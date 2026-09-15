@@ -1403,6 +1403,14 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
         cashBreakdown: entry.cashBreakdown,
         staffId: servedById,
         staffName: servedBy,
+        // What the card machine said about this tender. These were on the
+        // entry and never reached the row, so the acquirer's reference, the
+        // tip and the cashback all stopped here -- the back office had no
+        // reference to match a Dojo webhook to, and no cashback to report.
+        reference: entry.reference,
+        gratuityMinor: entry.gratuityMinor,
+        entryMode: entry.entryMode,
+        cashbackMinor: entry.cashbackMinor,
       );
     }
 

@@ -407,6 +407,13 @@ class _ReportBody extends StatelessWidget {
           value: money(report.voids.amountMinor),
         ),
         _Stat(label: 'No sales', value: '${report.noSales.count}'),
+        if (report.expenses.count > 0)
+          _Stat(
+            label: 'Paid out  [${report.expenses.count}]',
+            value: '-${money(report.expenses.amountMinor)}',
+          ),
+        if (report.wastage.count > 0)
+          _Stat(label: 'Wastage entries', value: '${report.wastage.count}'),
         if (report.gratuityMinor > 0)
           _Stat(
             label: 'Gratuity (owed to staff)',

@@ -288,6 +288,10 @@ class SyncService {
         // routes.
         final path = switch (entry.entity) {
           'void' => '/till/voids',
+          // A refund, a no-sale, an expense: one row on the server, for the
+          // reports. A wastage is a stock document there, so it has its own.
+          'event' => '/till/events',
+          'wastage' => '/till/wastage',
           _ => '/till/orders',
         };
 

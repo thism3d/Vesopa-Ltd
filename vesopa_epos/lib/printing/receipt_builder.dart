@@ -844,6 +844,19 @@ class ReceiptBuilder {
     section('REFUNDS');
     totalRow(report.refunds);
 
+    // Paid outs are the other way money leaves the drawer without a sale, and
+    // they are the line a manager cashing up needs before the cash total adds
+    // up. Printed only when there were some: most days there are none.
+    if (report.expenses.count > 0) {
+      section('PAID OUT');
+      totalRow(report.expenses);
+    }
+    if (report.wastage.count > 0) {
+      section('WASTAGE');
+      bytes.addAll(_row('Entries', '[${report.wastage.count}]'));
+      bytes.addAll(_text('Costed on the back office Wastage Report'));
+    }
+
     // The two lines a manager is actually looking for. Together, and with their
     // counts, because that is what makes them worth printing: a no-sale count
     // that has climbed is a question whatever the money says.

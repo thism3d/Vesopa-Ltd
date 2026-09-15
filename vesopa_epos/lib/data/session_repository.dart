@@ -52,6 +52,8 @@ class TillReport {
     this.voids = const ReportTally(),
     this.noSales = const ReportTally(),
     this.refunds = const ReportTally(),
+    this.expenses = const ReportTally(),
+    this.wastage = const ReportTally(),
     this.discounts = const ReportTally(),
     this.gratuityMinor = 0,
     this.declaredCashMinor,
@@ -84,6 +86,15 @@ class TillReport {
   final ReportTally noSales;
   final ReportTally refunds;
 
+  /// Money paid out of the drawer that was not a refund, and the drawer is
+  /// short by it. Counted with its total, like a refund.
+  final ReportTally expenses;
+
+  /// Wastage rung on this till: a count of entries, no money. The till holds
+  /// no cost price, and a wastage priced at retail would overstate what was
+  /// lost; the back office's Wastage Report has the real figure.
+  final ReportTally wastage;
+
   /// Bills that carried a reduction, and what it came to.
   final ReportTally discounts;
 
@@ -106,9 +117,13 @@ class TillReport {
   final int? declaredCashMinor;
 
   /// What should physically be in the drawer: the float plus everything taken
-  /// in cash.
+  /// in cash, less what was paid out of it. A window cleaner paid £30 from
+  /// the drawer is £30 the drawer is honestly short by, and a Z that called
+  /// that "down" would have the manager counting twice.
   int get expectedCashMinor =>
-      openingFloatMinor + (byMethod['cash']?.amountMinor ?? 0);
+      openingFloatMinor +
+      (byMethod['cash']?.amountMinor ?? 0) -
+      expenses.amountMinor;
 
   /// Counted minus expected. Positive is over, negative is short.
   ///
@@ -295,6 +310,8 @@ class SessionRepository {
         voids: report.voids,
         noSales: report.noSales,
         refunds: report.refunds,
+        expenses: report.expenses,
+        wastage: report.wastage,
         discounts: report.discounts,
         gratuityMinor: report.gratuityMinor,
         declaredCashMinor: declaredCashMinor,
@@ -381,6 +398,8 @@ class SessionRepository {
     var voids = const ReportTally();
     var noSales = const ReportTally();
     var refunds = const ReportTally();
+    var expenses = const ReportTally();
+    var wastage = const ReportTally();
     for (final e in events) {
       switch (e.kind) {
         case 'void':
@@ -389,6 +408,10 @@ class SessionRepository {
           noSales = noSales.plus(e.amountMinor);
         case 'refund':
           refunds = refunds.plus(e.amountMinor);
+        case 'expense':
+          expenses = expenses.plus(e.amountMinor);
+        case 'wastage':
+          wastage = wastage.plus(0);
       }
     }
 
@@ -408,6 +431,8 @@ class SessionRepository {
       voids: voids,
       noSales: noSales,
       refunds: refunds,
+      expenses: expenses,
+      wastage: wastage,
       discounts: ReportTally(count: discountedBills, amountMinor: discount),
       gratuityMinor: gratuity,
       terminalName: terminalName,

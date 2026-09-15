@@ -739,7 +739,7 @@ app.post('/till/customers', async (req, res, next) => {
  * string column, and a till asking for a value nothing seeds would get an
  * empty list and a dialog a clerk cannot get past.
  */
-const REASON_ACTIONS = ['void', 'cancel', 'refund', 'no_sale', 'discount'];
+const REASON_ACTIONS = ['void', 'cancel', 'refund', 'no_sale', 'discount', 'expense', 'wastage'];
 
 /**
  * What a venue calls the reasons for one action.

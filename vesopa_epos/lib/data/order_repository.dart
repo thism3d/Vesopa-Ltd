@@ -398,30 +398,111 @@ class OrderRepository {
         staffName: staffName,
       );
 
+  /// Money paid out of the drawer that is not a refund: the window cleaner,
+  /// a taxi for a customer, milk from the shop. Recorded against who it went
+  /// to and why, and sent up for the Expenses report.
+  Future<void> logExpense({
+    required String sessionId,
+    required int amountMinor,
+    required String paidTo,
+    String? reason,
+    String? staffName,
+  }) =>
+      _logEvent(
+        kind: 'expense',
+        sessionId: sessionId,
+        amountMinor: amountMinor.abs(),
+        note: paidTo,
+        reason: reason,
+        staffName: staffName,
+      );
+
+  /// Stock thrown away, spilled or sent back, rung at the counter.
+  ///
+  /// The till keeps no stock count of its own, so nothing local moves: the
+  /// event goes up and the back office takes the units off the shelf and
+  /// costs them. [amountMinor] is zero -- the value is the server's to work
+  /// out from the cost it holds, not the till's to guess from a price.
+  Future<void> logWastage({
+    required String sessionId,
+    required int pluId,
+    required String productName,
+    required double quantity,
+    String? reason,
+    String? staffName,
+  }) =>
+      _logEvent(
+        kind: 'wastage',
+        sessionId: sessionId,
+        note: productName,
+        reason: reason,
+        staffName: staffName,
+        pluId: pluId,
+        quantity: quantity,
+      );
+
   /// Record something that is not a sale but belongs on the Z report.
   ///
   /// Kept locally and never deleted by the sync, unlike the outbox entry beside
   /// it — see TillEvents for why that mattered.
+  ///
+  /// SENT UP AS WELL, since 1.8.0.0. Every one of these is queued to the
+  /// outbox and posted to the back office, which until now never heard of a
+  /// refund, a no-sale or an expense and so could not report on them. The
+  /// local row is the Z report's; the outbox entry is the server's; the id is
+  /// shared, so a retry cannot land twice.
   Future<void> _logEvent({
     required String kind,
     required String sessionId,
     int amountMinor = 0,
     String? note,
+    String? reason,
     String? staffName,
+    int? pluId,
+    double? quantity,
   }) async {
     // Practice is not counted: a trainee's voids, no-sales and refunds do not
     // belong on the Z a manager reconciles the drawer against.
     if (_training()) return;
-    await _db.into(_db.tillEvents).insert(
-          TillEventsCompanion.insert(
-            id: _uuid.v4(),
-            sessionId: sessionId,
-            kind: kind,
-            amountMinor: Value(amountMinor),
-            note: Value(note),
-            staffName: Value(staffName),
-          ),
-        );
+    final id = _uuid.v4();
+    final at = DateTime.now();
+    await _db.transaction(() async {
+      await _db.into(_db.tillEvents).insert(
+            TillEventsCompanion.insert(
+              id: id,
+              sessionId: sessionId,
+              kind: kind,
+              amountMinor: Value(amountMinor),
+              note: Value(note),
+              reason: Value(reason),
+              staffName: Value(staffName),
+              pluId: Value(pluId),
+              quantity: Value(quantity),
+              at: Value(at),
+            ),
+          );
+      await _db.into(_db.outboxEntries).insert(
+            OutboxEntriesCompanion.insert(
+              id: _uuid.v4(),
+              // A wastage has its own endpoint: it is a stock document on the
+              // server, not a line on a report.
+              entity: kind == 'wastage' ? 'wastage' : 'event',
+              entityId: id,
+              payload: jsonEncode({
+                'id': id,
+                'kind': kind,
+                'amount_minor': amountMinor,
+                'note': note,
+                'reason': reason,
+                'staff_name': staffName,
+                'session_id': sessionId,
+                'plu_id': pluId,
+                'quantity': quantity,
+                'at': at.toIso8601String(),
+              }),
+            ),
+          );
+    });
   }
 
   /// Void selected lines off an open check, leaving the rest of the sale alone.
@@ -916,6 +997,7 @@ class OrderRepository {
     String? reference,
     int gratuityMinor = 0,
     String? entryMode,
+    int cashbackMinor = 0,
   }) async {
     await _db.transaction(() async {
       await _db.into(_db.payments).insert(
@@ -932,6 +1014,7 @@ class OrderRepository {
               reference: Value(reference),
               gratuityMinor: Value(gratuityMinor),
               entryMode: Value(entryMode),
+              cashbackMinor: Value(cashbackMinor),
             ),
           );
 
@@ -1050,6 +1133,7 @@ class OrderRepository {
             'reference': pay.reference,
             'gratuity_minor': pay.gratuityMinor,
             'entry_mode': pay.entryMode,
+            'cashback_minor': pay.cashbackMinor,
           },
       ],
     });

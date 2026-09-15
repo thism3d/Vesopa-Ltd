@@ -823,6 +823,8 @@ const CRUD = {
           { value: 'refund', label: 'Refund — money back out of the drawer' },
           { value: 'no_sale', label: 'No Sale — the drawer opened with nothing sold' },
           { value: 'discount', label: 'Discount — money off' },
+          { value: 'expense', label: 'Paid Out — money paid out of the drawer' },
+          { value: 'wastage', label: 'Wastage — stock thrown away at the till' },
         ],
       },
     ],

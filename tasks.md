@@ -136,10 +136,10 @@ Status values: `Not started`, `In progress`, `Done`, `Blocked`.
 | T16 | Back office: Orders & Deliveries | 3 | Done | commit "The back office gets Stock Control" — driven in a local harness |
 | T17 | Back office: grouped report picker with per-report filters | 3 | Done | commit "The back office gets Stock Control" — driven in a local harness |
 | T18 | Back office: staff hourly rate on the Staff form | 3 | Done | commit "The back office gets Stock Control" — driven in a local harness |
-| T19 | Till: send refunds and no-sales up; Paid Out function | 4 | Not started | |
-| T20 | Till: Wastage function | 4 | Not started | |
-| T21 | Till: cashback on the payment row | 4 | Not started | |
-| T22 | Till: Z report carries expenses and wastage | 4 | Not started | |
+| T19 | Till: send refunds and no-sales up; Paid Out function | 4 | Done | commit "The till sends up what is not a sale" |
+| T20 | Till: Wastage function | 4 | Done | commit "The till sends up what is not a sale" |
+| T21 | Till: cashback on the payment row | 4 | Done | commit "The till sends up what is not a sale" |
+| T22 | Till: Z report carries expenses and wastage | 4 | Done | commit "The till sends up what is not a sale" |
 | T23 | Version bumps (till only) | 5 | Not started | |
 | T24 | Full test sweep | 5 | Not started | |
 | T25 | Server deploy, migrations, smoke checks, live walk-through | 5 | Not started | |
@@ -421,6 +421,18 @@ reading the code or measuring the running site.
    seeds a fortnight of sales, starts the server on a free port, and the
    pages were clicked through in a browser: settings, a suggested order, a
    part delivery, a full stock take, and the reports that read them back.
+6. **The card tender's details never reached the payment row.** Found
+   adding cashback to `settle()`: the payment page put the Dojo reference,
+   the tip and the entry mode on the `TenderEntry` and `settle()` was never
+   passed them, so every payment row — and every payload the server saw —
+   had them null. The back office could not match a Dojo webhook to a sale
+   and the Payment Types report's gratuity column was always £0.00. Passed
+   through now, with the cashback beside them.
+7. **Paid Out opens the drawer and prints no slip.** The plan said it would
+   print one. It records the event, opens the drawer quietly (not through the
+   No Sale key, which would log a no-sale on top) and says so on screen; the
+   Z carries the line and the drawer's cash-expected comes down by it. A slip
+   is a printer feature for a later release if a venue asks.
 4. **A scheduled week-start report keeps no date.** "Every Monday, the week
    before" is what a weekly Daily Department Sales schedule means, so the
    schedule stores the other filters and `runReport` takes the Monday of the

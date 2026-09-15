@@ -48,6 +48,25 @@ enum ReasonFor {
     'Change for a customer',
     'Opened in error',
     'Other',
+  ]),
+
+  /// Money paid out of the drawer that was not a refund.
+  expense('expense', [
+    'Sundries',
+    'Cleaning',
+    'Deliveries',
+    'Taxi',
+    'Other',
+  ]),
+
+  /// Stock thrown away at the counter.
+  wastage('wastage', [
+    'Spilled',
+    'Dropped',
+    'Sent back',
+    'Out of date',
+    'Pulled wrong',
+    'Other',
   ]);
 
   const ReasonFor(this.key, this.fallback);

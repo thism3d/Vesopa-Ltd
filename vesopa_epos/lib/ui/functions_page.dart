@@ -9,8 +9,10 @@ import '../main.dart';
 import 'card_machine_page.dart';
 import 'cash_drawer_sheets.dart';
 import 'clock_sheet.dart';
+import 'paid_out_sheet.dart';
 import 'refund_page.dart';
 import 'reprint_z_sheet.dart';
+import 'wastage_sheet.dart';
 import 'layout.dart';
 import 'sign_on_pad.dart';
 import 'staff_admin.dart';
@@ -137,6 +139,17 @@ class FunctionsPage extends ConsumerWidget {
           'Open the drawer without ringing up a sale.',
           () => TillActions.openCashDrawer(context, ref),
         ),
+        // The other way money leaves the drawer without a sale. Recorded as
+        // an expense so the Z's cash-expected line comes down by it, and sent
+        // up for the Expenses report -- see paid_out_sheet.dart.
+        _Function(
+          'Paid Out',
+          Icons.payments_outlined,
+          Pos.red,
+          'Pay somebody out of the drawer — the window cleaner, a taxi — and '
+              'record who and why.',
+          () => unawaited(showPaidOut(context, ref)),
+        ),
         // The card machine's own end of day can only be started from the till
         // on an integrated reader, so it needs a key of its own or the venue
         // cannot cash the machine up.
@@ -148,6 +161,19 @@ class FunctionsPage extends ConsumerWidget {
           () => Navigator.of(context).push(
             MaterialPageRoute<void>(builder: (_) => const CardMachinePage()),
           ),
+        ),
+      ]),
+      _Group('Stock', [
+        // Wastage is seen at the counter and forgotten by the back office,
+        // which is why the key is here. The till moves no stock itself; the
+        // event goes up and the back office takes it off the shelf.
+        _Function(
+          'Wastage',
+          Icons.delete_sweep_outlined,
+          Pos.amber,
+          'Record something dropped, spilled or sent back, so it comes off '
+              'the stock and onto the Wastage Report.',
+          () => unawaited(showWastage(context, ref)),
         ),
       ]),
       _Group('Terminal', [

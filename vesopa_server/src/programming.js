@@ -277,7 +277,7 @@ function programmingRoutes({ pool, broadcast, secret }) {
    * value — `/till/error-reasons?applies_to=no_sale` — so a row saved with a
    * misspelt action is a reason that exists, lists, and never reaches a till.
    */
-  const REASON_ACTIONS = ['void', 'cancel', 'refund', 'no_sale', 'discount'];
+  const REASON_ACTIONS = ['void', 'cancel', 'refund', 'no_sale', 'discount', 'expense', 'wastage'];
   crud('error-reasons', 'bo_error_reasons', ['reason', 'applies_to'], 'programming.updated', {
     tenantColumn: 'office_id',
     clean: (body) => {

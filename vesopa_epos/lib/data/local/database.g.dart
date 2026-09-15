@@ -4129,6 +4129,18 @@ class $PaymentsTable extends Payments with TableInfo<$PaymentsTable, Payment> {
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _cashbackMinorMeta = const VerificationMeta(
+    'cashbackMinor',
+  );
+  @override
+  late final GeneratedColumn<int> cashbackMinor = GeneratedColumn<int>(
+    'cashback_minor',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
   static const VerificationMeta _gratuityMinorMeta = const VerificationMeta(
     'gratuityMinor',
   );
@@ -4161,6 +4173,7 @@ class $PaymentsTable extends Payments with TableInfo<$PaymentsTable, Payment> {
     takenAt,
     cashBreakdown,
     reference,
+    cashbackMinor,
     gratuityMinor,
     entryMode,
   ];
@@ -4229,6 +4242,15 @@ class $PaymentsTable extends Payments with TableInfo<$PaymentsTable, Payment> {
         reference.isAcceptableOrUnknown(data['reference']!, _referenceMeta),
       );
     }
+    if (data.containsKey('cashback_minor')) {
+      context.handle(
+        _cashbackMinorMeta,
+        cashbackMinor.isAcceptableOrUnknown(
+          data['cashback_minor']!,
+          _cashbackMinorMeta,
+        ),
+      );
+    }
     if (data.containsKey('gratuity_minor')) {
       context.handle(
         _gratuityMinorMeta,
@@ -4281,6 +4303,10 @@ class $PaymentsTable extends Payments with TableInfo<$PaymentsTable, Payment> {
         DriftSqlType.string,
         data['${effectivePrefix}reference'],
       ),
+      cashbackMinor: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}cashback_minor'],
+      )!,
       gratuityMinor: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}gratuity_minor'],
@@ -4323,6 +4349,11 @@ class Payment extends DataClass implements Insertable<Payment> {
   /// cash and for anything taken on a platform that does not issue one.
   final String? reference;
 
+  /// Cashback handed over with this payment, in pence. The card machine adds
+  /// it on top of the sale and the drawer is short by it; since 1.8.0.0 it is
+  /// kept here and sent up, so the back office's Cashback report has it.
+  final int cashbackMinor;
+
   /// The tip inside [amountMinor], so the takings report can separate what the
   /// business earned from what belongs to the staff.
   final int gratuityMinor;
@@ -4341,6 +4372,7 @@ class Payment extends DataClass implements Insertable<Payment> {
     required this.takenAt,
     this.cashBreakdown,
     this.reference,
+    required this.cashbackMinor,
     required this.gratuityMinor,
     this.entryMode,
   });
@@ -4358,6 +4390,7 @@ class Payment extends DataClass implements Insertable<Payment> {
     if (!nullToAbsent || reference != null) {
       map['reference'] = Variable<String>(reference);
     }
+    map['cashback_minor'] = Variable<int>(cashbackMinor);
     map['gratuity_minor'] = Variable<int>(gratuityMinor);
     if (!nullToAbsent || entryMode != null) {
       map['entry_mode'] = Variable<String>(entryMode);
@@ -4378,6 +4411,7 @@ class Payment extends DataClass implements Insertable<Payment> {
       reference: reference == null && nullToAbsent
           ? const Value.absent()
           : Value(reference),
+      cashbackMinor: Value(cashbackMinor),
       gratuityMinor: Value(gratuityMinor),
       entryMode: entryMode == null && nullToAbsent
           ? const Value.absent()
@@ -4398,6 +4432,7 @@ class Payment extends DataClass implements Insertable<Payment> {
       takenAt: serializer.fromJson<DateTime>(json['takenAt']),
       cashBreakdown: serializer.fromJson<String?>(json['cashBreakdown']),
       reference: serializer.fromJson<String?>(json['reference']),
+      cashbackMinor: serializer.fromJson<int>(json['cashbackMinor']),
       gratuityMinor: serializer.fromJson<int>(json['gratuityMinor']),
       entryMode: serializer.fromJson<String?>(json['entryMode']),
     );
@@ -4413,6 +4448,7 @@ class Payment extends DataClass implements Insertable<Payment> {
       'takenAt': serializer.toJson<DateTime>(takenAt),
       'cashBreakdown': serializer.toJson<String?>(cashBreakdown),
       'reference': serializer.toJson<String?>(reference),
+      'cashbackMinor': serializer.toJson<int>(cashbackMinor),
       'gratuityMinor': serializer.toJson<int>(gratuityMinor),
       'entryMode': serializer.toJson<String?>(entryMode),
     };
@@ -4426,6 +4462,7 @@ class Payment extends DataClass implements Insertable<Payment> {
     DateTime? takenAt,
     Value<String?> cashBreakdown = const Value.absent(),
     Value<String?> reference = const Value.absent(),
+    int? cashbackMinor,
     int? gratuityMinor,
     Value<String?> entryMode = const Value.absent(),
   }) => Payment(
@@ -4438,6 +4475,7 @@ class Payment extends DataClass implements Insertable<Payment> {
         ? cashBreakdown.value
         : this.cashBreakdown,
     reference: reference.present ? reference.value : this.reference,
+    cashbackMinor: cashbackMinor ?? this.cashbackMinor,
     gratuityMinor: gratuityMinor ?? this.gratuityMinor,
     entryMode: entryMode.present ? entryMode.value : this.entryMode,
   );
@@ -4454,6 +4492,9 @@ class Payment extends DataClass implements Insertable<Payment> {
           ? data.cashBreakdown.value
           : this.cashBreakdown,
       reference: data.reference.present ? data.reference.value : this.reference,
+      cashbackMinor: data.cashbackMinor.present
+          ? data.cashbackMinor.value
+          : this.cashbackMinor,
       gratuityMinor: data.gratuityMinor.present
           ? data.gratuityMinor.value
           : this.gratuityMinor,
@@ -4471,6 +4512,7 @@ class Payment extends DataClass implements Insertable<Payment> {
           ..write('takenAt: $takenAt, ')
           ..write('cashBreakdown: $cashBreakdown, ')
           ..write('reference: $reference, ')
+          ..write('cashbackMinor: $cashbackMinor, ')
           ..write('gratuityMinor: $gratuityMinor, ')
           ..write('entryMode: $entryMode')
           ..write(')'))
@@ -4486,6 +4528,7 @@ class Payment extends DataClass implements Insertable<Payment> {
     takenAt,
     cashBreakdown,
     reference,
+    cashbackMinor,
     gratuityMinor,
     entryMode,
   );
@@ -4500,6 +4543,7 @@ class Payment extends DataClass implements Insertable<Payment> {
           other.takenAt == this.takenAt &&
           other.cashBreakdown == this.cashBreakdown &&
           other.reference == this.reference &&
+          other.cashbackMinor == this.cashbackMinor &&
           other.gratuityMinor == this.gratuityMinor &&
           other.entryMode == this.entryMode);
 }
@@ -4512,6 +4556,7 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
   final Value<DateTime> takenAt;
   final Value<String?> cashBreakdown;
   final Value<String?> reference;
+  final Value<int> cashbackMinor;
   final Value<int> gratuityMinor;
   final Value<String?> entryMode;
   final Value<int> rowid;
@@ -4523,6 +4568,7 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
     this.takenAt = const Value.absent(),
     this.cashBreakdown = const Value.absent(),
     this.reference = const Value.absent(),
+    this.cashbackMinor = const Value.absent(),
     this.gratuityMinor = const Value.absent(),
     this.entryMode = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -4535,6 +4581,7 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
     this.takenAt = const Value.absent(),
     this.cashBreakdown = const Value.absent(),
     this.reference = const Value.absent(),
+    this.cashbackMinor = const Value.absent(),
     this.gratuityMinor = const Value.absent(),
     this.entryMode = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -4550,6 +4597,7 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
     Expression<DateTime>? takenAt,
     Expression<String>? cashBreakdown,
     Expression<String>? reference,
+    Expression<int>? cashbackMinor,
     Expression<int>? gratuityMinor,
     Expression<String>? entryMode,
     Expression<int>? rowid,
@@ -4562,6 +4610,7 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
       if (takenAt != null) 'taken_at': takenAt,
       if (cashBreakdown != null) 'cash_breakdown': cashBreakdown,
       if (reference != null) 'reference': reference,
+      if (cashbackMinor != null) 'cashback_minor': cashbackMinor,
       if (gratuityMinor != null) 'gratuity_minor': gratuityMinor,
       if (entryMode != null) 'entry_mode': entryMode,
       if (rowid != null) 'rowid': rowid,
@@ -4576,6 +4625,7 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
     Value<DateTime>? takenAt,
     Value<String?>? cashBreakdown,
     Value<String?>? reference,
+    Value<int>? cashbackMinor,
     Value<int>? gratuityMinor,
     Value<String?>? entryMode,
     Value<int>? rowid,
@@ -4588,6 +4638,7 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
       takenAt: takenAt ?? this.takenAt,
       cashBreakdown: cashBreakdown ?? this.cashBreakdown,
       reference: reference ?? this.reference,
+      cashbackMinor: cashbackMinor ?? this.cashbackMinor,
       gratuityMinor: gratuityMinor ?? this.gratuityMinor,
       entryMode: entryMode ?? this.entryMode,
       rowid: rowid ?? this.rowid,
@@ -4618,6 +4669,9 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
     if (reference.present) {
       map['reference'] = Variable<String>(reference.value);
     }
+    if (cashbackMinor.present) {
+      map['cashback_minor'] = Variable<int>(cashbackMinor.value);
+    }
     if (gratuityMinor.present) {
       map['gratuity_minor'] = Variable<int>(gratuityMinor.value);
     }
@@ -4640,6 +4694,7 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
           ..write('takenAt: $takenAt, ')
           ..write('cashBreakdown: $cashBreakdown, ')
           ..write('reference: $reference, ')
+          ..write('cashbackMinor: $cashbackMinor, ')
           ..write('gratuityMinor: $gratuityMinor, ')
           ..write('entryMode: $entryMode, ')
           ..write('rowid: $rowid')
@@ -5556,6 +5611,35 @@ class $TillEventsTable extends TillEvents
     requiredDuringInsert: false,
     defaultValue: currentDateAndTime,
   );
+  static const VerificationMeta _reasonMeta = const VerificationMeta('reason');
+  @override
+  late final GeneratedColumn<String> reason = GeneratedColumn<String>(
+    'reason',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _pluIdMeta = const VerificationMeta('pluId');
+  @override
+  late final GeneratedColumn<int> pluId = GeneratedColumn<int>(
+    'plu_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _quantityMeta = const VerificationMeta(
+    'quantity',
+  );
+  @override
+  late final GeneratedColumn<double> quantity = GeneratedColumn<double>(
+    'quantity',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -5565,6 +5649,9 @@ class $TillEventsTable extends TillEvents
     note,
     staffName,
     at,
+    reason,
+    pluId,
+    quantity,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -5623,6 +5710,24 @@ class $TillEventsTable extends TillEvents
     if (data.containsKey('at')) {
       context.handle(_atMeta, at.isAcceptableOrUnknown(data['at']!, _atMeta));
     }
+    if (data.containsKey('reason')) {
+      context.handle(
+        _reasonMeta,
+        reason.isAcceptableOrUnknown(data['reason']!, _reasonMeta),
+      );
+    }
+    if (data.containsKey('plu_id')) {
+      context.handle(
+        _pluIdMeta,
+        pluId.isAcceptableOrUnknown(data['plu_id']!, _pluIdMeta),
+      );
+    }
+    if (data.containsKey('quantity')) {
+      context.handle(
+        _quantityMeta,
+        quantity.isAcceptableOrUnknown(data['quantity']!, _quantityMeta),
+      );
+    }
     return context;
   }
 
@@ -5660,6 +5765,18 @@ class $TillEventsTable extends TillEvents
         DriftSqlType.dateTime,
         data['${effectivePrefix}at'],
       )!,
+      reason: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}reason'],
+      ),
+      pluId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}plu_id'],
+      ),
+      quantity: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}quantity'],
+      ),
     );
   }
 
@@ -5675,7 +5792,7 @@ class TillEvent extends DataClass implements Insertable<TillEvent> {
   /// The trading period this belongs to, so a Z can total its own and no more.
   final String sessionId;
 
-  /// void | no_sale | refund
+  /// void | no_sale | refund | expense | wastage
   final String kind;
 
   /// What it was worth, in pence. Zero for a no-sale, which has a count and no
@@ -5688,6 +5805,17 @@ class TillEvent extends DataClass implements Insertable<TillEvent> {
   /// Who did it. The other half of what makes these lines worth reading.
   final String? staffName;
   final DateTime at;
+
+  /// Why, from the venue's own list, where [note] carries what: "Window
+  /// cleaner" is the note on an expense and "Sundries" its reason. Since
+  /// 1.8.0.0, when these events started going up to the back office and
+  /// being reported on.
+  final String? reason;
+
+  /// For a wastage: which product, and how many units. Null for everything
+  /// else. The server takes the units off the shelf; the till keeps no count.
+  final int? pluId;
+  final double? quantity;
   const TillEvent({
     required this.id,
     required this.sessionId,
@@ -5696,6 +5824,9 @@ class TillEvent extends DataClass implements Insertable<TillEvent> {
     this.note,
     this.staffName,
     required this.at,
+    this.reason,
+    this.pluId,
+    this.quantity,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -5711,6 +5842,15 @@ class TillEvent extends DataClass implements Insertable<TillEvent> {
       map['staff_name'] = Variable<String>(staffName);
     }
     map['at'] = Variable<DateTime>(at);
+    if (!nullToAbsent || reason != null) {
+      map['reason'] = Variable<String>(reason);
+    }
+    if (!nullToAbsent || pluId != null) {
+      map['plu_id'] = Variable<int>(pluId);
+    }
+    if (!nullToAbsent || quantity != null) {
+      map['quantity'] = Variable<double>(quantity);
+    }
     return map;
   }
 
@@ -5725,6 +5865,15 @@ class TillEvent extends DataClass implements Insertable<TillEvent> {
           ? const Value.absent()
           : Value(staffName),
       at: Value(at),
+      reason: reason == null && nullToAbsent
+          ? const Value.absent()
+          : Value(reason),
+      pluId: pluId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(pluId),
+      quantity: quantity == null && nullToAbsent
+          ? const Value.absent()
+          : Value(quantity),
     );
   }
 
@@ -5741,6 +5890,9 @@ class TillEvent extends DataClass implements Insertable<TillEvent> {
       note: serializer.fromJson<String?>(json['note']),
       staffName: serializer.fromJson<String?>(json['staffName']),
       at: serializer.fromJson<DateTime>(json['at']),
+      reason: serializer.fromJson<String?>(json['reason']),
+      pluId: serializer.fromJson<int?>(json['pluId']),
+      quantity: serializer.fromJson<double?>(json['quantity']),
     );
   }
   @override
@@ -5754,6 +5906,9 @@ class TillEvent extends DataClass implements Insertable<TillEvent> {
       'note': serializer.toJson<String?>(note),
       'staffName': serializer.toJson<String?>(staffName),
       'at': serializer.toJson<DateTime>(at),
+      'reason': serializer.toJson<String?>(reason),
+      'pluId': serializer.toJson<int?>(pluId),
+      'quantity': serializer.toJson<double?>(quantity),
     };
   }
 
@@ -5765,6 +5920,9 @@ class TillEvent extends DataClass implements Insertable<TillEvent> {
     Value<String?> note = const Value.absent(),
     Value<String?> staffName = const Value.absent(),
     DateTime? at,
+    Value<String?> reason = const Value.absent(),
+    Value<int?> pluId = const Value.absent(),
+    Value<double?> quantity = const Value.absent(),
   }) => TillEvent(
     id: id ?? this.id,
     sessionId: sessionId ?? this.sessionId,
@@ -5773,6 +5931,9 @@ class TillEvent extends DataClass implements Insertable<TillEvent> {
     note: note.present ? note.value : this.note,
     staffName: staffName.present ? staffName.value : this.staffName,
     at: at ?? this.at,
+    reason: reason.present ? reason.value : this.reason,
+    pluId: pluId.present ? pluId.value : this.pluId,
+    quantity: quantity.present ? quantity.value : this.quantity,
   );
   TillEvent copyWithCompanion(TillEventsCompanion data) {
     return TillEvent(
@@ -5785,6 +5946,9 @@ class TillEvent extends DataClass implements Insertable<TillEvent> {
       note: data.note.present ? data.note.value : this.note,
       staffName: data.staffName.present ? data.staffName.value : this.staffName,
       at: data.at.present ? data.at.value : this.at,
+      reason: data.reason.present ? data.reason.value : this.reason,
+      pluId: data.pluId.present ? data.pluId.value : this.pluId,
+      quantity: data.quantity.present ? data.quantity.value : this.quantity,
     );
   }
 
@@ -5797,14 +5961,27 @@ class TillEvent extends DataClass implements Insertable<TillEvent> {
           ..write('amountMinor: $amountMinor, ')
           ..write('note: $note, ')
           ..write('staffName: $staffName, ')
-          ..write('at: $at')
+          ..write('at: $at, ')
+          ..write('reason: $reason, ')
+          ..write('pluId: $pluId, ')
+          ..write('quantity: $quantity')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode =>
-      Object.hash(id, sessionId, kind, amountMinor, note, staffName, at);
+  int get hashCode => Object.hash(
+    id,
+    sessionId,
+    kind,
+    amountMinor,
+    note,
+    staffName,
+    at,
+    reason,
+    pluId,
+    quantity,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -5815,7 +5992,10 @@ class TillEvent extends DataClass implements Insertable<TillEvent> {
           other.amountMinor == this.amountMinor &&
           other.note == this.note &&
           other.staffName == this.staffName &&
-          other.at == this.at);
+          other.at == this.at &&
+          other.reason == this.reason &&
+          other.pluId == this.pluId &&
+          other.quantity == this.quantity);
 }
 
 class TillEventsCompanion extends UpdateCompanion<TillEvent> {
@@ -5826,6 +6006,9 @@ class TillEventsCompanion extends UpdateCompanion<TillEvent> {
   final Value<String?> note;
   final Value<String?> staffName;
   final Value<DateTime> at;
+  final Value<String?> reason;
+  final Value<int?> pluId;
+  final Value<double?> quantity;
   final Value<int> rowid;
   const TillEventsCompanion({
     this.id = const Value.absent(),
@@ -5835,6 +6018,9 @@ class TillEventsCompanion extends UpdateCompanion<TillEvent> {
     this.note = const Value.absent(),
     this.staffName = const Value.absent(),
     this.at = const Value.absent(),
+    this.reason = const Value.absent(),
+    this.pluId = const Value.absent(),
+    this.quantity = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   TillEventsCompanion.insert({
@@ -5845,6 +6031,9 @@ class TillEventsCompanion extends UpdateCompanion<TillEvent> {
     this.note = const Value.absent(),
     this.staffName = const Value.absent(),
     this.at = const Value.absent(),
+    this.reason = const Value.absent(),
+    this.pluId = const Value.absent(),
+    this.quantity = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        sessionId = Value(sessionId),
@@ -5857,6 +6046,9 @@ class TillEventsCompanion extends UpdateCompanion<TillEvent> {
     Expression<String>? note,
     Expression<String>? staffName,
     Expression<DateTime>? at,
+    Expression<String>? reason,
+    Expression<int>? pluId,
+    Expression<double>? quantity,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -5867,6 +6059,9 @@ class TillEventsCompanion extends UpdateCompanion<TillEvent> {
       if (note != null) 'note': note,
       if (staffName != null) 'staff_name': staffName,
       if (at != null) 'at': at,
+      if (reason != null) 'reason': reason,
+      if (pluId != null) 'plu_id': pluId,
+      if (quantity != null) 'quantity': quantity,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -5879,6 +6074,9 @@ class TillEventsCompanion extends UpdateCompanion<TillEvent> {
     Value<String?>? note,
     Value<String?>? staffName,
     Value<DateTime>? at,
+    Value<String?>? reason,
+    Value<int?>? pluId,
+    Value<double?>? quantity,
     Value<int>? rowid,
   }) {
     return TillEventsCompanion(
@@ -5889,6 +6087,9 @@ class TillEventsCompanion extends UpdateCompanion<TillEvent> {
       note: note ?? this.note,
       staffName: staffName ?? this.staffName,
       at: at ?? this.at,
+      reason: reason ?? this.reason,
+      pluId: pluId ?? this.pluId,
+      quantity: quantity ?? this.quantity,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -5917,6 +6118,15 @@ class TillEventsCompanion extends UpdateCompanion<TillEvent> {
     if (at.present) {
       map['at'] = Variable<DateTime>(at.value);
     }
+    if (reason.present) {
+      map['reason'] = Variable<String>(reason.value);
+    }
+    if (pluId.present) {
+      map['plu_id'] = Variable<int>(pluId.value);
+    }
+    if (quantity.present) {
+      map['quantity'] = Variable<double>(quantity.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -5933,6 +6143,9 @@ class TillEventsCompanion extends UpdateCompanion<TillEvent> {
           ..write('note: $note, ')
           ..write('staffName: $staffName, ')
           ..write('at: $at, ')
+          ..write('reason: $reason, ')
+          ..write('pluId: $pluId, ')
+          ..write('quantity: $quantity, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -10810,6 +11023,7 @@ typedef $$PaymentsTableCreateCompanionBuilder =
       Value<DateTime> takenAt,
       Value<String?> cashBreakdown,
       Value<String?> reference,
+      Value<int> cashbackMinor,
       Value<int> gratuityMinor,
       Value<String?> entryMode,
       Value<int> rowid,
@@ -10823,6 +11037,7 @@ typedef $$PaymentsTableUpdateCompanionBuilder =
       Value<DateTime> takenAt,
       Value<String?> cashBreakdown,
       Value<String?> reference,
+      Value<int> cashbackMinor,
       Value<int> gratuityMinor,
       Value<String?> entryMode,
       Value<int> rowid,
@@ -10886,6 +11101,11 @@ class $$PaymentsTableFilterComposer
 
   ColumnFilters<String> get reference => $composableBuilder(
     column: $table.reference,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get cashbackMinor => $composableBuilder(
+    column: $table.cashbackMinor,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -10962,6 +11182,11 @@ class $$PaymentsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get cashbackMinor => $composableBuilder(
+    column: $table.cashbackMinor,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get gratuityMinor => $composableBuilder(
     column: $table.gratuityMinor,
     builder: (column) => ColumnOrderings(column),
@@ -11026,6 +11251,11 @@ class $$PaymentsTableAnnotationComposer
 
   GeneratedColumn<String> get reference =>
       $composableBuilder(column: $table.reference, builder: (column) => column);
+
+  GeneratedColumn<int> get cashbackMinor => $composableBuilder(
+    column: $table.cashbackMinor,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<int> get gratuityMinor => $composableBuilder(
     column: $table.gratuityMinor,
@@ -11094,6 +11324,7 @@ class $$PaymentsTableTableManager
                 Value<DateTime> takenAt = const Value.absent(),
                 Value<String?> cashBreakdown = const Value.absent(),
                 Value<String?> reference = const Value.absent(),
+                Value<int> cashbackMinor = const Value.absent(),
                 Value<int> gratuityMinor = const Value.absent(),
                 Value<String?> entryMode = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -11105,6 +11336,7 @@ class $$PaymentsTableTableManager
                 takenAt: takenAt,
                 cashBreakdown: cashBreakdown,
                 reference: reference,
+                cashbackMinor: cashbackMinor,
                 gratuityMinor: gratuityMinor,
                 entryMode: entryMode,
                 rowid: rowid,
@@ -11118,6 +11350,7 @@ class $$PaymentsTableTableManager
                 Value<DateTime> takenAt = const Value.absent(),
                 Value<String?> cashBreakdown = const Value.absent(),
                 Value<String?> reference = const Value.absent(),
+                Value<int> cashbackMinor = const Value.absent(),
                 Value<int> gratuityMinor = const Value.absent(),
                 Value<String?> entryMode = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -11129,6 +11362,7 @@ class $$PaymentsTableTableManager
                 takenAt: takenAt,
                 cashBreakdown: cashBreakdown,
                 reference: reference,
+                cashbackMinor: cashbackMinor,
                 gratuityMinor: gratuityMinor,
                 entryMode: entryMode,
                 rowid: rowid,
@@ -11649,6 +11883,9 @@ typedef $$TillEventsTableCreateCompanionBuilder =
       Value<String?> note,
       Value<String?> staffName,
       Value<DateTime> at,
+      Value<String?> reason,
+      Value<int?> pluId,
+      Value<double?> quantity,
       Value<int> rowid,
     });
 typedef $$TillEventsTableUpdateCompanionBuilder =
@@ -11660,6 +11897,9 @@ typedef $$TillEventsTableUpdateCompanionBuilder =
       Value<String?> note,
       Value<String?> staffName,
       Value<DateTime> at,
+      Value<String?> reason,
+      Value<int?> pluId,
+      Value<double?> quantity,
       Value<int> rowid,
     });
 
@@ -11704,6 +11944,21 @@ class $$TillEventsTableFilterComposer
 
   ColumnFilters<DateTime> get at => $composableBuilder(
     column: $table.at,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get reason => $composableBuilder(
+    column: $table.reason,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get pluId => $composableBuilder(
+    column: $table.pluId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get quantity => $composableBuilder(
+    column: $table.quantity,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -11751,6 +12006,21 @@ class $$TillEventsTableOrderingComposer
     column: $table.at,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get reason => $composableBuilder(
+    column: $table.reason,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get pluId => $composableBuilder(
+    column: $table.pluId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get quantity => $composableBuilder(
+    column: $table.quantity,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$TillEventsTableAnnotationComposer
@@ -11784,6 +12054,15 @@ class $$TillEventsTableAnnotationComposer
 
   GeneratedColumn<DateTime> get at =>
       $composableBuilder(column: $table.at, builder: (column) => column);
+
+  GeneratedColumn<String> get reason =>
+      $composableBuilder(column: $table.reason, builder: (column) => column);
+
+  GeneratedColumn<int> get pluId =>
+      $composableBuilder(column: $table.pluId, builder: (column) => column);
+
+  GeneratedColumn<double> get quantity =>
+      $composableBuilder(column: $table.quantity, builder: (column) => column);
 }
 
 class $$TillEventsTableTableManager
@@ -11824,6 +12103,9 @@ class $$TillEventsTableTableManager
                 Value<String?> note = const Value.absent(),
                 Value<String?> staffName = const Value.absent(),
                 Value<DateTime> at = const Value.absent(),
+                Value<String?> reason = const Value.absent(),
+                Value<int?> pluId = const Value.absent(),
+                Value<double?> quantity = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TillEventsCompanion(
                 id: id,
@@ -11833,6 +12115,9 @@ class $$TillEventsTableTableManager
                 note: note,
                 staffName: staffName,
                 at: at,
+                reason: reason,
+                pluId: pluId,
+                quantity: quantity,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -11844,6 +12129,9 @@ class $$TillEventsTableTableManager
                 Value<String?> note = const Value.absent(),
                 Value<String?> staffName = const Value.absent(),
                 Value<DateTime> at = const Value.absent(),
+                Value<String?> reason = const Value.absent(),
+                Value<int?> pluId = const Value.absent(),
+                Value<double?> quantity = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TillEventsCompanion.insert(
                 id: id,
@@ -11853,6 +12141,9 @@ class $$TillEventsTableTableManager
                 note: note,
                 staffName: staffName,
                 at: at,
+                reason: reason,
+                pluId: pluId,
+                quantity: quantity,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

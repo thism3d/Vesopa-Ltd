@@ -208,7 +208,7 @@ class TillEvents extends Table {
   /// The trading period this belongs to, so a Z can total its own and no more.
   TextColumn get sessionId => text()();
 
-  /// void | no_sale | refund
+  /// void | no_sale | refund | expense | wastage
   TextColumn get kind => text()();
 
   /// What it was worth, in pence. Zero for a no-sale, which has a count and no
@@ -222,6 +222,17 @@ class TillEvents extends Table {
   TextColumn get staffName => text().nullable()();
 
   DateTimeColumn get at => dateTime().withDefault(currentDateAndTime)();
+
+  /// Why, from the venue's own list, where [note] carries what: "Window
+  /// cleaner" is the note on an expense and "Sundries" its reason. Since
+  /// 1.8.0.0, when these events started going up to the back office and
+  /// being reported on.
+  TextColumn get reason => text().nullable()();
+
+  /// For a wastage: which product, and how many units. Null for everything
+  /// else. The server takes the units off the shelf; the till keeps no count.
+  IntColumn get pluId => integer().nullable()();
+  RealColumn get quantity => real().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -524,6 +535,11 @@ class Payments extends Table {
   /// cash and for anything taken on a platform that does not issue one.
   TextColumn get reference => text().nullable()();
 
+  /// Cashback handed over with this payment, in pence. The card machine adds
+  /// it on top of the sale and the drawer is short by it; since 1.8.0.0 it is
+  /// kept here and sent up, so the back office's Cashback report has it.
+  IntColumn get cashbackMinor => integer().withDefault(const Constant(0))();
+
   /// The tip inside [amountMinor], so the takings report can separate what the
   /// business earned from what belongs to the staff.
   IntColumn get gratuityMinor => integer().withDefault(const Constant(0))();
@@ -664,7 +680,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 26;
+  int get schemaVersion => 27;
 
 
   /// Add a column only if the table has not already got it.
@@ -897,6 +913,16 @@ class AppDatabase extends _$AppDatabase {
             await _addColumnIfMissing(m, orders, orders.customerPhone);
             await _addColumnIfMissing(m, orders, orders.customerEmail);
             await _addColumnIfMissing(m, orders, orders.customerCardNumber);
+          }
+          if (from < 27) {
+            // 1.8.0.0: till events go up to the back office and two new
+            // kinds join them (an expense paid out, a wastage), and a
+            // payment remembers the cashback given with it. Every existing
+            // row reads as before: no reason, no product, no cashback.
+            await _addColumnIfMissing(m, tillEvents, tillEvents.reason);
+            await _addColumnIfMissing(m, tillEvents, tillEvents.pluId);
+            await _addColumnIfMissing(m, tillEvents, tillEvents.quantity);
+            await _addColumnIfMissing(m, payments, payments.cashbackMinor);
           }
         },
       );

@@ -257,6 +257,82 @@ void main() {
     });
   });
 
+  group('paid outs and wastage (1.8.0.0)', () {
+    test('a paid out is counted, valued, and comes off the cash expected', () async {
+      await stock([beer]);
+      await sell(beer, qty: 2, method: 'cash');
+      await orders.logExpense(
+        sessionId: (await sessions.current()).id,
+        amountMinor: 3000,
+        paidTo: 'Window cleaner',
+        reason: 'Cleaning',
+        staffName: 'Tom',
+      );
+
+      final z = await sessions.zReport();
+      expect(z.expenses.count, 1);
+      expect(z.expenses.amountMinor, 3000);
+      // £10 of beer in cash, £30 out to the window cleaner: the drawer is
+      // honestly £20 down on the float, not £30 short.
+      expect(z.expectedCashMinor, z.openingFloatMinor + 1000 - 3000);
+      expect(z.grossMinor, 1000, reason: 'a paid out is not a sale');
+    });
+
+    test('a wastage is counted with no money, and names the product', () async {
+      await orders.logWastage(
+        sessionId: (await sessions.current()).id,
+        pluId: 1,
+        productName: 'IPA',
+        quantity: 2,
+        reason: 'Spilled',
+        staffName: 'Sarah',
+      );
+      final z = await sessions.zReport();
+      expect(z.wastage.count, 1);
+      expect(z.wastage.amountMinor, 0);
+      final row = await db.select(db.tillEvents).getSingle();
+      expect(row.kind, 'wastage');
+      expect(row.pluId, 1);
+      expect(row.quantity, 2);
+      expect(row.reason, 'Spilled');
+    });
+
+    test('every event is queued for the back office, on the right route', () async {
+      final session = (await sessions.current()).id;
+      await orders.logRefund(sessionId: session, amountMinor: 410, note: 'Flat pint');
+      await orders.logNoSale(sessionId: session, note: 'Change');
+      await orders.logExpense(sessionId: session, amountMinor: 3000, paidTo: 'Taxi');
+      await orders.logWastage(sessionId: session, pluId: 1, productName: 'IPA', quantity: 1);
+
+      final queued = await db.select(db.outboxEntries).get();
+      expect(queued.map((e) => e.entity).toList(), ['event', 'event', 'event', 'wastage']);
+      // The outbox row points at the event by the event's own id, so a retry
+      // that crosses with the server's answer cannot land twice.
+      final events = await db.select(db.tillEvents).get();
+      expect(queued.map((e) => e.entityId).toSet(), events.map((e) => e.id).toSet());
+      final wastage = queued.last;
+      expect(wastage.payload, contains('"plu_id":1'));
+      expect(wastage.payload, contains('"quantity":1.0'));
+      expect(queued.first.payload, contains('"kind":"refund"'));
+      expect(queued.first.payload, contains('"amount_minor":410'));
+    });
+
+    test('the cashback on a card tender is kept on the payment row', () async {
+      await stock([beer]);
+      final session = await sessions.current();
+      final id = await orders.openOrder();
+      await orders.addLine(id, beer);
+      await orders.settle(id, 'card', 500, sessionId: session.id, cashbackMinor: 2000, reference: 'pi_123', gratuityMinor: 50);
+      final pay = await db.select(db.payments).getSingle();
+      expect(pay.cashbackMinor, 2000);
+      expect(pay.reference, 'pi_123');
+      expect(pay.gratuityMinor, 50);
+      final out = await (db.select(db.outboxEntries)..where((e) => e.entity.equals('order'))).getSingle();
+      expect(out.payload, contains('"cashback_minor":2000'));
+      expect(out.payload, contains('"reference":"pi_123"'));
+    });
+  });
+
   group('the cash declaration', () {
     // £100 float and one £5 beer in cash: the till expects £105 in the drawer.
     Future<TillReport> zWith(int? declared) async {
