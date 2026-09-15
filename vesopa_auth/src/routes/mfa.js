@@ -26,6 +26,7 @@ const {
 const config = require('../config');
 const db = require('../db');
 const sessions = require('../sessions');
+const recent = require('../recent');
 const events = require('../events');
 const csrf = require('../csrf');
 const rateLimit = require('../ratelimit');
@@ -519,6 +520,7 @@ router.post('/webauthn/authenticate/verify', async (req, res, next) => {
       userAgent: req.userAgent,
     });
     sessions.setCookie(res, session.token, true);
+    await recent.rememberUser(req, res, stored.user_id);
 
     await events.recordLogin({
       userId: stored.user_id,

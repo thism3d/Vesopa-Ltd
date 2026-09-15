@@ -191,6 +191,7 @@ h3 { font-size: 16px; }
    is the point — a person should recognise it on the till, in the menu and in
    the back office without reading it.
    --------------------------------------------------------------------------- */
+.login-other { display: block; margin-top: 10px; text-align: center; font-size: 14px; color: var(--muted); }
 .sso-btn {
   display: flex;
   align-items: center;

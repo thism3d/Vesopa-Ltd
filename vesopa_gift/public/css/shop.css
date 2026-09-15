@@ -99,7 +99,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 /* ---- Top bar (inner pages) ------------------------------------------------ */
 .bar { border-bottom: 1px solid var(--line); }
-.bar .wrap, .bar .narrow { height: 56px; display: flex; align-items: center; gap: 10px; }
+.bar .wrap, .bar .narrow { height: 56px; display: flex; align-items: center; gap: 10px; padding-right: 64px; }
 .bar .back { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; margin-left: -12px; }
 .bar .name { font-family: var(--heading); font-size: 16px; text-decoration: none; }
 
@@ -352,6 +352,11 @@ main.narrow { padding-bottom: 12px; }
 .bar-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 .btn.small { height: 38px; padding: 0 14px; font-size: 14px; border-radius: 10px; }
 .sso { gap: 10px; }
+.sso-as { justify-content: flex-start; padding: 0 14px; height: 60px; gap: 12px; text-align: left; }
+.sso-face { width: 34px; height: 34px; border-radius: 50%; background: rgba(255,255,255,.22); display: flex; align-items: center; justify-content: center; font-weight: 700; flex: 0 0 auto; }
+.sso-lines { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
+.sso-lines small { font-weight: 500; opacity: .85; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sso-other { display: block; margin-top: 12px; text-align: center; font-size: 14px; color: var(--ink-soft); }
 .ok-box { padding: 12px 14px; border-radius: 12px; background: var(--good-wash); color: var(--good); font-weight: 600; font-size: 15px; }
 .acct-hero { padding-top: 34px; display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; }
 .acct-hero h1.serif { font-size: 30px; line-height: 1.15; }
@@ -380,14 +385,27 @@ main.narrow { padding-bottom: 12px; }
 .acct-actions form { margin: 0; }
 .empty-state { margin-top: 30px; padding: 40px 20px; border-radius: var(--radius); background: var(--surface); border: 1px dashed var(--line); display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; color: var(--muted); }
 .empty-state h2.serif { color: var(--ink); font-size: 24px; }
-.hero .acct-link { position: absolute; right: 16px; top: 16px; z-index: 3; padding: 8px 14px; border-radius: 999px; background: rgba(0,0,0,.42); color: #fff; font-size: 13px; font-weight: 650; text-decoration: none; backdrop-filter: blur(6px); display: inline-flex; align-items: center; gap: 6px; }
+.hero .acct-link { position: absolute; right: 64px; top: 16px; z-index: 3; padding: 8px 14px; border-radius: 999px; background: rgba(0,0,0,.42); color: #fff; font-size: 13px; font-weight: 650; text-decoration: none; backdrop-filter: blur(6px); display: inline-flex; align-items: center; gap: 6px; }
 .hero .acct-link:hover { background: rgba(0,0,0,.6); }
 @media (min-width: 700px) { .acct-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (min-width: 1000px) { .acct-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 
-/* ---- Appearance: system, light, dark ---------------------------------------------- */
-.theme-pick { display: inline-flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--sunken); border: 1px solid var(--line); }
-.theme-pick button { height: 30px; padding: 0 12px; border-radius: 999px; border: 0; background: none; color: var(--ink-soft); font-size: 13px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
-.theme-pick button svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.theme-pick button.on { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px var(--shadow-soft); }
-.foot .theme-pick { align-self: flex-start; }
+
+/* ---- Appearance: one round button, Day / Night / Auto (the back office's own) ---- */
+.theme-corner { position: fixed; top: 14px; right: 16px; z-index: 70; }
+.theme-btn { width: 40px; height: 40px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; display: grid; place-items: center; box-shadow: 0 1px 2px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.08); transition: transform .12s ease, border-color .15s ease; padding: 0; }
+.theme-btn:hover { border-color: var(--accent); }
+.theme-btn:active { transform: scale(.94); }
+.theme-btn svg { width: 19px; height: 19px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; grid-area: 1 / 1; }
+.theme-btn .ic-sun, .theme-btn .ic-moon, .theme-btn .ic-auto { display: none; }
+:root[data-theme="light"] .theme-btn .ic-sun { display: block; }
+:root[data-theme="dark"] .theme-btn .ic-moon { display: block; }
+:root:not([data-theme]) .theme-btn .ic-auto { display: block; }
+.theme-menu { position: absolute; top: 48px; right: 0; min-width: 168px; background: var(--surface); border: 1px solid var(--line); border-radius: 13px; box-shadow: 0 14px 40px rgba(0,0,0,.18); padding: 6px; display: flex; flex-direction: column; gap: 2px; transform-origin: top right; animation: theme-pop .16s cubic-bezier(.2, .9, .3, 1); }
+.theme-menu[hidden] { display: none; }
+@keyframes theme-pop { from { opacity: 0; transform: scale(.94) translateY(-4px); } to { opacity: 1; transform: none; } }
+.theme-menu button { display: flex; align-items: center; gap: 10px; width: 100%; border: 0; border-radius: 9px; background: none; color: var(--ink); padding: 10px 11px; font-size: 14px; cursor: pointer; text-align: left; }
+.theme-menu button:hover { background: var(--sunken); }
+.theme-menu button[aria-checked="true"] { background: var(--good-wash); color: var(--good); font-weight: 600; }
+.theme-menu svg { width: 17px; height: 17px; flex: 0 0 auto; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+@media (prefers-reduced-motion: reduce) { .theme-menu { animation: none; } }

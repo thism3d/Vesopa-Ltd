@@ -1,47 +1,71 @@
-/* Vesopa Gift — light, dark, or the device's own setting.
+/* Vesopa Gift — Day, Night, or whatever the device is set to.
  *
- * Loaded in the head, before the page paints, so a dark page never flashes
- * white. The choice lives in this browser (localStorage): "system" means no
- * attribute, and the stylesheets follow prefers-color-scheme; "light" and
- * "dark" set data-theme on <html>, which the stylesheets obey over the device.
- *
- * Any element with data-theme-pick="light|dark|system" becomes a switch. */
+ * The back office's own switch (vesopa_server/public/app.js), key for key:
+ * a data-theme attribute on <html> that every colour in the stylesheet is
+ * expressed against, read out of localStorage before the page paints so a
+ * Night page never flashes white. One round button shows the CHOICE (Auto is a
+ * choice too); it opens a small menu of the three. */
 (function () {
   'use strict';
-  var KEY = 'vg_theme';
+  var KEY = 'vesopa.theme';
   var root = document.documentElement;
 
   function read() {
-    try { return localStorage.getItem(KEY) || 'system'; } catch (e) { return 'system'; }
+    try {
+      var stored = localStorage.getItem(KEY);
+      return stored === 'light' || stored === 'dark' ? stored : 'system';
+    } catch (e) { return 'system'; }
   }
-  function apply(mode) {
-    if (mode === 'light' || mode === 'dark') root.setAttribute('data-theme', mode);
-    else root.removeAttribute('data-theme');
+
+  function apply(choice) {
+    if (choice === 'system') root.removeAttribute('data-theme');
+    else root.setAttribute('data-theme', choice);
     var meta = document.querySelector('meta[name="color-scheme"]');
-    if (meta) meta.setAttribute('content', mode === 'system' ? 'light dark' : mode);
-    paint(mode);
-  }
-  function paint(mode) {
-    var picks = document.querySelectorAll('[data-theme-pick]');
-    for (var i = 0; i < picks.length; i++) {
-      var on = picks[i].getAttribute('data-theme-pick') === mode;
-      picks[i].classList.toggle('on', on);
-      picks[i].setAttribute('aria-pressed', on ? 'true' : 'false');
+    if (meta) meta.setAttribute('content', choice === 'system' ? 'light dark' : choice);
+    var items = document.querySelectorAll('[data-theme-set]');
+    for (var i = 0; i < items.length; i++) {
+      var on = items[i].getAttribute('data-theme-set') === choice;
+      items[i].setAttribute('aria-checked', on ? 'true' : 'false');
     }
   }
-  function set(mode) {
-    try { localStorage.setItem(KEY, mode); } catch (e) { /* private mode: it lasts the page */ }
-    apply(mode);
+
+  function set(choice) {
+    try {
+      if (choice === 'system') localStorage.removeItem(KEY);
+      else localStorage.setItem(KEY, choice);
+    } catch (e) { /* not remembered, still applied */ }
+    apply(choice);
+  }
+
+  function closeMenus() {
+    var corners = document.querySelectorAll('.theme-corner');
+    for (var i = 0; i < corners.length; i++) {
+      var menu = corners[i].querySelector('.theme-menu');
+      var btn = corners[i].querySelector('.theme-btn');
+      if (menu) menu.hidden = true;
+      if (btn) btn.setAttribute('aria-expanded', 'false');
+    }
   }
 
   apply(read());
   window.vgTheme = { set: set, get: read };
 
   document.addEventListener('DOMContentLoaded', function () {
-    paint(read());
+    apply(read());
     document.addEventListener('click', function (e) {
-      var b = e.target.closest && e.target.closest('[data-theme-pick]');
-      if (b) set(b.getAttribute('data-theme-pick'));
+      var t = e.target;
+      var pick = t.closest && t.closest('[data-theme-set]');
+      if (pick) { set(pick.getAttribute('data-theme-set')); closeMenus(); return; }
+      var toggle = t.closest && t.closest('.theme-btn');
+      if (toggle) {
+        var menu = toggle.parentNode.querySelector('.theme-menu');
+        var open = menu && menu.hidden;
+        closeMenus();
+        if (menu && open) { menu.hidden = false; toggle.setAttribute('aria-expanded', 'true'); }
+        return;
+      }
+      if (!(t.closest && t.closest('.theme-corner'))) closeMenus();
     });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeMenus(); });
   });
 })();

@@ -53,6 +53,10 @@
            href="/auth/vesopa/start?next=<%= encodeURIComponent(typeof next !== 'undefined' && next ? next : '/panel') %>">
           Sign in with your Vesopa account
         </a>
+        <a class="d-block text-center mt-2 small text-muted"
+           href="/auth/vesopa/start?switch=1&next=<%= encodeURIComponent(typeof next !== 'undefined' && next ? next : '/panel') %>">
+          Use another Vesopa account
+        </a>
       </div>
       <% } %>
     </form>

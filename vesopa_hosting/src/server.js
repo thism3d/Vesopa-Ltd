@@ -273,19 +273,20 @@ app.use((req, res, next) => {
 // ---------------------------------------------------------------------------
 // Routes
 // ---------------------------------------------------------------------------
+/*
+ * Signing in with a Vesopa account — Phase 6, migration three.
+ *
+ * Mounted always, and BEFORE the sign-in page: its middleware is what tells
+ * the login view whether to draw the button (res.locals.vesopaSso). Mounted
+ * after auth-routes, the view rendered before the local was set and the
+ * button never appeared -- which is how cloud.vesopa.com sat without
+ * Continue with Vesopa while /auth/vesopa/enabled said true.
+ */
+app.use('/', require('./routes/vesopa-sso').router);
 app.use('/', require('./routes/pages'));
 app.use('/', require('./routes/domains'));
 app.use('/', require('./routes/legal'));
 app.use('/', require('./routes/auth-routes'));
-
-/*
- * Signing in with a Vesopa account — Phase 6, migration three.
- *
- * Mounted always; the module itself decides what to answer. The sign-in page
- * asks it whether to draw the button, so turning the flag off takes effect on
- * the next page load with nothing to deploy.
- */
-app.use('/', require('./routes/vesopa-sso').router);
 app.use('/api/domains', require('./routes/domains-api'));
 app.use('/', require('./routes/cart'));
 /*

@@ -108,7 +108,8 @@ function backofficeAuthRoutes({ pool, secret, issueToken }) {
 
   // ------------------------------------------------------------------ start
   router.get('/auth/vesopa/start', (req, res) => {
-    const { url } = client.begin({ returnTo: '/' });
+    const hint = /^[^\s@]{1,120}@[^\s@]{1,120}$/.test(String(req.query.hint || '')) ? String(req.query.hint) : '';
+    const { url } = client.begin({ returnTo: '/', select: req.query.switch === '1', hint });
     return res.redirect(303, url);
   });
 
@@ -160,7 +161,7 @@ function backofficeAuthRoutes({ pool, secret, issueToken }) {
        * then shows an empty shell. The password form writes both; so does this.
        */
       const token = issueToken(user, secret);
-      return res.send(handOver(token, user));
+      return res.send(handOver(token, user, claims.email));
     } catch (error) {
       console.error('[backoffice_auth] callback failed:', error);
       return res.status(500).send(page('Something went wrong. Please use your password for now.'));
@@ -267,7 +268,7 @@ async function linkAndFind(pool, claims) {
  * log, kept in browser history and passed on as a Referer, and the thing being
  * passed here is a working session.
  */
-function handOver(token, user) {
+function handOver(token, user, claimsEmail = '') {
   /*
    * `</script>` inside a JSON string would end the script tag early, so the
    * `<` is escaped. It cannot occur in a JWT, but `user` carries a name typed
@@ -287,6 +288,8 @@ try {
   // back from another site does not expect to be asked again on the next tab.
   localStorage.setItem('vesopa_token', ${safeToken});
   localStorage.setItem('vesopa_user', ${safeUser});
+  // Who this browser last came in as, for "Continue as …" next time. Not a credential.
+  localStorage.setItem('vesopa_last', ${encode(JSON.stringify({ e: claimsEmail, n: user.name || user.display_name || '' }))});
   sessionStorage.removeItem('vesopa_token');
   sessionStorage.removeItem('vesopa_user');
 } catch (e) {}

@@ -32,8 +32,10 @@
     <p class="auth-sub">
       <% if (returnTo) { %>
         to carry on where you left off
-      <% } else { %>
+      <% } else if (roster.length) { %>
         You are signed in to <%= roster.length %> on this browser.
+      <% } else { %>
+        Accounts this browser has used. Pick one to sign back in.
       <% } %>
     </p>
 
@@ -78,6 +80,41 @@
         </form>
       </li>
       <% }) %>
+
+      <%
+        /*
+         * SIGNED OUT, STILL LISTED.
+         *
+         * The accounts this browser has used and left. A row goes to the sign-in
+         * page with the address already in the box -- the address is a name,
+         * not a credential, and every factor is still asked for -- and "Remove"
+         * takes it off this browser's list and nothing else.
+         */
+      %>
+      <% (locals.others || []).forEach(function (r) { %>
+      <li>
+        <a class="chooser-row chooser-row-link" href="/login?identifier=<%= encodeURIComponent(r.email) %><%= roster.length ? '&add=1' : '' %><%= returnTo ? '&return_to=' + encodeURIComponent(returnTo) : '' %>">
+          <% if (r.avatar) { %>
+          <img class="chooser-face" src="<%= r.avatar %>" alt="" width="40" height="40">
+          <% } else { %>
+          <span class="chooser-face chooser-face-empty" aria-hidden="true"><%= ((r.name || r.email || 'V').trim().charAt(0) || 'V').toUpperCase() %></span>
+          <% } %>
+          <span class="chooser-lines">
+            <span class="chooser-name">
+              <%= r.name || 'Your Vesopa account' %>
+              <span class="pill">Signed out</span>
+            </span>
+            <span class="chooser-mail"><%= r.email %></span>
+          </span>
+        </a>
+        <form method="post" action="/account/forget" class="chooser-out">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <input type="hidden" name="return_to" value="<%= returnTo %>">
+          <input type="hidden" name="email" value="<%= r.email %>">
+          <button type="submit" class="linklike">Remove</button>
+        </form>
+      </li>
+      <% }) %>
     </ul>
 
     <%
@@ -105,12 +142,14 @@
     </p>
     <% } %>
 
+    <% if (roster.length) { %>
     <form method="post" action="/account/signout" class="chooser-all">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <input type="hidden" name="return_to" value="<%= returnTo %>">
       <input type="hidden" name="scope" value="all">
       <button type="submit" class="linklike">Sign out of all accounts</button>
     </form>
+    <% } %>
 
     <p class="small-print">
       Signing out of one account here leaves the others exactly as they were.

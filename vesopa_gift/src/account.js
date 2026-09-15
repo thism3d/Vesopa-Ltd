@@ -24,6 +24,7 @@ const util = require('./util');
 const config = require('./config');
 const { createClient } = require('./oidc');
 const { limiter } = require('./security');
+const last = require('./last');
 
 const COOKIE = config.production ? '__Host-vg_acct' : 'vg_acct';
 const STATE_COOKIE = 'vg_acct_state';
@@ -159,7 +160,7 @@ function page(res, view, data) {
 router.get('/account', async (req, res, next) => {
   try {
     if (!req.account) {
-      return page(res, 'account-signin', { title: 'Your vouchers — Vesopa Gift', ready: oidc.enabled, returnTo: safeReturn(req.query.to) });
+      return page(res, 'account-signin', { title: 'Your vouchers — Vesopa Gift', ready: oidc.enabled, returnTo: safeReturn(req.query.to), last: last.read(req, 'acct') });
     }
     const groups = await mine(req.account);
     const sent = String(req.query.sent || '');
@@ -173,7 +174,12 @@ const stateCookie = { httpOnly: true, secure: config.production, sameSite: 'lax'
 
 router.get('/account/start', (req, res) => {
   if (!oidc.enabled) return res.redirect(303, '/account');
-  const { url, state } = oidc.begin({ returnTo: safeReturn(req.query.to) });
+  const remembered = last.read(req, 'acct');
+  const { url, state } = oidc.begin({
+    returnTo: safeReturn(req.query.to),
+    select: req.query.switch === '1',
+    hint: remembered && req.query.switch !== '1' ? remembered.email : '',
+  });
   res.cookie(STATE_COOKIE, state, stateCookie);
   res.redirect(303, url);
 });
@@ -190,7 +196,9 @@ router.get('/account/callback', async (req, res) => {
     if (!person.email) {
       return page(res, 'message', { title: 'Confirm your email', heading: 'Your email address is not confirmed', body: 'Sign in to your Vesopa account with an emailed code once, then come back: your vouchers are found by that address.' });
     }
+    if (req.account) await destroy(req, res);
     await create(res, person, req.ip);
+    last.write(res, 'acct', person);
     await fulfil.audit(null, 'account.signin', null, person.email);
     res.redirect(303, safeReturn(person.returnTo));
   } catch (e) {

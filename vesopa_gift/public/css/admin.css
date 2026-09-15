@@ -104,6 +104,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .rail-foot { margin-top: auto; padding: 18px 22px 0; border-top: 1px solid var(--rail-line); display: flex; flex-direction: column; gap: 2px; }
 .rail-foot strong { font-size: 13.5px; color: var(--text); font-weight: 600; }
 .rail-foot form { margin-top: 8px; }
+.rail-links { display: flex; gap: 14px; align-items: center; margin-top: 8px; }
+.rail-links form { margin-top: 0; }
+.rail-links .link { text-decoration: underline; }
 .link { border: 0; background: none; color: var(--rail-text); cursor: pointer; font-size: 13px; padding: 0; text-decoration: underline; }
 
 main { flex: 1; min-width: 0; padding: 30px 36px 60px; display: flex; flex-direction: column; gap: 18px; }
@@ -265,15 +268,37 @@ a.list-row:hover .t1 { text-decoration: underline; }
 .signin .fan .c { left: 90px; top: 170px; width: 340px; height: 214px; box-shadow: 0 26px 50px rgba(20,18,26,.24); }
 .sso { display: flex; align-items: center; justify-content: center; gap: 10px; height: 48px; border-radius: 9px; background: var(--brand); color: var(--on-brand); font-weight: 600; font-size: 15px; text-decoration: none; }
 .sso:hover { filter: brightness(1.05); color: var(--on-brand); }
+.sso-as { justify-content: flex-start; padding: 0 14px; height: 60px; gap: 12px; text-align: left; }
+.sso-face { width: 34px; height: 34px; border-radius: 50%; background: rgba(0,0,0,.18); display: flex; align-items: center; justify-content: center; font-weight: 700; flex: 0 0 auto; }
+.sso-lines { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
+.sso-lines small { font-weight: 500; opacity: .8; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sso-other { display: block; margin-top: 10px; text-align: center; font-size: 14px; color: var(--muted); }
 @media (max-width: 900px) { .signin { grid-template-columns: 1fr; } .signin .stage { display: none; } }
 
 
-/* ---- Appearance: system, light, dark ---------------------------------------------- */
-.theme-pick { display: inline-flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--track); margin-top: 10px; }
-.theme-pick button { height: 28px; padding: 0 10px; border-radius: 999px; border: 0; background: none; color: var(--rail-text); font-size: 12.5px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
-.theme-pick button svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.theme-pick button.on { background: var(--card); color: var(--rail-active); box-shadow: 0 1px 2px rgba(0,0,0,.15); }
 
+/* ---- Appearance: one round button, Day / Night / Auto (the back office's own) ---- */
+.theme-corner { position: fixed; top: 14px; right: 16px; z-index: 70; }
+.theme-btn { width: 40px; height: 40px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--text); cursor: pointer; display: grid; place-items: center; box-shadow: 0 1px 2px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.08); transition: transform .12s ease, border-color .15s ease; padding: 0; }
+.theme-btn:hover { border-color: var(--brand); }
+.theme-btn:active { transform: scale(.94); }
+.theme-btn svg { width: 19px; height: 19px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; grid-area: 1 / 1; }
+.theme-btn .ic-sun, .theme-btn .ic-moon, .theme-btn .ic-auto { display: none; }
+:root[data-theme="light"] .theme-btn .ic-sun { display: block; }
+:root[data-theme="dark"] .theme-btn .ic-moon { display: block; }
+:root:not([data-theme]) .theme-btn .ic-auto { display: block; }
+.theme-menu { position: absolute; top: 48px; right: 0; min-width: 168px; background: var(--card); border: 1px solid var(--line); border-radius: 13px; box-shadow: 0 14px 40px rgba(0,0,0,.18); padding: 6px; display: flex; flex-direction: column; gap: 2px; transform-origin: top right; animation: theme-pop .16s cubic-bezier(.2, .9, .3, 1); }
+.theme-menu[hidden] { display: none; }
+@keyframes theme-pop { from { opacity: 0; transform: scale(.94) translateY(-4px); } to { opacity: 1; transform: none; } }
+.theme-menu button { display: flex; align-items: center; gap: 10px; width: 100%; border: 0; border-radius: 9px; background: none; color: var(--text); padding: 10px 11px; font-size: 14px; cursor: pointer; text-align: left; }
+.theme-menu button:hover { background: var(--hover); }
+.theme-menu button[aria-checked="true"] { background: var(--brand-soft); color: var(--brand-deep); font-weight: 600; }
+.theme-menu svg { width: 17px; height: 17px; flex: 0 0 auto; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+@media (prefers-reduced-motion: reduce) { .theme-menu { animation: none; } }
+/* In the rail: not fixed, and the menu opens upwards. */
+.theme-corner.in-rail { position: relative; top: auto; right: auto; margin-top: 12px; z-index: 5; }
+.theme-corner.in-rail .theme-btn { box-shadow: none; }
+.theme-corner.in-rail .theme-menu { top: auto; bottom: 48px; right: auto; left: 0; transform-origin: bottom left; }
 /* ---- Door (phone, dark) ----------------------------------------------------------------- */
 body.door { background: #0d1014; color: #e8edf1; }
 .door-wrap { max-width: 480px; margin: 0 auto; min-height: 100vh; display: flex; flex-direction: column; padding-bottom: 20px; }

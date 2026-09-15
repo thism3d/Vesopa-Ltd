@@ -6090,6 +6090,7 @@ document.addEventListener('click', async (e) => {
   }
 
   if (t.id === 'logout') signOut();
+  if (t.id === 'switch-account') { signOut(); location.href = '/auth/vesopa/start?switch=1'; }
 });
 
 $('login-form').addEventListener('submit', async (e) => {
@@ -6146,6 +6147,28 @@ $('login-form').addEventListener('submit', async (e) => {
 
     const panel = document.getElementById('vesopa-sso');
     if (panel) panel.hidden = false;
+    const sw = document.getElementById('switch-account');
+    if (sw) sw.hidden = false;
+
+    /*
+     * "Continue as …": the account this browser last came in with, from
+     * localStorage, on the button -- and its address goes along as
+     * login_hint, so Auth picks that one of several without asking. "Use
+     * another account" asks Auth for its chooser instead. Google's button,
+     * the same way round.
+     */
+    try {
+      const last = JSON.parse(localStorage.getItem('vesopa_last') || 'null');
+      const link = document.getElementById('vesopa-sso-link');
+      const word = document.getElementById('vesopa-sso-word');
+      const other = document.getElementById('vesopa-sso-other');
+      if (last && last.e && link && word) {
+        word.textContent = `Continue as ${last.n || last.e}`;
+        link.href = `/auth/vesopa/start?hint=${encodeURIComponent(last.e)}`;
+        link.title = last.e;
+        if (other) other.hidden = false;
+      }
+    } catch (e) { /* the plain button stays */ }
 
     /*
      * "Vesopa only" — the owner's instruction for the back office: no other

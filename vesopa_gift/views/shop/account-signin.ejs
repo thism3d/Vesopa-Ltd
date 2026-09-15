@@ -13,7 +13,13 @@
   </div>
   <% if (locals.error) { %><div class="group"><div class="error-box" role="alert"><%= error %></div></div><% } %>
   <div class="group">
-    <% if (ready) { %>
+    <% if (ready && locals.last) { %>
+    <a class="btn primary block sso sso-as" href="/account/start?to=<%= encodeURIComponent(returnTo) %>">
+      <span class="sso-face" aria-hidden="true"><%= (last.name || last.email).trim().charAt(0).toUpperCase() %></span>
+      <span class="sso-lines"><span>Continue as <%= last.name || last.email %></span><small><%= last.email %></small></span>
+    </a>
+    <a class="sso-other" href="/account/start?switch=1&to=<%= encodeURIComponent(returnTo) %>">Use another account</a>
+    <% } else if (ready) { %>
     <a class="btn primary block sso" href="/account/start?to=<%= encodeURIComponent(returnTo) %>">
       <svg width="18" height="13" viewBox="0 0 100 70" aria-hidden="true"><path fill="currentColor" d="M0,0 L22.7,0 L50.7,49 L77.3,0 L100,0 L62,70 L40,70 Z"/></svg>
       Continue with Vesopa

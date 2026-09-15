@@ -40,6 +40,7 @@ const factors = require('../factors');
 const authmethods = require('../authmethods');
 const captcha = require('../captcha');
 const accounts = require('../accounts');
+const recent = require('../recent');
 const { hashPassword, verifyPassword } = require('../crypto');
 const { normaliseEmail, normalisePhone, guessIdentifierType } = require('../normalise');
 const { safeReturnTo } = require('./pages');
@@ -521,6 +522,7 @@ async function completeSignIn({ req, res, userId, amr, method, flow }) {
      * another device — is pruned in the same write rather than lingering.
      */
     accounts.add(res, await accounts.list(req, null), session.token);
+    await recent.rememberUser(req, res, userId);
 
     clearFlow(res);
 

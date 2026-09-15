@@ -24,6 +24,7 @@ const express = require('express');
 const config = require('../config');
 const db = require('../db');
 const sessions = require('../sessions');
+const recent = require('../recent');
 const identity = require('../identity');
 const events = require('../events');
 const csrf = require('../csrf');
@@ -332,6 +333,7 @@ router.post('/login/second', csrf.verify, async (req, res, next) => {
       userAgent: req.userAgent,
     });
     sessions.setCookie(res, session.token, Boolean(state.m));
+    await recent.rememberUser(req, res, state.u);
     clearPending(res);
 
     await events.recordLogin({

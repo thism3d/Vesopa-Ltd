@@ -6,6 +6,7 @@
   <span class="name">Vesopa Gift</span>
   <form class="bar-right" method="post" action="/account/signout"><input type="hidden" name="_csrf" value="<%= csrf %>">
     <span class="small muted"><%= account.name %></span>
+    <a class="btn ghost small" href="/account/start?switch=1&to=%2Faccount">Switch</a>
     <button class="btn ghost small" type="submit">Sign out</button>
   </form>
 </div></div>

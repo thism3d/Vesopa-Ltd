@@ -31,6 +31,7 @@ const providers = require('../providers');
 const identity = require('../identity');
 const avatars = require('../avatars');
 const sessions = require('../sessions');
+const recent = require('../recent');
 const events = require('../events');
 const rateLimit = require('../ratelimit');
 const stepup = require('./stepup');
@@ -472,6 +473,7 @@ async function signIn(req, res, { userId, provider, flow }) {
   });
 
   sessions.setCookie(res, session.token, true);
+  await recent.rememberUser(req, res, userId);
 
   await events.recordLogin({
     userId,

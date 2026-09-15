@@ -63,7 +63,8 @@ router.get('/auth/vesopa/enabled', (req, res) => {
 
 if (LIVE) {
   router.get('/auth/vesopa/start', (req, res) => {
-    const { url } = client.begin({ returnTo: safeNext(req.query.next) });
+    const hint = /^[^\s@]{1,120}@[^\s@]{1,120}$/.test(String(req.query.hint || '')) ? String(req.query.hint) : '';
+    const { url } = client.begin({ returnTo: safeNext(req.query.next), select: req.query.switch === '1', hint });
     res.redirect(303, url);
   });
 

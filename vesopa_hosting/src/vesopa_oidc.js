@@ -75,7 +75,7 @@ function createClient({
     }
   }
 
-  function begin({ returnTo = '' } = {}) {
+  function begin({ returnTo = '', hint = '', select = false } = {}) {
     sweep();
     const state = crypto.randomBytes(32).toString('base64url');
     const nonce = crypto.randomBytes(24).toString('base64url');
@@ -93,6 +93,8 @@ function createClient({
       nonce,
       code_challenge: challenge,
       code_challenge_method: 'S256',
+      ...(select ? { prompt: 'select_account' } : {}),
+      ...(hint && !select ? { login_hint: hint } : {}),
     });
     return { url: `${ISSUER}/oauth/authorize?${params}`, state };
   }

@@ -287,6 +287,10 @@ function dineinAuthRoutes({ pool, secret }) {
       url.searchParams.set('nonce', nonce);
       url.searchParams.set('code_challenge', challenge);
       url.searchParams.set('code_challenge_method', 'S256');
+      // "Use another account" asks Auth for its chooser; otherwise the address
+      // this phone last used here goes along, and Auth picks that one.
+      if (String(req.query.switch || '') === '1') url.searchParams.set('prompt', 'select_account');
+      else if (/^[^\s@]{1,120}@[^\s@]{1,120}$/.test(String(req.query.hint || ''))) url.searchParams.set('login_hint', String(req.query.hint));
       /*
        * Exactly what the menu needs and nothing more. `orders.claim` is what
        * lets somebody who ordered as a guest on this phone keep those orders

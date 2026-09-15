@@ -102,7 +102,7 @@ function createClient({
    * fields and closes authorisation-code interception, and the identity
    * provider requires it of every client regardless.
    */
-  function begin({ returnTo = '' } = {}) {
+  function begin({ returnTo = '', hint = '', select = false } = {}) {
     sweep();
 
     const state = crypto.randomBytes(32).toString('base64url');
@@ -121,6 +121,11 @@ function createClient({
       nonce,
       code_challenge: challenge,
       code_challenge_method: 'S256',
+      // As Google's button: say which account this browser last used here
+      // (login_hint) and Auth goes straight through as them; ask for the
+      // chooser (select_account) only to switch.
+      ...(select ? { prompt: 'select_account' } : {}),
+      ...(hint && !select ? { login_hint: hint } : {}),
     });
 
     return { url: `${ISSUER}/oauth/authorize?${params}`, state };

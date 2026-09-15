@@ -1495,6 +1495,8 @@ a { color: var(--text); }
   cursor: pointer;
 }
 .chooser-row:hover { background: var(--surface-2); }
+.chooser-list li > .chooser-row-link { flex: 1 1 auto; min-width: 0; text-decoration: none; color: inherit; }
+.chooser-row-link .chooser-face-empty { opacity: .7; }
 .chooser-row:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 
 .chooser-face {

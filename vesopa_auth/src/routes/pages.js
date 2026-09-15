@@ -114,7 +114,8 @@ router.get('/login', async (req, res, next) => {
     application: context.application,
     policy: context.policy,
     returnTo,
-    identifier: '',
+    // From the chooser's signed-out rows: the address, nothing more.
+    identifier: /^[^\s@]{1,120}@[^\s@]{1,120}$/.test(String(req.query.identifier || '')) ? String(req.query.identifier) : '',
     error: '',
     noindex: true,
     settings: live,

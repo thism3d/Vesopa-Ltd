@@ -83,8 +83,9 @@
                href="/auth/vesopa/start">
               <img src="/assets/vesopa_mark.svg" alt="" width="20" height="20"
                    class="sso-mark" />
-              <span>Continue with Vesopa</span>
+              <span id="vesopa-sso-word">Continue with Vesopa</span>
             </a>
+            <a id="vesopa-sso-other" class="login-other" href="/auth/vesopa/start?switch=1" hidden>Use another account</a>
           </div>
 
           <!-- The rule between the two ways in. Shown only while BOTH are on
@@ -397,6 +398,7 @@
         <div class="rail-foot">
           <span id="live-dot" class="dot offline" title="Realtime connection"></span>
           <span id="live-text" class="small">connecting…</span>
+          <button id="switch-account" class="link" hidden>Switch account</button>
           <button id="logout" class="link">Sign out</button>
         </div>
 

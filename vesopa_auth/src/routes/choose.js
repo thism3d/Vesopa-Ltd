@@ -18,6 +18,7 @@ const config = require('../config');
 const csrf = require('../csrf');
 const sessions = require('../sessions');
 const accounts = require('../accounts');
+const recent = require('../recent');
 const events = require('../events');
 const { safeReturnTo } = require('./pages');
 
@@ -35,13 +36,20 @@ router.get('/account/choose', async (req, res, next) => {
   try {
     const roster = await accounts.list(req, res);
     const returnTo = safeReturnTo(req.query.return_to);
+    for (const entry of roster) {
+      recent.remember(req, res, { email: entry.session.email, name: entry.session.display_name, avatar: entry.session.avatar_path });
+    }
+    // Accounts this browser has used and signed out of: offered too, the way
+    // Google's chooser does, so coming back is a tap and a code.
+    const signedIn = new Set(roster.map((entry) => String(entry.session.email || '').toLowerCase()));
+    const others = recent.list(req).filter((r) => !signedIn.has(r.email));
 
     /*
-     * Nobody at all. Not an error — it is the ordinary state of a fresh
-     * browser, and the answer to it is the sign-in page rather than an empty
-     * list explaining itself.
+     * Nobody at all, and nobody remembered. Not an error — it is the ordinary
+     * state of a fresh browser, and the answer to it is the sign-in page
+     * rather than an empty list explaining itself.
      */
-    if (!roster.length) {
+    if (!roster.length && !others.length) {
       return res.redirect(
         303,
         returnTo ? `/login?return_to=${encodeURIComponent(returnTo)}` : '/login',
@@ -53,6 +61,7 @@ router.get('/account/choose', async (req, res, next) => {
       nonce: res.locals.nonce,
       config,
       roster,
+      others,
       returnTo,
       full: accounts.full(roster),
       max: accounts.MAX,
@@ -94,6 +103,7 @@ router.post('/account/switch', csrf.verify, async (req, res, next) => {
        */
       sessions.setCookie(res, found.token, Boolean(found.session.remembered));
       accounts.add(res, roster, found.token);
+      recent.remember(req, res, { email: found.session.email, name: found.session.display_name, avatar: found.session.avatar_path });
 
       await events.recordAudit({
         actorUserId: found.session.user_id,
@@ -109,6 +119,13 @@ router.post('/account/switch', csrf.verify, async (req, res, next) => {
   } catch (error) {
     return next(error);
   }
+});
+
+/** Forget a signed-out account on this browser: it leaves the chooser, nothing else. */
+router.post('/account/forget', csrf.verify, (req, res) => {
+  const returnTo = safeReturnTo(req.body.return_to);
+  recent.forget(req, res, req.body.email);
+  return res.redirect(303, `/account/choose${returnTo ? `?return_to=${encodeURIComponent(returnTo)}` : ''}`);
 });
 
 /**

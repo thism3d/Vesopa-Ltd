@@ -33,6 +33,7 @@ const payments = require('./payments');
 const fulfil = require('./fulfil');
 const orders = require('./orders');
 const util = require('./util');
+const last = require('./last');
 
 const router = express.Router();
 
@@ -150,7 +151,7 @@ router.get('/', async (req, res, next) => {
     const error = req.query.error === 'signin'
       ? 'That sign-in did not work. Try again, and if it keeps happening, make sure you have been invited.'
       : null;
-    res.render('admin/signin', { error, ready: oidc.enabled });
+    res.render('admin/signin', { error, ready: oidc.enabled, last: last.read(req, 'admin') });
   } catch (e) { next(e); }
 });
 
@@ -163,7 +164,11 @@ const stateCookie = { httpOnly: true, secure: config.production, sameSite: 'lax'
 
 router.get('/start', (req, res) => {
   if (!oidc.enabled) return res.redirect(303, '/admin');
-  const { url, state } = oidc.begin();
+  const remembered = last.read(req, 'admin');
+  const { url, state } = oidc.begin({
+    select: req.query.switch === '1',
+    hint: remembered && req.query.switch !== '1' ? remembered.email : '',
+  });
   res.cookie(STATE_COOKIE, state, stateCookie);
   res.redirect(303, url);
 });
@@ -189,7 +194,10 @@ router.get('/callback', async (req, res) => {
         body: 'Sign in to your Vesopa account with an emailed code once, then come back.',
       });
     }
+    // Coming back as somebody else replaces whoever was signed in here.
+    if (req.session) await session.destroy(req, res);
     await session.create(res, person, req.ip);
+    last.write(res, 'admin', person);
     await fulfil.audit(null, 'admin.signin', { roles: person.roles }, person.email);
     res.redirect(303, '/admin');
   } catch (e) {

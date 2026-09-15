@@ -22,6 +22,8 @@ const config = require('../config');
 const db = require('../db');
 const keys = require('../keys');
 const sessions = require('../sessions');
+const recent = require('../recent');
+const accounts = require('../accounts');
 const identity = require('../identity');
 const events = require('../events');
 const webhooks = require('../webhooks');
@@ -242,43 +244,77 @@ router.get('/oauth/authorize', async (req, res, next) => {
         'The openid scope is required.');
     }
 
-    const session = await sessions.load(req);
+    /*
+     * WHO IS THIS SIGN-IN FOR? The same answer Google's button gives.
+     *
+     * The application may say (`login_hint`, an address it remembers using),
+     * the browser may hold several accounts (the roster), or it may hold none
+     * and remember some (signed out; recent.js). The rule, in order:
+     *
+     *   prompt=select_account   the chooser, always -- "Use another account"
+     *   login_hint in roster    that account, made active, no questions
+     *   login_hint not signed in  the sign-in page with the address filled in,
+     *                           the other accounts kept
+     *   one account signed in   straight through, as before
+     *   several signed in       the chooser: nobody is handed the wrong one
+     *   none, but some remembered  the chooser, to sign one back in
+     *   a fresh browser         the sign-in page
+     *
+     * So a person with one account never sees a chooser, a person with two is
+     * asked once by each application -- and after that the application says
+     * which, and is not asked again. Every prompt is stripped from the return
+     * address, or the chooser and this handler bounce off each other for ever.
+     */
+    const plain = new URLSearchParams(req.query);
+    plain.delete('prompt');
+    const back = `/oauth/authorize?${plain.toString()}`;
+    const toChooser = () => res.redirect(303, `/account/choose?return_to=${encodeURIComponent(back)}`);
+    const hint = /^[^\s@]{1,120}@[^\s@]{1,120}$/.test(String(req.query.login_hint || ''))
+      ? String(req.query.login_hint).toLowerCase()
+      : '';
+
+    let session = await sessions.load(req);
+    const roster = await accounts.list(req, res);
+
+    if (prompt === 'select_account') {
+      if (!roster.length && !recent.list(req).length) {
+        return res.redirect(303, `/login?return_to=${encodeURIComponent(back)}`);
+      }
+      return toChooser();
+    }
+
+    if (hint) {
+      const wanted = roster.find((entry) => String(entry.session.email || '').toLowerCase() === hint);
+      if (wanted) {
+        if (!wanted.active) {
+          sessions.setCookie(res, wanted.token, Boolean(wanted.session.remembered));
+          accounts.add(res, roster, wanted.token);
+          session = await sessions.loadByToken(wanted.token);
+          if (!session) return toChooser();
+        }
+      } else if (prompt !== 'none') {
+        const q = new URLSearchParams({ identifier: hint, return_to: back });
+        if (roster.length) q.set('add', '1');
+        return res.redirect(303, `/login?${q.toString()}`);
+      }
+    }
 
     if (!session) {
       if (prompt === 'none') {
         return redirectError(res, redirectUri, state, 'login_required',
           'No one is signed in.');
       }
-      // Send them to sign in, and bring them straight back to this exact
-      // request afterwards. `return_to` is a path on this site only, which is
-      // what safeReturnTo enforces.
-      const back = `/oauth/authorize?${new URLSearchParams(req.query).toString()}`;
+      if (recent.list(req).length) return toChooser();
       return res.redirect(303, `/login?return_to=${encodeURIComponent(back)}`);
     }
 
-    await sessions.touch(session);
-
-    /*
-     * `prompt=select_account` — the application asking us to let them choose.
-     *
-     * It is the standard way to say "I know somebody is signed in, ask them
-     * anyway", and until now it was accepted and ignored, which is worse than
-     * refusing it: a back office that asks to choose and is silently handed
-     * whoever was already there is a back office that opens as the wrong
-     * person on a shared machine.
-     *
-     * THE PROMPT IS STRIPPED FROM WHAT WE COME BACK TO, and that is the whole
-     * trap in this feature. Leaving it in `return_to` means the chooser sends
-     * them back here, this branch fires again, and the two bounce off each
-     * other for ever — a loop that looks exactly like a broken redirect and is
-     * a one-word omission.
-     */
-    if (prompt === 'select_account') {
-      const back = new URLSearchParams(req.query);
-      back.delete('prompt');
-      const to = `/oauth/authorize?${back.toString()}`;
-      return res.redirect(303, `/account/choose?return_to=${encodeURIComponent(to)}`);
+    if (!hint && roster.length > 1 && prompt !== 'none') {
+      return toChooser();
     }
+
+    await sessions.touch(session);
+    // Whoever this application goes through as is one this browser has used.
+    await recent.rememberUser(req, res, session.user_id);
 
     /*
      * Isolation: may this person use this application at all?

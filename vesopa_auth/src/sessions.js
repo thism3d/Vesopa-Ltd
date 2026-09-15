@@ -150,6 +150,11 @@ function clearCookie(res) {
  */
 async function load(req) {
   const token = req.cookies ? req.cookies[SESSION_COOKIE] : null;
+  return loadByToken(token);
+}
+
+/** The same, for a token just chosen out of the roster rather than read from the cookie. */
+async function loadByToken(token) {
   if (!token) return null;
 
   const session = await db.one(
@@ -440,6 +445,7 @@ function describeDevice(userAgent) {
 }
 
 module.exports = {
+  loadByToken,
   SESSION_COOKIE,
   DEVICE_COOKIE,
   create,

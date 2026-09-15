@@ -1246,6 +1246,7 @@ button{font:inherit;cursor:pointer}
   text-decoration:none
 }
 .asme-vesopa:hover{background:var(--sunken)}
+.asme-other{display:block;text-align:center;margin:8px 0 2px;font-size:13.5px;color:var(--ink-soft)}
 .asme-vesopa img{width:20px;height:20px;border-radius:5px;display:block;flex:0 0 auto}
 .asme button{
   flex:1;border:1px solid var(--line);border-radius:12px;background:var(--card);
@@ -3689,7 +3690,8 @@ ${shareImage ? `<meta name="twitter:image" content="${esc(shareImage)}">` : ''}
         'Your orders here are kept against this account.</p>' +
       '<button class="send" id="seeorders" type="button" style="margin-top:18px">' +
         'See my orders</button>' +
-      '<button class="shut" id="signout" type="button">Sign out</button>';
+      '<button class="shut" id="signout" type="button">Sign out</button>' +
+      (VESOPA_SSO ? '<button class="shut" id="switchacct" type="button">Switch account</button>' : '');
     document.getElementById('seeorders').addEventListener('click', function(){
       body.close();
       setTimeout(showMine, 200);
@@ -3699,6 +3701,14 @@ ${shareImage ? `<meta name="twitter:image" content="${esc(shareImage)}">` : ''}
       store(ACCT_KEY, null);
       paintWho();
       body.close();
+    });
+    var sw = document.getElementById('switchacct');
+    if (sw) sw.addEventListener('click', function(){
+      store(TOKEN_KEY, null);
+      store(ACCT_KEY, null);
+      var url = '/api/public/dinein/auth/start?switch=1';
+      if (SLUG) url += '&venue=' + encodeURIComponent(SLUG);
+      window.location.href = url;
     });
   }
 
@@ -4963,7 +4973,9 @@ ${shareImage ? `<meta name="twitter:image" content="${esc(shareImage)}">` : ''}
                   (SLUG ? '?venue=' + encodeURIComponent(SLUG) : '') + '">' +
                   '<img src="/assets/vesopa_mark.svg" alt="" width="20" height="20">' +
                   '<span>Continue with Vesopa</span>' +
-                '</a>'
+                '</a>' +
+                '<a class="asme-other" href="/api/public/dinein/auth/start?switch=1' +
+                  (SLUG ? '&venue=' + encodeURIComponent(SLUG) : '') + '">Use another account</a>'
               : '') +
             '<div class="asme-row">' +
               '<button type="button" data-as="guest" aria-pressed="true">Continue as guest</button>' +
