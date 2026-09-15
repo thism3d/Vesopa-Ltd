@@ -125,11 +125,11 @@ Status values: `Not started`, `In progress`, `Done`, `Blocked`.
 | T5 | `src/stock.js`: documents (wastage, adjustment, stocktake, spot check) and completion | 1 | Done | commit "Stock becomes a ledger" |
 | T6 | `src/stock.js`: purchase orders, suggested order, send, deliver | 1 | Done | commit "Stock becomes a ledger" |
 | T7 | `POST /till/events` and permissions keys | 1 | Done | commit "Stock becomes a ledger" |
-| T8 | Report filters: clerk, product, week start, department, group by | 2 | Not started | |
-| T9 | Sales & finance builders (16) | 2 | Not started | |
-| T10 | Stock builders (7) | 2 | Not started | |
-| T11 | Staff and customer builders (6) | 2 | Not started | |
-| T12 | Report tests: every builder scoped, reconciling, and runnable empty | 2 | Not started | |
+| T8 | Report filters: clerk, product, week start, department, group by | 2 | Done | commit "Thirty-three more reports" |
+| T9 | Sales & finance builders (20) | 2 | Done | commit "Thirty-three more reports" |
+| T10 | Stock builders (7) | 2 | Done | commit "Thirty-three more reports" |
+| T11 | Staff and customer builders (6) — 38 reports in all | 2 | Done | commit "Thirty-three more reports" |
+| T12 | Report tests: every builder scoped, reconciling, and runnable empty | 2 | Done | commit "Thirty-three more reports" |
 | T13 | Back office: Stock Control nav group and Stock Levels page | 3 | Not started | |
 | T14 | Back office: Suppliers and Pack Sizes pages | 3 | Not started | |
 | T15 | Back office: Wastage, Adjustments, Stock Takes, Spot Checks | 3 | Not started | |
@@ -403,3 +403,20 @@ receipt builder and on the Reports page.
 
 Kept in the 1.6.8.0 style: each is something the plan got wrong, found by
 reading the code or measuring the running site.
+
+1. **The Loyalty Spending report has been a 500 on live.** Found by the new
+   `test/reports-catalogue.test.js`, which runs every builder over a copy of
+   live's schema (`vesopa_live_shape`). Its customer join compared
+   `cu.email_key = o.email` column to column, and those two carry different
+   collations on live — the trap in the office-collation note. The unit tests
+   never ran the SQL. Fixed by binding the office (`cu.email_key = ?`), and
+   every new join in this release binds it the same way.
+2. **`lines` is a reserved word in MariaDB.** `COUNT(l.id) AS lines` is a
+   syntax error there and fine in the head. `line_count`.
+3. **Twenty sales builders, not sixteen.** Refunds, Expenses and Cashback are
+   their own reports in the recording, and Sales Comparison was in the
+   catalogue list at 11:22. All four are built.
+4. **A scheduled week-start report keeps no date.** "Every Monday, the week
+   before" is what a weekly Daily Department Sales schedule means, so the
+   schedule stores the other filters and `runReport` takes the Monday of the
+   period it was due for.

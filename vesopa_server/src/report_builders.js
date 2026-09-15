@@ -315,11 +315,16 @@ function reportBuilders({ col, section, money, grouped, sqlDateTime, UNKNOWN_TER
               SUM(COALESCE(o.covers, 0))         AS covers
          FROM epos_orders o
          JOIN epos_customers cu
-              ON cu.id = o.customer_id AND cu.email_key = o.email
+              ON cu.id = o.customer_id AND cu.email_key = ?
         WHERE ${where}
         GROUP BY cu.id, name, cu.member_no, tier
         ORDER BY total_minor DESC`,
-      params
+      // The office is BOUND on the customer join, not compared column to
+      // column: epos_customers.email_key and epos_orders.email carry
+      // different collations on live, and `cu.email_key = o.email` was a 500
+      // there and nowhere else -- found by reports-catalogue.test.js running
+      // every builder over a copy of live's schema.
+      [office, ...params]
     );
 
     // The ledger, over the same window. `office` is its own column here and not
@@ -584,6 +589,7 @@ function reportBuilders({ col, section, money, grouped, sqlDateTime, UNKNOWN_TER
   return {
     product_sales: {
       label: 'Product Sales',
+      group: 'sales',
       description:
         'Every product sold in the window with quantity, discount and net, ' +
         'and the same figures rolled up by department.',
@@ -591,6 +597,7 @@ function reportBuilders({ col, section, money, grouped, sqlDateTime, UNKNOWN_TER
     },
     discounts: {
       label: 'Discount Report',
+      group: 'sales',
       description:
         'Every reduction given away — promotions, manual discounts and ' +
         'whole-bill reductions — and which member of staff gave it.',
@@ -598,6 +605,7 @@ function reportBuilders({ col, section, money, grouped, sqlDateTime, UNKNOWN_TER
     },
     loyalty_spending: {
       label: 'Customer Loyalty Spending',
+      group: 'customers',
       description:
         'What members spend and how often they visit, by member and by tier, ' +
         'with the points earned and redeemed against it.',
@@ -605,6 +613,7 @@ function reportBuilders({ col, section, money, grouped, sqlDateTime, UNKNOWN_TER
     },
     voids_cancels: {
       label: 'Voids & Cancels',
+      group: 'sales',
       description:
         'What was taken back off a bill, by whom and why — with every ' +
         'individual void itemised.',

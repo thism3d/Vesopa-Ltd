@@ -134,4 +134,12 @@ CALL vesopa_reports_add_column(
   'bo_report_schedules', 'terminal',
   'VARCHAR(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL');
 
+-- 1.8.0.0: the catalogue grew from five reports to thirty, and some of them
+-- take more than a period and a terminal -- a clerk, a product, a department,
+-- a week start, a grouping. One JSON column rather than five nullable ones,
+-- because the next report will want a sixth and a schedule made today must
+-- still run then. NULL means "no extra filters", which is what every schedule
+-- made before this column existed means.
+CALL vesopa_reports_add_column('bo_report_schedules', 'filters', 'TEXT NULL');
+
 DROP PROCEDURE IF EXISTS vesopa_reports_add_column;
