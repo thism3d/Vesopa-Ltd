@@ -39,6 +39,17 @@ const {
 } = require('./config');
 
 /** The deadline written onto a new external domain, as a DATETIME string. */
+/**
+ * Progress, for whoever is watching.
+ *
+ * Every slow function here takes an `onStep(key, status, detail)` and calls it
+ * as each piece of work starts and ends. The default does nothing, so a sweep
+ * or a "check now" that has no page to report to costs nothing; a job started
+ * from the add-domain form (src/domain-setup.js) passes one that writes the
+ * step rows a page is polling. The keys are the job's planned step keys.
+ */
+function noStep() {}
+
 function graceDeadline(days = DOMAIN_NS_GRACE_DAYS) {
   const d = new Date(Date.now() + Number(days) * 864e5);
   return d.toISOString().slice(0, 19).replace('T', ' ');
@@ -235,6 +246,9 @@ async function findParent(customer, name) {
  */
 async function addSubdomain({
   customer, subdomain: input, serviceId = null, wantDns = false, wantMail = false,
+  // `build: false` records the subdomain and stops: the caller runs
+  // buildSubdomain() itself, from a job the customer can watch.
+  build = true, onStep = noStep,
 }) {
   const name = nameservers.normalise(input);
 
@@ -292,7 +306,29 @@ async function addSubdomain({
   }
 
   const row = await db.one('SELECT * FROM domains WHERE domain = ? LIMIT 1', [name]);
-  const built = await pointAtNode(row, customer);
+  if (!build) {
+    return { ok: true, id: row.id, domain: name, parent: parent.domain, row, built: null, dnsRecord: null };
+  }
+  return buildSubdomain({ row, parent, customer, wantDns, wantMail, onStep });
+}
+
+/**
+ * The slow half of adding a subdomain: the site on the node, the A record in
+ * the parent's zone. Split from addSubdomain so a job can run it and report
+ * each step — see src/domain-setup.js.
+ */
+async function buildSubdomain({ row, parent, customer, wantDns = false, wantMail = false, onStep = noStep }) {
+  const name = row.domain;
+  /*
+   * THE WEBSITE, THEN THE RECORD, THEN THE CERTIFICATE — in that order, and
+   * the order is the point. Let's Encrypt has to reach the name to sign for
+   * it, and a subdomain does not resolve anywhere until its A record is in
+   * the parent's zone, which is added below. Asking for the certificate as
+   * part of the build (the way a full domain does) asked before the record
+   * existed, and every new subdomain came out "certificate: waits until it
+   * resolves" — for a name that resolved five seconds later.
+   */
+  const built = await pointAtNode(row, customer, { onStep, deferSsl: true });
 
   /*
    * Make it resolve.
@@ -314,6 +350,7 @@ async function addSubdomain({
    */
   let dnsRecord = { ok: false, pointAt: POINT_HOSTNAME, reason: 'the main domain is not pointed at us' };
   if (!wantDns) {
+    onStep('record', 'running', `Adding an A record for it in ${parent.domain}'s zone`);
     try {
       /*
        * BOTH conditions, and the delegation is the one that decides it.
@@ -375,6 +412,27 @@ async function addSubdomain({
         dnsRecord = { ok: true, alreadyPointed: true, addresses: live.addresses };
       }
     }
+    if (dnsRecord.ok) {
+      onStep('record', 'ok', dnsRecord.existed ? 'It was already there'
+        : dnsRecord.alreadyPointed ? 'The name already resolves here'
+          : `${dnsRecord.name} → ${dnsRecord.value}`);
+    } else {
+      onStep('record', 'skipped', `Not added — ${dnsRecord.reason}. Point it here with an A record at your DNS provider.`);
+    }
+  }
+
+  if (built.pointed) {
+    // Our nameserver answers for the parent zone the instant the record is
+    // written, so this does not wait on propagation; a name that still fails
+    // to resolve is one whose DNS is elsewhere, and issueSsl says so.
+    onStep('ssl', 'running', "Let's Encrypt proves the name reaches us, then signs — usually ten to fifteen seconds");
+    const ssl = await issueSsl(row, customer, { force: true });
+    built.ssl = Boolean(ssl.ok);
+    built.sslError = ssl.ok ? '' : (ssl.message || explainSslError(ssl.error || ''));
+    if (ssl.ok) onStep('ssl', 'ok', `https://${name} — renews itself`);
+    else onStep('ssl', dnsRecord.ok ? 'failed' : 'skipped', built.sslError);
+  } else {
+    onStep('ssl', 'skipped', 'Nothing to certify without a website');
   }
 
   await db.logActivity({
@@ -429,14 +487,24 @@ async function addSubdomain({
  * @returns {Promise<{matched: boolean, method: string, nameservers: string[],
  *                    addresses: string[], error: string, pointed?: object}>}
  */
-async function verify(domainRow, { customer = null } = {}) {
+async function verify(domainRow, { customer = null, onStep = noStep } = {}) {
   const isSubdomain = domainRow.source === 'subdomain';
 
   let ns = { matched: false, nameservers: [], extras: [], error: '', serverFailure: false };
   let healed = null;
 
   if (!isSubdomain) {
+    onStep('delegation', 'running', 'Asking the registry and the public resolvers, not our own records');
     ns = await nameservers.check(domainRow.domain);
+    if (ns.matched) {
+      onStep('delegation', 'ok', `Delegated to us${ns.via === 'registry' ? ' at the registry' : ''}`);
+    } else if (ns.unregistered) {
+      onStep('delegation', 'failed', 'The registry says this name is not registered');
+    } else if (ns.nameservers.length) {
+      onStep('delegation', 'skipped', `Delegated to ${ns.nameservers.slice(0, 2).join(', ')}${ns.nameservers.length > 2 ? '…' : ''} — not us yet`);
+    } else {
+      onStep('delegation', 'skipped', ns.error || 'No nameservers found for it yet');
+    }
 
     /*
      * ------------------------------------------------------------------
@@ -515,11 +583,15 @@ async function verify(domainRow, { customer = null } = {}) {
    *
    * Never throws: "we could not tell" comes back as not-pointing.
    */
+  onStep('address', 'running', `Does ${domainRow.domain} answer with this server's address?`);
   const ip = await nameservers.pointsAtUs(domainRow.domain, POINT_HOSTNAME);
 
   const method = ns.matched ? 'ns' : (ip.pointed ? 'a' : '');
   const matched = Boolean(method);
   const resolvesHere = ip.pointed;
+  if (ip.pointed) onStep('address', 'ok', `Yes — ${ip.addresses.join(', ')}`);
+  else if (ns.matched) onStep('address', 'skipped', 'Not yet — the delegation is right and the zone is about to exist, so it will');
+  else onStep('address', 'skipped', ip.addresses.length ? `It answers with ${ip.addresses.join(', ')}, which is not us` : 'It does not resolve anywhere yet');
 
   /*
    * `ns_observed` and `ip_observed` are only overwritten when that lookup
@@ -591,7 +663,7 @@ async function verify(domainRow, { customer = null } = {}) {
     // Do not spend a slow Let's Encrypt call, or a slice of its rate limit, on
     // a name that demonstrably does not resolve here yet. The challenge would
     // fail by definition.
-    { resolvesHere },
+    { resolvesHere, onStep },
   );
 
   await db.logActivity({
@@ -611,7 +683,13 @@ async function verify(domainRow, { customer = null } = {}) {
  * failure for being set up. SSL is best-effort and last: a certificate that
  * cannot be issued yet is a retry button in the panel, not a broken site.
  */
-async function pointAtNode(domainRow, customer, { resolvesHere = null, force = false } = {}) {
+async function pointAtNode(domainRow, customer, {
+  resolvesHere = null, force = false, onStep = noStep,
+  // `deferSsl`: build the site and stop. The caller has something to do first
+  // that decides whether a certificate can be issued at all — a subdomain's A
+  // record, which does not exist until the site does.
+  deferSsl = false,
+} = {}) {
   /*
    * `force` exists for the one case the gate below gets wrong: a domain that
    * cannot be verified UNTIL it is built.
@@ -637,6 +715,7 @@ async function pointAtNode(domainRow, customer, { resolvesHere = null, force = f
      * them a Hestia account they have not bought would be creating hosting
      * without a payment — the exact thing the order flow now refuses to do.
      */
+    onStep('web', 'skipped', 'No hosting on this account yet');
     return { pointed: false, reason: 'No hosting on this account yet.' };
   }
 
@@ -657,9 +736,18 @@ async function pointAtNode(domainRow, customer, { resolvesHere = null, force = f
 
   // The zone first: our nameservers answer for this name now, and without a
   // zone on the node they answer with nothing at all.
+  const report = (key, result, doneText) => {
+    if (result.ok) onStep(key, 'ok', result.existed ? 'It was already there' : doneText);
+    else onStep(key, 'failed', explainNodeError(result.error || ''));
+  };
+
   if (wantsDns) {
-    steps.push({ step: 'dns', ...(await ignoringExists(() => hestia.addDnsDomain({ username, domain }))) });
+    onStep('zone', 'running', 'So our nameservers have something to answer with');
+    const dns = await ignoringExists(() => hestia.addDnsDomain({ username, domain }));
+    steps.push({ step: 'dns', ...dns });
+    report('zone', dns, 'A zone with the usual records, served by ns1 and ns2');
   }
+  onStep('web', 'running', 'A virtual host on the node, with a holding page until you upload');
 
   /*
    * ASK BEFORE CREATING, rather than creating and interpreting the failure.
@@ -683,6 +771,7 @@ async function pointAtNode(domainRow, customer, { resolvesHere = null, force = f
 
   if (alreadyServed) {
     steps.push({ step: 'web', ok: true, existed: true });
+    onStep('web', 'ok', 'It was already there');
   } else {
     /*
      * `addWebDomain` is v-add-domain, which creates the zone and the mail domain
@@ -690,16 +779,18 @@ async function pointAtNode(domainRow, customer, { resolvesHere = null, force = f
      * not. A name that opted out of either gets the narrow v-add-web-domain.
      */
     const webOnly = !wantsDns || !wantsMail;
-    steps.push({
-      step: 'web',
-      ...(await ignoringExists(() => (webOnly
-        ? hestia.addWebsite({ username, domain })
-        : hestia.addWebDomain({ username, domain })))),
-    });
+    const web = await ignoringExists(() => (webOnly
+      ? hestia.addWebsite({ username, domain })
+      : hestia.addWebDomain({ username, domain })));
+    steps.push({ step: 'web', ...web });
+    report('web', web, 'Created — files go in public_html');
   }
 
   if (wantsMail) {
-    steps.push({ step: 'mail', ...(await ignoringExists(() => hestia.addMailDomain({ username, domain }))) });
+    onStep('mail', 'running', 'A mail domain with DKIM, ready for mailboxes');
+    const mail = await ignoringExists(() => hestia.addMailDomain({ username, domain }));
+    steps.push({ step: 'mail', ...mail });
+    report('mail', mail, 'Ready — create mailboxes from the Email page');
   }
 
   const web = steps.find((s) => s.step === 'web');
@@ -715,6 +806,15 @@ async function pointAtNode(domainRow, customer, { resolvesHere = null, force = f
    * knows the answer already (verify has just looked it up); when it does not,
    * this looks it up rather than guessing.
    */
+  if (web.ok && deferSsl) {
+    // Not attempted, not recorded, not reported — and not LOOKED UP either:
+    // a public resolver asked about a name whose record is about to be
+    // written may cache the "no such name" for an hour. The caller does the
+    // certificate next, after the record exists.
+    await db.query('UPDATE domains SET pointed_at = COALESCE(pointed_at, NOW()) WHERE id = ?', [domainRow.id]);
+    return { pointed: true, ssl: false, sslError: '', reason: '', steps, deferred: true };
+  }
+
   const reachable = resolvesHere === null
     ? (await nameservers.pointsAtUs(domain, POINT_HOSTNAME)).pointed
     : resolvesHere;
@@ -725,7 +825,9 @@ async function pointAtNode(domainRow, customer, { resolvesHere = null, force = f
       error: 'The name does not resolve to this server yet, so a certificate cannot be issued. '
         + 'It is requested automatically once it does.',
     };
+    onStep('ssl', 'skipped', 'Waits until the name resolves here — then it is requested on its own');
   } else if (web.ok) {
+    onStep('ssl', 'running', "Let's Encrypt proves the name reaches us, then signs — usually ten to fifteen seconds");
     /*
      * NO `www.` FOR A SUBDOMAIN. `www.shop.example.com` is a name nobody
      * publishes, and a certificate request fails as a whole if any name in it
@@ -742,6 +844,10 @@ async function pointAtNode(domainRow, customer, { resolvesHere = null, force = f
       aliases: isSubdomain(domainRow) ? '' : `www.${domain}`,
       mail: false,
     }));
+    if (ssl.ok) onStep('ssl', 'ok', `https://${domain} — renews itself`);
+    else onStep('ssl', 'failed', explainSslError(ssl.error));
+  } else {
+    onStep('ssl', 'skipped', 'Nothing to certify without a website');
   }
   steps.push({ step: 'ssl', ...ssl });
   await recordSsl(domainRow.id, ssl);
@@ -1109,15 +1215,20 @@ async function unpointFromNode(domainRow, customer, parts = {}) {
    * "this domain is off the internet".
    */
   if (web && dns && mail) {
+    const removed = [];
+    const errors = [];
+    let absent = false;
     try {
       await hestia.deleteWebDomain({ username, domain });
-      return { ok: true, removed: ['website', 'DNS zone', 'mail'] };
+      removed.push('website', 'DNS zone', 'mail');
     } catch (err) {
       // 3 is E_NOTEXIST — there was nothing on the node to remove, which is the
       // state we were trying to reach.
-      if (err.code === 3) return { ok: true, absent: true, removed: [] };
-      return { ok: false, error: err.message, removed: [] };
+      if (err.code === 3) absent = true;
+      else return { ok: false, error: err.message, removed: [] };
     }
+    await dropOwnRecord(domainRow, username, removed, errors);
+    return { ok: errors.length === 0, absent, removed, error: errors.join('; ') };
   }
 
   // Mail first, then web, then DNS. Order matters on the way out: the zone is
@@ -1144,7 +1255,43 @@ async function unpointFromNode(domainRow, customer, parts = {}) {
     }
   }
 
+  if (web) await dropOwnRecord(domainRow, username, removed, errors);
+
   return { ok: errors.length === 0, removed, error: errors.join('; ') };
+}
+
+/**
+ * A SUBDOMAIN TAKES ITS OWN A RECORD WITH IT. buildSubdomain wrote one into
+ * the parent's zone so the name would resolve; left behind, it keeps the name
+ * answering with this server for a site that no longer exists, and the next
+ * add reports "it was already there" for a record nobody chose.
+ *
+ * ONLY the record that points at us. A record with any other value is the
+ * customer's own — an external service on that label, say — and is not ours
+ * to delete just because a subdomain of the same name was here once.
+ *
+ * Never fatal: the site is gone, which was the point. A failure is said in
+ * `errors`, not hidden.
+ */
+async function dropOwnRecord(domainRow, username, removed, errors) {
+  if (!isSubdomain(domainRow)) return;
+  const domain = domainRow.domain;
+  try {
+    const parentName = parentNameOf(domain);
+    const label = parentName ? domain.slice(0, -(parentName.length + 1)) : '';
+    if (!label || !(await hestia.dnsDomainExists({ username, domain: parentName }))) return;
+    const ours = new Set(await nameservers.ourAddresses(POINT_HOSTNAME).catch(() => []));
+    const records = await hestia.listDnsRecords({ username, domain: parentName });
+    for (const r of records) {
+      if (r.name === label && r.type === 'A' && ours.has(String(r.value).trim())) {
+        // eslint-disable-next-line no-await-in-loop -- one record, usually
+        await hestia.deleteDnsRecord({ username, domain: parentName, id: r.id });
+        removed.push(`A record in ${parentName}`);
+      }
+    }
+  } catch (err) {
+    errors.push(`A record: ${err.message}`);
+  }
 }
 
 /**
@@ -1456,6 +1603,7 @@ async function dropUnverified(domainRow) {
 }
 
 module.exports = {
+  buildSubdomain,
   isSubdomain,
   findParent,
   issueSsl,

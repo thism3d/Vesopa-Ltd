@@ -49,6 +49,9 @@
   <a class="tab" href="/panel/domains/<%= domain.domain %>/dns">DNS</a>
 </nav>
 
+<%- include('../partials/domain-setup') %>
+<% const settingUp = typeof setupStatus !== 'undefined' && setupStatus && !setupStatus.finished; %>
+
 <% if (!registrarLive && !external) { %>
   <div class="alert alert-info">
     <%- icon('info', 19) %>
@@ -56,7 +59,9 @@
   </div>
 <% } %>
 
-<% if (!verified) { %>
+<%# While the setup card is working, the verdict below is the one from before
+    it started — hidden until the card's own refresh brings the real one. %>
+<% if (!verified && !settingUp) { %>
   <div class="alert alert-warn">
     <%- icon('clock', 19) %>
     <div>
@@ -643,4 +648,5 @@
   </aside>
 </div>
 
+<script src="<%= asset('/assets/js/domain-setup.js') %>" defer></script>
 <%- include('../partials/panel-shell-end') %>

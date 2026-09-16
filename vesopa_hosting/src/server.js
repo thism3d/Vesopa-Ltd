@@ -472,6 +472,9 @@ app.use((err, req, res, _next) => {
    * middle of the boot log.
    */
   require('./jobs').start();
+  // Domain setups a previous process was running when it stopped are closed
+  // honestly rather than left spinning; the next sweep does the real work.
+  require('./domain-setup').sweepStale();
 
   /*
    * BIND TO LOOPBACK, NOT 0.0.0.0.

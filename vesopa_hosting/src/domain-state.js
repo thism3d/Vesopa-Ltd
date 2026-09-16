@@ -99,6 +99,23 @@ function describe(d, opts = {}) {
     needsYou: false,
   };
 
+  // ---- Being set up right now -------------------------------------------
+  // A job started from the add-domain form is working on it in this process.
+  // Said before anything else: whatever the row says, the truth for the next
+  // twenty seconds is "we are on it", and the line names the step.
+  const setup = require('./domain-setup').runningFor(d.id);
+  if (setup) {
+    return {
+      ...base,
+      key: 'setting_up',
+      label: 'Setting up…',
+      tone: 'blue',
+      icon: 'clock',
+      line: setup.label,
+      hint: 'You can leave this page — it carries on, and we will tell you when it is done.',
+    };
+  }
+
   // ---- Gone --------------------------------------------------------------
   if (d.status === 'cancelled' || d.status === 'removed') {
     return {
@@ -274,7 +291,7 @@ function group(domains, opts) {
     const state = describe(d, opts);
     const row = { ...d, state };
     if (state.needsYou) out.needsYou.push(row);
-    else if (state.key === 'registering') out.inFlight.push(row);
+    else if (state.key === 'registering' || state.key === 'setting_up') out.inFlight.push(row);
     else out.fine.push(row);
   });
   return out;

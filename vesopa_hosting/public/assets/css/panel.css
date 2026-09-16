@@ -1279,3 +1279,101 @@ summary.reveal:hover { color: var(--ink); }
   font-size: .68rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
   color: #1c6b3d; background: #e2f4e9; padding: 3px 9px; border-radius: 999px; white-space: nowrap;
 }
+
+/* ---- Setting a domain up, watched live ----------------------------------
+   partials/domain-setup.ejs + domain-setup.js. The steps are all present from
+   the start, greyed; each lights up as the job reaches it. The tone of the
+   whole card follows the run: working, then the outcome. */
+.dsetup {
+  position: relative;
+  margin: 0 0 18px;
+  padding: 20px 22px 18px;
+  border-radius: 16px;
+  background: #fff;
+  border: 1px solid var(--rule);
+  box-shadow: 0 6px 24px rgba(17, 17, 17, .05);
+  overflow: hidden;
+  transition: border-color .4s var(--ease), background .4s var(--ease);
+}
+.dsetup::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+  background: var(--blue);
+  transition: background .4s var(--ease);
+}
+.dsetup.is-ok::before { background: var(--green); }
+.dsetup.is-warn::before { background: var(--amber); }
+.dsetup.is-error::before { background: var(--red); }
+.dsetup.is-ok { background: #f6fbf7; border-color: #cfe7d8; }
+.dsetup.is-warn { background: #fffbf0; border-color: #efe0b4; }
+
+.dsetup-head { display: flex; align-items: flex-start; gap: 14px; }
+.dsetup-icon {
+  flex: none; width: 42px; height: 42px; border-radius: 12px;
+  display: grid; place-items: center;
+  background: #eaf3fd; color: #1f5f9a;
+  transition: background .4s var(--ease), color .4s var(--ease);
+}
+.dsetup-icon .spinner { width: 20px; height: 20px; border-width: 2.5px; border-color: rgba(31, 95, 154, .25); border-top-color: #1f5f9a; }
+.dsetup-icon svg { width: 22px; height: 22px; }
+.dsetup.is-ok .dsetup-icon { background: #dff3e6; color: #1c6b3d; }
+.dsetup.is-warn .dsetup-icon { background: #fbedc4; color: #7d5c00; }
+.dsetup.is-error .dsetup-icon { background: #fde3df; color: #9a2417; }
+.dsetup-words { min-width: 0; flex: 1; }
+.dsetup-title { font-size: 1.12rem; font-weight: 800; letter-spacing: -.01em; margin: 3px 0 4px; }
+.dsetup-sub { margin: 0; font-size: .9rem; color: var(--ink-2); line-height: 1.55; }
+.dsetup-clock {
+  flex: none; font-variant-numeric: tabular-nums; font-size: .82rem; font-weight: 700;
+  color: #1f5f9a; background: #eaf3fd; padding: 4px 9px; border-radius: 999px; margin-top: 4px;
+}
+
+.dsetup-bar {
+  height: 7px; border-radius: 4px; overflow: hidden;
+  background: var(--rule-soft); margin: 16px 0 6px;
+}
+.dsetup-bar i {
+  display: block; height: 100%; width: 0; border-radius: 4px; position: relative;
+  background: linear-gradient(90deg, #6fb6f7, var(--blue));
+  transition: width .6s var(--ease), background .4s var(--ease);
+}
+/* A sheen travelling along the filled part, so a slow step still looks alive. */
+.dsetup-bar i::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .55), transparent);
+  animation: dsetup-sheen 1.4s linear infinite;
+}
+@keyframes dsetup-sheen { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+.dsetup-bar.is-done i { background: linear-gradient(90deg, #5cbf84, var(--green)); }
+.dsetup-bar.is-done i::after { display: none; }
+.dsetup-bar.is-failed i { background: linear-gradient(90deg, #f0c84a, var(--amber)); }
+
+.dsetup-steps { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 2px; }
+.dsetup-step {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 9px 10px; border-radius: 10px;
+  transition: background .3s var(--ease), opacity .3s var(--ease);
+  opacity: .55;
+}
+.dsetup-step.is-running { background: #f1f7fd; opacity: 1; }
+.dsetup-step.is-ok, .dsetup-step.is-failed, .dsetup-step.is-skipped { opacity: 1; }
+.dsetup-mark {
+  flex: none; width: 24px; height: 24px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--rule-soft); color: #8a8f80; border: 1.5px solid var(--rule);
+  transition: background .3s var(--ease), color .3s var(--ease), border-color .3s var(--ease);
+}
+.dsetup-mark svg { width: 13px; height: 13px; }
+.dsetup-mark .spinner { width: 12px; height: 12px; border-width: 2px; border-color: rgba(31, 95, 154, .25); border-top-color: #1f5f9a; }
+.dsetup-step.is-running .dsetup-mark { background: #eaf3fd; border-color: #bcd9f6; }
+.dsetup-step.is-ok .dsetup-mark { background: #dff3e6; color: #1c6b3d; border-color: #bfe3cd; }
+.dsetup-step.is-failed .dsetup-mark { background: #fde3df; color: #9a2417; border-color: #f3c4bd; }
+.dsetup-step.is-skipped .dsetup-mark { background: #f3f4ef; color: #8a8f80; }
+.dsetup-text { min-width: 0; font-size: .9rem; color: var(--ink-2); line-height: 1.4; }
+.dsetup-text b { display: block; color: var(--ink); font-weight: 700; }
+.dsetup-text span { display: block; font-size: .8rem; color: #6f7566; margin-top: 1px; }
+.dsetup-step.is-failed .dsetup-text span { color: #9a2417; }
+
+.dsetup-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .dsetup-bar i::after { animation: none; }
+}

@@ -19,6 +19,7 @@ const sso = require('../integrations/hestia-sso');
 const registrar = require('../integrations/domainnameapi');
 const pricing = require('../pricing');
 const linking = require('../domain-linking');
+const domainSetup = require('../domain-setup');
 const nameservers = require('../nameservers');
 const registrantVerification = require('../registrant-verification');
 const domainState = require('../domain-state');
@@ -1296,36 +1297,28 @@ router.post('/domains/add', async (req, res, next) => {
         serviceId: attachTo,
         wantDns: false,
         wantMail: false,
+        // Recorded here; built by the job below, where the customer can watch.
+        build: false,
       });
 
       if (!added.ok) {
         flash(res, added.error, 'warn');
         return res.redirect(added.id ? `/panel/domains/${added.id}` : '/panel/domains/add');
       }
-      if (!added.built.pointed) {
-        /*
-         * Say WHY. "Open a ticket and we will sort it" is the wrong instruction
-         * for the commonest cause — a plan with no room left on it, which
-         * support cannot fix and the customer can. pointAtNode explains those
-         * in `reason`; a ticket is offered only where there is nothing else to
-         * suggest.
-         */
-        flash(res, `${added.domain} was added, but the website could not be created on the server. `
-          + (added.built.reason || 'Open a ticket and we will sort it.'), 'warn');
-        return res.redirect(domainPath(added));
-      }
 
-      // Whether it RESOLVES is the thing worth saying. A "done" message for a
-      // name that answers nowhere is the most annoying kind of wrong.
-      const live = await linking.verify(added.row, { customer: req.customer });
-      flash(
-        res,
-        live.matched
-          ? `${added.domain} is set up and serving.`
-          : `${added.domain} is set up. One thing left: add an A record for it at whoever runs `
-            + `DNS for ${added.parent} — this page shows exactly what.`,
-        live.matched ? 'ok' : 'warn',
-      );
+      /*
+       * THE SLOW PART HAPPENS AFTER THIS RESPONSE, as a job (src/domain-setup).
+       * The page it redirects to shows each step as it happens, and leaving
+       * the page does not stop it. Nothing is flashed: the card on the page
+       * says what is going on, and a toast on top of it would say it twice.
+       * The sentences the old synchronous version flashed — "set up and
+       * serving", "one thing left: an A record" — are in describeSubdomain()
+       * there, word for word.
+       */
+      await domainSetup.start({
+        domainRow: added.row, customer: req.customer, subdomain: true, parent: added.parent,
+        wantDns: false, wantMail: false,
+      });
       return res.redirect(domainPath(added));
     }
 
@@ -1355,46 +1348,42 @@ router.post('/domains/add', async (req, res, next) => {
     }
 
     /*
-     * Checked once, immediately. Most people add a domain AFTER pointing it, so
-     * this is usually the moment it goes live — and being told "you are all
-     * set" on the same screen is worth far more than the same message arriving
-     * from a sweep fifteen minutes later.
+     * Checked once, immediately — AS A JOB. Most people add a domain AFTER
+     * pointing it, so this is usually the moment it goes live, and the page
+     * they land on shows it happening step by step (src/domain-setup.js)
+     * rather than behind a button that spins for twenty seconds. The
+     * sentences the old synchronous version flashed live in
+     * describeExternal() there now, word for word.
      */
-    const verdict = await linking.verify(added.row, { customer: req.customer });
-
-    if (verdict.matched) {
-      flash(res, `${added.domain} is pointing at us — we are setting it up now.`);
-    } else if (verdict.unregistered) {
-      /*
-       * The registry says the name does not exist. Worth its own sentence: the
-       * generic "point it at us" reads as though the setup is nearly done, and
-       * sends somebody to a nameserver form for a domain they have not bought.
-       */
-      flash(res, `${added.domain} has been added, but its registry says the name is not registered. `
-        + 'Check the spelling — or register it here and we will set it up for you.', 'warn');
-    } else if (wanted.split('.').length > 2 && !verdict.nameservers.length) {
-      /*
-       * Looks like a subdomain, but of a domain this account does not hold. It
-       * is still perfectly addable — an A record aimed here is enough, and the
-       * new verification will pick that up — so it is added rather than
-       * refused. Saying why avoids the "it did not offer me the subdomain
-       * options" confusion.
-       *
-       * GUARDED ON HAVING NO DELEGATION OF ITS OWN, because counting dots does
-       * not tell a subdomain from a domain: `muzahid.com.bd` has three labels
-       * and is a registrable name with its own nameservers, and telling its
-       * owner we do not have "its main domain" is nonsense. A name the registry
-       * has a delegation for is a domain, whatever its label count.
-       */
-      flash(res, `${added.domain} has been added. We do not have its main domain on this account, `
-        + 'so point it here with an A record — this page shows the value to use.', 'warn');
-    } else {
-      flash(res, `${added.domain} has been added. Point it at us using either method shown on `
-        + 'this page; we check every few minutes and will email you when it is live.', 'warn');
-    }
+    await domainSetup.start({
+      domainRow: added.row, customer: req.customer,
+      wantDns: Boolean(req.body.want_dns), wantMail: Boolean(req.body.want_mail),
+    });
     res.redirect(domainPath(added));
   } catch (err) {
     next(err);
+  }
+});
+
+/**
+ * The setup card's feed: every step of a run, and the sentence at the end.
+ * Seen-ness is not decided here: the card refreshes its page when the run
+ * ends, and that render is where the outcome counts as shown.
+ */
+router.get('/domains/:id/setup/:run/status', async (req, res, next) => {
+  try {
+    const domain = await ownedDomain(req);
+    if (!domain) return next();
+    const run = await db.one(
+      'SELECT * FROM domain_setup_runs WHERE id = ? AND domain_id = ? AND customer_id = ? LIMIT 1',
+      [Number(req.params.run) || 0, domain.id, req.customer.id],
+    );
+    if (!run) return next();
+    const status = await domainSetup.status(run);
+    res.set('Cache-Control', 'no-store');
+    return res.json(status);
+  } catch (err) {
+    return next(err);
   }
 });
 
@@ -1426,6 +1415,15 @@ router.get('/domains/:id', async (req, res, next) => {
         .catch(() => null)
       : null;
     const hasHosting = Boolean(req.customer.hestia_user);
+
+    // The setup under way for this domain, or the last one whose outcome the
+    // customer has not seen. Drawn at the top of both pages; null draws nothing.
+    const setupRun = await domainSetup.current(domain.id);
+    res.locals.setupRun = setupRun;
+    res.locals.setupStatus = setupRun ? await domainSetup.status(setupRun) : null;
+    // A finished run is shown with its outcome ONCE — on the page the card's
+    // own refresh fetches — and then stands down.
+    if (setupRun && setupRun.status !== 'running') await domainSetup.markSeen(setupRun.id, req.customer.id);
 
     const [ssl, addresses, node] = await Promise.all([
       linking.refreshSsl(domain, req.customer),

@@ -473,4 +473,12 @@
   });
 
   if (!nativePage()) window.history.replaceState({ vesopa: true }, '', window.location.href);
+
+  /*
+   * For a page script that needs the page fetched again without a reload —
+   * the domain setup card, once its job has finished and the rest of the page
+   * is out of date. `go(href, false)` re-fetches and swaps in place, adding no
+   * history entry.
+   */
+  window.VesopaNav = { go: go };
 })();

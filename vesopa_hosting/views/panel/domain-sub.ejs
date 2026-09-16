@@ -22,7 +22,13 @@
   pageSub: parent ? 'A subdomain of ' + parent : 'A subdomain',
 }) %>
 
-<% if (pointed) { %>
+<%- include('../partials/domain-setup') %>
+<% const settingUp = typeof setupStatus !== 'undefined' && setupStatus && !setupStatus.finished; %>
+
+<% if (settingUp) { %>
+  <%# The verdicts below are from before the setup started; the card's own
+      refresh brings the real ones. %>
+<% } else if (pointed) { %>
   <div class="alert alert-ok">
     <%- icon('check', 19) %>
     <div>
@@ -236,4 +242,5 @@
   </aside>
 </div>
 
+<script src="<%= asset('/assets/js/domain-setup.js') %>" defer></script>
 <%- include('../partials/panel-shell-end') %>

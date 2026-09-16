@@ -1468,5 +1468,53 @@ CALL vesopa_add_column('orders', 'bill_city', "VARCHAR(80) CHARACTER SET utf8mb4
 CALL vesopa_add_column('orders', 'bill_postcode', "VARCHAR(24) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT ''");
 CALL vesopa_add_column('orders', 'bill_country', "CHAR(2) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT ''");
 
+-- ---------------------------------------------------------------------------
+-- Adding a domain, watched live — src/domain-setup.js
+--
+-- Adding a domain takes ten to twenty seconds of real work on the node (the
+-- delegation lookup, the zone, the website, mail, a Let's Encrypt certificate)
+-- and used to happen INSIDE the form post, behind a spinning button that said
+-- nothing. The work now runs as a job: one row per run, one row per step, the
+-- same shape as setup_steps for the post-payment build, so the page can show
+-- each step as it happens, the domain list can say "Setting up…" while the
+-- customer is somewhere else, and the outcome survives their leaving.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS domain_setup_runs (
+  id           INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  domain_id    INT UNSIGNED NOT NULL,
+  customer_id  INT UNSIGNED NOT NULL,
+  status       ENUM('running','finished','failed') NOT NULL DEFAULT 'running',
+  -- What to say when it is over: a heading, a sentence, and how loudly.
+  headline     VARCHAR(190) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  message      VARCHAR(600) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  kind         ENUM('ok','warn','error') NOT NULL DEFAULT 'ok',
+  started_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  finished_at  DATETIME NULL,
+  -- Set once the customer has been shown the outcome, so the card does not
+  -- greet them with "all done" on every visit for a week.
+  seen_at      DATETIME NULL,
+  PRIMARY KEY (id),
+  KEY idx_domain_setup_domain (domain_id, id),
+  KEY idx_domain_setup_customer (customer_id, status),
+  CONSTRAINT fk_domain_setup_domain FOREIGN KEY (domain_id) REFERENCES domains (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE IF NOT EXISTS domain_setup_steps (
+  id           INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  run_id       INT UNSIGNED NOT NULL,
+  step_key     VARCHAR(40)  CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  label        VARCHAR(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  -- The line under the label while it runs ("Let's Encrypt usually takes ten
+  -- seconds"), replaced by what happened once it has.
+  detail       VARCHAR(400) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  status       ENUM('pending','running','ok','failed','skipped') NOT NULL DEFAULT 'pending',
+  sort_order   INT NOT NULL DEFAULT 0,
+  started_at   DATETIME NULL,
+  finished_at  DATETIME NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_domain_setup_step (run_id, step_key),
+  CONSTRAINT fk_domain_setup_step_run FOREIGN KEY (run_id) REFERENCES domain_setup_runs (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
 CALL vesopa_fix_collations();
 DROP PROCEDURE IF EXISTS vesopa_fix_collations;

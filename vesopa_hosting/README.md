@@ -394,6 +394,27 @@ through us is a purchase and goes through checkout; naming one you own is not,
 and gating it behind a sale would mean a customer moving a live site cannot see
 the panel they are being asked to trust. `/panel/domains/add`.
 
+**Adding a domain is a job you can watch.** The form post records the domain
+and starts a run (`src/domain-setup.js`); the domain's page opens on a card
+listing every step the run will take — the delegation lookup, the zone, the
+website, mail, the certificate — and lights them up as they happen, with a
+line under each saying what is going on and then what happened, an elapsed
+clock, and "Continue in the background". Leaving does not stop it: the Domains
+list shows "Setting up…" with the current step over the live channel, and a
+notification carries the outcome. When the run ends the card refreshes the
+page through the no-reload router so the cards below agree with it. Runs and
+steps live in `domain_setup_runs` / `domain_setup_steps`; a run a restart
+left open is closed at boot. `tool/cloud_domain_add_drive.py` adds a test
+subdomain through the form, photographs the steps, and removes it.
+
+For a subdomain the order is website → A record → certificate: Let's Encrypt
+has to reach the name, and a subdomain resolves nowhere until its record is
+in the parent's zone. Removing a subdomain takes that record with it (only the
+one pointing at us). Hestia reports every Let's Encrypt refusal as exit 15
+"could not connect"; the real reason is in `/var/log/hestia/LE-<user>-<domain>.log`
+— five certificates for one exact name in a week is their limit, and a test
+loop hits it.
+
 **Two names for the same two machines.** `ns1/ns2.onzep.uk` are the same
 nameservers as `ns1/ns2.vesopa.com`, and a domain delegated to either pair —
 or one of each — verifies. Nothing ever prints the `onzep.uk` names: every

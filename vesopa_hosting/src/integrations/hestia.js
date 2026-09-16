@@ -739,11 +739,34 @@ async function rebuildWebDomain({ username, domain }) {
 }
 
 async function enableSSL({ username, domain, aliases = '', mail = false }) {
-  await run(
-    'v-add-letsencrypt-domain',
-    [username, domain, aliases, mail ? 'yes' : 'no'],
-    { timeoutMs: SSL_TIMEOUT_MS },
-  );
+  try {
+    await run(
+      'v-add-letsencrypt-domain',
+      [username, domain, aliases, mail ? 'yes' : 'no'],
+      { timeoutMs: SSL_TIMEOUT_MS },
+    );
+  } catch (err) {
+    /*
+     * EXIT 15 MEANS "LET'S ENCRYPT SAID NO", NOT "COULD NOT CONNECT".
+     *
+     * v-add-letsencrypt-domain answers E_CONNECT for every refusal from the
+     * certificate authority — a name that does not resolve here yet, a failed
+     * challenge, AND the rate limit (five certificates for one exact name in
+     * a week; measured on a test subdomain issued five times in an afternoon).
+     * The real reason is only in /var/log/hestia/LE-<user>-<domain>.log on
+     * the node. So the generic sentence, which sends a customer looking at
+     * our network, is replaced with the two things it can actually mean.
+     */
+    if (err.code === 15) {
+      throw new HestiaError(
+        "Let's Encrypt did not issue the certificate. Either the name does not reach this server "
+          + 'from the public internet yet, or this name has hit their limit of five certificates a week. '
+          + 'It is retried automatically; nothing on your side is needed unless the name is not pointed here.',
+        { code: 15, cmd: err.cmd },
+      );
+    }
+    throw err;
+  }
   return { ok: true, domain };
 }
 
