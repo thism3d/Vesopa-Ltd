@@ -103,6 +103,39 @@ const NAMESERVERS = [
 ];
 
 /**
+ * Other names for the same two machines — accepted, never offered.
+ *
+ * The node also answers as `ns1.onzep.uk` and `ns2.onzep.uk`, and a number of
+ * the owner's own sites were delegated to those names before this panel
+ * existed. A domain pointed at them IS pointed at us: same addresses, same
+ * zones, same certificates. Refusing to serve it because the customer used
+ * the older spelling would put a working site on the four-day clock to be
+ * dropped from the account.
+ *
+ * So the check treats these as ours. Nothing else does. Every instruction, every
+ * email, every "set these at your registrar" prints NAMESERVERS and only
+ * NAMESERVERS — the customer is told one pair of names, and the other pair is a
+ * detail they never need to see.
+ */
+const NAMESERVER_ALIASES = String(process.env.NS_ALIASES ?? 'ns1.onzep.uk,ns2.onzep.uk')
+  .split(',')
+  .map((s) => s.trim().toLowerCase())
+  .filter(Boolean);
+
+/**
+ * The Vesopa account is the ONLY way in.
+ *
+ * The owner's standing direction for every product: Continue with Vesopa, and
+ * no other login or registration. On: the sign-in page draws one button, the
+ * password, register and forgotten-password routes answer with a redirect to
+ * it, checkout asks a stranger to continue with Vesopa before it takes their
+ * details, and the first Vesopa sign-in from an address we have never seen
+ * creates the customer. Off: everything above is exactly as it was during the
+ * soak, password form included — a flag and a restart, never a deploy.
+ */
+const VESOPA_ONLY = String(process.env.VESOPA_AUTH_PANEL_ONLY ?? 'on').toLowerCase() !== 'off';
+
+/**
  * The name a customer points a record at when they keep DNS elsewhere.
  *
  * THE HOSTNAME IS THE INSTRUCTION; the address is the footnote.
@@ -320,6 +353,8 @@ module.exports = {
   SITE_HOSTNAME,
   BRAND,
   NAMESERVERS,
+  NAMESERVER_ALIASES,
+  VESOPA_ONLY,
   POINT_HOSTNAME,
   MAIL_HOSTNAME,
   WEBMAIL_URL,

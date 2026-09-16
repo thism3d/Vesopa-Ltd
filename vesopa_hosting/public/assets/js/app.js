@@ -9,9 +9,37 @@
 (function () {
   'use strict';
 
+  /*
+   * ONCE PER DOCUMENT, and once per PAGE.
+   *
+   * nav.js swaps the body without reloading, so this file is loaded once and
+   * then asked to decorate every page that arrives. Two things follow. The
+   * whole of the page-facing code lives in setup(), which runs now and again
+   * on every `vesopa:navigated`. And every listener it puts on `document` or
+   * `window` is bound with the current page's AbortSignal, so the old page's
+   * listeners die when the next one arrives instead of answering every click
+   * twice. Listeners on elements need nothing: they leave with the body.
+   */
+  if (window.__vesopaAppReady) return;
+  window.__vesopaAppReady = true;
+
   const $ = (sel, root) => (root || document).querySelector(sel);
   const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  let page = new AbortController();
+  window.addEventListener('vesopa:navigating', () => {
+    page.abort();
+    page = new AbortController();
+  });
+  window.addEventListener('vesopa:navigated', () => setup());
+
+  function setup() {
+  const { signal } = page;
+  // `opts` may be the old boolean capture flag — the confirm-before-delete
+  // listener relies on capturing, and spreading `true` would silently drop it.
+  const on = (target, type, fn, opts) =>
+    target.addEventListener(type, fn, typeof opts === 'boolean' ? { capture: opts, signal } : { ...(opts || {}), signal });
 
   /* ---- Money -------------------------------------------------------------
      The active currency is stamped on <body> by the server, so a total worked
@@ -33,12 +61,12 @@
      The <details> opens and closes on its own; this only closes it when the
      click lands elsewhere, which is the one behaviour the element does not
      give you and the one people expect from a dropdown. */
-  document.addEventListener('click', (e) => {
+  on(document, 'click', (e) => {
     $$('.cur-pick[open]').forEach((d) => {
       if (!d.contains(e.target)) d.removeAttribute('open');
     });
   });
-  document.addEventListener('keydown', (e) => {
+  on(document, 'keydown', (e) => {
     if (e.key !== 'Escape') return;
     $$('.cur-pick[open]').forEach((d) => d.removeAttribute('open'));
   });
@@ -72,8 +100,8 @@
       }
     };
     // passive: this runs on every scroll frame and must never block it.
-    window.addEventListener('scroll', onScroll, { passive: true });
-    window.addEventListener('resize', () => { mark = threshold(); onScroll(); }, { passive: true });
+    on(window, 'scroll', onScroll, { passive: true });
+    on(window, 'resize', () => { mark = threshold(); onScroll(); }, { passive: true });
     onScroll();
 
     /* ---- The full-screen sheet -------------------------------------------- */
@@ -125,7 +153,7 @@
       // page it just navigated to when the target is an anchor on this page.
       $$('a', sheet).forEach((a) => a.addEventListener('click', () => setOpen(false)));
 
-      document.addEventListener('keydown', (e) => {
+      on(document, 'keydown', (e) => {
         if (e.key === 'Escape' && document.body.classList.contains('nav-open')) setOpen(false);
       });
 
@@ -148,7 +176,7 @@
 
       // Growing past the breakpoint with the sheet open would leave the page
       // scroll-locked behind a bar that no longer has a burger to close it.
-      window.addEventListener('resize', () => {
+      on(window, 'resize', () => {
         if (window.innerWidth > 1140 && document.body.classList.contains('nav-open')) setOpen(false);
       }, { passive: true });
     }
@@ -310,9 +338,9 @@
       // The pill is positioned from measured widths, which are 0 until layout
       // has run and the webfont has settled.
       requestAnimationFrame(() => movePill(initial));
-      window.addEventListener('load', () => movePill($('.term-btn.is-active', toggle) || initial));
+      on(window, 'load', () => movePill($('.term-btn.is-active', toggle) || initial));
     }
-    window.addEventListener('resize', () => {
+    on(window, 'resize', () => {
       const active = $('.term-btn.is-active', toggle);
       if (active) movePill(active);
     });
@@ -368,7 +396,7 @@
   window.vhToast = toast;
 
   /* ---- Copy to clipboard ------------------------------------------------ */
-  document.addEventListener('click', async (e) => {
+  on(document, 'click', async (e) => {
     const btn = e.target.closest('[data-copy]');
     if (!btn) return;
     const text = btn.dataset.copy;
@@ -453,7 +481,7 @@
     });
   });
 
-  window.addEventListener('pageshow', (e) => {
+  on(window, 'pageshow', (e) => {
     if (!e.persisted) return;
     $$('.is-working').forEach(unbusy);
   });
@@ -471,7 +499,7 @@
    * Capturing on the document runs this before any listener on the form, so a
    * cancelled confirm stops the submit before anything has been made busy.
    * ----------------------------------------------------------------------- */
-  document.addEventListener('submit', (e) => {
+  on(document, 'submit', (e) => {
     const form = e.target;
     const message = form.dataset ? form.dataset.confirm : null;
     if (message && !window.confirm(message)) {
@@ -631,7 +659,7 @@
         net.style.setProperty('--sy', `${y * 0.14}px`);
       }
     };
-    window.addEventListener('scroll', onHeroScroll, { passive: true });
+    on(window, 'scroll', onHeroScroll, { passive: true });
     onHeroScroll();
   }
 
@@ -669,7 +697,9 @@
 
       const field = $('.dsearch-input');
       if (field) field.addEventListener('focus', stop, { once: true });
-      document.addEventListener('visibilitychange', () => { if (document.hidden) stop(); });
+      on(document, 'visibilitychange', () => { if (document.hidden) stop(); });
+      // And when the page it was typing on has gone.
+      signal.addEventListener('abort', stop);
     }
   }
 
@@ -735,4 +765,7 @@
     toast(flash.dataset.flash, flash.dataset.flashKind);
     flash.remove();
   }
+  }
+
+  setup();
 })();

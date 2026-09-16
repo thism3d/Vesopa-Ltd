@@ -24,6 +24,7 @@ const payments = require('../payments');
 const {
   resolveTerm,
   termEarnsFreeDomain, tldQualifiesFree, TERMS, perMonth, FREE_DOMAIN_MAX_PENCE,
+  VESOPA_ONLY,
 } = require('../config');
 
 const router = express.Router();
@@ -788,6 +789,19 @@ router.post('/checkout', async (req, res, next) => {
   try {
     const priced = await priceCart(req.cart, ctxOf(req));
     if (!priced.lines.length) return res.redirect('/cart');
+
+    /*
+     * A stranger at checkout continues with Vesopa first.
+     *
+     * With the Vesopa account as the only way in there is no password to set
+     * here, so there is no account this form can create. The page draws the
+     * button instead of the email and password fields; a POST that arrives
+     * without a session anyway — the fields have been removed from the page,
+     * so this is a script or a stale tab — goes to the same place.
+     */
+    if (!req.customer && VESOPA_ONLY) {
+      return res.redirect(303, `/auth/vesopa/start?next=${encodeURIComponent('/checkout')}`);
+    }
 
     const values = {
       email: field(req.body.email, 190).toLowerCase(),

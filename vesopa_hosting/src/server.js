@@ -2,6 +2,7 @@ require('dotenv').config();
 
 const path = require('path');
 const http = require('node:http');
+const crypto = require('node:crypto');
 const express = require('express');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
@@ -77,11 +78,21 @@ app.use((req, res, next) => {
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
+  /*
+   * ONE inline script per page, and this is what lets it run.
+   *
+   * The loading bar has to be on screen before first paint, and the only
+   * place that runs before first paint is a script in the <head> — see
+   * partials/head.ejs. A nonce admits that one script and nothing else:
+   * `'unsafe-inline'` would admit an injected one too, and this origin holds
+   * a customer's hosting, mail and terminal.
+   */
+  res.locals.nonce = crypto.randomBytes(16).toString('base64');
   res.setHeader(
     'Content-Security-Policy',
     [
       "default-src 'self'",
-      "script-src 'self'",
+      `script-src 'self' 'nonce-${res.locals.nonce}'`,
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data:",
       "font-src 'self'",
@@ -147,8 +158,33 @@ app.use(
 // Locals every view can rely on
 // ---------------------------------------------------------------------------
 app.use(async (req, res, next) => {
+  /*
+   * A redirect, when the no-reload router is asking, is a 204 and a header.
+   *
+   * nav.js fetches links and posts forms itself so the browser never shows its
+   * own loading state. `fetch` follows a 303 silently, which leaves the router
+   * holding the destination's HTML with no idea what address it belongs to —
+   * so a route that redirects tells the router WHERE instead, and the router
+   * navigates there itself. Only the shape of the answer changes: every check
+   * and every write has already happened by the time a route calls redirect.
+   * A request without the header — every ordinary browser navigation, every
+   * gateway callback — gets the redirect it always got.
+   */
+  if (req.get('x-vesopa-nav') === '1') {
+    const sendRedirect = res.redirect.bind(res);
+    res.redirect = function navRedirect(statusOrUrl, maybeUrl) {
+      const url = typeof statusOrUrl === 'string' ? statusOrUrl : maybeUrl;
+      if (typeof url !== 'string') return sendRedirect(statusOrUrl, maybeUrl);
+      res.setHeader('X-Vesopa-Location', url);
+      return res.status(204).end();
+    };
+  }
+
   res.locals.siteUrl = config.SITE_URL;
   res.locals.mainSiteUrl = config.MAIN_SITE_URL;
+  // Whether the Vesopa account is the only way in — the sign-in page, the
+  // header and checkout all draw differently. See config.VESOPA_ONLY.
+  res.locals.vesopaOnly = config.VESOPA_ONLY;
   res.locals.contact = config.CONTACT;
   res.locals.brand = config.BRAND;
   res.locals.currentPath = req.path;

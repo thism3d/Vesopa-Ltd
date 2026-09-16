@@ -16,9 +16,27 @@ const db = require('../db');
 const auth = require('../auth');
 const { sendMail, shell, escapeHtml } = require('../mailer');
 const { flash, rateLimited, clearRateLimit, field, isEmail } = require('../http-utils');
-const { SITE_URL } = require('../config');
+const { SITE_URL, VESOPA_ONLY } = require('../config');
 
 const router = express.Router();
+
+/*
+ * THE PASSWORD ROUTES ARE OFF, not gone.
+ *
+ * With the Vesopa account as the only way in (config.VESOPA_ONLY), every route
+ * below that takes or sets a password answers with a redirect to the sign-in
+ * page: registration, the password form itself, forgotten and reset. A link in
+ * an old email or a bookmark lands on the one button rather than a 404. The
+ * code stays, because the flag is how this is rolled back — a restart, not a
+ * deploy. `/verify/:token` is left alone: confirming an address does nothing a
+ * password route does, and a customer with an old confirmation email in their
+ * inbox should be able to use it.
+ */
+const OFF_WHEN_VESOPA_ONLY = ['/register', '/register/check-email', '/register/resend', '/forgot', '/reset/:token'];
+if (VESOPA_ONLY) {
+  router.all(OFF_WHEN_VESOPA_ONLY, (req, res) => res.redirect(303, '/login'));
+  router.post('/login', (req, res) => res.redirect(303, '/login'));
+}
 
 const VERIFY_TTL_HOURS = 48;
 const RESET_TTL_MINUTES = 60;
@@ -328,11 +346,19 @@ router.get('/verify/:token', async (req, res, next) => {
 // ---------------------------------------------------------------------------
 router.get('/login', (req, res) => {
   if (req.customer) return res.redirect(safeNext(req.query.next));
+  /*
+   * A refusal from the Vesopa callback arrives as a flash, because that route
+   * redirects here rather than rendering on an address a reload would replay.
+   * It is drawn inline where the old form's errors were, and not ALSO as a
+   * toast — one message, once.
+   */
+  const refused = res.locals.flash && res.locals.flash.kind === 'error' ? res.locals.flash.message : null;
+  if (refused) res.locals.flash = null;
   res.render('auth/login', {
     title: 'Sign in',
     robots: 'noindex',
     values: {},
-    error: null,
+    error: refused,
     next: safeNext(req.query.next),
   });
 });

@@ -84,6 +84,11 @@ const over = typeof navOver !== 'undefined' && navOver;
       <% if (customer) { %>
         <a class="btn btn-ghost btn-sm" href="/panel">My account</a>
         <a class="btn btn-sm" href="/panel/services">Dashboard</a>
+      <% } else if (vesopaOnly && typeof vesopaSso !== 'undefined' && vesopaSso) { %>
+        <%# One way in. Signing in and opening an account are the same button,
+            so there is nothing to put a "Create account" beside it. %>
+        <%- include('./vesopa-button', { cls: 'btn btn-ghost btn-sm' }) %>
+        <a class="btn btn-sm" href="/hosting">Get started</a>
       <% } else { %>
         <a class="btn btn-ghost btn-sm" href="/login">Sign in</a>
         <%#
@@ -152,6 +157,9 @@ const over = typeof navOver !== 'undefined' && navOver;
         <% if (customer) { %>
           <a class="btn btn-ghost btn-lg btn-block" href="/panel">My account</a>
           <a class="btn btn-lg btn-block" href="/panel/services">Dashboard</a>
+        <% } else if (vesopaOnly && typeof vesopaSso !== 'undefined' && vesopaSso) { %>
+          <%- include('./vesopa-button', { cls: 'btn btn-ghost btn-lg btn-block' }) %>
+          <a class="btn btn-lg btn-block" href="/hosting">Get started</a>
         <% } else { %>
           <a class="btn btn-ghost btn-lg btn-block" href="/login">Sign in</a>
           <a class="btn btn-ghost btn-lg btn-block" href="/register">Create account</a>

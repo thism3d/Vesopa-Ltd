@@ -1729,3 +1729,38 @@ body.nav-open .nav-sheet-foot {
   white-space: nowrap;
   border: 0;
 }
+
+/* ---- The loading bar ------------------------------------------------------
+   One line across the top, the same one auth.vesopa.com draws, started by a
+   three-line script in the <head> before first paint and driven afterwards by
+   loadbar.js and nav.js. It is the ONLY "wait" on the site: the no-reload
+   router means the browser's own spinner never has anything to show. */
+#loadbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 3px;
+  width: 0;
+  z-index: 1000;
+  background: linear-gradient(90deg, var(--lime), var(--lime-ink));
+  box-shadow: 0 0 8px rgba(165, 199, 21, .6);
+  opacity: 0;
+  transition: width .2s ease, opacity .25s ease;
+  pointer-events: none;
+  border-radius: 0 2px 2px 0;
+}
+#loadbar.on { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  #loadbar { transition: opacity .25s ease; }
+}
+
+/* ---- Continue with Vesopa -------------------------------------------------
+   partials/vesopa-button.ejs. The mark is a white tile so it reads the same on
+   every button colour; the ghost version in the header shows a bordered tile
+   so it does not vanish into the page. */
+.btn-vesopa { gap: 10px; }
+.btn-vesopa-mark { flex: 0 0 auto; border-radius: 5px; box-shadow: 0 0 0 1px rgba(17, 17, 17, .08); }
+.btn-ghost .btn-vesopa-mark { box-shadow: 0 0 0 1px rgba(17, 17, 17, .14); }
+.btn-sm.btn-vesopa .btn-vesopa-mark { width: 16px; height: 16px; }
+.auth-switch { margin: 12px 0 0; text-align: center; font-size: .87rem; }
+.auth-switch a { color: var(--ink-3); }

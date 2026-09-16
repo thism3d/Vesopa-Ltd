@@ -15,7 +15,7 @@
 
 const dns = require('node:dns');
 const registry = require('./dns-registry');
-const { NAMESERVERS } = require('./config');
+const { NAMESERVERS, NAMESERVER_ALIASES } = require('./config');
 
 /**
  * A resolver of our own rather than the process default.
@@ -52,12 +52,55 @@ function normalise(host) {
 }
 
 const OURS = NAMESERVERS.map(normalise).filter(Boolean);
+const ALIASES = NAMESERVER_ALIASES.map(normalise).filter((ns) => ns && !OURS.includes(ns));
+const SELF_TTL_MS = 5 * 60_000;
+
+/**
+ * The other names our nameservers answer to — accepted, never offered.
+ *
+ * `ns1/ns2.onzep.uk` are the same two machines as `ns1/ns2.vesopa.com`, and a
+ * number of the owner's own domains were delegated to them before this panel
+ * existed. A domain pointed at them is pointed at us, and must verify.
+ *
+ * BUT ONLY WHILE THAT IS TRUE, and the code checks rather than believes it.
+ * An alias counts only when the public DNS says it resolves to an address one
+ * of our own nameservers resolves to. This is not caution for its own sake:
+ * heat6.com was once delegated to `ns1.onzep.uk` when that name was a
+ * DIFFERENT box, whose copy of the zone happened to name our nameservers — and
+ * the domain read as verified while every visitor was served by the old
+ * server. A list that trusted the name would repeat that the day the name
+ * moves again. A list that checks the address cannot.
+ *
+ * Cached for a few minutes, like the self-check below: it is one answer for a
+ * whole sweep.
+ */
+let aliasCheck = { at: 0, accepted: [] };
+
+async function acceptedAliases({ fresh = false } = {}) {
+  if (!ALIASES.length) return [];
+  if (!fresh && Date.now() - aliasCheck.at < SELF_TTL_MS) return aliasCheck.accepted;
+
+  const resolver = makeResolver();
+  const lookup = (host) => resolver.resolve4(host).catch(() => []);
+  const ourAddrs = new Set((await Promise.all(OURS.map(lookup))).flat());
+
+  const accepted = [];
+  if (ourAddrs.size) {
+    for (const alias of ALIASES) {
+      const addrs = await lookup(alias);
+      if (addrs.length && addrs.every((ip) => ourAddrs.has(ip))) accepted.push(alias);
+    }
+  }
+  aliasCheck = { at: Date.now(), accepted };
+  return accepted;
+}
 
 /**
  * Is this domain delegated to us?
  *
- * BOTH of ours have to be present. Extra nameservers alongside them do not
- * block it.
+ * TWO of ours have to be present — either name of each machine will do, so
+ * `ns1.vesopa.com + ns2.onzep.uk` verifies just as `ns1 + ns2.vesopa.com`
+ * does. Extra nameservers alongside them do not block it.
  *
  * This used to be the other way round — every nameserver found had to be one of
  * ours — and the reasoning was sound as far as it went: a domain delegated to
@@ -81,15 +124,28 @@ const OURS = NAMESERVERS.map(normalise).filter(Boolean);
  *
  * Callers that want to warn about the extras can have them from `check()`.
  */
-function matchesOurs(list) {
+function matchesOurs(list, aliases = []) {
   const found = (list || []).map(normalise).filter(Boolean);
-  if (!found.length) return false;
-  return OURS.length > 0 && OURS.every((ns) => found.includes(ns));
+  if (!found.length || !OURS.length) return false;
+  /*
+   * Counted by MACHINE, not by name. NS1 and NS_ALIASES are aligned by
+   * position — `ns1.vesopa.com` and `ns1.onzep.uk` are the first machine
+   * under two names — so a delegation naming both of them is still only half
+   * a delegation, and does not pass.
+   */
+  const machines = new Set();
+  for (const ns of found) {
+    let at = OURS.indexOf(ns);
+    if (at < 0) at = aliases.indexOf(ns) >= 0 ? ALIASES.indexOf(ns) : -1;
+    if (at >= 0) machines.add(at);
+  }
+  return machines.size >= Math.min(2, OURS.length);
 }
 
 /** The nameservers in a delegation that are not ours. Never blocks; informs. */
-function extrasIn(list) {
-  return (list || []).map(normalise).filter((ns) => ns && !OURS.includes(ns));
+function extrasIn(list, aliases = []) {
+  const ours = new Set([...OURS, ...aliases]);
+  return (list || []).map(normalise).filter((ns) => ns && !ours.has(ns));
 }
 
 /** The recursive half: what a resolver on the internet answers today. */
@@ -167,21 +223,22 @@ async function check(domain) {
     };
   }
 
-  const [live, atRegistry] = await Promise.all([
+  const [live, atRegistry, aliases] = await Promise.all([
     resolverAnswer(name),
     registry.delegation(name).catch(() => ({ ok: false, nameservers: [], error: 'lookup failed' })),
+    acceptedAliases().catch(() => []),
   ]);
 
   // The registry answered and named somebody. That is the delegation.
   if (atRegistry.ok && atRegistry.nameservers.length) {
-    const matched = matchesOurs(atRegistry.nameservers);
+    const matched = matchesOurs(atRegistry.nameservers, aliases);
     return {
       matched,
       via: 'registry',
       nameservers: atRegistry.nameservers.slice().sort(),
       // Present but not blocking — a registrar's verification record, or a
       // leftover delegation the customer has not cleaned up yet.
-      extras: extrasIn(atRegistry.nameservers).sort(),
+      extras: extrasIn(atRegistry.nameservers, aliases).sort(),
       resolved: live.nameservers.slice().sort(),
       /*
        * DELEGATED TO US AND NOT ANSWERING is the state worth naming, because
@@ -223,10 +280,10 @@ async function check(domain) {
   // No usable registry answer: fall back to whatever the resolver said, which
   // is exactly the behaviour this had before the registry lookup existed.
   return {
-    matched: matchesOurs(live.nameservers),
+    matched: matchesOurs(live.nameservers, aliases),
     via: live.nameservers.length ? 'resolver' : '',
     nameservers: live.nameservers.slice().sort(),
-    extras: extrasIn(live.nameservers).sort(),
+    extras: extrasIn(live.nameservers, aliases).sort(),
     resolved: live.nameservers.slice().sort(),
     serverFailure: ['ESERVFAIL', 'ETIMEOUT', 'ECONNREFUSED', 'EREFUSED', 'ENOTIMP'].includes(live.code),
     unregistered: false,
@@ -293,7 +350,6 @@ async function pointsAtUs(name, target) {
  * and this runs at the top of each one.
  */
 let selfCheck = { at: 0, result: null };
-const SELF_TTL_MS = 5 * 60_000;
 
 async function ourNameserversResolve({ fresh = false } = {}) {
   if (!fresh && selfCheck.result && Date.now() - selfCheck.at < SELF_TTL_MS) return selfCheck.result;
@@ -413,5 +469,5 @@ module.exports = {
   ourAddresses,
   servedByUs,
   registryDelegation: registry.delegation,
-  check, matchesOurs, extrasIn, pointsAtUs, normalise, ourNameserversResolve, OURS, RESOLVERS,
+  check, matchesOurs, extrasIn, acceptedAliases, pointsAtUs, normalise, ourNameserversResolve, OURS, ALIASES, RESOLVERS,
 };

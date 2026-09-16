@@ -75,5 +75,20 @@ CALL vesopa_add_column('customers', 'vesopa_linked_at', 'DATETIME NULL DEFAULT N
 CALL vesopa_add_index('customers', 'uq_customers_vesopa_sub',
   'UNIQUE KEY uq_customers_vesopa_sub (vesopa_sub)');
 
+/*
+ * Staff sign in with Vesopa too.
+ *
+ * The same link, on the same terms: a row somebody with the owner role added,
+ * joined to a Vesopa account on the first sign-in by verified address, and by
+ * subject from then on. Nothing here creates an administrator.
+ */
+CALL vesopa_add_column('hosting_admins', 'vesopa_sub',
+  "VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL");
+
+CALL vesopa_add_column('hosting_admins', 'vesopa_linked_at', 'DATETIME NULL DEFAULT NULL');
+
+CALL vesopa_add_index('hosting_admins', 'uq_hosting_admins_vesopa_sub',
+  'UNIQUE KEY uq_hosting_admins_vesopa_sub (vesopa_sub)');
+
 DROP PROCEDURE IF EXISTS vesopa_add_column;
 DROP PROCEDURE IF EXISTS vesopa_add_index;

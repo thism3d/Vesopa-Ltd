@@ -13,6 +13,14 @@
       <div class="alert alert-error"><%- icon('warning', 19) %><div><%= error %></div></div>
     <% } %>
 
+    <% if (vesopaOnly && typeof vesopaSso !== 'undefined' && vesopaSso) { %>
+    <%# Staff sign in with their Vesopa account like everybody else. Only an
+        address on the staff list gets in; nothing here creates one. %>
+    <%- include('../partials/vesopa-button', { cls: 'btn btn-block btn-lg btn-dark', href: '/admin/auth/vesopa/start' }) %>
+    <p class="auth-switch">
+      <a href="/admin/auth/vesopa/start?switch=1" rel="external">Use a different Vesopa account</a>
+    </p>
+    <% } else { %>
     <form method="post" action="/admin/login" data-guard>
       <input type="hidden" name="_csrf" value="<%= csrf %>">
       <div class="field">
@@ -26,6 +34,7 @@
       </div>
       <button class="btn btn-block btn-lg btn-dark" type="submit" data-busy="Signing in…">Sign in</button>
     </form>
+    <% } %>
   </div>
   <p class="auth-foot" style="color:#787a6e"><a href="/" style="color:#787a6e">← Back to the website</a></p>
 </div>

@@ -56,9 +56,9 @@ async function main() {
   const application = await db.one("SELECT * FROM applications WHERE slug = 'vesopa-cloud'");
   check('the panel is registered', Boolean(application));
   check(
-    'and does not allow self-enrolment',
-    application && Number(application.allow_self_enroll) === 0,
-    'a hosting panel must not enrol whoever turns up — a customer row is a billing relationship',
+    'and allows self-enrolment',
+    application && Number(application.allow_self_enroll) === 1,
+    'the panel has no sign-up page any more: the first Continue with Vesopa creates the customer (schema_020)',
   );
 
   const registered = await db.query(
@@ -148,12 +148,32 @@ async function main() {
     callback.headers.get('location') || '',
   );
 
+  /*
+   * A refusal is a redirect to the sign-in page carrying the reason as a
+   * flash, never a page rendered on the callback address — that address holds
+   * a one-time code, and a page rendered there is a page a reload replays and
+   * a browser asks to resubmit.
+   */
   console.log('▶ refusals');
+  const refused = (response) =>
+    (response.status === 302 || response.status === 303)
+    && (response.headers.get('location') || '').endsWith('/login')
+    && (response.headers.getSetCookie ? response.headers.getSetCookie() : []).some((c) => c.startsWith('vh_flash='));
+
   const replay = await fetch(back, { redirect: 'manual' });
-  check('the callback cannot be replayed', replay.status >= 400, `status ${replay.status}`);
+  check('the callback cannot be replayed', refused(replay), `status ${replay.status} → ${replay.headers.get('location')}`);
 
   const madeUp = await fetch(`${PANEL}/auth/vesopa/callback?state=nope&code=x`, { redirect: 'manual' });
-  check('an invented state is refused', madeUp.status >= 400, `status ${madeUp.status}`);
+  check('an invented state is refused', refused(madeUp), `status ${madeUp.status} → ${madeUp.headers.get('location')}`);
+
+  const signIn = await fetch(`${PANEL}/login`, { redirect: 'manual' });
+  const signInPage = await signIn.text();
+  check('the sign-in page has one way in', signInPage.includes('Continue with Vesopa'));
+  check('and no password field', !/type="password"/.test(signInPage));
+  check('and nothing to create an account with', !/href="\/register"/.test(signInPage));
+
+  const register = await fetch(`${PANEL}/register`, { redirect: 'manual' });
+  check('registration answers with the sign-in page', register.status === 303 && (register.headers.get('location') || '').endsWith('/login'), `status ${register.status}`);
 
   console.log(`\n${passed} passed, ${failed} failed`);
   console.log('\nThe link lives in the hosting database; check it with:');

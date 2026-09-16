@@ -31,7 +31,7 @@ const mailboxes = require('../mailboxes');
 const { sendMail, shell, detailTable, escapeHtml, DEFAULT_TO } = require('../mailer');
 const { flash, field, rateLimited } = require('../http-utils');
 const {
-  NAMESERVERS, DOMAIN_NS_GRACE_DAYS, SITE_URL, POINT_HOSTNAME,
+  NAMESERVERS, DOMAIN_NS_GRACE_DAYS, SITE_URL, POINT_HOSTNAME, VESOPA_ONLY,
 } = require('../config');
 
 const router = express.Router();
@@ -2809,6 +2809,8 @@ router.post('/settings', async (req, res, next) => {
 
 router.post('/settings/password', async (req, res, next) => {
   try {
+    // There is no password when the Vesopa account is the way in.
+    if (VESOPA_ONLY) return res.redirect('/panel/settings');
     if (!auth.checkCsrf(req)) return res.redirect('/panel/settings');
 
     const current = String(req.body.current_password || '');

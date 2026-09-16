@@ -15,7 +15,7 @@
   It refreshes itself every few seconds, because a page about whether something
   is up is worthless the moment it is stale.
 %>
-<%- include('../partials/head', { extraCss: '/assets/css/panel.css', sections: false }) %>
+<%- include('../partials/head', { nativeNav: true, extraCss: '/assets/css/panel.css', sections: false }) %>
 <link rel="stylesheet" href="<%= asset('/assets/css/apps.css') %>">
 <%- include('../partials/panel-shell', {
   pageTitle: 'Node.js apps',

@@ -394,6 +394,17 @@ through us is a purchase and goes through checkout; naming one you own is not,
 and gating it behind a sale would mean a customer moving a live site cannot see
 the panel they are being asked to trust. `/panel/domains/add`.
 
+**Two names for the same two machines.** `ns1/ns2.onzep.uk` are the same
+nameservers as `ns1/ns2.vesopa.com`, and a domain delegated to either pair —
+or one of each — verifies. Nothing ever prints the `onzep.uk` names: every
+instruction, email and "Point it at us" card shows `NS1`/`NS2` only. The
+aliases live in `NS_ALIASES`, aligned by position with `NS1`/`NS2`, and an
+alias only counts while the public DNS says it resolves to the same address as
+our own nameservers (`nameservers.acceptedAliases`) — heat6.com was once falsely
+verified because `ns1.onzep.uk` was a *different* box whose zone happened to
+name ours, and a list that trusted the name would do it again the day the name
+moves.
+
 **It gets them nothing until the nameservers agree.** A domain typed into a form
 is a claim, not a fact — the person typing it may not own it, and a platform
 that will serve a site, accept mail and issue a certificate for any name it is
@@ -701,6 +712,47 @@ re-renders them on their own after every basket change and hands them back as
 fragments — see below.
 
 ---
+
+## One way in
+
+**The Vesopa account is the only sign-in.** `/login` is one button — *(mark)
+Continue with Vesopa* — and nothing else: no email field, no password, no
+"Forgotten?", no "Create an account". The first Vesopa sign-in from an address
+the panel has never seen creates the customer (`src/routes/vesopa-sso.js`),
+which is exactly what `/register` used to create minus the password. Checkout
+asks a stranger to continue with Vesopa before it takes their billing details;
+the basket is a cookie and survives the round trip. Staff sign in to `/admin`
+the same way, matched against `hosting_admins` by verified address and never
+created.
+
+For that to work, the `vesopa-cloud` client on auth.vesopa.com has
+`allow_self_enroll = 1` (its `schema_020`). With it at 0, everybody who is not
+already on that client's member list is turned away on auth.vesopa.com with
+"not been given access to Vesopa Cloud" — which is what the owner met, as a
+stranger to his own product's list.
+
+`VESOPA_AUTH_PANEL_ONLY=off` brings every password form back exactly as it was:
+the routes are still there behind the flag (`config.VESOPA_ONLY`), so rolling
+back is a restart, not a deploy.
+
+**A refusal is a redirect, never a render.** The Vesopa callback used to render
+the sign-in page ON the callback address when something went wrong. That
+address carries a one-time code, so a reload replayed it with a dead code, and
+Safari — which had the old password form in its history — asked "Confirm form
+resubmission". Every failure now sets a flash and redirects to `/login`, which
+draws the message inline and where a reload does nothing.
+
+**The browser's own loading state never shows.** `public/assets/js/loadbar.js`
+draws the same green line auth.vesopa.com draws, started by an inline script in
+the `<head>` before first paint (admitted by a per-request CSP nonce), and
+`nav.js` fetches links and posts forms itself so the browser has nothing to
+spin for. A route that redirects answers a router request with `204` and
+`X-Vesopa-Location` (see `src/server.js`). `app.js` and `panel.js` run once per
+document and re-decorate each page on `vesopa:navigated`, with their
+document-level listeners bound to a per-page AbortSignal. Pages whose script
+holds state a swap would strand — the file manager, the terminal, the app-job
+pages, onboarding — carry `data-native-nav` on `<body>` and are always reached
+and left by a real navigation, bar included.
 
 ## Decisions worth knowing
 

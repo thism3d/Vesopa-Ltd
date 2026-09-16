@@ -48,6 +48,32 @@
       admin opt out with `sections: false` rather than pay for it on every screen. %>
   <% if (typeof sections === 'undefined' || sections) { %><link rel="stylesheet" href="<%= asset('/assets/css/sections.css') %>"><% } %>
   <% if (typeof extraCss !== 'undefined') { %><link rel="stylesheet" href="<%= asset(extraCss) %>"><% } %>
+  <%#
+    The loading bar, before first paint.
+
+    loadbar.js is loaded at the end of the body, so on its own the Vesopa bar
+    could only ever describe a navigation that had already finished arriving —
+    it showed for a click and never for the page the click led to. On a slow
+    connection that is exactly backwards: the wait somebody notices is the
+    first one, and the only thing filling it was the browser's own bar, which
+    is the thing the owner asked to be rid of.
+
+    A few lines, inline, in the head, because that is the only place that runs
+    before first paint; the nonce is what the Content-Security-Policy admits it
+    on (src/server.js). It appends to <html> rather than <body>, which does not
+    exist yet. loadbar.js adopts it a moment later and finishes it on `load`.
+    Wrapped in try/catch: a page must not be taken down by its progress bar.
+  %>
+  <script nonce="<%= nonce %>">
+    try {
+      var vBar = document.createElement('div');
+      vBar.id = 'loadbar';
+      vBar.className = 'on';
+      vBar.setAttribute('aria-hidden', 'true');
+      vBar.style.width = '10%';
+      document.documentElement.appendChild(vBar);
+    } catch (e) {}
+  </script>
 </head>
 <%# The active currency, for the handful of places a running total is worked
     out in the browser (the mailbox counter on the email pricing grid).
@@ -58,5 +84,8 @@
     when a 500-mailbox total runs past four figures. %>
 <body data-cur-symbol="<%= currency.symbol %>"
       data-cur-code="<%= currency.code %>"
-      data-cur-locale="<%= currency.locale %>"<% if (typeof bodyClass !== 'undefined') { %> class="<%= bodyClass %>"<% } %>>
+      data-cur-locale="<%= currency.locale %>"<% if (typeof bodyClass !== 'undefined') { %> class="<%= bodyClass %>"<% } %><%#
+        A page whose script holds state the no-reload router would strand —
+        a websocket, a poller, its own history entries — is reached and left
+        by a real navigation. nav.js reads this and stands aside. %><% if (typeof nativeNav !== 'undefined' && nativeNav) { %> data-native-nav<% } %>>
 <a class="skip-link" href="#main">Skip to content</a>

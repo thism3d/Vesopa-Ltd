@@ -74,6 +74,11 @@
   <span data-flash="<%= flash.message %>" data-flash-kind="<%= flash.kind || 'ok' %>" hidden></span>
 <% } %>
 
+<%# The bar first and the router second: the router uses the bar if it is
+    there, and each works without the other. Neither is deferred — they must
+    be running before the page's own scripts, which are. %>
+<script src="<%= asset('/assets/js/loadbar.js') %>"></script>
+<script src="<%= asset('/assets/js/nav.js') %>"></script>
 <script src="<%= asset('/assets/js/app.js') %>" defer></script>
 <% if (typeof extraJs !== 'undefined') { %><script src="<%= asset(extraJs) %>" defer></script><% } %>
 </body>

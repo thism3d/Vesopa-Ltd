@@ -52,11 +52,18 @@ router.use(async (req, res, next) => {
 // ---------------------------------------------------------------------------
 router.get('/login', (req, res) => {
   if (req.admin) return res.redirect('/admin');
-  res.render('admin/login', { title: 'Admin sign in', robots: 'noindex', error: null, values: {} });
+  // A refusal from the Vesopa callback arrives as a flash — drawn inline, once.
+  const refused = res.locals.flash && res.locals.flash.kind === 'error' ? res.locals.flash.message : null;
+  if (refused) res.locals.flash = null;
+  res.render('admin/login', { title: 'Admin sign in', robots: 'noindex', error: refused, values: {} });
 });
 
 router.post('/login', async (req, res, next) => {
   try {
+    // Staff sign in with Vesopa (routes/vesopa-sso.js). The password form is
+    // off behind the same flag as the customers' one, and for the same reason.
+    if (config.VESOPA_ONLY) return res.redirect(303, '/admin/login');
+
     const email = field(req.body.email, 190).toLowerCase();
     const password = String(req.body.password || '');
 

@@ -20,6 +20,11 @@
 
           <% if (customer) { %>
             <div class="chip mb-2"><%- icon('user', 16) %> Signed in as <b><%= customer.email %></b></div>
+          <% } else if (vesopaOnly && typeof vesopaSso !== 'undefined' && vesopaSso) { %>
+            <%# No password to choose: the Vesopa account IS the account. The
+                basket is a cookie, so it is still here when they come back. %>
+            <p class="small muted mb-2">Your order is kept under your Vesopa account — one account for every Vesopa product.</p>
+            <%- include('../partials/vesopa-button', { href: '/auth/vesopa/start?next=' + encodeURIComponent('/checkout') }) %>
           <% } else { %>
             <div class="field <%= errors.email ? 'field-error' : '' %>">
               <label class="label" for="email">Email address</label>

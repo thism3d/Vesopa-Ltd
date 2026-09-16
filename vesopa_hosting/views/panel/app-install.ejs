@@ -11,7 +11,7 @@
   rather than a sentence, and the copy says exactly where the old files go so
   that somebody who does it anyway knows they are recoverable.
 %>
-<%- include('../partials/head', { extraCss: '/assets/css/panel.css', sections: false }) %>
+<%- include('../partials/head', { nativeNav: true, extraCss: '/assets/css/panel.css', sections: false }) %>
 <link rel="stylesheet" href="<%= asset('/assets/css/apps.css') %>">
 <%- include('../partials/panel-shell', {
   pageTitle: 'Install ' + app.name,
