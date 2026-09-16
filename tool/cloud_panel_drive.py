@@ -43,7 +43,7 @@ def check(label, ok, detail=""):
         failed += 1
 
 
-result = subprocess.run([sys.executable, str(ROOT / "tool" / "cloud_ssh.py"), "run", MINT], cwd=str(ROOT), text=True, capture_output=True)
+result = subprocess.run([sys.executable, str(ROOT / "tool" / "cloud_ssh.py"), "run", MINT], cwd=str(ROOT), text=True, encoding="utf-8", errors="replace", capture_output=True)
 token = next((line.split(" ", 1)[1].strip() for line in result.stdout.splitlines() if line.startswith("COOKIE ")), "")
 if not token:
     raise SystemExit("could not mint a session:\n" + result.stdout + result.stderr)

@@ -1177,8 +1177,22 @@ async function dkimRecord({ username, domain }) {
  * That name has no certificate of its own and is not where we want anybody
  * sent: webmail, IMAP and SMTP are all one hostname for every customer, so the
  * per-domain alias is a broken door with our name on it.
+ *
+ * EXCEPT FOR THE DOMAIN THAT HOSTS THAT ONE HOSTNAME. `mail.vesopa.com` — the
+ * webmail every customer is sent to — IS the webmail alias of the `vesopa.com`
+ * mail domain: the same Hestia vhost, the same certificate. On 2026-09-08 a
+ * mailbox was added to vesopa.com through the panel, this ran against it, and
+ * the vhost that serves everybody's webmail was deleted. nginx kept serving it
+ * from memory until the next reload eight days later, at which point
+ * mail.vesopa.com fell through to the default server: a stranger's
+ * certificate and a "Success!" stub instead of an inbox. So the alias that IS
+ * the shared hostname is never touched, whoever asks.
  */
 async function removeWebmailAlias({ username, domain }) {
+  const shared = String(process.env.MAIL_HOSTNAME || 'mail.vesopa.com').trim().toLowerCase();
+  if (shared === `mail.${String(domain || '').trim().toLowerCase()}`) {
+    return { ok: true, kept: true };
+  }
   await run('v-delete-mail-domain-webmail', [username, domain]).catch((err) => {
     if (err.code !== 3 && err.code !== 5) throw err;   // not there is the goal
   });
