@@ -510,11 +510,15 @@ router.get('/admin/health', async (req, res, next) => {
        WHERE created_at > DATE_SUB(NOW(), INTERVAL 24 HOUR)
     `);
 
+    // One person, one account — asked of the data, not assumed of the code.
+    const doubled = await require('../selfcheck').duplicateAddresses();
+
     return page(res, 'admin/health', session, {
       title: 'Health',
       path: '/admin/health',
       database,
       keys,
+      doubled,
       providers: all.map((key) => ({
         key,
         on: enabled.some((row) => row.key === key),

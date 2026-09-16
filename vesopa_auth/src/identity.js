@@ -318,13 +318,21 @@ async function revokeIdentity(userId, identityId, reason = 'user') {
  */
 async function findLinkCandidate(assertedEmail, normalised, providerTrustsEmail) {
   if (!providerTrustsEmail || !normalised) return null;
+  if (isPrivateRelay(assertedEmail)) return null;
   const existing = await findIdentity('email', normalised);
-  if (!existing) return null;
   // An address we have never proved ourselves is not a safe thing to match on
   // from either direction.
-  if (!existing.verified_at) return null;
-  if (isPrivateRelay(assertedEmail)) return null;
-  return existing;
+  if (existing) return existing.verified_at ? existing : null;
+  /*
+   * No email row — but another PROVIDER may already hold this address for
+   * somebody. Google first, GitHub second, each asserting the same verified
+   * address, and neither ever typed it on the sign-in page: the first made an
+   * account with the address on its provider row only, so a lookup of email
+   * rows finds nothing and the second would make a second account. The same
+   * two-proofs argument as findByAssertedEmail applies — a provider we trust
+   * verified it then, and one we trust has verified it now.
+   */
+  return findByAssertedEmail(normalised);
 }
 
 /**

@@ -54,6 +54,32 @@
 </div>
 <% } %>
 
+<%
+  /*
+   * ONE PERSON, ONE ACCOUNT. An address held by two active accounts is a
+   * person who will be refused by every application the other one was added
+   * to, and told "not been given access" for a product they use daily. It
+   * happened to the owner on 2026-09-09 (GitHub, then an emailed code). The
+   * sign-in code now refuses to make the second account; this is the check
+   * that it stays true, and it names the fix.
+   */
+%>
+<% if (doubled && doubled.length) { %>
+<div class="status status-bad">
+  <span class="status-mark"><%- include('../partials/icon', { name: 'alert' }) %></span>
+  <div>
+    <strong><%= doubled.length %> address<%= doubled.length === 1 ? ' is' : 'es are' %> held by more than one account</strong>
+    <p>
+      One person, one account. Each of these people will be refused by any
+      application their other account was added to.
+      <% doubled.forEach(function (row) { %><br><code><%= row.norm %></code> — users <%= row.users %><% }); %>
+      <br>Merge them on the server:
+      <code>node scripts/merge-users.js &lt;from&gt; &lt;into&gt; --dry</code>, then without <code>--dry</code>.
+    </p>
+  </div>
+</div>
+<% } %>
+
 <section class="card">
   <h2 class="card-head">This server</h2>
   <dl class="facts">

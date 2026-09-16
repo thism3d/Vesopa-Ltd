@@ -57,8 +57,55 @@ async function unusableClients() {
   }
 }
 
+/**
+ * Addresses held by more than one active account.
+ *
+ * ONE PERSON, ONE ACCOUNT is the rule, and the sign-in code enforces it in
+ * every direction it knows about (identity.findLinkCandidate,
+ * identity.findByAssertedEmail). It was not always so: on 2026-09-09 a GitHub
+ * sign-in and an emailed code made two accounts for one address, and nobody
+ * knew until the second one was refused by an application the first had been
+ * added to. A guard in code cannot see rows that already exist, and a new
+ * path could always be written without one — so the database is asked on
+ * every boot whether the rule holds, and the answer names the fix:
+ * scripts/merge-users.js.
+ */
+async function duplicateAddresses() {
+  try {
+    return await db.query(
+      `SELECT norm, GROUP_CONCAT(DISTINCT user_id ORDER BY user_id) AS users
+         FROM (
+           SELECT i.user_id, i.identifier_norm AS norm
+             FROM user_identities i JOIN users u ON u.id = i.user_id
+            WHERE i.type = 'email' AND i.revoked_at IS NULL AND i.verified_at IS NOT NULL
+              AND u.status = 'active'
+           UNION ALL
+           SELECT i.user_id, i.asserted_email_norm
+             FROM user_identities i JOIN users u ON u.id = i.user_id
+            WHERE i.type NOT IN ('email', 'phone') AND i.revoked_at IS NULL
+              AND i.asserted_email_verified = 1 AND i.asserted_email_norm <> ''
+              AND u.status = 'active'
+         ) held
+        GROUP BY norm HAVING COUNT(DISTINCT user_id) > 1
+        ORDER BY norm`,
+    );
+  } catch (error) {
+    console.warn('[selfcheck] could not check for duplicate addresses:', error.message);
+    return [];
+  }
+}
+
 /** Say what is broken, in words that name the fix. */
 async function report() {
+  const doubled = await duplicateAddresses();
+  if (doubled.length) {
+    console.error(`[boot] ${doubled.length} address(es) are held by MORE THAN ONE account — one person, one account:`);
+    for (const row of doubled) console.error(`[boot]   ${row.norm} — users ${row.users}`);
+    console.error('[boot]   Merge them: node scripts/merge-users.js <from> <into> --dry, then without --dry.');
+  } else {
+    console.log('[boot] no address is held by more than one account');
+  }
+
   const broken = await unusableClients();
   if (!broken.length) {
     console.log('[boot] every active application can be signed in to');
@@ -83,4 +130,4 @@ async function report() {
   return broken;
 }
 
-module.exports = { unusableClients, report };
+module.exports = { unusableClients, duplicateAddresses, report };

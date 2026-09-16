@@ -18,7 +18,8 @@ const { authorizeAnsweringConsent, clearConsent } = require('./lib/consent');
 const { newId, newToken, hashToken } = require('../src/crypto');
 
 const PANEL = 'https://cloud.vesopa.com';
-const ADDRESS = 'developer@vesopa.com';
+// Another of the developer's own addresses may be given: `node scripts/smoke-panel-sso.js muzahid@onzep.uk`.
+const ADDRESS = process.argv[2] || 'developer@vesopa.com';
 
 let passed = 0;
 let failed = 0;
@@ -71,11 +72,8 @@ async function main() {
     registered.map((r) => r.uri).join(', '),
   );
 
-  await db.execute(
-    `INSERT INTO application_members (application_id, user_id, status)
-     VALUES (?, ?, 'active') ON DUPLICATE KEY UPDATE status = 'active'`,
-    [application.id, user.id],
-  );
+  // The client self-enrols now (schema_020); nothing needs adding by hand, and
+  // a person who is NOT yet a member is the more interesting test.
 
   const token = newToken(32);
   await db.execute(
