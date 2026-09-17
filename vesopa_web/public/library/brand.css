@@ -1330,6 +1330,9 @@ main a:not([class]), .privacy_item_sub_heading a, p a:not([class]) { color: var(
 
 .device_platform_specific_image {
   width: 100%;
+  /* The tag carries width/height so the page does not jump while it loads;
+     without height:auto a phone squeezed it to the column and kept the 720px. */
+  height: auto;
   max-width: 760px;
   padding: 0;
   display: block;
