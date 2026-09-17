@@ -54,12 +54,21 @@ const over = typeof navOver !== 'undefined' && navOver;
           people wherever they were. The `to` parameter is what brings them back
           to this exact page instead of the homepage, and it is validated
           server-side before it is redirected to. %>
-      <%# The language switcher.
+      <%# The language switcher: the OTHER language, not a segmented control.
 
-          Two languages is a toggle, not a menu: a <details> to choose between
-          exactly two things costs a click to discover what the other one is.
-          It loops `locales` rather than naming them, so a third language is a
-          row in src/i18n's LOCALES and nothing here.
+          It was a two-segment toggle showing both languages, and it was
+          measured off the end of the screen. This bar was already full — in
+          English it wanted 1195px inside a 1180px wrap — so the 86px the
+          toggle added pushed "Get started" 36px past the right edge of a
+          1440px window. Showing only the language you are not reading costs
+          about half that, and says the same thing: the page you are on is
+          already in the language you are in.
+
+          It still loops, so a third language is a row in src/i18n's LOCALES
+          and nothing here — with three you get two links. Below 1400px even
+          this does not fit, and it comes out of the bar; the same choice is in
+          the currency menu beside it, in the phone sheet and in the footer, so
+          it is never the only way through.
 
           `data-no-router` is load-bearing. The no-reload router swaps
           body.innerHTML and leaves <head> and <html lang> alone, so a language
@@ -68,13 +77,12 @@ const over = typeof navOver !== 'undefined' && navOver;
           the browser's own scripts write. A language change is rare and a full
           load is instant on a warm cache; correctness wins. %>
       <% if (locales && locales.length > 1) { %>
-        <div class="lang-pick" role="group" aria-label="<%= t('Language') %>">
-          <% locales.forEach(function (l) { %>
-            <a class="lang-opt <%= l.code === locale ? 'is-active' : '' %>"
-               href="<%= langHref(l.code) %>" rel="nofollow" data-no-router
+        <div class="lang-pick">
+          <% locales.filter(function (l) { return l.code !== locale; }).forEach(function (l) { %>
+            <a class="lang-opt" href="<%= langHref(l.code) %>" rel="nofollow" data-no-router
                lang="<%= l.html %>" hreflang="<%= l.hreflang %>"
                title="<%= l.native %>"
-               <%= l.code === locale ? 'aria-current="true"' : '' %>><%= l.short %></a>
+               aria-label="<%= t('Read this page in {language}', { language: l.native }) %>"><%= l.short %></a>
           <% }); %>
         </div>
       <% } %>
@@ -103,6 +111,24 @@ const over = typeof navOver !== 'undefined' && navOver;
                 <%= t('We remember your choice on this device.') %>
               <% } %>
             </p>
+
+            <%# The language lives here too, and this is the copy that is
+                always reachable: the bar's own link comes out below 1400px,
+                where the row runs out of room, and this menu does not. The two
+                belong together anyway — currency and language are the same
+                question asked twice. %>
+            <% if (locales && locales.length > 1) { %>
+              <p class="cur-pick-head cur-pick-head-2"><%= t('Language') %></p>
+              <% locales.forEach(function (l) { %>
+                <a class="cur-pick-item <%= l.code === locale ? 'is-active' : '' %>"
+                   href="<%= langHref(l.code) %>" rel="nofollow" data-no-router
+                   lang="<%= l.html %>" hreflang="<%= l.hreflang %>">
+                  <span class="cur-pick-sym" aria-hidden="true"><%= l.short %></span>
+                  <span><b><%= l.native %></b></span>
+                  <% if (l.code === locale) { %><span class="cur-pick-tick">✓</span><% } %>
+                </a>
+              <% }); %>
+            <% } %>
           </div>
         </details>
       <% } %>
