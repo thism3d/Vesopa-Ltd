@@ -59,7 +59,7 @@ footer{border-top:1px solid var(--line);color:var(--muted);font-size:14px;paddin
 <header><a href="/"><img src="/assets/vesopa_logo_on_dark.png" alt="Vesopa" width="128" height="20">Loyalty</a></header>
 <main>
 <h1>Privacy policy for Vesopa Loyalty apps</h1>
-<p class="updated">Applies to The Vesopa Kitchen and every venue loyalty app built on Vesopa Loyalty, on Android, Windows and the web. Last updated ${UPDATED}.</p>
+<p class="updated">Applies to The Vesopa Kitchen and every venue loyalty app built on Vesopa Loyalty, on iPhone, iPad, Android, Windows and the web. Last updated ${UPDATED}.</p>
 
 <div class="summary">
 <ul>
@@ -105,7 +105,7 @@ footer{border-top:1px solid var(--line);color:var(--muted);font-size:14px;paddin
 <p>We never sell personal data. It is shared only with the services that make the app work:</p>
 <ul>
 <li><strong>The venue</strong> whose app it is, in its Vesopa back office.</li>
-<li><strong>Google Firebase Cloud Messaging</strong> (Android), <strong>Microsoft Windows Push Notification Services</strong> (Windows) and your browser's push service (web), which receive a notification token and the message to deliver it.</li>
+<li><strong>Apple Push Notification service</strong> (iPhone and iPad), <strong>Google Firebase Cloud Messaging</strong> (Android), <strong>Microsoft Windows Push Notification Services</strong> (Windows) and your browser's push service (web), which receive a notification token and the message to deliver it.</li>
 <li><strong>Postcoder</strong>, a UK provider, which receives your mobile number to send text-message sign-in codes.</li>
 <li><strong>Vesopa Auth</strong> (auth.vesopa.com), if you choose Continue with Vesopa or ask for your data to be deleted.</li>
 </ul>

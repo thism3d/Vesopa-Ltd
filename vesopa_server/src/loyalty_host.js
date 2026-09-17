@@ -86,7 +86,7 @@ function loyaltyHostGate() {
 
     if (path === '/health' || PASS.some((p) => path.startsWith(p))) return next();
     // The public page and its editor (src/loyalty_site.js).
-    if (path === '/' || path === '/privacy' || path === '/sitemap.xml' || path === '/admin' || path.startsWith('/admin/')) return next();
+    if (path === '/' || path === '/privacy' || path === '/support' || path === '/sitemap.xml' || path === '/admin' || path.startsWith('/admin/')) return next();
     if (path === '/robots.txt') {
       return res.type('text/plain').send(`User-agent: *\nDisallow: /admin\nAllow: /\nSitemap: https://${LOYALTY_HOST}/sitemap.xml\n`);
     }
