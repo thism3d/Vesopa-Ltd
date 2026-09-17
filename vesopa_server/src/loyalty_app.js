@@ -54,6 +54,7 @@ const { catalogueFor } = require('./fonts');
 const QR = require('./qr');
 const loyaltyAuth = require('./loyalty_auth');
 const loyaltyAccountRoutes = require('./loyalty_account');
+const { loyaltyDeletionRoutes } = require('./privacy_provider');
 const loyaltyEmail = require('./loyalty_email');
 
 const CODE_MINUTES = 10;
@@ -1047,6 +1048,12 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
    * Mounted on this router with the session helpers handed over, so there is
    * one idea of what a customer token is and one place that mints it.
    */
+  /*
+   * Delete my account and data: filed with Vesopa Auth, which runs every
+   * deletion request (src/privacy_provider.js).
+   */
+  router.use(loyaltyDeletionRoutes({ pool, requireCustomer }));
+
   router.use(loyaltyAccountRoutes({
     pool, json, requireCustomer, customerToken, appBySlug, revokeSessions,
     callerIp, customerByEmail, ensureCard, joinScheme, brandFor, sendMail,

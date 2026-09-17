@@ -289,6 +289,22 @@ class LoyaltyApi {
 
   Future<void> removeApp() => _send('DELETE', '/loyalty/v1/me');
 
+  /// A deletion request already made from this membership, if one is waiting.
+  Future<Map<String, dynamic>?> deletionRequest() async {
+    final json = await _send('GET', '/loyalty/v1/me/deletion');
+    return json['request'] as Map<String, dynamic>?;
+  }
+
+  /// Ask for this membership's data to be deleted: `scheduled` after [days]
+  /// (7, 15 or 30), or `review` for as soon as possible. Vesopa Auth runs it.
+  Future<Map<String, dynamic>?> requestDeletion({required String mode, int? days}) async {
+    final json = await _send('POST', '/loyalty/v1/me/deletion', body: {
+      'mode': mode,
+      if (days != null) 'delay_days': days,
+    });
+    return json['request'] as Map<String, dynamic>?;
+  }
+
   /// Continue with Vesopa before there is a venue: the Store app's way in.
   ///
   /// Needs no [slug] of its own. The server answers with a token and the venue

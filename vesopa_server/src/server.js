@@ -67,6 +67,7 @@ const { demoRoutes } = require('./demo_venue');
 const { licenceRoutes, adminLicenceRoutes } = require('./licences');
 const licences = require('./licences');
 const { loyaltyAppRoutes, startLoyaltyScheduler } = require('./loyalty_app');
+const { privacyRoutes } = require('./privacy_provider');
 const { expressKioskRoutes } = require('./express_kiosk');
 const { walletPageRoutes } = require('./wallet_pages');
 const { giftIntegrationRoutes } = require('./gift_integration');
@@ -1643,6 +1644,8 @@ function sendShell(_req, res) {
 // the menu address too -- menu.vesopaepos.com/app/<slug>/ -- where everything
 // not claimed before the guard is refused. See src/loyalty_app.js.
 app.use(loyaltyAppRoutes({ pool, broadcast, secret: JWT_SECRET }));
+// Vesopa Auth's deletion requests reach members' data here (signed).
+app.use(privacyRoutes({ pool }));
 
 app.use(dineinPageRoutes({ pool }));
 

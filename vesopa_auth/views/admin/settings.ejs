@@ -41,6 +41,7 @@
       <% Object.entries(definitions).forEach(function (entry) {
            const name = entry[0];
            const definition = entry[1];
+           if (definition.hidden) return;
       %>
       <div class="field">
         <label for="set-<%= name %>"><%= definition.label %></label>

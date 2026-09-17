@@ -1064,97 +1064,12 @@ router.post('/account/apps/:id/revoke', csrf.verify, async (req, res, next) => {
 
 // ---------------------------------------------------------------------------
 // Deletion
+//
+// Lives at /delete-account now (src/routes/deletion.js), which covers each
+// app's data as well as the Vesopa account, works for somebody who has no
+// account, and is the page the store listings link to. /account/delete
+// redirects there.
 // ---------------------------------------------------------------------------
-
-/*
- * A working route to delete an account is not optional: Apple requires it of
- * anything offering Sign in with Apple, and UK GDPR gives the right to erasure
- * regardless. It is also read by the OAuth reviewers, so it must resolve.
- */
-router.get('/account/delete', async (req, res, next) => {
-  try {
-    const session = await guard(req, res);
-    if (!session) return undefined;
-    return page(res, 'account/delete', session, {
-      title: 'Delete your account',
-      error: req.query.error || '',
-    });
-  } catch (error) {
-    return next(error);
-  }
-});
-
-router.post('/account/delete', csrf.verify, async (req, res, next) => {
-  try {
-    const session = await guard(req, res);
-    if (!session) return undefined;
-
-    if (String(req.body.confirm || '').trim().toUpperCase() !== 'DELETE') {
-      return res.redirect(303, '/account/delete?error=Type+DELETE+to+confirm.');
-    }
-
-    /*
-     * Marked, not erased, and the grace period is the reason.
-     *
-     * An account deleted the instant somebody clicks is an account a stranger
-     * with a borrowed session can destroy, and a person who changes their mind
-     * cannot recover. The identifiers are revoked immediately — so they become
-     * free for use elsewhere at once, which is the behaviour the owner asked
-     * for — and the row itself is purged by the sweeper after the published
-     * thirty days.
-     */
-    await db.transaction(async (tx) => {
-      await tx.execute(
-        "UPDATE users SET status = 'deleted', deletion_requested_at = NOW() WHERE id = ?",
-        [session.user_id],
-      );
-      await tx.execute(
-        "UPDATE user_identities SET revoked_at = NOW(), revoked_reason = 'account_deleted' WHERE user_id = ? AND revoked_at IS NULL",
-        [session.user_id],
-      );
-      await tx.execute(
-        "UPDATE sso_sessions SET revoked_at = NOW(), revoked_reason = 'account_deleted' WHERE user_id = ? AND revoked_at IS NULL",
-        [session.user_id],
-      );
-      await tx.execute(
-        "UPDATE oauth_refresh_tokens SET revoked_at = NOW(), revoked_reason = 'account_deleted' WHERE user_id = ? AND revoked_at IS NULL",
-        [session.user_id],
-      );
-    });
-
-    await events.recordAudit({
-      actorUserId: session.user_id,
-      action: 'account.deletion_requested',
-      targetType: 'user',
-      targetId: session.user_public_id,
-      ip: req.clientIp,
-      userAgent: req.userAgent,
-    });
-
-    /*
-     * The most important event this system sends, and the reason webhooks exist
-     * at all: the person exercised a legal right to be erased, and a dozen
-     * applications are each holding a copy of their name and address. It is
-     * emitted after the tombstone but the memberships survive it, so the
-     * fan-out still knows who to tell.
-     */
-    await webhooks.emitForUser(session.user_id, 'user.deleted', async (user, subject) => ({
-      sub: subject,
-      deleted_at: new Date().toISOString(),
-    }));
-
-    sessions.clearCookie(res);
-    return res.render('account/deleted', {
-      title: 'Your account has been deleted',
-      nonce: res.locals.nonce,
-      config,
-      days: config.retention.deletedAccountDays,
-      noindex: true,
-    });
-  } catch (error) {
-    return next(error);
-  }
-});
 
 async function notify(userId, { heading, body, req }) {
   try {

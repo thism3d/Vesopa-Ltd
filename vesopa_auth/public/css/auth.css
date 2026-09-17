@@ -1602,3 +1602,55 @@ a { color: var(--text); }
   font-size: 13.5px;
   color: var(--text-muted, #6b7280);
 }
+
+/* --------------------------------------------------------------------------
+ * Deleting an account and data (/delete-account)
+ *
+ * A wider card than sign-in: this page carries the explanation Google Play
+ * requires -- steps, what is deleted, what is kept -- and at 408px it read as
+ * a wall of text.
+ * ------------------------------------------------------------------------ */
+
+.auth-card-wide { max-width: 600px; }
+
+.del-section { margin: 22px 0 6px; }
+.del-section h2 { font-size: 15.5px; margin: 18px 0 8px; letter-spacing: .005em; }
+.del-steps { margin: 0 0 10px; padding-left: 22px; font-size: 15px; }
+.del-steps li { margin-bottom: 8px; }
+.del-note { font-size: 14.5px; color: var(--text-muted); margin: 10px 0 16px; }
+.del-form { margin: 18px 0 8px; }
+.del-form-inline { margin: 0; }
+
+.del-fieldset { border: 0; margin: 0 0 18px; padding: 0; min-width: 0; }
+.del-fieldset legend { font-size: 14px; font-weight: 600; margin-bottom: 8px; padding: 0; }
+
+.choice-list { display: grid; gap: 8px; }
+.choice {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  cursor: pointer;
+}
+.choice:has(input:checked) { border-color: var(--text); background: var(--surface-2); }
+.choice input[type="checkbox"],
+.choice input[type="radio"] { width: 18px; height: 18px; margin: 2px 0 0; flex: 0 0 auto; accent-color: var(--green-dark); }
+.choice-plain { border: 0; padding: 4px 0 14px; background: transparent; }
+.choice-plain:has(input:checked) { background: transparent; }
+.choice-body { display: grid; gap: 3px; min-width: 0; }
+.choice-title { font-size: 15px; font-weight: 600; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.choice-detail { font-size: 13.5px; color: var(--text-muted); }
+select.del-days { width: auto; min-height: 36px; padding: 5px 10px; font-size: 15px; }
+
+.notice-warn {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  font-size: 14.5px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--warn-line);
+  background: var(--warn-bg);
+  color: var(--warn);
+}

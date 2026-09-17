@@ -34,6 +34,7 @@ const rollups = require('../rollups');
 const portal = require('../portal');
 const recovery = require('../recovery');
 const invitations = require('../invitations');
+const deletion = require('../deletion');
 const csrf = require('../csrf');
 const { normaliseEmail, normalisePhone } = require('../normalise');
 
@@ -47,6 +48,7 @@ const RAIL = [
   { href: '/admin/health', label: 'Health', icon: 'shield', tint: 'amber' },
   { href: '/admin/invitations', label: 'Invitations', icon: 'mail', tint: 'green' },
   { href: '/admin/recoveries', label: 'Recoveries', icon: 'key', tint: 'amber' },
+  { href: '/admin/deletions', label: 'Deletion requests', icon: 'trash', tint: 'red' },
   { href: '/admin/settings', label: 'Sign-in page', icon: 'settings', tint: 'pink' },
   { group: 'Elsewhere' },
   { href: '/developers', label: 'Developer portal', icon: 'code', tint: 'slate' },
@@ -752,6 +754,129 @@ router.post('/admin/people/:publicId/recover', csrf.verify, async (req, res, nex
       303,
       `/admin/people/${encodeURIComponent(req.params.publicId)}?saved=1${shown}`,
     );
+  } catch (error) {
+    return next(error);
+  }
+});
+
+
+// ===========================================================================
+// Deletion requests
+//
+// Every request to delete an account or an app's data (src/deletion.js). The
+// "as soon as possible" ones wait here for an administrator; the scheduled ones
+// are listed with the day they will run, and can be brought forward.
+// ===========================================================================
+
+async function deletionOr404(req, res, session) {
+  const request = await deletion.getByPublicId(req.params.publicId);
+  if (!request) {
+    res.status(404).render('error', {
+      title: 'Page not found', heading: 'That request is not here',
+      message: 'It may have been mistyped.', config, nonce: res.locals.nonce, noindex: true,
+    });
+    return null;
+  }
+  return request;
+}
+
+router.get('/admin/deletions', async (req, res, next) => {
+  try {
+    const session = await requireAdmin(req, res);
+    if (!session) return undefined;
+    const rows = await deletion.list();
+    const live = await settings.all();
+    return page(res, 'admin/deletions', session, {
+      title: 'Deletion requests',
+      path: '/admin/deletions',
+      waiting: rows.filter((r) => ['awaiting_review', 'needs_attention', 'processing'].includes(r.status)),
+      scheduled: rows.filter((r) => r.status === 'scheduled'),
+      finished: rows.filter((r) => ['completed', 'cancelled', 'rejected'].includes(r.status)).slice(0, 100),
+      counts: await deletion.counts(),
+      providers: await deletion.providers(),
+      defaultDays: live.deletion_default_days,
+      notifyEmail: live.deletion_notify_email,
+      dayChoices: deletion.DAY_CHOICES,
+      saved: req.query.saved === '1',
+      error: String(req.query.error || '').slice(0, 200),
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/admin/deletions/settings', csrf.verify, async (req, res, next) => {
+  try {
+    const session = await requireAdmin(req, res);
+    if (!session) return undefined;
+    const email = normaliseEmail(String(req.body.deletion_notify_email || ''));
+    if (!email || !email.includes('@')) {
+      return res.redirect(303, '/admin/deletions?error=Enter+an+email+address+to+tell+about+new+requests.');
+    }
+    const days = await settings.set('deletion_default_days', String(req.body.deletion_default_days || ''), session.user_id);
+    if (!days.ok) return res.redirect(303, '/admin/deletions?error=Choose+7%2C+15+or+30+days.');
+    await settings.set('deletion_notify_email', email, session.user_id);
+    await events.recordAudit({
+      actorUserId: session.user_id, actorType: 'admin', action: 'settings.updated',
+      targetType: 'settings', targetId: 'deletion_default_days,deletion_notify_email',
+      detail: { deletion_default_days: req.body.deletion_default_days, deletion_notify_email: email },
+      ip: req.clientIp, userAgent: req.userAgent,
+    });
+    return res.redirect(303, '/admin/deletions?saved=1');
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.get('/admin/deletions/:publicId', async (req, res, next) => {
+  try {
+    const session = await requireAdmin(req, res);
+    if (!session) return undefined;
+    const request = await deletionOr404(req, res, session);
+    if (!request) return undefined;
+    const decidedBy = request.decided_by_user_id
+      ? await db.one('SELECT display_name FROM users WHERE id = ?', [request.decided_by_user_id])
+      : null;
+    return page(res, 'admin/deletion', session, {
+      title: 'Deletion request',
+      path: '/admin/deletions',
+      request,
+      decidedBy: decidedBy ? decidedBy.display_name : '',
+      done: String(req.query.done || ''),
+      error: String(req.query.error || '').slice(0, 300),
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/admin/deletions/:publicId/:action', csrf.verify, async (req, res, next) => {
+  try {
+    const session = await requireAdmin(req, res);
+    if (!session) return undefined;
+    const request = await deletionOr404(req, res, session);
+    if (!request) return undefined;
+    const back = `/admin/deletions/${request.public_id}`;
+    const note = String(req.body.note || '').trim().slice(0, 500);
+
+    switch (req.params.action) {
+      case 'approve': {
+        const result = await deletion.approve(request, session.user_id, note);
+        if (result.reason === 'not_open') return res.redirect(303, `${back}?error=${encodeURIComponent('This request is no longer open.')}`);
+        return res.redirect(303, `${back}?done=${result.ok ? 'deleted' : 'partial'}`);
+      }
+      case 'cancel': {
+        const ok = await deletion.cancel(request, { byUserId: session.user_id, note });
+        return res.redirect(303, ok ? `${back}?done=cancelled` : `${back}?error=${encodeURIComponent('This request is no longer open.')}`);
+      }
+      case 'reject': {
+        if (!note) return res.redirect(303, `${back}?error=${encodeURIComponent('Say why, so the person is told a reason.')}`);
+        const ok = await deletion.reject(request, session.user_id, note);
+        return res.redirect(303, ok ? `${back}?done=rejected` : `${back}?error=${encodeURIComponent('This request is no longer open.')}`);
+      }
+      default:
+        return res.redirect(303, back);
+    }
   } catch (error) {
     return next(error);
   }

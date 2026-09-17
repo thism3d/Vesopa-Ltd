@@ -82,6 +82,25 @@ const DEFINITIONS = {
       'well as a developer.',
   },
 
+  /*
+   * DELETION REQUESTS (schema_021). Kept off the sign-in settings page -- they
+   * are edited on /admin/deletions, beside the requests they govern.
+   */
+  deletion_default_days: {
+    default: '30',
+    options: ['7', '15', '30'],
+    label: 'Automatic deletion after',
+    help: 'Days before a request made without "as soon as possible" is carried out. The person can pick another.',
+    hidden: true,
+  },
+  deletion_notify_email: {
+    default: 'info@vesopasoftware.com',
+    options: null,
+    label: 'Tell this address about new requests',
+    help: 'Every new deletion request, and any that could not be completed, is emailed here.',
+    hidden: true,
+  },
+
   service_name: {
     default: 'Vesopa',
     options: null,

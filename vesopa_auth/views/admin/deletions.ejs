@@ -1,0 +1,150 @@
+<%- include('../partials/console-head') %>
+
+<h1 class="console-title">Deletion requests</h1>
+<p class="console-lead">
+  Every request to delete a Vesopa account or an app's data, from the web page
+  and from inside the apps.
+</p>
+
+<%
+  /*
+   * WHAT NEEDS SOMEBODY IS AT THE TOP.
+   *
+   * "As soon as possible" requests wait for an administrator, and a request an
+   * app could not finish needs one too. Scheduled requests run by themselves;
+   * they are listed with the day they run so nobody is surprised, and each can
+   * be opened and brought forward.
+   */
+  const niceDate = function (d) {
+    return d ? new Date(d).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' }) : '';
+  };
+  const daysUntil = function (d) {
+    const n = Math.ceil((new Date(d) - Date.now()) / 86400000);
+    return n <= 0 ? 'due now' : n === 1 ? 'in 1 day' : 'in ' + n + ' days';
+  };
+  const label = {
+    awaiting_review: ['Needs you', 'pill-bad'],
+    needs_attention: ['Could not finish', 'pill-bad'],
+    processing: ['Running', 'pill-info'],
+    scheduled: ['Scheduled', 'pill-info'],
+    completed: ['Deleted', 'pill-good'],
+    cancelled: ['Cancelled', ''],
+    rejected: ['Rejected', ''],
+  };
+%>
+
+<% if (saved) { %>
+<div class="status status-good">
+  <span class="status-mark"><%- include('../partials/icon', { name: 'check' }) %></span>
+  <div><strong>Saved.</strong><p>New requests use these settings.</p></div>
+</div>
+<% } %>
+<% if (error) { %>
+<div class="status status-bad">
+  <span class="status-mark"><%- include('../partials/icon', { name: 'alert' }) %></span>
+  <div><strong>Not saved</strong><p><%= error %></p></div>
+</div>
+<% } %>
+
+<% const row = function (r) { %>
+  <a class="row" href="/admin/deletions/<%= r.public_id %>">
+    <span class="row-mark"><%- include('../partials/icon', { name: 'trash' }) %></span>
+    <div class="row-lines">
+      <span class="row-title"><%= r.item_labels || 'Nothing listed' %></span>
+      <span class="row-sub">
+        <%= r.email || r.contact_label || 'no email' %> ·
+        <%= r.source === 'app' ? 'in the app' : 'on the web' %><%= r.app_label ? ' (' + r.app_label + ')' : '' %> ·
+        asked <%= niceDate(r.created_at) %>
+      </span>
+      <span class="row-sub">
+        <% if (r.status === 'scheduled') { %>
+          Deletes automatically <%= niceDate(r.due_at) %>, <%= daysUntil(r.due_at) %> (<%= r.delay_days %>-day choice)
+        <% } else if (r.status === 'awaiting_review') { %>
+          Asked for as soon as possible
+        <% } else if (r.completed_at) { %>
+          Finished <%= niceDate(r.completed_at) %>
+        <% } else if (r.cancelled_at) { %>
+          Cancelled <%= niceDate(r.cancelled_at) %>
+        <% } else if (r.decided_at) { %>
+          Decided <%= niceDate(r.decided_at) %><%= r.decided_by_name ? ' by ' + r.decided_by_name : '' %>
+        <% } %>
+      </span>
+    </div>
+    <div class="row-right">
+      <span class="pill <%= (label[r.status] || ['', ''])[1] %>"><%= (label[r.status] || [r.status])[0] %></span>
+    </div>
+  </a>
+<% } %>
+
+<div class="card">
+  <div class="card-head"><h2>Waiting for you</h2></div>
+  <% if (!waiting.length) { %>
+  <div class="card-body">
+    <div class="empty">
+      <span class="empty-mark"><%- include('../partials/icon', { name: 'check' }) %></span>
+      <p>Nothing needs you.</p>
+    </div>
+  </div>
+  <% } %>
+  <% waiting.forEach(function (r) { row(r); }) %>
+</div>
+
+<div class="card">
+  <div class="card-head"><h2>Scheduled to delete automatically</h2></div>
+  <% if (!scheduled.length) { %>
+  <div class="card-body"><div class="empty"><p>None scheduled.</p></div></div>
+  <% } %>
+  <% scheduled.forEach(function (r) { row(r); }) %>
+</div>
+
+<div class="card">
+  <div class="card-head"><h2>Finished</h2></div>
+  <% if (!finished.length) { %>
+  <div class="card-body"><div class="empty"><p>None yet.</p></div></div>
+  <% } %>
+  <% finished.forEach(function (r) { row(r); }) %>
+</div>
+
+<div class="card">
+  <div class="card-head"><h2>Settings</h2></div>
+  <div class="card-body">
+    <form method="post" action="/admin/deletions/settings">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="field">
+        <label for="del-days">Automatic deletion, unless the person chooses otherwise</label>
+        <select id="del-days" name="deletion_default_days">
+          <% dayChoices.forEach(function (d) { %>
+          <option value="<%= d %>" <%= String(d) === String(defaultDays) ? 'selected' : '' %>>After <%= d %> days</option>
+          <% }) %>
+        </select>
+        <p class="hint">The choice already ticked on the page and in the apps. People can still pick 7, 15 or 30.</p>
+      </div>
+      <div class="field">
+        <label for="del-email">Email new requests to</label>
+        <input type="email" id="del-email" name="deletion_notify_email" value="<%= notifyEmail %>" maxlength="190">
+        <p class="hint">Also told about any request an app could not finish.</p>
+      </div>
+      <button class="btn btn-primary btn-inline" type="submit">Save</button>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head"><h2>Apps that delete their own data</h2></div>
+  <div class="card-body">
+    <% if (!providers.length) { %>
+    <p class="hint">None connected. Only Vesopa accounts can be deleted automatically.</p>
+    <% } %>
+    <ul class="plain-list">
+      <% providers.forEach(function (p) { %>
+      <li><strong><%= p.app_display_name || p.name %></strong> — <span class="mono"><%= p.endpoint_url %></span></li>
+      <% }) %>
+    </ul>
+    <p class="hint">
+      The public page is <a href="/delete-account">/delete-account</a>. For an app's store listing, link
+      <span class="mono">/delete-account?app=&lt;app&gt;&amp;venue=&lt;venue&gt;</span> so the page names the app.
+    </p>
+  </div>
+</div>
+
+<%- include('../partials/console-foot') %>

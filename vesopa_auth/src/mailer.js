@@ -124,7 +124,7 @@ async function sendCode({ to, code, purpose = 'login', minutes = 10 }) {
     recovery: 'Use this code to get back into your Vesopa account.',
     step_up: 'Use this code to confirm it is you.',
     change_password: 'Use this code to change your password.',
-    delete_account: 'Use this code to confirm you want to delete your Vesopa account.',
+    delete_account: 'Use this code to confirm it is you asking to delete your account and data.',
   };
   const lead = lines[purpose] || lines.login;
 
@@ -203,9 +203,30 @@ async function sendSecurityNotice({ to, heading, body, when, ip, device }) {
   return send({ to, subject: `Vesopa security: ${heading}`, html, text });
 }
 
+/**
+ * A plain notice: a heading, a few paragraphs, at most one button.
+ *
+ * For the messages that are neither a code nor a security alert -- a deletion
+ * request received, carried out, or waiting for an administrator. The button
+ * is repeated as a bare link underneath because some mail clients strip styled
+ * anchors, and "open the link" with no link visible is a dead end.
+ */
+async function sendNotice({ to, subject, heading, paragraphs = [], action = null }) {
+  const html = wrap(
+    heading,
+    `<p style="margin:0 0 14px;font-size:19px;font-weight:650;">${escape(heading)}</p>
+     ${paragraphs.map((line) => `<p style="margin:0 0 14px;">${escape(line)}</p>`).join('')}
+     ${action ? `<p style="margin:20px 0 10px;"><a href="${escape(action.url)}"
+        style="display:inline-block;background:#000000;color:#ffffff;text-decoration:none;font-weight:600;padding:12px 20px;border-radius:8px;">${escape(action.label)}</a></p>
+     <p style="margin:0;font-size:13px;color:#55595c;word-break:break-all;">${escape(action.url)}</p>` : ''}`,
+  );
+  const text = [heading, '', ...paragraphs.flatMap((line) => [line, '']), ...(action ? [`${action.label}: ${action.url}`, ''] : []), FOOT_TEXT].join('\n');
+  return send({ to, subject, html, text });
+}
+
 /** Prove the mail path works without sending to a real person. */
 async function verifyConnection() {
   return getTransport().verify();
 }
 
-module.exports = { send, sendCode, sendSecurityNotice, verifyConnection };
+module.exports = { send, sendCode, sendSecurityNotice, sendNotice, verifyConnection };

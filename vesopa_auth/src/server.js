@@ -37,6 +37,8 @@ const device = require('./routes/device');
 const reauth = require('./routes/reauth');
 const choose = require('./routes/choose');
 const appapi = require('./routes/appapi');
+const deletionRoutes = require('./routes/deletion');
+const deletion = require('./deletion');
 
 const app = express();
 
@@ -149,6 +151,7 @@ app.get('/.well-known/security.txt', (req, res) => {
  * particular has to answer before anything else claims it.
  */
 app.use('/', appapi);
+app.use('/', deletionRoutes);
 app.use('/', oidc);
 app.use('/', social);
 app.use('/', mfa);
@@ -247,6 +250,11 @@ async function start() {
    */
   webhooks.startWorker();
   console.log('[boot] webhook worker running');
+
+  // Deletion requests whose day has come (src/deletion.js). Same reasoning as
+  // the webhook worker: a timer in this one process, not a cron entry.
+  deletion.startWorker();
+  console.log('[boot] deletion worker running');
 
   /*
    * Would every application actually work?

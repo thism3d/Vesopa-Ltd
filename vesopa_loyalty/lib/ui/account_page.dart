@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb, Tar
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../data/api.dart';
 import '../data/session.dart';
@@ -50,6 +51,8 @@ class AccountPage extends ConsumerWidget {
                 _Devices(account: a),
                 const SizedBox(height: 10),
                 const _LeaveCard(),
+                const SizedBox(height: 10),
+                const _DeleteCard(),
                 const SizedBox(height: 22),
                 const PoweredBy(),
               ],
@@ -684,6 +687,194 @@ class _LeaveCardState extends ConsumerState<_LeaveCard> {
           onTap: _busy ? null : () => _go(remove: true),
         ),
       ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Deleting the account and its data
+// ---------------------------------------------------------------------------
+
+/// A request already waiting, or null.
+final deletionProvider = FutureProvider.autoDispose<Map<String, dynamic>?>((ref) async {
+  final token = await ref.watch(sessionProvider.future);
+  if (token == null) return null;
+  return ref.read(apiProvider).deletionRequest();
+});
+
+/// Where the same request can be made, seen or cancelled without the app --
+/// the page the store listing links to.
+Uri deletionPage(String slug) => Uri.parse(
+  'https://auth.vesopa.com/delete-account?app=vesopa-loyalty&venue=${Uri.encodeComponent(slug)}',
+);
+
+/// "Delete account and data", which Google Play requires inside the app.
+///
+/// Unlike "Remove the app from my membership" above it, this deletes the
+/// membership's personal data: name, contact details, photo, card and sign-in.
+/// The member chooses when -- automatically after 7, 15 or 30 days, which they
+/// can cancel until then, or as soon as possible, which Vesopa's team carries
+/// out -- and Vesopa Auth runs the request and emails them about it.
+class _DeleteCard extends ConsumerWidget {
+  const _DeleteCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final pending = ref.watch(deletionProvider);
+    final request = pending.value;
+    final slug = ref.read(configProvider).slug;
+
+    return SettingsCard(
+      title: 'Your data',
+      children: [
+        if (request != null)
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.schedule, color: theme.colorScheme.error),
+            title: const Text('Deletion requested'),
+            subtitle: Text(
+              request['mode'] == 'review'
+                  ? 'Our team will delete your account and data soon, and email you when it is done.'
+                  : 'Your account and data will be deleted on ${when(request['due_at'], time: false)}. '
+                      'You can cancel until then from the email we sent you.',
+            ),
+            trailing: const Icon(Icons.open_in_new),
+            onTap: () => launchUrl(
+              request['manage_url'] is String ? Uri.parse(request['manage_url'] as String) : deletionPage(slug),
+              mode: LaunchMode.externalApplication,
+            ),
+          )
+        else
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.delete_forever_outlined, color: theme.colorScheme.error),
+            title: Text('Delete my account and data', style: TextStyle(color: theme.colorScheme.error)),
+            subtitle: const Text('Your membership details, photo, card and sign-in.'),
+            onTap: pending.isLoading
+                ? null
+                : () => showModalBottomSheet<void>(
+                    context: context,
+                    isScrollControlled: true,
+                    showDragHandle: true,
+                    builder: (_) => const _DeleteSheet(),
+                  ),
+          ),
+      ],
+    );
+  }
+}
+
+class _DeleteSheet extends ConsumerStatefulWidget {
+  const _DeleteSheet();
+
+  @override
+  ConsumerState<_DeleteSheet> createState() => _DeleteSheetState();
+}
+
+class _DeleteSheetState extends ConsumerState<_DeleteSheet> {
+  var _mode = 'scheduled';
+  var _days = 30;
+  var _understood = false;
+  var _busy = false;
+
+  Future<void> _submit() async {
+    setState(() => _busy = true);
+    final ok = await runWithFeedback(context, ref, () async {
+      await ref.read(apiProvider).requestDeletion(mode: _mode, days: _mode == 'scheduled' ? _days : null);
+      ref.invalidate(deletionProvider);
+    }, done: 'Request sent. We have emailed you a copy.');
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (ok) Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final slug = ref.read(configProvider).slug;
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: EdgeInsets.fromLTRB(20, 0, 20, 20 + MediaQuery.of(context).viewInsets.bottom),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Delete your account and data', style: theme.textTheme.titleLarge),
+            const SizedBox(height: 10),
+            const Text(
+              'We delete your name, email address, phone number and photo, your card and member number, '
+              'your password and passkeys, the devices you signed in on, your notifications, saved location and inbox.',
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'The venue keeps its sales and points records for tax, with your name removed, and gift card '
+              'balances so they can still be used. Your points and membership cannot be brought back.',
+              style: theme.textTheme.bodySmall,
+            ),
+            const SizedBox(height: 16),
+            Text('When', style: theme.textTheme.titleSmall),
+            RadioGroup<String>(
+              groupValue: _mode,
+              onChanged: (v) {
+                if (!_busy && v != null) setState(() => _mode = v);
+              },
+              child: Column(
+                children: [
+                RadioListTile<String>(
+                  contentPadding: EdgeInsets.zero,
+                  value: 'scheduled',
+                  title: Row(
+                    children: [
+                      const Text('Automatically after '),
+                      DropdownButton<int>(
+                        value: _days,
+                        items: const [7, 15, 30]
+                            .map((d) => DropdownMenuItem(value: d, child: Text('$d days')))
+                            .toList(),
+                        onChanged: _busy ? null : (d) => setState(() {
+                          _days = d ?? 30;
+                          _mode = 'scheduled';
+                        }),
+                      ),
+                    ],
+                  ),
+                  subtitle: const Text('Nothing is deleted until then, and you can cancel.'),
+                ),
+                RadioListTile<String>(
+                  contentPadding: EdgeInsets.zero,
+                  value: 'review',
+                  title: const Text('As soon as possible'),
+                  subtitle: const Text('Our team deletes it, normally within two working days.'),
+                ),
+                ],
+              ),
+            ),
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              controlAffinity: ListTileControlAffinity.leading,
+              value: _understood,
+              onChanged: _busy ? null : (v) => setState(() => _understood = v ?? false),
+              title: const Text('I understand that once it is deleted it cannot be brought back.'),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: theme.colorScheme.error, foregroundColor: theme.colorScheme.onError),
+                onPressed: _understood && !_busy ? _submit : null,
+                child: Text(_busy ? 'Sending…' : 'Request deletion'),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Center(
+              child: TextButton(
+                onPressed: () => launchUrl(deletionPage(slug), mode: LaunchMode.externalApplication),
+                child: const Text('More about deleting your data'),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

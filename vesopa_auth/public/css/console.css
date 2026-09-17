@@ -1600,3 +1600,9 @@ pre.code {
 /* Save and Cancel, side by side, Save first. */
 .edit-actions { display: flex; align-items: center; gap: 10px; margin-top: 20px; }
 .edit-actions .btn { width: auto; min-width: 104px; }
+
+/* Deletion requests (/admin/deletions). A button that is only as wide as its
+   words, and room between the two forms on a request. */
+.btn-inline { width: auto; display: inline-flex; padding: 0 18px; }
+.del-admin-action + .del-admin-action { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--border); }
+.del-admin-action .hint { margin: 0 0 10px; }
