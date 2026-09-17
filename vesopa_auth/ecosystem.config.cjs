@@ -64,6 +64,13 @@ module.exports = {
        */
       env: {
         NODE_ENV: 'production',
+        // The port is also in .env, which is what the app reads. It is here as
+        // well because the cloud panel (vesopa_hosting/apps/broker.py) reads
+        // pm2's own environment to find an app's port and check it answers;
+        // without it auth.vesopa.com showed "Running" with no port and no
+        // health check. Keep the two the same.
+        PORT: '20003',
+        VESOPA_DOMAIN: 'auth.vesopa.com',
       },
 
       // ABSOLUTE log paths: pm2 resolves a relative one against its own working
