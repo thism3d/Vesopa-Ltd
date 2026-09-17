@@ -738,6 +738,20 @@ async function rebuildWebDomain({ username, domain }) {
   return { ok: true };
 }
 
+/**
+ * Issue the certificate AND make the site use it.
+ *
+ * FORCING HTTPS IS PART OF ISSUING, NOT A SEPARATE FAVOUR. Hestia sets
+ * SSL='yes' and leaves SSL_FORCE='no', so before 2026-09-17 a site with a
+ * perfectly good certificate went on answering on port 80 with no redirect,
+ * and stayed that way until somebody noticed -- 36 of the 45 domains on the
+ * node were like that, bosheboshe.com among them, which is how it came up.
+ * The owner's instruction is that every domain redirects, so the redirect is
+ * turned on here, in the one place every caller goes through.
+ *
+ * A failure to force is logged, not thrown: a certificate that was issued is
+ * worth keeping even if the redirect has to be set on the next pass.
+ */
 async function enableSSL({ username, domain, aliases = '', mail = false }) {
   try {
     await run(
@@ -767,6 +781,13 @@ async function enableSSL({ username, domain, aliases = '', mail = false }) {
     }
     throw err;
   }
+
+  try {
+    await forceHttps({ username, domain });
+  } catch (err) {
+    console.error(`[hestia] certificate issued for ${domain} but force-https failed: ${String(err.message).slice(0, 160)}`);
+  }
+
   return { ok: true, domain };
 }
 
