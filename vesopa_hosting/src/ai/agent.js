@@ -293,7 +293,15 @@ async function runTurn(o) {
   const clock = { start: Date.now(), hear: 0, act: 0, talk: 0 };
   let heard = '';
   if (o.audio && o.audio.data) {
-    heard = await bedrock.transcribe({ data: o.audio.data, format: o.audio.format || 'wav', language: lang });
+    try {
+      heard = await bedrock.transcribe({ data: o.audio.data, format: o.audio.format || 'wav', language: lang });
+    } catch (err) {
+      // Marked so the widget can tell "the ears are down" from "the answer
+      // failed", and fall back to the browser's own recogniser rather than
+      // leaving the customer talking to something that cannot hear.
+      err.deaf = true;
+      throw err;
+    }
     clock.hear = Date.now() - clock.start;
     if (!heard) return { say: '', heard: '', actions: [], done: true, silence: true, lang };
   }
@@ -436,6 +444,9 @@ async function runTurn(o) {
       userText,
       spoken,
       auto: Boolean(o.auto),
+      interrupted: Boolean(o.interrupted),
+      currency: o.currency || '',
+      currencyExample: currency.format(100, o.currency),
       found,
       actions,
       asking,
@@ -509,6 +520,11 @@ async function talk(t) {
 
   const page = t.page || {};
   const lines = [`PAGE: ${String(page.url || '/').slice(0, 200)} -- ${String(page.title || '').slice(0, 120)}`];
+  // The symbol in force, spelled out. The rule below tells the model not to
+  // change a currency, and it still turned a $8.89 domain into GBP part way
+  // through a conversation; having the right symbol in front of it, with an
+  // example of this turn's own money, is what stopped that.
+  if (t.currency) lines.push(`CURRENCY ON THIS SITE FOR THIS CUSTOMER: ${t.currency} -- every price you say is written with ${t.currencyExample || t.currency}'s own symbol, exactly as the tool or the page gives it, however many times you say it.`);
   if (Array.isArray(page.headings) && page.headings.length) lines.push(`HEADINGS: ${page.headings.slice(0, 6).map((h) => String(h).slice(0, 80)).join(' | ')}`);
   if (Array.isArray(page.alerts) && page.alerts.length) lines.push(`MESSAGES ON THE PAGE: ${page.alerts.slice(0, 4).map((a) => String(a).slice(0, 200)).join(' | ')}`);
   if (page.text) lines.push(`PAGE TEXT (start): ${String(page.text).slice(0, 700)}`);
@@ -521,6 +537,7 @@ async function talk(t) {
   if (fields.length) lines.push(`FORM AS IT STANDS (before this turn's actions): ${fields.join('; ')}`);
   const recent = (t.history || []).slice(-8).filter((h) => h && h.content && (h.role === 'user' || h.role === 'assistant'));
   if (recent.length) lines.push(`CONVERSATION SO FAR:\n${recent.map((h) => `${h.role === 'user' ? 'customer' : 'you'}: ${String(h.content).slice(0, 400)}`).join('\n')}`);
+  if (t.interrupted) lines.push('THEY TALKED OVER YOU: your last reply was cut off part-way, so they may not have heard the end of it. Answer what they have just said. Do not start again from the beginning, do not apologise for being interrupted, and do not repeat a sentence they already heard.');
   if (t.userText && !t.auto) lines.push(`CUSTOMER NOW${t.spoken ? ' (spoken)' : ''}: ${t.userText}`);
   else if (t.auto) lines.push('NOBODY SPOKE: the page changed after the last action. Say briefly what happened or what comes next.');
   else lines.push('THE CUSTOMER JUST OPENED YOU: greet them in one friendly sentence and offer help with what this page is for.');

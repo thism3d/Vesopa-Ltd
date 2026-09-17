@@ -106,10 +106,30 @@ async function chat({ messages, tools, maxTokens = 700, temperature = 0.2, model
  *     email address).
  * English is unchanged by the auto wording.
  */
-const HEAR = {
-  en: "Transcribe this audio verbatim, in the language actually spoken and in that language's own script. Output only the transcript. Do not translate, summarise, add or guess words. If there is no clear speech, output [silence].",
-  bn: 'Transcribe this audio verbatim. The speaker is most likely speaking Bangla (Bengali). Output only the transcript: Bangla in Bengali script, any English words in English letters, English speech in English. Do not translate, summarise, add or guess words. If there is no clear speech, output [silence].',
-};
+/*
+ * MEASURED, 2026-09-17, on real clips (C:/vtts/clips, the MMS-TTS Bengali
+ * set plus stitched code-switched ones), five wordings against this model:
+ *
+ *   naming a language MAKES IT TRANSLATE. "The speaker is most likely
+ *   speaking Bangla" turned a wholly English clip into Bengali script
+ *   ("Hi there, could you check whether raheemstore.co.uk is available"
+ *   came back as "হ্যালো। আপনি কি চেক করতে পারবেন..."), and naming English
+ *   turned a Bangla clip into Urdu. Naming no language at all was right on
+ *   every clip the model could hear, and was the only wording that kept
+ *   BOTH halves of a sentence that changed language half way through.
+ *
+ * So there is one instruction for every language, it names none, and it says
+ * plainly that a recording may change language part way and all of it is
+ * wanted. `language` is still accepted and still passed by the caller, but
+ * it no longer picks a different instruction -- that was the bug.
+ *
+ * What this cannot fix: the model's Bengali itself is poor -- short
+ * technical Bengali comes back as nonsense whatever it is asked ("হোস্টিং
+ * প্ল্যানের দাম কত?" -> "বোস্টন প্ল্যানেট ডাম।"). That is why the widget
+ * still prefers the browser's own recogniser for Bangla and uses this only
+ * where there is none.
+ */
+const HEAR_ANY = "Transcribe this recording word for word. Write every word in the language it was spoken in, using that language's own script: English words in English letters, Bangla words in Bengali script. The speaker may change language in the middle of a sentence; keep both halves. Do not translate anything. Do not leave anything out. Output only the transcript, nothing else. If nobody is speaking, output [silence].";
 
 /**
  * What was said in a clip. `format` is what the browser recorded: the widget
@@ -118,7 +138,9 @@ const HEAR = {
 async function transcribe({ data, format = 'wav', language = 'en' }) {
   const body = {
     model: config.AI.VOICE_MODEL,
-    max_tokens: 300,
+    // Long enough for the whole of a slow, thought-out sentence: the widget
+    // now waits for a real pause rather than cutting in after 900ms.
+    max_tokens: 600,
     temperature: 0,
     // No system message: Voxtral on this endpoint refuses "system messages
     // ... and audio chunks" in one request. The instruction rides with the clip.
@@ -127,7 +149,7 @@ async function transcribe({ data, format = 'wav', language = 'en' }) {
         role: 'user',
         content: [
           { type: 'input_audio', input_audio: { data, format } },
-          { type: 'text', text: `${HEAR[language] || HEAR.en} Domain names are written as one word with dots (example.co.uk).` },
+          { type: 'text', text: `${HEAR_ANY} Domain names are written as one word with dots (example.co.uk).` },
         ],
       },
     ],

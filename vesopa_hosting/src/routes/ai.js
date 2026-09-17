@@ -120,6 +120,10 @@ router.get('/session', async (req, res) => {
     token: mintToken(req),
     // The assistant's own voice is up; and the lines it says without a turn.
     voice: voice.available(),
+    // The server's voice model can hear. The widget uses it for every
+    // language: it is the only one of the two ears that follows a customer
+    // who says "domain ta available kina dekhen" in one breath.
+    hears: bedrock.ENABLED,
     phrases: voice.available() ? voice.phrases() : null,
   };
   if (customer) {
@@ -156,6 +160,7 @@ router.post('/turn', async (req, res) => {
       currency: req.currency,
       text,
       spoken: Boolean(body.spoken) && Boolean(text),
+      interrupted: Boolean(body.interrupted),
       audio,
       lang: body.lang,
       page: body.page || {},
@@ -169,6 +174,9 @@ router.post('/turn', async (req, res) => {
     console.error('[ai] turn failed:', err.message);
     const busy = err.status === 429 || err.status === 503 || /timeout|abort|capacity/i.test(String(err.message));
     res.status(502).json({
+      // The voice model could not hear the clip: the widget falls back to
+      // the browser's own recogniser rather than listening into a void.
+      deaf: Boolean(err.deaf),
       error: busy
         ? words(req, 'The assistant is busy for a moment. Try again shortly.', 'সহকারী এক মুহূর্ত ব্যস্ত। একটু পরে আবার বলুন।')
         : words(req, 'The assistant could not answer that. Try again, or ask support.', 'এটার উত্তর দিতে পারলাম না। আবার চেষ্টা করুন, বা সাপোর্টে জিজ্ঞেস করুন।'),

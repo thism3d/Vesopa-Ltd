@@ -51,16 +51,22 @@
  * version always used the browser's default, and it was called "a robot".
  * While voice is on it listens continuously and sends each utterance when
  * the customer pauses; in the chat the microphone button is hold-to-talk.
- * Nothing is recorded while the assistant is speaking.
+ *
+ * IT WAITS, AND IT CAN BE INTERRUPTED. The pause that ends a turn is
+ * END_MS, long enough to think mid-sentence about a domain name -- the
+ * first version sent after 900ms and cut people off. The microphone also
+ * stays open while the assistant is speaking, so talking over it stops it
+ * dead and that clip becomes the next turn (onAudio, BARGE_MS); the server
+ * is told the reply was cut off so it answers instead of starting again.
  *
  * LANGUAGE. English or Bangla: a switch in the chat head and on the
- * introduction, and
- * speaking or typing Bengali script switches it by itself. In Bangla the
- * browser's own speech recogniser hears the customer where there is one
- * (Chrome, Edge, Android) -- the server's voice model, measured on Bengali
- * clips, gets everyday sentences right but garbles short technical ones --
- * and the voice model is the fallback wherever that recogniser is missing
- * or fails.
+ * introduction, and speaking or typing Bengali script switches it by
+ * itself. BOTH languages are heard by the server's voice model, which
+ * follows a sentence that changes language half way through -- which is how
+ * Bangladeshi customers actually talk ("amar domain ta available kina
+ * dekhen"). The browser's own recogniser hears only one language at a time
+ * and mangled the English half, so it is now only the fallback, for
+ * browsers the server cannot hear for, or after the voice model fails.
  */
 (function () {
   'use strict';
@@ -87,8 +93,11 @@
   var ui = {};
   var audio = { ctx: null, stream: null, node: null, src: null, chunks: [], speaking: false, above: 0, below: 0, floor: 0.004, ptt: false, talking: false };
   var voices = [];
-  var speech = { gen: 0, source: null, current: null, noVoiceSaid: false };
-  var ears = { rec: null, broken: false, misses: 0 };
+  var speech = { gen: 0, source: null, current: null, noVoiceSaid: false, saying: '' };
+  var ears = { rec: null, broken: false, misses: 0, serverFails: 0 };
+  // Quiet stretches in a row before the fallback recogniser rests. Each is
+  // roughly a recogniser timeout, so this is about two minutes of silence.
+  var QUIET_GIVE_UP = 12;
   var MIC = { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } };
 
   function load() {
@@ -610,48 +619,130 @@
 
   // ---- Voice: hearing Bangla through the browser's own recogniser -----------------
   function Recogniser() { return window.SpeechRecognition || window.webkitSpeechRecognition || null; }
-  function usingBrowserEars() { return (live || audio.ptt) && store.lang === 'bn' && !ears.broken && Boolean(Recogniser()); }
+  /**
+   * WHICH EARS. Measured on real clips, 2026-09-17 (see bedrock.js): the
+   * server's voice model cannot do Bengali -- "hosting planer dam koto?"
+   * comes back as nonsense whatever it is asked -- so Bangla is still heard
+   * by the browser's own recogniser (Google's), which is good at it. English
+   * is heard by the voice model, which is better at English and is the only
+   * one of the two that will keep both halves of a sentence that changes
+   * language part way through.
+   *
+   * The recogniser is also the fallback for English, for a browser the
+   * server cannot hear for, or after the voice model has failed twice.
+   */
+  function usingBrowserEars() {
+    if (!live && !audio.ptt) return false;
+    if (ears.broken || !Recogniser()) return false;
+    if (store.lang === 'bn') return true;
+    return !session.hears || ears.serverFails >= 2;
+  }
   function isTouch() { return window.matchMedia('(pointer: coarse)').matches; }
 
-  /** One utterance: listen, show the words as they come, send when it ends. */
+  /**
+   * One utterance: listen, show the words as they come, send when the
+   * customer has actually finished.
+   *
+   * IT WAITS. The recogniser used to run with continuous = false, so Chrome
+   * decided the turn was over after about a second of quiet and there was no
+   * way to ask it for longer -- the customer's words were "stopping before I
+   * finish taking". It now runs continuously and the turn ends here, after
+   * END_MS with nothing new heard, which is the same patience the English
+   * ears have.
+   *
+   * IT CAN BE INTERRUPTED. Words heard while the assistant is speaking stop
+   * it (unless they are its own voice coming back through the speaker, which
+   * is what spokenByUs checks).
+   */
   function earsStart() {
-    if (ears.rec || busy || audio.speaking || !usingBrowserEars()) return;
+    if (ears.rec || busy || !usingBrowserEars()) return;
     var rec;
     try { rec = new (Recogniser())(); } catch (e) { ears.broken = true; startListening(); return; }
-    rec.lang = 'bn-BD';
+    rec.lang = store.lang === 'bn' ? 'bn-BD' : 'en-GB';
     rec.interimResults = true;
-    rec.continuous = Boolean(audio.ptt);
+    rec.continuous = true;
     rec.maxAlternatives = 1;
     var heard = '';
+    var quiet = null;
+    var done = function () {
+      clearTimeout(quiet); quiet = null;
+      if (ears.rec === rec) { ears.rec = null; rec.vaiQuiet = false; try { rec.stop(); } catch (e) {} }
+      var text = heard.trim();
+      heard = '';
+      if (!text) return;
+      ears.misses = 0;
+      var cut = audio.barged; audio.barged = false;
+      audio.ptt = false;
+      if (ui.mic) ui.mic.classList.remove('is-live');
+      turn({ text: text, spoken: true, interrupted: cut });
+    };
     rec.onresult = function (e) {
       var interim = '';
       for (var i = e.resultIndex; i < e.results.length; i += 1) {
-        if (e.results[i].isFinal) heard += e.results[i][0].transcript; else interim += e.results[i][0].transcript;
+        if (e.results[i].isFinal) heard += e.results[i][0].transcript + ' '; else interim += e.results[i][0].transcript;
       }
       var line = (heard + ' ' + interim).trim();
-      if (line) { caption(line); setState('listening', T('hearing')); }
+      if (!line) return;
+      // Talking over the assistant stops it dead -- unless what came back is
+      // the assistant's own sentence returning through the loudspeaker.
+      if (audio.speaking) {
+        if (spokenByUs(line)) { heard = ''; return; }
+        audio.barged = true;
+        stopSpeaking();
+      }
+      caption(line); setState('listening', T('hearing'));
+      // Hold-to-talk ends when the button is let go, not on a pause.
+      if (audio.ptt) return;
+      clearTimeout(quiet);
+      quiet = setTimeout(done, END_MS);
     };
     rec.onerror = function (e) {
       // No Bangla here, no speech service, no microphone: the voice model hears instead.
       if (/^(not-allowed|service-not-allowed|language-not-supported|network|audio-capture|bad-grammar)$/.test(e.error)) ears.broken = true;
     };
     rec.onend = function () {
+      clearTimeout(quiet); quiet = null;
       if (ears.rec === rec) ears.rec = null;
       if (rec.vaiQuiet) return;
-      var text = heard.trim();
-      if (text) { ears.misses = 0; audio.ptt = false; if (ui.mic) ui.mic.classList.remove('is-live'); turn({ text: text, spoken: true }); return; }
+      // Chrome ends the session on its own timer even when continuous; if
+      // words were heard they go now rather than being thrown away.
+      if (heard.trim()) { done(); return; }
       if (ears.broken) { startListening(); return; }
       ears.misses += 1;
       if (audio.ptt) return;
-      // Every start can chime on a phone, so after a quiet spell voice goes
-      // off and waits for the next tap.
-      if (live && (!isTouch() || ears.misses < 2)) { setTimeout(earsStart, 250); return; }
+      // It used to give up after two quiet stretches on a phone, because
+      // every recogniser start can chime -- but that switched the
+      // microphone off while the customer was still thinking about what to
+      // say, which reads as the assistant refusing to listen. It now keeps
+      // listening, and only rests after a long silence (about two minutes).
+      if (live && ears.misses < QUIET_GIVE_UP) { setTimeout(earsStart, 250); return; }
       setState(restState());
       if (live) { stopVoice(); caption(T('voicePaused')); }
     };
     ears.rec = rec;
-    try { rec.start(); setState('listening'); } catch (e) { ears.rec = null; }
+    try { rec.start(); if (!audio.speaking) setState('listening'); } catch (e) { ears.rec = null; }
   }
+
+  /**
+   * Is this the assistant's own voice coming back? A loudspeaker feeds the
+   * recogniser its own sentence, and without this the assistant interrupts
+   * itself and answers its own words.
+   */
+  function spokenByUs(line) {
+    var said = String(speech.saying || '');
+    if (!said) return false;
+    var a = line.toLowerCase().replace(/[^\p{L}\p{N} ]+/gu, '').trim();
+    var b = said.toLowerCase().replace(/[^\p{L}\p{N} ]+/gu, '').trim();
+    if (!a || a.length < 3) return true;
+    if (b.indexOf(a) !== -1) return true;
+    // Or most of the words in it are words it is saying.
+    var words = a.split(/\s+/).filter(function (w) { return w.length > 2; });
+    if (!words.length) return true;
+    var hits = 0;
+    for (var i = 0; i < words.length; i += 1) if (b.indexOf(words[i]) !== -1) hits += 1;
+    return hits / words.length > 0.6;
+  }
+
   /** Stop listening: `quiet` throws away what was heard, otherwise it is sent. */
   function earsStop(quiet) {
     var rec = ears.rec;
@@ -662,12 +753,36 @@
   }
   /** Listening again after a reply, when nothing else is going on. */
   function resumeEars() {
-    if (!live || busy || audio.speaking || state === 'working' || state === 'thinking') return;
+    if (!live || busy || state === 'working' || state === 'thinking') return;
     if (usingBrowserEars()) { releaseMic(); if (!ears.rec) earsStart(); }
     else if (!audio.node) startListening();
   }
 
-  /** Voice activity: talk when it is clearly louder than the room, send on a pause. */
+  /**
+   * Voice activity: talk when it is louder than the room, send on a pause.
+   *
+   * WAITING FOR THE END OF A SENTENCE. This used to send after 900ms below
+   * the bar, which cut people off mid-thought -- a pause to remember a
+   * domain name, or a quiet tail on the last word, was read as "finished".
+   * The customer's words: "stopping before I finish talking". It now waits
+   * END_MS, and the bar sits closer to the room so a softly spoken tail
+   * still counts as speech.
+   *
+   * INTERRUPTING. The microphone now stays open while the assistant is
+   * speaking, so the customer can talk over it: BARGE_MS of voice stops the
+   * reply dead and that clip becomes the next turn. Everything recorded is
+   * after browser echo cancellation (MIC), so the assistant does not hear
+   * itself through the speaker -- on a phone held on loudspeaker a little
+   * can leak, which is why barge-in wants a clearly louder bar than the
+   * room, not merely a non-silent frame.
+   */
+  var START_MS = 120;        // voice this long: the customer has started
+  var END_MS = 2500;         // quiet this long: they have finished
+  var BARGE_MS = 250;        // voice this long while it speaks: stop and listen
+  var MIN_MS = 350;          // shorter than this is a cough, not a sentence
+  var MAX_MS = 30000;        // one clip never grows past this
+  var PRE_ROLL = 8;          // frames kept before speech starts (~700ms)
+
   function onAudio(e) {
     if (usingBrowserEars()) { audio.chunks = []; return; }
     var input = e.inputBuffer.getChannelData(0);
@@ -676,31 +791,50 @@
     var rms = Math.sqrt(sum / input.length);
     var frameMs = (input.length / audio.rate) * 1000;
 
-    var canHear = audio.ptt || (live && !busy && !audio.speaking && state !== 'thinking' && state !== 'working');
-    if (!canHear) { audio.chunks = []; audio.talking = false; return; }
+    var canHear = audio.ptt || (live && !busy && (audio.speaking || audio.barged || (state !== 'thinking' && state !== 'working')));
+    if (!canHear) { audio.chunks = []; audio.talking = false; audio.above = 0; audio.below = 0; return; }
 
-    if (!audio.talking) audio.floor = audio.floor * 0.95 + rms * 0.05;
-    var threshold = Math.max(0.012, audio.floor * 3.5);
+    // The room's own level, learned from the quiet frames only, so it keeps
+    // learning while somebody is talking instead of freezing at whatever it
+    // was when they started.
+    var threshold = Math.max(0.010, audio.floor * 2.6);
     var loud = rms > threshold;
+    if (!loud) audio.floor = audio.floor * 0.97 + rms * 0.03;
     var level = Math.min(1, rms / 0.12).toFixed(2);
     ui.orb.style.setProperty('--vai-level', level);
-    if (state === 'idle' && live && !audio.ptt) setState('listening');
 
+    // Talking over the assistant: a clearly louder bar, held for BARGE_MS.
+    if (audio.speaking) {
+      audio.chunks.push(new Float32Array(input));
+      if (audio.chunks.length > PRE_ROLL) audio.chunks.shift();
+      if (rms > Math.max(0.018, audio.floor * 4)) {
+        audio.above += frameMs;
+        if (audio.above > BARGE_MS) {
+          audio.above = 0; audio.below = 0;
+          audio.talking = true; audio.started = Date.now(); audio.barged = true;
+          stopSpeaking();
+          setState('listening', T('hearing'));
+        }
+      } else audio.above = 0;
+      return;
+    }
+
+    if (state === 'idle' && live && !audio.ptt) setState('listening');
     if (audio.ptt) { audio.chunks.push(new Float32Array(input)); return; }
 
     if (!audio.talking) {
-      if (loud) { audio.above += frameMs; if (audio.above > 120) { audio.talking = true; audio.started = Date.now(); audio.below = 0; setState('listening', T('hearing')); } }
+      if (loud) { audio.above += frameMs; if (audio.above > START_MS) { audio.talking = true; audio.started = Date.now(); audio.below = 0; setState('listening', T('hearing')); } }
       else audio.above = 0;
       audio.chunks.push(new Float32Array(input));
-      if (audio.chunks.length > 4 && !audio.talking) audio.chunks.shift();
+      if (audio.chunks.length > PRE_ROLL && !audio.talking) audio.chunks.shift();
       return;
     }
     audio.chunks.push(new Float32Array(input));
     if (loud) audio.below = 0; else audio.below += frameMs;
     var length = Date.now() - audio.started;
-    if ((audio.below > 900 && length > 350) || length > 20000) {
+    if ((audio.below > END_MS && length > MIN_MS) || length > MAX_MS) {
       var chunks = audio.chunks; audio.chunks = []; audio.talking = false; audio.above = 0; audio.below = 0;
-      if (length < 350) return;
+      if (length < MIN_MS) return;
       sendClip(chunks);
     }
   }
@@ -728,8 +862,10 @@
   }
   function sendClip(chunks) {
     var wav = toWav16k(chunks, audio.rate);
+    var cut = audio.barged;
+    audio.barged = false;
     if (!wav) return;
-    turn({ audio: { data: wav, format: 'wav' } });
+    turn({ audio: { data: wav, format: 'wav' }, interrupted: cut });
   }
 
   /** Float32 chunks at the device rate -> 16 kHz mono 16-bit WAV, base64. */
@@ -891,8 +1027,12 @@
     stopSpeaking();
     if (!live || !store.voice || !text) return Promise.resolve();
     var gen = speech.gen;
-    earsStop(true);
+    // The ears stay open through the reply so it can be talked over. What
+    // is being said is kept so the recogniser's own echo of it can be told
+    // apart from the customer (spokenByUs).
+    speech.saying = text;
     audio.speaking = true; setState('speaking');
+    if (usingBrowserEars() && !ears.rec) earsStart();
     var own = lines && lines.length && session.voice ? contextRunning() : Promise.resolve(false);
     speech.current = own.then(function (ready) {
       if (!ready) return speakBrowser(text, gen);
@@ -900,6 +1040,7 @@
     }).then(function () {
       if (gen !== speech.gen) return;
       audio.speaking = false;
+      speech.saying = '';
       if (state === 'speaking') setState(restState());
       resumeEars();
     });
@@ -910,6 +1051,7 @@
     if (speech.source) { try { speech.source.stop(); } catch (e) {} speech.source = null; }
     if (window.speechSynthesis && (speechSynthesis.speaking || speechSynthesis.pending)) speechSynthesis.cancel();
     audio.speaking = false;
+    speech.saying = '';
   }
 
   // ---- The page, as numbers -----------------------------------------------------
@@ -1184,6 +1326,7 @@
       voice: live && store.voice,
       lang: store.lang,
       spoken: Boolean(o.spoken),
+      interrupted: Boolean(o.interrupted),
       page: snapshot(),
       pending: (o.text || o.audio) && wasPending ? { ref: wasPending.ref, label: wasPending.label, question: wasPending.question } : null,
       local: session.signedIn ? null : { memory: store.memory, history: store.history.slice(-24) },
@@ -1197,10 +1340,13 @@
     typing(false);
     var res = out.res, data = out.data;
     if (!res || !res.ok || data.error) {
+      // Twice deaf and the browser's own recogniser takes over (usingBrowserEars).
+      if (data && data.deaf) ears.serverFails += 1;
       bubble('err', data && data.error ? data.error : T('wrong'));
       busy = false; clearContinuing(); setState(restState()); resumeEars();
       return;
     }
+    ears.serverFails = 0;
     if (data.silence) { busy = false; setState(restState()); resumeEars(); return; }
     // The server heard or read Bengali: the switch follows it.
     if (data.lang) setLang(data.lang, false);
@@ -1234,6 +1380,7 @@
     session.name = data.name || '';
     session.token = data.token || '';
     session.voice = Boolean(data.voice);
+    session.hears = Boolean(data.hears);
     session.phrases = data.phrases || null;
     session.history = data.history || session.history || [];
     session.memory = data.memory || session.memory || [];
