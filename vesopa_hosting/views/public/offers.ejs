@@ -1,0 +1,109 @@
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+
+<%#
+  What is on now, and the code that claims it.
+
+  THE PAGE IS HONEST OR IT IS WORTHLESS. Every figure here comes from the
+  coupon row the basket will actually be judged against -- the percentage, the
+  minimum spend, what it applies to, when it ends and how many are left. An
+  offers page that says something the checkout then disagrees with costs more
+  trust than the discount buys.
+
+  Only codes an admin has marked `public_offer` appear, and a code tied to a
+  country is only shown to somebody in it. Both rules live in the route.
+%>
+
+<main id="main">
+<%- include('../partials/page-hero', {
+  kicker: t('Offers'),
+  heading: inBangladesh
+    ? th('Built in Britain,<br><span class="hl">priced for Bangladesh</span>')
+    : th('What is on<br><span class="hl">right now</span>'),
+  sub: inBangladesh
+    ? t('Hosting, domains and email billed in taka, paid the way you already pay, with an opening discount on your first year.')
+    : t('Current discounts, what each one includes, and the code that claims it at the basket.'),
+  heroCta: { href: '/hosting', label: t('See hosting plans'), secondary: { href: '/domains', label: t('Find a domain') } },
+}) %>
+
+<% if (offers.length) { %>
+<section class="section">
+  <div class="wrap">
+    <div class="grid grid-3">
+      <% offers.forEach(function (o, i) { %>
+        <article class="card card-hover card-accent offer-card" data-reveal="<%= i * 80 %>">
+          <p class="offer-amount"><%= o.amount %> <span><%= t('off') %></span></p>
+          <h2 class="h3 mb-2"><%= o.headline %></h2>
+          <% if (o.detail && o.detail !== o.headline) { %>
+            <p class="small muted"><%= o.detail %></p>
+          <% } %>
+
+          <%# The code, big enough to read off a phone and easy to copy. %>
+          <p class="offer-code">
+            <span class="offer-code-label"><%= t('Use code') %></span>
+            <button type="button" class="offer-code-value" data-copy="<%= o.code %>" title="<%= t('Copy this code') %>">
+              <span><%= o.code %></span>
+            </button>
+          </p>
+
+          <%# Every condition the basket will enforce, said here first. %>
+          <ul class="offer-terms small muted">
+            <li>
+              <% if (o.appliesTo === 'all') { %><%= t('Applies to everything in your basket.') %>
+              <% } else if (o.appliesTo === 'hosting') { %><%= t('Applies to hosting plans.') %>
+              <% } else if (o.appliesTo === 'domain') { %><%= t('Applies to domain names.') %>
+              <% } else { %><%= t('Applies to mailboxes.') %><% } %>
+            </li>
+            <% if (o.firstOrderOnly) { %><li><%= t('First order only.') %></li><% } %>
+            <% if (o.minSpend) { %><li><%= t('Baskets of {v} or more.', { v: o.minSpend }) %></li><% } %>
+            <% if (o.forCountry) { %><li><%= t('For customers in Bangladesh.') %></li><% } %>
+            <% if (o.endsAt) { %><li><%= t('Ends {v}.', { v: fmtDate(o.endsAt) }) %></li><% } %>
+            <% if (o.left > 0 && o.left <= 25) { %><li><%= tn('Only {n} left.', 'Only {n} left.', o.left, { n: o.left }) %></li><% } %>
+          </ul>
+
+          <a class="btn btn-block" href="/hosting"><%= t('Start an order') %></a>
+        </article>
+      <% }); %>
+    </div>
+
+    <p class="small muted mt-4" style="max-width:62ch">
+      <%= t('Enter the code in the basket, at the step before payment. One code per order. If a code will not apply, the basket says why.') %>
+    </p>
+  </div>
+</section>
+<% } else { %>
+<%# No offer running is a normal state, and saying so plainly beats an empty
+    grid or a page that 404s. %>
+<section class="section">
+  <div class="wrap">
+    <div class="card" style="max-width:56ch">
+      <h2 class="h3 mb-2"><%= t('No offer is running just now') %></h2>
+      <p class="small muted"><%= t('Our plans are the same price for everybody today. Hosting starts with a free domain on any yearly plan, and moving a site here is free at any time.') %></p>
+      <a class="btn" href="/hosting"><%= t('See hosting plans') %></a>
+    </div>
+  </div>
+</section>
+<% } %>
+
+<% if (inBangladesh) { %>
+<%# Shown only to visitors placed in Bangladesh: the two things they are most
+    likely to be unsure about -- can I pay from here, and is anyone there in
+    my time zone. %>
+<section class="section section-tint">
+  <div class="wrap">
+    <div class="grid grid-2">
+      <article class="card">
+        <h2 class="h3 mb-2"><%= t('Pay the way you already pay') %></h2>
+        <p class="small muted mb-0"><%= t('bKash, Nagad, Rocket, and any Bangladeshi bank card, through SSLCommerz. Prices are shown and charged in taka, so what you approve is what leaves your account.') %></p>
+      </article>
+      <article class="card">
+        <h2 class="h3 mb-2"><%= t('Read it in Bangla') %></h2>
+        <p class="small muted"><%= t('The whole site, the panel and the assistant speak Bangla. Switch whenever you like — nothing is lost.') %></p>
+        <a class="btn btn-ghost btn-sm" href="<%= langHref('bn') %>" lang="bn">বাংলায় দেখুন</a>
+      </article>
+    </div>
+  </div>
+</section>
+<% } %>
+</main>
+<%- include('../partials/footer') %>

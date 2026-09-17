@@ -86,9 +86,11 @@ function isPrivateRelay(email) {
  * passed in rather than hard-coded to GB, because the caller knows which
  * country the person picked in the flag menu and this module should not.
  *
- * Note what this does NOT do: decide whether we can text it. Postcoder sends to
- * UK mobiles only, and that limit belongs at the sending edge, not here — the
- * database should be able to hold a French number long before we can SMS one.
+ * Note what this does NOT do: decide whether we can text it. Which numbers can
+ * actually be reached is a question about the gateways -- Postcoder for +44,
+ * BulkSMSBD for +880 -- and it belongs at the sending edge (sms.canReach), not
+ * here. The database should be able to hold a French number long before we can
+ * SMS one.
  */
 function normalisePhone(input, defaultCountry = 'GB') {
   const raw = String(input || '').trim();

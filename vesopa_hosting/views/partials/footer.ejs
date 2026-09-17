@@ -25,6 +25,7 @@
           <li><a href="/#wordpress"><%= t('WordPress hosting') %></a></li>
           <li><a href="/#vibe"><%= t('Deploy an AI-built app') %></a></li>
           <li><a href="/ssl"><%= t('SSL certificates') %></a></li>
+          <li><a href="/offers"><%= t('Offers and promo codes') %></a></li>
           <li><a href="/transfer"><%= t('Move your site to us') %></a></li>
         </ul>
       </div>
@@ -86,6 +87,11 @@
   </div>
 </footer>
 <% } %>
+
+<%# Offered to a visitor in Bangladesh, once: the site in their own language.
+    It sits outside the `bare` branch above so it reaches the onboarding
+    wizard too -- that is exactly where being asked matters. %>
+<%- include('./bangla-offer') %>
 
 <% if (typeof flash !== 'undefined' && flash && flash.message) { %>
   <span data-flash="<%= flash.message %>" data-flash-kind="<%= flash.kind || 'ok' %>" hidden></span>

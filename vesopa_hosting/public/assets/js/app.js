@@ -759,6 +759,34 @@
     }
   }
 
+  /* ---- The Bangla offer, asked once -------------------------------------
+     The server renders it only for a visitor it places in Bangladesh who is
+     not already reading Bangla. This decides whether to SHOW it: once they
+     have answered either way, or dismissed it, the cookie keeps it away for a
+     year. Choosing Bangla follows the ordinary /lang/bn link, so the choice is
+     remembered exactly as a click in the footer would be.
+     --------------------------------------------------------------------- */
+  const langOffer = $('#lang-offer');
+  if (langOffer) {
+    const key = langOffer.dataset.once || 'vh_lang_asked';
+    const asked = document.cookie.split('; ').some((c) => c.startsWith(key + '='));
+    const remember = () => {
+      document.cookie = key + '=1; path=/; max-age=' + (365 * 24 * 60 * 60) + '; samesite=lax'
+        + (location.protocol === 'https:' ? '; secure' : '');
+    };
+    if (!asked) {
+      langOffer.hidden = false;
+      langOffer.querySelectorAll('[data-lang-offer]').forEach((el) => {
+        el.addEventListener('click', () => {
+          remember();
+          // The Bangla choice is a link and must be allowed to navigate; only
+          // "keep English" has nothing to do but disappear.
+          if (el.dataset.langOffer === 'en') langOffer.hidden = true;
+        });
+      });
+    }
+  }
+
   /* ---- Flash messages from the server ----------------------------------- */
   const flash = $('[data-flash]');
   if (flash) {

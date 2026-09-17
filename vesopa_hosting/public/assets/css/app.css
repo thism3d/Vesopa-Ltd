@@ -1819,3 +1819,137 @@ body.nav-open .nav-sheet-foot {
 .btn-sm.btn-vesopa .btn-vesopa-mark { width: 16px; height: 16px; }
 .auth-switch { margin: 12px 0 0; text-align: center; font-size: .87rem; }
 .auth-switch a { color: var(--ink-3); }
+
+/* ---------------------------------------------------------------------------
+   The Bangla offer: shown once to a visitor whose address places them in
+   Bangladesh (views/partials/bangla-offer.ejs).
+
+   It sits at the bottom rather than the top on purpose. A bar that pushes the
+   page down the moment it loads moves what somebody was already reading, and
+   on a phone the top of the screen is where the address bar and the site's own
+   header already are. The bottom is reachable with a thumb and interrupts
+   nothing.
+
+   `hidden` comes off in app.js only when the choice has not been made before,
+   so a visitor who has answered never sees it again.
+   --------------------------------------------------------------------------- */
+.lang-offer {
+  position: fixed;
+  left: 50%;
+  bottom: max(16px, env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 60;
+  width: min(560px, calc(100vw - 32px));
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-2);
+  animation: lang-offer-in .28s ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lang-offer { animation: none; }
+}
+@keyframes lang-offer-in {
+  from { opacity: 0; transform: translate(-50%, 12px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+.lang-offer-inner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+}
+.lang-offer-text {
+  margin: 0;
+  flex: 1 1 14rem;
+  line-height: 1.45;
+}
+/* The Bangla asks the question and the English explains it, so somebody who
+   reads only one of them still understands the choice. */
+.lang-offer-bn { display: block; font-weight: 600; color: var(--ink); }
+.lang-offer-en { display: block; font-size: .92rem; color: var(--ink-3); }
+.lang-offer-actions {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+/* Below ~430px the two buttons and the text will not share a line without the
+   words wrapping to four; the actions take their own row and fill it. */
+@media (max-width: 430px) {
+  .lang-offer-actions { flex: 1 1 100%; }
+  .lang-offer-actions .btn { flex: 1 1 0; justify-content: center; }
+}
+
+/* ---------------------------------------------------------------------------
+   Offer cards (/offers).
+
+   The discount is the headline and the code is the thing to act on, so those
+   two are the only elements given weight; the conditions underneath are
+   deliberately quiet, because their job is to be true rather than to sell.
+   --------------------------------------------------------------------------- */
+.offer-card { display: flex; flex-direction: column; }
+.offer-amount {
+  margin: 0 0 6px;
+  font-size: clamp(2rem, 4vw, 2.6rem);
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: -.02em;
+  color: var(--lime-ink);
+}
+.offer-amount span {
+  font-size: .95rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--ink-3);
+}
+.offer-code {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 14px 0;
+}
+.offer-code-label {
+  font-size: .82rem;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--ink-3);
+}
+/* A button, not a span: it copies, so it must be reachable by keyboard and
+   announced as something that does a thing. */
+.offer-code-value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: .06em;
+  color: var(--lime-deep);
+  background: var(--lime-soft);
+  border: 1px dashed var(--lime-ink);
+  border-radius: var(--radius-sm);
+  padding: 7px 12px;
+  cursor: pointer;
+}
+.offer-code-value:hover { background: #e7f2c4; }
+.offer-code-value:focus-visible { outline: 2px solid var(--lime-ink); outline-offset: 2px; }
+.offer-terms {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.offer-terms li { padding-left: 16px; position: relative; }
+.offer-terms li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: .55em;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--rule);
+}
+/* The button sits on the floor of the card so a row of cards of different
+   heights still lines its actions up. */
+.offer-card .btn-block { margin-top: auto; }

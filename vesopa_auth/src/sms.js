@@ -1,11 +1,20 @@
 /**
  * Text messages, behind an interface.
  *
- * WHY AN INTERFACE FOR ONE PROVIDER. Postcoder texts UK mobiles only. That is
- * fine today — every Vesopa venue is in Britain — and it will not be fine the
- * first time somebody with an Irish number tries to sign in. The owner asked
- * for Postcoder now with a second route later, so the shape of "send a code to
- * this number" is fixed here and the gateway behind it is a setting.
+ * TWO GATEWAYS, CHOSEN BY THE NUMBER. Postcoder texts UK mobiles only. On
+ * 2026-09-17 the owner asked for Bangladeshi numbers to work as well, so
+ * +880 goes to BulkSMSBD — the gateway royalgrow.work and pasificgrowth.site
+ * already send with, reusing that account rather than opening another.
+ * Nothing else picks a provider: the dial code does, because the number is the
+ * only thing that actually decides which network can carry the message.
+ *
+ * THE TWO ARE NOT THE SAME SHAPE, and that is the interesting part.
+ * Postcoder mints, sends AND verifies the code — we never see it. BulkSMSBD
+ * only sends: it is a pipe for a message we wrote. So a Postcoder challenge
+ * stores their reference and verifies by calling them, and a BulkSMSBD
+ * challenge mints a code, hashes it and compares hashes exactly as an emailed
+ * code does. `mintsOwnCode` is how a provider says which it is, and
+ * challenges.js branches on it rather than on the country.
  *
  * THE ASYMMETRY WITH EMAIL, WHICH RUNS THROUGH THE WHOLE SYSTEM
  *
@@ -44,12 +53,19 @@ function canReach(e164) {
   if (!number.startsWith('+')) return false;
   if (config.sms.countries.includes('*')) return true;
   // Postcoder is UK-only. `+44` covers Great Britain and Northern Ireland.
-  if (config.sms.countries.includes('GB') && number.startsWith('+44')) return true;
+  if (config.sms.countries.includes('GB') && number.startsWith('+44') && Boolean(config.sms.postcoderKey)) return true;
+  // BulkSMSBD carries Bangladesh. Checked against the credential as well as
+  // the setting: a country listed with no gateway behind it accepts the number
+  // and then never delivers, which is the exact failure this function exists
+  // to prevent.
+  if (config.sms.countries.includes('BD') && number.startsWith('+880') && Boolean(config.sms.bulksmsbdKey)) return true;
   return false;
 }
 
 const postcoder = {
   name: 'postcoder',
+  /** Postcoder generates the code, sends it and checks it. We never see it. */
+  mintsOwnCode: true,
 
   /**
    * Ask the gateway to generate and send a code.
@@ -132,6 +148,85 @@ const postcoder = {
 };
 
 /**
+ * Bangladesh, through BulkSMSBD.
+ *
+ * A SEND-ONLY PIPE. It takes a number and a message and reports whether it was
+ * accepted; there is no OTP service and nothing to verify against, so the code
+ * in the message is one WE minted and the comparison happens in our own
+ * database. `mintsOwnCode: false` tells challenges.js to take that path.
+ *
+ * THE NUMBER FORMAT IS NOT E.164. BulkSMSBD wants `8801XXXXXXXXX` — the
+ * country code, no plus. Everything inside Vesopa stores E.164 (`+8801…`),
+ * so the plus comes off here, at the edge, and nowhere else.
+ *
+ * `response_code: 202` is its only success. Anything else, including an HTTP
+ * 200 carrying an error code in the body, is a failure — the person is waiting
+ * for a message, and "probably sent" is not a state this may report.
+ */
+const BULKSMSBD_DEFAULT_URL = 'http://bulksmsbd.net/api/smsapi';
+
+const bulksmsbd = {
+  name: 'bulksmsbd',
+  mintsOwnCode: false,
+
+  /**
+   * Send a code we generated.
+   * @returns {Promise<string|null>} a reference for the log, or null if unsent
+   */
+  async sendCode(e164, { minutes, code }) {
+    const key = config.sms.bulksmsbdKey;
+    const sender = config.sms.bulksmsbdSender;
+    if (!key || !sender) {
+      console.warn('[sms] no BULKSMSBD_API_KEY / BULKSMSBD_SENDER_ID — cannot send');
+      return null;
+    }
+    if (!code) {
+      // Defensive: this provider cannot invent one, and sending a message with
+      // no code in it is worse than not sending.
+      console.warn('[sms] bulksmsbd called without a code');
+      return null;
+    }
+
+    const number = String(e164 || '').replace(/^\+/, '');
+    const message = `${code} is your Vesopa code. It expires in ${minutes} minutes.`;
+
+    try {
+      const response = await fetch(config.sms.bulksmsbdUrl || BULKSMSBD_DEFAULT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          api_key: key,
+          senderid: sender,
+          number,
+          message,
+        }),
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (response.ok && Number(data.response_code) === 202) {
+        return `bulksmsbd-${Date.now()}`;
+      }
+      console.warn('[sms] bulksmsbd refused:', response.status, scrub(JSON.stringify(data).slice(0, 200), key));
+      return null;
+    } catch (error) {
+      console.warn('[sms] bulksmsbd send failed:', scrub(error.message, key));
+      return null;
+    }
+  },
+
+  /**
+   * Never called: a challenge sent this way is verified against our own hash,
+   * the same as an emailed code. It exists so the interface is complete, and
+   * it answers NO rather than throwing — a provider that cannot verify must
+   * not be able to let anybody in by accident.
+   */
+  async verifyCode() {
+    return false;
+  },
+};
+
+/**
  * A gateway that does nothing, for development and for the tests.
  *
  * It logs the code rather than sending it, and it is chosen by configuration —
@@ -141,6 +236,7 @@ const postcoder = {
  */
 const console_provider = {
   name: 'console',
+  mintsOwnCode: false,
   async sendCode(e164, options) {
     const reference = `console-${Date.now()}`;
     console.log(`[sms] would text ${e164} a ${options.length}-digit code (${reference})`);
@@ -155,10 +251,34 @@ function scrub(text, secret) {
   return secret ? String(text).split(secret).join('<key>') : String(text);
 }
 
+/**
+ * The default gateway, when the number does not choose one.
+ *
+ * Kept so existing callers and the tests behave as they did; new code should
+ * ask providerFor(number), because with two gateways live "the provider" is
+ * not a thing that exists on its own any more.
+ */
 function provider() {
   if (config.sms.provider === 'postcoder') return postcoder;
+  if (config.sms.provider === 'bulksmsbd') return bulksmsbd;
   if (config.sms.provider === 'console') return console_provider;
   throw new Error(`unknown SMS provider: ${config.sms.provider}`);
 }
 
-module.exports = { canReach, provider };
+/**
+ * Which gateway carries THIS number.
+ *
+ * The dial code decides, because it is what determines which network has to
+ * accept the message. A development box with SMS_PROVIDER=console keeps the
+ * console for everything — otherwise a developer typing a real Bangladeshi
+ * number into a test form sends a real message and spends real money.
+ */
+function providerFor(e164) {
+  if (config.sms.provider === 'console') return console_provider;
+  const number = String(e164 || '');
+  if (number.startsWith('+880')) return bulksmsbd;
+  if (number.startsWith('+44')) return postcoder;
+  return provider();
+}
+
+module.exports = { canReach, provider, providerFor };

@@ -21,11 +21,32 @@ const currency = require('./currency');
 const geo = require('./geo');
 
 const COOKIE = 'vh_cur';
+/*
+ * The country is remembered beside the currency, because the geo lookup that
+ * found it is the only one this visitor will ever pay for -- the currency
+ * cookie stops it running again. Anything else that wants to know where
+ * somebody is (the Bangla offer, the language prompt) would otherwise either
+ * repeat the lookup on every page or go without.
+ *
+ * Not httpOnly: the language prompt is decided in the browser, and this is a
+ * two-letter country code, not a secret.
+ */
+const COUNTRY_COOKIE = 'vh_cc';
 const COOKIE_MAX_AGE = 365 * 24 * 60 * 60 * 1000;
 
 function writeCookie(res, code) {
   res.cookie(COOKIE, code, {
     httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: COOKIE_MAX_AGE,
+    path: '/',
+  });
+}
+
+function writeCountryCookie(res, cc) {
+  res.cookie(COUNTRY_COOKIE, String(cc || '').toUpperCase().slice(0, 2), {
+    httpOnly: false,
     sameSite: 'lax',
     secure: process.env.NODE_ENV === 'production',
     maxAge: COOKIE_MAX_AGE,
@@ -77,6 +98,7 @@ async function attach(req, res, next) {
         const guess = await geo.currencyFor(req.ip);
         chosen = guess.currency;
         source = guess.country ? 'geo' : 'default';
+        if (guess.country) writeCountryCookie(res, guess.country);
         // Remembered either way. Writing the cookie even when the lookup failed
         // is what stops a visitor whose address we cannot place from paying the
         // timeout again on every page they open.
@@ -88,6 +110,14 @@ async function attach(req, res, next) {
 
     req.currency = chosen;
     req.currencySource = source;
+    /*
+     * Where they appear to be, for anything that is not about money: the offer
+     * shown to Bangladeshi visitors, and the prompt asking whether they would
+     * rather read the site in Bangla. Empty when we do not know, which must
+     * always read as "no special treatment" rather than as a default country.
+     */
+    req.country = String(req.cookies?.[COUNTRY_COOKIE] || '').toUpperCase().slice(0, 2);
+    res.locals.country = req.country;
 
     // -----------------------------------------------------------------------
     // View helpers

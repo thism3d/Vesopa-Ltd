@@ -14,6 +14,7 @@ const navItems = [
   ['/email',    'mail',   t('Email'),        t('Mailboxes and campaigns at your domain')],
   ['/ssl',      'lock',   t('SSL'),          t('Free certificates, renewed automatically')],
   ['/transfer', 'rocket', t('Transfer'),     t('Move your site to us, free')],
+  ['/offers',   'tag',    t('Offers'),       t('Current discounts and promo codes')],
   ['/support',  'headset',t('Support'),      t('Guides, status and a person to ask')],
 ];
 const isOn = (href) => (href === '/domains'
@@ -138,8 +139,15 @@ const over = typeof navOver !== 'undefined' && navOver;
         <a class="btn btn-sm" href="/panel/services"><%= t('Dashboard') %></a>
       <% } else if (vesopaOnly && typeof vesopaSso !== 'undefined' && vesopaSso) { %>
         <%# One way in. Signing in and opening an account are the same button,
-            so there is nothing to put a "Create account" beside it. %>
-        <%- include('./vesopa-button', { cls: 'btn btn-ghost btn-sm' }) %>
+            so there is nothing to put a "Create account" beside it.
+
+            THE WORDS CHANGE FOR A STRANGER, THE DESTINATION DOES NOT. Somebody
+            who has never heard of Vesopa does not know what "Continue with
+            Vesopa" offers them, and on a shop's header that reads as a wall
+            rather than a way in. So the button a signed-OUT visitor sees says
+            what will happen; from the click onwards -- the Vesopa page itself
+            -- it is "Continue with Vesopa" exactly as before. (Owner, 2026-09-17.) %>
+        <%- include('./vesopa-button', { cls: 'btn btn-ghost btn-sm', label: t('Sign in or create account') }) %>
         <a class="btn btn-sm" href="/hosting"><%= t('Get started') %></a>
       <% } else { %>
         <a class="btn btn-ghost btn-sm" href="/login"><%= t('Sign in') %></a>
@@ -224,7 +232,8 @@ const over = typeof navOver !== 'undefined' && navOver;
           <a class="btn btn-ghost btn-lg btn-block" href="/panel"><%= t('My account') %></a>
           <a class="btn btn-lg btn-block" href="/panel/services"><%= t('Dashboard') %></a>
         <% } else if (vesopaOnly && typeof vesopaSso !== 'undefined' && vesopaSso) { %>
-          <%- include('./vesopa-button', { cls: 'btn btn-ghost btn-lg btn-block' }) %>
+          <%# Same wording as the bar above: see the note there. %>
+          <%- include('./vesopa-button', { cls: 'btn btn-ghost btn-lg btn-block', label: t('Sign in or create account') }) %>
           <a class="btn btn-lg btn-block" href="/hosting"><%= t('Get started') %></a>
         <% } else { %>
           <a class="btn btn-ghost btn-lg btn-block" href="/login"><%= t('Sign in') %></a>

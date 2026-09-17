@@ -128,14 +128,44 @@ async function create({
   let plainCode = null;
 
   if (channel === 'sms') {
-    const reference = await sms.provider().sendCode(destinationNorm, {
-      minutes: config.codes.ttlMinutes,
-      length: config.codes.length,
-    });
-    // No reference means nothing was sent. The person is waiting for a message,
-    // so this must be a failure and never an optimistic success.
-    if (!reference) return { ok: false, reason: 'sms_send_failed' };
-    externalRef = reference;
+    /*
+     * TWO KINDS OF GATEWAY, AND THE ROW REMEMBERS WHICH.
+     *
+     * Postcoder mints the code, sends it and verifies it, so the row keeps
+     * their reference and no hash. BulkSMSBD (Bangladesh) is a send-only pipe,
+     * so the code is minted here, hashed here and compared here -- exactly as
+     * an emailed code is.
+     *
+     * verify() decides by whether the row HAS a hash, not by the number's
+     * country. A challenge must be checked the way it was created: if the
+     * gateway for a country changes while somebody is holding a code, the code
+     * they were sent still has to work.
+     */
+    const gateway = sms.providerFor(destinationNorm);
+
+    if (gateway.mintsOwnCode) {
+      const reference = await gateway.sendCode(destinationNorm, {
+        minutes: config.codes.ttlMinutes,
+        length: config.codes.length,
+      });
+      // No reference means nothing was sent. The person is waiting for a
+      // message, so this must be a failure and never an optimistic success.
+      if (!reference) return { ok: false, reason: 'sms_send_failed' };
+      externalRef = reference;
+    } else {
+      const code = newNumericCode(config.codes.length);
+      const reference = await gateway.sendCode(destinationNorm, {
+        minutes: config.codes.ttlMinutes,
+        length: config.codes.length,
+        code,
+      });
+      if (!reference) return { ok: false, reason: 'sms_send_failed' };
+      // Hashed with the same pepper as an emailed code, and the plain code is
+      // NOT kept: nothing outside this block ever sees it, and in particular it
+      // is never returned to the caller the way an email code is.
+      codeHash = hashCode(code, config.secrets.codePepper);
+      externalRef = reference;
+    }
   } else {
     plainCode = newNumericCode(config.codes.length);
     codeHash = hashCode(plainCode, config.secrets.codePepper);
@@ -213,9 +243,15 @@ async function verify({ challengeId, code, ip = '' }) {
   );
   if (counted.affectedRows !== 1) return { ok: false, reason: 'too_many_attempts' };
 
+  /*
+   * A row with a hash is checked against the hash, whatever channel it came
+   * through: that is true of every emailed code and of a Bangladeshi text,
+   * whose gateway cannot verify anything. Only a row with no hash and a
+   * reference is checked by calling the gateway back.
+   */
   let matched = false;
-  if (challenge.channel === 'sms') {
-    matched = await sms.provider().verifyCode(challenge.external_ref, code);
+  if (challenge.channel === 'sms' && !challenge.code_hash) {
+    matched = await sms.providerFor(challenge.destination_norm).verifyCode(challenge.external_ref, code);
   } else {
     const expected = hashCode(String(code).trim(), config.secrets.codePepper);
     matched = safeEqual(expected, challenge.code_hash);

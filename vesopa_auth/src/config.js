@@ -172,16 +172,31 @@ const config = {
   },
 
   sms: {
-    /** Which gateway. Postcoder today; the interface exists so it can change. */
+    /**
+     * The fallback gateway. With two live the NUMBER usually chooses (see
+     * sms.providerFor): +44 goes to Postcoder, +880 to BulkSMSBD. Set this to
+     * `console` on a development box and nothing is ever really sent.
+     */
     provider: optional('SMS_PROVIDER', 'postcoder'),
     postcoderKey: optional('POSTCODER_API_KEY', ''),
     /**
-     * Postcoder's OTP service texts UK mobiles only. The country picker is
-     * real and its dial codes are real, but a non-UK number must be refused
-     * with a sentence telling the person to use email — which is better than an
-     * SMS that silently never arrives.
+     * Bangladesh, through BulkSMSBD — the same account royalgrow.work and
+     * pasificgrowth.site send with. Send-only: it carries a code we minted,
+     * and we check it ourselves.
      */
-    countries: optional('SMS_COUNTRIES', 'GB').split(',').map((s) => s.trim()),
+    bulksmsbdKey: optional('BULKSMSBD_API_KEY', ''),
+    bulksmsbdSender: optional('BULKSMSBD_SENDER_ID', ''),
+    bulksmsbdUrl: optional('BULKSMSBD_URL', 'http://bulksmsbd.net/api/smsapi'),
+    /**
+     * Which countries may be texted at all. A number outside this list is
+     * refused up front with a sentence telling the person to use email, which
+     * is far better than a message that silently never arrives.
+     *
+     * Listing a country is not enough on its own: sms.canReach also checks that
+     * the gateway for it actually has a credential, so a half-configured box
+     * refuses the number rather than accepting it into a void.
+     */
+    countries: optional('SMS_COUNTRIES', 'GB,BD').split(',').map((s) => s.trim()),
   },
 
   admin: {

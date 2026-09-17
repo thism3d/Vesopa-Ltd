@@ -132,6 +132,70 @@ router.get('/ssl', (req, res) => {
   });
 });
 
+/*
+ * The offers page: what is on now, and the codes that claim it.
+ *
+ * ONLY CODES MARKED `public_offer` ARE LISTED, and that column defaults to 0.
+ * The database already held PROMO100 -- 100% off everything, no use limit, no
+ * expiry -- so a page built the obvious way, listing every active coupon,
+ * would have published a code that gives the shop away. Advertising a code is
+ * a decision somebody makes in the admin, one code at a time.
+ *
+ * A code restricted to a country is shown only to visitors in it, for the same
+ * reason it is refused at the basket: offering something and then rejecting it
+ * at checkout is worse than never having shown it.
+ */
+router.get('/offers', async (req, res, next) => {
+  try {
+    const country = String(req.country || '').toUpperCase();
+    const rows = await db.query(
+      `SELECT code, description, headline, kind, value, applies_to, min_spend_pence,
+              first_order_only, countries, starts_at, expires_at, max_uses, used
+         FROM coupons
+        WHERE active = 1
+          AND public_offer = 1
+          AND (starts_at IS NULL OR starts_at <= NOW())
+          AND (expires_at IS NULL OR expires_at >= NOW())
+          AND (max_uses = 0 OR used < max_uses)
+        ORDER BY value DESC, id ASC`,
+    );
+
+    const mine = (row) => {
+      const only = String(row.countries || '').split(',').map((c) => c.trim().toUpperCase()).filter(Boolean);
+      return !only.length || only.includes(country);
+    };
+
+    const offers = rows.filter(mine).map((row) => ({
+      code: row.code,
+      headline: row.headline || row.description,
+      detail: row.description,
+      // A percentage reads the same in every currency; a fixed amount is a
+      // base-currency figure and has to be converted like any other price.
+      amount: row.kind === 'percent'
+        ? `${Number(row.value)}%`
+        : currency.format(currency.convert(Number(row.value), req.currency), req.currency),
+      appliesTo: row.applies_to,
+      firstOrderOnly: Boolean(row.first_order_only),
+      minSpend: Number(row.min_spend_pence) > 0
+        ? currency.format(currency.convert(Number(row.min_spend_pence), req.currency), req.currency)
+        : '',
+      endsAt: row.expires_at || null,
+      forCountry: String(row.countries || '').trim(),
+      left: Number(row.max_uses) > 0 ? Number(row.max_uses) - Number(row.used) : 0,
+    }));
+
+    res.render('public/offers', {
+      title: req.t('Offers and promo codes'),
+      description: req.t('Current Vesopa offers: what is included, what it costs and the code that claims it.'),
+      offers,
+      country,
+      inBangladesh: country === 'BD',
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/transfer', (req, res) => {
   res.render('public/migration', {
     title: req.t('Move your site to us'),

@@ -1,0 +1,35 @@
+<%#
+  Shown to a visitor whose address places them in Bangladesh, once, offering
+  them the site in their own language.
+
+  WHY IT ASKS RATHER THAN SWITCHES. The owner's instruction was "check the IP
+  by the backend and if users from Bangladesh then ask the user if they want to
+  continue with English or switch to Bangla with a prompt" -- ask, not decide.
+  A Bangladeshi developer who reads technical English all day and lands on a
+  page that has silently become Bangla has had something taken from them; the
+  same person offered the choice has been recognised. Geo is a guess and their
+  click is a fact, which is the same rule the currency follows.
+
+  IT APPEARS ONCE. Dismissing it, or choosing either language, writes
+  `vh_lang_asked` and it never shows again -- a banner that returns on every
+  page is an argument, not an offer. The choice itself goes through the normal
+  switcher (/lang/bn), so it is remembered exactly like a click on the footer.
+
+  It is rendered server-side only when it applies, so nobody else's page
+  carries the markup, and it needs no JavaScript to be dismissed correctly --
+  the form posts if scripting is off.
+%>
+<% if (typeof country !== 'undefined' && country === 'BD' && locale !== 'bn') { %>
+  <div class="lang-offer" id="lang-offer" hidden data-once="vh_lang_asked">
+    <div class="lang-offer-inner">
+      <p class="lang-offer-text">
+        <span class="lang-offer-bn" lang="bn">আপনি কি বাংলায় পড়তে চান?</span>
+        <span class="lang-offer-en">Would you rather read this in Bangla?</span>
+      </p>
+      <div class="lang-offer-actions">
+        <a class="btn btn-sm" href="<%= langHref('bn') %>" data-lang-offer="bn" lang="bn">বাংলায় দেখুন</a>
+        <button type="button" class="btn btn-ghost btn-sm" data-lang-offer="en">Keep English</button>
+      </div>
+    </div>
+  </div>
+<% } %>

@@ -61,8 +61,9 @@ function eligibleLines(lines, appliesTo) {
  *                            currency minor units
  * @param {object}   customer signed-in customer, or null
  * @param {object}   cur      the currency the basket is priced in
+ * @param {string}   country  where the basket appears to be, '' if unknown
  */
-async function evaluate(code, lines, gross, customer, cur = null) {
+async function evaluate(code, lines, gross, customer, cur = null, country = '') {
   const money = (minor) => currency.format(minor, cur);
   // Base-currency figures on the coupon row, brought into the basket's money.
   const inBasket = (baseMinor) => currency.convert(Number(baseMinor) || 0, cur);
@@ -84,6 +85,27 @@ async function evaluate(code, lines, gross, customer, cur = null) {
   }
   if (coupon.max_uses > 0 && coupon.used >= coupon.max_uses) {
     return { ok: false, reason: 'That code has been fully redeemed.' };
+  }
+
+  /*
+   * A code that belongs to one country.
+   *
+   * The Bangladesh launch offer is the reason this exists: the owner wanted
+   * something extra for Bangladeshi customers, and a code anybody could type
+   * is not that. `countries` empty means anywhere, which is every code that
+   * existed before this was added.
+   *
+   * THIS IS A MARKETING BOUNDARY, NOT A SECURITY ONE. It rests on a geo lookup
+   * of the visitor's address, which a VPN changes in a click, and on a cookie
+   * this same server wrote. Use it to shape an offer; never use it to protect
+   * anything whose loss would matter.
+   */
+  const only = String(coupon.countries || '')
+    .split(',')
+    .map((c) => c.trim().toUpperCase())
+    .filter(Boolean);
+  if (only.length && !only.includes(String(country || '').toUpperCase())) {
+    return { ok: false, reason: 'That code is for customers in another country.' };
   }
   const minSpend = inBasket(coupon.min_spend_pence);
   if (minSpend > 0 && gross < minSpend) {

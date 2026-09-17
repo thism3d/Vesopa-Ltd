@@ -37,7 +37,7 @@
   // ---- Words ----------------------------------------------------------------
   var WORDS = {
     en: {
-      placeholder: 'Describe your website, or say what to change…', ready: 'Ready', listening: 'Listening…', hearing: 'Writing down what you said…', thinking: 'Thinking…', building: 'Building', speaking: 'Speaking',
+      placeholder: 'Describe your website…', ready: 'Ready', listening: 'Listening…', hearing: 'Writing down what you said…', thinking: 'Thinking…', building: 'Building', speaking: 'Speaking',
       publish: 'Publish', editing: 'Editing', heroA: 'Say what you want.', heroB: 'Watch it build.', heroP: 'Tell us about your business in a sentence, out loud or typed. Your website appears here as it is written, and you change anything just by saying so.',
       untitled: 'Untitled website', savedHere: 'Saved in this browser', langBtn: 'বাংলা',
       stepTheme: 'Colours and fonts', stepSection: '{v}', stepRemove: 'Removed {v}', stepMove: 'Moved {v}', stepName: 'Named “{v}”',
@@ -45,8 +45,9 @@
       lost: 'The connection dropped while building. What was finished is kept: say it again to carry on.',
       newConfirm: 'Start a new website? This one stays in your undo history until you close the page.',
       suggestNew: ['Make it darker', 'Add opening hours', 'Add customer reviews', 'Change the colours to green', 'Add a photo gallery'],
+      suggestStart: ['A bakery in Swansea', 'A barber shop, dark and modern', 'A photographer’s portfolio', 'A restaurant with a menu and booking form', 'A one-page site for my plumbing business'],
       hint: 'Tip: click any part of the preview, then say what to change about it.',
-      pubTitle: 'Publish your website', pubSignIn: 'Sign in with your Vesopa account to publish. Your design is saved in this browser and will be here when you come back.', signIn: 'Continue with Vesopa', download: 'Download the page instead',
+      pubTitle: 'Publish your website', pubSignIn: 'Sign in with your Vesopa account to publish. Your design is saved in this browser and will be here when you come back.', signIn: 'Sign in or create account', download: 'Download the page instead',
       pubNoHosting: 'Publishing needs a hosting plan with a website on it. Your design is saved here while you choose one.', seePlans: 'See hosting plans',
       pubNoDomains: 'There is no website on your account yet. Add a domain with hosting first, then publish from here.', addDomain: 'Add a domain',
       pubChoose: 'Choose where it goes live.', pubReplace: 'I understand this replaces what {v} shows now. The current website is moved to a backup folder, not deleted.', pubGo: 'Publish now', publishing: 'Publishing…',
@@ -55,7 +56,7 @@
       signInOpen: 'Sign in with your Vesopa account to open a website you have published.',
     },
     bn: {
-      placeholder: 'আপনার ওয়েবসাইটের কথা বলুন, বা কী বদলাবেন বলুন…', ready: 'প্রস্তুত', listening: 'শুনছি…', hearing: 'আপনার কথা লিখে নিচ্ছি…', thinking: 'ভাবছি…', building: 'বানাচ্ছি', speaking: 'বলছি',
+      placeholder: 'আপনার ওয়েবসাইটের কথা বলুন…', ready: 'প্রস্তুত', listening: 'শুনছি…', hearing: 'আপনার কথা লিখে নিচ্ছি…', thinking: 'ভাবছি…', building: 'বানাচ্ছি', speaking: 'বলছি',
       publish: 'প্রকাশ করুন', editing: 'এডিট করছেন', heroA: 'যা চান বলুন।', heroB: 'চোখের সামনে তৈরি হবে।', heroP: 'এক বাক্যে আপনার ব্যবসার কথা বলুন — মুখে বা লিখে। লেখা হতে হতেই ওয়েবসাইটটা এখানে দেখা যাবে, আর যা বদলাতে চান শুধু বললেই হবে।',
       untitled: 'নামহীন ওয়েবসাইট', savedHere: 'এই ব্রাউজারে সেভ করা', langBtn: 'English',
       stepTheme: 'রং আর ফন্ট', stepSection: '{v}', stepRemove: '{v} সরানো হয়েছে', stepMove: '{v} সরিয়ে রাখা হয়েছে', stepName: 'নাম “{v}”',
@@ -63,8 +64,9 @@
       lost: 'বানানোর সময় সংযোগ চলে গেছে। যা শেষ হয়েছে তা রাখা আছে — আবার বললেই বাকিটা হবে।',
       newConfirm: 'নতুন ওয়েবসাইট শুরু করবেন? পেজ বন্ধ না করা পর্যন্ত এটা আনডু করে ফিরিয়ে আনা যাবে।',
       suggestNew: ['আরেকটু গাঢ় রং করুন', 'খোলার সময় যোগ করুন', 'রিভিউ সেকশন যোগ করুন', 'রং সবুজ করে দিন', 'ছবির গ্যালারি যোগ করুন'],
+      suggestStart: ['ঢাকার একটি রেস্টুরেন্ট', 'একটি বেকারি, উজ্জ্বল রঙে', 'ফটোগ্রাফারের পোর্টফোলিও', 'মেনু আর বুকিং ফর্মসহ রেস্টুরেন্ট', 'আমার ব্যবসার এক পাতার ওয়েবসাইট'],
       hint: 'টিপস: প্রিভিউয়ের যেকোনো অংশে ক্লিক করুন, তারপর বলুন কী বদলাতে চান।',
-      pubTitle: 'ওয়েবসাইট প্রকাশ করুন', pubSignIn: 'প্রকাশ করতে আপনার Vesopa অ্যাকাউন্টে সাইন ইন করুন। ডিজাইনটা এই ব্রাউজারে সেভ করা আছে, ফিরে এলেই পাবেন।', signIn: 'Vesopa দিয়ে চালিয়ে যান', download: 'বরং পেজটা ডাউনলোড করুন',
+      pubTitle: 'ওয়েবসাইট প্রকাশ করুন', pubSignIn: 'প্রকাশ করতে আপনার Vesopa অ্যাকাউন্টে সাইন ইন করুন। ডিজাইনটা এই ব্রাউজারে সেভ করা আছে, ফিরে এলেই পাবেন।', signIn: 'সাইন ইন করুন বা অ্যাকাউন্ট খুলুন', download: 'বরং পেজটা ডাউনলোড করুন',
       pubNoHosting: 'প্রকাশ করতে একটা হোস্টিং প্ল্যান লাগবে। প্ল্যান বাছাই করার সময় ডিজাইনটা এখানে সেভ থাকবে।', seePlans: 'হোস্টিং প্ল্যান দেখুন',
       pubNoDomains: 'আপনার অ্যাকাউন্টে এখনো কোনো ওয়েবসাইট নেই। আগে হোস্টিং সহ একটা ডোমেইন যোগ করুন।', addDomain: 'ডোমেইন যোগ করুন',
       pubChoose: 'কোথায় লাইভ হবে বেছে নিন।', pubReplace: 'আমি বুঝেছি, এটা {v}-এ এখন যা আছে তার জায়গা নেবে। আগের ওয়েবসাইট মুছে না গিয়ে একটা ব্যাকআপ ফোল্ডারে থাকবে।', pubGo: 'এখনই প্রকাশ করুন', publishing: 'প্রকাশ হচ্ছে…',
@@ -298,11 +300,20 @@
   }
   function prettyId(sid) { return sid.charAt(0).toUpperCase() + sid.slice(1).replace(/-/g, ' '); }
 
+  /**
+   * The chips under the conversation.
+   *
+   * WITH NOTHING BUILT YET they are examples of what to ask for, because an
+   * empty rail beside an empty canvas gives a person nothing to push against
+   * -- the owner's words were "no questions and answers". Once sections exist
+   * they become the things worth changing next.
+   */
   function suggestions() {
     var box = $('[data-suggest]');
     box.innerHTML = '';
-    if (!state.site.sections.length) return;
-    T('suggestNew').forEach(function (s) {
+    var list = state.site.sections.length ? T('suggestNew') : T('suggestStart');
+    if (!list || !list.length) return;
+    list.forEach(function (s) {
       var b = document.createElement('button');
       b.type = 'button'; b.textContent = s;
       b.addEventListener('click', function () { send(s, false); });

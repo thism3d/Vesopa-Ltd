@@ -259,6 +259,16 @@ CREATE TABLE IF NOT EXISTS coupons (
   max_uses       INT UNSIGNED NOT NULL DEFAULT 0,
   used           INT UNSIGNED NOT NULL DEFAULT 0,
   first_order_only TINYINT(1) NOT NULL DEFAULT 0,
+  -- Advertised on /offers, or handed out privately. OFF by default, and that
+  -- default is the point: PROMO100 takes 100% off everything, and an offers
+  -- page that listed every active code would have published it.
+  public_offer   TINYINT(1) NOT NULL DEFAULT 0,
+  -- What the offers page calls it. Empty falls back to `description`.
+  headline       VARCHAR(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  -- Comma-separated ISO country codes this code may be used from; empty means
+  -- anywhere. Geo is a guess, so this is a marketing boundary, not a security
+  -- one -- never put anything behind it that matters if it leaks.
+  countries      VARCHAR(190) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
   starts_at      DATETIME NULL,
   expires_at     DATETIME NULL,
   active         TINYINT(1) NOT NULL DEFAULT 1,

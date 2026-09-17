@@ -84,6 +84,7 @@ const COOKIE_MAX_AGE = 365 * 24 * 60 * 60 * 1000;
  */
 const PUBLIC_EXACT = new Set([
   '/', '/hosting', '/email', '/ssl', '/transfer', '/support', '/about', '/contact', '/build',
+  '/offers',
   '/terms', '/privacy', '/aup', '/refunds',
 ]);
 const PUBLIC_PREFIX = ['/domains'];

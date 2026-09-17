@@ -34,7 +34,7 @@
       <h1><%= t('Sign in') %></h1>
       <p class="lede"><%= t('Your Vesopa account opens your sites, domains and billing.') %></p>
 
-      <%- include('../partials/vesopa-button', { href: '/auth/vesopa/start?next=' + encodeURIComponent(nextTo) }) %>
+      <%- include('../partials/vesopa-button', { href: '/auth/vesopa/start?next=' + encodeURIComponent(nextTo), label: t('Sign in or create account') }) %>
       <p class="auth-switch">
         <a href="/auth/vesopa/start?switch=1&next=<%= encodeURIComponent(nextTo) %>" rel="external"><%= t('Use a different Vesopa account') %></a>
       </p>

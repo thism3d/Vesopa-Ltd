@@ -107,7 +107,8 @@ router.get('/setup/:id', async (req, res, next) => {
       // always — an EJS template that references an undefined local throws, and
       // guarding every use with `typeof` in the view is worse than four cheap
       // locals here.
-      gateways: payments.gateways(),
+      // A customer paying: the offered list, same as the checkout.
+      gateways: payments.checkoutGateways(),
       selectedGateway: payments.defaultGateway(),
       canPayOnline: payments.anyGatewayAvailable(),
       isFree: Number(ctx.order.total_pence) === 0,

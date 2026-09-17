@@ -113,6 +113,8 @@ function ctxOf(req) {
     couponCode: req.cookies?.vh_coupon || '',
     customer: req.customer || null,
     cur: req.currency,
+    // Where they appear to be, for a code that belongs to one country.
+    country: req.country || '',
   };
 }
 
@@ -123,7 +125,7 @@ function ctxOf(req) {
  * erroring — a plan retired between adding to the basket and checking out
  * should not produce a stack trace on a customer's screen.
  */
-async function priceCart(cart, { couponCode = '', customer = null, cur = null } = {}) {
+async function priceCart(cart, { couponCode = '', customer = null, cur = null, country = '' } = {}) {
   const active = cur || (await currency.base());
   const { plans, emailPlans, tldBy } = await pricing.load({ includeInactive: true, cur: active });
   const money = (minor) => currency.format(minor, active);
@@ -312,7 +314,7 @@ async function priceCart(cart, { couponCode = '', customer = null, cur = null } 
   let couponDiscount = 0;
   let couponError = '';
   if (couponCode) {
-    const verdict = await coupons.evaluate(couponCode, lines, gross0, customer, active);
+    const verdict = await coupons.evaluate(couponCode, lines, gross0, customer, active, country);
     if (verdict.ok) {
       coupon = verdict.coupon;
       couponDiscount = verdict.discount_pence;
@@ -517,9 +519,9 @@ router.post('/cart/coupon', async (req, res, next) => {
 
     // Priced WITHOUT the code first, so the evaluation sees the basket the
     // coupon is being judged against rather than one it has already discounted.
-    const priced = await priceCart(req.cart, { customer: req.customer, cur: req.currency });
+    const priced = await priceCart(req.cart, { customer: req.customer, cur: req.currency, country: req.country || '' });
     const verdict = await coupons.evaluate(
-      code, priced.lines, priced.subtotal_pence, req.customer, req.currency,
+      code, priced.lines, priced.subtotal_pence, req.customer, req.currency, req.country || '',
     );
 
     if (!verdict.ok) {
@@ -724,7 +726,9 @@ router.get('/cart', async (req, res, next) => {
  * the next.
  */
 function paymentChoices(priced) {
-  const list = payments.gateways();
+  // checkoutGateways(), not gateways(): the admin and the renewal paths still
+  // see every adapter, a customer buying something sees only what is offered.
+  const list = payments.checkoutGateways();
   return {
     gateways: list,
     // A basket a coupon has taken to nothing skips the gateway entirely. There
