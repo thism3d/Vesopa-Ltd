@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -214,6 +215,34 @@ class LoyaltyApi {
   // ---- The member -----------------------------------------------------------
 
   Future<Map<String, dynamic>> me() => _send('GET', '/loyalty/v1/me');
+
+  /// The member's card as a signed Apple Wallet pass.
+  ///
+  /// Two steps: the API hands out a ten-minute link, and the pass comes from
+  /// that link -- the same address a printed QR code uses, so the pass is the
+  /// same one and updates itself the same way.
+  Future<Uint8List> applePass() async {
+    final json = await _send('GET', '/loyalty/v1/me/wallet');
+    final link = json['apple'] as String?;
+    if (link == null || link.isEmpty) {
+      throw ApiError('This venue is not offering Apple Wallet cards yet.');
+    }
+    final http.Response res;
+    try {
+      res = await _http.get(
+        Uri.parse(link),
+        // The link serves an iPhone a pass and sends anything else to Google.
+        headers: {'User-Agent': 'VesopaLoyalty (iPhone)', 'Accept': 'application/vnd.apple.pkpass'},
+      ).timeout(const Duration(seconds: 40));
+    } catch (_) {
+      throw ApiError('No connection. Check you are online and try again.');
+    }
+    final type = res.headers['content-type'] ?? '';
+    if (res.statusCode == 200 && type.contains('pkpass')) return res.bodyBytes;
+    // An error comes back as a small page; its heading is the reason.
+    final heading = RegExp(r'<title>([^<]+)</title>').firstMatch(res.body)?.group(1)?.trim();
+    throw ApiError(heading ?? 'Your card could not be added to Apple Wallet.', status: res.statusCode);
+  }
 
   Future<Map<String, dynamic>> history({DateTime? before}) => _send(
     'GET',

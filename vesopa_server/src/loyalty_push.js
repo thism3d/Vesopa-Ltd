@@ -271,20 +271,42 @@ async function sendFcm(channel, payload) {
 // one key for every app under the Apple developer account rather than a
 // certificate per app that expires every year.
 //
-// Configured with APNS_KEY_ID, APNS_TEAM_ID, APNS_PRIVATE_KEY and APNS_TOPIC
-// (the bundle id). APNS_ENV=sandbox points at Apple's test gateway.
+// Configured with APNS_KEY_ID, APNS_TEAM_ID, APNS_TOPIC (the bundle id) and the
+// key itself: APNS_KEY_PATH, a .p8 file on the server, or APNS_PRIVATE_KEY with
+// its line breaks written as \n. APNS_ENV=sandbox points at Apple's test
+// gateway only.
+//
+// PRODUCTION FIRST, THEN THE SANDBOX. An App Store or TestFlight install has a
+// production token; an app run from Xcode has a sandbox one, and Apple answers
+// BadDeviceToken when a token is sent to the other gateway. Trying the sandbox
+// on that one answer means a developer's phone and a customer's phone both get
+// the message without anybody changing the .env between them.
 
-const APNS_HOST = () =>
-  process.env.APNS_ENV === 'sandbox'
-    ? 'https://api.sandbox.push.apple.com'
-    : 'https://api.push.apple.com';
+const APNS_PRODUCTION = 'https://api.push.apple.com';
+const APNS_SANDBOX = 'https://api.sandbox.push.apple.com';
 
 let apnsToken = null;
+let apnsKeyFile = null;
+
+function apnsKey() {
+  const file = String(process.env.APNS_KEY_PATH || '').trim();
+  if (file) {
+    if (apnsKeyFile && apnsKeyFile.path === file) return apnsKeyFile.key;
+    try {
+      const key = require('fs').readFileSync(file, 'utf8');
+      apnsKeyFile = { path: file, key };
+      return key;
+    } catch {
+      return '';
+    }
+  }
+  return (process.env.APNS_PRIVATE_KEY || '').split('\n').join('\n');
+}
 
 function apnsCreds() {
   const keyId = process.env.APNS_KEY_ID || '';
   const teamId = process.env.APNS_TEAM_ID || '';
-  const privateKey = (process.env.APNS_PRIVATE_KEY || '').split('\\n').join('\n');
+  const privateKey = apnsKey();
   const topic = process.env.APNS_TOPIC || '';
   if (!keyId || !teamId || !privateKey || !topic) return null;
   return { keyId, teamId, privateKey, topic };
@@ -299,15 +321,60 @@ const apnsReady = () => apnsCreds() !== null;
  * reads like a broken key rather than too many tokens.
  */
 function apnsAuthToken(creds) {
-  if (apnsToken && apnsToken.until > Date.now()) return apnsToken.token;
+  if (apnsToken && apnsToken.until > Date.now() && apnsToken.kid === creds.keyId) return apnsToken.token;
   const token = jwt.sign(
     { iss: creds.teamId, iat: Math.floor(Date.now() / 1000) },
     creds.privateKey,
     { algorithm: 'ES256', header: { alg: 'ES256', kid: creds.keyId } }
   );
-  apnsToken = { token, until: Date.now() + 45 * 60_000 };
+  apnsToken = { token, kid: creds.keyId, until: Date.now() + 45 * 60_000 };
   return token;
 }
+
+/** One POST to one gateway. Resolves to {status, reason}; status 0 when it never got an answer. */
+function apnsPost(host, creds, deviceToken, body) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const session = http2.connect(host);
+    const done = (value) => {
+      if (settled) return;
+      settled = true;
+      try { session.close(); } catch { /* already gone */ }
+      resolve(value);
+    };
+
+    session.on('error', () => done({ status: 0, reason: 'connection' }));
+    session.setTimeout(10_000, () => done({ status: 0, reason: 'timeout' }));
+
+    const req = session.request({
+      ':method': 'POST',
+      ':path': `/3/device/${deviceToken}`,
+      authorization: `bearer ${apnsAuthToken(creds)}`,
+      'apns-topic': creds.topic,
+      'apns-push-type': 'alert',
+      'apns-priority': '10',
+      'content-type': 'application/json',
+      'content-length': Buffer.byteLength(body),
+    });
+    let status = 0;
+    let text = '';
+    req.setEncoding('utf8');
+    req.on('error', () => done({ status: 0, reason: 'request' }));
+    req.on('response', (headers) => { status = Number(headers[':status']); });
+    req.on('data', (chunk) => { text += chunk; });
+    req.on('end', () => {
+      let reason = '';
+      try { reason = JSON.parse(text).reason || ''; } catch { /* 200 has no body */ }
+      done({ status, reason });
+    });
+    req.end(body);
+  });
+}
+
+// Only these mean the token itself is no good. Every other 400 or 403 is a
+// fault at our end -- a wrong topic, a key without push enabled -- and deleting
+// customers' channels over one of those would lose them for good.
+const TOKEN_GONE = new Set(['BadDeviceToken', 'DeviceTokenNotForTopic', 'Unregistered', 'ExpiredToken']);
 
 /** Send one iPhone notification. Resolves to 'ok', 'gone' or 'failed'. */
 async function sendApns(channel, payload) {
@@ -329,39 +396,16 @@ async function sendApns(channel, payload) {
     image: payload.image || null,
   });
 
-  return new Promise((resolve) => {
-    let settled = false;
-    const session = http2.connect(APNS_HOST());
-    const done = (value) => {
-      if (settled) return;
-      settled = true;
-      try { session.close(); } catch { /* already gone */ }
-      resolve(value);
-    };
-
-    session.on('error', () => done('failed'));
-    session.setTimeout(10_000, () => done('failed'));
-
-    const req = session.request({
-      ':method': 'POST',
-      ':path': `/3/device/${channel.endpoint}`,
-      authorization: `bearer ${apnsAuthToken(creds)}`,
-      'apns-topic': creds.topic,
-      'apns-push-type': 'alert',
-      'content-type': 'application/json',
-      'content-length': Buffer.byteLength(body),
-    });
-    req.on('error', () => done('failed'));
-    req.on('response', (headers) => {
-      const status = Number(headers[':status']);
-      if (status === 200) return done('ok');
-      // 410 is Apple saying the app has gone from that phone; 400 covers a
-      // token that was never valid for this app.
-      if (status === 410 || status === 400) return done('gone');
-      done('failed');
-    });
-    req.end(body);
-  });
+  const sandboxOnly = process.env.APNS_ENV === 'sandbox';
+  let r = await apnsPost(sandboxOnly ? APNS_SANDBOX : APNS_PRODUCTION, creds, channel.endpoint, body);
+  if (!sandboxOnly && r.reason === 'BadDeviceToken') {
+    r = await apnsPost(APNS_SANDBOX, creds, channel.endpoint, body);
+  }
+  if (r.status === 200) return 'ok';
+  // 410 is Apple saying the app has gone from that phone.
+  if (r.status === 410 || TOKEN_GONE.has(r.reason)) return 'gone';
+  if (r.status) console.warn(`[loyalty push] APNs ${r.status} ${r.reason}`);
+  return 'failed';
 }
 
 module.exports = {

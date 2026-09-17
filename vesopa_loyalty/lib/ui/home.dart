@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/session.dart';
+import '../data/watch_card.dart';
+import '../platform/watch.dart';
 import '../platform/push.dart';
 import 'account_page.dart';
 import '../platform/brightness.dart';
@@ -134,8 +136,18 @@ class _HomePageState extends ConsumerState<HomePage> with WidgetsBindingObserver
     );
   }
 
+  /// The Apple Watch app's copy of the card, whenever either half changes.
+  void _syncWatch() {
+    final brand = ref.read(brandProvider).value;
+    final me = ref.read(meProvider).value;
+    if (brand == null || me == null) return;
+    unawaited(sendToWatch(watchCard(brand: brand, me: me, messages: ref.read(messagesProvider).value)));
+  }
+
   @override
   Widget build(BuildContext context) {
+    ref.listen(meProvider, (_, _) => _syncWatch());
+    ref.listen(messagesProvider, (_, _) => _syncWatch());
     final brand = ref.watch(brandProvider).requireValue;
     final unread = (ref.watch(messagesProvider).value?['unread'] as num?)?.toInt() ?? 0;
     final width = MediaQuery.of(context).size.width;

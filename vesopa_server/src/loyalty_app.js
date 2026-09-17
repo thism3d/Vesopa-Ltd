@@ -55,7 +55,7 @@ const QR = require('./qr');
 const loyaltyAuth = require('./loyalty_auth');
 const loyaltyAccountRoutes = require('./loyalty_account');
 const { loyaltyDeletionRoutes } = require('./privacy_provider');
-const { appPath, appUrl, RESERVED, NOT_FOUND } = require('./loyalty_host');
+const { appPath, appUrl, RESERVED, NOT_FOUND, LOYALTY_HOST } = require('./loyalty_host');
 const loyaltyEmail = require('./loyalty_email');
 
 const CODE_MINUTES = 10;
@@ -1014,6 +1014,35 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
     try {
       await pool.execute('DELETE FROM epos_customer_near WHERE office = ? AND customer_id = ?', [req.office, req.customerId]);
       res.json({ ok: true });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /**
+   * The member's card as a Wallet pass.
+   *
+   * A link, not the pass itself: the signing, the pass record and Apple's
+   * update service already live behind /wallet/c/:token (wallet_apple_service.js),
+   * and that link is the one a printed QR code uses, so a card added from the
+   * app is the same pass, updated the same way, as one added at the counter.
+   * Ten minutes, because it stands in for the member's session: long enough to
+   * download, useless if it turns up in a log later.
+   */
+  router.get('/loyalty/v1/me/wallet', requireCustomer, async (req, res, next) => {
+    try {
+      const token = jwt.sign(
+        { scope: 'wallet', office: req.office, kind: 'loyalty', sub: String(req.customerId) },
+        secret,
+        { expiresIn: '10m' }
+      );
+      const base = LOYALTY_HOST
+        ? `https://${LOYALTY_HOST}`
+        : String(process.env.BACKOFFICE_URL || '').replace(/\/+$/, '');
+      res.set('Cache-Control', 'no-store').json({
+        apple: `${base}/wallet/c/${token}?apple=1`,
+        google: `${base}/wallet/s/${token}`,
+      });
     } catch (e) {
       next(e);
     }

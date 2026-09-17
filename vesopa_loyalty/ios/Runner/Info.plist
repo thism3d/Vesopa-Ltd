@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Vesopa Loyalty</string>
+	<string>The Vesopa Kitchen</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -68,13 +68,22 @@
 	</array>
 	<!-- Lets a notification wake the app long enough to update its inbox, so a
 	     customer who taps one is not looking at yesterday's news. The Push
-	     Notifications *capability* is separate and lives on the App ID: turn it
-	     on in Xcode (Signing & Capabilities), which writes Runner.entitlements.
-	     It needs the Apple developer account, so it is not done here. -->
+	     Notifications capability itself is Runner.entitlements; the App ID
+	     com.vesopaepos.thevesopakitchen needs Push Notifications ticked too. -->
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
 	</array>
+	<!-- "Offers when I'm nearby". Without this string iOS refuses the request
+	     outright and the app went down the moment the switch was turned on.
+	     While the app is open only: there is no Always key, on purpose, and
+	     the position is compared with the venue's and never stored. -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>To tell whether you are near the venue so it can send you offers while you are there. Your location is used there and then and never stored.</string>
+	<!-- HTTPS only, through the system's own encryption: exempt from export
+	     paperwork, and saying so here saves the question on every upload. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSCameraUsageDescription</key>
 	<string>To take a photo for your membership card.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

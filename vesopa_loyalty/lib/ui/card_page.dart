@@ -6,7 +6,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../data/brand.dart';
+import '../data/api.dart';
 import '../data/session.dart';
+import '../platform/wallet.dart';
 import 'widgets.dart';
 
 /// The card: a QR code the till scans, and what is on it.
@@ -49,6 +51,7 @@ class CardPage extends ConsumerWidget {
                 padding: const EdgeInsets.all(20),
                 children: [
                   Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 440), child: card)),
+                  const _AddToWallet(),
                   const SizedBox(height: 18),
                   Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 440), child: facts)),
                 ],
@@ -62,7 +65,14 @@ class CardPage extends ConsumerWidget {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 440), child: card)),
+                      Expanded(
+                        child: Column(
+                          children: [
+                            ConstrainedBox(constraints: const BoxConstraints(maxWidth: 440), child: card),
+                            const _AddToWallet(),
+                          ],
+                        ),
+                      ),
                       const SizedBox(width: 28),
                       Expanded(child: facts),
                     ],
@@ -370,6 +380,69 @@ class _Back extends StatelessWidget {
           _Hint(on: on, icon: Icons.flip_camera_android, text: 'Tap to go back to your code'),
         ],
       ),
+    );
+  }
+}
+
+/// Add to Apple Wallet, under the card, on an iPhone that has Wallet.
+///
+/// Nothing at all anywhere else: no gap, no disabled button. The pass carries
+/// the same code as the card above, and once added it is on the lock screen
+/// at the till and on a paired Apple Watch without opening the app.
+class _AddToWallet extends ConsumerStatefulWidget {
+  const _AddToWallet();
+
+  @override
+  ConsumerState<_AddToWallet> createState() => _AddToWalletState();
+}
+
+class _AddToWalletState extends ConsumerState<_AddToWallet> {
+  late final Future<bool> _available = AppleWallet.available();
+  var _busy = false;
+
+  Future<void> _add() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final pass = await ref.read(apiProvider).applePass();
+      final outcome = await AppleWallet.add(pass);
+      if (outcome == WalletOutcome.added) {
+        messenger.showSnackBar(const SnackBar(content: Text('Your card is in Apple Wallet.')));
+      }
+    } on ApiError catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+    } on PlatformException catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.message ?? 'Your card could not be added to Apple Wallet.')));
+    } catch (_) {
+      messenger.showSnackBar(const SnackBar(content: Text('Your card could not be added to Apple Wallet.')));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<bool>(
+      future: _available,
+      builder: (context, snap) {
+        if (snap.data != true) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(top: 18),
+          child: Center(
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                AppleWalletButton(onPressed: _add),
+                if (_busy)
+                  const IgnorePointer(
+                    child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5)),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

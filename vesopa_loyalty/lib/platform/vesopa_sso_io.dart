@@ -39,6 +39,8 @@ String _randomString([int bytes = 32]) =>
 /// attempt does not leave a socket open all day.
 const _wait = Duration(minutes: 5);
 
+bool get _inApp => Platform.isIOS;
+
 Future<VesopaAnswer?> startVesopaSignIn({required String slug, required String venue}) async {
   if (_clientId.isEmpty) {
     return const VesopaAnswer(error: 'This app was built without a Vesopa sign-in.');
@@ -64,7 +66,12 @@ Future<VesopaAnswer?> startVesopaSignIn({required String slug, required String v
       'code_challenge': challenge,
       'code_challenge_method': 'S256',
     });
-    await launchUrl(url, mode: LaunchMode.externalApplication);
+    // AN IPHONE SIGNS IN INSIDE THE APP. Sent out to Safari, the app is
+    // suspended within seconds and this listener with it, so the page Vesopa
+    // returns to cannot connect and the sign-in never finishes. A Safari view
+    // over the app keeps the app running; it is closed below once the code is
+    // in. Android and Windows keep the listener alive in the background.
+    await launchUrl(url, mode: _inApp ? LaunchMode.inAppBrowserView : LaunchMode.externalApplication);
 
     final code = await _waitForCode(server, state, venue).timeout(
       _wait,
@@ -81,6 +88,13 @@ Future<VesopaAnswer?> startVesopaSignIn({required String slug, required String v
   } finally {
     // On every path: a listener left bound outlives the failure that made it.
     await server.close(force: true);
+    if (_inApp) {
+      try {
+        await closeInAppWebView();
+      } catch (_) {
+        // Already closed by the member.
+      }
+    }
   }
 }
 

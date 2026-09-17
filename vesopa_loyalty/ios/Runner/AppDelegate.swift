@@ -8,13 +8,15 @@ import UserNotifications
 ///
 /// APNs needs no configuration file and no third party: the app asks iOS for a
 /// device token and iOS gives it one, provided the Push Notifications
-/// capability is on the App ID. What the SERVER needs is the .p8 key, the key
-/// id, the team id and the bundle id — see APNS_* in the server's .env and
-/// src/loyalty_push.js. So this compiles and runs today; what it cannot do
-/// until those exist is have anything sent to it.
+/// capability is on the App ID (Runner.entitlements carries aps-environment).
+/// What the SERVER needs is the .p8 key, the key id, the team id and the bundle
+/// id com.vesopaepos.thevesopakitchen -- APNS_* in the server's .env and
+/// src/loyalty_push.js.
 ///
-/// Android is the opposite way round: its half is blocked on a Firebase
-/// project, because there is no way to wake an Android app without one.
+/// A notification that arrives while the app is open is shown as a banner
+/// (iOS hides it otherwise), and tapping one opens the news: `open` is sent to
+/// Dart with `/inbox/<id>`, or kept for Dart's `opened` call when the tap is
+/// what launched the app.
 ///
 /// HOW IT ANSWERS DART
 ///
@@ -34,10 +36,20 @@ import UserNotifications
   /// than starting another registration.
   private var pending: [FlutterResult] = []
 
+  /// A tapped notification's address, waiting for Dart to start and ask.
+  private var opened: String?
+  private var dartListening = false
+
+  /// Held for the life of the app; each owns its channel.
+  private var wallet: WalletBridge?
+  private var watch: WatchBridge?
+
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    // Before launch finishes, or the tap that launched the app is not delivered.
+    UNUserNotificationCenter.current().delegate = self
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
@@ -57,12 +69,53 @@ import UserNotifications
     )
     self.channel = channel
     channel.setMethodCallHandler { [weak self] call, result in
-      guard call.method == "token" else {
+      switch call.method {
+      case "token":
+        self?.deviceToken(result)
+      case "opened":
+        self?.dartListening = true
+        result(self?.opened)
+        self?.opened = nil
+      default:
         result(FlutterMethodNotImplemented)
-        return
       }
-      self?.deviceToken(result)
     }
+
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "VesopaLoyaltyWallet") {
+      let wallet = WalletBridge(messenger: registrar.messenger())
+      registrar.register(WalletButtonFactory(channel: wallet.channel), withId: "vesopa_loyalty/wallet_button")
+      self.wallet = wallet
+    }
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "VesopaLoyaltyWatch") {
+      watch = WatchBridge(messenger: registrar.messenger())
+    }
+  }
+
+  /// In the foreground too: the member sees the message, and the news badge
+  /// catches up when Dart next refreshes.
+  override func userNotificationCenter(
+    _ center: UNUserNotificationCenter,
+    willPresent notification: UNNotification,
+    withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+  ) {
+    completionHandler([.banner, .list, .sound])
+  }
+
+  /// Tapped: straight to the news.
+  override func userNotificationCenter(
+    _ center: UNUserNotificationCenter,
+    didReceive response: UNNotificationResponse,
+    withCompletionHandler completionHandler: @escaping () -> Void
+  ) {
+    let info = response.notification.request.content.userInfo
+    let id = (info["id"] as? CustomStringConvertible)?.description ?? ""
+    let address = id.isEmpty ? "/inbox" : "/inbox/\(id)"
+    if dartListening, let channel = channel {
+      channel.invokeMethod("open", arguments: address)
+    } else {
+      opened = address
+    }
+    completionHandler()
   }
 
   /// Ask the customer, then ask iOS.

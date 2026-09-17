@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../platform/location.dart';
 import '../platform/push.dart';
+import '../platform/watch.dart';
+import 'watch_card.dart';
 import 'api.dart';
 import 'brand.dart';
 
@@ -202,6 +206,8 @@ class SessionNotifier extends AsyncNotifier<String?> {
     await prefs.remove(_key);
     ref.read(apiProvider).token = null;
     state = const AsyncData(null);
+    // Signed out here, so the card goes from the watch too.
+    unawaited(sendToWatch(watchSignedOut));
   }
 }
 

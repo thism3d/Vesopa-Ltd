@@ -80,7 +80,19 @@ Future<String?> pushUnsubscribe() async {
   return uri;
 }
 
-/// Windows opens the app itself on a tapped toast.
-void onOpenRequest(void Function(String hash) handler) {}
+/// A tapped notification.
+///
+/// Windows opens the app itself on a tapped toast. An iPhone tells the app
+/// (ios/Runner/AppDelegate.swift): `open` while it is running, or kept for
+/// `opened` when the tap is what started it. The address is `/inbox/<id>`.
+void onOpenRequest(void Function(String hash) handler) {
+  if (!Platform.isIOS) return;
+  _mobile.setMethodCallHandler((call) async {
+    if (call.method == 'open') handler('${call.arguments}');
+  });
+  _mobile.invokeMethod<String>('opened').then((address) {
+    if (address != null && address.isNotEmpty) handler(address);
+  }, onError: (Object _) {});
+}
 
 String openedAt() => '';

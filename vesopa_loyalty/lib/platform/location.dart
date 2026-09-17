@@ -2,8 +2,13 @@ import 'package:geolocator/geolocator.dart';
 
 /// Where the customer is, asked only when they have turned on "Offers when
 /// I'm nearby" -- and only while the app is open. Nothing tracks them in the
-/// background. The server keeps the one latest position for a day, to send
-/// a venue's "near us now" notifications (src/loyalty_app.js, audience near).
+/// background. The server compares the position with the venue's there and
+/// then and keeps only whether they were near, for a few hours, to send a
+/// venue's "near us now" notifications (src/loyalty_app.js, audience near).
+/// The position itself is never stored.
+///
+/// On an iPhone this needs NSLocationWhenInUseUsageDescription in Info.plist;
+/// without it the request is refused by iOS itself.
 class Position2 {
   const Position2(this.latitude, this.longitude, this.accuracy);
   final double latitude;
