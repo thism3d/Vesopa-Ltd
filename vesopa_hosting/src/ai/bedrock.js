@@ -4,7 +4,8 @@
  * party and adds no SDK for two calls.
  *
  *   chat()        the task model (AI_TASK_MODEL, Qwen3-coder-next): decides
- *                 what to say and which tools to call
+ *                 which tools to call; and, with `model`, the talk model
+ *                 (AI_TALK_MODEL) that words the reply
  *   transcribe()  the voice model (AI_VOICE_MODEL, Voxtral): hears a clip and
  *                 writes down what was said. Sent as a chat message part —
  *                 Mantle has no /audio/transcriptions (tested: 404) — and
@@ -71,9 +72,9 @@ async function once(path, body, { timeoutMs = 60_000 } = {}) {
  * @returns {{message: object, usage: object}} the assistant message (content,
  *   tool_calls) as the API returned it.
  */
-async function chat({ messages, tools, maxTokens = 700, temperature = 0.2 }) {
+async function chat({ messages, tools, maxTokens = 700, temperature = 0.2, model = config.AI.TASK_MODEL, timeoutMs }) {
   const body = {
-    model: config.AI.TASK_MODEL,
+    model,
     messages,
     max_tokens: maxTokens,
     temperature,
@@ -82,11 +83,33 @@ async function chat({ messages, tools, maxTokens = 700, temperature = 0.2 }) {
     body.tools = tools;
     body.tool_choice = 'auto';
   }
-  const data = await call('/chat/completions', body);
+  const data = await call('/chat/completions', body, timeoutMs ? { timeoutMs } : {});
   const choice = data.choices && data.choices[0];
   if (!choice || !choice.message) throw new Error('AI: empty answer');
   return { message: choice.message, usage: data.usage || {} };
 }
+
+/*
+ * What the voice model is told. It used to say "the words spoken in
+ * English ... no translation" whatever was said, and with Bengali speech it
+ * translated, invented ("My name is Ian, I was wondering if you could help
+ * me" for "help me set up my email") or answered [silence].
+ *
+ * Measured 2026-09-17 on Bengali clips (Meta MMS-TTS) and English ones
+ * (Windows' voice), Voxtral Small:
+ *   - with no language named, Bengali speech comes back in Urdu or
+ *     Devanagari script, so Bangla needs the widget's switch;
+ *   - naming Bangla and saying "verbatim" gives everyday sentences word for
+ *     word; a list of example words in the prompt made it recite the list
+ *     back on a short clip, so there is none;
+ *   - the same instruction written in Bangla was worse (silence, an invented
+ *     email address).
+ * English is unchanged by the auto wording.
+ */
+const HEAR = {
+  en: "Transcribe this audio verbatim, in the language actually spoken and in that language's own script. Output only the transcript. Do not translate, summarise, add or guess words. If there is no clear speech, output [silence].",
+  bn: 'Transcribe this audio verbatim. The speaker is most likely speaking Bangla (Bengali). Output only the transcript: Bangla in Bengali script, any English words in English letters, English speech in English. Do not translate, summarise, add or guess words. If there is no clear speech, output [silence].',
+};
 
 /**
  * What was said in a clip. `format` is what the browser recorded: the widget
@@ -104,7 +127,7 @@ async function transcribe({ data, format = 'wav', language = 'en' }) {
         role: 'user',
         content: [
           { type: 'input_audio', input_audio: { data, format } },
-          { type: 'text', text: `Transcribe this short voice message from a customer of a UK web-hosting company. Write exactly the words spoken in ${language === 'en' ? 'English' : language}, with normal punctuation, and nothing else: no commentary, no quotes, no translation. Domain names are written as one word with dots, e.g. "example dot co dot uk" -> example.co.uk, "my shop dot com" -> myshop.com. If there is no speech, reply with the single word: [silence]` },
+          { type: 'text', text: `${HEAR[language] || HEAR.en} Domain names are written as one word with dots (example.co.uk).` },
         ],
       },
     ],

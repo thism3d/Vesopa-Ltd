@@ -14,7 +14,7 @@
  */
 
 const express = require('express');
-const { CONTACT } = require('../config');
+const { CONTACT, AI } = require('../config');
 
 const router = express.Router();
 const UPDATED = '5 August 2026';
@@ -91,7 +91,7 @@ const DOCS = {
 <p>Tickets and emails you send us, kept so that the next person to help you can see what has already been tried.</p>
 
 <h3>Vesopa AI, if you switch it on</h3>
-<p>The assistant on this site is off until you tap it. If you allow the microphone, what you say is sent to our AI provider (Amazon Web Services, Bedrock) to be written down and understood, and the audio is not kept by us or, under their terms, used to train anything. What you type or say, and what the assistant learned about your needs, is kept in your browser until you sign in and with your account afterwards, so it can carry on where you left off; you can wipe it from the assistant at any time. The assistant only ever sees the page you are on and your own account. Legal basis: your consent, which you give by allowing the microphone or typing to it, and can withdraw by switching it off.</p>
+<p>The assistant on this site is off until you tap it. If you allow the microphone, what you say is sent to our AI provider (Amazon Web Services, Bedrock) to be written down and understood, and the audio is not kept by us or, under their terms, used to train anything. If you choose Bangla, your browser's own speech recognition writes down what you say where the browser has it (Google's service in Chrome and on Android, Microsoft's in Edge), under that company's terms.${AI.TTS_API_KEY ? " The assistant's spoken replies are made by Google (Gemini): the text of each reply is sent to them to be turned into speech, and nothing you say is." : ''} What you type or say, and what the assistant learned about your needs, is kept in your browser until you sign in and with your account afterwards, so it can carry on where you left off; you can wipe it from the assistant at any time. The assistant only ever sees the page you are on and your own account. Legal basis: your consent, which you give by allowing the microphone or typing to it, and can withdraw by switching it off.</p>
 
 <h3>Your customers' data</h3>
 <p>Whatever you store on your hosting account is yours. We do not access it except when you ask us to, when we must to fix a fault or investigate abuse, or when legally required. In respect of that data <strong>you are the controller and we are your processor</strong>.</p>
@@ -111,7 +111,8 @@ const DOCS = {
   <li><strong>Domain registries and our registrar</strong> — registrant details, because registration cannot happen otherwise.</li>
   <li><strong>Our payment provider</strong> — to take payment.</li>
   <li><strong>Microsoft Azure</strong> — our servers are hosted there, in a UK region.</li>
-  <li><strong>Amazon Web Services (Bedrock)</strong> — what you say or type to Vesopa AI, only while you use it.</li>
+  <li><strong>Amazon Web Services (Bedrock)</strong> — what you say or type to Vesopa AI, only while you use it.</li>${AI.TTS_API_KEY ? `
+  <li><strong>Google (Gemini)</strong> — the text of Vesopa AI's replies, to speak them aloud.</li>` : ''}
   <li><strong>Law enforcement or a court</strong> — where we are legally obliged.</li>
 </ul>
 

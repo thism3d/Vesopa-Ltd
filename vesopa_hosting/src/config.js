@@ -184,8 +184,9 @@ const MAIL_HOSTNAME = process.env.MAIL_HOSTNAME || 'mail.vesopa.com';
  * The endpoint is Amazon Bedrock's OpenAI-compatible one; the two models
  * were chosen and verified on 2026-09-17: Voxtral hears (a chat message
  * carrying input_audio -- that endpoint has no /audio/transcriptions) and
- * Qwen3-coder-next decides and calls tools. Nothing on it speaks; the
- * browser's own voices do that.
+ * Qwen3-coder-next decides and calls tools. Nothing on it speaks: the
+ * spoken reply comes from Gemini TTS (src/ai/voice.js) when AI_TTS_API_KEY
+ * is set, and from the browser's own voices when it is not.
  */
 const AI = {
   API_KEY: process.env.AI_API_KEY || '',
@@ -193,6 +194,16 @@ const AI = {
   PROJECT_ID: process.env.AI_PROJECT_ID || '',
   TASK_MODEL: process.env.AI_TASK_MODEL || 'qwen.qwen3-coder-next',
   VOICE_MODEL: process.env.AI_VOICE_MODEL || 'mistral.voxtral-small-24b-2507',
+  // Words the reply (src/ai/agent.js talk()). Set AI_TALK_MODEL= empty to
+  // let the task model speak for itself, as it did at first.
+  TALK_MODEL: process.env.AI_TALK_MODEL !== undefined ? process.env.AI_TALK_MODEL : 'qwen.qwen3-235b-a22b-2507',
+  // The assistant's own voice (Gemini's text-to-speech). Voices are Gemini's
+  // prebuilt names; each speaks both English and Bangla.
+  TTS_API_KEY: process.env.AI_TTS_API_KEY || '',
+  TTS_MODEL: process.env.AI_TTS_MODEL || 'gemini-2.5-flash-preview-tts',
+  TTS_VOICE_EN: process.env.AI_TTS_VOICE_EN || 'Sulafat',
+  TTS_VOICE_BN: process.env.AI_TTS_VOICE_BN || 'Sulafat',
+  SPEAKS_PER_10_MIN: Number(process.env.AI_SPEAKS_PER_10_MIN) || 80,
   // How many turns one visitor may take in ten minutes, and how big a clip.
   TURNS_PER_10_MIN: Number(process.env.AI_TURNS_PER_10_MIN) || 40,
   MAX_AUDIO_BYTES: Number(process.env.AI_MAX_AUDIO_BYTES) || 1_500_000,

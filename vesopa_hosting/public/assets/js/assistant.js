@@ -8,20 +8,22 @@
  * that costs money or cannot be undone. The thinking happens on the server
  * (/ai/turn); this file is the ears, the voice and the hands.
  *
- * THREE SHAPES.
- *   the orb      minimised: a lime circle bottom-right whose ring shows the
- *                state — off, idle, listening (grows with the voice),
- *                thinking, working on the page, speaking
- *   the bar      on a phone: a strip along the bottom that listens and
- *                answers out loud, with the last thing said written on it
- *                and a keyboard button that opens the chat
+ * TWO SHAPES, ONE BUTTON. The same on a phone and a computer.
+ *   the orb      a lime circle bottom-right, calm and silent. Once a visit
+ *                it introduces itself in a bubble, then says nothing.
+ *                TAP: voice on -- the microphone is asked for inside that
+ *                tap, the ring moves with the customer's voice, replies are
+ *                spoken and written in a caption beside the orb.
+ *                TAP AGAIN: voice off, and the microphone is handed back.
+ *                PRESS AND HOLD (or right-click, or the menu key): the chat.
  *   the chat     the transcript and a keyboard: a column down the right on
  *                a tablet or desktop, a sheet from the bottom on a phone
  *
- * VOICE FIRST. The first tap on the orb asks the browser for the microphone
- * straight away — a tap is the gesture browsers need — and explains why
- * while the prompt is up. Allowed: it listens, and answers out loud.
- * Refused: it types instead, and the microphone button offers again.
+ * NOTHING UNTIL ASKED. The first version asked for the microphone on the
+ * first tap, and once it was allowed switched it on by itself on every later
+ * page load, with a listening bar across the bottom of a phone. The ask was
+ * the opposite: stay silent, introduce yourself, then wait to be tapped. So
+ * voice is never on when a page loads, and nothing is spoken unless voice is.
  *
  * WHERE IT LIVES. On <html>, beside the loading bar, not in <body>: the
  * no-reload router (nav.js) replaces body.innerHTML on every page, and a
@@ -43,10 +45,22 @@
  * the account, and the browser's copy is handed over once (POST /ai/import).
  *
  * VOICE. The browser records 16 kHz mono WAV and the server's voice model
- * writes down what was said; the reply is spoken by the browser's own
- * voices. With "listen" on, it listens continuously and sends each
- * utterance when the customer pauses; with it off, the mic button is
- * hold-to-talk. Nothing is recorded while the assistant is speaking.
+ * writes down what was said. The reply is spoken by the assistant's own
+ * voice (/ai/speak, a text-to-speech model) when the server has one, and by
+ * the most natural voice this browser has when it does not -- the first
+ * version always used the browser's default, and it was called "a robot".
+ * While voice is on it listens continuously and sends each utterance when
+ * the customer pauses; in the chat the microphone button is hold-to-talk.
+ * Nothing is recorded while the assistant is speaking.
+ *
+ * LANGUAGE. English or Bangla: a switch in the chat head and on the
+ * introduction, and
+ * speaking or typing Bengali script switches it by itself. In Bangla the
+ * browser's own speech recogniser hears the customer where there is one
+ * (Chrome, Edge, Android) -- the server's voice model, measured on Bengali
+ * clips, gets everyday sentences right but garbles short technical ones --
+ * and the voice model is the fallback wherever that recogniser is missing
+ * or fails.
  */
 (function () {
   'use strict';
@@ -56,13 +70,16 @@
 
   var STORE_KEY = 'vesopa_ai_v1';
   var MAX_AUTO_HOPS = 6;
+  var HOLD_MS = 520;                 // press and hold this long to open the chat
+  var HELLO_KEY = 'vesopa_ai_hello'; // sessionStorage: introduced this visit
   var NEVER = /^\/(auth|admin\/auth|pay|api|webmail|panel\/terminal|panel\/files)(\/|$)/;
 
   // ---- State ------------------------------------------------------------
   var store = load();
   var session = { enabled: false, signedIn: false, name: '', token: '' };
-  var state = 'off';
-  var shape = 'orb';        // orb | bar | chat
+  var state = 'idle';
+  var shape = 'orb';        // orb | chat
+  var live = false;         // voice on: listening, and replies spoken. Never on at load.
   var busy = false;
   var autoHops = 0;
   var pending = null;       // {ref, label, question}
@@ -70,16 +87,18 @@
   var ui = {};
   var audio = { ctx: null, stream: null, node: null, src: null, chunks: [], speaking: false, above: 0, below: 0, floor: 0.004, ptt: false, talking: false };
   var voices = [];
+  var speech = { gen: 0, source: null, current: null, noVoiceSaid: false };
+  var ears = { rec: null, broken: false, misses: 0 };
+  var MIC = { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } };
 
   function load() {
     try {
       var raw = localStorage.getItem(STORE_KEY);
       var s = raw ? JSON.parse(raw) : {};
       return {
-        consent: s.consent || null,       // 'voice' | 'text' | 'no'
-        voice: s.voice !== false,          // speak replies
-        listen: s.listen !== false,        // always listening
-        shape: s.shape || 'orb',           // what was open last
+        voice: s.voice !== false,          // speak replies while voice is on
+        shape: s.shape === 'chat' ? 'chat' : 'orb',
+        lang: s.lang === 'bn' || s.lang === 'en' ? s.lang : browserLang(),
         memory: Array.isArray(s.memory) ? s.memory.slice(-40) : [],
         history: Array.isArray(s.history) ? s.history.slice(-40) : [],
         seen: Boolean(s.seen),
@@ -87,9 +106,10 @@
         hops: Number(s.hops) || 0,         // how many automatic turns that job has taken
       };
     } catch (e) {
-      return { consent: null, voice: true, listen: true, shape: 'orb', memory: [], history: [], seen: false, cont: 0, hops: 0 };
+      return { voice: true, shape: 'orb', lang: browserLang(), memory: [], history: [], seen: false, cont: 0, hops: 0 };
     }
   }
+  function browserLang() { return /^bn/i.test(navigator.language || '') ? 'bn' : 'en'; }
   function save() {
     try { localStorage.setItem(STORE_KEY, JSON.stringify(store)); } catch (e) { /* private mode */ }
   }
@@ -97,13 +117,77 @@
     var m = document.cookie.match(/(?:^|; )vh_csrf=([^;]*)/);
     return m ? decodeURIComponent(m[1]) : '';
   }
-  function isPhone() { return window.matchMedia('(max-width: 700px)').matches; }
-  function voiceOn() { return store.consent === 'voice'; }
-  function restState() { return voiceOn() && store.listen && audio.node ? 'listening' : (store.consent && store.consent !== 'no' ? 'idle' : 'off'); }
+  function restState() { return live && (audio.node || ears.rec) ? 'listening' : 'idle'; }
   function enabledOnThisPage() {
     var b = document.body;
     if (!b || b.getAttribute('data-ai') !== '1') return false;
     return !/^\/admin(\/|$)/.test(window.location.pathname);
+  }
+
+  // ---- Words, in English and Bangla -------------------------------------------
+  var WORDS = {
+    en: {
+      idle: 'Ready', listening: 'Listening…', hearing: 'Hearing you…', thinking: 'Thinking…', working: 'Working on the page…', speaking: 'Speaking',
+      askingMic: 'Asking for the microphone…', letGo: 'Listening… let go to send',
+      placeholder: 'Ask, or say what you want done…',
+      hintVoice: 'Voice is on: talk whenever you like. Tap the ear to stop.',
+      hintText: 'Type below, hold the microphone to talk, or tap the ear for voice. What you say goes to our AI service to be understood; the audio isn’t kept.',
+      listeningNow: 'I’m listening. Tell me what you need, and tap me again to stop.',
+      voiceOff: 'Voice off.',
+      voicePaused: 'I’ve stopped listening. Tap me when you want to talk.',
+      noMic: 'This browser can’t use the microphone here. Press and hold me to type instead.',
+      micRefused: 'The microphone wasn’t allowed. Press and hold me to type instead, or allow it and tap me again.',
+      noVoice: 'This browser has no Bangla voice, so I’ll write my answers here.',
+      opening: 'Opening {v}', typing: 'Typing “{v}” into {l}', choosing: 'Choosing {v} for {l}', ticking: 'Ticking {l}', unticking: 'Unticking {l}', pressing: 'Pressing {l}',
+      field: 'the field', list: 'the list', box: 'the box', button: 'the button',
+      missing: 'Could not find {l} on this page any more.', noOption: 'That option is not in the list.', failed: 'That did not work: ',
+      yes: 'Yes, go ahead', no: 'No', yesSaid: 'Yes, go ahead.', noSaid: 'No, don’t do that.', sayYesNo: ' Say yes or no.',
+      lost: 'I lost the connection for a moment. Try again.', wrong: 'Something went wrong.',
+      switched: 'Okay, I’ll speak English from now on.',
+      langLabel: 'EN', langTitle: 'বাংলায় কথা বলুন — switch to Bangla', langAria: 'Language: English. Switch to Bangla',
+      orbLabel: 'Vesopa AI. Tap to talk, tap again to stop. Press and hold to open the chat.',
+      voiceToggle: 'Voice on or off',
+      helloTitle: 'Hello, I’m Vesopa AI', helloTitleName: 'Hello {v}, I’m Vesopa AI',
+      helloBody: 'I can help with domains, hosting, email and your website. Tap me to talk, tap again to stop, or press and hold to open the chat.',
+      helloAgain: 'Hello again{v}', helloAgainBody: 'Tap me to talk, or press and hold to open the chat.',
+      otherLang: 'বাংলা', openChat: 'Open chat', close: 'Close',
+      chatHello: 'Hi, I’m Vesopa AI. Ask me about domains, hosting, email or your website — or tell me what you’d like done and I’ll do the clicking for you.',
+    },
+    bn: {
+      idle: 'প্রস্তুত', listening: 'শুনছি…', hearing: 'শুনতে পাচ্ছি…', thinking: 'ভাবছি…', working: 'পেজে কাজ করছি…', speaking: 'বলছি',
+      askingMic: 'মাইক্রোফোনের অনুমতি চাইছি…', letGo: 'শুনছি… ছেড়ে দিলে পাঠাব',
+      placeholder: 'জিজ্ঞেস করুন, বা বলুন কী করতে চান…',
+      hintVoice: 'ভয়েস চালু: যখন খুশি কথা বলুন। থামাতে কানের আইকনে চাপুন।',
+      hintText: 'নিচে লিখুন, কথা বলতে মাইক্রোফোন চেপে ধরুন, বা ভয়েসের জন্য কানের আইকনে চাপুন। আপনি যা বলেন তা বোঝার জন্য আমাদের AI সার্ভিসে যায়; অডিও রাখা হয় না।',
+      listeningNow: 'শুনছি। কী লাগবে বলুন — থামাতে আবার চাপুন।',
+      voiceOff: 'ভয়েস বন্ধ।',
+      voicePaused: 'আর শুনছি না। কথা বলতে চাইলে আমাকে চাপুন।',
+      noMic: 'এই ব্রাউজারে মাইক্রোফোন চলে না। লিখতে চাইলে আমাকে চেপে ধরে রাখুন।',
+      micRefused: 'মাইক্রোফোনের অনুমতি দেওয়া হয়নি। লিখতে চাইলে আমাকে চেপে ধরে রাখুন, অথবা অনুমতি দিয়ে আবার চাপুন।',
+      noVoice: 'এই ব্রাউজারে বাংলা ভয়েস নেই, তাই উত্তরগুলো এখানে লিখে দিচ্ছি।',
+      opening: '{v} খুলছি', typing: '{l}-এ “{v}” লিখছি', choosing: '{l}-এ {v} বেছে নিচ্ছি', ticking: '{l} টিক দিচ্ছি', unticking: '{l} থেকে টিক সরাচ্ছি', pressing: '{l} চাপছি',
+      field: 'ঘরটি', list: 'তালিকা', box: 'বক্স', button: 'বোতাম',
+      missing: 'এই পেজে {l} আর খুঁজে পাচ্ছি না।', noOption: 'এই অপশনটা তালিকায় নেই।', failed: 'এটা কাজ করেনি: ',
+      yes: 'হ্যাঁ, করুন', no: 'না', yesSaid: 'হ্যাঁ, করুন।', noSaid: 'না, এটা করবেন না।', sayYesNo: ' হ্যাঁ বা না বলুন।',
+      lost: 'এক মুহূর্তের জন্য সংযোগ চলে গিয়েছিল। আবার বলুন।', wrong: 'কিছু একটা সমস্যা হয়েছে।',
+      switched: 'ঠিক আছে, এখন থেকে বাংলায় কথা বলব।',
+      langLabel: 'বাং', langTitle: 'Switch to English — ইংরেজিতে কথা বলুন', langAria: 'ভাষা: বাংলা। Switch to English',
+      orbLabel: 'Vesopa AI। কথা বলতে চাপুন, থামাতে আবার চাপুন। চ্যাট খুলতে চেপে ধরে রাখুন।',
+      voiceToggle: 'ভয়েস চালু বা বন্ধ',
+      helloTitle: 'হ্যালো, আমি Vesopa AI', helloTitleName: 'হ্যালো {v}, আমি Vesopa AI',
+      helloBody: 'ডোমেইন, হোস্টিং, ইমেইল আর ওয়েবসাইট নিয়ে সাহায্য করতে পারি। কথা বলতে আমাকে চাপুন, থামাতে আবার চাপুন, আর চ্যাট খুলতে চেপে ধরে রাখুন।',
+      helloAgain: 'আবার স্বাগতম{v}', helloAgainBody: 'কথা বলতে আমাকে চাপুন, চ্যাট খুলতে চেপে ধরে রাখুন।',
+      otherLang: 'English', openChat: 'চ্যাট খুলুন', close: 'বন্ধ করুন',
+      chatHello: 'হ্যালো, আমি Vesopa AI। ডোমেইন, হোস্টিং, ইমেইল বা ওয়েবসাইট নিয়ে জিজ্ঞেস করুন — অথবা কী করতে চান বলুন, ক্লিকের কাজগুলো আমি করে দেব।',
+    },
+  };
+  /** A phrase in the current language; {v} is a value, {l} a label. */
+  function T(key, v, l) {
+    var table = WORDS[store.lang] || WORDS.en;
+    var text = table[key] != null ? table[key] : WORDS.en[key];
+    return String(text)
+      .replace('{v}', function () { return v == null ? '' : String(v); })
+      .replace('{l}', function () { return l == null ? '' : String(l); });
   }
 
   // ---- UI ---------------------------------------------------------------
@@ -115,35 +199,56 @@
     close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
     send: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12L20 4l-4 16-4-7z"/></svg>',
     ear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 10a6 6 0 0 1 12 0c0 3-2 4-3 6s-1 5-4 5"/><path d="M9.5 10a2.5 2.5 0 0 1 5 0"/></svg>',
-    keyboard: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h.01M11 10h.01M15 10h.01M7 14h10"/></svg>',
-    voice: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 10v4M9 6v12M13 9v6M17 4v16M21 10v4"/></svg>',
   };
 
   function build() {
     var root = document.createElement('div');
     root.id = 'vai';
     root.innerHTML =
-      '<button class="vai-orb" type="button" data-state="off" aria-label="Vesopa AI"><span class="vai-ring"></span><span class="vai-ring2"></span>' + ICON.spark + '<span class="vai-badge"></span></button>' +
-      '<div class="vai-bar" hidden data-state="off">' +
-        '<span class="vai-bar-mark"><span class="vai-ring"></span>' + ICON.spark + '</span>' +
-        '<div class="vai-bar-text"><small class="vai-bar-status">Ready</small><span class="vai-bar-line"></span></div>' +
-        '<button class="vai-bar-btn vai-bar-kb" type="button" aria-label="Type instead" title="Type">' + ICON.keyboard + '</button>' +
-        '<button class="vai-bar-btn vai-bar-min" type="button" aria-label="Minimise" title="Minimise">' + ICON.min + '</button>' +
-      '</div>' +
+      '<button class="vai-orb" type="button" data-state="idle" aria-pressed="false"><span class="vai-ring"></span><span class="vai-ring2"></span>' + ICON.spark + '<span class="vai-badge"></span></button>' +
+      '<div class="vai-say" role="status" aria-live="polite" hidden><p class="vai-say-text"></p><div class="vai-say-row" hidden></div></div>' +
       '<div class="vai-cursor" aria-hidden="true"><i></i><span>AI</span></div>';
     document.documentElement.appendChild(root);
     ui.root = root;
     ui.orb = root.querySelector('.vai-orb');
-    ui.bar = root.querySelector('.vai-bar');
-    ui.barStatus = root.querySelector('.vai-bar-status');
-    ui.barLine = root.querySelector('.vai-bar-line');
+    ui.say = root.querySelector('.vai-say');
+    ui.sayText = root.querySelector('.vai-say-text');
+    ui.sayRow = root.querySelector('.vai-say-row');
     ui.cursor = root.querySelector('.vai-cursor');
-    ui.orb.addEventListener('click', onOrbTap);
-    root.querySelector('.vai-bar-kb').addEventListener('click', function () { showChat(); });
-    root.querySelector('.vai-bar-min').addEventListener('click', minimise);
-    ui.bar.addEventListener('click', function (e) {
-      if (e.target.closest('button')) return;
-      unlockSpeech(); resumeAudio();
+    orbGestures();
+    ui.say.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-y]');
+      if (b) { answerConfirm(b.getAttribute('data-y') === '1'); return; }
+      expand(); // the caption opens the conversation it came from
+    });
+    syncLang();
+  }
+
+  /** Tap: voice on or off. Press and hold, right-click or the menu key: the chat. */
+  function orbGestures() {
+    var timer = null, down = false, held = false;
+    var cancel = function () { clearTimeout(timer); timer = null; down = false; ui.orb.classList.remove('is-pressing'); };
+    ui.orb.addEventListener('pointerdown', function (e) {
+      if (e.button) return;
+      held = false; down = true;
+      ui.orb.classList.add('is-pressing');
+      timer = setTimeout(function () {
+        timer = null; held = true;
+        ui.orb.classList.remove('is-pressing');
+        if (navigator.vibrate) { try { navigator.vibrate(12); } catch (x) {} }
+        expand();
+      }, HOLD_MS);
+    });
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (t) { ui.orb.addEventListener(t, cancel); });
+    ui.orb.addEventListener('click', function (e) {
+      if (held) { held = false; e.preventDefault(); return; }
+      toggleVoice();
+    });
+    ui.orb.addEventListener('contextmenu', function (e) {
+      e.preventDefault();
+      if (down) held = true; // a long touch on Android arrives as a context menu
+      cancel();
+      expand();
     });
   }
 
@@ -159,9 +264,9 @@
       '<div class="vai-head">' +
         '<span class="vai-mark">' + ICON.spark + '</span>' +
         '<div class="vai-title"><b>Vesopa AI</b><span class="vai-status">Ready</span></div>' +
-        '<button class="vai-ic vai-t-listen" type="button" title="Always listening" aria-label="Always listening" aria-pressed="false">' + ICON.ear + '</button>' +
+        '<button class="vai-ic vai-lang" type="button"></button>' +
+        '<button class="vai-ic vai-t-live" type="button" aria-pressed="false">' + ICON.ear + '</button>' +
         '<button class="vai-ic vai-t-voice" type="button" title="Speak replies" aria-label="Speak replies" aria-pressed="false">' + ICON.speaker + '</button>' +
-        '<button class="vai-ic vai-t-bar" type="button" title="Voice only" aria-label="Back to voice">' + ICON.voice + '</button>' +
         '<button class="vai-ic vai-t-min" type="button" title="Minimise" aria-label="Minimise">' + ICON.min + '</button>' +
       '</div>' +
       '<div class="vai-body"></div>' +
@@ -179,12 +284,12 @@
     ui.input = p.querySelector('.vai-input');
     ui.send = p.querySelector('.vai-send');
     ui.mic = p.querySelector('.vai-mic');
-    ui.tListen = p.querySelector('.vai-t-listen');
+    ui.tLive = p.querySelector('.vai-t-live');
     ui.tVoice = p.querySelector('.vai-t-voice');
-    ui.tBar = p.querySelector('.vai-t-bar');
+    ui.headLang = p.querySelector('.vai-lang');
+    ui.headLang.addEventListener('click', toggleLang);
 
     p.querySelector('.vai-t-min').addEventListener('click', minimise);
-    ui.tBar.addEventListener('click', function () { if (voiceOn()) showBar(); else enableVoice(false, true); });
     ui.send.addEventListener('click', sendTyped);
     ui.input.addEventListener('keydown', function (e) {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendTyped(); }
@@ -198,13 +303,9 @@
       store.voice = !store.voice; save(); syncToggles();
       if (!store.voice) stopSpeaking();
     });
-    ui.tListen.addEventListener('click', function () {
-      if (!voiceOn()) { enableVoice(false, true); return; }
-      store.listen = !store.listen; save(); syncToggles();
-      if (store.listen) startListening(); else stopListening();
-    });
-    // Hold to talk, for people who keep the ear off.
-    var down = function (e) { e.preventDefault(); if (!voiceOn()) { enableVoice(false, true); return; } pttStart(); };
+    ui.tLive.addEventListener('click', toggleVoice);
+    // Hold to talk, with or without voice on.
+    var down = function (e) { e.preventDefault(); unlockSpeech(); pttStart(); };
     var up = function (e) { e.preventDefault(); pttStop(); };
     ui.mic.addEventListener('pointerdown', down);
     ui.mic.addEventListener('pointerup', up);
@@ -214,102 +315,212 @@
     // The transcript so far.
     var hist = session.signedIn && session.history ? session.history : store.history;
     hist.slice(-16).forEach(function (m) { bubble(m.role === 'user' ? 'user' : 'ai', m.content, true); });
-    syncToggles();
+    syncLang();
   }
 
   function syncToggles() {
+    if (ui.orb) {
+      ui.orb.setAttribute('aria-pressed', live ? 'true' : 'false');
+      ui.orb.setAttribute('aria-label', T('orbLabel'));
+      ui.orb.title = T('orbLabel');
+    }
     if (!ui.panel) return;
     ui.tVoice.setAttribute('aria-pressed', store.voice ? 'true' : 'false');
     ui.tVoice.classList.toggle('is-off', !store.voice);
-    var listening = voiceOn() && store.listen;
-    ui.tListen.setAttribute('aria-pressed', listening ? 'true' : 'false');
-    ui.tListen.classList.toggle('is-off', !listening);
-    ui.tBar.hidden = !isPhone();
-    ui.hint.textContent = voiceOn()
-      ? (store.listen ? 'Listening whenever you pause. Hold the microphone to talk instead.' : 'Hold the microphone to talk, or type.')
-      : 'Type below, or press the microphone to switch voice on.';
+    ui.tLive.setAttribute('aria-pressed', live ? 'true' : 'false');
+    ui.tLive.classList.toggle('is-off', !live);
+    ui.tLive.title = T('voiceToggle');
+    ui.tLive.setAttribute('aria-label', T('voiceToggle'));
+    ui.hint.textContent = live ? T('hintVoice') : T('hintText');
   }
 
-  var LABEL = { off: 'Off', idle: 'Ready', listening: 'Listening…', thinking: 'Thinking…', working: 'Working on the page…', speaking: 'Speaking' };
+  /** Everything that says which language it is in. */
+  function syncLang() {
+    if (ui.headLang) {
+      ui.headLang.textContent = T('langLabel');
+      ui.headLang.title = T('langTitle');
+      ui.headLang.setAttribute('aria-label', T('langAria'));
+    }
+    ui.root.setAttribute('lang', store.lang === 'bn' ? 'bn' : 'en');
+    if (ui.input) ui.input.placeholder = T('placeholder');
+    syncToggles();
+    fillHello();
+    if (ui.orb) setState(state);
+  }
+  function toggleLang() {
+    unlockSpeech();
+    setLang(store.lang === 'bn' ? 'en' : 'bn', true);
+  }
+  /** Switch language; `announce` says so in the new one (out loud only while voice is on). */
+  function setLang(next, announce) {
+    next = next === 'bn' ? 'bn' : 'en';
+    if (store.lang === next) return;
+    store.lang = next; save();
+    syncLang();
+    // The other language may hear through the other ears.
+    earsStop(true);
+    if (live && !busy) startListening();
+    if (announce) {
+      var phrase = session.phrases && session.phrases[next];
+      var line = phrase ? phrase.text : T('switched');
+      bubble('ai', line); remember('assistant', line);
+      speak(line, phrase ? [phrase] : null);
+    }
+  }
+
   function setState(next, label) {
     state = next;
     ui.orb.setAttribute('data-state', next);
-    ui.bar.setAttribute('data-state', next);
-    ui.barStatus.textContent = label || LABEL[next] || '';
     if (ui.panel) {
       ui.panel.setAttribute('data-state', next);
-      ui.status.textContent = label || LABEL[next] || '';
+      ui.status.textContent = label || T(next) || '';
     }
   }
-  function barLine(text) { ui.barLine.textContent = text || ''; }
 
-  // ---- Shapes ---------------------------------------------------------------
+  // ---- Beside the orb: the introduction, and the caption -----------------------------
+  /** Once a visit: hello and what the orb does, then quiet. */
+  function introduce() {
+    try {
+      if (sessionStorage.getItem(HELLO_KEY)) return;
+      sessionStorage.setItem(HELLO_KEY, '1');
+    } catch (e) { /* no storage: introduce anyway */ }
+    var first = !store.seen;
+    store.seen = true; save();
+    setTimeout(function () {
+      if (shape !== 'orb' || live || busy || ui.hello) return;
+      var h = document.createElement('div');
+      h.className = 'vai-hello';
+      h.setAttribute('role', 'status');
+      h.innerHTML = '<button class="vai-hello-x" type="button">×</button><b class="vai-hello-title"></b><p class="vai-hello-text"></p>' +
+        '<div class="vai-hello-row"><button class="vai-chip" type="button" data-h="lang"></button><button class="vai-chip" type="button" data-h="chat"></button></div>';
+      h.vaiFirst = first;
+      ui.root.appendChild(h);
+      ui.hello = h;
+      fillHello();
+      h.addEventListener('click', function (e) {
+        if (e.target.closest('.vai-hello-x')) { hideHello(); return; }
+        var b = e.target.closest('[data-h]');
+        if (!b) return;
+        if (b.getAttribute('data-h') === 'lang') { setLang(store.lang === 'bn' ? 'en' : 'bn', false); holdHello(); return; }
+        expand();
+      });
+      h.addEventListener('mouseenter', function () { clearTimeout(ui.helloTimer); });
+      h.addEventListener('mouseleave', holdHello);
+      holdHello();
+    }, 1200);
+  }
+  function holdHello() {
+    if (!ui.hello) return;
+    clearTimeout(ui.helloTimer);
+    ui.helloTimer = setTimeout(hideHello, ui.hello.vaiFirst ? 12000 : 7000);
+  }
+  function fillHello() {
+    var h = ui.hello;
+    if (!h) return;
+    var name = session.name ? String(session.name).trim().split(/\s+/)[0] : '';
+    h.querySelector('.vai-hello-title').textContent = h.vaiFirst
+      ? (name ? T('helloTitleName', name) : T('helloTitle'))
+      : T('helloAgain', name ? ', ' + name : '');
+    h.querySelector('.vai-hello-text').textContent = h.vaiFirst ? T('helloBody') : T('helloAgainBody');
+    h.querySelector('[data-h="lang"]').textContent = T('otherLang');
+    h.querySelector('[data-h="chat"]').textContent = T('openChat');
+    h.querySelector('.vai-hello-x').setAttribute('aria-label', T('close'));
+  }
+  function hideHello() {
+    if (!ui.hello) return;
+    clearTimeout(ui.helloTimer);
+    var h = ui.hello;
+    ui.hello = null;
+    h.classList.add('is-leaving');
+    setTimeout(function () { h.remove(); }, 260);
+  }
+
+  /** The caption beside the orb: what was heard, what it said, what it is doing. */
+  function caption(text, ms) {
+    if (!ui.say) return;
+    if (!ui.sayRow.hidden) return; // a question is waiting for its answer
+    clearTimeout(ui.sayTimer);
+    if (!text || shape !== 'orb') { ui.say.hidden = true; return; }
+    hideHello();
+    ui.sayText.textContent = text;
+    ui.say.hidden = false;
+    ui.sayTimer = setTimeout(function () { ui.say.hidden = true; }, ms || Math.min(15000, 4000 + text.length * 60));
+  }
+  function captionAsk(question) {
+    clearTimeout(ui.sayTimer);
+    ui.sayText.textContent = question;
+    ui.sayRow.innerHTML = '<button class="vai-btn lime" type="button" data-y="1"></button><button class="vai-btn" type="button" data-y="0"></button>';
+    ui.sayRow.querySelector('[data-y="1"]').textContent = T('yes');
+    ui.sayRow.querySelector('[data-y="0"]').textContent = T('no');
+    ui.sayRow.hidden = false;
+    ui.say.hidden = shape !== 'orb';
+    if (shape === 'orb') hideHello();
+  }
+  function clearAsk() {
+    ui.sayRow.hidden = true;
+    ui.sayRow.innerHTML = '';
+    var card = ui.body && ui.body.querySelector('.vai-confirm');
+    if (card) card.remove();
+  }
+  function answerConfirm(yes) {
+    clearAsk();
+    ui.say.hidden = true;
+    if (yes) confirmYes(); else confirmNo();
+  }
+
+  // ---- Shapes and voice -------------------------------------------------------------------
   function setShape(next) {
     shape = next;
     store.shape = next; save();
     ui.orb.hidden = next !== 'orb';
-    ui.bar.hidden = next !== 'bar';
     if (ui.panel) ui.panel.hidden = next !== 'chat';
-    if (ui.hello) { ui.hello.remove(); ui.hello = null; }
-    if (next !== 'orb') ui.orb.classList.remove('has-news');
+    if (next !== 'orb') { hideHello(); ui.say.hidden = true; ui.orb.classList.remove('has-news'); }
+    else if (!ui.sayRow.hidden) ui.say.hidden = false;
   }
-  function showBar() { setShape('bar'); }
-  function showChat() {
+  function expand() {
     buildChat();
     setShape('chat');
+    if (!ui.body.querySelector('.vai-msg')) bubble('ai', T('chatHello'), true);
     scrollBody();
-    if (!voiceOn()) setTimeout(function () { ui.input.focus(); }, 60);
+    if (!live && !isTouch()) setTimeout(function () { ui.input.focus(); }, 60);
   }
   function minimise() { setShape('orb'); }
 
-  /** The orb was tapped: the first time, that tap is what lets the mic in. */
-  function onOrbTap() {
+  function toggleVoice() {
     unlockSpeech();
-    if (!store.consent) { firstRun(); return; }
-    if (voiceOn()) {
-      if (!audio.stream) enableVoice(false, false); else resumeAudio();
-      if (isPhone()) showBar(); else showChat();
-    } else {
-      showChat();
-    }
+    hideHello();
+    if (live) { stopVoice(); caption(T('voiceOff'), 2200); return; }
+    startVoice();
   }
-
-  function firstRun() {
-    // Ask for the microphone NOW, inside the tap, and explain while the
-    // browser's prompt is up. Whatever they choose, they get an assistant.
-    if (isPhone()) {
-      showBar();
-      barLine('I can listen and talk you through it. Allow the microphone, or tap the keyboard to type.');
-    } else {
-      showChat();
-      explainerCard();
-    }
-    setState('idle', 'Asking for the microphone…');
-    enableVoice(true, false);
-  }
-
-  function explainerCard() {
-    var c = document.createElement('div');
-    c.className = 'vai-card vai-explainer';
-    c.innerHTML =
-      '<h3>Hello, I’m Vesopa AI.</h3>' +
-      '<p>I can walk you through a domain, hosting, email and your website — and do the clicking and typing for you. I only see this page and, once you sign in, your own account. I ask before anything is paid for or deleted.</p>' +
-      '<p class="small">Allow the microphone and we can talk; what you say is sent to our AI service to be understood and is not kept as audio. Or <button class="vai-link" type="button" data-c="text">type instead</button>.</p>';
-    ui.body.appendChild(c);
-    c.addEventListener('click', function (e) {
-      if (!e.target.closest('[data-c="text"]')) return;
-      c.remove();
-      store.consent = 'text'; save(); setState('idle'); syncToggles(); greet();
+  /** Voice on, from a tap: the tap is what lets the browser ask for the microphone. */
+  function startVoice() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { caption(T('noMic'), 9000); return; }
+    setState('idle', T('askingMic'));
+    caption(T('askingMic'), 30000);
+    navigator.mediaDevices.getUserMedia(MIC).then(function (stream) {
+      live = true;
+      audio.stream = stream;
+      syncToggles();
+      caption(T('listeningNow'));
+      startListening();
+      setState(restState());
+    }).catch(function () {
+      live = false;
+      syncToggles();
+      setState('idle');
+      caption(T('micRefused'), 9000);
     });
-    scrollBody();
   }
-  function clearExplainer() { var c = ui.body && ui.body.querySelector('.vai-explainer'); if (c) c.remove(); }
-
-  function greet() {
-    if (busy) return;
-    var hist = session.signedIn && session.history ? session.history : store.history;
-    if (hist.length) return;
-    turn({ greet: true });
+  /** Voice off: stop talking, stop listening, and give the microphone back. */
+  function stopVoice() {
+    live = false;
+    stopSpeaking();
+    earsStop(true);
+    audio.ptt = false;
+    releaseMic();
+    audio.chunks = []; audio.talking = false;
+    syncToggles();
+    if (!busy) setState('idle');
   }
 
   // ---- Transcript -----------------------------------------------------------
@@ -320,14 +531,14 @@
     el.textContent = text;
     ui.body.appendChild(el);
     if (!quiet) scrollBody();
-    if (shape === 'orb' && kind === 'ai') ui.orb.classList.add('has-news');
-    if (kind === 'ai') barLine(text);
-    if (kind === 'err') barLine(text);
+    if (quiet) return el;
+    if (shape === 'orb' && kind === 'ai' && !live) ui.orb.classList.add('has-news');
+    if (kind === 'ai' || kind === 'err' || kind === 'user') caption(text);
     return el;
   }
   function note(text) {
-    var el = bubble('note', text);
-    if (shape === 'bar') barLine(text);
+    var el = bubble('note', text, false);
+    caption(text, 2600);
     return el;
   }
   function typing(on) {
@@ -349,39 +560,18 @@
   }
 
   // ---- Voice: hearing -------------------------------------------------------
-  function enableVoice(firstTime, thenGreet) {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      fallBackToText(firstTime, 'This browser cannot use the microphone here, so I will read and type instead.');
-      return;
-    }
-    navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }).then(function (stream) {
-      audio.stream = stream;
-      store.consent = 'voice'; store.listen = true; save();
-      clearExplainer();
-      syncToggles();
-      startListening();
-      setState(restState());
-      if (shape === 'bar') barLine('I’m listening. Say what you would like to do.');
-      if (firstTime || thenGreet) greet();
-    }).catch(function () {
-      fallBackToText(firstTime, 'The microphone was not allowed, so I will read and type instead. The microphone button offers again.');
-    });
-  }
-  function fallBackToText(firstTime, why) {
-    if (store.consent !== 'voice') { store.consent = 'text'; save(); }
-    clearExplainer();
-    showChat();
-    setState('idle'); syncToggles();
-    bubble('err', why);
-    if (firstTime) greet();
-  }
   function resumeAudio() {
     if (audio.ctx && audio.ctx.state === 'suspended') audio.ctx.resume();
-    if (audio.stream && !audio.node && store.listen) startListening();
+    if (!live) return;
+    if (usingBrowserEars()) { ears.misses = 0; resumeEars(); } else if (!audio.node) startListening();
   }
 
+  /** Listening, through whichever ears this language uses. */
   function startListening() {
-    if (!audio.stream || audio.node) return;
+    if (!live && !audio.ptt) return;
+    if (usingBrowserEars()) { releaseMic(); if (live) resumeEars(); return; }
+    if (!audio.stream) { reacquireMic(); return; }
+    if (audio.node) return;
     var Ctx = window.AudioContext || window.webkitAudioContext;
     if (!Ctx) return;
     audio.ctx = audio.ctx || new Ctx();
@@ -389,27 +579,104 @@
     audio.src = audio.ctx.createMediaStreamSource(audio.stream);
     audio.node = audio.ctx.createScriptProcessor(4096, 1, 1);
     audio.rate = audio.ctx.sampleRate;
-    audio.chunks = []; audio.above = 0; audio.below = 0; audio.talking = false; audio.started = 0;
+    audio.chunks = []; audio.above = 0; audio.below = 0; audio.talking = false; audio.started = audio.ptt ? Date.now() : 0;
     audio.node.onaudioprocess = onAudio;
     audio.src.connect(audio.node);
     audio.node.connect(audio.ctx.destination);
     if (!busy && !audio.speaking) setState('listening');
   }
   function stopListening() {
+    earsStop(true);
     if (audio.node) { try { audio.node.disconnect(); audio.src.disconnect(); } catch (e) {} }
     audio.node = null; audio.src = null; audio.chunks = []; audio.talking = false;
     if (state === 'listening') setState('idle');
   }
+  /** Give the microphone back: on Android the browser's recogniser cannot have it while a stream holds it. */
+  function releaseMic() {
+    if (audio.node) { try { audio.node.disconnect(); audio.src.disconnect(); } catch (e) {} audio.node = null; audio.src = null; }
+    if (audio.stream) { audio.stream.getTracks().forEach(function (t) { t.stop(); }); audio.stream = null; }
+  }
+  /** Take it again (already allowed, so no prompt), after Bangla gave it up. */
+  function reacquireMic() {
+    if (audio.acquiring || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+    audio.acquiring = true;
+    navigator.mediaDevices.getUserMedia(MIC).then(function (stream) {
+      audio.acquiring = false;
+      if (usingBrowserEars() || (!live && !audio.ptt)) { stream.getTracks().forEach(function (t) { t.stop(); }); return; }
+      audio.stream = stream;
+      startListening();
+    }, function () { audio.acquiring = false; });
+  }
+
+  // ---- Voice: hearing Bangla through the browser's own recogniser -----------------
+  function Recogniser() { return window.SpeechRecognition || window.webkitSpeechRecognition || null; }
+  function usingBrowserEars() { return (live || audio.ptt) && store.lang === 'bn' && !ears.broken && Boolean(Recogniser()); }
+  function isTouch() { return window.matchMedia('(pointer: coarse)').matches; }
+
+  /** One utterance: listen, show the words as they come, send when it ends. */
+  function earsStart() {
+    if (ears.rec || busy || audio.speaking || !usingBrowserEars()) return;
+    var rec;
+    try { rec = new (Recogniser())(); } catch (e) { ears.broken = true; startListening(); return; }
+    rec.lang = 'bn-BD';
+    rec.interimResults = true;
+    rec.continuous = Boolean(audio.ptt);
+    rec.maxAlternatives = 1;
+    var heard = '';
+    rec.onresult = function (e) {
+      var interim = '';
+      for (var i = e.resultIndex; i < e.results.length; i += 1) {
+        if (e.results[i].isFinal) heard += e.results[i][0].transcript; else interim += e.results[i][0].transcript;
+      }
+      var line = (heard + ' ' + interim).trim();
+      if (line) { caption(line); setState('listening', T('hearing')); }
+    };
+    rec.onerror = function (e) {
+      // No Bangla here, no speech service, no microphone: the voice model hears instead.
+      if (/^(not-allowed|service-not-allowed|language-not-supported|network|audio-capture|bad-grammar)$/.test(e.error)) ears.broken = true;
+    };
+    rec.onend = function () {
+      if (ears.rec === rec) ears.rec = null;
+      if (rec.vaiQuiet) return;
+      var text = heard.trim();
+      if (text) { ears.misses = 0; audio.ptt = false; if (ui.mic) ui.mic.classList.remove('is-live'); turn({ text: text, spoken: true }); return; }
+      if (ears.broken) { startListening(); return; }
+      ears.misses += 1;
+      if (audio.ptt) return;
+      // Every start can chime on a phone, so after a quiet spell voice goes
+      // off and waits for the next tap.
+      if (live && (!isTouch() || ears.misses < 2)) { setTimeout(earsStart, 250); return; }
+      setState(restState());
+      if (live) { stopVoice(); caption(T('voicePaused')); }
+    };
+    ears.rec = rec;
+    try { rec.start(); setState('listening'); } catch (e) { ears.rec = null; }
+  }
+  /** Stop listening: `quiet` throws away what was heard, otherwise it is sent. */
+  function earsStop(quiet) {
+    var rec = ears.rec;
+    if (!rec) return;
+    ears.rec = null;
+    rec.vaiQuiet = Boolean(quiet);
+    try { if (quiet) rec.abort(); else rec.stop(); } catch (e) {}
+  }
+  /** Listening again after a reply, when nothing else is going on. */
+  function resumeEars() {
+    if (!live || busy || audio.speaking || state === 'working' || state === 'thinking') return;
+    if (usingBrowserEars()) { releaseMic(); if (!ears.rec) earsStart(); }
+    else if (!audio.node) startListening();
+  }
 
   /** Voice activity: talk when it is clearly louder than the room, send on a pause. */
   function onAudio(e) {
+    if (usingBrowserEars()) { audio.chunks = []; return; }
     var input = e.inputBuffer.getChannelData(0);
     var sum = 0;
     for (var i = 0; i < input.length; i += 1) sum += input[i] * input[i];
     var rms = Math.sqrt(sum / input.length);
     var frameMs = (input.length / audio.rate) * 1000;
 
-    var canHear = audio.ptt || (store.listen && !busy && !audio.speaking && state !== 'thinking' && state !== 'working');
+    var canHear = audio.ptt || (live && !busy && !audio.speaking && state !== 'thinking' && state !== 'working');
     if (!canHear) { audio.chunks = []; audio.talking = false; return; }
 
     if (!audio.talking) audio.floor = audio.floor * 0.95 + rms * 0.05;
@@ -417,13 +684,12 @@
     var loud = rms > threshold;
     var level = Math.min(1, rms / 0.12).toFixed(2);
     ui.orb.style.setProperty('--vai-level', level);
-    ui.bar.style.setProperty('--vai-level', level);
-    if (state === 'idle' && store.listen && !audio.ptt) setState('listening');
+    if (state === 'idle' && live && !audio.ptt) setState('listening');
 
     if (audio.ptt) { audio.chunks.push(new Float32Array(input)); return; }
 
     if (!audio.talking) {
-      if (loud) { audio.above += frameMs; if (audio.above > 120) { audio.talking = true; audio.started = Date.now(); audio.below = 0; setState('listening', 'Listening…'); } }
+      if (loud) { audio.above += frameMs; if (audio.above > 120) { audio.talking = true; audio.started = Date.now(); audio.below = 0; setState('listening', T('hearing')); } }
       else audio.above = 0;
       audio.chunks.push(new Float32Array(input));
       if (audio.chunks.length > 4 && !audio.talking) audio.chunks.shift();
@@ -440,19 +706,25 @@
   }
 
   function pttStart() {
-    if (!audio.stream) return;
-    if (!audio.node) startListening();
     stopSpeaking();
-    audio.ptt = true; audio.chunks = []; audio.started = Date.now();
-    ui.mic.classList.add('is-live'); setState('listening', 'Listening… let go to send');
+    audio.ptt = true;
+    ui.mic.classList.add('is-live');
+    setState('listening', T('letGo'));
+    if (usingBrowserEars()) { earsStop(true); earsStart(); return; }
+    // No microphone yet: it is asked for now, and listens if still held when it arrives.
+    if (!audio.stream) { reacquireMic(); return; }
+    if (!audio.node) startListening();
+    audio.chunks = []; audio.started = Date.now();
   }
   function pttStop() {
     if (!audio.ptt) return;
-    audio.ptt = false; ui.mic.classList.remove('is-live');
+    ui.mic.classList.remove('is-live');
+    if (usingBrowserEars()) { earsStop(false); audio.ptt = false; return; }
+    audio.ptt = false;
     var chunks = audio.chunks; audio.chunks = [];
-    if (Date.now() - audio.started < 300) { setState(restState()); return; }
-    sendClip(chunks);
-    if (!store.listen) stopListening();
+    if (Date.now() - audio.started >= 300) sendClip(chunks);
+    else setState(restState());
+    if (!live) releaseMic();
   }
   function sendClip(chunks) {
     var wav = toWav16k(chunks, audio.rate);
@@ -490,45 +762,153 @@
 
   // ---- Voice: speaking --------------------------------------------------------
   var unlocked = false;
-  /** iOS lets speech start only from a tap; an empty utterance in the tap opens the door. */
+  /**
+   * Inside a tap: wake the AudioContext the assistant's own voice plays
+   * through, and (iOS) open the door for the browser's voices with an empty
+   * utterance. Both only work from a gesture.
+   */
   function unlockSpeech() {
+    var Ctx = window.AudioContext || window.webkitAudioContext;
+    if (Ctx) { try { audio.ctx = audio.ctx || new Ctx(); if (audio.ctx.state === 'suspended') audio.ctx.resume(); } catch (e) {} }
     if (unlocked || !window.speechSynthesis) return;
     try { var u = new SpeechSynthesisUtterance(''); u.volume = 0; speechSynthesis.speak(u); unlocked = true; } catch (e) {}
   }
-  function pickVoice() {
+
+  /**
+   * The most natural voice this browser has for a language. Names with
+   * Natural, Neural, Online, Enhanced or Premium are the recorded-sounding
+   * ones (Edge, Safari, Android); "Desktop" voices are the old robotic ones,
+   * and the first version could land on those.
+   */
+  function pickVoice(lang) {
     if (!window.speechSynthesis) return null;
     voices = speechSynthesis.getVoices() || [];
-    var prefer = ['Google UK English Female', 'Microsoft Libby Online (Natural) - English (United Kingdom)', 'Microsoft Sonia Online (Natural) - English (United Kingdom)', 'Microsoft Hazel', 'Daniel', 'Kate', 'Serena'];
-    for (var i = 0; i < prefer.length; i += 1) {
-      for (var j = 0; j < voices.length; j += 1) if (voices[j].name.indexOf(prefer[i]) === 0) return voices[j];
+    var best = null, bestScore = -1e9;
+    for (var i = 0; i < voices.length; i += 1) {
+      var v = voices[i], tag = String(v.lang || '').replace('_', '-'), name = String(v.name || '');
+      if (lang === 'bn' ? !/^bn\b/i.test(tag) : !/^en\b/i.test(tag)) continue;
+      var score = 0;
+      if (/natural|neural|online|enhanced|premium|wavenet|studio|siri/i.test(name)) score += 60;
+      if (/^google/i.test(name)) score += 30;
+      if (/desktop|espeak|compact/i.test(name)) score -= 40;
+      if (lang === 'bn' ? /^bn-BD$/i.test(tag) : /^en-GB$/i.test(tag)) score += 20;
+      if (/Sonia|Libby|Maisie|Nabanita|Tanishaa|Serena|Kate|UK English Female/i.test(name)) score += 8;
+      if (!v.localService) score += 3;
+      if (score > bestScore) { best = v; bestScore = score; }
     }
-    for (var k = 0; k < voices.length; k += 1) if (/en-GB/i.test(voices[k].lang)) return voices[k];
-    for (var l = 0; l < voices.length; l += 1) if (/^en/i.test(voices[l].lang)) return voices[l];
-    return null;
+    return best;
   }
   if (window.speechSynthesis) { speechSynthesis.onvoiceschanged = function () { voices = speechSynthesis.getVoices(); }; }
 
-  function speak(text) {
+  /** The browser speaks it, a sentence at a time: natural pauses, and no cut-off on a long reply. */
+  function speakBrowser(text, gen) {
     return new Promise(function (resolve) {
-      if (!store.voice || !window.speechSynthesis || !text) return resolve();
-      stopSpeaking();
-      var u = new SpeechSynthesisUtterance(text.replace(/https?:\/\/\S+/g, 'the link').replace(/\bns([12])\.vesopa\.com\b/g, 'N S $1 dot vesopa dot com'));
-      var v = pickVoice();
-      if (v) u.voice = v;
-      u.lang = (v && v.lang) || 'en-GB';
-      u.rate = 1.02; u.pitch = 1;
-      var done = false;
-      var finish = function () { if (done) return; done = true; audio.speaking = false; setState(restState()); resolve(); };
-      u.onstart = function () { audio.speaking = true; setState('speaking'); };
-      u.onend = function () { setTimeout(finish, 250); };
-      u.onerror = finish;
-      audio.speaking = true; setState('speaking');
-      speechSynthesis.speak(u);
-      setTimeout(finish, Math.min(30000, 2000 + text.length * 70));
+      if (!window.speechSynthesis || gen !== speech.gen) return resolve();
+      var lang = /[\u0980-\u09FF]/.test(text) ? 'bn' : 'en';
+      var v = pickVoice(lang);
+      if (!v && lang === 'bn') {
+        // An English voice reading Bengali script is noise, not speech.
+        if (!speech.noVoiceSaid) { speech.noVoiceSaid = true; note(T('noVoice')); }
+        return resolve();
+      }
+      var clean = text.replace(/https?:\/\/\S+/g, lang === 'bn' ? 'লিংক' : 'the link').replace(/\bns([12])\.vesopa\.com\b/g, 'N S $1 dot vesopa dot com');
+      // Split after a full stop that ends a sentence, never inside example.co.uk.
+      var parts = clean.replace(/([.!?।])\s+/g, '$1\n').split('\n').map(function (x) { return x.trim(); }).filter(Boolean);
+      if (!parts.length) return resolve();
+      var left = parts.length, done = false;
+      var finish = function () { if (done) return; done = true; clearTimeout(guard); resolve(); };
+      var guard = setTimeout(finish, Math.min(60000, 3000 + clean.length * 90));
+      parts.forEach(function (part) {
+        var u = new SpeechSynthesisUtterance(part);
+        if (v) { u.voice = v; u.lang = v.lang; } else u.lang = 'en-GB';
+        u.rate = lang === 'bn' ? 0.95 : 1;
+        u.pitch = 1;
+        u.onend = u.onerror = function () { left -= 1; if (left <= 0) setTimeout(finish, 150); };
+        speechSynthesis.speak(u);
+      });
     });
   }
+
+  /** One signed line in the assistant's own voice, decoded and ready to play. */
+  function fetchLine(line) {
+    return fetch('/ai/speak', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-csrf-token': csrf(), 'x-ai-token': session.token || '' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ text: line.text, lang: line.lang, sig: line.sig }),
+    }).then(function (res) {
+      if (!res.ok) throw new Error('voice ' + res.status);
+      return res.arrayBuffer();
+    }).then(function (buf) {
+      return new Promise(function (resolve, reject) {
+        // Older Safari has only the callback form.
+        var p = audio.ctx.decodeAudioData(buf, resolve, reject);
+        if (p && typeof p.then === 'function') p.then(resolve, reject);
+      });
+    });
+  }
+  function playBuffer(buffer, gen) {
+    return new Promise(function (resolve) {
+      if (gen !== speech.gen) return resolve();
+      var src = audio.ctx.createBufferSource();
+      src.buffer = buffer;
+      src.connect(audio.ctx.destination);
+      speech.source = src;
+      var over = false;
+      var end = function () { if (over) return; over = true; if (speech.source === src) speech.source = null; resolve(); };
+      src.onended = end;
+      // A context that stalls never says it ended; the assistant must not stay deaf.
+      setTimeout(end, buffer.duration * 1000 + 1500);
+      src.start();
+    });
+  }
+  /** Every line is fetched at once and played in order as it arrives, so the first sentence starts early. */
+  async function speakServer(lines, gen) {
+    var coming = lines.map(function (l) { return fetchLine(l).then(function (b) { return b; }, function () { return null; }); });
+    for (var i = 0; i < lines.length; i += 1) {
+      var buffer = await coming[i];
+      if (gen !== speech.gen) return;
+      if (buffer) { await playBuffer(buffer, gen); continue; }
+      if (i === 0) throw new Error('no voice');
+      await speakBrowser(lines.slice(i).map(function (l) { return l.text; }).join(' '), gen);
+      return;
+    }
+  }
+  function contextRunning() {
+    if (!audio.ctx) return Promise.resolve(false);
+    if (audio.ctx.state === 'running') return Promise.resolve(true);
+    return Promise.race([
+      audio.ctx.resume().then(function () { return audio.ctx.state === 'running'; }, function () { return false; }),
+      sleep(300).then(function () { return false; }),
+    ]);
+  }
+
+  /**
+   * Say something. `lines` are the server's signed lines for the assistant's
+   * own voice; without them, or if that voice fails, the browser says it.
+   */
+  function speak(text, lines) {
+    stopSpeaking();
+    if (!live || !store.voice || !text) return Promise.resolve();
+    var gen = speech.gen;
+    earsStop(true);
+    audio.speaking = true; setState('speaking');
+    var own = lines && lines.length && session.voice ? contextRunning() : Promise.resolve(false);
+    speech.current = own.then(function (ready) {
+      if (!ready) return speakBrowser(text, gen);
+      return speakServer(lines, gen).catch(function () { return speakBrowser(text, gen); });
+    }).then(function () {
+      if (gen !== speech.gen) return;
+      audio.speaking = false;
+      if (state === 'speaking') setState(restState());
+      resumeEars();
+    });
+    return speech.current;
+  }
   function stopSpeaking() {
-    if (window.speechSynthesis && speechSynthesis.speaking) speechSynthesis.cancel();
+    speech.gen += 1;
+    if (speech.source) { try { speech.source.stop(); } catch (e) {} speech.source = null; }
+    if (window.speechSynthesis && (speechSynthesis.speaking || speechSynthesis.pending)) speechSynthesis.cancel();
     audio.speaking = false;
   }
 
@@ -641,7 +1021,7 @@
 
   async function act(action) {
     if (action.type === 'navigate') {
-      note('Opening ' + action.url);
+      note(T('opening', action.url));
       markContinuing();
       if (NEVER.test(action.url) || !window.VesopaNav) { window.location.assign(action.url); return sleep(1500); }
       window.VesopaNav.go(action.url, true);
@@ -649,17 +1029,17 @@
       return sleep(300);
     }
     var el = refs.get(action.ref);
-    if (!el || !document.contains(el)) { note('Could not find ' + (action.label || action.ref) + ' on this page any more.'); return; }
+    if (!el || !document.contains(el)) { note(T('missing', null, action.label || action.ref)); return; }
     el.scrollIntoView({ block: 'center', behavior: 'smooth' });
     await sleep(250);
     pointAt(el); focusRing(el, true);
     await sleep(350);
     try {
       if (action.type === 'fill') {
-        note('Typing “' + action.value + '” into ' + (action.label || 'the field'));
+        note(T('typing', action.value, action.label || T('field')));
         await typeInto(el, action.value);
       } else if (action.type === 'select') {
-        note('Choosing ' + action.value + ' for ' + (action.label || 'the list'));
+        note(T('choosing', action.value, action.label || T('list')));
         var want = String(action.value).toLowerCase();
         var found = false;
         for (var i = 0; i < el.options.length; i += 1) {
@@ -668,12 +1048,12 @@
         }
         if (!found) for (var j = 0; j < el.options.length; j += 1) { if (el.options[j].text.toLowerCase().indexOf(want) !== -1) { el.selectedIndex = j; found = true; break; } }
         fire(el, 'input'); fire(el, 'change');
-        if (!found) note('That option is not in the list.');
+        if (!found) note(T('noOption'));
       } else if (action.type === 'check') {
-        note((action.checked ? 'Ticking ' : 'Unticking ') + (action.label || 'the box'));
+        note(T(action.checked ? 'ticking' : 'unticking', null, action.label || T('box')));
         if (el.checked !== action.checked) el.click();
       } else if (action.type === 'click') {
-        note('Pressing ' + (action.label || 'the button'));
+        note(T('pressing', null, action.label || T('button')));
         var navigates = el.tagName === 'A' || el.type === 'submit' || el.closest('form');
         if (navigates) markContinuing();
         el.click();
@@ -686,39 +1066,41 @@
     }
   }
 
-  async function perform(actions) {
+  /** `ask` is how to put a confirmation: {said: the reply already asked it, text: that reply, lines: its signed voice lines}. */
+  async function perform(actions, ask) {
     if (!actions || !actions.length) return;
     setState('working');
     for (var i = 0; i < actions.length; i += 1) {
       var a = actions[i];
-      if (a.type === 'click' && a.confirm) { askConfirm(a); return; }
-      try { await act(a); } catch (e) { note('That did not work: ' + (e && e.message ? e.message : e)); }
+      if (a.type === 'click' && a.confirm) { askConfirm(a, ask || {}); return; }
+      try { await act(a); } catch (e) { note(T('failed') + (e && e.message ? e.message : e)); }
     }
   }
 
-  function askConfirm(action) {
+  function askConfirm(action, ask) {
     pending = { ref: action.ref, label: action.label, question: action.confirm };
     buildChat();
     var c = document.createElement('div');
     c.className = 'vai-card vai-confirm';
-    c.innerHTML = '<p></p><div class="vai-row"><button class="vai-btn lime" type="button" data-y="1">Yes, go ahead</button><button class="vai-btn" type="button" data-y="0">No</button></div>';
+    c.innerHTML = '<p></p><div class="vai-row"><button class="vai-btn lime" type="button" data-y="1"></button><button class="vai-btn" type="button" data-y="0"></button></div>';
     c.querySelector('p').textContent = action.confirm;
+    c.querySelector('[data-y="1"]').textContent = T('yes');
+    c.querySelector('[data-y="0"]').textContent = T('no');
     ui.body.appendChild(c); scrollBody();
-    barLine(action.confirm + ' Say yes or no.');
-    if (shape === 'orb') ui.orb.classList.add('has-news');
+    captionAsk(ask.said && ask.text ? ask.text : action.confirm);
     c.addEventListener('click', function (e) {
       var b = e.target.closest('[data-y]');
-      if (!b) return;
-      c.remove();
-      if (b.getAttribute('data-y') === '1') confirmYes(); else confirmNo();
+      if (b) answerConfirm(b.getAttribute('data-y') === '1');
     });
-    speak(action.confirm).then(function () { setState(restState()); });
+    if (ask.said) { setState(restState()); return; }
+    // After the reply has finished, not over the top of it.
+    (speech.current || Promise.resolve()).then(function () { return speak(action.confirm, ask.lines); }).then(function () { if (state !== 'working') setState(restState()); });
   }
   async function confirmYes() {
     if (!pending) return;
     var p = pending; pending = null;
-    bubble('user', 'Yes, go ahead.');
-    remember('user', 'Yes, go ahead.');
+    bubble('user', T('yesSaid'));
+    remember('user', T('yesSaid'));
     setState('working');
     await act({ type: 'click', ref: p.ref, label: p.label });
     autoHops = 0;
@@ -727,7 +1109,7 @@
   function confirmNo() {
     if (!pending) return;
     pending = null;
-    turn({ text: 'No, don’t do that.' });
+    turn({ text: T('noSaid') });
   }
 
   // ---- A turn ---------------------------------------------------------------------
@@ -755,12 +1137,12 @@
     if (busy || !session.enabled) return;
     busy = true;
     stopSpeaking();
+    earsStop(true);
     var wasPending = pending;
     if (o.text || o.audio) {
       pending = null;
       autoHops = 0; store.hops = 0;
-      var card = ui.body && ui.body.querySelector('.vai-confirm');
-      if (card) card.remove();
+      clearAsk();
     }
     // Automatic turns are counted across page loads too, so a job that keeps
     // navigating cannot go round for ever after a reload resets autoHops.
@@ -769,15 +1151,18 @@
       if (store.hops > MAX_AUTO_HOPS) { busy = false; clearContinuing(); setState(restState()); return; }
     }
     if (o.text) { bubble('user', o.text); remember('user', o.text); }
+    if (o.text && /[\u0980-\u09FF]/.test(o.text)) setLang('bn', false);
     setState('thinking');
     typing(true);
-    if (o.audio) barLine('…');
+    if (o.audio) caption('…', 30000);
     var payload = {
       text: o.text || '',
       audio: o.audio || null,
       auto: Boolean(o.auto),
       greet: Boolean(o.greet),
-      voice: store.voice,
+      voice: live && store.voice,
+      lang: store.lang,
+      spoken: Boolean(o.spoken),
       page: snapshot(),
       pending: (o.text || o.audio) && wasPending ? { ref: wasPending.ref, label: wasPending.label, question: wasPending.question } : null,
       local: session.signedIn ? null : { memory: store.memory, history: store.history.slice(-24) },
@@ -786,25 +1171,28 @@
     try {
       out = await post('/ai/turn', payload);
     } catch (e) {
-      out = { res: null, data: { error: 'I lost the connection for a moment. Try again.' } };
+      out = { res: null, data: { error: T('lost') } };
     }
     typing(false);
     var res = out.res, data = out.data;
     if (!res || !res.ok || data.error) {
-      bubble('err', data && data.error ? data.error : 'Something went wrong.');
-      busy = false; clearContinuing(); setState(restState());
+      bubble('err', data && data.error ? data.error : T('wrong'));
+      busy = false; clearContinuing(); setState(restState()); resumeEars();
       return;
     }
-    if (data.silence) { busy = false; setState(restState()); return; }
+    if (data.silence) { busy = false; setState(restState()); resumeEars(); return; }
+    // The server heard or read Bengali: the switch follows it.
+    if (data.lang) setLang(data.lang, false);
     if (data.heard) { bubble('user', data.heard); remember('user', data.heard); }
     if (Array.isArray(data.memory) && !session.signedIn) { store.memory = data.memory; save(); }
     if (data.say) { bubble('ai', data.say); remember('assistant', data.say); }
 
-    var spoken = data.say ? speak(data.say) : Promise.resolve();
+    var voiceLines = data.speak || {};
+    var spoken = data.say ? speak(data.say, voiceLines.say) : Promise.resolve();
     busy = false;
-    await perform(data.actions || []);
+    await perform(data.actions || [], { said: /[?？]\s*$/.test(data.say || ''), text: data.say, lines: voiceLines.ask });
     await spoken;
-    if (data.pending) { setState(restState()); return; }
+    if (data.pending) { if (state !== 'speaking') setState(restState()); resumeEars(); return; }
     if (data.done === false && autoHops < MAX_AUTO_HOPS) {
       autoHops += 1;
       await sleep(400);
@@ -813,6 +1201,7 @@
     autoHops = 0;
     clearContinuing();
     setState(restState());
+    resumeEars();
   }
 
   // ---- Session --------------------------------------------------------------------
@@ -823,6 +1212,8 @@
     session.signedIn = Boolean(data.signed_in);
     session.name = data.name || '';
     session.token = data.token || '';
+    session.voice = Boolean(data.voice);
+    session.phrases = data.phrases || null;
     session.history = data.history || session.history || [];
     session.memory = data.memory || session.memory || [];
   }
@@ -841,38 +1232,16 @@
     if (!session.enabled) { ui.root.hidden = true; return; }
     if (session.signedIn) await importLocal();
 
-    if (voiceOn()) {
-      setState('idle');
-      // Granted before, so no prompt; most browsers still want a gesture for
-      // the AudioContext, which the first tap on the orb or the bar supplies.
-      navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }).then(function (s) {
-        audio.stream = s; if (store.listen) startListening();
-      }).catch(function () { /* they will press the mic */ });
-    } else if (store.consent === 'text') {
-      setState('idle');
-    } else {
-      setState('off');
-      if (!store.seen) {
-        store.seen = true; save();
-        setTimeout(function () {
-          if (shape !== 'orb') return;
-          var h = document.createElement('div');
-          h.className = 'vai-hello';
-          h.innerHTML = '<b>Vesopa AI</b> — want a hand with a domain, hosting or your website? Tap me and we can talk.';
-          h.addEventListener('click', onOrbTap);
-          ui.root.appendChild(h); ui.hello = h;
-          setTimeout(function () { if (ui.hello) { ui.hello.remove(); ui.hello = null; } }, 14000);
-        }, 1800);
-      }
-    }
-
-    // Back where they were: the bar or the chat, and a job that was mid-way.
-    if (store.consent && store.consent !== 'no' && store.shape !== 'orb') {
-      if (store.shape === 'bar' && isPhone()) showBar(); else if (store.shape === 'bar' && !isPhone()) showChat(); else showChat();
-    }
+    // Calm: no microphone, nothing spoken. A job that was mid-way across a
+    // full page load carries on; otherwise it says hello once and waits.
+    setState('idle');
+    syncLang();
     if (store.cont && Date.now() - store.cont < 45000) {
       store.cont = 0; save();
+      if (store.shape === 'chat') expand();
       setTimeout(function () { turn({ auto: true }); }, 900);
+    } else {
+      introduce();
     }
 
     window.addEventListener('vesopa:navigated', function () {
@@ -880,7 +1249,6 @@
       ui.root.hidden = false;
     });
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && shape === 'chat') minimise(); });
-    window.addEventListener('resize', function () { if (ui.panel) syncToggles(); });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();

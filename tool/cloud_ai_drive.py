@@ -1,13 +1,16 @@
 """Drive Vesopa AI on cloud.vesopa.com in a real browser, and keep the pictures.
 
-    python tool/cloud_ai_drive.py
+    python tool/cloud_ai_drive.py [base-url]
 
 As a visitor (nobody signed in):
-  desktop  the first tap asks for the microphone; here it is refused, so the
-           assistant falls back to typing, greets, checks a domain and puts it
-           in the basket, and is still there after the router changes the page
-  phone    the microphone is granted (Chromium's fake device), so the first
-           tap gives the voice bar; the keyboard button opens the chat sheet
+  desktop  the orb is calm: nothing asks for the microphone at load, it
+           introduces itself once a visit and goes quiet by itself. A tap asks
+           for the microphone (refused here, so voice stays off and the caption
+           says how to type); press and hold opens the chat, which checks a
+           domain, puts it in the basket, and survives the router's page change
+  phone    the microphone is granted (Chromium's fake device): tap is voice
+           on, tap again is voice off with the microphone handed back, press
+           and hold is the chat sheet
   wire     a spoken WAV (Windows' own voice) posted to /ai/turn the way the
            widget posts it, with the widget token; and the same call without
            the token, which must be refused
@@ -25,7 +28,7 @@ import time
 import requests
 from playwright.sync_api import sync_playwright
 
-BASE = "https://cloud.vesopa.com"
+BASE = (sys.argv[1] if len(sys.argv) > 1 else "https://cloud.vesopa.com").rstrip("/")
 SHOTS = pathlib.Path.home() / "Documents" / "Vesopa-Claude-Images" / (datetime.date.today().isoformat() + "-cloud-ai")
 SHOTS.mkdir(parents=True, exist_ok=True)
 passed = failed = 0
@@ -51,6 +54,23 @@ def wait_idle(page, timeout=90):
     return state(page)
 
 
+def hold(page, selector, ms=850):
+    """Press and hold, the way a thumb does."""
+    box = page.locator(selector).bounding_box()
+    page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    page.mouse.down()
+    page.wait_for_timeout(ms)
+    page.mouse.up()
+
+
+def pressed(page):
+    return page.evaluate("() => document.querySelector('#vai .vai-orb')?.getAttribute('aria-pressed')")
+
+
+def caption(page):
+    return page.evaluate("() => { const s = document.querySelector('#vai .vai-say'); return s && !s.hidden ? s.textContent.trim() : ''; }")
+
+
 def transcript(page):
     return page.evaluate("() => [...document.querySelectorAll('#vai .vai-msg')].map(m => m.className.replace('vai-msg ','') + ': ' + m.textContent.trim())")
 
@@ -62,29 +82,46 @@ with sync_playwright() as p:
 
     # ---- desktop, microphone refused ----------------------------------------
     ctx = browser.new_context(viewport={"width": 1280, "height": 860})
-    ctx.add_init_script("navigator.mediaDevices.getUserMedia = () => Promise.reject(new DOMException('denied', 'NotAllowedError'));")
+    ctx.add_init_script("window.__micAsks = 0; navigator.mediaDevices.getUserMedia = () => { window.__micAsks += 1; return Promise.reject(new DOMException('denied', 'NotAllowedError')); };")
     page = ctx.new_page()
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
 
-    print("▶ desktop: the orb, the hello bubble")
+    print("▶ desktop: a calm orb that introduces itself once, then goes quiet")
     page.goto(f"{BASE}/", wait_until="networkidle")
     page.wait_for_timeout(2500)
     check("orb is there", page.locator("#vai .vai-orb").count() == 1)
-    check("hello bubble appears once", page.locator("#vai .vai-hello").count() == 1)
+    check("nothing asked for the microphone at load", page.evaluate("() => window.__micAsks") == 0, page.evaluate("() => window.__micAsks"))
+    check("idle and voice off", state(page) == "idle" and pressed(page) == "false", (state(page), pressed(page)))
+    check("it introduces itself", page.locator("#vai .vai-hello").count() == 1)
     page.screenshot(path=str(SHOTS / "01-orb-hello.png"))
+    for _ in range(40):
+        if page.locator("#vai .vai-hello").count() == 0:
+            break
+        time.sleep(0.5)
+    check("and goes quiet by itself", page.locator("#vai .vai-hello").count() == 0)
+    page.reload(wait_until="networkidle")
+    page.wait_for_timeout(2500)
+    check("only once a visit", page.locator("#vai .vai-hello").count() == 0)
 
-    print("▶ first tap asks for the mic; refused here, so it types")
+    print("▶ tap: voice on — the microphone is refused here")
     page.click("#vai .vai-orb")
-    page.wait_for_selector("#vai .vai-panel", state="visible")
-    page.wait_for_timeout(1200)
-    page.screenshot(path=str(SHOTS / "02-first-tap.png"))
-    wait_idle(page)
+    page.wait_for_timeout(1500)
+    check("the tap asked for the microphone", page.evaluate("() => window.__micAsks") == 1, page.evaluate("() => window.__micAsks"))
+    check("voice stays off", pressed(page) == "false", pressed(page))
+    print("   caption:", caption(page)[:120])
+    check("the caption says how to type instead", len(caption(page)) > 20, caption(page))
+    page.screenshot(path=str(SHOTS / "02-mic-refused.png"))
+
+    print("▶ press and hold opens the chat")
+    hold(page, "#vai .vai-orb")
+    page.wait_for_selector("#vai .vai-panel", state="visible", timeout=5000)
     page.wait_for_timeout(600)
     msgs = transcript(page)
-    check("fell back to text and greeted", any(m.startswith("ai:") for m in msgs), msgs)
-    page.screenshot(path=str(SHOTS / "03-greeting.png"))
+    check("the chat says hello", any(m.startswith("ai:") for m in msgs), msgs)
+    check("holding did not also toggle voice", page.evaluate("() => window.__micAsks") == 1, page.evaluate("() => window.__micAsks"))
+    page.screenshot(path=str(SHOTS / "03-chat.png"))
 
     print("▶ check a domain and add it to the basket")
     page.fill("#vai .vai-input", "Is vesopa-ai-demo.co.uk available? If so add it to my basket.")
@@ -136,32 +173,45 @@ with sync_playwright() as p:
     ctx.close()
 
     # ---- phone, microphone granted (fake device) -----------------------------
-    print("▶ phone: the voice bar")
+    print("▶ phone: tap for voice, tap again to stop, hold for the chat")
     phone = browser.new_context(viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True, device_scale_factor=2, permissions=["microphone"])
+    phone.add_init_script("""(() => {
+      const real = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+      window.__micAsks = 0; window.__streams = [];
+      navigator.mediaDevices.getUserMedia = (c) => { window.__micAsks += 1; return real(c).then((s) => { window.__streams.push(s); return s; }); };
+    })();""")
     pp = phone.new_page()
     perr = []
     pp.on("pageerror", lambda e: perr.append(str(e)))
     pp.goto(f"{BASE}/domains", wait_until="networkidle")
-    pp.wait_for_timeout(800)
+    pp.wait_for_timeout(2000)
+    check("calm at load: no microphone", pp.evaluate("() => window.__micAsks") == 0 and pressed(pp) == "false")
+    pp.screenshot(path=str(SHOTS / "07-phone-calm.png"))
     pp.click("#vai .vai-orb")
-    pp.wait_for_timeout(1500)
-    check("bar shown on first tap", pp.locator("#vai .vai-bar").is_visible())
-    pp.screenshot(path=str(SHOTS / "07-phone-bar-first.png"))
-    wait_idle(pp, 90)
-    pp.wait_for_timeout(800)
-    st = pp.evaluate("() => document.querySelector('#vai .vai-bar').getAttribute('data-state')")
-    line = pp.evaluate("() => document.querySelector('#vai .vai-bar-line').textContent")
-    print("   bar:", st, "|", line[:120])
-    check("voice on and listening", st in ("listening", "idle", "speaking"), st)
-    check("greeting shown on the bar", len(line) > 10, line)
-    pp.screenshot(path=str(SHOTS / "08-phone-bar-greeted.png"))
-    pp.click("#vai .vai-bar-kb")
-    pp.wait_for_timeout(600)
-    check("keyboard opens the chat sheet", pp.locator("#vai .vai-panel").is_visible())
-    pp.screenshot(path=str(SHOTS / "09-phone-chat.png"))
-    pp.click("#vai .vai-t-bar")
+    # The microphone is granted asynchronously, and on live the fake device
+    # took longer than a fixed 2 s once; wait for voice to come on.
+    for _ in range(40):
+        if pressed(pp) == "true" and state(pp) != "idle":
+            break
+        pp.wait_for_timeout(200)
+    print("   state:", state(pp), "| caption:", caption(pp)[:100])
+    check("tap: voice on", pressed(pp) == "true", pressed(pp))
+    check("listening", state(pp) in ("listening", "thinking", "speaking"), state(pp))
+    check("the caption says it is listening", len(caption(pp)) > 5, caption(pp))
+    pp.screenshot(path=str(SHOTS / "08-phone-voice-on.png"))
+    pp.click("#vai .vai-orb")
+    pp.wait_for_timeout(1200)
+    check("tap again: voice off", pressed(pp) == "false", pressed(pp))
+    check("the microphone is handed back", pp.evaluate("() => window.__streams.length > 0 && window.__streams.every((s) => s.getTracks().every((t) => t.readyState === 'ended'))"))
+    pp.screenshot(path=str(SHOTS / "09-phone-voice-off.png"))
+    hold(pp, "#vai .vai-orb")
+    pp.wait_for_timeout(700)
+    check("hold: the chat sheet", pp.locator("#vai .vai-panel").is_visible())
+    check("holding did not toggle voice", pressed(pp) == "false", pressed(pp))
+    pp.screenshot(path=str(SHOTS / "10-phone-chat.png"))
+    pp.click("#vai .vai-t-min")
     pp.wait_for_timeout(500)
-    check("back to the bar", pp.locator("#vai .vai-bar").is_visible() and pp.locator("#vai .vai-panel").is_hidden())
+    check("minimise: back to the orb", pp.locator("#vai .vai-orb").is_visible() and pp.locator("#vai .vai-panel").is_hidden())
     check("no JS errors on the phone", not perr, perr[:3])
     phone.close()
     browser.close()

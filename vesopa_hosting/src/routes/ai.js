@@ -5,7 +5,10 @@
  *                      signed-in customer, their memory and recent transcript;
  *                      and the widget token every turn must carry
  *   POST /ai/turn      one turn: what they said (text or a clip), the page,
- *                      and for a visitor what the browser remembers
+ *                      the language switch, and for a visitor what the
+ *                      browser remembers
+ *   POST /ai/speak     one line of a reply, spoken (src/ai/voice.js): only a
+ *                      line a turn signed, so this is nobody's free TTS
  *   POST /ai/import    a visitor signed in: the browser hands over what it
  *                      kept for them, once, and it becomes account memory
  *   POST /ai/forget    wipe the account's memory and transcript
@@ -34,6 +37,8 @@ const config = require('../config');
 const db = require('../db');
 const { rateLimited } = require('../http-utils');
 const agent = require('../ai/agent');
+const voice = require('../ai/voice');
+const { normaliseLang } = require('../ai/rules');
 
 const router = express.Router();
 const TOKEN_TTL_MS = 4 * 60 * 60 * 1000;
@@ -81,10 +86,15 @@ function sameSite(req) {
 const DAY_MAX = Number(process.env.AI_TURNS_PER_DAY) || 300;
 const GLOBAL_10_MIN = Number(process.env.AI_TURNS_GLOBAL_PER_10_MIN) || 600;
 
+/** The customer's language for our own messages: the widget sends its switch. */
+function words(req, en, bn) {
+  return normaliseLang(req.body && req.body.lang) === 'bn' ? bn : en;
+}
+
 router.use((req, res, next) => {
   res.set('Cache-Control', 'no-store');
   if (req.method !== 'POST') return next();
-  if (!auth.checkCsrf(req)) return res.status(403).json({ error: 'That page had been open too long. Reload it and try again.' });
+  if (!auth.checkCsrf(req)) return res.status(403).json({ error: words(req, 'That page had been open too long. Reload it and try again.', 'পেজটা অনেকক্ষণ খোলা ছিল। একবার রিলোড করে আবার চেষ্টা করুন।') });
   if (!sameSite(req)) return res.status(403).json({ error: 'Not from this site.' });
   if (!tokenOk(req)) return res.status(401).json({ error: 'expired', reload: true });
   next();
@@ -92,7 +102,15 @@ router.use((req, res, next) => {
 
 router.get('/session', async (req, res) => {
   const customer = req.customer || null;
-  const out = { enabled: true, signed_in: Boolean(customer), name: customer ? (customer.name || '') : '', token: mintToken(req) };
+  const out = {
+    enabled: true,
+    signed_in: Boolean(customer),
+    name: customer ? (customer.name || '') : '',
+    token: mintToken(req),
+    // The assistant's own voice is up; and the lines it says without a turn.
+    voice: voice.available(),
+    phrases: voice.available() ? voice.phrases() : null,
+  };
   if (customer) {
     out.memory = await agent.readMemory(customer);
     out.history = (await agent.readHistory(customer)).slice(-16);
@@ -103,19 +121,19 @@ router.get('/session', async (req, res) => {
 router.post('/turn', async (req, res) => {
   const who = req.customer ? `c${req.customer.id}` : req.ip;
   if (rateLimited('everyone', 'ai-global', { max: GLOBAL_10_MIN, windowMs: 600_000 })) {
-    return res.status(503).json({ error: 'The assistant is very busy right now. Try again in a few minutes.' });
+    return res.status(503).json({ error: words(req, 'The assistant is very busy right now. Try again in a few minutes.', 'এই মুহূর্তে অনেক ভিড়। কয়েক মিনিট পরে আবার চেষ্টা করুন।') });
   }
   if (rateLimited(who, 'ai-turn', { max: config.AI.TURNS_PER_10_MIN, windowMs: 600_000 })) {
-    return res.status(429).json({ error: 'That is a lot of questions in a short time. Give it a few minutes.' });
+    return res.status(429).json({ error: words(req, 'That is a lot of questions in a short time. Give it a few minutes.', 'অল্প সময়ে অনেক প্রশ্ন হয়ে গেছে। কয়েক মিনিট একটু থামুন।') });
   }
   if (rateLimited(who, 'ai-day', { max: DAY_MAX, windowMs: 86_400_000 })) {
-    return res.status(429).json({ error: 'You have reached today’s limit for the assistant. Support can help with anything else.' });
+    return res.status(429).json({ error: words(req, 'You have reached today’s limit for the assistant. Support can help with anything else.', 'আজকের জন্য সহকারীর সীমা শেষ। অন্য কিছু লাগলে সাপোর্ট টিম সাহায্য করবে।') });
   }
   const body = req.body || {};
   const audio = body.audio && typeof body.audio.data === 'string' ? body.audio : null;
   if (audio) {
     const bytes = Math.floor((audio.data.length * 3) / 4);
-    if (bytes > config.AI.MAX_AUDIO_BYTES) return res.status(413).json({ error: 'That clip is too long. Try a shorter sentence.' });
+    if (bytes > config.AI.MAX_AUDIO_BYTES) return res.status(413).json({ error: words(req, 'That clip is too long. Try a shorter sentence.', 'কথাটা একটু বেশি লম্বা হয়ে গেছে। ছোট করে বলুন।') });
     if (!/^(wav|mp3|webm|ogg|m4a)$/.test(String(audio.format || 'wav'))) return res.status(400).json({ error: 'Unsupported audio.' });
   }
   const text = typeof body.text === 'string' ? body.text.slice(0, 1000) : '';
@@ -126,7 +144,9 @@ router.post('/turn', async (req, res) => {
       customer: req.customer || null,
       currency: req.currency,
       text,
+      spoken: Boolean(body.spoken) && Boolean(text),
       audio,
+      lang: body.lang,
       page: body.page || {},
       voice: Boolean(body.voice),
       auto: Boolean(body.auto),
@@ -137,7 +157,30 @@ router.post('/turn', async (req, res) => {
   } catch (err) {
     console.error('[ai] turn failed:', err.message);
     const busy = err.status === 429 || err.status === 503 || /timeout|abort|capacity/i.test(String(err.message));
-    res.status(502).json({ error: busy ? 'The assistant is busy for a moment. Try again shortly.' : 'The assistant could not answer that. Try again, or ask support.' });
+    res.status(502).json({
+      error: busy
+        ? words(req, 'The assistant is busy for a moment. Try again shortly.', 'সহকারী এক মুহূর্ত ব্যস্ত। একটু পরে আবার বলুন।')
+        : words(req, 'The assistant could not answer that. Try again, or ask support.', 'এটার উত্তর দিতে পারলাম না। আবার চেষ্টা করুন, বা সাপোর্টে জিজ্ঞেস করুন।'),
+    });
+  }
+});
+
+router.post('/speak', async (req, res) => {
+  const body = req.body || {};
+  const text = typeof body.text === 'string' ? body.text : '';
+  const lang = normaliseLang(body.lang);
+  if (!text || text.length > 900 || !voice.verify(text, lang, body.sig)) return res.status(403).json({ error: 'Not a line the assistant said.' });
+  if (!voice.available()) return res.status(503).json({ fallback: true });
+  const who = req.customer ? `c${req.customer.id}` : req.ip;
+  if (rateLimited(who, 'ai-speak', { max: config.AI.SPEAKS_PER_10_MIN, windowMs: 600_000 })
+    || rateLimited('everyone', 'ai-speak-global', { max: GLOBAL_10_MIN * 2, windowMs: 600_000 })) {
+    return res.status(429).json({ fallback: true });
+  }
+  try {
+    const file = await voice.synthesise(text, lang);
+    res.type('audio/wav').send(file);
+  } catch (err) {
+    res.status(503).json({ fallback: true });
   }
 });
 
