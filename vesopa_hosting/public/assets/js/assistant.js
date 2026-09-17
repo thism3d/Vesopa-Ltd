@@ -939,7 +939,7 @@
     var n = 0;
     for (var i = 0; i < pool.length && n < 90; i += 1) {
       var el = pool[i];
-      if (!visible(el) || el.disabled && el.tagName !== 'BUTTON') continue;
+      if (!visible(el) || el.disabled && el.tagName !== 'BUTTON' || el.closest('[data-ai-private]')) continue;
       var tag = el.tagName.toLowerCase();
       var type = (el.getAttribute('type') || '').toLowerCase();
       if (tag === 'input' && (type === 'hidden' || type === 'submit' && !el.value && !el.textContent)) continue;
@@ -974,7 +974,14 @@
     }
     var headings = Array.prototype.slice.call(main.querySelectorAll('h1, h2')).filter(visible).slice(0, 12).map(function (h) { return h.textContent.trim().replace(/\s+/g, ' '); });
     var alerts = Array.prototype.slice.call(document.querySelectorAll('[role="alert"], .alert, .flash, .notice, .error, .field-error, .warning, .toast, [data-flash]')).filter(function (a) { return visible(a) || a.hasAttribute('data-flash'); }).map(function (a) { return (a.getAttribute('data-flash') || a.textContent).trim().replace(/\s+/g, ' ').slice(0, 300); }).filter(Boolean).slice(0, 6);
-    var text = (main.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 1800);
+    // A box marked data-ai-private (a database password shown once) is never
+    // sent: the live evaluation found that page text would carry it to the model.
+    var text = main.innerText || '';
+    Array.prototype.forEach.call(main.querySelectorAll('[data-ai-private]'), function (box) {
+      var secret = box.innerText || '';
+      if (secret) text = text.split(secret).join(' [private] ');
+    });
+    text = text.replace(/\s+/g, ' ').trim().slice(0, 1800);
     return { url: window.location.pathname + window.location.search, title: document.title, headings: headings, alerts: alerts, text: text, elements: els };
   }
 
@@ -1020,6 +1027,20 @@
   function clearContinuing() { if (store.cont || store.hops) { store.cont = 0; store.hops = 0; save(); } }
 
   async function act(action) {
+    if (action.type === 'open_site') {
+      note(T('opening', action.url));
+      // A reply arrives seconds after the tap, so a popup blocker may say no:
+      // then the link is put in the chat for one tap.
+      var tab = window.open(action.url, '_blank', 'noopener');
+      if (!tab) {
+        var row = bubble('ai', '', true);
+        var a = document.createElement('a');
+        a.href = action.url; a.target = '_blank'; a.rel = 'noopener'; a.textContent = action.url;
+        row.appendChild(a);
+        caption(action.url);
+      }
+      return sleep(300);
+    }
     if (action.type === 'navigate') {
       note(T('opening', action.url));
       markContinuing();

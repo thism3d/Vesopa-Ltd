@@ -91,7 +91,7 @@
    * /auth/* hands off to auth.vesopa.com, /pay/* to a gateway, and the
    * terminal and file manager hold websockets. /webmail is a different app.
    */
-  var NEVER = /^\/(auth|admin\/auth|pay|api|webmail|panel\/terminal|panel\/files)(\/|$)/;
+  var NEVER = /^\/(auth|admin\/auth|pay|api|webmail|panel\/terminal|panel\/files|build)(\/|$)/;
 
   /** Should this click be handled here, or left to the browser? */
   function shouldIntercept(link, event) {

@@ -812,12 +812,16 @@ body.nav-open .nav-sheet-foot {
 /* Just above the breakpoint the switcher shows its symbol only. Thirty-eight
    pixels back, at the widths where thirty-eight pixels is the difference
    between fitting and not. */
-@media (max-width: 1240px) and (min-width: 1141px) {
+/* Seven links since "Site builder" joined: between the phone sheet and a wide
+   screen the row tightens rather than pushing "Get started" off the edge
+   (it was cut off at 1280px the moment the link was added). */
+@media (max-width: 1380px) and (min-width: 1181px) {
   .cur-pick > summary { padding: 7px 8px; }
   .cur-pick > summary .cur-pick-code { display: none; }
+  .nav-link { padding: 8px 8px; font-size: .89rem; }
 }
 
-@media (max-width: 1140px) {
+@media (max-width: 1180px) {
   .nav-toggle { display: grid; }
   .nav-links, .nav-actions { display: none; }
   .nav-inner { gap: 14px; }
@@ -825,7 +829,7 @@ body.nav-open .nav-sheet-foot {
 
 /* Tablet: the sheet has room for two columns, so it uses them rather than
    leaving a single 700px-wide list stranded in the middle of the screen. */
-@media (min-width: 620px) and (max-width: 1140px) {
+@media (min-width: 620px) and (max-width: 1180px) {
   .nav-sheet-links { grid-template-columns: 1fr 1fr; gap: 8px; }
   .nav-sheet-cta { grid-template-columns: 1fr 1fr; }
   .nav-sheet-foot { padding-top: 28px; }

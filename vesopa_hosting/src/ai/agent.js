@@ -64,6 +64,7 @@ const TOOLS = [
   { type: 'function', function: { name: 'select', description: 'Choose an option in a select on the current page, by its visible text or value.', parameters: { type: 'object', properties: { ref: { type: 'string' }, value: { type: 'string' } }, required: ['ref', 'value'] } } },
   { type: 'function', function: { name: 'check', description: 'Tick or untick a checkbox or radio.', parameters: { type: 'object', properties: { ref: { type: 'string' }, checked: { type: 'boolean' } }, required: ['ref', 'checked'] } } },
   { type: 'function', function: { name: 'click', description: 'Press a button or link on the current page. Buttons that pay, order, delete, install or change DNS need confirmed: true, set only after the customer said yes to that exact action in this conversation.', parameters: { type: 'object', properties: { ref: { type: 'string' }, confirmed: { type: 'boolean' }, question: { type: 'string', description: 'When asking first: the one-sentence question you put to the customer.' } }, required: ['ref'] } } },
+  { type: 'function', function: { name: 'open_site', description: 'Open one of the signed-in customer\'s own domains (their live website) in a new browser tab, so they can see it. Only domains that account() lists.', parameters: { type: 'object', properties: { domain: { type: 'string', description: 'e.g. example.co.uk' } }, required: ['domain'] } } },
   { type: 'function', function: { name: 'check_domain', description: 'Whether a domain is available to register here, and its price. The answer includes add_to_basket_path: navigate there to put the domain in the basket.', parameters: { type: 'object', properties: { name: { type: 'string', description: 'e.g. example.co.uk' } }, required: ['name'] } } },
   { type: 'function', function: { name: 'pricing', description: 'The hosting and business email plans, with prices in the customer’s currency.', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'account', description: 'What the signed-in customer has: domains and their state, hosting plans, unpaid orders, open tickets. Empty for a visitor.', parameters: { type: 'object', properties: {} } } },
@@ -369,6 +370,15 @@ async function runTurn(o) {
             clientActionQueued = true;
             result = action.confirm ? { queued: false, asked: action.confirm } : { queued: true };
           }
+        } else if (name === 'open_site') {
+          const want = String(args.domain || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+          const mine = customer ? (await accountSummary(customer)).domains.map((d) => d.domain) : [];
+          if (!want || !mine.includes(want)) {
+            result = { error: customer ? 'not one of this account\'s domains' : 'sign in first: only a customer\'s own domains can be opened' };
+          } else {
+            actions.push({ type: 'open_site', url: `https://${want}/` });
+            result = { opened: `https://${want}/` };
+          }
         } else if (name === 'check_domain') {
           result = await checkDomain(args.name, o.currency);
           found.push({ tool: 'check_domain', result });
@@ -472,6 +482,7 @@ async function runTurn(o) {
 /** An action as the customer would describe it. */
 function describeAction(a) {
   if (a.type === 'navigate') return `opening the page ${a.url}`;
+  if (a.type === 'open_site') return `opening their website ${a.url} in a new tab`;
   if (a.type === 'fill') return `typing "${a.value}" into ${a.label}`;
   if (a.type === 'select') return `choosing "${a.value}" in ${a.label}`;
   if (a.type === 'check') return `${a.checked ? 'ticking' : 'unticking'} ${a.label}`;
@@ -488,7 +499,7 @@ function describeAction(a) {
 async function talk(t) {
   const system = [
     "You are Vesopa AI, the voice of the help desk inside Vesopa Cloud, a UK web hosting, domain and email service. A colleague looks at the customer's screen and does the clicking and typing; you are the one who talks to the customer. Write only the words you say to them now.",
-    "TRUTH. Use only what is below: the page, the tool results, the actions and the question. Never invent a price, plan, date, feature or state. Every price is written exactly as the tool or the page gives it, with the same currency symbol: this site shows visitors pounds, dollars or others, and a UK company does not mean £ (a $8.89 domain was once said as £8.89). Never say something has been done, or is about to be done, unless it is in ACTIONS; never say a button was pressed when you are only ASKING about it. NOTE is your colleague's private note: pass on what it says where the facts support it, drop anything they do not, and never read it out word for word.",
+    "TRUTH. The NOTE may describe intentions; only ACTIONS happen. Use only what is below: the page, the tool results, the actions and the question. Never invent a price, plan, date, feature or state. Every price is written exactly as the tool or the page gives it, with the same currency symbol: this site shows visitors pounds, dollars or others, and a UK company does not mean £ (a $8.89 domain was once said as £8.89). Never say something has been done, or is about to be done, unless it is in ACTIONS; never say a button was pressed when you are only ASKING about it. NOTE is your colleague's private note: pass on what it says where the facts support it, drop anything they do not, and never read it out word for word.",
     OFFER,
     'If ASKING is given, end your reply by asking exactly that, in your own words, and nothing after it. Never ask for passwords, card numbers or one-time codes.',
     MANNER,
@@ -501,6 +512,13 @@ async function talk(t) {
   if (Array.isArray(page.headings) && page.headings.length) lines.push(`HEADINGS: ${page.headings.slice(0, 6).map((h) => String(h).slice(0, 80)).join(' | ')}`);
   if (Array.isArray(page.alerts) && page.alerts.length) lines.push(`MESSAGES ON THE PAGE: ${page.alerts.slice(0, 4).map((a) => String(a).slice(0, 200)).join(' | ')}`);
   if (page.text) lines.push(`PAGE TEXT (start): ${String(page.text).slice(0, 700)}`);
+  // The form as it stands: the live evaluation caught "all set for
+  // vesopa.site" said over a form still showing another domain.
+  const fields = (Array.isArray(page.elements) ? page.elements : [])
+    .filter((e) => ['select', 'text', 'email', 'textarea', 'checkbox', 'radio', 'number', 'tel', 'url'].includes(String(e.kind)))
+    .slice(0, 24)
+    .map((e) => `${String(e.label || e.name || e.placeholder || e.ref).slice(0, 50)} = ${e.checked != null ? (e.checked ? 'ticked' : 'not ticked') : JSON.stringify(String(e.value || '').slice(0, 60))}`);
+  if (fields.length) lines.push(`FORM AS IT STANDS (before this turn's actions): ${fields.join('; ')}`);
   const recent = (t.history || []).slice(-8).filter((h) => h && h.content && (h.role === 'user' || h.role === 'assistant'));
   if (recent.length) lines.push(`CONVERSATION SO FAR:\n${recent.map((h) => `${h.role === 'user' ? 'customer' : 'you'}: ${String(h.content).slice(0, 400)}`).join('\n')}`);
   if (t.userText && !t.auto) lines.push(`CUSTOMER NOW${t.spoken ? ' (spoken)' : ''}: ${t.userText}`);
@@ -509,7 +527,9 @@ async function talk(t) {
   if (t.firstName) lines.push(`THEIR FIRST NAME: ${t.firstName}`);
   if (t.found.length) lines.push(`TOOL RESULTS:\n${t.found.map((f) => `${f.tool}: ${JSON.stringify(f.result).slice(0, 1500)}`).join('\n')}`);
   const doing = t.actions.filter((a) => !a.confirm);
-  lines.push(doing.length ? `ACTIONS (happening now, as you speak): ${doing.map(describeAction).join('; ')}` : 'ACTIONS: none this turn');
+  lines.push(doing.length
+    ? `ACTIONS (happening now, as you speak): ${doing.map(describeAction).join('; ')}`
+    : 'ACTIONS: NONE this turn. Nothing is being opened, filled, added or pressed, so do not say you are doing anything now; if something needs doing, say what you can do or ask.');
   if (t.asking) lines.push(`ASKING: whether to press "${t.asking.label}" -- it has NOT been pressed. Colleague's wording: ${t.asking.confirm}`);
   if (t.draft) lines.push(`NOTE: ${String(t.draft).slice(0, 1200)}`);
 

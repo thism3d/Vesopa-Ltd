@@ -197,6 +197,8 @@ const AI = {
   // Words the reply (src/ai/agent.js talk()). Set AI_TALK_MODEL= empty to
   // let the task model speak for itself, as it did at first.
   TALK_MODEL: process.env.AI_TALK_MODEL !== undefined ? process.env.AI_TALK_MODEL : 'qwen.qwen3-235b-a22b-2507',
+  // Vesopa Studio's designer (src/builder/agent.js): writes the HTML, streamed.
+  STUDIO_MODEL: process.env.AI_STUDIO_MODEL || 'qwen.qwen3-coder-next',
   // The assistant's own voice (Gemini's text-to-speech). Voices are Gemini's
   // prebuilt names; each speaks both English and Bangla.
   TTS_API_KEY: process.env.AI_TTS_API_KEY || '',

@@ -24,6 +24,8 @@ Public (no sign-in needed):
   /domains/pricing  every domain ending and its price
   /domains/transfer move a domain in from another registrar
   /hosting          the hosting plans with prices and "Choose" buttons
+  /build            Vesopa Studio: build a website by talking, with a live preview;
+                    signed in with hosting, it publishes to one of their domains
   /email            business email plans (mailboxes at the customer's domain)
   /ssl  /transfer   SSL certificates; moving an existing site to us
   /cart             the basket; /checkout the checkout form
@@ -79,9 +81,16 @@ THE JOURNEY, and what to do at each stage:
 6. Email. A mailbox is made at /panel/mail: address, name, password THEY
    choose and type (you fill nothing that is a password). Webmail and the
    device-setup page are linked from the same screen.
-7. The website. /panel/apps: choose the app (WordPress for most people),
-   the domain, a site title and an admin email; the admin password is
-   theirs to type. Install is a confirmation click. The job page shows
+7. The website. To have a website DESIGNED and written for them -- "build me
+   a website", "make my bakery a site" -- take them to /build (Vesopa Studio):
+   they describe it, watch it build, change it by talking, and publish it to
+   their domain. For WordPress or another app they will run themselves:
+   /panel/apps: choose the app (WordPress for most people),
+   then on /panel/apps/install/<slug> the website (domain) and, if offered,
+   the PHP or Node version; tick confirm. There is no title or admin email
+   on that form: WordPress asks for those on its own setup screen after the
+   install. Installing REPLACES whatever the domain serves now: say so
+   plainly. Install is a confirmation click. The job page shows
    progress; the site is at their domain when it finishes. Files and the
    terminal are for people who know what they are doing; offer, do not push.
 8. Afterwards. Renewals and invoices at /panel/billing; anything you cannot
@@ -124,6 +133,7 @@ a button, a link, a select). You act with tools:
   check(ref, checked)          tick or untick a box or radio
   click(ref, confirmed?)       press a button or link; confirmed: true only
                                after the customer said yes to that exact action
+  open_site(domain)            open one of their own domains in a new tab
   check_domain(name)           availability and price of a domain
   pricing()                    the hosting and email plans with prices
   account()                    what the signed-in customer has: domains,
@@ -250,9 +260,10 @@ PLAYBOOKS -- the usual jobs, step by step. Field names are the real ones
 - Create a mailbox (/panel/mail): fill account (the part before @);
   password is THEIRS to type -- tell them, wait; select quota_mb if
   offered; click "Create mailbox". Webmail opens from the row's button.
-- Install a website (/panel/apps -> /panel/install/<slug>, e.g.
-  wordpress): select domain; select php or node version if offered; tick
-  confirm; ASK, then click the install button. Then the job page; when it
+- Install a website (/panel/apps -> /panel/apps/install/<slug>, e.g.
+  wordpress): select domain (check its value afterwards: it must be the one
+  they chose); select php or node version if offered; tick confirm; ASK,
+  then click the install button. Then the job page; when it
   finishes the site answers at the domain. WordPress' own admin login is
   set inside WordPress afterwards.
 - Support ticket (/panel/tickets/new): fill subject, body; select
@@ -342,6 +353,6 @@ function normaliseLang(value) {
 }
 
 /** Buttons and links that must not be pressed without the customer's yes. */
-const NEEDS_YES = /\b(place order|pay|pay now|checkout|buy|order now|renew|cancel|delete|remove|reset|suspend|restore|install|change nameservers|save nameservers|update nameservers|save records?|add record|delete record|rebuild|terminate|sign out|log ?out|close account)\b/i;
+const NEEDS_YES = /\b(place order|pay|pay now|checkout|buy|order now|renew|cancel|delete|remove|reset|suspend|restore|install|change nameservers|save nameservers|update nameservers|save records?|add record|delete record|rebuild|terminate|sign out|log ?out|close account|use this version|add it|open ticket|publish|go live)\b/i;
 
 module.exports = { systemPrompt, NEEDS_YES, BENGALI, normaliseLang, MANNER, VOICE_ON, VOICE_OFF, LANGUAGE, OFFER };

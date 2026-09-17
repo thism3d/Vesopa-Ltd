@@ -9,6 +9,13 @@
  *                      browser remembers
  *   POST /ai/speak     one line of a reply, spoken (src/ai/voice.js): only a
  *                      line a turn signed, so this is nobody's free TTS
+ *   POST /ai/hear      a clip of speech, written down (Vesopa Studio's microphone)
+ *   POST /ai/build/turn      Vesopa Studio: one turn of building a website,
+ *                            streamed back as server-sent events
+ *   POST /ai/build/render    the finished page, for a download
+ *   GET  /ai/build/domains   where this customer could publish
+ *   GET  /ai/build/source    the Studio source kept beside a published site
+ *   POST /ai/build/publish   put the site live on one of those domains
  *   POST /ai/import    a visitor signed in: the browser hands over what it
  *                      kept for them, once, and it becomes account memory
  *   POST /ai/forget    wipe the account's memory and transcript
@@ -37,6 +44,10 @@ const config = require('../config');
 const db = require('../db');
 const { rateLimited } = require('../http-utils');
 const agent = require('../ai/agent');
+const bedrock = require('../ai/bedrock');
+const studio = require('../builder/agent');
+const studioKit = require('../builder/kit');
+const studioPublish = require('../builder/publish');
 const voice = require('../ai/voice');
 const { normaliseLang } = require('../ai/rules');
 
@@ -204,6 +215,145 @@ router.post('/import', async (req, res) => {
   } catch (err) {
     console.error('[ai] import failed:', err.message);
     res.status(500).json({ error: 'Could not keep that.' });
+  }
+});
+
+// ---- Hearing, for Vesopa Studio's microphone ------------------------------------
+
+router.post('/hear', async (req, res) => {
+  const who = req.customer ? `c${req.customer.id}` : req.ip;
+  if (rateLimited(who, 'ai-hear', { max: 80, windowMs: 600_000 }) || rateLimited('everyone', 'ai-hear-global', { max: GLOBAL_10_MIN, windowMs: 600_000 })) {
+    return res.status(429).json({ error: words(req, 'That is a lot of talking in a short time. Give it a few minutes.', 'অল্প সময়ে অনেক কথা হয়ে গেছে। কয়েক মিনিট একটু থামুন।') });
+  }
+  const audio = req.body && req.body.audio;
+  if (!audio || typeof audio.data !== 'string') return res.status(400).json({ error: 'No audio.' });
+  if (Math.floor((audio.data.length * 3) / 4) > config.AI.MAX_AUDIO_BYTES) return res.status(413).json({ error: words(req, 'That clip is too long. Try a shorter sentence.', 'কথাটা একটু বেশি লম্বা হয়ে গেছে। ছোট করে বলুন।') });
+  if (!/^(wav|mp3|webm|ogg|m4a)$/.test(String(audio.format || 'wav'))) return res.status(400).json({ error: 'Unsupported audio.' });
+  try {
+    const text = await bedrock.transcribe({ data: audio.data, format: audio.format || 'wav', language: normaliseLang(req.body.lang) });
+    res.json({ text });
+  } catch (err) {
+    console.error('[ai] hear failed:', err.message);
+    res.status(502).json({ error: words(req, 'I could not hear that. Try again.', 'শুনতে পাইনি। আবার বলুন।') });
+  }
+});
+
+// ---- Vesopa Studio: building a website by talking (src/builder) --------------------
+
+const STUDIO_10_MIN = Number(process.env.AI_STUDIO_TURNS_PER_10_MIN) || 30;
+const STUDIO_DAY = Number(process.env.AI_STUDIO_TURNS_PER_DAY) || 200;
+const MAX_SITE_BYTES = 400_000;
+
+function studioSite(req) {
+  const site = req.body && req.body.site;
+  if (!site || typeof site !== 'object') return studioKit.blankSite();
+  if (JSON.stringify(site).length > MAX_SITE_BYTES) return null;
+  return site;
+}
+
+/*
+ * One turn, streamed. Each event is a line of JSON the studio applies as it
+ * arrives -- a theme, a section while it is being written, a removal -- and
+ * the last is {op:'end'}. `Cache-Control: no-transform` keeps compression()
+ * from holding the stream back, and X-Accel-Buffering does the same for nginx.
+ */
+router.post('/build/turn', async (req, res) => {
+  const who = req.customer ? `c${req.customer.id}` : req.ip;
+  if (rateLimited('everyone', 'ai-global', { max: GLOBAL_10_MIN, windowMs: 600_000 })) {
+    return res.status(503).json({ error: words(req, 'The studio is very busy right now. Try again in a few minutes.', 'এই মুহূর্তে অনেক ভিড়। কয়েক মিনিট পরে আবার চেষ্টা করুন।') });
+  }
+  if (rateLimited(who, 'studio-turn', { max: STUDIO_10_MIN, windowMs: 600_000 }) || rateLimited(who, 'studio-day', { max: STUDIO_DAY, windowMs: 86_400_000 })) {
+    return res.status(429).json({ error: words(req, 'That is a lot of changes in a short time. Give it a few minutes.', 'অল্প সময়ে অনেক পরিবর্তন হয়ে গেছে। কয়েক মিনিট একটু থামুন।') });
+  }
+  const text = String((req.body && req.body.text) || '').trim().slice(0, 1500);
+  if (!text) return res.status(400).json({ error: 'Nothing to build.' });
+  const site = studioSite(req);
+  if (!site) return res.status(413).json({ error: words(req, 'This site has grown too large for one page.', 'এই সাইটটা এক পেজের জন্য অনেক বড় হয়ে গেছে।') });
+
+  res.status(200).set({
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache, no-transform',
+    'X-Accel-Buffering': 'no',
+  });
+  res.flushHeaders();
+  const controller = new AbortController();
+  res.on('close', () => { if (!res.writableEnded) controller.abort(); });
+  const send = (event) => { if (!res.writableEnded) res.write(`data: ${JSON.stringify(event)}\n\n`); };
+  const lang = normaliseLang(req.body.lang);
+  const started = Date.now();
+  try {
+    const said = await studio.runTurn({
+      site,
+      history: Array.isArray(req.body.history) ? req.body.history.slice(-10) : [],
+      text,
+      spoken: Boolean(req.body.spoken),
+      selected: req.body.selected || null,
+      chatLang: lang,
+      emit: send,
+      signal: controller.signal,
+    });
+    send({ op: 'end', say: said.say, ask: said.ask });
+    console.log(`[studio] turn ${lang} ${Date.now() - started}ms, ${said.chars} chars`);
+  } catch (err) {
+    if (err.name !== 'AbortError') {
+      console.error('[studio] turn failed:', String(err.message).slice(0, 300));
+      const busy = err.status === 429 || err.status === 503;
+      send({ op: 'error', error: busy
+        ? words(req, 'The designer is busy for a moment. Try again shortly.', 'ডিজাইনার এক মুহূর্ত ব্যস্ত। একটু পরে আবার বলুন।')
+        : words(req, 'Something went wrong while building. Nothing is lost: try again.', 'বানানোর সময় একটা সমস্যা হয়েছে। কিছু হারায়নি — আবার চেষ্টা করুন।') });
+    }
+  }
+  res.end();
+});
+
+router.post('/build/render', (req, res) => {
+  const site = studioSite(req);
+  if (!site) return res.status(413).json({ error: 'Too large.' });
+  res.type('html').send(studioKit.render(site));
+});
+
+function studioError(req, res, err, action) {
+  if (err.publish || err.name === 'FileError' || err.status) {
+    const nohosting = err.code === 'nohosting';
+    return res.status(err.status || 400).json({ error: err.message, nohosting });
+  }
+  console.error(`[studio] ${action} failed:`, err.message);
+  return res.status(500).json({ error: words(req, 'That did not work. Nothing was changed.', 'এটা কাজ করেনি। কিছুই বদলায়নি।') });
+}
+
+router.get('/build/domains', async (req, res) => {
+  if (!req.customer) return res.json({ signedIn: false, domains: [] });
+  try {
+    res.json({ signedIn: true, hosting: true, domains: await studioPublish.publishableDomains(req.customer) });
+  } catch (err) {
+    if (err.code === 'nohosting' || err.code === 'auth') return res.json({ signedIn: true, hosting: false, domains: [] });
+    studioError(req, res, err, 'domains');
+  }
+});
+
+router.get('/build/source', async (req, res) => {
+  if (!req.customer) return res.status(401).json({ error: 'Sign in first.' });
+  try {
+    const site = await studioPublish.source(req.customer, req.query.domain);
+    if (!site) return res.status(404).json({ error: words(req, 'There is no Studio site on that domain yet.', 'এই ডোমেইনে এখনো কোনো Studio সাইট নেই।') });
+    res.json({ site });
+  } catch (err) {
+    studioError(req, res, err, 'source');
+  }
+});
+
+router.post('/build/publish', async (req, res) => {
+  if (!req.customer) return res.status(401).json({ error: words(req, 'Sign in to publish.', 'প্রকাশ করতে সাইন ইন করুন।') });
+  if (req.body.confirm !== true) return res.status(400).json({ error: 'Confirm first.' });
+  if (rateLimited(`c${req.customer.id}`, 'studio-publish', { max: 10, windowMs: 600_000 })) {
+    return res.status(429).json({ error: words(req, 'That is a lot of publishing in a short time. Give it a few minutes.', 'অল্প সময়ে অনেকবার প্রকাশ হয়েছে। কয়েক মিনিট অপেক্ষা করুন।') });
+  }
+  const site = studioSite(req);
+  if (!site) return res.status(413).json({ error: 'Too large.' });
+  try {
+    res.json(await studioPublish.publish(req.customer, req.body.domain, site));
+  } catch (err) {
+    studioError(req, res, err, 'publish');
   }
 });
 

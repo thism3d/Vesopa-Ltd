@@ -346,6 +346,8 @@ app.use('/', require('./routes/pay'));
  */
 if (require('./ai/bedrock').ENABLED) {
   app.use('/ai', require('./routes/ai'));
+  // Vesopa Studio: build a website by talking (src/builder, routes/build.js).
+  app.use('/build', require('./routes/build'));
 }
 app.use('/panel', require('./routes/panel'));
 app.use('/admin', require('./routes/admin'));
