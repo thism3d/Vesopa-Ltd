@@ -1,0 +1,50 @@
+<%- include('_top', { nav: 'website' }) %>
+
+<form class="page-form" method="post" action="/admin/website">
+<input type="hidden" name="_csrf" value="<%= session.csrf %>">
+
+<div class="page-head">
+  <div>
+    <h2>Website</h2>
+    <p class="muted">What <a href="https://<%= siteHost %>/" target="_blank" rel="noopener"><%= siteHost %></a> shows to a venue that has not got Vesopa Gift yet: the plans, the prices, the demo. Saving changes the live page straight away.</p>
+  </div>
+  <div class="actions"><button class="btn primary" type="submit">Save and publish</button></div>
+</div>
+
+<div class="grid-2e">
+  <div class="col">
+    <% content.plans.forEach(function (p, i) { %>
+    <div class="card pad">
+      <h3>Plan <%= i + 1 %><% if (p.highlight) { %> <span class="badge lime">Most popular</span><% } %></h3>
+      <label class="lbl">Name<input class="in" type="text" name="plan_<%= i %>_name" value="<%= p.name %>" maxlength="40" required></label>
+      <label class="lbl">One-line description<input class="in" type="text" name="plan_<%= i %>_tagline" value="<%= p.tagline %>" maxlength="100"></label>
+      <div class="two-up">
+        <label class="lbl">Monthly price (£, excluding VAT)<input class="in" type="text" inputmode="decimal" name="plan_<%= i %>_monthly" value="<%= (Number(p.monthly_pence) / 100).toFixed(2) %>" required></label>
+        <label class="lbl">One-off setup (£, 0 for none)<input class="in" type="text" inputmode="decimal" name="plan_<%= i %>_setup" value="<%= (Number(p.setup_pence) / 100).toFixed(2) %>" required></label>
+      </div>
+      <label class="lbl">What is included, one per line<textarea class="in" name="plan_<%= i %>_features" rows="7"><%= (p.features || []).join('\n') %></textarea></label>
+      <label class="check"><input type="radio" name="highlight" value="<%= i %>" <%= p.highlight ? 'checked' : '' %>> Mark as “Most popular”</label>
+    </div>
+    <% }) %>
+  </div>
+  <div class="col">
+    <div class="card pad">
+      <h3>Around the prices</h3>
+      <label class="lbl">Note under the plans<input class="in" type="text" name="currency_note" value="<%= content.currency_note %>" maxlength="220"></label>
+      <label class="lbl">Where “Get a quote” emails go<input class="in" type="email" name="contact_email" value="<%= content.contact_email %>" maxlength="190" required></label>
+    </div>
+    <div class="card pad">
+      <h3>The demo</h3>
+      <label class="lbl">Demo venue (its shop address, after the slash)<input class="in" type="text" name="demo_slug" value="<%= content.demo_slug %>" maxlength="64" pattern="[a-z0-9][a-z0-9-]*" required></label>
+      <p class="help">The page links this shop as the demonstration and says its payments are test ones. Keep it on a venue whose Dojo key is the sandbox.</p>
+    </div>
+    <div class="card pad">
+      <h3>The pictures</h3>
+      <p class="help">The screenshots on the page are of the demo shop, kept with the code (<code>public/img/site</code>). Change the shop and ask for new ones.</p>
+    </div>
+  </div>
+</div>
+<div class="actions"><button class="btn primary" type="submit">Save and publish</button></div>
+</form>
+
+<%- include('_bottom') %>

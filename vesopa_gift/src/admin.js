@@ -34,6 +34,7 @@ const fulfil = require('./fulfil');
 const orders = require('./orders');
 const util = require('./util');
 const last = require('./last');
+const site = require('./site');
 
 const router = express.Router();
 
@@ -219,6 +220,27 @@ router.get('/none', signedIn, (req, res) => {
 });
 
 // ---- The owner's view --------------------------------------------------------
+
+/**
+ * The public page at gift.vesopa.com -- its plans, prices and links. The owner
+ * edits it here rather than at a sign-in of its own, because they are already
+ * in with the role Vesopa Auth gave them. Saving changes the live page at once.
+ */
+router.get('/website', signedIn, ownerOnly, async (req, res, next) => {
+  try {
+    page(req, res, 'website', { title: 'Website', content: await site.readContent(), siteHost: site.HOST });
+  } catch (e) { next(e); }
+});
+
+router.post('/website', signedIn, ownerOnly, async (req, res, next) => {
+  try {
+    const content = site.contentFromForm(req.body, await site.readContent());
+    await site.saveContent(content, req.session.email);
+    await fulfil.audit(null, 'site.saved', { plans: content.plans.map((p) => [p.name, p.monthly_pence]) }, req.session.email);
+    flash(res, 'ok', 'Saved. gift.vesopa.com shows the new prices now.');
+    res.redirect(303, '/admin/website');
+  } catch (e) { next(e); }
+});
 
 router.get('/venues', signedIn, everyVenue, async (req, res, next) => {
   try {

@@ -67,7 +67,9 @@ function locals(venue, extra = {}) {
 
 function notFound(res) {
   return res.status(404).render('shop/message', {
-    title: 'Not found', heading: 'There is nothing here', body: 'Check the address you were given.',
+    title: 'Not found', heading: 'There is no shop at this address',
+    body: 'A venue\u2019s shop lives at gift.vesopa.com/<venue>. Check the name on the link you were given \u2014 a letter out and the shop is not found.',
+    home: config.BASE_URL,
   });
 }
 

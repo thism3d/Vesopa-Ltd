@@ -412,3 +412,7 @@ body.door { background: #0d1014; color: #e8edf1; }
 .guest .act.out { background: #1b222a; color: #e8edf1; border: 1px solid #262f39; }
 .guest.flash { background: #133d2a; }
 @media (prefers-reduced-motion: reduce) { .door * { animation: none !important; transition: none !important; } }
+
+/* The website editor: two fields side by side. */
+.two-up { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 640px) { .two-up { grid-template-columns: 1fr; } }

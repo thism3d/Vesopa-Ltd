@@ -319,3 +319,13 @@ CALL vesopa_add_column('gift_order_lines', 'expiry_warned_at', 'DATETIME NULL');
 CALL vesopa_add_column('gift_orders', 'reminded_at', 'DATETIME NULL');
 
 DROP PROCEDURE IF EXISTS vesopa_add_column;
+
+-- The public page at gift.vesopa.com: its plans, prices and links, one JSON
+-- row edited from the console at /admin/website. Absent, the page shows the
+-- defaults in src/site.js.
+CREATE TABLE IF NOT EXISTS gift_site_settings (
+  id          VARCHAR(32)  NOT NULL PRIMARY KEY,
+  content     LONGTEXT     NOT NULL,
+  updated_by  VARCHAR(190) NULL,
+  updated_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);

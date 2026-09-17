@@ -3,7 +3,10 @@
   <div class="done-head">
     <h1 class="serif"><%= heading %></h1>
     <p class="muted pretty"><%= body %></p>
-    <% if (locals.venue) { %><a class="btn ghost" href="/<%= venue.slug %>">Back to <%= locals.brand ? brand.name : 'the shop' %></a><% } %>
+    <div class="actions">
+      <% if (locals.venue) { %><a class="btn primary" href="/<%= venue.slug %>">Back to <%= locals.brand ? brand.name : 'the shop' %></a><% } %>
+      <a class="btn <%= locals.venue ? 'ghost' : 'primary' %>" href="<%= locals.home || '/' %>">Back to the home page</a>
+    </div>
   </div>
 </main>
 <%- include('_foot') %>

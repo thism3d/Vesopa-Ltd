@@ -30,6 +30,7 @@ const account = require('./account');
 const scheduler = require('./scheduler');
 const mail = require('./mail');
 const venues = require('./venues');
+const site = require('./site');
 
 const PUBLIC = path.join(__dirname, '..', 'public');
 const app = express();
@@ -80,7 +81,12 @@ app.use(express.static(PUBLIC, {
 }));
 
 app.get('/health', (_req, res) => res.json({ ok: true }));
-app.get('/robots.txt', (_req, res) => res.type('text/plain').send('User-agent: *\nDisallow: /\n'));
+// The public page's own robots.txt allows the front page on gift.vesopa.com;
+// a venue's own domain, where there is no front page, still says no.
+app.get('/robots.txt', (req, res, next) => {
+  if (String(req.hostname || '').toLowerCase() === site.HOST) return next();
+  res.type('text/plain').send('User-agent: *\nDisallow: /\n');
+});
 
 /**
  * A venue's own domain (vouchers.thebridge.co.uk) is its shop at the root.
@@ -105,9 +111,13 @@ app.use('/admin', adminRouter);
 app.use(account.attach);
 app.use(account.accountRouter);
 
+// gift.vesopa.com itself: what Vesopa Gift is, the demo shop, the prices.
+// On any other host (a venue's own domain with no venue behind it) the root
+// is nothing, and says so with a way to the front page.
+app.use(site.siteRoutes({ asset }));
 app.get('/', (_req, res) => {
   res.status(404).render('shop/message', {
-    title: 'Vesopa Gift', heading: 'There is nothing here', body: 'Check the address you were given.',
+    title: 'Vesopa Gift', heading: 'There is nothing here', body: 'Check the address you were given.', home: config.BASE_URL,
   });
 });
 
@@ -115,7 +125,9 @@ app.use(shopRouter);
 
 app.use((req, res) => {
   res.status(404).render('shop/message', {
-    title: 'Not found', heading: 'There is nothing here', body: 'Check the address you were given.',
+    title: 'Not found', heading: 'There is nothing at this address',
+    body: 'It may have been typed a letter out, or the link may be older than the page. Check the address you were given.',
+    home: config.BASE_URL,
   });
 });
 

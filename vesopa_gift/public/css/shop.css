@@ -409,3 +409,6 @@ main.narrow { padding-bottom: 12px; }
 .theme-menu button[aria-checked="true"] { background: var(--good-wash); color: var(--good); font-weight: 600; }
 .theme-menu svg { width: 17px; height: 17px; flex: 0 0 auto; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 @media (prefers-reduced-motion: reduce) { .theme-menu { animation: none; } }
+
+/* The "nothing here" page: the way back, side by side. */
+.done-head .actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
