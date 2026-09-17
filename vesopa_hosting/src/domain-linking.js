@@ -35,7 +35,7 @@ const registrar = require('./integrations/domainnameapi');
 const nameservers = require('./nameservers');
 const { sendMail, shell, detailTable, escapeHtml } = require('./mailer');
 const {
-  SITE_URL, NAMESERVERS, DOMAIN_NS_GRACE_DAYS, POINT_HOSTNAME,
+  SITE_URL, NAMESERVERS, DOMAIN_NS_GRACE_DAYS, POINT_HOSTNAME, MAIL_HOSTNAME,
 } = require('./config');
 
 /** The deadline written onto a new external domain, as a DATETIME string. */
@@ -643,6 +643,70 @@ async function verify(domainRow, { customer = null, onStep = noStep } = {}) {
     // alarming sentence than the same failure twice.
     healed: healed ? { built: Boolean(healed.pointed), reason: healed.reason || '' } : null,
   };
+
+  /*
+   * EMAIL-ONLY. A domain whose MX points at us gets its mail here whatever its
+   * website does — a customer who hosts their site elsewhere and wants only
+   * mailboxes with us has nothing else to point. Verified on the same terms
+   * as the website: what the public DNS answers, not what anybody claims.
+   *
+   * Checked for every domain, not only unmatched ones, so a domain that IS
+   * pointed at us but has its MX at Google is known to be delivering its mail
+   * elsewhere and the Email page can say so.
+   */
+  let mx = { pointed: false, exchangers: [], others: [], exclusive: false };
+  if (!isSubdomain) {
+    onStep('mx', 'running', `Where does ${domainRow.domain}'s email get delivered?`);
+    mx = await nameservers.mxPointsAtUs(domainRow.domain, MAIL_HOSTNAME);
+    await db.query(
+      `UPDATE domains
+          SET mx_observed = ?,
+              mx_verified_at = CASE WHEN ? = 1 THEN COALESCE(mx_verified_at, NOW()) ELSE NULL END
+        WHERE id = ?`,
+      [mx.exchangers.map((e) => e.host).join(' ').slice(0, 400), mx.pointed ? 1 : 0, domainRow.id],
+    );
+    if (mx.pointed && mx.exclusive) onStep('mx', 'ok', `Here — MX ${mx.exchangers.map((e) => e.host).join(', ')}`);
+    else if (mx.pointed) onStep('mx', 'ok', `Here, and also at ${mx.others.join(', ')} — remove those or mail is split`);
+    else if (mx.exchangers.length) onStep('mx', 'skipped', `At ${mx.others.join(', ')} — not us. Point the MX at ${MAIL_HOSTNAME} to have email here`);
+    else onStep('mx', 'skipped', `No MX record yet — point one at ${MAIL_HOSTNAME} to have email here`);
+  }
+  result.mx = mx;
+
+  if (!matched && mx.pointed) {
+    /*
+     * Mail here, website elsewhere: the domain is in use and leaves the
+     * waiting room — a domain delivering somebody's email must never be put
+     * on the four-day clock and dropped. What is built is the mail domain,
+     * and only that; no zone, no site, no certificate.
+     */
+    await db.query(
+      "UPDATE domains SET status = 'active', ns_grace_until = NULL WHERE id = ? AND status = 'awaiting_ns'",
+      [domainRow.id],
+    );
+    const owner = customer
+      || await db.one('SELECT * FROM customers WHERE id = ? LIMIT 1', [domainRow.customer_id]);
+    const wantsMail = domainRow.mail_enabled === undefined || Number(domainRow.mail_enabled) === 1;
+    let mailBuilt = { ok: false, reason: '' };
+    if (!owner?.hestia_user) {
+      mailBuilt = { ok: false, reason: 'No hosting on this account yet.' };
+      onStep('mail', 'skipped', 'No hosting on this account yet');
+    } else if (!wantsMail) {
+      mailBuilt = { ok: false, reason: 'Email was not asked for on this domain.' };
+      onStep('mail', 'skipped', 'Email was switched off for this domain when it was added');
+    } else {
+      onStep('mail', 'running', 'A mail domain with DKIM, ready for mailboxes');
+      const built = await ignoringExists(() => hestia.addMailDomain({ username: owner.hestia_user, domain: domainRow.domain }));
+      await hestia.removeWebmailAlias({ username: owner.hestia_user, domain: domainRow.domain }).catch(() => {});
+      mailBuilt = { ok: built.ok, reason: built.ok ? '' : explainNodeError(built.error || '') };
+      if (built.ok) onStep('mail', 'ok', built.existed ? 'It was already there' : 'Ready — create mailboxes from the Email page, and add the records it shows');
+      else onStep('mail', 'failed', mailBuilt.reason);
+    }
+    await db.logActivity({
+      actorType: 'system', action: 'domain.mail_verified', target: domainRow.domain,
+      detail: `MX ${mx.exchangers.map((e) => e.host).join(', ')}; ${mailBuilt.ok ? 'mail domain on the node' : mailBuilt.reason}`,
+    });
+    return { ...result, mailOnly: true, mailBuilt };
+  }
 
   if (!matched) return result;
 
@@ -1524,10 +1588,20 @@ function mayHaveMail(domainRow) {
         + 'Addresses look better that way, and a subdomain accepting mail is almost never what anyone wants.',
     };
   }
-  if (!mayPoint(domainRow)) {
-    return { ok: false, reason: 'This domain is not pointing at us yet, so we cannot accept mail for it.' };
+  if (!mayPoint(domainRow) && !domainRow.mx_verified_at) {
+    return {
+      ok: false,
+      reason: 'This domain is not pointing at us yet, so we cannot accept mail for it. '
+        + `For email only, point its MX record at ${MAIL_HOSTNAME} — the website can stay where it is.`,
+    };
   }
-  return { ok: true, needsRecords: domainRow.verify_method === 'a' };
+  /*
+   * `needsRecords`: the customer runs their own DNS, so the MX, SPF and DKIM
+   * records have to be pasted there — true of a domain verified by A record
+   * and of an email-only one alike. Only a domain on our nameservers has them
+   * written for it.
+   */
+  return { ok: true, needsRecords: domainRow.verify_method !== 'ns', mailOnly: !mayPoint(domainRow) };
 }
 
 /**

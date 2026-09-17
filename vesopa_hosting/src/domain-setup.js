@@ -65,6 +65,7 @@ function plan({ domain, subdomain, wantDns, wantMail, parent }) {
   const steps = [
     ['delegation', `Look up who runs ${domain}`, 'At its registry, and on the public internet'],
     ['address', 'Check it points at this server', 'By nameservers, or by an A record'],
+    ['mx', 'Check where its email goes', 'An MX pointed at us is enough for email on its own'],
   ];
   if (wantDns) steps.push(['zone', 'Write the DNS zone', 'A zone with the usual records, served by our nameservers']);
   steps.push(['web', 'Create the website on the server', 'A virtual host on the node, with a holding page until you upload']);
@@ -163,7 +164,10 @@ async function execute({ runId, domainRow, customer, subdomain, parent, wantDns,
   // Anything planned that no hook reached did not apply to this run.
   for (const [key] of steps) {
     if (!seen.has(key)) {
-      await writeStep(runId, key, 'skipped', outcome.kind === 'ok' ? '' : 'Once it points at us — we check every few minutes').catch(() => {});
+      const why = outcome.kind === 'ok' && !outcome.headline.includes('for email') ? ''
+        : outcome.headline.includes('email') ? 'Not needed — the website is elsewhere, and that is fine'
+          : 'Once it points at us — we check every few minutes';
+      await writeStep(runId, key, 'skipped', why).catch(() => {});
     }
   }
 
@@ -182,6 +186,14 @@ function describeExternal(row, verdict) {
       return { status: 'finished', kind: 'ok', headline: `${name} is set up`, message: `The website is on the server. ${pointed.sslError || 'The certificate is requested automatically once the name resolves here.'}` };
     }
     return { status: 'finished', kind: 'warn', headline: `${name} is pointing at us`, message: `But the website could not be created on the server. ${pointed.reason || 'Open a ticket and we will sort it.'}` };
+  }
+  if (verdict.mailOnly) {
+    const split = verdict.mx && verdict.mx.others && verdict.mx.others.length
+      ? ` Its MX also names ${verdict.mx.others.join(', ')} — remove those, or mail will be split between them and us.` : '';
+    if (verdict.mailBuilt && verdict.mailBuilt.ok) {
+      return { status: 'finished', kind: 'ok', headline: `${name} is set up for email`, message: `Its MX points at us, so mail for ${name} is delivered here; the website stays where it is. Create mailboxes from the Email page, and add the SPF and DKIM records it shows so your mail is trusted.${split}` };
+    }
+    return { status: 'finished', kind: 'warn', headline: `${name}'s email points here — one thing in the way`, message: `${verdict.mailBuilt ? verdict.mailBuilt.reason : 'The mail domain could not be created.'}${split}` };
   }
   if (verdict.unregistered) {
     return { status: 'finished', kind: 'warn', headline: `${name} is on your account — but not registered`, message: 'Its registry says the name does not exist. Check the spelling, or register it here and we will set it up for you.' };

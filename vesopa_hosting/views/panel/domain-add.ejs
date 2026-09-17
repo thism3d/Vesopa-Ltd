@@ -85,7 +85,11 @@
             </span>
           </label>
 
-          <p class="hint">The website is always set up. You can change your mind later.</p>
+          <p class="hint">
+            The website is set up when the domain points here. You can change your mind later.
+            <b>Email only?</b> Keep the website where it is and tick Email — an MX record pointed at
+            <span class="mono"><%= mailHost %></span> is all it takes; we check for it on the spot.
+          </p>
         </fieldset>
 
         <button class="btn btn-lg" type="submit" data-busy="Adding…" id="add-submit">Add it</button>

@@ -343,7 +343,9 @@ async function collect(customer, { area = null } = {}) {
 
     // Delegated nowhere useful. Only for names the customer has to act on —
     // an external domain we are waiting on.
-    if (d.source === 'external' && !d.ns_verified_at && d.status !== 'pending') {
+    // An email-only domain (MX here, website elsewhere) is not waiting on
+    // anybody: it is in use, exactly as the customer meant it.
+    if (d.source === 'external' && !d.ns_verified_at && !d.mx_verified_at && d.status !== 'pending') {
       const deadline = d.ns_grace_until ? new Date(d.ns_grace_until) : null;
       const daysLeft = deadline ? Math.ceil((deadline - Date.now()) / 864e5) : null;
       add({

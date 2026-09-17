@@ -32,7 +32,7 @@ const mailboxes = require('../mailboxes');
 const { sendMail, shell, detailTable, escapeHtml, DEFAULT_TO } = require('../mailer');
 const { flash, field, rateLimited } = require('../http-utils');
 const {
-  NAMESERVERS, DOMAIN_NS_GRACE_DAYS, SITE_URL, POINT_HOSTNAME, VESOPA_ONLY,
+  NAMESERVERS, DOMAIN_NS_GRACE_DAYS, SITE_URL, POINT_HOSTNAME, VESOPA_ONLY, MAIL_HOSTNAME,
 } = require('../config');
 
 const router = express.Router();
@@ -1173,6 +1173,7 @@ async function addFormData(req) {
     pointHostname: POINT_HOSTNAME,
     addresses: await nameservers.ourAddresses(POINT_HOSTNAME),
     graceDays: DOMAIN_NS_GRACE_DAYS,
+    mailHost: MAIL_HOSTNAME,
   };
 }
 

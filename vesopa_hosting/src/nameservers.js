@@ -333,6 +333,54 @@ async function pointsAtUs(name, target) {
 }
 
 /**
+ * Is this domain's EMAIL delivered here?
+ *
+ * The question behind an email-only domain. A customer who keeps their
+ * website wherever it is and wants their mailboxes with us points ONE record
+ * at us — the MX — and that is all the proof that is needed: whoever controls
+ * the zone has said "deliver this domain's mail there". Nothing about the
+ * website, the nameservers or the A record comes into it.
+ *
+ * "Ours" is an exchanger that IS our mail hostname, or one that resolves to
+ * the same address it does (`mail.<their-domain>` aimed at us counts). Others
+ * — the previous provider's exchangers left in place, say — are reported, not
+ * refused: mail will be split between them and us until they are removed, and
+ * the page says so.
+ */
+async function mxPointsAtUs(name, mailHost) {
+  const host = normalise(name);
+  const ours = normalise(mailHost);
+  if (!host || !ours) return { pointed: false, exchangers: [], others: [], exclusive: false };
+
+  const resolver = makeResolver();
+  let records = [];
+  try {
+    records = await resolver.resolveMx(host);
+  } catch {
+    return { pointed: false, exchangers: [], others: [], exclusive: false };
+  }
+  const ourAddrs = new Set(await ourAddresses(ours).catch(() => []));
+  const exchangers = [];
+  for (const r of records) {
+    const exchange = normalise(r.exchange);
+    let mine = exchange === ours;
+    if (!mine && ourAddrs.size) {
+      const addrs = await resolver.resolve4(exchange).catch(() => []);
+      mine = addrs.length > 0 && addrs.every((ip) => ourAddrs.has(ip));
+    }
+    exchangers.push({ host: exchange, priority: Number(r.priority) || 0, ours: mine });
+  }
+  exchangers.sort((a, b) => a.priority - b.priority);
+  const others = exchangers.filter((e) => !e.ours).map((e) => e.host);
+  return {
+    pointed: exchangers.some((e) => e.ours),
+    exchangers,
+    others,
+    exclusive: exchangers.length > 0 && others.length === 0,
+  };
+}
+
+/**
  * Do OUR OWN nameservers exist?
  *
  * Asked before anything is decided on the strength of a customer's delegation,
@@ -469,5 +517,5 @@ module.exports = {
   ourAddresses,
   servedByUs,
   registryDelegation: registry.delegation,
-  check, matchesOurs, extrasIn, acceptedAliases, pointsAtUs, normalise, ourNameserversResolve, OURS, ALIASES, RESOLVERS,
+  check, matchesOurs, extrasIn, acceptedAliases, pointsAtUs, mxPointsAtUs, normalise, ourNameserversResolve, OURS, ALIASES, RESOLVERS,
 };

@@ -129,12 +129,13 @@ async function canCreate(customer) {
  */
 async function usableDomains(customer) {
   return db.query(
-    `SELECT d.domain, d.verify_method, d.mail_enabled
+    `SELECT d.domain, d.verify_method, d.mail_enabled,
+            (d.ns_verified_at IS NULL AND d.mx_verified_at IS NOT NULL) AS mail_only
        FROM domains d
       WHERE d.customer_id = ?
         AND d.status = 'active'
         AND d.source <> 'subdomain'
-        AND d.ns_verified_at IS NOT NULL
+        AND (d.ns_verified_at IS NOT NULL OR d.mx_verified_at IS NOT NULL)
       ORDER BY d.domain`,
     [customer.id],
   );

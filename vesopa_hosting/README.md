@@ -415,6 +415,17 @@ one pointing at us). Hestia reports every Let's Encrypt refusal as exit 15
 — five certificates for one exact name in a week is their limit, and a test
 loop hits it.
 
+**Email-only domains.** A customer who keeps their website elsewhere and wants
+only mailboxes here points ONE record at us — the MX, at `MAIL_HOSTNAME` — and
+that is the whole proof. `verify()` checks the MX for every domain
+(`nameservers.mxPointsAtUs`), writes `mx_verified_at`, and a domain that is
+not pointed at us but whose MX is becomes `active` with a mail domain on the
+node and nothing else: no zone, no site, no certificate, and never the
+four-day clock. It is listed as "Email here", `mayHaveMail` allows mailboxes,
+and the Email page shows the SPF/DKIM records to paste at their provider
+(`needsRecords`, as for a domain verified by A record). Exchangers that are
+not ours are reported — mail is split until they go — never refused.
+
 **Two names for the same two machines.** `ns1/ns2.onzep.uk` are the same
 nameservers as `ns1/ns2.vesopa.com`, and a domain delegated to either pair —
 or one of each — verifies. Nothing ever prints the `onzep.uk` names: every

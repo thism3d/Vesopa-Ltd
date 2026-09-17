@@ -61,7 +61,18 @@
 
 <%# While the setup card is working, the verdict below is the one from before
     it started — hidden until the card's own refresh brings the real one. %>
-<% if (!verified && !settingUp) { %>
+<% const mailOnly = !verified && Boolean(domain.mx_verified_at); %>
+<% if (mailOnly && !settingUp) { %>
+  <div class="alert alert-ok">
+    <%- icon('mail', 19) %>
+    <div>
+      <b>Email for <%= domain.domain %> is delivered here.</b>
+      Its MX record points at us, so mailboxes at <span class="mono">@<%= domain.domain %></span> work
+      — the website stays wherever it is, which is fine. To host the website here as well,
+      point the domain at us using either method on the right.
+    </div>
+  </div>
+<% } else if (!verified && !settingUp) { %>
   <div class="alert alert-warn">
     <%- icon('clock', 19) %>
     <div>
@@ -380,6 +391,13 @@
       </div>
       <% if (!canHaveMail.ok) { %>
         <p class="small muted mb-0"><%= canHaveMail.reason %></p>
+      <% } else if (canHaveMail.mailOnly) { %>
+        <p class="small muted mb-2">
+          Email-only: the MX record already brings mail here. Create mailboxes at
+          <span class="mono">@<%= domain.domain %></span>, then add the SPF and DKIM records the mail
+          page shows at your DNS provider so what you send is trusted.
+        </p>
+        <a class="btn btn-ghost btn-sm" href="/panel/mail?domain=<%= encodeURIComponent(domain.domain) %>">Mailboxes</a>
       <% } else if (canHaveMail.needsRecords) { %>
         <p class="small muted mb-2">
           You can create mailboxes at <span class="mono">@<%= domain.domain %></span>, but because your

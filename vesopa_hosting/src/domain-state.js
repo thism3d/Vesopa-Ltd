@@ -190,6 +190,21 @@ function describe(d, opts = {}) {
   }
 
   // ---- Waiting on the customer -------------------------------------------
+  // ---- Email only --------------------------------------------------------
+  // The MX points at us and nothing else does: mailboxes here, website
+  // wherever it is. In use, so never "waiting for you" and never dropped.
+  if (!d.ns_verified_at && d.mx_verified_at && !isSub(d)) {
+    return {
+      ...base,
+      key: 'mail_only',
+      label: 'Email here',
+      tone: 'green',
+      icon: 'mail',
+      line: 'Mail is delivered here; the website is elsewhere',
+      hint: 'Create mailboxes from the Email page. To host the website here too, point the domain at us.',
+    };
+  }
+
   if (d.status === 'awaiting_ns') {
     const left = countdown(graceLeft);
     return {

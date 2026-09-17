@@ -1160,6 +1160,14 @@ CALL vesopa_add_column('domains', 'ssl_error', "VARCHAR(300) CHARACTER SET utf8m
 -- reaches new installs only. Both defaults are 1, which describes a full domain
 -- correctly, so existing rows are right the moment the column appears.
 CALL vesopa_add_column('domains', 'dns_enabled', 'TINYINT(1) NOT NULL DEFAULT 1');
+
+-- Email-only domains. A domain whose MX points at us is verified for MAIL the
+-- way a nameserver change verifies it for a website: mailboxes may be created
+-- at it, it is listed as "Email here", and it is never dropped for not being
+-- pointed. Set by domain-linking.verify() from what the public DNS answers;
+-- `mx_observed` is the exchangers seen, ours and not.
+CALL vesopa_add_column('domains', 'mx_verified_at', 'DATETIME NULL DEFAULT NULL');
+CALL vesopa_add_column('domains', 'mx_observed', "VARCHAR(400) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT ''");
 CALL vesopa_add_column('domains', 'mail_enabled', 'TINYINT(1) NOT NULL DEFAULT 1');
 
 -- `subdomain` as a fourth value for `domains.source`.
