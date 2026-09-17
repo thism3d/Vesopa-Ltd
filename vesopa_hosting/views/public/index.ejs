@@ -19,15 +19,14 @@
   <div class="hero-spot" data-hero-spot></div>
 
   <div class="wrap hero-inner">
-    <p class="kicker" data-reveal="0" style="justify-content:center">Hosting by Vesopa</p>
+    <p class="kicker" data-reveal="0" style="justify-content:center"><%= t('Hosting by Vesopa') %></p>
 
     <h1 class="display" data-reveal="60">
-      Your website,<br><span class="hl">online in minutes</span>
+      <%- th('Your website,<br><span class="hl">online in minutes</span>') %>
     </h1>
 
     <p class="lede hero-lede" data-reveal="120">
-      Find your domain, pick a plan, and we do the rest — SSL, email and
-      backups included. One clear panel. No cPanel to learn.
+      <%= t('Find your domain, pick a plan, and we do the rest — SSL, email and backups included. One clear panel. No cPanel to learn.') %>
     </p>
 
     <%# A worked example that types itself, so the box below shows what to put
@@ -35,26 +34,25 @@
         focused — a placeholder that changes while you are reading it is worse
         than one that says nothing. %>
     <p class="small mb-3" style="color:#7e8377" data-reveal="150">
-      Try <span class="hero-type" data-type
-                data-words="yourbakery.co.uk,thegoodstudio.com,pontardawe.wales,askmeirion.uk">yourbakery.co.uk</span>
+      <%- th('Try <span class="hero-type" data-type data-words="yourbakery.co.uk,thegoodstudio.com,pontardawe.wales,askmeirion.uk">yourbakery.co.uk</span>') %>
     </p>
 
     <div data-reveal="180">
       <form class="dsearch" data-domain-search action="/domains" method="get">
         <div class="dsearch-form">
           <input class="dsearch-input" type="text" name="q" autocomplete="off"
-                 spellcheck="false" placeholder="Find your perfect domain name…"
-                 aria-label="Search for a domain name">
+                 spellcheck="false" placeholder="<%= t('Find your perfect domain name…') %>"
+                 aria-label="<%= t('Search for a domain name') %>">
           <button class="btn btn-lg" type="submit">
-            <%- icon('search', 19) %><span class="hide-sm">Search</span>
+            <%- icon('search', 19) %><span class="hide-sm"><%= t('Search') %></span>
           </button>
         </div>
       </form>
 
       <div class="dsearch-tlds">
-        <% featuredTlds.forEach(function (t) { %>
-          <button type="button" class="dsearch-tld" data-tld-chip="<%= t.tld %>">
-            <b>.<%= t.tld %></b> <%= money(t.register_pence) %>
+        <% featuredTlds.forEach(function (tld) { %>
+          <button type="button" class="dsearch-tld" data-tld-chip="<%= tld.tld %>">
+            <b>.<%= tld.tld %></b> <%= money(tld.register_pence) %>
           </button>
         <% }); %>
       </div>
@@ -67,10 +65,7 @@
     </div>
   </div>
 
-  <a class="hero-cue" href="#pricing" aria-label="See the plans">
-    <span>See plans</span>
-    <i></i>
-  </a>
+  <a class="hero-cue" href="#pricing" aria-label="<%= t('See the plans') %>"><%- th('<span>See plans</span> <i></i>') %></a>
 </section>
 
 <!-- ======================================================================
@@ -80,20 +75,16 @@
   <div class="wrap">
     <div class="grid grid-4">
       <div class="stat" data-reveal="0">
-        <b><span data-count="99.9" data-count-decimals="1">99.9</span>%</b>
-        <span>Uptime commitment</span>
+        <%- th('<b><span data-count="99.9" data-count-decimals="1">99.9</span>%</b> <span>Uptime commitment</span>') %>
       </div>
       <div class="stat" data-reveal="60">
-        <b>&lt;<span data-count="200">200</span>ms</b>
-        <span>Average UK response</span>
+        <%- th('<b>&lt;<span data-count="200">200</span>ms</b> <span>Average UK response</span>') %>
       </div>
       <div class="stat" data-reveal="120">
-        <b><span data-count="30">30</span>-day</b>
-        <span>Money-back guarantee</span>
+        <%- th('<b><span data-count="30">30</span>-day</b> <span>Money-back guarantee</span>') %>
       </div>
       <div class="stat" data-reveal="180">
-        <b><span data-count="24">24</span>/7</b>
-        <span>Monitoring &amp; backups</span>
+        <%- th('<b><span data-count="24">24</span>/7</b> <span>Monitoring &amp; backups</span>') %>
       </div>
     </div>
   </div>
@@ -121,24 +112,18 @@
   <div class="wrap">
 
     <div class="center launch-head">
-      <p class="kicker" data-reveal="0" style="justify-content:center">From nothing to live</p>
+      <p class="kicker" data-reveal="0" style="justify-content:center"><%= t('From nothing to live') %></p>
 
       <%# The countdown is decorative — the heading below carries the same words
           for anyone who cannot see it, so the numerals are hidden from assistive
           technology rather than read out as "three two online". %>
       <div class="launch-count" aria-hidden="true">
-        <span class="launch-num" data-beat="0">3</span>
-        <span class="launch-dot" data-beat="0"></span>
-        <span class="launch-num" data-beat="1">2</span>
-        <span class="launch-dot" data-beat="1"></span>
-        <span class="launch-word" data-beat="2">Online</span>
+        <%- th('<span class="launch-num" data-beat="0">3</span> <span class="launch-dot" data-beat="0"></span> <span class="launch-num" data-beat="1">2</span> <span class="launch-dot" data-beat="1"></span> <span class="launch-word" data-beat="2">Online</span>') %>
       </div>
 
-      <h2 class="h1 mt-2" data-reveal="60">Three steps. Two minutes. Online.</h2>
+      <h2 class="h1 mt-2" data-reveal="60"><%= t('Three steps. Two minutes. Online.') %></h2>
       <p class="lede mt-2" data-reveal="120">
-        No server to configure, no certificate to install, no control panel to
-        learn first. Pick a name, pick a plan, and the rest happens while you
-        are still reading this.
+        <%= t('No server to configure, no certificate to install, no control panel to learn first. Pick a name, pick a plan, and the rest happens while you are still reading this.') %>
       </p>
     </div>
 
@@ -149,10 +134,9 @@
             <span class="launch-step-time">0:00</span>
             <span class="launch-step-mark"><%- icon('search', 22) %></span>
             <div class="launch-step-text">
-              <h3>Pick your name</h3>
+              <h3><%= t('Pick your name') %></h3>
               <p>
-                Search, and we check it against the registry live. Free for the
-                first year on any plan of a year or more.
+                <%= t('Search, and we check it against the registry live. Free for the first year on any plan of a year or more.') %>
               </p>
             </div>
           </div>
@@ -161,10 +145,9 @@
             <span class="launch-step-time">0:40</span>
             <span class="launch-step-mark"><%- icon('card', 22) %></span>
             <div class="launch-step-text">
-              <h3>Pick your plan</h3>
+              <h3><%= t('Pick your plan') %></h3>
               <p>
-                One page, one price, and the same price when it renews. Thirty
-                days to change your mind about all of it.
+                <%= t('One page, one price, and the same price when it renews. Thirty days to change your mind about all of it.') %>
               </p>
             </div>
           </div>
@@ -173,10 +156,9 @@
             <span class="launch-step-time">2:00</span>
             <span class="launch-step-mark"><%- icon('rocket', 22) %></span>
             <div class="launch-step-text">
-              <h3>You are online</h3>
+              <h3><%= t('You are online') %></h3>
               <p>
-                Account built, DNS pointed, SSL issued and email ready — watched
-                step by step from your dashboard, not guessed at.
+                <%= t('Account built, DNS pointed, SSL issued and email ready — watched step by step from your dashboard, not guessed at.') %>
               </p>
             </div>
           </div>
@@ -197,10 +179,7 @@
           </span>
         </div>
         <div class="launch-screen">
-          <span class="launch-screen-empty">
-            <i></i>
-            <span data-launch-status>Waiting to start…</span>
-          </span>
+          <span class="launch-screen-empty"><%- th('<i></i> <span data-launch-status>Waiting to start…</span>') %></span>
           <div class="launch-site">
             <span class="launch-site-bar w45"></span>
             <span class="launch-site-bar w70"></span>
@@ -212,8 +191,7 @@
     </div>
 
     <p class="center small mt-3 mb-0" style="color:#7e8377">
-      Timings are what setup actually takes once payment clears — domain
-      propagation can add a few minutes, and we tell you when it has finished.
+      <%= t('Timings are what setup actually takes once payment clears — domain propagation can add a few minutes, and we tell you when it has finished.') %>
     </p>
   </div>
 </section>
@@ -225,22 +203,21 @@
 <section class="section" id="pricing">
   <div class="wrap">
     <div class="center mb-4">
-      <p class="kicker" data-reveal="0" style="justify-content:center">Shared hosting</p>
-      <h2 class="h1 mt-2" data-reveal="60">Simple plans, honest renewals</h2>
+      <p class="kicker" data-reveal="0" style="justify-content:center"><%= t('Shared hosting') %></p>
+      <h2 class="h1 mt-2" data-reveal="60"><%= t('Simple plans, honest renewals') %></h2>
       <p class="lede mt-2" data-reveal="120" style="max-width:56ch;margin-inline:auto">
-        The price you see is the price you renew at. No first-year trick, no
-        surprise at month thirteen.
+        <%= t('The price you see is the price you renew at. No first-year trick, no surprise at month thirteen.') %>
       </p>
     </div>
 
     <div class="center" data-reveal="150">
-      <div class="term-toggle" data-term-toggle role="group" aria-label="Billing term">
+      <div class="term-toggle" data-term-toggle role="group" aria-label="<%= t('Billing term') %>">
         <span class="term-pill" aria-hidden="true"></span>
-        <% terms.forEach(function (t) { %>
-          <button type="button" class="term-btn <%= t.months === 12 ? 'is-active' : '' %>"
-                  data-term="<%= t.months %>" aria-pressed="<%= t.months === 12 %>">
-            <%= t.label %>
-            <% if (t.maxSaving > 0) { %><span class="term-save">−<%= t.maxSaving %>%</span><% } %>
+        <% terms.forEach(function (term) { %>
+          <button type="button" class="term-btn <%= term.months === 12 ? 'is-active' : '' %>"
+                  data-term="<%= term.months %>" aria-pressed="<%= term.months === 12 %>">
+            <%= term.label %>
+            <% if (term.maxSaving > 0) { %><span class="term-save">−<%= term.maxSaving %>%</span><% } %>
           </button>
         <% }); %>
       </div>
@@ -254,25 +231,25 @@
           <h3 class="plan-name"><%= plan.name %></h3>
           <p class="plan-tagline"><%= plan.tagline %></p>
 
-          <% terms.forEach(function (t) { %>
-            <div data-price-for="<%= t.months %>" <%= t.months === 12 ? '' : 'hidden' %>>
+          <% terms.forEach(function (term) { %>
+            <div data-price-for="<%= term.months %>" <%= term.months === 12 ? '' : 'hidden' %>>
               <div class="plan-was">
-                <% if (plan.saving[t.months] > 0) { %>
-                  <s><%= money(plan.monthly_pence) %></s> save <%= plan.saving[t.months] %>%
+                <% if (plan.saving[term.months] > 0) { %>
+                  <s><%= money(plan.monthly_pence) %></s> save <%= plan.saving[term.months] %>%
                 <% } else { %>&nbsp;<% } %>
               </div>
               <div class="plan-price">
-                <span class="cur"><%= plan.perMonthParts[t.months].symbol %></span>
-                <span class="amt"><%= plan.perMonthParts[t.months].whole %></span>
-                <span class="frac">.<%= plan.perMonthParts[t.months].frac %></span>
+                <span class="cur"><%= plan.perMonthParts[term.months].symbol %></span>
+                <span class="amt"><%= plan.perMonthParts[term.months].whole %></span>
+                <span class="frac">.<%= plan.perMonthParts[term.months].frac %></span>
                 <span class="per">/month</span>
               </div>
               <p class="plan-term-note">
-                <% if (t.months === 1) { %>
+                <% if (term.months === 1) { %>
                   Billed monthly. Cancel any time.
                 <% } else { %>
-                  <%= money(plan.price[t.months]) %> for <%= t.label.toLowerCase() %>,
-                  then <%= money(plan.price[t.months]) %> on renewal.
+                  <%= money(plan.price[term.months]) %> for <%= term.label.toLowerCase() %>,
+                  then <%= money(plan.price[term.months]) %> on renewal.
                 <% } %>
               </p>
             </div>
@@ -306,18 +283,10 @@
     <div class="freedom mt-4" data-reveal="0">
       <span class="freedom-mark"><%- icon('globe', 22) %></span>
       <div class="freedom-text">
-        <b>One domain free, on every plan</b>
-        <span>
-          Buy any plan for a year or longer and your .co.uk, .uk or .com is
-          included for the first year — registered the moment your payment
-          clears. Renews at the normal price, which is printed before you buy.
-        </span>
+        <%- th('<b>One domain free, on every plan</b> <span> Buy any plan for a year or longer and your .co.uk, .uk or .com is included for the first year — registered the moment your payment clears. Renews at the normal price, which is printed before you buy. </span>') %>
       </div>
       <div class="freedom-terms">
-        <span class="freedom-term is-off">Monthly — no</span>
-        <span class="freedom-term">1 year</span>
-        <span class="freedom-term">2 years</span>
-        <span class="freedom-term">3 years</span>
+        <%- th('<span class="freedom-term is-off">Monthly — no</span> <span class="freedom-term">1 year</span> <span class="freedom-term">2 years</span> <span class="freedom-term">3 years</span>') %>
       </div>
     </div>
 
@@ -335,8 +304,8 @@
 <section class="section section-tint">
   <div class="wrap">
     <div class="center mb-4">
-      <p class="kicker" data-reveal="0" style="justify-content:center">Included as standard</p>
-      <h2 class="h1 mt-2" data-reveal="60">The things other hosts charge extra for</h2>
+      <p class="kicker" data-reveal="0" style="justify-content:center"><%= t('Included as standard') %></p>
+      <h2 class="h1 mt-2" data-reveal="60"><%= t('The things other hosts charge extra for') %></h2>
     </div>
 
     <div class="grid grid-3">
@@ -367,31 +336,29 @@
   <div class="wrap">
     <div class="grid grid-2" style="align-items:center;gap:56px">
       <div data-reveal="0">
-        <p class="kicker">Your control panel</p>
-        <h2 class="h1 mt-2 mb-2">Built for people who<br>did not ask for cPanel</h2>
+        <p class="kicker"><%= t('Your control panel') %></p>
+        <h2 class="h1 mt-2 mb-2"><%- th('Built for people who<br>did not ask for cPanel') %></h2>
         <p class="lede">
-          Most hosts hand you a twenty-year-old control panel with four hundred
-          icons and wish you luck. We built our own, so the six things you
-          actually do are six things you can find.
+          <%= t('Most hosts hand you a twenty-year-old control panel with four hundred icons and wish you luck. We built our own, so the six things you actually do are six things you can find.') %>
         </p>
 
         <div class="steps mt-4">
           <div class="step">
             <div>
-              <h3 class="h3 mb-1">Point your domain</h3>
-              <p class="small muted mb-0">Bought here, it is already pointed. Bought elsewhere, we show you the two nameservers to paste.</p>
+              <h3 class="h3 mb-1"><%= t('Point your domain') %></h3>
+              <p class="small muted mb-0"><%= t('Bought here, it is already pointed. Bought elsewhere, we show you the two nameservers to paste.') %></p>
             </div>
           </div>
           <div class="step">
             <div>
-              <h3 class="h3 mb-1">Install your site</h3>
-              <p class="small muted mb-0">WordPress in one click, or upload your own files. Staging included on Business and above.</p>
+              <h3 class="h3 mb-1"><%= t('Install your site') %></h3>
+              <p class="small muted mb-0"><%= t('WordPress in one click, or upload your own files. Staging included on Business and above.') %></p>
             </div>
           </div>
           <div class="step">
             <div>
-              <h3 class="h3 mb-1">Go live with SSL</h3>
-              <p class="small muted mb-0">The padlock appears on its own. You never see a certificate signing request.</p>
+              <h3 class="h3 mb-1"><%= t('Go live with SSL') %></h3>
+              <p class="small muted mb-0"><%= t('The padlock appears on its own. You never see a certificate signing request.') %></p>
             </div>
           </div>
         </div>
@@ -405,26 +372,26 @@
             <div class="row" style="gap:10px">
               <span class="f-icon" style="margin:0;width:38px;height:38px;border-radius:11px"><%- icon('globe', 18) %></span>
               <div>
-                <div class="strong">yourbusiness.co.uk</div>
-                <div class="tiny muted">Business plan · vh1</div>
+                <div class="strong"><%= t('yourbusiness.co.uk') %></div>
+                <div class="tiny muted"><%= t('Business plan · vh1') %></div>
               </div>
             </div>
-            <span class="badge badge-green"><span class="dot dot-live"></span> Live</span>
+            <span class="badge badge-green"><%- th('<span class="dot dot-live"></span> Live') %></span>
           </div>
 
           <div class="grid grid-2" style="gap:12px">
-            <div class="chip" style="justify-content:space-between"><span>SSL</span><span class="strong" style="color:var(--lime-ink)">Active</span></div>
-            <div class="chip" style="justify-content:space-between"><span>Backups</span><span class="strong">Daily</span></div>
-            <div class="chip" style="justify-content:space-between"><span>Storage</span><span class="strong">4.1 / 100 GB</span></div>
-            <div class="chip" style="justify-content:space-between"><span>Mailboxes</span><span class="strong">3</span></div>
+            <div class="chip" style="justify-content:space-between"><%- th('<span>SSL</span><span class="strong" style="color:var(--lime-ink)">Active</span>') %></div>
+            <div class="chip" style="justify-content:space-between"><%- th('<span>Backups</span><span class="strong">Daily</span>') %></div>
+            <div class="chip" style="justify-content:space-between"><%- th('<span>Storage</span><span class="strong">4.1 / 100 GB</span>') %></div>
+            <div class="chip" style="justify-content:space-between"><%- th('<span>Mailboxes</span><span class="strong">3</span>') %></div>
           </div>
 
           <hr class="divider">
           <div class="row" style="gap:8px">
-            <span class="btn btn-sm">Open site</span>
-            <span class="btn btn-ghost btn-sm">Files</span>
-            <span class="btn btn-ghost btn-sm">Email</span>
-            <span class="btn btn-ghost btn-sm">Backups</span>
+            <span class="btn btn-sm"><%= t('Open site') %></span>
+            <span class="btn btn-ghost btn-sm"><%= t('Files') %></span>
+            <span class="btn btn-ghost btn-sm"><%= t('Email') %></span>
+            <span class="btn btn-ghost btn-sm"><%= t('Backups') %></span>
           </div>
         </div>
       </div>
@@ -445,13 +412,10 @@
   <div class="wrap">
     <div class="split split-wide">
       <div data-reveal="0">
-        <p class="kicker">Build with AI</p>
-        <h2 class="h1 mt-2 mb-2">Vibe code your website<br>or web app today</h2>
+        <p class="kicker"><%= t('Build with AI') %></p>
+        <h2 class="h1 mt-2 mb-2"><%- th('Vibe code your website<br>or web app today') %></h2>
         <p class="lede">
-          Describe what you want to Claude, Cursor, v0 or Lovable, watch it
-          build, then put it online here. No pipeline to configure, no container
-          to learn, no DevOps engineer to hire for a site that took you an
-          afternoon to imagine.
+          <%= t('Describe what you want to Claude, Cursor, v0 or Lovable, watch it build, then put it online here. No pipeline to configure, no container to learn, no DevOps engineer to hire for a site that took you an afternoon to imagine.') %>
         </p>
 
         <div class="stack mt-4" style="gap:14px">
@@ -471,27 +435,26 @@
         </div>
 
         <div class="runtimes">
-          <% ['Static HTML', 'Node.js', 'Python', 'PHP 8.3', 'Next.js', 'Vite', 'SQLite', 'MySQL'].forEach(function (t) { %>
-            <span class="runtime"><b><%= t %></b></span>
+          <% ['Static HTML', 'Node.js', 'Python', 'PHP 8.3', 'Next.js', 'Vite', 'SQLite', 'MySQL'].forEach(function (row) { %>
+            <span class="runtime"><b><%= row %></b></span>
           <% }); %>
         </div>
 
         <div class="row mt-4">
           <a class="btn" href="/hosting">Start building — <%= fromPrice %>/mo</a>
-          <a class="btn btn-ghost" style="border-color:#3a3a35;color:#fff" href="/contact">Ask if yours will run</a>
+          <a class="btn btn-ghost" style="border-color:#3a3a35;color:#fff" href="/contact"><%= t('Ask if yours will run') %></a>
         </div>
       </div>
 
       <div data-reveal="120">
         <div class="editor">
           <div class="editor-bar">
-            <span class="editor-dot"></span><span class="editor-dot"></span><span class="editor-dot"></span>
-            <span class="editor-file">app/page.tsx</span>
+            <%- th('<span class="editor-dot"></span><span class="editor-dot"></span><span class="editor-dot"></span> <span class="editor-file">app/page.tsx</span>') %>
           </div>
           <div class="editor-body">
             <div class="editor-prompt">
-              <span class="editor-prompt-mark">AI</span>
-              <p>Build me a booking page for my bakery with opening hours, a gallery and a contact form.</p>
+              <span class="editor-prompt-mark"><%= t('AI') %></span>
+              <p><%= t('Build me a booking page for my bakery with opening hours, a gallery and a contact form.') %></p>
             </div>
 
             <%# Scenery. aria-hidden because a screen reader spelling out fake
@@ -528,39 +491,36 @@
   <div class="wrap">
     <div class="split">
       <div data-reveal="0">
-        <p class="kicker">WordPress</p>
-        <h2 class="h1 mt-2 mb-2">WordPress without<br>the complexity</h2>
+        <p class="kicker"><%= t('WordPress') %></p>
+        <h2 class="h1 mt-2 mb-2"><%- th('WordPress without<br>the complexity') %></h2>
         <p class="lede">
-          Forty per cent of the web runs on WordPress, and most of the people
-          running it never wanted to become server administrators. You pick a
-          name, we install it, and the parts that usually go wrong are already
-          handled.
+          <%= t('Forty per cent of the web runs on WordPress, and most of the people running it never wanted to become server administrators. You pick a name, we install it, and the parts that usually go wrong are already handled.') %>
         </p>
 
         <div class="steps mt-4">
           <div class="step">
             <div>
-              <h3 class="h3 mb-1">One click, not one afternoon</h3>
-              <p class="small muted mb-0">Choose your domain, press install. Two minutes later you are looking at your own dashboard — no database to create, no wp-config to edit, no FTP client.</p>
+              <h3 class="h3 mb-1"><%= t('One click, not one afternoon') %></h3>
+              <p class="small muted mb-0"><%= t('Choose your domain, press install. Two minutes later you are looking at your own dashboard — no database to create, no wp-config to edit, no FTP client.') %></p>
             </div>
           </div>
           <div class="step">
             <div>
-              <h3 class="h3 mb-1">Updates handled quietly</h3>
-              <p class="small muted mb-0">Core and security patches are applied for you. An out-of-date WordPress is how most small sites get defaced, and leaving that to the owner has never worked.</p>
+              <h3 class="h3 mb-1"><%= t('Updates handled quietly') %></h3>
+              <p class="small muted mb-0"><%= t('Core and security patches are applied for you. An out-of-date WordPress is how most small sites get defaced, and leaving that to the owner has never worked.') %></p>
             </div>
           </div>
           <div class="step">
             <div>
-              <h3 class="h3 mb-1">Try things without fear</h3>
-              <p class="small muted mb-0">Business and Pro get a staging copy: change the theme, test the plugin, and push it live only when it looks right. Every night is backed up either way.</p>
+              <h3 class="h3 mb-1"><%= t('Try things without fear') %></h3>
+              <p class="small muted mb-0"><%= t('Business and Pro get a staging copy: change the theme, test the plugin, and push it live only when it looks right. Every night is backed up either way.') %></p>
             </div>
           </div>
         </div>
 
         <div class="row mt-4">
-          <a class="btn" href="/order/business?term=12">Get WordPress hosting</a>
-          <a class="btn btn-ghost" href="/transfer">Move an existing site</a>
+          <a class="btn" href="/order/business?term=12"><%= t('Get WordPress hosting') %></a>
+          <a class="btn btn-ghost" href="/transfer"><%= t('Move an existing site') %></a>
         </div>
       </div>
 
@@ -570,45 +530,41 @@
             <div class="row" style="gap:11px">
               <span class="f-icon" style="margin:0;width:40px;height:40px;border-radius:12px"><%- icon('wordpress', 20) %></span>
               <div>
-                <div class="strong">yourbakery.co.uk</div>
-                <div class="tiny muted">WordPress 6.9 · PHP 8.3</div>
+                <div class="strong"><%= t('yourbakery.co.uk') %></div>
+                <div class="tiny muted"><%= t('WordPress 6.9 · PHP 8.3') %></div>
               </div>
             </div>
-            <span class="badge badge-green"><span class="dot dot-live"></span> Healthy</span>
+            <span class="badge badge-green"><%- th('<span class="dot dot-live"></span> Healthy') %></span>
           </div>
 
           <div class="wp-row">
             <span class="wp-row-mark"><%- icon('shield', 19) %></span>
             <div class="wp-row-text">
-              <b>Core &amp; plugins up to date</b>
-              <span>Checked an hour ago</span>
+              <%- th('<b>Core &amp; plugins up to date</b> <span>Checked an hour ago</span>') %>
             </div>
-            <span class="wp-row-state badge badge-soft">Auto</span>
+            <span class="wp-row-state badge badge-soft"><%= t('Auto') %></span>
           </div>
 
           <div class="wp-row">
             <span class="wp-row-mark"><%- icon('backup', 19) %></span>
             <div class="wp-row-text">
-              <b>Last backup</b>
-              <span>Last night, 03:12 — restore yourself</span>
+              <%- th('<b>Last backup</b> <span>Last night, 03:12 — restore yourself</span>') %>
             </div>
-            <span class="wp-row-state badge badge-grey">14 kept</span>
+            <span class="wp-row-state badge badge-grey"><%= t('14 kept') %></span>
           </div>
 
           <div class="wp-row">
             <span class="wp-row-mark"><%- icon('folder', 19) %></span>
             <div class="wp-row-text">
-              <b>Staging site</b>
-              <span>staging.yourbakery.co.uk</span>
+              <%- th('<b>Staging site</b> <span>staging.yourbakery.co.uk</span>') %>
             </div>
-            <span class="wp-row-state badge badge-soft">Ready</span>
+            <span class="wp-row-state badge badge-soft"><%= t('Ready') %></span>
           </div>
 
           <div class="wp-row">
             <span class="wp-row-mark"><%- icon('bolt', 19) %></span>
             <div class="wp-row-text" style="flex:1">
-              <b>Page speed</b>
-              <span>Cached, 0.4s to first byte</span>
+              <%- th('<b>Page speed</b> <span>Cached, 0.4s to first byte</span>') %>
               <div class="wp-bar"><i style="--w:88%"></i></div>
             </div>
           </div>
@@ -624,22 +580,20 @@
 <section class="section" id="email">
   <div class="wrap">
     <div class="sec-head sec-head-center mb-4">
-      <p class="kicker" data-reveal="0" style="justify-content:center">Email</p>
-      <h2 class="h1 mt-2" data-reveal="60">Business and marketing email</h2>
+      <p class="kicker" data-reveal="0" style="justify-content:center"><%= t('Email') %></p>
+      <h2 class="h1 mt-2" data-reveal="60"><%= t('Business and marketing email') %></h2>
       <p class="lede mt-2" data-reveal="120">
-        Priced separately, because they are different products bought for
-        different reasons. Mailboxes at your own domain, or campaigns that
-        actually reach an inbox.
+        <%= t('Priced separately, because they are different products bought for different reasons. Mailboxes at your own domain, or campaigns that actually reach an inbox.') %>
       </p>
     </div>
 
     <div class="center" data-reveal="150">
-      <div class="efam" data-email-tabs role="group" aria-label="Email type">
+      <div class="efam" data-email-tabs role="group" aria-label="<%= t('Email type') %>">
         <button type="button" class="efam-btn" data-efam="business" aria-pressed="true">
-          <%- icon('mail', 17) %> Business email
+          <%- icon('mail', 17) %> <%= t('Business email') %>
         </button>
         <button type="button" class="efam-btn" data-efam="marketing" aria-pressed="false">
-          <%- icon('chart', 17) %> Marketing email
+          <%- icon('chart', 17) %> <%= t('Marketing email') %>
         </button>
       </div>
     </div>
@@ -692,17 +646,14 @@
   <div class="wrap">
     <div class="grid grid-2" style="align-items:center;gap:48px">
       <div data-reveal="0">
-        <p class="kicker">Already hosted somewhere else?</p>
-        <h2 class="h1 mt-2 mb-2">We will move it for you. Free.</h2>
+        <p class="kicker"><%= t('Already hosted somewhere else?') %></p>
+        <h2 class="h1 mt-2 mb-2"><%= t('We will move it for you. Free.') %></h2>
         <p class="lede">
-          Send us your current login. We copy the site, the database and the
-          mailboxes, test it on a temporary address, and only switch the domain
-          over once you have looked at it and said yes. Most moves are done the
-          same working day, with no downtime you or your customers would notice.
+          <%= t('Send us your current login. We copy the site, the database and the mailboxes, test it on a temporary address, and only switch the domain over once you have looked at it and said yes. Most moves are done the same working day, with no downtime you or your customers would notice.') %>
         </p>
         <div class="row mt-3">
-          <a class="btn" href="/transfer">Start a free migration</a>
-          <a class="btn btn-ghost" style="border-color:#3a3a35;color:#fff" href="/contact">Ask a question first</a>
+          <a class="btn" href="/transfer"><%= t('Start a free migration') %></a>
+          <a class="btn btn-ghost" style="border-color:#3a3a35;color:#fff" href="/contact"><%= t('Ask a question first') %></a>
         </div>
       </div>
       <div class="grid" style="gap:14px" data-reveal="100">
@@ -732,8 +683,8 @@
 <section class="section" id="faq">
   <div class="wrap wrap-narrow">
     <div class="center mb-4">
-      <p class="kicker" data-reveal="0" style="justify-content:center">Questions</p>
-      <h2 class="h1 mt-2" data-reveal="60">The ones worth asking</h2>
+      <p class="kicker" data-reveal="0" style="justify-content:center"><%= t('Questions') %></p>
+      <h2 class="h1 mt-2" data-reveal="60"><%= t('The ones worth asking') %></h2>
     </div>
 
     <div data-acc-group data-reveal="100">
@@ -771,13 +722,13 @@
   <div class="wrap">
     <div class="card card-pad-lg center" data-reveal="0"
          style="background:linear-gradient(135deg,var(--lime-soft),#fff 65%);border-color:var(--lime)">
-      <h2 class="h1 mb-2">Ready when you are</h2>
+      <h2 class="h1 mb-2"><%= t('Ready when you are') %></h2>
       <p class="lede mb-3" style="max-width:48ch;margin-inline:auto">
-        Find your name, pick a plan, and be online this afternoon.
+        <%= t('Find your name, pick a plan, and be online this afternoon.') %>
       </p>
       <div class="row" style="justify-content:center">
-        <a class="btn btn-lg" href="/domains"><%- icon('search', 18) %> Find a domain</a>
-        <a class="btn btn-ghost btn-lg" href="/hosting">See all plans</a>
+        <a class="btn btn-lg" href="/domains"><%- icon('search', 18) %> <%= t('Find a domain') %></a>
+        <a class="btn btn-ghost btn-lg" href="/hosting"><%= t('See all plans') %></a>
       </div>
     </div>
   </div>

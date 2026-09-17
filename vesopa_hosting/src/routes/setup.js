@@ -93,7 +93,7 @@ router.get('/setup/:id', async (req, res, next) => {
     const items = await db.query('SELECT * FROM order_items WHERE order_id = ?', [ctx.order.id]);
 
     res.render('panel/setup', {
-      title: 'Finish setting up',
+      title: req.t('Finish setting up'),
       robots: 'noindex',
       // The wizard is full-bleed: it is the only thing the customer should be
       // doing, so it does not get the panel's rail and topbar.
@@ -141,7 +141,7 @@ router.post('/setup/:id/domain', async (req, res, next) => {
       // Everything here is re-checked server-side. The form is a convenience;
       // it is not evidence.
       if (!ctx.service.free_domain_eligible || ctx.service.free_domain_claimed) {
-        flash(res, 'That free domain has already been used.', 'error');
+        flash(res, req.t('That free domain has already been used.'), 'error');
         return res.redirect(back);
       }
       const wanted = field(req.body.domain, 190).toLowerCase();
@@ -315,7 +315,7 @@ router.post('/setup/:id/search', async (req, res, next) => {
     const ctx = await loadSetup(req);
     if (!ctx) return next();
     if (rateLimited(req.ip, 'setup-search', { max: 30, windowMs: 60_000 })) {
-      return res.status(429).json({ error: 'Slow down a moment, then try again.' });
+      return res.status(429).json({ error: req.t('Slow down a moment, then try again.') });
     }
 
     const { sld } = registrar.splitDomain(String(req.body?.q || ''));

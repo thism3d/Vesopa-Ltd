@@ -31,37 +31,25 @@
 
 <section class="section section-tint">
   <div class="wrap wrap-narrow">
-    <p class="kicker" data-reveal="0">Being straight with you</p>
-    <h2 class="h1 mt-2 mb-3" data-reveal="40">Why we do not sell SSL certificates</h2>
+    <p class="kicker" data-reveal="0"><%= t('Being straight with you') %></p>
+    <h2 class="h1 mt-2 mb-3" data-reveal="40"><%= t('Why we do not sell SSL certificates') %></h2>
 
     <div class="card card-pad-lg" data-reveal="80">
       <p>
-        Plenty of hosts sell an SSL certificate as a yearly line item. For an
-        ordinary website that is selling something the customer can get free, and
-        we would rather say so than take the money.
+        <%= t('Plenty of hosts sell an SSL certificate as a yearly line item. For an ordinary website that is selling something the customer can get free, and we would rather say so than take the money.') %>
       </p>
       <p>
-        A domain-validated certificate — the kind that produces the padlock and
-        encrypts the connection — is issued free by Let's Encrypt, and browsers
-        trust it exactly as much as a paid one. The encryption is identical. There
-        is no "stronger" padlock to buy.
+        <%= t('A domain-validated certificate — the kind that produces the padlock and encrypts the connection — is issued free by Let\'s Encrypt, and browsers trust it exactly as much as a paid one. The encryption is identical. There is no "stronger" padlock to buy.') %>
       </p>
       <p class="mb-0">
-        Paid certificates do still exist for two real cases: <b>organisation and
-        extended validation</b>, where a certificate authority verifies your
-        company's legal identity and that appears in the certificate detail, and
-        <b>wildcard certificates</b> across large numbers of subdomains. Banks and
-        listed companies buy those. If you need one, ask us and we will install it
-        at cost — we will not mark it up.
+        <%- th("Paid certificates do still exist for two real cases: <b>organisation and extended validation</b>, where a certificate authority verifies your company's legal identity and that appears in the certificate detail, and <b>wildcard certificates</b> across large numbers of subdomains. Banks and listed companies buy those. If you need one, ask us and we will install it at cost — we will not mark it up.") %>
       </p>
     </div>
 
     <div class="alert alert-info mt-3" data-reveal="120">
       <%- icon('info', 19) %>
       <div>
-        <b>If your site is not showing the padlock</b>, it is almost always that
-        the domain is not pointing at us yet. Check the nameservers in your panel,
-        then retry SSL from the site's page — it takes about thirty seconds.
+        <%- th("<b>If your site is not showing the padlock</b>, it is almost always that the domain is not pointing at us yet. Check the nameservers in your panel, then retry SSL from the site's page — it takes about thirty seconds.") %>
       </div>
     </div>
   </div>
@@ -69,7 +57,7 @@
 
 <section class="section">
   <div class="wrap wrap-narrow">
-    <h2 class="h2 center mb-4" data-reveal="0">Common questions</h2>
+    <h2 class="h2 center mb-4" data-reveal="0"><%= t('Common questions') %></h2>
     <div data-acc-group data-reveal="40">
       <%
       const faqs = [

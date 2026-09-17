@@ -44,7 +44,7 @@
   const wIcon = { error: 'warning', warn: 'warning', success: 'check', info: 'info' };
 %>
 <% if (wShown.length) { %>
-  <div class="warnstack <%= wCompact ? 'is-compact' : '' %>" role="region" aria-label="Things that need your attention">
+  <div class="warnstack <%= wCompact ? 'is-compact' : '' %>" role="region" aria-label="<%= t('Things that need your attention') %>">
     <% wShown.forEach(function (w) { %>
       <div class="warnrow is-<%= w.level %>">
         <span class="warnrow-ico"><%- icon(wIcon[w.level] || 'info', 18) %></span>
@@ -54,7 +54,7 @@
         </div>
         <% if (w.fix_url) { %>
           <a class="warnrow-fix" href="<%= w.fix_url %>">
-            <%= w.fix_label || 'Fix this' %>
+            <%= w.fix_label || t('Fix this') %>
             <%- icon('chevron-right', 15) %>
           </a>
         <% } %>
@@ -62,7 +62,7 @@
     <% }); %>
     <% if (wRest > 0) { %>
       <a class="warnrow-more" href="/panel/notifications">
-        and <%= wRest %> more <%= wRest === 1 ? 'thing that needs' : 'things that need' %> attention
+        <%= tn('and {n} more thing that needs attention', 'and {n} more things that need attention', wRest) %>
         <%- icon('chevron-right', 14) %>
       </a>
     <% } %>

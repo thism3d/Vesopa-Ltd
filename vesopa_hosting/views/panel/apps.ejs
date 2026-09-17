@@ -22,21 +22,21 @@
 <% if (mock) { %>
   <div class="alert alert-info">
     <%- icon('info', 19) %>
-    <div><b>Demonstration mode.</b> This panel is not connected to a live hosting node, so nothing here will actually be installed.</div>
+    <div><%- th('<b>Demonstration mode.</b> This panel is not connected to a live hosting node, so nothing here will actually be installed.') %></div>
   </div>
 <% } %>
 
 <% if (!service) { %>
   <div class="empty">
-    <p class="mb-3">You need hosting before you can install anything on it.</p>
-    <a class="btn" href="/hosting">See the plans</a>
+    <p class="mb-3"><%= t('You need hosting before you can install anything on it.') %></p>
+    <a class="btn" href="/hosting"><%= t('See the plans') %></a>
   </div>
 <% } else { %>
 
   <%# ---- What is already running ------------------------------------------ %>
   <% if (nodeApps.length) { %>
     <div class="row-between mb-2" style="align-items:baseline">
-      <h2 class="h3 mb-0">Your Node apps</h2>
+      <h2 class="h3 mb-0"><%= t('Your Node apps') %></h2>
       <a class="linklike small" href="/panel/apps/node">Manage all <%= nodeApps.length %></a>
     </div>
     <div class="applist mb-4">

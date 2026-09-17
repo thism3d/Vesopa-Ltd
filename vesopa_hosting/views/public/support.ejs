@@ -36,41 +36,39 @@
   <div class="wrap">
     <div class="grid grid-2" style="gap:40px;align-items:center">
       <div data-reveal="0">
-        <p class="kicker">Response times</p>
-        <h2 class="h1 mt-2 mb-2">What to expect</h2>
+        <p class="kicker"><%= t('Response times') %></p>
+        <h2 class="h1 mt-2 mb-2"><%= t('What to expect') %></h2>
         <p class="lede">
-          We would rather state these and meet them than promise instant and miss.
+          <%= t('We would rather state these and meet them than promise instant and miss.') %>
         </p>
       </div>
       <div class="card card-flush" data-reveal="60">
         <div class="table-wrap"><table class="table">
           <tbody>
-            <tr><td class="strong">Site down</td><td class="num">Within 1 hour</td></tr>
-            <tr><td class="strong">Email not working</td><td class="num">Within 4 hours</td></tr>
-            <tr><td class="strong">General ticket</td><td class="num">Within 1 working day</td></tr>
-            <tr><td class="strong">Migration request</td><td class="num">Same working day</td></tr>
-            <tr><td class="strong">Billing question</td><td class="num">Within 1 working day</td></tr>
+            <tr><td class="strong"><%= t('Site down') %></td><td class="num"><%= t('Within 1 hour') %></td></tr>
+            <tr><td class="strong"><%= t('Email not working') %></td><td class="num"><%= t('Within 4 hours') %></td></tr>
+            <tr><td class="strong"><%= t('General ticket') %></td><td class="num"><%= t('Within 1 working day') %></td></tr>
+            <tr><td class="strong"><%= t('Migration request') %></td><td class="num"><%= t('Same working day') %></td></tr>
+            <tr><td class="strong"><%= t('Billing question') %></td><td class="num"><%= t('Within 1 working day') %></td></tr>
           </tbody>
         </table></div>
       </div>
     </div>
     <p class="small muted mt-3">
-      Pro plans are answered first in every queue. Outside working hours, "site
-      down" is monitored and escalated; the rest waits until morning.
+      <%= t('Pro plans are answered first in every queue. Outside working hours, "site down" is monitored and escalated; the rest waits until morning.') %>
     </p>
   </div>
 </section>
 
 <section class="section">
   <div class="wrap center">
-    <h2 class="h1 mb-2" data-reveal="0">Still stuck?</h2>
+    <h2 class="h1 mb-2" data-reveal="0"><%= t('Still stuck?') %></h2>
     <p class="lede mb-3" data-reveal="40" style="max-width:46ch;margin-inline:auto">
-      Tell us the domain and what you expected to happen. That one sentence saves
-      a whole round trip.
+      <%= t('Tell us the domain and what you expected to happen. That one sentence saves a whole round trip.') %>
     </p>
     <div class="row" style="justify-content:center" data-reveal="80">
-      <a class="btn btn-lg" href="/panel/tickets/new">Open a ticket</a>
-      <a class="btn btn-ghost btn-lg" href="mailto:<%= contact.support_email %>">Email us</a>
+      <a class="btn btn-lg" href="/panel/tickets/new"><%= t('Open a ticket') %></a>
+      <a class="btn btn-ghost btn-lg" href="mailto:<%= contact.support_email %>"><%= t('Email us') %></a>
     </div>
   </div>
 </section>

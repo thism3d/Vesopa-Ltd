@@ -7,23 +7,23 @@
   <div class="hero-aura hero-aura-1"></div>
   <div class="hero-grid"></div>
   <div class="wrap hero-inner">
-    <p class="kicker" data-reveal="0" style="justify-content:center">Domain names</p>
+    <p class="kicker" data-reveal="0" style="justify-content:center"><%= t('Domain names') %></p>
     <h1 class="display" style="font-size:clamp(2.1rem,5vw,3.4rem)" data-reveal="60">
-      Find the name<br><span class="hl">before someone else does</span>
+      <%- th('Find the name<br><span class="hl">before someone else does</span>') %>
     </h1>
 
     <div data-reveal="120" class="mt-3">
       <form class="dsearch" data-domain-search action="/domains#results" method="get">
         <div class="dsearch-form">
           <input class="dsearch-input" type="text" name="q" autocomplete="off" spellcheck="false"
-                 value="<%= q %>" placeholder="yourbusiness.co.uk" aria-label="Search for a domain name">
-          <button class="btn btn-lg" type="submit"><%- icon('search', 19) %><span class="hide-sm">Search</span></button>
+                 value="<%= q %>" placeholder="<%= t('yourbusiness.co.uk') %>" aria-label="<%= t('Search for a domain name') %>">
+          <button class="btn btn-lg" type="submit"><%- icon('search', 19) %><span class="hide-sm"><%= t('Search') %></span></button>
         </div>
       </form>
       <div class="dsearch-tlds">
-        <% featuredTlds.forEach(function (t) { %>
-          <button type="button" class="dsearch-tld" data-tld-chip="<%= t.tld %>">
-            <b>.<%= t.tld %></b> <%= money(t.register_pence) %>
+        <% featuredTlds.forEach(function (tld) { %>
+          <button type="button" class="dsearch-tld" data-tld-chip="<%= tld.tld %>">
+            <b>.<%= tld.tld %></b> <%= money(tld.register_pence) %>
           </button>
         <% }); %>
       </div>
@@ -55,28 +55,28 @@
             <% if (exact.available && exact.sellable) { %>
               <div class="dresult-price">
                 <div class="amt"><%= exact.price_display %></div>
-                <div class="per">first year</div>
+                <div class="per"><%= t('first year') %></div>
               </div>
-              <a class="btn btn-sm" href="/cart/add-domain?domain=<%= encodeURIComponent(exact.domain) %>">Add</a>
+              <a class="btn btn-sm" href="/cart/add-domain?domain=<%= encodeURIComponent(exact.domain) %>"><%= t('Add') %></a>
             <% } else { %>
-              <div class="dresult-price"><span class="badge badge-grey">Taken</span></div>
+              <div class="dresult-price"><span class="badge badge-grey"><%= t('Taken') %></span></div>
             <% } %>
           </div>
         <% } %>
 
         <% if (serverResults.length > 1) { %>
-          <p class="kicker mt-3 mb-2">Other extensions</p>
+          <p class="kicker mt-3 mb-2"><%= t('Other extensions') %></p>
           <% serverResults.slice(1).forEach(function (r, i) { %>
             <div class="dresult <%= r.available ? '' : 'is-taken' %>" style="animation-delay:<%= i * 55 %>ms">
               <div class="dresult-name"><b><%= r.sld %></b>.<%= r.tld %></div>
               <% if (r.available && r.sellable) { %>
                 <div class="dresult-price">
                   <div class="amt"><%= r.price_display %></div>
-                  <div class="per">first year</div>
+                  <div class="per"><%= t('first year') %></div>
                 </div>
-                <a class="btn btn-sm" href="/cart/add-domain?domain=<%= encodeURIComponent(r.domain) %>">Add</a>
+                <a class="btn btn-sm" href="/cart/add-domain?domain=<%= encodeURIComponent(r.domain) %>"><%= t('Add') %></a>
               <% } else { %>
-                <div class="dresult-price"><span class="badge badge-grey">Taken</span></div>
+                <div class="dresult-price"><span class="badge badge-grey"><%= t('Taken') %></span></div>
               <% } %>
             </div>
           <% }); %>
@@ -87,8 +87,8 @@
     <% if (!serverResults) { %>
       <div class="empty" data-reveal="0">
         <%- icon('globe', 46) %>
-        <h3>Search for a name above</h3>
-        <p>Type a word or your business name — we will check it across every extension we sell.</p>
+        <h3><%= t('Search for a name above') %></h3>
+        <p><%= t('Type a word or your business name — we will check it across every extension we sell.') %></p>
       </div>
     <% } %>
   </div>
@@ -98,8 +98,8 @@
 <section class="section section-tint">
   <div class="wrap">
     <div class="center mb-4">
-      <p class="kicker" data-reveal="0" style="justify-content:center">Every domain includes</p>
-      <h2 class="h1 mt-2" data-reveal="60">No add-ons at the checkout</h2>
+      <p class="kicker" data-reveal="0" style="justify-content:center"><%= t('Every domain includes') %></p>
+      <h2 class="h1 mt-2" data-reveal="60"><%= t('No add-ons at the checkout') %></h2>
     </div>
     <div class="grid grid-4">
       <%
@@ -125,8 +125,8 @@
   <div class="wrap">
     <div class="row-between mb-3">
       <div>
-        <p class="kicker" data-reveal="0">Pricing</p>
-        <h2 class="h2 mt-2" data-reveal="40">Popular extensions</h2>
+        <p class="kicker" data-reveal="0"><%= t('Pricing') %></p>
+        <h2 class="h2 mt-2" data-reveal="40"><%= t('Popular extensions') %></h2>
         <%# The count is the invitation. "See every extension" is a link nobody
             clicks; "browse all 680" says there is something behind it. %>
         <p class="small muted mt-1 mb-0">
@@ -142,17 +142,17 @@
       <div class="table-wrap">
         <table class="table">
           <thead>
-            <tr><th>Extension</th><th class="num">Register</th><th class="num">Renew</th><th class="num">Transfer</th><th></th></tr>
+            <tr><th><%= t('Extension') %></th><th class="num"><%= t('Register') %></th><th class="num"><%= t('Renew') %></th><th class="num"><%= t('Transfer') %></th><th></th></tr>
           </thead>
           <tbody>
-            <% tlds.filter(function (t) { return t.featured; }).forEach(function (t) { %>
+            <% tlds.filter(function (tld) { return tld.featured; }).forEach(function (tld) { %>
               <tr>
-                <td class="strong">.<%= t.tld %></td>
-                <td class="num"><%= money(t.register_pence) %></td>
-                <td class="num"><%= money(t.renew_pence) %></td>
-                <td class="num"><%= money(t.transfer_pence) %></td>
+                <td class="strong">.<%= tld.tld %></td>
+                <td class="num"><%= money(tld.register_pence) %></td>
+                <td class="num"><%= money(tld.renew_pence) %></td>
+                <td class="num"><%= money(tld.transfer_pence) %></td>
                 <td class="num">
-                  <button type="button" class="btn btn-ghost btn-sm dsearch-tld-row" data-tld-chip="<%= t.tld %>">Search</button>
+                  <button type="button" class="btn btn-ghost btn-sm dsearch-tld-row" data-tld-chip="<%= tld.tld %>"><%= t('Search') %></button>
                 </td>
               </tr>
             <% }); %>
@@ -161,8 +161,7 @@
       </div>
     </div>
     <p class="small muted mt-2">
-      Prices are per year and include VAT. Register and transfer prices are for
-      the first year; renewal is what you pay every year after that.
+      <%= t('Prices are per year and include VAT. Register and transfer prices are for the first year; renewal is what you pay every year after that.') %>
     </p>
   </div>
 </section>
@@ -171,7 +170,7 @@
 <section class="section section-tint" id="faq">
   <div class="wrap wrap-narrow">
     <div class="center mb-4">
-      <h2 class="h1" data-reveal="0">Domain questions</h2>
+      <h2 class="h1" data-reveal="0"><%= t('Domain questions') %></h2>
     </div>
     <div data-acc-group data-reveal="60">
       <%

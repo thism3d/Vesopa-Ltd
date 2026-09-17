@@ -13,26 +13,26 @@
   <div class="wrap wrap-narrow">
     <div class="steps" data-reveal="0">
       <div class="step"><div>
-        <h2 class="h3 mb-1">Unlock it at your current registrar</h2>
-        <p class="small muted mb-0">Every registrar has a "registrar lock" or "transfer lock" switch. Turn it off. This exists to stop a domain being stolen, which is why it is on by default.</p>
+        <h2 class="h3 mb-1"><%= t('Unlock it at your current registrar') %></h2>
+        <p class="small muted mb-0"><%= t('Every registrar has a "registrar lock" or "transfer lock" switch. Turn it off. This exists to stop a domain being stolen, which is why it is on by default.') %></p>
       </div></div>
       <div class="step"><div>
-        <h2 class="h3 mb-1">Get the authorisation code</h2>
-        <p class="small muted mb-0">Sometimes called an EPP code, auth code or transfer key. Your current registrar must give it to you — for .uk domains the process is different and simpler: they just change the IPS tag to ours.</p>
+        <h2 class="h3 mb-1"><%= t('Get the authorisation code') %></h2>
+        <p class="small muted mb-0"><%= t('Sometimes called an EPP code, auth code or transfer key. Your current registrar must give it to you — for .uk domains the process is different and simpler: they just change the IPS tag to ours.') %></p>
       </div></div>
       <div class="step"><div>
-        <h2 class="h3 mb-1">Start it here and pay for a year</h2>
-        <p class="small muted mb-0">That year is added to your existing expiry, not instead of it. If you had eight months left, you now have twenty.</p>
+        <h2 class="h3 mb-1"><%= t('Start it here and pay for a year') %></h2>
+        <p class="small muted mb-0"><%= t('That year is added to your existing expiry, not instead of it. If you had eight months left, you now have twenty.') %></p>
       </div></div>
       <div class="step"><div>
-        <h2 class="h3 mb-1">Approve the email</h2>
-        <p class="small muted mb-0">The registry emails the address on the domain's record to confirm. Click it and the transfer completes, usually within five days — often much sooner.</p>
+        <h2 class="h3 mb-1"><%= t('Approve the email') %></h2>
+        <p class="small muted mb-0"><%= t("The registry emails the address on the domain's record to confirm. Click it and the transfer completes, usually within five days — often much sooner.") %></p>
       </div></div>
     </div>
 
     <hr class="divider">
 
-    <h2 class="h2 mb-3" data-reveal="0">Before you start</h2>
+    <h2 class="h2 mb-3" data-reveal="0"><%= t('Before you start') %></h2>
     <div class="grid" style="gap:14px" data-reveal="40">
       <% [
         ['warning', 'A domain registered or transferred in the last 60 days cannot move', 'This is an ICANN rule, not ours. You will have to wait out the remainder of the 60 days.'],
@@ -50,7 +50,7 @@
     </div>
 
     <div class="center mt-4" data-reveal="80">
-      <a class="btn btn-lg" href="/domains">Look up my domain</a>
+      <a class="btn btn-lg" href="/domains"><%= t('Look up my domain') %></a>
     </div>
   </div>
 </section>

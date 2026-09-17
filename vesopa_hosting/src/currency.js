@@ -23,6 +23,7 @@
  */
 
 const db = require('./db');
+const i18n = require('./i18n');
 
 /**
  * The minor unit is 100 for all three currencies we sell in, and the code
@@ -248,10 +249,28 @@ function toBase(minor, cur) {
  * and the visitor's locale is not ours to guess from. Intl still does the
  * digit grouping, which is the part that genuinely varies.
  */
-function format(minor, cur) {
+/**
+ * Which locale groups the digits.
+ *
+ * English keeps the CURRENCY's own locale, because that is what decides how a
+ * dollar figure is grouped for the people who use dollars, and nothing about
+ * that changed when a second language arrived. Any other language overrides
+ * it: a Bangla page groups 2,00,000 and writes its own numerals whatever the
+ * money is.
+ */
+function intlFor(locale, c) {
+  if (locale !== i18n.DEFAULT_LOCALE && i18n.LOCALES[locale]) return i18n.LOCALES[locale].intl;
+  return c.locale || 'en-GB';
+}
+
+function format(minor, cur, locale = i18n.currentLocale()) {
   const c = cur || FALLBACK[0];
   const n = Number(minor || 0) / MINOR;
-  const text = n.toLocaleString(c.locale || 'en-GB', {
+  // On a Bangla page the figures are Bangla numerals, grouped the Bangla way
+  // (2,00,000, not 200,000); the symbol stays our own column's, for the reason
+  // above. Which formatting locale that is comes from src/i18n's LOCALES, so a
+  // new language needs nothing here.
+  const text = n.toLocaleString(intlFor(locale, c), {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
@@ -259,14 +278,14 @@ function format(minor, cur) {
 }
 
 /** Symbol and the two halves of the number, for the big pricing-table figures. */
-function parts(minor, cur) {
+function parts(minor, cur, locale = i18n.currentLocale()) {
   const c = cur || FALLBACK[0];
   const n = Number(minor || 0) / MINOR;
   const [whole, frac] = n.toFixed(2).split('.');
   return {
     symbol: c.symbol,
-    whole: Number(whole).toLocaleString(c.locale || 'en-GB'),
-    frac,
+    whole: Number(whole).toLocaleString(intlFor(locale, c)),
+    frac: i18n.digits(frac, locale),
   };
 }
 

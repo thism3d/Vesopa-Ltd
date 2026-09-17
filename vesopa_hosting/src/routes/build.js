@@ -27,8 +27,8 @@ const cssVersion = () => crypto.createHash('sha1').update(kit.siteCss()).digest(
 
 router.get('/', (req, res) => {
   res.render('public/build', {
-    title: 'Studio — build your website by talking',
-    description: 'Say what your business does and watch your website appear. Change anything by saying so, then publish it to your own domain.',
+    title: req.t('Studio — build your website by talking'),
+    description: req.t('Say what your business does and watch your website appear. Change anything by saying so, then publish it to your own domain.'),
     aiEnabled: false, // the studio has its own voice; the floating guide would talk over it
     nativeNav: true,
     sections: false,

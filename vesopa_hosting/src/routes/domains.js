@@ -82,10 +82,10 @@ router.get('/domains', async (req, res, next) => {
       .join(', ');
 
     res.render('public/domains', {
-      title: 'Domain names',
-      description:
-        `Search and register a domain with Vesopa.${quotes ? ` ${quotes},` : ''} `
-        + 'free WHOIS privacy and DNS included.',
+      title: req.t('Domain names'),
+      description: quotes
+        ? req.t('Search and register a domain with Vesopa. {quotes}, free WHOIS privacy and DNS included.', { quotes })
+        : req.t('Search and register a domain with Vesopa. Free WHOIS privacy and DNS included.'),
       q,
       featuredTlds: featured,
       tlds: tlds.filter((t) => t.active),
@@ -124,14 +124,15 @@ async function renderBrowser(req, res, { category = null } = {}) {
     : null;
 
   res.render('public/domain-pricing', {
-    title: category ? `${category.label} domain names` : 'Domain pricing',
+    title: category ? req.t('{label} domain names', { label: category.label }) : req.t('Domain pricing'),
+    // One sentence per shape rather than a sentence assembled from three:
+    // Bengali does not put "from £8 a year" where English does, and a clause
+    // glued on at the end in English lands in the middle in Bangla.
     description: category
-      ? `${category.blurb} ${view.total} extensions`
-        + `${cheapest ? `, from ${cheapest.register_display} a year` : ''}. `
-        + 'Register, renew and transfer prices side by side.'
-      : `Every one of our ${view.total} domain extensions with its register, renew and `
-        + 'transfer price side by side. No hidden renewal jumps, and filters for '
-        + 'the cheap ones.',
+      ? (cheapest
+        ? req.t('{blurb} {total} extensions, from {price} a year. Register, renew and transfer prices side by side.', { blurb: category.blurb, total: view.total, price: cheapest.register_display })
+        : req.t('{blurb} {total} extensions. Register, renew and transfer prices side by side.', { blurb: category.blurb, total: view.total }))
+      : req.t('Every one of our {total} domain extensions with its register, renew and transfer price side by side. No hidden renewal jumps, and filters for the cheap ones.', { total: view.total }),
     // The browser's own canonical rule: a filtered view points at the page it
     // is a view OF, so the crawler consolidates rather than splitting.
     canonical: category ? `/domains/category/${category.slug}` : '/domains/pricing',
@@ -182,11 +183,10 @@ router.get('/domains/tld/:tld', async (req, res, next) => {
     ];
 
     res.render('public/domain-tld', {
-      title: `.${row.tld} domain names`,
-      description:
-        `Register a .${row.tld} domain with Vesopa for ${row.register_display} a year`
-        + `${row.promo ? `, renewing at ${row.renew_display}` : ''}. `
-        + 'Free WHOIS privacy, full DNS control and no add-ons at the checkout.',
+      title: req.t('.{tld} domain names', { tld: row.tld }),
+      description: row.promo
+        ? req.t('Register a .{tld} domain with Vesopa for {price} a year, renewing at {renew}. Free WHOIS privacy, full DNS control and no add-ons at the checkout.', { tld: row.tld, price: row.register_display, renew: row.renew_display })
+        : req.t('Register a .{tld} domain with Vesopa for {price} a year. Free WHOIS privacy, full DNS control and no add-ons at the checkout.', { tld: row.tld, price: row.register_display }),
       canonical: `/domains/tld/${row.tld}`,
       tld: row,
       category,
@@ -199,8 +199,8 @@ router.get('/domains/tld/:tld', async (req, res, next) => {
 
 router.get('/domains/transfer', (req, res) => {
   res.render('public/domain-transfer', {
-    title: 'Transfer a domain',
-    description: 'Move a domain to Vesopa. We add a year to whatever time is left, and DNS carries over unchanged.',
+    title: req.t('Transfer a domain'),
+    description: req.t('Move a domain to Vesopa. We add a year to whatever time is left, and DNS carries over unchanged.'),
   });
 });
 

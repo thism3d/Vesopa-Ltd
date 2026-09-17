@@ -19,9 +19,23 @@ const { CONTACT, AI } = require('../config');
 const router = express.Router();
 const UPDATED = '5 August 2026';
 
+/*
+ * A no-op that exists to be FOUND.
+ *
+ * The route below translates a document's name with `req.t(doc.title)`, which
+ * is the right thing to do — it has the request, and therefore the language —
+ * but a key built from a variable is invisible to `npm run i18n:extract`, and
+ * an invisible key is one nobody is ever asked to translate. Wrapping the
+ * English here marks it for the scanner and returns it unchanged, so the four
+ * names are in the catalogue and stay there.
+ *
+ * It does NOT translate anything. There is no language at module load.
+ */
+const t = (english) => english;
+
 const DOCS = {
   terms: {
-    title: 'Terms of service',
+    title: t('Terms of service'),
     body: `
 <h2>1. Who we are</h2>
 <p>These terms are between you and <strong>${CONTACT.company}</strong>, a company registered in England and Wales, whose address is ${CONTACT.address_line1}, ${CONTACT.address_line2} ("we", "us"). By ordering hosting, a domain or any other service from us you agree to them.</p>
@@ -72,7 +86,7 @@ const DOCS = {
   },
 
   privacy: {
-    title: 'Privacy policy',
+    title: t('Privacy policy'),
     body: `
 <h2>Who is responsible for your data</h2>
 <p><strong>${CONTACT.company}</strong>, ${CONTACT.address_line1}, ${CONTACT.address_line2}, is the data controller for the personal data described here. Contact us at <a href="mailto:${CONTACT.email}">${CONTACT.email}</a> about anything in this policy.</p>
@@ -137,7 +151,7 @@ const DOCS = {
   },
 
   aup: {
-    title: 'Acceptable use policy',
+    title: t('Acceptable use policy'),
     body: `
 <p>This policy exists because our customers share infrastructure. Nearly all of it comes down to one idea: <strong>do not use our servers to harm other people, and do not use so much of a shared machine that your neighbours suffer.</strong></p>
 
@@ -173,7 +187,7 @@ const DOCS = {
   },
 
   refunds: {
-    title: 'Refund policy',
+    title: t('Refund policy'),
     body: `
 <h2>Hosting: 30 days, no questions</h2>
 <p>Cancel a new hosting plan within <strong>30 days</strong> of ordering and we will refund the hosting fee in full. Email us; there is no form to complete, no reason required, and nobody will telephone you to talk you out of it.</p>
@@ -207,8 +221,11 @@ const DOCS = {
 Object.entries(DOCS).forEach(([slug, doc]) => {
   router.get(`/${slug}`, (req, res) => {
     res.render('partials/legal-shell', {
-      title: doc.title,
-      description: `${doc.title} for Vesopa Cloud, part of ${CONTACT.company}.`,
+      // The document's own name is translated even though its body is not:
+      // the <title>, the heading and the footer link are the page, not the
+      // agreement. See the note in partials/legal-shell.ejs.
+      title: req.t(doc.title),
+      description: req.t('{document} for Vesopa Cloud, part of {company}.', { document: req.t(doc.title), company: CONTACT.company }),
       body: doc.body,
       updated: UPDATED,
     });

@@ -483,7 +483,7 @@ router.get('/cart/add-domain', async (req, res, next) => {
   try {
     const { domain, sld, tld } = registrar.splitDomain(String(req.query.domain || ''));
     if (registrar.validateLabel(sld) || !tld) {
-      flash(res, 'That domain does not look right.', 'error');
+      flash(res, req.t('That domain does not look right.'), 'error');
       return res.redirect('/domains');
     }
     const price = await pricing.priceForTld(tld);
@@ -549,7 +549,7 @@ router.post('/cart/coupon/remove', async (req, res, next) => {
   try {
     if (!auth.checkCsrf(req)) return res.redirect(backTo(req));
     writeCoupon(req, res, '');
-    await finishCart(req, res, { message: 'Discount code removed.' });
+    await finishCart(req, res, { message: req.t('Discount code removed.') });
   } catch (err) {
     next(err);
   }
@@ -561,7 +561,7 @@ router.post('/cart/remove', async (req, res, next) => {
     const index = Number(req.body.index);
     const cart = req.cart.filter((_, i) => i !== index);
     writeCart(req, res, cart);
-    await finishCart(req, res, { message: 'Removed from your basket.' });
+    await finishCart(req, res, { message: req.t('Removed from your basket.') });
   } catch (err) {
     next(err);
   }
@@ -702,7 +702,7 @@ function wantsFragment(req) {
 router.get('/cart', async (req, res, next) => {
   try {
     res.render('public/cart', {
-      title: 'Your basket',
+      title: req.t('Your basket'),
       robots: 'noindex',
       ...(await cartView(req)),
     });
@@ -758,7 +758,7 @@ router.get('/checkout', async (req, res, next) => {
     }
 
     res.render('public/checkout', {
-      title: 'Checkout',
+      title: req.t('Checkout'),
       robots: 'noindex',
       ...priced,
       geoCountry,
@@ -918,7 +918,7 @@ router.post('/checkout', async (req, res, next) => {
 
     if (Object.keys(errors).length) {
       return res.status(400).render('public/checkout', {
-        title: 'Checkout',
+        title: req.t('Checkout'),
         robots: 'noindex',
         ...priced,
         // Whatever they picked is in `values`; no need to guess again.
@@ -1196,7 +1196,7 @@ router.post('/checkout', async (req, res, next) => {
      */
     if (err.code === 'COUPON_GONE') {
       writeCoupon(req, res, '');
-      flash(res, 'That discount code was fully redeemed while you were checking out. Your basket has been re-priced.', 'error');
+      flash(res, req.t('That discount code was fully redeemed while you were checking out. Your basket has been re-priced.'), 'error');
       return res.redirect('/cart');
     }
     next(err);

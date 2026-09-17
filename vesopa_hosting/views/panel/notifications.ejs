@@ -13,10 +13,9 @@
   <div class="p-card p-card-flush">
     <div class="empty">
       <%- icon('check', 30) %>
-      <h3>Nothing needs your attention</h3>
+      <h3><%= t('Nothing needs your attention') %></h3>
       <p>
-        Domains, certificates and renewals are all healthy. If something changes
-        we will show it here and email you.
+        <%= t('Domains, certificates and renewals are all healthy. If something changes we will show it here and email you.') %>
       </p>
     </div>
   </div>
@@ -24,7 +23,7 @@
 
 <div class="p-card p-card-flush">
   <div class="p-card-head">
-    <h2>Earlier</h2>
+    <h2><%= t('Earlier') %></h2>
     <div class="row" style="gap:12px;align-items:center">
       <span class="muted small">The last 30 days</span>
       <%# Only offered when there is something to do. A permanently-present
@@ -43,7 +42,7 @@
 
   <% if (!history.length) { %>
     <div class="p-card-body">
-      <p class="muted small mb-0">Nothing yet. Registrations, certificates and renewals will appear here.</p>
+      <p class="muted small mb-0"><%= t('Nothing yet. Registrations, certificates and renewals will appear here.') %></p>
     </div>
   <% } else { %>
     <ul class="notif-list">

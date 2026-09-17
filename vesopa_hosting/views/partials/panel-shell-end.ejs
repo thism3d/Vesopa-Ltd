@@ -8,7 +8,7 @@
 <% if (currentPath.indexOf('/admin') !== 0) { %>
 <div class="sheet" id="sheet-more" hidden>
   <div class="sheet-scrim" data-sheet-close></div>
-  <div class="sheet-card" role="dialog" aria-modal="true" aria-label="More">
+  <div class="sheet-card" role="dialog" aria-modal="true" aria-label="<%= t('More') %>">
     <div class="sheet-grab"></div>
     <a class="sheet-row" href="/panel/apps/node">
       <span class="sheet-ic"><%- icon('activity', 19) %></span>
@@ -57,7 +57,7 @@
         <span><b>Sign out</b></span>
       </button>
     </form>
-    <button class="btn btn-ghost btn-block sheet-cancel" type="button" data-sheet-close>Close</button>
+    <button class="btn btn-ghost btn-block sheet-cancel" type="button" data-sheet-close><%= t('Close') %></button>
   </div>
 </div>
 <% } %>

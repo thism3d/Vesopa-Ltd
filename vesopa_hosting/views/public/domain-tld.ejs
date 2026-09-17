@@ -40,19 +40,19 @@
         perverse. %>
     <dl class="dtldp-figures" data-reveal="120">
       <div class="dtldp-fig dtldp-fig-lead">
-        <dt>Register</dt>
+        <dt><%= t('Register') %></dt>
         <dd><%= tld.register_display %></dd>
         <small>first year<%= tld.promo ? ` · ${tld.promo_percent}% off` : '' %></small>
       </div>
       <div class="dtldp-fig">
-        <dt>Renews at</dt>
+        <dt><%= t('Renews at') %></dt>
         <dd><%= tld.renew_display %></dd>
-        <small>every year after</small>
+        <small><%= t('every year after') %></small>
       </div>
       <div class="dtldp-fig">
-        <dt>Transfer in</dt>
+        <dt><%= t('Transfer in') %></dt>
         <dd><%= tld.transfer_display %></dd>
-        <small>adds a year to what is left</small>
+        <small><%= t('adds a year to what is left') %></small>
       </div>
     </dl>
 
@@ -61,10 +61,10 @@
     <div class="dsearch dtldp-check" data-reveal="160">
       <form class="dsearch-form" data-tld-check action="/domains" method="get">
         <input class="dsearch-input" type="text" name="name" autocomplete="off" spellcheck="false"
-               data-tld-name maxlength="63" placeholder="yourbusiness"
-               aria-label="The name you want, without the extension">
+               data-tld-name maxlength="63" placeholder="<%= t('yourbusiness') %>"
+               aria-label="<%= t('The name you want, without the extension') %>">
         <span class="dtldp-suffix">.<%= tld.tld %></span>
-        <button class="btn btn-lg" type="submit"><%- icon('search', 19) %><span class="hide-sm">Check</span></button>
+        <button class="btn btn-lg" type="submit"><%- icon('search', 19) %><span class="hide-sm"><%= t('Check') %></span></button>
         <%# The real query the search page reads. Assembled from the box above on
             submit, and carrying the bare extension until then so a no-script
             submit still lands somewhere sensible. %>
@@ -121,7 +121,7 @@
   <div class="wrap">
     <div class="row-between mb-3">
       <div>
-        <p class="kicker" data-reveal="0">Also worth a look</p>
+        <p class="kicker" data-reveal="0"><%= t('Also worth a look') %></p>
         <h2 class="h2 mt-2" data-reveal="40">
           <%= category ? `Other ${category.label.toLowerCase()} extensions` : 'Related extensions' %>
         </h2>

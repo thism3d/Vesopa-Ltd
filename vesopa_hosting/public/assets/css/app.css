@@ -588,6 +588,42 @@ ul, ol { margin: 0 0 1em; padding-left: 1.15em; }
 }
 .nav-actions { display: flex; align-items: center; gap: 9px; flex: none; }
 
+/* ---- Language switcher -------------------------------------------------- */
+/* A segmented toggle, not a disclosure like the currency beside it. Two
+   languages in a menu means one click to find out what the other one is, and
+   the whole point is that somebody who reads Bangla can SEE that the site has
+   Bangla without hunting. It lays out from `locales`, so a third language
+   simply makes a third segment. */
+.lang-pick {
+  display: flex; flex: none; align-items: center;
+  padding: 2px; border-radius: 9px;
+  border: 1px solid var(--rule); background: #fff;
+}
+.lang-opt {
+  padding: 5px 9px; border-radius: 7px;
+  font-size: .78rem; font-weight: 700; line-height: 1.2;
+  color: var(--ink-3); text-decoration: none; white-space: nowrap;
+  transition: color .18s var(--ease), background .18s var(--ease);
+}
+.lang-opt:hover { color: var(--ink); text-decoration: none; }
+.lang-opt.is-active { background: var(--lime-soft); color: var(--lime-deep); }
+
+.nav-over .lang-pick { background: rgba(255, 255, 255, .1); border-color: rgba(255, 255, 255, .18); }
+.nav-over .lang-opt { color: rgba(255, 255, 255, .72); }
+.nav-over .lang-opt:hover { color: #fff; }
+.nav-over .lang-opt.is-active { background: rgba(255, 255, 255, .92); color: var(--ink); }
+.nav-over.is-stuck .lang-pick { background: #fff; border-color: var(--rule); }
+.nav-over.is-stuck .lang-opt { color: var(--ink-3); }
+.nav-over.is-stuck .lang-opt:hover { color: var(--ink); }
+.nav-over.is-stuck .lang-opt.is-active { background: var(--lime-soft); color: var(--lime-deep); }
+
+/* In the footer it is a list like every other column, but the current language
+   is marked — otherwise the only way to know which one you are reading is to
+   read it. */
+.footer-lang-head { margin-top: 22px; }
+.footer-langs .is-active { font-weight: 700; opacity: 1; }
+.footer-langs .is-active::before { content: '✓'; margin-right: 6px; opacity: .8; }
+
 /* ---- Currency switcher ------------------------------------------------- */
 /* A <details> disclosure rather than a JS dropdown: it opens, closes, traps
    nothing, and works with scripting off. The only JavaScript anywhere near it

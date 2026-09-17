@@ -2,13 +2,13 @@
 <%- include('../partials/panel-shell', { pageTitle: 'Billing', pageSub: 'Orders, invoices and what renews when.' }) %>
 
 <div class="p-card p-card-flush">
-  <div class="p-card-head"><h2>Upcoming renewals</h2></div>
+  <div class="p-card-head"><h2><%= t('Upcoming renewals') %></h2></div>
   <% if (!services.length) { %>
-    <div class="p-card-body"><p class="muted small mb-0">Nothing renewing — you have no active hosting.</p></div>
+    <div class="p-card-body"><p class="muted small mb-0"><%= t('Nothing renewing — you have no active hosting.') %></p></div>
   <% } else { %>
     <div class="table-wrap">
       <table class="table">
-        <thead><tr><th>Service</th><th>Plan</th><th>Renews</th><th class="num">Price</th></tr></thead>
+        <thead><tr><th><%= t('Service') %></th><th><%= t('Plan') %></th><th><%= t('Renews') %></th><th class="num"><%= t('Price') %></th></tr></thead>
         <tbody>
           <% services.forEach(function (s) { %>
             <tr>
@@ -35,21 +35,20 @@
 %>
 <div class="p-card p-card-flush">
   <div class="p-card-head">
-    <h2>Invoices</h2>
-    <span class="muted small">PDFs, ready to forward</span>
+    <h2><%= t('Invoices') %></h2>
+    <span class="muted small"><%= t('PDFs, ready to forward') %></span>
   </div>
   <% if (!invoices.length) { %>
     <div class="p-card-body">
       <p class="muted small mb-0">
-        Nothing yet. An invoice is issued automatically the moment a payment
-        goes through, and emailed to you with the PDF attached.
+        <%= t('Nothing yet. An invoice is issued automatically the moment a payment goes through, and emailed to you with the PDF attached.') %>
       </p>
     </div>
   <% } else { %>
     <div class="table-wrap">
       <table class="table">
         <thead>
-          <tr><th>Invoice</th><th>Date</th><th>Billed to</th><th class="num">Total</th><th></th></tr>
+          <tr><th><%= t('Invoice') %></th><th><%= t('Date') %></th><th><%= t('Billed to') %></th><th class="num"><%= t('Total') %></th><th></th></tr>
         </thead>
         <tbody>
           <% invoices.forEach(function (inv) { %>
@@ -60,7 +59,7 @@
               <td class="num strong"><%= inv.currency %> <%= Number(inv.total).toFixed(2) %></td>
               <td class="num">
                 <a class="btn btn-ghost btn-sm" href="/panel/invoices/<%= inv.id %>.pdf" target="_blank" rel="noopener">
-                  <%- icon('download', 15) %> PDF
+                  <%- icon('download', 15) %> <%= t('PDF') %>
                 </a>
               </td>
             </tr>
@@ -72,17 +71,17 @@
 </div>
 
 <div class="p-card p-card-flush">
-  <div class="p-card-head"><h2>Orders</h2></div>
+  <div class="p-card-head"><h2><%= t('Orders') %></h2></div>
   <% if (!orders.length) { %>
     <div class="empty">
       <%- icon('card', 46) %>
-      <h3>No orders yet</h3>
-      <p>Anything you buy will be listed here.</p>
+      <h3><%= t('No orders yet') %></h3>
+      <p><%= t('Anything you buy will be listed here.') %></p>
     </div>
   <% } else { %>
     <div class="table-wrap">
       <table class="table">
-        <thead><tr><th>Reference</th><th>Date</th><th>Status</th><th class="num">Total</th><th></th></tr></thead>
+        <thead><tr><th><%= t('Reference') %></th><th><%= t('Date') %></th><th><%= t('Status') %></th><th class="num"><%= t('Total') %></th><th></th></tr></thead>
         <tbody>
           <% orders.forEach(function (o) { %>
             <tr>
@@ -95,7 +94,7 @@
                 <% } else { %><span class="badge badge-grey"><%= o.status %></span><% } %>
               </td>
               <td class="num strong"><%= money(o.total_pence, o.currency) %></td>
-              <td class="num"><a class="btn btn-ghost btn-sm" href="/panel/orders/<%= o.id %>">View</a></td>
+              <td class="num"><a class="btn btn-ghost btn-sm" href="/panel/orders/<%= o.id %>"><%= t('View') %></a></td>
             </tr>
           <% }); %>
         </tbody>

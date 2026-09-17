@@ -16,6 +16,7 @@ const { sendMail, shell, detailTable, escapeHtml, DEFAULT_TO } = require('../mai
 const { checkCsrf } = require('../auth');
 const { flash, rateLimited } = require('../http-utils');
 const currency = require('../currency');
+const i18n = require('../i18n');
 const { SITE_URL, CONTACT } = require('../config');
 
 const router = express.Router();
@@ -49,8 +50,7 @@ router.get('/', async (req, res, next) => {
     ]);
     res.render('public/index', {
       title: null, // the default title is the marketing one
-      description:
-        'Fast UK web hosting, domain names, business email and free SSL from Vesopa. One clear control panel, no cPanel to learn, and a free domain on every yearly plan.',
+      description: req.t('Fast UK web hosting, domain names, business email and free SSL from Vesopa. One clear control panel, no cPanel to learn, and a free domain on every yearly plan.'),
       plans: catalogue.plans,
       businessEmail: catalogue.businessEmail,
       marketingEmail: catalogue.marketingEmail,
@@ -79,10 +79,11 @@ router.get('/hosting', async (req, res, next) => {
       pricing.termsWithSavings(req.currency),
     ]);
     res.render('public/hosting', {
-      title: 'Web hosting',
-      description:
-        'UK shared hosting on NVMe storage, with free SSL, daily backups and email included. '
-        + `Plans from ${currency.format(cheapest(plans), req.currency)} a month.`,
+      title: req.t('Web hosting'),
+      description: req.t(
+        'UK shared hosting on NVMe storage, with free SSL, daily backups and email included. Plans from {price} a month.',
+        { price: currency.format(cheapest(plans), req.currency) },
+      ),
       plans,
       terms,
     });
@@ -99,11 +100,11 @@ router.get('/email', async (req, res, next) => {
     const { businessEmail, marketingEmail } = await pricing.load({ cur: req.currency });
     const fmt = (minor) => currency.format(minor, req.currency);
     res.render('public/email', {
-      title: 'Business and marketing email',
-      description:
-        `Email at your own domain from ${fmt(cheapest(businessEmail, [12, 1]))} a mailbox, `
-        + `and marketing campaigns from ${fmt(cheapest(marketingEmail, [12, 1]))} a month. `
-        + 'UK hosted, properly authenticated, no per-seat surprises.',
+      title: req.t('Business and marketing email'),
+      description: req.t(
+        'Email at your own domain from {mailbox} a mailbox, and marketing campaigns from {campaign} a month. UK hosted, properly authenticated, no per-seat surprises.',
+        { mailbox: fmt(cheapest(businessEmail, [12, 1])), campaign: fmt(cheapest(marketingEmail, [12, 1])) },
+      ),
       businessEmail,
       marketingEmail,
       emailTerms: pricing.EMAIL_TERMS,
@@ -126,29 +127,29 @@ router.get('/email', async (req, res, next) => {
 // ---------------------------------------------------------------------------
 router.get('/ssl', (req, res) => {
   res.render('public/ssl', {
-    title: 'SSL certificates',
-    description: 'Free SSL on every Vesopa site, issued and renewed automatically. Nothing to install and nothing to pay.',
+    title: req.t('SSL certificates'),
+    description: req.t('Free SSL on every Vesopa site, issued and renewed automatically. Nothing to install and nothing to pay.'),
   });
 });
 
 router.get('/transfer', (req, res) => {
   res.render('public/migration', {
-    title: 'Move your site to us',
-    description: 'Free website migration. We copy your site, database and email, you check it, then we switch it over.',
+    title: req.t('Move your site to us'),
+    description: req.t('Free website migration. We copy your site, database and email, you check it, then we switch it over.'),
   });
 });
 
 router.get('/support', (req, res) => {
   res.render('public/support', {
-    title: 'Support',
-    description: 'Guides, status and a way to reach a person who can read a server log.',
+    title: req.t('Support'),
+    description: req.t('Guides, status and a way to reach a person who can read a server log.'),
   });
 });
 
 router.get('/about', (req, res) => {
   res.render('public/about', {
-    title: 'About',
-    description: 'Vesopa Cloud is run by Vesopa EPOS Ltd, a Welsh software company that has hosted its own systems since 2018.',
+    title: req.t('About'),
+    description: req.t('Vesopa Cloud is run by Vesopa EPOS Ltd, a Welsh software company that has hosted its own systems since 2018.'),
   });
 });
 
@@ -157,8 +158,8 @@ router.get('/about', (req, res) => {
 // ---------------------------------------------------------------------------
 router.get('/contact', (req, res) => {
   res.render('public/contact', {
-    title: 'Contact us',
-    description: 'Talk to Vesopa Cloud about a plan, a migration or anything that is not working.',
+    title: req.t('Contact us'),
+    description: req.t('Talk to Vesopa Cloud about a plan, a migration or anything that is not working.'),
     values: {},
     errors: {},
   });
@@ -184,7 +185,7 @@ router.post('/contact', async (req, res, next) => {
 
   if (Object.keys(errors).length) {
     return res.status(400).render('public/contact', {
-      title: 'Contact us',
+      title: req.t('Contact us'),
       values,
       errors,
     });
@@ -204,7 +205,7 @@ router.post('/contact', async (req, res, next) => {
       replyTo: values.email,
       subject: `Hosting enquiry — ${values.subject || values.name}`,
       html: shell({
-        title: 'New hosting enquiry',
+        title: req.t('New hosting enquiry'),
         bodyHtml:
           detailTable([
             ['Name', escapeHtml(values.name)],
@@ -227,7 +228,7 @@ router.post('/contact', async (req, res, next) => {
       }),
     });
 
-    flash(res, 'Thanks — we have your message and will reply shortly.');
+    flash(res, req.t('Thanks — we have your message and will reply shortly.'));
     res.redirect('/contact');
   } catch (err) {
     next(err);
@@ -239,7 +240,18 @@ router.post('/contact', async (req, res, next) => {
 // ---------------------------------------------------------------------------
 router.get('/robots.txt', (req, res) => {
   res.type('text/plain').send(
-    ['User-agent: *', 'Disallow: /panel/', 'Disallow: /admin/', 'Disallow: /cart/', '', `Sitemap: ${SITE_URL}/sitemap.xml`].join('\n'),
+    ['User-agent: *',
+      'Disallow: /panel/',
+      'Disallow: /admin/',
+      'Disallow: /cart/',
+      // The two switchers. Both are redirects that set a cookie and send the
+      // crawler back where it came from, so following them indexes nothing and
+      // multiplies every page by the number of currencies and languages. The
+      // links are rel="nofollow" too; this is the half that also covers a
+      // crawler that found the URL somewhere else.
+      'Disallow: /lang/',
+      'Disallow: /currency/',
+      '', `Sitemap: ${SITE_URL}/sitemap.xml`].join('\n'),
   );
 });
 
@@ -259,17 +271,43 @@ router.get('/robots.txt', (req, res) => {
  *
  * Priority is set rather than left off: without it every URL is equal and the
  * homepage competes with .abogado.
+ *
+ * EVERY PAGE IS LISTED ONCE PER LANGUAGE, and each entry names the others.
+ *
+ * Google's rule is that hreflang has to be reciprocal: /hosting must point at
+ * /bn/hosting and /bn/hosting must point back, or the pair is ignored and the
+ * two are judged as two sites with the same content. The <head> does that for
+ * anybody who fetches the page (views/partials/head.ejs), and this does it for
+ * the crawler that has only read the sitemap — which is how a page that has
+ * never been crawled gets its Bangla twin discovered at the same time.
+ *
+ * x-default is the English URL: it is what somebody whose language we do not
+ * publish should land on.
  */
 router.get('/sitemap.xml', async (req, res, next) => {
   try {
     const core = ['/', '/hosting', '/email', '/domains', '/domains/pricing', '/domains/transfer',
-      '/ssl', '/transfer', '/support', '/about', '/contact', '/terms', '/privacy', '/aup', '/refunds'];
+      '/ssl', '/transfer', '/build', '/support', '/about', '/contact', '/terms', '/privacy', '/aup', '/refunds'];
     const { tlds } = await pricing.load();
     const counts = await domainCatalogue.categoryCounts();
 
-    const entry = (path, priority, freq = 'weekly') =>
-      `  <url><loc>${SITE_URL}${path}</loc><changefreq>${freq}</changefreq>`
-      + `<priority>${priority}</priority></url>`;
+    const langs = Object.values(i18n.LOCALES);
+
+    /*
+     * One <url> per language per page. The alternates block is identical in
+     * each of them, which is what "reciprocal" means here and why it is built
+     * once per path rather than once per entry.
+     */
+    const entry = (path, priority, freq = 'weekly') => {
+      const alts = i18n.alternates(SITE_URL, path)
+        .map((a) => `    <xhtml:link rel="alternate" hreflang="${a.hreflang}" href="${escapeHtml(a.href)}"/>`)
+        .join('\n');
+      return langs.map((info) => (
+        `  <url>\n    <loc>${escapeHtml(SITE_URL + i18n.localizePath(path, info.code))}</loc>\n`
+        + `${alts}${alts ? '\n' : ''}`
+        + `    <changefreq>${freq}</changefreq><priority>${priority}</priority>\n  </url>`
+      )).join('\n');
+    };
 
     const urls = [
       ...core.map((p) => entry(p, p === '/' ? '1.0' : '0.8')),
@@ -281,7 +319,10 @@ router.get('/sitemap.xml', async (req, res, next) => {
 
     res
       .type('application/xml')
-      .send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>`);
+      .send('<?xml version="1.0" encoding="UTF-8"?>\n'
+        + '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"'
+        + ' xmlns:xhtml="http://www.w3.org/1999/xhtml">\n'
+        + `${urls}\n</urlset>`);
   } catch (err) {
     next(err);
   }

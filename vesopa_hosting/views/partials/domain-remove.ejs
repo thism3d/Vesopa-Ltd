@@ -51,8 +51,7 @@
     <% if (ours && (node.dns || node.mail)) { %>
       <p class="label mb-1">We also run these for <%= domain.domain %></p>
       <p class="tiny muted mb-2">
-        Tick anything you want deleted as well. Leave them and they keep working —
-        the domain simply has no website here.
+        <%= t('Tick anything you want deleted as well. Leave them and they keep working — the domain simply has no website here.') %>
       </p>
 
       <% if (node.dns) { %>

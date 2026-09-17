@@ -120,7 +120,7 @@ router.get('/', async (req, res, next) => {
     ]);
 
     res.render('panel/apps', {
-      title: 'Install an app',
+      title: req.t('Install an app'),
       robots: 'noindex',
       service,
       sites,
@@ -143,7 +143,7 @@ router.get('/', async (req, res, next) => {
 router.get('/install/:slug', async (req, res, next) => {
   try {
     const app = catalogue.find(req.params.slug);
-    if (!app) return res.status(404).render('404', { title: 'Not found', robots: 'noindex' });
+    if (!app) return res.status(404).render('404', { title: req.t('Not found'), robots: 'noindex' });
 
     const [service, sites, runtimes] = await Promise.all([
       serviceFor(req),
@@ -178,7 +178,7 @@ router.post('/install/:slug', async (req, res, next) => {
      * customer setting up a new account.
      */
     if (rateLimited(req.ip, 'app-install', { max: 5, windowMs: 600_000 })) {
-      flash(res, 'That is a lot of installs at once. Give it a few minutes.', 'error');
+      flash(res, req.t('That is a lot of installs at once. Give it a few minutes.'), 'error');
       return res.redirect(back);
     }
 
@@ -187,7 +187,7 @@ router.post('/install/:slug', async (req, res, next) => {
     const domain = String(req.body.domain || '').trim().toLowerCase();
     const sites = await sitesFor(req);
     if (!sites.some((s) => s.domain === domain)) {
-      flash(res, 'Choose one of your own websites to install it on.', 'error');
+      flash(res, req.t('Choose one of your own websites to install it on.'), 'error');
       return res.redirect(back);
     }
 
@@ -199,7 +199,7 @@ router.post('/install/:slug', async (req, res, next) => {
      * nobody warned them first.
      */
     if (!req.body.confirm) {
-      flash(res, 'Tick the box to confirm this replaces whatever is on that site now.', 'error');
+      flash(res, req.t('Tick the box to confirm this replaces whatever is on that site now.'), 'error');
       return res.redirect(back);
     }
 
@@ -248,7 +248,7 @@ router.post('/install/:slug', async (req, res, next) => {
     ).catch(() => { /* history, not the mechanism — never block an install on it */ });
 
     if (database) {
-      flash(res, 'Installing.', 'ok', { database, dbUser, dbPassword });
+      flash(res, req.t('Installing.'), 'ok', { database, dbUser, dbPassword });
     }
     return res.redirect(`/panel/apps/jobs/${started.job}`);
   } catch (err) {
@@ -316,7 +316,7 @@ router.get('/node', async (req, res, next) => {
       user ? apps.runtimes(user).catch(() => ({ node: [] })) : { node: [] },
     ]);
     return res.render('panel/node-apps', {
-      title: 'Node.js apps',
+      title: req.t('Node.js apps'),
       robots: 'noindex',
       apps: list,
       runtimes,
@@ -350,7 +350,7 @@ router.get('/node/:name', async (req, res, next) => {
     const user = await apps.accountFor(req.customer);
     const app = await apps.nodeApp(user, req.params.name);
     if (!app) {
-      flash(res, 'There is no application by that name on this account.', 'error');
+      flash(res, req.t('There is no application by that name on this account.'), 'error');
       return res.redirect('/panel/apps/node');
     }
     const [logs, env, packages] = await Promise.all([
@@ -409,7 +409,7 @@ router.post('/node/:name/env', async (req, res, next) => {
      * the running process still has the old one.
      */
     await apps.nodeAction(user, req.params.name, 'restart').catch(() => {});
-    flash(res, 'Environment saved and the app restarted.', 'ok');
+    flash(res, req.t('Environment saved and the app restarted.'), 'ok');
     return res.redirect(back);
   } catch (err) {
     if (err instanceof apps.AppError) {
@@ -472,7 +472,7 @@ router.get('/runtime', async (req, res, next) => {
     const nodeSite = (runtimes.sites || []).find((s) => s.domain === selected) || null;
 
     return res.render('panel/runtime', {
-      title: 'Languages & settings',
+      title: req.t('Languages & settings'),
       robots: 'noindex',
       sites,
       selected,
@@ -505,7 +505,7 @@ router.post('/runtime/php', async (req, res, next) => {
     const user = await apps.accountFor(req.customer);
     const sites = await sitesFor(req);
     if (!sites.some((s) => s.domain === domain)) {
-      flash(res, 'That is not one of your websites.', 'error');
+      flash(res, req.t('That is not one of your websites.'), 'error');
       return res.redirect('/panel/apps/runtime');
     }
 
@@ -513,7 +513,7 @@ router.post('/runtime/php', async (req, res, next) => {
     const runtimes = await apps.runtimes(user);
     const chosen = (runtimes.php || []).find((p) => p.version === version);
     if (!chosen) {
-      flash(res, 'This server does not have that PHP version.', 'error');
+      flash(res, req.t('This server does not have that PHP version.'), 'error');
       return res.redirect(back);
     }
 
@@ -544,7 +544,7 @@ router.post('/runtime/config', async (req, res, next) => {
     const user = await apps.accountFor(req.customer);
     const sites = await sitesFor(req);
     if (!sites.some((s) => s.domain === domain)) {
-      flash(res, 'That is not one of your websites.', 'error');
+      flash(res, req.t('That is not one of your websites.'), 'error');
       return res.redirect('/panel/apps/runtime');
     }
     const values = {};
@@ -554,7 +554,7 @@ router.post('/runtime/config', async (req, res, next) => {
     await apps.setPhpConfig(user, domain, values);
     // PHP caches .user.ini for five minutes by default, so "saved" and "in
     // effect" are not the same moment and saying so saves a support ticket.
-    flash(res, 'Saved. PHP re-reads these every five minutes, so give it a moment before testing.', 'ok');
+    flash(res, req.t('Saved. PHP re-reads these every five minutes, so give it a moment before testing.'), 'ok');
     return res.redirect(back);
   } catch (err) {
     if (err instanceof apps.AppError) {

@@ -43,7 +43,7 @@
           <span class="item-title">Order #<%= o.id %> is not paid</span>
           <span class="item-sub">Nothing goes live until payment clears — it takes a minute.</span>
         </span>
-        <span class="item-end"><span class="btn btn-sm">Pay now</span></span>
+        <span class="item-end"><span class="btn btn-sm"><%= t('Pay now') %></span></span>
       </a>
     <% }); %>
 
@@ -115,18 +115,18 @@
     <%# ---- Websites ---------------------------------------------------- %>
     <div class="p-card p-card-flush">
       <div class="p-card-head">
-        <h2>Your websites</h2>
-        <a class="btn btn-ghost btn-sm" href="/hosting"><%- icon('plus', 15) %> Add hosting</a>
+        <h2><%= t('Your websites') %></h2>
+        <a class="btn btn-ghost btn-sm" href="/hosting"><%- icon('plus', 15) %> <%= t('Add hosting') %></a>
       </div>
 
       <% if (!services.length) { %>
         <div class="empty">
           <%- icon('server', 46) %>
-          <h3>No hosting yet</h3>
-          <p>Pick a plan and you can be online this afternoon. Moving an existing site across is free — we do it for you.</p>
+          <h3><%= t('No hosting yet') %></h3>
+          <p><%= t('Pick a plan and you can be online this afternoon. Moving an existing site across is free — we do it for you.') %></p>
           <div class="row mt-2" style="gap:10px;justify-content:center;flex-wrap:wrap">
-            <a class="btn" href="/hosting">See plans</a>
-            <a class="btn btn-ghost" href="/panel/tickets/new?subject=Migration">Move a site to us</a>
+            <a class="btn" href="/hosting"><%= t('See plans') %></a>
+            <a class="btn btn-ghost" href="/panel/tickets/new?subject=Migration"><%= t('Move a site to us') %></a>
           </div>
         </div>
       <% } else { %>
@@ -165,18 +165,18 @@
     <%# ---- Domains, with the ones that are fine kept quiet -------------- %>
     <div class="p-card p-card-flush">
       <div class="p-card-head">
-        <h2>Your domains</h2>
-        <a class="btn btn-ghost btn-sm" href="/panel/domains/add"><%- icon('plus', 15) %> Add a domain</a>
+        <h2><%= t('Your domains') %></h2>
+        <a class="btn btn-ghost btn-sm" href="/panel/domains/add"><%- icon('plus', 15) %> <%= t('Add a domain') %></a>
       </div>
 
       <% if (!domains.length) { %>
         <div class="empty">
           <%- icon('globe', 46) %>
-          <h3>No domains yet</h3>
-          <p>Register one here and it is pointed at your hosting automatically — or bring one you already own.</p>
+          <h3><%= t('No domains yet') %></h3>
+          <p><%= t('Register one here and it is pointed at your hosting automatically — or bring one you already own.') %></p>
           <div class="row mt-2" style="gap:10px;justify-content:center;flex-wrap:wrap">
-            <a class="btn" href="/domains">Search a domain</a>
-            <a class="btn btn-ghost" href="/panel/domains/add">Add one I own</a>
+            <a class="btn" href="/domains"><%= t('Search a domain') %></a>
+            <a class="btn btn-ghost" href="/panel/domains/add"><%= t('Add one I own') %></a>
           </div>
         </div>
       <% } else { %>
@@ -209,39 +209,19 @@
   <aside>
     <% if (settingUp.length) { %>
       <div class="tip mb-3">
-        <span class="tip-ic"></span>
-        <span>
-          <b>Your hosting is being set up.</b> It takes about a minute. This page
-          updates itself the moment it is ready — you do not need to refresh.
-        </span>
+        <%- th('<span class="tip-ic"></span> <span> <b>Your hosting is being set up.</b> It takes about a minute. This page updates itself the moment it is ready — you do not need to refresh. </span>') %>
       </div>
     <% } else if (todo.length) { %>
       <div class="tip mb-3">
-        <span class="tip-ic"></span>
-        <span>
-          <b>Changing nameservers is the slow bit.</b> Your registrar applies it
-          within minutes, but the rest of the internet can take a few hours to
-          notice. Nothing breaks in the meantime — the old site keeps serving
-          until the new one takes over.
-        </span>
+        <%- th('<span class="tip-ic"></span> <span> <b>Changing nameservers is the slow bit.</b> Your registrar applies it within minutes, but the rest of the internet can take a few hours to notice. Nothing breaks in the meantime — the old site keeps serving until the new one takes over. </span>') %>
       </div>
     <% } else if (!services.length) { %>
       <div class="tip mb-3">
-        <span class="tip-ic"></span>
-        <span>
-          <b>Already have a site somewhere else?</b> Send us the login and we
-          move it across for free, on a preview address, so you can check it
-          before anything switches.
-        </span>
+        <%- th('<span class="tip-ic"></span> <span> <b>Already have a site somewhere else?</b> Send us the login and we move it across for free, on a preview address, so you can check it before anything switches. </span>') %>
       </div>
     <% } else { %>
       <div class="tip mb-3">
-        <span class="tip-ic"></span>
-        <span>
-          <b>Everything on this account is healthy.</b> Certificates renew
-          themselves, backups run nightly, and we email you before anything is
-          due — there is nothing you need to watch.
-        </span>
+        <%- th('<span class="tip-ic"></span> <span> <b>Everything on this account is healthy.</b> Certificates renew themselves, backups run nightly, and we email you before anything is due — there is nothing you need to watch. </span>') %>
       </div>
     <% } %>
 
@@ -250,11 +230,11 @@
         <span style="color:var(--lime-ink);display:grid;place-items:center"><%- icon('layers', 18) %></span>
         Your nameservers
       </h2>
-      <p class="small muted mb-2">Set these two at your registrar to host a domain with us.</p>
+      <p class="small muted mb-2"><%= t('Set these two at your registrar to host a domain with us.') %></p>
       <% nameservers.forEach(function (ns) { %>
         <div class="copyable">
           <span><%= ns %></span>
-          <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= ns %>">Copy</button>
+          <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= ns %>"><%= t('Copy') %></button>
         </div>
       <% }); %>
     </div>
@@ -265,10 +245,9 @@
         Need a hand?
       </h2>
       <p class="small muted mb-2">
-        A ticket from here arrives with your account attached, so nobody has to
-        ask you which domain you mean.
+        <%= t('A ticket from here arrives with your account attached, so nobody has to ask you which domain you mean.') %>
       </p>
-      <a class="btn btn-ghost btn-sm btn-block" href="/panel/tickets/new">Open a ticket</a>
+      <a class="btn btn-ghost btn-sm btn-block" href="/panel/tickets/new"><%= t('Open a ticket') %></a>
       <% if (openTickets.length) { %>
         <p class="small mt-2" style="margin-bottom:0">
           <a href="/panel/tickets"><%= openTickets.length %> open ticket<%= openTickets.length > 1 ? 's' : '' %></a>

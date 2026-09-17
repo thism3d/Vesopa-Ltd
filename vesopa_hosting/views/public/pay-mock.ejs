@@ -13,9 +13,9 @@
 %>
 <main id="main" class="mockpay">
   <div class="mockpay-card">
-    <p class="mockpay-tag">Test mode — no money moves</p>
+    <p class="mockpay-tag"><%= t('Test mode — no money moves') %></p>
 
-    <h1 class="h2 mb-1">Simulated payment</h1>
+    <h1 class="h2 mb-1"><%= t('Simulated payment') %></h1>
     <p class="small muted mb-3">
       This screen stands in for the <%= payment.gateway %> hosted checkout. It
       exists because that gateway has no live credentials set. Set a real one
@@ -28,9 +28,9 @@
     </div>
 
     <dl class="mockpay-rows">
-      <div><dt>Transaction</dt><dd><code><%= tranId %></code></dd></div>
-      <div><dt>Our reference</dt><dd><code><%= payment.order_ref %></code></dd></div>
-      <div><dt>Order total</dt><dd><%= (payment.amount_minor / 100).toFixed(2) %> <%= payment.currency %></dd></div>
+      <div><dt><%= t('Transaction') %></dt><dd><code><%= tranId %></code></dd></div>
+      <div><dt><%= t('Our reference') %></dt><dd><code><%= payment.order_ref %></code></dd></div>
+      <div><dt><%= t('Order total') %></dt><dd><%= (payment.amount_minor / 100).toFixed(2) %> <%= payment.currency %></dd></div>
     </dl>
 
     <%#
@@ -59,15 +59,15 @@
     <div class="mockpay-actions">
       <a class="btn btn-lg btn-block"
          href="<%= returnPath %>?r=ok<%- statusParam %>&amp;<%= idParam %>=<%= encodeURIComponent(idValue) %><%- extra %>">
-        Approve this payment
+        <%= t('Approve this payment') %>
       </a>
       <a class="btn btn-ghost btn-block"
          href="<%= returnPath %>?r=fail<%- failStatusParam %>&amp;<%= idParam %>=<%= encodeURIComponent(idValue) %>">
-        Decline it
+        <%= t('Decline it') %>
       </a>
       <a class="btn btn-ghost btn-block"
          href="<%= returnPath %>?r=cancel<%- cancelStatusParam %>&amp;<%= idParam %>=<%= encodeURIComponent(idValue) %>">
-        Cancel and go back
+        <%= t('Cancel and go back') %>
       </a>
     </div>
   </div>

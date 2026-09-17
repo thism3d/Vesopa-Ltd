@@ -32,7 +32,7 @@
 <% if (!hestiaLive) { %>
   <div class="alert alert-info">
     <%- icon('info', 19) %>
-    <div><b>Demonstration mode.</b> This is not connected to a live mail server, so nothing is listed here.</div>
+    <div><%- th('<b>Demonstration mode.</b> This is not connected to a live mail server, so nothing is listed here.') %></div>
   </div>
 <% } %>
 
@@ -40,20 +40,18 @@
   <div class="p-card">
     <div class="empty">
       <%- icon('mail', 46) %>
-      <h3>No domain ready for email yet</h3>
+      <h3><%= t('No domain ready for email yet') %></h3>
       <p>
-        A mailbox lives at a domain, and that domain has to be pointing at us
-        before we can accept mail for it. Subdomains do not get mailboxes —
-        email belongs on your main domain.
+        <%= t('A mailbox lives at a domain, and that domain has to be pointing at us before we can accept mail for it. Subdomains do not get mailboxes — email belongs on your main domain.') %>
       </p>
-      <a class="btn mt-2" href="/panel/domains">Your domains</a>
+      <a class="btn mt-2" href="/panel/domains"><%= t('Your domains') %></a>
     </div>
   </div>
 <% } else { %>
 
   <%# ---- Which domain. Every one, with its count. ---- %>
   <% if (switcher.length > 1) { %>
-    <nav class="switch" aria-label="Your mail domains">
+    <nav class="switch" aria-label="<%= t('Your mail domains') %>">
       <% switcher.forEach(function (d) { %>
         <a class="switch-item <%= d.domain === chosen ? 'is-on' : '' %>"
            href="/panel/mail?domain=<%= encodeURIComponent(d.domain) %>"
@@ -122,7 +120,7 @@
               <button class="btn btn-ghost btn-sm" type="submit"
                       data-check="<%= checkUrl %>" data-check-out="mail-dns-result"
                       data-csrf="<%= csrf %>">
-                <%- icon('refresh', 15) %> Check now
+                <%- icon('refresh', 15) %> <%= t('Check now') %>
               </button>
             </form>
           </div>
@@ -168,7 +166,7 @@
                     <span class="rec-action">Replace your existing record</span>
                   <% } %>
                   <% if (!r.satisfied) { %>
-                    <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= r.value %>">Copy</button>
+                    <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= r.value %>"><%= t('Copy') %></button>
                   <% } %>
                 </div>
 
@@ -178,7 +176,7 @@
                     <code class="mono"><%= r.existing %></code>
                   </div>
                   <div class="rec-was">
-                    <span class="rec-was-label rec-was-new">Change it to</span>
+                    <span class="rec-was-label rec-was-new"><%= t('Change it to') %></span>
                   </div>
                 <% } %>
 
@@ -189,10 +187,7 @@
                 <% if (!r.satisfied && r.redirect) { %>
                   <p class="rec-flag is-error">
                     <%- icon('warning', 14) %>
-                    Your record uses <code>redirect=</code>, which hands the whole check to
-                    another domain and cannot simply have terms added to it.
-                    <a href="/panel/tickets/new">Send us the record</a> and we will work out the
-                    right merge — this one is not safe to guess at.
+                    <%- th('Your record uses <code>redirect=</code>, which hands the whole check to another domain and cannot simply have terms added to it. <a href="/panel/tickets/new">Send us the record</a> and we will work out the right merge — this one is not safe to guess at.') %>
                   </p>
                 <% } else if (!r.satisfied && r.tooManyLookups) { %>
                   <p class="rec-flag is-warn">
@@ -206,9 +201,7 @@
             <% }); %>
           </div>
           <p class="tiny muted mt-2 mb-0">
-            Changes take anywhere from a few minutes to a few hours to spread.
-            You can create mailboxes now — they simply start receiving once the
-            records are visible.
+            <%= t('Changes take anywhere from a few minutes to a few hours to spread. You can create mailboxes now — they simply start receiving once the records are visible.') %>
           </p>
         </div>
       </details>
@@ -228,7 +221,7 @@
           <% if (!view.accounts.length) { %>
             <div class="empty">
               <%- icon('inbox', 46) %>
-              <h3>No mailboxes yet</h3>
+              <h3><%= t('No mailboxes yet') %></h3>
               <p>Create one on the right — <span class="mono">you@<%= view.domain %></span> takes about ten seconds.</p>
             </div>
           <% } else { %>
@@ -251,7 +244,7 @@
                   <a class="btn btn-sm" href="<%= base %>/open" target="_blank" rel="noopener">
                     <%- icon('inbox', 15) %> <%= canOpen ? 'Open inbox' : 'Webmail' %>
                   </a>
-                  <a class="btn btn-ghost btn-sm" href="<%= base %>">Settings</a>
+                  <a class="btn btn-ghost btn-sm" href="<%= base %>"><%= t('Settings') %></a>
                 </span>
               </div>
             <% }); %>
@@ -260,13 +253,7 @@
 
         <% if (view.accounts.length && ssoReady) { %>
           <div class="tip mb-3">
-            <span class="tip-ic"></span>
-            <span>
-              <b>Open inbox</b> takes you straight in — you are already signed in here,
-              so there is nothing more to type. We do not hold your mailbox password to
-              do it, and signing in from a phone or another device still asks for it,
-              as it should.
-            </span>
+            <%- th('<span class="tip-ic"></span> <span> <b>Open inbox</b> takes you straight in — you are already signed in here, so there is nothing more to type. We do not hold your mailbox password to do it, and signing in from a phone or another device still asks for it, as it should. </span>') %>
           </div>
         <% } else if (view.accounts.length && vaultReady) { %>
           <div class="tip mb-3">
@@ -323,12 +310,12 @@
           <form method="post" action="/panel/mail/<%= encodeURIComponent(view.domain) %>/catchall">
             <input type="hidden" name="_csrf" value="<%= csrf %>">
             <div class="field">
-              <label class="label" for="catchall">Send them to</label>
+              <label class="label" for="catchall"><%= t('Send them to') %></label>
               <input class="input mono" id="catchall" name="address" type="email"
-                     placeholder="leave empty to bounce them"
+                     placeholder="<%= t('leave empty to bounce them') %>"
                      value="<%= caOn ? caRaw : '' %>" autocomplete="off">
             </div>
-            <button class="btn btn-ghost btn-sm" type="submit">Save</button>
+            <button class="btn btn-ghost btn-sm" type="submit"><%= t('Save') %></button>
           </form>
           </div>
         </details>
@@ -359,43 +346,40 @@
           <div class="fold-body">
           <% if (!quota || !quota.total) { %>
             <p class="small muted mb-2">
-              Mailboxes come with a hosting plan, or with a business email plan.
-              Neither is active on this account yet.
+              <%= t('Mailboxes come with a hosting plan, or with a business email plan. Neither is active on this account yet.') %>
             </p>
-            <a class="btn btn-sm btn-block" href="/email">See email plans</a>
+            <a class="btn btn-sm btn-block" href="/email"><%= t('See email plans') %></a>
           <% } else if (quota.full) { %>
             <p class="small muted mb-2">
               You are using all <%= quota.total %> mailbox<%= quota.total === 1 ? '' : 'es' %>
               on this account. Add a business email plan for more, or free one up
               by deleting one you no longer need.
             </p>
-            <a class="btn btn-sm btn-block" href="/email">Add mailboxes</a>
+            <a class="btn btn-sm btn-block" href="/email"><%= t('Add mailboxes') %></a>
           <% } else { %>
             <form method="post" action="/panel/mail/<%= encodeURIComponent(view.domain) %>/create">
               <input type="hidden" name="_csrf" value="<%= csrf %>">
               <div class="field">
-                <label class="label" for="account">Address</label>
+                <label class="label" for="account"><%= t('Address') %></label>
                 <div class="input-affix">
-                  <input class="input mono" id="account" name="account" required placeholder="hello"
+                  <input class="input mono" id="account" name="account" required placeholder="<%= t('hello') %>"
                          autocomplete="off" spellcheck="false">
                   <span class="input-suffix mono">@<%= view.domain %></span>
                 </div>
               </div>
               <div class="field">
-                <label class="label" for="password">Password</label>
+                <label class="label" for="password"><%= t('Password') %></label>
                 <input class="input" id="password" name="password" type="password" required
                        autocomplete="new-password">
                 <p class="hint">
-                  The password for this mailbox — what goes into Outlook or
-                  webmail. It is not your Vesopa password and does not have to
-                  match it.
+                  <%= t('The password for this mailbox — what goes into Outlook or webmail. It is not your Vesopa password and does not have to match it.') %>
                 </p>
               </div>
               <div class="field">
-                <label class="label" for="quota_mb">Size limit</label>
+                <label class="label" for="quota_mb"><%= t('Size limit') %></label>
                 <input class="input" id="quota_mb" name="quota_mb" type="number" min="0" step="256"
                        value="1024">
-                <p class="hint">In MB. 0 for no limit.</p>
+                <p class="hint"><%= t('In MB. 0 for no limit.') %></p>
               </div>
 
               <%# Only where the node has no SSO. With it, one-click already
@@ -408,22 +392,14 @@
                     their mail password. %>
                 <label class="check mb-3">
                   <input type="checkbox" name="remember" checked>
-                  <span>
-                    <b>Let me open this inbox in one click</b>
-                    <small>
-                      We keep an encrypted copy of this password so the panel can
-                      sign you in. Untick it and we keep nothing — you will type
-                      the password at webmail, as usual.
-                    </small>
-                  </span>
+                  <span><%- th('<b>Let me open this inbox in one click</b> <small> We keep an encrypted copy of this password so the panel can sign you in. Untick it and we keep nothing — you will type the password at webmail, as usual. </small>') %></span>
                 </label>
               <% } %>
 
-              <button class="btn btn-block" type="submit">Create mailbox</button>
+              <button class="btn btn-block" type="submit"><%= t('Create mailbox') %></button>
             </form>
             <p class="tiny muted mt-2 mb-0">
-              Setup instructions are emailed to you and left waiting in the new
-              mailbox itself.
+              <%= t('Setup instructions are emailed to you and left waiting in the new mailbox itself.') %>
             </p>
           <% } %>
           </div>
@@ -456,19 +432,18 @@
           <div class="fold-body">
 
           <% if (view.accounts.length) { %>
-            <p class="small muted mb-2">Pick a mailbox, then your device:</p>
+            <p class="small muted mb-2"><%= t('Pick a mailbox, then your device:') %></p>
             <% view.accounts.slice(0, 4).forEach(function (a) {
                  const base = '/panel/mail/' + encodeURIComponent(view.domain) + '/' + encodeURIComponent(a.account); %>
               <div class="setup-row">
                 <span class="mono small" title="<%= a.address %>"><%= a.address %></span>
                 <a class="btn btn-ghost btn-sm" href="<%= base %>/apple.mobileconfig">
-                  <%- icon('apple', 15) %> iPhone / Mac
+                  <%- icon('apple', 15) %> <%= t('iPhone / Mac') %>
                 </a>
               </div>
             <% }); %>
             <p class="tiny muted mt-2 mb-3">
-              Tap the file on an iPhone or iPad and it installs the account —
-              you type the mailbox password once during setup.
+              <%= t('Tap the file on an iPhone or iPad and it installs the account — you type the mailbox password once during setup.') %>
             </p>
           <% } %>
 
@@ -482,41 +457,34 @@
               <span class="kv-v mono"><%= mailHost %> · port <%= ports.smtp %> · SSL/TLS</span>
             </div>
             <div class="kv-row">
-              <span class="kv-k">Username</span>
-              <span class="kv-v">Your full email address</span>
+              <%- th('<span class="kv-k">Username</span> <span class="kv-v">Your full email address</span>') %>
             </div>
           </div>
 
           <div class="copyable">
             <span class="mono"><%= mailHost %></span>
-            <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= mailHost %>">Copy</button>
+            <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= mailHost %>"><%= t('Copy') %></button>
           </div>
 
           <details class="mt-2">
             <summary class="reveal">
-              <%- icon('android', 15) %> Android, Gmail and Outlook
+              <%- icon('android', 15) %> <%= t('Android, Gmail and Outlook') %>
             </summary>
             <div class="small muted mt-2">
               <p class="mb-2">
-                <b>Android / Gmail app:</b> Settings → Add account → <b>Other</b>,
-                type the address, choose <b>Personal (IMAP)</b>, then use the
-                server above for both incoming and outgoing.
+                <%- th('<b>Android / Gmail app:</b> Settings → Add account → <b>Other</b>, type the address, choose <b>Personal (IMAP)</b>, then use the server above for both incoming and outgoing.') %>
               </p>
               <p class="mb-2">
-                <b>Outlook:</b> add the account, choose <b>IMAP</b> when it asks,
-                and enter the same server for both. Do not let it try to detect
-                the settings — it looks for Microsoft's servers and fails.
+                <%- th("<b>Outlook:</b> add the account, choose <b>IMAP</b> when it asks, and enter the same server for both. Do not let it try to detect the settings — it looks for Microsoft's servers and fails.") %>
               </p>
               <p class="mb-0">
-                Neither platform can be set up from a downloaded file the way an
-                iPhone can, so these are the steps rather than a button that
-                would not work.
+                <%= t('Neither platform can be set up from a downloaded file the way an iPhone can, so these are the steps rather than a button that would not work.') %>
               </p>
             </div>
           </details>
 
           <a class="btn btn-ghost btn-sm btn-block mt-2" href="<%= webmail %>" target="_blank" rel="noopener">
-            <%- icon('external', 15) %> Open webmail
+            <%- icon('external', 15) %> <%= t('Open webmail') %>
           </a>
           <p class="tiny muted mt-2 mb-0">
             The server is <span class="mono"><%= mailHost %></span> for every

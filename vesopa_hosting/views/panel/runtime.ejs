@@ -28,28 +28,28 @@
 <% if (mock) { %>
   <div class="alert alert-info">
     <%- icon('info', 19) %>
-    <div><b>Demonstration mode.</b> These versions and settings are examples — this panel is not connected to a live node.</div>
+    <div><%- th('<b>Demonstration mode.</b> These versions and settings are examples — this panel is not connected to a live node.') %></div>
   </div>
 <% } %>
 
 <% if (!hasHosting || !sites.length) { %>
   <div class="empty">
-    <p class="mb-2"><b>Nothing to configure yet.</b></p>
-    <p class="mb-3">Add a website and its runtime settings appear here.</p>
-    <a class="btn" href="/panel/domains/add">Add a domain</a>
+    <p class="mb-2"><b><%= t('Nothing to configure yet.') %></b></p>
+    <p class="mb-3"><%= t('Add a website and its runtime settings appear here.') %></p>
+    <a class="btn" href="/panel/domains/add"><%= t('Add a domain') %></a>
   </div>
 <% } else { %>
 
   <%# ---- Which site --------------------------------------------------------- %>
   <form method="get" action="/panel/apps/runtime" class="p-card mb-3">
-    <label class="label" for="site">Website</label>
+    <label class="label" for="site"><%= t('Website') %></label>
     <div class="row" style="gap:8px">
       <select class="input select" id="site" name="site" style="flex:1">
         <% sites.forEach(function (s) { %>
           <option value="<%= s.domain %>" <%= s.domain === selected ? 'selected' : '' %>><%= s.domain %></option>
         <% }); %>
       </select>
-      <button class="btn btn-ghost btn-sm" type="submit">Show</button>
+      <button class="btn btn-ghost btn-sm" type="submit"><%= t('Show') %></button>
     </div>
   </form>
 
@@ -61,7 +61,7 @@
           <span class="card-app-logo" style="width:34px;height:34px">
             <img src="<%= asset('/assets/img/apps/php.svg') %>" alt="" width="20" height="20">
           </span>
-          <h2 class="h3 mb-0">PHP version</h2>
+          <h2 class="h3 mb-0"><%= t('PHP version') %></h2>
         </div>
         <%
           /*
@@ -102,22 +102,18 @@
           <div class="tip tip-warn mb-3">
             <span class="tip-ic"></span>
             <div>
-              <b>Test the site afterwards.</b> A version jump can break an old plugin or theme
-              the moment it lands. If it does, come back and put it on the version it was on —
-              nothing else changes.
+              <%- th('<b>Test the site afterwards.</b> A version jump can break an old plugin or theme the moment it lands. If it does, come back and put it on the version it was on — nothing else changes.') %>
             </div>
           </div>
-          <button class="btn btn-sm" type="submit"><%- icon('save', 15) %> Use this version</button>
+          <button class="btn btn-sm" type="submit"><%- icon('save', 15) %> <%= t('Use this version') %></button>
         </form>
       </div>
 
       <%# ---- Config -------------------------------------------------------- %>
       <div class="p-card mb-3">
-        <h2 class="h3 mb-1">PHP settings</h2>
+        <h2 class="h3 mb-1"><%= t('PHP settings') %></h2>
         <p class="small muted mb-3">
-          The five people actually change. Written to
-          <code>.user.ini</code> in your web root, so you can also edit them in the file
-          manager — and so a bad value breaks this one site rather than the server.
+          <%- th('The five people actually change. Written to <code>.user.ini</code> in your web root, so you can also edit them in the file manager — and so a bad value breaks this one site rather than the server.') %>
         </p>
         <form method="post" action="/panel/apps/runtime/config">
           <input type="hidden" name="_csrf" value="<%= csrf %>">
@@ -137,10 +133,9 @@
               <p class="hint"><%= spec.note %></p>
             </div>
           <% }); %>
-          <button class="btn btn-sm" type="submit"><%- icon('save', 15) %> Save settings</button>
+          <button class="btn btn-sm" type="submit"><%- icon('save', 15) %> <%= t('Save settings') %></button>
           <p class="tiny muted mt-2 mb-0">
-            PHP re-reads this file every five minutes, so a change is not instant. If a test
-            still shows the old number, wait rather than saving again.
+            <%= t('PHP re-reads this file every five minutes, so a change is not instant. If a test still shows the old number, wait rather than saving again.') %>
           </p>
         </form>
       </div>
@@ -151,7 +146,7 @@
           <span class="card-app-logo" style="width:34px;height:34px">
             <img src="<%= asset('/assets/img/apps/wordpress.svg') %>" alt="" width="20" height="20">
           </span>
-          <h2 class="h3 mb-0">WordPress plugins</h2>
+          <h2 class="h3 mb-0"><%= t('WordPress plugins') %></h2>
         </div>
 
         <% if (wpPlugins === null) { %>
@@ -167,7 +162,7 @@
             FTP prompt.
           </p>
           <% if (!wpPlugins.length) { %>
-            <p class="small muted mb-3">No plugins installed.</p>
+            <p class="small muted mb-3"><%= t('No plugins installed.') %></p>
           <% } else { %>
             <div class="pkgs mb-3">
               <% wpPlugins.forEach(function (p) { %>
@@ -188,15 +183,14 @@
           <form method="post" action="/panel/apps/runtime/plugins">
             <input type="hidden" name="_csrf" value="<%= csrf %>">
             <input type="hidden" name="site" value="<%= selected %>">
-            <label class="label" for="plugin">Install a plugin</label>
+            <label class="label" for="plugin"><%= t('Install a plugin') %></label>
             <div class="row" style="gap:8px">
-              <input class="input mono" id="plugin" name="plugin" placeholder="wordpress-seo"
+              <input class="input mono" id="plugin" name="plugin" placeholder="<%= t('wordpress-seo') %>"
                      pattern="[a-z0-9][a-z0-9._-]*" required style="flex:1">
-              <button class="btn btn-sm" name="action" value="add" type="submit">Install</button>
+              <button class="btn btn-sm" name="action" value="add" type="submit"><%= t('Install') %></button>
             </div>
             <p class="hint">
-              The plugin's slug — the last part of its wordpress.org address. For
-              <code>wordpress.org/plugins/wordpress-seo/</code> that is <code>wordpress-seo</code>.
+              <%- th("The plugin's slug — the last part of its wordpress.org address. For <code>wordpress.org/plugins/wordpress-seo/</code> that is <code>wordpress-seo</code>.") %>
             </p>
           </form>
         <% } %>
@@ -206,10 +200,9 @@
     <%# ---- What each version has ------------------------------------------ %>
     <aside>
       <div class="p-card mb-3">
-        <h3 class="h3 mb-2">Node.js</h3>
+        <h3 class="h3 mb-2"><%= t('Node.js') %></h3>
         <p class="small muted mb-3">
-          Installed on this server, side by side. A Node app picks its version when it is
-          created, and each app can be on a different one.
+          <%= t('Installed on this server, side by side. A Node app picks its version when it is created, and each app can be on a different one.') %>
         </p>
         <div class="kv mb-3">
           <% (runtimes.node || []).forEach(function (n) { %>
@@ -225,10 +218,9 @@
       </div>
 
       <div class="p-card">
-        <h3 class="h3 mb-2">What each PHP has</h3>
+        <h3 class="h3 mb-2"><%= t('What each PHP has') %></h3>
         <p class="small muted mb-3">
-          Extensions are built per version for the whole server, so this is the honest list:
-          if something you need is missing, the fix is a version that has it, not a switch.
+          <%= t('Extensions are built per version for the whole server, so this is the honest list: if something you need is missing, the fix is a version that has it, not a switch.') %>
         </p>
         <% (runtimes.php || []).forEach(function (p) { %>
           <details class="fold" style="margin-bottom:10px">

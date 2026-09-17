@@ -784,7 +784,7 @@
     if (!askRun) return;
     var value = askEls.input.value.trim();
     if (!askEls.field.hidden && !value) {
-      askEls.error.textContent = 'Type a name first.';
+      askEls.error.textContent = VT.t('Type a name first.');
       askEls.error.hidden = false;
       return;
     }
@@ -1019,7 +1019,9 @@
     if (!list.length) return;
     var target = state.path;      // where they were when they dropped, not where they end up
     el.uploads.hidden = false;
-    el.uploadsTitle.textContent = 'Uploading ' + list.length + ' file' + (list.length === 1 ? '' : 's');
+    // One key with the count in it, not three strings glued together: in
+    // Bengali the number does not sit where English puts it.
+    el.uploadsTitle.textContent = VT.tn('Uploading {n} file', 'Uploading {n} files', list.length);
 
     var queue = list.slice(), active = 0, finished = 0, failed = 0;
 
@@ -1034,8 +1036,8 @@
           if (!ok) failed++;
           if (!queue.length && !active) {
             el.uploadsTitle.textContent = failed
-              ? finished - failed + ' uploaded, ' + failed + ' failed'
-              : finished + ' file' + (finished === 1 ? '' : 's') + ' uploaded';
+              ? VT.t('{ok} uploaded, {failed} failed', { ok: finished - failed, failed: failed })
+              : VT.tn('{n} file uploaded', '{n} files uploaded', finished);
             if (target === state.path) refresh();
           }
           next();
@@ -1057,7 +1059,7 @@
 
     if (file.size > MAX_UPLOAD) {
       row.classList.add('is-failed');
-      pct.textContent = 'too large';
+      pct.textContent = VT.t('too large');
       return done(false);
     }
 
@@ -1084,7 +1086,7 @@
       var message = '';
       try { message = (JSON.parse(xhr.responseText) || {}).error || ''; } catch (e) { /* not JSON */ }
       row.classList.add(ok ? 'is-done' : 'is-failed');
-      pct.textContent = ok ? 'done' : (message || 'failed');
+      pct.textContent = ok ? VT.t('done') : (message || VT.t('failed'));
       if (ok) fill.style.width = '100%';
       done(ok);
     };

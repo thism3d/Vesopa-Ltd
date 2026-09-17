@@ -14,6 +14,7 @@ const auth = require('./auth');
 const { icon } = require('./icons');
 const { asset } = require('./assets');
 const currencyContext = require('./currency-context');
+const i18n = require('./i18n');
 const geo = require('./geo');
 const registrar = require('./integrations/domainnameapi');
 const hestia = require('./integrations/hestia');
@@ -159,6 +160,13 @@ app.use(
 );
 
 // ---------------------------------------------------------------------------
+// Language
+// ---------------------------------------------------------------------------
+// Before everything that reads req.path: it takes /bn off the front, so every
+// route below is written once and answers in both languages. See src/i18n.
+app.use(i18n.resolve);
+
+// ---------------------------------------------------------------------------
 // Locals every view can rely on
 // ---------------------------------------------------------------------------
 app.use(async (req, res, next) => {
@@ -213,24 +221,10 @@ app.use(async (req, res, next) => {
    * Recent times are relative, because "4 minutes ago" is what somebody
    * watching a DNS check actually wants to know; older ones get a date.
    */
-  res.locals.when = (value, opts = {}) => {
-    if (!value) return opts.empty || '—';
-    const at = value instanceof Date ? value : new Date(value);
-    if (Number.isNaN(at.getTime())) return String(value);
-    const secs = Math.round((Date.now() - at.getTime()) / 1000);
-    if (!opts.dateOnly && secs >= 0 && secs < 60) return 'just now';
-    if (!opts.dateOnly && secs < 3600) {
-      const m = Math.round(secs / 60);
-      return `${m} minute${m === 1 ? '' : 's'} ago`;
-    }
-    if (!opts.dateOnly && secs < 86400) {
-      const h = Math.round(secs / 3600);
-      return `${h} hour${h === 1 ? '' : 's'} ago`;
-    }
-    return at.toLocaleDateString('en-GB', {
-      day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Europe/London',
-    });
-  };
+  res.locals.when = req.i18n.when;
+  // The page's own address in every language, for <link rel="alternate">.
+  res.locals.alternates = i18n.alternates(config.SITE_URL, req.path);
+  res.locals.localPath = (p) => i18n.localizePath(p, req.locale);
   // Every form that asks for a country renders from the same list.
   res.locals.countries = require('./countries');
   // Appends a deploy stamp to every asset URL. Without it the 7-day max-age
@@ -266,6 +260,28 @@ app.use(async (req, res, next) => {
   }
 
   next();
+});
+
+// The remembered language on a public page's English address, and the switch.
+app.use(i18n.redirectRemembered);
+app.get('/lang/:code', i18n.switchTo);
+
+/*
+ * The strings the browser's own scripts show, as a script rather than inline:
+ * the Content-Security-Policy admits one inline script a page and this is not
+ * it, and as a file it is cached like every other asset.
+ */
+const CLIENT_I18N = Object.fromEntries(
+  Object.keys(i18n.LOCALES)
+    .filter((code) => code !== i18n.DEFAULT_LOCALE)
+    .map((code) => [code, `window.VESOPA_I18N=${JSON.stringify(i18n.clientPayload(code))};\n`]),
+);
+app.get('/i18n/:file', (req, res, next) => {
+  const code = String(req.params.file || '').replace(/\.js$/, '');
+  if (!CLIENT_I18N[code] || !req.params.file.endsWith('.js')) return next();
+  res.type('application/javascript');
+  res.set('Cache-Control', process.env.NODE_ENV === 'production' ? 'public, max-age=604800' : 'no-cache');
+  return res.send(CLIENT_I18N[code]);
 });
 
 /**
@@ -357,13 +373,13 @@ app.use('/admin', require('./routes/admin'));
 // ---------------------------------------------------------------------------
 app.use((req, res) => {
   res.status(404);
-  if (req.path.startsWith('/api/')) return res.json({ error: 'Not found.' });
+  if (req.path.startsWith('/api/')) return res.json({ error: req.t('Not found.') });
   res.render('public/error', {
-    title: 'Page not found',
+    title: req.t('Page not found'),
     robots: 'noindex',
     code: 404,
-    heading: 'That page does not exist',
-    message: 'The link may be out of date, or the address mistyped.',
+    heading: req.t('That page does not exist'),
+    message: req.t('The link may be out of date, or the address mistyped.'),
   });
 });
 
@@ -371,14 +387,14 @@ app.use((err, req, res, _next) => {
   console.error('[error]', err.stack || err.message);
   res.status(err.status || 500);
   if (req.path.startsWith('/api/')) {
-    return res.json({ error: 'Something went wrong. Please try again.' });
+    return res.json({ error: i18n.translate(req.locale, 'Something went wrong. Please try again.') });
   }
   res.render('public/error', {
-    title: 'Something went wrong',
+    title: i18n.translate(req.locale, 'Something went wrong'),
     robots: 'noindex',
     code: 500,
-    heading: 'Something went wrong at our end',
-    message: 'The problem has been logged. Please try again, or contact support if it keeps happening.',
+    heading: i18n.translate(req.locale, 'Something went wrong at our end'),
+    message: i18n.translate(req.locale, 'The problem has been logged. Please try again, or contact support if it keeps happening.'),
   });
 });
 

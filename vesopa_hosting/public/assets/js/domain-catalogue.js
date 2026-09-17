@@ -126,7 +126,7 @@
       loading = false;
       if (loadBtn) {
         loadBtn.disabled = false;
-        loadBtn.textContent = 'Try again';
+        loadBtn.textContent = VT.t('Try again');
       }
       if (window.vhToast) window.vhToast('Could not load more extensions.', 'error');
       return;
@@ -289,7 +289,7 @@
         // handler below can ask for a name first.
         a.href = `/domains?q=${encodeURIComponent(tld)}`;
         a.classList.add('needs-name');
-        if (label) label.textContent = 'a name';
+        if (label) label.textContent = VT.t('a name');
       }
     });
   }

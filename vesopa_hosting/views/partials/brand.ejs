@@ -52,14 +52,14 @@
   const bMarkW = Math.round((bSize * 100) / 70);
   const bInk = bOn === 'dark' ? '#ffffff' : '#111111';
 %>
-<% if (bHref) { %><a class="brand-lockup" href="<%= bHref %>" aria-label="Vesopa"><% } else { %><span class="brand-lockup"><% } %>
+<% if (bHref) { %><a class="brand-lockup" href="<%= bHref %>" aria-label="<%= t('Vesopa') %>"><% } else { %><span class="brand-lockup"><% } %>
   <% if (bMarkOnly) { %>
     <%# The attributes are written out literally rather than through an escaping
         interpolation. Building them as a string and printing it escaped is what
         produced the invalid aria-hidden="&quot;true&quot;" that shipped on
         every rail in the panel. %>
     <svg class="brand-v" width="<%= bMarkW %>" height="<%= bSize %>" viewBox="0 0 100 70"
-         role="img" aria-label="Vesopa">
+         role="img" aria-label="<%= t('Vesopa') %>">
       <path fill="#a5c715" d="M0,0 L22.7,0 L50.7,49 L77.3,0 L100,0 L62,70 L40,70 Z"/>
       <path fill="<%= bInk %>" d="M58.3,35 L81,35 L62,70 L40,70 L50.7,49 Z"/>
     </svg>
@@ -68,6 +68,6 @@
         the file decides the width, so a new wordmark cannot squash itself. %>
     <img class="brand-word"
          src="/assets/img/brand/vesopa_logo<%= bOn === 'dark' ? '_on_dark' : '' %>.png"
-         alt="Vesopa" height="<%= bSize %>" style="height:<%= bSize %>px;width:auto">
+         alt="<%= t('Vesopa') %>" height="<%= bSize %>" style="height:<%= bSize %>px;width:auto">
   <% } %>
 <% if (bHref) { %></a><% } else { %></span><% } %>

@@ -16,12 +16,12 @@
   <div class="wrap">
 
     <div class="center" data-reveal="0">
-      <div class="efam" data-email-tabs role="group" aria-label="Email type">
+      <div class="efam" data-email-tabs role="group" aria-label="<%= t('Email type') %>">
         <button type="button" class="efam-btn" data-efam="business" aria-pressed="true">
-          <%- icon('mail', 17) %> Business email
+          <%- icon('mail', 17) %> <%= t('Business email') %>
         </button>
         <button type="button" class="efam-btn" data-efam="marketing" aria-pressed="false">
-          <%- icon('chart', 17) %> Marketing email
+          <%- icon('chart', 17) %> <%= t('Marketing email') %>
         </button>
       </div>
     </div>
@@ -29,10 +29,9 @@
     <!-- Business ---------------------------------------------------------- -->
     <div data-efam-panel="business">
       <div class="sec-head sec-head-center mb-4">
-        <h2 class="h2">Mailboxes at your own domain</h2>
+        <h2 class="h2"><%= t('Mailboxes at your own domain') %></h2>
         <p class="lede mt-2">
-          Priced per mailbox, per month. Add or remove people whenever you like
-          — there is no minimum seat count and no annual headcount lock.
+          <%= t('Priced per mailbox, per month. Add or remove people whenever you like — there is no minimum seat count and no annual headcount lock.') %>
         </p>
       </div>
 
@@ -51,12 +50,12 @@
             <p class="eplan-unit">per <%= p.unit_label %>, per month — billed yearly</p>
 
             <div class="units mt-3" data-units data-unit-pence="<%= p.price[12] %>">
-              <button type="button" class="units-btn" data-units-dec aria-label="One fewer mailbox">−</button>
+              <button type="button" class="units-btn" data-units-dec aria-label="<%= t('One fewer mailbox') %>">−</button>
               <input class="units-input" type="number" value="<%= p.min_units %>"
                      min="<%= p.min_units %>" max="<%= p.max_units %>"
-                     aria-label="Number of mailboxes">
-              <button type="button" class="units-btn" data-units-inc aria-label="One more mailbox">+</button>
-              <span class="units-label">mailboxes</span>
+                     aria-label="<%= t('Number of mailboxes') %>">
+              <button type="button" class="units-btn" data-units-inc aria-label="<%= t('One more mailbox') %>">+</button>
+              <span class="units-label"><%= t('mailboxes') %></span>
             </div>
 
             <p class="eplan-total">
@@ -96,10 +95,9 @@
     <!-- Marketing --------------------------------------------------------- -->
     <div data-efam-panel="marketing" hidden>
       <div class="sec-head sec-head-center mb-4">
-        <h2 class="h2">Campaigns your customers actually get</h2>
+        <h2 class="h2"><%= t('Campaigns your customers actually get') %></h2>
         <p class="lede mt-2">
-          Priced per thousand contacts, the same unit everyone else uses, so you
-          can compare it honestly against what you pay now.
+          <%= t('Priced per thousand contacts, the same unit everyone else uses, so you can compare it honestly against what you pay now.') %>
         </p>
       </div>
 
@@ -118,11 +116,11 @@
             <p class="eplan-unit">per <%= p.unit_label %>, per month — billed yearly</p>
 
             <div class="units mt-3" data-units data-unit-pence="<%= p.price[12] %>">
-              <button type="button" class="units-btn" data-units-dec aria-label="Fewer contacts">−</button>
+              <button type="button" class="units-btn" data-units-dec aria-label="<%= t('Fewer contacts') %>">−</button>
               <input class="units-input" type="number" value="<%= p.min_units %>"
                      min="<%= p.min_units %>" max="<%= p.max_units %>"
-                     aria-label="Thousands of contacts">
-              <button type="button" class="units-btn" data-units-inc aria-label="More contacts">+</button>
+                     aria-label="<%= t('Thousands of contacts') %>">
+              <button type="button" class="units-btn" data-units-inc aria-label="<%= t('More contacts') %>">+</button>
               <span class="units-label">× <%= p.unit_label %></span>
             </div>
 
@@ -149,11 +147,7 @@
         <%- icon('info', 19) %>
         <div>
           <p class="mb-0">
-            <b>Marketing email is set up by hand, for now.</b> When you order,
-            we configure your sending domain, authenticate it properly with SPF,
-            DKIM and DMARC, and email you when it is ready — usually the same
-            working day. Sending is deliberately kept off the web servers so
-            that a campaign can never affect anyone's website or ordinary mail.
+            <%- th("<b>Marketing email is set up by hand, for now.</b> When you order, we configure your sending domain, authenticate it properly with SPF, DKIM and DMARC, and email you when it is ready — usually the same working day. Sending is deliberately kept off the web servers so that a campaign can never affect anyone's website or ordinary mail.") %>
           </p>
         </div>
       </div>
@@ -173,17 +167,14 @@
   <div class="wrap">
     <div class="split">
       <div data-reveal="0">
-        <p class="kicker">Why mail goes missing</p>
-        <h2 class="h1 mt-2 mb-2">Authenticated properly,<br>from the first message</h2>
+        <p class="kicker"><%= t('Why mail goes missing') %></p>
+        <h2 class="h1 mt-2 mb-2"><%- th('Authenticated properly,<br>from the first message') %></h2>
         <p class="lede">
-          Most "my email goes to spam" problems are not spam at all — they are a
-          domain that never had SPF, DKIM and DMARC set up correctly. We publish
-          those records for you when the domain is added, and check them again
-          whenever your DNS changes.
+          <%= t('Most "my email goes to spam" problems are not spam at all — they are a domain that never had SPF, DKIM and DMARC set up correctly. We publish those records for you when the domain is added, and check them again whenever your DNS changes.') %>
         </p>
         <div class="row mt-3">
-          <a class="btn" href="/order/email/email-pro?term=12">Get business email</a>
-          <a class="btn btn-ghost" style="border-color:#3a3a35;color:#fff" href="/contact">Talk to someone</a>
+          <a class="btn" href="/order/email/email-pro?term=12"><%= t('Get business email') %></a>
+          <a class="btn btn-ghost" style="border-color:#3a3a35;color:#fff" href="/contact"><%= t('Talk to someone') %></a>
         </div>
       </div>
 
@@ -218,8 +209,8 @@
 <section class="section" id="faq">
   <div class="wrap wrap-narrow">
     <div class="sec-head sec-head-center mb-4">
-      <p class="kicker" data-reveal="0" style="justify-content:center">Questions</p>
-      <h2 class="h1 mt-2" data-reveal="60">Before you buy</h2>
+      <p class="kicker" data-reveal="0" style="justify-content:center"><%= t('Questions') %></p>
+      <h2 class="h1 mt-2" data-reveal="60"><%= t('Before you buy') %></h2>
     </div>
 
     <div data-acc-group data-reveal="100">

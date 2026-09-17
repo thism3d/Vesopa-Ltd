@@ -79,11 +79,11 @@ router.post('/check', async (req, res) => {
   // The search box is on the homepage, so this is the one endpoint a bored
   // person will hold down. Generous, but bounded.
   if (rateLimited(req.ip, 'domain-check', { max: 40, windowMs: 60_000 })) {
-    return res.status(429).json({ error: 'Slow down a moment, then try again.' });
+    return res.status(429).json({ error: req.t('Slow down a moment, then try again.') });
   }
 
   const raw = String(req.body?.q || '').trim();
-  if (!raw) return res.json({ error: 'Type a domain name to check.' });
+  if (!raw) return res.json({ error: req.t('Type a domain name to check.') });
 
   const { sld, tld } = registrar.splitDomain(raw);
   const invalid = registrar.validateLabel(sld);
@@ -107,7 +107,7 @@ router.post('/check', async (req, res) => {
     });
   } catch (err) {
     console.error('[domains] check failed:', err.message);
-    res.status(502).json({ error: 'We could not reach the registrar just now. Please try again.' });
+    res.status(502).json({ error: req.t('We could not reach the registrar just now. Please try again.') });
   }
 });
 
@@ -116,7 +116,7 @@ router.post('/check', async (req, res) => {
 // ---------------------------------------------------------------------------
 router.post('/suggestions', async (req, res) => {
   if (rateLimited(req.ip, 'domain-suggest', { max: 40, windowMs: 60_000 })) {
-    return res.status(429).json({ error: 'Slow down a moment, then try again.' });
+    return res.status(429).json({ error: req.t('Slow down a moment, then try again.') });
   }
 
   const { sld } = registrar.splitDomain(String(req.body?.sld || ''));
@@ -203,7 +203,7 @@ router.get('/catalogue', async (req, res) => {
     });
   } catch (err) {
     console.error('[domains] catalogue failed:', err.message);
-    res.status(500).json({ error: 'Could not load the catalogue.', html: '', hasMore: false });
+    res.status(500).json({ error: req.t('Could not load the catalogue.'), html: '', hasMore: false });
   }
 });
 

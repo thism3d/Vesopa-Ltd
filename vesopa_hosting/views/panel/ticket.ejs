@@ -24,12 +24,12 @@
   <form method="post" action="/panel/tickets/<%= ticket.id %>/reply" data-guard>
     <input type="hidden" name="_csrf" value="<%= csrf %>">
     <div class="field">
-      <textarea class="textarea" name="body" required placeholder="Type your reply…"></textarea>
+      <textarea class="textarea" name="body" required placeholder="<%= t('Type your reply…') %>"></textarea>
     </div>
-    <button class="btn" type="submit" data-busy="Sending…">Send reply</button>
+    <button class="btn" type="submit" data-busy="Sending…"><%= t('Send reply') %></button>
   </form>
 </div>
 
-<a class="btn btn-ghost btn-sm" href="/panel/tickets">← All tickets</a>
+<a class="btn btn-ghost btn-sm" href="/panel/tickets"><%= t('← All tickets') %></a>
 
 <%- include('../partials/panel-shell-end') %>

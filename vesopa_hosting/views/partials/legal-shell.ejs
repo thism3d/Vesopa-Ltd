@@ -7,19 +7,34 @@
 <section class="hero" style="padding:52px 0 58px">
   <div class="hero-aura hero-aura-1"></div>
   <div class="wrap hero-inner">
-    <p class="kicker" style="justify-content:center">Legal</p>
+    <p class="kicker" style="justify-content:center"><%= t('Legal') %></p>
     <h1 class="display" style="font-size:clamp(1.9rem,4.2vw,2.9rem)"><%= title %></h1>
-    <p class="lede hero-lede">Last updated <%= updated %>. <%= contact.company %>.</p>
+    <p class="lede hero-lede"><%= t('Last updated {date}.', { date: updated }) %> <%= contact.company %>.</p>
   </div>
 </section>
 
 <section class="section">
   <div class="wrap wrap-narrow legal-body">
+    <%# THE AGREEMENT ITSELF IS PUBLISHED IN ENGLISH, IN EVERY LANGUAGE.
+
+        Not an omission — a decision. A contract translated into a second
+        language is a second contract, and the day a clause about liability or
+        refunds reads even slightly differently in the two, it is the customer
+        and us arguing about which one they agreed to. One binding text, and a
+        line in the reader's own language saying so, is the honest arrangement
+        and the ordinary one. Everything AROUND the document — the page, the
+        navigation, this notice — is translated. %>
+    <% if (locale !== 'en') { %>
+      <p class="alert alert-info legal-lang-note">
+        <%- icon('info', 18) %>
+        <span><%= t('This agreement is published in English only. The English text is the one that applies.') %></span>
+      </p>
+    <% } %>
     <%- body %>
     <hr class="divider">
     <p class="small muted">
-      Questions about this document? Email
-      <a href="mailto:<%= contact.email %>"><%= contact.email %></a> or write to
+      <%= t('Questions about this document? Email') %>
+      <a href="mailto:<%= contact.email %>"><%= contact.email %></a> <%= t('or write to') %>
       <%= contact.company %>, <%= contact.address_line1 %>, <%= contact.address_line2 %>.
     </p>
   </div>

@@ -170,12 +170,12 @@
     if (data.finished) {
       if (done) done.hidden = false;
       if (data.failed) {
-        if (title) title.textContent = 'Almost there';
-        if (sub) sub.textContent = 'Most of your setup is done. A couple of steps need us to look at them — we have been told, and we will email you shortly. Nothing is lost.';
+        if (title) title.textContent = VT.t('Almost there');
+        if (sub) sub.textContent = VT.t('Most of your setup is done. A couple of steps need us to look at them — we have been told, and we will email you shortly. Nothing is lost.');
         if (iconWrap) iconWrap.className = 'setup-icon setup-icon-amber';
       } else {
-        if (title) title.textContent = 'Your hosting is ready';
-        if (sub) sub.textContent = 'Everything is set up and your welcome email is on its way. Open your account to add a site.';
+        if (title) title.textContent = VT.t('Your hosting is ready');
+        if (sub) sub.textContent = VT.t('Everything is set up and your welcome email is on its way. Open your account to add a site.');
       }
     }
   }
@@ -200,7 +200,7 @@
        */
       if (++misses >= 6) {
         stopped = true;
-        if (pct) pct.textContent = 'Lost contact with this page — your setup is still running. Refresh to check.';
+        if (pct) pct.textContent = VT.t('Lost contact with this page — your setup is still running. Refresh to check.');
         if (done) done.hidden = false;
         return;
       }

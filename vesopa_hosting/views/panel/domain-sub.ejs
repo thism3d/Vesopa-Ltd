@@ -61,7 +61,7 @@
   <div>
     <div class="p-card">
       <div class="row-between mb-2">
-        <h2 class="h3">Where it points</h2>
+        <h2 class="h3"><%= t('Where it points') %></h2>
         <span class="badge <%= pointed ? 'badge-green' : 'badge-amber' %>">
           <%= pointed ? 'Pointing here' : 'Not pointing here yet' %>
         </span>
@@ -77,11 +77,11 @@
       <% if (observed.length) { %>
         <div class="table-wrap"><table class="table" style="font-size:.86rem"><tbody>
           <tr>
-            <td class="muted">It answers with</td>
+            <td class="muted"><%= t('It answers with') %></td>
             <td class="strong mono"><%= observed.join(', ') %></td>
           </tr>
           <tr>
-            <td class="muted">It should answer with</td>
+            <td class="muted"><%= t('It should answer with') %></td>
             <td class="strong mono"><%= pointHostname %></td>
           </tr>
         </tbody></table></div>
@@ -90,7 +90,7 @@
       <form method="post" action="/panel/domains/<%= domain.domain %>/verify" class="mt-2">
         <input type="hidden" name="_csrf" value="<%= csrf %>">
         <button class="btn btn-sm <%= pointed ? 'btn-ghost' : '' %>" type="submit" data-busy="Checking…">
-          <%- icon('search', 15) %> Check now
+          <%- icon('search', 15) %> <%= t('Check now') %>
         </button>
       </form>
     </div>
@@ -98,7 +98,7 @@
     <%# The certificate. Its own card because it is the thing people come looking for. %>
     <div class="p-card">
       <div class="row-between mb-2">
-        <h2 class="h3">Certificate</h2>
+        <h2 class="h3"><%= t('Certificate') %></h2>
         <span class="badge <%= ssl.status === 'active' ? 'badge-green' : ssl.status === 'failed' ? 'badge-red' : 'badge-grey' %>">
           <%= ssl.status === 'active' ? 'Installed' : ssl.status === 'failed' ? 'Not issued' : 'None yet' %>
         </span>
@@ -111,8 +111,7 @@
         </p>
       <% } else if (!pointed) { %>
         <p class="small muted mb-2">
-          A certificate can only be issued for a name that already resolves to this server —
-          that is Let's Encrypt's rule, not ours. Add the record on the right first.
+          <%= t("A certificate can only be issued for a name that already resolves to this server — that is Let's Encrypt's rule, not ours. Add the record on the right first.") %>
         </p>
       <% } else { %>
         <p class="small muted mb-2">
@@ -128,19 +127,19 @@
         <form method="post" action="/panel/domains/<%= domain.domain %>/ssl">
           <input type="hidden" name="_csrf" value="<%= csrf %>">
           <button class="btn btn-sm" type="submit" data-busy="Requesting…">
-            <%- icon('lock', 15) %> Issue the certificate
+            <%- icon('lock', 15) %> <%= t('Issue the certificate') %>
           </button>
         </form>
       <% } else if (ssl.status === 'active') { %>
         <form method="post" action="/panel/domains/<%= domain.domain %>/ssl">
           <input type="hidden" name="_csrf" value="<%= csrf %>">
-          <button class="btn btn-ghost btn-sm" type="submit" data-busy="Reissuing…">Reissue it</button>
+          <button class="btn btn-ghost btn-sm" type="submit" data-busy="Reissuing…"><%= t('Reissue it') %></button>
         </form>
       <% } %>
     </div>
 
     <div class="p-card">
-      <h2 class="h3 mb-2">Its files</h2>
+      <h2 class="h3 mb-2"><%= t('Its files') %></h2>
       <p class="small muted mb-2">
         This subdomain has its own folder, separate from
         <%= parent || 'your main site' %>. Put the site in
@@ -148,7 +147,7 @@
       </p>
       <a class="btn btn-ghost btn-sm btn-block"
          href="/panel/files?path=<%= encodeURIComponent('web/' + domain.domain + '/public_html') %>">
-        <%- icon('folder', 16) %> Open its files
+        <%- icon('folder', 16) %> <%= t('Open its files') %>
       </a>
     </div>
 
@@ -161,7 +160,7 @@
     <%- include('../partials/redirect-card', { site, domain, hasHosting }) %>
 
     <div class="p-card">
-      <h2 class="h3 mb-2">DNS and email</h2>
+      <h2 class="h3 mb-2"><%= t('DNS and email') %></h2>
       <p class="small muted mb-2">
         A subdomain has no DNS zone and no mailboxes of its own, on purpose.
         Its records live in <b><%= parent || 'your main domain' %></b>'s zone — change them
@@ -197,14 +196,14 @@
       </p>
 
       <div class="table-wrap"><table class="table" style="font-size:.85rem"><tbody>
-        <tr><td class="muted">Type</td><td class="strong mono">A</td></tr>
-        <tr><td class="muted">Name</td>
+        <tr><td class="muted"><%= t('Type') %></td><td class="strong mono">A</td></tr>
+        <tr><td class="muted"><%= t('Name') %></td>
             <td class="strong mono"><%= parent ? domain.domain.slice(0, -(parent.length + 1)) : domain.domain %></td></tr>
-        <tr><td class="muted">Value</td>
+        <tr><td class="muted"><%= t('Value') %></td>
             <td class="strong mono"><%= addresses[0] || pointHostname %></td></tr>
       </tbody></table></div>
 
-      <p class="tiny muted mt-2 mb-1">Copy this into the record:</p>
+      <p class="tiny muted mt-2 mb-1"><%= t('Copy this into the record:') %></p>
       <%# The address first, the hostname under it — see the long note on the
           same card in views/panel/domain.ejs for why both are here and in this
           order. An A record takes an address, and a panel that refuses a name
@@ -212,7 +211,7 @@
       <% (addresses.length ? addresses : [pointHostname]).forEach(function (value) { %>
         <div class="copyable">
           <span class="mono"><%= value %></span>
-          <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= value %>">Copy</button>
+          <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= value %>"><%= t('Copy') %></button>
         </div>
       <% }); %>
       <% if (addresses.length) { %>
@@ -224,15 +223,15 @@
     </div>
 
     <div class="p-card">
-      <h2 class="h3 mb-2">Details</h2>
+      <h2 class="h3 mb-2"><%= t('Details') %></h2>
       <div class="table-wrap"><table class="table" style="font-size:.86rem"><tbody>
-        <tr><td class="muted">Type</td><td class="strong">Subdomain</td></tr>
-        <tr><td class="muted">Under</td><td class="strong"><%= parent || '—' %></td></tr>
-        <tr><td class="muted">Points here</td><td class="strong"><%= pointed ? 'Yes' : 'Not yet' %></td></tr>
-        <tr><td class="muted">Certificate</td>
+        <tr><td class="muted"><%= t('Type') %></td><td class="strong"><%= t('Subdomain') %></td></tr>
+        <tr><td class="muted"><%= t('Under') %></td><td class="strong"><%= parent || '—' %></td></tr>
+        <tr><td class="muted"><%= t('Points here') %></td><td class="strong"><%= pointed ? 'Yes' : 'Not yet' %></td></tr>
+        <tr><td class="muted"><%= t('Certificate') %></td>
             <td class="strong"><%= ssl.status === 'active' ? 'Installed' : ssl.status === 'failed' ? 'Not issued' : 'None yet' %></td></tr>
-        <tr><td class="muted">Last checked</td><td class="strong"><%= domain.ns_checked_at || 'Not yet' %></td></tr>
-        <tr><td class="muted">Set up</td><td class="strong"><%= domain.pointed_at || '—' %></td></tr>
+        <tr><td class="muted"><%= t('Last checked') %></td><td class="strong"><%= domain.ns_checked_at || 'Not yet' %></td></tr>
+        <tr><td class="muted"><%= t('Set up') %></td><td class="strong"><%= domain.pointed_at || '—' %></td></tr>
       </tbody></table></div>
       <p class="tiny muted mt-2 mb-0">
         Nothing to renew and nothing to pay — a subdomain is part of

@@ -99,7 +99,7 @@ async function sendVerifyEmail(customer, req) {
     to: customer.email,
     subject: 'Confirm your email — Vesopa Cloud',
     html: shell({
-      title: 'Confirm your email address',
+      title: req.t('Confirm your email address'),
       intro: `Hello ${escapeHtml(customer.first_name || 'there')} — click below to confirm this address and finish setting up your account.`,
       ctaText: 'Confirm my email',
       ctaUrl: url,
@@ -114,7 +114,7 @@ async function sendVerifyEmail(customer, req) {
 router.get('/register', (req, res) => {
   if (req.customer) return res.redirect('/panel');
   res.render('auth/register', {
-    title: 'Create your account',
+    title: req.t('Create your account'),
     // Indexable. A sign-up page nobody can find is a sign-up page nobody uses,
     // and there is nothing private on it. The POST handler's own re-renders
     // keep `noindex` — those carry back what somebody typed into the form.
@@ -149,7 +149,7 @@ router.post('/register', async (req, res, next) => {
 
     if (Object.keys(errors).length) {
       return res.status(400).render('auth/register', {
-        title: 'Create your account',
+        title: req.t('Create your account'),
         robots: 'noindex',
         values,
         errors,
@@ -226,7 +226,7 @@ router.post('/register', async (req, res, next) => {
       // Lost the race — the real owner verified in the meantime, so this is now
       // an ordinary "that address already has an account" and takes that path.
       if (!took.affectedRows) {
-        flash(res, 'Check your inbox to continue.');
+        flash(res, req.t('Check your inbox to continue.'));
         return res.redirect('/register/check-email');
       }
 
@@ -241,7 +241,7 @@ router.post('/register', async (req, res, next) => {
         ip: req.ip,
       });
       auth.issueCustomerSession(res, taken);
-      flash(res, 'Check your inbox to continue.');
+      flash(res, req.t('Check your inbox to continue.'));
       return res.redirect(`/register/check-email${sent ? '' : '?undelivered=1'}`);
     }
 
@@ -253,7 +253,7 @@ router.post('/register', async (req, res, next) => {
         to: values.email,
         subject: 'Someone tried to sign up with your email — Vesopa Cloud',
         html: shell({
-          title: 'You already have an account',
+          title: req.t('You already have an account'),
           intro:
             'Someone just tried to create a Vesopa Cloud account with this address. If that was you, you already have one — sign in instead.',
           ctaText: 'Sign in',
@@ -261,7 +261,7 @@ router.post('/register', async (req, res, next) => {
           footNote: 'If it was not you, you can safely ignore this. Your account has not changed and nobody has gained access to it.',
         }),
       });
-      flash(res, 'Check your inbox to continue.');
+      flash(res, req.t('Check your inbox to continue.'));
       return res.redirect('/register/check-email');
     }
 
@@ -288,7 +288,7 @@ router.post('/register', async (req, res, next) => {
 
 router.get('/register/check-email', (req, res) => {
   res.render('auth/check-email', {
-    title: 'Check your email',
+    title: req.t('Check your email'),
     robots: 'noindex',
     email: req.customer ? req.customer.email : '',
     // Set when SMTP refused the message. The page then says so rather than
@@ -302,15 +302,15 @@ router.post('/register/resend', async (req, res, next) => {
     if (!req.customer) return res.redirect('/login');
     if (req.customer.email_verified) return res.redirect('/panel');
     if (rateLimited(req.ip, 'resend', { max: 4, windowMs: 3600_000 })) {
-      flash(res, 'We have sent several already — check your spam folder.', 'warn');
+      flash(res, req.t('We have sent several already — check your spam folder.'), 'warn');
       return res.redirect('/register/check-email');
     }
     const sent = await sendVerifyEmail(req.customer, req);
     if (sent) {
-      flash(res, 'Sent. It should arrive within a minute.');
+      flash(res, req.t('Sent. It should arrive within a minute.'));
       res.redirect('/register/check-email');
     } else {
-      flash(res, 'Our mail server would not take it. That is our fault, not yours — please open a ticket and we will confirm the address by hand.', 'error');
+      flash(res, req.t('Our mail server would not take it. That is our fault, not yours — please open a ticket and we will confirm the address by hand.'), 'error');
       res.redirect('/register/check-email?undelivered=1');
     }
   } catch (err) {
@@ -323,10 +323,10 @@ router.get('/verify/:token', async (req, res, next) => {
     const customer = await consumeToken(req.params.token, 'verify');
     if (!customer) {
       return res.status(400).render('auth/token-invalid', {
-        title: 'That link has expired',
+        title: req.t('That link has expired'),
         robots: 'noindex',
-        heading: 'That confirmation link is no longer valid',
-        message: 'Links expire after 48 hours and can only be used once. Sign in and we will send you a fresh one.',
+        heading: req.t('That confirmation link is no longer valid'),
+        message: req.t('Links expire after 48 hours and can only be used once. Sign in and we will send you a fresh one.'),
       });
     }
 
@@ -334,7 +334,7 @@ router.get('/verify/:token', async (req, res, next) => {
     await db.logActivity({ actorType: 'customer', actorId: customer.id, action: 'account.verified', target: customer.email, ip: req.ip });
 
     auth.issueCustomerSession(res, customer);
-    flash(res, 'Email confirmed — welcome aboard.');
+    flash(res, req.t('Email confirmed — welcome aboard.'));
     res.redirect('/panel');
   } catch (err) {
     next(err);
@@ -355,7 +355,7 @@ router.get('/login', (req, res) => {
   const refused = res.locals.flash && res.locals.flash.kind === 'error' ? res.locals.flash.message : null;
   if (refused) res.locals.flash = null;
   res.render('auth/login', {
-    title: 'Sign in',
+    title: req.t('Sign in'),
     robots: 'noindex',
     values: {},
     error: refused,
@@ -371,7 +371,7 @@ router.post('/login', async (req, res, next) => {
 
     const fail = (message) =>
       res.status(401).render('auth/login', {
-        title: 'Sign in',
+        title: req.t('Sign in'),
         robots: 'noindex',
         values: { email },
         error: message,
@@ -418,7 +418,7 @@ router.post('/login', async (req, res, next) => {
 
 router.post('/logout', (req, res) => {
   auth.clearCustomerSession(res);
-  flash(res, 'Signed out.');
+  flash(res, req.t('Signed out.'));
   res.redirect('/');
 });
 
@@ -432,7 +432,7 @@ router.get('/logout', (req, res) => {
 // Forgotten password
 // ---------------------------------------------------------------------------
 router.get('/forgot', (req, res) => {
-  res.render('auth/forgot', { title: 'Reset your password', robots: 'noindex', sent: false, error: null });
+  res.render('auth/forgot', { title: req.t('Reset your password'), robots: 'noindex', sent: false, error: null });
 });
 
 router.post('/forgot', async (req, res, next) => {
@@ -440,12 +440,12 @@ router.post('/forgot', async (req, res, next) => {
     const email = field(req.body.email, 190).toLowerCase();
 
     if (!auth.checkCsrf(req)) {
-      return res.render('auth/forgot', { title: 'Reset your password', robots: 'noindex', sent: false, error: 'Your session expired. Please try again.' });
+      return res.render('auth/forgot', { title: req.t('Reset your password'), robots: 'noindex', sent: false, error: req.t('Your session expired. Please try again.') });
     }
     if (rateLimited(req.ip, 'forgot', { max: 6, windowMs: 3600_000 })) {
       // Still answer as if it worked. "You have asked too often" tells an
       // attacker their guesses are landing somewhere.
-      return res.render('auth/forgot', { title: 'Reset your password', robots: 'noindex', sent: true, error: null });
+      return res.render('auth/forgot', { title: req.t('Reset your password'), robots: 'noindex', sent: true, error: null });
     }
 
     const customer = await db.one('SELECT * FROM customers WHERE email = ? AND status = ? LIMIT 1', [email, 'active']);
@@ -455,7 +455,7 @@ router.post('/forgot', async (req, res, next) => {
         to: customer.email,
         subject: 'Reset your password — Vesopa Cloud',
         html: shell({
-          title: 'Reset your password',
+          title: req.t('Reset your password'),
           intro: 'Click below to choose a new password. If you did not ask for this, ignore this email — your password has not changed.',
           ctaText: 'Choose a new password',
           ctaUrl: `${SITE_URL}/reset/${token}`,
@@ -475,7 +475,7 @@ router.post('/forgot', async (req, res, next) => {
     }
 
     // Identical response either way — see the note at the top of this file.
-    res.render('auth/forgot', { title: 'Reset your password', robots: 'noindex', sent: true, error: null });
+    res.render('auth/forgot', { title: req.t('Reset your password'), robots: 'noindex', sent: true, error: null });
   } catch (err) {
     next(err);
   }
@@ -490,13 +490,13 @@ router.get('/reset/:token', async (req, res) => {
   );
   if (!row) {
     return res.status(400).render('auth/token-invalid', {
-      title: 'That link has expired',
+      title: req.t('That link has expired'),
       robots: 'noindex',
-      heading: 'That reset link is no longer valid',
-      message: 'Reset links expire after an hour and can only be used once. Request a new one below.',
+      heading: req.t('That reset link is no longer valid'),
+      message: req.t('Reset links expire after an hour and can only be used once. Request a new one below.'),
     });
   }
-  res.render('auth/reset', { title: 'Choose a new password', robots: 'noindex', token: req.params.token, error: null });
+  res.render('auth/reset', { title: req.t('Choose a new password'), robots: 'noindex', token: req.params.token, error: null });
 });
 
 router.post('/reset/:token', async (req, res, next) => {
@@ -505,7 +505,7 @@ router.post('/reset/:token', async (req, res, next) => {
     const again = String(req.body.password_confirm || '');
 
     const fail = (message) =>
-      res.status(400).render('auth/reset', { title: 'Choose a new password', robots: 'noindex', token: req.params.token, error: message });
+      res.status(400).render('auth/reset', { title: req.t('Choose a new password'), robots: 'noindex', token: req.params.token, error: message });
 
     if (!auth.checkCsrf(req)) return fail('Your session expired. Please try again.');
     if (password !== again) return fail('The two passwords do not match.');
@@ -515,10 +515,10 @@ router.post('/reset/:token', async (req, res, next) => {
     const customer = await consumeToken(req.params.token, 'reset');
     if (!customer) {
       return res.status(400).render('auth/token-invalid', {
-        title: 'That link has expired',
+        title: req.t('That link has expired'),
         robots: 'noindex',
-        heading: 'That reset link is no longer valid',
-        message: 'It may already have been used. Request a new one below.',
+        heading: req.t('That reset link is no longer valid'),
+        message: req.t('It may already have been used. Request a new one below.'),
       });
     }
 
@@ -531,7 +531,7 @@ router.post('/reset/:token', async (req, res, next) => {
       to: customer.email,
       subject: 'Your password was changed — Vesopa Cloud',
       html: shell({
-        title: 'Your password was changed',
+        title: req.t('Your password was changed'),
         intro: 'This is a confirmation that the password on your Vesopa Cloud account has just been changed, and every other device has been signed out.',
         footNote: '<b>If this was not you</b>, reply to this email immediately — someone else has access to your inbox.',
       }),
@@ -542,7 +542,7 @@ router.post('/reset/:token', async (req, res, next) => {
     const updated = await db.one('SELECT * FROM customers WHERE id = ? LIMIT 1', [customer.id]);
     auth.issueCustomerSession(res, updated);
 
-    flash(res, 'Password changed — you are signed in.');
+    flash(res, req.t('Password changed — you are signed in.'));
     res.redirect('/panel');
   } catch (err) {
     next(err);

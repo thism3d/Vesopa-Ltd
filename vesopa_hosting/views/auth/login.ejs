@@ -31,54 +31,54 @@
     %>
 
     <% if (onlyVesopa) { %>
-      <h1>Sign in</h1>
-      <p class="lede">Your Vesopa account opens your sites, domains and billing.</p>
+      <h1><%= t('Sign in') %></h1>
+      <p class="lede"><%= t('Your Vesopa account opens your sites, domains and billing.') %></p>
 
       <%- include('../partials/vesopa-button', { href: '/auth/vesopa/start?next=' + encodeURIComponent(nextTo) }) %>
       <p class="auth-switch">
-        <a href="/auth/vesopa/start?switch=1&next=<%= encodeURIComponent(nextTo) %>" rel="external">Use a different Vesopa account</a>
+        <a href="/auth/vesopa/start?switch=1&next=<%= encodeURIComponent(nextTo) %>" rel="external"><%= t('Use a different Vesopa account') %></a>
       </p>
 
       <p class="auth-alt mb-0">
-        New to Vesopa Cloud? The same button sets your account up — one account for every Vesopa product.
+        <%= t('New to Vesopa Cloud? The same button sets your account up — one account for every Vesopa product.') %>
       </p>
     <% } else { %>
-      <h1>Welcome back</h1>
-      <p class="lede">Sign in to manage your sites, domains and billing.</p>
+      <h1><%= t('Welcome back') %></h1>
+      <p class="lede"><%= t('Sign in to manage your sites, domains and billing.') %></p>
 
       <form method="post" action="/login" data-guard>
         <input type="hidden" name="_csrf" value="<%= csrf %>">
         <input type="hidden" name="next" value="<%= nextTo %>">
 
         <div class="field">
-          <label class="label" for="email">Email address</label>
+          <label class="label" for="email"><%= t('Email address') %></label>
           <input class="input" id="email" name="email" type="email" autocomplete="username"
                  value="<%= values.email || '' %>" required autofocus>
         </div>
 
         <div class="field">
           <div class="row-between" style="margin-bottom:6px">
-            <label class="label" for="password" style="margin:0">Password</label>
-            <a class="tiny" href="/forgot">Forgotten?</a>
+            <label class="label" for="password" style="margin:0"><%= t('Password') %></label>
+            <a class="tiny" href="/forgot"><%= t('Forgotten?') %></a>
           </div>
           <input class="input" id="password" name="password" type="password" autocomplete="current-password" required>
         </div>
 
-        <button class="btn btn-block btn-lg" type="submit" data-busy="Signing in…">Sign in</button>
+        <button class="btn btn-block btn-lg" type="submit" data-busy="Signing in…"><%= t('Sign in') %></button>
 
         <% if (typeof vesopaSso !== 'undefined' && vesopaSso) { %>
         <div id="vesopa-sso" style="margin-top:14px">
-          <div class="or-divider"><span>or</span></div>
+          <div class="or-divider"><span><%= t('or') %></span></div>
           <%- include('../partials/vesopa-button', { cls: 'btn btn-block btn-lg btn-secondary', href: '/auth/vesopa/start?next=' + encodeURIComponent(nextTo) }) %>
           <p class="auth-switch">
-            <a href="/auth/vesopa/start?switch=1&next=<%= encodeURIComponent(nextTo) %>" rel="external">Use a different Vesopa account</a>
+            <a href="/auth/vesopa/start?switch=1&next=<%= encodeURIComponent(nextTo) %>" rel="external"><%= t('Use a different Vesopa account') %></a>
           </p>
         </div>
         <% } %>
       </form>
 
       <p class="auth-alt mb-0">
-        New here? <a href="/register">Create an account</a>
+        <%- th('New here? <a href="/register">Create an account</a>') %>
       </p>
     <% } %>
   </div>

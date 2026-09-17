@@ -786,6 +786,105 @@ holds state a swap would strand — the file manager, the terminal, the app-job
 pages, onboarding — carry `data-native-nav` on `<body>` and are always reached
 and left by a real navigation, bar included.
 
+## Two languages
+
+The site is published in English and Bangla. Bangla has addresses of its own —
+`/bn/hosting`, `/bn/domains/tld/com` — because a search engine never sends a
+cookie, and a language that lived only in a cookie is a language Google never
+sees. The panel, the basket, sign-in and the payment returns have one address
+each and follow the remembered choice instead; none of them is ever indexed.
+
+**The English text is the key.** Every string is written in the template as it
+reads in English and wrapped — `<%= t('Web hosting') %>` — and the Bangla lives
+in `src/i18n/bn/*.json` under that same English. It is the gettext arrangement,
+chosen over `t('nav.hosting')` for one reason: this codebase is read and edited
+in English, and a template full of dotted keys is a template nobody can review
+without a second file open. Whitespace is collapsed before lookup, so a
+paragraph may stay wrapped across lines in the source.
+
+    t()     plain text, printed with <%= %>
+    th()    a string that carries its own markup, printed with <%- %>
+    tn()    one and many
+    req.t() the same thing in a route, where the request knows the language
+    VT.t()  the same thing in a browser script (public/assets/js/i18n.js)
+
+A string with no Bangla falls back to its English, so a half-finished catalogue
+is never a broken page — which is exactly why it needs a check that fails:
+
+```bash
+npm run i18n:extract              # find new strings, merge them in
+npm run i18n:extract -- --prune   # and delete keys the source no longer has
+npm run i18n:check                # exit 1 until it is finished and sound
+```
+
+`i18n:check` fails on four things, in the order they cost a customer something:
+a string with no translation; a `{placeholder}` that does not match its English
+(a dropped one prints a sentence with a hole in it, an invented one prints a
+literal `{days}`); a `<tag>` that does not match (these are printed with `<%- %>`,
+so an unbalanced tag breaks the page around it); and one English string with two
+different translations in two files, where the loader picks whichever sorts last.
+
+**A fifth test exists because of a bug that passed the other four.**
+`clientMessages` serves only `client.json`, but the extractor leaves a key in
+whichever file it is already in — so a string that was server-side first and
+later became a `VT.t()` call stays in `panel.json`, is translated, passes every
+other check, and is still English in the browser. "Add it" did exactly that.
+**NOT SERVED** catches it now.
+
+**Adding a third language is a row in `LOCALES` and a folder of JSON.** That row
+carries the language's numerals, the stylesheet only its pages load, the fonts
+to preload, whether it abbreviates a month and its text direction — and
+`head.ejs`, `currency.js`, the browser's `i18n.js`, the switcher, the sitemap
+and both scripts all read from it. There is no `if (locale === 'bn')` anywhere.
+
+**Bangla is written with Bangla numerals**, grouped the Bangla way — ২,০০,০০০,
+not 200,000 — and `currency.format()` does it for whichever currency the visitor
+is being shown, because the grouping is the part that genuinely varies while the
+symbol is our own column's. `.mono` is the deliberate exception: a DNS record, a
+connection string or a disk figure keeps Latin digits, because it is about to be
+copied into a terminal.
+
+`public/assets/css/bn.css` loads on Bangla pages and nowhere else. It carries a
+self-hosted Noto Sans Bengali — one fewer third party in front of a customer,
+and nobody new for the privacy page to name — with a `unicode-range` so that an
+English word inside a Bangla sentence still renders in the Latin stack. The rest
+of it is room: Bengali hangs its vowel signs above and below a headline stroke,
+so the line-heights the English design sets tight would clip them, and every
+`text-transform: uppercase` is dropped because Bengali has no case and the rule
+only mangles the English words sitting inside the same label.
+
+**The switch is a full page load, on purpose.** `nav.js` swaps `body.innerHTML`
+and leaves `<head>` and `<html lang>` alone, so a language changed through the
+router would keep the old `lang` attribute, never load the Bengali font, and go
+on showing the old language's strings in anything a script writes. The switcher
+links carry `data-no-router`. A language change is rare and a full load is
+instant on a warm cache; correctness wins.
+
+**Search engines.** Every public page carries reciprocal `hreflang` in its head
+and again in `sitemap.xml`, where each page is listed once per language with the
+same alternates block and an `x-default` pointing at the English. Google ignores
+a one-sided pair and judges the two as duplicate sites, so both halves matter.
+`robots.txt` disallows `/lang/` and `/currency/`: both are redirects that set a
+cookie and send the crawler back where it came from, so following them indexes
+nothing and multiplies every page by the number of languages and currencies.
+Titles and meta descriptions are translated too, including the ones that quote a
+live price — those interpolate `{price}` rather than concatenating, because
+Bengali does not put the figure where English does.
+
+**What is deliberately English.** The terms, privacy, acceptable-use and refund
+documents are published in English in every language, with a translated notice
+at the top saying so. A contract translated into a second language is a second
+contract, and the day a liability or refund clause reads differently in the two
+it is the customer and us arguing about which one they agreed to. Everything
+around the document — the page, the navigation, the notice — is translated, and
+so are the four document names; `legal.js` keeps a module-level `const t = (s) =>
+s` whose only job is to make those names visible to the extractor, because
+`req.t(doc.title)` builds its key from a variable and a scanner cannot see it.
+
+The transactional emails are English too, for now. Sending one in the customer's
+language needs the language stored against the customer; `withLocale()` in
+`src/i18n` is the half that is already written.
+
 ## Decisions worth knowing
 
 **Money is integer pence, everywhere.** A float pound value rounds wrong on the

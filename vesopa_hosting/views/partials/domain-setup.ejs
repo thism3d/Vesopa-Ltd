@@ -70,11 +70,11 @@
 
   <div class="dsetup-actions" data-ds-actions>
     <% if (!dsFinished) { %>
-      <a class="btn btn-ghost btn-sm" href="/panel/domains">Continue in the background</a>
-      <a class="btn btn-ghost btn-sm" href="/panel/domains/add">Add another domain</a>
+      <a class="btn btn-ghost btn-sm" href="/panel/domains"><%= t('Continue in the background') %></a>
+      <a class="btn btn-ghost btn-sm" href="/panel/domains/add"><%= t('Add another domain') %></a>
     <% } else { %>
-      <a class="btn btn-sm" href="/panel/domains/<%= domain.domain %>" data-ds-refresh>Show me the domain</a>
-      <a class="btn btn-ghost btn-sm" href="/panel/domains">Back to domains</a>
+      <a class="btn btn-sm" href="/panel/domains/<%= domain.domain %>" data-ds-refresh><%= t('Show me the domain') %></a>
+      <a class="btn btn-ghost btn-sm" href="/panel/domains"><%= t('Back to domains') %></a>
     <% } %>
   </div>
 </section>

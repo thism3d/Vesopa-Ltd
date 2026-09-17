@@ -22,15 +22,13 @@
   <div class="p-card">
     <div class="empty">
       <%- icon('server', 46) %>
-      <h3>No hosting yet</h3>
+      <h3><%= t('No hosting yet') %></h3>
       <p>
-        A hosting account is where your website's files, databases and mailboxes
-        live. Pick a plan and you can be online this afternoon — or send us a
-        login and we will move an existing site across for you, free.
+        <%= t("A hosting account is where your website's files, databases and mailboxes live. Pick a plan and you can be online this afternoon — or send us a login and we will move an existing site across for you, free.") %>
       </p>
       <div class="row mt-2" style="gap:10px;justify-content:center;flex-wrap:wrap">
-        <a class="btn" href="/hosting">See plans</a>
-        <a class="btn btn-ghost" href="/panel/tickets/new?subject=Migration">Move a site to us</a>
+        <a class="btn" href="/hosting"><%= t('See plans') %></a>
+        <a class="btn btn-ghost" href="/panel/tickets/new?subject=Migration"><%= t('Move a site to us') %></a>
       </div>
     </div>
   </div>
@@ -65,11 +63,11 @@
         <span class="obj-acts">
           <% if (url && live) { %>
             <a class="btn btn-sm" href="<%= url %>" target="_blank" rel="noopener">
-              <%- icon('external', 16) %> Open site
+              <%- icon('external', 16) %> <%= t('Open site') %>
             </a>
           <% } %>
           <a class="btn btn-ghost btn-sm" href="/panel/services/<%= s.id %>">
-            <%- icon('sliders', 16) %> Manage
+            <%- icon('sliders', 16) %> <%= t('Manage') %>
           </a>
         </span>
       </div>
@@ -148,12 +146,7 @@
 
 <% if (services.length) { %>
   <div class="tip">
-    <span class="tip-ic"></span>
-    <span>
-      <b>Everything here is signed in already.</b> Files, the terminal and the
-      database manager all use the session you are in now — there is no second
-      password and no separate control panel to learn.
-    </span>
+    <%- th('<span class="tip-ic"></span> <span> <b>Everything here is signed in already.</b> Files, the terminal and the database manager all use the session you are in now — there is no second password and no separate control panel to learn. </span>') %>
   </div>
 <% } %>
 

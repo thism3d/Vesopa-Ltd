@@ -75,7 +75,7 @@
       detect.hidden = true;
       domainOnly.hidden = false;
       if (asideDomain) asideDomain.hidden = false;
-      if (submit) submit.textContent = 'Add it';
+      if (submit) submit.textContent = VT.t('Add it');
       return;
     }
 
@@ -88,13 +88,13 @@
         'No DNS zone and no mailboxes of its own.');
       domainOnly.hidden = true;
       if (asideDomain) asideDomain.hidden = true;
-      if (submit) submit.textContent = 'Add this subdomain';
+      if (submit) submit.textContent = VT.t('Add this subdomain');
     } else {
       show('dom', 'A <b>domain</b>. You will point it at us with our nameservers, ' +
         'or with an A record if you would rather keep DNS where it is.');
       domainOnly.hidden = false;
       if (asideDomain) asideDomain.hidden = false;
-      if (submit) submit.textContent = 'Add this domain';
+      if (submit) submit.textContent = VT.t('Add this domain');
     }
   }
 

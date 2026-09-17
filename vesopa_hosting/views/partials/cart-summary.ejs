@@ -1,7 +1,7 @@
 <%# The order summary. Re-rendered as a fragment alongside cart-main whenever
     the basket changes — the two always move together, because a line price
     that updated without its total would be worse than a page reload. %>
-<h2 class="h3 mb-3">Order summary</h2>
+<h2 class="h3 mb-3"><%= t('Order summary') %></h2>
 
 <% lines.forEach(function (line) { %>
   <div class="sum-row">
@@ -95,7 +95,7 @@
         <b><%= couponCode %></b>
         <span><% if (couponDiscount_pence > 0) { %>You saved <%= money(couponDiscount_pence) %><% } else { %>Discount applied<% } %></span>
       </span>
-      <button class="coupon-remove" type="submit" aria-label="Remove discount code <%= couponCode %>">Remove</button>
+      <button class="coupon-remove" type="submit" aria-label="Remove discount code <%= couponCode %>"><%= t('Remove') %></button>
     </form>
   <% } else { %>
     <details class="coupon-box"<%= couponError ? ' open' : '' %>>
@@ -106,10 +106,10 @@
       </summary>
       <form method="post" action="/cart/coupon" class="coupon-form" data-cart-form>
         <input type="hidden" name="_csrf" value="<%= csrf %>">
-        <input class="input coupon-input" name="code" placeholder="e.g. WELCOME10"
+        <input class="input coupon-input" name="code" placeholder="<%= t('e.g. WELCOME10') %>"
                autocomplete="off" spellcheck="false" autocapitalize="characters"
-               aria-label="Discount code">
-        <button class="btn coupon-apply" type="submit">Apply</button>
+               aria-label="<%= t('Discount code') %>">
+        <button class="btn coupon-apply" type="submit"><%= t('Apply') %></button>
       </form>
       <% if (couponError) { %><p class="error-text mb-0 mt-2"><%= couponError %></p><% } %>
     </details>
@@ -123,6 +123,6 @@
 <%# --- Reassurance, where the decision is actually made ----------------- %>
 <ul class="cart-trust">
   <li><%- icon('shield', 15) %><span><%= moneyBackDays %>-day money-back guarantee</span></li>
-  <li><%- icon('lock', 15) %><span>Free SSL, issued automatically</span></li>
-  <li><%- icon('headset', 15) %><span>UK support — a person, not a script</span></li>
+  <li><%- icon('lock', 15) %><span><%= t('Free SSL, issued automatically') %></span></li>
+  <li><%- icon('headset', 15) %><span><%= t('UK support — a person, not a script') %></span></li>
 </ul>

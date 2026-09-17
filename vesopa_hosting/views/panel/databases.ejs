@@ -20,13 +20,11 @@
         <span style="color:var(--lime-ink);display:grid;place-items:center"><%- icon('check-circle', 20) %></span>
         <%= created.reset ? 'New password' : 'Your database is ready' %>
       </h2>
-      <span class="state state-amber"><i></i>Shown once</span>
+      <span class="state state-amber"><%- th('<i></i>Shown once') %></span>
     </div>
 
     <p class="small muted mb-3">
-      Copy these into your application's configuration now. We do not keep a copy
-      of the password — not in the panel and not in our database — so this box is
-      the only place it exists. If you lose it, reset it below; nothing else breaks.
+      <%= t("Copy these into your application's configuration now. We do not keep a copy of the password — not in the panel and not in our database — so this box is the only place it exists. If you lose it, reset it below; nothing else breaks.") %>
     </p>
 
     <div class="p-grid p-grid-2">
@@ -54,12 +52,12 @@
 
     <div class="row mt-3" style="gap:8px;flex-wrap:wrap">
       <button class="btn btn-sm copy-btn" type="button"
-              data-copy="<%= created.password %>">Copy password</button>
+              data-copy="<%= created.password %>"><%= t('Copy password') %></button>
       <button class="btn btn-ghost btn-sm copy-btn" type="button"
-              data-copy="<%= created.type === 'pgsql' ? 'postgresql' : 'mysql' %>://<%= created.user %>:<%= created.password %>@<%= created.host %>:<%= created.port %>/<%= created.name %>">Copy connection URL</button>
+              data-copy="<%= created.type === 'pgsql' ? 'postgresql' : 'mysql' %>://<%= created.user %>:<%= created.password %>@<%= created.host %>:<%= created.port %>/<%= created.name %>"><%= t('Copy connection URL') %></button>
       <% if (created.type !== 'pgsql') { %>
         <button class="btn btn-ghost btn-sm copy-btn" type="button"
-                data-copy="define('DB_NAME', '<%= created.name %>');&#10;define('DB_USER', '<%= created.user %>');&#10;define('DB_PASSWORD', '<%= created.password %>');&#10;define('DB_HOST', '<%= created.host %>');">Copy for wp-config.php</button>
+                data-copy="define('DB_NAME', '<%= created.name %>');&#10;define('DB_USER', '<%= created.user %>');&#10;define('DB_PASSWORD', '<%= created.password %>');&#10;define('DB_HOST', '<%= created.host %>');"><%= t('Copy for wp-config.php') %></button>
       <% } %>
     </div>
   </div>
@@ -79,9 +77,9 @@
   <div class="p-card">
     <div class="empty">
       <%- icon('database', 46) %>
-      <h3>No live hosting on this account</h3>
-      <p>Databases live on a hosting account. Once you have one, you can create as many as your plan includes, right here.</p>
-      <a class="btn mt-2" href="/hosting">See plans</a>
+      <h3><%= t('No live hosting on this account') %></h3>
+      <p><%= t('Databases live on a hosting account. Once you have one, you can create as many as your plan includes, right here.') %></p>
+      <a class="btn mt-2" href="/hosting"><%= t('See plans') %></a>
     </div>
   </div>
 <% } else { %>
@@ -96,7 +94,7 @@
   <div>
     <div class="p-card p-card-flush">
       <div class="p-card-head">
-        <h2>Your databases</h2>
+        <h2><%= t('Your databases') %></h2>
         <span class="small muted">
           <%= items.length %><% if (limit) { %> of <%= limit %><% } %> used
         </span>
@@ -105,8 +103,8 @@
       <% if (!items.length) { %>
         <div class="empty">
           <%- icon('database', 46) %>
-          <h3>No databases yet</h3>
-          <p>Create one on the right. It takes a second, and you get the connection details straight away.</p>
+          <h3><%= t('No databases yet') %></h3>
+          <p><%= t('Create one on the right. It takes a second, and you get the connection details straight away.') %></p>
         </div>
       <% } else { %>
         <% items.forEach(function (it) { %>
@@ -123,16 +121,16 @@
             <span class="item-end row" style="gap:7px;flex-wrap:wrap;justify-content:flex-end">
               <% if (ssoReady) { %>
                 <a class="btn btn-sm" href="/panel/databases/<%= encodeURIComponent(it.name) %>/open" rel="noopener">
-                  <%- icon('external', 15) %> Open
+                  <%- icon('external', 15) %> <%= t('Open') %>
                 </a>
               <% } %>
               <form method="post" action="/panel/databases/reset" style="display:inline">
                 <input type="hidden" name="_csrf" value="<%= csrf %>">
                 <input type="hidden" name="name" value="<%= it.name %>">
-                <button class="btn btn-ghost btn-sm" type="submit">New password</button>
+                <button class="btn btn-ghost btn-sm" type="submit"><%= t('New password') %></button>
               </form>
               <details class="inline-danger">
-                <summary class="btn btn-ghost btn-sm" style="color:var(--red)">Delete</summary>
+                <summary class="btn btn-ghost btn-sm" style="color:var(--red)"><%= t('Delete') %></summary>
                 <form method="post" action="/panel/databases/delete" class="inline-danger-body">
                   <input type="hidden" name="_csrf" value="<%= csrf %>">
                   <input type="hidden" name="name" value="<%= it.name %>">
@@ -143,7 +141,7 @@
                   <input class="input mb-2" name="confirm" placeholder="<%= it.name %>"
                          autocomplete="off" spellcheck="false" required>
                   <button class="btn btn-sm" type="submit"
-                          style="background:var(--red);color:#fff">Delete permanently</button>
+                          style="background:var(--red);color:#fff"><%= t('Delete permanently') %></button>
                 </form>
               </details>
             </span>
@@ -154,12 +152,7 @@
 
     <% if (items.length && ssoReady) { %>
       <div class="tip">
-        <span class="tip-ic"></span>
-        <span>
-          <b>Open</b> signs you into the database manager as yourself — no second
-          password. The link is valid for one minute, which is why it is a button
-          and not something you can bookmark.
-        </span>
+        <%- th('<span class="tip-ic"></span> <span> <b>Open</b> signs you into the database manager as yourself — no second password. The link is valid for one minute, which is why it is a button and not something you can bookmark. </span>') %>
       </div>
     <% } %>
   </div>
@@ -167,7 +160,7 @@
   <%# ---- Create ------------------------------------------------------- %>
   <aside>
     <div class="p-card">
-      <h2 class="h3 mb-2">Create a database</h2>
+      <h2 class="h3 mb-2"><%= t('Create a database') %></h2>
 
       <% if (atLimit) { %>
         <p class="small muted mb-2">
@@ -175,27 +168,29 @@
           database<%= limit === 1 ? '' : 's' %> and you are using all of them.
           Delete one you no longer need, or move up a plan.
         </p>
-        <a class="btn btn-ghost btn-sm btn-block" href="/hosting">See plans</a>
+        <a class="btn btn-ghost btn-sm btn-block" href="/hosting"><%= t('See plans') %></a>
       <% } else { %>
         <form method="post" action="/panel/databases/create">
           <input type="hidden" name="_csrf" value="<%= csrf %>">
 
           <label class="label" for="db-name">
-            Name
-            <span class="qmark">
+            <%= t('Name') %> <span class="qmark">
+              <%# The hint is prose a customer reads, so it is translated like
+                  any other sentence — it is only an attribute because that is
+                  where this control keeps it. %>
               <button type="button" aria-expanded="false"
-                      data-hint="Your account name is added to the front automatically, because that is how the server keeps every customer's databases apart. Use the full name in your config file.">?</button>
+                      data-hint="<%= t("Your account name is added to the front automatically, because that is how the server keeps every customer's databases apart. Use the full name in your config file.") %>">?</button>
             </span>
           </label>
           <div class="input-affix mb-3">
             <span class="input-prefix mono"><%= prefix %></span>
             <input class="input" id="db-name" name="name" required
-                   placeholder="shop" maxlength="24" pattern="[a-z][a-z0-9_]{2,23}"
+                   placeholder="<%= t('shop') %>" maxlength="24" pattern="[a-z][a-z0-9_]{2,23}"
                    autocomplete="off" spellcheck="false"
-                   title="Letters, numbers and underscores. Start with a letter.">
+                   title="<%= t('Letters, numbers and underscores. Start with a letter.') %>">
           </div>
 
-          <label class="label" for="db-type">Type</label>
+          <label class="label" for="db-type"><%= t('Type') %></label>
           <select class="input select mb-2" id="db-type" name="type">
             <% Object.keys(engines).forEach(function (key) { %>
               <option value="<%= key %>"><%= engines[key].label %></option>
@@ -204,11 +199,10 @@
           <p class="tiny muted mb-3"><%= engines.mysql.note %></p>
 
           <button class="btn btn-block" type="submit">
-            <%- icon('plus', 16) %> Create database
+            <%- icon('plus', 16) %> <%= t('Create database') %>
           </button>
           <p class="tiny muted mt-2" style="margin-bottom:0">
-            The password is generated for you and shown once, at the top of this
-            page. We never store it.
+            <%= t('The password is generated for you and shown once, at the top of this page. We never store it.') %>
           </p>
         </form>
       <% } %>
@@ -220,9 +214,7 @@
         Connecting from your site
       </h2>
       <p class="small muted mb-0">
-        Use <b class="mono">localhost</b> as the host. Your website and its
-        database are on the same machine, so the connection never leaves it —
-        which is both faster and one less thing exposed to the internet.
+        <%- th('Use <b class="mono">localhost</b> as the host. Your website and its database are on the same machine, so the connection never leaves it — which is both faster and one less thing exposed to the internet.') %>
       </p>
     </div>
   </aside>

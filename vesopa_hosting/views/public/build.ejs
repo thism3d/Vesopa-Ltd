@@ -7,45 +7,44 @@
 %>
 <div class="st" data-studio data-signed-in="<%= signedIn ? '1' : '0' %>">
   <header class="st-top">
-    <a class="st-logo" href="/" aria-label="Vesopa Cloud home">
+    <a class="st-logo" href="/" aria-label="<%= t('Vesopa Cloud home') %>">
       <span class="st-mark" aria-hidden="true"><%- icon('sparkle', 18) %></span>
       <span class="st-logo-text">Vesopa <b>Studio</b></span>
     </a>
     <div class="st-site">
-      <span class="st-site-name" data-site-name>Untitled website</span>
-      <span class="st-saved" data-saved></span>
+      <%- th('<span class="st-site-name" data-site-name>Untitled website</span> <span class="st-saved" data-saved></span>') %>
     </div>
-    <div class="st-devices" role="group" aria-label="Preview size">
-      <button type="button" data-device="desktop" aria-pressed="true" title="Computer" aria-label="Computer">
+    <div class="st-devices" role="group" aria-label="<%= t('Preview size') %>">
+      <button type="button" data-device="desktop" aria-pressed="true" title="<%= t('Computer') %>" aria-label="<%= t('Computer') %>">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>
       </button>
-      <button type="button" data-device="tablet" aria-pressed="false" title="Tablet" aria-label="Tablet">
+      <button type="button" data-device="tablet" aria-pressed="false" title="<%= t('Tablet') %>" aria-label="<%= t('Tablet') %>">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M11 18h2"/></svg>
       </button>
-      <button type="button" data-device="phone" aria-pressed="false" title="Phone" aria-label="Phone">
+      <button type="button" data-device="phone" aria-pressed="false" title="<%= t('Phone') %>" aria-label="<%= t('Phone') %>">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg>
       </button>
     </div>
     <div class="st-top-actions">
-      <button type="button" class="st-icon" data-undo title="Undo" aria-label="Undo" disabled>
+      <button type="button" class="st-icon" data-undo title="<%= t('Undo') %>" aria-label="<%= t('Undo') %>" disabled>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg>
       </button>
-      <button type="button" class="st-icon" data-redo title="Redo" aria-label="Redo" disabled>
+      <button type="button" class="st-icon" data-redo title="<%= t('Redo') %>" aria-label="<%= t('Redo') %>" disabled>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/></svg>
       </button>
       <div class="st-menu-wrap">
-        <button type="button" class="st-icon" data-menu title="More" aria-label="More" aria-haspopup="true" aria-expanded="false">
+        <button type="button" class="st-icon" data-menu title="<%= t('More') %>" aria-label="<%= t('More') %>" aria-haspopup="true" aria-expanded="false">
           <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
         </button>
         <div class="st-menu" data-menu-list hidden>
-          <button type="button" data-action="new">Start a new website</button>
-          <button type="button" data-action="open">Open a published website…</button>
-          <button type="button" data-action="download">Download the page</button>
+          <button type="button" data-action="new"><%= t('Start a new website') %></button>
+          <button type="button" data-action="open"><%= t('Open a published website…') %></button>
+          <button type="button" data-action="download"><%= t('Download the page') %></button>
         </div>
       </div>
       <button type="button" class="st-publish" data-publish>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
-        <span data-t="publish">Publish</span>
+        <span data-t="publish"><%= t('Publish') %></span>
       </button>
     </div>
   </header>
@@ -55,23 +54,23 @@
       <div class="st-browser" data-browser data-device="desktop">
         <div class="st-chrome">
           <span class="st-dots" aria-hidden="true"><i></i><i></i><i></i></span>
-          <span class="st-url"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><span data-url>your-website.co.uk</span></span>
-          <span class="st-live" data-live hidden><i></i><span data-t="building">Building</span></span>
+          <span class="st-url"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><span data-url><%= t('your-website.co.uk') %></span></span>
+          <span class="st-live" data-live hidden><%- th('<i></i><span data-t="building">Building</span>') %></span>
         </div>
         <div class="st-viewport" data-viewport>
-          <iframe title="Your website" data-frame src="/build/frame" sandbox="allow-same-origin"></iframe>
+          <iframe title="<%= t('Your website') %>" data-frame src="/build/frame" sandbox="allow-same-origin"></iframe>
           <div class="st-empty" data-empty>
             <div class="st-empty-inner">
-              <button type="button" class="st-bigmic" data-bigmic aria-label="Tap and describe your website">
+              <button type="button" class="st-bigmic" data-bigmic aria-label="<%= t('Tap and describe your website') %>">
                 <span class="st-bigmic-rings" aria-hidden="true"></span>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
               </button>
-              <h1><span data-t="heroA">Say what you want.</span><br><em data-t="heroB">Watch it build.</em></h1>
-              <p data-t="heroP">Tell us about your business in a sentence, out loud or typed. Your website appears here as it is written, and you change anything just by saying so.</p>
+              <h1><%- th('<span data-t="heroA">Say what you want.</span><br><em data-t="heroB">Watch it build.</em>') %></h1>
+              <p data-t="heroP"><%= t('Tell us about your business in a sentence, out loud or typed. Your website appears here as it is written, and you change anything just by saying so.') %></p>
               <div class="st-ideas" data-ideas>
-                <button type="button" data-idea="I run a small bakery in Swansea called Rahim's Bakery: sourdough, pastries and celebration cakes.">🥐 <span>A bakery in Swansea</span></button>
-                <button type="button" data-idea="A barber shop in Leeds called Sharp &amp; Co, with a price list and walk-ins welcome.">💈 <span>A barber in Leeds</span></button>
-                <button type="button" data-idea="A portfolio for a wedding photographer in Cardiff called Eleri Lens.">📷 <span>A photographer's portfolio</span></button>
+                <button type="button" data-idea="I run a small bakery in Swansea called Rahim's Bakery: sourdough, pastries and celebration cakes."><%- th('🥐 <span>A bakery in Swansea</span>') %></button>
+                <button type="button" data-idea="A barber shop in Leeds called Sharp &amp; Co, with a price list and walk-ins welcome."><%- th('💈 <span>A barber in Leeds</span>') %></button>
+                <button type="button" data-idea="A portfolio for a wedding photographer in Cardiff called Eleri Lens."><%- th("📷 <span>A photographer's portfolio</span>") %></button>
                 <button type="button" data-idea="লন্ডনে আমার একটা বাংলাদেশি রেস্টুরেন্ট আছে, নাম ঢাকা কিচেন। মেনু আর দাম সহ একটা ওয়েবসাইট বানিয়ে দিন।">🍛 <span>ঢাকা কিচেন, লন্ডন</span></button>
               </div>
             </div>
@@ -80,27 +79,27 @@
       </div>
     </section>
 
-    <aside class="st-rail" data-rail aria-label="Talk to Vesopa AI">
-      <button type="button" class="st-grab" data-grab aria-label="Show the conversation"><i></i></button>
+    <aside class="st-rail" data-rail aria-label="<%= t('Talk to Vesopa AI') %>">
+      <button type="button" class="st-grab" data-grab aria-label="<%= t('Show the conversation') %>"><i></i></button>
       <div class="st-rail-head">
         <span class="st-ai-mark" data-state="idle" aria-hidden="true"><%- icon('sparkle', 16) %></span>
-        <div class="st-rail-title"><b>Vesopa AI</b><span data-status>Ready</span></div>
-        <button type="button" class="st-lang" data-lang title="Language"></button>
+        <div class="st-rail-title"><%- th('<b>Vesopa AI</b><span data-status>Ready</span>') %></div>
+        <button type="button" class="st-lang" data-lang title="<%= t('Language') %>"></button>
       </div>
       <div class="st-log" data-log aria-live="polite"></div>
       <div class="st-compose">
         <div class="st-selected" data-selected hidden>
-          <span><span data-t="editing">Editing</span> <b data-selected-name></b></span>
-          <button type="button" data-unselect aria-label="Stop editing this section">×</button>
+          <span><%- th('<span data-t="editing">Editing</span> <b data-selected-name></b>') %></span>
+          <button type="button" data-unselect aria-label="<%= t('Stop editing this section') %>">×</button>
         </div>
         <div class="st-suggest" data-suggest></div>
         <div class="st-inputrow">
-          <textarea data-input rows="1" aria-label="Tell Vesopa AI what to build or change"></textarea>
-          <button type="button" class="st-mic" data-mic aria-pressed="false" aria-label="Talk">
+          <textarea data-input rows="1" aria-label="<%= t('Tell Vesopa AI what to build or change') %>"></textarea>
+          <button type="button" class="st-mic" data-mic aria-pressed="false" aria-label="<%= t('Talk') %>">
             <span class="st-level" aria-hidden="true"></span>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
           </button>
-          <button type="button" class="st-send" data-send aria-label="Send">
+          <button type="button" class="st-send" data-send aria-label="<%= t('Send') %>">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
           </button>
         </div>
@@ -110,7 +109,7 @@
 
   <div class="st-modal" data-modal hidden>
     <div class="st-modal-card" role="dialog" aria-modal="true" aria-labelledby="st-modal-title">
-      <button type="button" class="st-modal-x" data-modal-close aria-label="Close">×</button>
+      <button type="button" class="st-modal-x" data-modal-close aria-label="<%= t('Close') %>">×</button>
       <div data-modal-body></div>
     </div>
   </div>

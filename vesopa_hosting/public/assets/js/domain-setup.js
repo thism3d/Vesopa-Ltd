@@ -112,7 +112,7 @@
       // and say so rather than pretending to still be watching.
       if (++misses >= 8) {
         stopped = true;
-        if (sub) sub.textContent = 'Lost contact with this page — the setup is still running on the server. Refresh in a moment to see how it went.';
+        if (sub) sub.textContent = VT.t('Lost contact with this page — the setup is still running on the server. Refresh in a moment to see how it went.');
         return;
       }
     }

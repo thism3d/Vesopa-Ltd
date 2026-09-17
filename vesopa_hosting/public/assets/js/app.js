@@ -417,7 +417,7 @@
     btn.classList.add('is-copied');
     const original = btn.dataset.copyLabel || btn.textContent;
     btn.dataset.copyLabel = original;
-    btn.textContent = 'Copied';
+    btn.textContent = VT.t('Copied');
     setTimeout(() => {
       btn.classList.remove('is-copied');
       btn.textContent = original;
@@ -727,7 +727,7 @@
       launch.classList.add('is-running', 'is-done', 'is-secure', 'is-live');
       light(2);
       beats.forEach((b) => b.classList.remove('is-now'));
-      if (status) status.textContent = 'Live';
+      if (status) status.textContent = VT.t('Live');
     };
 
     const run = () => {
@@ -735,11 +735,11 @@
       launch.classList.add('is-running');
 
       const script = [
-        [0, () => { light(0); if (status) status.textContent = 'Registering the domain…'; }],
-        [1100, () => { light(1); if (status) status.textContent = 'Building your account…'; }],
-        [2200, () => { launch.classList.add('is-secure'); if (status) status.textContent = 'Issuing your SSL certificate…'; }],
+        [0, () => { light(0); if (status) status.textContent = VT.t('Registering the domain…'); }],
+        [1100, () => { light(1); if (status) status.textContent = VT.t('Building your account…'); }],
+        [2200, () => { launch.classList.add('is-secure'); if (status) status.textContent = VT.t('Issuing your SSL certificate…'); }],
         [3100, () => { light(2); launch.classList.add('is-done'); }],
-        [3500, () => { launch.classList.add('is-live'); if (status) status.textContent = 'Live'; }],
+        [3500, () => { launch.classList.add('is-live'); if (status) status.textContent = VT.t('Live'); }],
         [4200, () => beats.forEach((b) => b.classList.remove('is-now'))],
       ];
       script.forEach(([at, fn]) => setTimeout(fn, at));

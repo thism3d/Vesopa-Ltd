@@ -40,13 +40,12 @@
         <div class="dsearch-form">
           <input class="dsearch-input" type="text" name="q" autocomplete="off" spellcheck="false"
                  data-name-input maxlength="63"
-                 placeholder="Type your name — then check it against any extension below"
-                 aria-label="The domain name you want to check">
-          <button class="btn btn-lg" type="submit"><%- icon('search', 19) %><span class="hide-sm">Search</span></button>
+                 placeholder="<%= t('Type your name — then check it against any extension below') %>"
+                 aria-label="<%= t('The domain name you want to check') %>">
+          <button class="btn btn-lg" type="submit"><%- icon('search', 19) %><span class="hide-sm"><%= t('Search') %></span></button>
         </div>
         <p class="dcat-name-hint">
-          Just the name, no extension — <b data-name-echo>yourname</b> is checked against
-          whichever one you press <em>Check</em> on.
+          <%- th('Just the name, no extension — <b data-name-echo>yourname</b> is checked against whichever one you press <em>Check</em> on.') %>
         </p>
       </form>
     </div>
@@ -64,23 +63,23 @@
       <div class="dcat-find">
         <%- icon('search', 17) %>
         <input type="search" class="dcat-find-input" data-filter="q" value="<%= filters.q %>"
-               placeholder="Filter extensions — try shop, uk, io" aria-label="Filter the extension list">
+               placeholder="<%= t('Filter extensions — try shop, uk, io') %>" aria-label="<%= t('Filter the extension list') %>">
       </div>
 
-      <div class="dcat-bands" role="group" aria-label="Maximum first-year price">
+      <div class="dcat-bands" role="group" aria-label="<%= t('Maximum first-year price') %>">
         <% bands.forEach(function (b) { %>
           <button type="button" class="dcat-chip <%= filters.band === b.slug ? 'is-on' : '' %>"
                   data-filter="band" data-value="<%= b.slug %>"><%= b.label %></button>
         <% }); %>
         <button type="button" class="dcat-chip <%= filters.featuredOnly ? 'is-on' : '' %>"
-                data-filter="popular" data-value="1"><%- icon('star', 14) %> Popular</button>
+                data-filter="popular" data-value="1"><%- icon('star', 14) %> <%= t('Popular') %></button>
         <button type="button" class="dcat-chip <%= filters.promoOnly ? 'is-on' : '' %>"
-                data-filter="promo" data-value="1"><%- icon('tag', 14) %> First-year deals</button>
+                data-filter="promo" data-value="1"><%- icon('tag', 14) %> <%= t('First-year deals') %></button>
       </div>
 
       <label class="dcat-sort">
-        <span class="sr-only">Sort by</span>
-        <select data-filter="sort" aria-label="Sort the extension list">
+        <span class="sr-only"><%= t('Sort by') %></span>
+        <select data-filter="sort" aria-label="<%= t('Sort the extension list') %>">
           <% sorts.forEach(function (s) { %>
             <option value="<%= s.slug %>" <%= filters.sort === s.slug ? 'selected' : '' %>><%= s.label %></option>
           <% }); %>
@@ -92,7 +91,7 @@
     <%# The shelves. A horizontal scroller rather than a wrapped block: nineteen
         categories wrapped to four rows push the actual results below the fold
         on a laptop, which is the content the page is for. %>
-    <div class="dcat-cats" role="group" aria-label="Category">
+    <div class="dcat-cats" role="group" aria-label="<%= t('Category') %>">
       <a class="dcat-cat <%= !filters.category ? 'is-on' : '' %>" href="/domains/pricing">
         All<span class="dcat-cat-n"><%= categoryCounts.reduce(function (s, c) { return s + c.count; }, 0) %></span>
       </a>
@@ -127,8 +126,8 @@
     <% if (!total) { %>
       <div class="empty">
         <%- icon('search', 46) %>
-        <h3>Nothing matches that</h3>
-        <p>Try a shorter word, a higher price, or <a href="/domains/pricing">clear the filters</a>.</p>
+        <h3><%= t('Nothing matches that') %></h3>
+        <p><%- th('Try a shorter word, a higher price, or <a href="/domains/pricing">clear the filters</a>.') %></p>
       </div>
     <% } %>
 
@@ -142,7 +141,7 @@
     <div class="dcat-more" data-catalogue-more <%= hasMore ? '' : 'hidden' %>>
       <div class="dcat-sentinel" data-catalogue-sentinel aria-hidden="true"></div>
       <button type="button" class="btn btn-ghost" data-catalogue-load>
-        Show more extensions
+        <%= t('Show more extensions') %>
       </button>
       <p class="dcat-progress" data-catalogue-progress>
         Showing <b><%= rows.length %></b> of <%= total %>
@@ -164,8 +163,8 @@
 <section class="section section-tint">
   <div class="wrap">
     <div class="center mb-4">
-      <p class="kicker" data-reveal="0" style="justify-content:center">Browse by what you do</p>
-      <h2 class="h1 mt-2" data-reveal="60">Pick a shelf</h2>
+      <p class="kicker" data-reveal="0" style="justify-content:center"><%= t('Browse by what you do') %></p>
+      <h2 class="h1 mt-2" data-reveal="60"><%= t('Pick a shelf') %></h2>
     </div>
     <div class="dcat-shelves">
       <% categoryCounts.forEach(function (c, i) { %>
@@ -187,13 +186,7 @@
     <div class="alert alert-info" data-reveal="0">
       <%- icon('info', 19) %>
       <div>
-        <b>About the first-year deals.</b> On some extensions the registry itself
-        sells a heavily discounted first year to drive adoption, then charges the
-        standard rate from year two — .online, .shop, .store, .site and .tech are
-        the obvious ones. That is the registry's pricing, not a markup of ours,
-        and it is why both figures are on every card here rather than only on the
-        renewal notice. Filter by <b>First-year deals</b> to see every extension
-        that does it.
+        <%- th("<b>About the first-year deals.</b> On some extensions the registry itself sells a heavily discounted first year to drive adoption, then charges the standard rate from year two — .online, .shop, .store, .site and .tech are the obvious ones. That is the registry's pricing, not a markup of ours, and it is why both figures are on every card here rather than only on the renewal notice. Filter by <b>First-year deals</b> to see every extension that does it.") %>
       </div>
     </div>
 
