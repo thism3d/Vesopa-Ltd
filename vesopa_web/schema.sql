@@ -192,3 +192,15 @@ CREATE TABLE IF NOT EXISTS stripe_payments (
   -- issued instead of writing a second row.
   UNIQUE KEY uq_stripe_payments_session (stripe_session_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- One row per "Start your 30-day free trial" on the download page: the address
+-- typed, and where from. The trial itself starts when they sign in to the app;
+-- this is the lead, for support to say hello.
+CREATE TABLE IF NOT EXISTS trial_signup (
+  id         INTEGER PRIMARY KEY AUTO_INCREMENT NOT NULL,
+  timeadded  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  email      VARCHAR(255) NOT NULL,
+  ip         VARCHAR(45)  NOT NULL DEFAULT '',
+  user_agent VARCHAR(400) NOT NULL DEFAULT '',
+  INDEX idx_trial_signup_email (email)
+);

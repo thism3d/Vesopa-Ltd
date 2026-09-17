@@ -2579,3 +2579,44 @@ a.bl-chip:hover { background: rgba(165, 199, 21, .2); color: var(--vp-green, #a5
   .plan_addon_price b { display: inline; }
   .plan_addon_price span { display: inline; margin-left: 8px; }
 }
+
+/* ---- Download: the trial box, the app galleries, the 404 ------------------ */
+.dl-try {
+  margin: 22px 0 26px; padding: 20px 22px; border-radius: 14px;
+  background: var(--surface-2); border: 1px solid var(--line);
+}
+.dl-try-started { border-color: rgba(165, 199, 21, .45); }
+.dl-try-title { margin: 0 0 4px; font-size: 19px; font-weight: 800; color: var(--text); }
+.dl-try-title .fa { color: var(--lime); margin-right: 6px; }
+.dl-try-sub { margin: 0 0 14px; font-size: 14.5px; line-height: 1.55; color: var(--text-mute); }
+.dl-try-form { display: flex; gap: 10px; flex-wrap: wrap; }
+.dl-try-input {
+  flex: 1 1 240px; min-width: 0; padding: 13px 14px; border-radius: 11px; font-size: 15.5px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--text);
+}
+.dl-try-input:focus { outline: none; border-color: var(--lime); box-shadow: 0 0 0 3px rgba(165, 199, 21, .16); }
+.dl-try-button {
+  flex: 0 0 auto; padding: 13px 22px; border: 0; border-radius: 11px; cursor: pointer;
+  background: var(--lime); color: var(--on-lime); font-weight: 800; font-size: 15.5px;
+}
+.dl-try-button .fa { margin-left: 6px; }
+.dl-try-note { margin: 12px 0 0; font-size: 13px; color: var(--text-mute); }
+.dl-try-note a { color: var(--lime); }
+.dl-steps { margin: 6px 0 0; padding-left: 20px; font-size: 14.5px; line-height: 1.6; color: var(--text); }
+.dl-steps li { margin: 6px 0; }
+.dl-steps b { color: var(--text); }
+
+.dl-app-band-alt { background: var(--surface-2); }
+.dl-shots { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-content: start; }
+.dl-shot { margin: 0; border-radius: 12px; overflow: hidden; background: #000; border: 1px solid var(--line); }
+.dl-shot-lead { grid-column: 1 / -1; }
+.dl-shot img { display: block; width: 100%; height: auto; }
+.dl-shot figcaption { padding: 7px 10px; font-size: 12px; color: var(--text-mute); background: var(--surface); }
+.dl-web-inner { grid-template-columns: 1fr; }
+.dl-web-band .kds-lede a { color: var(--lime); font-weight: 600; }
+.error_actions { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center; justify-content: center; margin-top: 22px; }
+.error_home { display: inline-flex; align-items: center; gap: 8px; padding: 13px 22px; border-radius: 11px; text-decoration: none; }
+.error_link { color: var(--lime); font-weight: 600; text-decoration: none; }
+@media (max-width: 720px) {
+  .dl-shots { grid-template-columns: 1fr; }
+}

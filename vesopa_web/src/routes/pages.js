@@ -88,10 +88,15 @@ router.get('/download', async (_req, res) => {
     // extras and nothing else. Far better than 500-ing the download page.
     console.error('[download] could not list attached files:', e.message);
   }
+  // ?started=<email> is the address that just began a trial (POST /try). The
+  // page draws the three steps for it; an invented value draws nothing worse
+  // than an unlocked page.
+  const started = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(_req.query.started || '')) ? String(_req.query.started) : '';
   res.render('download', {
-    title: 'Download Vesopa EPOS for Windows | Vesopa Kitchen',
+    title: 'Download Vesopa — five apps, one system, free 30-day trial',
     extraFiles,
     bytes,
+    started,
   });
 });
 

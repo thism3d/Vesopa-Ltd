@@ -281,9 +281,9 @@ app.use((req, res) => {
   }
   res.status(404).render('error', {
     title: 'Vesopa EPOS | Page Not Found',
-    heading: 'Page Not Found',
+    heading: 'That page is not here',
     brief:
-      "We couldn't find the page you were looking for. It may have moved, or the link may be out of date. Try the <a href=\"/\">home page</a>, or <a href=\"/help\">contact support</a> and we'll point you the right way.",
+      "There is nothing at this address. It may have moved, or the link may be out of date — the home page has everything, and support will point you the right way.",
   });
 });
 

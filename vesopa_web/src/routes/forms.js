@@ -310,4 +310,53 @@ for (const [from, to] of Object.entries(LEGACY)) {
   router.get(`${from}.php`, (_req, res) => res.redirect('/'));
 }
 
+/**
+ * Start a free trial: one email address, from the download page.
+ *
+ * "Try Vesopa EPOS" used to land on the demo-request form — name, phone,
+ * business, a paragraph — which is a lot to ask of somebody who only wants to
+ * see the till. The address is the whole form. It is kept (trial_signup), the
+ * visitor gets the Store links and the three steps by email, support gets a
+ * note, and the download page comes back unlocked with the same three steps.
+ *
+ * Nothing is provisioned here: the trial itself starts when they press
+ * Continue with Vesopa in the app, and the 30 days are counted from there.
+ */
+const { renderTrialStart } = require('../emails/trial-start');
+
+router.post('/try', async (req, res, next) => {
+  const email = clean(req.body.email, 255);
+  if (!looksLikeEmail(email)) return res.redirect('/download#try');
+  if (rateLimited(req.ip)) return res.redirect(303, `${THANK_YOU_BASE}/too-many`);
+
+  try {
+    await pool.query(
+      'INSERT INTO trial_signup (email, ip, user_agent) VALUES (?, ?, ?)',
+      [email.toLowerCase(), String(req.ip || '').slice(0, 45), String(req.get('user-agent') || '').slice(0, 400)],
+    );
+  } catch (e) {
+    return next(e);
+  }
+
+  // Both mails after the row: a mail failure is logged, never shown.
+  sendMail({
+    to: email,
+    subject: 'Your Vesopa EPOS trial — three steps',
+    html: renderTrialStart({ email }),
+  });
+  sendMail({
+    subject: `New trial started: ${email}`,
+    replyTo: email,
+    html: renderNotification({
+      title: 'Vesopa EPOS | Trial started',
+      heroImage: res.locals.SITE_URL + '/assets/email/demo_request.png',
+      headline: 'Somebody started a free trial',
+      name: email,
+      rows: [{ label: 'Email', value: email }, { label: 'From', value: req.ip }],
+    }),
+  });
+
+  res.redirect(303, `/download?started=${encodeURIComponent(email)}#try`);
+});
+
 module.exports = { formsRouter: router };
