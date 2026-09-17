@@ -55,7 +55,7 @@ const QR = require('./qr');
 const loyaltyAuth = require('./loyalty_auth');
 const loyaltyAccountRoutes = require('./loyalty_account');
 const { loyaltyDeletionRoutes } = require('./privacy_provider');
-const { appPath, appUrl, RESERVED } = require('./loyalty_host');
+const { appPath, appUrl, RESERVED, NOT_FOUND } = require('./loyalty_host');
 const loyaltyEmail = require('./loyalty_email');
 
 const CODE_MINUTES = 10;
@@ -1503,7 +1503,7 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
       const app = await appBySlug(pool, req.params.slug);
       const indexFile = path.join(WEB_DIR, 'index.html');
       if (!app) {
-        return res.status(404).type('html').send('<!doctype html><meta charset="utf-8"><title>Not found</title><p style="font-family:sans-serif;padding:32px">There is no app at this address.</p>');
+        return res.status(404).type('html').send(NOT_FOUND);
       }
       if (!fs.existsSync(indexFile)) {
         return res.status(503).type('html').send('<!doctype html><meta charset="utf-8"><title>Coming soon</title><p style="font-family:sans-serif;padding:32px">The app is being prepared. Please try again shortly.</p>');

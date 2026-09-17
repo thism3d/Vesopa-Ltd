@@ -70,6 +70,9 @@ const { loyaltyAppRoutes, startLoyaltyScheduler } = require('./loyalty_app');
 const { privacyRoutes } = require('./privacy_provider');
 const { loyaltyHostGate } = require('./loyalty_host');
 const { loyaltySiteRoutes } = require('./loyalty_site');
+const { menuHostGate } = require('./menu_host');
+const { menuSiteRoutes } = require('./menu_site');
+const { notFoundPage } = require('./not_found');
 const { expressKioskRoutes } = require('./express_kiosk');
 const { walletPageRoutes } = require('./wallet_pages');
 const { giftIntegrationRoutes } = require('./gift_integration');
@@ -127,6 +130,14 @@ app.use(cors());
  * See src/loyalty_host.js.
  */
 app.use(loyaltyHostGate());
+/*
+ * menu.vesopa.com is the menu host now; the old menu.vesopaepos.com answers
+ * every path with a 301 to the same path there (table cards, QR codes and
+ * kitchen links printed with the old name keep working). After the loyalty
+ * gate, which sends the old /app/<venue>/ addresses to loyalty.vesopa.com.
+ * See src/menu_host.js.
+ */
+app.use(menuHostGate());
 /*
  * The raw bytes are kept alongside the parsed body, for one caller.
  *
@@ -1655,6 +1666,10 @@ function sendShell(_req, res) {
 // not claimed before the guard is refused. See src/loyalty_app.js.
 // loyalty.vesopa.com's own page and its editor, on that host only.
 app.use(loyaltySiteRoutes({ pool }));
+// menu.vesopa.com's own page — what Vesopa Menu is, the demo, the prices —
+// and its editor, on that host only. Ahead of the menu pages, whose `/` is
+// the one-line "this is a menu address" that this replaces.
+app.use(menuSiteRoutes({ pool }));
 app.use(loyaltyAppRoutes({ pool, broadcast, secret: JWT_SECRET }));
 // Vesopa Auth's deletion requests reach members' data here (signed).
 app.use(privacyRoutes({ pool }));
@@ -1689,9 +1704,17 @@ app.use(async (req, res, next) => {
   }
   if (MENU_ONLY_PREFIXES.some((prefix) => req.path.startsWith(prefix))) return next();
   // Anything else here is the back office, and it is not what this address is
-  // for. Answered rather than passed on: there is nothing at this address to
-  // send anybody to.
-  return res.status(404).type('txt').send('Not found');
+  // for. Answered rather than passed on — with a page that says so and offers
+  // the way back, because the person here mistyped a table card or followed
+  // a stale link, and a bare "Not found" gave them nothing to press.
+  return res.status(404).type('html').send(notFoundPage({
+    product: 'Menu',
+    home: '/',
+    homeLabel: 'Back to menu.vesopa.com',
+    title: 'That menu is not here',
+    message: 'There is no menu at this address. Check the venue name on the card, or scan the code again — a letter out and the page is gone.',
+    links: [['See the demo menu', '/vesopakitchen'], ['What Vesopa Menu is', '/#features']],
+  }));
 });
 
 app.get(['/', '/index.html'], sendShell);

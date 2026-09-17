@@ -27,7 +27,7 @@ const BACKOFFICE = (process.env.BACKOFFICE_ORIGIN || 'https://backoffice.vesopae
 // on menu.vesopaepos.com, and the first live page blocked them.
 const BRAND = [...new Set([
   BACKOFFICE,
-  ...String(process.env.BRAND_ORIGINS || 'https://menu.vesopaepos.com').split(/\s+/).filter(Boolean),
+  ...String(process.env.BRAND_ORIGINS || 'https://menu.vesopa.com https://menu.vesopaepos.com').split(/\s+/).filter(Boolean),
 ])].join(' ');
 
 function headers(req, res, next) {

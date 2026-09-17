@@ -29,7 +29,7 @@ class LoyaltyApi {
   LoyaltyApi({required this.base, required this.slug, http.Client? client})
     : _http = client ?? http.Client();
 
-  /// The server, e.g. https://menu.vesopaepos.com.
+  /// The server, e.g. https://menu.vesopa.com.
   final String base;
   final String slug;
   final http.Client _http;

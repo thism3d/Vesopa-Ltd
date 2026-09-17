@@ -17,7 +17,9 @@ const config = {
   PORT: Number(process.env.PORT) || 5070,
   // Where this server is reached from outside. Every link in every email, and
   // the address Dojo sends a buyer back to, is built from it.
-  BASE_URL: trimSlash(process.env.BASE_URL || 'https://gift.vesopaepos.com'),
+  // gift.vesopa.com since 2026-09-17; the old gift.vesopaepos.com 301s here,
+  // so a voucher printed with the old address still opens.
+  BASE_URL: trimSlash(process.env.BASE_URL || 'https://gift.vesopa.com'),
 
   // The EPOS it sells for. Loopback on the live box: the back office runs beside
   // this on the same machine, and nothing about the call needs to leave it.

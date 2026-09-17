@@ -33,7 +33,7 @@ let diCatalogue = null;
 
 /** The address a customer would type, as opposed to the one on the card.
  *
- * At the root of the menu host — `menu.vesopaepos.com/vesopakitchen` — because
+ * At the root of the menu host — `menu.vesopa.com/vesopakitchen` — because
  * that host serves nothing but menus and there is therefore nothing for a venue
  * name to collide with. `/m/<slug>` still answers, so any link already printed
  * or sent keeps working. */
@@ -388,7 +388,7 @@ async function loadDineIn() {
       <p class="muted small">
         Point a domain you own at this server and your menu answers on it, and
         your printed cards carry it instead of ours. Leave it blank to stay on
-        ${esc((diTables.base || 'menu.vesopaepos.com').replace(/^https?:\/\//, ''))}.
+        ${esc((diTables.base || 'menu.vesopa.com').replace(/^https?:\/\//, ''))}.
       </p>
       <div class="row" style="align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-start">
         <input id="di-domain" value="${esc(v.custom_domain || '')}"
@@ -402,7 +402,7 @@ async function loadDineIn() {
         </span>
       </div>
       <p class="muted small" style="margin-top:10px">
-        Point a CNAME at <code>menu.vesopaepos.com</code>. The certificate is
+        Point a CNAME at <code>${esc((diTables.base || 'menu.vesopa.com').replace(/^https?:\/\//, ''))}</code>. The certificate is
         issued once the name reaches us, which is usually within the hour.
       </p>
     </details>
@@ -1689,7 +1689,7 @@ function diCardHtml(design, table, base) {
       case 'link':
         // The venue's own address, not the table's. Somebody reading a printed
         // line off a card is going to type it, and nobody types 32 characters
-        // of hex — they type menu.vesopaepos.com/the-bridge. The code beside it
+        // of hex — they type menu.vesopa.com/the-bridge. The code beside it
         // is what carries the table.
         return `<div style="${box}${type}">${esc(
           base.replace(/^https?:\/\//, '') + '/' +

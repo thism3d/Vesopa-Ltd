@@ -285,7 +285,7 @@ function dcTextOf(el) {
     case 'table_name':
       return dcPreviewTable().display_name;
     case 'link':
-      return ((diTables.base || '').replace(/^https?:\/\//, '') || 'menu.vesopaepos.com') +
+      return ((diTables.base || '').replace(/^https?:\/\//, '') || 'menu.vesopa.com') +
              '/' + ((diVenue && diVenue.slug) || 'your-venue');
     default:
       return el.text || '';

@@ -393,9 +393,10 @@ function adminFrom(req) {
   }
 }
 
-function page(title, body) {
+// The editor's shell; menu_site.js borrows it, so the product name is a parameter.
+function page(title, body, product = 'Vesopa Loyalty') {
   return `<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="robots" content="noindex,nofollow"><title>${esc(title)} \u00b7 Vesopa Loyalty</title>
+<meta name="robots" content="noindex,nofollow"><title>${esc(title)} \u00b7 ${esc(product)}</title>
 <link rel="icon" type="image/png" href="/assets/favicon.png">
 <style>
 body{margin:0;background:#F6F6F1;color:#141413;font:15px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
@@ -623,4 +624,6 @@ ${req.query.error ? `<div class="bad">${esc(String(req.query.error).slice(0, 200
   return router;
 }
 
-module.exports = { loyaltySiteRoutes, DEFAULTS };
+// The look and the small helpers are shared with menu.vesopa.com's page
+// (src/menu_site.js) so the two products read as one family.
+module.exports = { loyaltySiteRoutes, DEFAULTS, CSS, ICON, esc, pounds, adminPage: page, cookieOptions, readCookie, money };

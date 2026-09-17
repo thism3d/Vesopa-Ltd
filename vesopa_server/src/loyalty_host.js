@@ -56,8 +56,17 @@ function callbackHost() {
   return LOYALTY_HOST || (process.env.MENU_HOST || 'menu.vesopaepos.com').trim();
 }
 
-const NOT_FOUND = '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
-  + '<title>Not found</title><p style="font-family:system-ui,sans-serif;padding:32px">There is no app at this address.</p>';
+const { notFoundPage } = require('./not_found');
+// A wrong address on loyalty.vesopa.com used to be one unstyled sentence
+// with nothing to press. Now it looks like the site and offers the way back.
+const NOT_FOUND = notFoundPage({
+  product: 'Loyalty',
+  home: '/',
+  homeLabel: 'Back to loyalty.vesopa.com',
+  title: 'There is no app at this address',
+  message: 'A venue’s loyalty app lives at loyalty.vesopa.com/<venue>. Check the name on the card or the link you were sent — a letter out and the app is not found.',
+  links: [['Try the demo app', '/thevesopakitchen/'], ['Get an app for your venue', '/#pricing']],
+});
 
 function loyaltyHostGate() {
   return (req, res, next) => {
@@ -94,4 +103,4 @@ function loyaltyHostGate() {
   };
 }
 
-module.exports = { loyaltyHostGate, appPath, appUrl, callbackHost, RESERVED, LOYALTY_HOST };
+module.exports = { loyaltyHostGate, appPath, appUrl, callbackHost, RESERVED, LOYALTY_HOST, NOT_FOUND };
