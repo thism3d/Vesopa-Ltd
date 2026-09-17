@@ -24,7 +24,7 @@
  *
  *   gone      name, email, phone, photo (and its file), card and member
  *             number, password, passkeys, sign-in codes, app sessions,
- *             notification channels, inbox, saved location; the name and
+ *             notification channels, inbox, the near-the-venue mark; the name and
  *             phone on their orders
  *   kept      the customer row as "Deleted member", with its points, visits
  *             and history: the venue's sales and points records, which it
@@ -116,7 +116,7 @@ async function eraseMembership(pool, customerId, email) {
     const scoped = [c.office, c.id];
     for (const table of [
       'epos_loyalty_app_sessions', 'epos_push_channels', 'epos_push_inbox',
-      'epos_customer_locations', 'epos_loyalty_passkeys',
+      'epos_customer_near', 'epos_loyalty_passkeys',
     ]) {
       // eslint-disable-next-line no-await-in-loop
       await conn.query(`DELETE FROM ${table} WHERE office = ? AND customer_id = ?`, scoped);
@@ -152,7 +152,7 @@ async function eraseMembership(pool, customerId, email) {
   if (c.photo_url && c.photo_url.startsWith('/uploads/')) {
     fs.promises.unlink(path.join(UPLOAD_DIR, path.basename(c.photo_url))).catch(() => {});
   }
-  return { ok: true, detail: 'Membership erased: contact details, photo, card, sign-in, notifications and location removed; sales and points history kept without a name.' };
+  return { ok: true, detail: 'Membership erased: contact details, photo, card, sign-in, notifications and nearby-offer mark removed; sales and points history kept without a name.' };
 }
 
 function privacyRoutes({ pool }) {

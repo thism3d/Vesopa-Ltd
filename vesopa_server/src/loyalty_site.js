@@ -26,6 +26,7 @@ const jwt = require('jsonwebtoken');
 
 const idtoken = require('./vesopa_idtoken');
 const { LOYALTY_HOST } = require('./loyalty_host');
+const { privacyPage } = require('./loyalty_privacy');
 
 const ADMINS = String(process.env.LOYALTY_SITE_ADMINS || 'info@vesopasoftware.com')
   .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
@@ -360,7 +361,7 @@ function landing(content) {
 
 <footer><div class="wrap">
   <span>\u00a9 ${new Date().getFullYear()} Vesopa Software Limited, registered in Wales, company number 17362206.</span>
-  <nav aria-label="Legal"><a href="https://auth.vesopa.com/privacy">Privacy</a><a href="https://auth.vesopa.com/terms">Terms</a><a href="https://auth.vesopa.com/delete-account">Delete your data</a><a href="${esc(mail)}">Contact</a></nav>
+  <nav aria-label="Legal"><a href="/privacy">Privacy</a><a href="https://auth.vesopa.com/terms">Terms</a><a href="https://auth.vesopa.com/delete-account">Delete your data</a><a href="${esc(mail)}">Contact</a></nav>
 </div></footer>
 </body>
 </html>`;
@@ -472,10 +473,21 @@ function loyaltySiteRoutes({ pool }) {
     }
   });
 
+  router.get('/privacy', async (req, res, next) => {
+    if (!onSite(req)) return next();
+    try {
+      const content = await readContent(pool);
+      res.set('Cache-Control', 'public, max-age=300');
+      res.type('html').send(privacyPage({ host: LOYALTY_HOST, demoSlug: content.demo_slug, contact: content.contact_email }));
+    } catch (e) {
+      next(e);
+    }
+  });
+
   router.get('/sitemap.xml', (req, res, next) => {
     if (!onSite(req)) return next();
     res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://${LOYALTY_HOST}/</loc></url><url><loc>https://${LOYALTY_HOST}/${DEFAULTS.demo_slug}/</loc></url></urlset>`);
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://${LOYALTY_HOST}/</loc></url><url><loc>https://${LOYALTY_HOST}/privacy</loc></url><url><loc>https://${LOYALTY_HOST}/${DEFAULTS.demo_slug}/</loc></url></urlset>`);
   });
 
   router.get('/admin', async (req, res, next) => {

@@ -341,18 +341,12 @@ async function recipientsFor(db, office, audience, app) {
     where.push('(c.last_visit IS NULL OR c.last_visit < NOW() - INTERVAL ? DAY)');
     params.push(days);
   } else if (kind === 'near') {
-    const lat = app && app.latitude != null ? Number(app.latitude) : null;
-    const lng = app && app.longitude != null ? Number(app.longitude) : null;
-    if (lat == null || lng == null) return [];
-    const radius = Number(app.radius_m) || 400;
-    join = `JOIN epos_customer_locations l
-               ON l.office = s.office AND l.customer_id = s.customer_id
-              AND l.at >= NOW() - INTERVAL ${NEAR_HOURS} HOUR`;
-    where.push(`6371000 * 2 * ASIN(SQRT(
-        POWER(SIN(RADIANS(l.latitude - ?) / 2), 2)
-      + COS(RADIANS(?)) * COS(RADIANS(l.latitude)) * POWER(SIN(RADIANS(l.longitude - ?) / 2), 2)
-    )) <= ?`);
-    params.push(lat, lat, lng, radius);
+    if (!app || app.latitude == null || app.longitude == null) return [];
+    // Who was checked and found inside the venue's area lately. No position is
+    // kept to measure against: see POST /loyalty/v1/me/location.
+    join = `JOIN epos_customer_near n
+               ON n.office = s.office AND n.customer_id = s.customer_id
+              AND n.near_at >= NOW() - INTERVAL ${NEAR_HOURS} HOUR`;
   }
   const [rows] = await db.query(
     `SELECT DISTINCT c.id
@@ -498,7 +492,7 @@ async function sendDue(pool) {
 
 /** Old locations and spent codes go. */
 async function sweep(pool) {
-  await pool.execute(`DELETE FROM epos_customer_locations WHERE at < NOW() - INTERVAL 24 HOUR`);
+  await pool.execute(`DELETE FROM epos_customer_near WHERE near_at < NOW() - INTERVAL ${NEAR_HOURS} HOUR`);
   await pool.execute(`DELETE FROM epos_loyalty_app_codes WHERE created_at < NOW() - INTERVAL 1 DAY`);
   // Spent and expired WebAuthn challenges are rubbish, not history.
   await loyaltyAuth.sweepChallenges(pool);
@@ -979,28 +973,36 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
     }
   });
 
-  /** The customer's position, only when they allowed it. One row, kept a day. */
+  /**
+   * The customer's position, only when they allowed it -- and NEVER STORED.
+   *
+   * The privacy policy says a member's location is used there and then for the
+   * app to work and is not saved, so that is what happens: the position is
+   * checked against the venue's own area in this request and forgotten when it
+   * ends. What is kept is only whether they were inside that area, and when,
+   * for the NEAR_HOURS a "near us now" offer can use it (schema_loyalty_near).
+   * No coordinates reach the database or the logs.
+   */
   router.post('/loyalty/v1/me/location', requireCustomer, json, async (req, res, next) => {
     try {
       const lat = Number((req.body || {}).latitude);
       const lng = Number((req.body || {}).longitude);
-      const acc = Number((req.body || {}).accuracy);
       if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
         return res.status(400).json({ error: 'That is not a position.' });
       }
-      await pool.execute(
-        `INSERT INTO epos_customer_locations (office, customer_id, latitude, longitude, accuracy_m, at)
-         VALUES (?, ?, ?, ?, ?, NOW())
-         ON DUPLICATE KEY UPDATE latitude = VALUES(latitude), longitude = VALUES(longitude),
-           accuracy_m = VALUES(accuracy_m), at = NOW()`,
-        [req.office, req.customerId, lat.toFixed(6), lng.toFixed(6), Number.isFinite(acc) ? Math.round(acc) : null]
-      );
-      // Whether they are at the venue now, so the app can greet them with the
-      // latest news without a second round trip.
       const app = await readApp(pool, req.office);
       let near = false;
       if (app && app.latitude != null && app.longitude != null) {
         near = distanceM(lat, lng, Number(app.latitude), Number(app.longitude)) <= (Number(app.radius_m) || 400);
+      }
+      if (near) {
+        await pool.execute(
+          `INSERT INTO epos_customer_near (office, customer_id, near_at) VALUES (?, ?, NOW())
+           ON DUPLICATE KEY UPDATE near_at = NOW()`,
+          [req.office, req.customerId]
+        );
+      } else {
+        await pool.execute('DELETE FROM epos_customer_near WHERE office = ? AND customer_id = ?', [req.office, req.customerId]);
       }
       res.json({ ok: true, near });
     } catch (e) {
@@ -1010,7 +1012,7 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
 
   router.delete('/loyalty/v1/me/location', requireCustomer, async (req, res, next) => {
     try {
-      await pool.execute('DELETE FROM epos_customer_locations WHERE office = ? AND customer_id = ?', [req.office, req.customerId]);
+      await pool.execute('DELETE FROM epos_customer_near WHERE office = ? AND customer_id = ?', [req.office, req.customerId]);
       res.json({ ok: true });
     } catch (e) {
       next(e);
@@ -1036,7 +1038,7 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
     try {
       await revokeSessions('office = ? AND customer_id = ?', [req.office, req.customerId]);
       await pool.execute('UPDATE epos_push_channels SET disabled_at = NOW() WHERE office = ? AND customer_id = ?', [req.office, req.customerId]);
-      await pool.execute('DELETE FROM epos_customer_locations WHERE office = ? AND customer_id = ?', [req.office, req.customerId]);
+      await pool.execute('DELETE FROM epos_customer_near WHERE office = ? AND customer_id = ?', [req.office, req.customerId]);
       res.json({ ok: true });
     } catch (e) {
       next(e);
@@ -1094,8 +1096,8 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
              WHERE office = ? AND disabled_at IS NULL AND kind = 'wns') AS windows,
            (SELECT COUNT(*) FROM epos_push_channels
              WHERE office = ? AND disabled_at IS NULL AND kind IN ('fcm', 'apns')) AS phones,
-           (SELECT COUNT(*) FROM epos_customer_locations
-             WHERE office = ? AND at >= NOW() - INTERVAL ${NEAR_HOURS} HOUR) AS located`,
+           (SELECT COUNT(*) FROM epos_customer_near
+             WHERE office = ? AND near_at >= NOW() - INTERVAL ${NEAR_HOURS} HOUR) AS located`,
         [office, office, office, office, office]
       );
       // A suggestion for a venue that has not chosen an address: its dine-in

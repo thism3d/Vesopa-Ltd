@@ -149,8 +149,8 @@ CREATE TABLE IF NOT EXISTS epos_push_inbox (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 
--- Where a customer last was, only if they allowed it. One row, not a trail,
--- and gone after 24 hours (swept by src/loyalty_app.js).
+-- RETIRED 2026-09-17: positions are no longer stored (schema_loyalty_near.sql).
+-- Kept, empty, only so an older server mid-deploy does not fail.
 CREATE TABLE IF NOT EXISTS epos_customer_locations (
   office       VARCHAR(190) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   customer_id  CHAR(36)     NOT NULL,
