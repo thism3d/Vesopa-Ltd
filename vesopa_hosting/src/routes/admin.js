@@ -732,11 +732,13 @@ router.post('/coupons', async (req, res, next) => {
 
     await db.query(
       `INSERT INTO coupons
-         (code, description, headline, kind, value, min_spend_pence, applies_to,
+         (code, description, headline, headline_bn, description_bn,
+          kind, value, min_spend_pence, applies_to,
           max_uses, first_order_only, public_offer, countries, expires_at, active)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
        ON DUPLICATE KEY UPDATE
          description = VALUES(description), headline = VALUES(headline),
+         headline_bn = VALUES(headline_bn), description_bn = VALUES(description_bn),
          kind = VALUES(kind), value = VALUES(value),
          min_spend_pence = VALUES(min_spend_pence), applies_to = VALUES(applies_to),
          max_uses = VALUES(max_uses), first_order_only = VALUES(first_order_only),
@@ -746,6 +748,8 @@ router.post('/coupons', async (req, res, next) => {
         code,
         field(req.body.description, 190),
         field(req.body.headline, 120),
+        field(req.body.headline_bn, 120),
+        field(req.body.description_bn, 190),
         kind,
         value,
         toPence(req.body.min_spend),

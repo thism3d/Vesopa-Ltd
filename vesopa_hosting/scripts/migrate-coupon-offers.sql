@@ -7,3 +7,9 @@
 ALTER TABLE coupons ADD COLUMN IF NOT EXISTS public_offer TINYINT(1) NOT NULL DEFAULT 0 AFTER first_order_only;
 ALTER TABLE coupons ADD COLUMN IF NOT EXISTS headline VARCHAR(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '' AFTER public_offer;
 ALTER TABLE coupons ADD COLUMN IF NOT EXISTS countries VARCHAR(190) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '' AFTER headline;
+
+-- The advertised copy in Bangla. An offer aimed at Bangladeshi customers that
+-- reads in English on /bn is the one place the translation really costs
+-- something. Empty falls back to the English.
+ALTER TABLE coupons ADD COLUMN IF NOT EXISTS headline_bn VARCHAR(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '' AFTER headline;
+ALTER TABLE coupons ADD COLUMN IF NOT EXISTS description_bn VARCHAR(190) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '' AFTER headline_bn;

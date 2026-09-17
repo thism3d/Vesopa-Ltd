@@ -149,7 +149,8 @@ router.get('/offers', async (req, res, next) => {
   try {
     const country = String(req.country || '').toUpperCase();
     const rows = await db.query(
-      `SELECT code, description, headline, kind, value, applies_to, min_spend_pence,
+      `SELECT code, description, headline, headline_bn, description_bn,
+              kind, value, applies_to, min_spend_pence,
               first_order_only, countries, starts_at, expires_at, max_uses, used
          FROM coupons
         WHERE active = 1
@@ -165,10 +166,21 @@ router.get('/offers', async (req, res, next) => {
       return !only.length || only.includes(country);
     };
 
+    /*
+     * The advertised copy in the language being read.
+     *
+     * The furniture around it comes from the i18n catalogue, but these two are
+     * free text an admin typed, so they need their own Bangla column. Falling
+     * back to the English rather than to nothing: a headline in the wrong
+     * language still sells the offer, and an empty one sells nothing.
+     */
+    const bn = res.locals.locale === 'bn';
+    const say = (bangla, english) => (bn && String(bangla || '').trim() ? bangla : english);
+
     const offers = rows.filter(mine).map((row) => ({
       code: row.code,
-      headline: row.headline || row.description,
-      detail: row.description,
+      headline: say(row.headline_bn, row.headline || row.description),
+      detail: say(row.description_bn, row.description),
       // A percentage reads the same in every currency; a fixed amount is a
       // base-currency figure and has to be converted like any other price.
       amount: row.kind === 'percent'

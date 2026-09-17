@@ -265,6 +265,13 @@ CREATE TABLE IF NOT EXISTS coupons (
   public_offer   TINYINT(1) NOT NULL DEFAULT 0,
   -- What the offers page calls it. Empty falls back to `description`.
   headline       VARCHAR(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  -- The same two in Bangla. An offer aimed at Bangladeshi customers that reads
+  -- in English on the Bangla edition of the site is the one page where the
+  -- translation matters most; these are free text an admin types, so they
+  -- cannot come from the i18n catalogue like the furniture around them.
+  -- Empty falls back to the English, which is better than an empty headline.
+  headline_bn    VARCHAR(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  description_bn VARCHAR(190) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
   -- Comma-separated ISO country codes this code may be used from; empty means
   -- anywhere. Geo is a guess, so this is a marketing boundary, not a security
   -- one -- never put anything behind it that matters if it leaks.
