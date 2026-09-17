@@ -428,7 +428,10 @@ async function collect(customer, { area = null } = {}) {
      * arpi.site was in, and on its own it is invisible: the domain page looks
      * fine and the hosting page does not mention it.
      */
-    if (d.status === 'active' && !d.service_id && d.source !== 'subdomain' && services.length) {
+    // An email-only domain has its website elsewhere on purpose; "no website
+    // behind it" is the arrangement, not a gap.
+    const mailOnly = !d.ns_verified_at && Boolean(d.mx_verified_at);
+    if (d.status === 'active' && !d.service_id && d.source !== 'subdomain' && services.length && !mailOnly) {
       add({
         level: 'info',
         area: 'domain',
