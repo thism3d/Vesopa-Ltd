@@ -50,7 +50,9 @@ def probe(url):
 
 
 def resolves():
-    out = cloud(f"for ns in $(dig +short NS vesopa.com @1.1.1.1); do echo \"$ns $(dig +short {NEW} @$ns | tr '\\n' ' ')\"; done")
+    # +norecurse: phase8 answers an RD query with nothing every third time or so,
+    # which is how a resolver never asks anyway.
+    out = cloud(f"for ns in $(dig +short NS vesopa.com @1.1.1.1); do echo \"$ns $(dig +short +norecurse {NEW} @$ns | tr '\\n' ' ')\"; done")
     rows = [l.split() for l in out.splitlines() if l.strip()]
     return rows and all(len(r) > 1 and IP in r[1:] for r in rows), out
 
