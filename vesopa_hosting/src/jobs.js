@@ -75,6 +75,9 @@ const DOMAIN_PROBE_DAYS = Number(process.env.DOMAIN_PROBE_DAYS || 45);
  */
 const SSL_RECHECK_HOURS = Number(process.env.SSL_RECHECK_HOURS || 6);
 
+/** Certificates requested per pass, at most: each is a Let's Encrypt order. */
+const SSL_ISSUE_BATCH = Number(process.env.SSL_ISSUE_BATCH || 3);
+
 // ---------------------------------------------------------------------------
 // Payments
 // ---------------------------------------------------------------------------
@@ -459,14 +462,82 @@ async function sweepDomains() {
     return 0;
   });
 
+  // Issue first, then read: both take their turn from ssl_checked_at, and a
+  // read that ran first would push a missing certificate's attempt back again.
+  const issued = await issueMissingCertificates().catch((err) => {
+    console.error('[jobs] certificate issuing failed:', err.message);
+    return 0;
+  });
+
   const certificates = await sweepCertificates().catch((err) => {
     console.error('[jobs] certificate sweep failed:', err.message);
     return 0;
   });
 
   return {
-    checked: rows.length, verified, dropped, registrants, certificates,
+    checked: rows.length, verified, dropped, registrants, certificates, issued,
   };
+}
+
+/**
+ * Ask for the certificates that were promised "automatically".
+ *
+ * pointAtNode builds a site before its name resolves here and says so: "The
+ * name does not resolve to this server yet, so a certificate cannot be issued.
+ * It is requested automatically once it does." Nothing did. The domain sweep
+ * only revisits domains that are not yet verified or not yet built, and
+ * sweepCertificates below only reads. So a domain built early stayed without
+ * a certificate until somebody pressed a button: measured 2026-09-17,
+ * heat6.com had served the panel's own certificate (a hostname mismatch in
+ * every browser) since a failed attempt on 30 August, and amzro.com and
+ * bosheboshe.com had none from their move until they were rebuilt by hand.
+ *
+ * linking.issueSsl does the careful part: it re-reads the node and does not
+ * reissue a valid certificate, and it looks the name up again and does not ask
+ * Let's Encrypt for one that does not resolve here. This decides only WHEN:
+ * built domains whose record says none or failed, at most once every
+ * SSL_RECHECK_HOURS each (one failed validation a domain per six hours is far
+ * inside Let's Encrypt's limits), a few a pass.
+ */
+async function issueMissingCertificates() {
+  if (!hestia.isLive()) return 0;
+
+  const rows = await db.query(
+    `SELECT d.*, c.hestia_user
+       FROM domains d
+       JOIN customers c ON c.id = d.customer_id
+      WHERE d.status = 'active'
+        AND d.pointed_at IS NOT NULL
+        AND d.ssl_status IN ('none', 'failed')
+        AND c.hestia_user IS NOT NULL AND c.hestia_user <> ''
+        AND (d.ssl_checked_at IS NULL
+             OR d.ssl_checked_at < DATE_SUB(NOW(), INTERVAL ? HOUR))
+      ORDER BY d.ssl_checked_at IS NOT NULL, d.ssl_checked_at ASC, d.id ASC
+      LIMIT ?`,
+    [SSL_RECHECK_HOURS, SSL_ISSUE_BATCH],
+  );
+
+  let issued = 0;
+  for (const row of rows) {
+    try {
+      // eslint-disable-next-line no-await-in-loop -- one Let's Encrypt order at a time
+      const result = await linking.issueSsl(row, { hestia_user: row.hestia_user });
+      if (result.ok && !result.skipped) {
+        issued += 1;
+        console.log(`[jobs] ${row.domain} certificate issued`);
+      } else if (result.ok && result.alreadyValid) {
+        console.log(`[jobs] ${row.domain} already had a valid certificate; record corrected`);
+      } else if (!result.ok) {
+        console.log(`[jobs] ${row.domain} certificate not issued yet: ${String(result.error || '').slice(0, 160)}`);
+      }
+      if (result.ok) {
+        await notify.resolve(row.customer_id, `domain:${row.id}:ssl_failed`).catch(() => {});
+      }
+    } catch (err) {
+      console.error(`[jobs] certificate request failed for ${row.domain}:`, err.message);
+    }
+  }
+  return issued;
 }
 
 /**
@@ -641,7 +712,8 @@ async function runOnce({ quiet = false } = {}) {
       (results.payments?.settled || 0) + (results.payments?.expired || 0)
       + (results.orders?.built || 0)
       + (results.domains?.verified || 0) + (results.domains?.dropped || 0)
-      + (results.domains?.registrants || 0) + (results.domains?.certificates || 0);
+      + (results.domains?.registrants || 0) + (results.domains?.certificates || 0)
+      + (results.domains?.issued || 0);
     if (noise && !quiet) {
       console.log(
         `[jobs] pass done in ${Date.now() - started}ms — `
@@ -651,7 +723,8 @@ async function runOnce({ quiet = false } = {}) {
         + `${results.domains?.verified || 0} domain(s) verified, `
         + `${results.domains?.dropped || 0} removed, `
         + `${results.domains?.registrants || 0} registrant(s) confirmed, `
-        + `${results.domains?.certificates || 0} certificate record(s) corrected`,
+        + `${results.domains?.certificates || 0} certificate record(s) corrected, `
+        + `${results.domains?.issued || 0} certificate(s) issued`,
       );
     }
     return results;
