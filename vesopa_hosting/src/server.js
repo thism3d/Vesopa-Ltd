@@ -61,7 +61,11 @@ app.use(express.urlencoded({ extended: false, limit: '512kb' }));
  * per JSON request and it is the only way the signature check can be honest.
  */
 app.use(express.json({
-  limit: '512kb',
+  // 512 KB is plenty for every JSON body but one: a spoken turn to Vesopa AI
+  // carries a WAV clip (16 kHz mono, ~32 KB a second) as base64, and a
+  // fifteen-second sentence is 650 KB. /ai/turn is the only route that gets
+  // near it, and it checks the clip's own size again (config.AI).
+  limit: '2mb',
   verify: (req, _res, buf) => { req.rawBody = buf; },
 }));
 app.use(cookieParser());
@@ -236,6 +240,8 @@ app.use(async (req, res, next) => {
   // currency middleware immediately below — they cannot be constants any more,
   // because what they mean depends on who is asking.
   res.locals.nameservers = config.NAMESERVERS;
+  // Whether the Vesopa AI widget is drawn (partials/head.ejs, footer.ejs).
+  res.locals.aiEnabled = Boolean(config.AI.API_KEY);
   res.locals.customer = null;
   res.locals.admin = null;
   res.locals.flash = null;
@@ -333,6 +339,14 @@ app.use('/', require('./routes/cart'));
  * customer-facing routes under here do their own signed-in check.
  */
 app.use('/', require('./routes/pay'));
+/*
+ * Vesopa AI -- the guide on every page. Only when a key is configured: with
+ * no key there is no widget (head.ejs reads res.locals.aiEnabled) and no
+ * route, so the panel is exactly what it was without it.
+ */
+if (require('./ai/bedrock').ENABLED) {
+  app.use('/ai', require('./routes/ai'));
+}
 app.use('/panel', require('./routes/panel'));
 app.use('/admin', require('./routes/admin'));
 

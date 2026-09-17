@@ -80,6 +80,7 @@
 <script src="<%= asset('/assets/js/loadbar.js') %>"></script>
 <script src="<%= asset('/assets/js/nav.js') %>"></script>
 <script src="<%= asset('/assets/js/app.js') %>" defer></script>
+<% if (typeof aiEnabled !== 'undefined' && aiEnabled) { %><script src="<%= asset('/assets/js/assistant.js') %>" defer></script><% } %>
 <% if (typeof extraJs !== 'undefined') { %><script src="<%= asset(extraJs) %>" defer></script><% } %>
 </body>
 </html>

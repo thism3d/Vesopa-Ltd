@@ -176,6 +176,28 @@ const POINT_HOSTNAME = process.env.POINT_HOSTNAME || 'point.vesopa.com';
  */
 const MAIL_HOSTNAME = process.env.MAIL_HOSTNAME || 'mail.vesopa.com';
 
+/*
+ * Vesopa AI -- the guide that hovers on every page (src/ai/). Off unless a
+ * key is set: the widget is not drawn and /ai/* answers 404, so a panel
+ * without credentials is exactly the panel there was before.
+ *
+ * The endpoint is Amazon Bedrock's OpenAI-compatible one; the two models
+ * were chosen and verified on 2026-09-17: Voxtral hears (a chat message
+ * carrying input_audio -- that endpoint has no /audio/transcriptions) and
+ * Qwen3-coder-next decides and calls tools. Nothing on it speaks; the
+ * browser's own voices do that.
+ */
+const AI = {
+  API_KEY: process.env.AI_API_KEY || '',
+  BASE_URL: String(process.env.AI_BASE_URL || 'https://bedrock-mantle.ap-south-1.api.aws/v1').replace(/\/+$/, ''),
+  PROJECT_ID: process.env.AI_PROJECT_ID || '',
+  TASK_MODEL: process.env.AI_TASK_MODEL || 'qwen.qwen3-coder-next',
+  VOICE_MODEL: process.env.AI_VOICE_MODEL || 'mistral.voxtral-small-24b-2507',
+  // How many turns one visitor may take in ten minutes, and how big a clip.
+  TURNS_PER_10_MIN: Number(process.env.AI_TURNS_PER_10_MIN) || 40,
+  MAX_AUDIO_BYTES: Number(process.env.AI_MAX_AUDIO_BYTES) || 1_500_000,
+};
+
 /** Where webmail lives. The same host — one name is one thing to remember. */
 const WEBMAIL_URL = process.env.WEBMAIL_URL || `https://${MAIL_HOSTNAME}`;
 
@@ -358,6 +380,7 @@ module.exports = {
   POINT_HOSTNAME,
   MAIL_HOSTNAME,
   WEBMAIL_URL,
+  AI,
   MAIL_PORTS,
   DOMAIN_NS_GRACE_DAYS,
   PAYMENT_SESSION_MINUTES,

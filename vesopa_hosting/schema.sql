@@ -1524,5 +1524,33 @@ CREATE TABLE IF NOT EXISTS domain_setup_steps (
   CONSTRAINT fk_domain_setup_step_run FOREIGN KEY (run_id) REFERENCES domain_setup_runs (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+-- ---------------------------------------------------------------------------
+-- Vesopa AI (src/ai/): what it remembers about a customer, and what was said.
+-- One memory row per customer -- a JSON list of short facts the assistant
+-- chose to keep ("trading as The Bridge", "wants example.co.uk"). The
+-- transcript is the last two hundred lines, for continuity between visits;
+-- the model reads only the last couple of dozen. A visitor who is not signed
+-- in has neither here: the browser holds theirs until they sign in, then
+-- hands it over (POST /ai/import). Both go with the customer row.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS ai_memory (
+  customer_id  INT UNSIGNED NOT NULL,
+  content      JSON NOT NULL,
+  updated_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (customer_id),
+  CONSTRAINT fk_ai_memory_customer FOREIGN KEY (customer_id) REFERENCES customers (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE IF NOT EXISTS ai_messages (
+  id           INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  customer_id  INT UNSIGNED NOT NULL,
+  role         ENUM('user','assistant') NOT NULL,
+  content      TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_ai_messages_customer (customer_id, id),
+  CONSTRAINT fk_ai_messages_customer FOREIGN KEY (customer_id) REFERENCES customers (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
 CALL vesopa_fix_collations();
 DROP PROCEDURE IF EXISTS vesopa_fix_collations;

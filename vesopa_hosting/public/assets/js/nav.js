@@ -57,7 +57,7 @@
   var bar = window.VesopaLoadbar || { start: function () {}, done: function () {} };
 
   /* Scripts that must not run twice. Matched on path, ignoring the ?v= stamp. */
-  var SHARED = /\/assets\/js\/(app|panel|loadbar|nav)\.js$/;
+  var SHARED = /\/assets\/js\/(app|panel|loadbar|nav|assistant)\.js$/;
 
   function isShared(src) {
     try {
@@ -289,11 +289,30 @@
   function go(url, push) {
     bar.start();
     fetch(url, {
-      headers: { 'x-requested-with': 'vesopa-nav' },
+      headers: { 'x-vesopa-nav': '1', 'x-requested-with': 'vesopa-nav' },
       credentials: 'same-origin',
       redirect: 'follow',
     })
       .then(function (response) {
+        // A GET that redirects — "add to basket" links, a plan's order link —
+        // answers 204 with the destination in a header, the same as a form
+        // post (below); the router goes there itself rather than reloading.
+        var moved = response.headers.get('x-vesopa-location');
+        if (moved) {
+          var next;
+          try {
+            next = new URL(moved, window.location.href);
+          } catch (e) {
+            window.location.assign(moved);
+            return null;
+          }
+          if (next.origin !== window.location.origin || NEVER.test(next.pathname)) {
+            window.location.assign(next.href);
+            return null;
+          }
+          go(next.href, push);
+          return null;
+        }
         // A redirect that landed somewhere else — a session expiring and
         // bouncing to /login, say — is handed to the browser, so the address
         // bar tells the truth about where the person actually is.

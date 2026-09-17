@@ -48,6 +48,10 @@
       admin opt out with `sections: false` rather than pay for it on every screen. %>
   <% if (typeof sections === 'undefined' || sections) { %><link rel="stylesheet" href="<%= asset('/assets/css/sections.css') %>"><% } %>
   <% if (typeof extraCss !== 'undefined') { %><link rel="stylesheet" href="<%= asset(extraCss) %>"><% } %>
+  <%# Vesopa AI, the guide on the right of every page -- only when the server
+      has a key for it (res.locals.aiEnabled). The script comes with the
+      shared ones at the end of the body. %>
+  <% if (typeof aiEnabled !== 'undefined' && aiEnabled) { %><link rel="stylesheet" href="<%= asset('/assets/css/assistant.css') %>"><% } %>
   <%#
     The loading bar, before first paint.
 
@@ -84,7 +88,8 @@
     when a 500-mailbox total runs past four figures. %>
 <body data-cur-symbol="<%= currency.symbol %>"
       data-cur-code="<%= currency.code %>"
-      data-cur-locale="<%= currency.locale %>"<% if (typeof bodyClass !== 'undefined') { %> class="<%= bodyClass %>"<% } %><%#
+      data-cur-locale="<%= currency.locale %>"
+      data-ai="<%= (typeof aiEnabled !== 'undefined' && aiEnabled && (currentPath || '').indexOf('/admin') !== 0) ? '1' : '0' %>"<% if (typeof bodyClass !== 'undefined') { %> class="<%= bodyClass %>"<% } %><%#
         A page whose script holds state the no-reload router would strand —
         a websocket, a poller, its own history entries — is reached and left
         by a real navigation. nav.js reads this and stands aside. %><% if (typeof nativeNav !== 'undefined' && nativeNav) { %> data-native-nav<% } %>>
