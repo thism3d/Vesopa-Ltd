@@ -1,0 +1,12 @@
+#!/bin/bash
+# info: release the port allocated to a user's Node.js app
+# options: USER DOMAIN
+set -u
+REGISTRY=/usr/local/hestia/data/nodeapp/ports.conf
+LOCK=/usr/local/hestia/data/nodeapp/.portlock
+user="${1:-}"; domain="${2:-}"
+[[ -n "$user" && -n "$domain" ]] || { echo "usage: v-release-nodejs-port USER DOMAIN" >&2; exit 1; }
+[[ -f "$REGISTRY" ]] || exit 0
+exec 9>"$LOCK"; flock 9
+tmp=$(mktemp); awk -v u="$user" -v d="$domain" '!($1==u && $2==d)' "$REGISTRY" > "$tmp"
+cat "$tmp" > "$REGISTRY"; rm -f "$tmp"

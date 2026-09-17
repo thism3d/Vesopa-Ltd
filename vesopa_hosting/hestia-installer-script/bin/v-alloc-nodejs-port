@@ -1,0 +1,38 @@
+#!/bin/bash
+# info: allocate a loopback port for a user's Node.js app
+# options: USER DOMAIN
+#
+# Prints the port for USER/DOMAIN, allocating one if needed. Idempotent:
+# calling it twice for the same domain returns the same port.
+# Range sits below the kernel ephemeral range (32768-60999) so an outbound
+# connection can never steal an app's port.
+set -u
+PORT_MIN=20000
+PORT_MAX=29999
+REGISTRY=/usr/local/hestia/data/nodeapp/ports.conf
+LOCK=/usr/local/hestia/data/nodeapp/.portlock
+
+user="${1:-}"; domain="${2:-}"
+[[ -n "$user" && -n "$domain" ]] || { echo "usage: v-alloc-nodejs-port USER DOMAIN" >&2; exit 1; }
+
+mkdir -p "$(dirname "$REGISTRY")"
+touch "$REGISTRY" "$LOCK"
+chmod 600 "$REGISTRY"
+
+exec 9>"$LOCK"
+flock 9 || { echo "ERROR: could not lock port registry" >&2; exit 1; }
+
+existing=$(awk -v u="$user" -v d="$domain" '$1==u && $2==d {print $3; exit}' "$REGISTRY")
+if [[ -n "$existing" ]]; then echo "$existing"; exit 0; fi
+
+listening=$(ss -lntH 2>/dev/null | awk '{print $4}' | sed 's/.*://' | sort -un)
+for ((p=PORT_MIN; p<=PORT_MAX; p++)); do
+	grep -qE "[[:space:]]$p\$" "$REGISTRY" && continue
+	grep -qx "$p" <<<"$listening" && continue
+	printf '%s %s %s\n' "$user" "$domain" "$p" >> "$REGISTRY"
+	echo "$p"
+	exit 0
+done
+
+echo "ERROR: no free port in $PORT_MIN-$PORT_MAX" >&2
+exit 1

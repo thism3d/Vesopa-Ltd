@@ -95,6 +95,18 @@ async function acceptedAliases({ fresh = false } = {}) {
   return accepted;
 }
 
+/** The nameservers in a list that have no address at all. */
+async function deadOnes(names) {
+  const resolver = makeResolver();
+  const out = [];
+  for (const ns of names) {
+    const v4 = await resolver.resolve4(ns).catch(() => []);
+    const v6 = v4.length ? [] : await resolver.resolve6(ns).catch(() => []);
+    if (!v4.length && !v6.length) out.push(ns);
+  }
+  return out;
+}
+
 /**
  * Is this domain delegated to us?
  *
@@ -124,9 +136,20 @@ async function acceptedAliases({ fresh = false } = {}) {
  *
  * Callers that want to warn about the extras can have them from `check()`.
  */
-function matchesOurs(list, aliases = []) {
+function matchesOurs(list, aliases = [], dead = []) {
   const found = (list || []).map(normalise).filter(Boolean);
   if (!found.length || !OURS.length) return false;
+  /*
+   * A NAMESERVER THAT DOES NOT EXIST IS NOT A COMPETITOR. pasificgrowth.site
+   * was delegated to `ns.onzep.uk` (a typo with no address) and
+   * `ns1.onzep.uk` (ours): one live nameserver, and it is ours — refusing
+   * that as "half a delegation" kept a site down that resolved perfectly. A
+   * delegation whose only LIVE nameservers are ours is ours; the dead name is
+   * reported in `extras` so the customer can fix it at the registrar.
+   */
+  const live = found.filter((ns) => !dead.includes(ns));
+  const ours = new Set([...OURS, ...aliases]);
+  if (live.length && live.every((ns) => ours.has(ns))) return true;
   /*
    * Counted by MACHINE, not by name. NS1 and NS_ALIASES are aligned by
    * position — `ns1.vesopa.com` and `ns1.onzep.uk` are the first machine
@@ -231,7 +254,8 @@ async function check(domain) {
 
   // The registry answered and named somebody. That is the delegation.
   if (atRegistry.ok && atRegistry.nameservers.length) {
-    const matched = matchesOurs(atRegistry.nameservers, aliases);
+    const dead = await deadOnes(extrasIn(atRegistry.nameservers, aliases));
+    const matched = matchesOurs(atRegistry.nameservers, aliases, dead);
     return {
       matched,
       via: 'registry',
@@ -239,6 +263,7 @@ async function check(domain) {
       // Present but not blocking — a registrar's verification record, or a
       // leftover delegation the customer has not cleaned up yet.
       extras: extrasIn(atRegistry.nameservers, aliases).sort(),
+      dead,
       resolved: live.nameservers.slice().sort(),
       /*
        * DELEGATED TO US AND NOT ANSWERING is the state worth naming, because

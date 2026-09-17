@@ -172,10 +172,17 @@ def web_domain_exists(user, domain):
     return domain in hestia(f"v-list-web-domains {user} plain | cut -f1").split()
 
 
-def node_app(user, domain, old_app_dir, old_env_path, db_renames, start="src/server.js", node="22"):
-    """Move a Node app under a domain the panel already has, as a panel Node app."""
+def node_app(user, domain, old_app_dir, old_env_path, db_renames, start="src/server.js", node="22", keep_modules=False):
+    """Move a Node app under a domain the panel already has, as a panel Node app.
+
+    `keep_modules`: carry node_modules as they are instead of `npm ci` — for an
+    app whose generated code (a Prisma client) lives there and cannot be
+    rebuilt from what ships with it. Same Node major, same platform, so it is
+    exactly what ran before.
+    """
     app_dir = f"/home/{user}/web/{domain}/private/nodeapp"
-    log(f"    rsync app → {app_dir}: {rsync(old_app_dir, app_dir, user, excludes=['node_modules', 'logs', '.pm2'])}")
+    excludes = ['logs', '.pm2'] + ([] if keep_modules else ['node_modules'])
+    log(f"    rsync app → {app_dir}: {rsync(old_app_dir, app_dir, user, excludes=excludes)}")
     # The real .env, kept aside: v-add-nodejs-app overwrites it with a stub.
     cloud(f"cp {app_dir}/.env /root/migrate-env-{domain} 2>/dev/null")
     already = hestia(f"v-list-nodejs-apps {user} 2>/dev/null | grep -c ' {domain} \\|^{domain}\\b' || true").strip()
@@ -188,8 +195,9 @@ def node_app(user, domain, old_app_dir, old_env_path, db_renames, start="src/ser
         f"cp /root/migrate-env-{domain} {app_dir}/.env && sed -i -E 's/^PORT=.*/PORT={port}/; {sed}' {app_dir}/.env "
         f"&& grep -q '^PORT=' {app_dir}/.env || echo PORT={port} >> {app_dir}/.env; chown {user}:{user} {app_dir}/.env"
     )
+    install = "true" if keep_modules else "npm ci --omit=dev --no-audit --no-fund 2>&1 | tail -2"
     out = cloud(
-        f"su - {user} -c 'cd {app_dir} && export PATH=/opt/nodejs/{node}/bin:$PATH && npm ci --omit=dev --no-audit --no-fund 2>&1 | tail -2 "
+        f"su - {user} -c 'cd {app_dir} && export PATH=/opt/nodejs/{node}/bin:$PATH && {install} "
         f"&& PM2_HOME=/home/{user}/.pm2 pm2 restart {domain} --update-env >/dev/null && PM2_HOME=/home/{user}/.pm2 pm2 save >/dev/null && echo started'",
         timeout=1200,
     )
@@ -379,6 +387,63 @@ def phase_personal():
     mail_domain("muzahid", "u265966", "onzep.uk")
 
 
+def pg_database(session, user, suffix, dump_on_cloud):
+    """A PostgreSQL database made through the panel's Databases page, then filled from a dump.
+
+    The panel mints the password and shows it exactly once, on the page after
+    creation — it is read from there, as the customer would read it, and the
+    app's DATABASE_URL is written from it. Returns (name, password).
+    """
+    full = f"{user}_{suffix}"
+    if full in hestia(f"v-list-databases {user} plain | cut -f1"):
+        # Already made: the only way to a known password is the panel's own reset.
+        session.get(f"{CLOUD}/panel/databases")
+        r = session.post(f"{CLOUD}/panel/databases/reset", data={"_csrf": session.cookies.get("vh_csrf"), "name": full}, allow_redirects=True)
+        log(f"    {full} exists — password reset through the panel")
+    else:
+        session.get(f"{CLOUD}/panel/databases")
+        r = session.post(f"{CLOUD}/panel/databases/create", data={"_csrf": session.cookies.get("vh_csrf"), "name": suffix, "type": "pgsql"}, allow_redirects=True)
+        log(f"    panel create {full} (pgsql): {r.status_code}")
+    m = re.search(r'data-copy="postgresql://[^:]+:([^@"]+)@', r.text)
+    if not m:
+        raise SystemExit(f"could not read the one-time password for {full} from the page")
+    password = m.group(1)
+    out = cloud(
+        f"su - postgres -c \"psql -d {full} -c 'CREATE EXTENSION IF NOT EXISTS ltree; CREATE EXTENSION IF NOT EXISTS pgcrypto; CREATE EXTENSION IF NOT EXISTS \\\"uuid-ossp\\\";'\" 2>&1 | tail -1; "
+        f"PGPASSWORD={shlex.quote(password)} psql -q -h localhost -U {full} -d {full} -v ON_ERROR_STOP=0 -f {dump_on_cloud} 2>&1 | grep -c ERROR; "
+        f"su - postgres -c \"psql -Atd {full} -c \\\"SELECT count(*) FROM information_schema.tables WHERE table_schema='public'\\\"\""
+    )
+    lines = out.strip().splitlines()
+    log(f"    restored {dump_on_cloud} → {full}: {lines[-1] if lines else '?'} tables, {lines[-2] if len(lines) > 1 else '?'} errors")
+    return full, password
+
+
+CUSTOMERS = [
+    # customer id, old hestia user, new hestia user, apex, old db, new db suffix, backend pm2 name
+    {"id": 11, "old": "nasim", "user": "u265969", "apex": "pasificgrowth.site", "olddb": "pasificdb", "db": "pasificdb", "dbrole": "pasificgrowth"},
+    {"id": 12, "old": "tradebridge", "user": "u265970", "apex": "royalgrow.work", "olddb": "royaldb", "db": "royaldb", "dbrole": "royalgrow"},
+]
+
+
+def phase_customers():
+    """Two customers moved whole: apex + api as panel domains, PostgreSQL through the panel, both Node apps, mail."""
+    for c in CUSTOMERS:
+        apex, api, user, old_user = c["apex"], f"api.{c['apex']}", c["user"], c["old"]
+        log(f"▶ {apex} → customer {c['id']} ({user})")
+        s = mint(c["id"])
+        if not web_domain_exists(user, apex):
+            panel_add_domain(s, apex, want_dns=True, want_mail=True)
+        if not web_domain_exists(user, api):
+            panel_add_domain(s, api)
+        # The database: same password the app already carries in DATABASE_URL.
+        full, password = pg_database(s, user, c["db"], f"/root/migrate/backups/{c['olddb']}.sql")
+        new_url = f"postgresql://{full}:{password}@localhost:5432/{full}"
+        # Backend, then frontend — the frontend's default API base is the api hostname, unchanged.
+        node_app(user, api, f"/home/{old_user}/web/{api}/private/nodeapp", "", [(r"^DATABASE_URL=.*$", "DATABASE_URL=" + new_url.replace("/", r"\/").replace("&", r"\&"))], start="dist/boot.js", keep_modules=True)
+        node_app(user, apex, f"/home/{old_user}/web/{apex}/private/nodeapp", "", [], start="server.cjs", keep_modules=True)
+        mail_domain(old_user, user, apex)
+
+
 def phase_dns():
     """Records the old zones had that were about OTHER hosts — carried, never the old box's address."""
     log("▶ dns extras")
@@ -423,8 +488,9 @@ def phase_mailsync():
     """
     log("▶ final mail re-sync (additive)")
     for old_user, user, domain in [("vesopa", "vesopasoftware", "vesopaepos.com"), ("vesopa", "vesopasoftware", "vesopaepos.co.uk"),
-                                   ("vesopa", "vesopasoftware", "vesopaepos.store"), ("amzro", "u265966", "amzro.com"),
-                                   ("muzahid", "u265966", "onzep.uk")]:
+                                   ("amzro", "u265966", "amzro.com"), ("muzahid", "u265966", "onzep.uk"),
+                                   ("muzahid", "u265966", "muzahidislam.com"), ("nasim", "u265969", "pasificgrowth.site"),
+                                   ("tradebridge", "u265970", "royalgrow.work")]:
         for name in old(f"ls /home/{old_user}/mail/{domain}/ 2>/dev/null").split():
             size = rsync(f"/home/{old_user}/mail/{domain}/{name}", f"/home/{user}/mail/{domain}/{name}", user, delete=False)
             cloud(f"chown -R {user}:mail /home/{user}/mail/{domain}/{name}")
@@ -443,7 +509,7 @@ def phase_check():
 
 PHASES = {
     "databases": phase_databases, "backoffice": phase_backoffice, "web": phase_web, "sites": phase_sites,
-    "mail": phase_mail, "personal": phase_personal, "dns": phase_dns, "mailsync": phase_mailsync, "check": phase_check,
+    "mail": phase_mail, "personal": phase_personal, "customers": phase_customers, "dns": phase_dns, "mailsync": phase_mailsync, "check": phase_check,
 }
 
 if __name__ == "__main__":

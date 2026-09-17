@@ -47,7 +47,12 @@ const { normaliseEmail } = require('../src/normalise');
  * decision to give a human being a password on a platform that has decided not
  * to have them, and should be as awkward as editing a file.
  */
-const ALLOWED = ['manager@vesopa.co.uk'];
+/*
+ * 2026-09-17: the owner added two hosting customers moved off the old server,
+ * by name, for whom he chose a password himself — "create an account … with
+ * password". The list stays a list.
+ */
+const ALLOWED = ['manager@vesopa.co.uk', 'nasim@vesopa.site', 'habib@vesopa.site'];
 
 async function main() {
   const email = normaliseEmail(process.argv[2]);

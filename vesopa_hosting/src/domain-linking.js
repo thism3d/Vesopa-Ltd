@@ -496,7 +496,9 @@ async function verify(domainRow, { customer = null, onStep = noStep } = {}) {
   if (!isSubdomain) {
     onStep('delegation', 'running', 'Asking the registry and the public resolvers, not our own records');
     ns = await nameservers.check(domainRow.domain);
-    if (ns.matched) {
+    if (ns.matched && ns.dead && ns.dead.length) {
+      onStep('delegation', 'ok', `Delegated to us — but ${ns.dead.join(', ')} in the delegation does not exist; replace it with ${NAMESERVERS[1] || NAMESERVERS[0]} at the registrar`);
+    } else if (ns.matched) {
       onStep('delegation', 'ok', `Delegated to us${ns.via === 'registry' ? ' at the registry' : ''}`);
     } else if (ns.unregistered) {
       onStep('delegation', 'failed', 'The registry says this name is not registered');
