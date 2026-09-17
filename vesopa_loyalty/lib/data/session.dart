@@ -10,8 +10,9 @@ import 'brand.dart';
 /// Which venue this app is, and where its server is.
 ///
 /// A BROWSER KNOWS FROM ITS ADDRESS. The app is served at
-/// `https://menu.vesopaepos.com/app/<slug>/`, so the venue is in the path and
-/// there is nothing to ask.
+/// `https://loyalty.vesopa.com/<slug>/`, so the venue is in the path and there
+/// is nothing to ask. (It used to be `menu.vesopaepos.com/app/<slug>/`, which
+/// now redirects there.)
 ///
 /// NOTHING ELSE HAS AN ADDRESS. Windows, Android and an iPhone have only what
 /// they were built with or what somebody told them, so the venue is chosen
@@ -34,16 +35,19 @@ class AppConfig {
   static const buildSlug = String.fromEnvironment('LOYALTY_SLUG');
   static const apiBase = String.fromEnvironment(
     'LOYALTY_API',
-    defaultValue: 'https://menu.vesopaepos.com',
+    defaultValue: 'https://loyalty.vesopa.com',
   );
 
   /// The venue in this page's address, in a browser.
   static String? slugFromUrl() {
     if (!kIsWeb) return null;
-    final segments = Uri.base.pathSegments;
+    final segments = Uri.base.pathSegments.where((s) => s.isNotEmpty).toList();
+    // The old address, /app/<slug>/, for a page opened before the redirect.
     final i = segments.indexOf('app');
-    if (i >= 0 && i + 1 < segments.length && segments[i + 1].isNotEmpty) {
-      return segments[i + 1];
+    if (i >= 0 && i + 1 < segments.length) return segments[i + 1];
+    // loyalty.vesopa.com/<slug>/
+    if (segments.isNotEmpty && RegExp(r'^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$').hasMatch(segments.first)) {
+      return segments.first;
     }
     return null;
   }

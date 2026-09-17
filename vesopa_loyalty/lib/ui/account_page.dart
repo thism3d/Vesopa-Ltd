@@ -705,7 +705,7 @@ final deletionProvider = FutureProvider.autoDispose<Map<String, dynamic>?>((ref)
 /// Where the same request can be made, seen or cancelled without the app --
 /// the page the store listing links to.
 Uri deletionPage(String slug) => Uri.parse(
-  'https://auth.vesopa.com/delete-account?app=vesopa-loyalty&venue=${Uri.encodeComponent(slug)}',
+  'https://auth.vesopa.com/delete-account/${Uri.encodeComponent(slug)}',
 );
 
 /// "Delete account and data", which Google Play requires inside the app.

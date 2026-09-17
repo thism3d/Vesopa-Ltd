@@ -37,7 +37,7 @@
    * and shorter than anybody's patience, and the request that follows is one
    * the server is happy to receive without a token.
    */
-  var PATIENCE_MS = 2500;
+  var PATIENCE_MS = 2000;
 
   function loadScript() {
     return new Promise(function (resolve) {

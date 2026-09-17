@@ -19,8 +19,8 @@ const jwt = require('jsonwebtoken');
 const mysql = require('mysql2/promise');
 
 const OFFICE = 'manager@vesopa.co.uk';
-const SLUG = 'vesopa-test';
-const BASE = process.env.VERIFY_BASE || 'https://menu.vesopaepos.com';
+const SLUG = 'thevesopakitchen';
+const BASE = process.env.VERIFY_BASE || 'https://loyalty.vesopa.com';
 
 let passed = 0;
 const failures = [];

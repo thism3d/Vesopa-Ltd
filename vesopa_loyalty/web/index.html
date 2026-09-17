@@ -3,25 +3,39 @@
 <head>
   <!--
     One build, every venue. The server (src/loyalty_app.js) serves this page at
-    /app/<slug>/ and writes the venue in: its address over /app/__SLUG__/, its
-    name, colour, background and icon over the other placeholders. Built with
-    --base-href /app/__SLUG__/ so every file is fetched from the venue's own
-    address.
+    loyalty.vesopa.com/<slug>/ and writes the venue in: its address over the
+    SLUG placeholder, its name, description, colour, background, icon and public
+    address over the others. Built with a base href of the SLUG placeholder so
+    every file is fetched from the venue's own address.
   -->
   <base href="$FLUTTER_BASE_HREF">
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="description" content="__APP_NAME__: your card, your points and our latest news.">
+  <meta name="description" content="__DESCRIPTION__">
   <meta name="theme-color" content="__THEME__">
+  <link rel="canonical" href="__URL__">
+
+  <!-- What a link to the app shows when it is shared: a message, a social post. -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="__APP_NAME__">
+  <meta property="og:title" content="__APP_NAME__">
+  <meta property="og:description" content="__DESCRIPTION__">
+  <meta property="og:url" content="__URL__">
+  <meta property="og:image" content="__OG_IMAGE__">
+  <meta property="og:locale" content="en_GB">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="__APP_NAME__">
+  <meta name="twitter:description" content="__DESCRIPTION__">
+  <meta name="twitter:image" content="__OG_IMAGE__">
 
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="__APP_NAME__">
   <link rel="apple-touch-icon" href="__ICON__">
-  <link rel="icon" href="__ICON__">
+  <link rel="icon" type="image/png" href="__ICON__">
 
   <title>__APP_NAME__</title>
   <link rel="manifest" href="manifest.webmanifest">

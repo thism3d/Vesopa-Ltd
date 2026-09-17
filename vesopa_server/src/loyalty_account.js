@@ -17,6 +17,8 @@
  * software on somebody's phone and cannot be trusted to have stopped drawing
  * it. Turning off passwords has to mean passwords stop working.
  */
+const { callbackHost } = require('./loyalty_host');
+const idtoken = require('./vesopa_idtoken');
 const crypto = require('crypto');
 
 const express = require('express');
@@ -357,114 +359,16 @@ module.exports = function loyaltyAccountRoutes(deps) {
     }
   });
 
-  /**
-   * Swap an authorization code for an id token, server to server.
-   *
-   * PKCE carries the proof, so this works whether or not the client has a
-   * secret -- and the loyalty client is a public one, because the app it
-   * serves is a web page anybody can read.
-   */
-  async function exchangeCode(code, verifier, redirectUri) {
-    const issuer = String(process.env.VESOPA_AUTH_ISSUER || '').replace(/\/$/, '');
-    const clientId = String(process.env.VESOPA_LOYALTY_CLIENT_ID || '');
-    if (!issuer || !clientId || !code || !verifier) return null;
-    try {
-      const form = new URLSearchParams({
-        grant_type: 'authorization_code',
-        code,
-        code_verifier: verifier,
-        client_id: clientId,
-        redirect_uri: redirectUri || `https://${process.env.MENU_HOST || 'menu.vesopaepos.com'}/app/vesopa/callback`,
-      });
-      const secret = process.env.VESOPA_LOYALTY_CLIENT_SECRET;
-      if (secret) form.set('client_secret', secret);
-      const res = await fetch(`${issuer}/oauth/token`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: form,
-        signal: AbortSignal.timeout(12000),
-      });
-      if (!res.ok) {
-        console.warn('[loyalty_account] token exchange refused:', res.status, (await res.text()).slice(0, 200));
-        return null;
-      }
-      const data = await res.json();
-      return data && data.id_token ? String(data.id_token) : null;
-    } catch (e) {
-      console.warn('[loyalty_account] token exchange failed:', e.message);
-      return null;
-    }
-  }
-
   /*
-   * The signing keys, cached, with the stale set kept as a fallback.
-   *
-   * THE PATH IS /jwks.json, NOT /.well-known/jwks.json. Guessing the
-   * conventional path is what broke this: the fetch 404'd, the verifier
-   * answered null, and every Continue with Vesopa was refused with a message
-   * that blamed the sign-in. The discovery document publishes `jwks_uri` and
-   * that is the authority -- so it is read from there and only falls back to
-   * the known path if discovery itself cannot be reached.
+   * Continue with Vesopa's server half -- the code swap and the id token check
+   * -- lives in src/vesopa_idtoken.js, shared with the loyalty website's
+   * administrator sign-in.
    */
-  let jwksCache = { at: 0, keys: null };
-  const JWKS_TTL_MS = 60 * 60 * 1000;
+  const exchangeCode = (code, verifier, redirectUri) => idtoken.exchangeCode({
+    code, verifier, redirectUri: redirectUri || `https://${callbackHost()}/app/vesopa/callback`,
+  });
+  const verifyVesopaToken = (idToken) => idtoken.verify(idToken);
 
-  async function signingKeys() {
-    if (jwksCache.keys && Date.now() - jwksCache.at < JWKS_TTL_MS) return jwksCache.keys;
-    const issuer = String(process.env.VESOPA_AUTH_ISSUER || '').replace(/\/$/, '');
-    try {
-      let uri = `${issuer}/jwks.json`;
-      try {
-        const disco = await fetch(`${issuer}/.well-known/openid-configuration`,
-          { signal: AbortSignal.timeout(8000) });
-        if (disco.ok) {
-          const doc = await disco.json();
-          if (doc && typeof doc.jwks_uri === 'string') uri = doc.jwks_uri;
-        }
-      } catch {
-        // Discovery is a convenience. The known path still works.
-      }
-      const res = await fetch(uri, { signal: AbortSignal.timeout(8000) });
-      if (!res.ok) throw new Error(`jwks ${res.status}`);
-      const body = await res.json();
-      if (!body || !Array.isArray(body.keys) || !body.keys.length) throw new Error('jwks was empty');
-      jwksCache = { at: Date.now(), keys: body.keys };
-      return body.keys;
-    } catch (e) {
-      // Stale beats nothing: an hour-old key set verifies today's tokens, and
-      // a member signing in on a bad line should not fail for that.
-      if (jwksCache.keys) return jwksCache.keys;
-      throw e;
-    }
-  }
-
-  /**
-   * Check an id token from Vesopa Auth against its published keys.
-   *
-   * THE ALGORITHM COMES FROM THE KEY, never from the token's own header.
-   * Trusting the header is the `alg: none` hole, where an attacker declares
-   * the token unsigned and every check after it passes. The header is used
-   * only to say WHICH key, which it cannot lie about usefully.
-   */
-  async function verifyVesopaToken(idToken) {
-    const issuer = String(process.env.VESOPA_AUTH_ISSUER || '').replace(/\/$/, '');
-    const clientId = String(process.env.VESOPA_LOYALTY_CLIENT_ID || '');
-    if (!issuer || !clientId || !idToken) return null;
-    try {
-      const jwt = require('jsonwebtoken');
-      const header = JSON.parse(Buffer.from(String(idToken).split('.')[0], 'base64url').toString());
-      const keys = await signingKeys();
-      const jwk = keys.find((k) => k.kid === header.kid) || (keys.length === 1 ? keys[0] : null);
-      if (!jwk) return null;
-      const algorithms = [jwk.alg || (jwk.kty === 'EC' ? 'ES256' : 'RS256')];
-      const pem = crypto.createPublicKey({ key: jwk, format: 'jwk' })
-        .export({ type: 'spki', format: 'pem' });
-      return jwt.verify(idToken, pem, { algorithms, issuer, audience: clientId });
-    } catch (e) {
-      console.warn('[loyalty_account] vesopa token refused:', e.message);
-      return null;
-    }
-  }
   // ---- The member's own account --------------------------------------------
 
   /** Who they are and what they can prove, for the account page. */

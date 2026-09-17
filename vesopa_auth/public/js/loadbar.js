@@ -155,7 +155,17 @@
       if (!form || form.hasAttribute('data-no-loadbar')) return;
       start();
       setTimeout(function () {
-        if (event.defaultPrevented) done();
+        /*
+         * A form held back while its reCAPTCHA token is made is NOT a cancelled
+         * submit: it is re-submitted in a moment. Ending the bar here left the
+         * slowest part of signing in -- Google's script on a phone, a first
+         * visit -- with no sign that anything was happening at all.
+         */
+        var waiting = form.hasAttribute('data-captcha-bound') && !form.hasAttribute('data-captcha-done');
+        if (event.defaultPrevented && !waiting) {
+          done();
+          settle(form);
+        }
       }, 0);
 
       /*
@@ -171,9 +181,54 @@
         button.setAttribute('aria-disabled', 'true');
         button.classList.add('is-working');
       }
+
+      /*
+       * THE CARD SAYS IT TOO, after a moment.
+       *
+       * A thin bar and a small spinner were all there was, and on a slow phone
+       * a sign-in that takes a few seconds read as a page that had stopped. The
+       * veil only appears if the wait outlasts a blink, so a fast answer does
+       * not flash.
+       *
+       * And nothing is left waiting for ever: if no page has arrived after
+       * STUCK_MS the form is sent the plain way, which the browser always
+       * finishes one way or another.
+       */
+      var card = form.closest('.auth-card');
+      if (card && !form.hasAttribute('data-no-veil')) {
+        clearTimeout(form.__veil);
+        form.__veil = setTimeout(function () { card.classList.add('is-busy'); }, 450);
+      }
+      clearTimeout(form.__stuck);
+      form.__stuck = setTimeout(function () {
+        if (!document.contains(form) || form.hasAttribute('data-no-router')) return;
+        form.setAttribute('data-no-router', '');
+        form.setAttribute('data-captcha-done', '');
+        try {
+          form.submit();
+        } catch (e) {
+          settle(form);
+        }
+      }, STUCK_MS);
     },
     true
   );
+
+  var STUCK_MS = 20000;
+
+  /** Everything a submit turned on, turned off: the page stayed where it was. */
+  function settle(form) {
+    if (!form) return;
+    clearTimeout(form.__veil);
+    clearTimeout(form.__stuck);
+    var card = form.closest && form.closest('.auth-card');
+    if (card) card.classList.remove('is-busy');
+    var working = form.querySelectorAll('.is-working');
+    for (var i = 0; i < working.length; i += 1) {
+      working[i].classList.remove('is-working');
+      working[i].removeAttribute('aria-disabled');
+    }
+  }
 
   /**
    * A link the router will not take: another origin, or one of the protocol
@@ -227,6 +282,13 @@
     for (var i = 0; i < working.length; i += 1) {
       working[i].classList.remove('is-working');
       working[i].removeAttribute('aria-disabled');
+    }
+    var busy = document.querySelectorAll('.is-busy');
+    for (var j = 0; j < busy.length; j += 1) busy[j].classList.remove('is-busy');
+    var forms = document.querySelectorAll('form');
+    for (var k = 0; k < forms.length; k += 1) {
+      clearTimeout(forms[k].__veil);
+      clearTimeout(forms[k].__stuck);
     }
   });
 })();

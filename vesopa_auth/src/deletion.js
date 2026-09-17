@@ -129,12 +129,14 @@ async function callProvider(provider, action, payload) {
 /**
  * The app a person came from, for the page heading.
  *
- * `?app=vesopa-loyalty&venue=vesopa-test` is what The Vesopa Kitchen's store
- * listing links to, and Google asks that the page name the app as the listing
- * does — so the venue's own app name is asked of the provider rather than
- * showing "Vesopa Loyalty", which no member has ever seen.
+ * /delete-account/thevesopakitchen is what The Vesopa Kitchen's store listing
+ * links to, and Google asks that the page name the app as the listing does —
+ * so the venue's own app name is asked of the provider rather than showing
+ * "Vesopa Loyalty", which no member has ever seen. With only a venue, each
+ * provider is asked in turn; the first that knows it is the app.
  */
 async function describe({ app, venue }) {
+  if (!app && venue) return describeVenue(venue);
   if (!app) return null;
   const application = await db.one(
     'SELECT id, slug, name, app_display_name FROM applications WHERE slug = ?',
@@ -154,6 +156,23 @@ async function describe({ app, venue }) {
     }
   }
   return { applicationId: application.id, slug: application.slug, venue: venue || '', label };
+}
+
+async function describeVenue(venue) {
+  const clean = String(venue || '').slice(0, 80);
+  if (!/^[a-z0-9](?:[a-z0-9-]{1,62}[a-z0-9])?$/.test(clean)) return null;
+  for (const provider of await providers()) {
+    try {
+      // eslint-disable-next-line no-await-in-loop -- a handful of providers
+      const answer = await callProvider(provider, 'describe', { venue: clean });
+      if (answer && answer.name) {
+        return { applicationId: provider.application_id, slug: provider.slug, venue: clean, label: String(answer.name).slice(0, 120) };
+      }
+    } catch (error) {
+      console.error(`[deletion] describe at ${provider.slug} failed:`, error.message);
+    }
+  }
+  return null;
 }
 
 /**

@@ -7,10 +7,10 @@ void main() {
     test('one venue: signed in, and told where', () {
       final way = VesopaWayIn.fromJson({
         'token': 't',
-        'venue': {'slug': 'vesopa-test', 'name': 'The Vesopa Kitchen'},
+        'venue': {'slug': 'thevesopakitchen', 'name': 'The Vesopa Kitchen'},
       });
       expect(way.token, 't');
-      expect(way.venue?.slug, 'vesopa-test');
+      expect(way.venue?.slug, 'thevesopakitchen');
       expect(way.venues, isEmpty);
     });
 

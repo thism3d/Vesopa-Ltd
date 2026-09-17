@@ -12,12 +12,12 @@ the launcher icon -- which still needs a device.
 
 WHAT IT DOES, step by step, mirroring lib/:
 
-  1. GET  /loyalty/v1/app/vesopa-test            brand at start-up (session.dart)
+  1. GET  /loyalty/v1/app/thevesopakitchen            brand at start-up (session.dart)
   2. Continue with Vesopa the native way (platform/vesopa_sso_io.dart): PKCE,
      a loopback listener on a port the OS picks, auth.vesopa.com/oauth/authorize
      in a real browser, the code back on 127.0.0.1, /oauth/token for the id
      token, nonce checked.
-  3. POST /loyalty/v1/app/vesopa-test/vesopa    platform=android  -> app token
+  3. POST /loyalty/v1/app/thevesopakitchen/vesopa    platform=android  -> app token
   4. POST /loyalty/v1/me/push  kind=fcm           the phone's registration
   5. GET  /loyalty/v1/me, /me/messages, /me/account   the card and the inbox
   6. Back office: /api/loyalty-app stats.phones went up by one,
@@ -52,9 +52,9 @@ from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[2]
 AUTH = "https://auth.vesopa.com"
-MENU = "https://menu.vesopaepos.com"
+MENU = "https://loyalty.vesopa.com"
 BACKOFFICE = "https://backoffice.vesopaepos.com"
-SLUG = "vesopa-test"
+SLUG = "thevesopakitchen"
 # The same client id the build passes as --dart-define=VESOPA_LOYALTY_CLIENT_ID.
 CLIENT_ID = "12a1047bafa611f185af42010a80000e"
 SHOTS = Path.home() / "Documents" / "Vesopa-Claude-Images" / "2026-09-14-android-kitchen"
@@ -144,7 +144,7 @@ def main():
 
     print("1. brand at start-up")
     st, brand = call("GET", f"{MENU}/loyalty/v1/app/{SLUG}")
-    step("GET /loyalty/v1/app/vesopa-test", st == 200 and bool(brand.get("name")),
+    step("GET /loyalty/v1/app/thevesopakitchen", st == 200 and bool(brand.get("name")),
          f"{st} name={brand.get('name')!r} methods={brand.get('signin', {}).get('methods') or brand.get('methods')}")
 
     print("2. Continue with Vesopa, the native way")
@@ -200,7 +200,7 @@ def main():
     print("3. the app signs in to the venue as an Android phone")
     st, signed = call("POST", f"{MENU}/loyalty/v1/app/{SLUG}/vesopa", {"id_token": id_token, "platform": "android"})
     app_token = signed.get("token", "")
-    step("POST /loyalty/v1/app/vesopa-test/vesopa", st == 200 and bool(app_token), f"{st} {signed.get('error', '')}")
+    step("POST /loyalty/v1/app/thevesopakitchen/vesopa", st == 200 and bool(app_token), f"{st} {signed.get('error', '')}")
     if not app_token:
         raise SystemExit("cannot go on without an app token")
 

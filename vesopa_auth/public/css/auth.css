@@ -1654,3 +1654,38 @@ select.del-days { width: auto; min-height: 36px; padding: 5px 10px; font-size: 1
   background: var(--warn-bg);
   color: var(--warn);
 }
+
+/* --------------------------------------------------------------------------
+ * A card that is waiting on the server (public/js/loadbar.js adds .is-busy
+ * when a submit outlasts a blink). The form stays visible underneath, so it is
+ * obvious what is being sent, and nothing on it can be pressed twice.
+ * ------------------------------------------------------------------------ */
+
+.auth-card { position: relative; }
+.auth-card.is-busy::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--surface);
+  opacity: .72;
+  z-index: 5;
+}
+.auth-card.is-busy::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 34px;
+  height: 34px;
+  margin: -17px 0 0 -17px;
+  border: 3px solid var(--green);
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: btn-spin .75s linear infinite;
+  z-index: 6;
+}
+@media (prefers-reduced-motion: reduce) {
+  .auth-card.is-busy::after { animation-duration: 2.5s; }
+}
+

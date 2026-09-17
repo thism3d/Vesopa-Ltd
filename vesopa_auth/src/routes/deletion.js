@@ -70,12 +70,9 @@ function origin(req) {
   return { app, venue };
 }
 
-function query({ app, venue }) {
-  const q = new URLSearchParams();
-  if (app) q.set('app', app);
-  if (venue) q.set('venue', venue);
-  const s = q.toString();
-  return s ? `?${s}` : '';
+/** The page a person started on: /delete-account/<venue> for an app's own link. */
+function startPath({ venue } = {}) {
+  return venue ? `/delete-account/${encodeURIComponent(venue)}` : '/delete-account';
 }
 
 async function render(res, state, extra = {}) {
@@ -90,6 +87,7 @@ async function render(res, state, extra = {}) {
     error: '',
     dayChoices: deletion.DAY_CHOICES,
     ...extra,
+    startPath: startPath(extra.from || {}),
   });
 }
 
@@ -115,21 +113,30 @@ async function verifiedEmailsOf(req) {
 // Step 1: the address
 // ---------------------------------------------------------------------------
 
-router.get('/delete-account', async (req, res, next) => {
+async function startPage(req, res, next, from) {
   try {
-    const from = origin(req);
-    const appLabel = await describeFor(from);
+    const described = from.venue || from.app ? await deletion.describe(from).catch(() => null) : null;
+    const appLabel = described ? described.label : '';
     const { emails } = await verifiedEmailsOf(req);
     return render(res, 'start', {
-      from,
+      from: described ? { app: described.slug, venue: described.venue } : { app: '', venue: '' },
       appLabel,
       heading: appLabel ? `${appLabel}: delete your account and data` : 'Delete your account and data',
       signedInEmail: emails.length ? emails[0].identifier : '',
       error: String(req.query.error || '').slice(0, 200),
+      noindex: Boolean(from.venue && !described),
     });
   } catch (error) {
     return next(error);
   }
+}
+
+router.get('/delete-account', (req, res, next) => {
+  const from = origin(req);
+  // /delete-account?app=…&venue=… was the first form of the link; the venue's
+  // own address is the one to keep.
+  if (from.venue) return res.redirect(301, startPath(from));
+  return startPage(req, res, next, from);
 });
 
 router.post('/delete-account/start', csrf.verify, async (req, res, next) => {
@@ -137,13 +144,13 @@ router.post('/delete-account/start', csrf.verify, async (req, res, next) => {
     const from = origin(req);
     const typed = String(req.body.email || '').trim();
     const norm = normaliseEmail(typed);
-    const back = (message) => res.redirect(303, `/delete-account${query(from)}${query(from) ? '&' : '?'}error=${encodeURIComponent(message)}`);
+    const back = (message) => res.redirect(303, `${startPath(from)}?error=${encodeURIComponent(message)}`);
     if (!norm || !norm.includes('@')) return back('Enter the email address you use with the app.');
 
     const { emails } = await verifiedEmailsOf(req);
     if (emails.some((e) => e.identifier_norm === norm)) {
       seal(res, PROVED_COOKIE, { email: norm, ...from }, HALF_HOUR);
-      return res.redirect(303, `/delete-account/choose${query(from)}`);
+      return res.redirect(303, '/delete-account/choose');
     }
 
     const sent = await challenges.create({
@@ -160,7 +167,7 @@ router.post('/delete-account/start', csrf.verify, async (req, res, next) => {
     }
     if (!sent.ok) return back('We could not send a code just now. Please try again in a few minutes.');
     seal(res, PENDING_COOKIE, { challengeId: sent.challengeId, email: norm, ...from }, HALF_HOUR);
-    return res.redirect(303, `/delete-account/code${query(from)}`);
+    return res.redirect(303, '/delete-account/code');
   } catch (error) {
     return next(error);
   }
@@ -170,7 +177,7 @@ router.get('/delete-account/code', async (req, res, next) => {
   try {
     const pending = unseal(req, PENDING_COOKIE);
     const from = pending ? { app: pending.app, venue: pending.venue } : origin(req);
-    if (!pending) return res.redirect(303, `/delete-account${query(from)}`);
+    if (!pending) return res.redirect(303, startPath(from));
     return render(res, 'code', {
       from,
       appLabel: await describeFor(from),
@@ -195,11 +202,11 @@ router.post('/delete-account/code', csrf.verify, async (req, res, next) => {
         expired: 'That code has expired. Send another one.',
         too_many_attempts: 'Too many tries. Send another code.',
       }[checked.reason] || 'That code cannot be used. Send another one.';
-      return res.redirect(303, `/delete-account/code${query(from)}${query(from) ? '&' : '?'}error=${encodeURIComponent(message)}`);
+      return res.redirect(303, `/delete-account/code?error=${encodeURIComponent(message)}`);
     }
     res.clearCookie(PENDING_COOKIE, cookieOptions(0));
     seal(res, PROVED_COOKIE, { email: pending.email, ...from }, HALF_HOUR);
-    return res.redirect(303, `/delete-account/choose${query(from)}`);
+    return res.redirect(303, '/delete-account/choose');
   } catch (error) {
     return next(error);
   }
@@ -212,7 +219,7 @@ router.post('/delete-account/code', csrf.verify, async (req, res, next) => {
 router.get('/delete-account/choose', async (req, res, next) => {
   try {
     const proved = unseal(req, PROVED_COOKIE);
-    if (!proved) return res.redirect(303, `/delete-account${query(origin(req))}`);
+    if (!proved) return res.redirect(303, startPath(origin(req)));
     const from = { app: proved.app, venue: proved.venue };
     const [found, described] = await Promise.all([
       deletion.discover(proved.email),
@@ -247,12 +254,17 @@ router.get('/delete-account/choose', async (req, res, next) => {
   }
 });
 
+router.get('/delete-account/:venue', (req, res, next) => {
+  const venue = String(req.params.venue || '').toLowerCase();
+  return startPage(req, res, next, { app: '', venue });
+});
+
 router.post('/delete-account/confirm', csrf.verify, async (req, res, next) => {
   try {
     const proved = unseal(req, PROVED_COOKIE);
     if (!proved) return res.redirect(303, '/delete-account?error=That+took+too+long.+Please+start+again.');
     const from = { app: proved.app, venue: proved.venue };
-    const again = (message) => res.redirect(303, `/delete-account/choose${query(from)}${query(from) ? '&' : '?'}error=${encodeURIComponent(message)}`);
+    const again = (message) => res.redirect(303, `/delete-account/choose?error=${encodeURIComponent(message)}`);
 
     // What can be chosen is worked out again here, never taken from the form:
     // the form only says which of the found things were ticked.

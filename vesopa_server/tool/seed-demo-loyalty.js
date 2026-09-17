@@ -46,7 +46,7 @@ const mysql = require('mysql2/promise');
 
 /** The demonstration venue. Not a flag, not an environment variable. */
 const DEMO_OFFICE = 'manager@vesopa.co.uk';
-const DEMO_SLUG = 'vesopa-test';
+const DEMO_SLUG = 'thevesopakitchen';
 const DEMO_TAG = 'demo-seed';
 
 const MEMBERS = 120;
@@ -203,7 +203,7 @@ async function main() {
          VALUES (?, ?, ?, ?, NOW() - INTERVAL 2 HOUR, NOW() + INTERVAL 7 DAY)`,
         [uuid(), office, HERO_EMAIL, hash]
       );
-      console.log(`sign in at https://menu.vesopaepos.com/app/${DEMO_SLUG}/`);
+      console.log(`sign in at https://loyalty.vesopa.com/${DEMO_SLUG}/`);
       console.log(`  email     ${HERO_EMAIL}`);
       console.log(`  code      ${code}   (one use, 7 days)`);
       return;

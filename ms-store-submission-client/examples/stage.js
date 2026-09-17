@@ -209,6 +209,20 @@ if (flightId) {
   }
 }
 
+// Certification notes are copied from the last submission. When something they
+// name has moved -- an address, a venue -- CERT_NOTES_REPLACE="old|new" (pairs
+// separated by ";;") corrects it in place, so the rest of what the reviewer was
+// told, including anything typed in Partner Center, is kept.
+if (!flightId && process.env.CERT_NOTES_REPLACE && typeof submission.notesForCertification === "string") {
+  for (const pair of process.env.CERT_NOTES_REPLACE.split(";;")) {
+    const [from, to] = pair.split("|");
+    if (!from) continue;
+    const hits = submission.notesForCertification.split(from).length - 1;
+    submission.notesForCertification = submission.notesForCertification.split(from).join(to ?? "");
+    console.log(`  certification notes: ${hits} x "${from}" -> "${to ?? ""}"`);
+  }
+}
+
 await (flightId
   ? client.updateFlightSubmission(storeId, flightId, submission.id, submission)
   : client.updateSubmission(storeId, submission.id, submission));

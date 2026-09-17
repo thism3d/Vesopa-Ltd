@@ -1,6 +1,6 @@
 {
   "name": "vesopa_auth",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "auth.vesopa.com \u2014 Vesopa OAuth, the single sign-on and identity provider for every Vesopa product",
   "main": "src/server.js",
   "scripts": {

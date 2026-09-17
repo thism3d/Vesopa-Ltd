@@ -8,7 +8,7 @@
  * member signs in to with their email address. It shows their card as a QR code,
  * their points and their history, and the venue's news. It is one Flutter app
  * (vesopa_loyalty/) delivered two ways: a web app at
- * menu.vesopaepos.com/app/<slug>/ that installs to a phone's home screen, and a
+ * loyalty.vesopa.com/<slug>/ that installs to a phone's home screen, and a
  * Windows app from the Microsoft Store under the venue's own name.
  *
  * THE QR CODE IS THE CARD NUMBER
@@ -55,6 +55,7 @@ const QR = require('./qr');
 const loyaltyAuth = require('./loyalty_auth');
 const loyaltyAccountRoutes = require('./loyalty_account');
 const { loyaltyDeletionRoutes } = require('./privacy_provider');
+const { appPath, appUrl, RESERVED } = require('./loyalty_host');
 const loyaltyEmail = require('./loyalty_email');
 
 const CODE_MINUTES = 10;
@@ -418,7 +419,7 @@ async function deliver(pool, message) {
     image: message.image_url || null,
     link: message.link_url || null,
     icon: brand.icon || null,
-    url: brand.slug ? `/app/${brand.slug}/#/inbox/${message.id}` : null,
+    url: brand.slug ? `${appUrl(brand.slug)}#/inbox/${message.id}` : null,
   };
 
   let web = 0;
@@ -1105,8 +1106,7 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
         const dine = o ? await maybeOne(pool, 'SELECT slug FROM dinein_venue WHERE office_id = ?', [o.id]) : null;
         suggested = (dine && dine.slug) || (o && o.name ? o.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) : null);
       }
-      const base = `https://${(process.env.MENU_HOST || 'menu.vesopaepos.com').trim()}`;
-      const url = app && app.slug ? `${base}/app/${app.slug}/` : null;
+      const url = app && app.slug ? appUrl(app.slug) : null;
       let fonts = [];
       try {
         fonts = (await catalogueFor(pool, office)).map((f) => ({ slug: f.slug, family: f.family, built_in: !!f.builtIn }));
@@ -1189,6 +1189,9 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
       const slug = b.slug == null ? (current && current.slug) : String(b.slug).trim().toLowerCase();
       if (slug && !SLUG.test(slug)) {
         return res.status(400).json({ error: 'The address can use lower-case letters, numbers and hyphens (3 to 64).' });
+      }
+      if (slug && RESERVED.has(slug)) {
+        return res.status(400).json({ error: 'That address is kept for Vesopa. Choose another.' });
       }
       if (slug) {
         const [[taken]] = await pool.query('SELECT office FROM epos_loyalty_app WHERE slug = ? AND office <> ?', [slug, office]);
@@ -1442,7 +1445,7 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
       const app = await appBySlug(pool, req.params.slug);
       if (!app) return res.status(404).end();
       const brand = await brandFor(pool, app.office, app);
-      const scope = `/app/${app.slug}/`;
+      const scope = appPath(req, app.slug);
       /*
        * AN EMPTY ICON LIST IS NOT "NO ICON" TO A PHONE -- it is a generated
        * letter tile, and that is what a venue's app looked like on a home
@@ -1505,15 +1508,23 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
       }
       const brand = await brandFor(pool, app.office, app);
       const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+      const base = appPath(req, app.slug);
+      // Shared links are read by other sites, which need a whole address.
+      const absolute = (u) => (/^https?:\/\//.test(String(u)) ? u : `${appUrl(app.slug).replace(/\/[^/]*\/$/, '')}${u}`);
       const html = fs.readFileSync(indexFile, 'utf8')
-        .replace(/\/app\/__SLUG__\//g, `/app/${app.slug}/`)
+        // Built with --base-href /__SLUG__/ (older builds: /app/__SLUG__/).
+        .replace(/\/app\/__SLUG__\//g, base)
+        .replace(/\/__SLUG__\//g, base)
+        .replace(/__DESCRIPTION__/g, esc(`${brand.name}: ${String(brand.welcome || '').replace(/\.$/, '')}.`))
+        .replace(/__URL__/g, esc(appUrl(app.slug)))
+        .replace(/__OG_IMAGE__/g, esc(absolute(brand.icon || brand.logo || `${base}icons/Icon-512.png`)))
         .replace(/__APP_NAME__/g, esc(brand.name))
         .replace(/__THEME__/g, esc(brand.colours.primary))
         .replace(/__BACKGROUND__/g, esc(brand.colours.background))
         // The loading screen shows what the APP shows. A venue that set a logo
         // but no separate app icon was getting Vesopa's mark on the splash and
         // its own a second later, which reads as having opened the wrong thing.
-        .replace(/__ICON__/g, esc(brand.icon || brand.logo || `/app/${app.slug}/icons/Icon-192.png`));
+        .replace(/__ICON__/g, esc(brand.icon || brand.logo || `${base}icons/Icon-192.png`));
       res.set('Cache-Control', 'no-cache');
       res.type('html').send(html);
     } catch (e) {
@@ -1554,13 +1565,13 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
     for (const k of ['code', 'state', 'error', 'error_description']) {
       if (req.query[k]) q.set(k === 'code' ? 'vesopa_code' : `vesopa_${k}`, String(req.query[k]));
     }
-    res.redirect(302, `/app/${encodeURIComponent(slug)}/?${q.toString()}`);
+    res.redirect(302, `${appPath(req, encodeURIComponent(slug))}?${q.toString()}`);
   });
 
   /** Signed out at Vesopa: back to the venue's app, which will ask again. */
   router.get('/app/vesopa/signed-out', (req, res) => {
     const slug = String(req.query.state || '').split('.')[0].toLowerCase();
-    res.redirect(302, SLUG.test(slug) ? `/app/${encodeURIComponent(slug)}/` : '/');
+    res.redirect(302, SLUG.test(slug) ? appPath(req, encodeURIComponent(slug)) : '/');
   });
 
   const statics = express.static(WEB_DIR, { index: false, fallthrough: false, maxAge: '1h' });
@@ -1570,7 +1581,7 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
     // A deep link inside the app (no file extension) is the app's page.
     if (!/\.[a-z0-9]+$/i.test(rest)) return page(req, res, next);
     // The push worker must be allowed to control the venue's whole app.
-    if (rest === 'push-sw.js') res.set('Service-Worker-Allowed', `/app/${req.params.slug}/`);
+    if (rest === 'push-sw.js') res.set('Service-Worker-Allowed', appPath(req, req.params.slug));
     req.url = `/${rest}`;
     return statics(req, res, (err) => (err ? res.status(err.status || 404).end() : res.status(404).end()));
   });

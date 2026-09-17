@@ -68,6 +68,8 @@ const { licenceRoutes, adminLicenceRoutes } = require('./licences');
 const licences = require('./licences');
 const { loyaltyAppRoutes, startLoyaltyScheduler } = require('./loyalty_app');
 const { privacyRoutes } = require('./privacy_provider');
+const { loyaltyHostGate } = require('./loyalty_host');
+const { loyaltySiteRoutes } = require('./loyalty_site');
 const { expressKioskRoutes } = require('./express_kiosk');
 const { walletPageRoutes } = require('./wallet_pages');
 const { giftIntegrationRoutes } = require('./gift_integration');
@@ -118,6 +120,13 @@ const app = express();
 // the whole platform after a handful of requests.
 app.set('trust proxy', 1);
 app.use(cors());
+/*
+ * loyalty.vesopa.com is served by this same process. The gate goes first so
+ * that on that name only the loyalty app, its API and its callbacks answer,
+ * and the old menu.vesopaepos.com/app/<venue>/ addresses redirect there.
+ * See src/loyalty_host.js.
+ */
+app.use(loyaltyHostGate());
 /*
  * The raw bytes are kept alongside the parsed body, for one caller.
  *
@@ -1638,11 +1647,14 @@ function sendShell(_req, res) {
  * dinein.js — and the host-guarded ones call next() on every other host, so the
  * back office's own routing is untouched.
  */
-// The loyalty app: its API (/loyalty/v1), its web build (/app/<slug>/) and the
+// The loyalty app: its API (/loyalty/v1), its web build (loyalty.vesopa.com/<slug>/,
+// routed internally as /app/<slug>/ by the gate above) and the
 // back office's Loyalty app page (/api/loyalty-app). Ahead of the menu pages
 // and the menu-host guard below, because the web app and its API are served on
 // the menu address too -- menu.vesopaepos.com/app/<slug>/ -- where everything
 // not claimed before the guard is refused. See src/loyalty_app.js.
+// loyalty.vesopa.com's own page and its editor, on that host only.
+app.use(loyaltySiteRoutes({ pool }));
 app.use(loyaltyAppRoutes({ pool, broadcast, secret: JWT_SECRET }));
 // Vesopa Auth's deletion requests reach members' data here (signed).
 app.use(privacyRoutes({ pool }));

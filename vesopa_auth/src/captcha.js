@@ -30,7 +30,7 @@
 const config = require('./config');
 
 const VERIFY_URL = 'https://www.google.com/recaptcha/api/siteverify';
-const TIMEOUT_MS = 4000;
+const TIMEOUT_MS = 2500;
 
 function enabled() {
   return Boolean(config.captcha && config.captcha.siteKey && config.captcha.secretKey);

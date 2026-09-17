@@ -207,7 +207,7 @@ class _VenuePageState extends ConsumerState<VenuePage> {
         /*
          * CHANGING VENUE, and only where there is anything to change.
          *
-         * In a browser the venue IS the address: this app is at /app/<slug>/
+         * In a browser the venue IS the address: this app is at loyalty.vesopa.com/<slug>/
          * and a button claiming to change it would either lie or navigate
          * somewhere the person did not ask to go. On Windows and the phones
          * it was typed in once, and a wrong code typed once must not mean

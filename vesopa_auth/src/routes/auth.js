@@ -1225,7 +1225,9 @@ async function setPasswordPage(req, res, error = '') {
     return null;
   }
 
-  const returnTo = safeReturnTo(req.query.return_to || req.body.return_to) || '';
+  // `req.body` is undefined on a GET in Express 5; reading through it was a 500
+  // for anybody who opened this page without a return_to in the address.
+  const returnTo = safeReturnTo(req.query.return_to || (req.body && req.body.return_to)) || '';
 
   // Somebody who reaches this by typing the address, and already has a
   // password, is sent on rather than shown a form that would replace it.

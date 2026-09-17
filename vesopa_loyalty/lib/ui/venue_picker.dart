@@ -8,7 +8,7 @@ import 'widgets.dart';
 
 /// The first screen on Windows, Android and an iPhone: Continue with Vesopa.
 ///
-/// A browser never sees this: the app is served at `/app/<slug>/` and the venue
+/// A browser never sees this: the app is served at `loyalty.vesopa.com/<slug>/` and the venue
 /// is in the address.
 ///
 /// NO VENUE CODE. A venue gives somebody access in its back office -- it

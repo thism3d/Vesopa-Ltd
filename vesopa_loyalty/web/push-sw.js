@@ -1,7 +1,7 @@
 /*
  * The venue app's notification worker.
  *
- * Registered with the app's own scope (/app/<slug>/), which the server allows
+ * Registered with the app's own scope (/<slug>/), which the server allows
  * with a Service-Worker-Allowed header. It does one thing: show what the venue
  * sent, and open the app on the message when it is tapped. Nothing is cached --
  * the app itself is fetched fresh, so a venue's rebrand is seen at once.

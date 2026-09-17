@@ -62,7 +62,7 @@ def main():
     # The app user must read the secret to register it; a private copy, removed after.
     ssh("run", f"cp {SECRET} /tmp/.vps && chown vesopasoftware /tmp/.vps && chmod 600 /tmp/.vps && "
                f"su - vesopasoftware -c 'cd {AUTH} && node scripts/set-privacy-provider.js vesopa-loyalty "
-               f"https://backoffice.vesopaepos.com/privacy/v1 /tmp/.vps Loyalty memberships'; rm -f /tmp/.vps")
+               f"https://loyalty.vesopa.com/privacy/v1 /tmp/.vps Loyalty memberships'; rm -f /tmp/.vps")
 
     print("▶ backoffice.vesopaepos.com")
     stage = pathlib.Path(tempfile.mkdtemp(prefix="deletion-"))
@@ -85,9 +85,9 @@ def main():
     print("▶ checks")
     ssh("run",
         "sleep 4; "
-        "curl -sS -o /dev/null -w 'delete-account page %{http_code}\\n' 'https://auth.vesopa.com/delete-account?app=vesopa-loyalty&venue=vesopa-test'; "
-        "curl -sS -o /dev/null -w 'unsigned lookup      %{http_code} (expect 401)\\n' -X POST -H 'content-type: application/json' -d '{}' https://backoffice.vesopaepos.com/privacy/v1/lookup; "
-        "curl -sS -o /dev/null -w 'loyalty app          %{http_code}\\n' https://menu.vesopaepos.com/loyalty/v1/app/vesopa-test; "
+        "curl -sS -o /dev/null -w 'delete-account page %{http_code}\\n' https://auth.vesopa.com/delete-account/thevesopakitchen; "
+        "curl -sS -o /dev/null -w 'unsigned lookup      %{http_code} (expect 401)\\n' -X POST -H 'content-type: application/json' -d '{}' https://loyalty.vesopa.com/privacy/v1/lookup; "
+        "curl -sS -o /dev/null -w 'loyalty app          %{http_code}\\n' https://loyalty.vesopa.com/loyalty/v1/app/thevesopakitchen; "
         f"rm -f {SECRET}; tail -3 {BACKOFFICE}/logs/error-0.log 2>/dev/null || true", check=False)
 
 

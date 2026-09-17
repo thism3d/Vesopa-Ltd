@@ -60,7 +60,7 @@ async function main() {
   await check('lookup finds the demo membership at The Vesopa Kitchen', async () => {
     found = await deletion.discover(reviewed);
     assert(!found.problems.length, `provider problems: ${found.problems.join(', ')}`);
-    const kitchen = found.items.find((i) => i.kind === 'app_data' && i.venue === 'vesopa-test');
+    const kitchen = found.items.find((i) => i.kind === 'app_data' && i.venue === 'thevesopakitchen');
     assert(kitchen, `no Kitchen membership in ${JSON.stringify(found.items)}`);
   });
 
@@ -70,7 +70,7 @@ async function main() {
   });
 
   await check('the page names the venue app', async () => {
-    const d = await deletion.describe({ app: 'vesopa-loyalty', venue: 'vesopa-test' });
+    const d = await deletion.describe({ venue: 'thevesopakitchen' });
     assert(d && d.label === 'The Vesopa Kitchen', `label ${d && d.label}`);
   });
 
