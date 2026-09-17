@@ -182,6 +182,14 @@ router.get('/offers', async (req, res, next) => {
       endsAt: row.expires_at || null,
       forCountry: String(row.countries || '').trim(),
       left: Number(row.max_uses) > 0 ? Number(row.max_uses) - Number(row.used) : 0,
+      /*
+       * Which drawing goes with it. The artwork carries no figure -- the
+       * discount is live HTML beside it -- so a change of percentage or an
+       * expiry never leaves a picture saying something the price contradicts.
+       */
+      art: String(row.countries || '').toUpperCase().includes('BD')
+        ? '/assets/img/offers/bangladesh.svg'
+        : '/assets/img/offers/generic.svg',
     }));
 
     res.render('public/offers', {

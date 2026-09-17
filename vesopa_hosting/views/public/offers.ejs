@@ -12,6 +12,32 @@
 
   Only codes an admin has marked `public_offer` appear, and a code tied to a
   country is only shown to somebody in it. Both rules live in the route.
+
+  THE BIGGEST OFFER GETS THE ROOM. One card in a three-column grid under a
+  tall hero was most of a screen of white space with a narrow box in it --
+  true, but not worth reading. The leading offer is now a banner with its own
+  artwork and anything after it fills the grid beneath.
+%>
+
+<%
+  const feature = offers.length ? offers[0] : null;
+  const rest = offers.slice(1);
+
+  // The conditions the basket will enforce, said here first and in the same
+  // words in both places on this page.
+  const termsOf = (o) => {
+    const list = [];
+    if (o.appliesTo === 'all') list.push(t('Applies to everything in your basket.'));
+    else if (o.appliesTo === 'hosting') list.push(t('Applies to hosting plans.'));
+    else if (o.appliesTo === 'domain') list.push(t('Applies to domain names.'));
+    else list.push(t('Applies to mailboxes.'));
+    if (o.firstOrderOnly) list.push(t('First order only.'));
+    if (o.minSpend) list.push(t('Baskets of {v} or more.', { v: o.minSpend }));
+    if (o.forCountry) list.push(t('For customers in Bangladesh.'));
+    if (o.endsAt) list.push(t('Ends {v}.', { v: fmtDate(o.endsAt) }));
+    if (o.left > 0 && o.left <= 25) list.push(tn('Only {n} left.', 'Only {n} left.', o.left, { n: o.left }));
+    return list;
+  };
 %>
 
 <main id="main">
@@ -26,45 +52,68 @@
   heroCta: { href: '/hosting', label: t('See hosting plans'), secondary: { href: '/domains', label: t('Find a domain') } },
 }) %>
 
-<% if (offers.length) { %>
+<% if (feature) { %>
 <section class="section">
   <div class="wrap">
-    <div class="grid grid-3">
-      <% offers.forEach(function (o, i) { %>
-        <article class="card card-hover card-accent offer-card" data-reveal="<%= i * 80 %>">
-          <p class="offer-amount"><%= o.amount %> <span><%= t('off') %></span></p>
-          <h2 class="h3 mb-2"><%= o.headline %></h2>
-          <% if (o.detail && o.detail !== o.headline) { %>
-            <p class="small muted"><%= o.detail %></p>
-          <% } %>
 
-          <%# The code, big enough to read off a phone and easy to copy. %>
-          <p class="offer-code">
-            <span class="offer-code-label"><%= t('Use code') %></span>
-            <button type="button" class="offer-code-value" data-copy="<%= o.code %>" title="<%= t('Copy this code') %>">
-              <span><%= o.code %></span>
-            </button>
-          </p>
+    <article class="offer-feature">
+      <div class="offer-feature-text">
+        <p class="offer-amount"><%= feature.amount %> <span><%= t('off') %></span></p>
+        <h2 class="offer-feature-h"><%= feature.headline %></h2>
+        <% if (feature.detail && feature.detail !== feature.headline) { %>
+          <p class="lede offer-feature-lede"><%= feature.detail %></p>
+        <% } %>
 
-          <%# Every condition the basket will enforce, said here first. %>
-          <ul class="offer-terms small muted">
-            <li>
-              <% if (o.appliesTo === 'all') { %><%= t('Applies to everything in your basket.') %>
-              <% } else if (o.appliesTo === 'hosting') { %><%= t('Applies to hosting plans.') %>
-              <% } else if (o.appliesTo === 'domain') { %><%= t('Applies to domain names.') %>
-              <% } else { %><%= t('Applies to mailboxes.') %><% } %>
-            </li>
-            <% if (o.firstOrderOnly) { %><li><%= t('First order only.') %></li><% } %>
-            <% if (o.minSpend) { %><li><%= t('Baskets of {v} or more.', { v: o.minSpend }) %></li><% } %>
-            <% if (o.forCountry) { %><li><%= t('For customers in Bangladesh.') %></li><% } %>
-            <% if (o.endsAt) { %><li><%= t('Ends {v}.', { v: fmtDate(o.endsAt) }) %></li><% } %>
-            <% if (o.left > 0 && o.left <= 25) { %><li><%= tn('Only {n} left.', 'Only {n} left.', o.left, { n: o.left }) %></li><% } %>
-          </ul>
+        <p class="offer-code">
+          <span class="offer-code-label"><%= t('Use code') %></span>
+          <button type="button" class="offer-code-value" data-copy="<%= feature.code %>" title="<%= t('Copy this code') %>">
+            <span><%= feature.code %></span>
+          </button>
+        </p>
 
-          <a class="btn btn-block" href="/hosting"><%= t('Start an order') %></a>
-        </article>
-      <% }); %>
-    </div>
+        <ul class="offer-terms small muted">
+          <% termsOf(feature).forEach(function (line) { %><li><%= line %></li><% }); %>
+        </ul>
+
+        <div class="offer-feature-cta">
+          <a class="btn btn-lg" href="/hosting"><%= t('Start an order') %></a>
+          <a class="btn btn-ghost btn-lg" href="/domains"><%= t('Find a domain') %></a>
+        </div>
+      </div>
+
+      <%# Decorative: everything it says is in the text beside it, so it is
+          hidden from screen readers rather than described twice. %>
+      <div class="offer-feature-art">
+        <img src="<%= asset(feature.art) %>" alt="" width="640" height="420" loading="eager" decoding="async">
+      </div>
+    </article>
+
+    <% if (rest.length) { %>
+      <div class="grid grid-3 mt-4">
+        <% rest.forEach(function (o, i) { %>
+          <article class="card card-hover card-accent offer-card" data-reveal="<%= i * 80 %>">
+            <div class="offer-card-art">
+              <img src="<%= asset(o.art) %>" alt="" width="640" height="420" loading="lazy" decoding="async">
+            </div>
+            <p class="offer-amount"><%= o.amount %> <span><%= t('off') %></span></p>
+            <h2 class="h3 mb-2"><%= o.headline %></h2>
+            <% if (o.detail && o.detail !== o.headline) { %>
+              <p class="small muted"><%= o.detail %></p>
+            <% } %>
+            <p class="offer-code">
+              <span class="offer-code-label"><%= t('Use code') %></span>
+              <button type="button" class="offer-code-value" data-copy="<%= o.code %>" title="<%= t('Copy this code') %>">
+                <span><%= o.code %></span>
+              </button>
+            </p>
+            <ul class="offer-terms small muted">
+              <% termsOf(o).forEach(function (line) { %><li><%= line %></li><% }); %>
+            </ul>
+            <a class="btn btn-block" href="/hosting"><%= t('Start an order') %></a>
+          </article>
+        <% }); %>
+      </div>
+    <% } %>
 
     <p class="small muted mt-4" style="max-width:62ch">
       <%= t('Enter the code in the basket, at the step before payment. One code per order. If a code will not apply, the basket says why.') %>
@@ -76,25 +125,33 @@
     grid or a page that 404s. %>
 <section class="section">
   <div class="wrap">
-    <div class="card" style="max-width:56ch">
-      <h2 class="h3 mb-2"><%= t('No offer is running just now') %></h2>
-      <p class="small muted"><%= t('Our plans are the same price for everybody today. Hosting starts with a free domain on any yearly plan, and moving a site here is free at any time.') %></p>
-      <a class="btn" href="/hosting"><%= t('See hosting plans') %></a>
-    </div>
+    <article class="offer-feature offer-feature-quiet">
+      <div class="offer-feature-text">
+        <h2 class="offer-feature-h"><%= t('No offer is running just now') %></h2>
+        <p class="lede offer-feature-lede"><%= t('Our plans are the same price for everybody today. Hosting starts with a free domain on any yearly plan, and moving a site here is free at any time.') %></p>
+        <div class="offer-feature-cta">
+          <a class="btn btn-lg" href="/hosting"><%= t('See hosting plans') %></a>
+          <a class="btn btn-ghost btn-lg" href="/transfer"><%= t('Move a site here') %></a>
+        </div>
+      </div>
+      <div class="offer-feature-art">
+        <img src="<%= asset('/assets/img/offers/generic.svg') %>" alt="" width="640" height="420" loading="lazy" decoding="async">
+      </div>
+    </article>
   </div>
 </section>
 <% } %>
 
 <% if (inBangladesh) { %>
 <%# Shown only to visitors placed in Bangladesh: the two things they are most
-    likely to be unsure about -- can I pay from here, and is anyone there in
-    my time zone. %>
+    likely to be unsure about -- can I pay from here, and can I read it. %>
 <section class="section section-tint">
   <div class="wrap">
     <div class="grid grid-2">
       <article class="card">
         <h2 class="h3 mb-2"><%= t('Pay the way you already pay') %></h2>
-        <p class="small muted mb-0"><%= t('bKash, Nagad, Rocket, and any Bangladeshi bank card, through SSLCommerz. Prices are shown and charged in taka, so what you approve is what leaves your account.') %></p>
+        <p class="small muted mb-3"><%= t('bKash, Nagad, Rocket, and any Bangladeshi bank card, through SSLCommerz. Prices are shown and charged in taka, so what you approve is what leaves your account.') %></p>
+        <img class="offer-paymark" src="<%= asset('/assets/img/pay/sslcommerz.svg') %>" alt="SSLCommerz" height="28" loading="lazy" decoding="async">
       </article>
       <article class="card">
         <h2 class="h3 mb-2"><%= t('Read it in Bangla') %></h2>

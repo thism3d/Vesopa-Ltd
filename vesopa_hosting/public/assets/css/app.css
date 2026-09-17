@@ -1836,7 +1836,10 @@ body.nav-open .nav-sheet-foot {
 .lang-offer {
   position: fixed;
   left: 50%;
-  bottom: max(16px, env(safe-area-inset-bottom, 0px));
+  /* Clear of the assistant, which lives bottom-right and opens a bubble
+     leftwards: centred at this width the two overlapped and the "Keep English"
+     button ended up underneath it. */
+  bottom: calc(96px + env(safe-area-inset-bottom, 0px));
   transform: translateX(-50%);
   z-index: 60;
   width: min(560px, calc(100vw - 32px));
@@ -1880,6 +1883,20 @@ body.nav-open .nav-sheet-foot {
   .lang-offer-actions { flex: 1 1 100%; }
   .lang-offer-actions .btn { flex: 1 1 0; justify-content: center; }
 }
+/* On a wide screen there is room to move out of the assistant's way entirely
+   rather than just sitting above it. */
+@media (min-width: 1024px) {
+  .lang-offer {
+    left: 24px;
+    transform: none;
+    bottom: max(24px, env(safe-area-inset-bottom, 0px));
+  }
+  @keyframes lang-offer-in-left {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: none; }
+  }
+  .lang-offer { animation-name: lang-offer-in-left; }
+}
 
 /* ---------------------------------------------------------------------------
    Offer cards (/offers).
@@ -1888,7 +1905,57 @@ body.nav-open .nav-sheet-foot {
    two are the only elements given weight; the conditions underneath are
    deliberately quiet, because their job is to be true rather than to sell.
    --------------------------------------------------------------------------- */
+/* The leading offer, given the width to be worth reading. Text on the left,
+   its drawing on the right, and on a narrow screen the drawing goes first --
+   it is what stops the page reading as a wall of conditions. */
+.offer-feature {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, .92fr);
+  align-items: center;
+  gap: clamp(20px, 4vw, 56px);
+  padding: clamp(22px, 3.4vw, 44px);
+  background: linear-gradient(135deg, var(--lime-soft) 0%, var(--bg) 62%);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
+}
+.offer-feature-quiet { background: var(--bg-2); }
+.offer-feature-h {
+  margin: 0 0 10px;
+  font-size: clamp(1.5rem, 3vw, 2.1rem);
+  line-height: 1.15;
+  letter-spacing: -.02em;
+}
+.offer-feature-lede { margin: 0 0 18px; max-width: 46ch; }
+.offer-feature-cta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+.offer-feature-art { min-width: 0; }
+.offer-feature-art img { display: block; width: 100%; height: auto; }
+
+@media (max-width: 820px) {
+  .offer-feature { grid-template-columns: 1fr; gap: 18px; }
+  /* The picture first on a phone: it is the reason to keep reading. */
+  .offer-feature-art { order: -1; }
+  .offer-feature-art img { max-width: 420px; margin: 0 auto; }
+}
+
 .offer-card { display: flex; flex-direction: column; }
+/* A band of the same drawing across the top of each smaller card, cropped so
+   the tag reads at this size rather than the whole scene shrinking to nothing. */
+.offer-card-art {
+  margin: -20px -20px 14px;
+  height: 116px;
+  overflow: hidden;
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: var(--lime-soft);
+}
+.offer-card-art img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 62% 46%;
+}
+.offer-paymark { display: block; max-width: 160px; height: 28px; object-fit: contain; object-position: left center; }
 .offer-amount {
   margin: 0 0 6px;
   font-size: clamp(2rem, 4vw, 2.6rem);

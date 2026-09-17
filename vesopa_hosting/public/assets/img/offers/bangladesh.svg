@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 420" width="640" height="420" role="img" aria-labelledby="bdOfferTitle">
+  <title id="bdOfferTitle">A website built with Vesopa, priced in Bangladeshi taka</title>
+  <!--
+    Artwork for the Bangladesh offer.
+
+    DRAWN, NOT PHOTOGRAPHED, and that is a decision rather than a shortcut. The
+    site's content security policy is `img-src 'self' data:`, so a stock photo
+    from anybody's CDN is blocked before it loads; and every other image on this
+    site is flat vector in the brand's own palette, so a photograph would be the
+    odd one out even if it were allowed.
+
+    NO NUMBER IS BAKED IN. The discount is rendered in HTML beside this, from
+    the coupon row, so the same drawing keeps working when the offer changes to
+    30% or ends. Putting "40%" in the artwork is how a picture ends up
+    contradicting the price underneath it.
+  -->
+  <defs>
+    <linearGradient id="bdGlow" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#eff6d8"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="bdCoin" x1="0.3" y1="0.1" x2="0.8" y2="1">
+      <stop offset="0" stop-color="#d6ef5a"/>
+      <stop offset="0.5" stop-color="#a5c715"/>
+      <stop offset="1" stop-color="#6e8a0e"/>
+    </linearGradient>
+    <linearGradient id="bdScreen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1f221b"/>
+      <stop offset="1" stop-color="#14160f"/>
+    </linearGradient>
+    <filter id="bdSoft" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#111111" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+
+  <!-- A wash behind everything, so the drawing sits on the page rather than
+       floating on a hard white rectangle. -->
+  <circle cx="470" cy="150" r="220" fill="url(#bdGlow)"/>
+
+  <!-- The website itself: a browser window with a real-looking page in it. -->
+  <g filter="url(#bdSoft)">
+    <rect x="40" y="70" width="400" height="280" rx="18" fill="url(#bdScreen)"/>
+    <!-- chrome -->
+    <rect x="40" y="70" width="400" height="38" rx="18" fill="#262a20"/>
+    <rect x="40" y="94" width="400" height="14" fill="#262a20"/>
+    <circle cx="66" cy="89" r="5" fill="#e8615a"/>
+    <circle cx="84" cy="89" r="5" fill="#f5b301"/>
+    <circle cx="102" cy="89" r="5" fill="#62c454"/>
+    <rect x="124" y="80" width="232" height="18" rx="9" fill="#33382c"/>
+    <!-- a padlock, because the certificate is part of what is being sold -->
+    <path d="M148 86v-2.5a3.5 3.5 0 0 1 7 0V86" fill="none" stroke="#a5c715" stroke-width="1.6" stroke-linecap="round"/>
+    <rect x="146.5" y="86" width="10" height="7.5" rx="1.8" fill="#a5c715"/>
+    <rect x="164" y="84" width="96" height="9" rx="4.5" fill="#4b5140"/>
+
+    <!-- the page: a hero line, a paragraph, and three cards -->
+    <rect x="72" y="136" width="170" height="16" rx="8" fill="#e9ecdf"/>
+    <rect x="72" y="162" width="118" height="16" rx="8" fill="#a5c715"/>
+    <rect x="72" y="194" width="232" height="8" rx="4" fill="#3c4234"/>
+    <rect x="72" y="210" width="196" height="8" rx="4" fill="#3c4234"/>
+
+    <g>
+      <rect x="72" y="244" width="108" height="76" rx="12" fill="#22261d" stroke="#333829"/>
+      <rect x="88" y="262" width="34" height="8" rx="4" fill="#a5c715"/>
+      <rect x="88" y="280" width="70" height="6" rx="3" fill="#3c4234"/>
+      <rect x="88" y="294" width="54" height="6" rx="3" fill="#3c4234"/>
+    </g>
+    <g>
+      <rect x="192" y="244" width="108" height="76" rx="12" fill="#22261d" stroke="#333829"/>
+      <rect x="208" y="262" width="34" height="8" rx="4" fill="#a5c715"/>
+      <rect x="208" y="280" width="70" height="6" rx="3" fill="#3c4234"/>
+      <rect x="208" y="294" width="54" height="6" rx="3" fill="#3c4234"/>
+    </g>
+    <g>
+      <rect x="312" y="244" width="108" height="76" rx="12" fill="#22261d" stroke="#333829"/>
+      <rect x="328" y="262" width="34" height="8" rx="4" fill="#a5c715"/>
+      <rect x="328" y="280" width="70" height="6" rx="3" fill="#3c4234"/>
+      <rect x="328" y="294" width="54" height="6" rx="3" fill="#3c4234"/>
+    </g>
+  </g>
+
+  <!-- The taka coin, overlapping the window so the two read as one scene. -->
+  <g filter="url(#bdSoft)">
+    <circle cx="474" cy="232" r="86" fill="url(#bdCoin)"/>
+    <circle cx="474" cy="232" r="72" fill="none" stroke="#2f3b05" stroke-opacity="0.22" stroke-width="2"/>
+    <!-- ৳ -->
+    <text x="474" y="232" text-anchor="middle" dominant-baseline="central"
+          font-family="Hind Siliguri, Noto Sans Bengali, system-ui, sans-serif"
+          font-size="86" font-weight="700" fill="#2f3b05">৳</text>
+  </g>
+
+  <!-- A price tag, empty of numbers on purpose: the figure is live HTML. -->
+  <g filter="url(#bdSoft)">
+    <path d="M334 300 h104 a14 14 0 0 1 14 14 v46 a14 14 0 0 1 -14 14 h-104 l-30 -37 z" fill="#111111"/>
+    <circle cx="326" cy="337" r="7" fill="#a5c715"/>
+    <rect x="352" y="326" width="72" height="9" rx="4.5" fill="#a5c715"/>
+    <rect x="352" y="344" width="46" height="7" rx="3.5" fill="#4b5140"/>
+  </g>
+
+  <!-- Two small marks of speed and safety, the things the plan actually buys. -->
+  <g opacity="0.95">
+    <circle cx="96" cy="386" r="16" fill="#eff6d8"/>
+    <path d="M96 378 l-5 9 h5 l-2 7 8 -10 h-5 z" fill="#6e8a0e"/>
+    <circle cx="140" cy="386" r="16" fill="#eff6d8"/>
+    <path d="M140 379 l7 3 v4c0 4-3 7-7 8-4-1-7-4-7-8v-4z" fill="#6e8a0e"/>
+  </g>
+</svg>
