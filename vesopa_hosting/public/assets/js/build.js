@@ -413,7 +413,7 @@
     status('thinking');
     state.undo.push(snapshot()); state.redo = [];
     if (state.undo.length > 40) state.undo.shift();
-    turn = { partial: {}, removed: {}, steps: {}, stepsEl: null, say: '', ask: '', started: {} };
+    turn = { partial: {}, removed: {}, steps: {}, stepsEl: null, say: '', ask: '', started: {}, completed: 0 };
     syncChrome();
     openSheet(false); // on a phone, get out of the way of the preview
 
@@ -444,14 +444,64 @@
             if (!line) continue;
             var ev; try { ev = JSON.parse(line.slice(5)); } catch (e) { continue; }
             if (ev.op === 'error') failed = ev.error;
-            else handle(ev);
+            else enqueue(ev);
           }
         }
       }
     } catch (e) {
       failed = T('lost');
     }
+    // The model finishes writing long before the page finishes showing it.
+    await drained();
     finishTurn(failed);
+  }
+
+  /* ---- Pacing -------------------------------------------------------------
+   * SECTIONS ARRIVE FASTER THAN ANYONE CAN WATCH THEM.
+   *
+   * The designer writes about 690 characters a second, so a whole site — nav,
+   * hero, four or five bands, contact, footer — lands in a few seconds and the
+   * customer sees a finished page appear more or less at once. The thing they
+   * were promised is watching it being built, and the thing they need is a
+   * moment to read each part and say "no, not that". Both were lost to raw
+   * speed.
+   *
+   * So the stream is received as fast as it comes and APPLIED on a queue, with
+   * a beat before each new section starts. The same reasoning as the setup
+   * wizard's MIN_STEP_MS in provisioning.js: a checklist where every row
+   * finishes in the same frame reads as "nothing happened".
+   *
+   * The pause is before a NEW section, never after the last one, so a
+   * one-section edit — "make the hero green" — is as immediate as it ever was.
+   * Nothing waits on a timer that the customer is not watching.
+   */
+  var SECTION_DWELL = 650;
+  var queue = [];
+  var draining = false;
+  var drainWaiters = [];
+
+  function pause(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+  function enqueue(ev) { queue.push(ev); drain(); }
+
+  async function drain() {
+    if (draining) return;
+    draining = true;
+    while (queue.length) {
+      var ev = queue[0];
+      var startsNewSection = ev.op === 'section' && !turn.started[ev.id];
+      if (startsNewSection && turn.completed > 0) await pause(SECTION_DWELL);
+      queue.shift();
+      handle(ev);
+    }
+    draining = false;
+    drainWaiters.splice(0).forEach(function (r) { r(); });
+  }
+
+  /** Resolves once everything received has actually been put on the page. */
+  function drained() {
+    if (!draining && !queue.length) return Promise.resolve();
+    return new Promise(function (r) { drainWaiters.push(r); });
   }
 
   function handle(ev) {
@@ -510,6 +560,7 @@
       }
       if (ev.final) {
         html[ev.id] = ev.html;
+        turn.completed += 1;
         delete turn.partial[ev.id];
         if (node) { node.classList.remove('vs-writing'); node.classList.add('vs-born'); }
         syncOrder();
