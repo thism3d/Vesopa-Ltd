@@ -17,21 +17,20 @@
   <div class="hero-grid"></div>
   <div class="wrap hero-inner">
     <p class="kicker" data-reveal="0" style="justify-content:center">
-      <%= category ? category.label : 'Domain pricing' %>
+      <%= category ? category.label : t('Domain pricing') %>
     </p>
     <h1 class="display dcat-h1" data-reveal="60">
       <% if (category) { %>
-        <%= category.label %> domains<br><span class="hl"><%= total %> extensions</span>
+        <%- th('{category} domains<br><span class="hl">{v} extensions</span>', { category: category.label, v: num(total) }) %>
       <% } else { %>
-        Every extension we sell<br><span class="hl">and what it renews at</span>
+        <%- th('Every extension we sell<br><span class="hl">and what it renews at</span>') %>
       <% } %>
     </h1>
     <p class="lede hero-lede" data-reveal="100">
       <% if (category) { %>
         <%= category.blurb %>
       <% } else { %>
-        All <%= total %> of them, with the renewal price next to the first year —
-        because the second year is the one that surprises people.
+        <%= t('All {v} of them, with the renewal price next to the first year — because the second year is the one that surprises people.', { v: num(total) }) %>
       <% } %>
     </p>
 
@@ -108,11 +107,21 @@
   <div class="wrap">
     <div class="dcat-meta">
       <p class="dcat-count" data-catalogue-count aria-live="polite">
-        <b><%= total %></b> extension<%= total === 1 ? '' : 's' %><%= filters.q ? ` matching “${filters.q}”` : '' %>
-        <% if (cheapest) { %> · from <b><%= cheapest.register_display %></b> a year<% } %>
+        <%# One sentence per case rather than fragments glued together: in
+            Bangla the price does not sit where it sits in English, and a
+            sentence assembled from pieces cannot be reordered by a translator. %>
+        <% if (filters.q && cheapest) { %>
+          <%- th('<b>{n}</b> extensions matching “{q}” · from <b>{price}</b> a year', { n: num(total), q: filters.q, price: cheapest.register_display }) %>
+        <% } else if (filters.q) { %>
+          <%- th('<b>{n}</b> extensions matching “{q}”', { n: num(total), q: filters.q }) %>
+        <% } else if (cheapest) { %>
+          <%- th('<b>{n}</b> extensions · from <b>{price}</b> a year', { n: num(total), price: cheapest.register_display }) %>
+        <% } else { %>
+          <%- th('<b>{n}</b> extensions', { n: num(total) }) %>
+        <% } %>
       </p>
       <% if (filters.category || filters.band || filters.q || filters.promoOnly || filters.featuredOnly) { %>
-        <a class="dcat-clear" href="/domains/pricing" data-clear-filters>Clear filters</a>
+        <a class="dcat-clear" href="/domains/pricing" data-clear-filters><%= t('Clear filters') %></a>
       <% } %>
     </div>
 
@@ -150,7 +159,7 @@
 
     <div class="dcat-end" data-catalogue-end <%= hasMore ? 'hidden' : '' %>>
       <%- icon('check-circle', 18) %>
-      <span>That is all <b><%= total %></b> of them.</span>
+      <span><%- th('That is all <b>{v}</b> of them.', { v: num(total) }) %></span>
     </div>
   </div>
 </section>
@@ -172,7 +181,9 @@
           <span class="dcat-shelf-icon"><%- icon(c.icon, 20) %></span>
           <span class="dcat-shelf-body">
             <b><%= c.label %></b>
-            <span class="small muted"><%= c.count %> extensions<%= c.from_display ? ` · from ${c.from_display}` : '' %></span>
+            <span class="small muted"><%= c.from_display
+                  ? t('{n} extensions · from {price} a year', { n: num(c.count), price: c.from_display })
+                  : tn('{n} extension', '{n} extensions', c.count, { n: num(c.count) }) %></span>
           </span>
           <%- icon('arrow', 16) %>
         </a>
@@ -191,11 +202,12 @@
     </div>
 
     <p class="small muted mt-3">
-      All prices are per year and
-      <% if (showVat) { %>include <%= vatLabel %> at <%= vatPercent %>%<% } else { %>are shown in <%= currency.code %><% } %>.
-      Register and transfer prices are for the first year; renewal is what you pay
-      every year after that. Prices are reviewed when the registries change theirs,
-      and we email before we take a renewal.
+      <% if (showVat) { %>
+        <%= t('All prices are per year and include {label} at {v}%.', { label: vatLabel, v: num(vatPercent) }) %>
+      <% } else { %>
+        <%= t('All prices are per year and are shown in {code}.', { code: currency.code }) %>
+      <% } %>
+      <%= t('Register and transfer prices are for the first year; renewal is what you pay every year after that. Prices are reviewed when the registries change theirs, and we email before we take a renewal.') %>
     </p>
   </div>
 </section>

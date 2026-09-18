@@ -1,4 +1,5 @@
 {
+  "{n} year": "{n} বছর",
   "Address": "ঠিকানা",
   "Address line 2 (optional)": "ঠিকানার দ্বিতীয় লাইন (ঐচ্ছিক)",
   "At least 10 characters, with a number.": "অন্তত ১০টি অক্ষর, সঙ্গে একটি সংখ্যা।",
@@ -13,6 +14,7 @@
   "First name": "নামের প্রথম অংশ",
   "Last name": "নামের শেষ অংশ",
   "Message": "বার্তা",
+  "Monthly": "মাসিক",
   "New password": "নতুন পাসওয়ার্ড",
   "Not found.": "পাওয়া যায়নি।",
   "Open a ticket": "একটি টিকিট খুলুন",

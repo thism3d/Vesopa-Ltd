@@ -4,9 +4,9 @@
 <main id="main">
 <%- include('../partials/page-hero', {
   kicker: 'SSL certificates',
-  heading: 'The padlock,<br><span class="hl">included and automatic</span>',
-  sub: 'Every site hosted with us gets a certificate issued the moment your domain points here, renewed for as long as you stay. There is nothing to buy.',
-  heroCta: { href: '/hosting', label: 'See hosting plans', secondary: { href: '/transfer', label: 'Move a site here' } },
+  heading: th('The padlock,<br><span class="hl">included and automatic</span>'),
+  sub: t('Every site hosted with us gets a certificate issued the moment your domain points here, renewed for as long as you stay. There is nothing to buy.'),
+  heroCta: { href: '/hosting', label: t('See hosting plans'), secondary: { href: '/transfer', label: t('Move a site here') } },
 }) %>
 
 <section class="section">
@@ -14,9 +14,9 @@
     <div class="grid grid-3">
       <%
       const points = [
-        ['lock',  'Issued automatically', 'When your domain resolves to our server, a certificate is requested, installed and turned on. You never generate a signing request or paste a private key.'],
-        ['backup','Renewed for you',      'Certificates last 90 days. Ours renew at 60 with no involvement from you — the single most common cause of a site going "not secure" simply cannot happen here.'],
-        ['shield','Redirects to HTTPS',   'Once the certificate is live we can force every http request to https, so an old link or a bookmark still lands on the secure version.'],
+        ['lock',  'Issued automatically', t('When your domain resolves to our server, a certificate is requested, installed and turned on. You never generate a signing request or paste a private key.')],
+        ['backup',t('Renewed for you'),      t('Certificates last 90 days. Ours renew at 60 with no involvement from you — the single most common cause of a site going "not secure" simply cannot happen here.')],
+        ['shield','Redirects to HTTPS',   t('Once the certificate is live we can force every http request to https, so an old link or a bookmark still lands on the secure version.')],
       ];
       points.forEach(function (p, i) { %>
         <article class="card card-hover card-accent" data-reveal="<%= i * 80 %>">
@@ -61,14 +61,14 @@
     <div data-acc-group data-reveal="40">
       <%
       const faqs = [
-        ['Does a free certificate look different to a visitor?',
-         'No. A visitor sees the same padlock and the same "connection is secure" panel. The difference only appears if somebody opens the certificate detail and reads the issuer, which essentially nobody does.'],
-        ['What about subdomains?',
-         'Each subdomain you add in the panel gets its own certificate, issued the same way. shop.yourdomain.co.uk and blog.yourdomain.co.uk are both covered without you doing anything.'],
-        ['I already bought a certificate elsewhere. Can I use it?',
-         'Yes. Send us the certificate, the private key and the intermediate bundle and we will install it. Ordinary support, no charge.'],
-        ['Will HTTPS slow my site down?',
-         'No. On HTTP/2 — which we run — an encrypted connection is usually faster than an unencrypted one, because the protocol only negotiates over TLS. The handshake cost is a few milliseconds, once.'],
+        [t('Does a free certificate look different to a visitor?'),
+         t('No. A visitor sees the same padlock and the same "connection is secure" panel. The difference only appears if somebody opens the certificate detail and reads the issuer, which essentially nobody does.')],
+        [t('What about subdomains?'),
+         t('Each subdomain you add in the panel gets its own certificate, issued the same way. shop.yourdomain.co.uk and blog.yourdomain.co.uk are both covered without you doing anything.')],
+        [t('I already bought a certificate elsewhere. Can I use it?'),
+         t('Yes. Send us the certificate, the private key and the intermediate bundle and we will install it. Ordinary support, no charge.')],
+        [t('Will HTTPS slow my site down?'),
+         t('No. On HTTP/2 — which we run — an encrypted connection is usually faster than an unencrypted one, because the protocol only negotiates over TLS. The handshake cost is a few milliseconds, once.')],
       ];
       faqs.forEach(function (f) { %>
         <div class="acc">

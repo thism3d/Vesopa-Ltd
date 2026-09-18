@@ -4,8 +4,8 @@
 <main id="main">
 <%- include('../partials/page-hero', {
   kicker: 'Domain transfer',
-  heading: 'Bring your domain,<br><span class="hl">keep your year</span>',
-  sub: 'Transferring adds a full year to whatever time is already left on the name. Nothing is lost and your DNS carries over unchanged.',
+  heading: th('Bring your domain,<br><span class="hl">keep your year</span>'),
+  sub: t('Transferring adds a full year to whatever time is already left on the name. Nothing is lost and your DNS carries over unchanged.'),
   heroCta: { href: '/domains', label: 'Start a transfer' },
 }) %>
 
@@ -35,10 +35,10 @@
     <h2 class="h2 mb-3" data-reveal="0"><%= t('Before you start') %></h2>
     <div class="grid" style="gap:14px" data-reveal="40">
       <% [
-        ['warning', 'A domain registered or transferred in the last 60 days cannot move', 'This is an ICANN rule, not ours. You will have to wait out the remainder of the 60 days.'],
-        ['warning', 'Check the contact email on the domain', 'The approval goes to whatever address is on the WHOIS record. If that is an old mailbox you cannot reach, update it before you begin.'],
-        ['info', 'Your DNS records come with you', 'We copy the existing zone so mail and any subdomains keep working. If you host elsewhere, nothing about your website changes at all.'],
-        ['info', '.uk domains work differently', 'No auth code. Ask your registrar to change the IPS tag to ours and it moves, usually within minutes. Tell us and we will walk you through it.'],
+        ['warning', t('A domain registered or transferred in the last 60 days cannot move'), t('This is an ICANN rule, not ours. You will have to wait out the remainder of the 60 days.')],
+        ['warning', t('Check the contact email on the domain'), t('The approval goes to whatever address is on the WHOIS record. If that is an old mailbox you cannot reach, update it before you begin.')],
+        ['info', t('Your DNS records come with you'), t('We copy the existing zone so mail and any subdomains keep working. If you host elsewhere, nothing about your website changes at all.')],
+        ['info', t('.uk domains work differently'), t('No auth code. Ask your registrar to change the IPS tag to ours and it moves, usually within minutes. Tell us and we will walk you through it.')],
       ].forEach(function (s) { %>
         <div class="card">
           <div class="row" style="gap:12px;align-items:flex-start">

@@ -134,6 +134,15 @@ CREATE TABLE IF NOT EXISTS plans (
   slug               VARCHAR(60)  CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   name               VARCHAR(80)  CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   tagline            VARCHAR(190) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  -- The same copy in Bangla. A plan's name, its tagline, its badge and its
+  -- feature list are text an admin types, so they are not translatable keys and
+  -- the i18n catalogue cannot reach them -- which is why the Bangla home page
+  -- still said "Starter / One website, done properly." in English.
+  -- Empty falls back to the English, which still sells the plan.
+  name_bn        VARCHAR(80) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  tagline_bn     VARCHAR(190) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  badge_bn       VARCHAR(40) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  features_bn    TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL,
   monthly_pence      INT UNSIGNED NOT NULL,
   annual_pence       INT UNSIGNED NOT NULL,
   biennial_pence     INT UNSIGNED NOT NULL,
@@ -1065,6 +1074,92 @@ BEGIN
     VALUES
       ('BDT', 'Bangladeshi taka', '৳', 'en-BD', 149.000000, 'nearest100', 0.00, '',
        '', 0, 0, 0, 90);
+  END IF;
+
+  -- -------------------------------------------------------------------------
+  -- The public offers page's own columns.
+  -- -------------------------------------------------------------------------
+  -- These went into CREATE TABLE and nowhere else, which is only half a
+  -- migration: `CREATE TABLE IF NOT EXISTS` does nothing to a table that
+  -- already exists, so a fresh database got them and every database that
+  -- predates them never would. Found by seeding an offer into a local copy and
+  -- being told `Unknown column 'description_bn'`. Live has them because live
+  -- was built after they were written; a restore from any older dump would
+  -- not, and the offers page would have thrown on its own SELECT.
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'coupons'
+       AND COLUMN_NAME = 'public_offer'
+  ) THEN
+    ALTER TABLE coupons
+      ADD COLUMN public_offer TINYINT(1) NOT NULL DEFAULT 0 AFTER first_order_only,
+      ADD COLUMN headline VARCHAR(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci
+                 NOT NULL DEFAULT '' AFTER public_offer,
+      ADD COLUMN headline_bn VARCHAR(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci
+                 NOT NULL DEFAULT '' AFTER headline,
+      ADD COLUMN description_bn VARCHAR(190) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci
+                 NOT NULL DEFAULT '' AFTER headline_bn,
+      ADD COLUMN countries VARCHAR(190) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci
+                 NOT NULL DEFAULT '' AFTER description_bn;
+  END IF;
+
+  -- -------------------------------------------------------------------------
+  -- Bundle offers: buy the domain, the first month of hosting comes with it.
+  -- -------------------------------------------------------------------------
+  -- A third kind of code. `percent` and `fixed` both take something OFF a
+  -- basket; a bundle says what the basket COSTS instead -- "a .site and a
+  -- month of hosting, 381 taka, whatever those two are priced at today". The
+  -- discount is then derived (what the lines come to, minus the bundle price)
+  -- rather than typed, so a price rise never quietly turns the offer into a
+  -- loss and a price cut never leaves the customer paying more than the
+  -- headline. Re-stating the whole ENUM is the only way to extend one.
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'coupons'
+       AND COLUMN_NAME = 'kind' AND COLUMN_TYPE LIKE '%bundle%'
+  ) THEN
+    ALTER TABLE coupons
+      MODIFY COLUMN kind ENUM('percent','fixed','bundle') NOT NULL DEFAULT 'percent';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'coupons'
+       AND COLUMN_NAME = 'requires_tld'
+  ) THEN
+    ALTER TABLE coupons
+      -- The extension the basket must contain for the bundle to apply, without
+      -- the dot. Empty means any.
+      ADD COLUMN requires_tld VARCHAR(63) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci
+                 NOT NULL DEFAULT '' AFTER applies_to,
+      -- The plan whose free months are granted, BY SLUG rather than id: a slug
+      -- survives a catalogue reimport and reads in the admin without a join.
+      ADD COLUMN grants_plan_slug VARCHAR(40) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci
+                 NOT NULL DEFAULT '' AFTER requires_tld,
+      ADD COLUMN grants_months INT UNSIGNED NOT NULL DEFAULT 0 AFTER grants_plan_slug;
+  END IF;
+
+  -- -------------------------------------------------------------------------
+  -- The trial itself, on the service it belongs to.
+  -- -------------------------------------------------------------------------
+  -- Recorded on the SERVICE for the same reason free_domain_eligible is: what
+  -- somebody was given must not be re-derived later from a coupon row that an
+  -- admin may since have edited or switched off.
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'services'
+       AND COLUMN_NAME = 'is_trial'
+  ) THEN
+    ALTER TABLE services
+      ADD COLUMN is_trial TINYINT(1) NOT NULL DEFAULT 0 AFTER free_domain_claimed,
+      -- Which offer gave it, so the admin can count what a campaign produced.
+      ADD COLUMN trial_code VARCHAR(40) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci
+                 NOT NULL DEFAULT '' AFTER is_trial,
+      -- Set when the "your free month is ending" email goes out, so it goes
+      -- out ONCE. A reminder sent every five minutes by the job loop is worse
+      -- than no reminder at all.
+      ADD COLUMN trial_warned_at DATETIME NULL AFTER trial_code,
+      ADD KEY idx_services_trial (is_trial, status, next_due_at);
   END IF;
 END //
 DELIMITER ;

@@ -4,8 +4,8 @@
 <main id="main">
 <%- include('../partials/page-hero', {
   kicker: 'About',
-  heading: 'A hosting company<br><span class="hl">run by people who use it</span>',
-  sub: 'Vesopa Cloud is part of Vesopa EPOS Ltd — a Welsh software company that has run its own servers since 2018, because we needed hosting we could trust for our own customers first.',
+  heading: th('A hosting company<br><span class="hl">run by people who use it</span>'),
+  sub: t('Vesopa Cloud is part of Vesopa EPOS Ltd — a Welsh software company that has run its own servers since 2018, because we needed hosting we could trust for our own customers first.'),
 }) %>
 
 <section class="section">
@@ -48,10 +48,10 @@
     <h2 class="h1 center mb-4" data-reveal="0"><%= t('What we will not do') %></h2>
     <div class="grid" style="gap:14px" data-reveal="40">
       <% [
-        ['Sell you something free', 'SSL is included. So is WHOIS privacy where the registry allows it. If we ever charge for one of those, something has gone wrong here.'],
-        ['Hide the renewal price', 'It is printed on the plan before you buy and it does not move. The industry standard of a cheap first year and a doubled second is a trick, not a business model.'],
-        ['Make leaving difficult', 'Unlock the domain, get the code, go. No fee, no retention call, no seven-day wait we invented.'],
-        ['Oversell the hardware', 'There is a real limit to how many accounts go on a node and we hold to it. "Unlimited" everything on a shared server means everyone is slow at the same time.'],
+        [t('Sell you something free'), t('SSL is included. So is WHOIS privacy where the registry allows it. If we ever charge for one of those, something has gone wrong here.')],
+        [t('Hide the renewal price'), t('It is printed on the plan before you buy and it does not move. The industry standard of a cheap first year and a doubled second is a trick, not a business model.')],
+        [t('Make leaving difficult'), t('Unlock the domain, get the code, go. No fee, no retention call, no seven-day wait we invented.')],
+        [t('Oversell the hardware'), t('There is a real limit to how many accounts go on a node and we hold to it. "Unlimited" everything on a shared server means everyone is slow at the same time.')],
       ].forEach(function (s) { %>
         <div class="card">
           <div class="row" style="gap:12px;align-items:flex-start">

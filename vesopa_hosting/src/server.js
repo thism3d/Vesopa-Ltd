@@ -222,6 +222,53 @@ app.use(async (req, res, next) => {
    * watching a DNS check actually wants to know; older ones get a date.
    */
   res.locals.when = req.i18n.when;
+
+  /*
+   * TEXT THAT LIVES IN THE DATABASE, in the language being read.
+   *
+   * t() translates the furniture, because the English IS the key. It cannot
+   * touch a plan's name, its tagline, its badge, its feature list or an
+   * offer's headline: those are typed by an admin, they change without a
+   * deploy, and they are not keys. So `npm run i18n:check` reported the Bangla
+   * complete while the Bangla home page said "Starter", "One website, done
+   * properly." and seven English feature lines in the middle of a Bangla page.
+   *
+   * Each such column has a `_bn` twin. This picks it when the page is Bangla
+   * and there is something in it, and falls back to the English otherwise --
+   * falling back to the English rather than to nothing, because a plan named
+   * in the wrong language still sells and an unnamed one does not.
+   */
+  res.locals.dbT = (row, field) => {
+    if (!row) return '';
+    if (req.locale === 'bn') {
+      const alt = row[`${field}_bn`];
+      if (alt != null && String(alt).trim()) return alt;
+    }
+    return row[field] == null ? '' : row[field];
+  };
+
+  /*
+   * A billing term, said in the language being read.
+   *
+   * The labels in config.TERMS are English data ("1 year"), not translatable
+   * keys, so t(term.label) would be a lookup the extractor cannot see and
+   * nobody would ever translate. Built from the number of years instead: that
+   * is extractable, it takes the plural correctly, and it works for a term
+   * nobody has added yet. Shared from here because three pages print it and
+   * two copies of this would drift.
+   */
+  res.locals.termLabel = (term) => {
+    const months = Number(term && term.months) || 0;
+    if (months === 1) return res.locals.t('Monthly');
+    const years = Math.round(months / 12);
+    return res.locals.tn('{n} year', '{n} years', years, { n: res.locals.num(years) });
+  };
+
+  /** The same, for a column holding one item per line (a feature list). */
+  res.locals.dbList = (row, field) => String(res.locals.dbT(row, field) || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
   // The page's own address in every language, for <link rel="alternate">.
   res.locals.alternates = i18n.alternates(config.SITE_URL, req.path);
   res.locals.localPath = (p) => i18n.localizePath(p, req.locale);

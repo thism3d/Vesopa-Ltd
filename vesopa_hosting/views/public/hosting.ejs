@@ -25,7 +25,7 @@
         <% terms.forEach(function (term) { %>
           <button type="button" class="term-btn <%= term.months === 12 ? 'is-active' : '' %>"
                   data-term="<%= term.months %>" aria-pressed="<%= term.months === 12 %>">
-            <%= term.label %>
+            <%= termLabel(term) %>
             <% if (term.maxSaving > 0) { %><span class="term-save">−<%= term.maxSaving %>%</span><% } %>
           </button>
         <% }); %>
@@ -35,9 +35,11 @@
     <div class="plans">
       <% plans.forEach(function (plan, i) { %>
         <div class="plan <%= plan.badge ? 'plan-featured' : '' %>" data-reveal="<%= i * 90 %>">
-          <% if (plan.badge) { %><span class="plan-badge"><%= plan.badge %></span><% } %>
-          <h2 class="plan-name"><%= plan.name %></h2>
-          <p class="plan-tagline"><%= plan.tagline %></p>
+          <%# dbT(): a plan's own words are typed by an admin, so they have a
+              Bangla twin column rather than a catalogue entry. %>
+          <% if (plan.badge) { %><span class="plan-badge"><%= dbT(plan, 'badge') %></span><% } %>
+          <h2 class="plan-name"><%= dbT(plan, 'name') %></h2>
+          <p class="plan-tagline"><%= dbT(plan, 'tagline') %></p>
 
           <% terms.forEach(function (term) { %>
             <div data-price-for="<%= term.months %>" <%= term.months === 12 ? '' : 'hidden' %>>
@@ -45,32 +47,32 @@
                 <% if (plan.saving[term.months] > 0) { %><s><%= money(plan.monthly_pence) %></s> save <%= plan.saving[term.months] %>%<% } else { %>&nbsp;<% } %>
               </div>
               <div class="plan-price">
-                <span class="cur"><%= plan.perMonthParts[term.months].symbol %></span>
-                <span class="amt"><%= plan.perMonthParts[term.months].whole %></span>
-                <span class="frac">.<%= plan.perMonthParts[term.months].frac %></span>
-                <span class="per">/month</span>
+                <span class="cur"><%= moneyParts(plan.perMonthPence[term.months]).symbol %></span>
+                <span class="amt"><%= moneyParts(plan.perMonthPence[term.months]).whole %></span>
+                <span class="frac">.<%= moneyParts(plan.perMonthPence[term.months]).frac %></span>
+                <span class="per"><%= t('/month') %></span>
               </div>
               <p class="plan-term-note">
-                <% if (term.months === 1) { %>Billed monthly. Cancel any time.
-                <% } else { %><%= money(plan.price[term.months]) %> for <%= term.label.toLowerCase() %>, renews at the same price.<% } %>
+                <% if (term.months === 1) { %><%= t('Billed monthly. Cancel any time.') %>
+                <% } else { %><%= t('{price} for {term}, renews at the same price.', { price: money(plan.price[term.months]), term: termLabel(term) }) %><% } %>
               </p>
             </div>
           <% }); %>
 
           <div class="plan-cta">
             <a class="btn btn-block <%= plan.badge ? '' : 'btn-dark' %>" data-buy-link
-               href="/order/<%= plan.slug %>?term=12">Choose <%= plan.name %></a>
+               href="/order/<%= plan.slug %>?term=12"><%= t('Choose {plan}', { plan: dbT(plan, 'name') }) %></a>
           </div>
 
           <div class="plan-spec">
-            <div><b><%= plan.websites %></b><span><%= plan.websites === 1 ? 'Website' : 'Websites' %></span></div>
-            <div><b><%= plan.storage_gb %> GB</b><span>NVMe storage</span></div>
+            <div><b><%= num(plan.websites) %></b><span><%= tn('Website', 'Websites', plan.websites) %></span></div>
+            <div><b><%= t('{v} GB', { v: num(plan.storage_gb) }) %></b><span><%= t('NVMe storage') %></span></div>
             <div><b><%= plan.databases %></b><span>Databases</span></div>
-            <div><b><%= plan.mailboxes %></b><span>Mailboxes</span></div>
+            <div><b><%= num(plan.mailboxes) %></b><span><%= t('Mailboxes') %></span></div>
           </div>
 
           <ul class="plan-features">
-            <% plan.featureList.forEach(function (f) { %>
+            <% dbList(plan, 'features').forEach(function (f) { %>
               <li><%- icon('check', 16) %><span><%= f %></span></li>
             <% }); %>
           </ul>
@@ -79,8 +81,7 @@
     </div>
 
     <p class="center small muted mt-3">
-      Prices exclude VAT at <%= vatPercent %>%. A free domain is included on
-      12-month terms and above for .co.uk, .uk and .com.
+      <%= t('Prices exclude VAT at {v}%. A free domain is included on 12-month terms and above for .co.uk, .uk and .com.', { v: num(vatPercent) }) %>
     </p>
   </div>
 </section>
@@ -100,22 +101,22 @@
             <tr>
               <th style="min-width:190px"><%= t('Feature') %></th>
               <% plans.forEach(function (p) { %>
-                <th class="center"><%= p.name %></th>
+                <th class="center"><%= dbT(p, 'name') %></th>
               <% }); %>
             </tr>
           </thead>
           <tbody>
             <%
             const rows = [
-              ['Websites',          (p) => p.websites],
-              ['NVMe storage',      (p) => p.storage_gb + ' GB'],
-              ['Bandwidth',         (p) => p.bandwidth_gb === 0 ? 'Unmetered' : p.bandwidth_gb + ' GB'],
-              ['Databases',         (p) => p.databases],
-              ['Mailboxes',         (p) => p.mailboxes],
-              ['Free SSL',          (p) => p.free_ssl ? true : false],
-              ['Free domain (12m+)',(p) => p.free_domain ? true : false],
-              ['Daily backups',     (p) => p.daily_backups ? true : 'Weekly'],
-              ['Priority support',  (p) => p.priority_support ? true : false],
+              [t('Websites'),       (p) => num(p.websites)],
+              [t('NVMe storage'),   (p) => t('{v} GB', { v: num(p.storage_gb) })],
+              [t('Bandwidth'),      (p) => (p.bandwidth_gb === 0 ? t('Unmetered') : t('{v} GB', { v: num(p.bandwidth_gb) }))],
+              [t('Databases'),      (p) => num(p.databases)],
+              [t('Mailboxes'),      (p) => num(p.mailboxes)],
+              [t('Free SSL'),       (p) => p.free_ssl ? true : false],
+              [t('Free domain (12m+)'), (p) => p.free_domain ? true : false],
+              [t('Daily backups'),  (p) => (p.daily_backups ? true : t('Weekly'))],
+              [t('Priority support'), (p) => p.priority_support ? true : false],
             ];
             rows.forEach(function (r) { %>
               <tr>
@@ -159,10 +160,10 @@
     <div class="grid grid-4">
       <%
       const stack = [
-        ['server', 'Ubuntu 24.04 LTS', 'Long-term support to 2029, patched on a schedule rather than when something breaks.'],
-        ['bolt',   'NVMe SSD',         'Not SATA marketed as "SSD". Database-heavy sites feel this the most.'],
-        ['shield', 'Isolated accounts','Every account is a separate system user. A neighbour being compromised is not your problem.'],
-        ['globe',  'HTTP/2 + Brotli',  'Modern transport and compression on by default, no configuration needed.'],
+        ['server', 'Ubuntu 24.04 LTS', t('Long-term support to 2029, patched on a schedule rather than when something breaks.')],
+        ['bolt',   'NVMe SSD',         t('Not SATA marketed as "SSD". Database-heavy sites feel this the most.')],
+        ['shield', 'Isolated accounts',t('Every account is a separate system user. A neighbour being compromised is not your problem.')],
+        ['globe',  'HTTP/2 + Brotli',  t('Modern transport and compression on by default, no configuration needed.')],
       ];
       stack.forEach(function (s, i) { %>
         <article class="card card-hover" data-reveal="<%= i * 70 %>">

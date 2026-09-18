@@ -3,9 +3,9 @@
 
 <main id="main">
 <%- include('../partials/page-hero', {
-  kicker: 'Free website migration',
-  heading: 'We will move it,<br><span class="hl">you just check it</span>',
-  sub: 'Send us your current hosting login. We copy everything, you look at it on a preview address, and only then does anything change for your visitors.',
+  kicker: t('Free website migration'),
+  heading: th('We will move it,<br><span class="hl">you just check it</span>'),
+  sub: t('Send us your current hosting login. We copy everything, you look at it on a preview address, and only then does anything change for your visitors.'),
   heroCta: { href: '/contact?subject=Migration', label: 'Start a migration' },
 }) %>
 
@@ -60,9 +60,9 @@
       </div>
       <div class="grid" style="gap:14px" data-reveal="80">
         <% [
-          ['DNS propagation is not instant', 'We can change the record in a second; some ISPs cache the old one for a few hours. Email is the part people notice — which is why we keep the old mailbox reachable during the switch.'],
-          ['Very old PHP may not run', 'We ship modern PHP. A site written for PHP 5.6 in 2014 may need a small amount of work. We will tell you before you buy, not after.'],
-          ['Custom server software', 'If your current host installed something unusual for you — a compiled extension, a background daemon — shared hosting may not be the right home. We will say so rather than take the money.'],
+          [t('DNS propagation is not instant'), t('We can change the record in a second; some ISPs cache the old one for a few hours. Email is the part people notice — which is why we keep the old mailbox reachable during the switch.')],
+          [t('Very old PHP may not run'), t('We ship modern PHP. A site written for PHP 5.6 in 2014 may need a small amount of work. We will tell you before you buy, not after.')],
+          [t('Custom server software'), t('If your current host installed something unusual for you — a compiled extension, a background daemon — shared hosting may not be the right home. We will say so rather than take the money.')],
         ].forEach(function (s) { %>
           <div class="card">
             <div class="row" style="gap:12px;align-items:flex-start">

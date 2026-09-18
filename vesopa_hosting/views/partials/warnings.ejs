@@ -62,7 +62,7 @@
     <% }); %>
     <% if (wRest > 0) { %>
       <a class="warnrow-more" href="/panel/notifications">
-        <%= tn('and {n} more thing that needs attention', 'and {n} more things that need attention', wRest) %>
+        <%= tn('and {n} more thing that needs attention', t('and {n} more things that need attention'), wRest) %>
         <%- icon('chevron-right', 14) %>
       </a>
     <% } %>

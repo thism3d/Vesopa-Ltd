@@ -59,9 +59,9 @@
     </div>
 
     <div class="hero-trust" data-reveal="240">
-      <span><%- icon('check-circle', 15) %> Free SSL on every site</span>
-      <span><%- icon('check-circle', 15) %> <%= moneyBackDays %>-day money back</span>
-      <span><%- icon('check-circle', 15) %> UK support, real people</span>
+      <span><%- icon('check-circle', 15) %> <%= t('Free SSL on every site') %></span>
+      <span><%- icon('check-circle', 15) %> <%= t('{n}-day money back', { n: num(moneyBackDays) }) %></span>
+      <span><%- icon('check-circle', 15) %> <%= t('UK support, real people') %></span>
     </div>
   </div>
 
@@ -216,8 +216,8 @@
         <% terms.forEach(function (term) { %>
           <button type="button" class="term-btn <%= term.months === 12 ? 'is-active' : '' %>"
                   data-term="<%= term.months %>" aria-pressed="<%= term.months === 12 %>">
-            <%= term.label %>
-            <% if (term.maxSaving > 0) { %><span class="term-save">−<%= term.maxSaving %>%</span><% } %>
+            <%= termLabel(term) %>
+            <% if (term.maxSaving > 0) { %><span class="term-save">−<%= num(term.maxSaving) %>%</span><% } %>
           </button>
         <% }); %>
       </div>
@@ -226,30 +226,38 @@
     <div class="plans">
       <% plans.forEach(function (plan, i) { %>
         <div class="plan <%= plan.badge ? 'plan-featured' : '' %>" data-reveal="<%= i * 90 %>">
-          <% if (plan.badge) { %><span class="plan-badge"><%= plan.badge %></span><% } %>
+          <%# dbT(), not plain plan.name: the plan's own words are typed by an
+              admin and are not translatable keys, so they have a Bangla twin
+              column rather than a catalogue entry. See res.locals.dbT. %>
+          <% if (plan.badge) { %><span class="plan-badge"><%= dbT(plan, 'badge') %></span><% } %>
 
-          <h3 class="plan-name"><%= plan.name %></h3>
-          <p class="plan-tagline"><%= plan.tagline %></p>
+          <h3 class="plan-name"><%= dbT(plan, 'name') %></h3>
+          <p class="plan-tagline"><%= dbT(plan, 'tagline') %></p>
 
           <% terms.forEach(function (term) { %>
             <div data-price-for="<%= term.months %>" <%= term.months === 12 ? '' : 'hidden' %>>
               <div class="plan-was">
                 <% if (plan.saving[term.months] > 0) { %>
-                  <s><%= money(plan.monthly_pence) %></s> save <%= plan.saving[term.months] %>%
+                  <%# num() so the figure is written in Bengali digits on the
+                      Bangla site, the way money() already writes prices. %>
+                  <s><%= money(plan.monthly_pence) %></s> <%= t('save {v}%', { v: num(plan.saving[term.months]) }) %>
                 <% } else { %>&nbsp;<% } %>
               </div>
               <div class="plan-price">
-                <span class="cur"><%= plan.perMonthParts[term.months].symbol %></span>
-                <span class="amt"><%= plan.perMonthParts[term.months].whole %></span>
-                <span class="frac">.<%= plan.perMonthParts[term.months].frac %></span>
-                <span class="per">/month</span>
+                <span class="cur"><%= moneyParts(plan.perMonthPence[term.months]).symbol %></span>
+                <span class="amt"><%= moneyParts(plan.perMonthPence[term.months]).whole %></span>
+                <span class="frac">.<%= moneyParts(plan.perMonthPence[term.months]).frac %></span>
+                <span class="per"><%= t('/month') %></span>
               </div>
               <p class="plan-term-note">
                 <% if (term.months === 1) { %>
-                  Billed monthly. Cancel any time.
+                  <%= t('Billed monthly. Cancel any time.') %>
                 <% } else { %>
-                  <%= money(plan.price[term.months]) %> for <%= term.label.toLowerCase() %>,
-                  then <%= money(plan.price[term.months]) %> on renewal.
+                  <%= t('{price} for {term}, then {renewal} on renewal.', {
+                        price: money(plan.price[term.months]),
+                        term: termLabel(term),
+                        renewal: money(plan.price[term.months]),
+                      }) %>
                 <% } %>
               </p>
             </div>
@@ -257,18 +265,18 @@
 
           <div class="plan-cta">
             <a class="btn btn-block <%= plan.badge ? '' : 'btn-dark' %>" data-buy-link
-               href="/order/<%= plan.slug %>?term=12">Choose <%= plan.name %></a>
+               href="/order/<%= plan.slug %>?term=12"><%= t('Choose {plan}', { plan: dbT(plan, 'name') }) %></a>
           </div>
 
           <div class="plan-spec">
-            <div><b><%= plan.websites === 1 ? '1' : plan.websites %></b><span><%= plan.websites === 1 ? 'Website' : 'Websites' %></span></div>
-            <div><b><%= plan.storage_gb %> GB</b><span>NVMe storage</span></div>
-            <div><b><%= plan.bandwidth_gb === 0 ? 'Unmetered' : plan.bandwidth_gb + ' GB' %></b><span>Bandwidth</span></div>
-            <div><b><%= plan.mailboxes %></b><span>Mailboxes</span></div>
+            <div><b><%= num(plan.websites) %></b><span><%= tn('Website', 'Websites', plan.websites) %></span></div>
+            <div><b><%= t('{v} GB', { v: num(plan.storage_gb) }) %></b><span><%= t('NVMe storage') %></span></div>
+            <div><b><%= plan.bandwidth_gb === 0 ? t('Unmetered') : t('{v} GB', { v: num(plan.bandwidth_gb) }) %></b><span><%= t('Bandwidth') %></span></div>
+            <div><b><%= num(plan.mailboxes) %></b><span><%= t('Mailboxes') %></span></div>
           </div>
 
           <ul class="plan-features">
-            <% plan.featureList.forEach(function (f) { %>
+            <% dbList(plan, 'features').forEach(function (f) { %>
               <li><%- icon('check', 16) %><span><%= f %></span></li>
             <% }); %>
           </ul>
@@ -291,9 +299,7 @@
     </div>
 
     <p class="center small muted mt-3">
-      All prices include VAT at <%= vatPercent %>% — the price you see is the price you pay, and nothing is added at checkout. The monthly plan is priced
-      without a commitment discount; every longer term brings the rate down and
-      includes the domain.
+      <%= t('All prices include VAT at {v}% — the price you see is the price you pay, and nothing is added at checkout. The monthly plan is priced without a commitment discount; every longer term brings the rate down and includes the domain.', { v: num(vatPercent) }) %>
     </p>
   </div>
 </section>
@@ -311,12 +317,12 @@
     <div class="grid grid-3">
       <%
       const features = [
-        ['lock',      'Free SSL, always on',      'A certificate is issued the moment your domain points at us, and renewed automatically for as long as you host with us. Never an add-on.'],
-        ['bolt',      'NVMe storage',             'Every plan is on NVMe SSDs with a modern PHP stack and server-side caching. Pages start rendering in well under a second.'],
-        ['backup',    'Backups you can restore',  'Daily on Business and Pro, weekly on Starter — and you restore them yourself from the panel without opening a ticket.'],
-        ['mail',      'Email at your own domain', 'Mailboxes at yourname@yourbusiness.co.uk, with webmail, IMAP and spam filtering. No separate email bill.'],
-        ['wordpress', 'WordPress in one click',   'Install, update and stage WordPress from the panel. We keep the core patched so an unattended site does not become a liability.'],
-        ['headset',   'Support that answers',     'A ticket reaches someone in the UK who can read a server log — not a script and not a queue that closes at five.'],
+        ['lock',      'Free SSL, always on',      t('A certificate is issued the moment your domain points at us, and renewed automatically for as long as you host with us. Never an add-on.')],
+        ['bolt',      'NVMe storage',             t('Every plan is on NVMe SSDs with a modern PHP stack and server-side caching. Pages start rendering in well under a second.')],
+        ['backup',    t('Backups you can restore'),  t('Daily on Business and Pro, weekly on Starter — and you restore them yourself from the panel without opening a ticket.')],
+        ['mail',      t('Email at your own domain'), t('Mailboxes at yourname@yourbusiness.co.uk, with webmail, IMAP and spam filtering. No separate email bill.')],
+        ['wordpress', 'WordPress in one click',   t('Install, update and stage WordPress from the panel. We keep the core patched so an unattended site does not become a liability.')],
+        ['headset',   t('Support that answers'),     t('A ticket reaches someone in the UK who can read a server log — not a script and not a queue that closes at five.')],
       ];
       features.forEach(function (f, i) { %>
         <article class="card card-hover card-accent" data-reveal="<%= (i % 3) * 80 %>">
@@ -420,9 +426,9 @@
 
         <div class="stack mt-4" style="gap:14px">
           <% [
-            ['bolt',   'Push it and it is live',   'Deploy from Git or drop the folder in. We install the dependencies, pick the port and put it behind HTTPS.'],
-            ['shield', 'SSL before you ask',       'The certificate is issued and renewed on its own. Your AI-built app is on https from its first minute.'],
-            ['backup', 'Break it, roll it back',   'Every deploy is snapshotted. Vibe coding means occasionally shipping something odd at midnight; one click puts yesterday back.'],
+            ['bolt',   t('Push it and it is live'),   t('Deploy from Git or drop the folder in. We install the dependencies, pick the port and put it behind HTTPS.')],
+            ['shield', t('SSL before you ask'),       t('The certificate is issued and renewed on its own. Your AI-built app is on https from its first minute.')],
+            ['backup', t('Break it, roll it back'),   t('Every deploy is snapshotted. Vibe coding means occasionally shipping something odd at midnight; one click puts yesterday back.')],
           ].forEach(function (s, i) { %>
             <div class="row" style="gap:13px;align-items:flex-start">
               <span style="color:var(--lime);flex:none;margin-top:2px"><%- icon(s[0], 20) %></span>
@@ -441,7 +447,7 @@
         </div>
 
         <div class="row mt-4">
-          <a class="btn" href="/hosting">Start building — <%= fromPrice %>/mo</a>
+          <a class="btn" href="/hosting"><%= t('Start building — {price}/mo', { price: fromPrice }) %></a>
           <a class="btn btn-ghost" style="border-color:#3a3a35;color:#fff" href="/contact"><%= t('Ask if yours will run') %></a>
         </div>
       </div>
@@ -460,7 +466,10 @@
             <%# Scenery. aria-hidden because a screen reader spelling out fake
                 source code is noise, and nothing here is information the page
                 depends on. %>
-            <pre class="editor-code" aria-hidden="true"><% [
+            <%# i18n-ignore: the lines below are a React sample, drawn as an illustration.
+    Code is code in every language -- translating `export default function`
+    would make the picture wrong, not localised. %>
+<pre class="editor-code" aria-hidden="true"><% [
               ['<span class="k">export default</span> <span class="k">function</span> <span class="t">Page</span>() {', 0],
               ['  <span class="k">return</span> (', 90],
               ['    &lt;<span class="t">main</span> <span class="s">className</span>=<span class="s">"bakery"</span>&gt;', 180],
@@ -474,8 +483,8 @@
             ].forEach(function (l) { %><span data-line style="animation-delay:<%= l[1] %>ms"><%- l[0] %></span><% }); %></pre>
 
             <div class="editor-foot">
-              <span class="editor-status"><%- icon('check-circle', 17) %> Deployed to yourbakery.co.uk</span>
-              <span class="tiny" style="color:#6f7862">SSL active · 1.2s build</span>
+              <span class="editor-status"><%- icon('check-circle', 17) %> <%= t('Deployed to {domain}', { domain: 'yourbakery.co.uk' }) %></span>
+              <span class="tiny" style="color:#6f7862"><%= t('SSL active · {v}s build', { v: num('1.2') }) %></span>
             </div>
           </div>
         </div>
@@ -602,27 +611,31 @@
       <div class="eplans" data-efam-panel="<%= pair[0] %>" <%= pair[0] === 'business' ? '' : 'hidden' %>>
         <% pair[1].forEach(function (p, i) { %>
           <div class="eplan <%= p.badge ? 'eplan-featured' : '' %>" data-reveal="<%= i * 90 %>">
-            <% if (p.badge) { %><span class="eplan-badge"><%= p.badge %></span><% } %>
-            <h3 class="eplan-name"><%= p.name %></h3>
-            <p class="eplan-tagline"><%= p.tagline %></p>
+            <% if (p.badge) { %><span class="eplan-badge"><%= dbT(p, 'badge') %></span><% } %>
+            <h3 class="eplan-name"><%= dbT(p, 'name') %></h3>
+            <p class="eplan-tagline"><%= dbT(p, 'tagline') %></p>
 
             <div class="eplan-price">
-              <span class="cur"><%= p.perMonthParts[12].symbol %></span>
-              <span class="amt"><%= p.perMonthParts[12].whole %></span>
-              <span class="frac">.<%= p.perMonthParts[12].frac %></span>
+              <span class="cur"><%= moneyParts(p.perMonthPence[12]).symbol %></span>
+              <span class="amt"><%= moneyParts(p.perMonthPence[12]).whole %></span>
+              <span class="frac">.<%= moneyParts(p.perMonthPence[12]).frac %></span>
             </div>
-            <p class="eplan-unit">per <%= p.unit_label %>, per month — billed yearly</p>
+            <p class="eplan-unit"><%= t('per {unit}, per month — billed yearly', { unit: p.unit_label }) %></p>
             <p class="eplan-total">
-              <%= money(p.price[12]) %> a year per <%= p.unit_label %>.
-              Monthly is <%= money(p.monthly_pence) %><% if (p.saving[12] > 0) { %>, so yearly saves <%= p.saving[12] %>%<% } %>.
+              <%= t('{price} a year per {unit}.', { price: money(p.price[12]), unit: p.unit_label }) %>
+              <% if (p.saving[12] > 0) { %>
+                <%= t('Monthly is {price}, so yearly saves {v}%.', { price: money(p.monthly_pence), v: num(p.saving[12]) }) %>
+              <% } else { %>
+                <%= t('Monthly is {price}.', { price: money(p.monthly_pence) }) %>
+              <% } %>
             </p>
 
             <a class="btn btn-block <%= p.badge ? '' : 'btn-dark' %>" href="/order/email/<%= p.slug %>?term=12">
-              Choose <%= p.name %>
+              <%= t('Choose {plan}', { plan: dbT(p, 'name') }) %>
             </a>
 
             <ul class="eplan-features">
-              <% p.featureList.forEach(function (f) { %>
+              <% dbList(p, 'features').forEach(function (f) { %>
                 <li><%- icon('check', 15) %><span><%= f %></span></li>
               <% }); %>
             </ul>
@@ -632,9 +645,7 @@
     <% }); %>
 
     <p class="center small muted mt-3">
-      All prices include VAT at <%= vatPercent %>%. Every hosting plan already
-      includes mailboxes — these are for email on its own, or for a team that
-      has outgrown what the plan covers. <a href="/email">Full email comparison</a>.
+      <%- th('All prices include VAT at {v}%. Every hosting plan already includes mailboxes — these are for email on its own, or for a team that has outgrown what the plan covers. <a href="/email">Full email comparison</a>.', { v: num(vatPercent) }) %>
     </p>
   </div>
 </section>
@@ -658,9 +669,9 @@
       </div>
       <div class="grid" style="gap:14px" data-reveal="100">
         <% [
-          ['We copy everything', 'Files, database, email accounts and cron jobs — not just the public folder.'],
-          ['You check it first', 'On a preview URL, before a single DNS record changes.'],
-          ['Then we switch', 'At a time you choose. Your old host stays live until it has propagated.'],
+          ['We copy everything', t('Files, database, email accounts and cron jobs — not just the public folder.')],
+          [t('You check it first'), t('On a preview URL, before a single DNS record changes.')],
+          ['Then we switch', t('At a time you choose. Your old host stays live until it has propagated.')],
         ].forEach(function (s, i) { %>
           <div class="card" style="background:#1a1a18;border-color:#2a2a26">
             <div class="row" style="gap:12px;align-items:flex-start">
@@ -690,18 +701,18 @@
     <div data-acc-group data-reveal="100">
       <%
       const faqs = [
-        ['Will my price go up when I renew?',
-         'No. The renewal price is the same as the price you signed up at, and it is printed on the plan before you buy. We do not run a cheap first year and then double it — that practice is why people distrust hosting companies, and it costs more in churn than it earns.'],
-        ['What happens if I outgrow my plan?',
-         'You move up a plan from the panel and pay only the difference for the rest of your term. Nothing is reinstalled and nothing goes offline; the account limits change in place.'],
-        ['Do I need to know anything technical?',
-         'No. If you can fill in a form you can get a WordPress site online here. If you do want the technical parts — SSH, cron, a staging copy, a second database — they are all there on Business and Pro, just not in your way.'],
-        ['Can I use a domain I already own?',
-         'Yes. Point its nameservers at ours and add it in the panel; we will show you exactly what to paste and where. You can also transfer the domain to us later, or never — hosting here does not require it.'],
-        ['What is your uptime actually like?',
-         'We commit to 99.9%, which allows about 43 minutes a month. The node is monitored every minute and we publish incidents rather than quietly absorbing them. If we miss the commitment in a month, ask and we will credit that month.'],
-        ['How do I get my money back?',
-         'Cancel within 30 days and email us; we refund the hosting in full, no questions and no retention call. Domain registrations are the one exception — once a registry has taken the name, that fee is spent and cannot be returned.'],
+        [t('Will my price go up when I renew?'),
+         t('No. The renewal price is the same as the price you signed up at, and it is printed on the plan before you buy. We do not run a cheap first year and then double it — that practice is why people distrust hosting companies, and it costs more in churn than it earns.')],
+        [t('What happens if I outgrow my plan?'),
+         t('You move up a plan from the panel and pay only the difference for the rest of your term. Nothing is reinstalled and nothing goes offline; the account limits change in place.')],
+        [t('Do I need to know anything technical?'),
+         t('No. If you can fill in a form you can get a WordPress site online here. If you do want the technical parts — SSH, cron, a staging copy, a second database — they are all there on Business and Pro, just not in your way.')],
+        [t('Can I use a domain I already own?'),
+         t('Yes. Point its nameservers at ours and add it in the panel; we will show you exactly what to paste and where. You can also transfer the domain to us later, or never — hosting here does not require it.')],
+        [t('What is your uptime actually like?'),
+         t('We commit to 99.9%, which allows about 43 minutes a month. The node is monitored every minute and we publish incidents rather than quietly absorbing them. If we miss the commitment in a month, ask and we will credit that month.')],
+        [t('How do I get my money back?'),
+         t('Cancel within 30 days and email us; we refund the hosting in full, no questions and no retention call. Domain registrations are the one exception — once a registry has taken the name, that fee is spent and cannot be returned.')],
       ];
       faqs.forEach(function (f) { %>
         <div class="acc">

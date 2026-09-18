@@ -22,7 +22,7 @@
   Expects: domain, node (from linking.nodeState), ours, parentName.
 %>
 <div class="p-card">
-  <h2 class="h3 mb-2"><%= ours ? 'Remove from hosting' : 'Remove this ' + (domain.source === 'subdomain' ? 'subdomain' : 'domain') %></h2>
+  <h2 class="h3 mb-2"><%= ours ? t('Remove from hosting') : 'Remove this ' + (domain.source === 'subdomain' ? 'subdomain' : 'domain') %></h2>
 
   <% if (ours) { %>
     <p class="small muted mb-2">
@@ -33,7 +33,7 @@
   <% } else if (domain.source === 'subdomain') { %>
     <p class="small muted mb-2">
       Deletes the site, its files and its certificate from our server.
-      <b><%= parentName || 'The main domain' %> is not affected.</b>
+      <b><%= parentName || t('The main domain') %> is not affected.</b>
       You can add the subdomain again at any time.
     </p>
   <% } else { %>
@@ -45,7 +45,7 @@
   <% } %>
 
   <form method="post" action="/panel/domains/<%= domain.domain %>/remove" data-guard
-        data-confirm="Remove <%= domain.domain %> from <%= ours ? 'its hosting plan' : 'your account' %>? Its website and files are deleted from the server and cannot be recovered.">
+        data-confirm="Remove <%= domain.domain %> from <%= ours ? t('its hosting plan') : 'your account' %>? Its website and files are deleted from the server and cannot be recovered.">
     <input type="hidden" name="_csrf" value="<%= csrf %>">
 
     <% if (ours && (node.dns || node.mail)) { %>
@@ -74,7 +74,7 @@
           <span>
             <span class="strong">Email<% if (node.mailboxes) { %> — <%= node.mailboxes %> mailbox<%= node.mailboxes === 1 ? '' : 'es' %><% } %></span>
             <span class="tiny muted" style="display:block">
-              Stops us accepting mail for this domain<%= node.mailboxes ? ' and deletes the mailboxes and everything in them' : '' %>.
+              Stops us accepting mail for this domain<%= node.mailboxes ? t(' and deletes the mailboxes and everything in them') : '' %>.
               This cannot be undone.
             </span>
           </span>
@@ -83,7 +83,7 @@
     <% } %>
 
     <button class="btn btn-ghost btn-sm" type="submit" data-busy="Removing…">
-      <%= ours ? 'Remove from hosting' : 'Remove ' + domain.domain %>
+      <%= ours ? t('Remove from hosting') : 'Remove ' + domain.domain %>
     </button>
   </form>
 </div>

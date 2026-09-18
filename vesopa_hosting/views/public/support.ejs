@@ -4,9 +4,9 @@
 <main id="main">
 <%- include('../partials/page-hero', {
   kicker: 'Support',
-  heading: 'Stuck? <span class="hl">Start here</span>',
-  sub: 'The quick answers are below. If none of them fit, open a ticket from your panel and a person will read it.',
-  heroCta: { href: '/panel/tickets/new', label: 'Open a ticket', secondary: { href: '/contact', label: 'Not a customer yet' } },
+  heading: th('Stuck? <span class="hl">Start here</span>'),
+  sub: t('The quick answers are below. If none of them fit, open a ticket from your panel and a person will read it.'),
+  heroCta: { href: '/panel/tickets/new', label: 'Open a ticket', secondary: { href: '/contact', label: t('Not a customer yet') } },
 }) %>
 
 <section class="section">
@@ -14,12 +14,12 @@
     <div class="grid grid-3">
       <%
       const guides = [
-        ['globe',  'Point a domain at us',   'Set your nameservers to ours and wait for propagation. The exact two values are on your service page.'],
-        ['lock',   'Get the padlock working','SSL is issued automatically once DNS resolves here. If it has not, retry it from the site page.'],
-        ['mail',   'Set up your email',      'Create a mailbox in the panel, then use the IMAP and SMTP settings shown next to it.'],
-        ['wordpress','Install WordPress',    'One click from the site page. We set the database up and keep the core patched.'],
-        ['backup', 'Restore a backup',       'Pick a date on the Backups tab and restore files, the database, or both. No ticket needed.'],
-        ['key',    'Reset your password',    'Use the forgotten-password link on the sign-in page. Resets expire after an hour.'],
+        ['globe',  'Point a domain at us',   t('Set your nameservers to ours and wait for propagation. The exact two values are on your service page.')],
+        ['lock',   t('Get the padlock working'),t('SSL is issued automatically once DNS resolves here. If it has not, retry it from the site page.')],
+        ['mail',   t('Set up your email'),      t('Create a mailbox in the panel, then use the IMAP and SMTP settings shown next to it.')],
+        ['wordpress','Install WordPress',    t('One click from the site page. We set the database up and keep the core patched.')],
+        ['backup', 'Restore a backup',       t('Pick a date on the Backups tab and restore files, the database, or both. No ticket needed.')],
+        ['key',    t('Reset your password'),    t('Use the forgotten-password link on the sign-in page. Resets expire after an hour.')],
       ];
       guides.forEach(function (g, i) { %>
         <article class="card card-hover card-accent" data-reveal="<%= (i % 3) * 70 %>">

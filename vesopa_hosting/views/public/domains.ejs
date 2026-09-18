@@ -49,7 +49,7 @@
       <% if (serverResults) { %>
         <% const exact = serverResults[0]; %>
         <% if (exact) { %>
-          <p class="kicker mb-2"><%= exact.available ? 'Good news' : 'That one is taken' %></p>
+          <p class="kicker mb-2"><%= exact.available ? 'Good news' : t('That one is taken') %></p>
           <div class="dresult <%= exact.available ? 'dresult-hero' : 'is-taken' %>">
             <div class="dresult-name"><b><%= exact.sld %></b>.<%= exact.tld %></div>
             <% if (exact.available && exact.sellable) { %>
@@ -104,10 +104,10 @@
     <div class="grid grid-4">
       <%
       const inc = [
-        ['shield', 'WHOIS privacy',  'Your name and address kept off the public record, at no charge, where the registry allows it.'],
-        ['globe',  'Full DNS control','A, AAAA, CNAME, MX, TXT and SRV records you can edit yourself from the panel.'],
-        ['mail',   'Email forwarding','Point hello@yourdomain at any inbox you already use, without buying a mailbox.'],
-        ['lock',   'Registrar lock',  'On by default, so nobody can start a transfer without your authorisation code.'],
+        ['shield', 'WHOIS privacy',  t('Your name and address kept off the public record, at no charge, where the registry allows it.')],
+        ['globe',  'Full DNS control',t('A, AAAA, CNAME, MX, TXT and SRV records you can edit yourself from the panel.')],
+        ['mail',   'Email forwarding',t('Point hello@yourdomain at any inbox you already use, without buying a mailbox.')],
+        ['lock',   'Registrar lock',  t('On by default, so nobody can start a transfer without your authorisation code.')],
       ];
       inc.forEach(function (f, i) { %>
         <article class="card card-hover" data-reveal="<%= i * 70 %>">
@@ -130,11 +130,11 @@
         <%# The count is the invitation. "See every extension" is a link nobody
             clicks; "browse all 680" says there is something behind it. %>
         <p class="small muted mt-1 mb-0">
-          These are the ones most people want. We sell <b><%= totalTlds %></b> altogether.
+          <%- th('These are the ones most people want. We sell <b>{v}</b> altogether.', { v: num(totalTlds) }) %>
         </p>
       </div>
       <a class="btn btn-ghost btn-sm" href="/domains/pricing">
-        Browse all <%= totalTlds %> <%- icon('arrow', 16) %>
+        <%= t('Browse all {v}', { v: num(totalTlds) }) %> <%- icon('arrow', 16) %>
       </a>
     </div>
 
@@ -175,16 +175,16 @@
     <div data-acc-group data-reveal="60">
       <%
       const faqs = [
-        ['Do I have to host with you to buy a domain?',
-         'No. You can register a name here and point it anywhere — or park it and decide later. The DNS editor is included either way.'],
-        ['What is WHOIS privacy and do I need it?',
-         'Registries publish the registrant of every domain. Privacy substitutes our details for yours so your home address is not in a public database that spammers scrape. It is included free where the registry permits it — .uk domains have their own opt-out for individuals, which we set for you.'],
-        ['Can I move a domain away later?',
-         'Yes, and we will not make it difficult. Unlock it in the panel, we email the authorisation code, and you are gone. No fee and no retention call. A domain you cannot leave with is not one you own.'],
-        ['Why is the renewal more than the first year?',
-         'On some extensions the registry itself sells a discounted first year to drive adoption — .online and .shop are the obvious ones. We show both numbers side by side before you buy rather than after. On .com, .co.uk and .uk the difference is small and honest.'],
-        ['How quickly does a new domain work?',
-         'The registration itself is usually instant. DNS then propagates, which is typically minutes but can be a few hours depending on your ISP. If you bought hosting at the same time we point it at your site automatically.'],
+        [t('Do I have to host with you to buy a domain?'),
+         t('No. You can register a name here and point it anywhere — or park it and decide later. The DNS editor is included either way.')],
+        [t('What is WHOIS privacy and do I need it?'),
+         t('Registries publish the registrant of every domain. Privacy substitutes our details for yours so your home address is not in a public database that spammers scrape. It is included free where the registry permits it — .uk domains have their own opt-out for individuals, which we set for you.')],
+        [t('Can I move a domain away later?'),
+         t('Yes, and we will not make it difficult. Unlock it in the panel, we email the authorisation code, and you are gone. No fee and no retention call. A domain you cannot leave with is not one you own.')],
+        [t('Why is the renewal more than the first year?'),
+         t('On some extensions the registry itself sells a discounted first year to drive adoption — .online and .shop are the obvious ones. We show both numbers side by side before you buy rather than after. On .com, .co.uk and .uk the difference is small and honest.')],
+        [t('How quickly does a new domain work?'),
+         t('The registration itself is usually instant. DNS then propagates, which is typically minutes but can be a few hours depending on your ISP. If you bought hosting at the same time we point it at your site automatically.')],
       ];
       faqs.forEach(function (f) { %>
         <div class="acc">

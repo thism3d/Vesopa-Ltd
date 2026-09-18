@@ -5,7 +5,12 @@
   (a column on a computer, a sheet from the bottom on a phone). Everything
   moving is public/assets/js/build.js; the preview document is /build/frame.
 %>
-<div class="st" data-studio data-signed-in="<%= signedIn ? '1' : '0' %>">
+<%# data-site-lang: the Studio has its own EN/বাংলা switch, but it used to
+    start from the BROWSER's language and ignore the site's. So a visitor who
+    had chosen Bangla, and was reading /bn/build, still got an English studio
+    with English example prompts. The page's own language is the better
+    default; their switch inside the studio still wins after that. %>
+<div class="st" data-studio data-signed-in="<%= signedIn ? '1' : '0' %>" data-site-lang="<%= locale %>">
   <header class="st-top">
     <a class="st-logo" href="/" aria-label="<%= t('Vesopa Cloud home') %>">
       <span class="st-mark" aria-hidden="true"><%- icon('sparkle', 18) %></span>

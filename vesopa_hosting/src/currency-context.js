@@ -216,17 +216,31 @@ async function attach(req, res, next) {
      * an amount in a currency other than the request's: an admin looking at a
      * dollar order, a renewal notice for a service sold in Canada.
      */
+    /*
+     * THE LOCALE IS PASSED, NOT LOOKED UP.
+     *
+     * currency.format() defaults its locale to i18n.currentLocale(), which
+     * reads an AsyncLocalStorage set around the route handler. A template is
+     * rendered AFTER that handler has returned, so by the time money() runs
+     * inside an EJS view the store is gone and every figure came out in
+     * English digits. The effect was visible and odd: on the Bangla home page
+     * the big plan price read ৳৪৪৬.০০ (from pricing's cached parts, computed
+     * inside the context) while the line directly beneath it read ৳5,352.00.
+     *
+     * Passing req.locale removes the dependency on where the call happens.
+     */
+    const locale = req.locale;
     const fmt = (minor, code) => {
-      if (!code || code === chosen.code) return currency.format(minor, chosen);
+      if (!code || code === chosen.code) return currency.format(minor, chosen, locale);
       const other = all.find((c) => c.code === String(code).toUpperCase());
-      return currency.format(minor, other || chosen);
+      return currency.format(minor, other || chosen, locale);
     };
 
     res.locals.money = fmt;
     res.locals.moneyParts = (minor, code) => {
-      if (!code || code === chosen.code) return currency.parts(minor, chosen);
+      if (!code || code === chosen.code) return currency.parts(minor, chosen, locale);
       const other = all.find((c) => c.code === String(code).toUpperCase());
-      return currency.parts(minor, other || chosen);
+      return currency.parts(minor, other || chosen, locale);
     };
     res.locals.currency = chosen;
     res.locals.currencies = all.filter((c) => c.active);

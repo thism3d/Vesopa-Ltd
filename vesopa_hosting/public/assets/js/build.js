@@ -87,7 +87,22 @@
   var state = {
     site: saved.site && Array.isArray(saved.site.sections) ? saved.site : blankSite(),
     history: Array.isArray(saved.history) ? saved.history.slice(-30) : [],
-    lang: saved.lang === 'bn' || saved.lang === 'en' ? saved.lang : (/^bn/i.test(navigator.language || '') ? 'bn' : 'en'),
+    /*
+     * Which language the studio opens in.
+     *
+     * Their own choice first -- the switch in the header writes `saved.lang`
+     * and must outrank everything. Then the language the SITE is being read
+     * in, which is the whole point of /bn: somebody who has chosen Bangla and
+     * is reading a Bangla page should not be handed an English studio with
+     * English example prompts. The browser's own language is the last resort,
+     * for a visitor who has expressed no preference at all.
+     */
+    lang: (function () {
+      if (saved.lang === 'bn' || saved.lang === 'en') return saved.lang;
+      var site = root && root.getAttribute('data-site-lang');
+      if (site === 'bn' || site === 'en') return site;
+      return /^bn/i.test(navigator.language || '') ? 'bn' : 'en';
+    }()),
     device: window.matchMedia('(max-width: 760px)').matches ? 'phone' : 'desktop',
     selected: null,
     busy: false,

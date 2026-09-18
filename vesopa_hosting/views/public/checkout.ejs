@@ -16,7 +16,7 @@
         <input type="hidden" name="_csrf" value="<%= csrf %>">
 
         <div class="card mb-3">
-          <h2 class="h3 mb-3"><%= customer ? 'Your account' : 'Create your account' %></h2>
+          <h2 class="h3 mb-3"><%= customer ? 'Your account' : t('Create your account') %></h2>
 
           <% if (customer) { %>
             <div class="chip mb-2"><%- icon('user', 16) %> Signed in as <b><%= customer.email %></b></div>
@@ -50,10 +50,9 @@
           <h2 class="h3 mb-1"><%= t('Billing details') %></h2>
           <p class="small muted mb-3">
             <% if (lines.some(function (l) { return l.kind === 'domain' || l.kind === 'domain_transfer'; })) { %>
-              A domain registration needs a real registrant address — that is a registry
-              rule, not a marketing form. It is not published if WHOIS privacy is on.
+              <%= t('A domain registration needs a real registrant address — that is a registry rule, not a marketing form. It is not published if WHOIS privacy is on.') %>
             <% } else { %>
-              Used on your invoices.
+              <%= t('Used on your invoices.') %>
             <% } %>
           </p>
 
@@ -188,14 +187,13 @@
             <div class="alert alert-ok mb-3">
               <%- icon('check-circle', 19) %>
               <div>
-                <b>Nothing to pay.</b>
+                <b><%= t('Nothing to pay.') %></b>
                 <% if (couponCode) { %>
-                  <%= couponCode %> covers this order in full — there is no payment
-                  step and no card needed.
+                  <%= t('{code} covers this order in full — there is no payment step and no card needed.', { code: couponCode }) %>
                 <% } else { %>
-                  This order comes to <%= money(0) %>, so there is no payment step.
+                  <%= t('This order comes to {price}, so there is no payment step.', { price: money(0) }) %>
                 <% } %>
-                Your services are set up as soon as you place it.
+                <%= t('Your services are set up as soon as you place it.') %>
               </div>
             </div>
 
@@ -245,8 +243,7 @@
                       <span class="paypick-secure">
                         <%- icon('lock', 13) %>
                         <% if (g.secure) { %><%= g.secure %><% } else { %>
-                          You are taken to <%= g.name %>'s own secure page to
-                          pay. Your card details are never sent to us and never touch this server.
+                          <%= t('You are taken to {gateway}’s own secure page to pay. Your card details are never sent to us and never touch this server.', { gateway: g.name }) %>
                         <% } %>
                       </span>
                     </span>
@@ -284,7 +281,7 @@
                 <span class="coupon-applied-ico"><%- icon('check', 16) %></span>
                 <span class="coupon-applied-txt">
                   <b><%= couponCode %></b>
-                  <span><% if (couponDiscount_pence > 0) { %>You saved <%= money(couponDiscount_pence) %> on this order<% } else { %>Discount applied<% } %></span>
+                  <span><% if (couponDiscount_pence > 0) { %><%= t('You saved {v} on this order', { v: money(couponDiscount_pence) }) %><% } else { %><%= t('Discount applied') %><% } %></span>
                 </span>
                 <button class="coupon-remove" type="submit" formaction="/cart/coupon/remove" formnovalidate
                         aria-label="Remove discount code <%= couponCode %>"><%= t('Remove') %></button>
@@ -293,8 +290,8 @@
               <details class="coupon-box"<%= typeof couponError !== 'undefined' && couponError ? ' open' : '' %>>
                 <summary class="coupon-toggle">
                   <span class="coupon-toggle-ico"><%- icon('tag', 17) %></span>
-                  <span class="coupon-toggle-txt">Have a discount code?</span>
-                  <span class="coupon-toggle-cta">Enter code</span>
+                  <span class="coupon-toggle-txt"><%= t('Have a discount code?') %></span>
+                  <span class="coupon-toggle-cta"><%= t('Enter code') %></span>
                 </summary>
                 <div class="coupon-form">
                   <input class="input coupon-input" name="code" placeholder="<%= t('e.g. WELCOME10') %>"
@@ -312,21 +309,18 @@
           <label class="check mb-3">
             <input type="checkbox" name="agree" required>
             <span class="small">
-              I agree to the <a href="/terms" target="_blank">terms of service</a>,
-              <a href="/aup" target="_blank">acceptable use policy</a> and
-              <a href="/refunds" target="_blank">refund policy</a>. I understand that
-              domain registration fees cannot be refunded once the registry has taken them.
+              <%- th('I agree to the <a href="/terms" target="_blank">terms of service</a>, <a href="/aup" target="_blank">acceptable use policy</a> and <a href="/refunds" target="_blank">refund policy</a>. I understand that domain registration fees cannot be refunded once the registry has taken them.') %>
             </span>
           </label>
 
           <button class="btn btn-lg btn-block" type="submit"
-                  data-busy="<%= isFree ? 'Confirming your order…' : 'Taking you to payment…' %>">
+                  data-busy="<%= isFree ? t('Confirming your order…') : t('Taking you to payment…') %>">
             <% if (isFree) { %>
-              Confirm order — <%= money(0) %>
+              <%= t('Confirm order — {v}', { v: money(0) }) %>
             <% } else if (canPayOnline) { %>
               Pay <%= money(total_pence) %> <%- icon('arrow', 17) %>
             <% } else { %>
-              Place order — <%= money(total_pence) %>
+              <%= t('Place order — {v}', { v: money(total_pence) }) %>
             <% } %>
           </button>
         </div>
@@ -366,7 +360,7 @@
               it applies at all. %>
           <% if (showVat) { %>
             <div class="sum-row sum-row-vat">
-              <span><%= vatLabel %> (<%= vatPercent %>%) <span class="vat-tag">we pay this</span></span>
+              <span><%= vatLabel %> (<%= num(vatPercent) %>%) <span class="vat-tag"><%= t('we pay this') %></span></span>
               <span class="sum-val muted"><%= money(vat_pence) %></span>
             </div>
           <% } %>
@@ -385,14 +379,15 @@
           </div>
 
           <% if (saved_total_pence > 0) { %>
-            <p class="sum-saved"><%- icon('check-circle', 15) %> You are saving <b><%= money(saved_total_pence) %></b></p>
+            <p class="sum-saved"><%- icon('check-circle', 15) %> <%- th('You are saving <b>{v}</b>', { v: money(saved_total_pence) }) %></p>
           <% } %>
 
           <p class="tiny muted mt-2 mb-0">
-            This is the full amount<% if (showVat) { %>. <%= vatLabel %> is
-            included and accounted for by us — nothing further is added<% } else { %>,
-            charged in <%= currency.code %> (<%= currency.name %>).
-            Nothing further is added<% } %>.
+            <% if (showVat) { %>
+              <%= t('This is the full amount. {label} is included and accounted for by us — nothing further is added.', { label: vatLabel }) %>
+            <% } else { %>
+              <%= t('This is the full amount, charged in {code} ({name}). Nothing further is added.', { code: currency.code, name: currency.name }) %>
+            <% } %>
           </p>
 
           <ul class="cart-trust">

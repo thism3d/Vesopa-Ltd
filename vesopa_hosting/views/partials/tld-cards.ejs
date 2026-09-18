@@ -21,7 +21,7 @@
           explain itself on the card, or it reads as a trick when the renewal
           notice lands. %>
       <span class="dtld-ribbon" title="First year only — it renews at <%= row.renew_display %>">
-        <%= row.promo_percent %>% off year one
+        <%= t('{v}% off year one', { v: num(row.promo_percent) }) %>
       </span>
     <% } %>
 
@@ -32,7 +32,7 @@
 
     <div class="dtld-price">
       <span class="dtld-amt"><%= row.register_display %></span>
-      <span class="dtld-per">first year</span>
+      <span class="dtld-per"><%= t('first year') %></span>
     </div>
 
     <dl class="dtld-rows">

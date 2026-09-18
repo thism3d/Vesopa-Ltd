@@ -84,15 +84,17 @@
         </div>
 
         <% if (line.saving_pence > 0) { %>
-          <span class="save-badge"><%- icon('bolt', 13) %> You save <%= money(line.saving_pence) %></span>
+          <span class="save-badge"><%- icon('bolt', 13) %> <%= t('You save {v}', { v: money(line.saving_pence) }) %></span>
         <% } %>
         <p class="hint mb-0">
           <% if (line.term_months === 1) { %>
-            Billed every month. Cancel any time.
+            <%= t('Billed every month. Cancel any time.') %>
           <% } else { %>
-            <%= money(line.total_pence) %> billed today, then
-            <b><%= money(line.renews_pence) %></b> every
-            <%= line.term.label.toLowerCase() %>. Cancel any time.
+            <%- th('{today} billed today, then <b>{renews}</b> every {term}. Cancel any time.', {
+                  today: money(line.total_pence),
+                  renews: money(line.renews_pence),
+                  term: termLabel(line.term),
+                }) %>
           <% } %>
         </p>
       </form>
@@ -103,7 +105,7 @@
           <span class="cart-deal-mark"><%- icon('star', 18) %></span>
           <div>
             <b>Go <%= line.upsell.label.toLowerCase() %> for <%= money(line.upsell.perMonth) %>/mo</b>
-            <span><%= money(line.upsell.saving) %> less than paying monthly, and the free domain comes with it.</span>
+            <span><%= t('{v} less than paying monthly, and the free domain comes with it.', { v: money(line.upsell.saving) }) %></span>
           </div>
           <form method="post" action="/cart/term" data-cart-form>
             <input type="hidden" name="_csrf" value="<%= csrf %>">
@@ -129,7 +131,7 @@
                   aria-label="<%= t('One more') %>" <%= line.units >= line.emailPlan.max_units ? 'disabled' : '' %>>+</button>
           <button class="btn btn-ghost btn-sm qty-go" type="submit"><%= t('Update') %></button>
         </div>
-        <p class="hint mb-0"><%= money(line.unit_pence) %> per <%= line.emailPlan.unit_label %>, per year.</p>
+        <p class="hint mb-0"><%= t('{price} per {unit}, per year.', { price: money(line.unit_pence), unit: line.emailPlan.unit_label }) %></p>
       </form>
     <% } %>
   </article>
@@ -155,8 +157,7 @@
       <div style="flex:1;min-width:0">
         <h2 class="h3 mb-1"><%= t('Secure your domain') %></h2>
         <p class="small muted mb-3">
-          Add one now, or choose your free one after payment — either
-          works. Free on any plan of a year or more, up to <%= freeMax %>.
+          <%= t('Add one now, or choose your free one after payment — either works. Free on any plan of a year or more, up to {v}.', { v: freeMax }) %>
         </p>
 
         <form class="dsearch dsearch-light" data-domain-search action="/domains" method="get"
@@ -190,10 +191,10 @@
     <div style="flex:1;min-width:0">
       <h2 class="h3 mb-1"><%= t('Add marketing email') %></h2>
       <p class="small muted mb-2">
-        Newsletters and campaigns from your own domain, authenticated
-        properly so they reach the inbox. From
-        <b><%= money(crossSell.perMonthPence[12]) %></b> per
-        <%= crossSell.unit_label %> a month.
+        <%- th('Newsletters and campaigns from your own domain, authenticated properly so they reach the inbox. From <b>{price}</b> per {unit} a month.', {
+              price: money(crossSell.perMonthPence[12]),
+              unit: crossSell.unit_label,
+            }) %>
       </p>
       <a class="btn btn-ghost btn-sm" href="/order/email/<%= crossSell.slug %>?term=12">
         <%- icon('plus', 15) %> Add <%= crossSell.name %>

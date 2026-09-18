@@ -26,6 +26,30 @@
           <textarea class="textarea" id="features" name="features" style="min-height:180px"><%= plan.features %></textarea>
           <p class="hint">One per line. These are the ticks under the plan.</p>
         </div>
+
+        <%# The same copy in Bangla. It cannot come from the translation
+            catalogue: these are words an admin types, they change without a
+            deploy, and they are not keys — which is why the Bangla home page
+            said "Starter / One website, done properly." while the catalogue
+            reported itself complete. %>
+        <h2 class="h3 mb-3 mt-4" lang="bn">বাংলা <span class="muted small">— shown on /bn, blank falls back to the English</span></h2>
+        <div class="field">
+          <label class="label" for="name_bn">Name in Bangla</label>
+          <input class="input" id="name_bn" name="name_bn" lang="bn" value="<%= plan.name_bn || '' %>" placeholder="স্টার্টার">
+        </div>
+        <div class="field">
+          <label class="label" for="tagline_bn">Tagline in Bangla</label>
+          <input class="input" id="tagline_bn" name="tagline_bn" lang="bn" value="<%= plan.tagline_bn || '' %>">
+        </div>
+        <div class="field">
+          <label class="label" for="badge_bn">Badge in Bangla</label>
+          <input class="input" id="badge_bn" name="badge_bn" lang="bn" value="<%= plan.badge_bn || '' %>" placeholder="সবচেয়ে জনপ্রিয়">
+        </div>
+        <div class="field">
+          <label class="label" for="features_bn">Feature bullets in Bangla</label>
+          <textarea class="textarea" id="features_bn" name="features_bn" lang="bn" style="min-height:180px"><%= plan.features_bn || '' %></textarea>
+          <p class="hint">One per line, matching the English list above. Write figures in Bengali digits (৯৯.৯%, ৩০ দিন) — the page cannot convert words.</p>
+        </div>
       </div>
 
       <div class="p-card">
