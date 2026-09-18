@@ -83,7 +83,27 @@
 
   // ---- State ------------------------------------------------------------------------
   function blankSite() { return { v: 1, name: '', description: '', lang: 'en', theme: null, sections: [] }; }
-  var saved = (function () { try { return JSON.parse(localStorage.getItem(STORE) || '{}') || {}; } catch (e) { return {}; } })();
+  var saved = (function () {
+    var s;
+    try { s = JSON.parse(localStorage.getItem(STORE) || '{}') || {}; } catch (e) { return {}; }
+    /*
+     * HEAL A SITE THAT WAS SAVED HALF-WRITTEN.
+     *
+     * Filtering on the way out is not enough: somebody whose turn was cut off
+     * already HAS the broken state in their browser, and without this they
+     * would open Studio to a blank preview and no empty state for ever —
+     * their own localStorage is not something they can be asked to clear.
+     * Anything with no HTML is dropped as it comes back in, and if that
+     * leaves nothing the site is simply new again, which is a screen they can
+     * act on.
+     */
+    if (s.site && Array.isArray(s.site.sections)) {
+      s.site.sections = s.site.sections.filter(function (sec) {
+        return sec && typeof sec.html === 'string' && sec.html.trim() !== '';
+      });
+    }
+    return s;
+  }());
   var state = {
     site: saved.site && Array.isArray(saved.site.sections) ? saved.site : blankSite(),
     history: Array.isArray(saved.history) ? saved.history.slice(-30) : [],
@@ -210,10 +230,27 @@
     syncChrome();
   }
 
-  /** The model from the page: order from the frame, html from finished sections. */
+  /**
+   * A section that has an id but no HTML is not a section.
+   *
+   * `html[id] != null` used to be the whole test, and an empty string passes
+   * it. A turn interrupted between `@section hero` and the HTML that follows
+   * — a refresh, a dropped connection, a closed tab — therefore saved
+   * `{id:'hero', html:''}` to localStorage. On the next load that section was
+   * restored, drawn as an empty wrapper, and counted: the preview was blank
+   * white, and because `sections.length` was 2 the "say what you want" empty
+   * state stayed hidden. No content, no prompts, no way to begin again.
+   * Reproduced on 2026-09-18 with exactly that saved state.
+   *
+   * So emptiness is the test, here and on restore, in both directions.
+   */
+  function isRealSection(h) { return typeof h === 'string' && h.trim() !== ''; }
+
   function syncOrder() {
     var order = Array.prototype.map.call(frameDoc.body.querySelectorAll(':scope > [data-sec]'), function (el) { return el.getAttribute('data-sec'); });
-    state.site.sections = order.filter(function (id) { return html[id] != null; }).map(function (id) { return { id: id, html: html[id] }; });
+    state.site.sections = order
+      .filter(function (id) { return isRealSection(html[id]); })
+      .map(function (id) { return { id: id, html: html[id] }; });
   }
 
   function scrollToSection(el) {
