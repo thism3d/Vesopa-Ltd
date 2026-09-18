@@ -1220,4 +1220,31 @@ router.get('/order/complete/:id', (req, res) => {
   res.redirect(301, `/panel/setup/${req.params.id}`);
 });
 
+/**
+ * Build the basket an offer needs, in one step.
+ *
+ * Exported for the offers page's "Claim this offer" button (routes/pages.js).
+ * A bundle is a price for a SET, and the basket only reaches that price when
+ * both halves are in it; leaving a customer to work that out from the card's
+ * wording is how an advertised offer goes unclaimed. This remembers the code
+ * and adds the granted plan at the granted term, so the only thing left to do
+ * is choose the name — the one part only they can do.
+ *
+ * It grants nothing. The coupon is still evaluated on every basket price and
+ * again inside the checkout transaction, so an expired, country-locked or
+ * fully-redeemed code refuses here exactly as a typed one would.
+ */
+function startOffer(req, res, { code = '', planSlug = '', months = 0 } = {}) {
+  if (code) writeCoupon(req, res, code);
+  if (!planSlug || months <= 0) return;
+  const items = Array.isArray(req.cart) ? req.cart.slice() : [];
+  const already = items.some(
+    (i) => i.kind === 'hosting' && i.slug === planSlug && Number(i.term) === Number(months),
+  );
+  if (!already) items.unshift({ kind: 'hosting', slug: planSlug, term: Number(months) });
+  writeCart(req, res, items);
+}
+
 module.exports = router;
+module.exports.startOffer = startOffer;
+

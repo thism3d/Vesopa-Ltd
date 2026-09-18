@@ -58,7 +58,7 @@
 
     <article class="offer-feature">
       <div class="offer-feature-text">
-        <p class="offer-amount"><%= feature.amount %> <span><%= t('off') %></span></p>
+        <p class="offer-amount"><%= feature.amount %> <span><%= feature.amountIsPrice ? t('the set') : t('off') %></span></p>
         <h2 class="offer-feature-h"><%= feature.headline %></h2>
         <% if (feature.detail && feature.detail !== feature.headline) { %>
           <p class="lede offer-feature-lede"><%= feature.detail %></p>
@@ -76,8 +76,8 @@
         </ul>
 
         <div class="offer-feature-cta">
-          <a class="btn btn-lg" href="/hosting"><%= t('Start an order') %></a>
-          <a class="btn btn-ghost btn-lg" href="/domains"><%= t('Find a domain') %></a>
+          <a class="btn btn-lg" href="<%= feature.startUrl %>"><%= t('Claim this offer') %></a>
+          <a class="btn btn-ghost btn-lg" href="/hosting"><%= t('See hosting plans') %></a>
         </div>
       </div>
 
@@ -95,7 +95,7 @@
             <div class="offer-card-art">
               <img src="<%= asset(o.art) %>" alt="" width="640" height="420" loading="lazy" decoding="async">
             </div>
-            <p class="offer-amount"><%= o.amount %> <span><%= t('off') %></span></p>
+            <p class="offer-amount"><%= o.amount %> <span><%= o.amountIsPrice ? t('the set') : t('off') %></span></p>
             <h2 class="h3 mb-2"><%= o.headline %></h2>
             <% if (o.detail && o.detail !== o.headline) { %>
               <p class="small muted"><%= o.detail %></p>
@@ -109,7 +109,7 @@
             <ul class="offer-terms small muted">
               <% termsOf(o).forEach(function (line) { %><li><%= line %></li><% }); %>
             </ul>
-            <a class="btn btn-block" href="/hosting"><%= t('Start an order') %></a>
+            <a class="btn btn-block" href="<%= o.startUrl %>"><%= t('Claim this offer') %></a>
           </article>
         <% }); %>
       </div>

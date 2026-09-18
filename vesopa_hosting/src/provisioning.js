@@ -35,6 +35,7 @@ const hestia = require('./integrations/hestia');
 const registrar = require('./integrations/domainnameapi');
 const auth = require('./auth');
 const linking = require('./domain-linking');
+const coupons = require('./coupons');
 const nameservers = require('./nameservers');
 const registrantVerification = require('./registrant-verification');
 const { sendMail, shell, detailTable, escapeHtml } = require('./mailer');
@@ -237,6 +238,35 @@ async function materialiseOrder(orderId) {
     const created = { services: 0, domains: 0, emails: 0, skipped: [] };
 
     /*
+     * DID THIS ORDER COME WITH A FREE MONTH?
+     *
+     * A bundle code ("a .site and a month of hosting, 381 taka") grants a
+     * hosting term rather than only discounting one. What it granted is read
+     * here, once, and written onto the service below — for the same reason
+     * free_domain_eligible is stored rather than re-derived: an admin editing
+     * or retiring the coupon next week must not change what somebody was
+     * already given.
+     *
+     * Resolved to a plan id here because order lines carry ids, not slugs.
+     */
+    let grant = null;
+    let grantPlanId = 0;
+    if (order.coupon_code) {
+      const [[couponRow]] = await conn.query(
+        'SELECT * FROM coupons WHERE code = ? LIMIT 1', [order.coupon_code],
+      );
+      grant = coupons.grant(couponRow);
+      if (grant) {
+        const [[granted]] = await conn.query(
+          'SELECT id FROM plans WHERE slug = ? LIMIT 1', [grant.plan_slug],
+        );
+        grantPlanId = granted ? granted.id : 0;
+      }
+    }
+    // One free month per order, however many matching lines are in the basket.
+    let trialGiven = false;
+
+    /*
      * THE DOMAIN BOUGHT IN THE SAME BASKET.
      *
      * A hosting line carries `domain` only when the customer named one on the
@@ -273,16 +303,31 @@ async function materialiseOrder(orderId) {
       }
 
       if (line.kind === 'hosting' && line.plan_id) {
+        /*
+         * The granted month, if this is the line the bundle was for. Its price
+         * is recorded as nothing because nothing is what was paid for it: the
+         * 381 taka bought the domain, and this month came with it. Recording
+         * the list price instead would put a charge in the customer's billing
+         * history for something they were given.
+         */
+        const isTrial = Boolean(
+          grant && grantPlanId && !trialGiven
+          && line.plan_id === grantPlanId
+          && Number(line.term_months) === grant.months,
+        );
+        if (isTrial) trialGiven = true;
+
         await conn.query(
           `INSERT INTO services
              (customer_id, plan_id, order_id, primary_domain, status, term_months, price_pence,
-              currency, free_domain_eligible, free_domain_claimed, setup_step)
-           VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)`,
+              currency, free_domain_eligible, free_domain_claimed, setup_step,
+              is_trial, trial_code)
+           VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             order.customer_id, line.plan_id, order.id,
             // The hosting line's own domain, or the one bought alongside it.
             line.domain || orderedDomain?.domain || '',
-            line.term_months, line.total_pence, order.currency,
+            line.term_months, isTrial ? 0 : line.total_pence, order.currency,
             line.free_domain_eligible ? 1 : 0,
             line.free_domain_spent ? 1 : 0,
             /*
@@ -294,6 +339,8 @@ async function materialiseOrder(orderId) {
               || !(line.domain || orderedDomain?.domain)
               ? 'domain'
               : 'provisioning',
+            isTrial ? 1 : 0,
+            isTrial ? String(grant.code || '').slice(0, 40) : '',
           ],
         );
         created.services += 1;

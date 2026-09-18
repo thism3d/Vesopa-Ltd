@@ -36,8 +36,9 @@ const notify = require('./notifications');
 const nameservers = require('./nameservers');
 const registrantVerification = require('./registrant-verification');
 const hestia = require('./integrations/hestia');
+const { sendMail, shell, detailTable, escapeHtml } = require('./mailer');
 const {
-  JOB_INTERVAL_MINUTES, PAYMENT_SESSION_MINUTES, DOMAIN_NS_GRACE_DAYS, NAMESERVERS,
+  JOB_INTERVAL_MINUTES, PAYMENT_SESSION_MINUTES, DOMAIN_NS_GRACE_DAYS, NAMESERVERS, SITE_URL,
 } = require('./config');
 
 /** How many rows one pass of a job will touch. */
@@ -684,6 +685,82 @@ let running = false;
  * one timer. It matters anyway: a sweep that takes longer than the interval
  * would otherwise start again underneath itself and check the same rows twice.
  */
+/**
+ * Tell somebody their free month is ending, before it does.
+ *
+ * The offer that grants it promises exactly this, and nothing else in the app
+ * sends it: `notifications.js` raises warnings in the panel and never emails,
+ * so a customer who has not signed in since they ordered would have found out
+ * by their site stopping. Which is the moment you lose them, and the moment
+ * they are least inclined to pay.
+ *
+ * NOTHING IS SUSPENDED HERE. This sends a message and stamps a date; the trial
+ * running out is the ordinary `next_due_at` path every other service uses, and
+ * suspension stays a deliberate act. A job that could switch a customer's site
+ * off is a job that will eventually do it to the wrong row.
+ *
+ * `trial_warned_at` is what makes it once. The loop runs every five minutes.
+ */
+const TRIAL_WARN_DAYS = Number(process.env.TRIAL_WARN_DAYS || 7);
+
+async function warnEndingTrials() {
+  const rows = await db.query(
+    `SELECT s.id, s.next_due_at, s.primary_domain, s.trial_code,
+            p.name AS plan_name,
+            c.email, c.first_name
+       FROM services s
+       JOIN plans p ON p.id = s.plan_id
+       JOIN customers c ON c.id = s.customer_id
+      WHERE s.is_trial = 1
+        AND s.status = 'active'
+        AND s.trial_warned_at IS NULL
+        AND s.next_due_at IS NOT NULL
+        AND s.next_due_at <= DATE_ADD(CURDATE(), INTERVAL ? DAY)
+      ORDER BY s.next_due_at ASC
+      LIMIT 25`,
+    [TRIAL_WARN_DAYS],
+  );
+
+  let sent = 0;
+  for (const row of rows) {
+    const days = Math.max(0, Math.ceil((new Date(row.next_due_at) - Date.now()) / 864e5));
+    try {
+      // eslint-disable-next-line no-await-in-loop -- one mail at a time is fine at this volume
+      await sendMail({
+        to: row.email,
+        subject: `Your free month of ${row.plan_name} ends in ${days} day${days === 1 ? '' : 's'}`,
+        html: shell({
+          title: 'Your free month is nearly up',
+          intro:
+            `Hello${row.first_name ? ` ${escapeHtml(row.first_name)}` : ''}, the free month of `
+            + `${escapeHtml(row.plan_name)} hosting that came with your domain ends on `
+            + `${new Date(row.next_due_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}. `
+            + 'Your domain is yours either way and stays registered — this is only about the hosting.',
+          bodyHtml: detailTable([
+            ['Site', escapeHtml(row.primary_domain || '—')],
+            ['Plan', escapeHtml(row.plan_name)],
+            ['Free month ends', new Date(row.next_due_at).toLocaleDateString('en-GB')],
+          ]),
+          ctaUrl: `${SITE_URL}/panel/billing`,
+          ctaText: 'Keep it running',
+          footNote:
+            'If you would rather not continue, do nothing and it will simply stop. '
+            + 'Nothing is charged automatically and we hold no card for you.',
+        }),
+      });
+      // eslint-disable-next-line no-await-in-loop
+      await db.query('UPDATE services SET trial_warned_at = NOW() WHERE id = ?', [row.id]);
+      sent += 1;
+      console.log(`[jobs] told ${row.email} their free month ends in ${days}d`);
+    } catch (err) {
+      // Not stamped, so the next pass tries again. A warning that failed to
+      // send must not be recorded as sent.
+      console.error(`[jobs] could not warn service ${row.id}:`, err.message);
+    }
+  }
+  return sent;
+}
+
 async function runOnce({ quiet = false } = {}) {
   if (running) return null;
   running = true;
@@ -702,6 +779,10 @@ async function runOnce({ quiet = false } = {}) {
       domains: await sweepDomains().catch((err) => {
         console.error('[jobs] domain sweep failed:', err.message);
         return null;
+      }),
+      trials: await warnEndingTrials().catch((err) => {
+        console.error('[jobs] trial warning failed:', err.message);
+        return 0;
       }),
     };
 

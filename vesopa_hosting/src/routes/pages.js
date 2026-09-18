@@ -16,6 +16,7 @@ const { sendMail, shell, detailTable, escapeHtml, DEFAULT_TO } = require('../mai
 const { checkCsrf } = require('../auth');
 const { flash, rateLimited } = require('../http-utils');
 const currency = require('../currency');
+const cart = require('./cart');
 const i18n = require('../i18n');
 const { SITE_URL, CONTACT } = require('../config');
 
@@ -151,7 +152,8 @@ router.get('/offers', async (req, res, next) => {
     const rows = await db.query(
       `SELECT code, description, headline, headline_bn, description_bn,
               kind, value, applies_to, min_spend_pence,
-              first_order_only, countries, starts_at, expires_at, max_uses, used
+              first_order_only, countries, starts_at, expires_at, max_uses, used,
+              requires_tld, grants_plan_slug, grants_months
          FROM coupons
         WHERE active = 1
           AND public_offer = 1
@@ -183,9 +185,24 @@ router.get('/offers', async (req, res, next) => {
       detail: say(row.description_bn, row.description),
       // A percentage reads the same in every currency; a fixed amount is a
       // base-currency figure and has to be converted like any other price.
+      kind: row.kind,
       amount: row.kind === 'percent'
         ? `${Number(row.value)}%`
         : currency.format(currency.convert(Number(row.value), req.currency), req.currency),
+      /*
+       * A bundle's figure is what you PAY, so the card must not print "off"
+       * after it — that would read as the whole bundle price coming off.
+       */
+      amountIsPrice: row.kind === 'bundle',
+      grantsMonths: Number(row.grants_months) || 0,
+      grantsPlan: String(row.grants_plan_slug || ''),
+      requiresTld: String(row.requires_tld || ''),
+      /*
+       * The one-click path. A bundle is two specific things in a basket, and
+       * asking a customer to assemble it from the wording is how an offer goes
+       * unclaimed; this builds it for them. See /offers/:code/start.
+       */
+      startUrl: `/offers/${encodeURIComponent(row.code)}/start`,
       appliesTo: row.applies_to,
       firstOrderOnly: Boolean(row.first_order_only),
       minSpend: Number(row.min_spend_pence) > 0
@@ -316,6 +333,67 @@ router.post('/contact', async (req, res, next) => {
     res.redirect('/contact');
   } catch (err) {
     next(err);
+  }
+});
+
+/**
+ * Claim an offer in one click.
+ *
+ * A bundle is a price for a SET — "a .site and a month of hosting, 381 taka" —
+ * and the basket only reaches that price when both halves are in it. Leaving a
+ * customer to work that out from the card's wording is how an advertised offer
+ * goes unclaimed: they add the domain, the code says it needs a plan too, and
+ * they give up. So this puts the hosting half in, remembers the code, and
+ * drops them on the domain search to choose the name, which is the only part
+ * only they can do.
+ *
+ * It grants nothing by itself. The coupon is still evaluated on every basket
+ * price and again inside the checkout transaction, so a code that is expired,
+ * country-locked or fully redeemed refuses here exactly as it would if it had
+ * been typed by hand.
+ */
+router.get('/offers/:code/start', async (req, res, next) => {
+  try {
+    const code = String(req.params.code || '').trim().toUpperCase().slice(0, 40);
+    const row = await db.one(
+      `SELECT * FROM coupons
+        WHERE code = ? AND active = 1 AND public_offer = 1
+          AND (starts_at IS NULL OR starts_at <= NOW())
+          AND (expires_at IS NULL OR expires_at >= NOW())
+          AND (max_uses = 0 OR used < max_uses)
+        LIMIT 1`,
+      [code],
+    );
+    // An offer that has ended is not an error page: it is the offers page,
+    // which will say what IS on.
+    if (!row) return res.redirect('/offers');
+
+    const only = String(row.countries || '').split(',').map((c) => c.trim().toUpperCase()).filter(Boolean);
+    if (only.length && !only.includes(String(req.country || '').toUpperCase())) {
+      return res.redirect('/offers');
+    }
+
+
+    /*
+     * Put the granted plan in the basket at the granted term, so the only
+     * thing left is the name. Nothing is added for a code that grants no
+     * trial — an ordinary percentage code needs no particular basket.
+     */
+    const months = Number(row.grants_months) || 0;
+    const slug = String(row.grants_plan_slug || '').trim();
+    const plan = months > 0 && slug
+      ? await db.one('SELECT slug FROM plans WHERE slug = ? AND active = 1 LIMIT 1', [slug])
+      : null;
+    cart.startOffer(req, res, {
+      code,
+      planSlug: plan ? plan.slug : '',
+      months: plan ? months : 0,
+    });
+
+    const tld = String(row.requires_tld || '').trim().toLowerCase();
+    return res.redirect(tld ? `/domains?tld=${encodeURIComponent(tld)}` : '/domains');
+  } catch (err) {
+    return next(err);
   }
 });
 

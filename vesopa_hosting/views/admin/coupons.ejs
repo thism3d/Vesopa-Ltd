@@ -27,7 +27,10 @@
             <% if (c.description) { %><br><span class="tiny muted"><%= c.description %></span><% } %>
           </td>
           <td class="strong">
-            <%= c.kind === 'percent' ? c.value + '%' : money(c.value) %> off
+            <% if (c.kind === 'bundle') { %>
+              <%= money(c.value) %> the set<% if (Number(c.grants_months)) { %>,
+                incl. <%= c.grants_months %>m <%= c.grants_plan_slug %><% } %>
+            <% } else { %><%= c.kind === 'percent' ? c.value + '%' : money(c.value) %> off<% } %>
           </td>
           <td><span class="badge badge-grey"><%= c.applies_to %></span></td>
           <td class="num"><%= c.min_spend_pence ? money(c.min_spend_pence) : '—' %></td>
@@ -71,12 +74,39 @@
         <select class="select" id="kind" name="kind">
           <option value="percent">Percentage off</option>
           <option value="fixed">Fixed amount off</option>
+          <option value="bundle">Bundle — a price for the set</option>
         </select>
       </div>
       <div class="field">
         <label class="label" for="value">Amount</label>
         <input class="input" id="value" name="value" placeholder="20" required>
-        <p class="hint">A whole number for a percentage, or <%= currency.code %> (<%= currency.symbol %>) for a fixed amount.</p>
+        <p class="hint">
+          A whole number for a percentage, or <%= currency.code %> (<%= currency.symbol %>)
+          for a fixed amount. For a <b>bundle</b> it is what the whole set COSTS,
+          not what comes off — the discount is worked out from it every time a
+          basket is priced, so a price change never makes the offer a loss.
+        </p>
+      </div>
+    </div>
+
+    <%# The three fields a bundle needs and the other kinds ignore. Left
+        visible rather than hidden behind the Type box: an admin who cannot see
+        a field cannot discover the offer shape exists. %>
+    <div class="p-grid p-grid-3">
+      <div class="field">
+        <label class="label" for="requires_tld">Bundle — extension required</label>
+        <input class="input mono" id="requires_tld" name="requires_tld" maxlength="63" placeholder="site">
+        <p class="hint">Without the dot. The basket must contain one of these to qualify.</p>
+      </div>
+      <div class="field">
+        <label class="label" for="grants_plan_slug">Bundle — plan given free</label>
+        <input class="input mono" id="grants_plan_slug" name="grants_plan_slug" maxlength="40" placeholder="starter">
+        <p class="hint">The plan slug, e.g. <span class="mono">starter</span>.</p>
+      </div>
+      <div class="field">
+        <label class="label" for="grants_months">Bundle — months free</label>
+        <input class="input" id="grants_months" name="grants_months" type="number" min="0" max="36" value="0">
+        <p class="hint">The term that must be in the basket, and the term granted. 0 for no trial.</p>
       </div>
     </div>
 

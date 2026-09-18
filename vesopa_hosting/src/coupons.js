@@ -107,6 +107,34 @@ async function evaluate(code, lines, gross, customer, cur = null, country = '') 
   if (only.length && !only.includes(String(country || '').toUpperCase())) {
     return { ok: false, reason: 'That code is for customers in another country.' };
   }
+  /*
+   * A bundle is a price for a SET of things, so the set has to be there.
+   *
+   * Both halves are checked and each says which half is missing, because
+   * "that code does not apply" to somebody who has done most of it right is
+   * the message that loses the sale. The offers page has a button that builds
+   * this basket in one click precisely so that most people never read these.
+   */
+  if (coupon.kind === 'bundle') {
+    const wantTld = String(coupon.requires_tld || '').trim().toLowerCase().replace(/^\./, '');
+    if (wantTld && !lines.some((l) => l.kind === 'domain'
+        && String(l.tld || '').toLowerCase() === wantTld)) {
+      return { ok: false, reason: `That code needs a .${wantTld} domain in your basket.` };
+    }
+    const months = Number(coupon.grants_months) || 0;
+    const slug = String(coupon.grants_plan_slug || '').trim();
+    if (months > 0 && slug) {
+      const plan = lines.find((l) => l.kind === 'hosting'
+        && l.plan && l.plan.slug === slug && Number(l.term_months) === months);
+      if (!plan) {
+        return {
+          ok: false,
+          reason: `That code needs the ${slug} plan on a ${months}-month term in your basket.`,
+        };
+      }
+    }
+  }
+
   const minSpend = inBasket(coupon.min_spend_pence);
   if (minSpend > 0 && gross < minSpend) {
     return { ok: false, reason: `That code needs a basket of ${money(minSpend)} or more.` };
@@ -134,9 +162,25 @@ async function evaluate(code, lines, gross, customer, cur = null, country = '') 
    * figure and is converted — £10 off is $13 off, not $10 off, which would be a
    * quietly different (and smaller) offer to every American customer.
    */
+  /*
+   * A BUNDLE says what the basket costs, not what comes off it.
+   *
+   * "A .site and a month of hosting, 381 taka" is not a discount anybody can
+   * type as a number: it is the difference between what those two lines are
+   * priced at today and the price on the poster. Typing the difference instead
+   * would mean a price rise quietly turning the offer into a loss, and a price
+   * cut leaving the customer paying more than the advert promised. So the
+   * bundle carries the TOTAL, and the discount is derived from it every time
+   * the basket is priced.
+   *
+   * `base` here is already only the qualifying lines, so a bundle basket with
+   * something else in it discounts the bundle and charges for the rest.
+   */
   const raw = coupon.kind === 'percent'
     ? Math.round((base * Number(coupon.value)) / 100)
-    : inBasket(coupon.value);
+    : coupon.kind === 'bundle'
+      ? Math.max(0, base - inBasket(coupon.value))
+      : inBasket(coupon.value);
 
   // Never more than the qualifying lines are worth. A £20 fixed code on a £12
   // basket takes £12 off, not £20 and a refund.
@@ -164,11 +208,28 @@ async function redeem(conn, couponId) {
 
 /** A short human label for the basket line: "SUMMER20 — 20% off". */
 function label(coupon, cur = null) {
-  const off = coupon.kind === 'percent'
-    ? `${coupon.value}% off`
-    : `${currency.format(currency.convert(Number(coupon.value) || 0, cur), cur)} off`;
+  const money = (v) => currency.format(currency.convert(Number(v) || 0, cur), cur);
+  // A bundle's number is what you PAY, not what comes off, so it must not be
+  // labelled "off" — that would read as a discount of the whole bundle price.
+  if (coupon.kind === 'bundle') return `${coupon.code} — ${money(coupon.value)} the pair`;
+  const off = coupon.kind === 'percent' ? `${coupon.value}% off` : `${money(coupon.value)} off`;
   const scope = coupon.applies_to === 'all' ? '' : ` ${coupon.applies_to}`;
   return `${coupon.code} — ${off}${scope}`;
 }
 
-module.exports = { normalise, evaluate, redeem, label };
+/**
+ * What a coupon GIVES as well as what it takes off: the trial a bundle grants.
+ *
+ * Read at checkout and written onto the service, so what somebody was given
+ * survives an admin editing the coupon afterwards. Returns null for the
+ * ordinary discount codes, which grant nothing.
+ */
+function grant(coupon) {
+  if (!coupon || coupon.kind !== 'bundle') return null;
+  const months = Number(coupon.grants_months) || 0;
+  const slug = String(coupon.grants_plan_slug || '').trim();
+  if (!months || !slug) return null;
+  return { plan_slug: slug, months, code: coupon.code };
+}
+
+module.exports = { normalise, evaluate, redeem, label, grant };
