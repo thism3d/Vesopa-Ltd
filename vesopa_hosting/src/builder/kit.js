@@ -174,7 +174,7 @@ const DROP_OPEN = /<\/?(script|style|iframe|frame|frameset|object|embed|applet|t
 
 const TAGS = new Set(['header', 'footer', 'section', 'nav', 'main', 'article', 'aside', 'div', 'span', 'p', 'a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'strong', 'em', 'b', 'i', 'small', 'br', 'hr', 'img', 'figure', 'figcaption', 'blockquote', 'cite', 'address', 'details', 'summary', 'time', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'dl', 'dt', 'dd', 'mark', 's', 'u', 'sup', 'sub', 'q', 'abbr', 'picture', 'button']);
 const VOID = new Set(['br', 'hr', 'img']);
-const ATTRS = new Set(['class', 'id', 'title', 'role', 'data-i', 'data-emoji', 'datetime', 'colspan', 'rowspan', 'open', 'loading', 'width', 'height', 'alt', 'href', 'src', 'target', 'rel', 'style', 'lang', 'dir']);
+const ATTRS = new Set(['class', 'id', 'title', 'role', 'data-i', 'data-emoji', 'data-photo', 'data-photo-id', 'datetime', 'colspan', 'rowspan', 'open', 'loading', 'width', 'height', 'alt', 'href', 'src', 'target', 'rel', 'style', 'lang', 'dir']);
 
 function escAttr(v) {
   return String(v).replace(/&(?!(?:[a-z]+|#\d+|#x[0-9a-f]+);)/gi, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');

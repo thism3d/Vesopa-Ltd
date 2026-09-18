@@ -153,15 +153,25 @@
   var viewport = $('[data-viewport]');
   var browser = $('[data-browser]');
 
+  /*
+   * The preview's own document, once it is really there.
+   *
+   * An iframe starts out holding an empty about:blank document that already
+   * says readyState "complete" and has a body. Accepting that one drew the
+   * whole site into a document /build/frame replaced a moment later: after a
+   * reload the preview came up blank, and clicking it did nothing because the
+   * handlers were on the discarded document too. Three reloads in five here,
+   * with the sections and photos safely saved the whole time.
+   */
   function frameReady() {
     return new Promise(function (resolve) {
       var check = function () {
         var d = iframe.contentDocument;
-        if (d && d.readyState !== 'loading' && d.body) { frameDoc = d; resolve(d); return true; }
+        if (d && d.URL !== 'about:blank' && d.readyState !== 'loading' && d.body) { frameDoc = d; resolve(d); return true; }
         return false;
       };
       if (check()) return;
-      iframe.addEventListener('load', function () { check(); }, { once: true });
+      iframe.addEventListener('load', function onLoad() { if (check()) iframe.removeEventListener('load', onLoad); });
     });
   }
 
@@ -504,6 +514,105 @@
     return new Promise(function (r) { drainWaiters.push(r); });
   }
 
+  /* ---- Photographs --------------------------------------------------------
+   * The designer marks a tile `data-photo="what is in the picture"`; this asks
+   * /ai/build/photos for one and puts it in. The tile's emoji is what shows
+   * until then and what stays if nothing comes back, so a section is never
+   * blank while it waits and never broken if the library is down.
+   *
+   * The picture becomes part of the section's HTML — `html[id]` is read back
+   * after it goes in — so it is saved, survives a reload, and is what gets
+   * published. The URL is the library's own: hotlinking is a condition of the
+   * Unsplash licence, and the credit link is the other one.
+   */
+  var photoRequests = {};   // section id -> true while its photos are on the way
+
+  function orientationOf(tile) {
+    if (tile.classList.contains('v-wide')) return 'landscape';
+    if (tile.classList.contains('v-square')) return 'square';
+    return tile.classList.contains('v-art') ? 'portrait' : 'landscape';
+  }
+
+  function plainText(node) {
+    return String((node && node.textContent) || '').replace(/[^\p{L}\p{N}' ]+/gu, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  /**
+   * What to search for when the designer did not say. It is told to mark every
+   * tile, and mostly does, but it copies its templates closely: on the first
+   * live florist every tile had a photograph except the "Our story" square,
+   * whose template carried no data-photo, and that one kept its emoji. The
+   * tile's own caption says best what is in it; failing that, the heading of
+   * the section it illustrates.
+   */
+  function photoQueryOf(tile, wrap) {
+    var own = (tile.getAttribute('data-photo') || '').trim();
+    if (/\p{L}{3}/u.test(own)) return own;
+    return plainText(tile.querySelector('figcaption'))
+      || plainText(wrap.querySelector('h1, h2'))
+      || plainText(tile.querySelector('.v-tag'));
+  }
+
+  async function resolvePhotos(sid) {
+    if (!frameDoc || photoRequests[sid]) return;
+    var wrap = wrapper(sid);
+    if (!wrap) return;
+    // Every art and photo tile, marked or not — but never one already holding
+    // a picture, whether ours or an address the customer gave.
+    var tiles = Array.prototype.filter.call(
+      wrap.querySelectorAll('.v-art:not(.has-photo), .v-ph:not(.has-photo), [data-photo]:not(.has-photo)'),
+      function (t) { return !t.querySelector('img'); });
+    tiles.forEach(function (t) { t.setAttribute('data-photo', photoQueryOf(t, wrap)); });
+    tiles = tiles.filter(function (t) { return t.getAttribute('data-photo'); });
+    if (!tiles.length) return;
+    // Nothing already on the page is offered twice.
+    var exclude = Array.prototype.map.call(frameDoc.querySelectorAll('[data-photo-id]'), function (n) { return n.getAttribute('data-photo-id'); });
+    photoRequests[sid] = true;
+    var data = null;
+    try {
+      var res = await postJSON('/ai/build/photos', {
+        wanted: tiles.map(function (t) { return { query: t.getAttribute('data-photo'), orientation: orientationOf(t) }; }),
+        exclude: exclude,
+      });
+      data = res.ok ? await res.json() : null;
+    } catch (e) { /* the emoji stays, which is a finished-looking tile */ }
+    photoRequests[sid] = false;
+    if (!data || !Array.isArray(data.photos)) return;
+
+    // The section may have been rewritten or removed while we waited.
+    wrap = wrapper(sid);
+    if (!wrap) return;
+    var placed = 0;
+    data.photos.forEach(function (p, i) {
+      var tile = tiles[i];
+      if (!p || !tile || !wrap.contains(tile)) return;
+      var img = frameDoc.createElement('img');
+      img.src = p.url;
+      img.alt = p.alt || '';
+      img.loading = 'lazy';
+      tile.insertBefore(img, tile.firstChild);
+      tile.classList.add('has-photo');
+      tile.setAttribute('data-photo-id', p.id);
+      var credit = frameDoc.createElement('a');
+      credit.className = 'v-credit';
+      credit.href = p.creditUrl;
+      credit.target = '_blank';
+      credit.rel = 'noopener';
+      credit.textContent = 'Photo: ' + p.credit + ' · ' + p.source;
+      tile.appendChild(credit);
+      placed += 1;
+    });
+    if (!placed) return;
+    html[sid] = wrap.innerHTML;
+    syncOrder();
+    save();
+  }
+
+  /** Every section still waiting for a picture — after a reload, or after a library was busy. */
+  function resolveAllPhotos() {
+    state.site.sections.forEach(function (s) { resolvePhotos(s.id); });
+  }
+
   function handle(ev) {
     if (ev.op === 'say') { turn.say = turn.say ? turn.say + ' ' + ev.text : ev.text; bubble('ai', ev.text); status('building', T('building') + '…'); return; }
     if (ev.op === 'ask') { turn.ask = ev.text; return; }
@@ -566,6 +675,7 @@
         syncOrder();
         step('s-' + ev.id, prettyId(ev.id), true);
         syncChrome();
+        resolvePhotos(ev.id);
       }
     }
   }
@@ -932,10 +1042,23 @@
   (async function boot() {
     syncLang();
     setDevice(state.device);
-    refreshToken();
+    var token = refreshToken();
     await frameReady();
     bindFrame();
     renderAll();
+    // After the token, not before: sent without one, every section's request
+    // came back 401 and went again, two round trips each on every reload.
+    token.then(resolveAllPhotos);
+    // If the frame's document is ever swapped for another, draw into the new
+    // one rather than leave the customer looking at an empty page.
+    iframe.addEventListener('load', function () {
+      var d = iframe.contentDocument;
+      if (!d || d === frameDoc || d.URL === 'about:blank' || !d.body) return;
+      frameDoc = d;
+      bindFrame();
+      renderAll();
+      resolveAllPhotos();
+    });
     state.history.slice(-8).forEach(function (h) { bubble(h.role === 'user' ? 'user' : 'ai', h.text); });
     fit();
     root.classList.add('is-ready');

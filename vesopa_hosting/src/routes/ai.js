@@ -48,6 +48,7 @@ const bedrock = require('../ai/bedrock');
 const studio = require('../builder/agent');
 const studioKit = require('../builder/kit');
 const studioPublish = require('../builder/publish');
+const studioPhotos = require('../builder/photos');
 const voice = require('../ai/voice');
 const { normaliseLang } = require('../ai/rules');
 
@@ -328,6 +329,42 @@ function studioError(req, res, err, action) {
   console.error(`[studio] ${action} failed:`, err.message);
   return res.status(500).json({ error: words(req, 'That did not work. Nothing was changed.', 'এটা কাজ করেনি। কিছুই বদলায়নি।') });
 }
+
+/**
+ * Photographs for the tiles the designer marked with `data-photo`.
+ *
+ * A separate request rather than part of the turn's stream, on purpose: the
+ * turn is already the slowest thing the customer waits for, and a photo search
+ * is a network round trip to somebody else's API. Doing it here lets the
+ * section appear with its emoji art straight away and the photo arrive a
+ * moment later, instead of the whole section waiting on Pexels.
+ *
+ * The keys stay on this side. The browser gets image URLs and the credit it
+ * must show; it never sees what was used to find them.
+ */
+router.post('/build/photos', async (req, res) => {
+  if (!studioPhotos.available()) return res.json({ photos: [] });
+  const who = req.customer ? `c${req.customer.id}` : req.ip;
+  // Generous per person — a new site asks for six or eight at once — and
+  // capped overall, because the Unsplash half of this is fifty an hour.
+  if (rateLimited(who, 'studio-photos', { max: 120, windowMs: 600_000 })
+      || rateLimited('everyone', 'studio-photos-global', { max: 1500, windowMs: 600_000 })) {
+    return res.status(429).json({ photos: [] });
+  }
+  const wanted = (Array.isArray(req.body && req.body.wanted) ? req.body.wanted : [])
+    .slice(0, 12)
+    .map((w) => ({ query: String((w && w.query) || '').slice(0, 100), orientation: String((w && w.orientation) || '') }));
+  const exclude = (Array.isArray(req.body && req.body.exclude) ? req.body.exclude : [])
+    .slice(0, 60).map((x) => String(x).slice(0, 60));
+  try {
+    const photos = await studioPhotos.pick(wanted, exclude);
+    return res.json({ photos });
+  } catch (err) {
+    console.error('[studio photos]', err.message);
+    // No photos is a site that keeps its emoji art, not an error to show.
+    return res.json({ photos: wanted.map(() => null) });
+  }
+});
 
 router.get('/build/domains', async (req, res) => {
   if (!req.customer) return res.json({ signedIn: false, domains: [] });

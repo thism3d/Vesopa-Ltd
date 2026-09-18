@@ -178,6 +178,31 @@ p { margin: 0 0 1em; text-wrap: pretty; }
 .v-ph img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .v-ph figcaption { position: absolute; left: 12px; bottom: 12px; padding: .32em .75em; border-radius: 999px; background: color-mix(in srgb, var(--surface) 90%, transparent); color: var(--ink); font-size: .85rem; font-weight: 700; }
 
+/* ---- Real photographs ------------------------------------------------------
+   A tile with a photo in it stops being an illustration: the emoji and the
+   gloss that make the art look finished would sit ON the picture, so both go.
+   The emoji stays in the markup as `data-emoji` all the same — it is what the
+   tile shows while the photo loads and if the photo ever fails. */
+.v-art.has-photo::before, .v-art.has-photo::after,
+.v-ph.has-photo::after { content: none; }
+.v-art.has-photo, .v-ph.has-photo { background: var(--soft); }
+.v-art img, .v-ph img { z-index: 0; }
+.v-ph.has-photo figcaption { z-index: 1; }
+
+/* The credit the licence asks for. Small and quiet, bottom right, so it never
+   fights the caption (bottom left) or the tag on a hero tile — but a real link,
+   because "credit with a link" is the condition, not a nicety. */
+.v-credit {
+  position: absolute; right: 8px; bottom: 8px; z-index: 1;
+  max-width: calc(100% - 16px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding: .18em .55em; border-radius: 6px;
+  background: rgba(0, 0, 0, .45); color: rgba(255, 255, 255, .92);
+  font-size: .68rem; font-weight: 500; line-height: 1.5; text-decoration: none;
+  backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+}
+.v-credit:hover { color: #fff; background: rgba(0, 0, 0, .6); }
+.v-ph.has-photo figcaption ~ .v-credit { bottom: auto; top: 8px; }
+
 /* ---- Reviews ------------------------------------------------------------------------------------------------ */
 .v-quote { margin: 0; display: flex; flex-direction: column; gap: 14px; }
 .v-quote p { margin: 0; font-family: var(--font-h), serif; font-size: 1.18rem; line-height: 1.5; letter-spacing: -.005em; }
