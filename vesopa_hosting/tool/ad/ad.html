@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="bn">
+<head>
+<meta charset="utf-8">
+<title>Vesopa Cloud — Bangladesh</title>
+<!--
+  THE ADVERT, DRAWN AS ONE FRAME AT A TIME.
+
+  Nothing here animates itself. There is no CSS animation and no
+  requestAnimationFrame: every position, opacity and number is a pure function
+  of `t`, and the renderer calls seek(t) and photographs the result. That is
+  what makes a frame reproducible -- the same t always draws the same picture,
+  whether it is captured in eighty milliseconds or eight hundred -- and it is
+  the only way the picture can be cut to a voice track that was recorded
+  before it. A CSS keyframe would drift against the audio the moment a
+  screenshot took longer than a frame, which on a headless browser it always
+  does.
+
+  The timeline comes from timing.json, measured off the synthesised speech, and
+  is injected as window.__timeline before the first seek.
+-->
+<style>
+  @font-face {
+    font-family: 'Noto Sans Bengali';
+    src: url('../../public/assets/fonts/noto-sans-bengali-wght.woff2') format('woff2-variations');
+    font-weight: 100 900;
+    font-display: block;
+  }
+  /* `block` rather than `swap`: a frame captured during a swap would show the
+     fallback, and one frame of the wrong font in a finished advert is a defect
+     nobody can explain. Better to wait for it. */
+
+  :root {
+    --lime: #a5c715;
+    --lime-deep: #2f3b05;
+    --ink: #0b0b0a;
+    --paper: #ffffff;
+    --muted: rgba(255, 255, 255, .62);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    width: 1920px; height: 1080px;
+    overflow: hidden;
+    background: var(--ink);
+  }
+
+  body {
+    font-family: 'Noto Sans Bengali', -apple-system, 'Segoe UI', Roboto, sans-serif;
+    color: #fff;
+    -webkit-font-smoothing: antialiased;
+    position: relative;
+  }
+
+  /* ---- The backdrop, which never cuts ------------------------------------
+     It holds through every scene so the advert reads as one place rather than
+     five slides. The aura drifts and the grid parallaxes by a few pixels; both
+     are driven from seek(), like everything else. */
+  #grid {
+    position: absolute; inset: -60px;
+    background-image:
+      linear-gradient(rgba(255,255,255,.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,.045) 1px, transparent 1px);
+    background-size: 96px 96px;
+  }
+  #aura {
+    position: absolute; width: 1500px; height: 1500px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(165,199,21,.30) 0%, rgba(165,199,21,.10) 38%, transparent 68%);
+    filter: blur(8px);
+  }
+  #vignette {
+    position: absolute; inset: 0;
+    background: radial-gradient(ellipse at 50% 50%, transparent 40%, rgba(0,0,0,.55) 100%);
+  }
+
+  .stage { position: absolute; inset: 0; display: grid; place-items: center; }
+  .scene { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; }
+
+  .wrap { width: 1500px; }
+
+  .kicker {
+    font-size: 30px; font-weight: 700; letter-spacing: .02em;
+    color: var(--lime); margin-bottom: 26px;
+  }
+  .kicker .rule {
+    display: inline-block; width: 54px; height: 3px; background: var(--lime);
+    vertical-align: middle; margin-right: 18px; border-radius: 2px;
+  }
+
+  h1 { font-size: 96px; line-height: 1.32; font-weight: 800; letter-spacing: -.01em; }
+  h2 { font-size: 66px; line-height: 1.38; font-weight: 800; }
+  .lede { font-size: 40px; line-height: 1.6; color: var(--muted); margin-top: 30px; }
+  .hl { color: var(--lime); }
+
+  /* ---- Scene 2: the number ---------------------------------------------- */
+  .bignum {
+    font-size: 340px; font-weight: 800; line-height: 1;
+    color: var(--lime); letter-spacing: -.02em;
+    font-variant-numeric: tabular-nums;
+  }
+  .bigrow { display: flex; align-items: baseline; justify-content: center; gap: 24px; }
+  .bigword { font-size: 92px; font-weight: 800; }
+
+  /* ---- Scene 3: what comes with it -------------------------------------- */
+  .chips { display: flex; gap: 22px; justify-content: center; flex-wrap: wrap; margin-top: 44px; }
+  .chip {
+    display: flex; align-items: center; gap: 16px;
+    padding: 24px 34px; border-radius: 20px;
+    background: rgba(255,255,255,.055);
+    border: 1px solid rgba(255,255,255,.12);
+    font-size: 36px; font-weight: 700; white-space: nowrap;
+  }
+  .tick {
+    width: 40px; height: 40px; border-radius: 50%; flex: none;
+    background: var(--lime); color: var(--ink);
+    display: grid; place-items: center; font-size: 26px; font-weight: 900;
+  }
+
+  /* ---- Scene 4: the language toggle ------------------------------------- */
+  .toggle {
+    display: inline-flex; gap: 8px; padding: 10px;
+    border-radius: 22px; background: rgba(255,255,255,.08);
+    border: 1px solid rgba(255,255,255,.16); margin-bottom: 40px;
+  }
+  .seg {
+    padding: 16px 40px; border-radius: 15px; font-size: 38px; font-weight: 800;
+    color: var(--muted);
+  }
+  .seg.on { background: var(--lime); color: var(--lime-deep); }
+
+  /* ---- Scene 5: the code ------------------------------------------------ */
+  .code {
+    display: inline-block; padding: 30px 62px; border-radius: 22px;
+    background: var(--lime); color: var(--lime-deep);
+    font-size: 84px; font-weight: 900; letter-spacing: .06em;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+  }
+  .url {
+    font-size: 52px; font-weight: 700; margin-top: 42px;
+    font-family: 'Segoe UI', system-ui, sans-serif; letter-spacing: .01em;
+  }
+  .terms {
+    position: absolute; left: 0; right: 0; bottom: 150px;
+    font-size: 28px; color: rgba(255,255,255,.58); font-weight: 600;
+  }
+
+  /* ---- The lockup, bottom left, from the second scene on ----------------- */
+  #lockup {
+    position: absolute; left: 96px; bottom: 74px;
+    display: flex; align-items: center; gap: 18px;
+  }
+  #lockup img { height: 44px; width: auto; display: block; }
+  #lockup .sub {
+    font-size: 26px; font-weight: 700; color: var(--muted);
+    padding-left: 18px; border-left: 2px solid rgba(255,255,255,.25);
+  }
+
+  /* The opening lockup is centre stage and much larger. */
+  #bigmark { display: grid; place-items: center; gap: 30px; }
+  #bigmark img { height: 112px; width: auto; }
+</style>
+</head>
+<body>
+  <div id="grid"></div>
+  <div id="aura"></div>
+
+  <div class="stage">
+    <!-- 1. the hook -->
+    <section class="scene" data-scene="hook">
+      <div class="wrap" id="bigmark">
+        <img src="../../public/assets/img/brand/vesopa_logo_on_dark.png" alt="Vesopa">
+        <h1 data-el="hook-line">আপনার ব্যবসা<br><span class="hl">অনলাইনে আনুন</span></h1>
+      </div>
+    </section>
+
+    <!-- 2. the offer -->
+    <section class="scene" data-scene="offer">
+      <div class="wrap">
+        <p class="kicker" data-el="offer-kicker"><span class="rule"></span>বাংলাদেশের জন্য</p>
+        <div class="bigrow">
+          <span class="bignum" data-el="offer-num">0</span>
+          <span class="bignum" data-el="offer-pc">%</span>
+          <span class="bigword hl" data-el="offer-word">ছাড়</span>
+        </div>
+        <p class="lede" data-el="offer-lede">নতুন গ্রাহকদের <b class="hl">প্রথম বছরের হোস্টিংয়ে</b></p>
+      </div>
+    </section>
+
+    <!-- 3. what comes with it -->
+    <section class="scene" data-scene="included">
+      <div class="wrap">
+        <h2 data-el="inc-head">টাকায় পেমেন্ট</h2>
+        <div class="chips">
+          <div class="chip" data-el="chip0"><span class="tick">✓</span>ফ্রি ডোমেইন</div>
+          <div class="chip" data-el="chip1"><span class="tick">✓</span>ফ্রি SSL</div>
+          <div class="chip" data-el="chip2"><span class="tick">✓</span>ফ্রি মাইগ্রেশন</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. in Bangla -->
+    <section class="scene" data-scene="bangla">
+      <div class="wrap">
+        <div class="toggle" data-el="bn-toggle">
+          <span class="seg" data-el="seg-en">EN</span>
+          <span class="seg on" data-el="seg-bn">বাংলা</span>
+        </div>
+        <h2 data-el="bn-head">ওয়েবসাইট আর কন্ট্রোল প্যানেল —<br><span class="hl">সবই বাংলায়</span></h2>
+      </div>
+    </section>
+
+    <!-- 5. the code -->
+    <section class="scene" data-scene="cta">
+      <div class="wrap">
+        <p class="kicker" data-el="cta-kicker"><span class="rule"></span>বাস্কেটে কোডটি দিন</p>
+        <div class="code" data-el="cta-code">BANGLADESH40</div>
+        <p class="url" data-el="cta-url">cloud.vesopa.com<span style="color:var(--lime)">/bn/offers</span></p>
+      </div>
+      <p class="terms" data-el="cta-terms">নতুন গ্রাহক · বাংলাদেশ থেকে অর্ডার · প্রথম বছরের হোস্টিং প্ল্যানে প্রযোজ্য · ফ্রি ডোমেইন বাৎসরিক প্ল্যানে</p>
+    </section>
+  </div>
+
+  <div id="lockup">
+    <img src="../../public/assets/img/brand/vesopa_logo_on_dark.png" alt="Vesopa">
+    <span class="sub">ক্লাউড</span>
+  </div>
+  <div id="vignette"></div>
+
+<script>
+/* ---------------------------------------------------------------------------
+   The whole animation, as arithmetic on t.
+   --------------------------------------------------------------------------- */
+const $ = (sel) => document.querySelector(sel);
+const el = (name) => document.querySelector(`[data-el="${name}"]`);
+const scene = (name) => document.querySelector(`[data-scene="${name}"]`);
+
+const clamp = (v, lo = 0, hi = 1) => Math.min(hi, Math.max(lo, v));
+/* A gentle ease for anything that moves in, and a softer one for anything that
+   leaves: things should arrive with intent and go quietly. */
+const easeOut = (p) => 1 - Math.pow(1 - clamp(p), 3);
+const easeInOut = (p) => (clamp(p) < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * clamp(p) + 2, 3) / 2);
+
+/* THE PERCENTAGE IS IN LATIN DIGITS, AND THAT IS NOT AN OVERSIGHT.
+ *
+ * Everything else here is Bangla, and the site writes its prices in Bengali
+ * numerals — ৳৮৯৩.০০ — so ৪০% was the obvious first choice. Two things say
+ * otherwise. The offers page this advert sends people to renders the figure
+ * as `40% ছাড়`, in Latin, straight out of the coupon row; an advert that
+ * promises ৪০ and lands on 40 makes the reader check whether they are the
+ * same offer. And ৪০ is, to anyone reading Latin numerals, the shape of 80 —
+ * a misread that promises double what the basket will give and is discovered
+ * at the checkout.
+ *
+ * So: Latin for the number, Bangla for every word around it, exactly as the
+ * landing page does it. */
+
+/* Where each scene sits, worked out from the measured speech. */
+let TL = [];
+function buildTimeline() {
+  const t = window.__timeline;
+  const GAP = 0.45;      // breath between lines
+  const LEAD = 0.35;     // picture arrives a beat before the word
+  const TAIL = 0.55;     // and holds a beat after it
+  let at = 0.6;          // a moment of backdrop before anyone speaks
+  TL = t.lines.map((line) => {
+    const start = at;
+    const dur = line.seconds + TAIL;
+    at = start + dur + GAP;
+    return { name: line.show, start, end: start + dur, audioAt: start + LEAD };
+  });
+  window.__total = at + 0.8;   // a breath at the end before the fade
+  return TL;
+}
+
+function at(name) { return TL.find((s) => s.name === name); }
+
+/** Opacity and lift for a scene that fades in, holds, and fades out. */
+function envelope(t, s, fadeIn = .5, fadeOut = .4) {
+  if (t < s.start - fadeIn || t > s.end + fadeOut) return { o: 0, p: 0 };
+  const inP = easeOut((t - (s.start - fadeIn)) / fadeIn);
+  const outP = t > s.end ? easeOut((t - s.end) / fadeOut) : 0;
+  return { o: clamp(inP) * (1 - clamp(outP)), p: clamp(inP), out: clamp(outP) };
+}
+
+function seek(t) {
+  if (!TL.length) buildTimeline();
+  const total = window.__total;
+
+  /* ---- backdrop: always on, always moving a little --------------------- */
+  const drift = t / total;
+  $('#aura').style.transform =
+    `translate(${1180 - drift * 260}px, ${-260 + Math.sin(drift * 3.1) * 90}px)`;
+  $('#grid').style.transform = `translate(${-drift * 44}px, ${-drift * 22}px)`;
+
+  /* The opening fade up from black, and the closing fade down. */
+  const openFade = easeOut(t / 0.5);
+  const closeFade = t > total - 0.6 ? easeOut((t - (total - 0.6)) / 0.6) : 0;
+  document.body.style.opacity = (openFade * (1 - closeFade)).toFixed(4);
+
+  /* ---- the small lockup, from scene two onwards ------------------------- */
+  const lockOn = at('offer') ? at('offer').start - 0.4 : 99;
+  const lockP = easeOut((t - lockOn) / 0.6);
+  $('#lockup').style.opacity = (clamp(lockP) * (1 - closeFade)).toFixed(4);
+  $('#lockup').style.transform = `translateY(${(1 - clamp(lockP)) * 18}px)`;
+
+  /* ---- 1. the hook ------------------------------------------------------ */
+  {
+    const s = at('hook'); const e = envelope(t, s, .55, .45);
+    scene('hook').style.opacity = e.o.toFixed(4);
+    const mark = $('#bigmark');
+    mark.style.transform = `translateY(${(1 - e.p) * 26 - e.out * 16}px) scale(${0.985 + e.p * 0.015})`;
+    el('hook-line').style.opacity = clamp((t - (s.start + 0.25)) / 0.5).toFixed(4);
+    el('hook-line').style.transform = `translateY(${(1 - easeOut((t - (s.start + 0.25)) / 0.5)) * 22}px)`;
+  }
+
+  /* ---- 2. the offer, and the number that counts --------------------------
+     It counts to forty rather than appearing at forty: the eye follows a
+     number that moves, and forty is the whole point of the advert. */
+  {
+    const s = at('offer'); const e = envelope(t, s, .5, .45);
+    scene('offer').style.opacity = e.o.toFixed(4);
+    const countP = easeInOut(clamp((t - (s.start + 0.15)) / 1.15));
+    el('offer-num').textContent = String(Math.round(countP * 40));
+    const pop = 1 + Math.sin(clamp((t - (s.start + 1.3)) / 0.45) * Math.PI) * 0.035;
+    el('offer-num').style.transform = `scale(${countP >= 1 ? pop : 1})`;
+    el('offer-pc').style.opacity = clamp((t - (s.start + 0.2)) / 0.4).toFixed(4);
+    el('offer-word').style.opacity = clamp((t - (s.start + 1.25)) / 0.45).toFixed(4);
+    el('offer-word').style.transform =
+      `translateX(${(1 - easeOut((t - (s.start + 1.25)) / 0.45)) * 26}px)`;
+    el('offer-kicker').style.opacity = clamp((t - s.start) / 0.45).toFixed(4);
+    const ledeP = easeOut((t - (s.start + 1.9)) / 0.5);
+    el('offer-lede').style.opacity = clamp(ledeP).toFixed(4);
+    el('offer-lede').style.transform = `translateY(${(1 - clamp(ledeP)) * 18}px)`;
+  }
+
+  /* ---- 3. what comes with it: chips, one after another ------------------ */
+  {
+    const s = at('included'); const e = envelope(t, s, .5, .45);
+    scene('included').style.opacity = e.o.toFixed(4);
+    const headP = easeOut((t - s.start) / 0.5);
+    el('inc-head').style.opacity = clamp(headP).toFixed(4);
+    el('inc-head').style.transform = `translateY(${(1 - clamp(headP)) * 20}px)`;
+    for (let i = 0; i < 3; i += 1) {
+      const p = easeOut((t - (s.start + 1.1 + i * 0.62)) / 0.5);
+      const c = el(`chip${i}`);
+      c.style.opacity = clamp(p).toFixed(4);
+      c.style.transform = `translateY(${(1 - clamp(p)) * 26}px) scale(${0.96 + clamp(p) * 0.04})`;
+    }
+  }
+
+  /* ---- 4. the language toggle flicking to Bangla ------------------------ */
+  {
+    const s = at('bangla'); const e = envelope(t, s, .5, .45);
+    scene('bangla').style.opacity = e.o.toFixed(4);
+    const flick = t > s.start + 0.75;
+    el('seg-en').classList.toggle('on', !flick);
+    el('seg-bn').classList.toggle('on', flick);
+    const tp = easeOut((t - s.start) / 0.5);
+    el('bn-toggle').style.opacity = clamp(tp).toFixed(4);
+    el('bn-toggle').style.transform = `translateY(${(1 - clamp(tp)) * 18}px)`;
+    const hp = easeOut((t - (s.start + 0.5)) / 0.5);
+    el('bn-head').style.opacity = clamp(hp).toFixed(4);
+    el('bn-head').style.transform = `translateY(${(1 - clamp(hp)) * 22}px)`;
+  }
+
+  /* ---- 5. the code, which is the thing to remember --------------------- */
+  {
+    const s = at('cta'); const e = envelope(t, s, .5, .5);
+    scene('cta').style.opacity = e.o.toFixed(4);
+    el('cta-kicker').style.opacity = clamp((t - s.start) / 0.45).toFixed(4);
+    const cp = easeOut((t - (s.start + 0.35)) / 0.55);
+    el('cta-code').style.opacity = clamp(cp).toFixed(4);
+    /* One small settle, then still. A code that keeps moving is a code nobody
+       can read, and reading it is the only job this scene has. */
+    el('cta-code').style.transform = `scale(${0.92 + clamp(cp) * 0.08})`;
+    const up = easeOut((t - (s.start + 1.5)) / 0.5);
+    el('cta-url').style.opacity = clamp(up).toFixed(4);
+    el('cta-url').style.transform = `translateY(${(1 - clamp(up)) * 16}px)`;
+    el('cta-terms').style.opacity = (clamp(easeOut((t - (s.start + 2.2)) / 0.6)) * 1).toFixed(4);
+  }
+}
+
+window.seek = seek;
+window.buildTimeline = buildTimeline;
+</script>
+</body>
+</html>

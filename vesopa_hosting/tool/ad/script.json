@@ -1,0 +1,59 @@
+{
+  "_comment": [
+    "The Bangladesh advert, line by line. The narration is synthesised from",
+    "`say`; `show` is what the frame carries at the same moment.",
+    "",
+    "EVERY CLAIM HERE IS CHECKED AGAINST THE LIVE OFFER, not written from",
+    "memory. BANGLADESH40 is percent/40/hosting with first_order_only = 1 and",
+    "countries = BD, so the narration says new customers and says Bangladesh;",
+    "an advert that promised it to everybody would be selling something the",
+    "basket then refuses. The free domain, the free certificate and the free",
+    "migration are the standing terms off the hosting page, not part of the",
+    "code, so they are said as what comes with a plan rather than as the offer.",
+    "",
+    "The code is spoken as Bangla words -- 'বাংলাদেশ ফোরটি' -- because a Bangla",
+    "voice reading the Latin string BANGLADESH40 says it letter by letter. The",
+    "screen carries the real characters; the voice carries how you say it.",
+    "",
+    "No taka figure is spoken anywhere, on purpose: a price in a video outlives",
+    "the price list, and this one is already sold in four currencies."
+  ],
+  "voice": "bn-BD-PradeepNeural",
+  "rate": "-4%",
+  "lines": [
+    {
+      "id": "hook",
+      "say": "আপনার ব্যবসা অনলাইনে আনার সময় এখনই।",
+      "show": "hook"
+    },
+    {
+      "id": "offer",
+      "say": "ভেসোপা ক্লাউডে বাংলাদেশের জন্য বিশেষ অফার। নতুন গ্রাহকদের প্রথম বছরের হোস্টিংয়ে চল্লিশ শতাংশ ছাড়।",
+      "show": "offer"
+    },
+    {
+      "id": "included",
+      "say": "টাকায় পেমেন্ট। ফ্রি ডোমেইন, ফ্রি এসএসএল, আর পুরনো সাইট নিয়ে আসা সম্পূর্ণ ফ্রি।",
+      "show": "included"
+    },
+    {
+      "_note": [
+        "This said 'প্যানেল আর সাপোর্ট, সবই বাংলায়' — the panel AND the support,",
+        "all in Bangla. The panel is: it was translated, string by string, and",
+        "it is live. The support is not. Nowhere on the site is Bangla-speaking",
+        "support offered; the footer says 'ইউকে সাপোর্ট, একজন মানুষ' and means",
+        "it. Promising it in an advert would be discovered by the first person",
+        "who opened a ticket, which is the worst possible moment.",
+        "So the claim is the half that is true, and it is still the strong half."
+      ],
+      "id": "bangla",
+      "say": "ওয়েবসাইট আর পুরো কন্ট্রোল প্যানেল, সবই বাংলায়।",
+      "show": "bangla"
+    },
+    {
+      "id": "cta",
+      "say": "কোড বাংলাদেশ ফোরটি ব্যবহার করুন। ক্লাউড ডট ভেসোপা ডট কম।",
+      "show": "cta"
+    }
+  ]
+}
