@@ -23,6 +23,7 @@ import datetime
 import json
 import pathlib
 import re
+import subprocess
 import sys
 
 import requests
@@ -56,6 +57,38 @@ def strip_tags(html):
     return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html))
 
 
+_COOKIE_CACHE = {}
+
+
+def signed_country_cookie(cc):
+    """A country cookie the server will actually believe.
+
+    The value is HMAC-signed on the node, so a plain "BD" is rejected and the
+    visitor reads as being nowhere -- which hides every country-locked offer
+    and made this test report the site broken when it was the test that was
+    wrong. Ask the node to mint one rather than re-implementing the signature
+    here, where it would drift the first time the salt changed.
+    """
+    if cc in _COOKIE_CACHE:
+        return _COOKIE_CACHE[cc]
+    node = (
+        'require("dotenv").config();'
+        'const c=require("crypto");'
+        'const s=process.env.GEO_SALT||process.env.SESSION_SECRET||"vesopa-geo";'
+        f'console.log("{cc}."+c.createHmac("sha256",s).update("cc:{cc}")'
+        '.digest("base64url").slice(0,16));'
+    )
+    out = subprocess.run(
+        [sys.executable, "tool/cloud_ssh.py", "run",
+         "A=/home/vesopasoftware/web/cloud.vesopa.com/private/nodeapp; cd $A && "
+         f"su vesopasoftware -c 'cd $PWD && node -e {json.dumps(node)}' 2>/dev/null | tail -1"],
+        capture_output=True, text=True, timeout=180,
+    )
+    value = out.stdout.strip().splitlines()[-1].strip()
+    _COOKIE_CACHE[cc] = value
+    return value
+
+
 def fetch(path, country, currency):
     s = requests.Session()
     s.headers["User-Agent"] = "Mozilla/5.0 (Vesopa offers language test)"
@@ -63,7 +96,7 @@ def fetch(path, country, currency):
     # Both cookies, so no geo lookup runs and overwrites the country (it did
     # exactly that the first time this kind of test was written).
     s.cookies.set("vh_cur", currency, domain=host)
-    s.cookies.set("vh_cc", country, domain=host)
+    s.cookies.set("vh_cc", signed_country_cookie(country), domain=host)
     r = s.get(f"{BASE}{path}", timeout=40)
     return r.status_code, r.text
 

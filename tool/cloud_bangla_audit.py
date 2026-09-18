@@ -21,6 +21,7 @@ import datetime
 import json
 import pathlib
 import re
+import subprocess
 import sys
 
 from playwright.sync_api import sync_playwright
@@ -55,6 +56,29 @@ KEEP = {
 }
 
 
+def signed_country_cookie(cc):
+    """A country cookie the server will believe.
+
+    It is HMAC-signed on the node, so a plain "BD" reads as nowhere and every
+    country-locked offer disappears -- which would let this audit call a page
+    finished because the untranslated part never rendered.
+    """
+    node = (
+        'require("dotenv").config();'
+        'const c=require("crypto");'
+        'const s=process.env.GEO_SALT||process.env.SESSION_SECRET||"vesopa-geo";'
+        f'console.log("{cc}."+c.createHmac("sha256",s).update("cc:{cc}")'
+        '.digest("base64url").slice(0,16));'
+    )
+    out = subprocess.run(
+        [sys.executable, "tool/cloud_ssh.py", "run",
+         "A=/home/vesopasoftware/web/cloud.vesopa.com/private/nodeapp; cd $A && "
+         f"su vesopasoftware -c 'cd $PWD && node -e {json.dumps(node)}' 2>/dev/null | tail -1"],
+        capture_output=True, text=True, timeout=180,
+    )
+    return out.stdout.strip().splitlines()[-1].strip()
+
+
 def english_words(line):
     words = re.findall(r"[A-Za-z][A-Za-z'’]{2,}", line)
     return [w for w in words if w.lower() not in KEEP]
@@ -68,7 +92,7 @@ def main():
         ctx = browser.new_context(viewport={"width": 1280, "height": 900}, bypass_csp=True)
         host = BASE.split("//")[1]
         ctx.add_cookies([
-            {"name": "vh_cc", "value": "BD", "domain": host, "path": "/"},
+            {"name": "vh_cc", "value": signed_country_cookie("BD"), "domain": host, "path": "/"},
             {"name": "vh_cur", "value": "BDT", "domain": host, "path": "/"},
         ])
         page = ctx.new_page()
