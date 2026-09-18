@@ -88,10 +88,10 @@
 </footer>
 <% } %>
 
-<%# Offered to a visitor in Bangladesh, once: the site in their own language.
-    It sits outside the `bare` branch above so it reaches the onboarding
-    wizard too -- that is exactly where being asked matters. %>
-<%- include('./bangla-offer') %>
+<%# Offered once to somebody reading Bangla: the same page in English. It sits
+    outside the `bare` branch above so it reaches the onboarding wizard too --
+    that is exactly where being able to switch back matters. %>
+<%- include('./language-offer') %>
 
 <% if (typeof flash !== 'undefined' && flash && flash.message) { %>
   <span data-flash="<%= flash.message %>" data-flash-kind="<%= flash.kind || 'ok' %>" hidden></span>

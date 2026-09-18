@@ -342,6 +342,15 @@ app.get('/i18n/:file', (req, res, next) => {
 app.use(currencyContext.attach);
 app.get('/currency/:code', currencyContext.switchTo);
 
+/*
+ * A visitor in Bangladesh is served the Bangla site rather than offered it.
+ *
+ * Here and not beside i18n.resolve, because this needs req.country and that is
+ * the currency middleware's answer. Their own choice, if they have made one,
+ * outranks it -- see i18n.redirectByCountry.
+ */
+app.use(i18n.redirectByCountry);
+
 /** Attach the signed-in customer, if the cookie is valid and still current. */
 app.use(async (req, res, next) => {
   const session = auth.readCustomerSession(req);

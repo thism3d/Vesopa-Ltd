@@ -467,13 +467,17 @@
                 source code is noise, and nothing here is information the page
                 depends on. %>
             <%# i18n-ignore: the lines below are a React sample, drawn as an illustration.
-    Code is code in every language -- translating `export default function`
-    would make the picture wrong, not localised. %>
+    Code is code in every language -- `export default function` is not English
+    prose and translating it would make the picture wrong rather than
+    localised. What IS translated is the only thing a human reads in it: the
+    string the component is given. On the Bangla page this file therefore looks
+    like a Bangladeshi developer's own -- English identifiers, Bangla content,
+    which is exactly how it is written in life. %>
 <pre class="editor-code" aria-hidden="true"><% [
               ['<span class="k">export default</span> <span class="k">function</span> <span class="t">Page</span>() {', 0],
               ['  <span class="k">return</span> (', 90],
               ['    &lt;<span class="t">main</span> <span class="s">className</span>=<span class="s">"bakery"</span>&gt;', 180],
-              ['      &lt;<span class="t">Hero</span> <span class="s">title</span>=<span class="s">"Fresh at 7am"</span> /&gt;', 270],
+              ['      &lt;<span class="t">Hero</span> <span class="s">title</span>=<span class="s">"' + t('Fresh at 7am') + '"</span> /&gt;', 270],
               ['      &lt;<span class="t">Hours</span> <span class="s">open</span>=<span class="s">"07:00"</span> /&gt;', 360],
               ['      &lt;<span class="t">Gallery</span> /&gt;', 450],
               ['      &lt;<span class="t">BookingForm</span> /&gt;', 540],

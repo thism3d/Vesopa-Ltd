@@ -759,12 +759,19 @@
     }
   }
 
-  /* ---- The Bangla offer, asked once -------------------------------------
-     The server renders it only for a visitor it places in Bangladesh who is
-     not already reading Bangla. This decides whether to SHOW it: once they
-     have answered either way, or dismissed it, the cookie keeps it away for a
-     year. Choosing Bangla follows the ordinary /lang/bn link, so the choice is
-     remembered exactly as a click in the footer would be.
+  /* ---- The language offer, asked once ------------------------------------
+     The server renders it only on a Bangla page, and only there, because a
+     visitor in Bangladesh is now SERVED Bangla rather than offered it — this
+     is the way back to English. Once they have answered either way, or
+     dismissed it, the cookie keeps it away for a year. Choosing English
+     follows the ordinary /lang/en link, so the choice is remembered exactly as
+     a click in the footer would be, and the country redirect then leaves them
+     alone for good.
+
+     Whether a choice navigates is read off the element, not hardcoded: the
+     link goes, the button just closes. The first version of this had the two
+     the other way round, and flipping the offer would have left the wrong one
+     silently doing nothing.
      --------------------------------------------------------------------- */
   const langOffer = $('#lang-offer');
   if (langOffer) {
@@ -779,9 +786,9 @@
       langOffer.querySelectorAll('[data-lang-offer]').forEach((el) => {
         el.addEventListener('click', () => {
           remember();
-          // The Bangla choice is a link and must be allowed to navigate; only
-          // "keep English" has nothing to do but disappear.
-          if (el.dataset.langOffer === 'en') langOffer.hidden = true;
+          // A link is going somewhere and must be left to do it; anything else
+          // has nothing to do but disappear.
+          if (el.tagName !== 'A') langOffer.hidden = true;
         });
       });
     }

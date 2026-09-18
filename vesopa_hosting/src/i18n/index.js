@@ -421,6 +421,57 @@ function redirectRemembered(req, res, next) {
   return res.redirect(302, localizePath(req.originalUrl || req.url, req.locale));
 }
 
+/**
+ * A visitor in Bangladesh is shown the Bangla site, not offered it.
+ *
+ * WHAT THIS REPLACES. Before, everyone landed on English and a Bangladeshi
+ * visitor got a bar asking whether they would rather read Bangla. The owner's
+ * judgement, and it is the right one: a Bangladeshi customer arriving on an
+ * English page has already had to work out that this shop is for them. The
+ * default should be their language, and the escape hatch should be the thing
+ * that is one click away -- so the site now serves /bn and offers English back
+ * (views/partials/language-offer.ejs).
+ *
+ * THEIR CHOICE ALWAYS WINS. If `vh_lang` is set they have chosen, and this
+ * does nothing, in either direction: somebody who picked English in Dhaka
+ * stays in English for a year. Geo is a guess; a click is a fact. That is the
+ * same rule the currency has always followed.
+ *
+ * A CRAWLER IS NEVER REDIRECTED. Google indexes from American and European
+ * addresses, so this would rarely fire for it anyway, but sending a bot to a
+ * different language than the address it asked for is how a site ends up with
+ * its English pages de-indexed. Both languages stay reachable at their own
+ * addresses, and the hreflang alternates say so.
+ *
+ * Runs after the currency middleware because that is what resolves req.country.
+ */
+const CRAWLER = /bot|crawler|spider|crawling|slurp|bingpreview|facebookexternalhit|embedly|quora link preview|showyoubot|outbrain|pinterest|vkshare|w3c_validator|whatsapp|telegram/i;
+
+function redirectByCountry(req, res, next) {
+  if (req.method !== 'GET' || req.localePrefixed) return next();
+  // A language they have chosen is not ours to override.
+  if (req.cookies && req.cookies[COOKIE]) return next();
+  if (!isPublicPath(req.path)) return next();
+  if (CRAWLER.test(String(req.get('user-agent') || ''))) return next();
+
+  const wanted = COUNTRY_LANGUAGE[String(req.country || '').toUpperCase()];
+  if (!wanted || wanted === DEFAULT_LOCALE) return next();
+  const info = LOCALES[wanted];
+  if (!info || !info.prefix) return next();
+
+  return res.redirect(302, localizePath(req.originalUrl || req.url, wanted));
+}
+
+/**
+ * Which language a country reads, where we have that language.
+ *
+ * Deliberately a table rather than Accept-Language: the browser of a
+ * Bangladeshi customer using a phone bought abroad often says en-US, and the
+ * country is the better signal for which shop they are standing in. One entry
+ * today; it is a table so the second one is data rather than an if.
+ */
+const COUNTRY_LANGUAGE = { BD: 'bn' };
+
 /** Same page, other language: `/lang/bn?to=/hosting`. */
 function switchTo(req, res) {
   const wanted = String(req.params.code || '').toLowerCase();
@@ -450,6 +501,7 @@ module.exports = {
   DEFAULT_LOCALE,
   COOKIE,
   isPublicPath,
+  redirectByCountry,
   forLocale,
   translate,
   translateHtml,

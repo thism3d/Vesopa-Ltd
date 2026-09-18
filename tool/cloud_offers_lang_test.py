@@ -89,7 +89,17 @@ def signed_country_cookie(cc):
     return value
 
 
-def fetch(path, country, currency):
+def fetch(path, country, currency, lang=None):
+    """One visitor, reading one page.
+
+    `lang` is their REMEMBERED language choice, and it has to be sent: since
+    the site began serving Bangla to Bangladeshi visitors, asking for /offers
+    from Bangladesh is answered with a redirect to /bn/offers. Without this the
+    English half of this test silently read the Bangla page and reported the
+    English headline missing -- which it was, because it was not the page being
+    looked at. A real Bangladeshi customer reading English is a customer who
+    chose it, and this is that customer.
+    """
     s = requests.Session()
     s.headers["User-Agent"] = "Mozilla/5.0 (Vesopa offers language test)"
     host = BASE.split("//")[1]
@@ -97,6 +107,8 @@ def fetch(path, country, currency):
     # exactly that the first time this kind of test was written).
     s.cookies.set("vh_cur", currency, domain=host)
     s.cookies.set("vh_cc", signed_country_cookie(country), domain=host)
+    if lang:
+        s.cookies.set("vh_lang", lang, domain=host)
     r = s.get(f"{BASE}{path}", timeout=40)
     return r.status_code, r.text
 
@@ -114,7 +126,7 @@ def main():
         print(f"  [{'PASS' if passed else 'FAIL'}] {name}" + (f" -- {detail}" if detail else ""))
 
     # ---- English, from Bangladesh -------------------------------------------
-    status, html = fetch("/offers", "BD", "BDT")
+    status, html = fetch("/offers", "BD", "BDT", lang="en")
     text = strip_tags(html)
     check("English page loads", status == 200, f"HTTP {status}")
     check("English shows the code", CODE in text)
@@ -124,7 +136,7 @@ def main():
     report["english_extract"] = text[text.find("40%"):text.find("40%") + 320] if "40%" in text else ""
 
     # ---- Bangla, from Bangladesh --------------------------------------------
-    status, html_bn = fetch("/bn/offers", "BD", "BDT")
+    status, html_bn = fetch("/bn/offers", "BD", "BDT", lang="bn")
     text_bn = strip_tags(html_bn)
     check("Bangla page loads", status == 200, f"HTTP {status}")
     check("Bangla shows the code", CODE in text_bn)
@@ -141,7 +153,7 @@ def main():
 
     # ---- Anyone else ---------------------------------------------------------
     for path, label in (("/offers", "English"), ("/bn/offers", "Bangla")):
-        status, html_gb = fetch(path, "GB", "GBP")
+        status, html_gb = fetch(path, "GB", "GBP", lang=("bn" if path.startswith("/bn") else "en"))
         t = strip_tags(html_gb)
         check(f"{label}: offer hidden outside Bangladesh", CODE not in t, "code was visible" if CODE in t else "")
 
