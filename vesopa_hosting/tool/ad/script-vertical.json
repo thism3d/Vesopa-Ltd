@@ -1,0 +1,79 @@
+{
+  "_comment": [
+    "The vertical cut, for phones: Reels, Shorts, TikTok, a story.",
+    "",
+    "It is NOT the 16x9 script reflowed. That one sells the 40% hosting",
+    "discount; this one sells the GoDigital bundle, leads with Vesopa AI",
+    "speaking Bangla, and shows the site builder -- the three things the owner",
+    "asked a vertical advert to carry. Same voice, same pipeline, its own copy.",
+    "",
+    "EVERY CLAIM IS CHECKED AGAINST THE LIVE OFFER. GODIGITAL is kind=bundle,",
+    "value 256 pence, requires_tld=site, grants starter for 1 month,",
+    "first_order_only=1, countries=BD. Driven end to end on the live basket on",
+    "2026-09-18: a .site at BDT 297 plus Starter monthly at BDT 893 came to",
+    "BDT 1,190, the code took BDT 809 off, and the total was BDT 381.00.",
+    "",
+    "THIS ONE SPEAKS A PRICE, and the 16x9 script deliberately does not. The",
+    "reason it is safe here: 381 is not a price that drifts with a rate card --",
+    "it is what the bundle COSTS, pinned by the coupon itself, and the day the",
+    "offer ends the advert ends with it. The taka figure is also the whole",
+    "hook; an advert for a fixed-price bundle that will not say the price is",
+    "asking to be scrolled past.",
+    "",
+    "The number is spoken as Bangla words -- তিনশো একাশি -- because a Bangla",
+    "voice reading '381' says it digit by digit. The screen carries ৳৩৮১ in",
+    "Bengali numerals, which is how the site itself writes money to a",
+    "Bangladeshi visitor.",
+    "",
+    "The code is spoken as 'গো ডিজিটাল' for the same reason BANGLADESH40 is",
+    "spoken as Bangla words in the other script: a Bangla voice reading the",
+    "Latin string GODIGITAL spells it out letter by letter."
+  ],
+
+  "voice": "bn-BD-PradeepNeural",
+  "rate": "-4%",
+
+  "html": "ad-vertical.html",
+  "width": 1080,
+  "height": 1920,
+  "frames": "frames-vertical",
+  "audio": "audio-vertical",
+  "timing": "timing-vertical.json",
+  "voice_raw": "voice-vertical-raw.m4a",
+  "voice_file": "voice-vertical.m4a",
+  "output": "vesopa-cloud-godigital-9x16-1080p.mp4",
+
+  "lines": [
+    {
+      "id": "hook",
+      "say": "ব্যবসা অনলাইনে আনবেন? এখন সবচেয়ে সহজ।",
+      "show": "hook"
+    },
+    {
+      "_note": [
+        "The assistant is on every page of cloud.vesopa.com and it does speak",
+        "Bangla -- it is the same Vesopa AI the site ships, not a promise.",
+        "What it does NOT do is buy anything on your behalf without asking, so",
+        "the line says it finds and explains, which is what it actually does."
+      ],
+      "id": "ai",
+      "say": "ভেসোপা এ আই কে বাংলায় বলুন। ডোমেইন খুঁজে দেবে, হোস্টিং বুঝিয়ে দেবে।",
+      "show": "ai"
+    },
+    {
+      "id": "builder",
+      "say": "আর ওয়েবসাইট? মুখে বলুন, চোখের সামনেই তৈরি হয়ে যাবে।",
+      "show": "builder"
+    },
+    {
+      "id": "offer",
+      "say": "ডট সাইট ডোমেইন, সঙ্গে প্রথম মাসের হোস্টিং। দুটো মিলে মাত্র তিনশো একাশি টাকা।",
+      "show": "offer"
+    },
+    {
+      "id": "cta",
+      "say": "কোড গো ডিজিটাল। ক্লাউড ডট ভেসোপা ডট কম।",
+      "show": "cta"
+    }
+  ]
+}

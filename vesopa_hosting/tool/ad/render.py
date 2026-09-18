@@ -25,10 +25,24 @@ import sys
 
 HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
-FRAMES = HERE / "frames"
-AUDIO = HERE / "audio"
 OUT = pathlib.Path.home() / "Documents" / "Vesopa-Ads"
 FPS = 30
+
+# Which advert. A format is a script file, not a fork of this module: the
+# vertical cut is the same pipeline at a different size, and two renderers
+# would drift apart the first time one of them was fixed.
+#   python tool/ad/render.py --script script-vertical.json
+_script_name = sys.argv[sys.argv.index("--script") + 1] if "--script" in sys.argv else "script.json"
+SCRIPT = json.loads((HERE / _script_name).read_text(encoding="utf-8"))
+FRAMES = HERE / SCRIPT.get("frames", "frames")
+AUDIO = HERE / SCRIPT.get("audio", "audio")
+TIMING = HERE / SCRIPT.get("timing", "timing.json")
+PAGE = HERE / SCRIPT.get("html", "ad.html")
+WIDTH = int(SCRIPT.get("width", 1920))
+HEIGHT = int(SCRIPT.get("height", 1080))
+FINAL_NAME = SCRIPT.get("output", "vesopa-cloud-bangladesh-16x9-1080p.mp4")
+VOICE_RAW = HERE / SCRIPT.get("voice_raw", "voice-raw.m4a")
+VOICE_OUT = HERE / SCRIPT.get("voice_file", "voice.m4a")
 
 FFMPEG = ""
 for raw in (ROOT / ".env.claude-tools").read_text(encoding="utf-8").splitlines():
@@ -67,8 +81,8 @@ def shoot(timing):
 
     with sync_playwright() as p:
         browser = p.chromium.launch(args=["--force-color-profile=srgb", "--font-render-hinting=none"])
-        page = browser.new_page(viewport={"width": 1920, "height": 1080}, device_scale_factor=1)
-        page.goto((HERE / "ad.html").as_uri(), wait_until="networkidle")
+        page = browser.new_page(viewport={"width": WIDTH, "height": HEIGHT}, device_scale_factor=1)
+        page.goto(PAGE.as_uri(), wait_until="networkidle")
         # The Bengali face is font-display: block, so a frame taken before it
         # arrives would be blank rather than wrong -- wait for it either way.
         page.evaluate("document.fonts.ready")
@@ -168,7 +182,7 @@ def loudness(src, dst):
 # ---------------------------------------------------------------------------
 def encode(total, voice):
     OUT.mkdir(parents=True, exist_ok=True)
-    final = OUT / "vesopa-cloud-bangladesh-16x9-1080p.mp4"
+    final = OUT / FINAL_NAME
     args = [
         FFMPEG, "-y", "-hide_banner", "-loglevel", "error",
         "-framerate", str(FPS), "-i", str(FRAMES / "f%05d.png"),
@@ -230,13 +244,15 @@ def main():
     ap.add_argument("--remux", action="store_true",
                     help="rebuild the sound and mux it onto the frames already rendered")
     ap.add_argument("--check", action="store_true")
+    ap.add_argument("--script", default="script.json",
+                    help="which advert to build (read at import; listed here so --help shows it)")
     args = ap.parse_args()
 
-    final = OUT / "vesopa-cloud-bangladesh-16x9-1080p.mp4"
+    final = OUT / FINAL_NAME
     if args.check:
         sys.exit(0 if check(final) else 1)
 
-    timing = json.loads((HERE / "timing.json").read_text(encoding="utf-8"))
+    timing = json.loads(TIMING.read_text(encoding="utf-8"))
     if args.remux:
         frames = len(list(FRAMES.glob('f*.png')))
         if not frames:

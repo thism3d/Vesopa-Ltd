@@ -28,8 +28,19 @@ import sys
 
 HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
-OUT = HERE / "audio"
-SCRIPT = json.loads((HERE / "script.json").read_text(encoding="utf-8"))
+
+# Which advert. A second format is a second script file, not a second copy of
+# this: the vertical cut says the same things in a different shape, and two
+# narrators that drift apart is how a caption ends up a beat behind the word.
+#   python tool/ad/narrate.py --script script-vertical.json
+_args = [a for a in sys.argv[1:] if not a.startswith("-")]
+if "--script" in sys.argv:
+    _name = sys.argv[sys.argv.index("--script") + 1]
+else:
+    _name = "script.json"
+SCRIPT = json.loads((HERE / _name).read_text(encoding="utf-8"))
+OUT = HERE / SCRIPT.get("audio", "audio")
+TIMING = HERE / SCRIPT.get("timing", "timing.json")
 
 # The repo keeps the ffmpeg path with the other tool settings.
 FFMPEG = ""
@@ -72,11 +83,15 @@ async def main():
             "file": path.name,
             "seconds": secs,
         })
-        print(f"  {line['id']:<9} {secs:>6.2f}s  {line['say'][:48]}")
+        # The Windows console here is cp1252 and raises on Bangla, which would
+        # throw away a synthesis that had already succeeded. The line is
+        # reported by id and length instead, and the text itself is in the
+        # script and in timing.json for anybody who wants to read it.
+        print(f"  {line['id']:<9} {secs:>6.2f}s  {len(line['say']):>3} characters")
 
     total = sum(l["seconds"] for l in timing["lines"])
     timing["spoken_seconds"] = round(total, 3)
-    (HERE / "timing.json").write_text(json.dumps(timing, ensure_ascii=False, indent=2), encoding="utf-8")
+    TIMING.write_text(json.dumps(timing, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"\n  {len(timing['lines'])} lines, {total:.2f}s of speech before gaps.")
 
 

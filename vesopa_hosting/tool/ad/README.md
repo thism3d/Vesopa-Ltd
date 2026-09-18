@@ -85,13 +85,45 @@ worth writing down:
 No taka figure is spoken or shown anywhere, on purpose: a price in a video
 outlives the price list, and this one is already sold in four currencies.
 
+## A second advert: the vertical cut
+
+```bash
+python tool/ad/narrate.py --script script-vertical.json
+python tool/ad/render.py  --script script-vertical.json
+python tool/ad/render.py  --script script-vertical.json --check
+```
+
+Output: `~/Documents/Vesopa-Ads/vesopa-cloud-godigital-9x16-1080p.mp4`.
+
+**A format is a script file, not a fork.** `--script` carries the shape, the
+page, the output name and where its frames and audio live, so both adverts run
+through the same renderer. Two renderers would have drifted apart the first
+time one of them was fixed — and the first thing that gets fixed in a pipeline
+like this is always the sound.
+
+The vertical one sells a different thing on purpose. 16x9 carries the 40%
+hosting discount; 9x16 leads with Vesopa AI speaking Bangla, shows the site
+builder building, and closes on the GoDigital bundle — a `.site` domain and the
+first month of hosting for ৳381. It is built for a phone held close and watched
+with the sound off as often as not: one large thing per screen, and everything
+inside a safe area that clears the platform's own chrome top and bottom.
+
+**This one does speak a price, and the 16x9 deliberately does not.** ৳381 is not
+a rate-card number that drifts — it is what the bundle costs, pinned by the
+coupon row itself, and the day the offer ends the advert ends with it. It was
+driven end to end on the live basket before the line was written: a `.site` at
+৳297 plus Starter monthly at ৳893 came to ৳1,190, GODIGITAL took ৳809 off, and
+the total was ৳381.00.
+
 ## What is in here
 
 | | |
 |---|---|
-| `script.json` | the lines, the voice, and why each claim is worded as it is |
-| `narrate.py` | speaks them, measures them, writes `timing.json` |
-| `ad.html` | the picture, as one pure function of `t` |
+| `script.json` | the 16x9 lines, the voice, and why each claim is worded as it is |
+| `script-vertical.json` | the 9x16 lines, and the shape, page and output name for that cut |
+| `narrate.py` | speaks them, measures them, writes the timing file |
+| `ad.html` | the 16x9 picture, as one pure function of `t` |
+| `ad-vertical.html` | the 9x16 picture, same contract, built for a phone |
 | `render.py` | photographs it, builds the track, encodes, checks |
-| `audio/` | the synthesised lines, kept so the picture can be redrawn without calling the service again |
-| `frames/` | build output, not committed |
+| `audio/`, `audio-vertical/` | the synthesised lines, kept so the picture can be redrawn without calling the service again |
+| `frames*/` | build output, not committed |
