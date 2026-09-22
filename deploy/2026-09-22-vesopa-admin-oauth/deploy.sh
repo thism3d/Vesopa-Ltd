@@ -12,6 +12,12 @@ echo "mkdir -p /root/deploy_oauth_admin && chmod 700 /root/deploy_oauth_admin" >
 "$PUTTY/plink.exe" -ssh -batch -hostkey "$HOSTKEY" -l root -pw "$PW" 34.63.118.67 -m "$(cygpath -w "$HERE/.mk")"
 "$PUTTY/pscp.exe" -batch -hostkey "$HOSTKEY" -pw "$PW" -q \
   "$(cygpath -w "$HERE/remote-deploy.sh")" "$(cygpath -w "$HERE/remote-resume.sh")" "$(cygpath -w "$HERE/schema_024_venue_orgs_and_admin_client.sql")" "$(cygpath -w "$HERE/auth.tgz")" "$(cygpath -w "$HERE/web.tgz")" \
+  "$(cygpath -w "$HERE/remote-update.sh")" "$(cygpath -w "$HERE/update-vesopa-only.tgz")" \
   root@34.63.118.67:/root/deploy_oauth_admin/
-if [ "${1:-}" = "--resume" ]; then echo "bash /root/deploy_oauth_admin/remote-resume.sh"; else echo "bash /root/deploy_oauth_admin/remote-deploy.sh ${1:-}"; fi > "$HERE/.run"
+#   ./deploy.sh --update     Connect with Vesopa as the only way in (2026-09-22)
+case "${1:-}" in
+  --update) echo "bash /root/deploy_oauth_admin/remote-update.sh" ;;
+  --resume) echo "bash /root/deploy_oauth_admin/remote-resume.sh" ;;
+  *)        echo "bash /root/deploy_oauth_admin/remote-deploy.sh ${1:-}" ;;
+esac > "$HERE/.run"
 "$PUTTY/plink.exe" -ssh -batch -hostkey "$HOSTKEY" -l root -pw "$PW" 34.63.118.67 -m "$(cygpath -w "$HERE/.run")"
