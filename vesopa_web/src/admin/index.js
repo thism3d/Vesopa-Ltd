@@ -36,22 +36,41 @@ const { usersRouter } = require('./users');
 const { blogRouter } = require('./blog');
 const { filesRouter, filesFor } = require('./files');
 const { requestsRouter } = require('./requests');
+const { vesopaAdminRoutes, LIVE: VESOPA_LIVE, ONLY: VESOPA_ONLY } = require('./vesopa-auth');
 
 const router = express.Router();
 
 // ---- Login ----------------------------------------------------------------
 
+// Every render of the login page says which doors are open, so the template
+// never has to know about the flags.
+function renderLogin(res, status, error) {
+  res.status(status).render('admin/login', {
+    error,
+    APP_VERSION: config.APP_VERSION,
+    vesopaSignIn: VESOPA_LIVE,
+    vesopaOnly: VESOPA_ONLY,
+  });
+}
+
 router.get('/', (req, res) => {
   if (read(req)) return res.redirect('/admin/dashboard');
-  res.render('admin/login', { error: null, APP_VERSION: config.APP_VERSION });
+  renderLogin(res, 200, null);
 });
 
+// Continue with Vesopa. Mounted before requireAdmin: these are how somebody
+// who is not signed in yet becomes signed in.
+router.use(vesopaAdminRoutes({ pool, issue, render: renderLogin }));
+
 router.post('/', async (req, res, next) => {
+  // With Vesopa-only on, the form is not drawn — and a hidden form that still
+  // accepts a post is a password door with the sign taken down, not a closed one.
+  if (VESOPA_ONLY) return renderLogin(res, 403, 'Sign in with your Vesopa account.');
+
   const username = str(req.body.username, 40);
   const password = String(req.body.password || '');
 
-  const fail = (error) =>
-    res.status(401).render('admin/login', { error, APP_VERSION: config.APP_VERSION });
+  const fail = (error) => renderLogin(res, 401, error);
 
   if (username.length < 8 || password.length < 8) {
     return fail('Enter a valid username and password.');

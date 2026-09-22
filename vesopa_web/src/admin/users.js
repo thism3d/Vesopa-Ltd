@@ -17,6 +17,7 @@ const bcrypt = require('bcryptjs');
 const { pool } = require('../db');
 const { sendMail } = require('../mailer');
 const { renderAccountApproved } = require('../emails/account-approved');
+const { syncOfficeQuietly } = require('../vesopa-venues');
 const {
   formatDate, formatDateTime, back, readFlash, navCounts, str, int,
 } = require('./util');
@@ -197,6 +198,11 @@ router.post('/users/new', async (req, res, next) => {
         officeId,
       ]
     );
+
+    // If their venue is already an organisation on Vesopa, make them a member
+    // of it. Not awaited and never throws: the user above is added whatever
+    // auth.vesopa.com says, and the provisioning script picks up anyone missed.
+    syncOfficeQuietly(officeId);
 
     if (req.body.notify) {
       // The plaintext password exists only on this request — the column holds
