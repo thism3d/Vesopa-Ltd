@@ -586,9 +586,9 @@ p:last-child { margin-bottom: 0; }
 .ap-login-box .sub { text-align: center; color: var(--ink-3); font-size: 13px; margin-bottom: 22px; }
 .ap-login-box .ap-btn { width: 100%; margin-top: 6px; }
 .ap-login-box a.ap-btn { text-decoration: none; justify-content: center; }
-/* The "or" between Continue with Vesopa and the password form. */
-.ap-login-or { display: flex; align-items: center; gap: 10px; margin: 18px 0 14px; color: var(--ink-3); font-size: 12px; }
-.ap-login-or::before, .ap-login-or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+/* Connect with Vesopa: the brand mark in the button's own ink. */
+.ap-vesopa-btn { gap: 10px; padding-top: 12px; padding-bottom: 12px; font-size: 15px; }
+.ap-vesopa-mark { width: 22px; height: 16px; fill: currentColor; flex: none; }
 
 /* ---- Utility ------------------------------------------------------------- */
 

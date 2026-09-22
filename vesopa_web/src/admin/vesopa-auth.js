@@ -1,17 +1,16 @@
 /**
- * "Continue with Vesopa" for /admin.
+ * "Connect with Vesopa" for /admin — the only way in.
  *
  * The third first-party migration onto auth.vesopa.com, after the menu and the
- * back office, and built the same way on purpose:
+ * back office:
  *
- *   IT SHIPS DORMANT. Nothing here answers unless VESOPA_AUTH_ADMIN_ENABLED=on
- *   and the client id, secret and issuer are all present. Rollback is a flag
- *   and a restart, not a deploy.
+ *   IT NEEDS ITS CONFIGURATION. Nothing here answers unless
+ *   VESOPA_AUTH_ADMIN_ENABLED=on and the client id, secret and issuer are all
+ *   present; without them the login page says sign-in is unavailable.
  *
- *   THE PASSWORD FORM STAYS. Both doors are open for the soak. When every admin
- *   has come in through Vesopa at least once, VESOPA_AUTH_ADMIN_ONLY=on stops
- *   drawing the password form — a flag, not a deletion, so the way back is
- *   still a restart.
+ *   THERE IS NO PASSWORD FORM. The owner removed it outright on 2026-09-22
+ *   (see admin/index.js). Access is an admin_table row, enabled, whose Vesopa
+ *   account can sign in to the "Vesopa EPOS Administration" application.
  *
  *   IT NEVER CREATES AN ADMIN. A Vesopa account is a person; an admin_table row
  *   is Vesopa Software deciding that person may see every venue's billing. The
@@ -45,9 +44,6 @@ const client = createClient({
 });
 
 const LIVE = flag('VESOPA_AUTH_ADMIN_ENABLED') && client.enabled;
-// "Vesopa only" is ignored unless Vesopa sign-in is actually live, or turning
-// it on by mistake would leave the login page with no way in at all.
-const ONLY = LIVE && flag('VESOPA_AUTH_ADMIN_ONLY');
 
 /**
  * Find the admin a Vesopa sign-in belongs to, linking on first use.
@@ -94,7 +90,8 @@ async function linkAndFind(pool, claims) {
     );
   }
 
-  // The same gate the password form applies (authenticate() filters enabled='Y').
+  // A disabled admin is refused however good their Vesopa sign-in (requireAdmin
+  // re-checks this on every request too, so disabling ends a session at once).
   if (row.enabled !== 'Y') return { blocked: 'This admin account is disabled.' };
 
   return { id: row.id, fullname: row.fullname, username: row.username, status: row.status };
@@ -103,7 +100,7 @@ async function linkAndFind(pool, claims) {
 /**
  * @param pool   the site's own database
  * @param issue  admin-auth.js issue(res, admin) — reused, so the session is
- *               byte-for-byte the one the password form creates
+ *               the one every /admin screen already checks
  * @param render (res, status, error) — draws the login page with a message
  */
 function vesopaAdminRoutes({ pool, issue, render }) {
@@ -152,7 +149,7 @@ function vesopaAdminRoutes({ pool, issue, render }) {
 
       issue(res, admin);
       console.info(`[admin_auth] admin ${admin.id} signed in with Vesopa`);
-      // A contributor has no dashboard; see the password route in index.js.
+      // A contributor has no dashboard, so they land on the File Manager.
       return res.redirect(303, admin.status === 'Contributor' ? '/admin/files' : '/admin/dashboard');
     } catch (error) {
       return next(error);
@@ -162,4 +159,4 @@ function vesopaAdminRoutes({ pool, issue, render }) {
   return router;
 }
 
-module.exports = { vesopaAdminRoutes, linkAndFind, LIVE, ONLY, client };
+module.exports = { vesopaAdminRoutes, linkAndFind, LIVE, client };

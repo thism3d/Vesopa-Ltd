@@ -199,7 +199,7 @@ test('a contributor keeps the contributor role', async () => {
 function loadRoutes(env) {
   for (const k of Object.keys(require.cache)) if (/vesopa-(auth|oidc)\.js$/.test(k)) delete require.cache[k];
   Object.assign(process.env, {
-    VESOPA_AUTH_ADMIN_ENABLED: '', VESOPA_AUTH_ADMIN_ONLY: '', VESOPA_AUTH_ADMIN_CLIENT_ID: '',
+    VESOPA_AUTH_ADMIN_ENABLED: '', VESOPA_AUTH_ADMIN_CLIENT_ID: '',
     VESOPA_AUTH_ADMIN_CLIENT_SECRET: '', VESOPA_AUTH_ISSUER: ISSUER, ...env,
   });
   return require('../src/admin/vesopa-auth');
@@ -244,9 +244,9 @@ test('the flag without credentials is still dormant', async () => {
   assert.equal(mod.LIVE, false);
 });
 
-test('"Vesopa only" is ignored while Vesopa sign-in is not live', async () => {
-  const mod = loadRoutes({ VESOPA_AUTH_ADMIN_ONLY: 'on' });
-  assert.equal(mod.ONLY, false);
+test('there is no "Vesopa only" switch any more: Vesopa is the only way in', () => {
+  const mod = loadRoutes(LIVE_ENV);
+  assert.equal('ONLY' in mod, false);
 });
 
 test('live: start redirects to the issuer with PKCE and the admin redirect URI', async () => {
@@ -311,4 +311,14 @@ test('live: a forged token never reaches the database', async () => {
   assert.equal(cb.status, 400);
   assert.equal(issued.length, 0);
   assert.equal(pool.writes.length, 0);
+});
+
+test('live: a disabled admin (Mehedi, 2026-09-22) is refused however valid the Vesopa sign-in', async () => {
+  const rows = admins(); rows[2].enabled = 'N';
+  const pool = fakePool(rows);
+  const { cb, issued } = await roundTrip(loadRoutes(LIVE_ENV), pool,
+    (n) => goodClaims(n, { sub: 'sub-m', email: 'mehedi901952@gmail.com' }));
+  assert.equal(cb.status, 403);
+  assert.match(cb.body, /disabled/);
+  assert.equal(issued.length, 0, 'no admin cookie');
 });

@@ -36,20 +36,22 @@ const { usersRouter } = require('./users');
 const { blogRouter } = require('./blog');
 const { filesRouter, filesFor } = require('./files');
 const { requestsRouter } = require('./requests');
-const { vesopaAdminRoutes, LIVE: VESOPA_LIVE, ONLY: VESOPA_ONLY } = require('./vesopa-auth');
+const { vesopaAdminRoutes, LIVE: VESOPA_LIVE } = require('./vesopa-auth');
 
 const router = express.Router();
 
 // ---- Login ----------------------------------------------------------------
+//
+// Vesopa is the only way in — the owner's decision of 2026-09-22. The username
+// and password form and its POST handler are gone, not hidden: a form that is
+// not drawn but still accepts a post is a password door with the sign taken
+// down. Rolling back is a revert and a deploy.
 
-// Every render of the login page says which doors are open, so the template
-// never has to know about the flags.
 function renderLogin(res, status, error) {
   res.status(status).render('admin/login', {
     error,
     APP_VERSION: config.APP_VERSION,
     vesopaSignIn: VESOPA_LIVE,
-    vesopaOnly: VESOPA_ONLY,
   });
 }
 
@@ -58,37 +60,13 @@ router.get('/', (req, res) => {
   renderLogin(res, 200, null);
 });
 
-// Continue with Vesopa. Mounted before requireAdmin: these are how somebody
-// who is not signed in yet becomes signed in.
+// Connect with Vesopa. Mounted before requireAdmin: these are how somebody who
+// is not signed in yet becomes signed in.
 router.use(vesopaAdminRoutes({ pool, issue, render: renderLogin }));
 
-router.post('/', async (req, res, next) => {
-  // With Vesopa-only on, the form is not drawn — and a hidden form that still
-  // accepts a post is a password door with the sign taken down, not a closed one.
-  if (VESOPA_ONLY) return renderLogin(res, 403, 'Sign in with your Vesopa account.');
-
-  const username = str(req.body.username, 40);
-  const password = String(req.body.password || '');
-
-  const fail = (error) => renderLogin(res, 401, error);
-
-  if (username.length < 8 || password.length < 8) {
-    return fail('Enter a valid username and password.');
-  }
-
-  try {
-    const admin = await authenticate(username, password);
-    if (!admin) return fail('Those details were not recognised.');
-
-    issue(res, admin);
-    // A contributor has no dashboard — it is one of the screens the role is
-    // defined by not having — so they land on the File Manager instead of being
-    // bounced off a redirect on the way in.
-    res.redirect(303, admin.status === 'Contributor' ? '/admin/files' : '/admin/dashboard');
-  } catch (e) {
-    next(e);
-  }
-});
+// A bookmark or an old tab still posting the removed form is told where the
+// door is now, and nothing it sent is looked at.
+router.post('/', (_req, res) => renderLogin(res, 410, 'Password sign-in has been removed. Use Connect with Vesopa.'));
 
 /**
  * POST, not GET.

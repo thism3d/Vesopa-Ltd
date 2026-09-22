@@ -21,42 +21,28 @@
     <p class="sub">Staff console for the site and the back office</p>
 
 <% if (error) { %>
-    <%# Deliberately never "no such user" vs "wrong password": either wording
-        turns this form into an account-enumeration oracle. %>
+    <%# Wording never says which admins exist; see admin/vesopa-auth.js. %>
     <div class="ap-flash err"><span class="material-icons">error</span><%= error %></div>
 <% } %>
 
-<%# The flags arrive from renderLogin in admin/index.js. `locals.` so a render
-    from anywhere else that forgot them draws the password form, not an error. %>
-<% const vesopa = locals.vesopaSignIn === true; const only = vesopa && locals.vesopaOnly === true; %>
-<% if (vesopa) { %>
+<%# Vesopa is the only way in — the owner's decision (2026-09-22). There is
+    no username and password form any more. `locals.` so a render that forgot
+    the flag says sign-in is unavailable rather than throwing. %>
+<% if (locals.vesopaSignIn === true) { %>
     <%# A plain link, not a form: /start is a GET that only redirects to
-        auth.vesopa.com, and a link is what a password manager leaves alone. %>
-    <a class="ap-btn primary" href="/admin/auth/vesopa/start" id="vesopa-signin">
-      <span class="material-icons">verified_user</span> Continue with Vesopa
+        auth.vesopa.com. %>
+    <a class="ap-btn primary ap-vesopa-btn" href="/admin/auth/vesopa/start" id="vesopa-signin">
+      <%# The Vesopa mark, drawn in the button's ink so it reads on lime. %>
+      <svg class="ap-vesopa-mark" viewBox="0 0 46.35 33.09" aria-hidden="true" focusable="false">
+        <polygon points="9.95 0 0 0 18.01 33.09 27.96 33.09 9.95 0"/>
+        <polygon points="27.4 16.54 37.35 16.54 46.35 0 36.4 0 27.4 16.54"/>
+        <polygon points="27.4 16.54 18.39 33.09 28.34 33.09 37.35 16.54 27.4 16.54" opacity=".55"/>
+      </svg>
+      Connect with Vesopa
     </a>
-<% } %>
-<% if (vesopa && !only) { %>
-    <div class="ap-login-or" role="separator"><span>or use your admin password</span></div>
-<% } %>
-<% if (!only) { %>
-    <form method="post" action="/admin" autocomplete="off">
-      <div class="ap-field">
-        <label>Username</label>
-        <input class="ap-input" name="username" required minlength="8" maxlength="20"
-               autocomplete="username"<%= vesopa ? '' : ' autofocus' %>>
-      </div>
-      <div class="ap-field">
-        <label>Password</label>
-        <%# No maxlength: the old form capped it at 20, which silently truncated
-            anything longer and made a manager's password fail to match. %>
-        <input class="ap-input" type="password" name="password" required minlength="8"
-               autocomplete="current-password">
-      </div>
-      <button class="ap-btn<%= vesopa ? '' : ' primary' %>" type="submit">
-        <span class="material-icons">login</span> Sign in
-      </button>
-    </form>
+<% } else { %>
+    <div class="ap-flash err"><span class="material-icons">lock</span>
+      Sign-in is unavailable: Vesopa sign-in is not configured on this server.</div>
 <% } %>
   </div>
 </div>
