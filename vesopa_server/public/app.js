@@ -313,6 +313,7 @@ const ROUTES = {
   stock_adjustments: '/stock/adjustments',
   stock_takes: '/stock/stock-takes',
   stock_spot_checks: '/stock/spot-checks',
+  stock_recipes: '/stock/recipes',
   stock_suppliers: '/stock/suppliers',
   stock_pack_sizes: '/stock/pack-sizes',
   screens: '/screen-programming',
@@ -1312,6 +1313,7 @@ const VIEW_LOADERS = {
     stock_adjustments: () => loadStockDocs('adjustment'),
     stock_takes: () => loadStockDocs('stocktake'),
     stock_spot_checks: () => loadStockDocs('spot_check'),
+    stock_recipes: loadStockRecipes,
     stock_suppliers: loadStockSuppliers,
     stock_pack_sizes: loadStockPackSizes,
     users: loadUsers,
@@ -2005,7 +2007,7 @@ async function loadProducts() {
   // each falls back to empty rather than rejecting the lot.
   const [
     rows, departments, groups, tax, modifierGroups, printCategories,
-    allergens, till,
+    allergens, till, packs, suppliers,
   ] = await Promise.all([
       api('/products'),
       api('/departments').catch(() => []),
@@ -2021,10 +2023,15 @@ async function loadProducts() {
       // that has not run the migration, falls back to "Price 2" — which is
       // what the field says anyway.
       api('/till-settings').catch(() => null),
+      // Case sizes and suppliers, for the stock columns and the product form's
+      // stock section (2026-09-22). Empty on failure, like the rest.
+      api('/stock/pack-sizes').catch(() => []),
+      api('/stock/suppliers').catch(() => []),
     ]);
   productRows = rows;
   productRefs = {
     departments, groups, tax, modifierGroups, printCategories, allergens,
+    packs, suppliers,
   };
   priceLevelNames = safeLevelNames(till?.price_level_names);
   bindProducts();
@@ -2068,6 +2075,9 @@ function bindProducts() {
       // The whole product, with the one field changed. PUT replaces the row, so
       // sending the field alone would blank everything it did not mention.
       const full = await api(`/products/${id}`);
+      // Never the stock count: it is the ledger's, and re-sending the number
+      // read a moment ago would overwrite a sale that landed in between.
+      delete full.stock_quantity;
       await api(`/products/${id}`, {
         method: 'PUT',
         body: JSON.stringify({ ...full, [field]: value }),
@@ -2087,7 +2097,34 @@ function bindProducts() {
     }
   };
 
+  // A case size chosen in the list: saved through the stock settings, then
+  // the unit cost beside it redrawn, since a case can change what a unit costs.
+  const saveStockCell = async (select) => {
+    const tr = select.closest('tr');
+    const row = productRows.find((r) => String(r.id) === String(tr?.dataset.product));
+    if (!row) return;
+    const field = select.dataset.stockCell;
+    const value = select.value === '' ? null : Number(select.value);
+    select.classList.add('saving');
+    try {
+      await api(`/stock/products/${row.id}`, { method: 'PATCH', body: JSON.stringify({ [field]: value }) });
+      const fresh = await api(`/products/${row.id}`).catch(() => null);
+      Object.assign(row, fresh || { [field]: value });
+      const cost = tr.querySelector('[data-unit-cost]');
+      if (cost) cost.innerHTML = unitCostText(row);
+      select.classList.remove('saving');
+      select.classList.add('saved');
+      setTimeout(() => select.classList.remove('saved'), 900);
+    } catch (err) {
+      select.classList.remove('saving');
+      select.value = row[field] ?? '';
+      toast(err.message, 'error');
+    }
+  };
+
   table.addEventListener('change', (e) => {
+    const stockCell = e.target.closest('.stock-cell');
+    if (stockCell) return void saveStockCell(stockCell);
     const cell = e.target.closest('.cell-edit');
     if (cell) return void saveCell(cell);
 
@@ -2348,6 +2385,34 @@ async function bulkEditProducts() {
         value: '',
       },
       { label: 'Price (£) — blank leaves them alone', name: 'price', type: 'money', value: '' },
+      // Mass-apply a case size (2026-09-22), a supplier, or non-stock.
+      {
+        label: 'Case size',
+        name: 'pack_size_id',
+        type: 'select',
+        options: [{ value: '', label: 'Leave as they are' }, { value: CLEAR, label: '— no case size —' }]
+          .concat((productRefs.packs || []).map((k) => ({ value: String(k.id), label: `${k.name}${Number(k.units) > 1 ? ` — ${Number(k.units)} units` : ''}` }))),
+        value: '',
+      },
+      {
+        label: 'Supplier',
+        name: 'supplier_id',
+        type: 'select',
+        options: [{ value: '', label: 'Leave as they are' }, { value: CLEAR, label: '— no supplier —' }]
+          .concat((productRefs.suppliers || []).filter((s) => s.active).map((s) => ({ value: String(s.id), label: s.name }))),
+        value: '',
+      },
+      {
+        label: 'Stock',
+        name: 'non_stock',
+        type: 'select',
+        options: [
+          { value: '', label: 'Leave as they are' },
+          { value: '0', label: 'Stock items (counted on a stock take)' },
+          { value: '1', label: 'Non-stock (never counted)' },
+        ],
+        value: '',
+      },
       {
         label: 'Printers — ticking any replaces what these products had',
         name: 'printer_routes',
@@ -2378,19 +2443,71 @@ async function bulkEditProducts() {
         fields.printer_routes = [].concat(d.printer_routes ?? []).filter(Boolean);
       }
 
-      if (!Object.keys(fields).length) {
+      const stockFields = {};
+      for (const key of ['pack_size_id', 'supplier_id']) {
+        if (d[key] === CLEAR) stockFields[key] = null;
+        else if (d[key]) stockFields[key] = Number(d[key]);
+      }
+      if (d.non_stock === '0' || d.non_stock === '1') stockFields.non_stock = Number(d.non_stock);
+
+      if (!Object.keys(fields).length && !Object.keys(stockFields).length) {
         throw new Error('Nothing was chosen to change.');
       }
 
-      const res = await api('/products/bulk', {
-        method: 'PATCH',
-        body: JSON.stringify({ ids, fields }),
-      });
+      let updated = 0;
+      if (Object.keys(fields).length) {
+        const res = await api('/products/bulk', {
+          method: 'PATCH',
+          body: JSON.stringify({ ids, fields }),
+        });
+        updated = res.updated;
+      }
+      let refusedNote = '';
+      if (Object.keys(stockFields).length) {
+        const res = await api('/stock/products', {
+          method: 'PATCH',
+          body: JSON.stringify({ ids: ids.map(Number), fields: stockFields }),
+        });
+        updated = Math.max(updated, res.updated);
+        if (res.refused && res.refused.length) refusedNote = ` ${res.refused.length} could not be changed: ${res.refused[0].error}`;
+      }
       productPicks.clear();
       renderBulkBar();
-      toast(`Updated ${res.updated} product${res.updated === 1 ? '' : 's'}.`);
+      toast(`Updated ${updated} product${updated === 1 ? '' : 's'}.${refusedNote}`, refusedNote ? 'error' : undefined);
+      await loadProducts();
     }
   );
+}
+
+/**
+ * What one unit costs, as the stock pages work it out: from the case when the
+ * product has a case size and a case cost, from `cost_price` otherwise.
+ * "Would be good if unit cost was displayed on the product list" (2026-09-22).
+ */
+function unitCostMinorOf(p) {
+  const pack = (productRefs.packs || []).find((k) => String(k.id) === String(p.pack_size_id));
+  const packCost = p.pack_cost === null || p.pack_cost === undefined || p.pack_cost === '' ? null : Number(p.pack_cost);
+  if (packCost !== null && pack && Number(pack.units) > 0) return Math.round((packCost / Number(pack.units)) * 100);
+  const cost = p.cost_price === null || p.cost_price === undefined || p.cost_price === '' ? null : Number(p.cost_price);
+  return cost === null || !Number.isFinite(cost) ? null : Math.round(cost * 100);
+}
+function unitCostText(p) {
+  const minor = unitCostMinorOf(p);
+  return minor === null ? '<span class="muted">—</span>' : `£${(minor / 100).toFixed(2)}`;
+}
+
+/**
+ * The case-size dropdown in the product list -- "changeable with a drop down
+ * like department and sub-department" (2026-09-22). Saved on change through
+ * the stock settings, which re-derives the unit cost.
+ */
+function caseSizeSelect(p) {
+  const packs = productRefs.packs || [];
+  const options = ['<option value="">No case size</option>'].concat(packs.map((k) =>
+    `<option value="${k.id}"${String(k.id) === String(p.pack_size_id) ? ' selected' : ''}>${esc(k.name)}${Number(k.units) > 1 ? ` (${Number(k.units)})` : ''}</option>`));
+  // `cell-edit` for the look only, so it sits like the department dropdowns;
+  // it has no data-cell, so the product save ignores it and saveStockCell has it.
+  return `<select class="cell-edit stock-cell" data-stock-cell="pack_size_id" title="${packs.length ? 'Case size' : 'Add case sizes under Stock Control → Case Sizes'}">${options.join('')}</select>`;
 }
 
 function cellSelect(field, values, current) {
@@ -2469,18 +2586,21 @@ function renderProducts() {
           : ''}</td>
         <td>${cellSelect('department_name', productRefs.departments.map((d) => d.department_name), p.department_name)}</td>
         <td>${cellSelect('group_name', productRefs.groups.map((g) => g.group_name), p.group_name)}</td>
+        <td>${caseSizeSelect(p)}</td>
+        <td class="right nowrap" data-unit-cost="${p.id}">${unitCostText(p)}</td>
         <td class="right"><input class="cell-edit right" data-cell="price" type="number" step="0.01" min="0" value="${Number(p.price || 0).toFixed(2)}" /></td>
         <td class="right">${p.tax_percentage || 0}%</td>
         <td>${routeChips(p)}</td>
         <td class="right">
           ${iconBtn('edit', 'Edit', `data-edit-product="${p.id}"`)}
+          ${iconBtn('topup', 'Stock info — supplier, case size, cost, GP, links', `data-stock-info="${p.id}"`)}
           ${iconBtn('copy', 'Duplicate', `data-dup-product="${p.id}"`)}
           ${iconBtn('del', 'Delete', `data-del-product="${p.id}"`, 'danger')}
         </td>
       </tr>`
     )
     .join('') ||
-    `<tr><td colspan="8" class="empty">${
+    `<tr><td colspan="10" class="empty">${
       productRows.length ? 'No products match that search.' : 'No products.'
     }</td></tr>`;
 }
@@ -4096,6 +4216,7 @@ async function saveFloor() {
 const ticked = (value) => Number(value) === 1;
 
 function fieldHtml(f) {
+  if (f.type === 'gp') return '<div class="gp-calc" data-gp-panel></div>';
   if (f.type === 'color') {
     // Paired with a text box: a colour picker alone hides the hex value, and
     // a venue matching a brand colour needs to read and paste it.
@@ -4635,6 +4756,92 @@ function openCropper(file, shape = 'square') {
   });
 }
 
+/**
+ * The GP calculator in the product form (2026-09-22: "when the product has a
+ * cost price attached, it will generate you a recommended selling price").
+ *
+ * GP is worked on the price without VAT, the way a stock controller reads it:
+ *   GP% = (net - cost) / net,  net = price / (1 + VAT)
+ * and the recommended price is the one that hits the target, VAT back on,
+ * rounded UP to the next 5p. Recomputed as the price, VAT, cost, case or
+ * target change; "Use this price" puts it in the price box.
+ */
+function mountGpCalculator(root) {
+  const panel = root.querySelector('[data-gp-panel]');
+  if (!panel) return;
+  const val = (name) => root.querySelector(`[name="${name}"]`);
+  const numOf = (name) => {
+    const el = val(name);
+    if (!el || el.value === '') return null;
+    const n = Number(el.value);
+    return Number.isFinite(n) ? n : null;
+  };
+  const draw = () => {
+    const pack = (productRefs.packs || []).find((k) => String(k.id) === String(val('pack_size_id')?.value));
+    const packCost = numOf('pack_cost');
+    const unit = packCost !== null && pack && Number(pack.units) > 0 ? packCost / Number(pack.units) : numOf('cost_price');
+    const price = numOf('price') || 0;
+    const vat = 1 + (numOf('tax_percentage') || 0) / 100;
+    const target = numOf('target_gp') ?? 70;
+    if (!unit) {
+      panel.innerHTML = '<span class="muted small">Add a unit cost (or a case cost and case size) to see the GP and a recommended price.</span>';
+      return;
+    }
+    const net = price / vat;
+    const gp = net > 0 ? ((net - unit) / net) * 100 : null;
+    const t = Math.min(Math.max(target, 0), 99) / 100;
+    const rec = Math.ceil(((unit / (1 - t)) * vat * 100) / 5) * 5 / 100;
+    panel.innerHTML = `
+      <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center">
+        <span>Unit cost <strong>£${unit.toFixed(2)}</strong></span>
+        <span>GP now <strong class="${gp !== null && gp < target ? 'sk-neg' : ''}">${gp === null ? '—' : `${gp.toFixed(1)}%`}</strong></span>
+        <span>At ${target}% charge <strong>£${rec.toFixed(2)}</strong> <span class="muted small">incl. VAT</span></span>
+        <button type="button" class="btn small ghost" data-gp-use="${rec.toFixed(2)}">Use this price</button>
+      </div>`;
+  };
+  panel.addEventListener('click', (e) => {
+    const use = e.target.closest('[data-gp-use]');
+    if (!use) return;
+    const price = val('price');
+    if (price) {
+      price.value = use.dataset.gpUse;
+      price.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  });
+  ['price', 'tax_percentage', 'cost_price', 'pack_cost', 'pack_size_id', 'target_gp'].forEach((n) => {
+    const el = val(n);
+    if (el) {
+      el.addEventListener('input', draw);
+      el.addEventListener('change', draw);
+    }
+  });
+  draw();
+}
+
+/**
+ * Save the product form's stock section through the stock settings, and only
+ * if something in it changed -- so somebody who may edit products but not
+ * stock can still fix a price without being refused over fields they did not
+ * touch.
+ */
+async function saveProductStock(id, d, before) {
+  const fields = ['pack_size_id', 'supplier_id', 'pack_cost', 'cost_price', 'target_gp', 'non_stock'];
+  const norm = (v) => (v === null || v === undefined || v === '' ? '' : String(Number(v)));
+  const change = {};
+  for (const f of fields) {
+    if (d[f] === undefined) continue;
+    const now = f === 'non_stock' ? String(Number(d[f]) ? 1 : 0) : norm(d[f]);
+    const was = f === 'non_stock' ? String(Number(before[f]) ? 1 : 0) : norm(before[f]);
+    if (now !== was) change[f] = d[f] === '' ? null : d[f];
+  }
+  if (!Object.keys(change).length) return;
+  try {
+    await api(`/stock/products/${id}`, { method: 'PATCH', body: JSON.stringify(change) });
+  } catch (err) {
+    toast(`Product saved, but its stock info was not: ${err.message}`, 'error');
+  }
+}
+
 function modal(title, fields, onSubmit) {
   const root = $('modal-root');
   root.innerHTML = `
@@ -4665,6 +4872,10 @@ function modal(title, fields, onSubmit) {
   // uses. It used to be written out here, which is why nothing outside a modal
   // form could offer a picture and half the pages asked for a URL instead.
   wireImagePickers(root);
+
+  // A field that needs behaviour once it is on screen -- the GP calculator,
+  // which recomputes as the price and cost change -- supplies mount().
+  fields.forEach((f) => { if (typeof f.mount === 'function') f.mount(root); });
 
   // The ordered modifier picker: add, reorder, remove. Everything it does is a
   // move of one <li>, because the list *is* the value — each row carries the
@@ -5759,7 +5970,42 @@ document.addEventListener('click', async (e) => {
       })(),
       value: String(Number(p.tax_percentage ?? 20)),
     },
-    { label: 'Stock', name: 'stock_quantity', type: 'number', value: p.stock_quantity ?? 0 },
+    // STOCK. It used to be a bare "Stock" number that saved straight onto the
+    // product -- skipping the ledger, and turning an untracked product into a
+    // tracked 0 every time it was opened and saved. Counts change in Stock
+    // Levels now; this is how the product is BOUGHT and what it COSTS
+    // (2026-09-22: "can't attach a supplier", "add stock info from the list").
+    {
+      label: 'Case size',
+      name: 'pack_size_id',
+      type: 'select',
+      value: p.pack_size_id ?? '',
+      options: [{ value: '', label: 'No case size' }].concat((productRefs.packs || []).map((k) => ({
+        value: k.id, label: `${k.name}${Number(k.units) > 1 ? ` — ${Number(k.units)} units` : ''}`,
+      }))),
+      hint: 'Only products with a case size appear on a stock take.',
+    },
+    {
+      label: 'Supplier',
+      name: 'supplier_id',
+      type: 'select',
+      value: p.supplier_id ?? '',
+      options: [{ value: '', label: 'None' }].concat((productRefs.suppliers || [])
+        .filter((s) => s.active || String(s.id) === String(p.supplier_id))
+        .map((s) => ({ value: s.id, label: s.name }))),
+      hint: (productRefs.suppliers || []).length ? '' : 'No suppliers yet — add them under Stock Control → Suppliers.',
+    },
+    { label: 'Cost of one case (£)', name: 'pack_cost', type: 'money', value: p.pack_cost ?? '', hint: 'Sets the unit cost from the case. Leave blank to type the unit cost.' },
+    { label: 'Unit cost (£)', name: 'cost_price', type: 'money', value: p.cost_price ?? '' },
+    { label: 'Target GP %', name: 'target_gp', type: 'number', value: p.target_gp ?? '', placeholder: '70' },
+    { label: 'GP calculator', name: '_gp', type: 'gp', mount: mountGpCalculator },
+    {
+      label: 'Non-stock item — never counted on a stock take',
+      name: 'non_stock',
+      type: 'checkbox',
+      value: p.non_stock ? 1 : 0,
+      hint: 'Linked products (a half pint from the pint) and recipes are set from this product’s Stock info on the product list.',
+    },
     /*
      * "Set a check box on a product (Renews membership)."
      *
@@ -5894,8 +6140,10 @@ document.addEventListener('click', async (e) => {
     return modal('Add product', productFields(), async (d) => {
       const made = await api('/products', { method: 'POST', body: JSON.stringify(d) });
       await saveModifiers(made.pluid, d);
+      await saveProductStock(made.id, d, {});
     });
   }
+  if (t.dataset.stockInfo) return skOpenStockInfo(t.dataset.stockInfo);
   if (t.dataset.editProduct) {
     const p = await api(`/products/${t.dataset.editProduct}`);
     const attached = await api(`/products/${p.pluid}/modifiers`).catch(() => []);
@@ -5903,6 +6151,7 @@ document.addEventListener('click', async (e) => {
     return modal('Edit product', productFields(p), async (d) => {
       await api(`/products/${p.id}`, { method: 'PUT', body: JSON.stringify(d) });
       await saveModifiers(p.pluid, d);
+      await saveProductStock(p.id, d, p);
     });
   }
   // Half a catalogue is a variant of the other half — the same burger with
@@ -5922,6 +6171,7 @@ document.addEventListener('click', async (e) => {
       async (d) => {
         const made = await api('/products', { method: 'POST', body: JSON.stringify(d) });
         await saveModifiers(made.pluid, d);
+        await saveProductStock(made.id, d, {});
       }
     );
   }

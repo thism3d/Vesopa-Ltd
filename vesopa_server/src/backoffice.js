@@ -192,6 +192,11 @@ function backofficeRoutes({ pool, broadcast, secret }) {
                 low_stock_at, button_position, button_color, printer_routes,
                 print_to_receipt, emoji, image_url, print_category_id,
                 is_modifier, barcode, allergens, renews_membership,
+                -- The product list shows the case size and the unit cost
+                -- (2026-09-22). Columns from schema_stock.sql, which every
+                -- live database has, so the list never depends on a newer
+                -- migration having run.
+                pack_size_id, pack_cost, cost_price,
                 ${PRICE_LEVELS.join(', ')}
          FROM bo_products
          WHERE email = ?
@@ -345,7 +350,7 @@ function backofficeRoutes({ pool, broadcast, secret }) {
         `UPDATE bo_products
          SET product_name = ?, department_name = ?, group_name = ?,
              accounting_code = ?, price = ?, tax_percentage = ?,
-             stock_quantity = ?,
+             stock_quantity = ${keep('stock_quantity')},
              button_position = ${keep('button_position')},
              button_color = ${keep('button_color')},
              printer_route = ?, printer_routes = ?, print_to_receipt = ?,
@@ -364,7 +369,14 @@ function backofficeRoutes({ pool, broadcast, secret }) {
           p.accounting_code ?? null,
           p.price ?? 0,
           p.tax_percentage ?? 0,
-          p.stock_quantity ?? 0,
+          // STOCK IS THE LEDGER'S (2026-09-22). This used to be
+          // `p.stock_quantity ?? 0`: saving any product through the editor
+          // wrote its stock -- turning an untracked product into a tracked 0,
+          // skipping the ledger, and letting a name edit overwrite a sale that
+          // landed between reading the product and saving it. Now stock moves
+          // only when a caller names it (an import, a template); the editor and
+          // the product list do not, and change stock through Stock Levels.
+          ...kept('stock_quantity', p.stock_quantity === '' ? null : p.stock_quantity ?? null),
           ...kept('button_position', p.button_position || null),
           ...kept('button_color', p.button_color || null),
           legacyRoute(p),

@@ -321,8 +321,9 @@
           <button class="nav" data-view="stock_adjustments">Adjustments</button>
           <button class="nav" data-view="stock_takes">Stock Takes</button>
           <button class="nav" data-view="stock_spot_checks">Spot Checks</button>
+          <button class="nav" data-view="stock_recipes">Recipes</button>
           <button class="nav" data-view="stock_suppliers">Suppliers</button>
-          <button class="nav" data-view="stock_pack_sizes">Pack Sizes</button>
+          <button class="nav" data-view="stock_pack_sizes">Case Sizes</button>
 
           <button class="nav-group" data-group="programming">Programming<span class="caret">▼</span></button>
           <button class="nav" data-view="screens">Screen Programming</button>
@@ -770,6 +771,8 @@
               <th data-sort="product_name">Name</th>
               <th data-sort="department_name">Department</th>
               <th data-sort="group_name">Sub Department</th>
+              <th title="How it is bought. Only products with a case size appear on a stock take.">Case size</th>
+              <th class="right" title="What one unit costs you — from the case cost, or typed in">Unit cost</th>
               <th class="right" data-sort="price">Price</th>
               <th class="right" data-sort="tax_percentage">VAT</th>
               <th>Printing</th><th></th>
@@ -886,13 +889,23 @@
           </table></div>
         </section>
 
+        <section id="view-stock_recipes" class="view" hidden>
+          <!-- Recipes: a product made of other products. stock.js draws the
+               list or the editor into the host, and sets the head's words. -->
+          <div class="page-head">
+            <div><h2 id="sk-title-recipes">Recipes</h2><p class="muted small" id="sk-blurb-recipes">Cocktails and anything else made from other products. Selling or wasting one takes each ingredient off by its measure, and its cost is the recipe's.</p></div>
+            <div class="sk-head-actions" id="sk-actions-recipes"></div>
+          </div>
+          <div id="sk-recipes"></div>
+        </section>
+
         <section id="view-stock_pack_sizes" class="view" hidden>
           <div class="page-head">
-            <div><h2>Pack Sizes</h2><p class="muted small">How things arrive. A keg is bought as one thing and sold as eighty-eight pints; a case of bottles as twenty-four. Stock is counted in units and ordered in packs.</p></div>
-            <button class="btn primary" id="sk-add-pack">Add pack size</button>
+            <div><h2>Case Sizes</h2><p class="muted small">How things arrive. A keg is bought as one thing and sold as eighty-eight pints; a case of bottles as twenty-four. Stock is counted in units and ordered in cases. Only products with a case size appear on a stock take.</p></div>
+            <button class="btn primary" id="sk-add-pack">Add case size</button>
           </div>
           <div class="card"><table class="table table-cards">
-            <thead><tr><th>Pack</th><th class="right">Units per pack</th><th></th></tr></thead>
+            <thead><tr><th>Case size</th><th class="right">Units per case</th><th></th></tr></thead>
             <tbody id="sk-packs"></tbody>
           </table></div>
         </section>

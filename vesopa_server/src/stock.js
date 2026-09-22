@@ -49,6 +49,7 @@ const express = require('express');
 const { requireAuth } = require('./auth');
 const { accessGuard } = require('./permissions');
 const { sendMail } = require('./mailer');
+const { stockTargets } = require('./stock_effects');
 
 const DOC_KINDS = ['wastage', 'adjustment', 'stocktake', 'spot_check', 'delivery'];
 const ORDER_STATUSES = ['new', 'sent', 'part_delivered', 'delivered', 'cancelled'];
@@ -133,6 +134,43 @@ function withPacks(units, packName, packUnits) {
   return `${shown} (${(u / packUnits).toFixed(2)} ${packName})`;
 }
 
+/** The GP% the calculator aims for when a product has not been given one. */
+const DEFAULT_TARGET_GP = 70;
+
+/**
+ * Gross profit, and the price that would hit the target.
+ *
+ * The till price includes VAT, so GP is worked on the price without it:
+ *   net   = price / (1 + VAT)
+ *   GP%   = (net - cost) / net
+ * and the recommended price is the one whose net gives the target:
+ *   price = cost / (1 - target) x (1 + VAT)
+ * rounded UP to the next 5p -- a recommendation that lands at £3.02 is
+ * useless on a menu, and rounding down would quietly miss the target.
+ *
+ * Nothing without a cost: GP on a product whose cost nobody has entered is a
+ * number that is always 100% and always wrong.
+ */
+function gpFigures(price, taxPercentage, costMinor, targetGp) {
+  const cost = Number(costMinor) || 0;
+  const vat = 1 + (Number(taxPercentage) || 0) / 100;
+  const target = num(targetGp) ?? DEFAULT_TARGET_GP;
+  if (!cost) return { has_cost: false, target_gp: target };
+  const priceMinor = Math.round((Number(price) || 0) * 100);
+  const net = priceMinor / vat;
+  const current = net > 0 ? ((net - cost) / net) * 100 : null;
+  const t = Math.min(Math.max(target, 0), 99) / 100;
+  const raw = (cost / (1 - t)) * vat;
+  const recommended = Math.ceil(raw / 5) * 5;
+  return {
+    has_cost: true,
+    target_gp: target,
+    current_gp: current === null ? null : Number(current.toFixed(1)),
+    recommended_price_minor: recommended,
+    profit_minor: Math.round(net - cost),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Routes
 // ---------------------------------------------------------------------------
@@ -178,12 +216,17 @@ function stockRoutes({ pool, broadcast, secret, toPdf }) {
            p.low_stock_at, p.min_stock, p.max_stock, p.stock_unit,
            p.supplier_id, p.supplier_code, p.pack_size_id, p.pack_cost,
            p.barcode, p.active,
+           p.non_stock, p.stock_parent_pluid, p.stock_ratio, p.target_gp,
            s.name  AS supplier_name,
            k.name  AS pack_name,
-           k.units AS pack_units
+           k.units AS pack_units,
+           par.product_name AS parent_name,
+           (SELECT COUNT(*) FROM bo_recipe_lines r
+             WHERE r.office = p.email AND r.recipe_pluid = p.pluid) AS recipe_lines
       FROM bo_products p
       LEFT JOIN bo_suppliers  s ON s.id = p.supplier_id  AND s.office = p.email
       LEFT JOIN bo_pack_sizes k ON k.id = p.pack_size_id AND k.office = p.email
+      LEFT JOIN bo_products par ON par.pluid = p.stock_parent_pluid AND par.email = p.email
      WHERE p.email = ?`;
 
   /** A product row with the derived figures every page shows. */
@@ -199,9 +242,22 @@ function stockRoutes({ pool, broadcast, secret, toPdf }) {
         : low !== null && stock <= low
           ? 'low'
           : 'ok';
+    const linked = Boolean(p.stock_parent_pluid);
+    const recipe = Number(p.recipe_lines) > 0;
     return {
       ...p,
+      non_stock: Number(p.non_stock) ? 1 : 0,
+      is_linked: linked,
+      is_recipe: recipe,
+      /*
+       * WHAT A STOCKTAKE OFFERS (2026-09-22): "only products that have a case
+       * size should appear", and never one marked non-stock. A linked product
+       * or a recipe has no shelf of its own -- its stock is its parent's or
+       * its ingredients' -- so it is not counted either.
+       */
+      stock_item: !Number(p.non_stock) && Boolean(p.pack_size_id) && !linked && !recipe,
       unit_cost_minor: cost,
+      gp: gpFigures(p.price, p.tax_percentage, cost, p.target_gp),
       stock_value_minor: tracked ? Math.round(stock * cost) : 0,
       packs_on_hand:
         tracked && p.pack_units > 1 ? Number((stock / p.pack_units).toFixed(2)) : null,
@@ -456,56 +512,354 @@ function stockRoutes({ pool, broadcast, secret, toPdf }) {
    * price. `cost_price` is kept in step with the pack cost so the reports,
    * the product form and the till all agree what a unit costs.
    */
+  /**
+   * Save a product's stock settings. One place, used by the whole-form PUT,
+   * the one-field PATCH (a case-size dropdown in the product list) and the
+   * bulk PATCH (mass-apply a case size), so all three validate identically.
+   *
+   * `b` is the COMPLETE set of stock fields; the PATCH routes build it by
+   * laying the change over what the product already has.
+   */
+  async function saveStockSettings(office, id, b) {
+    const [[me]] = await pool.query(
+      'SELECT id, pluid FROM bo_products WHERE id = ? AND email = ?',
+      [id, office]
+    );
+    if (!me) throw Object.assign(new Error('No such product.'), { status: 404 });
+
+    const packId = num(b.pack_size_id);
+    let packUnits = null;
+    if (packId !== null) {
+      const [[pack]] = await pool.query(
+        'SELECT units FROM bo_pack_sizes WHERE id = ? AND office = ?',
+        [packId, office]
+      );
+      if (!pack) throw bad('No such case size.');
+      packUnits = Number(pack.units);
+    }
+    const supplierId = num(b.supplier_id);
+    if (supplierId !== null) {
+      const [[s]] = await pool.query(
+        'SELECT id FROM bo_suppliers WHERE id = ? AND office = ?',
+        [supplierId, office]
+      );
+      if (!s) throw bad('No such supplier.');
+    }
+
+    /*
+     * A LINK: this product sells from another, `ratio` of it at a time.
+     * One level only -- a parent may not itself sell from something -- so the
+     * question "whose shelf does this come off" always has a one-step answer,
+     * and a loop cannot be built by linking two products to each other.
+     */
+    const parentPlu = num(b.stock_parent_pluid);
+    let ratio = num(b.stock_ratio);
+    let parentCost = null;
+    if (parentPlu !== null) {
+      if (parentPlu === Number(me.pluid)) throw bad('A product cannot sell from itself.');
+      const [[parent]] = await pool.query(
+        `${PRODUCT_SELECT} AND p.pluid = ? LIMIT 1`,
+        [office, parentPlu]
+      );
+      if (!parent) throw bad('No product with that PLU to link to.');
+      if (parent.stock_parent_pluid) throw bad(`${parent.product_name} itself sells from another product. Link to that one instead.`);
+      const [[child]] = await pool.query(
+        'SELECT COUNT(*) AS n FROM bo_products WHERE email = ? AND stock_parent_pluid = ?',
+        [office, me.pluid]
+      );
+      if (Number(child.n)) throw bad('Other products already sell from this one, so it cannot sell from another.');
+      if (ratio === null || !(ratio > 0)) throw bad('Say how much of it one of these uses — for example 0.5 for a half pint.');
+      parentCost = unitCostMinor(parent);
+    } else {
+      ratio = null;
+    }
+
+    const packCost = num(b.pack_cost);
+    let costPrice = num(b.cost_price);
+    if (packCost !== null && packUnits) costPrice = Number((packCost / packUnits).toFixed(4));
+    // A linked product costs what it takes off its parent. Written onto
+    // cost_price so the GP calculator, the reports and the till all agree.
+    else if (parentPlu !== null && parentCost) costPrice = Number(((parentCost * ratio) / 100).toFixed(4));
+
+    const target = num(b.target_gp);
+    if (target !== null && (target < 0 || target >= 100)) throw bad('A target GP is a percentage below 100.');
+
+    await pool.execute(
+      `UPDATE bo_products
+          SET supplier_id = ?, supplier_code = ?, pack_size_id = ?, pack_cost = ?,
+              cost_price = ?, min_stock = ?, max_stock = ?, low_stock_at = ?,
+              stock_unit = ?, non_stock = ?, stock_parent_pluid = ?, stock_ratio = ?,
+              target_gp = ?
+        WHERE id = ? AND email = ?`,
+      [
+        supplierId,
+        String(b.supplier_code || '').trim() || null,
+        packId,
+        packCost,
+        costPrice,
+        num(b.min_stock),
+        num(b.max_stock),
+        // Low stock and min stock are the same question asked twice; the
+        // older column follows the newer one so the dashboard's badge agrees
+        // with the order suggestion.
+        num(b.low_stock_at) ?? num(b.min_stock),
+        String(b.stock_unit || '').trim().slice(0, 24) || null,
+        Number(b.non_stock) ? 1 : 0,
+        parentPlu,
+        ratio,
+        target,
+        id,
+        office,
+      ]
+    );
+  }
+
+  /** The stock fields a product has now, in the shape saveStockSettings takes. */
+  const STOCK_FIELDS = [
+    'supplier_id', 'supplier_code', 'pack_size_id', 'pack_cost', 'cost_price',
+    'min_stock', 'max_stock', 'low_stock_at', 'stock_unit', 'non_stock',
+    'stock_parent_pluid', 'stock_ratio', 'target_gp',
+  ];
+  async function currentStockFields(office, id) {
+    const [[row]] = await pool.query(
+      `SELECT ${STOCK_FIELDS.join(', ')} FROM bo_products WHERE id = ? AND email = ?`,
+      [id, office]
+    );
+    return row || null;
+  }
+
+  const answer = (res, next) => (e) => {
+    if (e.status) return res.status(e.status).json({ error: e.message });
+    return next(e);
+  };
+
   router.put('/stock/products/:id/settings', mayEdit, async (req, res, next) => {
     try {
       const office = await tenantEmail(req);
-      const b = req.body || {};
-      const packId = num(b.pack_size_id);
-      let packUnits = null;
-      if (packId !== null) {
-        const [[pack]] = await pool.query(
-          'SELECT units FROM bo_pack_sizes WHERE id = ? AND office = ?',
-          [packId, office]
-        );
-        if (!pack) return res.status(400).json({ error: 'No such pack size.' });
-        packUnits = Number(pack.units);
-      }
-      const supplierId = num(b.supplier_id);
-      if (supplierId !== null) {
-        const [[s]] = await pool.query(
-          'SELECT id FROM bo_suppliers WHERE id = ? AND office = ?',
-          [supplierId, office]
-        );
-        if (!s) return res.status(400).json({ error: 'No such supplier.' });
-      }
-      const packCost = num(b.pack_cost);
-      let costPrice = num(b.cost_price);
-      if (packCost !== null && packUnits) costPrice = Number((packCost / packUnits).toFixed(4));
+      await saveStockSettings(office, req.params.id, req.body || {});
+      changed('products');
+      res.json({ ok: true });
+    } catch (e) {
+      answer(res, next)(e);
+    }
+  });
 
-      const [result] = await pool.execute(
-        `UPDATE bo_products
-            SET supplier_id = ?, supplier_code = ?, pack_size_id = ?, pack_cost = ?,
-                cost_price = ?, min_stock = ?, max_stock = ?, low_stock_at = ?,
-                stock_unit = ?
-          WHERE id = ? AND email = ?`,
-        [
-          supplierId,
-          String(b.supplier_code || '').trim() || null,
-          packId,
-          packCost,
-          costPrice,
-          num(b.min_stock),
-          num(b.max_stock),
-          // Low stock and min stock are the same question asked twice; the
-          // older column follows the newer one so the dashboard's badge agrees
-          // with the order suggestion.
-          num(b.low_stock_at) ?? num(b.min_stock),
-          String(b.stock_unit || '').trim().slice(0, 24) || null,
-          req.params.id,
-          office,
-        ]
+  /**
+   * Change SOME of a product's stock settings, leaving the rest as they are.
+   * The product list's case-size dropdown sends one field; the product editor
+   * sends the stock section. Only the named fields move.
+   */
+  router.patch('/stock/products/:id', mayEdit, async (req, res, next) => {
+    try {
+      const office = await tenantEmail(req);
+      const now = await currentStockFields(office, req.params.id);
+      if (!now) return res.status(404).json({ error: 'No such product.' });
+      const b = req.body || {};
+      const merged = { ...now };
+      for (const f of STOCK_FIELDS) if (b[f] !== undefined) merged[f] = b[f];
+      // The unit cost follows from what is set: a case cost and case size
+      // derive it, a link derives it from the parent, otherwise the product's
+      // own cost_price stands (see saveStockSettings).
+      await saveStockSettings(office, req.params.id, merged);
+      changed('products');
+      res.json({ ok: true });
+    } catch (e) {
+      answer(res, next)(e);
+    }
+  });
+
+  /**
+   * The same change on many products: "mass-apply case sizes". Only the
+   * fields sent move, and only case size, supplier and non-stock may be sent
+   * in bulk -- a link or a cost is one product's fact, not ten products'.
+   * All or nothing is not needed here: each product is its own save, and the
+   * answer says how many moved and which (if any) refused and why.
+   */
+  router.patch('/stock/products', mayEdit, async (req, res, next) => {
+    try {
+      const office = await tenantEmail(req);
+      const ids = (Array.isArray(req.body?.ids) ? req.body.ids : []).map(Number).filter(Number.isInteger).slice(0, 2000);
+      const fields = req.body?.fields || {};
+      const allowed = ['pack_size_id', 'supplier_id', 'non_stock'];
+      const change = {};
+      for (const f of allowed) if (fields[f] !== undefined) change[f] = fields[f] === '' ? null : fields[f];
+      if (!ids.length) return res.status(400).json({ error: 'Pick some products first.' });
+      if (!Object.keys(change).length) return res.status(400).json({ error: 'Nothing was chosen to change.' });
+      let updated = 0;
+      const refused = [];
+      for (const id of ids) {
+        // eslint-disable-next-line no-await-in-loop -- one small row each
+        const now = await currentStockFields(office, id);
+        if (!now) continue;
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          await saveStockSettings(office, id, { ...now, ...change });
+          updated += 1;
+        } catch (e) {
+          if (!e.status) throw e;
+          refused.push({ id, error: e.message });
+        }
+      }
+      changed('products');
+      res.json({ ok: true, updated, refused });
+    } catch (e) {
+      answer(res, next)(e);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Recipes: a product made of other products (2026-09-22)
+  // -------------------------------------------------------------------------
+  //
+  // A cocktail is its ingredients. Selling or wasting one moves each of them
+  // (stock_effects.js); this is where the list is kept. The recipe's cost --
+  // each ingredient's unit cost times its measure -- is written onto the
+  // product's cost_price, so its GP is right wherever GP is shown.
+
+  async function recipeWithLines(office, pluid) {
+    const [[head]] = await pool.query(`${PRODUCT_SELECT} AND p.pluid = ? LIMIT 1`, [office, pluid]);
+    if (!head) return null;
+    const [lines] = await pool.query(
+      `SELECT r.ingredient_pluid, r.quantity, r.sort_order
+         FROM bo_recipe_lines r
+        WHERE r.office = ? AND r.recipe_pluid = ?
+        ORDER BY r.sort_order, r.created_at`,
+      [office, pluid]
+    );
+    const out = [];
+    let costMinor = 0;
+    for (const l of lines) {
+      // eslint-disable-next-line no-await-in-loop -- a recipe has a handful of lines
+      const [[ing]] = await pool.query(`${PRODUCT_SELECT} AND p.pluid = ? LIMIT 1`, [office, l.ingredient_pluid]);
+      const unit = ing ? unitCostMinor(ing) : 0;
+      const lineCost = Math.round(unit * Number(l.quantity));
+      costMinor += lineCost;
+      out.push({
+        pluid: Number(l.ingredient_pluid),
+        product_name: ing ? ing.product_name : `PLU ${l.ingredient_pluid} (deleted)`,
+        stock_unit: ing ? ing.stock_unit : null,
+        pack_name: ing ? ing.pack_name : null,
+        pack_units: ing ? ing.pack_units : null,
+        quantity: Number(l.quantity),
+        unit_cost_minor: unit,
+        line_cost_minor: lineCost,
+        missing: !ing,
+      });
+    }
+    const decorated = decorate(head);
+    return {
+      product: decorated,
+      lines: out,
+      cost_minor: costMinor,
+      gp: gpFigures(head.price, head.tax_percentage, costMinor, head.target_gp),
+    };
+  }
+
+  router.get('/stock/recipes', auth, async (req, res, next) => {
+    try {
+      const office = await tenantEmail(req);
+      const [rows] = await pool.query(
+        `SELECT DISTINCT recipe_pluid FROM bo_recipe_lines WHERE office = ?`,
+        [office]
       );
-      if (!result.affectedRows) return res.status(404).json({ error: 'No such product.' });
+      const out = [];
+      for (const r of rows) {
+        // eslint-disable-next-line no-await-in-loop -- a venue has tens of recipes
+        const one = await recipeWithLines(office, r.recipe_pluid);
+        if (one) out.push({ ...one.product, line_count: one.lines.length, recipe_cost_minor: one.cost_minor, recipe_gp: one.gp });
+      }
+      out.sort((a, b) => String(a.product_name).localeCompare(String(b.product_name)));
+      res.json(out);
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.get('/stock/recipes/:pluid', auth, async (req, res, next) => {
+    try {
+      const one = await recipeWithLines(await tenantEmail(req), Number(req.params.pluid));
+      if (!one) return res.status(404).json({ error: 'No such product.' });
+      res.json(one);
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.put('/stock/recipes/:pluid', mayEdit, async (req, res, next) => {
+    const conn = await pool.getConnection();
+    try {
+      const office = await tenantEmail(req);
+      const recipePlu = Number(req.params.pluid);
+      const [[head]] = await conn.query(
+        'SELECT id, pluid, pack_cost FROM bo_products WHERE email = ? AND pluid = ? LIMIT 1',
+        [office, recipePlu]
+      );
+      if (!head) return res.status(404).json({ error: 'No such product.' });
+
+      const raw = Array.isArray(req.body?.lines) ? req.body.lines : [];
+      const seen = new Set();
+      const lines = [];
+      for (const l of raw) {
+        const pluid = Number(l.pluid);
+        if (!Number.isInteger(pluid)) throw bad('Every ingredient needs a product.');
+        if (pluid === recipePlu) throw bad('A recipe cannot list itself as an ingredient.');
+        if (seen.has(pluid)) throw bad('An ingredient is listed twice — put its whole measure on one line.');
+        const qty = quantity(l.quantity, 'measure');
+        if (!(qty > 0)) throw bad('Every measure must be more than nothing.');
+        // eslint-disable-next-line no-await-in-loop
+        const [[ing]] = await conn.query('SELECT pluid FROM bo_products WHERE email = ? AND pluid = ?', [office, pluid]);
+        if (!ing) throw bad(`No product with PLU ${pluid}.`);
+        seen.add(pluid);
+        lines.push({ pluid, qty });
+      }
+
+      await conn.beginTransaction();
+      await conn.execute('DELETE FROM bo_recipe_lines WHERE office = ? AND recipe_pluid = ?', [office, recipePlu]);
+      for (const [i, l] of lines.entries()) {
+        // eslint-disable-next-line no-await-in-loop
+        await conn.execute(
+          `INSERT INTO bo_recipe_lines (id, office, recipe_pluid, ingredient_pluid, quantity, sort_order)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [uuid(), office, recipePlu, l.pluid, l.qty, i]
+        );
+      }
+      // A product made of others does not also sell from a parent: the recipe
+      // is the fuller statement of what it is, and two answers to "whose shelf
+      // does this come off" would be one too many.
+      if (lines.length) {
+        await conn.execute(
+          'UPDATE bo_products SET stock_parent_pluid = NULL, stock_ratio = NULL WHERE email = ? AND pluid = ?',
+          [office, recipePlu]
+        );
+      }
+      await conn.commit();
+
+      const one = await recipeWithLines(office, recipePlu);
+      // The recipe's cost becomes the product's, unless a case cost already
+      // sets it (a bought-in cocktail with a recipe only for stock).
+      if (one && lines.length && num(head.pack_cost) === null) {
+        await pool.execute(
+          'UPDATE bo_products SET cost_price = ? WHERE email = ? AND pluid = ?',
+          [Number((one.cost_minor / 100).toFixed(4)), office, recipePlu]
+        );
+      }
+      changed('products');
+      res.json(await recipeWithLines(office, recipePlu));
+    } catch (e) {
+      await conn.rollback().catch(() => {});
+      answer(res, next)(e);
+    } finally {
+      conn.release();
+    }
+  });
+
+  router.delete('/stock/recipes/:pluid', mayEdit, async (req, res, next) => {
+    try {
+      const office = await tenantEmail(req);
+      await pool.execute('DELETE FROM bo_recipe_lines WHERE office = ? AND recipe_pluid = ?', [
+        office,
+        Number(req.params.pluid),
+      ]);
       changed('products');
       res.json({ ok: true });
     } catch (e) {
@@ -783,6 +1137,54 @@ function stockRoutes({ pool, broadcast, secret, toPdf }) {
       const sign = doc.kind === 'wastage' ? -1 : 1;
 
       for (const line of lines) {
+        /*
+         * WASTING A COCKTAIL WASTES ITS INGREDIENTS (2026-09-22). A wastage or
+         * adjustment of a recipe or a linked product moves the stock it is made
+         * of -- the same rule a sale follows (stock_effects.js). A count is of
+         * the thing on the shelf itself, and a delivery is of what arrived, so
+         * neither is resolved.
+         */
+        if (!counting && doc.kind !== 'delivery') {
+          const targets = await stockTargets(conn, office, line.pluid, Number(line.quantity));
+          const direct = targets.length === 1 && targets[0].pluid === Number(line.pluid) && !targets[0].via;
+          if (!direct) {
+            const [[own]] = await conn.query(
+              'SELECT stock_quantity FROM bo_products WHERE email = ? AND pluid = ?',
+              [office, line.pluid]
+            );
+            if (!own) throw bad(`${line.product_name || `PLU ${line.pluid}`} is no longer in the catalogue.`);
+            await conn.execute('UPDATE bo_stock_doc_lines SET expected = ? WHERE id = ?', [num(own.stock_quantity), line.id]);
+            for (const target of targets) {
+              const [[tp]] = await conn.query(
+                'SELECT stock_quantity, product_name, cost_price FROM bo_products WHERE email = ? AND pluid = ? FOR UPDATE',
+                [office, target.pluid]
+              );
+              // An ingredient nobody counts stays uncounted, as it does on a
+              // sale: wasting one cocktail must not start tracking the mixers.
+              if (!tp || tp.stock_quantity === null) continue;
+              const was = Number(tp.stock_quantity);
+              const move = sign * target.qty;
+              await conn.execute(
+                `INSERT INTO epos_stock_movements
+                   (id, office, pluid, product_name, kind, quantity, unit_cost_minor,
+                    reason, doc_id, order_id, staff_name, terminal, moved_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [
+                  uuid(), office, target.pluid, tp.product_name, doc.kind, move,
+                  Math.round((Number(tp.cost_price) || 0) * 100),
+                  [line.reason || doc.notes, `via ${target.via || line.product_name}`].filter(Boolean).join(' · ').slice(0, 255),
+                  doc.id, doc.order_id, staffName, terminal, at,
+                ]
+              );
+              await conn.execute(
+                'UPDATE bo_products SET stock_quantity = ? WHERE email = ? AND pluid = ?',
+                [was + move, office, target.pluid]
+              );
+            }
+            continue;
+          }
+        }
+
         const [[p]] = await conn.query(
           'SELECT stock_quantity, product_name FROM bo_products WHERE email = ? AND pluid = ? FOR UPDATE',
           [office, line.pluid]
@@ -873,11 +1275,15 @@ function stockRoutes({ pool, broadcast, secret, toPdf }) {
         params.push(String(req.query.department));
       }
       if (req.query.tracked !== 'all') where += ' AND p.stock_quantity IS NOT NULL';
-      const [rows] = await pool.query(
+      const [all] = await pool.query(
         `${PRODUCT_SELECT}${where} AND COALESCE(p.is_modifier, 0) = 0
           ORDER BY p.department_name, p.group_name, p.product_name`,
         params
       );
+      // The sheet is what a stock take counts: STOCK ITEMS only -- a case
+      // size, and not non-stock, linked or a recipe (2026-09-22). `?items=all`
+      // prints everything, for a venue that has not set case sizes up yet.
+      const rows = req.query.items === 'all' ? all : all.filter((p) => decorate(p).stock_item);
       const bySub = new Map();
       for (const p of rows) {
         const key = `${p.department_name || 'Unassigned'} — ${p.group_name || 'Unassigned'}`;
@@ -1399,6 +1805,8 @@ module.exports = {
   stockRoutes,
   unitCostMinor,
   withPacks,
+  gpFigures,
+  DEFAULT_TARGET_GP,
   DOC_KINDS,
   ORDER_STATUSES,
   DEFAULT_PACKS,

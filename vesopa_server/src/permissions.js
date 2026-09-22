@@ -134,7 +134,8 @@ const BACKOFFICE_PERMISSIONS = [
     keys: [
       { key: 'stock.levels', label: 'Stock Levels' },
       { key: 'stock.suppliers', label: 'Suppliers' },
-      { key: 'stock.pack_sizes', label: 'Pack Sizes' },
+      { key: 'stock.pack_sizes', label: 'Case Sizes' },
+      { key: 'stock.recipes', label: 'Recipes' },
       { key: 'stock.docs', label: 'Wastage, adjustments, stock takes and spot checks' },
       { key: 'stock.orders', label: 'Orders & Deliveries' },
       { key: 'stock.edit', label: 'Record and change stock' },

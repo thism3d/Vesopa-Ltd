@@ -17,6 +17,8 @@
  * the primary key and the insert is IGNORE, so a retried upload changes nothing
  * -- and the caller should roll back and say so.
  */
+const { stockTargets } = require('./stock_effects');
+
 async function recordSale(conn, order) {
   const [result] = await conn.execute(
     `INSERT IGNORE INTO epos_orders
@@ -171,41 +173,61 @@ async function recordSale(conn, order) {
   // twice for one sale.
   const stockOwner = order.email || 'default';
   const movedAt = order.closed_at ? new Date(order.closed_at) : new Date();
+  //
+  // RECIPES AND LINKED PRODUCTS (2026-09-22). A cocktail takes its ingredients
+  // off, a half pint takes half a pint off the pint -- see stock_effects.js.
+  // A plain product resolves to itself, so nothing changes for the rest of the
+  // catalogue. Each target keeps the rule above: counted products only.
   for (const line of order.lines || []) {
     if (line.is_modifier) continue;
     const qty = Number(line.quantity ?? 1);
     if (!Number.isFinite(qty) || qty <= 0) continue;
-    const [[product]] = await conn.query(
-      `SELECT stock_quantity, cost_price, product_name
-         FROM bo_products
-        WHERE email = ? AND pluid = ?
-        LIMIT 1`,
-      [stockOwner, line.plu_id]
-    );
-    if (!product || product.stock_quantity === null) continue;
-    await conn.execute(
-      `UPDATE bo_products
-          SET stock_quantity = stock_quantity - ?
-        WHERE email = ? AND pluid = ? AND stock_quantity IS NOT NULL`,
-      [qty, stockOwner, line.plu_id]
-    );
-    await conn.execute(
-      `INSERT INTO epos_stock_movements
-         (id, office, pluid, product_name, kind, quantity, unit_cost_minor,
-          order_id, staff_name, terminal, moved_at)
-       VALUES (UUID(), ?, ?, ?, 'sale', ?, ?, ?, ?, ?, ?)`,
-      [
-        stockOwner,
-        line.plu_id,
-        product.product_name || line.name || null,
-        -qty,
-        Math.round((Number(product.cost_price) || 0) * 100),
-        order.id,
-        order.clerk_name ?? null,
-        order.terminal ?? null,
-        movedAt,
-      ]
-    );
+    // Never lose a sale to this: if resolving recipes or links fails (a server
+    // that has not run schema_stock_links_recipes.sql yet, say), the line takes
+    // itself off exactly as it always did. MySQL rolls back only the failed
+    // statement, so the transaction carries on.
+    let targets;
+    try {
+      targets = await stockTargets(conn, stockOwner, line.plu_id, qty);
+    } catch (e) {
+      console.warn(`[sales] stock resolution fell back for PLU ${line.plu_id}:`, e.code || e.message);
+      targets = [{ pluid: Number(line.plu_id), qty, via: null }];
+    }
+    for (const target of targets) {
+      const [[product]] = await conn.query(
+        `SELECT stock_quantity, cost_price, product_name
+           FROM bo_products
+          WHERE email = ? AND pluid = ?
+          LIMIT 1`,
+        [stockOwner, target.pluid]
+      );
+      if (!product || product.stock_quantity === null) continue;
+      await conn.execute(
+        `UPDATE bo_products
+            SET stock_quantity = stock_quantity - ?
+          WHERE email = ? AND pluid = ? AND stock_quantity IS NOT NULL`,
+        [target.qty, stockOwner, target.pluid]
+      );
+      await conn.execute(
+        `INSERT INTO epos_stock_movements
+           (id, office, pluid, product_name, kind, quantity, unit_cost_minor,
+            reason, order_id, staff_name, terminal, moved_at)
+         VALUES (UUID(), ?, ?, ?, 'sale', ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          stockOwner,
+          target.pluid,
+          product.product_name || line.name || null,
+          -target.qty,
+          Math.round((Number(product.cost_price) || 0) * 100),
+          // Which product on the bill moved this one, when it was not itself.
+          target.via ? `Sold as ${String(target.via).slice(0, 200)}` : null,
+          order.id,
+          order.clerk_name ?? null,
+          order.terminal ?? null,
+          movedAt,
+        ]
+      );
+    }
   }
 
   for (const payment of order.payments || []) {

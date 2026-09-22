@@ -52,6 +52,7 @@ const NAV_PERMISSION = {
   stock_adjustments: 'stock.docs',
   stock_takes: 'stock.docs',
   stock_spot_checks: 'stock.docs',
+  stock_recipes: 'stock.recipes',
   screens: 'programming.screens',
   program_departments: 'programming.departments',
   program_groups: 'programming.groups',
