@@ -52,7 +52,15 @@ const { normaliseEmail } = require('../src/normalise');
  * by name, for whom he chose a password himself — "create an account … with
  * password". The list stays a list.
  */
-const ALLOWED = ['manager@vesopa.co.uk', 'nasim@vesopa.site', 'habib@vesopa.site'];
+/*
+ * 2026-09-22: the owner asked for password sign-in on both of Dylan's accounts
+ * (The Vesopa Kitchen staff): dylan@vesopa.com and dylan@beaconsepos.com, with a
+ * password he chose.
+ */
+const ALLOWED = [
+  'manager@vesopa.co.uk', 'nasim@vesopa.site', 'habib@vesopa.site',
+  'dylan@vesopa.com', 'dylan@beaconsepos.com',
+];
 
 async function main() {
   const email = normaliseEmail(process.argv[2]);
