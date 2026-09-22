@@ -10,51 +10,54 @@
   <div class="sheet-scrim" data-sheet-close></div>
   <div class="sheet-card" role="dialog" aria-modal="true" aria-label="<%= t('More') %>">
     <div class="sheet-grab"></div>
-    <a class="sheet-row" href="/panel/apps/node">
-      <span class="sheet-ic"><%- icon('activity', 19) %></span>
-      <span><b>Node apps</b><small>Whether each one is actually answering</small></span>
+<%
+  // Every title and line goes through t() — they were bare English, so the
+  // phone's menu stayed English after choosing বাংলা.
+  const sheetRows = [
+    ['/panel/apps/node',    'activity', t('Node apps'),              t('Whether each one is actually answering')],
+    ['/panel/apps/runtime', 'sliders',  t('Languages & settings'),   t('PHP and Node versions, limits, plugins')],
+    // Vesopa Studio only while the AI features are on (AI_FEATURES in .env).
+    ...((typeof studioEnabled !== 'undefined' && studioEnabled)
+      ? [['/build', 'wand', t('Site builder'), t('Say what you want and watch your website build')]] : []),
+    ['/panel/files',        'folder',   t('Files'),                  t("Upload, edit and manage your website's files")],
+    ['/panel/terminal',     'code',     t('Terminal'),               t('A real shell on your account')],
+    ['/panel/billing',      'card',     t('Billing'),                t('Invoices, payments and renewals')],
+    ['/panel/tickets',      'ticket',   t('Support'),                t('Ask us anything — we answer')],
+    ['/panel/settings',     'user',     t('Account & settings'),     t('Your details and your password')],
+  ];
+  const sheetBuy = [
+    ['/domains', 'globe',  t('Register a domain')],
+    ['/hosting', 'server', t('Add hosting')],
+    ['/email',   'mail',   t('Add email')],
+  ];
+%>
+    <p class="sheet-head"><%= t('Buy something new') %></p>
+    <div class="sheet-buy">
+      <% sheetBuy.forEach(function (b) { %>
+        <a class="sheet-buy-item" href="<%= b[0] %>"><%- icon(b[1], 18) %><span><%= b[2] %></span></a>
+      <% }); %>
+    </div>
+    <% sheetRows.forEach(function (r) { %>
+    <a class="sheet-row" href="<%= r[0] %>">
+      <span class="sheet-ic"><%- icon(r[1], 19) %></span>
+      <span><b><%= r[2] %></b><small><%= r[3] %></small></span>
       <%- icon('chevron-right', 16) %>
     </a>
-    <a class="sheet-row" href="/panel/apps/runtime">
-      <span class="sheet-ic"><%- icon('sliders', 19) %></span>
-      <span><b>Languages &amp; settings</b><small>PHP and Node versions, limits, plugins</small></span>
-      <%- icon('chevron-right', 16) %>
-    </a>
-    <a class="sheet-row" href="/build">
-      <span class="sheet-ic"><%- icon('wand', 19) %></span>
-      <span><b>Site builder</b><small>Say what you want and watch your website build</small></span>
-      <%- icon('chevron-right', 16) %>
-    </a>
-    <a class="sheet-row" href="/panel/files">
-      <span class="sheet-ic"><%- icon('folder', 19) %></span>
-      <span><b>Files</b><small>Upload, edit and manage your website's files</small></span>
-      <%- icon('chevron-right', 16) %>
-    </a>
-    <a class="sheet-row" href="/panel/terminal">
-      <span class="sheet-ic"><%- icon('code', 19) %></span>
-      <span><b>Terminal</b><small>A real shell on your account</small></span>
-      <%- icon('chevron-right', 16) %>
-    </a>
-    <a class="sheet-row" href="/panel/billing">
-      <span class="sheet-ic"><%- icon('card', 19) %></span>
-      <span><b>Billing</b><small>Invoices, payments and renewals</small></span>
-      <%- icon('chevron-right', 16) %>
-    </a>
-    <a class="sheet-row" href="/panel/tickets">
-      <span class="sheet-ic"><%- icon('ticket', 19) %></span>
-      <span><b>Support</b><small>Ask us anything — we answer</small></span>
-      <%- icon('chevron-right', 16) %>
-    </a>
-    <a class="sheet-row" href="/panel/settings">
-      <span class="sheet-ic"><%- icon('user', 19) %></span>
-      <span><b>Account &amp; settings</b><small>Your details and your password</small></span>
-      <%- icon('chevron-right', 16) %>
-    </a>
+    <% }); %>
+    <% if (typeof locales !== 'undefined' && locales.length > 1) { %>
+    <div class="sheet-lang" role="group" aria-label="<%= t('Language') %>">
+      <span class="sheet-lang-label"><%= t('Language') %></span>
+      <% locales.forEach(function (l) { %>
+        <a class="sheet-lang-opt <%= l.code === locale ? 'is-active' : '' %>" href="<%= langHref(l.code) %>"
+           rel="nofollow" data-no-router lang="<%= l.html %>" hreflang="<%= l.hreflang %>"><%= l.native %></a>
+      <% }); %>
+    </div>
+    <% } %>
     <form method="post" action="/logout" class="sheet-row-form">
       <input type="hidden" name="_csrf" value="<%= csrf %>">
       <button class="sheet-row" type="submit">
         <span class="sheet-ic"><%- icon('logout', 19) %></span>
-        <span><b>Sign out</b></span>
+        <span><b><%= t('Sign out') %></b></span>
       </button>
     </form>
     <button class="btn btn-ghost btn-block sheet-cancel" type="button" data-sheet-close><%= t('Close') %></button>

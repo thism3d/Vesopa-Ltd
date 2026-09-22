@@ -8,6 +8,9 @@ const compression = require('compression');
 const cookieParser = require('cookie-parser');
 
 const config = require('./config');
+// Vesopa AI and Vesopa Studio: a key must be configured AND AI_FEATURES not
+// switched off. Decided once, so the routes and every link agree.
+const STUDIO_MOUNTED = require('./ai/bedrock').ENABLED && config.AI.FEATURES_ON;
 const db = require('./db');
 const { verifyMail } = require('./mailer');
 const auth = require('./auth');
@@ -282,7 +285,10 @@ app.use(async (req, res, next) => {
   // because what they mean depends on who is asking.
   res.locals.nameservers = config.NAMESERVERS;
   // Whether the Vesopa AI widget is drawn (partials/head.ejs, footer.ejs).
-  res.locals.aiEnabled = Boolean(config.AI.API_KEY);
+  res.locals.aiEnabled = Boolean(config.AI.API_KEY) && config.AI.FEATURES_ON;
+  // Whether Vesopa Studio is linked (header, panel rail, phone sheet): only
+  // when its routes are actually mounted below.
+  res.locals.studioEnabled = STUDIO_MOUNTED;
   res.locals.customer = null;
   res.locals.admin = null;
   res.locals.flash = null;
@@ -416,7 +422,7 @@ app.use('/', require('./routes/pay'));
  * no key there is no widget (head.ejs reads res.locals.aiEnabled) and no
  * route, so the panel is exactly what it was without it.
  */
-if (require('./ai/bedrock').ENABLED) {
+if (STUDIO_MOUNTED) {
   app.use('/ai', require('./routes/ai'));
   // Vesopa Studio: build a website by talking (src/builder, routes/build.js).
   app.use('/build', require('./routes/build'));

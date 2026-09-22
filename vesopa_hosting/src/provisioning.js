@@ -643,7 +643,27 @@ async function provisionEmailService(row, customer) {
 // ---------------------------------------------------------------------------
 // Domains
 // ---------------------------------------------------------------------------
+/**
+ * Register one domain — once, whoever asks and however many ask at once.
+ *
+ * The lock is per domain row, and the row is re-read INSIDE it: a second
+ * caller that waited behind a registration sees the name already active and
+ * stops, instead of acting on the 'pending' it read before the first one
+ * finished. That stale read is how one purchase reached the registrar twice.
+ */
 async function provisionDomain(domainRow, customer) {
+  const held = await db.withLock(`vh:register-domain:${domainRow.id}`, async () => {
+    const fresh = await db.one('SELECT * FROM domains WHERE id = ? LIMIT 1', [domainRow.id]);
+    if (!fresh) return { skipped: true, reason: 'Domain row no longer exists.' };
+    return registerDomainOnce(fresh, customer);
+  });
+  if (!held.locked) {
+    return { skipped: true, reason: `${domainRow.domain} is already being registered.` };
+  }
+  return held.value;
+}
+
+async function registerDomainOnce(domainRow, customer) {
   if (domainRow.status !== 'pending') {
     return { skipped: true, reason: `Domain is already ${domainRow.status}.` };
   }
@@ -796,7 +816,21 @@ async function provisionDomain(domainRow, customer) {
  * what did not, so the admin sees "hosting live, domain failed: registrar
  * timeout" and can retry just the failed half.
  */
-async function provisionOrder(orderId, { actorType = 'admin', actorId = null, ip = '' } = {}) {
+async function provisionOrder(orderId, opts = {}) {
+  /*
+   * One run per order at a time. A second caller — the setup page arriving
+   * while checkout's run is still going, the sweep, a retry — is told it is
+   * already running and does nothing, rather than starting a parallel run
+   * that registers the same domain and builds the same account again.
+   */
+  const held = await db.withLock(`vh:provision-order:${orderId}`, () => provisionOrderOnce(orderId, opts));
+  if (!held.locked) {
+    return { services: [], domains: [], emails: [], credentials: null, alreadyRunning: true };
+  }
+  return held.value;
+}
+
+async function provisionOrderOnce(orderId, { actorType = 'admin', actorId = null, ip = '' } = {}) {
   const order = await db.one('SELECT * FROM orders WHERE id = ? LIMIT 1', [orderId]);
   if (!order) throw new Error('Order not found.');
 

@@ -28,20 +28,33 @@
      form. `panel-shell-end` closes the page instead.
 %>
 <%
+  // Labels go through t(): they used to be bare strings, which is why the
+  // panel stayed English after somebody chose বাংলা.
   const railPrimary = [
-    ['/panel',          'chart',  'Overview'],
-    ['/panel/services', 'server', 'Hosting'],
-    ['/panel/apps',     'grid',   'Apps'],
-    ['/panel/domains',  'globe',  'Domains'],
-    ['/panel/mail',     'mail',   'Email'],
+    ['/panel',          'chart',  t('Overview')],
+    ['/panel/services', 'server', t('Hosting')],
+    ['/panel/apps',     'grid',   t('Apps')],
+    ['/panel/domains',  'globe',  t('Domains')],
+    ['/panel/mail',     'mail',   t('Email')],
   ];
+  // Vesopa Studio (the AI site builder) is drawn only while the AI features
+  // are on — AI_FEATURES=off hides it and closes its routes (server.js).
+  const studioOn = typeof studioEnabled !== 'undefined' && studioEnabled;
   const railExtra = [
-    ['/build',          'wand',     'Site builder'],
-    ['/panel/files',    'folder',   'Files'],
-    ['/panel/terminal', 'code',     'Terminal'],
-    ['/panel/billing',  'card',     'Billing'],
-    ['/panel/tickets',  'ticket',   'Support'],
+    ...(studioOn ? [['/build', 'wand', t('Site builder')]] : []),
+    ['/panel/files',    'folder',   t('Files')],
+    ['/panel/terminal', 'code',     t('Terminal')],
+    ['/panel/billing',  'card',     t('Billing')],
+    ['/panel/tickets',  'ticket',   t('Support')],
   ];
+  // Buy something new without leaving for the shop's front door: the same
+  // pages a visitor uses, which already know who is signed in at checkout.
+  const buyLinks = [
+    ['/domains', 'globe',  t('Register a domain')],
+    ['/hosting', 'server', t('Add hosting')],
+    ['/email',   'mail',   t('Add email')],
+  ];
+  const otherLocales = (typeof locales !== 'undefined' ? locales : []).filter(function (l) { return l.code !== locale; });
   // Exact match for the root, prefix match for the rest, so /panel/services/12
   // still lights up "Hosting".
   const railActive = (href) => (href === '/panel'
@@ -49,6 +62,25 @@
     : currentPath.indexOf(href) === 0);
   const accountActive = currentPath.indexOf('/panel/settings') === 0;
 %>
+<%# The Buy menu and language switch. Inline and small, so this change does not
+    depend on a stylesheet deploy. %>
+<style>
+  .pbuy{position:relative}
+  .pbuy>summary{list-style:none;cursor:pointer}
+  .pbuy>summary::-webkit-details-marker{display:none}
+  .pbuy-menu{position:absolute;right:0;top:calc(100% + 6px);min-width:220px;background:#fff;border:1px solid #e5e7e3;border-radius:12px;box-shadow:0 12px 32px rgba(17,17,17,.12);padding:6px;z-index:60}
+  .pbuy-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:9px;color:var(--ink,#111);text-decoration:none;font-size:.9rem}
+  .pbuy-item:hover,.pbuy-item:focus-visible{background:var(--lime-soft,#eff6d8);outline:none}
+  .plang{display:inline-flex;align-items:center;justify-content:center;min-width:38px;height:34px;padding:0 10px;border:1px solid #e5e7e3;border-radius:9px;color:var(--ink,#111);text-decoration:none;font-size:.84rem;font-weight:600}
+  .plang:hover,.plang:focus-visible{border-color:var(--lime,#a5c715);background:var(--lime-soft,#eff6d8)}
+  .sheet-head{margin:4px 4px 8px;font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#6b7280}
+  .sheet-buy{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0 0 12px}
+  .sheet-buy-item{display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 6px;border:1px solid #e5e7e3;border-radius:12px;text-align:center;font-size:.8rem;color:var(--ink,#111);text-decoration:none}
+  .sheet-lang{display:flex;align-items:center;gap:8px;padding:12px 4px;border-top:1px solid #eef0ec;margin-top:6px}
+  .sheet-lang-label{font-size:.85rem;color:#6b7280;margin-right:auto}
+  .sheet-lang-opt{padding:7px 12px;border:1px solid #e5e7e3;border-radius:9px;color:var(--ink,#111);text-decoration:none;font-size:.85rem}
+  .sheet-lang-opt.is-active{border-color:var(--lime,#a5c715);background:var(--lime-soft,#eff6d8);font-weight:700}
+</style>
 <div class="shell">
   <aside class="rail">
     <a class="rail-brand" href="/panel">
@@ -74,7 +106,7 @@
           hidden above, plus sign-out. %>
       <button class="rail-link rail-more" type="button" data-sheet-open="more" aria-haspopup="dialog">
         <span class="rail-icon"><%- icon('menu', 19) %></span>
-        <span class="rail-label">More</span>
+        <span class="rail-label"><%= t('More') %></span>
       </button>
     </nav>
 
@@ -83,19 +115,19 @@
         <span class="acct-av"><%= (customer.first_name || customer.email).charAt(0).toUpperCase() %></span>
         <span class="acct-txt">
           <span class="acct-name"><%= [customer.first_name, customer.last_name].filter(Boolean).join(' ') || customer.email %></span>
-          <span class="acct-sub">Account &amp; settings</span>
+          <span class="acct-sub"><%= t('Account & settings') %></span>
         </span>
         <span class="acct-chev"><%- icon('chevron-right', 15) %></span>
       </a>
       <a class="rail-link" href="/support">
         <span class="rail-icon"><%- icon('info', 19) %></span>
-        <span class="rail-label">Help</span>
+        <span class="rail-label"><%= t('Help') %></span>
       </a>
       <form method="post" action="/logout">
         <input type="hidden" name="_csrf" value="<%= csrf %>">
         <button class="rail-link" type="submit" style="width:100%;border:0;background:none;cursor:pointer;text-align:left">
           <span class="rail-icon"><%- icon('logout', 19) %></span>
-          <span class="rail-label">Sign out</span>
+          <span class="rail-label"><%= t('Sign out') %></span>
         </button>
       </form>
     </div>
@@ -115,6 +147,27 @@
               when it drops, so a page that has stopped updating itself admits
               to it instead of showing figures that quietly went stale. %>
           <span class="live-dot is-off hide-sm" data-live-dot hidden><i></i><span data-live-text>Live</span></span>
+          <%# Buy something new, from inside. A <details> so it opens with no
+              script and closes like any disclosure; the pages it leads to are
+              the shop's own, and checkout already knows who is signed in. %>
+          <details class="pbuy">
+            <summary class="btn btn-sm pbuy-btn" aria-label="<%= t('Buy something new') %>">
+              <%- icon('plus', 16) %><span class="hide-sm"> <%= t('Buy') %></span>
+            </summary>
+            <div class="pbuy-menu" role="menu">
+              <% buyLinks.forEach(function (b) { %>
+                <a class="pbuy-item" role="menuitem" href="<%= b[0] %>"><%- icon(b[1], 17) %> <span><%= b[2] %></span></a>
+              <% }); %>
+            </div>
+          </details>
+          <%# Language. The panel follows the remembered choice (vh_lang) but
+              had nowhere to change it; /lang/:code sets it and comes back to
+              this same page, which has one address in every language. %>
+          <% otherLocales.forEach(function (l) { %>
+            <a class="plang" href="<%= langHref(l.code) %>" rel="nofollow" data-no-router
+               lang="<%= l.html %>" hreflang="<%= l.hreflang %>" title="<%= l.native %>"
+               aria-label="<%= t('Read this page in {language}', { language: l.native }) %>"><%= l.short %></a>
+          <% }); %>
           <%# The bell. The count is unread AND unresolved: a problem that fixed
               itself stops asking to be read about. %>
           <a class="bell <%= (typeof notifyUnread !== 'undefined' && notifyUnread) ? 'has-unread' : '' %>"

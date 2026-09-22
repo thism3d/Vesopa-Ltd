@@ -65,6 +65,35 @@ async function transaction(fn) {
 }
 
 /**
+ * Run `fn` only if nobody else holds the named lock; otherwise return
+ * `{ locked: false }` at once, without waiting.
+ *
+ * A MySQL named lock (GET_LOCK), not an in-memory flag, so it holds across
+ * requests, the job sweep and an admin clicking retry — and is released by the
+ * server itself if this process dies mid-way, so it can never stick.
+ *
+ * Why it exists: on 2026-09-22 a free order was provisioned twice at once —
+ * checkout started it, and the setup page it landed on started it again — so
+ * two registrations of the same domain reached the registrar seconds apart.
+ * "Idempotent per row" only holds for one caller at a time.
+ */
+async function withLock(name, fn) {
+  const conn = await pool.getConnection();
+  const key = String(name).slice(0, 64);
+  try {
+    const [[row]] = await conn.query('SELECT GET_LOCK(?, 0) AS got', [key]);
+    if (!row || Number(row.got) !== 1) return { locked: false };
+    try {
+      return { locked: true, value: await fn() };
+    } finally {
+      await conn.query('SELECT RELEASE_LOCK(?)', [key]).catch(() => {});
+    }
+  } finally {
+    conn.release();
+  }
+}
+
+/**
  * Append to the activity log. Deliberately swallows its own errors: an audit
  * write must never be the reason a customer's action fails.
  */
@@ -111,6 +140,7 @@ module.exports = {
   query,
   one,
   transaction,
+  withLock,
   logActivity,
   settings,
   invalidateSettings,

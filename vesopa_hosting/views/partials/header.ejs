@@ -9,7 +9,9 @@
  */
 const navItems = [
   ['/hosting',  'server', t('Web hosting'),  t('Fast UK NVMe hosting, SSL included')],
-  ['/build',    'wand',   t('Site builder'), t('Say what you want and watch your website build')],
+  // Vesopa Studio only while the AI features are on (AI_FEATURES, server.js).
+  ...((typeof studioEnabled !== 'undefined' && studioEnabled)
+    ? [['/build', 'wand', t('Site builder'), t('Say what you want and watch your website build')]] : []),
   ['/domains',  'globe',  t('Domains'),      t('Search, register and transfer names')],
   ['/email',    'mail',   t('Email'),        t('Mailboxes and campaigns at your domain')],
   ['/ssl',      'lock',   t('SSL'),          t('Free certificates, renewed automatically')],

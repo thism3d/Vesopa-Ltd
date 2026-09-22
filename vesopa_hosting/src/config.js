@@ -189,6 +189,13 @@ const MAIL_HOSTNAME = process.env.MAIL_HOSTNAME || 'mail.vesopa.com';
  * is set, and from the browser's own voices when it is not.
  */
 const AI = {
+  /*
+   * The off switch, independent of the key: AI_FEATURES=off hides the
+   * assistant and Vesopa Studio everywhere and closes /ai and /build, while
+   * the key stays configured for the day they come back (owner, 2026-09-22:
+   * "temporarily disable the AI features"). Anything but "off" means on.
+   */
+  FEATURES_ON: String(process.env.AI_FEATURES || 'on').trim().toLowerCase() !== 'off',
   API_KEY: process.env.AI_API_KEY || '',
   BASE_URL: String(process.env.AI_BASE_URL || 'https://bedrock-mantle.ap-south-1.api.aws/v1').replace(/\/+$/, ''),
   PROJECT_ID: process.env.AI_PROJECT_ID || '',
