@@ -31,9 +31,58 @@ const Charts = (() => {
     return `£${v.toFixed(0)}`;
   };
 
-  /** The palette. Ordered so adjacent series stay distinguishable. */
-  const PALETTE = ['#b5179e', '#4361ee', '#4cc9f0', '#f72585', '#7209b7',
-    '#3a0ca3', '#4895ef', '#f77f00', '#06d6a0', '#ef476f'];
+  /**
+   * The palette, read off the stylesheet rather than written here.
+   *
+   * It used to be a fixed magenta-and-violet ramp — `#b5179e` filled the
+   * Takings chart and the payment donut, `#7209b7` the ranked bars — which is
+   * where the venue's "change the tiles to our Green from the light
+   * lilac/purple" came from. Those values belonged to no part of the brand and
+   * appeared nowhere else in the product.
+   *
+   * They now live as `--chart-1` … `--chart-8` in `style.css`, beside every
+   * other colour, and are declared once per theme. That matters for more than
+   * tidiness: the back office has a real Night mode, and a series colour that
+   * reads on white is not the same colour that reads on near-black. Resolving
+   * them at draw time is what lets the two differ.
+   *
+   * Falls back to the literals if a stylesheet has not loaded — a chart with no
+   * colour draws nothing at all, which looks like a broken page rather than a
+   * missing variable.
+   */
+  const FALLBACK = ['#7fa50c', '#4b8ef5', '#f5a524', '#30a46c', '#8b5cf6',
+    '#e5484d', '#0ea5b7', '#b0781f'];
+
+  function token(name, fallback) {
+    const value = getComputedStyle(document.documentElement)
+      .getPropertyValue(name)
+      .trim();
+    return value || fallback;
+  }
+
+  /** The series colours for the theme in force right now. */
+  function palette() {
+    return FALLBACK.map((hex, i) => token(`--chart-${i + 1}`, hex));
+  }
+
+  /** The one colour a single-series chart uses: the Vesopa green. */
+  const primary = () => token('--chart-1', FALLBACK[0]);
+
+  /**
+   * Turn `var(--chart-3)` into the hex it currently stands for.
+   *
+   * Callers name a series rather than a colour, which is what lets the same
+   * dashboard read correctly in Day and in Night. It has to be resolved here
+   * rather than handed to the SVG, because two things downstream need a real
+   * value: `stop-color` on a gradient, and the gradient's own id, which is
+   * built out of the colour so that two charts on one page do not share one —
+   * `cg-ar(--chart-3)` is not an id, and the area under the line would come out
+   * unfilled with nothing in the console to say why.
+   */
+  function resolve(colour) {
+    const named = /^var\(\s*(--[\w-]+)\s*\)$/.exec(String(colour || ''));
+    return named ? token(named[1], FALLBACK[0]) : colour;
+  }
 
   function empty(el, message = 'No data yet.') {
     el.innerHTML = `<p class="muted small chart-empty">${esc(message)}</p>`;
@@ -45,8 +94,9 @@ const Charts = (() => {
    * `rows` is [{ label, value }]. Values are minor units; the axis is
    * formatted compactly so a busy venue's £12,400 does not overflow the gutter.
    */
-  function line(el, rows, { colour = '#b5179e', height = 200, format = money } = {}) {
+  function line(el, rows, { colour, height = 200, format = money } = {}) {
     if (!rows?.length) return empty(el);
+    colour = resolve(colour) || primary();
 
     const w = 800;
     const h = height;
@@ -106,7 +156,8 @@ const Charts = (() => {
   }
 
   /** Vertical bars — trade by hour, takings by weekday. */
-  function bar(el, rows, { colour = '#4361ee', height = 200, format = money } = {}) {
+  function bar(el, rows, { colour, height = 200, format = money } = {}) {
+    colour = resolve(colour) || primary();
     if (!rows?.length) return empty(el);
 
     const w = 800;
@@ -162,6 +213,11 @@ const Charts = (() => {
     const c = size / 2;
     const circumference = 2 * Math.PI * r;
 
+    // Resolved once per draw rather than once per segment: eight
+    // getComputedStyle calls per slice on a donut that is redrawn every
+    // time the period changes is a lot of style recalculation for a
+    // value that cannot change between two segments of the same chart.
+    const series = palette();
     let offset = 0;
     const segments = data.map((row, i) => {
       const value = Number(row.value) || 0;
@@ -169,7 +225,7 @@ const Charts = (() => {
       const dash = fraction * circumference;
       const seg = `
         <circle cx="${c}" cy="${c}" r="${r}" fill="none"
-                stroke="${row.colour || PALETTE[i % PALETTE.length]}"
+                stroke="${resolve(row.colour) || series[i % series.length]}"
                 stroke-width="${thickness}"
                 stroke-dasharray="${dash} ${circumference - dash}"
                 stroke-dashoffset="${-offset}"
@@ -195,7 +251,7 @@ const Charts = (() => {
         <ul class="chart-legend">
           ${data.map((row, i) => `
             <li>
-              <span class="swatch" style="background:${row.colour || PALETTE[i % PALETTE.length]}"></span>
+              <span class="swatch" style="background:${resolve(row.colour) || series[i % series.length]}"></span>
               <span class="legend-label">${esc(row.label)}</span>
               <span class="legend-value">${esc(format(row.value))}</span>
             </li>`).join('')}
@@ -204,7 +260,8 @@ const Charts = (() => {
   }
 
   /** Horizontal ranked bars — top products, departments, clerks. */
-  function ranked(el, rows, { colour = '#7209b7', format = money, limit = 10 } = {}) {
+  function ranked(el, rows, { colour, format = money, limit = 10 } = {}) {
+    colour = resolve(colour) || primary();
     const data = (rows || []).slice(0, limit);
     if (!data.length) return empty(el);
 
@@ -253,5 +310,8 @@ const Charts = (() => {
       ${hint ? `<span class="stat-hint">${esc(hint)}</span>` : ''}`;
   }
 
-  return { line, bar, donut, ranked, stat, money, compact, PALETTE, esc };
+  // `palette` is a function now, not an array. Nothing outside this file
+  // read PALETTE, and a frozen copy handed out at load time would be the
+  // wrong colours the moment the operator switched to Night.
+  return { line, bar, donut, ranked, stat, money, compact, palette, esc };
 })();

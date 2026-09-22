@@ -43,7 +43,7 @@
  */
 
 /**
- * What a screen lays out.
+ * What a screen lays out: 'sale', 'topbar' or 'bottombar'.
  *
  * A bar is a screen. The strip of open tables along the top of the till and the
  * strip of keys along the bottom are one or two rows of the same buttons the
@@ -51,13 +51,11 @@
  * colour, the whole-grid save — works on them without knowing they are bars.
  * Only three things differ: the ceilings, the list of functions on offer, and
  * the shape the editor draws them in.
+ *
+ * A surface is not the same thing as a *slot*. There are five slots a venue can
+ * fill — the sale screen, its two bars, and the payment screen's two — and two
+ * of those slots take a 'topbar' layout. See SP_DEFAULT_FIELDS.
  */
-const SP_SURFACES = [
-  ['sale', 'Sale screens'],
-  ['topbar', 'Top bars'],
-  ['bottombar', 'Bottom bars'],
-];
-
 const spIsBar = (surface) => surface === 'topbar' || surface === 'bottombar';
 
 /** The till functions a button on a sale screen may be bound to. */
@@ -70,6 +68,14 @@ const SP_FUNCTIONS = [
   ['print_bill', 'Print bill'],
   ['sign_on', 'Sign on — hand the till to somebody else'],
   ['clock_in_out', 'Clock in / out'],
+  ['display_lock', 'Lock / unlock the customer screen'],
+  // Offered on the grid as well as on a bar, because a venue running one
+  // screen with no bars at all would otherwise be unable to reach them.
+  // `table_plan` is not here: it leaves the sale screen, and this list carries
+  // no navigation. Mirrors FUNCTION_KEYS in vesopa_server/src/screens.js.
+  ['price_check', 'Price check — what does this cost?'],
+  ['product_search', 'Product search — find and ring an item'],
+  ['price_override', 'Price override — change a line’s price'],
 ];
 
 /**
@@ -93,6 +99,14 @@ const SP_BAR_GROUPS = [
     ['note', 'Note'],
     ['covers', 'Covers'],
     ['customer', 'Customer'],
+    ['price_override', 'Price override — change a line’s price'],
+    ['split', 'Split the bill'],
+    ['transfer', 'Transfer — move this bill to another table'],
+    ['refund', 'Refund — give money back'],
+  ]],
+  ['Looking things up', [
+    ['price_check', 'Price check — what does this cost?'],
+    ['product_search', 'Product search — find and ring an item'],
   ]],
   ['Paper and cash', [
     ['print_bill', 'Print bill'],
@@ -107,11 +121,18 @@ const SP_BAR_GROUPS = [
     ['go_products', 'Products'],
     ['go_functions', 'Functions'],
     ['go_settings', 'Settings'],
+    ['table_plan', 'Table plan — open the floor'],
     ['sign_off', 'Sign off'],
   ]],
   ['Who is on', [
     ['sign_on', 'Sign on — hand the till to somebody else'],
     ['clock_in_out', 'Clock in / out'],
+  ]],
+  ['The customer screen', [
+    ['display_lock', 'Lock / unlock the customer screen'],
+  ]],
+  ['Dine-in', [
+    ['dinein_orders', 'Orders waiting from tables'],
   ]],
   ['Live displays', [
     ['open_bills', 'Open bills — the table strip'],
@@ -243,7 +264,7 @@ let spFillChosen = null;
  * decision — "this is what my tills look like" — and the page now draws them
  * as one.
  */
-let spDefaults = { home: null, top: null, bottom: null };
+let spDefaults = { home: null, top: null, bottom: null, payTop: null, payBottom: null };
 
 /**
  * The venue's modifier questions, for the keys that ask one.
@@ -862,7 +883,7 @@ async function spRemoveFont(slug) {
   const font = spFonts.find((f) => f.slug === slug);
   if (!font) return;
   if (
-    !confirm(
+    !await confirmDialog(
       `Remove ${font.family}? Any key lettered in it goes back to your tills’ ` +
         'font. Nothing else changes.'
     )
@@ -872,7 +893,7 @@ async function spRemoveFont(slug) {
   try {
     await api(`/fonts/${encodeURIComponent(slug)}`, { method: 'DELETE' });
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'error');
     return;
   }
   if (spTillFont === slug) spTillFont = null;
@@ -920,7 +941,7 @@ async function spSetTillFont(slug) {
     spTillFont = was;
     spRenderFontsCard();
     spRenderGrid();
-    alert(err.message);
+    toast(err.message, 'error');
   }
 }
 
@@ -1196,6 +1217,10 @@ async function loadScreens() {
     home: settings.home_screen_id ?? null,
     top: settings.top_bar_screen_id ?? null,
     bottom: settings.bottom_bar_screen_id ?? null,
+    // Undefined on a server that has not run schema_till_pay_bars.sql, which
+    // reads as null — the payment screen's built-in bars.
+    payTop: settings.pay_top_bar_screen_id ?? null,
+    payBottom: settings.pay_bottom_bar_screen_id ?? null,
   };
   spTillFont = settings.font_family ?? null;
   spProductOptionsSig = '';
@@ -1792,6 +1817,156 @@ function spPasteClipboard() {
 }
 
 /**
+ * Copy the selected keys onto other pages.
+ *
+ * "Ability to copy products / functions from one page to multiple other pages
+ * using a checkbox for each page and a select all button."
+ *
+ * WHY THIS SAVES FIRST
+ *
+ * The server copies by cell -- it reads the buttons out of the database rather
+ * than trusting a list of them from the browser, because a request that
+ * carried whole button rows could write anything anywhere. So a key that has
+ * been dragged into place and not yet saved does not exist as far as the copy
+ * is concerned. Rather than copying four of the five keys somebody has just
+ * selected, the unsaved page is offered for saving first and the copy runs
+ * after. Refusing outright was the alternative, and "save first" is a step the
+ * dialog can simply take.
+ *
+ * WHAT COMES BACK IS SHOWN
+ *
+ * The server reports what it copied and what it skipped, per page, and every
+ * word of that reaches the manager. A copy that quietly dropped the two keys a
+ * bar would not accept is a manager who believes their pages match and finds
+ * out at the counter.
+ */
+async function spCopyToPages() {
+  if (!spCurrent) return;
+
+  const chosen = spSelectedButtons();
+  if (!chosen.length) {
+    toast('Select the keys you want to copy first.', 'error');
+    return;
+  }
+
+  const others = spScreens.filter((s) => Number(s.id) !== Number(spCurrent.id));
+  if (!others.length) {
+    toast('There is only one page. Make another to copy onto.', 'error');
+    return;
+  }
+
+  // Saved first, for the reason in the header. Only when there is something
+  // unsaved, so the ordinary case costs nothing.
+  if (spDirty()) {
+    if (!await confirmDialog(
+      'This page has changes that have not been saved. They have to be saved '
+      + 'before they can be copied. Save now and carry on?',
+      { title: 'Save this page first?', confirmLabel: 'Save and copy' }
+    )) return;
+    await spSaveLayout({ quiet: true });
+  }
+
+  const cells = chosen.map((b) => b.row + ':' + b.col);
+
+  /*
+   * Grids and bars in one list, but labelled.
+   *
+   * A bar accepts keys a sale grid does not and the other way round, so
+   * copying across the two is often partly refused -- and that is a useful
+   * thing to be able to do rather than something to prevent. Saying which is
+   * which lets the manager tick knowingly, and the skip report explains
+   * whatever did not fit.
+   */
+  const surfaceLabel = (s) => (
+    s.surface === 'topbar' ? 'top bar'
+      : s.surface === 'bottombar' ? 'bottom bar'
+        : s.surface === 'modifier' ? 'answers' : 'page'
+  );
+
+  const back = document.createElement('div');
+  back.className = 'modal-back';
+  back.innerHTML =
+    '<div class="modal" role="dialog" aria-modal="true">'
+    + '<h3>Copy ' + chosen.length + ' key' + (chosen.length === 1 ? '' : 's')
+    + ' to other pages</h3>'
+    + '<p class="muted small">Each key keeps its place where that cell is free, '
+    + 'and drops into the first free cell where it is not. Nothing is ever '
+    + 'written over, and a key already on a page is left alone.</p>'
+    + '<label class="check" style="margin:10px 0">'
+    + '<input type="checkbox" id="sp-copy-all"><span><b>Select all</b></span></label>'
+    + '<div id="sp-copy-list" class="sp-copy-list">'
+    + others.map((s) =>
+      '<label class="check"><input type="checkbox" class="sp-copy-target" value="'
+      + s.id + '"><span>' + spEsc(s.name)
+      + ' <span class="muted small">\u2014 ' + surfaceLabel(s) + '</span></span></label>'
+    ).join('')
+    + '</div>'
+    + '<div id="sp-copy-report" class="sp-copy-report" hidden></div>'
+    + '<div class="modal-actions">'
+    + '<button type="button" class="btn ghost" data-close>Close</button>'
+    + '<button type="button" class="btn primary" data-go>Copy</button>'
+    + '</div></div>';
+  document.body.appendChild(back);
+  requestAnimationFrame(() => back.classList.add('in'));
+
+  const close = () => {
+    back.classList.remove('in');
+    setTimeout(() => back.remove(), 220);
+    document.removeEventListener('keydown', onKey);
+  };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  back.onclick = (e) => { if (e.target === back) close(); };
+  back.querySelector('[data-close]').onclick = close;
+
+  const boxes = () => [...back.querySelectorAll('.sp-copy-target')];
+  back.querySelector('#sp-copy-all').onchange = (e) => {
+    boxes().forEach((b) => { b.checked = e.target.checked; });
+  };
+
+  back.querySelector('[data-go]').onclick = async (e) => {
+    const targets = boxes().filter((b) => b.checked).map((b) => Number(b.value));
+    if (!targets.length) {
+      toast('Tick at least one page.', 'error');
+      return;
+    }
+    const button = e.target;
+    button.disabled = true;
+    try {
+      const res = await api('/screens/' + spCurrent.id + '/buttons/copy', {
+        method: 'POST',
+        body: JSON.stringify({ cells, target_screen_ids: targets }),
+      });
+
+      // Every page's answer, in full. The skips are the point: they are the
+      // difference between a copy that worked and one that looked like it did.
+      const report = back.querySelector('#sp-copy-report');
+      report.hidden = false;
+      report.innerHTML = (res.results || []).map((r) =>
+        '<div class="sp-copy-row"><b>' + spEsc(r.name) + '</b> \u2014 '
+        + r.copied.length + ' copied'
+        + (r.skipped.length
+          ? '<ul class="muted small">' + r.skipped.map((s) =>
+            '<li>' + spEsc(s.label) + ': ' + spEsc(s.reason) + '</li>').join('') + '</ul>'
+          : '')
+        + '</div>'
+      ).join('');
+
+      const total = (res.results || []).reduce((n, r) => n + r.copied.length, 0);
+      toast(total + ' key' + (total === 1 ? '' : 's') + ' copied.', 'ok');
+      // The pages themselves have changed underneath the editor's copy of
+      // them, so re-read rather than leaving a list that disagrees with the
+      // database about what is on every other page.
+      await loadScreens();
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      button.disabled = false;
+    }
+  };
+}
+
+/**
  * Resize the grid, in hand rather than on the server.
  *
  * This used to PUT immediately and reload, which threw away every unsaved
@@ -1799,7 +1974,10 @@ function spPasteClipboard() {
  * the twenty minutes went with it. Now it is an edit like any other: undoable,
  * and saved with the rest.
  */
-function spResizeGrid(rows, cols) {
+// Async because the "these buttons will be removed" question is now an in-page
+// dialog rather than window.confirm — see the note on confirmDialog in app.js.
+// Its only caller is a change listener that ignores the return value.
+async function spResizeGrid(rows, cols) {
   if (!spCurrent) return;
   const max = spLimits(spCurrentSurface());
   const wanted = {
@@ -1813,7 +1991,7 @@ function spResizeGrid(rows, cols) {
   );
   if (
     lost.length &&
-    !confirm(
+    !await confirmDialog(
       `${lost.length} button${lost.length === 1 ? '' : 's'} fall outside a ` +
         `${wanted.rows} × ${wanted.cols} grid and will be removed. Continue?`
     )
@@ -1861,6 +2039,7 @@ function spRenderChrome() {
   for (const id of [
     'sp-rename',
     'sp-duplicate',
+    'sp-copy-to',
     'sp-delete',
     'sp-save',
     'sp-revert',
@@ -2152,6 +2331,16 @@ function spRenderDefaults() {
     spDefaults.bottom,
     'Built-in — Void, Cancel … Pay'
   );
+  $('sp-def-pay-top').innerHTML = spLayoutOptions(
+    'topbar',
+    spDefaults.payTop,
+    'Built-in — table, covers, Void, Cancel'
+  );
+  $('sp-def-pay-bottom').innerHTML = spLayoutOptions(
+    'bottombar',
+    spDefaults.payBottom,
+    'Built-in — none'
+  );
 
   const named = (surface, fallback) => {
     const id = spDefaultFor(surface);
@@ -2173,12 +2362,17 @@ function spRenderDefaults() {
     el.classList.toggle('editing', surface === spSurface);
   }
 
-  const set = SP_SURFACES.filter(([k]) => spDefaultFor(k) != null).length;
+  // Counted over the slots, not the surfaces. There are five settings on this
+  // card now — the sale screen's three and the payment screen's two — and two
+  // of them are topbar layouts, so counting by surface would say "3" for ever.
+  const slots = Object.keys(SP_DEFAULT_FIELDS);
+  const set = slots.filter((slot) => spDefaults[slot] != null).length;
   const flag = $('sp-defaults-state');
   flag.hidden = set === 0;
   flag.className = 'sp-flag ok';
-  flag.textContent =
-    set === 3 ? 'All three are yours' : `${set} of 3 set to your own`;
+  flag.textContent = set === slots.length
+    ? 'All of it is yours'
+    : `${set} of ${slots.length} set to your own`;
 }
 
 /**
@@ -3560,13 +3754,15 @@ function spBind() {
   }
 
   // ---- What the tills wear ----
-  for (const [id, surface] of [
-    ['sp-def-home', 'sale'],
-    ['sp-def-top', 'topbar'],
-    ['sp-def-bottom', 'bottombar'],
+  for (const [id, slot] of [
+    ['sp-def-home', 'home'],
+    ['sp-def-top', 'top'],
+    ['sp-def-bottom', 'bottom'],
+    ['sp-def-pay-top', 'payTop'],
+    ['sp-def-pay-bottom', 'payBottom'],
   ]) {
     $(id).addEventListener('change', (e) =>
-      spSetDefault(surface, e.target.value ? Number(e.target.value) : null)
+      spSetDefault(slot, e.target.value ? Number(e.target.value) : null)
     );
   }
 
@@ -3593,6 +3789,7 @@ function spBind() {
   $('sp-new').addEventListener('click', spNewScreen);
   $('sp-rename').addEventListener('click', spRenameScreen);
   $('sp-duplicate').addEventListener('click', spDuplicateScreen);
+  $('sp-copy-to').addEventListener('click', spCopyToPages);
   $('sp-delete').addEventListener('click', spDeleteScreen);
   // The manual key. Also the way back for anybody who chose the tab: pressing
   // it says they want the window after all, so the preference goes with it.
@@ -3626,8 +3823,8 @@ function spBind() {
   $('sp-redo').addEventListener('click', spRedo);
   $('sp-up').addEventListener('click', () => spReorder(-1));
   $('sp-down').addEventListener('click', () => spReorder(1));
-  $('sp-revert').addEventListener('click', () => {
-    if (spDirty() && !confirm('Throw away the changes on this screen?')) return;
+  $('sp-revert').addEventListener('click', async () => {
+    if (spDirty() && !await confirmDialog('Throw away the changes on this screen?')) return;
     spSelect(spCurrent ? spCurrent.id : null);
     spRenderChrome();
   });
@@ -4075,13 +4272,13 @@ function spAsk(title, message, choices) {
       root.innerHTML = '';
       resolve(value);
     };
-    const onKey = (e) => {
+    const onKey = async (e) => {
       if (e.key !== 'Escape') return;
       e.preventDefault();
       e.stopPropagation();
       done('cancel');
     };
-    const onClick = (e) => {
+    const onClick = async (e) => {
       const key = e.target.closest('[data-choice]');
       if (key) return done(key.dataset.choice);
       if (e.target.classList.contains('modal-back')) done('cancel');
@@ -4096,9 +4293,9 @@ function spAsk(title, message, choices) {
 /**
  * Ask before unsaved work is left behind. Resolves true to go ahead.
  *
- * A drawn modal, not `confirm()`, and that is the whole of a reported bug:
+ * A drawn modal, not `await confirmDialog()`, and that is the whole of a reported bug:
  * Chrome offers "prevent this page from creating additional dialogs" on the
- * second native dialog in a row, and once it is ticked every `confirm()` on the
+ * second native dialog in a row, and once it is ticked every `await confirmDialog()` on the
  * page returns **false** without drawing anything. This guard reads that as
  * "stay put", the picker is re-rendered back to the screen already open, and
  * the editor silently refuses to change page — which is exactly what "swapping
@@ -4146,7 +4343,7 @@ async function spGuardUnsaved() {
  * The same trap the kitchen editors were rewritten out of: Chrome offers "stop
  * showing dialogs" on the *second* dialog in a row, so a chained
  * prompt-then-confirm returns null from everything after it. The function bails
- * at its first null check and does nothing, and the alert() that would have
+ * at its first null check and does nothing, and the toast() that would have
  * explained is suppressed by the same tick box. One form, one submit.
  */
 async function spNewScreen() {
@@ -4238,7 +4435,7 @@ function spRenameScreen() {
  */
 async function spDuplicateScreen() {
   if (!spCurrent) return;
-  if (spDirty() && !confirm('Save this screen first, then copy it?')) return;
+  if (spDirty() && !await confirmDialog('Save this screen first, then copy it?')) return;
   if (spDirty()) await spSaveLayout({ quiet: true });
 
   // Unique on this surface, which is what the database's key is: (office,
@@ -4261,7 +4458,7 @@ async function spDuplicateScreen() {
     spSavedShape = spShape(created);
     await loadScreens();
   } catch (e) {
-    alert(e.message);
+    toast(e.message, 'error');
   }
 }
 
@@ -4287,14 +4484,14 @@ async function spReorder(direction) {
     }
     await loadScreens();
   } catch (e) {
-    alert(e.message);
+    toast(e.message, 'error');
   }
 }
 
 async function spDeleteScreen() {
   if (!spCurrent) return;
   if (
-    !confirm(
+    !await confirmDialog(
       `Delete "${spCurrent.name}"?\n\n` +
         (spIsBar(spCurrentSurface())
           ? 'Any till or screen wearing it goes back to the built-in bar.'
@@ -4310,14 +4507,15 @@ async function spDeleteScreen() {
     spSavedShape = '';
     await loadScreens();
   } catch (e) {
-    alert(e.message);
+    toast(e.message, 'error');
   }
 }
 
 /** The tick box beside the screen picker: "my tills wear this one". */
 async function spSetHome(e) {
   if (!spCurrent) return;
-  await spSetDefault(spCurrentSurface(), e.target.checked ? spCurrent.id : null);
+  const slot = { topbar: 'top', bottombar: 'bottom' }[spCurrentSurface()] || 'home';
+  await spSetDefault(slot, e.target.checked ? spCurrent.id : null);
 }
 
 /**
@@ -4328,24 +4526,29 @@ async function spSetHome(e) {
  * asked to un-set their home screen — and it is the one setting on this page
  * that every till in the building acts on.
  */
-async function spSetDefault(surface, id) {
-  const field =
-    surface === 'topbar'
-      ? 'topBarScreenId'
-      : surface === 'bottombar'
-        ? 'bottomBarScreenId'
-        : 'homeScreenId';
+/** Which request field each slot writes. Keyed by slot, not by surface: two
+ *  slots are 'topbar' layouts now, and keying by surface would make the sale
+ *  screen's top bar and the payment screen's the same setting. */
+const SP_DEFAULT_FIELDS = {
+  home: 'homeScreenId',
+  top: 'topBarScreenId',
+  bottom: 'bottomBarScreenId',
+  payTop: 'payTopBarScreenId',
+  payBottom: 'payBottomBarScreenId',
+};
+
+async function spSetDefault(slot, id) {
+  const field = SP_DEFAULT_FIELDS[slot];
+  if (!field) return;
   try {
     await api('/screens/defaults', {
       method: 'PUT',
       body: JSON.stringify({ [field]: id }),
     });
-    if (surface === 'topbar') spDefaults.top = id;
-    else if (surface === 'bottombar') spDefaults.bottom = id;
-    else spDefaults.home = id;
+    spDefaults[slot] = id;
     spRenderChrome();
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'error');
     spRenderChrome();
   }
 }
@@ -4369,7 +4572,7 @@ async function spSetScreenBar(field, id) {
     if (stored) stored[field] = id;
     spRenderChrome();
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'error');
     spRenderChrome();
   }
 }
@@ -4411,7 +4614,7 @@ async function spUploadKeyImage(e) {
     if (!spGallery.includes(body.url)) spGallery.unshift(body.url);
     spRenderInspector();
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'error');
   } finally {
     button.disabled = false;
     button.textContent = was;
@@ -4429,7 +4632,7 @@ async function spUploadKeyImage(e) {
  * for the bottom, and _OpenOrdersBar for the top. They are a starting point,
  * not a contract — a venue is expected to change them, which is the point.
  */
-function spLayOutBuiltInBar() {
+async function spLayOutBuiltInBar() {
   if (!spCurrent || !spIsBar(spCurrentSurface())) return;
   const top = spCurrentSurface() === 'topbar';
 
@@ -4460,7 +4663,7 @@ function spLayOutBuiltInBar() {
       'this bar is replaced.'
     : 'This lays in the bottom bar your tills show today, key for key, ending with a ' +
       'wide green Pay.\n\nAnything already on this bar is replaced.';
-  if (spCurrent.buttons.length && !confirm(message)) return;
+  if (spCurrent.buttons.length && !await confirmDialog(message)) return;
 
   spEdit(() => {
     spCurrent.rows = 1;
@@ -4519,7 +4722,7 @@ async function spSaveLayout({ quiet = false } = {}) {
     }
     await loadScreens();
   } catch (e) {
-    alert(e.message);
+    toast(e.message, 'error');
   } finally {
     button.disabled = false;
   }
@@ -4535,7 +4738,7 @@ async function spSaveLayout({ quiet = false } = {}) {
  */
 async function spFillFromDepartment() {
   if (!spCurrent || !spSelection.size) {
-    alert('Select some buttons on the left first.');
+    toast('Select some buttons on the left first.');
     return;
   }
 
@@ -4546,11 +4749,12 @@ async function spFillFromDepartment() {
     // Two different answers, because they need two different actions: an empty
     // shelf is a catalogue problem and an empty tick list is one press away
     // from being fixed.
-    alert(
+    toast(
       scope.length
         ? `Nothing in ${where} is ticked. Tick the products you want laid out, ` +
             'or press All.'
-        : `There are no products in ${where}.`
+        : `There are no products in ${where}.`,
+      'warn'
     );
     return;
   }
@@ -4561,7 +4765,7 @@ async function spFillFromDepartment() {
 
   // One question, not two, and drawn rather than asked of the browser.
   //
-  // This used to be a pair of confirm() calls back to back — replacing
+  // This used to be a pair of await confirmDialog() calls back to back — replacing
   // programmed keys, then not enough room — which is exactly the chain Chrome
   // offers "prevent this page from creating additional dialogs" on. Once
   // ticked, the second returned false without drawing anything and the fill

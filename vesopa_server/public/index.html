@@ -4,7 +4,26 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Vesopa EPOS — Back Office</title>
-    <link rel="icon" href="/assets/favicon.png" />
+    <meta name="description" content="Vesopa EPOS back office: catalogue, programming, floor plans, dine-in menus and reports." />
+    <!-- The back office is signed-in and has nothing to say to a crawler. -->
+    <meta name="robots" content="noindex,nofollow" />
+    <!-- Kept in step with the chosen theme by applyTheme() in app.js, so the
+         browser chrome on a phone matches the page rather than staying lime. -->
+    <meta name="theme-color" content="#A5C715" id="theme-colour" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="color-scheme" content="light dark" />
+
+    <!-- The mark, not the wordmark.
+         `vesopa_logo.png` is 900x130. As an icon a browser squashes it into a
+         square, which turns eleven letters into an illegible smear — and it is
+         what the tab, the home-screen shortcut and the bookmark were all
+         showing. `favicon.png` is the 512x512 mark and is the only one of the
+         two that is an icon. -->
+    <link rel="icon" type="image/png" sizes="512x512" href="/assets/favicon.png" />
+    <link rel="icon" type="image/x-icon" href="/assets/favicon.ico" />
+    <link rel="apple-touch-icon" href="/assets/favicon.png" />
+    <meta name="apple-mobile-web-app-title" content="Vesopa" />
+
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
@@ -13,22 +32,74 @@
          wordmark appears exactly once (above the form) — the stage carries the
          cropped product shot, which has no lockup baked into it, so the two
          never compete. -->
+    <!-- The same corner control the signed-in application has. Somebody who
+         works nights sets this once, and being made to sign in on a white page
+         first is the one moment it matters most. -->
+    <div class="theme-corner" id="theme-corner-login">
+      <button type="button" class="theme-btn" data-theme-toggle
+              aria-haspopup="true" aria-expanded="false" aria-label="Appearance">
+        <svg class="ic-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2" /><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.2 5.2l1.6 1.6M17.2 17.2l1.6 1.6M18.8 5.2l-1.6 1.6M6.8 17.2l-1.6 1.6" /></svg>
+        <svg class="ic-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.2A8.2 8.2 0 0 1 9.8 4a8.4 8.4 0 1 0 10.2 10.2z" /></svg>
+        <svg class="ic-auto" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.4" /><path d="M12 3.6v16.8a8.4 8.4 0 0 0 0-16.8z" fill="currentColor" stroke="none" /></svg>
+      </button>
+      <div class="theme-menu" role="menu" hidden>
+        <button type="button" data-theme-set="light" role="menuitemradio" aria-checked="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2" /><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.2 5.2l1.6 1.6M17.2 17.2l1.6 1.6M18.8 5.2l-1.6 1.6M6.8 17.2l-1.6 1.6" /></svg>
+          <span>Day</span>
+        </button>
+        <button type="button" data-theme-set="dark" role="menuitemradio" aria-checked="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.2A8.2 8.2 0 0 1 9.8 4a8.4 8.4 0 1 0 10.2 10.2z" /></svg>
+          <span>Night</span>
+        </button>
+        <button type="button" data-theme-set="system" role="menuitemradio" aria-checked="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.4" /><path d="M12 3.6v16.8a8.4 8.4 0 0 0 0-16.8z" fill="currentColor" stroke="none" /></svg>
+          <span>Auto</span>
+        </button>
+      </div>
+    </div>
+
     <div id="login" class="login-wrap">
       <div class="login-side">
         <form id="login-form" class="login-card" novalidate>
-          <img src="/assets/vesopa_logo.png" alt="Vesopa" class="login-logo" />
+          <img src="/assets/vesopa_logo.png" alt="Vesopa"
+               class="login-logo lockup-light" />
+          <img src="/assets/vesopa_logo_on_dark.png" alt="Vesopa"
+               class="login-logo lockup-dark" />
 
           <h1>Sign in to Back Office</h1>
           <p class="login-sub">Manage your tills, catalogue and reporting.</p>
 
-          <div class="field">
+          <!-- CONTINUE WITH VESOPA — the first thing on the page, and with
+               "Vesopa only" on, the only thing.
+
+               Hidden until the server says the feature is live, because this
+               file is read into a constant at start-up and the flag lives in
+               the environment. A button that leads nowhere is worse than no
+               button: somebody picks the option that looks most official and is
+               told it went wrong, which teaches them the whole product is
+               unreliable. -->
+          <div id="vesopa-sso" hidden>
+            <a class="btn primary block sso-btn" id="vesopa-sso-link"
+               href="/auth/vesopa/start">
+              <img src="/assets/vesopa_mark.svg" alt="" width="20" height="20"
+                   class="sso-mark" />
+              <span id="vesopa-sso-word">Continue with Vesopa</span>
+            </a>
+            <a id="vesopa-sso-other" class="login-other" href="/auth/vesopa/start?switch=1" hidden>Use another account</a>
+          </div>
+
+          <!-- The rule between the two ways in. Shown only while BOTH are on
+               the page: with "Vesopa only" there is nothing to separate. -->
+          <div id="vesopa-or" class="login-or" hidden><span>or</span></div>
+
+          <div class="field" data-local-auth>
             <label for="email">Email</label>
             <input type="email" id="email" required autocomplete="username"
                    autocapitalize="off" spellcheck="false"
                    placeholder="you@company.com" />
           </div>
 
-          <div class="field">
+          <div class="field" data-local-auth>
             <label for="password">Password</label>
             <div class="field-pw">
               <input type="password" id="password" required minlength="4"
@@ -38,7 +109,7 @@
             </div>
           </div>
 
-          <div class="login-row">
+          <div class="login-row" data-local-auth>
             <label class="check" for="remember">
               <input type="checkbox" id="remember" checked />
               Keep me signed in
@@ -50,20 +121,35 @@
 
           <p id="login-note" class="login-hint" hidden></p>
 
-          <button class="btn primary block" type="submit">Sign in</button>
+          <button class="btn primary block" type="submit" data-local-auth>Sign in</button>
           <p id="login-error" class="error" role="alert" aria-live="polite"></p>
 
-          <p class="login-foot">
+
+          <!-- Marked as local auth so it goes with the password form.
+               "Don't have an account?" is a question for a prospect, and with
+               Vesopa as the only way in the person reading this page is a
+               member of a venue's staff whose manager adds them in Staff. An
+               invitation to sign up, on a door that cannot be signed up
+               through, is the sort of promise this product does not make. -->
+          <p class="login-foot" data-local-auth>
             Don't have an account?
             <a href="https://vesopaepos.com/#try-vesopa" target="_blank"
                rel="noopener">Request a demo</a>
+          </p>
+          <!-- What replaces it, and it is the true answer: there is no
+               self-registration anywhere in this platform. -->
+          <p class="login-foot" data-vesopa-only hidden>
+            Staff are added by your manager under <strong>Staff</strong>.
           </p>
         </form>
 
         <!-- Step 2: ask for the link. Swapped in place of the sign-in form so
              the column never changes width or jumps. -->
         <form id="forgot-form" class="login-card" hidden novalidate>
-          <img src="/assets/vesopa_logo.png" alt="Vesopa" class="login-logo" />
+          <img src="/assets/vesopa_logo.png" alt="Vesopa"
+               class="login-logo lockup-light" />
+          <img src="/assets/vesopa_logo_on_dark.png" alt="Vesopa"
+               class="login-logo lockup-dark" />
 
           <h1>Reset your password</h1>
           <p class="login-sub">
@@ -92,7 +178,10 @@
 
         <!-- Step 3: shown when the page is opened as /reset?token=… -->
         <form id="reset-form" class="login-card" hidden novalidate>
-          <img src="/assets/vesopa_logo.png" alt="Vesopa" class="login-logo" />
+          <img src="/assets/vesopa_logo.png" alt="Vesopa"
+               class="login-logo lockup-light" />
+          <img src="/assets/vesopa_logo_on_dark.png" alt="Vesopa"
+               class="login-logo lockup-dark" />
 
           <h1>Choose a new password</h1>
           <p class="login-sub" id="reset-sub">
@@ -155,8 +244,14 @@
                 aria-label="Open menu" aria-expanded="false" aria-controls="rail">
           <span class="rail-toggle-bars" aria-hidden="true"></span>
         </button>
-        <!-- Reversed lockup: the top bar is the same near-black as the rail. -->
-        <img src="/assets/vesopa_logo_on_dark.png" alt="Vesopa" class="topbar-logo" />
+        <!-- Two lockups, one per theme. The white wordmark is invisible on a
+             white bar, and Day mode now reaches this bar. CSS picks; doing it
+             in JavaScript would miss the "Auto" case where the system changes
+             under a running page. -->
+        <img src="/assets/vesopa_logo_on_dark.png" alt="Vesopa"
+             class="topbar-logo lockup-dark" />
+        <img src="/assets/vesopa_logo.png" alt="Vesopa"
+             class="topbar-logo lockup-light" />
         <span id="live-dot-m" class="dot offline" title="Realtime connection"></span>
       </header>
       <div id="rail-scrim" class="rail-scrim" hidden></div>
@@ -166,16 +261,51 @@
           <!-- The on-dark lockup, not a filtered copy of the light one:
                brightness(0) invert(1) flattens the lime tail to white and
                throws the brand accent away. -->
-          <img src="/assets/vesopa_logo_on_dark.png" alt="Vesopa" class="brand-logo" />
+          <img src="/assets/vesopa_logo_on_dark.png" alt="Vesopa"
+               class="brand-logo lockup-dark" />
+          <img src="/assets/vesopa_logo.png" alt="Vesopa"
+               class="brand-logo lockup-light" />
+        </div>
+
+        <!-- Every section starts folded, which is what the venue asked for and
+             is right for a menu this long. This is what it costs and how that
+             is paid back: type a word and every matching page appears wherever
+             it lives, so nobody has to remember that Timesheets is filed under
+             Reports before they can reach it. -->
+        <!-- Which site this session is managing. Shown only to a login with
+             more than one site; see src/sites.js. -->
+        <div class="site-switch" id="site-switch" hidden>
+          <label for="site-select">Site</label>
+          <select id="site-select" aria-label="Which site you are managing"></select>
+        </div>
+
+        <!-- In the rail, so it is on every page rather than on the one page
+             somebody happens to open. The worst outcome this whole feature has
+             is a manager believing they are practising while they are trading,
+             or reading practice takings as the day's. See src/demo_venue.js. -->
+        <div class="demo-banner" id="demo-banner" hidden role="status">
+          <strong>Practice venue</strong>
+          <span>Nothing here is real. These sales, customers and reports are training only.</span>
+          <button type="button" class="btn small" id="demo-leave">Back to the live venue</button>
+        </div>
+
+        <div class="rail-find">
+          <svg class="rail-find-icon" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-3.5-3.5" />
+          </svg>
+          <input id="rail-find" type="search" placeholder="Find a page"
+                 autocomplete="off" aria-label="Find a page in the menu" />
         </div>
 
         <nav>
           <button class="nav active" data-view="dashboard">Dashboard</button>
 
           <button class="nav-group" data-group="reports">Reports<span class="caret">▼</span></button>
-          <button class="nav" data-view="run_report">Financial Summary</button>
-          <button class="nav" data-view="report_schedules">Scheduled reports</button>
-          <button class="nav" data-view="report">Report</button>
+          <button class="nav" data-view="run_report">Reports</button>
+          <button class="nav" data-view="report_schedules">Scheduled Reports</button>
+          <button class="nav" data-view="report">Sales Overview</button>
           <button class="nav" data-view="sales_explorer">Sales Explorer</button>
           <button class="nav" data-view="till_report">Till Report</button>
           <button class="nav" data-view="bill_report">Bill Report</button>
@@ -183,68 +313,143 @@
 
           <button class="nav-group" data-group="catalogue">Catalogue<span class="caret">▼</span></button>
           <button class="nav" data-view="products">Products</button>
-          <button class="nav" data-view="stock">Stock</button>
+
+          <button class="nav-group" data-group="stock">Stock Control<span class="caret">▼</span></button>
+          <button class="nav" data-view="stock">Stock Levels</button>
+          <button class="nav" data-view="stock_orders">Orders &amp; Deliveries</button>
+          <button class="nav" data-view="stock_wastage">Wastage</button>
+          <button class="nav" data-view="stock_adjustments">Adjustments</button>
+          <button class="nav" data-view="stock_takes">Stock Takes</button>
+          <button class="nav" data-view="stock_spot_checks">Spot Checks</button>
+          <button class="nav" data-view="stock_suppliers">Suppliers</button>
+          <button class="nav" data-view="stock_pack_sizes">Pack Sizes</button>
 
           <button class="nav-group" data-group="programming">Programming<span class="caret">▼</span></button>
-          <button class="nav" data-view="screens">Screen programming</button>
+          <button class="nav" data-view="screens">Screen Programming</button>
+          <button class="nav" data-view="price_levels">Price Levels</button>
           <button class="nav" data-view="program_departments">Departments</button>
           <button class="nav" data-view="program_groups">Sub Departments</button>
+          <button class="nav" data-view="printer_categories">Printer Categories</button>
           <button class="nav" data-view="import">Import</button>
           <button class="nav" data-view="modifiers">Modifiers</button>
           <button class="nav" data-view="mix_match">Mix &amp; Match</button>
           <button class="nav" data-view="finalise_keys">Finalise Keys</button>
           <button class="nav" data-view="error_reasons">Error Reasons</button>
           <button class="nav" data-view="tax">Tax</button>
-          <button class="nav" data-view="idle">Till &amp; printers</button>
-          <button class="nav" data-view="kitchen">Kitchen screens</button>
+          <button class="nav" data-view="idle">Till &amp; Printers</button>
+          <button class="nav" data-view="kitchen">Kitchen Screens</button>
           <button class="nav" data-view="devices">Devices</button>
 
           <button class="nav-group" data-group="floor">Floor<span class="caret">▼</span></button>
           <button class="nav" data-view="tables">Table Designer</button>
 
+          <button class="nav-group" data-group="dinein">Dine-in &amp; QR<span class="caret">▼</span></button>
+          <button class="nav" data-view="dinein">Your Menu Page</button>
+          <button class="nav" data-view="dinein_menu">Menu</button>
+          <button class="nav" data-view="dinein_qr">Table Codes</button>
+          <button class="nav" data-view="dinein_orders">Online Orders</button>
+          <button class="nav" data-view="express">Vesopa Express</button>
+
           <button class="nav-group" data-group="people">People<span class="caret">▼</span></button>
           <button class="nav" data-view="users">Back Office Users</button>
+          <button class="nav" data-view="user_roles">Back Office User Roles</button>
           <button class="nav" data-view="staff">Staff</button>
+          <button class="nav" data-view="permission_groups">Staff Permissions</button>
           <button class="nav" data-view="customers">Customers</button>
+          <button class="nav" data-view="gym" id="nav-gym">Gym</button>
           <button class="nav" data-view="vouchers">Vouchers</button>
-          <button class="nav" data-view="receipt_designer">Receipt designer</button>
+          <button class="nav" data-view="receipt_designer">Receipt Designer</button>
 
           <button class="nav-group" data-group="commerce">Commerce<span class="caret">▼</span></button>
           <button class="nav" data-view="promotions">Promotions</button>
-          <button class="nav" data-view="gift_cards">Gift cards</button>
+          <button class="nav" data-view="gift_cards">Gift Cards</button>
           <button class="nav" data-view="deposits">Deposits</button>
           <button class="nav" data-view="loyalty">Loyalty</button>
           <button class="nav" data-view="cards">Cards</button>
-          <button class="nav" data-view="wallet">Wallet passes</button>
-          <button class="nav" data-view="tender">Tender &amp; gratuity</button>
-          <button class="nav" data-view="rules">Automation rules</button>
+          <button class="nav" data-view="wallet">Wallet Passes</button>
+          <button class="nav" data-view="loyalty_app">Loyalty App</button>
+          <button class="nav" data-view="tender">Tender &amp; Gratuity</button>
+          <button class="nav" data-view="rules">Automation Rules</button>
 
           <div id="admin-group" hidden>
             <button class="nav-group" data-group="administration">Administration<span class="caret">▼</span></button>
             <button class="nav" data-view="offices">Offices</button>
+            <button class="nav" data-view="licences">Licences &amp; pricing</button>
             <button class="nav" data-view="billing">Billing</button>
             <button class="nav" data-view="templates">Templates</button>
             <button class="nav" data-view="subscriptions">Subscriptions</button>
           </div>
         </nav>
 
+        <span id="role-badge" hidden></span>
+
+        <!-- Folding the rail. Desktop only: below 960px the rail is already a
+             drawer, and a fold button inside a drawer is a control for making
+             a thing you just opened smaller. -->
+        <button id="rail-fold" class="rail-fold" type="button"
+                aria-label="Collapse the menu" aria-expanded="true"
+                title="Collapse the menu">
+          <svg viewBox="0 0 24 24" aria-hidden="true" class="rail-fold-icon">
+            <path d="m14 7-5 5 5 5" />
+          </svg>
+          <span class="rail-fold-word">Hide menu</span>
+        </button>
+
         <div class="rail-foot">
           <span id="live-dot" class="dot offline" title="Realtime connection"></span>
           <span id="live-text" class="small">connecting…</span>
+          <button id="switch-account" class="link" hidden>Switch account</button>
           <button id="logout" class="link">Sign out</button>
         </div>
 
-        <!-- Day or Night. An office and a bar are not the same room, so the
-             choice is the manager's and it is remembered on this computer;
-             leaving it alone follows whatever the machine is set to. -->
-        <div class="rail-theme">
-          <div class="theme-switch" role="group" aria-label="Appearance">
-            <button type="button" data-theme-set="light" aria-pressed="false">Day</button>
-            <button type="button" data-theme-set="dark" aria-pressed="false">Night</button>
-            <button type="button" data-theme-set="system" aria-pressed="false">Auto</button>
-          </div>
-        </div>
       </aside>
+
+      <!-- Brings the rail back once it has been folded away. Only rendered
+           into view when it is: see .rail-show in the stylesheet. -->
+      <button type="button" id="rail-show" class="rail-show"
+              aria-label="Show the menu" aria-expanded="false" title="Show the menu">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 7h16M4 12h16M4 17h16" />
+        </svg>
+      </button>
+
+      <!-- Day or Night, in the top right corner where every application on
+           this manager's machine puts it. An office and a bar are not the same
+           room, so the choice is theirs and it is remembered on this computer;
+           leaving it on Auto follows the machine.
+
+           Outside the rail, because the rail folds and this must not fold with
+           it, and outside <main>, because main scrolls and this must not. -->
+      <div class="theme-corner" id="theme-corner">
+        <button type="button" id="theme-btn" class="theme-btn"
+                aria-haspopup="true" aria-expanded="false" aria-label="Appearance">
+          <svg class="ic-sun" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="4.2" />
+            <path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.2 5.2l1.6 1.6M17.2 17.2l1.6 1.6M18.8 5.2l-1.6 1.6M6.8 17.2l-1.6 1.6" />
+          </svg>
+          <svg class="ic-moon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M20 14.2A8.2 8.2 0 0 1 9.8 4a8.4 8.4 0 1 0 10.2 10.2z" />
+          </svg>
+          <svg class="ic-auto" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="8.4" />
+            <path d="M12 3.6v16.8a8.4 8.4 0 0 0 0-16.8z" fill="currentColor" stroke="none" />
+          </svg>
+        </button>
+        <div class="theme-menu" id="theme-menu" role="menu" hidden>
+          <button type="button" data-theme-set="light" role="menuitemradio" aria-checked="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2" /><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.2 5.2l1.6 1.6M17.2 17.2l1.6 1.6M18.8 5.2l-1.6 1.6M6.8 17.2l-1.6 1.6" /></svg>
+            <span>Day</span>
+          </button>
+          <button type="button" data-theme-set="dark" role="menuitemradio" aria-checked="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.2A8.2 8.2 0 0 1 9.8 4a8.4 8.4 0 1 0 10.2 10.2z" /></svg>
+            <span>Night</span>
+          </button>
+          <button type="button" data-theme-set="system" role="menuitemradio" aria-checked="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.4" /><path d="M12 3.6v16.8a8.4 8.4 0 0 0 0-16.8z" fill="currentColor" stroke="none" /></svg>
+            <span>Auto</span>
+          </button>
+        </div>
+      </div>
 
       <main>
         <!-- Dashboard -->
@@ -260,9 +465,9 @@
                  question really is about the trend. -->
             <div class="seg" id="dash-range">
               <button class="seg-btn active" data-days="1">Today</button>
-              <button class="seg-btn" data-days="7">Last 7 days</button>
-              <button class="seg-btn" data-days="30">Last 30 days</button>
-              <button class="seg-btn" data-days="90">90 days</button>
+              <button class="seg-btn" data-days="7"><span class="seg-long">Last 7 days</span><span class="seg-short">7 days</span></button>
+              <button class="seg-btn" data-days="30"><span class="seg-long">Last 30 days</span><span class="seg-short">30 days</span></button>
+              <button class="seg-btn" data-days="90"><span class="seg-long">Last 90 days</span><span class="seg-short">90 days</span></button>
               <button class="seg-btn" data-days="365">Year</button>
             </div>
             <span class="muted small" id="dash-window"></span>
@@ -299,7 +504,7 @@
 
         <!-- Report -->
         <section id="view-report" class="view" hidden>
-          <div class="page-head"><div><h2>Report</h2><p class="muted small">Your biggest sellers across every closed bill, by group, department, staff member and product.</p></div></div>
+          <div class="page-head"><div><h2>Sales Overview</h2><p class="muted small">Your biggest sellers across every closed bill, by group, department, staff member and product.</p></div></div>
           <div class="grid-2">
             <div class="card panel"><h3>Group Sales Total</h3><div class="bars" id="r-groups"></div></div>
             <div class="card panel"><h3>Department Sales Total</h3><div class="bars" id="r-depts"></div></div>
@@ -314,10 +519,14 @@
         <section id="view-run_report" class="view" hidden>
           <div class="page-head">
             <div>
-              <h2>Financial Summary</h2>
-              <p class="muted small">
-                Sales by department and sub department for any period, with the discounts,
-                payments and spend per head that have to reconcile against them.
+              <!-- Named by the report chosen below, not fixed. This page runs
+                   five of them now, and a heading that always said "Financial
+                   Summary" over a Voids table is a page that looks broken. -->
+              <h2 id="rr-title">Reports</h2>
+              <p class="muted small" id="rr-blurb">
+                Choose a report and a period. Every one can be viewed here,
+                downloaded as a PDF, CSV or spreadsheet, or scheduled to arrive
+                by email.
               </p>
             </div>
           </div>
@@ -331,12 +540,23 @@
                a grid that gives every one of them a whole column; the actions
                sit on their own rule under it and stay together. -->
           <div class="card rd-card">
+            <!-- Thirty-eight reports in four groups. The search box narrows
+                 the picker as you type; the picker itself is grouped. The
+                 fields after Terminal appear only for the reports that take
+                 them -- a clerk, a product, a department, a week, a grouping
+                 -- and the catalogue says which. -->
             <div class="rr-controls">
+              <label>Find a report
+                <input type="search" id="rr-search" placeholder="Type to narrow the list" autocomplete="off">
+              </label>
               <label>Report
                 <select id="rr-report"></select>
               </label>
-              <label>Period
+              <label id="rr-period-field">Period
                 <select id="rr-period"></select>
+              </label>
+              <label id="rr-week-field" hidden>Week starting
+                <input type="date" id="rr-week">
               </label>
               <label>Terminal
                 <select id="rr-terminal"></select>
@@ -346,6 +566,22 @@
               </label>
               <label id="rr-to-field" hidden>To
                 <input type="date" id="rr-to">
+              </label>
+              <label id="rr-clerk-field" hidden>Clerk
+                <select id="rr-clerk"></select>
+              </label>
+              <label id="rr-department-field" hidden>Department
+                <select id="rr-department"></select>
+              </label>
+              <label id="rr-product-field" hidden>Product
+                <input type="text" id="rr-product" list="rr-product-list" placeholder="Name or PLU" autocomplete="off">
+                <datalist id="rr-product-list"></datalist>
+              </label>
+              <label id="rr-groupby-field" hidden>Group by
+                <select id="rr-groupby">
+                  <option value="sub_department">Sub department</option>
+                  <option value="department">Department</option>
+                </select>
               </label>
             </div>
 
@@ -369,7 +605,7 @@
         <section id="view-report_schedules" class="view" hidden>
           <div class="page-head">
             <div>
-              <h2>Scheduled reports</h2>
+              <h2>Scheduled Reports</h2>
               <p class="muted small">
                 A report that runs on a clock and emails itself. Nothing has to be remembered
                 on a Monday morning.
@@ -514,7 +750,7 @@
             <label class="sp-pick">Department
               <select id="prod-dept"></select>
             </label>
-            <button type="button" class="btn ghost small" id="prod-clear">Clear</button>
+            <button type="button" class="btn ghost" id="prod-clear">Clear</button>
             <span class="sp-spacer"></span>
             <span class="muted small" id="prod-count"></span>
             <span class="bulk-bar" id="prod-bulk" hidden>
@@ -543,11 +779,121 @@
         </section>
 
         <!-- Stock -->
+        <!-- Stock Control. Eight pages over one ledger; the code is in
+             stock.js. A product is "tracked" once somebody has counted it,
+             and only tracked products carry a value or a level. -->
         <section id="view-stock" class="view" hidden>
-          <div class="page-head"><div><h2>Stock</h2><p class="muted small">How many of each product remain, and the department it sells under.</p></div></div>
-          <div class="card"><table>
-            <thead><tr><th>PLU</th><th>Product</th><th>Department</th><th class="right">In stock</th></tr></thead>
-            <tbody id="stock"></tbody>
+          <div class="page-head">
+            <div>
+              <h2>Stock Levels</h2>
+              <p class="muted small">
+                What is on the shelf, what it is worth at cost, and the supplier, pack and
+                minimum that let an order be suggested. Book a delivery or set a count from
+                the row; every change is kept in the stock ledger.
+              </p>
+            </div>
+          </div>
+          <div class="rr-tiles" id="sk-tiles"></div>
+          <div class="card rd-card">
+            <div class="rr-controls">
+              <label>Search
+                <input type="search" id="sk-search" placeholder="Product, PLU or supplier" autocomplete="off">
+              </label>
+              <label>Department
+                <select id="sk-dept"></select>
+              </label>
+              <label>Show
+                <select id="sk-level">
+                  <option value="">Everything</option>
+                  <option value="out">Out of stock</option>
+                  <option value="low">Low</option>
+                  <option value="ok">In stock</option>
+                  <option value="untracked">Not tracked</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <div class="card">
+            <div class="rr-scroll">
+              <table class="table" data-no-cards>
+                <thead><tr><th>PLU</th><th>Product</th><th>Supplier</th><th>Pack</th><th class="right">In stock</th><th class="right">Min / Max</th><th class="right">Unit cost</th><th class="right">Value</th><th>Status</th><th></th></tr></thead>
+                <tbody id="sk-levels"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section id="view-stock_orders" class="view" hidden>
+          <div class="page-head">
+            <div><h2 id="sk-title-orders">Orders &amp; Deliveries</h2><p class="muted small" id="sk-blurb-orders">Raise an order in packs, send it to the supplier, and book it in when it arrives. Booking in adds the units to stock and updates what each product cost.</p></div>
+            <div class="sk-head-actions" id="sk-actions-orders"></div>
+          </div>
+          <div id="sk-orders-host"></div>
+        </section>
+
+        <section id="view-stock_wastage" class="view" hidden>
+          <!-- The head is fixed markup; stock.js changes its words and its
+               buttons when a document is opened, and draws the list or the
+               editor in the host below. -->
+          <div class="page-head">
+            <div><h2 id="sk-title-wastage">Wastage</h2><p class="muted small" id="sk-blurb-wastage">What was thrown away, spilled or sent back. Completing a wastage takes the quantity off the shelf and costs it.</p></div>
+            <div class="sk-head-actions" id="sk-actions-wastage"></div>
+          </div>
+          <div id="sk-docs-wastage"></div>
+        </section>
+
+        <section id="view-stock_adjustments" class="view" hidden>
+          <!-- The head is fixed markup; stock.js changes its words and its
+               buttons when a document is opened, and draws the list or the
+               editor in the host below. -->
+          <div class="page-head">
+            <div><h2 id="sk-title-adjustment">Adjustments</h2><p class="muted small" id="sk-blurb-adjustment">A correction that is neither a sale nor a delivery — a box found in the cellar, a miscount put right. Positive adds, negative takes away.</p></div>
+            <div class="sk-head-actions" id="sk-actions-adjustment"></div>
+          </div>
+          <div id="sk-docs-adjustment"></div>
+        </section>
+
+        <section id="view-stock_takes" class="view" hidden>
+          <!-- The head is fixed markup; stock.js changes its words and its
+               buttons when a document is opened, and draws the list or the
+               editor in the host below. -->
+          <div class="page-head">
+            <div><h2 id="sk-title-stocktake">Stock Takes</h2><p class="muted small" id="sk-blurb-stocktake">Count what is on the shelf. Completing a stock take sets each product’s count to what you typed, and the Stock Variance report shows the difference.</p></div>
+            <div class="sk-head-actions" id="sk-actions-stocktake"></div>
+          </div>
+          <div id="sk-docs-stocktake"></div>
+        </section>
+
+        <section id="view-stock_spot_checks" class="view" hidden>
+          <!-- The head is fixed markup; stock.js changes its words and its
+               buttons when a document is opened, and draws the list or the
+               editor in the host below. -->
+          <div class="page-head">
+            <div><h2 id="sk-title-spot_check">Spot Checks</h2><p class="muted small" id="sk-blurb-spot_check">A stock take of a few products. Same rules: what you type becomes the count.</p></div>
+            <div class="sk-head-actions" id="sk-actions-spot_check"></div>
+          </div>
+          <div id="sk-docs-spot_check"></div>
+        </section>
+
+        <section id="view-stock_suppliers" class="view" hidden>
+          <div class="page-head">
+            <div><h2>Suppliers</h2><p class="muted small">Who you buy from. Put each product under its supplier in Stock Levels, and an order can be suggested from what is running low.</p></div>
+            <button class="btn primary" id="sk-add-supplier">Add supplier</button>
+          </div>
+          <div class="card"><table class="table table-cards">
+            <thead><tr><th>Supplier</th><th>Contact</th><th>Phone</th><th>Email</th><th class="right">Products</th><th class="right">Orders</th><th>Status</th><th></th></tr></thead>
+            <tbody id="sk-suppliers"></tbody>
+          </table></div>
+        </section>
+
+        <section id="view-stock_pack_sizes" class="view" hidden>
+          <div class="page-head">
+            <div><h2>Pack Sizes</h2><p class="muted small">How things arrive. A keg is bought as one thing and sold as eighty-eight pints; a case of bottles as twenty-four. Stock is counted in units and ordered in packs.</p></div>
+            <button class="btn primary" id="sk-add-pack">Add pack size</button>
+          </div>
+          <div class="card"><table class="table table-cards">
+            <thead><tr><th>Pack</th><th class="right">Units per pack</th><th></th></tr></thead>
+            <tbody id="sk-packs"></tbody>
           </table></div>
         </section>
 
@@ -561,6 +907,32 @@
         <section id="view-program_groups" class="view" hidden>
           <div class="page-head"><div><h2>Sub Departments</h2><p class="muted small">Drag rows to set the order.</p></div><button class="btn primary" data-add="groups">Add sub department</button></div>
           <div class="card"><table><thead><tr><th class="drag-col"></th><th>Sub Department</th><th>Accounting code</th><th></th></tr></thead><tbody id="groups"></tbody></table></div>
+        </section>
+
+        <!-- Printer categories: what order a kitchen ticket prints in.
+             Deliberately not the department — a department is how the takings
+             are broken down and answers to the accountant, and Wine and
+             Draughts are two of those and one printing group. -->
+        <section id="view-printer_categories" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Printer Categories</h2>
+              <p class="muted small">
+                Group what the kitchen sees, and set the order it prints in — Breakfast, then Mains,
+                then Desserts. Drag the rows to reorder them, then put each product in a category
+                from the product form. A product in no category prints last, under no heading.
+              </p>
+            </div>
+            <button class="btn primary" data-add="print-categories">Add category</button>
+          </div>
+          <div class="card"><table>
+            <thead><tr><th class="drag-col"></th><th>Category</th><th></th></tr></thead>
+            <tbody id="print-categories"></tbody>
+          </table></div>
+          <p class="muted small" style="margin-top:12px">
+            A ticket comes out grouped and in this order, whatever order the items were rung up in:
+            <code>--- BREAKFAST ---</code> and then the breakfasts.
+          </p>
         </section>
 
         <!-- Modifiers -->
@@ -596,8 +968,21 @@
                 An .xlsx workbook. Sheets you leave out are simply not imported — to change
                 only your prices, upload a workbook with just the Products sheet in it.
               </p>
-              <input type="file" id="import-file"
-                     accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+              <!-- A label styled as one of our buttons, with the real input
+                   hidden inside it. The platform's own file control is a grey
+                   button in the platform's font that says "No file chosen" and
+                   never says what was chosen afterwards. -->
+              <div class="filepick" id="import-pick">
+                <input type="file" id="import-file"
+                       accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+                <label for="import-file">
+                  <svg viewBox="0 -960 960 960" aria-hidden="true">
+                    <path d="M440-320h80v-168l64 64 56-56-160-160-160 160 56 56 64-64v168ZM240-80q-33 0-56.5-23.5T160-160v-640q0-33 23.5-56.5T240-880h320l240 240v480q0 33-23.5 56.5T720-80H240Zm280-520v-200H240v640h480v-440H520ZM240-800v200-200 640-640Z"/>
+                  </svg>
+                  Choose a workbook
+                </label>
+                <span class="picked" id="import-picked"></span>
+              </div>
               <div class="denom-actions" style="margin-top:12px">
                 <button type="button" class="btn ghost" id="import-check" disabled>
                   Check the file
@@ -637,6 +1022,114 @@
           <div class="card"><table><thead><tr><th class="drag-col"></th><th>Deal</th><th class="right">Qty</th><th class="right">Deal price</th><th>Active</th><th></th></tr></thead><tbody id="mix-match"></tbody></table></div>
         </section>
 
+        <!-- Repricing a catalogue a level at a time.
+
+             Two columns and then a preview, in that order, because that is the
+             order the decision is actually made in: what am I reading, what am
+             I writing, to which products, by how much — and only then, is this
+             right? Nothing is written until the preview has been seen. -->
+        <section id="view-price_levels" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Price Levels</h2>
+              <p class="muted small">
+                Change a whole shelf of prices at once. Read one level, write another,
+                and see every change before anything is saved.
+              </p>
+            </div>
+          </div>
+
+          <div class="card rd-card">
+            <div class="pl-grid">
+              <div>
+                <label>Read prices from
+                  <select id="pl-source"></select>
+                </label>
+                <p class="muted small">The level the new price is worked out from.</p>
+
+                <label>Write them to
+                  <select id="pl-target"></select>
+                </label>
+                <p class="muted small" id="pl-target-note">
+                  Price 1 is the product&rsquo;s own price and cannot be written by a
+                  bulk update.
+                </p>
+              </div>
+
+              <div>
+                <label>Change by
+                  <select id="pl-method">
+                    <option value="percent">A percentage</option>
+                    <option value="amount">A fixed amount</option>
+                    <option value="copy">Nothing &mdash; copy the price across</option>
+                  </select>
+                </label>
+
+                <div class="grid2" id="pl-amount-row">
+                  <label>Direction
+                    <select id="pl-direction">
+                      <option value="up">Up</option>
+                      <option value="down">Down</option>
+                    </select>
+                  </label>
+                  <label id="pl-amount-label">By
+                    <input id="pl-amount" type="number" min="0" step="0.01" placeholder="0">
+                  </label>
+                </div>
+
+                <label>Round the result to
+                  <select id="pl-rounding">
+                    <option value="none">The exact penny</option>
+                    <option value="5p">The nearest 5p</option>
+                    <option value="10p">The nearest 10p</option>
+                    <option value="99">A price ending .99</option>
+                    <option value="95">A price ending .95</option>
+                    <option value="pound">A whole pound</option>
+                  </select>
+                </label>
+                <p class="muted small">
+                  7.5% on &pound;3.20 is &pound;3.44, and no bar prices like that.
+                  Pick the shape you actually charge in.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div class="card rd-card">
+            <h3>Which products</h3>
+            <div class="row" style="gap:10px;align-items:center;flex-wrap:wrap">
+              <input id="pl-search" placeholder="Search products&hellip;" style="flex:1 1 240px">
+              <button class="btn ghost small" id="pl-all">Select all</button>
+              <button class="btn ghost small" id="pl-none">Clear</button>
+              <span class="muted small" id="pl-count">Nothing selected</span>
+            </div>
+            <div id="pl-products" class="pl-products"></div>
+          </div>
+
+          <div class="row" style="gap:10px;align-items:center">
+            <button class="btn primary" id="pl-preview">Preview the change</button>
+            <span class="muted small" id="pl-status"></span>
+          </div>
+
+          <div class="card rd-card" id="pl-preview-card" hidden>
+            <h3>What will change</h3>
+            <div id="pl-preview-body"></div>
+            <div class="row" style="gap:10px;align-items:center;margin-top:12px">
+              <button class="btn primary" id="pl-apply">Apply these prices</button>
+              <button class="btn ghost" id="pl-cancel">Not yet</button>
+            </div>
+          </div>
+
+          <div class="card rd-card">
+            <h3>Recent price updates</h3>
+            <p class="muted small" style="margin:0 0 10px">
+              Every bulk change is recorded with what each product used to cost, so
+              the last one can be put back.
+            </p>
+            <div id="pl-runs"></div>
+          </div>
+        </section>
+
         <section id="view-finalise_keys" class="view" hidden>
           <div class="page-head"><div><h2>Finalise Keys</h2><p class="muted small">Drag rows to set button order on the till.</p></div><button class="btn primary" data-add="finalise-keys">Add key</button></div>
           <div class="card"><table><thead><tr><th class="drag-col"></th><th>Name</th><th>Kind</th><th>Opens drawer</th><th></th></tr></thead><tbody id="finalise-keys"></tbody></table></div>
@@ -653,20 +1146,78 @@
         </section>
 
         <!-- Table designer -->
+        <section id="view-dinein" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Your Menu Page</h2>
+              <p class="muted small">The page a customer lands on when they scan the code on their table. Set the address once — it goes on printed cards — then fill in what they see and turn it on.</p>
+            </div>
+          </div>
+          <div id="dinein-body"></div>
+        </section>
+
+        <section id="view-dinein_menu" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Menu</h2>
+              <p class="muted small">What a customer is shown, in the order they scroll through it. This is deliberately not your whole catalogue: bar tabs, deposits and staff meals all live in there, and none of them belong on a phone. Prices always come from the catalogue, so you never keep two lists.</p>
+            </div>
+          </div>
+          <div id="dinein_menu-body"></div>
+        </section>
+
+        <section id="view-dinein_qr" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Table Codes</h2>
+              <p class="muted small">Every table has its own permanent web address and its own code. Lay the card out once and print the set.</p>
+            </div>
+          </div>
+          <div id="dinein_qr-body"></div>
+        </section>
+
+        <section id="view-dinein_orders" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Online Orders</h2>
+              <p class="muted small">Everything that has come in from a phone in the last 24 hours, and what the till did with it.</p>
+            </div>
+          </div>
+          <div id="dinein_orders-body"></div>
+        </section>
+
         <section id="view-tables" class="view" hidden>
           <div class="page-head">
             <div>
               <h2>Table Designer</h2>
               <p class="muted small">Drag tables to lay out the room. <span id="dirty"></span></p>
             </div>
-            <div style="display:flex;gap:10px">
+            <div class="fd-tools">
               <button class="btn ghost" id="add-room">New room</button>
+              <button class="btn ghost" id="draw-room">Draw the room</button>
+              <button class="btn ghost" id="room-shape">Size &amp; colours</button>
               <button class="btn ghost" id="add-table">Add table</button>
               <button class="btn primary" id="save-floor">Save layout</button>
             </div>
           </div>
 
           <div class="room-tabs" id="room-tabs"></div>
+
+          <!-- The furniture. A room is two-tops along the window and four-tops
+               in the middle, not a stack of identical squares — so the tables
+               are laid out from a strip of real shapes, dragged onto the spot
+               they go or clicked to drop one in. -->
+          <div class="fd-palette" id="table-palette" aria-label="Table shapes"></div>
+
+          <!-- Only while the room is being drawn: a bar of its own so the
+               instruction and the way out of the mode are next to the plan
+               being drawn on, rather than up in the page heading. -->
+          <div class="fd-drawbar" id="draw-bar" hidden>
+            <span id="draw-say">Tap the first corner of the room.</span>
+            <button class="btn small ghost" id="draw-undo" type="button">Undo corner</button>
+            <button class="btn small ghost" id="draw-cancel" type="button">Cancel</button>
+            <button class="btn small primary" id="draw-room-done" type="button">Done</button>
+          </div>
 
           <div class="designer">
             <div id="canvas"></div>
@@ -688,12 +1239,12 @@
           <div class="page-head">
             <div>
               <h2>Back Office Users</h2>
-              <p class="muted small">Managers and employees who sign into this back office. Clerks who only use the till are managed under Clerks.</p>
+              <p class="muted small">Managers and employees who sign in to this back office. People who only use the till are managed under Staff.</p>
             </div>
             <button class="btn primary" id="add-user">Add user</button>
           </div>
           <div class="card"><table>
-            <thead><tr><th>Name</th><th>Email</th><th>Office</th><th>Role</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>Email</th><th>Office</th><th>Role</th><th>Access</th><th></th></tr></thead>
             <tbody id="users"></tbody>
           </table></div>
         </section>
@@ -705,15 +1256,49 @@
               <p class="muted small">
                 The people who work the till. They sign on at the terminal with a PIN, not an email —
                 and whoever is signed on is the name that prints as “Served by”.
-                Permissions and rota will be added to this section later.
+                What each of them may do is set under Staff Permissions and chosen here.
               </p>
             </div>
-            <button class="btn primary" id="add-staff">Add staff</button>
+            <div class="row gap">
+              <button class="btn" id="add-training-staff"
+                      title="A PIN for practising on the till: its sales are not recorded and do not count on the till">
+                Add a training account</button>
+              <button class="btn primary" id="add-staff">Add staff</button>
+            </div>
           </div>
           <div class="card"><table>
-            <thead><tr><th>Name</th><th>ID</th><th>PIN</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>ID</th><th>PIN</th><th>Permissions</th><th>Status</th><th></th></tr></thead>
             <tbody id="staff"></tbody>
           </table></div>
+          <p class="muted small" style="margin-top:12px">
+            <strong>Training accounts</strong> are for practising. While one is signed on the till shows
+            <em>TRAINING</em>: it works in this venue's <strong>practice copy</strong> instead of the real
+            one, takes no card payment, opens no drawer, and its sales never count on the live venue's
+            figures or X and Z. Needs Vesopa EPOS 1.7.3 or later — an older
+            till does not offer a training account at all.
+          </p>
+
+          <!-- The practice venue. Here rather than on a page of its own because
+               this is where training accounts are made, and the two are one
+               thought: who may practise, and what they practise on. -->
+          <div class="card" id="demo-venue-card" style="margin-top:16px">
+            <h3>Practice venue</h3>
+            <p class="muted small">
+              A copy of this venue for training: the same products, screens, prices and tables, with
+              none of the sales, customers or gift cards. A trainee's till works against it, so their
+              practice appears on <em>its</em> reports and never touches yours. Switch to it from the
+              <strong>Site</strong> menu to see what they did.
+            </p>
+            <p class="muted small" id="demo-venue-state">Checking…</p>
+            <div class="row gap">
+              <button class="btn" id="demo-refresh"
+                      title="Copy this venue's current products, screens and prices into the practice venue">
+                Set up / refresh from live</button>
+              <button class="btn" id="demo-reset"
+                      title="Delete the practice sales, bills and customers. The products and screens stay.">
+                Clear practice data</button>
+            </div>
+          </div>
           <p class="muted small" style="margin-top:12px">
             PINs must be exactly 4 digits and no two people can share one — the till pad signs
             someone on the moment the fourth digit lands, so a longer PIN could never be used and
@@ -721,12 +1306,55 @@
           </p>
         </section>
 
+        <!-- Staff Permissions: the till's roles.
+             Named groups of keys — Staff, Supervisor, Manager — assigned to a
+             member of staff on the Staff page. Checked at the terminal with the
+             broadband down, which is why the switches travel with the PIN. -->
+        <section id="view-permission_groups" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Staff Permissions</h2>
+              <p class="muted small">
+                Set up roles — Staff, Supervisor, Manager — say what each one may do at the till,
+                then assign one to each member of staff on the Staff page.
+                Anyone not in a group keeps every key, which is how the till worked before this page existed.
+              </p>
+            </div>
+            <button class="btn primary" id="add-permission-group">Add group</button>
+          </div>
+          <div class="card"><table>
+            <thead><tr><th>Group</th><th></th><th>Can</th><th></th></tr></thead>
+            <tbody id="permission-groups"></tbody>
+          </table></div>
+        </section>
+
+        <!-- Back Office User Roles: this application's own.
+             What a login may open here, as opposed to what a PIN may do at the
+             counter. An accountant sees the reporting and nothing else. -->
+        <section id="view-user_roles" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Back Office User Roles</h2>
+              <p class="muted small">
+                What each back-office login may see and do. An accountant can be given the reporting
+                and nothing else; a manager everything but the logins.
+                A user with no role sees everything, which is how it worked before this page existed.
+              </p>
+            </div>
+            <button class="btn primary" id="add-user-role">Add role</button>
+          </div>
+          <div class="card"><table>
+            <thead><tr><th>Role</th><th>Description</th><th>Access</th><th>People</th><th></th></tr></thead>
+            <tbody id="user-roles"></tbody>
+          </table></div>
+        </section>
+
         <!-- Idle screen: what the terminal shows between customers, and how
              long it waits before signing the current staff member off. -->
         <section id="view-idle" class="view" hidden>
           <div class="page-head">
             <div>
-              <h2>Till &amp; printers</h2>
+              <h2>Till &amp; Printers</h2>
               <p class="muted small">What every terminal in this venue does between customers, and what the venue calls each printer.</p>
             </div>
             <button class="btn primary" id="idle-save">Save settings</button>
@@ -830,6 +1458,62 @@
                 </p>
               </div>
 
+              <!-- The screen facing the customer, which is the one surface
+                   in the venue a stranger reads. Both settings are here rather
+                   than on the display application itself because a venue with
+                   four counters has four displays, and a greeting typed into
+                   each of them ends up different on all four. -->
+              <div class="card rd-card">
+                <h3>Customer screen</h3>
+                <p class="muted small" style="margin:0 0 10px">
+                  What the screen facing the customer says when a member is put on
+                  the bill. Their name and points balance are shown underneath it.
+                </p>
+                <div class="rd-fields">
+                  <label>Greeting
+                    <input data-idle="customer_display_greeting" maxlength="120"
+                           placeholder="Welcome">
+                  </label>
+                </div>
+                <label class="check" style="margin-top:10px">
+                  <input type="checkbox" data-idle="customer_display_show_member">
+                  <span>Show the member&rsquo;s name and points</span>
+                </label>
+                <p class="muted small" style="margin:6px 0 0">
+                  Leave the greeting blank for &ldquo;Welcome&rdquo;. Turn the name off
+                  if you would rather not have it readable from the other side of the
+                  counter &mdash; the greeting still shows, and so does the bill.
+                  Nothing appears at all until a customer is attached to the sale.
+                </p>
+              </div>
+
+              <!-- Naming only, and only levels 2 to 6. Price 1 is *the*
+                   price: a venue that renamed it would have a product form
+                   whose first field agreed with nothing else in the system,
+                   and the till's own parser hardcodes it. -->
+              <div class="card rd-card">
+                <h3>Price level names</h3>
+                <p class="muted small" style="margin:0 0 10px">
+                  What this venue calls each price level. A till key labelled
+                  &ldquo;Price 2&rdquo; tells a clerk nothing and &ldquo;Happy Hour&rdquo; tells
+                  them everything &mdash; and the name appears on the product editor, on the
+                  price-level key at the till and in reporting, so it means the same thing
+                  everywhere. Leave one blank to call it &ldquo;Price&nbsp;N&rdquo;.
+                </p>
+                <div class="rd-fields">
+                  <label>Price 2 <input data-level="2" maxlength="40" placeholder="Price 2"></label>
+                  <label>Price 3 <input data-level="3" maxlength="40" placeholder="Price 3"></label>
+                  <label>Price 4 <input data-level="4" maxlength="40" placeholder="Price 4"></label>
+                  <label>Price 5 <input data-level="5" maxlength="40" placeholder="Price 5"></label>
+                  <label>Price 6 <input data-level="6" maxlength="40" placeholder="Price 6"></label>
+                </div>
+                <p class="muted small" style="margin:8px 0 0">
+                  Price 1 is always &ldquo;Price 1&rdquo;. Which level a till is charging is
+                  switched at the terminal, under Functions; a loyalty tier can name one too,
+                  and that wins for that member&rsquo;s bill.
+                </p>
+              </div>
+
               <div class="card rd-card">
                 <h3>Product buttons</h3>
                 <label class="check">
@@ -840,6 +1524,107 @@
                   On by default. Turn it off for a cleaner grid where staff know the menu, or where
                   prices change often enough that the button is not where anyone should be reading
                   them. The price still shows on the bill as soon as the item is rung up.
+                </p>
+              </div>
+
+              <div class="card rd-card">
+                <h3>The bill</h3>
+                <label class="check">
+                  <input type="checkbox" data-idle="consolidate_lines">
+                  <span>Add repeated items up on the bill</span>
+                </label>
+                <p class="muted small" style="margin:6px 0 0">
+                  On by default, and what every Vesopa till has always done: tap Carling three
+                  times and the bill says <em>3&nbsp;&nbsp;Carling</em>. Turn it off and it says
+                  <em>Carling, Carling, Carling</em> — which some venues prefer, because the bill
+                  then reads the way the order was called back to the table, and because each line
+                  is a line to void on its own rather than a quantity to edit down.
+                </p>
+              </div>
+
+              <div class="card rd-card">
+                <h3>Cash declaration</h3>
+                <label class="field">
+                  <span>Before a Z report, ask what is in the drawer</span>
+                  <select data-idle="cash_declaration">
+                    <option value="off">Do not ask</option>
+                    <option value="total">Ask for a total</option>
+                    <option value="count">Count it note by note</option>
+                  </select>
+                </label>
+                <p class="muted small" style="margin:6px 0 0">
+                  The Z then prints what was counted and whether the till is up or down against
+                  what it expected — the float plus everything taken in cash. <em>Ask for a
+                  total</em> is one figure and fast at close, but when the till is down there is
+                  nothing to say where. <em>Count it note by note</em> uses the denominations you
+                  have already set up, so a miscount shows as a wrong denomination rather than a
+                  wrong total. Backing out of the count cancels the Z rather than running it
+                  without one.
+                </p>
+              </div>
+
+              <!-- Which app may interrupt somebody, decided once for the
+                   building. Each app keeps its own switch as well; the two
+                   combine as AND, so a device can opt out of what it is
+                   allowed but cannot switch on what has been turned off here.
+                   That is what makes this page authoritative rather than
+                   advisory. See schema_till_notifications.sql. -->
+              <div class="card rd-card">
+                <h3>Notifications</h3>
+                <label class="check">
+                  <input type="checkbox" data-idle="notify_master">
+                  <span>Windows notifications in all apps</span>
+                </label>
+                <p class="muted small" style="margin:6px 0 14px">
+                  The master switch. Turn this off and no Vesopa app pops a notification on any
+                  machine in this venue, whatever the boxes below say. Each app also has its own
+                  switch in its settings, so a quiet terminal can opt out of something allowed
+                  here — but nothing can turn back on what you switch off.
+                </p>
+
+                <p class="muted small" style="margin:0 0 6px"><strong>Events</strong></p>
+                <label class="check">
+                  <input type="checkbox" data-idle="notify_till_dinein_new">
+                  <span>A customer orders from a QR code — notify the till</span>
+                </label>
+                <label class="check">
+                  <input type="checkbox" data-idle="notify_kitchen_dinein_new">
+                  <span>A customer orders from a QR code — notify the kitchen</span>
+                </label>
+                <label class="check">
+                  <input type="checkbox" data-idle="notify_kitchen_ticket_new">
+                  <span>A till sends food to the pass — notify the kitchen</span>
+                </label>
+                <p class="muted small" style="margin:6px 0 14px">
+                  A QR order is two separate switches on purpose: which screen somebody is
+                  actually watching differs by venue. A bar watches the till; a kitchen watches
+                  the board. One combined setting would be wrong for half of them.
+                </p>
+
+                <p class="muted small" style="margin:0 0 6px"><strong>Sound</strong></p>
+                <label class="check">
+                  <input type="checkbox" data-idle="notify_till_sound">
+                  <span>Till notifications make a sound</span>
+                </label>
+                <label class="check">
+                  <input type="checkbox" data-idle="notify_kitchen_sound">
+                  <span>Kitchen notifications make a sound</span>
+                </label>
+                <p class="muted small" style="margin:6px 0 14px">
+                  Separate from the notification itself. A bar loud enough that a chime is just
+                  noise still wants the light on the screen, and a kitchen that cannot hear over
+                  an extractor wants the opposite.
+                </p>
+
+                <p class="muted small" style="margin:0 0 6px"><strong>Customer display</strong></p>
+                <label class="check">
+                  <input type="checkbox" data-idle="notify_display_enabled">
+                  <span>Notifications on the customer display</span>
+                </label>
+                <p class="muted small" style="margin:6px 0 0">
+                  Off by default, and it should usually stay off: that screen faces a queue, and
+                  the person who needs to know is behind the counter. Switch it on for a display
+                  mounted somewhere staff actually stand.
                 </p>
               </div>
             </div>
@@ -853,7 +1638,7 @@
         <section id="view-kitchen" class="view" hidden>
           <div class="page-head">
             <div>
-              <h2>Kitchen screens</h2>
+              <h2>Kitchen Screens</h2>
               <p class="muted small">
                 Vesopa Kitchen shows a station its orders on a touch screen instead of
                 printing them. Products are still routed to KP&nbsp;1 to KP&nbsp;6 in the product
@@ -1022,7 +1807,7 @@
         <section id="view-screens" class="view" hidden>
           <div class="page-head">
             <div>
-              <h2>Screen programming</h2>
+              <h2>Screen Programming</h2>
               <p class="muted small">
                 Lay out what your tills show. The sale screen is a grid of buttons — each one a
                 product, a jump to another screen, or a till function — and the two strips of
@@ -1086,6 +1871,22 @@
               <label>Bottom bar
                 <select id="sp-def-bottom"></select>
               </label>
+              <!-- The payment screen's own pair.
+                   Deliberately its own row with its own heading rather than two
+                   more entries in the list above, because they are not more of
+                   the same thing: a sale bar carries Void, Save Table and
+                   Covers, and none of those mean anything once the bill is
+                   being settled. A manager choosing between five dropdowns in
+                   one column would pick the wrong one. -->
+              <div class="sp-defaults-split">
+                <span class="muted small">On the payment screen</span>
+              </div>
+              <label>Payment top bar
+                <select id="sp-def-pay-top"></select>
+              </label>
+              <label>Payment bottom bar
+                <select id="sp-def-pay-bottom"></select>
+              </label>
               <!-- A drawing of the till, not a list of names. Which of three
                    layouts is the bottom one is a question a picture answers and
                    a dropdown does not. -->
@@ -1130,6 +1931,8 @@
             <button type="button" class="btn ghost small" id="sp-new">New…</button>
             <button type="button" class="btn ghost small" id="sp-rename">Rename</button>
             <button type="button" class="btn ghost small" id="sp-duplicate" title="Copy this screen, buttons and all">Duplicate</button>
+            <button type="button" class="btn ghost small" id="sp-copy-to"
+                    title="Copy the selected keys onto other pages">Copy to pages…</button>
             <button type="button" class="btn danger-ghost small" id="sp-delete">Delete</button>
             <span class="sp-order">
               <button type="button" class="btn ghost small" id="sp-up" title="Move this screen earlier in the list">↑</button>
@@ -1531,8 +2334,39 @@
             </div>
             <button class="btn primary" id="add-customer">Add customer</button>
           </div>
+
+          <!-- A membership year is renewed for everybody on one date, and doing
+               that through the edit form is two hundred modals. Search is held
+               in the browser like the catalogue's: the list is already in hand,
+               so a round trip per keystroke would only be slower. -->
+          <div class="tbl-bar">
+            <label class="sp-pick">Search
+              <input id="cust-q" type="search" placeholder="Name, card, phone or email" autocomplete="off">
+            </label>
+            <label class="sp-pick">Membership
+              <select id="cust-filter">
+                <option value="">Everyone</option>
+                <option value="member">Has a membership</option>
+                <option value="lapsed">Expired</option>
+                <option value="soon">Expiring within 30 days</option>
+                <option value="none">No membership</option>
+              </select>
+            </label>
+            <button type="button" class="btn ghost" id="cust-clear">Clear</button>
+            <span class="sp-spacer"></span>
+            <span class="muted small" id="cust-count"></span>
+            <span class="bulk-bar" id="cust-bulk" hidden>
+              <span class="bulk-count" id="cust-bulk-count"></span>
+              <button class="btn small primary" id="cust-bulk-expiry">Set expiry date</button>
+              <button class="btn small ghost" id="cust-bulk-clear">Clear</button>
+            </span>
+          </div>
+
           <div class="card"><table>
-            <thead><tr><th>Name</th><th>Card</th><th>Phone</th><th>Email</th><th>Discount</th><th class="right">Points</th><th>Membership</th><th></th></tr></thead>
+            <thead><tr>
+              <th class="pick-col"><input type="checkbox" id="cust-pick-all" title="Select every customer shown"></th>
+              <th></th><th>Name</th><th>Card</th><th>Phone</th><th>Email</th><th>Discount</th><th class="right">Points</th><th>Membership</th><th></th>
+            </tr></thead>
             <tbody id="customers"></tbody>
           </table></div>
         </section>
@@ -1546,7 +2380,7 @@
         <section id="view-receipt_designer" class="view" hidden>
           <div class="page-head">
             <div>
-              <h2>Receipt designer</h2>
+              <h2>Receipt Designer</h2>
               <p class="muted small">Changes appear on every till as soon as you save.</p>
             </div>
             <div class="rd-head-actions">
@@ -1653,7 +2487,7 @@
         <!-- Gift cards -->
         <section id="view-gift_cards" class="view" hidden>
           <div class="page-head">
-            <div><h2>Gift cards</h2><p class="muted small">Smart cards keep a balance and can be topped up. Paper certificates redeem once.</p></div>
+            <div><h2>Gift Cards</h2><p class="muted small">Smart cards keep a balance and can be topped up. Paper certificates can only be redeemed once.</p></div>
             <button class="btn primary" id="gift-add">Issue card</button>
           </div>
           <div class="grid-cards" id="gift-stats"></div>
@@ -1705,6 +2539,40 @@
                 </div>
                 <p class="muted small" id="loyalty-example"></p>
               </div>
+              <!-- Membership is a different thing from points and shares this
+                   page because it is the same scheme from the venue's side: one
+                   card, one member, one renewal.
+
+                   A SEASON *OR* A TERM. This used to be a term only, and the
+                   argument for that was sound: a fixed date is wrong for
+                   everybody who joins on a different day. It answered the wrong
+                   question. A club does not run twelve rolling months per
+                   person, it runs a season, and every card in the place expires
+                   on the same night. Both are here; the date wins while it is
+                   set and has not passed. -->
+              <div class="card rd-card">
+                <h3>Membership</h3>
+                <p class="muted small">
+                  A membership card stops working at the till once it has expired.
+                  Staff can take the fee and renew it there, and this is what
+                  decides the new date.
+                </p>
+                <label>Memberships run to
+                  <input type="date" data-loy="membership_renewal_date">
+                </label>
+                <p class="muted small" id="loyalty-season-warning" hidden></p>
+                <div class="grid2">
+                  <label>Or, if no date is set, run for (months)<input type="number" min="1" max="60" data-loy="membership_term_months"></label>
+                  <label>Membership fee (pence)<input type="number" min="0" data-loy="membership_fee_minor"></label>
+                </div>
+                <p class="muted small" id="loyalty-membership-note"></p>
+                <p class="muted small" style="margin:8px 0 0">
+                  Which products renew a membership is set on the product itself
+                  &mdash; tick <strong>Renews membership</strong> in Products. Any number
+                  of products may carry it, so full, concession and junior can all
+                  renew, each with its own price and VAT treatment.
+                </p>
+              </div>
               <div class="card rd-card">
                 <h3>Tiers</h3>
                 <p class="muted small">Customers move up automatically as their lifetime spend grows.</p>
@@ -1741,10 +2609,199 @@
           one that did not exist: epos_wallet_programs has held a per-card design
           since the table was added and nothing was ever routed to it.
         -->
+        <!-- The loyalty app: the venue's own app for its members. src/loyalty_app.js -->
+        <section id="view-loyalty_app" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Loyalty App</h2>
+              <p class="muted small">
+                Your own app for your members: their card as a QR code the till scans,
+                their points and history, and your news. It installs from a link on any
+                phone, and as a Windows app from the Microsoft Store.
+              </p>
+            </div>
+            <button class="btn primary" id="la-save">Save</button>
+          </div>
+          <div class="grid-cards" id="la-stats"></div>
+
+          <div class="rd-layout">
+            <div class="la-form">
+              <div class="card rd-card">
+                <h3>The app</h3>
+                <label class="la-check"><input type="checkbox" id="la-enabled" /> The app is on</label>
+                <label>Its address
+                  <span class="la-slug"><span class="muted small" id="la-host">loyalty.vesopa.com/</span>
+                  <input id="la-slug" maxlength="64" placeholder="your-venue" autocomplete="off" /></span>
+                </label>
+                <p class="muted small" id="la-link"></p>
+              </div>
+
+              <div class="card rd-card">
+                <h3>How it looks</h3>
+                <label>App name <input id="la-app_name" maxlength="80" placeholder="e.g. Pontardawe RFC Rewards" /></label>
+                <label>Welcome line <input id="la-welcome_text" maxlength="255" placeholder="Your card, your points and our latest news." /></label>
+                <div class="la-pictures">
+                  <div><span class="small">Logo (square)</span><div id="la-logo-picker"></div></div>
+                  <div><span class="small">App icon (square, the home-screen icon)</span><div id="la-icon-picker"></div></div>
+                </div>
+                <div class="la-colours">
+                  <label>Main colour <input type="color" id="la-colour_primary" /></label>
+                  <label>Accent <input type="color" id="la-colour_accent" /></label>
+                  <label>Background <input type="color" id="la-colour_background" /></label>
+                  <label>Text <input type="color" id="la-colour_text" /></label>
+                  <label>Icons <input type="color" id="la-colour_icon" /></label>
+                </div>
+                <p class="muted small">Text is drawn in the text colour on the background and on every card and sheet, which are shades of the background — so pick a text colour that reads on it. Icons are the tab bar, the card’s details and the account page.</p>
+                <div class="la-fonts">
+                  <label>Heading font <select id="la-font_heading"></select></label>
+                  <label>Text font <select id="la-font_body"></select></label>
+                  <label>Text size
+                    <select id="la-font_scale">
+                      <option value="0.8">Smaller (80%)</option>
+                      <option value="0.9">A little smaller (90%)</option>
+                      <option value="1">Normal (100%)</option>
+                      <option value="1.1">A little larger (110%)</option>
+                      <option value="1.2">Larger (120%)</option>
+                      <option value="1.3">Large (130%)</option>
+                      <option value="1.45">Very large (145%)</option>
+                      <option value="1.6">Largest (160%)</option>
+                    </select>
+                  </label>
+                </div>
+                <p class="muted small">Fonts come from your font library (Programming &rsaquo; Fonts), the same ones your tills use. A condensed face such as Bebas Neue reads small; pick a larger text size for it.</p>
+                <h4>News in the app</h4>
+                <div class="la-fonts">
+                  <label>Keep
+                    <select id="la-inbox_mode">
+                      <option value="limit">The newest few, and let older ones go</option>
+                      <option value="scroll">Every notification, loaded as the page scrolls</option>
+                    </select>
+                  </label>
+                  <label>How many <input type="number" id="la-inbox_limit" min="1" max="500" step="1" value="12" /></label>
+                </div>
+                <p class="muted small">Applies to the phone apps and the web app alike. Nothing is deleted: raising the number brings older news back.</p>
+                <h4>Links shown in the app</h4>
+                <div class="la-links">
+                  <label>Website <input id="la-link-website" placeholder="https://" /></label>
+                  <label>Phone <input id="la-link-phone" /></label>
+                  <label>Email <input id="la-link-email" /></label>
+                  <label>Facebook <input id="la-link-facebook" placeholder="https://facebook.com/..." /></label>
+                  <label>Instagram <input id="la-link-instagram" placeholder="https://instagram.com/..." /></label>
+                  <label>Booking <input id="la-link-booking" placeholder="https://" /></label>
+                </div>
+              </div>
+
+              <div class="card rd-card">
+                <h3>Where you are</h3>
+                <p class="muted small">
+                  For notifications to members who are near you now. Members choose whether
+                  the app may use their location; it is kept for a day, never as a trail.
+                </p>
+                <div class="la-where">
+                  <label>Latitude <input id="la-latitude" inputmode="decimal" /></label>
+                  <label>Longitude <input id="la-longitude" inputmode="decimal" /></label>
+                  <label>Radius (metres) <input id="la-radius_m" type="number" min="50" max="20000" /></label>
+                </div>
+                <button class="btn small ghost" id="la-here" type="button">Use where I am now</button>
+              </div>
+
+              <div class="card rd-card">
+                <h3>How members sign in</h3>
+                <p class="muted small">
+                  Every member can always sign in with an emailed code. Switch on anything else
+                  you want to offer. A member only ever sees the ways you allow.
+                </p>
+                <div id="la-signin-methods" class="la-methods"></div>
+                <label>What members see first
+                  <select id="la-auth_policy">
+                    <option value="code_first">An email address, then a code</option>
+                    <option value="password_first">An email address and a password</option>
+                    <option value="vesopa_first">Continue with Vesopa</option>
+                  </select>
+                </label>
+                <p class="muted small">
+                  This only decides which one comes first. The others stay available underneath it.
+                </p>
+                <label class="la-check">
+                  <input type="checkbox" id="la-self_service" />
+                  Members may change their own name, phone and password in the app
+                </label>
+                <p class="muted small">
+                  Switch this off if your membership list is your record and only the venue should change it.
+                </p>
+              </div>
+
+              <div class="card rd-card">
+                <h3>Send a notification</h3>
+                <p class="muted small" id="la-push-note"></p>
+                <label>Title <input id="la-n-title" maxlength="80" placeholder="e.g. Match day" /></label>
+                <label>Message <textarea id="la-n-body" maxlength="500" rows="3" placeholder="e.g. Two for one on pints before kick-off."></textarea></label>
+                <label>Link (optional) <input id="la-n-link" placeholder="https://" /></label>
+                <label>Picture (optional)</label>
+                <div id="la-n-image-picker"></div>
+                <label>Video (optional)
+                  <input id="la-n-video" placeholder="A YouTube or Vimeo link, or an address ending .mp4" />
+                </label>
+                <p class="muted small">
+                  A YouTube or Vimeo link shows as a picture members tap to watch. An .mp4 address plays
+                  inside the app.
+                </p>
+                <div class="la-audience">
+                  <label>Who
+                    <select id="la-n-audience">
+                      <option value="all">Every member with the app</option>
+                      <option value="near">Members near the venue now</option>
+                      <option value="tier">Members on a tier</option>
+                      <option value="lapsed">Members who have not visited lately</option>
+                    </select>
+                  </label>
+                  <label id="la-n-tier-wrap" hidden>Tier <input id="la-n-tier" placeholder="e.g. Gold" /></label>
+                  <label id="la-n-days-wrap" hidden>Not visited for (days) <input id="la-n-days" type="number" min="1" value="30" /></label>
+                  <label>When
+                    <select id="la-n-when">
+                      <option value="now">Now</option>
+                      <option value="later">At a time</option>
+                    </select>
+                  </label>
+                  <label id="la-n-at-wrap" hidden>Send at <input id="la-n-at" type="datetime-local" /></label>
+                </div>
+                <p class="small" id="la-n-reach"></p>
+                <div class="row gap">
+                  <button class="btn ghost" id="la-n-count" type="button">How many will it reach?</button>
+                  <button class="btn primary" id="la-n-send" type="button">Send</button>
+                </div>
+                <h4>Sent and scheduled</h4>
+                <div id="la-messages"></div>
+              </div>
+
+              <div class="card rd-card">
+                <h3>Windows app (Microsoft Store)</h3>
+                <p class="muted small">
+                  For notifications to your own Windows app. From Partner Center, the app's
+                  Package SID and its secret (Product management &rsaquo; WNS/MPNS).
+                </p>
+                <label>Package SID <input id="la-wns-sid" placeholder="ms-app://s-1-15-2-..." autocomplete="off" /></label>
+                <label>Secret <input id="la-wns-secret" type="password" autocomplete="new-password" placeholder="Leave blank to keep the saved one" /></label>
+                <p class="small" id="la-wns-state"></p>
+              </div>
+            </div>
+
+            <div class="rd-preview-pane">
+              <div class="rd-preview-head"><span class="small muted">What your members see</span></div>
+              <div class="la-phone" id="la-preview"></div>
+              <div class="card rd-card la-poster" id="la-poster" hidden>
+                <h3>Put it on a poster</h3>
+                <div id="la-qr"></div>
+                <p class="muted small">Scanning this opens the app. Members add it to their home screen from there.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <section id="view-wallet" class="view" hidden>
           <div class="page-head">
             <div>
-              <h2>Wallet passes</h2>
+              <h2>Wallet Passes</h2>
               <p class="muted small">
                 A card on the customer's phone. The barcode carries the same
                 number as the plastic, so a phone and a card scan to the same
@@ -1952,6 +3009,34 @@
               <label class="check"><input type="checkbox" data-wal="apple_enabled"> Issue Apple passes</label>
               <div id="wallet-apple-status"></div>
             </div>
+
+            <!--
+              What has actually happened to the cards.
+
+              The panel above says whether a pass CAN be signed. This one says
+              whether anybody's phone has one, whether it updated, and what
+              Apple said when it did not — which is the question a venue rings
+              up about, and which nothing on this screen could previously
+              answer.
+            -->
+            <div class="card rd-card">
+              <h3>Wallet activity</h3>
+              <p class="muted small">
+                Every card built, every phone that added one, and every update —
+                newest first. Kept for 90 days.
+              </p>
+              <div id="wallet-events-summary"></div>
+              <p class="row" style="gap:8px;align-items:center;flex-wrap:wrap">
+                <label class="check">
+                  <input type="checkbox" id="wallet-events-trouble"> Only what went wrong
+                </label>
+                <input id="wallet-events-serial" class="input" style="flex:1 1 20em;max-width:26em"
+                       placeholder="Filter by pass serial (from the customer's card)">
+                <button class="btn" id="wallet-events-refresh" type="button"
+                        style="flex:0 0 auto">Refresh</button>
+              </p>
+              <div id="wallet-events"></div>
+            </div>
           </div>
 
           <!-- ---- Every card handed out -------------------------------- -->
@@ -1998,6 +3083,7 @@
                   <label>Loyalty<input type="text" inputmode="numeric" maxlength="8" data-card="loyalty_prefix" placeholder="9998"></label>
                   <label>Gift<input type="text" inputmode="numeric" maxlength="8" data-card="gift_prefix" placeholder="9878"></label>
                   <label>Membership<input type="text" inputmode="numeric" maxlength="8" data-card="membership_prefix" placeholder="not used"></label>
+                  <label id="cards-gym-row" hidden>Gym<input type="text" inputmode="numeric" maxlength="8" data-card="gym_prefix" placeholder="not used"></label>
                 </div>
                 <p class="muted small" id="cards-example"></p>
               </div>
@@ -2048,6 +3134,430 @@
           </div>
         </section>
 
+        <!-- The gym door: who is in, how often they come, and who has expired.
+             Kept out of the rail entirely until a venue switches it on -- see
+             the note on loadGym in app.js. -->
+        <section id="view-gym" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Gym</h2>
+              <p class="muted small">
+                A member swipes their card on the way in and the same card on the
+                way out. Nobody has to be standing there: the till asks nothing
+                and waits for nothing.
+              </p>
+            </div>
+            <button class="btn primary" id="gym-save" hidden>Save gym</button>
+          </div>
+
+          <div class="grid-cards" id="gym-stats"></div>
+
+          <div class="gym-tabs" role="tablist">
+            <button class="gym-tab on" data-gymtab="board" role="tab">Who is in</button>
+            <button class="gym-tab" data-gymtab="attendance" role="tab">How often</button>
+            <button class="gym-tab" data-gymtab="expiries" role="tab">Expiries</button>
+            <button class="gym-tab" data-gymtab="settings" role="tab">Settings</button>
+          </div>
+
+          <!-- ---- Who is in ------------------------------------------- -->
+          <div class="gym-panel" data-gympanel="board">
+            <div class="card rd-card">
+              <div class="gym-board-head">
+                <div>
+                  <h3>Today at the door</h3>
+                  <p class="muted small">
+                    Green is in the gym now. Red has been and gone. The list
+                    refreshes itself, so this can be left up on a screen.
+                  </p>
+                </div>
+                <label class="gym-date">On
+                  <input type="date" id="gym-board-date">
+                </label>
+              </div>
+              <div id="gym-board"></div>
+            </div>
+          </div>
+
+          <!-- ---- How often ------------------------------------------- -->
+          <div class="gym-panel" data-gympanel="attendance" hidden>
+            <div class="card rd-card">
+              <div class="gym-board-head">
+                <div>
+                  <h3>How often members have been using the gym</h3>
+                  <p class="muted small">
+                    One row per member. Times a week is worked out over the whole
+                    period, so it means the same thing whether you ask about a
+                    fortnight or a year.
+                  </p>
+                </div>
+                <div class="gym-range">
+                  <label>From <input type="date" id="gym-from"></label>
+                  <label>To <input type="date" id="gym-to"></label>
+                  <button class="btn" id="gym-run">Show</button>
+                  <button class="btn" id="gym-csv">Download CSV</button>
+                </div>
+              </div>
+              <div id="gym-attendance"></div>
+            </div>
+            <div class="card rd-card">
+              <h3>When the gym is busy</h3>
+              <p class="muted small">
+                The other half of "how often": not how often one member comes,
+                but when the room is full. That is what staffing and class times
+                are decided on.
+              </p>
+              <div id="gym-hours"></div>
+            </div>
+          </div>
+
+          <!-- ---- Expiries -------------------------------------------- -->
+          <div class="gym-panel" data-gympanel="expiries" hidden>
+            <div class="card rd-card">
+              <div class="gym-board-head">
+                <div>
+                  <h3>Expired</h3>
+                  <p class="muted small">
+                    The same people the door prints a slip for. Last seen is here
+                    because it is the question that comes next: somebody who
+                    expired in January and has not been back is a different
+                    conversation from somebody who was here yesterday.
+                  </p>
+                </div>
+                <button class="btn" id="gym-expired-csv">Download CSV</button>
+              </div>
+              <div id="gym-expired"></div>
+            </div>
+            <div class="card rd-card">
+              <h3>About to expire</h3>
+              <p class="muted small">
+                So a renewal can be asked for before anybody is turned away at a
+                door with nobody on it. How far ahead this looks is on the
+                Settings tab.
+              </p>
+              <div id="gym-soon"></div>
+            </div>
+          </div>
+
+          <!-- ---- Settings -------------------------------------------- -->
+          <div class="gym-panel" data-gympanel="settings" hidden>
+            <div class="rd-layout">
+              <div class="rd-editor">
+                <div class="card rd-card">
+                  <h3>The gym</h3>
+                  <p class="muted small">
+                    Off until you switch it on. While it is off there is no Gym
+                    section on any till in this venue, no gym options in a till's
+                    settings, and a gym card is not a kind of card a till knows
+                    about.
+                  </p>
+                  <label class="check"><input type="checkbox" data-gym="enabled"> Run a gym at this venue</label>
+                  <div class="grid2">
+                    <label>Gym card prefix
+                      <input type="text" inputmode="numeric" maxlength="8" data-gym="gym_prefix" placeholder="not used">
+                    </label>
+                  </div>
+                  <p class="muted small" id="gym-example"></p>
+                  <p class="muted small">
+                    Gym cards need a prefix of their own, separate from staff,
+                    loyalty and gift. It is what lets a till know a swipe is a
+                    door rather than a sale before it looks anything up, which is
+                    the whole reason nothing pops up at an unmanned counter.
+                  </p>
+                </div>
+
+                <div class="card rd-card">
+                  <h3>The door</h3>
+                  <div class="grid2">
+                    <label>Ignore a second swipe within (seconds)
+                      <input type="number" min="0" max="600" data-gym="debounce_seconds">
+                    </label>
+                    <label>Sign out anyone still in after (hours)
+                      <input type="number" min="1" max="24" data-gym="auto_close_hours">
+                    </label>
+                    <label>Greeting stays on screen for (seconds)
+                      <input type="number" min="2" max="30" data-gym="greeting_seconds">
+                    </label>
+                  </div>
+                  <label class="check"><input type="checkbox" data-gym="show_photo"> Show the member's photograph on the greeting</label>
+                  <p class="muted small">
+                    A reader that double-reads, or a member who swipes twice
+                    because the first one did not look like it worked, would
+                    otherwise be signed in and straight back out again, and there
+                    is nobody standing there to notice. Anyone who leaves without
+                    swiping out is signed out automatically, and their visit is
+                    marked so the report never treats its length as measured.
+                  </p>
+                </div>
+
+                <div class="card rd-card">
+                  <h3>Memberships that have run out</h3>
+                  <div class="grid2">
+                    <label>Still let them in for (days after expiry)
+                      <input type="number" min="0" max="90" data-gym="grace_days">
+                    </label>
+                    <label>Warn this many days before expiry
+                      <input type="number" min="0" max="120" data-gym="expiring_soon_days">
+                    </label>
+                  </div>
+                  <label class="check"><input type="checkbox" data-gym="expiry_slip"> Print a slip at the till when an expired card is swiped</label>
+                  <label class="check"><input type="checkbox" data-gym="refuse_expired"> Refuse an expired card instead of recording the visit</label>
+                  <p class="muted small">
+                    The slip says who expired and when. Leave refusing off unless
+                    the door is genuinely locked to the till: it cannot stop
+                    anybody walking in, so a record saying the visit did not
+                    happen would simply be untrue. Off means they are let in, the
+                    visit is flagged, and the slip still prints.
+                  </p>
+                </div>
+              </div>
+
+              <div class="rd-preview-pane">
+                <div class="rd-preview-head"><span class="small muted">What the door does</span></div>
+                <div class="card rd-card">
+                  <div id="gym-preview"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Vesopa Express: the self-service kiosk. In the rail whether or not
+             the venue uses it, because the switch that turns it on is here --
+             see the note on loadExpress in app.js. -->
+        <section id="view-express" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Vesopa Express</h2>
+              <p class="muted small">
+                A self-service kiosk. Customers order on a touchscreen, pay on the
+                Dojo card machine beside it, and collect when their number comes up.
+              </p>
+            </div>
+            <button class="btn primary" id="exp-save" hidden>Save</button>
+          </div>
+
+          <div class="grid-cards" id="exp-stats"></div>
+
+          <div class="gym-tabs" role="tablist">
+            <button class="gym-tab on" data-exptab="orders" role="tab">Orders</button>
+            <button class="gym-tab" data-exptab="meals" role="tab">Meals</button>
+            <button class="gym-tab" data-exptab="kiosks" role="tab">Kiosks</button>
+            <button class="gym-tab" data-exptab="settings" role="tab">Settings</button>
+          </div>
+
+          <!-- ---- Orders ---------------------------------------------- -->
+          <div class="gym-panel" data-exppanel="orders">
+            <div class="card rd-card">
+              <div class="gym-board-head">
+                <div>
+                  <h3>Kiosk orders</h3>
+                  <p class="muted small">
+                    Every order a kiosk took, paid or not. A paid order is already
+                    a sale in your reports and a ticket on your kitchen screens;
+                    this list refreshes itself.
+                  </p>
+                </div>
+                <label class="gym-date">On
+                  <input type="date" id="exp-date">
+                </label>
+              </div>
+              <div id="exp-orders"></div>
+            </div>
+          </div>
+
+          <!-- ---- Meals ----------------------------------------------- -->
+          <div class="gym-panel" data-exppanel="meals" hidden>
+            <div class="card rd-card">
+              <h3>Make it a meal</h3>
+              <p class="muted small">
+                A dish on the kiosk can offer a meal: <b>Just the burger</b> or
+                <b>Make it a meal</b>, then one step at a time through the meal's
+                own questions &mdash; a side, a drink &mdash; with a picture for
+                each answer. A meal is a product of its own, so its price lives in
+                Products like every other price, and the till sells it the same way.
+              </p>
+              <ol class="small exp-steps">
+                <li>In <b>Products</b>, make the meal: <i>Cheeseburger Meal</i> at the meal price.</li>
+                <li>Make the answers as products priced as the upgrade: <i>Chips</i> at &pound;0,
+                  <i>Sweet potato fries</i> at &pound;0.80.</li>
+                <li>In <b>Modifiers</b>, give the meal its questions: <i>Choose your side</i> and
+                  <i>Choose your drink</i>, one answer each.</li>
+                <li>Here, link the meal to the dish. A dish with a Regular and a Large meal gets two.</li>
+              </ol>
+              <div class="exp-meal-add">
+                <label>Dish
+                  <select id="exp-meal-dish"></select>
+                </label>
+                <label>Its meal (a product)
+                  <select id="exp-meal-plu"></select>
+                </label>
+                <label>Size, if it has more than one
+                  <input type="text" id="exp-meal-label" maxlength="40" placeholder="Regular">
+                </label>
+                <button class="btn primary small" id="exp-meal-add">Add meal</button>
+              </div>
+            </div>
+            <div class="card rd-card">
+              <h3>Meals on your menu</h3>
+              <div id="exp-meals"></div>
+            </div>
+          </div>
+
+          <!-- ---- Kiosks ---------------------------------------------- -->
+          <div class="gym-panel" data-exppanel="kiosks" hidden>
+            <div class="card rd-card">
+              <h3>Kiosks in this venue</h3>
+              <p class="muted small">
+                A kiosk is set up on the kiosk itself: open Vesopa Express and press
+                <b>Continue with Vesopa</b> as a manager of this venue. It then
+                appears here, where you can name it and pair it with the card
+                machine beside it. A removed kiosk stops taking orders at once.
+              </p>
+              <div id="exp-kiosks"></div>
+            </div>
+          </div>
+
+          <!-- ---- Settings -------------------------------------------- -->
+          <div class="gym-panel" data-exppanel="settings" hidden>
+            <div class="rd-layout">
+              <div class="rd-editor">
+                <div class="card rd-card">
+                  <h3>Vesopa Express</h3>
+                  <p class="muted small">
+                    Off until you switch it on. While it is off a kiosk cannot be set
+                    up here, and a kiosk that was set up shows that it is switched
+                    off instead of taking orders.
+                  </p>
+                  <label class="check"><input type="checkbox" data-exp="enabled"> Run Vesopa Express kiosks at this venue</label>
+                  <label class="check"><input type="checkbox" data-exp="demo_mode"> Demo mode: take no money and send nothing to the kitchen</label>
+                </div>
+
+                <div class="card rd-card">
+                  <h3>Ordering</h3>
+                  <label class="check"><input type="checkbox" data-exp="eat_in"> Eat in</label>
+                  <label class="check"><input type="checkbox" data-exp="take_away"> Take away</label>
+                  <label class="check"><input type="checkbox" data-exp="ask_name"> Ask for a first name to call out</label>
+                  <div class="grid2">
+                    <label>Clear an untouched basket after (seconds)
+                      <input type="number" min="20" max="600" data-exp="idle_seconds">
+                    </label>
+                    <label>Collection numbers start at
+                      <input type="number" min="1" max="9000" data-exp="number_start">
+                    </label>
+                    <label>and go round after
+                      <input type="number" min="2" max="9999" data-exp="number_end">
+                    </label>
+                  </div>
+                  <p class="muted small">
+                    The kiosk sells from your <b>Dine-in menu</b>: the same dishes,
+                    pictures, allergens and add-ons, priced from your products. A
+                    price changed in Products changes on the kiosk too.
+                  </p>
+                </div>
+
+                <div class="card rd-card">
+                  <h3>Paying</h3>
+                  <label class="check"><input type="checkbox" data-exp="pay_card"> By card, on the Dojo card machine beside the kiosk</label>
+                  <label class="check"><input type="checkbox" data-exp="pay_counter"> At the counter: the order goes to the till's Online Orders, unpaid</label>
+                  <p class="small" id="exp-key-state"></p>
+                  <div class="grid2">
+                    <label>Your Dojo secret key
+                      <input type="password" id="exp-dojo-key" autocomplete="off" placeholder="sk_live_...">
+                    </label>
+                  </div>
+                  <button class="btn small" id="exp-key-clear" hidden>Use the Vesopa key instead</button>
+                  <p class="muted small">
+                    The key stays on the server, sealed, and is never sent to a
+                    kiosk. Only its last four characters are shown here again. Each
+                    kiosk is paired with its card machine on the Kiosks tab.
+                  </p>
+                </div>
+
+                <div class="card rd-card">
+                  <h3>Where orders are announced</h3>
+                  <label class="check"><input type="checkbox" data-exp="notify_kitchen"> Kitchen screens: the order arrives like one from a till</label>
+                  <label class="check"><input type="checkbox" data-exp="notify_till"> Tills: a card on screen and a Windows notification</label>
+                  <label class="check"><input type="checkbox" data-exp="board_enabled"> Collection board: numbers on any TV or browser</label>
+                  <div id="exp-board"></div>
+                  <p class="muted small">
+                    Kitchen screens get the dishes routed to a station set to Screen
+                    or Both under Kitchen Screens. A station set to Printer or Both
+                    gets its ticket on paper too: a till with a printer at that
+                    station prints it (Vesopa EPOS 1.7.3 or later), once, however
+                    many tills the venue has. The Orders tab says where each ticket
+                    printed, or why it did not.
+                  </p>
+                </div>
+
+                <div class="card rd-card">
+                  <h3>Receipts at the kiosk</h3>
+                  <div class="grid2">
+                    <label>A ticket from the kiosk's printer
+                      <select data-exp="receipt_mode">
+                        <option value="ask">Ask the customer (Print a receipt?)</option>
+                        <option value="always">Always print one</option>
+                        <option value="never">Never</option>
+                      </select>
+                    </label>
+                  </div>
+                  <p class="muted small">
+                    The ticket carries the order number in large type, eat in or take
+                    away, the dishes and the total with its VAT, under your receipt
+                    header and footer from <b>Receipt Designer</b>. A pay-at-the-counter
+                    order says so across the top. The printer itself is chosen on the
+                    kiosk, in its Settings; a kiosk with none prints nothing.
+                  </p>
+                </div>
+
+                <div class="card rd-card">
+                  <h3>Leaving kiosk mode</h3>
+                  <p class="small" id="exp-passcode-state"></p>
+                  <div class="grid2">
+                    <label>New passcode (4 to 8 digits)
+                      <input type="password" inputmode="numeric" maxlength="8" id="exp-passcode" autocomplete="off">
+                    </label>
+                  </div>
+                  <button class="btn small" id="exp-pass-clear" hidden>Remove the passcode</button>
+                  <p class="muted small">
+                    A kiosk runs full screen and cannot be closed from the screen.
+                    Staff hold the bottom-left corner for three seconds and type this
+                    passcode to reach its Settings, where it can be exited. It works
+                    with no network too.
+                  </p>
+                </div>
+
+                <div class="card rd-card">
+                  <h3>Welcome screen</h3>
+                  <div class="grid2">
+                    <label>Headline
+                      <input type="text" maxlength="120" data-exp="welcome_title" placeholder="Order here, skip the queue">
+                    </label>
+                    <label>Line underneath
+                      <input type="text" maxlength="200" data-exp="welcome_subtitle">
+                    </label>
+                    <label>Picture (web address)
+                      <input type="url" maxlength="500" data-exp="welcome_image_url">
+                    </label>
+                  </div>
+                  <h3 class="exp-sub">May we suggest</h3>
+                  <p class="muted small">
+                    Offered once, just before paying. Leave them all unticked and the
+                    dishes you have marked Popular are suggested instead.
+                  </p>
+                  <div id="exp-upsell"></div>
+                </div>
+              </div>
+
+              <div class="rd-preview-pane">
+                <div class="rd-preview-head"><span class="small muted">What the kiosk does</span></div>
+                <div class="card rd-card">
+                  <div id="exp-preview"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <!-- Machines: which tills and screens a venue has, and what happened. -->
         <section id="view-devices" class="view" hidden>
           <div class="page-head">
@@ -2062,6 +3572,41 @@
             <button class="btn" id="devices-refresh">Refresh</button>
           </div>
           <div class="grid-cards" id="devices-stats"></div>
+          <div class="card rd-card" id="seats-card">
+            <h3>Till licences</h3>
+            <p class="muted small">
+              Each till signed in holds one licence. Signing a till out here frees
+              its licence straight away; the till asks to be signed in again the
+              next time it calls in. Signing in again on the same machine never
+              takes a second licence.
+            </p>
+            <div id="seats-list"></div>
+          </div>
+
+          <!-- Every app, not just tills. Until 1.7.4 only tills were counted,
+               so a venue paying for one kitchen screen could run six. -->
+          <div class="card rd-card" id="licences-card">
+            <h3>Licences</h3>
+            <p class="muted small">
+              What this venue has paid for, and what is signed in now. A blank limit means
+              no limit. Tills, kitchen screens and kiosks are <strong>refused</strong> when they
+              are all in use — a manager signs one out below — because bouncing one mid-sale
+              loses work. A customer display holds nothing, so the newest one wins and the
+              oldest goes blank.
+            </p>
+            <div id="licences-list"></div>
+          </div>
+
+          <div class="card rd-card" id="licence-keys-card" hidden>
+            <h3>Licence keys</h3>
+            <p class="muted small">
+              A key activates on one machine and is then locked to it, so a copy of the
+              install on a second PC is refused. Vesopa issues them; ask us to move one if
+              you replace a machine.
+            </p>
+            <div id="licence-keys-list"></div>
+          </div>
+
           <div class="card rd-card">
             <div id="devices-list"></div>
           </div>
@@ -2078,7 +3623,7 @@
         <!-- Tender & gratuity -->
         <section id="view-tender" class="view" hidden>
           <div class="page-head">
-            <div><h2>Tender &amp; gratuity</h2><p class="muted small">How the till takes money: service charge, cash keys, split and partial payments.</p></div>
+            <div><h2>Tender &amp; Gratuity</h2><p class="muted small">How the till takes money: service charge, cash keys, split and partial payments.</p></div>
             <button class="btn primary" id="tender-save">Save settings</button>
           </div>
           <div class="rd-layout">
@@ -2134,7 +3679,7 @@
         <!-- Automation rules -->
         <section id="view-rules" class="view" hidden>
           <div class="page-head">
-            <div><h2>Automation rules</h2><p class="muted small">If this happens, then that applies.</p></div>
+            <div><h2>Automation Rules</h2><p class="muted small">If this happens, then that applies.</p></div>
             <button class="btn primary" id="rule-add">New rule</button>
           </div>
           <div class="card"><table>
@@ -2146,7 +3691,7 @@
         <!-- Templates (super admin) -->
         <section id="view-templates" class="view" hidden>
           <div class="page-head">
-            <div><h2>Starter templates</h2><p class="muted small">Pre-set catalogues assigned when an office is created.</p></div>
+            <div><h2>Starter Templates</h2><p class="muted small">Pre-set catalogues assigned when an office is created.</p></div>
             <button class="btn primary" id="template-add">New template</button>
           </div>
           <div class="card"><table>
@@ -2167,11 +3712,36 @@
           </table></div>
         </section>
 
+
+        <!-- What every venue is entitled to, and what it is using.
+
+             READ HERE, CHANGED IN VESOPA. The quantities come from the
+             subscriptions on auth.vesopa.com, because that is where a customer
+             buys them. This screen shows what that means on the ground: how
+             many of each app a venue may run and how many it actually has. -->
+        <section id="view-licences" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Licences &amp; pricing</h2>
+              <p class="muted small">
+                What each venue pays Vesopa for, and what it is running. The numbers come
+                from the venue's subscriptions and are changed there, not here — a number
+                typed in two places is a number that will disagree with itself.
+                A venue with no Vesopa organisation has no limits at all.
+              </p>
+            </div>
+            <button class="btn" id="licences-refresh"
+                    title="Ask Vesopa again for every linked venue">Refresh from Vesopa</button>
+          </div>
+          <p class="muted small" id="licences-state"></p>
+          <div class="card rd-card"><div id="licences-table"></div></div>
+        </section>
+
         <!-- Admin -->
         <section id="view-offices" class="view" hidden>
           <div class="page-head"><div><h2>Offices</h2><p class="muted small">Every office on this installation, what it is charged, and when it is next due.</p></div><button class="btn primary" id="add-office">New office</button></div>
           <div class="card"><table>
-            <thead><tr><th>Office</th><th>Contact</th><th>Status</th><th>Users</th><th class="right">Charge</th><th>Next due</th><th></th></tr></thead>
+            <thead><tr><th>Office</th><th>Contact</th><th>Status</th><th>Users</th><th title="Tills signed in, and the licences paid for">Tills</th><th class="right">Charge</th><th>Next due</th><th></th></tr></thead>
             <tbody id="offices"></tbody>
           </table></div>
         </section>
@@ -2231,6 +3801,12 @@
          rendered, which is always after everything has parsed. -->
     <script src="/charts.js"></script>
     <script src="/screens.js"></script>
+    <!-- Before app.js, like screens.js: it defines functions app.js's render
+         map refers to, and uses app.js's helpers only from inside them. -->
+    <script src="/permissions.js"></script>
+    <script src="/stock.js"></script>
+    <script src="/dinein_card.js"></script>
+    <script src="/dinein.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>

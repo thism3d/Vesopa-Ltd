@@ -43,8 +43,22 @@ function applyTheme(choice) {
   if (choice === 'system') root.removeAttribute('data-theme');
   else root.setAttribute('data-theme', choice);
 
+  // The address bar and the task switcher on a phone read theme-color, and it
+  // was a fixed lime — so a manager in Night mode got a bright green bar over a
+  // near-black page. Read back from the rail rather than hardcoded twice: the
+  // stylesheet already knows what colour the chrome is, and two lists of
+  // colours are two lists to keep in step.
+  const meta = document.getElementById('theme-colour');
+  if (meta) {
+    const rail = getComputedStyle(root).getPropertyValue('--rail').trim();
+    if (rail) meta.setAttribute('content', rail);
+  }
+
   document.querySelectorAll('[data-theme-set]').forEach((b) => {
     b.setAttribute('aria-pressed', String(b.dataset.themeSet === choice));
+    // The menu items are radios in a menu rather than pressed buttons; both
+    // attributes are set so the control reads correctly whichever it is.
+    b.setAttribute('aria-checked', String(b.dataset.themeSet === choice));
   });
 }
 
@@ -56,13 +70,34 @@ function setTheme(choice) {
     // Not remembered, but still applied for this session.
   }
   applyTheme(choice);
+
+  // Redraw whatever is on screen. The charts are SVG with the series colour
+  // baked into each stroke, and they resolve `--chart-1` … `--chart-8` at draw
+  // time — so a page drawn in Day and then switched to Night keeps the Day
+  // greens on a near-black card until something else happens to re-render it.
+  // Guarded on `token`, because the switch is also on the sign-in page, where
+  // there is no view to render. Reachable only from a click, so `token` is
+  // long past its declaration by the time this runs.
+  if (token) render();
 }
 
 applyTheme(readTheme());
 
+// The rail and the theme corner, once the document has a body to hang them on.
+// This file runs before </body> in some paths and after it in others, so both
+// cases are covered rather than assuming either.
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => wireShell());
+} else {
+  wireShell();
+}
+
 document.addEventListener('click', (e) => {
   const key = e.target.closest?.('[data-theme-set]');
-  if (key) setTheme(key.dataset.themeSet);
+  if (key) {
+    setTheme(key.dataset.themeSet);
+    closeThemeMenu();
+  }
 });
 
 // ---- Session --------------------------------------------------------------
@@ -160,6 +195,10 @@ function connectSocket() {
     // on another machine should relabel them here. Safe to reload now that
     // loadScreens keeps an unsaved layout rather than replacing it.
     if (msg.type === 'catalogue.updated' && ['products', 'stock', 'screens'].includes(currentView)) render();
+    // A stock document completed on another screen, or a wastage rung on a
+    // till, changes the levels page under whoever is looking at it. The
+    // editors are left alone: a draft being typed must not be redrawn.
+    if (String(msg.type).startsWith('stock.') && currentView === 'stock') render();
     if (msg.type === 'staff.updated' && currentView === 'staff') render();
     if (msg.type === 'users.updated' && currentView === 'users') render();
     if (msg.type === 'customers.updated' && currentView === 'customers') render();
@@ -269,9 +308,17 @@ const ROUTES = {
   timesheets: '/timesheets',
   products: '/products',
   stock: '/stock',
+  stock_orders: '/stock/orders',
+  stock_wastage: '/stock/wastage',
+  stock_adjustments: '/stock/adjustments',
+  stock_takes: '/stock/stock-takes',
+  stock_spot_checks: '/stock/spot-checks',
+  stock_suppliers: '/stock/suppliers',
+  stock_pack_sizes: '/stock/pack-sizes',
   screens: '/screen-programming',
   program_departments: '/program-departments',
   program_groups: '/program-groups',
+  printer_categories: '/printer-categories',
   import: '/import',
   run_report: '/reports/financial-summary',
   report_schedules: '/reports/schedules',
@@ -283,8 +330,15 @@ const ROUTES = {
   idle: '/idle-screen',
   kitchen: '/kitchen-screens',
   tables: '/tables',
+  dinein: '/dine-in',
+  dinein_menu: '/dine-in/menu',
+  dinein_qr: '/dine-in/table-codes',
+  dinein_orders: '/dine-in/orders',
+  express: '/vesopa-express',
   users: '/users',
+  user_roles: '/user-roles',
   staff: '/staff',
+  permission_groups: '/permission-groups',
   customers: '/customers',
   vouchers: '/vouchers',
   receipt_designer: '/receipt-designer',
@@ -294,12 +348,21 @@ const ROUTES = {
   loyalty: '/loyalty',
   cards: '/cards',
   wallet: '/wallet',
+  loyalty_app: '/loyalty-app',
   devices: '/devices',
+  gym: '/gym',
+  // Added when the reachability check above found it missing. Price Levels has
+  // had a nav button, a section and a loader since 1.6.9.0 and no URL, so the
+  // address bar said /dashboard while you were looking at it and a refresh
+  // threw the page away. Nobody reported it, which is what a missing route
+  // looks like: mildly annoying, every time, to whoever is using that page.
+  price_levels: '/price-levels',
   tender: '/tender',
   rules: '/rules',
   templates: '/templates',
   subscriptions: '/subscriptions',
   offices: '/offices',
+  licences: '/licences',
   billing: '/billing',
 };
 
@@ -319,24 +382,67 @@ function show(view, { push = true, userInitiated = false } = {}) {
     view !== 'screens' &&
     typeof spDirty === 'function' &&
     spDirty() &&
-    !confirm('This screen has changes that have not been saved. Leave them behind?')
+    // Not window.confirm: iOS lets a person switch those off for the session,
+    // after which this returns false for ever and the editor cannot be left at
+    // all. This is a synchronous decision — show() cannot await — so the guard
+    // is a flag the dialog sets, and the dialog re-runs the navigation itself.
+    !spLeaveConfirmed
   ) {
+    confirmDialog(
+      'This screen has changes that have not been saved.',
+      { title: 'Leave without saving?', confirmLabel: 'Discard changes', danger: true }
+    ).then((yes) => {
+      if (!yes) return;
+      spLeaveConfirmed = true;
+      show(view, { push, userInitiated });
+      spLeaveConfirmed = false;
+    });
     if (!push) history.pushState({ view: 'screens' }, '', ROUTES.screens);
     return;
   }
 
+  // EVERYTHING VISIBLE HAPPENS BEFORE ANYTHING IS ASKED FOR.
+  //
+  // The address, the highlighted nav item, the heading, the progress bar and
+  // the skeleton are all settled in this synchronous block, so the browser
+  // paints the new page on the same frame as the press. The data arrives when
+  // it arrives and drops into a page that is already there.
+  //
+  // Before this, a press changed nothing at all until the response landed —
+  // which on a slow connection is a button that appears not to work, and which
+  // is exactly what was reported.
   currentView = view;
+
+  const path = ROUTES[view] || '/dashboard';
+  if (push && location.pathname !== path) {
+    history.pushState({ view }, '', path);
+  }
+  // Named by the rail rather than by the view key. The key is a variable name
+  // — `run_report`, `dinein_qr` — and a browser tab reading "Vesopa EPOS —
+  // dinein qr" is the internals leaking into the one place a manager keeps
+  // several of these open at once.
+  const tab = document.querySelector(`.nav[data-view="${view}"]`);
+  document.title = `Vesopa EPOS — ${
+    tab ? tab.textContent.trim() : view.replace(/_/g, ' ')
+  }`;
+
   document.querySelectorAll('.view').forEach((v) => (v.hidden = true));
   $(`view-${view}`).hidden = false;
   document.querySelectorAll('.nav').forEach((b) =>
     b.classList.toggle('active', b.dataset.view === view)
   );
 
-  const path = ROUTES[view] || '/dashboard';
-  if (push && location.pathname !== path) {
-    history.pushState({ view }, '', path);
+  // Only where something is actually coming. A view that fetches nothing is
+  // already complete, and a skeleton over it would be a lie that never
+  // resolves.
+  if (VIEW_LOADERS[view]) {
+    paintSkeleton(view);
+    loadbar.start();
   }
-  document.title = `Vesopa EPOS — ${view.replace(/_/g, ' ')}`;
+
+  // The page starts at the top, as it would on a real navigation. Without this
+  // a long list left the next view scrolled halfway down its own skeleton.
+  window.scrollTo({ top: 0, behavior: 'auto' });
 
   // The screen editor opens in a window of its own, and this tab draws a card
   // saying where it went. Asked here rather than inside loadScreens because it
@@ -370,12 +476,35 @@ function navItemsFor(heading) {
   return items;
 }
 
-function applyGroupState(heading, collapsed) {
+/**
+ * Where the operator's own fold choices are kept.
+ *
+ * Version 2 of the key, deliberately. Until 1.6.8.0 three of the seven groups
+ * started open, and every browser that has ever been used has a v1 preference
+ * saved that says so. A saved choice wins over the default — which is right,
+ * and which would also mean that "start every group closed" reached nobody who
+ * had ever pressed a heading. A new key hands everybody the new behaviour once
+ * and then remembers what they do next.
+ */
+const NAV_OPEN_KEY = 'vesopa_nav_open_v2';
+
+/**
+ * Fold or unfold one group.
+ *
+ * `remember` is false when the state is not the operator's decision — the
+ * opening of whichever group holds the current page. Saving that would turn
+ * "you are looking at Products" into "you always want Catalogue open", and a
+ * week of ordinary use would leave every group open again, which is the thing
+ * the venue asked to be rid of.
+ */
+function applyGroupState(heading, collapsed, { remember = true } = {}) {
   heading.classList.toggle('collapsed', collapsed);
   navItemsFor(heading).forEach((n) => n.classList.toggle('hidden-by-group', collapsed));
-  const open = JSON.parse(localStorage.getItem('vesopa_nav_open') || '{}');
+  heading.setAttribute('aria-expanded', String(!collapsed));
+  if (!remember) return;
+  const open = JSON.parse(localStorage.getItem(NAV_OPEN_KEY) || '{}');
   open[heading.dataset.group] = !collapsed;
-  localStorage.setItem('vesopa_nav_open', JSON.stringify(open));
+  localStorage.setItem(NAV_OPEN_KEY, JSON.stringify(open));
 }
 
 function toggleGroup(heading) {
@@ -383,22 +512,103 @@ function toggleGroup(heading) {
 }
 
 /**
- * Set the initial fold state. Bigger sections start minimised so the rail is
- * short and scannable; the operator's own choices (saved above) win over the
- * defaults, and whichever group holds the current view is always opened.
+ * Find a page by typing, whatever section it is filed under.
+ *
+ * The counterweight to folding every group. A manager who knows a page is
+ * called "Timesheets" should not have to know it lives under Reports, and
+ * before this they did not have to — every item was on screen.
+ *
+ * It hides rather than moves: the rail keeps its order, so the same word
+ * always finds the same item in the same place, and clearing the box puts
+ * everything back exactly as it was including each group's own fold state.
+ * A heading survives only if something under it matched.
+ */
+function wireNavFind() {
+  const box = document.getElementById('rail-find');
+  const rail = document.getElementById('rail');
+  if (!box || !rail) return;
+
+  box.addEventListener('input', () => {
+    const q = box.value.trim().toLowerCase();
+    rail.classList.toggle('finding', q !== '');
+
+    if (!q) {
+      document.querySelectorAll('.hidden-by-find').forEach((el) =>
+        el.classList.remove('hidden-by-find')
+      );
+      return;
+    }
+
+    document.querySelectorAll('.nav-group').forEach((heading) => {
+      const items = navItemsFor(heading);
+      let any = false;
+      for (const item of items) {
+        const hit = item.textContent.trim().toLowerCase().includes(q);
+        item.classList.toggle('hidden-by-find', !hit);
+        any = any || hit;
+      }
+      heading.classList.toggle('hidden-by-find', !any);
+    });
+
+    // Dashboard sits above every heading and belongs to no group, so it is
+    // matched on its own rather than being missed by the loop above.
+    document.querySelectorAll('.nav').forEach((item) => {
+      if (item.closest('nav') && !item.classList.contains('nav-group')
+          && !navGrouped(item)) {
+        item.classList.toggle(
+          'hidden-by-find',
+          !item.textContent.trim().toLowerCase().includes(q)
+        );
+      }
+    });
+  });
+
+  // Escape clears it, because a search box that can only be emptied by
+  // selecting its contents is a search box people stop using.
+  box.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      box.value = '';
+      box.dispatchEvent(new Event('input'));
+    }
+  });
+}
+
+/** Whether this nav item sits under a group heading. */
+function navGrouped(item) {
+  let el = item.previousElementSibling;
+  while (el) {
+    if (el.classList.contains('nav-group')) return true;
+    el = el.previousElementSibling;
+  }
+  return false;
+}
+
+/**
+ * Set the initial fold state.
+ *
+ * **Every group starts closed**, at the venue's request: "default the back
+ * office navigation so all the sub pages are hidden and only displaying the
+ * header until clicked to show submenu". Seven headings fit on any screen
+ * without scrolling, which forty-nine items never did — the rail used to run
+ * off the bottom under the Hide menu footer, and the last two sections were
+ * only reachable by scrolling a column nobody expects to scroll.
+ *
+ * Two things still override the default: an operator's own saved choices, and
+ * the group holding the page they are looking at, which is never hidden.
  */
 function initNavGroups() {
-  const defaultCollapsed = ['programming', 'people', 'administration'];
-  const saved = JSON.parse(localStorage.getItem('vesopa_nav_open') || '{}');
+  const saved = JSON.parse(localStorage.getItem(NAV_OPEN_KEY) || '{}');
 
   document.querySelectorAll('.nav-group').forEach((heading) => {
     const g = heading.dataset.group;
-    let collapsed = g in saved ? !saved[g] : defaultCollapsed.includes(g);
-    // Never hide the section the user is currently looking at.
-    if (navItemsFor(heading).some((n) => n.dataset.view === currentView)) {
-      collapsed = false;
-    }
-    applyGroupState(heading, collapsed);
+    const chosen = g in saved ? !saved[g] : true;
+    // Never hide the section the user is currently looking at — but do not
+    // record that as a choice they made.
+    const holdsCurrent = navItemsFor(heading)
+      .some((n) => n.dataset.view === currentView);
+    applyGroupState(heading, holdsCurrent ? false : chosen, {
+      remember: !holdsCurrent,
+    });
   });
 }
 
@@ -412,6 +622,23 @@ function initNavGroups() {
  * cell (e.g. pence → £, 1/0 → Yes/No).
  */
 const yesNo = (v) => (Number(v) ? 'Yes' : '—');
+
+/**
+ * What an error reason explains, in the words the manager chose it by.
+ *
+ * The column stores `no_sale`, which is right for a database and wrong for a
+ * list somebody reads. Anything unrecognised is shown as it is stored rather
+ * than blanked — a value this list has not caught up with is still a fact
+ * about the row, and hiding it would make the row look broken.
+ */
+const REASON_ACTION_LABELS = {
+  void: 'Void',
+  cancel: 'Cancel',
+  refund: 'Refund',
+  no_sale: 'No Sale',
+  discount: 'Discount',
+};
+const reasonAction = (v) => REASON_ACTION_LABELS[String(v)] || String(v || '—');
 
 const CRUD = {
   departments: {
@@ -432,6 +659,20 @@ const CRUD = {
     fields: [
       { name: 'group_name', label: 'Sub Department', required: true },
       { name: 'accounting_code', label: 'Accounting code' },
+    ],
+  },
+  /**
+   * Printing categories: the order a kitchen ticket comes out in.
+   *
+   * One field, because one field is all it is — a name. The order is the row
+   * order, dragged, which is why `sortable` matters more here than the form
+   * does: a venue reorders Breakfast, Mains and Desserts by moving them, not by
+   * typing numbers into a column and working out the gaps.
+   */
+  'print-categories': {
+    path: 'print-categories', title: 'printer category', sortable: true,
+    fields: [
+      { name: 'name', label: 'Category', required: true },
     ],
   },
   /**
@@ -479,17 +720,74 @@ const CRUD = {
     ],
     rowActions: (r) =>
       r.screen_id
-        ? `<button class="btn small ghost" data-edit-answers="${r.screen_id}">Edit answers</button>`
+        ? iconBtn('tune', 'Edit the answers', `data-edit-answers="${r.screen_id}"`)
         : '',
   },
+  /**
+   * Mix & Match deals, and — new in 1.6.8.0 — which products are in one.
+   *
+   * "Instead of using PLU numbers can this be set to select products from a
+   * drop down list with a search function." Worth saying what was actually
+   * there: `bo_mix_match_products` has existed since the first schema and the
+   * till has always read it, but the back office has never written it. There
+   * was no PLU box to replace — the deals on the live database were populated
+   * by hand — so this is the first way a venue can say what a deal is *for*.
+   *
+   * `plu_ids` is not a column on `bo_mix_match`; it is a second table, saved
+   * by `afterSave` once the deal has an id. That is also why it is hidden from
+   * the table: `extraColumns` shows the count instead, which is the part
+   * anybody scanning the list wants.
+   */
   'mix-match': {
     path: 'mix-match', title: 'deal', sortable: true,
     fields: [
       { name: 'name', label: 'Deal name', required: true },
       { name: 'trigger_qty', label: 'Trigger quantity', type: 'number' },
       { name: 'deal_price_minor', label: 'Deal price (£)', type: 'money' },
+      {
+        name: 'plu_ids',
+        label: 'Products in this deal',
+        type: 'products',
+        hideInTable: true,
+        hint: 'Search by name or PLU. The deal fires when the trigger quantity '
+          + 'of any of these is on one bill.',
+      },
       { name: 'active', label: 'Active', type: 'checkbox', render: yesNo },
     ],
+    extraColumns: [
+      {
+        // Zero is the number worth spotting: a deal with no products never
+        // fires, and until 1.6.8.0 there was no way to see that from here.
+        cell: (r) =>
+          Number(r.product_count)
+            ? `${r.product_count} product${Number(r.product_count) === 1 ? '' : 's'}`
+            : '<span class="badge archived" title="No products chosen, so this deal never fires on the till.">no products</span>',
+      },
+    ],
+    /**
+     * The catalogue, fetched when the form opens rather than with the page.
+     * The Mix & Match list itself has no use for four hundred products, and a
+     * venue looking at four deals should not pay for them.
+     */
+    choices: async () => {
+      crudProductChoices = await api('/products');
+    },
+    /** The deal's products, fetched when the form opens. */
+    prefill: async (row) =>
+      row?.id
+        ? {
+            plu_ids: (await api(`/mix-match/${row.id}/products`))
+              .map((p) => String(p.plu_id)),
+          }
+        : { plu_ids: [] },
+    /** The second table, written once the deal has an id. */
+    afterSave: async (id, data) =>
+      api(`/mix-match/${id}/products`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          plu_ids: [].concat(data.plu_ids || []).map(Number).filter(Number.isFinite),
+        }),
+      }),
   },
   'finalise-keys': {
     path: 'finalise-keys', title: 'finalise key', sortable: true,
@@ -503,7 +801,32 @@ const CRUD = {
     path: 'error-reasons', title: 'error reason', sortable: true,
     fields: [
       { name: 'reason', label: 'Reason', required: true },
-      { name: 'applies_to', label: 'Applies to', type: 'select', options: ['void', 'refund', 'discount'] },
+      {
+        name: 'applies_to',
+        label: 'Applies to',
+        type: 'select',
+        render: reasonAction,
+        // Five actions, each with its own list on the till.
+        //
+        // "Can we have reasons for No Sale, Refunds, Voids and Cancel (Void
+        // and Cancel is already done just need to split them off." Cancel was
+        // not done — the till was showing the void list when a check was
+        // cancelled, which is why it looked done. It has its own list now,
+        // seeded from each venue's void reasons so nobody starts with an
+        // empty dialog, and it is theirs to edit apart.
+        //
+        // Labelled, not raw: the stored value is `no_sale` and a manager
+        // choosing from this box should read "No Sale".
+        options: [
+          { value: 'void', label: 'Void — an item off a bill' },
+          { value: 'cancel', label: 'Cancel — a whole check abandoned' },
+          { value: 'refund', label: 'Refund — money back out of the drawer' },
+          { value: 'no_sale', label: 'No Sale — the drawer opened with nothing sold' },
+          { value: 'discount', label: 'Discount — money off' },
+          { value: 'expense', label: 'Paid Out — money paid out of the drawer' },
+          { value: 'wastage', label: 'Wastage — stock thrown away at the till' },
+        ],
+      },
     ],
   },
   tax: {
@@ -568,6 +891,142 @@ function cellText(field, value) {
       : '—';
   }
   return esc(String(value ?? '—'));
+}
+
+/**
+ * Choose a picture: the preview, the button, and the value that gets saved.
+ *
+ * WHY THIS IS A FUNCTION AND NOT A TEXT BOX
+ *
+ * Half the picture fields in the back office were an input labelled "Image
+ * URL", which asks a publican to go and find a web address for a photograph of
+ * their own dining room. There is nowhere for them to get one: the photograph
+ * is on their phone. The only people who could fill those boxes in were people
+ * who had already uploaded the picture somewhere else.
+ *
+ * The upload path already existed — crop, resize, post to /api/product-image —
+ * but only inside the modal form builder. This is that same path, extracted, so
+ * a page that is not a modal can use it too.
+ *
+ * WHAT IT RENDERS
+ *
+ * A hidden input carrying the URL, which is what gets read on save, so an
+ * untouched field keeps the picture it already had; a preview beside it,
+ * because a filename is not a picture and the whole question here is whether it
+ * looks right; and a button to remove one, because a venue that took the wrong
+ * photograph has no other way back to none.
+ *
+ * `wireImagePickers` has to be called on whatever contains it.
+ */
+function imagePicker(name, value, {
+  crop = 'square',
+  label = 'Choose a picture',
+  // Where the file goes. Product images and venue logos share one route;
+  // a photograph of a person has its own, because a venue has to be able to
+  // find, replace and delete those on request and the two should be separable
+  // later without rewriting every URL in the database.
+  endpoint = '/api/product-image',
+} = {}) {
+  const has = !!(value && String(value).trim());
+  return `
+    <input type="hidden" name="${esc(name)}" id="${esc(name)}" value="${esc(value ?? '')}" />
+    <div class="img-field" data-img-for="${esc(name)}">
+      ${has ? `<img class="img-preview" src="${esc(value)}" alt="" />` : ''}
+      <div class="img-acts">
+        <label class="btn small filepick-btn">
+          <span>${esc(has ? 'Replace' : label)}</span>
+          <input type="file" accept="image/*"
+                 data-upload-for="${esc(name)}" data-crop-shape="${esc(crop)}"
+                 data-upload-to="${esc(endpoint)}" />
+        </label>
+        <button type="button" class="btn small ghost" data-img-clear="${esc(name)}"
+                ${has ? '' : 'hidden'}>Remove</button>
+      </div>
+    </div>`;
+}
+
+/**
+ * Make every picker inside `root` work.
+ *
+ * Idempotent: a page that redraws part of itself can call this again without
+ * binding the same input twice, which would upload the same photograph twice
+ * and race the two replies.
+ */
+function wireImagePickers(root) {
+  if (!root) return;
+
+  root.querySelectorAll('[data-upload-for]').forEach((input) => {
+    if (input.dataset.wired) return;
+    input.dataset.wired = '1';
+
+    input.addEventListener('change', async () => {
+      const file = input.files[0];
+      if (!file) return;
+
+      let blob;
+      try {
+        // Zoom, pan and crop, so what is stored is the shape the page will draw
+        // it in rather than whatever came off a camera.
+        blob = await openCropper(file, input.dataset.cropShape);
+      } catch {
+        input.value = '';
+        return; // cancelled, which is not a failure
+      }
+      if (!blob) return;
+
+      const name = input.dataset.uploadFor;
+      const wrap = input.closest('.img-field');
+      const button = input.closest('.filepick-btn');
+      const say = button?.querySelector('span');
+      const was = say?.textContent;
+      if (say) say.textContent = 'Uploading…';
+
+      const body = new FormData();
+      body.append('image', blob, 'image.png');
+      try {
+        const res = await fetch(input.dataset.uploadTo || '/api/product-image', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body,
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Upload failed');
+
+        const hidden = root.querySelector(`[name="${CSS.escape(name)}"]`)
+          || document.getElementById(name);
+        if (hidden) hidden.value = data.url;
+
+        wrap?.querySelector('.img-preview')?.remove();
+        const img = document.createElement('img');
+        img.className = 'img-preview';
+        img.src = data.url;
+        wrap?.prepend(img);
+        wrap?.querySelector('[data-img-clear]')?.removeAttribute('hidden');
+        if (say) say.textContent = 'Replace';
+      } catch (err) {
+        toast(err.message, 'error');
+        if (say) say.textContent = was || 'Choose a picture';
+      } finally {
+        input.value = '';
+      }
+    });
+  });
+
+  root.querySelectorAll('[data-img-clear]').forEach((btn) => {
+    if (btn.dataset.wired) return;
+    btn.dataset.wired = '1';
+    btn.addEventListener('click', () => {
+      const name = btn.dataset.imgClear;
+      const hidden = root.querySelector(`[name="${CSS.escape(name)}"]`)
+        || document.getElementById(name);
+      if (hidden) hidden.value = '';
+      const wrap = btn.closest('.img-field');
+      wrap?.querySelector('.img-preview')?.remove();
+      const say = wrap?.querySelector('.filepick-btn span');
+      if (say) say.textContent = 'Choose a picture';
+      btn.hidden = true;
+    });
+  });
 }
 
 /**
@@ -705,8 +1164,8 @@ async function loadCrud(key) {
         ${extras.map((c) => `<td>${c.cell(r)}</td>`).join('')}
         <td class="right nowrap row-actions-cell">
           ${cfg.rowActions ? cfg.rowActions(r) : ''}
-          <button class="btn small ghost" data-edit="${key}" data-id="${r.id}">Edit</button>
-          <button class="btn small danger" data-del="${cfg.path}" data-id="${r.id}">Delete</button>
+          ${iconBtn('edit', 'Edit', `data-edit="${key}" data-id="${r.id}"`)}
+          ${iconBtn('del', 'Delete', `data-del="${cfg.path}" data-id="${r.id}"`, 'danger')}
         </td>
       </tr>`
     )
@@ -724,12 +1183,25 @@ async function loadCrud(key) {
  * Build the modal fields for a CRUD row, prefilled from `row` on edit.
  * Money fields store pence but edit in pounds, so they convert both ways.
  */
+/**
+ * The catalogue, for a picker that chooses products inside a CRUD form.
+ *
+ * Module-level rather than passed through, because `fieldHtml` renders from a
+ * field description alone and the alternative is threading a products array
+ * through four call sites that have no other use for one. Filled by a config's
+ * `choices()` hook immediately before the form is built.
+ */
+let crudProductChoices = [];
+
 function crudModalFields(cfg, row = {}) {
   return cfg.fields.map((f) => {
     let value = row[f.name];
     if (f.type === 'money' && value != null) value = (Number(value) / 100).toFixed(2);
     if (f.type === 'checkbox') value = Number(value) ? 1 : 0;
     if (f.type === 'date' && value) value = String(value).slice(0, 10);
+    if (f.type === 'products') {
+      return { ...f, options: crudProductChoices, value: value ?? [] };
+    }
     return { ...f, value: value ?? (f.type === 'checkbox' ? 0 : '') };
   });
 }
@@ -740,6 +1212,13 @@ function crudPayload(cfg, data) {
   for (const f of cfg.fields) {
     if (f.type === 'money') out[f.name] = Math.round(parseFloat(out[f.name] || '0') * 100);
     if (f.type === 'checkbox') out[f.name] = out[f.name] ? 1 : 0;
+    // The sentinel comes off and what is left is the answer — an array, which
+    // may legitimately be empty. See the field renderer for why it is needed.
+    if (f.type === 'allergens') {
+      const raw = out[f.name];
+      const values = raw === undefined ? [] : [].concat(raw).map(String);
+      out[f.name] = values.filter((v) => v !== '__answered__');
+    }
     // A blank number means "none", which for a NOT NULL DEFAULT 0 column is 0,
     // not NULL — MySQL rejects NULL there under strict mode, so leaving
     // "minimum spend" empty would fail the entire save with a 500. Columns that
@@ -793,7 +1272,7 @@ function makeSortable(tbody, path) {
           body: JSON.stringify({ order }),
         });
       } catch (err) {
-        alert(err.message);
+        toast(err.message, 'error');
         render();
       }
     });
@@ -810,12 +1289,15 @@ function makeSortable(tbody, path) {
   });
 }
 
-function render() {
-  if (CRUD[currentView.replace('program_', '').replace('_', '-')]) {
-    // handled below by the map
-  }
-
-  const load = {
+/**
+ * Which views fetch something when they open.
+ *
+ * Lifted out of render() so that show() can consult it as well. It has to know
+ * whether the view it is about to display will be filled in later, because that
+ * is the difference between drawing a skeleton and drawing nothing.
+ */
+const VIEW_LOADERS = {
+    price_levels: loadPriceLevels,
     dashboard: loadDashboard,
     report: loadReports,
     sales_explorer: loadExplorer,
@@ -823,15 +1305,32 @@ function render() {
     bill_report: loadBillReport,
     timesheets: loadTimesheets,
     products: loadProducts,
-    stock: loadStock,
+    // Stock Control: the loaders are in stock.js.
+    stock: loadStockLevels,
+    stock_orders: loadStockOrders,
+    stock_wastage: () => loadStockDocs('wastage'),
+    stock_adjustments: () => loadStockDocs('adjustment'),
+    stock_takes: () => loadStockDocs('stocktake'),
+    stock_spot_checks: () => loadStockDocs('spot_check'),
+    stock_suppliers: loadStockSuppliers,
+    stock_pack_sizes: loadStockPackSizes,
     users: loadUsers,
+    user_roles: loadUserRoles,
     staff: loadStaff,
+    permission_groups: loadPermissionGroups,
     customers: loadCustomers,
     offices: loadOffices,
+    licences: loadAdminLicences,
     billing: loadBilling,
     tables: loadFloor,
+    dinein: loadDineIn,
+    dinein_menu: loadDineInMenu,
+    dinein_qr: loadDineInQr,
+    dinein_orders: loadDineInOrders,
+    express: loadExpress,
     program_departments: () => loadCrud('departments'),
     program_groups: () => loadCrud('groups'),
+    printer_categories: () => loadCrud('print-categories'),
     import: loadImport,
     run_report: loadRunReport,
     report_schedules: loadReportSchedules,
@@ -850,21 +1349,69 @@ function render() {
     deposits: loadDeposits,
     loyalty: loadLoyalty,
     cards: loadCards,
+    gym: loadGym,
     wallet: loadWallet,
+    loyalty_app: loadLoyaltyApp,
     devices: loadDevices,
     tender: loadTender,
     rules: loadRules,
     templates: loadTemplates,
     subscriptions: loadSubscriptions,
-  }[currentView];
+  };
+
+/**
+ * Nothing to look at, in the shape of what is coming.
+ *
+ * A view keeps its heading — that is already correct and switching it out for
+ * a grey bar would be a step backwards — and everything below it is replaced
+ * until the data lands. Done by adding a class rather than by emptying the
+ * view, so no loader has to cooperate and nothing is destroyed: when the class
+ * comes off, whatever the loader wrote is underneath.
+ */
+function paintSkeleton(view) {
+  const section = $(`view-${view}`);
+  if (!section) return;
+  section.classList.add('is-loading');
+  if (section.querySelector(':scope > .view-skeleton')) return;
+
+  const sk = document.createElement('div');
+  sk.className = 'view-skeleton';
+  sk.setAttribute('aria-hidden', 'true');
+  // Two shapes: pages that lead with figures, and pages that lead with a list.
+  const figures = ['dashboard', 'report', 'financial', 'till_report', 'bill_report'];
+  sk.innerHTML = figures.includes(view) ? SKELETONS.stats : SKELETONS.list;
+
+  const head = section.querySelector(':scope > .page-head');
+  if (head && head.nextSibling) section.insertBefore(sk, head.nextSibling);
+  else section.appendChild(sk);
+}
+
+function clearSkeleton(view) {
+  const section = $(`view-${view}`);
+  if (!section) return;
+  section.classList.remove('is-loading');
+  section.querySelectorAll(':scope > .view-skeleton').forEach((el) => el.remove());
+}
+
+function render() {
+  const view = currentView;
+  const load = VIEW_LOADERS[view];
 
   if (load) {
     Promise.resolve(load())
       .then(cardsInView)
-      .catch((e) => console.error(e));
+      .catch((e) => console.error(e))
+      .finally(() => {
+        clearSkeleton(view);
+        loadbar.done();
+      });
+  } else {
+    // A view with nothing to fetch still has to finish the bar, or it creeps
+    // towards the end for ever on every page that is already drawn.
+    clearSkeleton(view);
+    loadbar.done();
   }
 }
-
 // ---- New reports ----------------------------------------------------------
 
 /**
@@ -887,7 +1434,7 @@ function render() {
  * afterwards and appends yesterday's lines under today's heading. Each search
  * takes a number, and a reply carrying the wrong one is dropped.
  */
-const EX_PAGE = 60;
+const EX_PAGE = 100;
 let exFeed = { token: 0, offset: 0, done: false, loading: false, watcher: null };
 
 async function loadExplorer() {
@@ -910,7 +1457,12 @@ async function exNextPage() {
   if (exFeed.loading || exFeed.done) return;
   const mine = exFeed.token;
   exFeed.loading = true;
-  if (exFeed.offset) exSay('Loading more…', true);
+  // Deliberately silent. A "Loading more…" line that appears and vanishes
+  // under a list somebody is reading is the loading *becoming* visible; the
+  // fetch runs far enough ahead (see FEED_MARGIN) that there is nothing to
+  // wait for, and a message about it is only a chance to notice a wait that
+  // did not happen. The first page still shows the skeleton, and the end of
+  // the list still says how many there were.
 
   const params = new URLSearchParams();
   if ($('ex-from').value) params.set('from', $('ex-from').value);
@@ -979,7 +1531,14 @@ function exWatch() {
    --------------------------------------------------------------------------- */
 
 /** How much warning the foot of a list gets, in pixels of scroll. */
-const FEED_MARGIN = 500;
+// How far ahead of the fold the next page is fetched.
+//
+// 500 meant the request went out as the last row arrived on screen, so on a
+// slow connection somebody scrolling steadily hit the bottom and waited. At
+// 1400 the page after this one is usually already in hand by the time it is
+// needed, and the list simply never ends — which is the whole point of loading
+// as you scroll rather than paging.
+const FEED_MARGIN = 1400;
 
 /**
  * Load until the foot of the list is off the bottom of the screen.
@@ -1002,6 +1561,23 @@ async function feedFill(footId, feed, nextPage) {
 
   for (let guard = 0; guard < 40; guard++) {
     if (feed.done) return;
+
+    // A view that is still under its skeleton has `display: none` on everything
+    // below the heading, so the sentinel has no box at all — and a box of no
+    // size reports top 0, which reads here as "the foot of the list is at the
+    // top of the screen, keep filling". It did: the Sales Explorer fetched
+    // every line it had, a page at a time, before the skeleton came off. Three
+    // hundred and seventy-seven rows on a first paint that should have drawn a
+    // hundred.
+    //
+    // One page, then stop. The observer is already watching the sentinel, so
+    // the moment the skeleton clears and the foot is genuinely in view, filling
+    // resumes on its own with the real measurements.
+    if (!sentinel.getClientRects().length) {
+      if (!feed.offset) await nextPage();
+      return;
+    }
+
     const box = sentinel.getBoundingClientRect();
     // The same margin the observer is given, asked directly.
     const fold = window.innerHeight || document.documentElement.clientHeight;
@@ -1127,7 +1703,7 @@ async function loadTimesheets() {
             '</td>' +
             '<td class="right">' +
             '<button class="btn small ghost" data-edit-shift="' + r.id + '">Correct</button> ' +
-            '<button class="btn small danger-ghost" data-del-shift="' + r.id + '">Delete</button>' +
+            iconBtn('del', 'Delete this shift', 'data-del-shift="' + r.id + '"', 'danger') +
             '</td></tr>'
         )
         .join('')
@@ -1164,7 +1740,7 @@ async function loadTillReport() {
  * anywhere in the back office, and nothing on the screen said so. Nobody
  * scrolls two hundred rows to discover a limit.
  */
-const BR_PAGE = 60;
+const BR_PAGE = 100;
 let brFeed = { token: 0, offset: 0, done: false, loading: false, watcher: null };
 
 async function loadBillReport() {
@@ -1181,7 +1757,7 @@ async function brNextPage() {
   if (brFeed.loading || brFeed.done) return;
   const mine = brFeed.token;
   brFeed.loading = true;
-  if (brFeed.offset) feedSay('br-more', 'Loading more…', true);
+  // Silent, for the same reason as the Sales Explorer above.
 
   const params = new URLSearchParams();
   params.set('limit', String(BR_PAGE));
@@ -1317,6 +1893,9 @@ function routeChips(p) {
   if (Number(p.print_to_receipt) === 0) {
     chips.push('<span class="chip warn">Not on receipt</span>');
   }
+  if (Number(p.is_modifier) === 1) {
+    chips.push('<span class="chip">Attaches to an item</span>');
+  }
   return chips.length ? chips.join(' ') : '<span class="muted">—</span>';
 }
 
@@ -1359,27 +1938,95 @@ let productsBound = false;
 /// does not lose them because somebody else saved a price.
 let productPicks = new Set();
 
+/// The last row whose box was clicked, which is where a shift-click measures
+/// from. Null until something has been picked, and left alone by the header's
+/// select-all — "everything" has no end to hold a range against.
+let pickAnchor = null;
+
 // What the product form's list boxes are built from: the departments, sub
 // departments and VAT rates this venue has already set up. Fetched beside the
 // catalogue rather than when the form opens, so picking a department is a
 // choice from a list instead of a spelling test — and so the list is on screen
 // the instant the modal is.
-let productRefs = { departments: [], groups: [], tax: [], modifierGroups: [] };
+let productRefs = {
+  departments: [],
+  groups: [],
+  tax: [],
+  modifierGroups: [],
+  printCategories: [],
+  // The statutory fourteen, fetched once and shared by the product form and
+  // the dine-in menu item form. Served from src/allergens.js so that no screen
+  // spells them for itself — see the header of that file.
+  allergens: [],
+};
+
+/** What this venue calls each level, or "Price 2" where it has not said. */
+let priceLevelNames = null;
+
+/**
+ * Read the venue's level names, whatever shape they arrive in.
+ *
+ * Unreadable is "named nothing", which reads as "Price 2" on the form — the
+ * state every venue is in until it names one. A product form that would not
+ * open because a settings blob was malformed would be a much worse failure
+ * than a field labelled with a number.
+ */
+function safeLevelNames(raw) {
+  if (!raw) return null;
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The five optional prices, as form fields.
+ *
+ * Named by the venue where it has named them — a till key labelled "Price 2"
+ * tells a clerk nothing, and "Happy Hour" tells them everything. Set under
+ * Programming › Till & printers.
+ */
+function priceLevelFields(p = {}) {
+  const names = priceLevelNames || {};
+  return [2, 3, 4, 5, 6].map((n) => ({
+    label: `${names[n] || `Price ${n}`} (£) — blank uses Price 1`,
+    name: `price_${n}`,
+    type: 'money',
+    value: p[`price_${n}`] ?? '',
+  }));
+}
 
 async function loadProducts() {
   await ensurePrinterNames();
   // One round of requests, not four in series. The reference lists are small
   // and a failure in any of them must not leave the catalogue unreachable, so
   // each falls back to empty rather than rejecting the lot.
-  const [rows, departments, groups, tax, modifierGroups] = await Promise.all([
-    api('/products'),
-    api('/departments').catch(() => []),
-    api('/groups').catch(() => []),
-    api('/tax').catch(() => []),
-    api('/modifier-groups').catch(() => []),
-  ]);
+  const [
+    rows, departments, groups, tax, modifierGroups, printCategories,
+    allergens, till,
+  ] = await Promise.all([
+      api('/products'),
+      api('/departments').catch(() => []),
+      api('/groups').catch(() => []),
+      api('/tax').catch(() => []),
+      api('/modifier-groups').catch(() => []),
+      api('/print-categories').catch(() => []),
+      // Falls back to empty like the rest: a server that has not been
+      // redeployed yet shows the form without the allergen block rather than
+      // making the catalogue unreachable.
+      api('/allergens').then((r) => r.allergens || []).catch(() => []),
+      // For the price-level labels. A venue that has named none, or a server
+      // that has not run the migration, falls back to "Price 2" — which is
+      // what the field says anyway.
+      api('/till-settings').catch(() => null),
+    ]);
   productRows = rows;
-  productRefs = { departments, groups, tax, modifierGroups };
+  productRefs = {
+    departments, groups, tax, modifierGroups, printCategories, allergens,
+  };
+  priceLevelNames = safeLevelNames(till?.price_level_names);
   bindProducts();
   renderProducts();
 }
@@ -1431,7 +2078,7 @@ function bindProducts() {
       setTimeout(() => input.classList.remove('saved'), 900);
     } catch (err) {
       input.classList.remove('saving');
-      alert(err.message);
+      toast(err.message, 'error');
       // Put back what is actually stored, rather than leaving a value on screen
       // that the catalogue does not have.
       input.value = field === 'price'
@@ -1449,8 +2096,59 @@ function bindProducts() {
       const id = String(pick.dataset.pick);
       if (pick.checked) productPicks.add(id);
       else productPicks.delete(id);
+      pickAnchor = id;
       renderBulkBar();
     }
+  });
+
+  /**
+   * Shift-click picks everything between the last box and this one.
+   *
+   * "Select the first and last product and everything in between" — the venue
+   * asked for it because the alternative on a 400-product catalogue is 400
+   * clicks, and because every other list they use works this way.
+   *
+   * Three things worth knowing:
+   *
+   * * It runs on `click`, not on `change`. A `change` event is not a mouse
+   *   event and carries no `shiftKey`, so the modifier is simply not there to
+   *   read by then.
+   * * The range follows **what is on screen** — `visibleProducts()`, in the
+   *   order it is drawn, after the search, the department filter and whatever
+   *   column the manager has sorted by. Walking `productRows` instead would
+   *   tick rows that are not in front of them, which they would find out about
+   *   at the point of pressing Edit.
+   * * The whole range takes the state of the box just clicked, so a shift-click
+   *   on an unticked box de-selects a range as readily as it selects one.
+   *
+   * Selecting text is suppressed for the gesture: holding shift and clicking
+   * twice in a table otherwise highlights every product name in between, and
+   * the row of blue then survives the re-render.
+   */
+  table.addEventListener('click', (e) => {
+    const pick = e.target.closest('[data-pick]');
+    if (!pick) return;
+    const id = String(pick.dataset.pick);
+
+    if (e.shiftKey && pickAnchor && pickAnchor !== id) {
+      const order = visibleProducts().map((r) => String(r.id));
+      const from = order.indexOf(pickAnchor);
+      const to = order.indexOf(id);
+      // The anchor can have been filtered away since it was clicked. Falling
+      // back to the single tick is right: there is no range to a row that is
+      // not on the screen.
+      if (from !== -1 && to !== -1) {
+        const span = from < to ? order.slice(from, to + 1) : order.slice(to, from + 1);
+        for (const rowId of span) {
+          if (pick.checked) productPicks.add(rowId);
+          else productPicks.delete(rowId);
+        }
+        window.getSelection?.()?.removeAllRanges();
+        renderProducts();
+        renderBulkBar();
+      }
+    }
+    pickAnchor = id;
   });
 
   // Enter commits and moves on rather than submitting anything — there is no
@@ -1477,6 +2175,7 @@ function bindProducts() {
 
   $('prod-bulk-clear').addEventListener('click', () => {
     productPicks.clear();
+    pickAnchor = null;
     renderProducts();
     renderBulkBar();
   });
@@ -1689,7 +2388,7 @@ async function bulkEditProducts() {
       });
       productPicks.clear();
       renderBulkBar();
-      alert(`Updated ${res.updated} product${res.updated === 1 ? '' : 's'}.`);
+      toast(`Updated ${res.updated} product${res.updated === 1 ? '' : 's'}.`);
     }
   );
 }
@@ -1774,9 +2473,9 @@ function renderProducts() {
         <td class="right">${p.tax_percentage || 0}%</td>
         <td>${routeChips(p)}</td>
         <td class="right">
-          <button class="btn small ghost" data-edit-product="${p.id}">Edit</button>
-          <button class="btn small ghost" data-dup-product="${p.id}">Duplicate</button>
-          <button class="btn small danger" data-del-product="${p.id}">Delete</button>
+          ${iconBtn('edit', 'Edit', `data-edit-product="${p.id}"`)}
+          ${iconBtn('copy', 'Duplicate', `data-dup-product="${p.id}"`)}
+          ${iconBtn('del', 'Delete', `data-del-product="${p.id}"`, 'danger')}
         </td>
       </tr>`
     )
@@ -1795,6 +2494,16 @@ async function loadUsers() {
         <td class="muted small">${esc(u.email)}</td>
         <td>${esc(u.office_name || '—')}</td>
         <td><span class="badge ${u.role === 'admin' ? 'active' : 'archived'}">${u.role}</span></td>
+        <td>${
+          u.role === 'admin'
+            ? '<span class="muted">Platform admin</span>'
+            : u.role_name
+              ? `<span class="pill">${esc(u.role_name)}</span>`
+              // Named, not blank. A login with no role sees everything, and a
+              // column that says nothing for the most permissive state is the
+              // one way this table could mislead somebody.
+              : '<span class="muted">Everything</span>'
+        }</td>
         <td class="right nowrap">
           ${u.staff_id
             // A back-office login and a till operator are two different records
@@ -1806,82 +2515,85 @@ async function loadUsers() {
             : rowCardActions({ kind: 'staff', id: '', name: u.name, print: false,
                 disabled: 'No staff record matches this email, so there is no '
                   + 'card to issue. Add them under Staff first.' })}
-          <button class="btn small ghost" data-pw-user="${u.id}">Reset password</button>
           ${u.role !== 'admin'
-            ? `<button class="btn small danger" data-del-user="${u.id}">Delete</button>` : ''}
+            ? `<button class="btn small ghost" data-role-user="${u.id}" data-role-current="${u.role_id ?? ''}">Role</button>` : ''}
+          ${vesopaOnly
+            // WITH VESOPA AS THE ONLY WAY IN, there is no password to reset —
+            // the form is not on the sign-in page and no hash here can open
+            // anything. Offering the button anyway would be a manager setting a
+            // password, sending it to somebody, and both of them discovering
+            // over the phone that it does nothing.
+            //
+            // What replaces it is the thing that DOES let somebody in: an
+            // invitation to their Vesopa account.
+            ? `<button class="btn small ghost" data-invite-user="${u.id}">Invite through Vesopa</button>`
+            : `<button class="btn small ghost" data-pw-user="${u.id}">Reset password</button>`}
+          ${u.role !== 'admin'
+            ? iconBtn('del', 'Delete', `data-del-user="${u.id}"`, 'danger') : ''}
         </td>
       </tr>`
     )
-    .join('') || '<tr><td colspan="5" class="empty">No users.</td></tr>';
+    .join('') || '<tr><td colspan="6" class="empty">No users.</td></tr>';
 }
 
 /**
- * How many of each product remain.
- *
- * The count on its own was not telling anybody anything. Every product that
- * does not track stock came out as a flat "0", so a catalogue where nothing is
- * counted looked exactly like a catalogue where everything has run out — a
- * page of zeros that reads as an emergency and means nothing. Three states now,
- * and they are different states:
- *
- *   * **Not tracked** — no figure has ever been set. Said in words, greyed,
- *     because it is the absence of a number rather than the number nought.
- *   * **Out of stock** — tracked, and at or below zero. This is the emergency,
- *     and it is now the only thing that looks like one.
- *   * **Low** — tracked, and at or under the product's own low_stock_at. The
- *     dashboard has counted these for a while; this is the list that says which
- *     ones they are.
- *
- * Out of stock first, then low, then the rest in catalogue order: a stock list
- * is opened to find what needs ordering, and that should not need scrolling to.
+ * The Stock page moved to stock.js in 1.8.0.0 -- Stock Levels, with the
+ * ledger behind it. `loadStockLevels` replaces `loadStock`; the two count
+ * actions it had became a one-line delivery and a one-line stock take there,
+ * which is the same thing done by a document that remembers it happened.
  */
-async function loadStock() {
-  const rows = await api('/products');
 
-  const level = (p) => {
-    if (p.stock_quantity === null || p.stock_quantity === undefined) return 'none';
-    const left = Number(p.stock_quantity);
-    if (!Number.isFinite(left)) return 'none';
-    if (left <= 0) return 'out';
-    const at = Number(p.low_stock_at);
-    return Number.isFinite(at) && p.low_stock_at !== null && left <= at ? 'low' : 'ok';
+/**
+ * The permission-group picker for the staff form.
+ *
+ * "Every key" is the blank option and it is first, because it is what every
+ * existing member of staff has and what a new one gets unless somebody says
+ * otherwise. Naming it rather than leaving the option empty is the difference
+ * between a manager knowing what they are choosing and guessing.
+ *
+ * A venue with no groups gets the picker anyway, pointing at Staff Permissions.
+ * The alternative — hiding the field — leaves the feature invisible to exactly
+ * the people who have not set it up yet.
+ */
+async function staffGroupField(value) {
+  let groups = [];
+  try {
+    groups = await api('/permission-groups');
+  } catch {
+    // A half-migrated server. The field degrades to the only honest option.
+  }
+  return {
+    label: groups.length
+      ? 'Permissions'
+      : 'Permissions (set groups up under Staff Permissions)',
+    name: 'permission_group_id',
+    type: 'select',
+    value: value ?? '',
+    options: [
+      { value: '', label: 'Every key — no restrictions' },
+      ...groups.map((g) => ({ value: g.id, label: g.name })),
+    ],
   };
+}
 
-  const rank = { out: 0, low: 1, ok: 2, none: 3 };
-  const sorted = [...rows].sort((a, b) => rank[level(a)] - rank[level(b)]);
-
-  const count = (p) => {
-    const left = Number(p.stock_quantity);
-    // Stock is a DOUBLE — half a kilo of something is a real quantity — but
-    // almost every product is whole, and "12.00 in stock" reads as an error.
-    return Number.isInteger(left) ? String(left) : left.toFixed(2);
+/** The role picker for the back-office user form. Same shape, same reasoning. */
+async function userRoleField(value) {
+  let roles = [];
+  try {
+    roles = await api('/user-roles');
+  } catch {
+    // As above.
+  }
+  return {
+    label: roles.length ? 'Role' : 'Role (set roles up under Back Office User Roles)',
+    name: 'role_id',
+    type: 'select',
+    value: value ?? '',
+    options: [
+      { value: '', label: 'Everything — no restrictions' },
+      ...roles.map((r) => ({ value: r.id, label: r.display_name })),
+    ],
   };
-
-  const cell = (p) => {
-    switch (level(p)) {
-      case 'none':
-        return '<span class="muted small">Not tracked</span>';
-      case 'out':
-        return '<span class="badge paused">Out of stock</span>';
-      case 'low':
-        return `${count(p)} <span class="badge due">Low</span>`;
-      default:
-        return count(p);
-    }
-  };
-
-  $('stock').innerHTML =
-    sorted
-      .map(
-        (p) => `<tr>
-        <td>${p.pluid}</td>
-        <td>${esc(p.product_name)}</td>
-        <td>${esc(p.department_name || '—')}</td>
-        <td class="right nowrap">${cell(p)}</td>
-      </tr>`
-      )
-      .join('') ||
-    '<tr><td colspan="4" class="empty">No products yet.</td></tr>';
 }
 
 async function loadStaff() {
@@ -1897,12 +2609,21 @@ async function loadStaff() {
           pluid: c.pluid,
           pin_code: pin,
           active: active ? 1 : 0,
+          permission_group_id: c.permission_group_id ?? '',
+          training: c.training ? 1 : 0,
         })
       );
       // A PIN that is not four digits cannot be used at the till — the pad
       // submits on the fourth key — so any legacy row like that is called out
       // here rather than leaving a member of staff who silently cannot sign on.
       const badPin = !/^\d{4}$/.test(pin);
+      // "Every key" and not a blank: a clerk in no group is unrestricted, and a
+      // permissions column that says nothing for the most permissive state is
+      // the one way this table could mislead somebody.
+      const group = c.permission_group
+        ? `<span class="pill">${esc(c.permission_group)}</span>`
+        : '<span class="muted">Every key</span>';
+
       return `<tr>
         <td>${esc(c.clark_name)}</td>
         <td>${c.pluid}</td>
@@ -1911,11 +2632,16 @@ async function loadStaff() {
             ? ' <span class="pin-warn" title="The till pad submits after four digits, so this PIN can never sign on. Edit it to a 4-digit PIN.">needs fixing</span>'
             : ''
         }</td>
-        <td>${active ? 'Active' : '<span class="muted">Retired</span>'}</td>
+        <td>${group}</td>
+        <td>${active ? 'Active' : '<span class="muted">Retired</span>'}${
+          c.training
+            ? ' <span class="pill training-pill" title="Practice only: sales are not recorded and do not count on the till">Training</span>'
+            : ''
+        }</td>
         <td class="right nowrap">
           ${rowCardActions({ kind: 'staff', id: c.id, name: c.clark_name })}
-          <button class="btn small ghost" data-edit-staff='${payload}'>Edit</button>
-          <button class="btn small danger" data-del-staff="${c.id}">Delete</button>
+          ${iconBtn('edit', 'Edit', `data-edit-staff='${payload}'`)}
+          ${iconBtn('del', 'Delete', `data-del-staff="${c.id}"`, 'danger')}
         </td>
       </tr>`;
     })
@@ -1944,13 +2670,114 @@ function discountLabel(c) {
   return '—';
 }
 
+// ---- Customers -------------------------------------------------------------
+//
+// Held in the browser between renders, exactly as the catalogue is: the whole
+// list is already in hand, so filtering and picking cost nothing, and a socket
+// push does not throw away a selection somebody is halfway through making.
+
+let customerRows = [];
+let customerQuery = '';
+let customerFilter = '';
+let customerPicks = new Set();
+let customerAnchor = null;
+let customersBound = false;
+
+/** Today, as the same YYYY-MM-DD text the server sends an expiry in. */
+function todayText() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** The customers on screen, after the search box and the membership filter. */
+function visibleCustomers() {
+  const today = todayText();
+  const soon = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 30);
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  })();
+
+  return customerRows.filter((c) => {
+    const expiry = c.membership_expiry ? String(c.membership_expiry).slice(0, 10) : null;
+    if (customerFilter === 'member' && !expiry) return false;
+    if (customerFilter === 'none' && expiry) return false;
+    if (customerFilter === 'lapsed' && !(expiry && expiry < today)) return false;
+    if (customerFilter === 'soon'
+        && !(expiry && expiry >= today && expiry <= soon)) return false;
+
+    if (!customerQuery) return true;
+    return [c.name, c.phone, c.email, c.card_number, c.member_no]
+      .some((v) => String(v ?? '').toLowerCase().includes(customerQuery));
+  });
+}
+
+/** The "N selected" bar, shown only when there is a selection to act on. */
+function renderCustomerBulkBar() {
+  const bar = $('cust-bulk');
+  if (!bar) return;
+  const n = customerPicks.size;
+  bar.hidden = n === 0;
+  $('cust-bulk-count').textContent = `${n} selected`;
+}
+
+/**
+ * A face, or the initials to stand in for one.
+ *
+ * The initials are not decoration. A venue that has photographed half its
+ * members needs to see at a glance which half, and an empty cell reads as a
+ * column that is not working.
+ */
+function customerAvatar(c) {
+  if (c.photo_url) {
+    return `<img class="cust-face" src="${esc(c.photo_url)}" alt=""
+                 title="Shown on the till when this member is scanned" />`;
+  }
+  const initials = String(c.name || '?')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0].toUpperCase())
+    .join('');
+  return `<span class="cust-face cust-face-none" aria-hidden="true">${esc(initials || '?')}</span>`;
+}
+
 async function loadCustomers() {
-  const rows = await api('/customers');
+  customerRows = await api('/customers');
+  bindCustomers();
+  renderCustomers();
+}
+
+function renderCustomers() {
+  const rows = visibleCustomers();
+  const today = todayText();
+
+  // Picks for customers that have since been deleted are dropped, so the bar
+  // cannot offer to edit rows that are not there.
+  const live = new Set(customerRows.map((r) => String(r.id)));
+  for (const id of [...customerPicks]) {
+    if (!live.has(id)) customerPicks.delete(id);
+  }
+  renderCustomerBulkBar();
+
+  const count = $('cust-count');
+  if (count) {
+    count.textContent = rows.length === customerRows.length
+      ? `${customerRows.length} customer${customerRows.length === 1 ? '' : 's'}`
+      : `${rows.length} of ${customerRows.length} customers`;
+  }
+
   $('customers').innerHTML = rows
     .map((c) => {
       const expiry = c.membership_expiry ? String(c.membership_expiry).slice(0, 10) : null;
-      const lapsed = expiry && expiry < new Date().toISOString().slice(0, 10);
-      return `<tr>
+      const lapsed = expiry && expiry < today;
+      return `<tr data-customer="${esc(String(c.id))}">
+        <td class="pick-col"><input type="checkbox" data-cust-pick="${esc(String(c.id))}"${
+          customerPicks.has(String(c.id)) ? ' checked' : ''
+        }></td>
+        <td class="cust-face-cell">${customerAvatar(c)}</td>
         <td>${esc(c.name)}</td>
         <td class="muted small">${c.card_number
           // The number on the stripe, and the membership number under it.
@@ -1969,16 +2796,298 @@ async function loadCustomers() {
           : '<span class="muted">—</span>'}</td>
         <td class="right nowrap">
           ${rowCardActions({ kind: 'loyalty', id: c.id, name: c.name })}
-          <button class="btn small ghost" data-edit-customer="${c.id}">Edit</button>
-          <button class="btn small danger" data-del-customer="${c.id}">Delete</button>
+          ${iconBtn('edit', 'Edit', `data-edit-customer="${c.id}"`)}
+          ${iconBtn('del', 'Delete', `data-del-customer="${c.id}"`, 'danger')}
         </td>
       </tr>`;
     })
-    .join('') || '<tr><td colspan="8" class="empty">No customers yet.</td></tr>';
+    .join('') || `<tr><td colspan="10" class="empty">${
+      customerRows.length ? 'No customers match that.' : 'No customers yet.'
+    }</td></tr>`;
+}
+
+/**
+ * Wire the customers page once. The table is redrawn on every filter and every
+ * socket push, so the listeners live on the containers rather than the rows.
+ */
+function bindCustomers() {
+  if (customersBound) return;
+  customersBound = true;
+
+  const table = $('customers');
+
+  table.addEventListener('change', (e) => {
+    const pick = e.target.closest('[data-cust-pick]');
+    if (!pick) return;
+    const id = String(pick.dataset.custPick);
+    if (pick.checked) customerPicks.add(id);
+    else customerPicks.delete(id);
+    customerAnchor = id;
+    renderCustomerBulkBar();
+  });
+
+  // Shift-click picks a range, the same gesture and the same rules as the
+  // catalogue: measured over what is on screen, and taking the state of the
+  // box just clicked. See the note on the Products table.
+  table.addEventListener('click', (e) => {
+    const pick = e.target.closest('[data-cust-pick]');
+    if (!pick) return;
+    const id = String(pick.dataset.custPick);
+    if (e.shiftKey && customerAnchor && customerAnchor !== id) {
+      const order = visibleCustomers().map((r) => String(r.id));
+      const from = order.indexOf(customerAnchor);
+      const to = order.indexOf(id);
+      if (from !== -1 && to !== -1) {
+        const span = from < to ? order.slice(from, to + 1) : order.slice(to, from + 1);
+        for (const rowId of span) {
+          if (pick.checked) customerPicks.add(rowId);
+          else customerPicks.delete(rowId);
+        }
+        window.getSelection?.()?.removeAllRanges();
+        renderCustomers();
+      }
+    }
+    customerAnchor = id;
+  });
+
+  $('cust-pick-all')?.addEventListener('change', (e) => {
+    // Every customer *shown*, not every customer. A manager who has filtered
+    // to "Expired" and ticks the header means those, and a select-all that
+    // quietly included everybody else would be found out at renewal time.
+    for (const row of visibleCustomers()) {
+      if (e.target.checked) customerPicks.add(String(row.id));
+      else customerPicks.delete(String(row.id));
+    }
+    renderCustomers();
+  });
+
+  $('cust-q')?.addEventListener('input', (e) => {
+    customerQuery = e.target.value.trim().toLowerCase();
+    renderCustomers();
+  });
+  $('cust-filter')?.addEventListener('change', (e) => {
+    customerFilter = e.target.value;
+    renderCustomers();
+  });
+  $('cust-clear')?.addEventListener('click', () => {
+    customerQuery = '';
+    customerFilter = '';
+    $('cust-q').value = '';
+    $('cust-filter').value = '';
+    renderCustomers();
+  });
+
+  $('cust-bulk-clear')?.addEventListener('click', () => {
+    customerPicks.clear();
+    customerAnchor = null;
+    renderCustomers();
+  });
+
+  $('cust-bulk-expiry')?.addEventListener('click', bulkCustomerExpiry);
+}
+
+/**
+ * Put one expiry date on every picked customer.
+ *
+ * "Please allow a mass edit of customers so we can set expiry dates easier."
+ * A blank date is a real answer and clears the membership — which is the other
+ * half of what a venue does at renewal time, to the people who did not renew —
+ * so it asks for confirmation rather than treating an empty box as a mistake.
+ */
+async function bulkCustomerExpiry() {
+  const ids = [...customerPicks];
+  if (!ids.length) return;
+
+  const names = customerRows
+    .filter((c) => ids.includes(String(c.id)))
+    .map((c) => c.name);
+  const listed = names.slice(0, 3).join(', ')
+    + (names.length > 3 ? ` and ${names.length - 3} more` : '');
+
+  return modal(
+    `Membership for ${ids.length} customer${ids.length === 1 ? '' : 's'}`,
+    [
+      {
+        name: 'membership_expiry',
+        label: 'Expires on',
+        type: 'date',
+        value: '',
+        hint: `${listed}. Leave the date empty to take the membership off all `
+          + 'of them.',
+      },
+    ],
+    async (d) => {
+      const expiry = d.membership_expiry || '';
+      if (!expiry && !(await confirmDialog(
+        `This takes the membership off ${ids.length} customer`
+          + `${ids.length === 1 ? '' : 's'}. Their cards stop working at the till.`,
+        { title: 'Clear the expiry?', confirmLabel: 'Clear it', danger: true }
+      ))) return;
+
+      const res = await api('/customers/bulk', {
+        method: 'PATCH',
+        body: JSON.stringify({ ids, fields: { membership_expiry: expiry || null } }),
+      });
+      // The rows in hand are updated rather than re-fetched, so the badges move
+      // on the same frame and a filtered view does not jump.
+      for (const c of customerRows) {
+        if (ids.includes(String(c.id))) c.membership_expiry = expiry || null;
+      }
+      renderCustomers();
+      toast(
+        expiry
+          ? `${res.updated} customer${res.updated === 1 ? '' : 's'} now expire on ${date(expiry)}.`
+          : `${res.updated} membership${res.updated === 1 ? '' : 's'} cleared.`
+      );
+    }
+  );
 }
 
 // ---- Admin ----------------------------------------------------------------
 
+
+// ---- Licences & pricing (admin) -------------------------------------------
+//
+// Every venue, what it is entitled to and what it is running. The quantities
+// are the venue's SUBSCRIPTIONS, read from auth.vesopa.com and cached here --
+// see src/entitlements.js. They are changed where they are sold, not here.
+
+async function loadAdminLicences() {
+  const host = $('licences-table');
+  const state = $('licences-state');
+  if (!host) return;
+
+  let data;
+  try {
+    data = await api('/admin/licences');
+  } catch (e) {
+    host.innerHTML = `<p class="muted">${esc(e.message)}</p>`;
+    return;
+  }
+
+  const linked = data.venues.filter((v) => v.auth_organisation_id).length;
+  if (state) {
+    state.textContent =
+      `${data.venues.length} venue${data.venues.length === 1 ? '' : 's'}, ` +
+      `${linked} linked to a Vesopa organisation. ` +
+      'An unlinked venue has no limits — nothing is refused until it is linked.';
+  }
+
+  const cell = (p) => {
+    if (p.limit == null) {
+      return `<td class="nowrap">${p.in_use} <span class="muted small">of ∞</span></td>`;
+    }
+    // Over its limit, or paid up but expired: both are worth seeing at a
+    // glance, and they mean different things to whoever is looking.
+    const flag = p.over
+      ? ' <span class="pill" style="background:#fde8ea;color:#b3261e">over</span>'
+      : (p.status && p.status !== 'active'
+        ? ` <span class="pill" style="background:#fff4e5;color:#8a5200">${esc(p.status)}</span>`
+        : '');
+    // An override is worth seeing next to the number: it is a decision somebody
+    // made, not what the customer is paying for, and a refresh will not undo it.
+    const held = p.source === 'override'
+      ? ' <span class="pill" title="Set by hand here; refreshes leave it alone">override</span>'
+      : '';
+    return `<td class="nowrap">${p.in_use} <span class="muted small">of ${p.limit}</span>${flag}${held}</td>`;
+  };
+
+  const head = data.kinds.map((k) => `<th>${esc(k.label)}</th>`).join('')
+    + '<th title="When on, this venue’s apps stop opening once a subscription is past its grace">Lock when lapsed</th>';
+  const rows = data.venues.map((v) => `<tr>
+      <td>${esc(v.name)}<br><span class="muted small">${esc(v.email)}</span></td>
+      <td class="nowrap">${v.auth_organisation_id
+        ? `#${v.auth_organisation_id}`
+        : '<span class="muted">not linked</span>'}
+        <button class="btn small ghost" data-link-org="${v.id}"
+                data-link-org-name="${esc(v.name)}"
+                data-link-org-now="${v.auth_organisation_id || ''}">Link</button></td>
+      ${v.products.map(cell).join('')}
+      <td class="nowrap">
+        <label class="check"><input type="checkbox" data-lock-venue="${v.id}"
+               ${v.licence_lock_enabled ? 'checked' : ''}>
+          <span>${v.licence_lock_enabled ? 'On' : 'Off'}</span></label>
+      </td>
+    </tr>`).join('');
+
+  host.innerHTML =
+    `<table><thead><tr><th>Venue</th><th>Vesopa organisation</th>${head}</tr></thead>`
+    + `<tbody>${rows}</tbody></table>`;
+}
+
+document.addEventListener('click', async (e) => {
+  const refresh = e.target.closest && e.target.closest('#licences-refresh');
+  if (refresh) {
+    refresh.disabled = true;
+    try {
+      const r = await api('/admin/entitlements/refresh', { method: 'POST' });
+      toast(`Asked Vesopa about ${r.linked} venue${r.linked === 1 ? '' : 's'}; ${r.refreshed} answered.`);
+      await loadAdminLicences();
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      refresh.disabled = false;
+    }
+    return;
+  }
+
+  const lock = e.target.closest && e.target.closest('[data-lock-venue]');
+  if (lock) {
+    const on = lock.checked;
+    /*
+     * Asked before it is switched ON, never before it is switched off.
+     *
+     * Turning this on means that venue's apps STOP OPENING once a subscription
+     * is past its grace -- not a warning, not read-only. That is worth a
+     * sentence and a deliberate press. Turning it off only ever gives somebody
+     * their software back, and nobody should have to confirm that.
+     */
+    if (on) {
+      const ok = await confirmDialog(
+        'While this is on, every app at this venue will STOP OPENING once its '
+          + 'subscription is more than 14 days past its end date. Staff will see a '
+          + 'renew screen instead of the till. Switch it on?',
+        { title: 'Lock this venue when it lapses', confirmLabel: 'Switch it on', danger: true },
+      );
+      if (!ok) { lock.checked = false; return; }
+    }
+    try {
+      await api(`/admin/offices/${lock.dataset.lockVenue}/licence-lock`, {
+        method: 'PUT',
+        body: JSON.stringify({ enabled: on }),
+      });
+      toast(on ? 'Locking is on for this venue.' : 'Locking is off for this venue.');
+      await loadAdminLicences();
+    } catch (err) {
+      toast(err.message, 'error');
+      lock.checked = !on;
+    }
+    return;
+  }
+
+  const link = e.target.closest && e.target.closest('[data-link-org]');
+  if (!link) return;
+  const office = link.dataset.linkOrg;
+  return modal(
+    `Link ${link.dataset.linkOrgName || 'this venue'} to Vesopa`,
+    [{
+      name: 'organisation_id',
+      label: 'Vesopa organisation id (blank to unlink)',
+      type: 'number',
+      value: link.dataset.linkOrgNow || '',
+      hint: 'Its licences are then read from that organisation\u2019s subscriptions. '
+        + 'Unlinked means no limits.',
+    }],
+    async (d) => {
+      const r = await api(`/admin/offices/${office}/auth-organisation`, {
+        method: 'PUT',
+        body: JSON.stringify({ organisation_id: d.organisation_id === '' ? null : d.organisation_id }),
+      });
+      toast(r.organisation_id ? 'Linked, and its licences read.' : 'Unlinked.');
+      await loadAdminLicences();
+    },
+  );
+});
 async function loadOffices() {
   const rows = await api('/admin/offices');
   $('offices').innerHTML = rows
@@ -1988,16 +3097,27 @@ async function loadOffices() {
         <td class="muted small">${esc(o.contact_email)}</td>
         <td><span class="badge ${o.status}">${o.status}</span></td>
         <td>${o.user_count}</td>
+        <td class="nowrap">${
+          o.till_licences === undefined
+            ? '<span class="muted">—</span>'
+            : `${Number(o.tills_in_use || 0)}${o.till_licences == null ? ' <span class="muted small">no limit</span>' : ` of ${o.till_licences}`}
+               <button class="btn small ghost" data-licences="${o.id}" data-licences-now="${o.till_licences ?? ''}"
+                       data-licences-name="${esc(o.name)}">Licences</button>
+               <button class="btn small ghost" data-licence-key="${o.id}"
+                       title="Issue a key that activates on one machine and is then locked to it">Key</button>`
+        }</td>
         <td class="right">${o.amount_minor ? money(o.amount_minor) + ' / ' + o.interval_unit : '—'}</td>
         <td>${o.next_due_on ? date(o.next_due_on) : '—'}</td>
-        <td class="right">
+        <td class="right nowrap">
+          <button class="btn small ghost" data-managers="${o.id}" data-managers-name="${esc(o.name)}"
+                  title="Logins from another office that can also manage this site">Managed by</button>
           ${o.status === 'active'
             ? `<button class="btn small danger" data-pause="${o.id}">Pause</button>`
             : `<button class="btn small primary" data-resume="${o.id}">Resume</button>`}
         </td>
       </tr>`
     )
-    .join('') || '<tr><td colspan="7" class="empty">No offices.</td></tr>';
+    .join('') || '<tr><td colspan="8" class="empty">No offices.</td></tr>';
 }
 
 async function loadBilling() {
@@ -2053,18 +3173,431 @@ const ROOM_ROWS = 15;
  * already agreed with its staff.
  */
 function roomSize(room) {
-  let cols = ROOM_COLS;
-  let rows = ROOM_ROWS;
+  // The room's own dimensions win, so a manager who has drawn a 20x14 room gets
+  // 20x14 of floor to work on rather than a box that shrinks to whatever is
+  // currently in it. The tables still push it outwards — a table dragged past
+  // the edge must stay reachable — but they can no longer pull it in.
+  let cols = Math.max(ROOM_COLS, (room && room.cols) || 0);
+  let rows = Math.max(ROOM_ROWS, (room && room.rows) || 0);
   for (const t of (room && room.tables) || []) {
     cols = Math.max(cols, (t.pos_x || 0) + (t.width || 1));
     rows = Math.max(rows, (t.pos_y || 0) + (t.height || 1));
   }
   return { cols, rows };
 }
+
+/**
+ * A room's outline as a list of grid points, or null for a plain rectangle.
+ *
+ * The server stores this as JSON text and hands it straight back, so it is
+ * parsed here rather than trusted: a room saved by an older build, or one whose
+ * shape was cleared, comes through as null and must draw as the rectangle every
+ * room used to be.
+ */
+function roomOutline(room) {
+  if (!room || !room.outline) return null;
+  try {
+    const points = JSON.parse(room.outline);
+    return Array.isArray(points) && points.length >= 3 ? points : null;
+  } catch {
+    return null;
+  }
+}
+/** Set for the length of one re-entry into show() — see the note there. */
+let spLeaveConfirmed = false;
+
 let floor = [];
 let activeRoom = null;
 let selected = null;
 let dirty = false;
+
+/**
+ * The furniture.
+ *
+ * A room is not made of "tables": it is made of two-tops along the window,
+ * four-tops in the middle, a long six for the party, a couple of high stools at
+ * the bar. Adding one used to be a form asking for a number and a seat count,
+ * after which a 2x2 rectangle appeared in the corner and had to be dragged and
+ * resized into whatever was meant — so every table on every floor started as
+ * the same square, and most of them stayed that way.
+ *
+ * Sizes are in grid squares, and they are the proportions of the real thing: a
+ * two-top is square, a six is long, a round table is round. Dropping one is a
+ * drag from this strip onto the spot it goes.
+ */
+const TABLE_PRESETS = [
+  { key: 'two',    label: 'Two',    seats: 2, w: 2, h: 2, shape: 'rect' },
+  { key: 'round2', label: 'Round 2', seats: 2, w: 2, h: 2, shape: 'circle' },
+  { key: 'four',   label: 'Four',   seats: 4, w: 3, h: 2, shape: 'rect' },
+  { key: 'round4', label: 'Round 4', seats: 4, w: 3, h: 3, shape: 'circle' },
+  { key: 'six',    label: 'Six',    seats: 6, w: 4, h: 2, shape: 'rect' },
+  { key: 'round6', label: 'Round 6', seats: 6, w: 4, h: 4, shape: 'circle' },
+  { key: 'eight',  label: 'Eight',  seats: 8, w: 5, h: 3, shape: 'rect' },
+  { key: 'booth',  label: 'Booth',  seats: 4, w: 4, h: 3, shape: 'rect' },
+  { key: 'stool',  label: 'Stool',  seats: 1, w: 1, h: 1, shape: 'circle' },
+];
+
+/** The lowest table number this venue is not already using. */
+function nextTableNumber() {
+  const used = new Set();
+  floor.forEach((r) => (r.tables || []).forEach((t) => used.add(Number(t.table_number))));
+  let n = 1;
+  while (used.has(n)) n += 1;
+  return n;
+}
+
+/**
+ * Put one of the presets down.
+ *
+ * Saved immediately rather than held in the layout: adding a table mints the
+ * code that goes on the card sitting on it, and that has to come from the
+ * server. Everything after — where it sits, how big it is — is a drag, and
+ * drags are saved together when the manager presses Save.
+ */
+async function dropPreset(preset, gridX, gridY) {
+  if (!activeRoom) return toast('Create a room first.', 'warn');
+  const room = floor.find((r) => r.id === activeRoom);
+  const size = roomSize(room);
+
+  try {
+    await api('/floor/tables', {
+      method: 'POST',
+      body: JSON.stringify({
+        room_id: activeRoom,
+        table_number: nextTableNumber(),
+        seats: preset.seats,
+        width: preset.w,
+        height: preset.h,
+        shape: preset.shape,
+        // Clamped so a table dropped near the edge lands whole inside the room
+        // rather than half outside it, where it cannot be dragged back.
+        pos_x: Math.max(0, Math.min(size.cols - preset.w, gridX)),
+        pos_y: Math.max(0, Math.min(size.rows - preset.h, gridY)),
+      }),
+    });
+    await loadFloor();
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+// =========================================================================
+// DRAWING THE ROOM
+// =========================================================================
+//
+// A real room is an L round a corner, a bar cutting across, a bay at the front.
+// The shape panel offers four presets and, for everything else, a box to type
+// x,y pairs into — which is asking a publican to describe their own dining room
+// in coordinates. This draws it instead: click each corner, click the first one
+// again to close it, drag any corner afterwards to nudge it.
+//
+// It writes the same array of grid points the presets do, so nothing downstream
+// knows the difference and a room drawn today can still be edited as a preset
+// tomorrow.
+
+/*
+ * Is Vesopa the only way into this back office?
+ *
+ * Answered by the server — see /api/public/backoffice/sign-in-options — because
+ * this page is static HTML read into a constant at start-up, so a flag baked in
+ * here could never follow the environment. It is read on the sign-in screen and
+ * used again on the users page, where it decides whether "Reset password" is a
+ * real thing or a button that does nothing.
+ */
+let vesopaOnly = false;
+
+let lasso = null;   // { points: [[x,y], …] } while drawing, else null
+
+/**
+ * Where a pointer is, in grid squares.
+ *
+ * THE PLAN SCROLLS. #canvas is `overflow: auto` and a room is routinely wider
+ * and taller than the box it is shown in, so `getBoundingClientRect()` gives
+ * the *window's* view of the canvas and not the plan's own origin. Every corner
+ * dropped on a scrolled plan therefore landed short by exactly however far it
+ * had been scrolled — which on a tablet, where the plan almost never fits, is
+ * every corner. It looked like the tool ignoring where you tapped.
+ *
+ * Adding the scroll offsets is the whole fix, and it belongs in one function
+ * because three separate places were computing this and all three were wrong
+ * in the same way.
+ */
+function canvasPoint(e, size) {
+  const canvas = $('canvas');
+  const box = canvas.getBoundingClientRect();
+  const x = (e.clientX - box.left + canvas.scrollLeft) / GRID;
+  const y = (e.clientY - box.top + canvas.scrollTop) / GRID;
+  return [
+    Math.max(0, Math.min(size.cols, Math.round(x))),
+    Math.max(0, Math.min(size.rows, Math.round(y))),
+  ];
+}
+
+/** Is the plan currently being drawn on rather than arranged? */
+function drawing() {
+  return !!lasso;
+}
+
+function startLasso() {
+  const room = floor.find((r) => r.id === activeRoom);
+  if (!room) return toast('Create a room first.', 'warn');
+  // Opens on whatever shape the room already has, so adjusting an L is moving
+  // six corners rather than drawing it again from nothing.
+  lasso = { points: (roomOutline(room) || []).map(([x, y]) => [x, y]) };
+  $('canvas').classList.add('drawing');
+  $('draw-bar').hidden = false;
+  $('draw-room').textContent = 'Done drawing';
+  drawRoom();
+}
+
+function stopLasso(save) {
+  const room = floor.find((r) => r.id === activeRoom);
+  const points = lasso ? lasso.points : null;
+  lasso = null;
+  $('canvas').classList.remove('drawing');
+  $('draw-bar').hidden = true;
+  $('draw-room').textContent = 'Draw the room';
+
+  if (!save || !room) return drawRoom();
+  // Fewer than three corners is not a room. Cleared rather than refused: a
+  // manager who drew two points and pressed done meant "no custom shape", and
+  // that is a rectangle.
+  const outline = points && points.length >= 3 ? points : null;
+  api('/floor/rooms/' + room.id, {
+    method: 'PUT',
+    body: JSON.stringify({ outline }),
+  })
+    .then(() => loadFloor())
+    .then(() => toast(outline ? 'Room shape saved.' : 'Back to a plain rectangle.'))
+    .catch((e) => toast(e.message, 'error'));
+}
+
+/**
+ * A click on the plan while drawing.
+ *
+ * Snapped to the grid, because a wall between two grid squares is a wall no
+ * table can be aligned to — and everything else in this designer is on the
+ * grid already.
+ */
+function lassoClick(e) {
+  const room = floor.find((r) => r.id === activeRoom);
+  const size = roomSize(room);
+  const [x, y] = canvasPoint(e, size);
+
+  // Back on the first corner closes the shape — which is what the instruction
+  // says to do and what every drawing tool this resembles does.
+  //
+  // Two squares of slack, not none. The first corner is a 14px dot and a
+  // fingertip is nearer 40px across, so demanding the exact square would mean
+  // a shape that cannot be closed by the person it was drawn by. Two squares
+  // is generous enough to hit and still far short of the next corner.
+  const first = lasso.points[0];
+  if (first && lasso.points.length >= 3
+      && Math.abs(first[0] - x) <= 2 && Math.abs(first[1] - y) <= 2) {
+    return stopLasso(true);
+  }
+
+  // Tapping the same square twice is a double tap, not two corners in one
+  // place — and a repeated point makes a polygon the server refuses to store.
+  const last = lasso.points[lasso.points.length - 1];
+  if (last && last[0] === x && last[1] === y) return;
+
+  lasso.points.push([x, y]);
+  drawRoom();
+}
+
+/** What the drawing bar says, which changes with every corner. */
+function lassoSay() {
+  const bar = $('draw-say');
+  if (!bar || !lasso) return;
+  const n = lasso.points.length;
+  bar.textContent =
+    n === 0 ? 'Tap the first corner of the room.'
+      : n < 3 ? `Corner ${n} down. Keep tapping round the walls.`
+        : `${n} corners. Tap the first one again — the ✓ — to close the room.`;
+}
+
+/**
+ * The shape as it stands.
+ *
+ * Three things have to be visible at once: the wall drawn so far, every corner
+ * so it can be moved, and — once there are three — which corner closes the
+ * shape. Without the last of those the instruction "click the first corner
+ * again" is asking somebody to remember where they started, on a plan they may
+ * have scrolled twice since.
+ */
+function lassoLayer(size) {
+  const w = size.cols * GRID;
+  const h = size.rows * GRID;
+  const pts = lasso.points;
+  const closable = pts.length >= 3;
+
+  const line = pts.map(([x, y]) => `${x * GRID},${y * GRID}`).join(' ');
+
+  const handles = pts.map(([x, y], i) => {
+    const first = i === 0;
+    // The first corner grows into a target once closing is possible, and says
+    // so. Everything else is a small dot to be dragged.
+    return `
+      <g class="lasso-pt ${first && closable ? 'first' : ''}" data-pt="${i}">
+        <circle cx="${x * GRID}" cy="${y * GRID}"
+                r="${first && closable ? 14 : 8}" />
+        ${first && closable
+          ? `<text x="${x * GRID}" y="${y * GRID + 4}" text-anchor="middle">✓</text>`
+          : `<text x="${x * GRID}" y="${y * GRID + 3}" text-anchor="middle">${i + 1}</text>`}
+      </g>`;
+  }).join('');
+
+  // The wall back to the start, dashed, so a shape three corners in already
+  // reads as the room it is about to become.
+  const closing = closable
+    ? `<line x1="${pts[pts.length - 1][0] * GRID}" y1="${pts[pts.length - 1][1] * GRID}"
+             x2="${pts[0][0] * GRID}" y2="${pts[0][1] * GRID}"
+             stroke="#A5C715" stroke-width="2" stroke-dasharray="6 5" />`
+    : '';
+
+  return `
+    <svg class="lasso" width="${w}" height="${h}"
+         style="position:absolute;left:0;top:0">
+      ${closable
+        ? `<polygon points="${line}" fill="rgba(165,199,21,.16)"
+                    stroke="none" />`
+        : ''}
+      <polyline points="${line}" fill="none"
+                stroke="#A5C715" stroke-width="2.5"
+                stroke-linejoin="round" stroke-linecap="round" />
+      ${closing}
+      ${handles}
+    </svg>`;
+}
+
+/**
+ * Set for one tick after a corner is dragged.
+ *
+ * A drag that ends over the plan also produces a click, and that click would
+ * be read as "drop another corner" — so nudging a corner added one beside it
+ * every time.
+ */
+let movedAPoint = false;
+
+/** Drag a corner. */
+function wireLassoHandles() {
+  $('canvas').querySelectorAll('.lasso-pt').forEach((dot) => {
+    dot.addEventListener('pointerdown', (e) => {
+      // Not a new corner: this is moving one that is already there.
+      e.stopPropagation();
+      e.preventDefault();
+      const index = Number(dot.dataset.pt);
+      const room = floor.find((r) => r.id === activeRoom);
+      const size = roomSize(room);
+      dot.setPointerCapture(e.pointerId);
+      // A finger dragging a corner must not also scroll the plan under it.
+      dot.style.touchAction = 'none';
+
+      const move = (ev) => {
+        ev.preventDefault();
+        lasso.points[index] = canvasPoint(ev, size);
+        drawRoom();
+      };
+      const up = () => {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+        window.removeEventListener('pointercancel', up);
+        // The corner has moved; a click would otherwise land as a new one.
+        movedAPoint = true;
+        setTimeout(() => { movedAPoint = false; }, 0);
+      };
+      window.addEventListener('pointermove', move, { passive: false });
+      window.addEventListener('pointerup', up);
+      window.addEventListener('pointercancel', up);
+    });
+  });
+}
+
+/** The strip of presets, and the drag that carries one onto the plan. */
+function paintPalette() {
+  const strip = $('table-palette');
+  if (!strip) return;
+
+  strip.innerHTML = TABLE_PRESETS.map((t) => `
+    <button type="button" class="preset" draggable="true" data-preset="${t.key}"
+            title="Drag onto the plan, or click to drop one in">
+      <span class="preset-art ${t.shape}"
+            style="--pw:${t.w};--ph:${t.h}"></span>
+      <span class="preset-name">${esc(t.label)}</span>
+    </button>`).join('');
+
+  strip.querySelectorAll('[data-preset]').forEach((btn) => {
+    const preset = TABLE_PRESETS.find((t) => t.key === btn.dataset.preset);
+
+    btn.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('text/plain', preset.key);
+      e.dataTransfer.effectAllowed = 'copy';
+    });
+
+    // Clicking drops one in the middle, because a click is what a finger does
+    // and dragging on a touchscreen fights the page's own scrolling.
+    btn.addEventListener('click', () => {
+      const room = floor.find((r) => r.id === activeRoom);
+      if (!room) return toast('Create a room first.', 'warn');
+      const size = roomSize(room);
+      dropPreset(preset,
+        Math.max(0, Math.round(size.cols / 2 - preset.w / 2)),
+        Math.max(0, Math.round(size.rows / 2 - preset.h / 2)));
+    });
+  });
+}
+
+/** Let the canvas take one. */
+function wireCanvasDrop() {
+  const canvas = $('canvas');
+  if (!canvas || canvas.dataset.dropWired) return;
+  canvas.dataset.dropWired = '1';
+
+  // Corners, while the room is being drawn. Bound once here rather than added
+  // and removed with the mode, because a listener added on every redraw is a
+  // listener added a hundred times over an afternoon.
+  canvas.addEventListener('click', (e) => {
+    if (!drawing()) return;
+    if (movedAPoint) return;   // that was a corner being moved, not a new one
+
+    const onHandle = e.target.closest('.lasso-pt');
+    if (onHandle) {
+      // The first corner is the way out of the mode — "tap the first point
+      // again and the room is drawn" — and it is also a handle you can drag.
+      // The handle guard was swallowing the tap that closes the shape, so the
+      // one gesture the whole tool is built around did nothing at all. A clean
+      // tap on it closes; a drag moves it, and sets movedAPoint so the click
+      // that follows a drag is not read as closing.
+      if (Number(onHandle.dataset.pt) === 0 && lasso.points.length >= 3) {
+        return stopLasso(true);
+      }
+      return;   // any other corner: it is being aimed at, not added to
+    }
+
+    lassoClick(e);
+  });
+
+  canvas.addEventListener('dragover', (e) => {
+    if (!activeRoom) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  });
+
+  canvas.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const preset = TABLE_PRESETS.find((t) => t.key === e.dataTransfer.getData('text/plain'));
+    if (!preset) return;
+    // Dropped by its middle, which is where the pointer is and where somebody
+    // aiming at a spot on the floor thinks the table is going. Through
+    // canvasPoint, so a drop onto a scrolled plan lands where it was aimed.
+    const room = floor.find((r) => r.id === activeRoom);
+    const [gx, gy] = canvasPoint(e, roomSize(room));
+    dropPreset(preset,
+      Math.round(gx - preset.w / 2),
+      Math.round(gy - preset.h / 2));
+  });
+}
 
 function markDirty(on) {
   dirty = on;
@@ -2105,19 +3638,55 @@ function drawRoom() {
   canvas.style.setProperty('--room-w', `${cols * GRID}px`);
   canvas.style.setProperty('--room-h', `${rows * GRID}px`);
 
-  canvas.innerHTML = room.tables
+  // The venue's own floor, if it has chosen one. Set as properties rather than
+  // written into the SVG so the same two values also tint the grid behind a
+  // plain rectangular room, which has no polygon to fill.
+  if (room.floor_colour) canvas.style.setProperty('--room-fill', room.floor_colour);
+  else canvas.style.removeProperty('--room-fill');
+  if (room.wall_colour) canvas.style.setProperty('--room-line', room.wall_colour);
+  else canvas.style.removeProperty('--room-line');
+
+  // The walls, under the tables.
+  //
+  // Real rooms are not boxes: an L wrapping a corner is the commonest floor in
+  // the trade, and a venue forced to draw it as a rectangle either loses the
+  // corner or gains a quarter of the room that is actually the kitchen. The
+  // polygon is drawn as an SVG behind everything and takes no pointer events,
+  // so dragging a table over it is unaffected.
+  const outline = roomOutline(room);
+  const walls = outline
+    ? `<svg class="room-walls" width="${cols * GRID}" height="${rows * GRID}"
+            style="position:absolute;left:0;top:0;pointer-events:none">
+         <polygon points="${outline
+           .map(([x, y]) => `${x * GRID},${y * GRID}`)
+           .join(' ')}"
+           fill="var(--room-fill, rgba(127,127,127,.08))"
+           stroke="var(--room-line, rgba(127,127,127,.55))"
+           stroke-width="2" stroke-linejoin="round" />
+       </svg>`
+    : '';
+
+  canvas.innerHTML = walls + room.tables
     .map(
       (t) => `<div class="tbl ${t.shape === 'circle' ? 'circle' : ''}"
         data-table="${t.id}"
         style="left:${t.pos_x * GRID}px; top:${t.pos_y * GRID}px;
-               width:${t.width * GRID}px; height:${t.height * GRID}px;">
-        <span class="num">${t.label ? esc(t.label) : t.table_number}</span>
+               width:${t.width * GRID}px; height:${t.height * GRID}px;
+               ${t.colour ? `--tbl-colour:${esc(t.colour)}` : ''}">
+        <span class="num">${esc(t.name || t.label || String(t.table_number))}</span>
         <span class="seats">${t.seats} seats</span>
       </div>`
     )
-    .join('');
+    .join('') + (drawing() ? lassoLayer({ cols, rows }) : '');
 
-  canvas.querySelectorAll('.tbl').forEach(makeDraggable);
+  // Not while the room is being drawn. A pointerdown on a table would start a
+  // drag instead of dropping a corner, and the corner somebody was aiming at is
+  // usually the one a table is sitting on.
+  if (!drawing()) canvas.querySelectorAll('.tbl').forEach(makeDraggable);
+  else { wireLassoHandles(); lassoSay(); }
+
+  wireCanvasDrop();
+  paintPalette();
   showInspector();
 }
 
@@ -2190,6 +3759,214 @@ function drawSelection() {
   );
 }
 
+/**
+ * The shapes a room is actually the shape of.
+ *
+ * Offered as a handful of presets rather than a polygon editor, because the
+ * shape of a room is a fact somebody already knows when they sit down to draw
+ * it — and clicking corners onto a grid to describe a rectangle with a bite out
+ * of it is slower and worse than saying "L, twelve by ten, cut six by five".
+ *
+ * Each preset is a function of the room's size and the size of the cut, so the
+ * same four entries cover every L a venue will ever have. Anything genuinely
+ * odd — a bay window, a curved bar — falls through to the points box, which
+ * takes the polygon directly.
+ *
+ * Walked clockwise from the top left in every case, because the fill rule and
+ * the till's renderer both assume one winding.
+ */
+const ROOM_SHAPES = {
+  rect: {
+    label: 'Rectangle',
+    points: (w, h) => [[0, 0], [w, 0], [w, h], [0, h]],
+  },
+  l: {
+    label: 'L — corner cut from the bottom right',
+    points: (w, h, cw, ch) => [
+      [0, 0], [w, 0], [w, h - ch], [w - cw, h - ch], [w - cw, h], [0, h],
+    ],
+  },
+  l_flipped: {
+    label: 'L — corner cut from the bottom left',
+    points: (w, h, cw, ch) => [
+      [0, 0], [w, 0], [w, h], [cw, h], [cw, h - ch], [0, h - ch],
+    ],
+  },
+  t: {
+    label: 'T — narrower at the bottom',
+    points: (w, h, cw, ch) => [
+      [0, 0], [w, 0], [w, h - ch], [w - cw, h - ch], [w - cw, h],
+      [cw, h], [cw, h - ch], [0, h - ch],
+    ],
+  },
+  u: {
+    label: 'U — a gap up the middle',
+    points: (w, h, cw, ch) => [
+      [0, 0], [w, 0], [w, h], [w - cw, h], [w - cw, ch],
+      [cw, ch], [cw, h], [0, h],
+    ],
+  },
+};
+
+/** Which preset a stored outline came from, so reopening the panel is not a
+    blank form. Falls back to the points box for anything hand-edited. */
+function shapeOf(room) {
+  const outline = roomOutline(room);
+  if (!outline) return 'rect';
+  const w = room.cols || ROOM_COLS;
+  const h = room.rows || ROOM_ROWS;
+  for (const [key, shape] of Object.entries(ROOM_SHAPES)) {
+    for (let cw = 1; cw < w; cw++) {
+      for (let ch = 1; ch < h; ch++) {
+        const made = shape.points(w, h, cw, ch);
+        if (JSON.stringify(made) === JSON.stringify(outline)) {
+          return key + ':' + cw + ':' + ch;
+        }
+      }
+    }
+  }
+  return 'custom';
+}
+
+function editRoomShape() {
+  const room = floor.find((r) => r.id === activeRoom);
+  if (!room) return;
+
+  const current = shapeOf(room);
+  const [kind, curCw, curCh] = current.split(':');
+  const w = room.cols || ROOM_COLS;
+  const h = room.rows || ROOM_ROWS;
+
+  showPanel('Room shape — ' + room.name, `
+    <div class="grid-2">
+      <label>Room name<input id="shape-name" value="${esc(room.name || '')}"></label>
+      <label>Shape
+        <select id="shape-kind">
+          ${Object.entries(ROOM_SHAPES).map(([k, v]) =>
+            `<option value="${k}" ${k === kind ? 'selected' : ''}>${esc(v.label)}</option>`
+          ).join('')}
+          <option value="custom" ${kind === 'custom' ? 'selected' : ''}>
+            Custom — give me the corners
+          </option>
+        </select>
+      </label>
+      <label>Width (grid squares)<input id="shape-w" type="number" min="4" max="60" value="${w}"></label>
+      <label>Depth (grid squares)<input id="shape-h" type="number" min="4" max="60" value="${h}"></label>
+      <label>Cut across<input id="shape-cw" type="number" min="1" max="59" value="${curCw || Math.round(w / 2)}"></label>
+      <label>Cut back<input id="shape-ch" type="number" min="1" max="59" value="${curCh || Math.round(h / 2)}"></label>
+      <label>The floor
+        <input id="shape-fill" type="color" value="${esc(room.floor_colour || '#F4F5F1')}">
+        <span class="muted small">The carpet, behind the tables.</span>
+      </label>
+      <label>The walls
+        <input id="shape-line" type="color" value="${esc(room.wall_colour || '#8A8F98')}">
+        <span class="muted small">The line drawn round it.</span>
+      </label>
+    </div>
+    <label class="check">
+      <input type="checkbox" id="shape-plain" ${room.floor_colour ? '' : 'checked'}>
+      <span>Use the theme's own colours instead</span>
+    </label>
+
+    <label id="shape-points-wrap" ${kind === 'custom' ? '' : 'hidden'}>
+      Corners, as x,y pairs — one per line, walked round the room
+      <textarea id="shape-points" rows="6"
+        style="font-family:ui-monospace,Consolas,monospace">${
+          esc((roomOutline(room) || []).map((p) => p.join(',')).join('\n'))
+        }</textarea>
+    </label>
+
+    <p class="hint">Preview</p>
+    <div id="shape-preview" style="margin-bottom:10px"></div>
+
+    <div class="row" style="gap:8px">
+      <button class="btn primary" id="shape-save" type="button">Save the room</button>
+      <button class="btn danger" id="shape-del" type="button">Delete this room</button>
+    </div>
+  `);
+
+  const readPoints = () => {
+    const kind = $('shape-kind').value;
+    const w = Math.max(4, Number($('shape-w').value) || ROOM_COLS);
+    const h = Math.max(4, Number($('shape-h').value) || ROOM_ROWS);
+    if (kind === 'rect') return { w, h, points: null };
+    if (kind === 'custom') {
+      const points = $('shape-points').value
+        .split(/[\n;]+/)
+        .map((line) => line.split(',').map((n) => Number(n.trim())))
+        .filter((p) => p.length === 2 && p.every(Number.isFinite));
+      return { w, h, points: points.length >= 3 ? points : null };
+    }
+    // Clamped so a cut can never be the whole room, which would leave a
+    // polygon with no area and a designer with nothing to drop tables onto.
+    const cw = Math.min(w - 1, Math.max(1, Number($('shape-cw').value) || 1));
+    const ch = Math.min(h - 1, Math.max(1, Number($('shape-ch').value) || 1));
+    return { w, h, points: ROOM_SHAPES[kind].points(w, h, cw, ch) };
+  };
+
+  const preview = () => {
+    const { w, h, points } = readPoints();
+    const scale = Math.min(320 / w, 200 / h);
+    const shape = points || [[0, 0], [w, 0], [w, h], [0, h]];
+    $('shape-preview').innerHTML = `
+      <svg width="${w * scale}" height="${h * scale}"
+           style="border:1px solid var(--line);border-radius:6px;background:var(--bg)">
+        <polygon points="${shape.map(([x, y]) => `${x * scale},${y * scale}`).join(' ')}"
+                 fill="rgba(165,199,21,.18)" stroke="#A5C715" stroke-width="2"
+                 stroke-linejoin="round" />
+      </svg>`;
+    $('shape-points-wrap').hidden = $('shape-kind').value !== 'custom';
+  };
+
+  ['shape-kind', 'shape-w', 'shape-h', 'shape-cw', 'shape-ch', 'shape-points'].forEach((id) => {
+    const el = $(id);
+    if (el) el.addEventListener('input', preview);
+  });
+  preview();
+
+  $('shape-save').onclick = async () => {
+    const { w, h, points } = readPoints();
+    try {
+      await api('/floor/rooms/' + room.id, {
+        method: 'PUT',
+        body: JSON.stringify({
+          name: $('shape-name').value.trim() || room.name,
+          cols: w,
+          rows: h,
+          outline: points,
+          // Empty means "no colour of its own", which the server stores as
+          // null and the designer reads as the theme's — a real choice, and one
+          // a venue makes by ticking the box rather than by hunting for the
+          // grey it started with.
+          floor_colour: $('shape-plain').checked ? '' : $('shape-fill').value,
+          wall_colour: $('shape-plain').checked ? '' : $('shape-line').value,
+        }),
+      });
+      $('modal-root').innerHTML = '';
+      await loadFloor();
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  };
+
+  $('shape-del').onclick = async () => {
+    const count = room.tables.length;
+    if (!await confirmDialog(
+      count
+        ? `Delete "${room.name}" and its ${count} table${count === 1 ? '' : 's'}?`
+        : `Delete "${room.name}"?`
+    )) return;
+    try {
+      await api('/floor/rooms/' + room.id, { method: 'DELETE' });
+      $('modal-root').innerHTML = '';
+      activeRoom = null;
+      await loadFloor();
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  };
+}
+
 function showInspector() {
   const body = $('inspector-body');
   const room = floor.find((r) => r.id === activeRoom);
@@ -2202,6 +3979,14 @@ function showInspector() {
 
   body.innerHTML = `
     <label>Number<input id="i-num" type="number" value="${table.table_number}" disabled /></label>
+    <label>Name a customer sees
+      <input id="i-name" value="${esc(table.name || '')}"
+             placeholder="Table ${table.table_number}" />
+      <span class="muted small">
+        Shown on the phone that scans this table's code. Must be different from
+        every other table in the venue. Changing it does not change the code.
+      </span>
+    </label>
     <label>Label<input id="i-label" value="${esc(table.label || '')}" /></label>
     <label>Seats<input id="i-seats" type="number" value="${table.seats}" /></label>
     <div class="row">
@@ -2214,25 +3999,67 @@ function showInspector() {
         <option value="circle" ${table.shape === 'circle' ? 'selected' : ''}>Circle</option>
       </select>
     </label>
+    <label>Colour
+      <span class="i-colour">
+        <input id="i-colour" type="color" value="${esc(table.colour || '#A5C715')}" />
+        <button type="button" class="btn small ghost" id="i-colour-clear"
+                ${table.colour ? '' : 'hidden'}>Use the default</button>
+      </span>
+      <span class="muted small">
+        For the tables worth picking out — the window seats, the booths.
+      </span>
+    </label>
+
+    <div class="i-code">
+      <b>Its code</b>
+      <p class="muted small">
+        Minted when the table was added and never changed since, so a card
+        printed today keeps working through every rename and every move. Print
+        the set under <b>Table codes</b>.
+      </p>
+      <label class="check">
+        <input type="checkbox" id="i-qr" ${table.qr_enabled ? 'checked' : ''}>
+        <span>Phones can order from this table</span>
+      </label>
+    </div>
+
     <button class="btn danger small" id="i-del" style="margin-top:16px">Delete table</button>`;
 
   const apply = () => {
+    table.name = $('i-name').value.trim() || null;
     table.label = $('i-label').value || null;
     table.seats = Number($('i-seats').value) || 4;
     table.width = Math.max(1, Number($('i-w').value) || 2);
     table.height = Math.max(1, Number($('i-h').value) || 2);
     table.shape = $('i-shape').value;
+    table.qr_enabled = $('i-qr').checked ? 1 : 0;
     markDirty(true);
     drawRoom();
     drawSelection();
   };
 
-  ['i-label', 'i-seats', 'i-w', 'i-h', 'i-shape'].forEach((id) =>
+  ['i-name', 'i-label', 'i-seats', 'i-w', 'i-h', 'i-shape', 'i-qr'].forEach((id) =>
     $(id).addEventListener('change', apply)
   );
 
+  // The colour is live: picking one and having to guess until Save is picking
+  // blind, and the whole point of a colour is what it looks like on the plan.
+  $('i-colour').addEventListener('input', () => {
+    table.colour = $('i-colour').value.toUpperCase();
+    $('i-colour-clear').hidden = false;
+    markDirty(true);
+    drawRoom();
+    drawSelection();
+  });
+  $('i-colour-clear').onclick = () => {
+    table.colour = null;
+    markDirty(true);
+    drawRoom();
+    drawSelection();
+  };
+
   $('i-del').onclick = async () => {
-    if (!confirm(`Delete table ${table.table_number}?`)) return;
+    if (!await confirmDialog(`Delete table ${table.table_number}?`)) return;
     await api(`/floor/tables/${table.id}`, { method: 'DELETE' });
     selected = null;
     loadFloor();
@@ -2281,15 +4108,29 @@ function fieldHtml(f) {
   }
   if (f.type === 'select') {
     // Options are either plain strings or {value,label} pairs — the commerce
-    // editors need labels that read differently from the stored value.
-    return `<select name="${f.name}">${f.options
-      .map((o) => {
-        const value = typeof o === 'object' ? o.value : o;
-        const label = typeof o === 'object' ? o.label : o;
-        return `<option value="${esc(value)}"${
-          String(value) === String(f.value) ? ' selected' : ''
-        }>${esc(label)}</option>`;
-      })
+    // editors need labels that read differently from the stored value. An
+    // option with a `group` sits under an <optgroup> of that name, in the
+    // order the groups first appear: the report picker has thirty-eight
+    // entries and a flat list of them is a list nobody can find anything in.
+    const option = (o) => {
+      const value = typeof o === 'object' ? o.value : o;
+      const label = typeof o === 'object' ? o.label : o;
+      return `<option value="${esc(value)}"${
+        String(value) === String(f.value) ? ' selected' : ''
+      }>${esc(label)}</option>`;
+    };
+    const grouped = f.options.some((o) => typeof o === 'object' && o.group);
+    if (!grouped) return `<select name="${f.name}">${f.options.map(option).join('')}</select>`;
+    const groups = new Map();
+    for (const o of f.options) {
+      const g = (typeof o === 'object' && o.group) || '';
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g).push(o);
+    }
+    return `<select name="${f.name}">${[...groups.entries()]
+      .map(([g, list]) =>
+        g ? `<optgroup label="${esc(g)}">${list.map(option).join('')}</optgroup>` : list.map(option).join('')
+      )
       .join('')}</select>`;
   }
   if (f.type === 'checkbox') {
@@ -2302,14 +4143,10 @@ function fieldHtml(f) {
     </span>`;
   }
   if (f.type === 'image') {
-    // A file picker plus a hidden field holding the uploaded URL, so an
-    // unchanged image keeps its existing value on edit.
-    return `
-      <input type="hidden" name="${f.name}" value="${esc(f.value ?? '')}" />
-      <div class="img-field" data-img-for="${f.name}">
-        ${f.value ? `<img class="img-preview" src="${esc(f.value)}" alt="" />` : ''}
-        <input type="file" accept="image/*" data-upload-for="${f.name}" data-crop-shape="${f.crop || 'square'}" />
-      </div>`;
+    return imagePicker(f.name, f.value, {
+      crop: f.crop || 'square',
+      endpoint: f.endpoint || '/api/product-image',
+    });
   }
   if (f.type === 'modifiers') {
     // An ordered list, not a set of tick boxes, because the order is the
@@ -2358,6 +4195,103 @@ function fieldHtml(f) {
       <template data-mod-template>${f.options.map((o) => rowFor(o.id)).join('')}</template>
     </div>`;
   }
+  if (f.type === 'products') {
+    // Pick products by searching for them.
+    //
+    // "Instead of using PLU numbers can this be set to select products from a
+    // drop down list with a search function." Not a <select>, deliberately: a
+    // venue has several hundred products and the answer is a *set* of them, so
+    // a multiple-select would be a scrolling box in which the operator has to
+    // hold ctrl to keep what they already chose. A search box over a filtered
+    // list of tick boxes is the control people actually mean when they say
+    // "drop down with a search".
+    //
+    // The value is carried by one hidden input per chosen PLU, exactly as the
+    // modifier picker does, so the form submits the list without anything
+    // having to be kept in step with the DOM. Everything the search does is
+    // hide and show rows; nothing about the value moves when a filter changes,
+    // which is what stops a search wiping the choices made before it.
+    const chosen = new Set([].concat(f.value || []).map(String));
+    const all = f.options || [];
+    return `<div class="pp-field" data-product-field data-name="${esc(f.name)}">
+      <input type="search" class="pp-search" data-pp-search
+             placeholder="Search by name or PLU" autocomplete="off" />
+      <div class="pp-chosen" data-pp-chosen>
+        ${[...chosen].map((plu) => {
+          const p = all.find((o) => String(o.pluid) === plu);
+          return `<span class="pp-chip" data-pp-chip="${esc(plu)}">
+            <input type="hidden" name="${esc(f.name)}" value="${esc(plu)}" />
+            ${esc(p ? p.product_name : `PLU ${plu}`)}
+            <button type="button" class="pp-x" data-pp-remove="${esc(plu)}"
+                    aria-label="Remove">✕</button>
+          </span>`;
+        }).join('')}
+      </div>
+      <p class="pp-empty muted small"${chosen.size ? ' hidden' : ''}>
+        Nothing chosen yet — this deal will never fire on the till.
+      </p>
+      <ul class="pp-list" data-pp-list>
+        ${all.map((p) => `<li class="pp-row" data-pp-plu="${esc(String(p.pluid))}"
+              data-pp-hay="${esc(`${p.product_name || ''} ${p.pluid}`.toLowerCase())}"
+              ${chosen.has(String(p.pluid)) ? 'data-pp-on' : ''}>
+          <label>
+            <input type="checkbox" ${chosen.has(String(p.pluid)) ? 'checked' : ''} />
+            <span class="pp-name">${esc(p.product_name || `PLU ${p.pluid}`)}</span>
+            <span class="pp-meta muted small">${esc(String(p.pluid))}${
+              p.department_name ? ` · ${esc(p.department_name)}` : ''
+            }</span>
+          </label>
+        </li>`).join('')}
+      </ul>
+      ${all.length ? '' : '<p class="muted small">No products in the catalogue yet.</p>'}
+    </div>`;
+  }
+  if (f.type === 'allergens') {
+    // The statutory fourteen, ticked.
+    //
+    // THE HIDDEN SENTINEL IS THE WHOLE TRICK, so it is worth explaining. The
+    // modal collects repeated names with FormData.getAll, and a set of tick
+    // boxes with none ticked submits *nothing at all* — the key is simply
+    // absent. Every other field here treats absent as "the caller did not
+    // mention it, leave it alone", which is exactly the guard that stops an
+    // import wiping a venue's allergens.
+    //
+    // But "none of the fourteen" is a real answer and has to be storable, and
+    // it looks identical to "not mentioned" over the wire. So the field always
+    // submits one marker value; crudPayload strips it and hands the server a
+    // real array, empty or not. Absent still means untouched; present-and-empty
+    // means somebody looked and said none.
+    //
+    // See src/allergens.js — the NULL / [] distinction is the point of it.
+    const chosen = new Set(
+      Array.isArray(f.value)
+        ? f.value.map(String)
+        : (() => {
+            try {
+              const parsed = JSON.parse(f.value || 'null');
+              return Array.isArray(parsed) ? parsed.map(String) : [];
+            } catch {
+              return [];
+            }
+          })()
+    );
+    const list = Array.isArray(f.options) ? f.options : [];
+    if (!list.length) {
+      return '<p class="muted small">Allergen list unavailable — reload the page.</p>';
+    }
+    return `<div class="allergen-field">
+      <input type="hidden" name="${f.name}" value="__answered__" />
+      ${list
+        .map(
+          (a) => `<label class="check allergen-tick">
+            <input type="checkbox" name="${f.name}" value="${esc(a.code)}"
+                   ${chosen.has(a.code) ? 'checked' : ''} />
+            <span>${esc(a.label)}</span>
+          </label>`
+        )
+        .join('')}
+    </div>`;
+  }
   if (f.type === 'stations') {
     // Every station gets a box, including the ones this venue has not set up:
     // the back office does not know which printers are plugged into which
@@ -2386,9 +4320,116 @@ function fieldHtml(f) {
   // `money` is a pounds amount entered as a decimal number.
   const htmlType = f.type === 'money' ? 'number' : (f.type || 'text');
   const step = f.type === 'money' ? ' step="0.01"' : '';
-  return `<input name="${f.name}" type="${htmlType}"${step} ${
+  const placeholder = f.placeholder
+    ? ` placeholder="${esc(f.placeholder)}"`
+    : '';
+  // Readable but not editable, and selected as soon as it appears. For the one
+  // case that needs it: a licence key is shown once, because only a hash of it
+  // is kept, so the value has to be easy to copy and impossible to mangle.
+  const readonly = f.readonly ? ' readonly onfocus="this.select()"' : '';
+  return `<input name="${f.name}" type="${htmlType}"${step}${placeholder}${readonly} ${
     f.required ? 'required' : ''
   } value="${esc(String(f.value ?? ''))}" />`;
+}
+
+// ---------------------------------------------------------------------------
+// Saying something, and asking something, without the browser's own dialogs
+// ---------------------------------------------------------------------------
+//
+// WHY THESE EXIST
+//
+// iOS Safari adds a third button — "Suppress dialogs" — as soon as a page puts
+// up two dialogs in a row. Once anybody presses it, every `alert`, `confirm`
+// and `prompt` on that origin is dead for the rest of the browsing session:
+// `alert` shows nothing, `confirm` returns false, `prompt` returns null. No
+// error, nothing in the console, and it survives a reload.
+//
+// So on an iPad the Add table button silently did nothing, Delete silently did
+// nothing, and every error message this application reports was swallowed. It
+// was reported as "I cannot add any tables from my iPad", which is the only
+// symptom a person can see.
+//
+// A dialog drawn in the page cannot be suppressed by the browser, works the
+// same everywhere, and can say more than one line.
+
+/**
+ * A short message that appears, waits, and leaves. Never blocks.
+ *
+ * @param {string} message
+ * @param {'ok'|'warn'|'error'} [kind]
+ */
+function toast(message, kind) {
+  let host = document.getElementById('toast-host');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'toast-host';
+    document.body.appendChild(host);
+  }
+  const el = document.createElement('div');
+  el.className = 'toast toast-' + (kind || 'ok');
+  el.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+  el.textContent = String(message == null ? '' : message);
+  host.appendChild(el);
+  // Next frame, so the browser has a start state to animate away from.
+  requestAnimationFrame(() => el.classList.add('in'));
+
+  // An error stays long enough to be read twice; an acknowledgement does not
+  // need to be read at all.
+  const life = kind === 'error' ? 6000 : 3200;
+  const close = () => {
+    el.classList.remove('in');
+    el.addEventListener('transitionend', () => el.remove(), { once: true });
+    // A transition that never runs — reduced motion, a backgrounded tab —
+    // must not leave the message on screen for ever.
+    setTimeout(() => el.remove(), 500);
+  };
+  const timer = setTimeout(close, life);
+  el.addEventListener('click', () => { clearTimeout(timer); close(); });
+  return el;
+}
+
+/**
+ * Ask a yes/no question. Resolves true only if the person pressed the
+ * confirming button.
+ *
+ * @returns {Promise<boolean>}
+ */
+function confirmDialog(message, { title, confirmLabel, danger } = {}) {
+  return new Promise((resolve) => {
+    const back = document.createElement('div');
+    back.className = 'modal-back confirm-back';
+    back.innerHTML = `
+      <div class="modal confirm-modal" role="alertdialog" aria-modal="true">
+        <h3>${esc(title || 'Are you sure?')}</h3>
+        <p class="confirm-body">${esc(message)}</p>
+        <div class="modal-actions">
+          <button type="button" class="btn ghost" data-no>Cancel</button>
+          <button type="button" class="btn ${danger ? 'danger' : 'primary'}" data-yes>
+            ${esc(confirmLabel || 'Yes')}
+          </button>
+        </div>
+      </div>`;
+    document.body.appendChild(back);
+    requestAnimationFrame(() => back.classList.add('in'));
+
+    const done = (answer) => {
+      back.classList.remove('in');
+      setTimeout(() => back.remove(), 220);
+      document.removeEventListener('keydown', onKey);
+      resolve(answer);
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') done(false);
+      if (e.key === 'Enter') done(true);
+    };
+    document.addEventListener('keydown', onKey);
+    back.querySelector('[data-no]').onclick = () => done(false);
+    back.querySelector('[data-yes]').onclick = () => done(true);
+    // The backdrop is a Cancel, which is what every other dialog in this
+    // application does and what a thumb expects.
+    back.onclick = (e) => { if (e.target === back) done(false); };
+    back.querySelector('[data-yes]').focus();
+  });
 }
 
 // Crop-frame shapes, matched to how each picture actually renders on the
@@ -2601,7 +4642,17 @@ function modal(title, fields, onSubmit) {
       <form class="modal" id="modal-form">
         <h3>${esc(title)}</h3>
         ${fields
-          .map((f) => `<label>${esc(f.label)}${fieldHtml(f)}</label>`)
+          .map(
+            (f) =>
+              `<label>${esc(f.label)}${fieldHtml(f)}` +
+              // A line under the control, for the fields whose label cannot
+              // carry the whole answer on its own. Added for "can only be sold
+              // attached to another item", which sits directly beneath a
+              // *different* feature also called modifiers — two things by one
+              // name on one form need the sentence.
+              (f.hint ? `<span class="field-hint">${esc(f.hint)}</span>` : '') +
+              `</label>`
+          )
           .join('')}
         <div class="modal-actions">
           <button type="button" class="btn ghost" id="modal-cancel">Cancel</button>
@@ -2610,47 +4661,10 @@ function modal(title, fields, onSubmit) {
       </form>
     </div>`;
 
-  // On file select, open the cropper (zoom / pan / crop). What it returns is
-  // a resized PNG in the shape that field displays on the till — never the
-  // raw camera image — so till buttons all get a consistent, small picture.
-  root.querySelectorAll('[data-upload-for]').forEach((input) => {
-    input.addEventListener('change', async () => {
-      const file = input.files[0];
-      if (!file) return;
-      let blob;
-      try {
-        blob = await openCropper(file, input.dataset.cropShape);
-      } catch {
-        input.value = '';
-        return; // cancelled
-      }
-      if (!blob) return;
-
-      const body = new FormData();
-      body.append('image', blob, 'product.png');
-      try {
-        const res = await fetch('/api/product-image', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
-          body,
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Upload failed');
-        const hidden = root.querySelector(`input[name="${input.dataset.uploadFor}"]`);
-        hidden.value = data.url;
-        const wrap = input.closest('.img-field');
-        wrap.querySelector('.img-preview')?.remove();
-        const img = document.createElement('img');
-        img.className = 'img-preview';
-        img.src = data.url;
-        wrap.prepend(img);
-      } catch (err) {
-        alert(err.message);
-      } finally {
-        input.value = '';
-      }
-    });
-  });
+  // Crop, upload, preview — the same component the rest of the back office
+  // uses. It used to be written out here, which is why nothing outside a modal
+  // form could offer a picture and half the pages asked for a URL instead.
+  wireImagePickers(root);
 
   // The ordered modifier picker: add, reorder, remove. Everything it does is a
   // move of one <li>, because the list *is* the value — each row carries the
@@ -2701,6 +4715,64 @@ function modal(title, fields, onSubmit) {
     });
   });
 
+  // The product picker: search, tick, chip. Everything it does is add or
+  // remove one hidden input, because those inputs *are* the value — see the
+  // note in fieldHtml.
+  root.querySelectorAll('[data-product-field]').forEach((field) => {
+    const name = field.dataset.name;
+    const chips = field.querySelector('[data-pp-chosen]');
+    const list = field.querySelector('[data-pp-list]');
+    const empty = field.querySelector('.pp-empty');
+
+    const refreshEmpty = () => {
+      if (empty) empty.hidden = chips.children.length > 0;
+    };
+
+    const label = (plu) => {
+      const row = list.querySelector(`[data-pp-plu="${CSS.escape(plu)}"] .pp-name`);
+      return row ? row.textContent : `PLU ${plu}`;
+    };
+
+    const add = (plu) => {
+      if (chips.querySelector(`[data-pp-chip="${CSS.escape(plu)}"]`)) return;
+      const chip = document.createElement('span');
+      chip.className = 'pp-chip';
+      chip.dataset.ppChip = plu;
+      chip.innerHTML =
+        `<input type="hidden" name="${esc(name)}" value="${esc(plu)}" />` +
+        `${esc(label(plu))}<button type="button" class="pp-x" ` +
+        `data-pp-remove="${esc(plu)}" aria-label="Remove">✕</button>`;
+      chips.appendChild(chip);
+      refreshEmpty();
+    };
+
+    const remove = (plu) => {
+      chips.querySelector(`[data-pp-chip="${CSS.escape(plu)}"]`)?.remove();
+      const box = list.querySelector(`[data-pp-plu="${CSS.escape(plu)}"] input`);
+      if (box) box.checked = false;
+      refreshEmpty();
+    };
+
+    list.addEventListener('change', (e) => {
+      const row = e.target.closest('[data-pp-plu]');
+      if (!row) return;
+      if (e.target.checked) add(row.dataset.ppPlu);
+      else remove(row.dataset.ppPlu);
+    });
+
+    chips.addEventListener('click', (e) => {
+      const plu = e.target.closest('[data-pp-remove]')?.dataset.ppRemove;
+      if (plu) remove(plu);
+    });
+
+    field.querySelector('[data-pp-search]')?.addEventListener('input', (e) => {
+      const q = e.target.value.trim().toLowerCase();
+      for (const row of list.children) {
+        row.hidden = q ? !row.dataset.ppHay.includes(q) : false;
+      }
+    });
+  });
+
   $('modal-cancel').onclick = () => (root.innerHTML = '');
   $('modal-form').onsubmit = async (e) => {
     e.preventDefault();
@@ -2718,9 +4790,316 @@ function modal(title, fields, onSubmit) {
       root.innerHTML = '';
       render();
     } catch (err) {
-      alert(err.message);
+      // In the dialog, not behind it: a message about the form belongs where
+      // the form is, and on iOS an alert here would not have appeared at all.
+      toast(err.message, 'error');
     }
   };
+}
+
+// ---------------------------------------------------------------------------
+// The shell: folding the rail, and the theme corner
+// ---------------------------------------------------------------------------
+
+const RAIL_FOLD_KEY = 'vesopa.rail.folded';
+
+/**
+ * Hide the rail, or slide it back.
+ *
+ * Collapsed means gone, not narrow. The point of collapsing is to give the page
+ * its width back, and a strip of unlabelled icons charges 68px for a menu you
+ * still have to decode — so it leaves entirely and one press on the corner
+ * brings the whole thing back with its words on.
+ *
+ * Remembered per browser, like the theme. A manager who hides it is telling us
+ * something about their screen, and that is still true tomorrow.
+ *
+ * Desktop only. Below 960px the rail is already a drawer over the page.
+ */
+function setRailFolded(folded) {
+  const app = document.getElementById('app');
+  const btn = document.getElementById('rail-fold');
+  if (!app) return;
+  app.classList.toggle('rail-folded', !!folded);
+  const opener = document.getElementById('rail-show');
+  if (opener) opener.setAttribute('aria-expanded', String(!folded));
+  if (btn) {
+    btn.setAttribute('aria-expanded', String(!folded));
+    btn.setAttribute('aria-label', folded ? 'Show the menu' : 'Hide the menu');
+    btn.title = folded ? 'Show the menu' : 'Hide the menu';
+  }
+  try { localStorage.setItem(RAIL_FOLD_KEY, folded ? '1' : '0'); } catch { /* private mode */ }
+}
+
+/*
+ * `labelNavForFolding` used to live here.
+ *
+ * It wrapped each nav button's text in a <span> so the words could be hidden
+ * while the icon stayed, for the version of collapsing that kept a 68px strip
+ * of icons. That design was replaced by hiding the rail outright, so the span
+ * had no job left — and it had quietly broken the nav, because the click
+ * handler read data-view off the clicked element and the span does not carry
+ * it. Removed rather than left in place unused.
+ */
+
+
+function closeThemeMenu() {
+  document.querySelectorAll('.theme-corner').forEach((corner) => {
+    const menu = corner.querySelector('.theme-menu');
+    const btn = corner.querySelector('.theme-btn');
+    if (menu) menu.hidden = true;
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+  });
+}
+
+function wireShell() {
+  const fold = document.getElementById('rail-fold');
+  if (fold) {
+    let folded = false;
+    try { folded = localStorage.getItem(RAIL_FOLD_KEY) === '1'; } catch { /* private mode */ }
+    setRailFolded(folded);
+    fold.addEventListener('click', () => {
+      setRailFolded(!document.getElementById('app').classList.contains('rail-folded'));
+    });
+  }
+  wireTips();
+
+  const opener = document.getElementById('rail-show');
+  if (opener) opener.addEventListener('click', () => setRailFolded(false));
+
+  // Two of these now: one on the sign-in page and one in the application. They
+  // behave identically, so they are wired identically rather than by id.
+  document.querySelectorAll('.theme-corner').forEach((corner) => {
+    const btn = corner.querySelector('.theme-btn');
+    const menu = corner.querySelector('.theme-menu');
+    if (!btn || !menu) return;
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const open = menu.hidden;
+      menu.hidden = !open;
+      btn.setAttribute('aria-expanded', String(open));
+    });
+  });
+
+  // Anywhere else, and Escape. A popover that can only be closed by the button
+  // that opened it is a trap on a touchscreen.
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.theme-corner')) closeThemeMenu();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeThemeMenu();
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Saying that something is happening
+// ---------------------------------------------------------------------------
+
+/**
+ * The line across the top.
+ *
+ * It creeps rather than reporting a percentage, because there is no percentage
+ * to report — the server has not said how much there is. What it is actually
+ * for is the first 200ms: the gap between a press and anything changing, which
+ * is the whole of "it did not respond" on a slow connection.
+ */
+const loadbar = {
+  el: null,
+  timer: null,
+  at: 0,
+
+  node() {
+    if (!this.el) {
+      this.el = document.getElementById('loadbar');
+      if (!this.el) {
+        this.el = document.createElement('div');
+        this.el.id = 'loadbar';
+        document.body.appendChild(this.el);
+      }
+    }
+    return this.el;
+  },
+
+  start() {
+    const el = this.node();
+    clearInterval(this.timer);
+    this.at = 8;
+    el.classList.add('on');
+    el.style.width = '8%';
+    // Slower the further it gets, so it never reaches the end on its own and
+    // never has to go backwards.
+    this.timer = setInterval(() => {
+      this.at += Math.max(0.4, (92 - this.at) / 14);
+      if (this.at > 92) this.at = 92;
+      el.style.width = this.at + '%';
+    }, 220);
+  },
+
+  done() {
+    const el = this.node();
+    clearInterval(this.timer);
+    el.style.width = '100%';
+    setTimeout(() => {
+      el.classList.remove('on');
+      // Reset only once it has faded, or the next start jumps from the right.
+      setTimeout(() => { el.style.width = '0'; }, 260);
+    }, 160);
+  },
+};
+
+/** The shape of what is coming, in the place it will come. */
+const SKELETONS = {
+  stats: '<div class="sk"><div class="sk-row">' +
+    '<div class="sk-stat"></div><div class="sk-stat"></div>' +
+    '<div class="sk-stat"></div><div class="sk-stat"></div></div>' +
+    '<div class="sk-card"></div></div>',
+  list: '<div class="sk">' +
+    '<div class="sk-line w40"></div><div class="sk-card"></div>' +
+    '<div class="sk-line w70"></div><div class="sk-card"></div></div>',
+};
+
+function showSkeleton(hostId, kind) {
+  const host = document.getElementById(hostId);
+  if (host) host.innerHTML = SKELETONS[kind] || SKELETONS.list;
+}
+
+// ---------------------------------------------------------------------------
+// Icon buttons
+// ---------------------------------------------------------------------------
+//
+// One place for the marks, so that Delete is the same shape on every page. A
+// second copy of a bin somewhere else is how two pages end up disagreeing about
+// what a bin means.
+
+/**
+ * Material Symbols, from fonts.google.com/icons.
+ *
+ * WHY A LIBRARY AND NOT HAND-DRAWN PATHS
+ *
+ * The first version of this file drew its own bin, its own pencil and its own
+ * printer. They were legible but they were not a set: different stroke weights,
+ * different optical sizes, and a printer nobody recognised as one. An icon has
+ * one job — to be recognised before it is read — and a mark somebody has seen
+ * ten thousand times in other software does that job better than anything
+ * drawn here.
+ *
+ * These are the filled 24dp Material Symbols, taken as paths rather than loaded
+ * as a font: the font is 200KB for the dozen marks used here, it arrives after
+ * the first paint, and until it does every button shows the ligature's text.
+ *
+ * The viewBox is Google's own `0 -960 960 960`, kept exactly as exported so a
+ * replacement can be pasted in from the site without re-drawing anything. They
+ * are filled shapes, so they take `fill: currentColor` and no stroke.
+ */
+const ICONS = {
+  // edit
+  edit: '<path d="M200-200h57l391-391-57-57-391 391v57Zm-80 80v-170l528-527q12-11 26.5-17t30.5-6q16 0 31 6t26 18l55 56q12 11 17.5 26t5.5 30q0 16-5.5 30.5T817-647L290-120H120Zm640-584-56-56 56 56Zm-141 85-28-29 57 57-29-28Z"/>',
+  // delete
+  del: '<path d="M280-120q-33 0-56.5-23.5T200-200v-520h-40v-80h200v-40h240v40h200v80h-40v520q0 33-23.5 56.5T680-120H280Zm400-600H280v520h400v-520ZM360-280h80v-360h-80v360Zm160 0h80v-360h-80v360ZM280-720v520-520Z"/>',
+  // content_copy
+  copy: '<path d="M360-240q-33 0-56.5-23.5T280-320v-480q0-33 23.5-56.5T360-880h360q33 0 56.5 23.5T800-800v480q0 33-23.5 56.5T720-240H360Zm0-80h360v-480H360v480ZM200-80q-33 0-56.5-23.5T120-160v-560h80v560h440v80H200Zm160-240v-480 480Z"/>',
+  // save
+  save: '<path d="M840-680v480q0 33-23.5 56.5T760-120H200q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h480l160 160Zm-80 34L646-760H200v560h560v-446ZM480-240q50 0 85-35t35-85q0-50-35-85t-85-35q-50 0-85 35t-35 85q0 50 35 85t85 35ZM240-560h360v-160H240v160Zm-40-86v446-560 114Z"/>',
+  // add
+  add: '<path d="M440-440H200v-80h240v-240h80v240h240v80H520v240h-80v-240Z"/>',
+  // print — the file supplied for this
+  print: '<path d="M640-640v-120H320v120h-80v-200h480v200h-80Zm-480 80h640-640Zm560 100q17 0 28.5-11.5T760-500q0-17-11.5-28.5T720-540q-17 0-28.5 11.5T680-500q0 17 11.5 28.5T720-460Zm-80 260v-160H320v160h320Zm80 80H240v-160H80v-240q0-51 35-85.5t85-34.5h560q51 0 85.5 34.5T880-520v240H720v160Zm80-240v-160q0-17-11.5-28.5T760-560H200q-17 0-28.5 11.5T160-520v160h80v-80h480v80h80Z"/>',
+  // visibility
+  eye: '<path d="M480-320q75 0 127.5-52.5T660-500q0-75-52.5-127.5T480-680q-75 0-127.5 52.5T300-500q0 75 52.5 127.5T480-320Zm0-72q-45 0-76.5-31.5T372-500q0-45 31.5-76.5T480-608q45 0 76.5 31.5T588-500q0 45-31.5 76.5T480-392Zm0 192q-146 0-266-81.5T40-500q54-137 174-218.5T480-800q146 0 266 81.5T920-500q-54 137-174 218.5T480-200Zm0-300Zm0 220q113 0 207.5-59.5T832-500q-50-101-144.5-160.5T480-720q-113 0-207.5 59.5T128-500q50 101 144.5 160.5T480-280Z"/>',
+  // link
+  link: '<path d="M440-280H280q-83 0-141.5-58.5T80-480q0-83 58.5-141.5T280-680h160v80H280q-50 0-85 35t-35 85q0 50 35 85t85 35h160v80ZM320-440v-80h320v80H320Zm200 160v-80h160q50 0 85-35t35-85q0-50-35-85t-85-35H520v-80h160q83 0 141.5 58.5T880-480q0 83-58.5 141.5T680-280H520Z"/>',
+  // keyboard_arrow_up
+  up: '<path d="M480-528 296-344l-56-56 240-240 240 240-56 56-184-184Z"/>',
+  // keyboard_arrow_down
+  down: '<path d="M480-344 240-584l56-56 184 184 184-184 56 56-240 240Z"/>',
+  // payments — topping a gift card up
+  topup: '<path d="M560-440q-50 0-85-35t-35-85q0-50 35-85t85-35q50 0 85 35t35 85q0 50-35 85t-85 35ZM280-320q-33 0-56.5-23.5T200-400v-320q0-33 23.5-56.5T280-800h560q33 0 56.5 23.5T920-720v320q0 33-23.5 56.5T840-320H280Zm80-80h400q0-33 23.5-56.5T840-480v-160q-33 0-56.5-23.5T760-720H360q0 33-23.5 56.5T280-640v160q33 0 56.5 23.5T360-400Zm440 240H120q-33 0-56.5-23.5T40-240v-440h80v440h680v80ZM280-400v-320 320Z"/>',
+  // history
+  history: '<path d="M480-120q-138 0-240.5-91.5T122-440h82q14 104 92.5 172T480-200q117 0 198.5-81.5T760-480q0-117-81.5-198.5T480-760q-69 0-129 32t-101 88h110v80H120v-240h80v94q51-64 124.5-99T480-840q75 0 140.5 28.5t114 77q48.5 48.5 77 114T840-480q0 75-28.5 140.5t-77 114q-48.5 48.5-114 77T480-120Zm112-192L440-464v-216h80v184l128 128-56 56Z"/>',
+  // block — voiding a card
+  block: '<path d="M480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q54 0 104-17.5t92-50.5L228-676q-33 42-50.5 92T160-480q0 134 93 227t227 93Zm252-124q33-42 50.5-92T800-480q0-134-93-227t-227-93q-54 0-104 17.5T284-732l448 448Z"/>',
+  // tune — editing the answers on a modifier group
+  tune: '<path d="M440-120v-240h80v80h320v80H520v80h-80Zm-320-80v-80h240v80H120Zm160-160v-80H120v-80h160v-80h80v240h-80Zm160-80v-80h400v80H440Zm160-160v-240h80v80h160v80H680v80h-80Zm-480-80v-80h400v80H120Z"/>',
+  // check_circle
+  check: '<path d="m424-296 282-282-56-56-226 226-114-114-56 56 170 170Zm56 216q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z"/>',
+  // download
+  download: '<path d="M480-320 280-520l56-58 104 104v-326h80v326l104-104 56 58-200 200ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z"/>',
+  // send
+  send: '<path d="M120-160v-640l760 320-760 320Zm80-120 474-200-474-200v140l240 60-240 60v140Zm0 0v-400 400Z"/>',
+  // wallet — putting a card on a phone
+  wallet: '<path d="M200-160q-33 0-56.5-23.5T120-240v-480q0-33 23.5-56.5T200-800h560q33 0 56.5 23.5T840-720v480q0 33-23.5 56.5T760-160H200Zm0-80h560v-480H200v480Zm0 0v-480 480Zm360-120h120q17 0 28.5-11.5T720-400v-160q0-17-11.5-28.5T680-600H560q-17 0-28.5 11.5T520-560v160q0 17 11.5 28.5T560-360Zm40-60v-120h40v120h-40Z"/>',
+  // person_remove / delete for a user row uses `del`; groups use `folder`
+  folder: '<path d="M160-160q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h240l80 80h320q33 0 56.5 23.5T880-640v400q0 33-23.5 56.5T800-160H160Zm0-80h640v-400H447l-80-80H160v480Zm0 0v-480 480Z"/>',
+};
+
+/**
+ * One icon button.
+ *
+ * `tip` is both the tooltip and the accessible name, so there is one string to
+ * write and no way for the two to fall out of step.
+ */
+function iconBtn(icon, tip, attrs = '', kind = '') {
+  return `<button type="button" class="ibtn${kind ? ' ' + kind : ''}" ` +
+    `data-tip="${esc(tip)}" aria-label="${esc(tip)}" title="${esc(tip)}" ${attrs}>` +
+    `<svg viewBox="0 -960 960 960" aria-hidden="true">${ICONS[icon] || ''}</svg></button>`;
+}
+
+/** The legend that goes under a table of them. */
+function iconKey(pairs) {
+  return '<div class="ibtn-key">' + pairs.map(([icon, label]) =>
+    `<span><svg viewBox="0 -960 960 960" aria-hidden="true">${ICONS[icon] || ''}</svg>` +
+    `${esc(label)}</span>`).join('') + '</div>';
+}
+
+/**
+ * Press and hold to see what a button does.
+ *
+ * On a touchscreen :hover either never fires or fires and then sticks on after
+ * the finger has gone, so the tooltip would either never appear or never leave.
+ * A long press is the gesture people already use to interrogate something they
+ * are not sure about.
+ *
+ * The press must not also activate the button, so a press that has opened a
+ * tooltip swallows the click that follows it.
+ */
+function wireTips() {
+  let timer = null;
+  let opened = null;
+
+  const close = () => {
+    if (opened) opened.classList.remove('tip-open');
+    opened = null;
+  };
+
+  document.addEventListener('pointerdown', (e) => {
+    const btn = e.target.closest?.('.ibtn');
+    if (!btn || e.pointerType === 'mouse') return;
+    timer = setTimeout(() => {
+      close();
+      btn.classList.add('tip-open');
+      opened = btn;
+      timer = null;
+    }, 450);
+  }, { passive: true });
+
+  const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
+  document.addEventListener('pointerup', cancel, { passive: true });
+  document.addEventListener('pointercancel', cancel, { passive: true });
+  document.addEventListener('pointermove', cancel, { passive: true });
+
+  // A press that opened a tooltip has answered the question; it must not also
+  // delete the row.
+  document.addEventListener('click', (e) => {
+    if (opened && e.target.closest?.('.ibtn') === opened) {
+      e.stopPropagation();
+      e.preventDefault();
+      close();
+    } else if (opened) {
+      close();
+    }
+  }, true);
+
+  document.addEventListener('scroll', close, { passive: true, capture: true });
 }
 
 // ---- Receipt viewer -------------------------------------------------------
@@ -2737,7 +5116,7 @@ async function showReceipt(id) {
   try {
     data = await api(`/receipts/${id}`);
   } catch (err) {
-    return alert(err.message);
+    return toast(err.message, 'error');
   }
   const { order, lines, payments } = data;
 
@@ -2822,17 +5201,29 @@ document.addEventListener('click', async (e) => {
   const group = t.closest?.('.nav-group');
   if (group) return toggleGroup(group);
 
-  if (t.dataset.view) {
+  // `closest`, not `t` itself.
+  //
+  // This read `t.dataset.view` off the clicked element, which worked only while
+  // a nav button contained nothing but a bare text node. The moment anything
+  // was put inside one — a span, an icon — clicking the words hit the child,
+  // which has no data-view, and the press did nothing; clicking the padding
+  // around them still worked. That is a nav that responds about one press in
+  // three, which is exactly how it was reported.
+  const navBtn = t.closest?.('[data-view]');
+  if (navBtn) {
     // Picking a view is the end of the errand the drawer was opened for.
     setRailOpen(false);
     // This is a press, which is what lets the screen editor open a window of
     // its own — see spEnterView. A deep link or the back button is not.
-    return show(t.dataset.view, { userInitiated: true });
+    return show(navBtn.dataset.view, { userInitiated: true });
   }
 
   // ---- Floor designer ----
   if (t.dataset.room) {
-    if (dirty && !confirm('Discard unsaved layout changes?')) return;
+    if (dirty && !(await confirmDialog(
+      'This room has changes that have not been saved.',
+      { title: 'Leave without saving?', confirmLabel: 'Discard changes', danger: true }
+    ))) return;
     activeRoom = Number(t.dataset.room);
     selected = null;
     markDirty(false);
@@ -2840,43 +5231,103 @@ document.addEventListener('click', async (e) => {
   }
   if (t.id === 'save-floor') return saveFloor();
   if (t.id === 'add-room') {
-    const name = prompt('Room name (e.g. Main Floor, Terrace)');
-    if (!name) return;
-    await api('/floor/rooms', { method: 'POST', body: JSON.stringify({ name }) });
-    return loadFloor();
+    return modal(
+      'New room',
+      [{ name: 'name', label: 'Room name', placeholder: 'Main Floor, Terrace, Snug' }],
+      async (d) => {
+        const name = String(d.name || '').trim();
+        if (!name) throw new Error('A room needs a name.');
+        await api('/floor/rooms', { method: 'POST', body: JSON.stringify({ name }) });
+        await loadFloor();
+        toast('Room added.');
+      }
+    );
+  }
+  if (t.id === 'draw-room') {
+    if (drawing()) return stopLasso(true);
+    return startLasso();
+  }
+
+  if (t.id === 'draw-room-done') return stopLasso(true);
+  if (t.id === 'draw-cancel') return stopLasso(false);
+
+  if (t.id === 'draw-undo') {
+    if (!drawing() || !lasso.points.length) return;
+    lasso.points.pop();
+    return drawRoom();
+  }
+
+  if (t.id === 'room-shape') {
+    if (!activeRoom) return toast('Create a room first.', 'warn');
+    return editRoomShape();
   }
   if (t.id === 'add-table') {
-    if (!activeRoom) return alert('Create a room first.');
-    const num = parseInt(prompt('Table number') || '', 10);
-    if (!num) return;
-    try {
-      await api('/floor/tables', {
-        method: 'POST',
-        body: JSON.stringify({
-          room_id: activeRoom, table_number: num,
-          pos_x: 1, pos_y: 1, width: 2, height: 2, seats: 4, shape: 'rect',
-        }),
-      });
-      return loadFloor();
-    } catch (err) {
-      return alert(err.message);
-    }
+    if (!activeRoom) return toast('Create a room first.', 'warn');
+
+    // The next free number across the whole venue, not just this room: table
+    // numbers are unique per venue, so suggesting "1" in a second room only
+    // produces a rejection.
+    const used = new Set();
+    floor.forEach((r) => (r.tables || []).forEach((tb) => used.add(Number(tb.table_number))));
+    let suggested = 1;
+    while (used.has(suggested)) suggested += 1;
+
+    return modal(
+      'Add a table',
+      [
+        { name: 'table_number', label: 'Table number', type: 'number', value: suggested },
+        {
+          name: 'name',
+          label: 'Name a customer sees (optional)',
+          placeholder: 'Window, Snug 2, Booth A',
+        },
+        { name: 'seats', label: 'Seats', type: 'number', value: 4 },
+      ],
+      async (d) => {
+        const num = parseInt(d.table_number, 10);
+        if (!num || num < 1) throw new Error('Give the table a number.');
+        const name = String(d.name || '').trim();
+        await api('/floor/tables', {
+          method: 'POST',
+          body: JSON.stringify({
+            room_id: activeRoom,
+            table_number: num,
+            name: name || null,
+            pos_x: 1, pos_y: 1, width: 2, height: 2,
+            seats: Math.max(1, parseInt(d.seats, 10) || 4),
+            shape: 'rect',
+          }),
+        });
+        await loadFloor();
+        toast('Table ' + num + ' added.');
+      }
+    );
   }
 
   // ---- Generic programming CRUD ----
   if (t.dataset.del && t.dataset.id) {
-    if (!confirm('Delete this?')) return;
+    if (!(await confirmDialog('This cannot be undone.',
+      { title: 'Delete this?', confirmLabel: 'Delete', danger: true }))) return;
     await api(`/${t.dataset.del}/${t.dataset.id}`, { method: 'DELETE' });
     return render();
   }
   if (t.dataset.add) {
     const cfg = CRUD[t.dataset.add];
-    return modal(`Add ${cfg.title}`, crudModalFields(cfg), (d) =>
-      api(`/${cfg.path}`, {
+    if (cfg.choices) await cfg.choices();
+    const seed = cfg.prefill ? await cfg.prefill(null) : {};
+    return modal(`Add ${cfg.title}`, crudModalFields(cfg, seed), async (d) => {
+      const created = await api(`/${cfg.path}`, {
         method: 'POST',
         body: JSON.stringify(crudPayload(cfg, d)),
-      })
-    );
+      });
+      // Anything kept in a second table is written after the row exists,
+      // because it is keyed by the id the insert has just handed back. A deal
+      // and its products cannot be saved in one request without the CRUD
+      // factory knowing about join tables, which is a much larger change for
+      // one screen.
+      if (cfg.afterSave && created?.id) await cfg.afterSave(created.id, d);
+      return created;
+    });
   }
   // A modifier group's answers are a grid of buttons, so they are laid out in
   // the screen editor rather than in a form of their own. The editor cannot be
@@ -2903,12 +5354,16 @@ document.addEventListener('click', async (e) => {
     const rows = await api(`/${cfg.path}`);
     const row = rows.find((r) => String(r.id) === String(t.dataset.id));
     if (!row) return;
-    return modal(`Edit ${cfg.title}`, crudModalFields(cfg, row), (d) =>
-      api(`/${cfg.path}/${row.id}`, {
+    if (cfg.choices) await cfg.choices();
+    const full = cfg.prefill ? { ...row, ...(await cfg.prefill(row)) } : row;
+    return modal(`Edit ${cfg.title}`, crudModalFields(cfg, full), async (d) => {
+      const saved = await api(`/${cfg.path}/${row.id}`, {
         method: 'PUT',
         body: JSON.stringify(crudPayload(cfg, d)),
-      })
-    );
+      });
+      if (cfg.afterSave) await cfg.afterSave(row.id, d);
+      return saved;
+    });
   }
   if (t.id === 'ex-run') return loadExplorer();
 
@@ -2960,12 +5415,12 @@ document.addEventListener('click', async (e) => {
     );
   }
 
-  if (t.dataset.delShift && confirm('Delete this shift? The hours go with it.')) {
+  if (t.dataset.delShift && await confirmDialog('Delete this shift? The hours go with it.')) {
     await api('/timesheets/' + t.dataset.delShift, { method: 'DELETE' });
     return loadTimesheets();
   }
 
-  if (t.dataset.delProduct && confirm('Delete this product?')) {
+  if (t.dataset.delProduct && await confirmDialog('Delete this product?')) {
     await api(`/products/${t.dataset.delProduct}`, { method: 'DELETE' });
     return loadProducts();
   }
@@ -2974,7 +5429,7 @@ document.addEventListener('click', async (e) => {
   // prompt says so, because this is the button a manager reaches for first.
   if (
     t.dataset.delStaff &&
-    confirm(
+    await confirmDialog(
       'Delete this staff member?\n\n' +
         'Their PIN stops working immediately. Sales they have already rung up ' +
         'keep their name. To stop them signing on but keep the record tidy, ' +
@@ -2986,13 +5441,136 @@ document.addEventListener('click', async (e) => {
   }
 
   if (t.dataset.pause) {
-    const reason = prompt('Reason for pausing (shown to the office):', 'Non-payment');
-    if (reason === null) return;
-    await api(`/admin/offices/${t.dataset.pause}/status`, {
-      method: 'POST',
-      body: JSON.stringify({ status: 'paused', reason }),
-    });
-    return loadOffices();
+    const office = t.dataset.pause;
+    return modal(
+      'Pause this office',
+      [{ name: 'reason', label: 'Reason (shown to the office)', value: 'Non-payment' }],
+      async (d) => {
+        const reason = String(d.reason || '').trim();
+        if (!reason) throw new Error('Say why, so the office can be told.');
+        await api(`/admin/offices/${office}/status`, {
+          method: 'POST',
+          body: JSON.stringify({ status: 'paused', reason }),
+        });
+        await loadOffices();
+      }
+    );
+  }
+  if (t.dataset.managers) {
+    const office = t.dataset.managers;
+    const people = await api(`/admin/offices/${office}/managers`);
+    const home = people.filter((p) => p.home);
+    const linked = people.filter((p) => !p.home);
+    return modal(
+      `Who manages ${t.dataset.managersName || 'this site'}`,
+      [
+        ...linked.map((p) => ({
+          name: `keep_${p.user_id}`,
+          type: 'checkbox',
+          value: 1,
+          label: `${p.name} <${p.email}>${p.home_office ? ` — from ${p.home_office}` : ''}`,
+          hint: 'Untick to stop this login managing this site. Its own office is not affected.',
+        })),
+        {
+          name: 'add_email',
+          label: 'Also let this login manage this site (its email)',
+          type: 'email',
+          hint: home.length
+            ? `This site's own logins: ${home.map((p) => p.name).join(', ')}. `
+              + 'A linked login gets a Site drop-down in the back office.'
+            : 'A linked login gets a Site drop-down in the back office.',
+        },
+      ],
+      async (d) => {
+        for (const p of linked) {
+          if (!Number(d[`keep_${p.user_id}`])) {
+            await api(`/admin/offices/${office}/managers/${p.user_id}`, { method: 'DELETE' });
+          }
+        }
+        const email = String(d.add_email || '').trim();
+        if (email) {
+          await api(`/admin/offices/${office}/managers`, {
+            method: 'POST',
+            body: JSON.stringify({ email }),
+          });
+        }
+        await loadOffices();
+      }
+    );
+  }
+  if (t.dataset.licences) {
+    const office = t.dataset.licences;
+    const name = t.dataset.licencesName || 'this office';
+
+    // Every app, not just tills. Fetched first so the boxes show what the venue
+    // actually has rather than blanks that would wipe the other three on save.
+    let current = { limits: {}, kinds: ['till', 'kitchen', 'display', 'express'], labels: {} };
+    try {
+      current = await api(`/admin/offices/${office}/licence-limits`);
+    } catch {
+      // A server without the migration: fall back to the till-only box, which
+      // is what it can still honour.
+    }
+
+    const labels = current.labels || {};
+    const fields = (current.kinds || []).map((kind) => ({
+      name: kind,
+      label: `${labels[kind] || kind}s at once (blank for no limit)`,
+      type: 'number',
+      value: current.limits?.[kind] ?? '',
+    }));
+
+    return modal(
+      `Licences — ${name}`,
+      fields,
+      async (d) => {
+        const body = {};
+        // '' is "no limit" and is sent as null, which DELETES the row. Zero is
+        // a different thing entirely -- it means the venue may run none.
+        for (const kind of current.kinds) body[kind] = d[kind] === '' ? null : d[kind];
+        await api(`/admin/offices/${office}/licence-limits`, {
+          method: 'PUT',
+          body: JSON.stringify(body),
+        });
+        await loadOffices();
+      }
+    );
+  }
+
+  if (t.dataset.licenceKey) {
+    const office = t.dataset.licenceKey;
+    return modal(
+      'Issue a licence key',
+      [
+        {
+          name: 'kind',
+          label: 'Which app',
+          type: 'select',
+          options: [
+            { value: 'till', label: 'Till' },
+            { value: 'kitchen', label: 'Kitchen screen' },
+            { value: 'display', label: 'Customer display' },
+            { value: 'express', label: 'Express kiosk' },
+          ],
+          value: 'till',
+        },
+        { name: 'label', label: 'What it is for (e.g. "Bar till")', value: '' },
+      ],
+      async (d) => {
+        const r = await api(`/admin/offices/${office}/licence-keys`, {
+          method: 'POST',
+          body: JSON.stringify({ kind: d.kind, label: d.label || null }),
+        });
+        // Shown once and never again: only a hash is kept, so there is nothing
+        // to look it up from later. Saying so here is the whole warning.
+        await modal(
+          'Copy this key now',
+          [{ name: 'key', label: 'It cannot be shown again', value: r.key, readonly: true }],
+          async () => {}
+        );
+        await loadOffices();
+      }
+    );
   }
   if (t.dataset.resume) {
     await api(`/admin/offices/${t.dataset.resume}/status`, {
@@ -3008,7 +5586,7 @@ document.addEventListener('click', async (e) => {
 
   if (t.id === 'sweep') {
     const r = await api('/admin/invoices/sweep-overdue', { method: 'POST' });
-    alert(`${r.marked_overdue} invoice(s) flagged overdue.`);
+    toast(`${r.marked_overdue} invoice(s) flagged overdue.`);
     return loadBilling();
   }
 
@@ -3042,6 +5620,24 @@ document.addEventListener('click', async (e) => {
     { label: 'Discount value (% or pence)', name: 'discount_value', type: 'number', value: c.discount_value ?? 0 },
     { label: 'Loyalty points', name: 'points_balance', type: 'number', value: c.points_balance ?? 0 },
     { label: 'Membership expires (blank = none)', name: 'membership_expiry', type: 'date', value: c.membership_expiry ? String(c.membership_expiry).slice(0, 10) : '' },
+    // A face, cropped round, shown on the till the moment the card is scanned.
+    // "To confirm it's the right person" — a membership card is a bearer
+    // token, and without this the only check a venue has is whether somebody
+    // knows the name on it.
+    {
+      label: 'Photo',
+      name: 'photo_url',
+      type: 'image',
+      // Square, and rounded off by whatever draws it. `CROP_SHAPES` has no
+      // circle — a circular crop would only mean storing a square with the
+      // corners thrown away, which is worse for anything that later wants the
+      // whole face.
+      crop: 'square',
+      endpoint: '/api/customer-photo',
+      value: c.photo_url ?? '',
+      hint: 'Shown on the till when this member is scanned, so staff can see '
+        + 'they are serving the right person.',
+    },
     { label: 'Notes', name: 'notes', value: c.notes ?? '' },
   ];
   const customerPayload = (d) => ({
@@ -3118,7 +5714,28 @@ document.addEventListener('click', async (e) => {
     // `money`, not `number`: a bare number input steps in whole units, so the
     // browser rejected £2.05 and offered the two "nearest valid values", 2 and
     // 3. Every price with pence in it was unenterable.
-    { label: 'Price (£)', name: 'price', type: 'money', value: p.price ?? 0 },
+    { label: 'Price 1 (£)', name: 'price', type: 'money', value: p.price ?? 0 },
+    // Five more, and every one of them optional.
+    //
+    // Blank is not zero. A level left empty means "this product has no special
+    // price here, charge Price 1", and the till falls back — so a venue can put
+    // a happy-hour price on the six drinks it applies to and leave the other
+    // four hundred products alone. A default of 0 would mean switching the till
+    // to Price 2 started giving everything away, silently, at the counter.
+    ...priceLevelFields(p),
+    {
+      label: 'Printer category — blank prints last, under no heading',
+      name: 'print_category_id',
+      type: 'select',
+      value: p.print_category_id ?? '',
+      options: [
+        { value: '', label: 'No category' },
+        ...(productRefs.printCategories || []).map((c) => ({
+          value: c.id,
+          label: c.name,
+        })),
+      ],
+    },
     {
       label: 'VAT rate',
       name: 'tax_percentage',
@@ -3143,6 +5760,31 @@ document.addEventListener('click', async (e) => {
       value: String(Number(p.tax_percentage ?? 20)),
     },
     { label: 'Stock', name: 'stock_quantity', type: 'number', value: p.stock_quantity ?? 0 },
+    /*
+     * "Set a check box on a product (Renews membership)."
+     *
+     * Which lines on a bill move a member's expiry forward when the bill is
+     * paid. Any number of products may carry it, which is the whole reason it
+     * lives here rather than as one PLU named in the loyalty settings: a club
+     * sells full, concession, junior and social memberships, and those are
+     * four products with four prices and one meaning.
+     *
+     * The date it renews TO is the club's, not the product's — set once under
+     * Loyalty › Membership, because a season ends on one night for everybody
+     * and four products disagreeing about which night is a support call.
+     *
+     * The fee is an ordinary line and goes through tendering with the rest of
+     * the bill, so it carries this product's VAT rate and department and lands
+     * in the Z report. Nothing is renewed until the bill is actually settled:
+     * a renewal recorded when the key is pressed is a renewal a voided bill
+     * leaves behind.
+     */
+    {
+      label: 'Renews membership — paying for this moves the member’s expiry on',
+      name: 'renews_membership',
+      type: 'checkbox',
+      value: p.renews_membership ?? 0,
+    },
     // No button colour, no button position, no emoji. All three belong to the
     // screen editor now — that is where the layout, the colour, the size, the
     // lettering and the face of every key are set. Two places to style one
@@ -3172,6 +5814,10 @@ document.addEventListener('click', async (e) => {
       name: 'modifier_group_ids',
       type: 'modifiers',
       options: productRefs.modifierGroups,
+      hint:
+        'These are the QR menu’s Add Ons too, asked before the item goes ' +
+        'in the basket. Prices come from the products on the modifier screen, ' +
+        'so one setup serves the till and the menu.',
       value: p.modifier_group_ids || [],
     },
     {
@@ -3181,6 +5827,42 @@ document.addEventListener('click', async (e) => {
       // New products default to on. Only an explicit 0 turns it off, so a
       // catalogue imported without the field is not hidden from every bill.
       value: p.print_to_receipt === undefined ? 1 : p.print_to_receipt,
+    },
+    {
+      label: 'Allergens',
+      name: 'allergens',
+      type: 'allergens',
+      options: productRefs.allergens,
+      hint:
+        'The fourteen a UK venue has to declare. Shown on the QR menu, on ' +
+        'kitchen tickets and on the customer display. Leave every box clear ' +
+        'and save to record that this contains none of them — which is a ' +
+        'different answer from never having been asked.',
+      value: p.allergens || null,
+    },
+    {
+      label: 'Barcode',
+      name: 'barcode',
+      hint:
+        'Scan the packet into this box, or type the number. On the till, ' +
+        'scanning it rings the product up; scanning one nothing carries ' +
+        'offers to add it.',
+      value: p.barcode || '',
+    },
+    {
+      // Deliberately worded as what it *does* rather than what it is called.
+      // "Is a modifier" is the venue's phrase and means nothing to the person
+      // who has to tick it eighteen months from now, and the field above it is
+      // the other, different modifier feature — the questions a product asks.
+      // Two things called "modifier" on one form need the sentence.
+      label: 'Can only be sold attached to another item',
+      name: 'is_modifier',
+      type: 'checkbox',
+      hint:
+        'For things like “No ice” or “Extra shot”. On the till, pick the item ' +
+        'on the bill first, then tap this — it goes underneath it. It cannot ' +
+        'be rung up on its own.',
+      value: p.is_modifier === undefined ? 0 : p.is_modifier,
     },
   ];
 
@@ -3249,45 +5931,117 @@ document.addEventListener('click', async (e) => {
     return modal('Add back office user', [
       { label: 'Name', name: 'name', required: true },
       { label: 'Email (their sign-in)', name: 'email', type: 'email', required: true },
-      { label: 'Password', name: 'password', type: 'password', required: true },
+      /*
+       * NO PASSWORD FIELD WHERE THERE IS NO PASSWORD FORM.
+       *
+       * With Vesopa as the only way in, asking a manager to invent a password
+       * means them typing a secret, sending it to a colleague over WhatsApp,
+       * and discovering together that it opens nothing — a real credential in a
+       * chat log, for a door that is not there. The server fills the column
+       * with random bytes nobody ever sees.
+       */
+      ...(vesopaOnly
+        ? []
+        : [{ label: 'Password', name: 'password', type: 'password', required: true }]),
       ...(me?.role === 'admin'
         ? [{ label: 'Office', name: 'office_id', type: 'select',
              options: offices.map((o) => `${o.id} — ${o.name}`) }]
         : []),
-    ], (d) => {
+    ], async (d) => {
       // The select carries "12 — Name"; the API wants the id.
       if (d.office_id) d.office_id = parseInt(d.office_id, 10);
-      return api('/users', { method: 'POST', body: JSON.stringify(d) });
+      const made = await api('/users', { method: 'POST', body: JSON.stringify(d) });
+
+      /*
+       * Say whether the invitation went, because from the manager's side
+       * "added the user" and "the user can get in" are the same act and they
+       * have no reason to think otherwise. A row with no invitation is a
+       * colleague who cannot sign in and has been told nothing.
+       */
+      if (made && made.invited === true) toast(`Invitation sent to ${d.email}.`);
+      else if (made && made.invited === false) {
+        toast(made.invite_error || 'The user was added, but the invitation did not send.', 'error');
+      }
+      return made;
     });
   }
-  if (t.dataset.pwUser) {
-    const pw = prompt('New password (at least 6 characters)');
-    if (!pw) return;
+
+  if (t.dataset.inviteUser) {
+    const button = t;
+    button.disabled = true;
     try {
-      await api(`/users/${t.dataset.pwUser}/password`, {
-        method: 'POST',
-        body: JSON.stringify({ password: pw }),
-      });
-      alert('Password reset.');
+      const sent = await api(`/users/${button.dataset.inviteUser}/vesopa-invite`, { method: 'POST' });
+      toast(`Invitation sent. The link works for ${sent.expires_in_days || 7} days.`);
     } catch (err) {
-      alert(err.message);
+      toast(err.message, 'error');
+    } finally {
+      button.disabled = false;
     }
-    return;
+    return undefined;
   }
-  if (t.dataset.delUser && confirm('Delete this user?')) {
+  if (t.dataset.pwUser) {
+    const who = t.dataset.pwUser;
+    return modal(
+      'Set a new password',
+      [{ name: 'password', label: 'New password', type: 'password' }],
+      async (d) => {
+        const pw = String(d.password || '');
+        if (pw.length < 6) throw new Error('Use at least six characters.');
+        await api(`/users/${who}/password`, {
+          method: 'POST',
+          body: JSON.stringify({ password: pw }),
+        });
+        // The modal reports its own failures, so a thrown error from api()
+        // lands in the dialog rather than behind it.
+        toast('Password reset.');
+      }
+    );
+  }
+  if (t.dataset.delUser && await confirmDialog('Delete this user?')) {
     try {
       await api(`/users/${t.dataset.delUser}`, { method: 'DELETE' });
     } catch (err) {
-      alert(err.message);
+      toast(err.message, 'error');
     }
     return loadUsers();
   }
 
+  if (t.dataset.roleUser) {
+    return modal(
+      'Role',
+      [await userRoleField(t.dataset.roleCurrent)],
+      async (d) => {
+        await api(`/users/${t.dataset.roleUser}/role`, {
+          method: 'PUT',
+          body: JSON.stringify({ role_id: d.role_id }),
+        });
+        return loadUsers();
+      }
+    );
+  }
+
+  if (t.id === 'add-training-staff') {
+    return modal('Add a training account', [
+      { label: 'Name (shown on the till while practising)', name: 'clark_name', required: true, value: 'Training' },
+      { label: 'PIN (exactly 4 digits)', name: 'pin_code', required: true },
+      { label: 'Staff ID', name: 'pluid', type: 'number', value: '0' },
+      await staffGroupField(''),
+    ], (d) => {
+      const bad = staffPinError(d.pin_code, { required: true });
+      if (bad) throw new Error(bad);
+      return api('/staff', {
+        method: 'POST',
+        body: JSON.stringify({ ...d, active: 1, training: 1 }),
+      });
+    });
+  }
   if (t.id === 'add-staff') {
     return modal('Add staff', [
       { label: 'Staff name', name: 'clark_name', required: true },
       { label: 'Staff PIN (exactly 4 digits)', name: 'pin_code', required: true },
       { label: 'Staff ID', name: 'pluid', type: 'number', value: '0' },
+      await staffGroupField(''),
+      { label: 'Hourly rate £ (for the wage reports; leave blank if not paid by the hour)', name: 'hourly_rate', type: 'money', value: '' },
       { label: 'Active (can sign on at the till)', name: 'active', type: 'checkbox', value: 1 },
     ], (d) => {
       const bad = staffPinError(d.pin_code, { required: true });
@@ -3304,7 +6058,10 @@ document.addEventListener('click', async (e) => {
       // "keep the old one" is a worse thing to explain than the PIN itself.
       { label: 'Staff PIN (exactly 4 digits)', name: 'pin_code', value: c.pin_code ?? '' },
       { label: 'Staff ID', name: 'pluid', type: 'number', value: c.pluid },
+      await staffGroupField(c.permission_group_id ?? ''),
+      { label: 'Hourly rate £ (for the wage reports; leave blank if not paid by the hour)', name: 'hourly_rate', type: 'money', value: c.hourly_rate ?? '' },
       { label: 'Active (can sign on at the till)', name: 'active', type: 'checkbox', value: c.active },
+      { label: 'Training account (practice only: sales are not recorded or counted)', name: 'training', type: 'checkbox', value: c.training ?? 0 },
     ], (d) => {
       // Blank still means "leave it alone" server-side, so it is only validated
       // when something was actually typed.
@@ -3314,7 +6071,7 @@ document.addEventListener('click', async (e) => {
     });
   }
 
-  if (t.dataset.delCustomer && confirm('Delete this customer?')) {
+  if (t.dataset.delCustomer && await confirmDialog('Delete this customer?')) {
     await api(`/customers/${t.dataset.delCustomer}`, { method: 'DELETE' });
     return loadCustomers();
   }
@@ -3333,6 +6090,7 @@ document.addEventListener('click', async (e) => {
   }
 
   if (t.id === 'logout') signOut();
+  if (t.id === 'switch-account') { signOut(); location.href = '/auth/vesopa/start?switch=1'; }
 });
 
 $('login-form').addEventListener('submit', async (e) => {
@@ -3369,6 +6127,72 @@ $('login-form').addEventListener('submit', async (e) => {
   }
 });
 
+/*
+ * Ask the server whether to offer signing in with a Vesopa account.
+ *
+ * The flag lives in the environment on the server, and this page is static —
+ * so the button cannot be baked in. Asking is also what keeps a rollback
+ * instant: the flag goes off, the next person to open the page does not see the
+ * button, and nobody has to deploy anything.
+ *
+ * Failure is silent and means "no". A sign-in page must not break because an
+ * optional extra could not be reached.
+ */
+(async function offerVesopaSignIn() {
+  try {
+    const res = await fetch('/api/public/backoffice/sign-in-options', { cache: 'no-store' });
+    if (!res.ok) return;
+    const options = await res.json();
+    if (!options || !options.vesopa) return;
+
+    const panel = document.getElementById('vesopa-sso');
+    if (panel) panel.hidden = false;
+    const sw = document.getElementById('switch-account');
+    if (sw) sw.hidden = false;
+
+    /*
+     * "Continue as …": the account this browser last came in with, from
+     * localStorage, on the button -- and its address goes along as
+     * login_hint, so Auth picks that one of several without asking. "Use
+     * another account" asks Auth for its chooser instead. Google's button,
+     * the same way round.
+     */
+    try {
+      const last = JSON.parse(localStorage.getItem('vesopa_last') || 'null');
+      const link = document.getElementById('vesopa-sso-link');
+      const word = document.getElementById('vesopa-sso-word');
+      const other = document.getElementById('vesopa-sso-other');
+      if (last && last.e && link && word) {
+        word.textContent = `Continue as ${last.n || last.e}`;
+        link.href = `/auth/vesopa/start?hint=${encodeURIComponent(last.e)}`;
+        link.title = last.e;
+        if (other) other.hidden = false;
+      }
+    } catch (e) { /* the plain button stays */ }
+
+    /*
+     * "Vesopa only" — the owner's instruction for the back office: no other
+     * options.
+     *
+     * The class goes on <body> rather than the fields being hidden one by one,
+     * so a field added to this form later is covered by the same rule instead
+     * of quietly reappearing on a page that is supposed to have one way in.
+     *
+     * The rule between the two ways in is only shown when there ARE two.
+     */
+    const rule = document.getElementById('vesopa-or');
+    if (options.only) {
+      vesopaOnly = true;
+      document.body.classList.add('vesopa-only');
+      if (rule) rule.hidden = true;
+    } else if (rule) {
+      rule.hidden = false;
+    }
+  } catch (e) {
+    /* the password form is unaffected */
+  }
+})();
+
 function signOut() {
   token = null;
   me = null;
@@ -3376,6 +6200,7 @@ function signOut() {
   if (socket) socket.close();
   $('app').hidden = true;
   $('login').hidden = false;
+  $('theme-corner-login').hidden = false;
   $('login-note').hidden = true;
   showLoginPanel('login-form');
   history.replaceState({}, '', '/');
@@ -3551,9 +6376,16 @@ async function verifyResetToken(raw) {
     'This reset link has expired or has already been used. Request a new one.';
 }
 
-function start() {
+async function start() {
   $('login').hidden = true;
   $('app').hidden = false;
+  // The sign-in page has a theme control of its own, outside #login so that it
+  // is reachable on a white page before anybody has signed in. It was never put
+  // away afterwards: it is `position: fixed` with a higher z-index than the
+  // application's, so on a phone it sat directly on top of the real one, two
+  // pixels off and with a solid white background the real one does not have.
+  // Two controls, one visible, and the visible one was the wrong one.
+  $('theme-corner-login').hidden = true;
 
   // Administration is only shown to the platform admin. The server enforces
   // this too — hiding the buttons alone would not stop anyone.
@@ -3562,16 +6394,195 @@ function start() {
     ? `Signed in as ${me.name} — platform administrator`
     : `${me?.officeName || ''}`;
 
+  // The site drop-down, for a login that manages more than one. Not awaited:
+  // the rest of the page does not depend on it.
+  loadSites();
+
+  // Whether this session is inside the practice venue. Also not awaited, but it
+  // is the first thing asked for: a manager must never read practice takings as
+  // the day's because a banner arrived late.
+  loadDemoVenue();
+
   connectSocket();
+
+  // What this login's role allows, and the menu trimmed to match. Awaited
+  // before the first view is shown so that a restricted user never sees a
+  // section flash up and vanish — and the server refuses anyway, so a failure
+  // here costs a tidy menu and nothing else.
+  await applyAccess();
 
   // Land on whatever the URL asks for, so a refresh or a bookmarked page
   // reopens where the user left off.
   show(viewForPath(location.pathname), { push: false });
 
-  // Fold the rail's bigger sections once the current view is known, so the
-  // group holding it is left open.
+  // Fold the rail once the current view is known, so the group holding it is
+  // the one section left open — and give it a way to be searched, which is
+  // what folding it costs.
   initNavGroups();
+  wireNavFind();
 }
+
+
+// ---- Sites ----------------------------------------------------------------
+//
+// One login, more than one venue. Choosing a site asks the server for a session
+// in that site (it checks this login may manage it) and reloads into it -- every
+// page then reads and writes that site alone, because every page always did
+// read and write "the office in the session".
+
+async function loadSites() {
+  const box = $('site-switch');
+  if (!box) return;
+  let data;
+  try {
+    data = await api('/sites');
+  } catch {
+    box.hidden = true;
+    return;
+  }
+  const sites = data.sites || [];
+  if (sites.length < 2) {
+    box.hidden = true;
+    return;
+  }
+  $('site-select').innerHTML = sites
+    .map((s) => `<option value="${s.id}"${Number(s.id) === Number(data.current) ? ' selected' : ''}>${
+      esc(s.name)}${s.status !== 'active' ? ` (${esc(s.status)})` : ''}</option>`)
+    .join('');
+  box.hidden = false;
+}
+
+document.addEventListener('change', async (e) => {
+  if (e.target.id !== 'site-select') return;
+  const officeId = Number(e.target.value);
+  try {
+    const r = await api('/sites/switch', {
+      method: 'POST',
+      body: JSON.stringify({ office_id: officeId }),
+    });
+    token = r.token;
+    me = { ...me, officeId: r.site.id, officeName: r.site.name, officeEmail: r.site.email };
+    // The same store the session is already in, so "keep me signed in" keeps
+    // meaning what it meant.
+    saveSession(localStorage.getItem(SESSION_KEYS.token) != null);
+    location.reload();
+  } catch (err) {
+    toast(err.message, 'error');
+    loadSites();
+  }
+});
+
+
+// ---- The practice venue ---------------------------------------------------
+//
+// A copy of the venue for training, which is itself a venue (src/demo_venue.js).
+// Two jobs here: say loudly when this session is inside one, and let a manager
+// set one up, refresh it from live, or throw the practice data away.
+
+/** Switch this session to a given site, the way the Site menu does. */
+async function switchToSite(officeId) {
+  const r = await api('/sites/switch', {
+    method: 'POST',
+    body: JSON.stringify({ office_id: officeId }),
+  });
+  token = r.token;
+  me = { ...me, officeId: r.site.id, officeName: r.site.name, officeEmail: r.site.email };
+  saveSession(localStorage.getItem(SESSION_KEYS.token) != null);
+  location.reload();
+}
+
+async function loadDemoVenue() {
+  const banner = $('demo-banner');
+  const state = $('demo-venue-state');
+  const card = $('demo-venue-card');
+  let data;
+  try {
+    data = await api('/demo');
+  } catch {
+    if (banner) banner.hidden = true;
+    if (card) card.hidden = true;
+    return;
+  }
+
+  // Inside the practice venue: the banner goes up, and the card that offers to
+  // rebuild it goes away -- rebuilding is done from the live venue, where the
+  // products being copied actually are.
+  if (banner) banner.hidden = !data.is_demo;
+  if (data.is_demo) {
+    if (card) card.hidden = true;
+    const leave = $('demo-leave');
+    if (leave && data.live) leave.dataset.officeId = data.live.id;
+    return;
+  }
+
+  if (card) card.hidden = false;
+  if (!state) return;
+  if (!data.demo) {
+    state.textContent =
+      'No practice venue yet. “Set up / refresh from live” makes one from this venue as it is now.';
+    return;
+  }
+  const when = (v) => (v ? new Date(v).toLocaleString('en-GB') : 'never');
+  state.textContent =
+    `Practice venue ready. Last copied from live: ${when(data.demo.refreshed_at)}. ` +
+    `Practice data last cleared: ${when(data.demo.reset_at)}.`;
+}
+
+document.addEventListener('click', async (e) => {
+  const leave = e.target.closest && e.target.closest('#demo-leave');
+  if (leave) {
+    const officeId = Number(leave.dataset.officeId);
+    if (!officeId) return;
+    try {
+      await switchToSite(officeId);
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+    return;
+  }
+
+  const refresh = e.target.closest && e.target.closest('#demo-refresh');
+  if (refresh) {
+    const ok = await confirmDialog(
+      'Copy this venue’s products, screens, prices and tables into the practice venue? ' +
+        'Anything already set up there is replaced. Practice sales are not affected.',
+      { title: 'Refresh the practice venue', confirmLabel: 'Copy from live' }
+    );
+    if (!ok) return;
+    refresh.disabled = true;
+    try {
+      await api('/demo/refresh', { method: 'POST' });
+      toast('The practice venue now matches this one.');
+      loadDemoVenue();
+      loadSites();
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      refresh.disabled = false;
+    }
+    return;
+  }
+
+  const reset = e.target.closest && e.target.closest('#demo-reset');
+  if (reset) {
+    const ok = await confirmDialog(
+      'Delete every practice sale, bill, ticket and customer in the practice venue? ' +
+        'Its products, screens and prices stay. Nothing in this venue is touched.',
+      { title: 'Clear the practice data', confirmLabel: 'Clear it', danger: true }
+    );
+    if (!ok) return;
+    reset.disabled = true;
+    try {
+      await api('/demo/reset', { method: 'POST' });
+      toast('The practice data has gone.');
+      loadDemoVenue();
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      reset.disabled = false;
+    }
+  }
+});
 
 
 // ---- Receipt designer -----------------------------------------------------
@@ -3685,7 +6696,7 @@ async function rdUploadLogo(event) {
     rdFillForm();
     rdRenderPreview();
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'error');
   } finally {
     // Let the same file be picked again after a failure.
     event.target.value = '';
@@ -3708,7 +6719,7 @@ async function rdSave() {
     button.textContent = 'Saved ✓';
     setTimeout(() => { button.textContent = 'Save receipt'; }, 1600);
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'error');
     button.textContent = 'Save receipt';
   } finally {
     button.disabled = false;
@@ -3879,11 +6890,18 @@ async function loadDashboardAnalytics() {
     { label: 'Gross takings', value: `£${pounds(t.gross_minor)}`,
       hint: trendHint(t.gross_minor, p.gross_minor), tone: 'primary' },
     { label: 'Net of VAT', value: `£${pounds(net)}` },
+    // Three accents across eight tiles, not five.
+    //
+    // Every figure used to carry one — a royal blue on Sales, a mint on
+    // Gratuity — and a row where everything is highlighted is a row where
+    // nothing is. The stripe means something now: green is the takings, amber
+    // is money owed to somebody else, red is money given away. The rest are
+    // plain, which is what lets the three that are not stand out.
     { label: 'VAT', value: `£${pounds(t.tax_minor)}`, tone: 'amber' },
     { label: 'Sales', value: String(t.sales || 0),
-      hint: trendHint(t.sales, p.sales), tone: 'blue' },
+      hint: trendHint(t.sales, p.sales) },
     { label: 'Average sale', value: `£${pounds(t.average_minor)}` },
-    { label: 'Gratuity', value: `£${pounds(t.gratuity_minor)}`, tone: 'green' },
+    { label: 'Gratuity', value: `£${pounds(t.gratuity_minor)}` },
     { label: 'Discounts',
       value: `£${pounds(num(t.discount_minor) + num(t.promo_minor) + num(t.voucher_minor))}`,
       tone: 'red' },
@@ -3904,7 +6922,7 @@ async function loadDashboardAnalytics() {
   Charts.bar($('dash-hourly'), (data.hourly || []).map((h) => ({
     label: `${String(h.hour).padStart(2, '0')}`,
     value: h.gross_minor,
-  })), { colour: '#4361ee' });
+  })));
 
   Charts.donut($('dash-tenders'), (data.tenders || []).map((x) => ({
     label: tenderLabel(x.method),
@@ -3920,14 +6938,14 @@ async function loadDashboardAnalytics() {
   Charts.ranked($('dash-departments'), (data.departments || []).map((x) => ({
     label: x.department,
     value: x.gross_minor,
-  })), { colour: '#4cc9f0' });
+  })));
 
   // MySQL DAYOFWEEK is 1=Sunday.
   const DOW = ['', 'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   Charts.bar($('dash-weekday'), (data.weekday || []).map((w) => ({
     label: DOW[w.dow] || String(w.dow),
     value: w.gross_minor,
-  })), { colour: '#7209b7' });
+  })));
 
   const l = data.liabilities || {};
   const s = data.stock || {};
@@ -4011,8 +7029,8 @@ async function loadPromotions() {
       <td>${r.active ? '<span class="pill on">Live</span>' : '<span class="pill">Off</span>'}</td>
       <td class="right nowrap">
         ${rowCardActions({ kind: 'promo', id: r.id, name: r.name })}
-        <button class="btn small" data-promo-edit="${r.id}">Edit</button>
-        <button class="btn small danger-ghost" data-promo-del="${r.id}">Delete</button>
+        ${iconBtn('edit', 'Edit', `data-promo-edit="${r.id}"`)}
+        ${iconBtn('del', 'Delete', `data-promo-del="${r.id}"`, 'danger')}
       </td>
     </tr>`).join('') || '<tr><td colspan="8" class="muted">No promotions yet.</td></tr>';
 
@@ -4023,7 +7041,7 @@ async function loadPromotions() {
       label: p.name,
       value: p.discount_minor,
       meta: `${p.uses} uses`,
-    })), { colour: '#f72585' });
+    })));
   } catch { /* chart is a nicety; the table is the page */ }
 }
 
@@ -4131,7 +7149,7 @@ document.addEventListener('click', async (e) => {
     }
   }
   const del = e.target.dataset?.promoDel;
-  if (del && confirm('Delete this promotion?')) {
+  if (del && await confirmDialog('Delete this promotion?')) {
     await api(`/promotions/${del}`, { method: 'DELETE' });
     loadPromotions();
   }
@@ -4170,10 +7188,10 @@ async function loadGiftCards() {
           // the same reason loadSubject() keeps returning it.
         })}
         ${r.reloadable && r.status === 'active'
-          ? `<button class="btn small" data-gift-reload="${r.id}">Top up</button>` : ''}
-        <button class="btn small" data-gift-history="${r.id}">History</button>
+          ? iconBtn('topup', 'Top up', `data-gift-reload="${r.id}"`) : ''}
+        ${iconBtn('history', 'History', `data-gift-history="${r.id}"`)}
         ${r.status === 'active'
-          ? `<button class="btn small danger-ghost" data-gift-void="${r.id}">Void</button>` : ''}
+          ? iconBtn('block', 'Void this card', `data-gift-void="${r.id}"`, 'danger') : ''}
       </td>
     </tr>`).join('') || '<tr><td colspan="8" class="muted">No gift cards issued yet.</td></tr>';
 }
@@ -4235,7 +7253,7 @@ document.addEventListener('click', async (e) => {
   }
 
   const voidId = e.target.dataset?.giftVoid;
-  if (voidId && confirm('Void this gift card? Its balance will no longer be redeemable.')) {
+  if (voidId && await confirmDialog('Void this gift card? Its balance will no longer be redeemable.')) {
     await api(`/gift-cards/${voidId}/void`, { method: 'PUT' });
     loadGiftCards();
   }
@@ -4272,7 +7290,7 @@ async function loadDeposits() {
           why: 'A deposit is money held against a bill, not a card. It prints as '
             + 'a receipt.',
         })}
-        <button class="btn small" data-deposit-edit="${r.id}">Edit</button>
+        ${iconBtn('edit', 'Edit', `data-deposit-edit="${r.id}"`)}
       </td>
     </tr>`).join('') || '<tr><td colspan="8" class="muted">No deposits taken yet.</td></tr>';
 }
@@ -4334,6 +7352,21 @@ let loyaltyState = null;
 
 async function loadLoyalty() {
   loyaltyState = await api('/loyalty');
+
+  // The catalogue, so the membership note can name the product a renewal is
+  // rung up as rather than quoting a number back. Without it the note said
+  // "no product with that PLU" about a product that exists, because it was
+  // looking in a list only the Products page fills.
+  //
+  // Awaited but not required: a venue that cannot load its catalogue should
+  // still be able to set its points rules, so a failure here costs the
+  // product's name and nothing else.
+  try {
+    crudProductChoices = await api('/products');
+  } catch {
+    crudProductChoices = [];
+  }
+
   fillLoyaltyForm();
   renderTiers();
   loyaltyExample();
@@ -4349,13 +7382,13 @@ async function loadLoyalty() {
       Object.entries(byDay).map(([day, v]) => ({
         label: shortDate(day), value: v.earn,
       })),
-      { colour: '#06d6a0', format: (v) => `${v} pts` });
+      { format: (v) => `${v} pts` });
 
     Charts.ranked($('loyalty-top'), (stats.top_customers || []).map((c) => ({
       label: c.name || 'Guest',
       value: c.lifetime_spend_minor,
       meta: `${c.points_balance} pts${c.tier_name ? ` · ${c.tier_name}` : ''}`,
-    })), { limit: 8, colour: '#4361ee' });
+    })), { limit: 8 });
 
     const totals = (stats.tiers || []).reduce((s, t) => s + Number(t.customers || 0), 0);
     const points = (stats.tiers || []).reduce((s, t) => s + Number(t.points || 0), 0);
@@ -4374,8 +7407,71 @@ function fillLoyaltyForm() {
   document.querySelectorAll('[data-loy]').forEach((el) => {
     const v = loyaltyState[el.dataset.loy];
     if (el.type === 'checkbox') el.checked = !!Number(v);
+    // Blank is a real answer for the membership product, and it is not the
+    // same answer as zero: empty means "no product, ring a plain line", and 0
+    // would be a PLU no venue has, which the till would look up, fail to find,
+    // and fall back from silently for ever.
+    else if (el.dataset.loy === 'membership_plu') el.value = v ?? '';
+    // A day, not a number. `?? 0` on a date input would put "0" into a field
+    // that only accepts YYYY-MM-DD, which browsers answer by showing an empty
+    // box — so the setting would look unset every time the page was opened
+    // and be silently cleared the next time it was saved.
+    else if (el.dataset.loy === 'membership_renewal_date') el.value = v ?? '';
     else el.value = v ?? 0;
   });
+  membershipNote();
+}
+
+/// Say in words what the till will actually do, because the fields do not say
+/// it on their own — and warn about the one setting that goes stale.
+function membershipNote() {
+  const el = $('loyalty-membership-note');
+  if (!el || !loyaltyState) return;
+  const months = Number(loyaltyState.membership_term_months) || 12;
+  const fee = Number(loyaltyState.membership_fee_minor) || 0;
+  const season = loyaltyState.membership_renewal_date || '';
+
+  // Today in the same shape the server compares in: a plain calendar day.
+  // Not `new Date(season) < new Date()`, which compares a UTC midnight against
+  // a local moment and calls today's date yesterday all summer.
+  const now = new Date();
+  const today = [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, '0'),
+    String(now.getDate()).padStart(2, '0'),
+  ].join('-');
+  const stale = season && season < today;
+
+  /*
+   * The stale-season warning.
+   *
+   * A season end is typed in months ahead, so there will be a morning after it
+   * when nobody has moved it forward. The till does not renew to a date that
+   * has passed — it falls back to the term, so nobody is handed an
+   * already-expired card at the counter — but the venue has to be told, here,
+   * where they can fix it.
+   */
+  const warn = $('loyalty-season-warning');
+  if (warn) {
+    warn.hidden = !stale;
+    if (stale) {
+      warn.textContent = `That date has passed. Until it is moved forward, `
+        + `renewals at the till fall back to ${months} month`
+        + `${months === 1 ? '' : 's'} from the day the fee is taken.`;
+    }
+  }
+
+  const runsTo = season && !stale
+    ? `moves the expiry to ${season}`
+    : `moves the expiry on ${months} month${months === 1 ? '' : 's'}`;
+
+  el.textContent = fee > 0
+    ? `Renewing at the till puts £${pounds(fee)} on the bill and, once it is `
+      + `paid, ${runsTo}. Which product the fee is rung up as is whichever `
+      + `product you have ticked as renewing a membership; if none is on the `
+      + `bill the till rings a plain “Membership renewal” line with no VAT on it.`
+    : `No fee is set, so renewing adds nothing to the bill and simply `
+      + `${runsTo} once the sale is settled.`;
 }
 
 function renderTiers() {
@@ -4390,7 +7486,7 @@ function renderTiers() {
       <label class="tier-field">×pts<input type="number" step="0.1" class="tier-mult"
         value="${Number(t.points_multiplier || 1)}"></label>
       <input type="color" class="tier-colour" value="${esc(t.colour || '#8e8e93')}">
-      <button class="btn small danger-ghost" data-tier-del="${i}">Remove</button>
+      ${iconBtn('del', 'Remove this tier', `data-tier-del="${i}"`, 'danger')}
     </div>`).join('') || '<p class="muted small">No tiers. Everyone earns at the base rate.</p>';
 }
 
@@ -4407,10 +7503,24 @@ function loyaltyExample() {
 document.addEventListener('input', (e) => {
   if (!loyaltyState || !e.target.dataset?.loy) return;
   const key = e.target.dataset.loy;
-  loyaltyState[key] = e.target.type === 'checkbox'
-    ? (e.target.checked ? 1 : 0)
-    : Number(e.target.value) || 0;
+  if (key === 'membership_plu') {
+    const raw = e.target.value.trim();
+    loyaltyState[key] = raw === '' ? null : Number(raw) || null;
+  } else if (key === 'membership_renewal_date') {
+    // A day, kept as the string the date input gives us. Everything else on
+    // this form is a number and falls through to `Number(value) || 0` below —
+    // which would turn "2027-08-31" into 0 and silently save a season of
+    // nothing. Emptying the box is a real instruction and means "no season,
+    // use the term", so it is stored as null rather than as ''.
+    const raw = e.target.value.trim();
+    loyaltyState[key] = raw === '' ? null : raw;
+  } else {
+    loyaltyState[key] = e.target.type === 'checkbox'
+      ? (e.target.checked ? 1 : 0)
+      : Number(e.target.value) || 0;
+  }
   loyaltyExample();
+  membershipNote();
 });
 
 document.addEventListener('click', async (e) => {
@@ -4419,7 +7529,13 @@ document.addEventListener('click', async (e) => {
     loyaltyState.tiers.push({
       name: `Tier ${loyaltyState.tiers.length + 1}`,
       min_spend_minor: 0, discount_percent: 0, points_multiplier: 1,
-      colour: Charts.PALETTE[loyaltyState.tiers.length % Charts.PALETTE.length],
+      colour: (() => {
+        // A tier's colour is stored, so it is resolved to a real value
+        // here rather than kept as a `var()` — the swatch beside it is
+        // an <input type="color">, which cannot hold one.
+        const series = Charts.palette();
+        return series[loyaltyState.tiers.length % series.length];
+      })(),
     });
     renderTiers();
   }
@@ -4983,7 +8099,7 @@ document.addEventListener('click', async (e) => {
         if (note) note.textContent = '';
       }, 1500);
     } catch (err) {
-      alert(String(err && err.message ? err.message : err));
+      toast(String(err && err.message ? err.message : err), 'error');
     } finally {
       e.target.disabled = false;
     }
@@ -4992,7 +8108,7 @@ document.addEventListener('click', async (e) => {
 
   // ---- Back to the venue's look ----
   if (e.target.id === 'wal-design-reset') {
-    if (!confirm(
+    if (!await confirmDialog(
       'Put this card back to the venue’s own look?\n\n'
       + 'Its name, colours, artwork and words are cleared, and it follows the '
       + 'Programme tab again from now on.'
@@ -5011,7 +8127,7 @@ document.addEventListener('click', async (e) => {
       renderWalletKinds();
       renderWalletDesignEditor();
     } catch (err) {
-      alert(String(err && err.message ? err.message : err));
+      toast(String(err && err.message ? err.message : err), 'error');
     }
   }
 });
@@ -5048,7 +8164,7 @@ document.addEventListener('change', async (e) => {
       walletDesignEdit('strip_url', await uploadWalletArt(blobs));
       renderWalletDesignEditor();
     } catch (err) {
-      alert(String(err && err.message ? err.message : err));
+      toast(String(err && err.message ? err.message : err), 'error');
     }
     return;
   }
@@ -5069,7 +8185,7 @@ document.addEventListener('change', async (e) => {
     try {
       walletSetArt(field.dataset.artfield, await uploadWalletArt(blobs));
     } catch (err) {
-      alert(String(err && err.message ? err.message : err));
+      toast(String(err && err.message ? err.message : err), 'error');
     }
   }
 });
@@ -5217,6 +8333,126 @@ async function loadWalletApple() {
     <p class="muted small">${walletApple.push_updates
       ? 'Passes update themselves in the customer’s wallet.'
       : 'Passes are correct when issued and refresh when the code is scanned again. Automatic updates need a web service URL.'}</p>`;
+
+  // The history sits under the same tab, so a venue looking at "can we issue
+  // passes" also sees whether anybody has one.
+  loadWalletEvents();
+
+  const refresh = $('wallet-events-refresh');
+  if (refresh && !refresh.dataset.wired) {
+    refresh.dataset.wired = '1';
+    refresh.addEventListener('click', loadWalletEvents);
+    $('wallet-events-trouble').addEventListener('change', loadWalletEvents);
+    $('wallet-events-serial').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') loadWalletEvents();
+    });
+  }
+}
+
+/**
+ * What has actually happened to this venue's passes.
+ *
+ * WHY THIS SCREEN EXISTS
+ *
+ * Everything a pass does after it leaves the server happens on somebody else's
+ * phone. There is no app to instrument and no crash report to read, so when a
+ * customer says "it never updated" the only evidence is what the server saw:
+ * the card was built, a phone registered, a push went out, Apple refused it.
+ * That story was previously spread across one overwritable error column and a
+ * log file on the server that no venue can reach.
+ */
+async function loadWalletEvents() {
+  const box = $('wallet-events');
+  const summaryBox = $('wallet-events-summary');
+  if (!box) return;
+
+  const params = new URLSearchParams({ limit: '150' });
+  if ($('wallet-events-trouble') && $('wallet-events-trouble').checked) params.set('trouble', '1');
+  const serial = $('wallet-events-serial') && $('wallet-events-serial').value.trim();
+  if (serial) params.set('serial', serial);
+
+  let data;
+  try {
+    data = await api(`/wallet/apple/events?${params}`);
+  } catch (e) {
+    box.innerHTML = '<p class="muted small">No wallet activity is recorded on this server yet.</p>';
+    if (summaryBox) summaryBox.innerHTML = '';
+    return;
+  }
+
+  const s = data.summary || {};
+  if (summaryBox) {
+    /*
+     * Built and downloaded side by side on purpose.
+     *
+     * A column of successful builds looks healthy until you notice none were
+     * downloaded — which is what a broken QR code looks like from here, and it
+     * is invisible if you only count the thing that worked.
+     */
+    summaryBox.innerHTML = `
+      <p class="muted small">Last ${s.days || 7} days:
+        <b>${s.built || 0}</b> built,
+        <b>${s.downloaded || 0}</b> added to a phone,
+        <b>${s.registered || 0}</b> registered for updates,
+        <b>${s.refreshed || 0}</b> refreshed,
+        <b>${s.pushed || 0}</b> pushed${s.push_failed ? `, <b>${s.push_failed}</b> pushes failed` : ''}${
+          s.unregistered ? `, <b>${s.unregistered}</b> removed` : ''}.
+        ${s.avg_build_ms ? `A card takes about ${s.avg_build_ms}ms to sign.` : ''}
+        ${s.failures ? `<span class="pill warn">${s.failures} problem${s.failures === 1 ? '' : 's'}</span>` : ''}
+      </p>`;
+  }
+
+  const rows = data.events || [];
+  if (!rows.length) {
+    box.innerHTML = '<p class="muted small">Nothing yet. Hand out a card and it will appear here.</p>';
+    return;
+  }
+
+  const WORDS = {
+    built: 'Card built',
+    downloaded: 'Added to a phone',
+    registered: 'Registered for updates',
+    unregistered: 'Removed from a phone',
+    refreshed: 'Refreshed on a phone',
+    pushed: 'Update pushed',
+    push_failed: 'Update failed',
+    device_log: 'Reported by Apple',
+    error: 'Failed',
+  };
+
+  box.innerHTML = `<table class="table"><thead><tr>
+      <th>When</th><th>What</th><th>Card</th><th>Detail</th>
+    </tr></thead><tbody>${rows
+      .map((r) => {
+        const when = new Date(r.created_at);
+        /*
+         * Joined, not concatenated.
+         *
+         * Each part carried its own leading separator, so a row with a size and
+         * no detail — which is every download — rendered as "· 341KB" with a
+         * dot floating in front of it.
+         */
+        const detail = [
+          r.detail,
+          r.bytes ? `${Math.round(r.bytes / 1024)}KB` : null,
+          r.ms ? `${r.ms}ms` : null,
+        ]
+          .filter(Boolean)
+          .map((part) => esc(part))
+          .join(' · ');
+        return `<tr${r.ok ? '' : ' class="warn-row"'}>
+          <td class="small muted" title="${esc(when.toISOString())}">${esc(
+            when.toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' }),
+          )}</td>
+          <td>${r.ok ? '' : '<span class="pill warn">!</span> '}${esc(WORDS[r.event] || r.event)}</td>
+          <td class="small muted">${esc(r.kind || '')}${
+            r.serial_number ? `<br><code>${esc(String(r.serial_number).slice(0, 8))}…</code>` : ''
+          }</td>
+          <td class="small muted">${detail}</td>
+        </tr>`;
+      })
+      .join('')}</tbody></table>
+    <p class="muted small">Kept for ${data.retain_days || 90} days.</p>`;
 }
 
 /**
@@ -5375,7 +8611,7 @@ document.addEventListener('click', async (e) => {
       );
       walletShowCode(name || subjectId, out.scan_url, out.card_number);
     } catch (err) {
-      alert(String(err && err.message ? err.message : err));
+      toast(String(err && err.message ? err.message : err), 'error');
     } finally {
       e.target.disabled = false;
     }
@@ -5466,24 +8702,13 @@ function rowCardActions({ kind, id, name = '', print = true, disabled = '' }) {
   const off = disabled ? ' disabled' : '';
   const why = disabled ? ` title="${esc(disabled)}"` : '';
 
-  return `
-    <button class="icon-btn" data-row-pass="${key}"${off}${why}
-            aria-label="Wallet pass for ${esc(name || id)}"
-            title="${disabled ? esc(disabled) : 'Put this card on a phone'}">
-      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-        <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5z"/>
-        <path d="M4 10h16"/><path d="M15.5 14.5h2"/>
-      </svg>
-    </button>${print ? `
-    <button class="icon-btn" data-row-print="${key}"
-            aria-label="Print a card for ${esc(name || id)}"
-            title="Print the card">
-      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-        <path d="M7 9V4h10v5"/>
-        <path d="M6.5 9h11A2.5 2.5 0 0 1 20 11.5V16h-3v4H7v-4H4v-4.5A2.5 2.5 0 0 1 6.5 9z"/>
-        <path d="M17 12.5h.01"/>
-      </svg>
-    </button>` : ''}`;
+  return iconBtn(
+    'wallet',
+    disabled ? disabled : 'Put this card on a phone',
+    `data-row-pass="${key}"${off}${why}`
+  ) + (print
+    ? iconBtn('print', 'Print the card', `data-row-print="${key}"`)
+    : '');
 }
 
 /**
@@ -5598,22 +8823,8 @@ function printNode(node) {
  */
 function printOnlyAction({ what, id, name = '', why = '' }) {
   const key = esc(`${what}|${id}|${name}`);
-  return `
-    <button class="icon-btn" disabled title="${esc(why)}"
-            aria-label="${esc(why)}">
-      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-        <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5z"/>
-        <path d="M4 10h16"/><path d="M15.5 14.5h2"/>
-      </svg>
-    </button>
-    <button class="icon-btn" data-row-slip="${key}"
-            aria-label="Print this ${esc(what)}" title="Print it">
-      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-        <path d="M7 9V4h10v5"/>
-        <path d="M6.5 9h11A2.5 2.5 0 0 1 20 11.5V16h-3v4H7v-4H4v-4.5A2.5 2.5 0 0 1 6.5 9z"/>
-        <path d="M17 12.5h.01"/>
-      </svg>
-    </button>`;
+  return iconBtn('wallet', why, 'disabled')
+    + iconBtn('print', 'Print this ' + what, `data-row-slip="${key}"`);
 }
 
 /**
@@ -5680,7 +8891,7 @@ document.addEventListener('click', async (e) => {
     try {
       await openRowSlip(what, id, rest.join('|'));
     } catch (err) {
-      alert(String(err && err.message ? err.message : err));
+      toast(String(err && err.message ? err.message : err), 'error');
     } finally {
       slipBtn.disabled = false;
     }
@@ -5694,7 +8905,7 @@ document.addEventListener('click', async (e) => {
     try {
       await openRowPass(kind, id, rest.join('|'));
     } catch (err) {
-      alert(String(err && err.message ? err.message : err));
+      toast(String(err && err.message ? err.message : err), 'error');
     } finally {
       passBtn.disabled = false;
     }
@@ -5708,7 +8919,7 @@ document.addEventListener('click', async (e) => {
     try {
       await openRowPrint(kind, id, rest.join('|'));
     } catch (err) {
-      alert(String(err && err.message ? err.message : err));
+      toast(String(err && err.message ? err.message : err), 'error');
     } finally {
       printBtn.disabled = false;
     }
@@ -5736,11 +8947,35 @@ const CARD_KINDS = [
   { key: 'loyalty_prefix', label: 'Loyalty' },
   { key: 'gift_prefix', label: 'Gift' },
   { key: 'membership_prefix', label: 'Membership' },
+  // Only for a venue that runs a gym. `gym` on the list unconditionally would
+  // put a fifth programme in front of every pub in the estate, which is the
+  // one thing switching the gym off is supposed to prevent.
+  { key: 'gym_prefix', label: 'Gym', gymOnly: true },
 ];
 
 const cardKindLabel = (kind) => ({
   clerk: 'Staff', loyalty: 'Loyalty', gift: 'Gift', membership: 'Membership',
+  gym: 'Gym',
 }[kind] || kind);
+
+/**
+ * The prefixes this venue is actually offered.
+ *
+ * The gym one appears only where there is a gym -- this page belongs to every
+ * venue, and a fifth prefix on it would be a fifth thing for a pub to wonder
+ * about.
+ *
+ * `gymState` is filled in by loadGym, so on a browser that has not opened the
+ * Gym page yet it is null. That is why the prefix itself is the second half of
+ * the test: a venue that has set one has a gym whether or not this tab has been
+ * there, and hiding a prefix somebody has already set would leave them with a
+ * field they cannot clear.
+ */
+function cardKindsHere() {
+  const gym = !!Number(gymState && gymState.enabled)
+    || String((cardsState && cardsState.gym_prefix) || '').length > 0;
+  return CARD_KINDS.filter((k) => !k.gymOnly || gym);
+}
 
 async function loadCards() {
   cardsState = await api('/cards/settings');
@@ -5751,7 +8986,11 @@ async function loadCards() {
     else el.value = value ?? '';
   }
 
-  const running = CARD_KINDS.filter((k) => String(cardsState[k.key] || '').length);
+  const kinds = cardKindsHere();
+  const gymRow = $('cards-gym-row');
+  if (gymRow) gymRow.hidden = !kinds.some((k) => k.gymOnly);
+
+  const running = kinds.filter((k) => String(cardsState[k.key] || '').length);
   statCards($('cards-stats'), [
     { label: 'Reading cards', value: cardsState.enabled ? 'On' : 'Off',
       tone: cardsState.enabled ? 'green' : 'red' },
@@ -5778,7 +9017,7 @@ function cardsPreview() {
   const digits = document.querySelector('[data-card="number_digits"]');
   const width = Math.min(Math.max(Number(digits && digits.value) || 5, 4), 12);
 
-  const rows = CARD_KINDS.map((kind) => {
+  const rows = cardKindsHere().map((kind) => {
     const field = document.querySelector('[data-card="' + kind.key + '"]');
     const prefix = String((field && field.value) || '').replace(/\D/g, '');
 
@@ -5860,17 +9099,1522 @@ document.addEventListener('click', async (e) => {
   if (voidId) {
     // Spelled out, because this is the one destructive thing on the page and
     // what it does to the person holding the card is not obvious from "cancel".
-    if (!confirm(
+    if (!await confirmDialog(
       'Cancel this card?\n\n'
       + 'It stops working at the till immediately and is detached from whoever '
       + 'held it. The number is never reissued — the card itself is still out '
       + 'there.'
     )) return;
-    const reason = prompt('Why? (kept on the record)', 'Lost') || 'Cancelled';
-    await api('/cards/issues/' + voidId + '/void', {
-      method: 'POST', body: JSON.stringify({ reason }),
+    return modal(
+      'Void this card',
+      [{ name: 'reason', label: 'Why? (kept on the record)', value: 'Lost' }],
+      async (d) => {
+        await api('/cards/issues/' + voidId + '/void', {
+          method: 'POST',
+          body: JSON.stringify({ reason: String(d.reason || '').trim() || 'Cancelled' }),
+        });
+        await loadCards();
+      }
+    );
+  }
+});
+
+// ---- The gym --------------------------------------------------------------
+//
+// A member swipes a card on the way in and the same card on the way out. The
+// till this happens at has nobody standing behind it, which is the fact that
+// shapes every decision on this page and in gym.js: a door that asked a
+// question would be a door that stayed shut until somebody walked over.
+//
+// OFF FOR EVERY VENUE UNTIL SOMEBODY TURNS IT ON
+//
+// Most venues on this platform are pubs. `enabled` defaults to 0, and while it
+// is 0 there is no Gym button in the rail here, no Gym page on any till in the
+// venue, no gym options in a till's settings, and a gym card is not a kind of
+// card a till recognises. That was asked for twice and in those words, and it
+// is worth being literal about: switching the gym off has to take the whole
+// thing away, not grey it out.
+
+let gymState = null;
+let gymTab = 'board';
+let gymBoardTimer = null;
+let gymAttendance = null;
+let gymExpiries = null;
+
+/*
+ * WHY THE GYM IS IN THE RAIL EVEN WHERE THERE IS NO GYM
+ *
+ * It was hidden until `enabled` was 1, which read as the obvious way to honour
+ * "disabled by default". It was not: the only switch that turns the gym on is
+ * on this page, so hiding the page hid the switch, and the feature could not be
+ * reached at all. There was no URL either -- `gym` was missing from ROUTES, so
+ * /gym fell through to the dashboard.
+ *
+ * The requirement is about the till. "If disabled nothing of gym options
+ * appears in the till" -- and that half is enforced strictly, in three places
+ * at once: the Gym section, the gym block in a till's Settings, and whether a
+ * gym card is a kind of card the till has heard of at all.
+ *
+ * The back office is where a venue switches it on, so it has to be able to see
+ * it -- and it now behaves like every other optional feature in this rail:
+ * Wallet Passes, Deposits, Vouchers and Mix & Match are all there whether or
+ * not the venue uses them. A pub that opens this page is told in one sentence
+ * that the gym is off and what the switch does.
+ */
+
+/**
+ * The gym page.
+ *
+ * Loads the settings first and stops there if the venue has the gym switched
+ * off — every other route answers 404 while it is off, and four failed requests
+ * would paint four error messages on a page whose real answer is one sentence.
+ */
+async function loadGym() {
+  try {
+    gymState = await api('/gym/settings');
+  } catch (e) {
+    $('gym-stats').innerHTML = '';
+    $('gym-board').innerHTML =
+      '<p class="muted small">The gym is not available on this server yet.</p>';
+    return;
+  }
+
+  for (const el of document.querySelectorAll('[data-gym]')) {
+    const value = gymState[el.dataset.gym];
+    if (el.type === 'checkbox') el.checked = !!Number(value);
+    else el.value = value ?? '';
+  }
+
+  $('gym-save').hidden = false;
+  gymPreview();
+
+  if (!Number(gymState.enabled)) {
+    // Not an error and not an empty page. The one thing to do here is the one
+    // thing offered.
+    statCards($('gym-stats'), [
+      { label: 'The gym', value: 'Off', tone: 'red',
+        hint: 'Nothing gym-shaped appears on a till' },
+    ]);
+    const off = '<p class="muted small">The gym is switched off for this venue. '
+      + 'Turn it on under <b>Settings</b> and give gym cards a prefix of their '
+      + 'own, and this page fills in.</p>';
+    $('gym-board').innerHTML = off;
+    $('gym-attendance').innerHTML = off;
+    $('gym-expired').innerHTML = off;
+    $('gym-soon').innerHTML = '';
+    $('gym-hours').innerHTML = '';
+    gymStopBoardTimer();
+    return;
+  }
+
+  await gymLoadBoard();
+  gymStartBoardTimer();
+}
+
+/**
+ * The board refreshes itself, because it is meant to be left on a screen.
+ *
+ * Twenty seconds: fast enough that somebody walking in appears while they are
+ * still taking their coat off, slow enough to be nothing on a server. Stopped
+ * whenever the page is left, or a back office abandoned on a tab in an office
+ * polls a venue's door all night.
+ */
+function gymStartBoardTimer() {
+  gymStopBoardTimer();
+  gymBoardTimer = setInterval(() => {
+    if (currentView !== 'gym' || gymTab !== 'board' || document.hidden) return;
+    gymLoadBoard().catch(() => {});
+  }, 20000);
+}
+
+function gymStopBoardTimer() {
+  if (gymBoardTimer) clearInterval(gymBoardTimer);
+  gymBoardTimer = null;
+}
+
+/** Local YYYY-MM-DD. `toISOString` is UTC and gets yesterday wrong after 11pm. */
+function gymDay(date) {
+  const d = date || new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function gymClock(value) {
+  if (!value) return '—';
+  return new Date(value).toLocaleTimeString('en-GB',
+    { hour: '2-digit', minute: '2-digit' });
+}
+
+function gymSpell(minutes) {
+  const n = Number(minutes);
+  if (!Number.isFinite(n) || n < 0) return '—';
+  if (n < 60) return `${n} min`;
+  const h = Math.floor(n / 60);
+  const m = n % 60;
+  return m ? `${h}h ${m}m` : `${h}h`;
+}
+
+/** "1 day" / "12 days" — because "in 12" is not a length of time. */
+function gymDaysWord(n) {
+  return n === 1 ? '1 day' : `${n} days`;
+}
+
+async function gymLoadBoard() {
+  const date = ($('gym-board-date') && $('gym-board-date').value) || '';
+  let rows = [];
+  try {
+    rows = await api('/gym/board' + (date ? `?date=${encodeURIComponent(date)}` : ''));
+  } catch (e) {
+    $('gym-board').innerHTML =
+      '<p class="muted small">Could not read the door just now.</p>';
+    return;
+  }
+
+  const inNow = rows.filter((r) => Number(r.in_now));
+  const been = rows.filter((r) => !Number(r.in_now));
+  const expired = rows.filter((r) => Number(r.expired));
+
+  statCards($('gym-stats'), [
+    { label: 'In the gym now', value: String(inNow.length),
+      tone: inNow.length ? 'green' : '', hint: inNow.length ? '' : 'Nobody at the moment' },
+    { label: 'Been and gone', value: String(been.length) },
+    { label: 'Visits', value: String(rows.length), tone: 'primary',
+      hint: date ? `on ${date}` : 'today' },
+    { label: 'Expired cards used', value: String(expired.length),
+      tone: expired.length ? 'red' : '' },
+  ]);
+
+  if (!rows.length) {
+    $('gym-board').innerHTML =
+      '<p class="muted small">Nobody has swiped in ' + (date ? 'that day' : 'today') + '.</p>';
+    return;
+  }
+
+  // Green in, red been-and-gone. The venue's own words, and the colour carries
+  // a word beside it as well — a board read at a glance from across a room is
+  // exactly where colour alone leaves somebody out.
+  $('gym-board').innerHTML = '<table class="table"><thead><tr>'
+    + '<th></th><th>Member</th><th>In</th><th>Out</th><th>For</th>'
+    + '<th>Card</th><th></th></tr></thead><tbody>'
+    + rows.map((r) => {
+      const here = !!Number(r.in_now);
+      const auto = r.closed_by === 'auto';
+      return '<tr class="gym-row ' + (here ? 'is-in' : 'is-out') + '">'
+        + '<td><span class="gym-dot ' + (here ? 'in' : 'out') + '"></span></td>'
+        + '<td><b>' + esc(r.member_name || 'Unknown card') + '</b>'
+        + (r.member_no ? ' <span class="muted small">#' + esc(r.member_no) + '</span>' : '')
+        + (Number(r.expired)
+          ? ' <span class="pill danger">expired</span>' : '')
+        + '</td>'
+        + '<td>' + gymClock(r.entered_at) + '</td>'
+        + '<td>' + (here ? '<span class="pill green">in the gym</span>' : gymClock(r.left_at))
+        + (auto ? ' <span class="muted small">(not swiped out)</span>' : '')
+        + '</td>'
+        + '<td>' + gymSpell(r.minutes) + '</td>'
+        + '<td class="small muted"><code>' + esc(r.card_number) + '</code></td>'
+        + '<td class="right">' + (here
+          ? '<button class="btn small" data-gym-close="' + esc(r.id) + '">Sign out</button>'
+          : '') + '</td>'
+        + '</tr>';
+    }).join('')
+    + '</tbody></table>';
+}
+
+// ---- How often ------------------------------------------------------------
+
+async function gymLoadAttendance() {
+  const from = $('gym-from').value || '';
+  const to = $('gym-to').value || '';
+  const query = [];
+  if (from) query.push(`from=${encodeURIComponent(from)}`);
+  if (to) query.push(`to=${encodeURIComponent(to)}`);
+
+  try {
+    gymAttendance = await api('/gym/attendance' + (query.length ? `?${query.join('&')}` : ''));
+  } catch (e) {
+    $('gym-attendance').innerHTML =
+      '<p class="muted small">Could not read attendance just now.</p>';
+    return;
+  }
+
+  // The server decides the period when the boxes are empty; showing what it
+  // decided is how somebody knows what they are looking at.
+  $('gym-from').value = gymAttendance.from;
+  $('gym-to').value = gymAttendance.to;
+
+  const members = gymAttendance.members || [];
+  if (!members.length) {
+    $('gym-attendance').innerHTML =
+      '<p class="muted small">No visits in that period.</p>';
+    $('gym-hours').innerHTML = '';
+    return;
+  }
+
+  $('gym-attendance').innerHTML = '<table class="table"><thead><tr>'
+    + '<th>Member</th><th class="right">Visits</th><th class="right">Times a week</th>'
+    + '<th class="right">Days</th><th class="right">Typical stay</th>'
+    + '<th>Last seen</th><th>Membership</th></tr></thead><tbody>'
+    + members.map((m) => {
+      const expiry = m.membership_expiry;
+      const gone = expiry && Date.parse(expiry + 'T23:59:59') < Date.now();
+      return '<tr>'
+        + '<td><b>' + esc(m.member_name || 'Unknown') + '</b>'
+        + (m.member_no ? ' <span class="muted small">#' + esc(m.member_no) + '</span>' : '')
+        + '</td>'
+        + '<td class="right">' + esc(m.visits) + '</td>'
+        + '<td class="right"><b>' + esc(m.per_week) + '</b></td>'
+        + '<td class="right">' + esc(m.days_attended) + '</td>'
+        + '<td class="right">' + (m.avg_minutes == null
+          ? '<span class="muted">—</span>' : gymSpell(m.avg_minutes)) + '</td>'
+        + '<td class="small muted">' + (m.last_visit
+          ? new Date(m.last_visit).toLocaleString('en-GB') : '—') + '</td>'
+        + '<td class="small">' + (expiry
+          ? (gone ? '<span class="pill danger">expired ' + esc(expiry) + '</span>'
+                  : esc(expiry))
+          : '<span class="muted">no date</span>') + '</td>'
+        + '</tr>';
+    }).join('')
+    + '</tbody></table>'
+    + '<p class="muted small">Typical stay is worked out only from visits where '
+    + 'the member swiped out. Anybody signed out automatically had their length '
+    + 'guessed, and a guess averaged into a measurement is a number nobody can '
+    + 'use.</p>';
+
+  gymRenderHours();
+}
+
+/**
+ * When the room is busy, as bars.
+ *
+ * Drawn as div widths rather than through charts.js, because this is one series
+ * of twenty-four small numbers and pulling in a chart for it would be more code
+ * than the thing it draws. Percentages go on a class-free inline width, which is
+ * the one styling this back office does inline — see the note in charts.js.
+ */
+function gymRenderHours() {
+  const hours = (gymAttendance && gymAttendance.by_hour) || [];
+  if (!hours.length) { $('gym-hours').innerHTML = ''; return; }
+
+  const counts = new Array(24).fill(0);
+  for (const h of hours) counts[Number(h.hour)] = Number(h.visits);
+  const peak = Math.max(...counts, 1);
+
+  $('gym-hours').innerHTML = '<div class="gym-hours">'
+    + counts.map((n, hour) => '<div class="gym-hour">'
+      // No bar at all for an hour nobody came, rather than the 2px minimum the
+      // rule gives every other bar. A sliver at six in the morning reads as
+      // "a couple of people" from across the room, which is the opposite of
+      // what it means.
+      + '<div class="gym-hour-bar">' + (n > 0
+        ? '<i style="height:' + Math.round((n / peak) * 100) + '%"></i>'
+        : '') + '</div>'
+      + '<span class="gym-hour-label">' + String(hour).padStart(2, '0') + '</span>'
+      + '<span class="gym-hour-count">' + (n || '') + '</span>'
+      + '</div>').join('')
+    + '</div>';
+}
+
+/**
+ * The attendance report as a file.
+ *
+ * Built from what is already on screen rather than fetched again, so the file
+ * and the page can never disagree about the period.
+ */
+function gymCsv() {
+  if (!gymAttendance) return;
+  const rows = [
+    ['Member', 'Number', 'Card', 'Visits', 'Times a week', 'Days attended',
+     'Typical stay (min)', 'First visit', 'Last visit', 'Expired visits',
+     'Membership expiry'],
+    ...(gymAttendance.members || []).map((m) => [
+      m.member_name || '', m.member_no || '', m.card_number || '',
+      m.visits, m.per_week, m.days_attended,
+      m.avg_minutes == null ? '' : m.avg_minutes,
+      m.first_visit || '', m.last_visit || '', m.expired_visits || 0,
+      m.membership_expiry || '',
+    ]),
+  ];
+  downloadCsv(
+    `gym-attendance-${gymAttendance.from}-to-${gymAttendance.to}.csv`, rows);
+}
+
+/**
+ * A CSV, quoted the one way that survives a member called O'Brien-Jones and a
+ * venue that uses commas in names.
+ */
+function downloadCsv(filename, rows) {
+  const body = rows
+    .map((r) => r.map((cell) => {
+      const text = String(cell ?? '');
+      return /[",\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
+    }).join(','))
+    .join('\r\n');
+  // The BOM is not decoration: without it Excel opens a UTF-8 CSV as Windows
+  // 1252 and every accented name in the venue arrives mangled.
+  const blob = new Blob(['﻿' + body], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// ---- Expiries -------------------------------------------------------------
+
+async function gymLoadExpiries() {
+  try {
+    gymExpiries = await api('/gym/expiries');
+  } catch (e) {
+    $('gym-expired').innerHTML =
+      '<p class="muted small">Could not read memberships just now.</p>';
+    return;
+  }
+
+  const table = (rows, empty) => rows.length
+    ? '<table class="table"><thead><tr>'
+      + '<th>Member</th><th>Expiry</th><th class="right">Days</th>'
+      + '<th>Last seen</th><th class="right">Visits (90 days)</th>'
+      + '<th>Contact</th></tr></thead><tbody>'
+      + rows.map((r) => '<tr>'
+        + '<td><b>' + esc(r.name || '') + '</b>'
+        + (r.member_no ? ' <span class="muted small">#' + esc(r.member_no) + '</span>' : '')
+        + '</td>'
+        + '<td>' + esc(r.membership_expiry || '—') + '</td>'
+        + '<td class="right">' + (Number(r.days) < 0
+          ? '<span class="pill danger">' + gymDaysWord(Math.abs(Number(r.days)))
+            + ' ago</span>'
+          : '<span class="pill">in ' + gymDaysWord(Number(r.days)) + '</span>') + '</td>'
+        + '<td class="small muted">' + (r.last_visit
+          ? new Date(r.last_visit).toLocaleDateString('en-GB') : 'never') + '</td>'
+        + '<td class="right">' + esc(r.visits_90d) + '</td>'
+        + '<td class="small muted">' + esc(r.phone || r.email || '—') + '</td>'
+        + '</tr>').join('')
+      + '</tbody></table>'
+    : '<p class="muted small">' + empty + '</p>';
+
+  $('gym-expired').innerHTML = table(
+    gymExpiries.expired || [], 'Nobody has expired.');
+  $('gym-soon').innerHTML = table(
+    gymExpiries.soon || [],
+    'Nobody is due to expire in the next ' + (gymExpiries.soon_days || 0) + ' days.');
+}
+
+// ---- Settings -------------------------------------------------------------
+
+/**
+ * What the door will actually do, spelled out from the boxes above it.
+ *
+ * The same idea as the card preview beside it: the one thing a venue has to get
+ * right here is the prefix, and a worked example is how somebody checks it
+ * against a card in their hand in two seconds rather than reasoning about it.
+ */
+function gymPreview() {
+  const read = (key) => {
+    const el = document.querySelector('[data-gym="' + key + '"]');
+    if (!el) return '';
+    return el.type === 'checkbox' ? el.checked : el.value;
+  };
+
+  const prefix = String(read('gym_prefix') || '').replace(/\D/g, '');
+  const on = !!read('enabled');
+
+  const lines = [];
+
+  if (!on) {
+    lines.push('<div class="card-eg off"><span class="card-eg-label">Off</span> '
+      + '<span class="muted small">no Gym page on any till, and a gym card is '
+      + 'not a card the till knows</span></div>');
+  } else if (!prefix) {
+    lines.push('<div class="card-eg off"><span class="card-eg-label">No prefix</span> '
+      + '<span class="muted small">nothing will match — set one, or the door '
+      + 'reads every gym card as an unknown card</span></div>');
+  } else {
+    const digits = (cardsState && Number(cardsState.number_digits)) || 5;
+    const number = prefix + '1'.padStart(Math.min(Math.max(digits, 4), 12), '0');
+    lines.push('<div class="card-eg"><span class="card-eg-label">Gym</span> '
+      + '<code class="card-eg-track">;' + esc(number) + '?</code> '
+      + '<span class="muted small">card ' + esc(number) + ' — member 1</span></div>');
+  }
+
+  if (on) {
+    const grace = Number(read('grace_days')) || 0;
+    lines.push('<ul class="gym-rules">'
+      + '<li>Swipe in, and the same card swipes out.</li>'
+      + '<li>A second swipe within <b>' + (Number(read('debounce_seconds')) || 0)
+      + ' seconds</b> is ignored as a double read.</li>'
+      + '<li>Still in after <b>' + (Number(read('auto_close_hours')) || 0)
+      + ' hours</b> and they are signed out automatically, and the visit marked.</li>'
+      + '<li>An expired card ' + (read('refuse_expired')
+        ? '<b>is refused</b>' : 'still lets them in, and the visit is flagged')
+      + (read('expiry_slip') ? ', and <b>a slip prints</b> saying who and when.'
+        : ', and no slip prints.') + '</li>'
+      + (grace ? '<li>A membership keeps working for <b>' + grace
+        + ' days</b> after its expiry date.</li>' : '')
+      + '<li>The greeting clears itself after <b>'
+      + (Number(read('greeting_seconds')) || 0) + ' seconds</b>. Nothing waits '
+      + 'for a tap.</li>'
+      + '</ul>');
+  }
+
+  $('gym-preview').innerHTML = lines.join('');
+}
+
+// ---- Wiring ---------------------------------------------------------------
+
+document.addEventListener('input', (e) => {
+  if (e.target.matches && e.target.matches('[data-gym]') && gymState) gymPreview();
+});
+
+document.addEventListener('change', (e) => {
+  if (e.target && e.target.id === 'gym-board-date') gymLoadBoard();
+});
+
+document.addEventListener('click', async (e) => {
+  // ---- Tabs ----
+  const tab = e.target.closest && e.target.closest('[data-gymtab]');
+  if (tab) {
+    gymTab = tab.dataset.gymtab;
+    document.querySelectorAll('[data-gymtab]').forEach((t) =>
+      t.classList.toggle('on', t === tab));
+    document.querySelectorAll('[data-gympanel]').forEach((panel) => {
+      panel.hidden = panel.dataset.gympanel !== gymTab;
     });
-    loadCards();
+    // Fetched when the tab is opened rather than all four at load. Attendance
+    // groups a year of visits; a manager who only ever looks at the board
+    // should not be paying for it every time the page opens.
+    if (gymTab === 'attendance' && !gymAttendance && Number(gymState?.enabled)) {
+      await gymLoadAttendance();
+    }
+    if (gymTab === 'expiries' && !gymExpiries && Number(gymState?.enabled)) {
+      await gymLoadExpiries();
+    }
+    if (gymTab === 'board') await gymLoadBoard();
+    return;
+  }
+
+  if (e.target.id === 'gym-run') { gymAttendance = null; await gymLoadAttendance(); return; }
+  if (e.target.id === 'gym-csv') { gymCsv(); return; }
+
+  if (e.target.id === 'gym-expired-csv') {
+    if (!gymExpiries) return;
+    downloadCsv('gym-expired-' + gymDay() + '.csv', [
+      ['Member', 'Number', 'Card', 'Expiry', 'Days ago', 'Last seen',
+       'Visits (90 days)', 'Phone', 'Email'],
+      ...(gymExpiries.expired || []).map((r) => [
+        r.name || '', r.member_no || '', r.card_number || '',
+        r.membership_expiry || '', Math.abs(Number(r.days) || 0),
+        r.last_visit || '', r.visits_90d || 0, r.phone || '', r.email || '',
+      ]),
+    ]);
+    return;
+  }
+
+  const closeId = e.target.dataset && e.target.dataset.gymClose;
+  if (closeId) {
+    // No confirmation. This corrects a visit somebody forgot to swipe out of,
+    // it takes nothing away, and the row stays on the board with the correction
+    // marked on it.
+    try {
+      await api('/gym/visits/' + closeId + '/close', { method: 'POST' });
+    } catch (err) {
+      toast(String(err && err.message ? err.message : err), 'error');
+    }
+    await gymLoadBoard();
+    return;
+  }
+
+  if (e.target.id === 'gym-save') {
+    const body = {};
+    for (const el of document.querySelectorAll('[data-gym]')) {
+      body[el.dataset.gym] = el.type === 'checkbox' ? el.checked : el.value;
+    }
+    await api('/gym/settings', { method: 'PUT', body: JSON.stringify(body) });
+    e.target.textContent = 'Saved ✓';
+    setTimeout(() => { e.target.textContent = 'Save gym'; }, 1500);
+    gymAttendance = null;
+    gymExpiries = null;
+    await loadGym();
+  }
+});
+
+// ---- Vesopa Express -------------------------------------------------------
+//
+// The self-service kiosk. Customers order on a touchscreen, pay on the Dojo
+// card machine beside it, and collect when their number comes up. The server
+// half is src/express_kiosk.js; the kiosk is vesopa_express/.
+//
+// IN THE RAIL WHETHER OR NOT THE VENUE USES IT
+//
+// Off by default, like the gym -- and like the gym, the only switch that turns
+// it on is on this page, so the page is always reachable. The gym first shipped
+// with its page hidden behind its own switch and nobody could turn it on; see
+// backoffice-routing.test.js. A venue with Express off is told so in one
+// sentence and offered the switch.
+
+let expState = null;
+let expTab = 'orders';
+let expTimer = null;
+let expKiosks = null;
+let expTerminals = null;
+let expMenu = null;
+let expMeals = null;
+let expProducts = null;
+
+/** Where a kitchen ticket's paper got to, in words a manager can act on. */
+const EXP_PRINT = {
+  waiting: ['waiting for a till', 'amber'],
+  claimed: ['printing', 'amber'],
+  printed: ['printed', 'green'],
+  failed: ['not printed', 'danger'],
+  expired: ['not printed', 'danger'],
+};
+
+/** The order states, in the words a manager uses, and the pill each wears. */
+const EXP_STATUS = {
+  awaiting_payment: ['Paying', 'amber'],
+  paid: ['Preparing', 'on'],
+  ready: ['Ready', 'green'],
+  collected: ['Collected', ''],
+  counter: ['Pay at counter', 'amber'],
+  demo: ['Demo', ''],
+  cancelled: ['Cancelled', ''],
+  failed: ['Not paid', 'danger'],
+};
+
+function expMoney(minor) {
+  return '£' + (Number(minor || 0) / 100).toFixed(2);
+}
+
+const expOn = () => !!Number(expState && expState.enabled);
+
+/**
+ * The Vesopa Express page.
+ *
+ * Settings first, because everything else depends on whether the venue has it
+ * switched on, and a venue that has not should see one sentence rather than
+ * three empty tables.
+ */
+async function loadExpress() {
+  try {
+    expState = await api('/express/settings');
+  } catch (e) {
+    $('exp-stats').innerHTML = '';
+    $('exp-orders').innerHTML =
+      '<p class="muted small">Vesopa Express is not available on this server yet.</p>';
+    return;
+  }
+  expFill();
+  $('exp-save').hidden = expTab !== 'settings';
+
+  if (!expOn()) {
+    statCards($('exp-stats'), [
+      { label: 'Vesopa Express', value: 'Off', tone: 'red',
+        hint: 'No kiosk can be set up or take an order' },
+    ]);
+    $('exp-orders').innerHTML = '<p class="muted small">Vesopa Express is switched off '
+      + 'for this venue. Turn it on under <b>Settings</b>, then open Vesopa Express on '
+      + 'the kiosk and press <b>Continue with Vesopa</b> to set it up.</p>';
+    expStopTimer();
+  }
+
+  if (expTab === 'kiosks') await expLoadKiosks();
+  else if (expTab === 'settings') await expLoadMenuPicks();
+  else if (expTab === 'meals') await expLoadMeals();
+  else if (expOn()) {
+    await expLoadOrders();
+    expStartTimer();
+  }
+}
+
+/** Put the settings into the form, and say what each secret-ish thing is. */
+function expFill() {
+  for (const el of document.querySelectorAll('[data-exp]')) {
+    const value = expState[el.dataset.exp];
+    if (el.type === 'checkbox') el.checked = !!Number(value);
+    else el.value = value ?? '';
+  }
+
+  // Never filled from the server: the server never sends either of them back.
+  $('exp-passcode').value = '';
+  $('exp-dojo-key').value = '';
+
+  $('exp-passcode-state').innerHTML = expState.passcode_set
+    ? '<span class="pill green">A passcode is set</span> Type a new one to change it.'
+    : '<span class="pill danger">No passcode yet</span> The first manager to set up a '
+      + 'kiosk chooses one there, or set it here.';
+  $('exp-pass-clear').hidden = !expState.passcode_set;
+
+  const source = expState.dojo_key_source;
+  $('exp-key-state').innerHTML = source === 'venue'
+    ? '<span class="pill green">Your Dojo key</span> ending <code>'
+      + esc(expState.dojo_key_hint || '') + '</code>'
+      + (expState.dojo_sandbox ? ' <span class="pill amber">sandbox</span>' : '')
+    : source === 'platform'
+      ? '<span class="pill amber">Vesopa test key</span> '
+        + (expState.dojo_sandbox
+          ? 'Card payments go to the Dojo sandbox: no real money moves.'
+          : 'Card payments use the Vesopa platform key.')
+      : '<span class="pill danger">No Dojo key</span> Card payments are unavailable until one is added.';
+  $('exp-key-clear').hidden = source !== 'venue';
+  $('exp-dojo-key').disabled = !expState.can_store_key;
+
+  const url = expState.board_url;
+  $('exp-board').innerHTML = url
+    ? '<code class="exp-url">' + esc(url) + '</code>'
+      + '<div class="exp-actions">'
+      + '<button class="btn small" id="exp-board-copy">Copy address</button>'
+      + '<a class="btn small" href="' + esc(url) + '" target="_blank" rel="noopener">Open the board</a>'
+      + '<button class="btn small" id="exp-board-rotate">Give it a new address</button>'
+      + '</div>'
+    : '<p class="muted small">Tick the board and save, and its address appears here.</p>';
+
+  expPreview();
+}
+
+/** What the kiosk will do with these settings, in sentences. */
+function expPreview() {
+  const s = expState || {};
+  const on = (k) => !!Number(s[k]);
+  const out = [];
+  if (!on('enabled')) {
+    out.push('<p><b>Off.</b> A kiosk cannot be set up here, and one already set up '
+      + 'says it is switched off instead of showing the menu.</p>');
+  } else {
+    const types = [on('eat_in') && 'eat in', on('take_away') && 'take away']
+      .filter(Boolean).join(' or ');
+    out.push('<p>Customers choose <b>' + esc(types || 'nothing') + '</b>'
+      + (on('ask_name') ? ', give a first name,' : '')
+      + ' and build a basket from your <b>Dine-in menu</b>.</p>');
+    if (on('demo_mode')) {
+      out.push('<p><b>Demo mode.</b> No money is taken, nothing reaches the kitchen, '
+        + 'and every screen says DEMO.</p>');
+    } else {
+      const pay = [on('pay_card') && 'by card on the Dojo machine',
+        on('pay_counter') && 'at the counter'].filter(Boolean).join(' or ');
+      out.push('<p>They pay <b>' + esc(pay || 'nowhere') + '</b>.</p>');
+    }
+    const to = [on('notify_kitchen') && 'kitchen screens', on('notify_till') && 'tills',
+      on('board_enabled') && 'the collection board'].filter(Boolean).join(', ');
+    out.push('<p>A paid order is announced to <b>' + esc(to || 'nobody') + '</b> with a '
+      + 'number from ' + esc(s.number_start) + ' to ' + esc(s.number_end) + '.</p>');
+    out.push('<p>' + ({
+      always: 'Every customer gets a <b>printed ticket</b> with their number.',
+      never: 'The kiosk prints <b>no ticket</b>: the number is on the screen and the board.',
+    }[s.receipt_mode] || 'The kiosk <b>offers a printed ticket</b> with the number.')
+      + ' (Only on a kiosk with a printer chosen in its Settings.)</p>');
+    out.push('<p>A basket nobody touches for ' + esc(s.idle_seconds)
+      + ' seconds is cleared for the next customer.</p>');
+  }
+  $('exp-preview').innerHTML = out.join('');
+}
+
+function expStartTimer() {
+  expStopTimer();
+  expTimer = setInterval(() => {
+    if (currentView !== 'express' || expTab !== 'orders' || document.hidden) return;
+    expLoadOrders().catch(() => {});
+  }, 15000);
+}
+
+function expStopTimer() {
+  if (expTimer) clearInterval(expTimer);
+  expTimer = null;
+}
+
+async function expLoadOrders() {
+  const date = ($('exp-date') && $('exp-date').value) || '';
+  let data;
+  try {
+    data = await api('/express/orders' + (date ? '?date=' + encodeURIComponent(date) : ''));
+  } catch (e) {
+    $('exp-orders').innerHTML = '<p class="muted small">Could not read the kiosk orders just now.</p>';
+    return;
+  }
+  if (!$('exp-date').value) $('exp-date').value = data.date;
+
+  const orders = data.orders || [];
+  const paid = orders.filter((o) => ['paid', 'ready', 'collected'].includes(o.status));
+  const preparing = orders.filter((o) => o.status === 'paid');
+  statCards($('exp-stats'), [
+    { label: 'Vesopa Express', value: 'On', tone: 'green' },
+    { label: 'Paid orders', value: String(paid.length), tone: 'primary',
+      hint: date ? 'on ' + date : 'today' },
+    { label: 'Taken at the kiosk',
+      value: expMoney(paid.reduce((n, o) => n + Number(o.total_minor || 0), 0)) },
+    { label: 'Being prepared', value: String(preparing.length) },
+  ]);
+
+  if (!orders.length) {
+    $('exp-orders').innerHTML = '<p class="muted small">No kiosk orders '
+      + (date ? 'that day' : 'yet today') + '.</p>';
+    return;
+  }
+
+  $('exp-orders').innerHTML = '<table class="table"><thead><tr>'
+    + '<th>No.</th><th>Time</th><th>Kiosk</th><th>Order</th><th class="right">Items</th>'
+    + '<th class="right">Total</th><th>Status</th><th></th></tr></thead><tbody>'
+    + orders.map((o) => {
+      const [label, tone] = EXP_STATUS[o.status] || [o.status, ''];
+      return '<tr>'
+        + '<td><b class="exp-no">' + esc(o.number) + '</b></td>'
+        + '<td>' + new Date(o.created_at).toLocaleTimeString('en-GB',
+          { hour: '2-digit', minute: '2-digit' }) + '</td>'
+        + '<td class="small">' + esc(o.kiosk_name || '—') + '</td>'
+        + '<td class="small">' + (o.order_type === 'eat_in' ? 'Eat in' : 'Take away')
+        + (o.customer_name ? ' · ' + esc(o.customer_name) : '') + '</td>'
+        + '<td class="right">' + esc(o.items) + '</td>'
+        + '<td class="right">' + expMoney(o.total_minor) + '</td>'
+        + '<td><span class="pill ' + tone + '">' + esc(label) + '</span>'
+        + (o.status_note ? ' <span class="muted small">' + esc(o.status_note) + '</span>' : '')
+        + (o.prints && o.prints.length
+          ? '<div class="exp-prints">' + o.prints.map((p) => {
+            const [said, ptone] = EXP_PRINT[p.status] || [p.status, ''];
+            const why = p.status === 'expired'
+              ? 'no till printed it within 30 minutes'
+              : p.error || (p.status === 'printed' && p.by ? 'by ' + p.by : '');
+            return '<span class="pill ' + ptone + '">' + esc(p.name) + ': ' + esc(said) + '</span>'
+              + (why ? ' <span class="muted small">' + esc(why) + '</span>' : '');
+          }).join('<br>') + '</div>'
+          : '')
+        + '</td>'
+        + '<td class="right">'
+        + (o.status === 'paid'
+          ? '<button class="btn small" data-exp-move="ready" data-exp-order="' + esc(o.id) + '">Ready</button> '
+          : '')
+        + (['paid', 'ready'].includes(o.status)
+          ? '<button class="btn small" data-exp-move="collected" data-exp-order="' + esc(o.id) + '">Collected</button>'
+          : '')
+        + '</td></tr>';
+    }).join('')
+    + '</tbody></table>';
+}
+
+async function expLoadKiosks() {
+  try {
+    expKiosks = await api('/express/kiosks');
+  } catch (e) {
+    $('exp-kiosks').innerHTML = '<p class="muted small">Could not read the kiosks just now.</p>';
+    return;
+  }
+  // Asked once per visit: it goes to Dojo, and the list of card machines a
+  // venue owns does not change while somebody is looking at it.
+  if (!expTerminals) {
+    try {
+      expTerminals = await api('/express/terminals');
+    } catch (e) {
+      expTerminals = { terminals: [], error: e.message };
+    }
+  }
+
+  const live = expKiosks.filter((k) => !k.revoked_at);
+  statCards($('exp-stats'), [
+    { label: 'Vesopa Express', value: expOn() ? 'On' : 'Off', tone: expOn() ? 'green' : 'red' },
+    { label: 'Kiosks', value: String(live.length), tone: 'primary' },
+    { label: 'With a card machine', value: String(live.filter((k) => k.dojo_terminal_id).length) },
+  ]);
+
+  if (!expKiosks.length) {
+    $('exp-kiosks').innerHTML = '<p class="muted small">No kiosks yet. ' + (expOn()
+      ? 'Open Vesopa Express on the kiosk and press <b>Continue with Vesopa</b>.'
+      : 'Switch Vesopa Express on under Settings first.') + '</p>';
+    return;
+  }
+
+  const terms = expTerminals.terminals || [];
+  const options = (current) => '<option value="">No card machine</option>'
+    + terms.map((t) => '<option value="' + esc(t.id) + '"' + (t.id === current ? ' selected' : '') + '>'
+      + esc(t.tid || t.id) + (t.status ? ' (' + esc(String(t.status).toLowerCase()) + ')' : '')
+      + '</option>').join('')
+    // A machine Dojo did not list just now (switched off, busy) is still the
+    // one this kiosk is paired with, and must not silently become "none".
+    + (current && !terms.some((t) => t.id === current)
+      ? '<option value="' + esc(current) + '" selected>' + esc(current) + '</option>' : '');
+
+  $('exp-kiosks').innerHTML = '<table class="table"><thead><tr>'
+    + '<th>Kiosk</th><th>Card machine</th><th>Last seen</th><th>Version</th>'
+    + '<th>Set up by</th><th></th></tr></thead><tbody>'
+    + expKiosks.map((k) => (k.revoked_at
+      ? '<tr class="exp-gone"><td>' + esc(k.name) + '</td><td colspan="4" class="small muted">Removed '
+        + new Date(k.revoked_at).toLocaleString('en-GB') + '</td><td></td></tr>'
+      : '<tr>'
+        + '<td><input type="text" maxlength="80" value="' + esc(k.name) + '" data-exp-kiosk-name="' + esc(k.id) + '"></td>'
+        + '<td><select data-exp-kiosk-tid="' + esc(k.id) + '">' + options(k.dojo_terminal_id) + '</select></td>'
+        + '<td class="small">' + (k.last_seen_at
+          ? new Date(k.last_seen_at).toLocaleString('en-GB') : '<span class="muted">never</span>') + '</td>'
+        + '<td class="small muted">' + esc(k.app_version || '—') + '</td>'
+        + '<td class="small muted">' + esc(k.commissioned_by || '—') + '</td>'
+        + '<td class="right"><button class="btn small" data-exp-kiosk-save="' + esc(k.id) + '">Save</button> '
+        + '<button class="btn small" data-exp-kiosk-remove="' + esc(k.id) + '">Remove</button></td>'
+        + '</tr>')).join('')
+    + '</tbody></table>'
+    + (expTerminals.error ? '<p class="muted small">' + esc(expTerminals.error) + '</p>' : '')
+    + (expTerminals.sandbox
+      ? '<p class="muted small">These are Dojo <b>sandbox</b> card machines: no real money moves.</p>'
+      : '');
+}
+
+/** The dishes a manager can put on "May we suggest", from the Dine-in menu. */
+async function expLoadMenuPicks() {
+  if (!expMenu) {
+    try {
+      expMenu = await api('/dinein/menu');
+    } catch (e) {
+      expMenu = null;
+      $('exp-upsell').innerHTML = '<p class="muted small">Could not read your menu just now.</p>';
+      $('exp-upsell').dataset.loaded = '';
+      return;
+    }
+  }
+  const picks = new Set((expState && expState.upsell_items) || []);
+  const items = expMenu.flatMap((s) => (s.items || []).map((i) => ({ ...i, section: s.name })));
+  $('exp-upsell').dataset.loaded = '1';
+  $('exp-upsell').innerHTML = items.length
+    ? '<div class="exp-picks">' + items.map((i) => '<label class="check">'
+      + '<input type="checkbox" data-exp-pick="' + esc(i.id) + '"' + (picks.has(i.id) ? ' checked' : '') + '> '
+      + esc(i.name || i.catalogue_name || 'Dish') + ' <span class="muted small">' + esc(i.section) + '</span>'
+      + '</label>').join('') + '</div>'
+    : '<p class="muted small">Your Dine-in menu has no dishes yet. The kiosk sells from that '
+      + 'menu, so build it under <b>Dine-in &amp; QR</b> &rsaquo; <b>Menu</b> first.</p>';
+}
+
+/**
+ * The Meals tab: which dishes offer "make it a meal", and what each meal will
+ * walk a customer through.
+ *
+ * Every meal shows its steps as the kiosk will ask them, and says plainly when
+ * one asks nothing -- a meal product with no questions on it is a burger at a
+ * meal price, which is the mistake this page exists to make visible.
+ */
+async function expLoadMeals() {
+  try {
+    [expMeals, expProducts] = await Promise.all([
+      api('/express/meals'),
+      expProducts ? Promise.resolve(expProducts) : api('/products'),
+    ]);
+  } catch (e) {
+    $('exp-meals').innerHTML = '<p class="muted small">Could not read your meals just now.</p>';
+    return;
+  }
+  const items = expMeals.items || [];
+
+  const dish = $('exp-meal-dish');
+  const kept = dish.value;
+  dish.innerHTML = items.length
+    ? items.map((i) => '<option value="' + esc(i.id) + '">' + esc(i.name) + ' (' + esc(i.section) + ')</option>').join('')
+    : '<option value="">Your Dine-in menu has no dishes yet</option>';
+  if (kept && items.some((i) => String(i.id) === kept)) dish.value = kept;
+
+  // Products with "meal" in the name first: the one being looked for is almost
+  // always called something-Meal, and a catalogue can run to hundreds.
+  const products = [...(expProducts || [])].sort((a, b) => {
+    const am = /meal/i.test(a.product_name || '') ? 0 : 1;
+    const bm = /meal/i.test(b.product_name || '') ? 0 : 1;
+    return am - bm || String(a.product_name || '').localeCompare(String(b.product_name || ''));
+  });
+  const plu = $('exp-meal-plu');
+  const keptPlu = plu.value;
+  plu.innerHTML = '<option value="">Choose the meal product</option>'
+    + products.map((p) => '<option value="' + esc(p.pluid) + '">' + esc(p.product_name || 'PLU ' + p.pluid)
+      + ' &mdash; ' + expMoney(Math.round(Number(p.price || 0) * 100)) + ' (PLU ' + esc(p.pluid) + ')</option>').join('');
+  if (keptPlu) plu.value = keptPlu;
+
+  const withMeals = items.filter((i) => i.meals && i.meals.length);
+  statCards($('exp-stats'), [
+    { label: 'Vesopa Express', value: expOn() ? 'On' : 'Off', tone: expOn() ? 'green' : 'red' },
+    { label: 'Dishes with a meal', value: String(withMeals.length), tone: 'primary' },
+    { label: 'Meals', value: String(withMeals.reduce((n, i) => n + i.meals.length, 0)) },
+  ]);
+
+  if (!withMeals.length) {
+    $('exp-meals').innerHTML = '<p class="muted small">No dish offers a meal yet. Add one above.</p>';
+    return;
+  }
+  const steps = (m) => (m.steps.length
+    ? m.steps.map((s) => esc(s.name) + ' <span class="muted">(' + (s.min_select
+      ? (s.max_select > s.min_select ? s.min_select + ' to ' + s.max_select : s.min_select)
+      : 'up to ' + s.max_select) + ' of ' + s.options.length + ')</span>').join(' &rarr; ')
+    : '<span class="pill danger">Asks nothing</span> <span class="muted small">Give this product its questions '
+      + 'under <b>Modifiers</b>, or the kiosk sells it as a burger at a meal price.</span>');
+  $('exp-meals').innerHTML = '<table class="table"><thead><tr>'
+    + '<th>Dish</th><th>Meal</th><th>Size</th><th class="right">Price</th><th>Steps on the kiosk</th><th></th>'
+    + '</tr></thead><tbody>'
+    + withMeals.flatMap((i) => i.meals.map((m, n) => '<tr>'
+      + '<td>' + (n === 0 ? '<b>' + esc(i.name) + '</b><div class="muted small">' + expMoney(i.price_minor) + ' on its own</div>' : '') + '</td>'
+      + '<td>' + esc(m.name) + '</td>'
+      + '<td><input type="text" maxlength="40" value="' + esc(m.label || '') + '" placeholder="&mdash;" data-exp-meal-label="' + esc(m.id) + '"></td>'
+      + '<td class="right">' + expMoney(m.price_minor) + '</td>'
+      + '<td class="small">' + steps(m) + '</td>'
+      + '<td class="right"><button class="btn small" data-exp-meal-save="' + esc(m.id) + '">Save</button> '
+      + '<button class="btn small" data-exp-meal-remove="' + esc(m.id) + '">Remove</button></td>'
+      + '</tr>')).join('')
+    + '</tbody></table>';
+}
+
+async function expSave(button) {
+  const body = {};
+  for (const el of document.querySelectorAll('[data-exp]')) {
+    body[el.dataset.exp] = el.type === 'checkbox' ? el.checked : el.value;
+  }
+  // Only when the list was actually drawn: saving an unread list would clear
+  // every pick the venue had made.
+  if ($('exp-upsell').dataset.loaded === '1') {
+    body.upsell_items = [...document.querySelectorAll('[data-exp-pick]:checked')]
+      .map((c) => Number(c.dataset.expPick));
+  }
+  const passcode = $('exp-passcode').value.trim();
+  if (passcode) body.passcode = passcode;
+  const key = $('exp-dojo-key').value.trim();
+  if (key) body.dojo_key = key;
+
+  try {
+    expState = await api('/express/settings', { method: 'PUT', body: JSON.stringify(body) });
+  } catch (err) {
+    toast(String(err && err.message ? err.message : err), 'error');
+    return;
+  }
+  // A new key may reach a different set of card machines.
+  if (key) expTerminals = null;
+  button.textContent = 'Saved ✓';
+  setTimeout(() => { button.textContent = 'Save'; }, 1500);
+  expFill();
+}
+
+async function expPut(body, done) {
+  try {
+    expState = await api('/express/settings', { method: 'PUT', body: JSON.stringify(body) });
+    expFill();
+    if (done) toast(done, 'ok');
+  } catch (err) {
+    toast(String(err && err.message ? err.message : err), 'error');
+  }
+}
+
+document.addEventListener('click', async (e) => {
+  const t = e.target;
+
+  const tab = t.closest && t.closest('[data-exptab]');
+  if (tab) {
+    expTab = tab.dataset.exptab;
+    document.querySelectorAll('[data-exptab]').forEach((b) => b.classList.toggle('on', b === tab));
+    document.querySelectorAll('[data-exppanel]').forEach((panel) => {
+      panel.hidden = panel.dataset.exppanel !== expTab;
+    });
+    $('exp-save').hidden = expTab !== 'settings';
+    if (expTab === 'orders' && expOn()) {
+      await expLoadOrders();
+      expStartTimer();
+    } else {
+      expStopTimer();
+    }
+    if (expTab === 'kiosks') await expLoadKiosks();
+    if (expTab === 'settings') await expLoadMenuPicks();
+    if (expTab === 'meals') await expLoadMeals();
+    return;
+  }
+
+  if (t.id === 'exp-save') { await expSave(t); return; }
+
+  if (t.id === 'exp-meal-add') {
+    const body = {
+      item_id: Number($('exp-meal-dish').value),
+      plu_id: Number($('exp-meal-plu').value),
+      label: $('exp-meal-label').value.trim(),
+    };
+    if (!body.item_id || !body.plu_id) {
+      toast('Choose the dish and the product that is its meal.', 'warn');
+      return;
+    }
+    try {
+      await api('/express/meals', { method: 'POST', body: JSON.stringify(body) });
+      $('exp-meal-label').value = '';
+      toast('Meal added', 'ok');
+    } catch (err) {
+      toast(String(err && err.message ? err.message : err), 'error');
+    }
+    await expLoadMeals();
+    return;
+  }
+
+  const mealSave = t.dataset && t.dataset.expMealSave;
+  if (mealSave) {
+    const label = document.querySelector('[data-exp-meal-label="' + mealSave + '"]').value;
+    try {
+      await api('/express/meals/' + mealSave, { method: 'PUT', body: JSON.stringify({ label }) });
+      toast('Saved', 'ok');
+    } catch (err) {
+      toast(String(err && err.message ? err.message : err), 'error');
+    }
+    await expLoadMeals();
+    return;
+  }
+
+  const mealRemove = t.dataset && t.dataset.expMealRemove;
+  if (mealRemove) {
+    const yes = await confirmDialog(
+      'The dish stays on the menu; the kiosk just stops offering this meal. The product itself is not touched.',
+      { title: 'Stop offering this meal?', confirmLabel: 'Remove meal', danger: true }
+    );
+    if (!yes) return;
+    try {
+      await api('/express/meals/' + mealRemove, { method: 'DELETE' });
+    } catch (err) {
+      toast(String(err && err.message ? err.message : err), 'error');
+    }
+    await expLoadMeals();
+    return;
+  }
+
+  if (t.id === 'exp-board-copy') {
+    try {
+      await navigator.clipboard.writeText(expState.board_url);
+      toast('Board address copied', 'ok');
+    } catch (err) {
+      toast('Copying is not allowed here: select the address and copy it instead.', 'warn');
+    }
+    return;
+  }
+
+  if (t.id === 'exp-board-rotate') {
+    const yes = await confirmDialog(
+      'The current address stops working straight away, so any TV showing the board will need the new one.',
+      { title: 'Give the board a new address?', confirmLabel: 'New address' }
+    );
+    if (yes) await expPut({ rotate_board: true }, 'The board has a new address');
+    return;
+  }
+
+  if (t.id === 'exp-key-clear') {
+    const yes = await confirmDialog(
+      'Card payments will go through the Vesopa key instead of yours.',
+      { title: 'Stop using your Dojo key?', confirmLabel: 'Stop using it', danger: true }
+    );
+    if (yes) await expPut({ clear_dojo_key: true }, 'Your Dojo key has been removed');
+    return;
+  }
+
+  if (t.id === 'exp-pass-clear') {
+    const yes = await confirmDialog(
+      'Until a new one is set, nobody can leave kiosk mode from a kiosk. The next kiosk set up chooses a new one.',
+      { title: 'Remove the kiosk passcode?', confirmLabel: 'Remove it', danger: true }
+    );
+    if (yes) await expPut({ clear_passcode: true }, 'The passcode has been removed');
+    return;
+  }
+
+  const move = t.dataset && t.dataset.expMove;
+  if (move) {
+    try {
+      await api('/express/orders/' + t.dataset.expOrder + '/' + move, { method: 'POST' });
+    } catch (err) {
+      toast(String(err && err.message ? err.message : err), 'error');
+    }
+    await expLoadOrders();
+    return;
+  }
+
+  const saveId = t.dataset && t.dataset.expKioskSave;
+  if (saveId) {
+    const name = document.querySelector('[data-exp-kiosk-name="' + saveId + '"]').value;
+    const tid = document.querySelector('[data-exp-kiosk-tid="' + saveId + '"]').value;
+    try {
+      await api('/express/kiosks/' + saveId, {
+        method: 'PUT', body: JSON.stringify({ name, dojo_terminal_id: tid }),
+      });
+      toast('Kiosk saved', 'ok');
+    } catch (err) {
+      toast(String(err && err.message ? err.message : err), 'error');
+    }
+    await expLoadKiosks();
+    return;
+  }
+
+  const removeId = t.dataset && t.dataset.expKioskRemove;
+  if (removeId) {
+    const yes = await confirmDialog(
+      'It stops taking orders at once, and has to be set up again with Continue with Vesopa to come back.',
+      { title: 'Remove this kiosk?', confirmLabel: 'Remove kiosk', danger: true }
+    );
+    if (!yes) return;
+    try {
+      await api('/express/kiosks/' + removeId, { method: 'DELETE' });
+    } catch (err) {
+      toast(String(err && err.message ? err.message : err), 'error');
+    }
+    await expLoadKiosks();
+  }
+});
+
+document.addEventListener('change', (e) => {
+  const el = e.target;
+  if (el.id === 'exp-date') { expLoadOrders(); return; }
+  // The sentences on the right follow the boxes as they are ticked, before
+  // anything is saved -- that is what they are for.
+  if (el.dataset && el.dataset.exp && expState) {
+    expState = {
+      ...expState,
+      [el.dataset.exp]: el.type === 'checkbox' ? (el.checked ? 1 : 0) : el.value,
+    };
+    expPreview();
+  }
+});
+
+// ---- Loyalty app ------------------------------------------------------------
+//
+// The venue's own app for its members (src/loyalty_app.js). Held as one object
+// and saved in one go, like the tender settings; the preview on the right
+// follows every field as it is typed, before anything is saved.
+
+let laState = null;
+
+const LA_LINKS = ['website', 'phone', 'email', 'facebook', 'instagram', 'booking'];
+
+function laValue(id) {
+  const el = $(id);
+  return el ? el.value : '';
+}
+
+/** The form as the API wants it. */
+function laForm() {
+  const links = {};
+  for (const k of LA_LINKS) {
+    const v = laValue(`la-link-${k}`).trim();
+    if (v) links[k] = v;
+  }
+  const body = {
+    enabled: $('la-enabled').checked ? 1 : 0,
+    slug: laValue('la-slug').trim().toLowerCase(),
+    app_name: laValue('la-app_name'),
+    welcome_text: laValue('la-welcome_text'),
+    logo_url: (document.querySelector('[name="la_logo_url"]') || {}).value || '',
+    icon_url: (document.querySelector('[name="la_icon_url"]') || {}).value || '',
+    colour_primary: laValue('la-colour_primary'),
+    colour_accent: laValue('la-colour_accent'),
+    colour_background: laValue('la-colour_background'),
+    colour_text: laValue('la-colour_text'),
+    colour_icon: laValue('la-colour_icon'),
+    font_scale: laValue('la-font_scale') || '1',
+    font_heading: laValue('la-font_heading'),
+    font_body: laValue('la-font_body'),
+    inbox_mode: laValue('la-inbox_mode') || 'limit',
+    inbox_limit: laValue('la-inbox_limit') || '12',
+    links,
+    latitude: laValue('la-latitude'),
+    longitude: laValue('la-longitude'),
+    radius_m: laValue('la-radius_m'),
+    wns_package_sid: laValue('la-wns-sid'),
+    auth_policy: laValue('la-auth_policy') || 'code_first',
+    self_service: $('la-self_service') && $('la-self_service').checked ? 1 : 0,
+    // Every method, on or off. Sending only the ones that are ON would mean
+    // switching one off left no trace and the default crept back in.
+    signin_methods: Object.fromEntries(
+      Array.from(document.querySelectorAll('[data-la-method]'))
+        .map((el) => [el.dataset.laMethod, el.checked ? 1 : 0])
+    ),
+  };
+  const secret = laValue('la-wns-secret');
+  if (secret) body.wns_secret = secret;
+  return body;
+}
+
+async function loadLoyaltyApp() {
+  let data;
+  try {
+    data = await api('/loyalty-app');
+  } catch (e) {
+    $('la-stats').innerHTML = `<p class="muted small">${esc(e.message)}</p>`;
+    return;
+  }
+  laState = data;
+  const s = data.settings;
+  const b = data.brand;
+
+  statCards($('la-stats'), [
+    { label: 'Members with the app', value: String(data.stats.members), tone: data.stats.members ? 'primary' : '' },
+    { label: 'Phones & browsers for notifications', value: String(data.stats.web + (data.stats.phones || 0)) },
+    { label: 'Windows PCs for notifications', value: String(data.stats.windows) },
+    { label: 'Near you now', value: String(data.stats.located) },
+  ]);
+
+  $('la-enabled').checked = !!s.enabled;
+  $('la-slug').value = s.slug || data.suggested_slug || '';
+  $('la-app_name').value = s.app_name || '';
+  $('la-welcome_text').value = s.welcome_text || '';
+  $('la-logo-picker').innerHTML = imagePicker('la_logo_url', s.logo_url || '', { crop: 'square' });
+  $('la-icon-picker').innerHTML = imagePicker('la_icon_url', s.icon_url || '', { crop: 'square' });
+  wireImagePickers($('la-logo-picker'));
+  wireImagePickers($('la-icon-picker'));
+  $('la-colour_primary').value = s.colour_primary || b.colours.primary;
+  $('la-colour_accent').value = s.colour_accent || b.colours.accent;
+  $('la-colour_background').value = s.colour_background || b.colours.background;
+  $('la-colour_text').value = s.colour_text || b.colours.text;
+  // Icons follow the main colour until the venue says otherwise.
+  $('la-colour_icon').value = s.colour_icon || b.colours.icon || s.colour_primary || b.colours.primary;
+  $('la-font_scale').value = String(Number(s.font_scale) || 1);
+  if (!$('la-font_scale').value) $('la-font_scale').value = '1';
+  $('la-inbox_mode').value = s.inbox_mode === 'scroll' ? 'scroll' : 'limit';
+  $('la-inbox_limit').value = s.inbox_limit || 12;
+
+  const fontOptions = ['<option value="">The app\'s own (Montserrat)</option>']
+    .concat((data.fonts || []).map((f) => `<option value="${esc(f.slug)}">${esc(f.family)}${f.built_in ? '' : ' (yours)'}</option>`))
+    .join('');
+  $('la-font_heading').innerHTML = fontOptions;
+  $('la-font_body').innerHTML = fontOptions;
+  $('la-font_heading').value = s.font_heading || '';
+  $('la-font_body').value = s.font_body || '';
+
+  for (const k of LA_LINKS) $(`la-link-${k}`).value = (s.links && s.links[k]) || '';
+  $('la-latitude').value = s.latitude ?? (b.location ? b.location.latitude : '');
+  $('la-longitude').value = s.longitude ?? (b.location ? b.location.longitude : '');
+  $('la-radius_m').value = s.radius_m || 400;
+  $('la-wns-sid').value = s.wns_package_sid || '';
+  $('la-wns-secret').value = '';
+  $('la-wns-state').innerHTML = s.wns_configured
+    ? '<span class="pill on">Connected</span> Windows notifications will be sent.'
+    : '<span class="muted">Not connected: Windows notifications are skipped until these are filled in.</span>';
+
+  $('la-link').innerHTML = data.url
+    ? `<a href="${esc(data.url)}" target="_blank" rel="noopener">${esc(data.url)}</a>${
+      s.enabled ? '' : ' <span class="muted">— switched off, so it answers "no app here" until you switch it on</span>'}`
+      + (data.web_build_ready ? '' : '<br><span class="pin-warn">The app itself is still being installed on the server.</span>')
+    : 'Choose an address, save, and the link appears here.';
+  $('la-poster').hidden = !data.qr_svg;
+  $('la-qr').innerHTML = data.qr_svg || '';
+
+  laSignin(data.signin);
+  // A notification's picture uses the same picker as the logo and icon, so a
+  // venue uploads and crops it the way it already knows.
+  $('la-n-image-picker').innerHTML = imagePicker('la_n_image_url', '', { crop: 'landscape' });
+  wireImagePickers($('la-n-image-picker'));
+
+  $('la-push-note').textContent = !data.web_push_ready
+    ? 'Notifications land in the app\'s inbox. Phone notifications are not switched on for this server yet.'
+    : data.android_push_ready
+      ? 'Reaches members who allowed notifications (phones, browsers and the Windows app), and always lands in the app\'s inbox.'
+      : 'Reaches members who allowed notifications in a browser or the Windows app, and always lands in the app\'s inbox. The Android app\'s notifications are not switched on for this server yet.';
+
+  laPreview();
+  laAudienceFields();
+  await laLoadMessages();
+}
+
+/**
+ * The ways in, one switch each.
+ *
+ * An emailed code has no switch: it is the fallback the server falls back TO
+ * when everything else is off or unavailable, so a switch for it would be a
+ * switch that does not always do what it says.
+ *
+ * A method this SERVER cannot do is shown disabled with the reason, rather
+ * than hidden. Hiding it makes a venue think Vesopa does not offer texted
+ * codes at all; saying "needs an SMS account" tells them what to ask for.
+ */
+const LA_METHOD_LABELS = {
+  code_email: ['A code emailed to the member', 'Always available. This is what members use today.'],
+  password: ['An email address and a password', 'Members set their own in the app, under Account.'],
+  passkey: ['A passkey', 'Face, fingerprint or device PIN. Web browsers only — the Windows app falls back.'],
+  code_sms: ['A code texted to the member', 'Only to a mobile number the member has confirmed in the app.'],
+  vesopa: ['Continue with Vesopa', 'For venues whose members already have a Vesopa account.'],
+};
+
+const LA_METHOD_MISSING = {
+  code_sms: 'Not available: this server has no SMS account configured.',
+  vesopa: 'Not available: this server has no Vesopa sign-in configured.',
+};
+
+function laSignin(signin) {
+  if (!signin) return;
+  const box = $('la-signin-methods');
+  if (box) {
+    box.innerHTML = Object.keys(LA_METHOD_LABELS).map((m) => {
+      const [label, hint] = LA_METHOD_LABELS[m];
+      const can = signin.available[m] !== false;
+      const always = m === 'code_email';
+      const on = always || !!signin.methods[m];
+      return `<label class="la-check la-method">`
+        + `<input type="checkbox" data-la-method="${esc(m)}"${on ? ' checked' : ''}`
+        + `${(always || !can) ? ' disabled' : ''} />`
+        + `<span><b>${esc(label)}</b><br><span class="muted small">`
+        + `${esc(can ? hint : (LA_METHOD_MISSING[m] || hint))}</span></span></label>`;
+    }).join('');
+  }
+  if ($('la-auth_policy')) $('la-auth_policy').value = signin.policy || 'code_first';
+  if ($('la-self_service')) $('la-self_service').checked = signin.self_service !== false;
+}
+
+/** The phone on the right: the member's card, in the venue's colours. */
+function laPreview() {
+  const f = laForm();
+  const name = f.app_name || (laState && laState.brand.name) || 'Your app';
+  const logo = f.logo_url || (laState && laState.brand.logo);
+  $('la-preview').innerHTML = `
+    <div class="la-screen" style="background:${esc(f.colour_background)};color:${esc(f.colour_text)};font-size:${Number(f.font_scale) || 1}em">
+      <div class="la-top" style="background:${esc(f.colour_primary)}">
+        ${logo ? `<img src="${esc(logo)}" alt="" />` : ''}
+        <b>${esc(name)}</b>
+      </div>
+      <div class="la-card" style="border-color:${esc(f.colour_accent)}">
+        <div class="la-card-name">Sam Member</div>
+        <div class="la-qr-fake" aria-hidden="true"></div>
+        <div class="small muted">9998 00042</div>
+        <div class="la-points"><b style="color:${esc(f.colour_primary)}">1,250</b> points</div>
+      </div>
+      <p class="small">${esc(f.welcome_text || (laState && laState.brand.welcome) || '')}</p>
+      <div class="la-tabs"><span style="color:${esc(f.colour_icon || f.colour_primary)}">Card</span><span>History</span><span>News</span><span>Venue</span></div>
+    </div>`;
+}
+
+function laAudienceFields() {
+  const kind = laValue('la-n-audience');
+  $('la-n-tier-wrap').hidden = kind !== 'tier';
+  $('la-n-days-wrap').hidden = kind !== 'lapsed';
+  $('la-n-at-wrap').hidden = laValue('la-n-when') !== 'later';
+}
+
+function laAudience() {
+  const kind = laValue('la-n-audience');
+  if (kind === 'tier') return { kind, tier: laValue('la-n-tier') };
+  if (kind === 'lapsed') return { kind, days: Number(laValue('la-n-days')) || 30 };
+  return { kind };
+}
+
+const LA_AUDIENCE_LABEL = (a) => ({
+  all: 'Every member',
+  near: 'Near the venue',
+  tier: `Tier: ${a.tier || ''}`,
+  lapsed: `Not visited for ${a.days || 30} days`,
+}[a.kind] || a.kind);
+
+async function laLoadMessages() {
+  let rows = [];
+  try {
+    rows = await api('/loyalty-app/messages');
+  } catch {
+    return;
+  }
+  $('la-messages').innerHTML = rows.length
+    ? '<table class="table"><thead><tr><th>Notification</th><th>Who</th><th>When</th><th>Reached</th><th></th></tr></thead><tbody>'
+      + rows.map((m) => `<tr>
+          <td><b>${esc(m.title)}</b><br><span class="small muted">${esc(m.body)}</span></td>
+          <td class="small">${esc(LA_AUDIENCE_LABEL(m.audience))}</td>
+          <td class="small">${m.status === 'sent'
+            ? new Date(m.sent_at).toLocaleString('en-GB')
+            : m.status === 'scheduled'
+              ? `Scheduled for ${new Date(m.send_at).toLocaleString('en-GB')}`
+              : esc(m.status)}</td>
+          <td class="small">${m.status === 'sent'
+            ? `${m.recipients} member${m.recipients === 1 ? '' : 's'}`
+              + ` <span class="muted">(${m.reached_web + m.reached_wns} notified${m.failed ? `, ${m.failed} not reached` : ''})</span>`
+            : '—'}</td>
+          <td class="right">${m.status === 'scheduled'
+            ? `<button class="btn small danger-ghost" data-la-cancel="${esc(m.id)}">Cancel</button>`
+            : ''}</td>
+        </tr>`).join('')
+      + '</tbody></table>'
+    : '<p class="muted small">Nothing sent yet.</p>';
+}
+
+async function laCount() {
+  const r = await api('/loyalty-app/audience', {
+    method: 'POST',
+    body: JSON.stringify({ audience: laAudience() }),
+  });
+  $('la-n-reach').innerHTML = r.needs_location
+    ? '<span class="pin-warn">Set where you are (above) first.</span>'
+    : `Reaches <b>${r.members}</b> member${r.members === 1 ? '' : 's'} in the app `
+      + `<span class="muted">(${r.web + r.windows} with notifications on)</span>.`;
+  return r;
+}
+
+document.addEventListener('input', (e) => {
+  if (e.target.closest && e.target.closest('#view-loyalty_app .la-form') && laState) laPreview();
+});
+
+document.addEventListener('change', (e) => {
+  const id = e.target.id;
+  if (id === 'la-n-audience' || id === 'la-n-when') {
+    laAudienceFields();
+    $('la-n-reach').textContent = '';
+  }
+  if (e.target.closest && e.target.closest('#view-loyalty_app .la-form') && laState) laPreview();
+});
+
+document.addEventListener('click', async (e) => {
+  const t = e.target;
+  if (t.id === 'la-save') {
+    try {
+      await api('/loyalty-app', { method: 'PUT', body: JSON.stringify(laForm()) });
+      toast('Saved.');
+      return loadLoyaltyApp();
+    } catch (err) {
+      return toast(err.message, 'error');
+    }
+  }
+  if (t.id === 'la-here') {
+    if (!navigator.geolocation) return toast('This browser cannot tell where it is.', 'error');
+    navigator.geolocation.getCurrentPosition(
+      (p) => {
+        $('la-latitude').value = p.coords.latitude.toFixed(6);
+        $('la-longitude').value = p.coords.longitude.toFixed(6);
+        toast('Position filled in. Save to keep it.');
+      },
+      () => toast('The browser did not share its position.', 'error'),
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+    return;
+  }
+  if (t.id === 'la-n-count') {
+    try { await laCount(); } catch (err) { toast(err.message, 'error'); }
+    return;
+  }
+  if (t.id === 'la-n-send') {
+    const title = laValue('la-n-title').trim();
+    const body = laValue('la-n-body').trim();
+    if (!title || !body) return toast('A notification needs a title and a message.', 'error');
+    const later = laValue('la-n-when') === 'later';
+    const at = laValue('la-n-at');
+    if (later && !at) return toast('Choose when to send it.', 'error');
+    let reach;
+    try { reach = await laCount(); } catch (err) { return toast(err.message, 'error'); }
+    if (!await confirmDialog(
+      `${later ? 'Schedule' : 'Send'} "${title}" to ${reach.members} member${reach.members === 1 ? '' : 's'}?`
+    )) return;
+    try {
+      await api('/loyalty-app/messages', {
+        method: 'POST',
+        body: JSON.stringify({
+          title,
+          body,
+          link_url: laValue('la-n-link').trim() || null,
+          image_url: (document.querySelector('[name="la_n_image_url"]') || {}).value || null,
+          video_url: laValue('la-n-video').trim() || null,
+          audience: laAudience(),
+          send_at: later ? new Date(at).toISOString() : null,
+        }),
+      });
+      toast(later ? 'Scheduled.' : 'Sent.');
+      $('la-n-title').value = '';
+      $('la-n-body').value = '';
+      $('la-n-link').value = '';
+      $('la-n-video').value = '';
+      const pic = document.querySelector('[name="la_n_image_url"]');
+      if (pic) { pic.value = ''; $('la-n-image-picker').innerHTML = imagePicker('la_n_image_url', '', { crop: 'landscape' }); wireImagePickers($('la-n-image-picker')); }
+      setTimeout(laLoadMessages, 1500);
+      return laLoadMessages();
+    } catch (err) {
+      return toast(err.message, 'error');
+    }
+  }
+  if (t.dataset && t.dataset.laCancel) {
+    try {
+      await api(`/loyalty-app/messages/${encodeURIComponent(t.dataset.laCancel)}/cancel`, { method: 'POST' });
+      toast('Cancelled.');
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+    return laLoadMessages();
   }
 });
 
@@ -5925,7 +10669,119 @@ async function loadDevices() {
       + 'itself when it starts, so this fills in the next time one is switched '
       + 'on.</p>';
 
+  await loadSeats();
+  // The whole licence picture, beside the till-only card above.
+  await loadLicences();
   await loadDeviceLog();
+}
+
+/**
+ * The venue's till licences: "2 of 3 in use", and which tills hold them.
+ *
+ * A till signed in before licences existed is listed too -- it was given a
+ * seat the first time it called in -- so the count is the truth rather than
+ * "tills that happened to sign in again since".
+ */
+/**
+ * Every app's licences, not just the till's.
+ *
+ * The till has its own card above (which tills hold which seat, and the button
+ * to sign one out). This one is the whole picture: how many of each app the
+ * venue pays for, how many are signed in, and which keys exist.
+ */
+async function loadLicences() {
+  let data;
+  try {
+    data = await api('/licences');
+  } catch {
+    $('licences-card').hidden = true;
+    $('licence-keys-card').hidden = true;
+    return;
+  }
+  $('licences-card').hidden = false;
+
+  const rows = (data.kinds || []).map((k) => {
+    const over = k.limit != null && k.in_use > k.limit;
+    const limit = k.limit == null
+      ? '<span class="muted">no limit</span>'
+      : `${k.in_use} of ${k.limit}`;
+    const flag = over
+      ? ' <span class="pill" style="background:#fde8ea;color:#b3261e">over the limit</span>'
+      : '';
+    const full = k.limit != null && k.in_use >= k.limit && !over
+      ? ' <span class="pill" style="background:#fff4e5;color:#8a5200">all in use</span>'
+      : '';
+    const when = k.policy === 'evict-oldest'
+      ? 'newest wins; the oldest is signed out'
+      : 'the next one is refused';
+    return `<tr>
+        <td>${esc(k.label)}</td>
+        <td>${limit}${flag}${full}</td>
+        <td class="muted small">${esc(when)}</td>
+      </tr>`;
+  }).join('');
+
+  $('licences-list').innerHTML =
+    `<table><thead><tr><th>App</th><th>In use</th><th>When they are all in use</th></tr></thead>`
+    + `<tbody>${rows}</tbody></table>`;
+
+  // Keys are opt-in per venue. A venue that has never been issued one should
+  // not be shown an empty table implying it is missing something.
+  const keys = data.keys || [];
+  $('licence-keys-card').hidden = keys.length === 0;
+  if (!keys.length) return;
+
+  const when = (v) => (v ? new Date(v).toLocaleDateString('en-GB') : '—');
+  $('licence-keys-list').innerHTML =
+    '<table><thead><tr><th>Key</th><th>App</th><th>On</th><th>Activated</th><th>Status</th></tr></thead><tbody>'
+    + keys.map((k) => `<tr>
+        <td><code>${esc(k.key_prefix)}…</code>${k.label ? `<br><span class="muted small">${esc(k.label)}</span>` : ''}</td>
+        <td>${esc(k.kind)}</td>
+        <td>${k.device_name ? esc(k.device_name) : '<span class="muted">not yet used</span>'}</td>
+        <td>${when(k.activated_at)}</td>
+        <td>${k.revoked_at
+          ? '<span class="pill" style="background:#fde8ea;color:#b3261e">withdrawn</span>'
+          : (k.activated_at ? 'in use' : '<span class="muted">unused</span>')}</td>
+      </tr>`).join('')
+    + '</tbody></table>';
+}
+
+async function loadSeats() {
+  let data;
+  try {
+    data = await api('/devices/seats');
+  } catch (e) {
+    $('seats-card').hidden = true;
+    return;
+  }
+  $('seats-card').hidden = false;
+  const { limit, in_use: inUse, seats } = data;
+  const over = limit != null && inUse > limit;
+  const head = limit == null
+    ? `<p><b>${inUse}</b> ${inUse === 1 ? 'till is' : 'tills are'} signed in. `
+      + '<span class="muted small">No licence limit is set for this venue.</span></p>'
+    : `<p><b>${inUse} of ${limit}</b> till licence${limit === 1 ? '' : 's'} in use`
+      + (over
+        ? ' <span class="pill" style="background:#fde8ea;color:#b3261e">over the limit</span>'
+          + '<br><span class="small muted">No more tills can sign in until one is signed out.</span>'
+        : (inUse >= limit ? ' <span class="small muted">— all in use</span>' : ''))
+      + '</p>';
+  const ago = (t) => (t ? new Date(t).toLocaleString('en-GB') : '—');
+  $('seats-list').innerHTML = head + (seats.length
+    ? '<table class="table"><thead><tr><th>Till</th><th>Signed in by</th>'
+      + '<th>Signed in</th><th>Last called in</th><th></th></tr></thead><tbody>'
+      + seats.map((s) => '<tr>'
+        + '<td><b>' + esc(s.device_name || 'A till') + '</b>'
+        + (s.legacy ? ' <span class="small muted" title="Signed in before licences were counted">(earlier sign-in)</span>' : '')
+        + '</td>'
+        + '<td class="small muted">' + esc(s.signed_in_by || '—') + '</td>'
+        + '<td class="small muted">' + ago(s.signed_in_at) + '</td>'
+        + '<td class="small muted">' + ago(s.last_seen_at) + '</td>'
+        + '<td class="right"><button class="btn small danger-ghost" data-seat-release="'
+        + esc(s.id) + '" data-seat-name="' + esc(s.device_name || 'this till') + '">Sign out</button></td>'
+        + '</tr>').join('')
+      + '</tbody></table>'
+    : '<p class="muted small">No tills are signed in.</p>');
 }
 
 async function loadDeviceLog() {
@@ -5951,9 +10807,28 @@ async function loadDeviceLog() {
 document.addEventListener('click', async (e) => {
   if (e.target.id === 'devices-refresh') return loadDevices();
 
+  const seat = e.target.dataset && e.target.dataset.seatRelease;
+  if (seat) {
+    const name = e.target.dataset.seatName || 'this till';
+    if (!await confirmDialog(
+      `Sign ${name} out?
+
+`
+      + 'Its till licence is freed straight away. The till asks to be signed in '
+      + 'again the next time it calls in; a sale already on its screen is not lost.'
+    )) return;
+    try {
+      await api('/devices/seats/' + encodeURIComponent(seat) + '/release', { method: 'POST' });
+      toast('Signed out. Its licence is free.');
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+    return loadDevices();
+  }
+
   const forget = e.target.dataset && e.target.dataset.deviceForget;
   if (forget) {
-    if (!confirm(
+    if (!await confirmDialog(
       'Forget this machine?\n\n'
       + 'It disappears from this list. If it is still running it will register '
       + 'again the next time it starts — this is for a screen that has been '
@@ -5996,6 +10871,28 @@ async function loadIdle() {
     if (el.type === 'checkbox') el.checked = !!Number(v);
     else el.value = v ?? '';
   });
+  /*
+   * The price level names, which are one JSON column rather than five.
+   *
+   * `data-level` instead of `data-idle` because the five boxes are not five
+   * settings: they are five keys inside `price_level_names`, and the server
+   * takes the whole object. Reusing `data-idle` would have meant either five
+   * columns on the till settings row or a special case inside the generic
+   * handler, and both are worse than one more attribute.
+   *
+   * Unreadable JSON reads as "named nothing", which is what every venue that
+   * has named none already sees. A settings page that would not open because a
+   * blob was malformed is a much worse failure than a box labelled with a
+   * number.
+   */
+  const names = safeLevelNames(idleState.price_level_names) || {};
+  document.querySelectorAll('[data-level]').forEach((el) => {
+    el.value = names[el.dataset.level] ?? '';
+  });
+  // The product form reads this to label its five optional price fields, and
+  // it is loaded independently. Keep the two in step so a manager who renames
+  // a level and walks straight to a product sees the new name.
+  priceLevelNames = names;
   renderIdlePreview();
 }
 
@@ -6044,7 +10941,7 @@ async function idleUploadImage(event) {
     idleState.idle_image_url = url;
     renderIdlePreview();
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'error');
   } finally {
     // Let the same file be picked again after a failure.
     event.target.value = '';
@@ -6053,6 +10950,29 @@ async function idleUploadImage(event) {
 
 document.addEventListener('change', (e) => {
   if (e.target.id === 'idle-image') return idleUploadImage(e);
+
+  // A price level name: gathered into the one JSON column the server stores.
+  //
+  // Rebuilt from the boxes rather than merged into whatever was loaded, so
+  // clearing a box actually clears the name. Merging would have made a name
+  // impossible to remove — the key would simply keep its old value — which is
+  // the sort of thing a manager reports as "it will not let me undo it".
+  //
+  // A trimmed-empty box is left out of the object entirely, which is what the
+  // till reads as "call it Price N".
+  if (e.target.dataset?.level) {
+    const names = {};
+    document.querySelectorAll('[data-level]').forEach((el) => {
+      const name = String(el.value || '').trim();
+      if (name) names[el.dataset.level] = name;
+    });
+    idleState.price_level_names = Object.keys(names).length
+      ? JSON.stringify(names)
+      : null;
+    priceLevelNames = names;
+    return;
+  }
+
   if (!e.target.dataset?.idle) return;
   idleState[e.target.dataset.idle] = e.target.type === 'checkbox'
     ? (e.target.checked ? 1 : 0)
@@ -6080,7 +11000,7 @@ document.addEventListener('click', async (e) => {
     button.textContent = 'Saved ✓';
     setTimeout(() => { button.textContent = 'Save settings'; }, 1500);
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'error');
   } finally {
     button.disabled = false;
   }
@@ -6178,7 +11098,7 @@ document.addEventListener('click', async (e) => {
   }
 
   if (e.target.id === 'denom-reset') {
-    if (!confirm('Drop this office\'s note keys and go back to the Vesopa specimen notes?')) {
+    if (!await confirmDialog('Drop this office\'s note keys and go back to the Vesopa specimen notes?')) {
       return;
     }
     $('denom-error').textContent = '';
@@ -6334,8 +11254,8 @@ async function loadRules() {
       <td>${r.priority}</td>
       <td>${r.active ? '<span class="pill on">On</span>' : '<span class="pill">Off</span>'}</td>
       <td class="right">
-        <button class="btn small" data-rule-edit="${r.id}">Edit</button>
-        <button class="btn small danger-ghost" data-rule-del="${r.id}">Delete</button>
+        ${iconBtn('edit', 'Edit', `data-rule-edit="${r.id}"`)}
+        ${iconBtn('del', 'Delete', `data-rule-del="${r.id}"`, 'danger')}
       </td>
     </tr>`).join('') || '<tr><td colspan="6" class="muted">No rules yet.</td></tr>';
 }
@@ -6388,7 +11308,7 @@ document.addEventListener('click', async (e) => {
     }
   }
   const del = e.target.dataset?.ruleDel;
-  if (del && confirm('Delete this rule?')) {
+  if (del && await confirmDialog('Delete this rule?')) {
     await api(`/rules/${del}`, { method: 'DELETE' });
     loadRules();
   }
@@ -6411,8 +11331,8 @@ async function loadTemplates() {
       <td>${r.is_default ? '<span class="pill on">Default</span>' : ''}</td>
       <td>${r.active ? '<span class="pill on">Active</span>' : '<span class="pill">Off</span>'}</td>
       <td class="right">
-        <button class="btn small" data-template-edit="${r.id}">Edit</button>
-        <button class="btn small danger-ghost" data-template-del="${r.id}">Delete</button>
+        ${iconBtn('edit', 'Edit', `data-template-edit="${r.id}"`)}
+        ${iconBtn('del', 'Delete', `data-template-del="${r.id}"`, 'danger')}
       </td>
     </tr>`;
   }).join('') || '<tr><td colspan="6" class="muted">No templates yet.</td></tr>';
@@ -6457,7 +11377,7 @@ document.addEventListener('click', async (e) => {
   }
 
   const del = e.target.dataset?.templateDel;
-  if (del && confirm('Delete this template? Offices already created from it are unaffected.')) {
+  if (del && await confirmDialog('Delete this template? Offices already created from it are unaffected.')) {
     await api(`/admin/templates/${del}`, { method: 'DELETE' });
     loadTemplates();
   }
@@ -6540,7 +11460,7 @@ document.addEventListener('click', async (e) => {
           replace: ticked(data.replace),
         }),
       });
-      alert(`Applied: ${Object.entries(res.applied || {})
+      toast(`Applied: ${Object.entries(res.applied || {})
         .map(([k, v]) => `${v} ${k}`).join(', ')}`);
       loadSubscriptions();
     });
@@ -6562,7 +11482,7 @@ document.addEventListener('click', async (e) => {
         method: 'POST',
         body: JSON.stringify({ scope: data.scope, confirm: data.confirm }),
       });
-      alert(`Removed ${res.removed.orders} sales.`);
+      toast(`Removed ${res.removed.orders} sales.`);
       loadSubscriptions();
     });
   }
@@ -6744,10 +11664,8 @@ function renderKitchenUsers() {
           (u.last_seen_at ? date(u.last_seen_at) : 'Never') + '</td>' +
         '<td>' + (u.active ? 'Yes' : 'No') + '</td>' +
         '<td class="right">' +
-          '<button class="btn ghost small" data-kds-user-edit="' + u.id +
-            '">Edit</button> ' +
-          '<button class="btn ghost small" data-kds-user-del="' + u.id +
-            '">Delete</button>' +
+          iconBtn('edit', 'Edit', 'data-kds-user-edit="' + u.id + '"') +
+          iconBtn('del', 'Delete', 'data-kds-user-del="' + u.id + '"', 'danger') +
         '</td>' +
       '</tr>'
     ).join('') +
@@ -7018,7 +11936,7 @@ async function kdsUploadLogo(event) {
     kdsBranding.logoUrl = url;
     kdsFillBranding();
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'error');
   } finally {
     // Cleared so choosing the same file twice in a row still fires a change.
     event.target.value = '';
@@ -7051,7 +11969,7 @@ async function kdsSaveBranding() {
     button.textContent = 'Saved ✓';
     setTimeout(() => { button.textContent = 'Save branding'; }, 1500);
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'error');
   } finally {
     button.disabled = false;
   }
@@ -7088,7 +12006,7 @@ document.addEventListener('click', async (e) => {
       button.textContent = 'Saved ✓';
       setTimeout(() => { button.textContent = 'Save delivery'; }, 1500);
     } catch (err) {
-      alert(err.message);
+      toast(err.message, 'error');
     } finally {
       button.disabled = false;
     }
@@ -7108,7 +12026,7 @@ document.addEventListener('click', async (e) => {
     if (!user) return;
     // Named in the prompt, because these are short and similar and deleting
     // the wrong one blinds a kitchen mid-service.
-    if (!confirm('Delete the kitchen login "' + user.username + '"? ' +
+    if (!await confirmDialog('Delete the kitchen login "' + user.username + '"? ' +
         'Any screen signed in with it stops working.')) return;
     await api('/kitchen/users/' + user.id, { method: 'DELETE' });
     return loadKitchen();
@@ -7125,7 +12043,7 @@ document.addEventListener('click', async (e) => {
     const id = e.target.dataset.kdsScreenDel;
     const screen = kdsScreens.find((s) => String(s.id) === id);
     if (!screen) return;
-    if (!confirm('Delete the screen "' + screen.name + '"? Any machine set ' +
+    if (!await confirmDialog('Delete the screen "' + screen.name + '"? Any machine set ' +
         'to it falls back to showing every station.')) return;
     await api('/kitchen/screens/' + screen.id, { method: 'DELETE' });
     return loadKitchen();
@@ -7141,7 +12059,7 @@ document.addEventListener('click', async (e) => {
  * tick box on the *second* one, which is exactly where a three-prompt chain
  * puts it — makes every later `prompt()` return null instantly. The function
  * then returned at its first `if (x === null) return;` and did nothing at all,
- * and the `alert()` that would have explained was suppressed by the same
+ * and the `toast()` that would have explained was suppressed by the same
  * setting. Silent, permanent, and un-recoverable without clearing site data.
  *
  * The username is settable only on create. It is what somebody types into a
@@ -7335,6 +12253,7 @@ function loadImport() {
       // A new file has not been checked, whatever the last one's result was.
       apply.disabled = true;
       result.hidden = true;
+      showPickedFile(file, 'import-picked');
     });
 
     check.addEventListener('click', () => importRun(false));
@@ -7344,6 +12263,31 @@ function loadImport() {
   check.disabled = !file.files.length;
   apply.disabled = true;
   result.hidden = true;
+  showPickedFile(file, 'import-picked');
+}
+
+/**
+ * Say which file was chosen, with its extension and its size.
+ *
+ * The platform's own control says "No file chosen" and then the bare name in
+ * its own font, and on some browsers nothing at all. Somebody about to rewrite
+ * a whole catalogue should be able to read back what they picked before they
+ * press the button that does it.
+ */
+function showPickedFile(input, targetId) {
+  const out = document.getElementById(targetId);
+  if (!out) return;
+  const f = input.files && input.files[0];
+  if (!f) { out.textContent = ''; return; }
+  const kb = f.size / 1024;
+  const size = kb >= 1024
+    ? (kb / 1024).toFixed(1) + ' MB'
+    : Math.max(1, Math.round(kb)) + ' KB';
+  out.innerHTML = ICONS.check
+    ? `<svg viewBox="0 -960 960 960" aria-hidden="true"
+            style="width:16px;height:16px;fill:var(--green);flex:0 0 auto">${ICONS.check}</svg>`
+      + `<b>${esc(f.name)}</b><span class="size">${esc(size)}</span>`
+    : `<b>${esc(f.name)}</b><span class="size">${esc(size)}</span>`;
 }
 
 /**
@@ -7375,7 +12319,7 @@ async function importTemplate() {
     // beat the click in some browsers and download nothing at all.
     setTimeout(() => URL.revokeObjectURL(url), 0);
   } catch (e) {
-    alert(e.message || 'The template could not be downloaded.');
+    toast(e.message || 'The template could not be downloaded.', 'error');
   } finally {
     button.disabled = false;
   }
@@ -7426,7 +12370,7 @@ async function importRun(commit) {
       apply.disabled = body.blocked;
     }
   } catch (e) {
-    alert(e.message);
+    toast(e.message, 'error');
     apply.disabled = true;
   } finally {
     check.disabled = !input.files.length;
@@ -7446,13 +12390,30 @@ function importRender(body, commit) {
 
   const past = body.applied;
   const line = (what, counts) => {
-    if (!counts.created && !counts.updated) return '';
+    const repeated = counts.repeated || 0;
+    if (!counts.created && !counts.updated && !repeated) return '';
     const parts = [];
     if (counts.created) {
       parts.push(`${counts.created} new`);
     }
     if (counts.updated) {
       parts.push(`${counts.updated} ${past ? 'updated' : 'to update'}`);
+    }
+    // Said in its own words, because it is a different thing.
+    //
+    // A row that repeats one earlier in the same file used to be counted as
+    // "to update", which reads as "your catalogue already has these". It was
+    // reported from a venue whose catalogue was empty: 510 new, 17 to update,
+    // nothing in the database at all. All seventeen were products the
+    // spreadsheet listed twice.
+    //
+    // The later row still wins — that is deliberate, and it is what somebody
+    // correcting a price halfway down a sheet means — but the summary now says
+    // so rather than inventing seventeen products the venue does not have.
+    if (repeated) {
+      parts.push(
+        `${repeated} listed twice in the file${past ? '' : ' — the later row wins'}`
+      );
     }
     return `<li><strong>${esc(what)}</strong> — ${esc(parts.join(', '))}</li>`;
   };
@@ -7517,47 +12478,138 @@ function importRender(body, commit) {
  */
 let rrCatalogue = null;
 
-/**
- * The icons the row actions are drawn with.
+/*
+ * The scheduled-reports row used to carry its own icon set and its own button
+ * component — a second `ICON` and a second `iconButton`, drawn at a different
+ * weight from the ones every other row used. Two components doing one job is
+ * how a screen ends up with two kinds of Delete.
  *
- * Inline rather than a font or a sprite: there are six of them, they never
- * change, and a webfont that has not loaded yet turns a row of actions into a
- * row of empty boxes. Every one is a 24-unit stroked path, so they all sit at
- * the same weight beside each other.
+ * Both now come from ICONS and iconBtn at the top of this file. `iconButton`
+ * survives as a thin shim because its call sites pass a mark rather than a
+ * name; the shim maps one to the other so those sites did not all have to move
+ * at once.
  */
 const ICON = {
-  eye:
-    '<path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/>' +
-    '<circle cx="12" cy="12" r="3"/>',
-  download:
-    '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>' +
-    '<polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
-  send: '<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>',
-  history:
-    '<path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/>' +
-    '<path d="M12 7v5l4 2"/>',
-  edit:
-    '<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>' +
-    '<path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z"/>',
-  trash:
-    '<polyline points="3 6 5 6 21 6"/>' +
-    '<path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+  eye: 'eye', download: 'download', send: 'send',
+  history: 'history', edit: 'edit', trash: 'del',
 };
 
-/** An icon button: a picture, a tooltip, and a name a screen reader can read. */
+/** The old signature, answered by the one component. */
 const iconButton = (icon, label, data, extra = '') =>
-  `<button type="button" class="icon-btn ${extra}" ${data} title="${esc(label)}"
-           aria-label="${esc(label)}">
-     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icon}</svg>
-   </button>`;
+  iconBtn(icon, label, data, extra);
+
+/**
+ * Put the chosen report's own name and description at the top of the page.
+ *
+ * This screen used to run one report and the heading was written into the
+ * markup. It runs five now, and a page headed "Financial Summary" above a table
+ * of voids is one a manager reasonably reports as broken.
+ */
+function rrNameReport() {
+  const chosen = (rrCatalogue?.reports || []).find(
+    (r) => r.key === $('rr-report').value
+  );
+  if (!chosen) return;
+  $('rr-title').textContent = chosen.label;
+  $('rr-blurb').textContent = chosen.description || '';
+  rrShowFilters(chosen);
+}
+
+/**
+ * The fields this report takes, and only those.
+ *
+ * A week-start report covers seven days from a date and the period picker
+ * would be a lie beside it, so it swaps: the date box appears, the period
+ * and its custom range go. Everything else is additive.
+ */
+function rrShowFilters(chosen) {
+  const wants = new Set(chosen.filters || []);
+  const week = wants.has('week_start');
+  $('rr-period-field').hidden = week;
+  $('rr-week-field').hidden = !week;
+  if (week && !$('rr-week').value) {
+    // Last Monday: the week a manager most often wants is the one just gone.
+    const d = new Date();
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7) - 7);
+    $('rr-week').value = d.toISOString().slice(0, 10);
+  }
+  $('rr-clerk-field').hidden = !wants.has('clerk');
+  $('rr-department-field').hidden = !wants.has('department');
+  $('rr-product-field').hidden = !wants.has('product');
+  $('rr-groupby-field').hidden = !wants.has('group_by');
+  if (wants.has('product')) rrFillProducts();
+  rrToggleCustom();
+}
+
+/** The report picker, grouped, narrowed by whatever is in the search box. */
+function rrFillReports() {
+  const needle = ($('rr-search').value || '').trim().toLowerCase();
+  const current = $('rr-report').value;
+  const groups = rrCatalogue.groups || [{ key: 'sales', label: 'Reports' }];
+  let first = null;
+  $('rr-report').innerHTML = groups
+    .map((g) => {
+      const list = rrCatalogue.reports.filter(
+        (r) =>
+          (r.group || 'sales') === g.key &&
+          (!needle ||
+            r.label.toLowerCase().includes(needle) ||
+            (r.description || '').toLowerCase().includes(needle))
+      );
+      if (!list.length) return '';
+      if (!first) first = list[0].key;
+      return `<optgroup label="${esc(g.label)}">${list
+        .map((r) => `<option value="${esc(r.key)}">${esc(r.label)}</option>`)
+        .join('')}</optgroup>`;
+    })
+    .join('');
+  // Keep the chosen report where it survives the narrowing; otherwise the
+  // first match is the one the search was for.
+  const still = [...$('rr-report').options].some((o) => o.value === current);
+  $('rr-report').value = still ? current : first || '';
+}
+
+/** Products for the product filter, fetched once, offered as you type. */
+let rrProducts = null;
+async function rrFillProducts() {
+  if (rrProducts) return;
+  rrProducts = await api('/products').catch(() => []);
+  $('rr-product-list').innerHTML = rrProducts
+    .map((p) => `<option value="${esc(`${p.product_name} — PLU ${p.pluid}`)}"></option>`)
+    .join('');
+}
+
+/** The PLU the product box means: "Carling — PLU 12", "12", or a name. */
+function rrProductPlu() {
+  const typed = ($('rr-product').value || '').trim();
+  if (!typed) return undefined;
+  const tagged = /PLU\s+(\d+)/i.exec(typed);
+  if (tagged) return tagged[1];
+  if (/^\d+$/.test(typed)) return typed;
+  const hit = (rrProducts || []).find(
+    (p) => String(p.product_name || '').toLowerCase() === typed.toLowerCase()
+  );
+  return hit ? String(hit.pluid) : typed;
+}
 
 async function loadRunReport() {
   if (!rrCatalogue) {
     rrCatalogue = await api('/reports/catalogue');
-    $('rr-report').innerHTML = rrCatalogue.reports
-      .map((r) => `<option value="${esc(r.key)}">${esc(r.label)}</option>`)
-      .join('');
+    rrFillReports();
+    $('rr-clerk').innerHTML =
+      '<option value="">All staff</option>' +
+      (rrCatalogue.clerks || [])
+        .map((c) => `<option value="${esc(c.value)}">${esc(c.label)} (${c.sales})</option>`)
+        .join('');
+    $('rr-department').innerHTML =
+      '<option value="">All departments</option>' +
+      (rrCatalogue.departments || [])
+        .map((d) => `<option value="${esc(d.value)}">${esc(d.label)}</option>`)
+        .join('');
+    $('rr-search').addEventListener('input', () => {
+      rrFillReports();
+      rrNameReport();
+    });
     $('rr-period').innerHTML = rrCatalogue.ranges
       .map((r) => `<option value="${esc(r.key)}">${esc(r.label)}</option>`)
       .join('');
@@ -7571,11 +12623,14 @@ async function loadRunReport() {
     $('rr-period').value = 'yesterday';
 
     $('rr-period').addEventListener('change', rrToggleCustom);
+    $('rr-report').addEventListener('change', rrNameReport);
     $('rr-run').addEventListener('click', rrRun);
     $('rr-export').addEventListener('click', rrExport);
     $('rr-view').addEventListener('click', rrView);
     rrToggleCustom();
   }
+
+  rrNameReport();
 
   // Nothing is run on arrival. A report is a query over the whole ledger, and
   // firing one because somebody clicked a menu item is how a back office comes
@@ -7613,9 +12668,9 @@ function rrFillTerminals() {
       .join('');
 }
 
-/** The two date boxes only exist for Custom Range. */
+/** The two date boxes only exist for Custom Range, and never with a week. */
 function rrToggleCustom() {
-  const custom = $('rr-period').value === 'custom';
+  const custom = $('rr-period').value === 'custom' && $('rr-period-field').hidden === false;
   $('rr-from-field').hidden = !custom;
   $('rr-to-field').hidden = !custom;
   if (custom && !$('rr-from').value) {
@@ -7639,6 +12694,15 @@ function rrSpec() {
     // Empty string means every terminal. Sent as undefined rather than '' so
     // the server's own "unfiltered" default is the one thing deciding it.
     terminal: $('rr-terminal').value || undefined,
+    // The report's own filters. The server keeps only the ones the chosen
+    // report names, so sending the lot is harmless and simpler than knowing.
+    filters: {
+      clerk: $('rr-clerk').value || undefined,
+      department: $('rr-department').value || undefined,
+      product: $('rr-product-field').hidden ? undefined : rrProductPlu(),
+      week_start: $('rr-week-field').hidden ? undefined : $('rr-week').value || undefined,
+      group_by: $('rr-groupby-field').hidden ? undefined : $('rr-groupby').value,
+    },
   };
 }
 
@@ -7677,6 +12741,9 @@ function rrRender(report) {
     ['Site', report.site],
     ['Period covered', `${rrWhen(report.from)} — ${rrWhen(report.to)}`],
     ['Terminal', report.terminalLabel || 'All terminals'],
+    // Whatever the report was narrowed by, from the same header the PDF
+    // prints -- everything after the Terminal line.
+    ...(report.header || []).slice(6),
     ['Generated', rrWhen(report.generatedAt)],
   ];
 
@@ -7828,7 +12895,7 @@ async function rrExport() {
     });
     if (file) saveBlob(file.blob, file.filename);
   } catch (e) {
-    alert(e.message);
+    toast(e.message, 'error');
   } finally {
     button.textContent = label;
     button.disabled = false;
@@ -8049,7 +13116,7 @@ async function rsAction(e, rows) {
       );
       if (file) saveBlob(file.blob, file.filename);
     } catch (err) {
-      alert(err.message);
+      toast(err.message, 'error');
     } finally {
       button.disabled = false;
     }
@@ -8063,21 +13130,22 @@ async function rsAction(e, rows) {
     // office got the test.
     const schedule = row(data.rsSend);
     const to = schedule ? schedule.recipients : 'its recipients';
-    if (!confirm(`Email this report now to ${to}?`)) return;
+    if (!await confirmDialog(`Email this report now to ${to}?`)) return;
 
     button.disabled = true;
     try {
       const outcome = await api(`/reports/schedules/${data.rsSend}/run`, {
         method: 'POST',
       });
-      alert(
+      toast(
         outcome.status === 'sent'
           ? outcome.detail
-          : `Not sent: ${outcome.detail || outcome.status}`
+          : `Not sent: ${outcome.detail || outcome.status}`,
+        outcome.status === 'sent' ? 'ok' : 'error'
       );
       render();
     } catch (err) {
-      alert(err.message);
+      toast(err.message, 'error');
     } finally {
       button.disabled = false;
     }
@@ -8086,7 +13154,7 @@ async function rsAction(e, rows) {
 
   if (data.rsDelete) {
     const schedule = row(data.rsDelete);
-    if (!confirm(`Delete "${schedule.name}"? It will stop sending.`)) return;
+    if (!await confirmDialog(`Delete "${schedule.name}"? It will stop sending.`)) return;
     await api(`/reports/schedules/${data.rsDelete}`, { method: 'DELETE' });
     render();
   }
@@ -8126,7 +13194,50 @@ function rsEdit(existing) {
         label: 'Report',
         type: 'select',
         value: existing ? existing.report_key : rsOptions.reports[0].key,
-        options: rsOptions.reports.map((r) => ({ value: r.key, label: r.label })),
+        // In the catalogue's group order -- Sales, Stock, Staff, Customers --
+        // not the order the builders happen to be registered in.
+        options: (rsOptions.groups || [{ key: 'sales' }]).flatMap((g) =>
+          rsOptions.reports
+            .filter((r) => (r.group || 'sales') === g.key)
+            .map((r) => ({ value: r.key, label: r.label, group: g.label }))
+        ),
+      },
+      // The report's own filters. Shown only for a report that takes them --
+      // see the wiring under the modal -- and kept with the schedule, so
+      // "Product Sales by Clerk, for Sarah, every Monday" is one schedule.
+      {
+        name: 'clerk',
+        label: 'Clerk',
+        type: 'select',
+        value: (existing && existing.filters && existing.filters.clerk) || '',
+        options: [{ value: '', label: 'All staff' }].concat(
+          (rsOptions.clerks || []).map((c) => ({ value: c.value, label: `${c.label} (${c.sales})` }))
+        ),
+      },
+      {
+        name: 'department',
+        label: 'Department',
+        type: 'select',
+        value: (existing && existing.filters && existing.filters.department) || '',
+        options: [{ value: '', label: 'All departments' }].concat(
+          (rsOptions.departments || []).map((d) => ({ value: d.value, label: d.label }))
+        ),
+      },
+      {
+        name: 'product',
+        label: 'Product (PLU)',
+        type: 'number',
+        value: (existing && existing.filters && existing.filters.product) || '',
+      },
+      {
+        name: 'group_by',
+        label: 'Group by',
+        type: 'select',
+        value: (existing && existing.filters && existing.filters.group_by) || 'sub_department',
+        options: [
+          { value: 'sub_department', label: 'Sub department' },
+          { value: 'department', label: 'Department' },
+        ],
       },
       {
         name: 'format',
@@ -8194,6 +13305,29 @@ function rsEdit(existing) {
       );
     }
   );
+  rsWireFilters();
+}
+
+/**
+ * Show the filter fields the chosen report takes and hide the rest, now and
+ * whenever the report changes. The modal is plain markup, so this reaches in
+ * by field name after it has been drawn.
+ */
+function rsWireFilters() {
+  const form = $('modal-form');
+  if (!form) return;
+  const pick = form.querySelector('[name="report_key"]');
+  const apply = () => {
+    const def = (rsOptions.reports || []).find((r) => r.key === pick.value) || {};
+    const wants = new Set(def.filters || []);
+    for (const name of ['clerk', 'department', 'product', 'group_by']) {
+      const field = form.querySelector(`[name="${name}"]`);
+      const label = field && field.closest('label');
+      if (label) label.hidden = !wants.has(name);
+    }
+  };
+  pick.addEventListener('change', apply);
+  apply();
 }
 
 /** What happened each time it fired. The answer to "it never arrived". */
@@ -8225,4 +13359,402 @@ async function rsShowRuns(id) {
   // Written after the view loaded, so it missed the pass in render().
   cardsOnPhone($('rs-runs').querySelector('table'));
   $('rs-runs').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// ---- Price levels ---------------------------------------------------------
+//
+// Repricing a whole shelf at once. Three things make this different from the
+// form it is modelled on: nothing is written until a preview has been seen,
+// rounding is part of the rule rather than an afterthought, and every run can
+// be put back.
+//
+// The server does the arithmetic — twice, once for the preview and once for
+// the write, from the same inputs. Nothing here sends a price. A preview the
+// browser could edit would be a preview that decided nothing.
+
+let plProducts = [];
+let plLevels = [];
+let plChosen = new Set();
+let plPreview = null;
+
+async function loadPriceLevels() {
+  const data = await api('/price-levels');
+  plProducts = data.products || [];
+  plLevels = data.levels || [];
+  plChosen = new Set();
+  plPreview = null;
+
+  // The venue's own names, everywhere. "Happy Hour" tells a manager what they
+  // are about to reprice; "Price Level 2" tells them nothing.
+  const options = (skipOne) =>
+    plLevels
+      .filter((l) => !(skipOne && l.level === 1))
+      .map((l) => `<option value="${l.level}">${esc(l.name)}</option>`)
+      .join('');
+
+  $('pl-source').innerHTML = options(false);
+  $('pl-target').innerHTML = options(true);
+  $('pl-target').value = '2';
+
+  plRenderProducts();
+  plRenderMethod();
+  await plRenderRuns();
+  plBind();
+}
+
+let plBound = false;
+function plBind() {
+  if (plBound) return;
+  plBound = true;
+
+  $('pl-method').addEventListener('change', plRenderMethod);
+  $('pl-search').addEventListener('input', plRenderProducts);
+  $('pl-all').addEventListener('click', () => {
+    // Everything the SEARCH is currently showing, not the whole catalogue —
+    // "select all" under a filter means the filtered set, which is the only
+    // reading that makes the search box worth having.
+    for (const p of plVisible()) plChosen.add(p.pluid);
+    plRenderProducts();
+  });
+  $('pl-none').addEventListener('click', () => {
+    plChosen = new Set();
+    plRenderProducts();
+  });
+  $('pl-runs').addEventListener('click', plUndoClicked);
+  $('pl-preview').addEventListener('click', plDoPreview);
+  $('pl-apply').addEventListener('click', plDoApply);
+  $('pl-cancel').addEventListener('click', () => {
+    plPreview = null;
+    $('pl-preview-card').hidden = true;
+  });
+
+  $('pl-products').addEventListener('change', (e) => {
+    const plu = Number(e.target?.dataset?.plu);
+    if (!plu) return;
+    if (e.target.checked) plChosen.add(plu);
+    else plChosen.delete(plu);
+    plCount();
+  });
+
+  $('pl-products').addEventListener('click', (e) => {
+    const dept = e.target?.dataset?.dept;
+    if (dept === undefined) return;
+    // A department heading ticks or clears everything under it, which is how
+    // somebody actually reprices "all the beers".
+    const rows = plVisible().filter((p) => (p.department_name || '') === dept);
+    const allOn = rows.every((p) => plChosen.has(p.pluid));
+    for (const p of rows) {
+      if (allOn) plChosen.delete(p.pluid);
+      else plChosen.add(p.pluid);
+    }
+    plRenderProducts();
+  });
+}
+
+/** Products matching the search box. */
+function plVisible() {
+  const q = String($('pl-search').value || '').trim().toLowerCase();
+  if (!q) return plProducts;
+  return plProducts.filter(
+    (p) =>
+      String(p.product_name || '').toLowerCase().includes(q) ||
+      String(p.department_name || '').toLowerCase().includes(q) ||
+      String(p.pluid).includes(q),
+  );
+}
+
+function plCount() {
+  const n = plChosen.size;
+  $('pl-count').textContent =
+    n === 0 ? 'Nothing selected' : `${n} product${n === 1 ? '' : 's'} selected`;
+}
+
+function plRenderProducts() {
+  const box = $('pl-products');
+  const rows = plVisible();
+  if (!rows.length) {
+    box.innerHTML = '<p class="muted small">No products match that.</p>';
+    plCount();
+    return;
+  }
+
+  // Grouped by department, because that is the unit a venue reprices in.
+  const byDept = new Map();
+  for (const p of rows) {
+    const key = p.department_name || 'No department';
+    if (!byDept.has(key)) byDept.set(key, []);
+    byDept.get(key).push(p);
+  }
+
+  const source = Number($('pl-source').value) || 1;
+  const priceOf = (p, level) => (level === 1 ? p.price : p[`price_${level}`]);
+
+  box.innerHTML = [...byDept.entries()]
+    .map(([dept, items]) => {
+      const on = items.filter((p) => plChosen.has(p.pluid)).length;
+      return (
+        `<div class="pl-dept">` +
+        `<button type="button" class="pl-dept-head" data-dept="${esc(
+          dept === 'No department' ? '' : dept,
+        )}">` +
+        `${esc(dept)} <span class="muted small">${on}/${items.length}</span></button>` +
+        items
+          .map((p) => {
+            const base = priceOf(p, source);
+            return (
+              `<label class="check pl-item">` +
+              `<input type="checkbox" data-plu="${p.pluid}"${
+                plChosen.has(p.pluid) ? ' checked' : ''
+              }>` +
+              `<span>${esc(p.product_name || `PLU ${p.pluid}`)}` +
+              `<span class="muted small"> — ${
+                base === null || base === undefined ? 'no price' : '£' + pounds(Math.round(base * 100))
+              }</span></span></label>`
+            );
+          })
+          .join('') +
+        `</div>`
+      );
+    })
+    .join('');
+  plCount();
+}
+
+/** A fixed amount is in pounds; a percentage is not; a copy needs neither. */
+function plRenderMethod() {
+  const method = $('pl-method').value;
+  $('pl-amount-row').hidden = method === 'copy';
+  $('pl-amount-label').firstChild.textContent =
+    method === 'percent' ? 'By (%)' : 'By (£)';
+}
+
+async function plDoPreview() {
+  const button = $('pl-preview');
+  button.disabled = true;
+  $('pl-status').textContent = 'Working it out…';
+  try {
+    const body = plRule();
+    const res = await api('/price-levels/preview', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    plPreview = { body, ...res };
+    plRenderPreview();
+    $('pl-status').textContent = '';
+  } catch (err) {
+    $('pl-status').textContent = '';
+    toast(err.message, 'error');
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function plRule() {
+  const method = $('pl-method').value;
+  return {
+    source_level: Number($('pl-source').value),
+    target_level: Number($('pl-target').value),
+    method,
+    direction: $('pl-direction').value,
+    // Pence for a fixed amount, percentage points for a percentage. Sent as
+    // the server expects them so the two cannot disagree about the unit.
+    amount:
+      method === 'copy'
+        ? 0
+        : method === 'amount'
+          ? Math.round((Number($('pl-amount').value) || 0) * 100)
+          : Number($('pl-amount').value) || 0,
+    rounding: $('pl-rounding').value,
+    plu_ids: [...plChosen],
+  };
+}
+
+function plRenderPreview() {
+  const card = $('pl-preview-card');
+  const body = $('pl-preview-body');
+  const { changes = [], skipped = [] } = plPreview || {};
+
+  if (!changes.length) {
+    body.innerHTML =
+      '<p class="muted">Nothing would change.</p>' + plSkippedHtml(skipped);
+    $('pl-apply').disabled = true;
+    card.hidden = false;
+    return;
+  }
+
+  $('pl-apply').disabled = false;
+
+  const target = plLevels.find((l) => l.level === Number($('pl-target').value));
+  const up = changes.filter((c) => c.delta_minor !== null && c.delta_minor > 0).length;
+  const down = changes.filter((c) => c.delta_minor !== null && c.delta_minor < 0).length;
+  const fresh = changes.filter((c) => c.before_minor === null).length;
+
+  body.innerHTML =
+    `<p><strong>${changes.length}</strong> product${changes.length === 1 ? '' : 's'} ` +
+    `would change on <strong>${esc(target ? target.name : '')}</strong>` +
+    `${up ? ` · ${up} up` : ''}${down ? ` · ${down} down` : ''}` +
+    `${fresh ? ` · ${fresh} priced for the first time` : ''}.</p>` +
+    '<div class="pl-preview-table"><table class="table"><thead><tr>' +
+    '<th>Product</th><th>Department</th><th class="right">Now</th>' +
+    '<th class="right">Becomes</th><th class="right">Change</th>' +
+    '</tr></thead><tbody>' +
+    changes
+      .map(
+        (c) =>
+          '<tr><td>' +
+          esc(c.name || `PLU ${c.pluid}`) +
+          '</td><td class="muted small">' +
+          esc(c.department || '') +
+          '</td><td class="right">' +
+          (c.before_minor === null ? '<span class="muted">—</span>' : '£' + pounds(c.before_minor)) +
+          '</td><td class="right"><strong>£' +
+          pounds(c.after_minor) +
+          '</strong></td><td class="right">' +
+          (c.delta_minor === null
+            ? '<span class="muted">new</span>'
+            : (c.delta_minor > 0 ? '+' : '−') + '£' + pounds(Math.abs(c.delta_minor))) +
+          '</td></tr>',
+      )
+      .join('') +
+    '</tbody></table></div>' +
+    plSkippedHtml(skipped);
+
+  card.hidden = false;
+  card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+/**
+ * What was left out, and why.
+ *
+ * Named rather than silently dropped. A product with no price at the level
+ * being read is skipped on purpose — null there means "charge Price 1", and
+ * treating it as £0.00 would set a real price of nothing on the target.
+ */
+function plSkippedHtml(skipped) {
+  if (!skipped.length) return '';
+  return (
+    `<details class="pl-skipped"><summary class="muted small">` +
+    `${skipped.length} left alone</summary><ul class="muted small">` +
+    skipped
+      .map((s) => `<li>${esc(s.name || `PLU ${s.pluid}`)} — ${esc(s.reason)}</li>`)
+      .join('') +
+    '</ul></details>'
+  );
+}
+
+async function plDoApply() {
+  if (!plPreview) return;
+  const n = (plPreview.changes || []).length;
+  if (
+    !(await confirmDialog(
+      `This changes the price of ${n} product${n === 1 ? '' : 's'} on every till. ` +
+        'It can be put back afterwards from the list below.',
+      { title: 'Apply these prices?', confirmLabel: 'Apply' },
+    ))
+  ) {
+    return;
+  }
+
+  const button = $('pl-apply');
+  button.disabled = true;
+  try {
+    // The rule again, not the preview's rows: the server recalculates. See the
+    // header of src/price_levels.js.
+    const res = await api('/price-levels/apply', {
+      method: 'POST',
+      body: JSON.stringify(plPreview.body),
+    });
+    toast(`${res.applied} price${res.applied === 1 ? '' : 's'} updated.`, 'ok');
+    plPreview = null;
+    $('pl-preview-card').hidden = true;
+    await loadPriceLevels();
+  } catch (err) {
+    toast(err.message, 'error');
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function plRenderRuns() {
+  const box = $('pl-runs');
+  let runs = [];
+  try {
+    runs = await api('/price-levels/runs');
+  } catch {
+    box.innerHTML = '<p class="muted small">Could not read the history.</p>';
+    return;
+  }
+  if (!runs.length) {
+    box.innerHTML = '<p class="muted small">No bulk price changes yet.</p>';
+    return;
+  }
+
+  const name = (n) => {
+    const l = plLevels.find((x) => x.level === Number(n));
+    return l ? l.name : `Price ${n}`;
+  };
+  const how = (r) => {
+    if (r.method === 'copy') return 'copied across';
+    const value = r.method === 'percent'
+      ? `${Number(r.amount)}%`
+      : `£${pounds(Math.round(Number(r.amount)))}`;
+    return `${r.direction === 'down' ? 'down' : 'up'} ${value}`;
+  };
+
+  box.innerHTML =
+    '<table class="table"><thead><tr><th>When</th><th>What</th>' +
+    '<th class="right">Products</th><th>By</th><th></th></tr></thead><tbody>' +
+    runs
+      .map(
+        (r) =>
+          '<tr><td class="muted small">' +
+          esc(
+            new Date(r.created_at).toLocaleString('en-GB', {
+              dateStyle: 'short',
+              timeStyle: 'short',
+            }),
+          ) +
+          '</td><td>' +
+          esc(`${name(r.source_level)} → ${name(r.target_level)}, ${how(r)}`) +
+          '</td><td class="right">' +
+          r.product_count +
+          '</td><td class="muted small">' +
+          esc(r.created_by || '') +
+          '</td><td class="right">' +
+          (r.undone_at
+            ? '<span class="muted small">put back</span>'
+            : `<button class="btn small ghost" data-pl-undo="${r.id}">Undo</button>`) +
+          '</td></tr>',
+      )
+      .join('') +
+    '</tbody></table>';
+}
+
+/**
+ * Put a run back.
+ *
+ * Delegated on the runs container rather than on `document`, and registered in
+ * `plBind()` with every other listener on this page — a top-level listener at
+ * the bottom of this file runs the moment the file is evaluated, which is not
+ * something a page module should do.
+ */
+async function plUndoClicked(e) {
+  const id = e.target?.dataset?.plUndo;
+  if (!id) return;
+  if (
+    !(await confirmDialog(
+      'Every product this change touched goes back to the price it had before. '
+        + 'Tills pick it up on their next refresh.',
+      { title: 'Put these prices back?', confirmLabel: 'Put them back' },
+    ))
+  ) {
+    return;
+  }
+  try {
+    const res = await api(`/price-levels/runs/${id}/undo`, { method: 'POST' });
+    toast(`${res.restored} price${res.restored === 1 ? '' : 's'} put back.`, 'ok');
+    await loadPriceLevels();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
 }

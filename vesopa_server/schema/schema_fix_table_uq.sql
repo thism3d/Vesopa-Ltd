@@ -10,5 +10,34 @@ DELETE t1 FROM floor_tables t1
    AND t1.table_number = t2.table_number
    AND t1.id > t2.id;
 
-ALTER TABLE floor_tables DROP INDEX uq_table_number;
-ALTER TABLE floor_tables ADD UNIQUE KEY uq_room_table (room_id, table_number);
+--
+-- Both statements are guarded: dropping an index that is already gone is an
+-- error, and so is adding one that is already there, so on the second run this
+-- file used to fail twice over. Neither is a reason to stop a deploy.
+DROP PROCEDURE IF EXISTS vesopa_fix_table_index;
+DELIMITER //
+CREATE PROCEDURE vesopa_fix_table_index()
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'floor_tables'
+      AND INDEX_NAME = 'uq_table_number'
+  ) THEN
+    ALTER TABLE floor_tables DROP INDEX uq_table_number;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'floor_tables'
+      AND INDEX_NAME = 'uq_room_table'
+  ) THEN
+    ALTER TABLE floor_tables ADD UNIQUE KEY uq_room_table (room_id, table_number);
+  END IF;
+END //
+DELIMITER ;
+
+CALL vesopa_fix_table_index();
+
+DROP PROCEDURE IF EXISTS vesopa_fix_table_index;
