@@ -1,0 +1,822 @@
+/**
+ * Licences: how many of each app a venue may run, and on which machines.
+ *
+ * WHAT A LICENCE IS HERE
+ *
+ * Two separate things, and keeping them apart is what makes this usable:
+ *
+ *   * a LIMIT -- how many of an app a venue has paid for (`bo_licence_limits`).
+ *     Absent means no limit, and every venue starts absent, so nothing that is
+ *     running today stops running when this is deployed.
+ *   * a KEY -- a string Vesopa issues, which activates on exactly one machine
+ *     and is thereafter bound to it (`bo_licence_keys`).
+ *
+ * A venue can be limited without keys (count the devices, trust the venue) or
+ * keyed as well (the device must present a key nobody else's machine can use).
+ * Keys are the answer to "only activated on that device"; limits are the answer
+ * to "if they paid for two, two".
+ *
+ * THE FINGERPRINT
+ *
+ * A device id is a UUID the app generates and keeps in its own settings. A
+ * reinstall makes a new one and a copied install brings the old one along, so
+ * it can say which machine this *probably* is and nothing more. A fingerprint
+ * is a hash of things a copy cannot carry -- on Windows the MachineGuid, the
+ * motherboard serial and the system drive serial. The app computes it; the
+ * server only ever sees the hash, never the serials themselves, which keeps a
+ * venue's hardware inventory out of this database.
+ *
+ * WHAT HAPPENS TO THE SIXTH DEVICE
+ *
+ * Not the same answer for every app, because the cost of being wrong differs.
+ * See POLICY below.
+ */
+const crypto = require('crypto');
+
+const express = require('express');
+const jwt = require('jsonwebtoken');
+
+const { requireAuth } = require('./auth');
+const entitlements = require('./entitlements');
+
+/** The apps a venue licenses. Matches bo_devices.kind. */
+const KINDS = ['till', 'kitchen', 'display', 'express'];
+
+/** What each app is called on screen. */
+const LABELS = {
+  till: 'Till',
+  kitchen: 'Kitchen screen',
+  display: 'Customer display',
+  express: 'Express kiosk',
+};
+
+/**
+ * What to do when a venue is at its limit and another device signs in.
+ *
+ * `refuse` -- tell the venue which devices hold the licences and let a manager
+ * sign one out. The right answer wherever bouncing a device loses work or
+ * money: a till or a kiosk can be mid-sale, and a kitchen screen that vanishes
+ * takes the orders being cooked with it.
+ *
+ * `evict-oldest` -- the newest device wins and the one signed in longest ago is
+ * bounced. Only for the customer display, which shows a basket and holds
+ * nothing: losing one costs a screen that goes blank until somebody looks at it.
+ */
+const POLICY = {
+  till: 'refuse',
+  kitchen: 'refuse',
+  express: 'refuse',
+  display: 'evict-oldest',
+};
+
+
+/**
+ * The product a device credential belongs to.
+ *
+ * Read from the token's own scope, never from anything the caller sends, so a
+ * kiosk cannot ask about a till's licence by claiming to be one. `terminal` is
+ * the till: the scope predates the word `till` being used for the product.
+ */
+const SCOPE_KIND = {
+  terminal: 'till',
+  kitchen: 'kitchen',
+  display: 'display',
+  express: 'express',
+};
+
+const KEY_BYTES = 8;
+
+function hashKey(key) {
+  return crypto.createHash('sha256').update(String(key).trim().toUpperCase()).digest('hex');
+}
+
+/**
+ * A new licence key, as the venue will see it once and never again.
+ *
+ * Grouped in fours because it is read down a telephone. Upper case and hashed
+ * upper case, so a venue that types it in lower case is not told it is wrong.
+ */
+function newKey(kind) {
+  const body = crypto
+    .randomBytes(KEY_BYTES)
+    .toString('hex')
+    .toUpperCase()
+    .match(/.{4}/g)
+    .join('-');
+  const key = `VES-${String(kind).toUpperCase()}-${body}`;
+  // Up to the end of the first group, not a fixed number of characters: a
+  // prefix that stops halfway through "41B7" reads as a typo on the screen
+  // where somebody is trying to tell two keys apart.
+  const prefix = key.split('-').slice(0, 3).join('-');
+  return { key, hash: hashKey(key), prefix };
+}
+
+/**
+ * How many of an app this venue may have signed in, or null for no limit.
+ *
+ * Falls back to `offices.till_licences` for tills, so a venue the admin set a
+ * number for before this table existed keeps it even if the migration that
+ * copies it across has not run.
+ */
+async function limitFor(db, office, kind) {
+  try {
+    const [[row]] = await db.query(
+      'SELECT seats FROM bo_licence_limits WHERE office = ? AND kind = ?',
+      [office, kind]
+    );
+    if (row && row.seats != null) return Math.max(0, Number(row.seats));
+  } catch (e) {
+    if (e.code !== 'ER_NO_SUCH_TABLE') throw e;
+  }
+  if (kind !== 'till') return null;
+  try {
+    const [[row]] = await db.query(
+      'SELECT till_licences FROM offices WHERE contact_email = ?',
+      [office]
+    );
+    const n = row && row.till_licences;
+    return n == null ? null : Math.max(0, Number(n));
+  } catch (e) {
+    if (e.code === 'ER_BAD_FIELD_ERROR') return null;
+    throw e;
+  }
+}
+
+/** Every limit this venue has, for the back office. */
+async function limitsFor(db, office) {
+  const out = {};
+  for (const kind of KINDS) out[kind] = await limitFor(db, office, kind);
+  return out;
+}
+
+/**
+ * Present a licence key from a machine.
+ *
+ * First machine to present it claims it. Any other machine is refused -- that
+ * refusal is the whole feature, so it is deliberately not softened by a
+ * "probably the same machine" guess.
+ *
+ * A device that sends no fingerprint (an app too old to compute one) can still
+ * activate a key, and the key records what it can. Refusing those would turn a
+ * licence into a reason a venue cannot open, which it must never be.
+ */
+async function activate(db, { office, kind, key, fingerprint, deviceId, deviceName, by }) {
+  const hash = hashKey(key);
+  const [[row]] = await db.query(
+    `SELECT id, office, kind, device_fingerprint, device_name, revoked_at
+       FROM bo_licence_keys WHERE key_hash = ?`,
+    [hash]
+  );
+  if (!row) return { ok: false, error: 'That licence key is not recognised.' };
+  if (row.revoked_at) {
+    return { ok: false, error: 'That licence key has been withdrawn. Please contact Vesopa.' };
+  }
+  if (row.office !== office) {
+    // Deliberately the same wording as an unknown key: which venue a key
+    // belongs to is not a thing to confirm to somebody who does not have it.
+    return { ok: false, error: 'That licence key is not recognised.' };
+  }
+  if (kind && row.kind !== kind) {
+    return {
+      ok: false,
+      error: `That is a ${LABELS[row.kind] || row.kind} licence, not a ${LABELS[kind] || kind} one.`,
+    };
+  }
+
+  if (row.device_fingerprint && fingerprint && row.device_fingerprint !== fingerprint) {
+    return {
+      ok: false,
+      error:
+        `That licence is already in use on ${row.device_name || 'another machine'}. ` +
+        'Ask Vesopa to move it to this one.',
+      inUseOn: row.device_name || null,
+    };
+  }
+
+  await db.execute(
+    `UPDATE bo_licence_keys
+        SET device_fingerprint = COALESCE(device_fingerprint, ?),
+            device_id          = COALESCE(?, device_id),
+            device_name        = COALESCE(?, device_name),
+            activated_at       = COALESCE(activated_at, NOW()),
+            activated_by       = COALESCE(activated_by, ?)
+      WHERE id = ?`,
+    [fingerprint || null, deviceId || null, deviceName || null, by || null, row.id]
+  );
+
+  return { ok: true, id: row.id, kind: row.kind };
+}
+
+
+/**
+ * What a device should be told about its own licence, and whether it may run.
+ *
+ * ONE PLACE DECIDES THE LOCK. Four apps ask this question and they must not
+ * each answer it slightly differently -- a till that locks a day before the
+ * kitchen screen is a venue convinced the software is broken rather than
+ * unpaid.
+ *
+ * THE ORDER OF THE CHECKS IS THE SAFETY. Read it as: lock only when we are
+ * SURE. Every uncertain answer falls through to `locked: false`:
+ *
+ *   * the venue has not been made lockable -> not locked;
+ *   * we have no entitlement row for this product -> not locked, because we
+ *     do not know what they bought, and guessing costs them their trade;
+ *   * the subscription is active -> not locked;
+ *   * it lapsed, but within the grace -> not locked, and `renewBy` is set so
+ *     the app can warn;
+ *   * only past all of that -> locked.
+ *
+ * A database that will not answer throws, and every caller treats a throw as
+ * not locked. That is deliberate: a billing lookup failing must never be the
+ * reason a venue cannot open.
+ */
+async function stateFor(pool, office, kind) {
+  const unknown = {
+    kind,
+    label: LABELS[kind] || kind,
+    locked: false,
+    status: null,
+    endsAt: null,
+    renewBy: null,
+    limit: null,
+    key: null,
+    device: null,
+  };
+  if (!office || !kind) return unknown;
+
+  let lockable = false;
+  try {
+    const [[row]] = await pool.query(
+      'SELECT licence_lock_enabled FROM offices WHERE contact_email = ?',
+      [office],
+    );
+    lockable = Boolean(row && Number(row.licence_lock_enabled) === 1);
+  } catch (e) {
+    // Migration not run. Nobody is lockable, which is exactly true.
+    if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+  }
+
+  let limit = null;
+  try {
+    const [[row]] = await pool.query(
+      'SELECT seats, source, status, ends_at FROM bo_licence_limits WHERE office = ? AND kind = ?',
+      [office, kind],
+    );
+    limit = row || null;
+  } catch (e) {
+    if (e.code !== 'ER_NO_SUCH_TABLE' && e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+  }
+
+  // The key this venue holds for this product, and the machine it sits on.
+  // The PREFIX only: the whole key is shown once when it is issued and stored
+  // hashed, and a settings page that could display it would turn every screen
+  // in a venue into somewhere to read one off.
+  let key = null;
+  try {
+    const [[row]] = await pool.query(
+      `SELECT key_prefix, label, device_name, activated_at, revoked_at
+         FROM bo_licence_keys
+        WHERE office = ? AND kind = ? AND revoked_at IS NULL
+        ORDER BY activated_at IS NULL, activated_at DESC LIMIT 1`,
+      [office, kind],
+    );
+    if (row) {
+      key = {
+        prefix: row.key_prefix,
+        label: row.label,
+        activatedAt: row.activated_at,
+        device: row.device_name || null,
+      };
+    }
+  } catch (e) {
+    if (e.code !== 'ER_NO_SUCH_TABLE') throw e;
+  }
+
+  const status = limit ? limit.status : null;
+  const endsAt = limit && limit.ends_at ? new Date(limit.ends_at) : null;
+
+  // Not linked to a subscription at all, or an override somebody typed: there
+  // is nothing to have expired, so there is nothing to lock.
+  const known = Boolean(limit && limit.source === 'auth' && status);
+
+  let locked = false;
+  let renewBy = null;
+  if (known && status !== 'active') {
+    if (endsAt && Number.isFinite(endsAt.valueOf())) {
+      const deadline = new Date(endsAt.valueOf() + entitlements.GRACE_DAYS * 86400000);
+      if (Date.now() < deadline.valueOf()) renewBy = deadline.toISOString();
+      else locked = lockable;
+    } else {
+      // Lapsed with no end date. Nothing to measure a grace against, so it is
+      // treated as out of grace -- but still only locks a lockable venue.
+      locked = lockable;
+    }
+  }
+
+  return {
+    kind,
+    label: LABELS[kind] || kind,
+    locked,
+    lockable,
+    status,
+    endsAt: endsAt ? endsAt.toISOString() : null,
+    renewBy,
+    limit: limit && limit.seats != null ? Number(limit.seats) : null,
+    key,
+    // The machine this venue's key is registered to, which is the question a
+    // manager actually asks: "which of these is licensed?"
+    device: key ? key.device : null,
+  };
+}
+/**
+ * Everything a device signing in has to satisfy, in one place.
+ *
+ * Both doors into a till (the password form in server.js and Continue with
+ * Vesopa in terminal_vesopa.js) come through here, so the rules cannot drift
+ * apart between them -- which they would, because only one of the two is
+ * usually remembered when a rule changes.
+ *
+ * Order matters. The key is checked first: a machine presenting somebody else's
+ * key is refused before it is given a seat, or a refused sign-in would still
+ * have used up a licence.
+ *
+ * A device that sends no key is not refused. Keys are opt-in per venue -- most
+ * are counted and trusted -- and a venue that has never been issued one must go
+ * on working exactly as it did.
+ */
+async function signInDevice(
+  pool,
+  { office, kind = 'till', deviceId, deviceName, fingerprint, licenceKey, by }
+) {
+  const tillSeats = require('./till_seats');
+
+  if (licenceKey) {
+    const result = await activate(pool, {
+      office,
+      kind,
+      key: licenceKey,
+      fingerprint,
+      deviceId,
+      deviceName,
+      by,
+    });
+    if (!result.ok) {
+      const err = new Error(result.error);
+      err.name = 'LicenceKeyError';
+      err.licenceKey = true;
+      throw err;
+    }
+  }
+
+  return tillSeats.claimSeat(pool, {
+    office,
+    kind,
+    deviceId,
+    deviceName,
+    fingerprint,
+    by,
+  });
+}
+
+/**
+ * Venue-facing and admin routes.
+ *
+ * Setting a limit is the platform admin's (it is what the venue pays for);
+ * seeing the limits and which devices hold them is the venue's.
+ */
+function licenceRoutes({ pool, secret }) {
+  const router = express.Router();
+  const auth = requireAuth(secret);
+
+  const officeOf = async (req) => {
+    const [[row]] = await pool.query('SELECT contact_email FROM offices WHERE id = ?', [
+      req.user.officeId,
+    ]);
+    return row ? row.contact_email : null;
+  };
+
+
+  /**
+   * This device's own licence: the key, the machine, the dates, the lock.
+   *
+   * ONE ENDPOINT FOR ALL FOUR APPS. Every product's credential is a JWT signed
+   * with the same secret and carrying `scope` and `office`, so the product can
+   * be read off the token rather than trusted from the caller. A kiosk cannot
+   * ask about the till's licence by saying it is a till.
+   *
+   * The scope IS the product, with one translation: a till's token says
+   * `terminal` because that is what it has always said.
+   */
+  router.get('/licence/state', async (req, res, next) => {
+    try {
+      const header = req.headers.authorization || '';
+      const raw = header.startsWith('Bearer ') ? header.slice(7) : '';
+      if (!raw) return res.status(401).json({ error: 'This device is not signed in.' });
+
+      let claims;
+      try {
+        claims = jwt.verify(raw, secret);
+      } catch {
+        return res.status(401).json({ error: 'This device needs to be signed in again.' });
+      }
+
+      const kind = SCOPE_KIND[claims.scope];
+      if (!kind || !claims.office) {
+        return res.status(403).json({ error: 'That credential is not a device.' });
+      }
+
+      return res.json(await stateFor(pool, claims.office, kind));
+    } catch (e) {
+      next(e);
+    }
+  });
+  /** This venue's limits, what is in use, and its keys. */
+  router.get('/licences', auth, async (req, res, next) => {
+    try {
+      const office = await officeOf(req);
+      if (!office) return res.status(404).json({ error: 'No venue on this login.' });
+
+      const limits = await limitsFor(pool, office);
+
+      let inUse = {};
+      try {
+        const [rows] = await pool.query(
+          `SELECT kind, COUNT(*) AS n FROM bo_till_seats
+            WHERE office = ? AND released_at IS NULL GROUP BY kind`,
+          [office]
+        );
+        for (const r of rows) inUse[r.kind || 'till'] = Number(r.n);
+      } catch (e) {
+        if (e.code !== 'ER_NO_SUCH_TABLE' && e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+      }
+
+      let keys = [];
+      try {
+        const [rows] = await pool.query(
+          `SELECT id, kind, key_prefix, label, device_name, activated_at, revoked_at
+             FROM bo_licence_keys WHERE office = ? ORDER BY kind, created_at DESC`,
+          [office]
+        );
+        keys = rows;
+      } catch (e) {
+        if (e.code !== 'ER_NO_SUCH_TABLE') throw e;
+      }
+
+      res.json({
+        kinds: KINDS.map((kind) => ({
+          kind,
+          label: LABELS[kind],
+          limit: limits[kind],
+          in_use: inUse[kind] || 0,
+          policy: POLICY[kind],
+        })),
+        keys,
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  return router;
+}
+
+/** The admin's half: set a venue's limits and issue its keys. */
+function adminLicenceRoutes({ pool }) {
+  const router = express.Router();
+
+  const officeEmail = async (officeId) => {
+    const [[row]] = await pool.query('SELECT contact_email FROM offices WHERE id = ?', [officeId]);
+    return row ? row.contact_email : null;
+  };
+
+  /**
+   * Every venue's licences at once — what the platform admin actually needs.
+   *
+   * `/api/licences` is venue-scoped: it answers "what am I entitled to" from the
+   * office in the session. The platform admin has NO office, deliberately --
+   * they are not a venue -- so that route answers 404 for them, which is correct
+   * and useless. This is the other question: what is every venue entitled to,
+   * what is each using, and where is that over or under.
+   *
+   * Read-only. Numbers are changed per venue through licence-limits below, and
+   * -- once the join to auth exists -- upstream in the subscription itself. See
+   * docs/plan-2026-09-13-entitlement-and-admin.md.
+   */
+  router.get('/licences', async (req, res, next) => {
+    try {
+      // The link column arrived with schema_licence_link.sql. An install
+      // that has not run it yet still gets the screen -- every venue simply
+      // shows as unlinked, which is exactly what it is.
+      let offices;
+      try {
+        [offices] = await pool.query(
+          `SELECT id, name, contact_email, status, plan, auth_organisation_id,
+                  licence_lock_enabled
+             FROM offices WHERE demo_of IS NULL ORDER BY name`,
+        );
+      } catch (e) {
+        if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+        [offices] = await pool.query(
+          'SELECT id, name, contact_email, status, plan FROM offices ORDER BY name',
+        );
+      }
+
+      let limits = [];
+      try {
+        const [rows] = await pool.query(
+          `SELECT office, kind, seats, source, status, ends_at
+             FROM bo_licence_limits`,
+        );
+        limits = rows;
+      } catch (e) {
+        if (e.code !== 'ER_NO_SUCH_TABLE') throw e;
+      }
+
+      let inUse = [];
+      try {
+        const [rows] = await pool.query(
+          `SELECT office, COALESCE(kind, 'till') AS kind, COUNT(*) AS n
+             FROM bo_till_seats WHERE released_at IS NULL
+            GROUP BY office, COALESCE(kind, 'till')`,
+        );
+        inUse = rows;
+      } catch (e) {
+        if (e.code !== 'ER_NO_SUCH_TABLE' && e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+      }
+
+      let keys = [];
+      try {
+        const [rows] = await pool.query(
+          `SELECT office, kind, COUNT(*) AS issued,
+                  SUM(activated_at IS NOT NULL) AS activated,
+                  SUM(revoked_at IS NOT NULL) AS revoked
+             FROM bo_licence_keys GROUP BY office, kind`,
+        );
+        keys = rows;
+      } catch (e) {
+        if (e.code !== 'ER_NO_SUCH_TABLE') throw e;
+      }
+
+      const at = (rows, office, kind) =>
+        rows.find((r) => r.office === office && r.kind === kind);
+
+      res.json({
+        kinds: KINDS.map((k) => ({ kind: k, label: LABELS[k] })),
+        venues: offices.map((o) => ({
+          id: o.id,
+          name: o.name,
+          email: o.contact_email,
+          status: o.status,
+          plan: o.plan,
+          auth_organisation_id: o.auth_organisation_id,
+          licence_lock_enabled: Number(o.licence_lock_enabled) === 1,
+          products: KINDS.map((kind) => {
+            const limit = at(limits, o.contact_email, kind);
+            const used = at(inUse, o.contact_email, kind);
+            const key = at(keys, o.contact_email, kind);
+            const seats = limit ? Number(limit.seats) : null;
+            const n = used ? Number(used.n) : 0;
+            return {
+              kind,
+              label: LABELS[kind],
+              limit: seats,
+              in_use: n,
+              // Why the number is what it is. A limit of 0 with no
+              // explanation reads as a mistake; "expired" reads as an
+              // invoice somebody needs to chase.
+              status: limit ? limit.status : null,
+              ends_at: limit ? limit.ends_at : null,
+              // 'auth' came from the subscription; 'override' was typed by a
+              // person and a refresh will not touch it. Worth seeing, so a
+              // favour is never mistaken for what the customer pays for.
+              source: limit ? limit.source : null,
+              // Said here rather than worked out on the page, so the back office
+              // and any future report agree on what "over" means.
+              over: seats != null && n > seats,
+              keys_issued: key ? Number(key.issued) : 0,
+              keys_activated: key ? Number(key.activated) : 0,
+              keys_revoked: key ? Number(key.revoked) : 0,
+            };
+          }),
+        })),
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /** What this venue is limited to now, and its keys — for the admin's form. */
+  router.get('/offices/:id/licence-limits', async (req, res, next) => {
+    try {
+      const office = await officeEmail(Number(req.params.id));
+      if (!office) return res.status(404).json({ error: 'No such venue.' });
+      let keys = [];
+      try {
+        const [rows] = await pool.query(
+          `SELECT id, kind, key_prefix, label, device_name, activated_at, revoked_at
+             FROM bo_licence_keys WHERE office = ? ORDER BY kind, created_at DESC`,
+          [office]
+        );
+        keys = rows;
+      } catch (e) {
+        if (e.code !== 'ER_NO_SUCH_TABLE') throw e;
+      }
+      res.json({ limits: await limitsFor(pool, office), keys, kinds: KINDS, labels: LABELS });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /** How many of each app this venue has paid for. */
+  router.put('/offices/:id/licence-limits', async (req, res, next) => {
+    try {
+      const office = await officeEmail(Number(req.params.id));
+      if (!office) return res.status(404).json({ error: 'No such venue.' });
+      const body = req.body || {};
+      for (const kind of KINDS) {
+        if (!(kind in body)) continue;
+        const raw = body[kind];
+        // A blank box is "no limit", which is a deletion rather than a zero --
+        // zero would mean the venue may run none of that app at all.
+        if (raw === null || raw === '' || raw === undefined) {
+          await pool.execute('DELETE FROM bo_licence_limits WHERE office = ? AND kind = ?', [
+            office,
+            kind,
+          ]);
+          continue;
+        }
+        const seats = Math.max(0, Number(raw) || 0);
+        /*
+         * A NUMBER TYPED BY A PERSON IS AN OVERRIDE, and has to be recorded as
+         * one. Without this the row keeps whatever source it had -- 'auth' for
+         * anything already fetched -- and the next refresh quietly replaces the
+         * number somebody just set, at whatever moment the schedule next runs.
+         * That is the worst possible way to discover this table has two kinds
+         * of row in it.
+         *
+         * The status is cleared with it: an override is not a subscription and
+         * must not keep wearing the subscription's `expired` badge.
+         */
+        await pool.execute(
+          `INSERT INTO bo_licence_limits
+             (office, kind, seats, source, status, ends_at, updated_by)
+           VALUES (?, ?, ?, 'override', NULL, NULL, ?)
+           ON DUPLICATE KEY UPDATE
+             seats      = VALUES(seats),
+             source     = 'override',
+             status     = NULL,
+             ends_at    = NULL,
+             updated_by = VALUES(updated_by)`,
+          [office, kind, seats, req.user?.email || null]
+        );
+      }
+      res.json({ ok: true, limits: await limitsFor(pool, office) });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /**
+   * Issue a key. The only time the key itself exists anywhere but the venue's
+   * hands -- it is hashed on the way in and cannot be read back.
+   */
+  router.post('/offices/:id/licence-keys', async (req, res, next) => {
+    try {
+      const office = await officeEmail(Number(req.params.id));
+      if (!office) return res.status(404).json({ error: 'No such venue.' });
+      const kind = String((req.body || {}).kind || '').toLowerCase();
+      if (!KINDS.includes(kind)) {
+        return res.status(400).json({ error: `Which app? One of: ${KINDS.join(', ')}.` });
+      }
+      const { key, hash, prefix } = newKey(kind);
+      await pool.execute(
+        `INSERT INTO bo_licence_keys (office, kind, key_hash, key_prefix, label, created_by)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [office, kind, hash, prefix, (req.body || {}).label || null, req.user?.email || null]
+      );
+      res.json({
+        key,
+        kind,
+        note: 'Copy this now. It is stored only as a hash and cannot be shown again.',
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /**
+   * Link a venue to the Vesopa organisation that pays for it.
+   *
+   * Until this is set the venue takes the unlinked path -- no limit unless one
+   * was typed here -- which is exactly today's behaviour. So venues can be
+   * linked one at a time, and getting one wrong costs that venue and nobody
+   * else.
+   */
+  router.put('/offices/:id/auth-organisation', async (req, res, next) => {
+    try {
+      const raw = (req.body || {}).organisation_id;
+      const organisationId = raw === '' || raw == null ? null : Number(raw);
+      if (organisationId !== null && (!Number.isInteger(organisationId) || organisationId <= 0)) {
+        return res.status(400).json({ error: 'That is not an organisation id.' });
+      }
+      await pool.execute('UPDATE offices SET auth_organisation_id = ? WHERE id = ?', [
+        organisationId,
+        Number(req.params.id),
+      ]);
+
+      // Fetch straight away, so the person who just linked it can see whether
+      // it worked rather than waiting for a schedule to tell them tomorrow.
+      let refreshed = null;
+      if (organisationId) {
+        const [[office]] = await pool.query('SELECT contact_email FROM offices WHERE id = ?', [
+          Number(req.params.id),
+        ]);
+        if (office) refreshed = await entitlements.refreshOffice(pool, office.contact_email);
+      }
+      res.json({ ok: true, organisation_id: organisationId, refreshed });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+
+  /**
+   * Whether this venue's apps lock when its subscription lapses.
+   *
+   * Off everywhere until somebody decides otherwise, one venue at a time. A
+   * locked product does not open at all and the lock lands on the next config
+   * fetch, so this is a switch worth throwing deliberately rather than by
+   * default.
+   */
+  router.put('/offices/:id/licence-lock', async (req, res, next) => {
+    try {
+      const on = req.body && (req.body.enabled === true || req.body.enabled === 1);
+      await pool.execute('UPDATE offices SET licence_lock_enabled = ? WHERE id = ?', [
+        on ? 1 : 0,
+        Number(req.params.id),
+      ]);
+      res.json({ ok: true, enabled: on });
+    } catch (e) {
+      next(e);
+    }
+  });
+  /** Ask auth again for every linked venue. */
+  router.post('/entitlements/refresh', async (req, res, next) => {
+    try {
+      res.json({ ok: true, ...(await entitlements.refreshAll(pool)) });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /** Take a key back, or free it so it can be activated on new hardware. */
+  router.post('/licence-keys/:id/revoke', async (req, res, next) => {
+    try {
+      await pool.execute(
+        'UPDATE bo_licence_keys SET revoked_at = NOW(), revoked_by = ? WHERE id = ?',
+        [req.user?.email || null, Number(req.params.id)]
+      );
+      res.json({ ok: true });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /**
+   * Move a key to another machine: forget the fingerprint so the next machine
+   * to present it claims it. A deliberate act by a person, which is the point --
+   * a licence that re-bound itself silently would not be bound to anything.
+   */
+  router.post('/licence-keys/:id/rebind', async (req, res, next) => {
+    try {
+      await pool.execute(
+        `UPDATE bo_licence_keys
+            SET device_fingerprint = NULL, device_id = NULL, device_name = NULL,
+                activated_at = NULL, activated_by = NULL
+          WHERE id = ? AND revoked_at IS NULL`,
+        [Number(req.params.id)]
+      );
+      res.json({ ok: true });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  return router;
+}
+
+module.exports = {
+  KINDS,
+  LABELS,
+  POLICY,
+  hashKey,
+  newKey,
+  limitFor,
+  limitsFor,
+  stateFor,
+  activate,
+  signInDevice,
+  licenceRoutes,
+  adminLicenceRoutes,
+};

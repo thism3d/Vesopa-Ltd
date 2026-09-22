@@ -21,6 +21,7 @@
 
 const express = require('express');
 const { requireAuth, requireTerminal } = require('./auth');
+const training = require('./training');
 
 /** Longest basket we will carry. A bill this size is a runaway, not a round. */
 const MAX_PAYLOAD_BYTES = 512 * 1024;
@@ -144,6 +145,17 @@ function terminalRoutes({ pool, broadcast, secret }) {
     const office = req.office;
     const bill = req.body || {};
     if (!bill.id) return res.status(400).json({ error: 'A bill id is required' });
+
+    // A training bill stays on the till that rang it up. Put on the shared plan,
+    // a trainee's practice table would appear on every other till in the room --
+    // and a live clerk could settle it for real.
+    try {
+      if (await training.isTrainingSale(pool, office, bill)) {
+        return res.status(200).json(training.IGNORED);
+      }
+    } catch (e) {
+      return next(e);
+    }
 
     const payload = JSON.stringify(bill.payload ?? {});
     if (Buffer.byteLength(payload, 'utf8') > MAX_PAYLOAD_BYTES) {

@@ -41,6 +41,9 @@ const {
   displayDateTime,
   fileNameFor,
   terminalsInUse,
+  clerksInUse,
+  departmentsOf,
+  GROUPS,
   UNKNOWN_TERMINAL,
 } = require('./reports');
 
@@ -244,8 +247,38 @@ function validateSchedule(body) {
       // instruction, and a till that is off today, or renamed next month, must
       // not make one fail to save.
       terminal: String(body.terminal || '').trim().slice(0, 120) || null,
+      // The report's own filters -- a clerk, a product, a grouping -- kept as
+      // JSON and only the ones this report names. A week-start schedule keeps
+      // no date: "the seven days before this runs" is what a weekly schedule
+      // of a weekly grid means, and runReport works that out from the period.
+      filters: scheduleFilters(body),
     },
   };
+}
+
+/** The filters a schedule keeps: those its report names, minus week_start. */
+function scheduleFilters(body) {
+  const def = REPORTS[body.report_key];
+  const raw = (body.filters && typeof body.filters === 'object') ? body.filters : body;
+  const kept = {};
+  for (const name of (def && def.filters) || []) {
+    if (name === 'week_start') continue;
+    const value = raw[name];
+    if (value === undefined || value === null || String(value).trim() === '') continue;
+    kept[name] = String(value).trim().slice(0, 190);
+  }
+  return Object.keys(kept).length ? JSON.stringify(kept) : null;
+}
+
+/** The stored JSON, or nothing. Never throws: a bad row is a report with no filters. */
+function parseFilters(raw) {
+  if (!raw) return {};
+  try {
+    const v = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return v && typeof v === 'object' ? v : {};
+  } catch {
+    return {};
+  }
 }
 
 const escapeHtml = (text) =>
@@ -439,6 +472,7 @@ async function runSchedule({
       period: schedule.period,
       now: dueAt,
       terminal: schedule.terminal,
+      filters: parseFilters(schedule.filters),
     });
     covered = { from: report.from, to: report.to };
 
@@ -604,6 +638,7 @@ function reportScheduleRoutes({ pool, secret }) {
         ? 'Unknown terminal'
         : row.terminal
       : 'All terminals',
+    filters: parseFilters(row.filters),
     last_run_at: row.last_run_at,
     next_run_at: row.next_run_at,
   });
@@ -616,10 +651,15 @@ function reportScheduleRoutes({ pool, secret }) {
         // The same list the Run a report screen offers, so a manager who has
         // just run a report for Bar 2 can schedule exactly that.
         terminals: await terminalsInUse({ pool, office }),
+        groups: Object.entries(GROUPS).map(([key, label]) => ({ key, label })),
         reports: Object.entries(REPORTS).map(([key, value]) => ({
           key,
           label: value.label,
+          group: value.group,
+          filters: (value.filters || []).filter((f) => f !== 'week_start'),
         })),
+        clerks: await clerksInUse({ pool, office }),
+        departments: await departmentsOf({ pool, office }),
         formats: Object.entries(FORMATS).map(([key, value]) => ({
           key,
           label: value.label,
@@ -667,8 +707,8 @@ function reportScheduleRoutes({ pool, secret }) {
       const [result] = await pool.execute(
         `INSERT INTO bo_report_schedules
            (office, name, description, report_key, format, frequency,
-            run_at_minute, period, recipients, active, next_run_at, terminal)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            run_at_minute, period, recipients, active, next_run_at, terminal, filters)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           office,
           value.name,
@@ -682,6 +722,7 @@ function reportScheduleRoutes({ pool, secret }) {
           value.active,
           next_run_at ? sqlDateTime(next_run_at) : null,
           value.terminal,
+          value.filters,
         ]
       );
       res.status(201).json({ id: result.insertId });
@@ -708,7 +749,7 @@ function reportScheduleRoutes({ pool, secret }) {
         `UPDATE bo_report_schedules
             SET name = ?, description = ?, report_key = ?, format = ?,
                 frequency = ?, run_at_minute = ?, period = ?, recipients = ?,
-                active = ?, next_run_at = ?, terminal = ?
+                active = ?, next_run_at = ?, terminal = ?, filters = ?
           WHERE id = ? AND office = ?`,
         [
           value.name,
@@ -722,6 +763,7 @@ function reportScheduleRoutes({ pool, secret }) {
           value.active,
           next_run_at ? sqlDateTime(next_run_at) : null,
           value.terminal,
+          value.filters,
           req.params.id,
           office,
         ]
@@ -804,6 +846,7 @@ function reportScheduleRoutes({ pool, secret }) {
         report: schedule.report_key,
         period: schedule.period,
         terminal: schedule.terminal,
+        filters: parseFilters(schedule.filters),
       });
 
       const body = await format.render(report);

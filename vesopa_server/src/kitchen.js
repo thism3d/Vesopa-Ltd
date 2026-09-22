@@ -23,6 +23,9 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 
 const { requireAuth, requireTerminal } = require('./auth');
+const training = require('./training');
+const licences = require('./licences');
+const { cleanAllergens, readAllergens } = require('./allergens');
 
 /**
  * The stations a screen may watch.
@@ -99,6 +102,119 @@ function formatStations(list) {
 }
 
 /**
+ * Write one fired ticket: the header, its lines, and a progress row for each
+ * station it is waiting on.
+ *
+ * Shared by the tills' POST /till/kitchen/tickets and by Vesopa Express, so a
+ * kiosk order lands on the board as exactly the ticket a till would have sent.
+ * The caller owns the transaction; this never commits.
+ *
+ * Idempotent by the ticket id the sender minted. Returns { duplicate: true }
+ * when the ticket is already held -- a sender that retries after a dropped
+ * connection re-sends the same id and the kitchen does not cook the order
+ * twice, which matters more here than for a sale: a duplicated sale is a figure
+ * to correct and a duplicated ticket is food.
+ */
+async function recordTicket(conn, ticket) {
+  const lines = Array.isArray(ticket.lines) ? ticket.lines : [];
+
+  // Which stations this ticket is waiting on: the union of its lines'.
+  const stations = new Set();
+  for (const line of lines) {
+    for (const station of parseStations(line.stations)) stations.add(station);
+  }
+
+  const [result] = await conn.execute(
+    `INSERT IGNORE INTO epos_kitchen_tickets
+       (id, office, order_id, ticket_no, kind, table_number, room_name,
+        staff_name, covers, note, placed_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      ticket.id,
+      ticket.office,
+      ticket.order_id || ticket.id,
+      ticket.ticket_no ?? null,
+      ['sale', 'table', 'reprint'].includes(ticket.kind)
+        ? ticket.kind
+        : 'sale',
+      ticket.table_number ?? null,
+      ticket.room_name ?? null,
+      ticket.staff_name ?? null,
+      ticket.covers ?? null,
+      ticket.note ?? null,
+      ticket.placed_at ? new Date(ticket.placed_at) : new Date(),
+    ]
+  );
+
+  if (result.affectedRows === 0) return { duplicate: true, stations: [] };
+
+  // What is in the food, frozen at the moment it is fired.
+  //
+  // A snapshot, unlike the customer menu, which reads the catalogue live. The
+  // board in front of a chef has to keep saying what the plate they are making
+  // contains even if a manager edits the product mid-service, and it has to
+  // keep saying it on a screen that has lost its network.
+  //
+  // Taken from the PLU the sender names. A till on the previous version sends
+  // neither the allergens nor the PLU, and the column stays NULL -- which reads
+  // as "nobody has said", not as "contains nothing".
+  const plus = [
+    ...new Set(lines.map((l) => Number(l.plu_id)).filter((p) => p > 0)),
+  ];
+  const allergensByPlu = new Map();
+  if (plus.length) {
+    const [rows] = await conn.query(
+      'SELECT pluid, allergens FROM bo_products' +
+        ' WHERE email = ? AND pluid IN (' + plus.map(() => '?').join(',') + ')',
+      [ticket.office, ...plus]
+    );
+    for (const r of rows) allergensByPlu.set(r.pluid, r.allergens);
+  }
+
+  let seq = 0;
+  for (const line of lines) {
+    // What the sender said wins over what the catalogue says, because a till
+    // that has already resolved a price-level or a variant knows something this
+    // lookup does not. cleanAllergens drops anything that is not one of the
+    // fourteen rather than refusing the ticket: a mis-typed code must never
+    // stop food reaching a kitchen.
+    const declared = line.allergens !== undefined && line.allergens !== null
+      ? cleanAllergens(line.allergens)
+      : allergensByPlu.get(Number(line.plu_id)) ?? null;
+
+    await conn.execute(
+      `INSERT INTO epos_kitchen_ticket_lines
+         (id, ticket_id, seq, quantity, name, note, stations, is_modifier,
+          allergens)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        line.id || crypto.randomUUID(),
+        ticket.id,
+        seq++,
+        Number(line.quantity) || 1,
+        String(line.name || '').slice(0, 255),
+        line.note ? String(line.note).slice(0, 500) : null,
+        formatStations(line.stations),
+        // A till on the previous version sends nothing here, and every one of
+        // its lines is a dish in its own right -- which is the default.
+        line.is_modifier ? 1 : 0,
+        declared,
+      ]
+    );
+  }
+
+  for (const station of stations) {
+    await conn.execute(
+      `INSERT INTO epos_kitchen_ticket_stations (ticket_id, station, status)
+       VALUES (?, ?, 'open')`,
+      [ticket.id, station]
+    );
+  }
+
+  return { duplicate: false, stations: [...stations] };
+}
+
+/**
  * Assemble tickets, their lines and their per-station progress.
  *
  * Three queries and a stitch rather than one join, because a join would repeat
@@ -120,7 +236,7 @@ async function loadTickets(pool, ids) {
 
   const [lines] = await pool.query(
     `SELECT id, ticket_id, seq, quantity, name, note, stations, made_at,
-            made_by, is_modifier
+            made_by, is_modifier, allergens
        FROM epos_kitchen_ticket_lines
       WHERE ticket_id IN (${holes})
       ORDER BY ticket_id, seq`,
@@ -147,6 +263,12 @@ async function loadTickets(pool, ids) {
       // dish of its own. `seq` already puts it directly under its item.
       isModifier: line.is_modifier === 1,
       stations: parseStations(line.stations),
+      // What is in it, as the catalogue said when the ticket was fired. An
+      // empty list here means nobody has declared anything, not that the dish
+      // is free of the fourteen — `allergensDeclared` is the one that says
+      // which, and the board has to word itself from that, not from a count.
+      allergens: readAllergens(line.allergens),
+      allergensDeclared: line.allergens !== null && line.allergens !== undefined,
       // When this item was crossed off as made, and by whom. Null until it is.
       madeAt: line.made_at,
       madeBy: line.made_by,
@@ -941,6 +1063,32 @@ function kitchenAppRoutes({ pool, broadcast, secret }) {
         [user.id]
       );
 
+      // A kitchen licence seat. Until now only tills were counted, so a venue
+      // paying for one screen could run six. Refused rather than evicted: a
+      // screen that vanished would take the orders being cooked with it.
+      const clampText = (v, n) => (v == null ? null : String(v).trim().slice(0, n) || null);
+      try {
+        await licences.signInDevice(pool, {
+          office,
+          kind: 'kitchen',
+          deviceId: clampText(req.body?.device_id, 64),
+          deviceName: clampText(req.body?.device_name, 120),
+          fingerprint: clampText(req.body?.device_fingerprint, 64),
+          licenceKey: clampText(req.body?.licence_key, 64),
+          by: user.username,
+        });
+      } catch (e) {
+        if (e.name === 'SeatLimitError') {
+          return res.status(409).json({
+            error: e.message,
+            licences: e.limit,
+            seats: (e.seats || []).map((x) => ({ name: x.device_name })),
+          });
+        }
+        if (e.licenceKey) return res.status(403).json({ error: e.message, licence_key: true });
+        throw e;
+      }
+
       res.json({
         token: jwt.sign(
           {
@@ -1016,6 +1164,25 @@ function kitchenAppRoutes({ pool, broadcast, secret }) {
    */
   router.post('/kitchen/verify', kitchen, async (req, res, next) => {
     try {
+      /*
+       * A screen commissioned with a Vesopa account has no typed password to
+       * re-enter, and this route exists to stop a passer-by in a kitchen
+       * rebranding a display.
+       *
+       * Said plainly rather than answered with "that is not the password for
+       * this screen", which would be true and useless: there is no password
+       * for this screen, and the person reading it would try three more times.
+       * Branding is a venue-wide setting and the back office is where every
+       * other one of them already lives.
+       */
+      if (req.kitchen && req.kitchen.via === 'vesopa') {
+        return res.status(403).json({
+          error: 'This screen was set up with a Vesopa account, so it has no '
+            + 'screen password. Change the branding in the back office under '
+            + 'Kitchen screens.',
+        });
+      }
+
       const ok = await passwordMatches(
         req.office,
         req.kitchen.user,
@@ -1282,6 +1449,16 @@ function tillKitchenRoutes({ pool, broadcast, secret }) {
         .json({ error: 'A ticket id and an office are required' });
     }
 
+    // Practice orders are not cooked. A trainee's ticket on the kitchen screen
+    // is food somebody makes for nobody.
+    try {
+      if (await training.isTrainingSale(pool, ticket.office, ticket)) {
+        return res.status(200).json(training.IGNORED);
+      }
+    } catch (e) {
+      return next(e);
+    }
+
     const lines = Array.isArray(ticket.lines) ? ticket.lines : [];
     if (lines.length === 0) {
       // Nothing was routed to a screen. Accepted rather than refused: the till
@@ -1303,62 +1480,14 @@ function tillKitchenRoutes({ pool, broadcast, secret }) {
     try {
       await conn.beginTransaction();
 
-      const [result] = await conn.execute(
-        `INSERT IGNORE INTO epos_kitchen_tickets
-           (id, office, order_id, ticket_no, kind, table_number, room_name,
-            staff_name, covers, note, placed_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          ticket.id,
-          ticket.office,
-          ticket.order_id || ticket.id,
-          ticket.ticket_no ?? null,
-          ['sale', 'table', 'reprint'].includes(ticket.kind)
-            ? ticket.kind
-            : 'sale',
-          ticket.table_number ?? null,
-          ticket.room_name ?? null,
-          ticket.staff_name ?? null,
-          ticket.covers ?? null,
-          ticket.note ?? null,
-          ticket.placed_at ? new Date(ticket.placed_at) : new Date(),
-        ]
-      );
-
-      // Already had it. Roll back rather than adding a second set of lines to
-      // the ticket that is already on the board.
-      if (result.affectedRows === 0) {
+      // The header, the lines and one progress row per station -- written by
+      // recordTicket below, which Vesopa Express calls too. Already had it:
+      // roll back rather than adding a second set of lines to the ticket that
+      // is already on the board.
+      const written = await recordTicket(conn, ticket);
+      if (written.duplicate) {
         await conn.rollback();
         return res.status(200).json({ status: 'duplicate', id: ticket.id });
-      }
-
-      let seq = 0;
-      for (const line of lines) {
-        await conn.execute(
-          `INSERT INTO epos_kitchen_ticket_lines
-             (id, ticket_id, seq, quantity, name, note, stations, is_modifier)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            line.id || crypto.randomUUID(),
-            ticket.id,
-            seq++,
-            Number(line.quantity) || 1,
-            String(line.name || '').slice(0, 255),
-            line.note ? String(line.note).slice(0, 500) : null,
-            formatStations(line.stations),
-            // A till on the previous version sends nothing here, and every one
-            // of its lines is a dish in its own right — which is the default.
-            line.is_modifier ? 1 : 0,
-          ]
-        );
-      }
-
-      for (const station of stations) {
-        await conn.execute(
-          `INSERT INTO epos_kitchen_ticket_stations (ticket_id, station, status)
-           VALUES (?, ?, 'open')`,
-          [ticket.id, station]
-        );
       }
 
       await conn.commit();
@@ -1472,4 +1601,12 @@ module.exports = {
   requireKitchen,
   KP_STATIONS,
   DELIVERY_MODES,
+  // For Vesopa Express, which raises its tickets through the same writer and
+  // routes them with the same station rules.
+  recordTicket,
+  readModes,
+  parseStations,
+  formatStations,
+  // So the back office can say "Grill: printed" rather than "kp1: printed".
+  stationNames,
 };

@@ -78,4 +78,51 @@
 <% }); %>
 
     </div>
+
+<%#
+  What a plan includes, and what is charged on top.
+
+  Under the cards rather than inside them: it is the same for every term, and
+  repeating four bullet points three times makes the cards taller without
+  telling anybody anything the card next to it does not already say.
+
+  The add-ons are here because the commonest question about a per-till price is
+  "what counts as a till" — and the honest answer is that one screen for the
+  customer comes with it and a second one does not.
+%>
+<% if ((typeof PLAN_INCLUDES !== 'undefined' && PLAN_INCLUDES && PLAN_INCLUDES.length)
+       || (typeof ADD_ONS !== 'undefined' && ADD_ONS && ADD_ONS.length)) { %>
+<div class="plan_extras">
+<% if (typeof PLAN_INCLUDES !== 'undefined' && PLAN_INCLUDES && PLAN_INCLUDES.length) { %>
+    <div class="plan_extras_col">
+        <h3 class="plan_extras_title">Every plan includes</h3>
+        <ul class="plan_includes">
+<% PLAN_INCLUDES.forEach(function (line) { %>
+            <li><i class="fa fa-check" aria-hidden="true"></i><%= line %></li>
+<% }); %>
+        </ul>
+    </div>
+<% } %>
+<% if (typeof ADD_ONS !== 'undefined' && ADD_ONS && ADD_ONS.length) { %>
+    <div class="plan_extras_col">
+        <h3 class="plan_extras_title">Add what you need</h3>
+        <ul class="plan_addons">
+<% ADD_ONS.forEach(function (extra) { %>
+            <li>
+                <div class="plan_addon_copy">
+                    <b><%= extra.name %></b>
+                    <span><%= extra.blurb %></span>
+                </div>
+                <div class="plan_addon_price">
+                    <b>+£<%= money(extra.price_per_month) %></b>
+                    <span><%= extra.note %></span>
+                </div>
+            </li>
+<% }); %>
+        </ul>
+        <p class="plan_addon_foot">Added to whichever term you are on, and cancelled the same way.</p>
+    </div>
+<% } %>
+</div>
+<% } %>
 </div>

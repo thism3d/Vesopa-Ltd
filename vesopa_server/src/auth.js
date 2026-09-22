@@ -1,5 +1,6 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const tillSeats = require('./till_seats');
 
 // The default when a caller does not ask for anything else — a working day.
 // /api/login overrides it for "Keep me signed in".
@@ -111,7 +112,7 @@ function issueToken(user, secret, ttl = TOKEN_TTL) {
  * refuses a session token and `requireAuth` refuses this one, so a terminal
  * token left on a shop-floor machine cannot be used to read the back office.
  */
-function issueTerminalToken(user, secret, ttl = TERMINAL_TOKEN_TTL) {
+function issueTerminalToken(user, secret, ttl = TERMINAL_TOKEN_TTL, seatId = null) {
   return jwt.sign(
     {
       scope: 'terminal',
@@ -122,7 +123,9 @@ function issueTerminalToken(user, secret, ttl = TERMINAL_TOKEN_TTL) {
       commissionedBy: user.email,
     },
     secret,
-    { expiresIn: ttl }
+    // The seat this till holds, as the token's own id: it is what lets the
+    // back office sign one till out and count how many are in (till_seats.js).
+    seatId ? { expiresIn: ttl, jwtid: seatId } : { expiresIn: ttl }
   );
 }
 
@@ -167,29 +170,48 @@ function requireAuth(secret) {
  * be reachable by guessing a venue's contact email.
  */
 function requireTerminal(secret) {
-  return (req, res, next) => {
+  return async (req, res, next) => {
     const header = req.headers.authorization || '';
     const token = header.startsWith('Bearer ') ? header.slice(7) : null;
     if (!token) {
       return res.status(401).json({ error: 'This terminal is not commissioned' });
     }
 
+    let claims;
     try {
-      const claims = jwt.verify(token, secret);
-      if (claims.scope !== 'terminal' || !claims.office) {
-        return res.status(401).json({ error: 'Not a terminal token' });
-      }
-      req.terminal = claims;
-      req.office = claims.office;
-      next();
+      claims = jwt.verify(token, secret);
     } catch {
       // Says what to do about it: the fix is to sign this till in again, which
       // is not obvious from "expired".
-      res.status(401).json({
+      return res.status(401).json({
         error:
           'This terminal needs to be signed in again to enable staff sign-on.',
       });
     }
+    if (claims.scope !== 'terminal' || !claims.office) {
+      return res.status(401).json({ error: 'Not a terminal token' });
+    }
+
+    // The till's licence seat. A seat given back -- signed out from the back
+    // office, or superseded by this machine signing in again -- turns the
+    // token away. A lookup that fails lets the till through: a licence count
+    // must never be the thing that stops a venue selling.
+    try {
+      const seat = await tillSeats.seatFor(claims, token);
+      if (seat && seat.released) {
+        return res.status(401).json({
+          error: 'This till was signed out from the back office. Sign it in again to carry on.',
+          signed_out: true,
+        });
+      }
+      if (seat) req.seatId = seat.seatId;
+    } catch (e) {
+      console.warn('[till_seats] could not check a seat:', e.message);
+    }
+
+    req.terminal = claims;
+    req.office = claims.office;
+    next();
   };
 }
 

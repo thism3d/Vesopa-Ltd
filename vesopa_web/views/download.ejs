@@ -1,78 +1,82 @@
 <%- include('partials/header') %>
+<%#
+  Five applications, one system — and the way in.
+
+  This page used to be "Download Vesopa EPOS" with two more apps stuck on
+  underneath as afterthoughts, drawn rather than photographed. Vesopa has five
+  applications in the Microsoft Store now, and this page says so, shows each of
+  them as it actually looks (the Store listing's own screenshots), and puts the
+  free trial where somebody landing here expects it: at the top, one field,
+  Continue.
+
+  THE TRIAL IS AN EMAIL ADDRESS AND NOTHING ELSE. "Try Vesopa EPOS" used to
+  lead to the demo-request form — name, phone, business, a paragraph — which is
+  asking a lot of somebody who only wants to see the till. The address is
+  enough: it gets the Store links and the three steps by email, support gets
+  told, and the page below unlocks to the same three steps. The demo form is
+  still on the home page for the venue that wants a person.
+
+  Only the Microsoft Store is offered, for the reasons in the git history of
+  this file: the Store build is signed and updates itself; a bare installer
+  earns a SmartScreen warning that reads as this site being malicious. No
+  version numbers appear anywhere — the Store always serves the current build.
+%>
+<%
+  const store = {
+    epos:     'https://apps.microsoft.com/detail/9PDMNJXNFZCW',
+    kitchen:  'https://apps.microsoft.com/detail/9P29NN3R5PGS',
+    display:  'https://apps.microsoft.com/detail/9P8JCLQ5M3SQ',
+    express:  'https://apps.microsoft.com/detail/9N5W5VLP2948',
+    loyalty:  'https://apps.microsoft.com/detail/9N6VWPJ25VPH',
+  };
+  const startedEmail = typeof started !== 'undefined' && started ? started : '';
+%>
 
 <div class="device_download_section">
     <div class="device_download_main_body">
         <div class="device_download_left">
-            <%# One platform is offered here on purpose — see the note above
-                the Store badge. The Android build is not published from this
-                page; it is sent to a venue that asks for it. %>
-            <h1 class="downlaod_heading">Download Vesopa EPOS</h1>
-            <p class="download_brief">Optimize your business with an advanced EPOS system for seamless transactions. Installs on Windows in a couple of taps.</p>
+            <p class="kds-eyebrow">Five applications, one system</p>
+            <h1 class="downlaod_heading">Download Vesopa</h1>
+            <p class="download_brief">The till, the kitchen screen, the customer display, the self-order kiosk and your own loyalty app &mdash; five applications in the Microsoft Store, all run from one Back Office. Installs on Windows in a couple of taps and updates itself.</p>
 
-            <div class="downlaod_brief_description">
-                <p class="donwload_brief_desc_item"><i class="fa fa-check"></i> Efficient sales and inventory management</p>
-                <p class="donwload_brief_desc_item"><i class="fa fa-check"></i> Secure payment processing with multi-method support</p>
-                <p class="donwload_brief_desc_item"><i class="fa fa-check"></i> Real-time reporting and analytics for better decision-making</p>
-                <p class="donwload_brief_desc_item"><i class="fa fa-check"></i> Multi-user access with role-based permissions</p>
-                <p class="donwload_brief_desc_item"><i class="fa fa-check"></i> Dedicated customer support for uninterrupted operations</p>
+            <% if (startedEmail) { %>
+            <div class="dl-try dl-try-started" id="try">
+                <p class="dl-try-title"><i class="fa fa-check"></i> You&rsquo;re set &mdash; your 30 days start when you sign in</p>
+                <p class="dl-try-sub">We&rsquo;ve emailed the links and these steps to <b><%= startedEmail %></b>. Support knows you&rsquo;re trying it and will say hello.</p>
+                <ol class="dl-steps">
+                    <li><b>Get Vesopa EPOS from the Microsoft Store</b> &mdash; the button just below. It installs like any Store app.</li>
+                    <li><b>Open it and press Continue with Vesopa.</b> Sign in with this email address; your first 30 days are free, no card needed.</li>
+                    <li><b>Add what your counter needs</b> &mdash; the Kitchen screen, the Customer Display, the Express kiosk &mdash; from the same Store, further down this page.</li>
+                </ol>
             </div>
+            <% } else { %>
+            <div class="dl-try" id="try">
+                <p class="dl-try-title">Start your 30-day free trial</p>
+                <p class="dl-try-sub">Your email address is all we need. You get the Store links and three short steps; no card, no call.</p>
+                <form class="dl-try-form" action="/try" method="post" onsubmit="this.querySelector('button').disabled=true;">
+                    <input class="dl-try-input" name="email" type="email" inputmode="email" autocomplete="email" placeholder="you@yourvenue.co.uk" required>
+                    <button class="dl-try-button" type="submit">Continue <i class="fa fa-arrow-right"></i></button>
+                </form>
+                <p class="dl-try-note">Prefer a person to walk you through it? <a href="/#try-vesopa">Request a demo</a> instead.</p>
+            </div>
+            <% } %>
 
             <div class="dl-platforms">
-                <%#
-                  The Microsoft Store and nothing else — no direct installer,
-                  no Android file, no version number.
-
-                  The unsigned direct installer that used to sit here was removed
-                  deliberately. It carries no Authenticode signature, so Chrome
-                  warned that it "may be dangerous" and SmartScreen showed
-                  "Windows protected your PC" — which reads to a customer as this
-                  site being malicious. The Store build is signed by Microsoft,
-                  shows neither, and updates itself.
-
-                  No version number is printed anywhere on this page either. The
-                  Store always serves the current build, and a number in the page
-                  is a number that goes stale the moment a release ships — a
-                  customer comparing it against what they have installed then
-                  draws the wrong conclusion.
-
-                  The Android build is deliberately not offered here either. It
-                  is a file rather than a store listing, so it lands a customer
-                  in Android's "install blocked" prompt with no signature behind
-                  it — the same problem as the Windows installer, on a platform
-                  where the warning is harder to get past. A venue that needs it
-                  is sent it directly.
-                %>
                 <div class="dl-platform">
-                    <p class="dl-platform-label">Windows</p>
+                    <p class="dl-platform-label">Vesopa EPOS &mdash; the till &middot; Windows</p>
                     <div class="downlaod_brief_buttons_keeper">
-                        <a class="download_brief_store"
-                           href="https://apps.microsoft.com/store/detail/9PDMNJXNFZCW?cid=DevShareMCLPCS"
-                           target="_blank" rel="noopener">
-                            <img class="download_brief_image_windows"
-                                 src="/assets/icons/microsoft_store.png"
-                                 alt="Get Vesopa EPOS from the Microsoft Store">
+                        <a class="download_brief_store" href="<%= store.epos %>" target="_blank" rel="noopener">
+                            <img class="download_brief_image_windows" src="/assets/icons/microsoft_store.png" alt="Get Vesopa EPOS from the Microsoft Store">
                         </a>
                         <p class="dl-apk-note dl-note-good"><i class="fa fa-shield"></i> Installs and updates itself &middot; nothing to configure</p>
                     </div>
                 </div>
-
-<%#
-  Anything else the admin has attached to this page in /admin/files — a macOS
-  build, a beta, a setup guide PDF, a store listing. The Store badge above stays
-  hardcoded because it is what the page is built around and must never silently
-  vanish if a row is deleted; this block is the extension point.
-
-  The version each row carries is held back for the same reason the Windows one
-  is: /admin/files is where a version is edited, not where it is read.
-%>
 <% if (extraFiles && extraFiles.length) { %>
                 <div class="dl-platform dl-platform-extra">
                     <p class="dl-platform-label">More downloads</p>
                     <div class="dl-extra-list">
 <% extraFiles.forEach(function (f) { %>
-                        <a class="dl-extra"
-                           href="<%= f.url %>"
-                           <%= f.kind === 'file' ? 'download' : 'target="_blank" rel="noopener"' %>>
+                        <a class="dl-extra" href="<%= f.url %>" <%= f.kind === 'file' ? 'download' : 'target="_blank" rel="noopener"' %>>
                             <span class="dl-extra-name"><%= f.label || f.title %></span>
                             <span class="dl-extra-meta"><% if (f.size_bytes) { %><%= bytes(f.size_bytes) %><% } %></span>
                         </a>
@@ -81,84 +85,121 @@
                 </div>
 <% } %>
             </div>
-
-            <div class="download_brief_final">
-                <p class="download_free_text">Try <span>30 days</span> free!</p>
-            </div>
         </div>
-
-        <%# demo1 is the dark-theme capture. demo2 (the light one) was a white
-            slab dropped onto a black page. %>
         <div class="device_download_right">
-            <img class="device_platform_specific_image mac_app_screenshot"
-                 src="/assets/demo_screenshots/demo1.jpg"
-                 alt="The Vesopa EPOS till running on Windows">
+            <img class="device_platform_specific_image mac_app_screenshot" src="/assets/app/store/epos-1.jpg" alt="The Vesopa EPOS till: the coffee menu open, a bill building on the left" width="1280" height="720">
         </div>
     </div>
 </div>
 
 <%#
-  Vesopa Kitchen is a second Store listing, not a second platform, so it gets a
-  band of its own rather than a third tile in .dl-platforms — a tile there would
-  read as "Vesopa EPOS for kitchens", which is the wrong idea. It is the screen
-  the till sends its orders to, and on its own it does nothing.
+  One band per application, in the order a venue meets them: the till first,
+  then what the till talks to. Every picture is the Store listing's own
+  screenshot — the same ones a customer sees before they press Install — so
+  the page and the Store never disagree about what the app looks like.
 %>
-<div class="kds-band">
+<%
+  const apps = [
+    {
+      key: 'epos', name: 'Vesopa EPOS', eyebrow: 'The till',
+      lede: 'Counter service, tables and the floor plan, split bills, card payments and a receipt that prints before the customer has put their wallet away. Keeps trading when the internet does not.',
+      points: [
+        ['Fast counter sales', 'a keyed item is on the bill the instant it is pressed, and the pay screen is one tap away.'],
+        ['Tables and the floor', 'open bills by table, move them, merge them, pay together or separately.'],
+        ['Integrated card payments', 'the amount goes to the terminal and the result comes back; nobody retypes anything.'],
+        ['Offline', 'the till keeps taking money when the line goes down and syncs when it is back.'],
+      ],
+      shots: [['epos-2.jpg', 'Taking a card payment on the till'], ['epos-3.jpg', 'The table plan'], ['epos-4.jpg', 'The functions screen']],
+      note: 'One till licence per counter. A customer display is included.',
+    },
+    {
+      key: 'kitchen', name: 'Vesopa Kitchen', eyebrow: 'The kitchen screen',
+      lede: 'The screen that replaces the kitchen printer. Orders arrive the moment they are rung up on the till &mdash; no paper, and no ticket blown off the pass.',
+      points: [
+        ['Tap an item once it is cooked', 'and it rules through. When the last one goes, the ticket takes itself to Completed.'],
+        ['One screen or six', 'grill, fryer and pass each answer for their own items, exactly as their own printers used to.'],
+        ['Keep the printers if you want them', 'every station can be paper, screen or both.'],
+        ['Your name on it', 'your logo, colours and venue name carry onto every kitchen screen.'],
+      ],
+      shots: [['kitchen-1.jpg', 'Open tickets on the pass'], ['kitchen-2.jpg', 'Tickets colour by how long they have waited']],
+      note: 'Works with the Vesopa EPOS tills and Back Office you already have.',
+    },
+    {
+      key: 'display', name: 'Vesopa Customer Display', eyebrow: 'The customer-facing screen',
+      lede: 'The screen your customer reads while you serve them. Every item appears as it is rung up, the total is never in doubt, and between sales it shows whatever you want it to.',
+      points: [
+        ['The bill as it is built', 'each line lands the moment it is keyed, so a customer sees what they are paying for before they pay.'],
+        ['Your own adverts between sales', 'pictures and clips from a folder you choose.'],
+        ['Locked from the till', 'one switch and the screen ignores being touched.'],
+        ['Included', 'one display comes with every Vesopa EPOS till.'],
+      ],
+      shots: [['display-1.jpg', 'The bill as the customer sees it'], ['display-2.jpg', 'Choosing which screen it shows on']],
+      note: 'Pairs with the Vesopa EPOS till on the same counter &mdash; nothing to configure.',
+    },
+    {
+      key: 'express', name: 'Vesopa Express', eyebrow: 'The self-order kiosk',
+      lede: 'Customers order and pay at a screen by the door, in their own time, and the order lands on the till and the kitchen like any other. Skip the queue, upsell the meal, take the card there and then.',
+      points: [
+        ['Order here, skip the queue', 'the menu, the pictures, the sizes and the sides, on a screen anyone can use.'],
+        ['Pays on the spot', 'tap, insert or swipe on the card machine beside it.'],
+        ['One sale, no double keying', 'the order is on the kitchen screen before the customer has sat down.'],
+        ['Commissioned from the till', 'a manager presses Continue with Vesopa on the kiosk and it appears in the Back Office.'],
+      ],
+      shots: [['express-1.jpg', 'The attract screen'], ['express-2.jpg', 'Ordering a meal'], ['express-3.jpg', 'Choosing extras']],
+      note: 'Runs on any Windows touch screen with a card machine beside it.',
+    },
+    {
+      key: 'loyalty', name: 'The Vesopa Kitchen', eyebrow: 'Your own loyalty app, shown as ours',
+      lede: 'This is the loyalty app we publish for a venue, running for our own demonstration restaurant. Yours carries your name, logo and colours, on Google Play, the Microsoft Store and the web at loyalty.vesopa.com/yourvenue.',
+      points: [
+        ['A card on their phone', 'scanned at your Vesopa EPOS till, with points, tiers and the visit history.'],
+        ['News and offers', 'sent as notifications, to the phone and to Windows.'],
+        ['Published for you', 'the store listing, screenshots and updates are done by us, under your venue’s name.'],
+        ['Install this one to see yours', 'everything on it is sample data.'],
+      ],
+      shots: [['loyalty-1.jpg', 'The member’s card and QR code'], ['loyalty-2.jpg', 'Points and membership'], ['loyalty-3.jpg', 'News and offers']],
+      note: 'Plans and prices at <a href="https://loyalty.vesopa.com" target="_blank" rel="noopener">loyalty.vesopa.com</a>.',
+    },
+  ];
+%>
+<% apps.forEach(function (a, i) { %>
+<div class="kds-band dl-app-band<%= i % 2 ? ' dl-app-band-alt' : '' %>" id="<%= a.key %>">
     <div class="kds-band-inner">
         <div class="kds-band-copy">
-            <p class="kds-eyebrow">Also from Vesopa</p>
-            <h2 class="kds-title">Vesopa Kitchen</h2>
-            <p class="kds-lede">The screen that replaces the kitchen printer. Orders arrive the moment they are rung up on the till &mdash; no paper, and no ticket blown off the pass.</p>
-
+            <p class="kds-eyebrow"><%= a.eyebrow %></p>
+            <h2 class="kds-title"><%= a.name %></h2>
+            <p class="kds-lede"><%- a.lede %></p>
             <ul class="kds-points">
-                <li><b>Tap an item once it is cooked</b> and it rules through. When the last one goes, the ticket takes itself to Completed.</li>
-                <li><b>One screen or six.</b> Grill, fryer and pass each answer for their own items, exactly as their own printers used to.</li>
-                <li><b>Keep the printers if you want them.</b> Every station can be paper, screen or both &mdash; a venue that never opens the app prints as it always did.</li>
-                <li><b>Your name on it.</b> Your logo, colours and venue name carry onto every kitchen screen.</li>
+                <% a.points.forEach(function (p) { %><li><b><%= p[0] %>.</b> <%- p[1] %></li><% }); %>
             </ul>
-
             <div class="kds-cta">
-                <a class="download_brief_store"
-                   href="https://apps.microsoft.com/detail/9P29NN3R5PGS"
-                   target="_blank" rel="noopener">
-                    <img class="download_brief_image_windows"
-                         src="/assets/icons/microsoft_store.png"
-                         alt="Get Vesopa Kitchen from the Microsoft Store">
+                <a class="download_brief_store" href="<%= store[a.key] %>" target="_blank" rel="noopener">
+                    <img class="download_brief_image_windows" src="/assets/icons/microsoft_store.png" alt="Get <%= a.name %> from the Microsoft Store">
                 </a>
-                <p class="dl-apk-note dl-note-good"><i class="fa fa-shield"></i> Works with the Vesopa EPOS tills and Back Office you already have</p>
+                <p class="dl-apk-note dl-note-good"><i class="fa fa-shield"></i> <%- a.note %></p>
             </div>
         </div>
-
-        <%# The board, drawn rather than screenshotted: a capture of a real pass
-            is either a customer's order data or an invented one, and this says
-            what the app is in a tenth of the bytes. %>
-        <div class="kds-board" aria-hidden="true">
-            <div class="kds-tabs">
-                <span class="kds-tab is-on">3 Open</span>
-                <span class="kds-tab">Counts</span>
-                <span class="kds-tab">35 Completed</span>
-            </div>
-            <div class="kds-cards">
-                <div class="kds-card">
-                    <div class="kds-card-top">
-                        <span class="kds-where">Table #4</span>
-                        <span class="kds-elapsed">00:41</span>
-                    </div>
-                    <p class="kds-line is-made"><span class="kds-qty">1</span> The Front Row <i class="fa fa-check"></i></p>
-                    <p class="kds-line kds-mod is-made">Extra sausage</p>
-                    <p class="kds-line"><span class="kds-qty">1</span> Poached eggs on toast</p>
-                </div>
-                <div class="kds-card">
-                    <div class="kds-card-top">
-                        <span class="kds-where">Table #3</span>
-                        <span class="kds-elapsed kds-late">06:52</span>
-                    </div>
-                    <p class="kds-line"><span class="kds-qty">1</span> Crispy chicken burger</p>
-                    <p class="kds-line kds-mod">no tomato, no garlic</p>
-                    <p class="kds-line is-made"><span class="kds-qty">1</span> Kids breakfast <i class="fa fa-check"></i></p>
-                </div>
-            </div>
+        <div class="dl-shots">
+            <% a.shots.forEach(function (s, j) { %>
+            <figure class="dl-shot<%= j === 0 ? ' dl-shot-lead' : '' %>">
+                <img src="/assets/app/store/<%= s[0] %>" alt="<%= a.name %>: <%= s[1] %>" loading="lazy">
+                <figcaption><%= s[1] %></figcaption>
+            </figure>
+            <% }); %>
         </div>
     </div>
 </div>
+<% }); %>
+
+<div class="kds-band dl-web-band">
+    <div class="kds-band-inner dl-web-inner">
+        <div class="kds-band-copy">
+            <p class="kds-eyebrow">And on the web</p>
+            <h2 class="kds-title">Nothing to install for the rest</h2>
+            <p class="kds-lede">The <b>Back Office</b> &mdash; products, prices, staff, reports, every till and screen &mdash; runs in the browser at <a href="https://backoffice.vesopaepos.com" target="_blank" rel="noopener">backoffice.vesopaepos.com</a>. The <b>QR menu</b> your tables scan, and the kitchen it orders to, live at <a href="https://menu.vesopa.com" target="_blank" rel="noopener">menu.vesopa.com</a>. Gift vouchers and tickets sell at <a href="https://gift.vesopa.com" target="_blank" rel="noopener">gift.vesopa.com</a>.</p>
+            <p class="kds-lede">One sign-in for all of it: <b>Continue with Vesopa</b>, the same account on every app.</p>
+        </div>
+    </div>
+</div>
+
 <%- include('partials/footer') %>

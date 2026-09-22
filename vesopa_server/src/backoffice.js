@@ -8,6 +8,9 @@ const {
   ensureMemberNumber,
   backfill: backfillMemberNumbers,
 } = require('./member_numbers');
+const { accessGuard } = require('./permissions');
+const { ALLERGENS, cleanAllergens } = require('./allergens');
+const { inviteToVesopa, LIVE: VESOPA_SIGN_IN, ONLY: VESOPA_ONLY } = require('./backoffice_auth');
 
 // Product images. Stored on disk under public/uploads and served statically.
 // Capped and type-checked, so an upload cannot fill the disk or smuggle in a
@@ -37,6 +40,16 @@ const upload = multer({
 function backofficeRoutes({ pool, broadcast, secret }) {
   const router = express.Router();
   const auth = requireAuth(secret);
+
+  /**
+   * Handing somebody a back-office login, or changing what one may do, is
+   * itself a permission.
+   *
+   * A role can only ever subtract, so anyone able to edit users can restore
+   * their own access by taking the role off their own row. Guarding these
+   * routes is what stops the accountant promoting themselves.
+   */
+  const mayEditPeople = accessGuard({ pool, secret })('people.edit');
 
   /**
    * The tenant key. Catalogue rows carry the office's contact email — an
@@ -77,6 +90,43 @@ function backofficeRoutes({ pool, broadcast, secret }) {
    * than in the form.
    */
   const KP_STATIONS = ['kp1', 'kp2', 'kp3', 'kp4', 'kp5', 'kp6'];
+
+  /**
+   * The five extra prices a product can carry. `price` is Price 1.
+   *
+   * Kept as a list rather than spelled out at each call site, because the whole
+   * point of the feature is that all six behave identically and a loop is the
+   * only way to say that once.
+   */
+  const PRICE_LEVELS = ['price_2', 'price_3', 'price_4', 'price_5', 'price_6'];
+
+  /**
+   * A level as it should be stored: a number, or NULL for "not set".
+   *
+   * NULL and 0 are opposite answers and the difference is money. NULL means
+   * "this product has no special price at this level, charge Price 1"; 0 means
+   * "give it away". A blank box in the form is the first of those, so an empty
+   * string must never round to a zero.
+   */
+  /**
+   * The printing category a product belongs to, as a value to store.
+   *
+   * NULL means "no category" — the product prints last on a kitchen ticket,
+   * under no heading, exactly as it did before categories existed. A blank in
+   * the form is that, so an empty string must not become a 0 pointing at a
+   * category that does not exist.
+   */
+  function printCategoryId(value) {
+    if (value === undefined || value === null || value === '') return null;
+    const id = Number(value);
+    return Number.isInteger(id) && id > 0 ? id : null;
+  }
+
+  function priceLevel(value) {
+    if (value === undefined || value === null || value === '') return null;
+    const number = Number(value);
+    return Number.isFinite(number) && number >= 0 ? number : null;
+  }
 
   /**
    * Normalise whatever the form sent into a stored routing string.
@@ -140,7 +190,9 @@ function backofficeRoutes({ pool, broadcast, secret }) {
         `SELECT id, pluid, product_name, department_name, group_name,
                 accounting_code, price, tax_percentage, stock_quantity,
                 low_stock_at, button_position, button_color, printer_routes,
-                print_to_receipt, emoji, image_url
+                print_to_receipt, emoji, image_url, print_category_id,
+                is_modifier, barcode, allergens, renews_membership,
+                ${PRICE_LEVELS.join(', ')}
          FROM bo_products
          WHERE email = ?
          ORDER BY department_name, button_position IS NULL, button_position,
@@ -215,8 +267,11 @@ function backofficeRoutes({ pool, broadcast, secret }) {
            (email, pluid, product_name, department_name, group_name,
             accounting_code, price, tax_percentage, stock_quantity,
             button_position, button_color, printer_route, printer_routes,
-            print_to_receipt, emoji, image_url)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            print_to_receipt, emoji, image_url, print_category_id,
+            is_modifier, barcode, allergens, renews_membership,
+            ${PRICE_LEVELS.join(', ')})
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                 ${PRICE_LEVELS.map(() => '?').join(', ')})`,
         [
           // The office's key, not the individual's: two managers in one shop
           // must add to the same catalogue.
@@ -239,6 +294,15 @@ function backofficeRoutes({ pool, broadcast, secret }) {
           flag(p.print_to_receipt),
           p.emoji || null,
           p.image_url || null,
+          printCategoryId(p.print_category_id),
+          flag(p.is_modifier),
+          barcode(p.barcode),
+          cleanAllergens(p.allergens),
+          // "Set a check box on a product (Renews membership)". Off unless
+          // the form says otherwise: a product that silently renewed a
+          // membership would move somebody's expiry a year for buying a pint.
+          flag(p.renews_membership),
+          ...PRICE_LEVELS.map((level) => priceLevel(p[level])),
         ]
       );
 
@@ -285,7 +349,13 @@ function backofficeRoutes({ pool, broadcast, secret }) {
              button_position = ${keep('button_position')},
              button_color = ${keep('button_color')},
              printer_route = ?, printer_routes = ?, print_to_receipt = ?,
-             emoji = ${keep('emoji')}, image_url = ?
+             emoji = ${keep('emoji')}, image_url = ?,
+             print_category_id = ${keep('print_category_id')},
+             is_modifier = ${keep('is_modifier')},
+             barcode = ${keep('barcode')},
+             allergens = ${keep('allergens')},
+             renews_membership = ${keep('renews_membership')},
+             ${PRICE_LEVELS.map((l) => l + ' = ' + keep(l)).join(', ')}
          WHERE id = ? AND email = ?`,
         [
           p.product_name,
@@ -302,6 +372,30 @@ function backofficeRoutes({ pool, broadcast, secret }) {
           flag(p.print_to_receipt),
           ...kept('emoji', p.emoji || null),
           p.image_url || null,
+          ...kept('print_category_id', printCategoryId(p.print_category_id)),
+          // Only when the caller sent it, same rule as emoji and the price
+          // levels above: an import that knows nothing about modifiers must
+          // not un-flag every one a venue has set.
+          ...kept('is_modifier', flag(p.is_modifier)),
+          ...kept('barcode', barcode(p.barcode)),
+          // Only when the caller sent it, the same rule as barcode and the
+          // price levels: an import that knows nothing about allergens must
+          // not erase what a venue has declared about every product it
+          // touches. Silently dropping a nut warning is the worst thing on
+          // this form.
+          ...kept('allergens', cleanAllergens(p.allergens)),
+          // Only when the caller sent it, the same rule as the rest. An
+          // import or a template that knows nothing about memberships must not
+          // un-flag the product a club renews on — that is a season's
+          // subscriptions quietly stopping working at the counter.
+          ...kept('renews_membership', flag(p.renews_membership)),
+          // Each level only when the caller sent it — the same rule as
+          // button_position and emoji above. An import that knows nothing about
+          // price levels must not strip a venue's happy-hour prices off every
+          // product it touches.
+          ...PRICE_LEVELS.flatMap((level) =>
+            kept(level, priceLevel(p[level]))
+          ),
           req.params.id,
           // Scoped: editing another office's product must be impossible even if
           // its id is guessed.
@@ -458,6 +552,21 @@ function backofficeRoutes({ pool, broadcast, secret }) {
    * venue's print header at sign-in, and this exposes nothing a customer does
    * not already read off their receipt.
    */
+  /**
+   * The fourteen allergens, as a list anything may read.
+   *
+   * Unauthenticated on purpose. It is a list fixed by law, identical for every
+   * venue and carrying nothing about anybody's business — and the two things
+   * that most need it are a kitchen board on a venue's own network and a menu
+   * page a customer opens with no account at all. Putting a token in front of a
+   * public statutory list would be a login prompt protecting nothing.
+   *
+   * Served from src/allergens.js so no surface spells the labels for itself.
+   */
+  router.get('/allergens', (_req, res) => {
+    res.json({ allergens: ALLERGENS });
+  });
+
   router.get('/branding/public', async (req, res, next) => {
     try {
       const office = String(req.query.office || '').trim();
@@ -552,13 +661,64 @@ function backofficeRoutes({ pool, broadcast, secret }) {
 
   const KITCHEN_MODES = ['printer', 'screen', 'both'];
 
+  /**
+   * A product's barcode, or null.
+   *
+   * Trimmed and stripped of everything a scanner would not type. A wedge
+   * scanner sends the code and a Return, and the Return is not part of the
+   * code — a barcode stored with trailing whitespace matches nothing at the
+   * counter and there is no way to see why by looking at it.
+   *
+   * Blank is null and not an empty string, so a second product with no barcode
+   * does not collide with the first under any future unique key, and so
+   * "has a barcode" is a question the database can answer.
+   */
+  function barcode(value) {
+    const code = String(value ?? '').replace(/[^0-9A-Za-z-]/g, '').slice(0, 64);
+    return code || null;
+  }
+
+  /**
+   * Which app may interrupt somebody, and whether it may make a noise.
+   *
+   * Named once and spread into both the whitelist and the defaults, so a
+   * column added here cannot be accepted by the save and then missing from the
+   * read — which is how a switch ends up appearing to reset itself.
+   *
+   * See schema_till_notifications.sql for what each one governs and for the
+   * rule that combines them with each app's local toggle.
+   */
+  const NOTIFY_FIELDS = [
+    'notify_master',
+    'notify_till_dinein_new',
+    'notify_kitchen_dinein_new',
+    'notify_kitchen_ticket_new',
+    'notify_till_sound',
+    'notify_kitchen_sound',
+    'notify_display_enabled',
+  ];
+
   const TILL_FIELDS = [
     'idle_enabled', 'idle_image_url', 'idle_after_sale', 'idle_require_pin',
     'idle_message', 'signoff_seconds', 'change_window_seconds',
     'receipt_auto_print', 'buttons_show_prices', 'font_family',
+    'price_level_names', 'consolidate_lines', 'cash_declaration',
+    // What the screen facing the customer says above their name, and whether
+    // it names them at all. See schema_till_customer_display.sql.
+    'customer_display_greeting', 'customer_display_show_member',
+    ...NOTIFY_FIELDS,
     ...PRINTER_NAME_FIELDS,
     ...KITCHEN_MODE_FIELDS,
   ];
+
+  /** JSON.parse that answers null instead of throwing. */
+  function safeJson(text) {
+    try {
+      return JSON.parse(text);
+    } catch {
+      return null;
+    }
+  }
 
   const TILL_DEFAULTS = {
     idle_enabled: 1,
@@ -573,6 +733,29 @@ function backofficeRoutes({ pool, broadcast, secret }) {
     // that upgrades start printing paper for every sale without being asked.
     // A venue that wants one every time switches it on once.
     receipt_auto_print: 0,
+    // What every till has always done: tap Carling three times and the bill
+    // says "3  Carling". A venue that wants a line each turns it off.
+    consolidate_lines: 1,
+    // Never ask, which is what every till does today. See
+    // schema_till_consolidate.sql for what the other two values mean.
+    cash_declaration: 'off',
+    // Null, not 'Welcome'. An empty greeting means "use the built-in one", so
+    // a venue that clears the box gets the default back rather than being left
+    // with a field it cannot empty. Same rule as the printer names above.
+    customer_display_greeting: null,
+    // On, because a customer display with a greeting and no name on it is a
+    // screen that says "Welcome" to nobody. A venue that would rather not put
+    // a name on a screen the queue can read turns it off.
+    customer_display_show_member: 1,
+    // On, except the customer display — it faces a queue, and the person who
+    // needs to know a QR order has landed is behind the counter.
+    notify_master: 1,
+    notify_till_dinein_new: 1,
+    notify_kitchen_dinein_new: 1,
+    notify_kitchen_ticket_new: 1,
+    notify_till_sound: 1,
+    notify_kitchen_sound: 1,
+    notify_display_enabled: 0,
     buttons_show_prices: 1,
     // Null means the app's own typeface, which is what every till wears today.
     // A venue picks one once and every terminal follows; see src/fonts.js.
@@ -668,8 +851,21 @@ function backofficeRoutes({ pool, broadcast, secret }) {
           if (url && !/^\/(uploads|assets)\//.test(url)) return null;
           return url;
         }
-        if (f === 'receipt_auto_print' || f === 'buttons_show_prices') {
+        if (
+          f === 'receipt_auto_print' ||
+          f === 'buttons_show_prices' ||
+          f === 'consolidate_lines' ||
+          NOTIFY_FIELDS.includes(f)
+        ) {
           return v ? 1 : 0;
+        }
+        // One of three ways of counting the drawer, and nothing else. Anything
+        // unrecognised is 'off' rather than stored: a till reading a value it
+        // does not understand would either invent a way of counting money or
+        // refuse to close the day, and both are worse than not asking.
+        if (f === 'cash_declaration') {
+          const mode = String(v ?? '').trim().toLowerCase();
+          return ['off', 'total', 'count'].includes(mode) ? mode : 'off';
         }
         // A font slug, or null for the app's own. Not checked against the
         // catalogue here for the same reason a button's is not — see
@@ -688,6 +884,26 @@ function backofficeRoutes({ pool, broadcast, secret }) {
         if (f.startsWith('printer_name_')) {
           const name = String(v ?? '').trim().slice(0, 40);
           return name || null;
+        }
+        // What this venue calls Price 2 to Price 6 — "Happy Hour", "Staff",
+        // "Function Room". Stored as JSON keyed by the level, because a till
+        // key labelled "Price 2" tells a clerk nothing.
+        //
+        // Only levels 2-6 are nameable. Price 1 is the price, and a venue that
+        // renamed it would have a product form whose first field agreed with
+        // nothing else in the system.
+        if (f === 'price_level_names') {
+          if (v === null || v === undefined || v === '') return null;
+          const source = typeof v === 'string' ? safeJson(v) : v;
+          if (!source || typeof source !== 'object') return null;
+          const names = {};
+          for (const level of [2, 3, 4, 5, 6]) {
+            const name = String(source[level] ?? source[`${level}`] ?? '')
+              .trim()
+              .slice(0, 40);
+            if (name) names[level] = name;
+          }
+          return Object.keys(names).length ? JSON.stringify(names) : null;
         }
         // Anything unrecognised becomes 'printer'. A back office sent a mode
         // it does not know about must leave the kitchen printing, not leave it
@@ -755,6 +971,24 @@ function backofficeRoutes({ pool, broadcast, secret }) {
     }
   );
 
+  /**
+   * Upload a customer's photograph; returns the URL to store on the customer.
+   *
+   * A route of its own rather than a second caller of `/product-image`, and
+   * that is worth a sentence: they are the same upload today, and they are not
+   * the same *thing*. One is a picture of a burger and the other is a
+   * photograph of a person, which a venue has to be able to find, replace and
+   * delete on request — so the two want to be separable later without a
+   * migration of every URL in the database.
+   */
+  router.post('/customer-photo', auth, (req, res) => {
+    upload.single('image')(req, res, (err) => {
+      if (err) return res.status(400).json({ error: err.message });
+      if (!req.file) return res.status(400).json({ error: 'No file' });
+      res.status(201).json({ url: `/uploads/${req.file.filename}` });
+    });
+  });
+
   // Departments & groups are served by the programming router's CRUD factory
   // (with sort_order, edit and reorder). They used to have read-only handlers
   // here; removed so the fuller routes are not shadowed by mount order.
@@ -791,17 +1025,102 @@ function backofficeRoutes({ pool, broadcast, secret }) {
    */
   router.get(STAFF_PATHS, auth, async (req, res, next) => {
     try {
-      const [rows] = await pool.query(
-        `SELECT id, pluid, clark_name, pin_code, COALESCE(active, 1) AS active
-         FROM bo_clarks WHERE email = ?
-         ORDER BY pluid, clark_name`,
-        [scope(req, await tenantEmail(req))]
+      const email = scope(req, await tenantEmail(req));
+
+      // `permission_group_id` arrives with schema_permissions.sql, and
+      // deploy.sh applies migrations only when asked. Tried and fallen back
+      // from rather than assumed, exactly as `member_no` is above: naming a
+      // column that is not there yet takes the whole staff page down for the
+      // sake of one field nobody has filled in.
+      const WITH_GROUP = `
+        SELECT c.id, c.pluid, c.clark_name, c.pin_code,
+               COALESCE(c.active, 1) AS active,
+               c.permission_group_id,
+               g.name AS permission_group
+          FROM bo_clarks c
+          LEFT JOIN epos_permission_groups g
+                 ON g.id = c.permission_group_id AND g.email = c.email
+         WHERE c.email = ?
+         ORDER BY c.pluid, c.clark_name`;
+
+      // Training accounts (schema_staff_training.sql). Its own step, tried first,
+      // so a database without the column loses only the badge.
+      const WITH_TRAINING = WITH_GROUP.replace(
+        'COALESCE(c.active, 1) AS active,',
+        'COALESCE(c.active, 1) AS active, COALESCE(c.training, 0) AS training,'
       );
-      res.json(rows);
+
+      // The hourly rate (schema_till_events.sql, 1.8.0.0), for the wage
+      // reports. Tried first; a database without it loses only the column.
+      const WITH_RATE = WITH_TRAINING.replace(
+        'COALESCE(c.training, 0) AS training,',
+        'COALESCE(c.training, 0) AS training, c.hourly_rate,'
+      );
+
+      const WITHOUT_GROUP = `
+        SELECT id, pluid, clark_name, pin_code, COALESCE(active, 1) AS active
+          FROM bo_clarks WHERE email = ?
+         ORDER BY pluid, clark_name`;
+
+      const missing = (e) =>
+        e.code === 'ER_BAD_FIELD_ERROR' || e.code === 'ER_NO_SUCH_TABLE';
+      let rows;
+      try {
+        [rows] = await pool.query(WITH_RATE, [email]);
+      } catch (eRate) {
+        if (!missing(eRate)) throw eRate;
+        try {
+          [rows] = await pool.query(WITH_TRAINING, [email]);
+        } catch (e0) {
+          if (!missing(e0)) throw e0;
+          try {
+            [rows] = await pool.query(WITH_GROUP, [email]);
+          } catch (e) {
+            if (!missing(e)) throw e;
+            [rows] = await pool.query(WITHOUT_GROUP, [email]);
+          }
+        }
+      }
+      res.json(rows.map((r) => ({ ...r, training: Number(r.training) === 1 })));
     } catch (e) {
       next(e);
     }
   });
+
+  /**
+   * The permission group a clerk belongs to, as a value to store.
+   *
+   * Null is not "no permissions", it is "as before" — see src/permissions.js.
+   * A blank in the form therefore has to reach the database as NULL and not as
+   * 0, which would be a foreign key to a group that does not exist.
+   */
+  function groupId(body) {
+    const raw = body?.permission_group_id;
+    if (raw === undefined || raw === null || raw === '') return null;
+    const id = Number(raw);
+    return Number.isInteger(id) && id > 0 ? id : null;
+  }
+
+  /**
+   * What a member of staff costs an hour, written after the row is saved.
+   *
+   * Its own statement rather than another branch of the insert's fallback
+   * chain, which is four deep already. Only when the form sent the field, so
+   * an older tab cannot blank a rate; blank means NULL, which the wage
+   * reports read as "no rate set" and say so. A database without the column
+   * loses the rate and nothing else.
+   */
+  async function saveHourlyRate(email, id, body) {
+    if (!body || !('hourly_rate' in body)) return;
+    const raw = body.hourly_rate;
+    const rate = raw === '' || raw === null || raw === undefined ? null : Number(raw);
+    if (rate !== null && (!Number.isFinite(rate) || rate < 0)) return;
+    try {
+      await pool.execute('UPDATE bo_clarks SET hourly_rate = ? WHERE id = ? AND email = ?', [rate, id, email]);
+    } catch (e) {
+      if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+    }
+  }
 
   router.post(STAFF_PATHS, auth, async (req, res, next) => {
     const { clark_name, pin_code, pluid, active } = req.body;
@@ -829,11 +1148,47 @@ function backofficeRoutes({ pool, broadcast, secret }) {
         });
       }
 
-      const [result] = await pool.execute(
-        `INSERT INTO bo_clarks (email, pluid, clark_name, pin_code, active)
-         VALUES (?, ?, ?, ?, ?)`,
-        [email, pluid ?? 0, clark_name, pin_code, active === 0 ? 0 : 1]
-      );
+      const values = [email, pluid ?? 0, clark_name, pin_code, active === 0 ? 0 : 1];
+
+      // A training account is asked for explicitly and never implied: every
+      // other way into this route creates somebody who sells for real.
+      const trainee = req.body.training === true || req.body.training === 1;
+
+      let result;
+      try {
+        [result] = await pool.execute(
+          `INSERT INTO bo_clarks
+             (email, pluid, clark_name, pin_code, active, permission_group_id,
+              training)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [...values, groupId(req.body), trainee ? 1 : 0]
+        );
+      } catch (e0) {
+        if (e0.code !== 'ER_BAD_FIELD_ERROR') throw e0;
+        if (trainee) {
+          // Refused rather than quietly created as a real clerk: a "training"
+          // account that sells for real is the one outcome worse than none.
+          return res.status(503).json({
+            error: 'Training accounts are not available yet on this server.',
+          });
+        }
+        try {
+          [result] = await pool.execute(
+            `INSERT INTO bo_clarks
+               (email, pluid, clark_name, pin_code, active, permission_group_id)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            [...values, groupId(req.body)]
+          );
+        } catch (e) {
+          if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+          [result] = await pool.execute(
+            `INSERT INTO bo_clarks (email, pluid, clark_name, pin_code, active)
+             VALUES (?, ?, ?, ?, ?)`,
+            values
+          );
+        }
+      }
+      await saveHourlyRate(email, result.insertId, req.body);
       broadcast({ type: 'staff.updated' });
       res.status(201).json({ id: result.insertId });
     } catch (e) {
@@ -885,15 +1240,43 @@ function backofficeRoutes({ pool, broadcast, secret }) {
         sets.push('active = ?');
         params.push(active ? 1 : 0);
       }
-      params.push(req.params.id, email);
+      // Only when the form sent it, like the group below: an older tab or the
+      // import must never turn a trainee into a real clerk, or the reverse.
+      if (req.body && 'training' in req.body) {
+        sets.push('training = ?');
+        params.push(req.body.training === true || req.body.training === 1 ? 1 : 0);
+      }
 
-      const [r] = await pool.execute(
-        `UPDATE bo_clarks SET ${sets.join(', ')} WHERE id = ? AND email = ?`,
-        params
-      );
+      // Only when the form sent the field. A caller that does not know about
+      // permission groups — an older browser tab, the import — must not clear
+      // the group off everybody it touches.
+      const setsWithGroup = [...sets];
+      const paramsWithGroup = [...params];
+      if (req.body && 'permission_group_id' in req.body) {
+        setsWithGroup.push('permission_group_id = ?');
+        paramsWithGroup.push(groupId(req.body));
+      }
+
+      params.push(req.params.id, email);
+      paramsWithGroup.push(req.params.id, email);
+
+      let r;
+      try {
+        [r] = await pool.execute(
+          `UPDATE bo_clarks SET ${setsWithGroup.join(', ')} WHERE id = ? AND email = ?`,
+          paramsWithGroup
+        );
+      } catch (e) {
+        if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+        [r] = await pool.execute(
+          `UPDATE bo_clarks SET ${sets.join(', ')} WHERE id = ? AND email = ?`,
+          params
+        );
+      }
       if (r.affectedRows === 0) {
         return res.status(404).json({ error: 'No such staff member' });
       }
+      await saveHourlyRate(email, req.params.id, req.body);
       broadcast({ type: 'staff.updated' });
       res.json({ ok: true });
     } catch (e) {
@@ -935,7 +1318,7 @@ function backofficeRoutes({ pool, broadcast, secret }) {
   router.get('/users', auth, async (req, res, next) => {
     try {
       const admin = req.user.role === 'admin';
-      const [rows] = await pool.query(
+      const withRole =
         // `staff_id` is the till operator this login belongs to, when there is
         // one. Matched on name and not on email, because bo_clarks.email is the
         // OFFICE key -- the tenant column, shared by every clerk in the venue --
@@ -949,6 +1332,7 @@ function backofficeRoutes({ pool, broadcast, secret }) {
         // leaving this alone would 500 the user list for every venue, empty or
         // not. Converting in the query keeps a live ALTER off a shared table.
         `SELECT u.id, u.email, u.name, u.approved, u.role, u.office_id,
+                u.role_id, r.display_name AS role_name,
                 o.name AS office_name,
                 (SELECT c.id FROM bo_clarks c
                   WHERE CONVERT(c.email USING utf8mb4) COLLATE utf8mb4_general_ci
@@ -958,10 +1342,26 @@ function backofficeRoutes({ pool, broadcast, secret }) {
                   ORDER BY c.id LIMIT 1) AS staff_id
          FROM backoffice_users u
          LEFT JOIN offices o ON o.id = u.office_id
+         LEFT JOIN bo_user_roles r ON r.id = u.role_id
          ${admin ? '' : 'WHERE u.office_id = ?'}
-         ORDER BY o.name, u.name`,
-        admin ? [] : [req.user.officeId]
-      );
+         ORDER BY o.name, u.name`;
+
+      // `role_id` arrives with schema_permissions.sql and deploy.sh applies
+      // migrations only when asked, so this is tried and fallen back from
+      // rather than assumed. The user list is how a locked-out manager gets
+      // back in; it must not be the page that breaks on a half-migrated
+      // database.
+      const WITHOUT_ROLE = withRole
+        .replace('u.role_id, r.display_name AS role_name,\n                ', '')
+        .replace('LEFT JOIN bo_user_roles r ON r.id = u.role_id\n         ', '');
+
+      let rows;
+      try {
+        [rows] = await pool.query(withRole, admin ? [] : [req.user.officeId]);
+      } catch (e) {
+        if (e.code !== 'ER_BAD_FIELD_ERROR' && e.code !== 'ER_NO_SUCH_TABLE') throw e;
+        [rows] = await pool.query(WITHOUT_ROLE, admin ? [] : [req.user.officeId]);
+      }
       res.json(rows);
     } catch (e) {
       next(e);
@@ -969,11 +1369,31 @@ function backofficeRoutes({ pool, broadcast, secret }) {
   });
 
   router.post('/users', auth, async (req, res, next) => {
-    const { email, name, password, approved } = req.body || {};
-    if (!email || !name || !password) {
-      return res
-        .status(400)
-        .json({ error: 'Name, email and password are required' });
+    const { email, name, approved } = req.body || {};
+    let { password } = req.body || {};
+
+    if (!email || !name) {
+      return res.status(400).json({ error: 'Name and email are required' });
+    }
+
+    /*
+     * NO PASSWORD IS ASKED FOR WHEN VESOPA IS THE ONLY WAY IN.
+     *
+     * With `VESOPA_AUTH_BACKOFFICE_ONLY` on, the password form is not rendered
+     * and no password can ever be used — so demanding one here means a manager
+     * inventing a secret, typing it twice, and sending it to a colleague over
+     * WhatsApp for a door that is not there. That is not a smaller risk than no
+     * password; it is a real credential in a chat log for nothing.
+     *
+     * The column is NOT NULL and the hash is what stops the row being a way in
+     * if the flag is ever turned back off, so it is filled with random bytes
+     * that are hashed and then thrown away. Nobody knows it, including us.
+     */
+    if (!password) {
+      if (!VESOPA_ONLY) {
+        return res.status(400).json({ error: 'Name, email and password are required' });
+      }
+      password = crypto.randomBytes(32).toString('base64url');
     }
 
     // A non-admin can only add people to their own office — never to someone
@@ -985,18 +1405,149 @@ function backofficeRoutes({ pool, broadcast, secret }) {
 
     try {
       const hash = await bcrypt.hash(password, 12);
-      const [r] = await pool.execute(
-        `INSERT INTO backoffice_users
-           (email, password, name, approved, role, office_id)
-         VALUES (?, ?, ?, ?, 'office', ?)`,
-        [email, hash, name, approved === false ? 'N' : 'Y', officeId]
-      );
+      const values = [email, hash, name, approved === false ? 'N' : 'Y', officeId];
+
+      let r;
+      try {
+        [r] = await pool.execute(
+          `INSERT INTO backoffice_users
+             (email, password, name, approved, role, office_id, role_id)
+           VALUES (?, ?, ?, ?, 'office', ?, ?)`,
+          [...values, await roleFor(req, req.body?.role_id)]
+        );
+      } catch (e) {
+        if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+        [r] = await pool.execute(
+          `INSERT INTO backoffice_users
+             (email, password, name, approved, role, office_id)
+           VALUES (?, ?, ?, ?, 'office', ?)`,
+          values
+        );
+      }
       broadcast({ type: 'users.updated' });
-      res.status(201).json({ id: r.insertId });
+
+      /*
+       * INVITE THEM STRAIGHT AWAY, when Vesopa is how people sign in here.
+       *
+       * A staff row on its own is a person who cannot get in and has not been
+       * told anything — and the manager has no reason to suspect a second step
+       * exists, because from their side they have just added somebody. So the
+       * invitation goes with the row.
+       *
+       * Its failure is REPORTED, NOT THROWN. The user has been created and
+       * that must stand; what an unreachable Vesopa costs is one press of
+       * "Invite through Vesopa" on the row that is now in the list.
+       */
+      let invited = null;
+      if (VESOPA_SIGN_IN) {
+        invited = await inviteToVesopa({
+          email,
+          message: `You have been added to the back office for ${req.user.officeName || 'your venue'}.`,
+        });
+      }
+
+      res.status(201).json({
+        id: r.insertId,
+        invited: invited ? invited.ok : null,
+        invite_error: invited && !invited.ok ? invited.error : undefined,
+      });
     } catch (e) {
       if (e.code === 'ER_DUP_ENTRY') {
         return res.status(409).json({ error: 'That email is already in use' });
       }
+      next(e);
+    }
+  });
+
+  /**
+   * Send — or re-send — the Vesopa invitation for somebody already on the list.
+   *
+   * The row and the invitation are separate things and either can exist without
+   * the other: somebody added before Vesopa sign-in was switched on has a row
+   * and no invitation, and somebody who deleted the email has a row and a dead
+   * one. This is the button for both.
+   *
+   * `mayEditPeople`, the same permission as changing a role. Sending an
+   * invitation decides who may hold an account here, which is the same kind of
+   * decision.
+   */
+  router.post('/users/:id/vesopa-invite', mayEditPeople, async (req, res, next) => {
+    try {
+      if (!VESOPA_SIGN_IN) {
+        return res.status(400).json({ error: 'Vesopa sign-in is not switched on here.' });
+      }
+
+      const [rows] = await pool.execute(
+        'SELECT email, name, office_id, role FROM backoffice_users WHERE id = ?',
+        [req.params.id],
+      );
+      const person = rows[0];
+      if (!person) return res.status(404).json({ error: 'No such user' });
+
+      // The same isolation as every other route here: an office manager acts
+      // on their own office and nobody else's.
+      if (req.user.role !== 'admin' && person.office_id !== req.user.officeId) {
+        return res.status(403).json({ error: 'That user is not in your office' });
+      }
+
+      const result = await inviteToVesopa({
+        email: person.email,
+        message: `You have been added to the back office for ${req.user.officeName || 'your venue'}.`,
+      });
+      if (!result.ok) return res.status(502).json({ error: result.error });
+
+      return res.json({ ok: true, expires_in_days: result.expiresInDays });
+    } catch (e) {
+      return next(e);
+    }
+  });
+
+  /**
+   * The role to store, checked against the caller's own office.
+   *
+   * Null for "no role", which means unrestricted — see src/permissions.js. The
+   * office check is the point: without it a manager of one venue could hand
+   * their user a role belonging to another, and roles are the thing that
+   * decides what the back office will show.
+   */
+  async function roleFor(req, raw) {
+    if (raw === undefined || raw === null || raw === '') return null;
+    const id = Number(raw);
+    if (!Number.isInteger(id) || id <= 0) return null;
+
+    const [[role]] = await pool.query(
+      'SELECT id FROM bo_user_roles WHERE id = ? AND email = ?',
+      [id, await tenantEmail(req)]
+    );
+    return role ? id : null;
+  }
+
+  /**
+   * Give somebody a role, or take it away.
+   *
+   * Separate from the rest of the user record because it is the one field that
+   * changes what a person can reach, and a route that only ever touches it is
+   * one whose guard is obvious.
+   */
+  router.put('/users/:id/role', mayEditPeople, async (req, res, next) => {
+    try {
+      const [[target]] = await pool.query(
+        'SELECT office_id FROM backoffice_users WHERE id = ?',
+        [req.params.id]
+      );
+      if (!target) return res.status(404).json({ error: 'No such user' });
+
+      if (req.user.role !== 'admin' && target.office_id !== req.user.officeId) {
+        return res.status(403).json({ error: 'Not your office' });
+      }
+
+      await pool.execute('UPDATE backoffice_users SET role_id = ? WHERE id = ?', [
+        await roleFor(req, req.body?.role_id),
+        req.params.id,
+      ]);
+      broadcast({ type: 'users.updated' });
+      res.json({ ok: true });
+    } catch (e) {
       next(e);
     }
   });
@@ -1068,39 +1619,52 @@ function backofficeRoutes({ pool, broadcast, secret }) {
 
   // ---- Live trading -------------------------------------------------------
 
-  /** Today's takings, for the dashboard. */
-  router.get('/live', auth, async (_req, res, next) => {
+  /**
+   * Today's takings, for the dashboard.
+   *
+   * Scoped, like everything that reads `epos_orders`. This route once selected
+   * the day's orders with no owner at all, so the dashboard of a venue that had
+   * not yet opened showed whatever every other venue on the platform had taken
+   * that morning.
+   */
+  router.get('/live', auth, async (req, res, next) => {
     try {
+      const office = scope(req, await tenantEmail(req));
       const [[totals]] = await pool.query(
         `SELECT COUNT(*) AS orders,
                 COALESCE(SUM(total_minor), 0) AS gross_minor,
                 COALESCE(SUM(tax_minor), 0)   AS tax_minor
          FROM epos_orders
-         WHERE DATE(closed_at) = CURDATE()`
+         WHERE email = ? AND DATE(closed_at) = CURDATE()`,
+        [office]
       );
       const [recent] = await pool.query(
         `SELECT id, table_number, total_minor, closed_at
          FROM epos_orders
-         WHERE closed_at IS NOT NULL
-         ORDER BY closed_at DESC LIMIT 12`
+         WHERE email = ? AND closed_at IS NOT NULL
+         ORDER BY closed_at DESC LIMIT 12`,
+        [office]
       );
       const [byTender] = await pool.query(
         `SELECT p.method AS label, SUM(p.amount_minor) AS amount_minor
          FROM epos_payments p
          JOIN epos_orders o ON o.id = p.order_id
-         WHERE DATE(o.closed_at) = CURDATE()
+         WHERE o.email = ? AND DATE(o.closed_at) = CURDATE()
          GROUP BY p.method
-         ORDER BY amount_minor DESC`
+         ORDER BY amount_minor DESC`,
+        [office]
       );
       const [byDept] = await pool.query(
         `SELECT COALESCE(pr.department_name, 'Other') AS label,
                 SUM(l.unit_price_minor * l.quantity)  AS amount_minor
          FROM epos_order_lines l
          JOIN epos_orders o  ON o.id = l.order_id
-         LEFT JOIN bo_products pr ON pr.pluid = l.plu_id
-         WHERE DATE(o.closed_at) = CURDATE()
+         LEFT JOIN bo_products pr
+                ON pr.pluid = l.plu_id AND pr.email = o.email
+         WHERE o.email = ? AND DATE(o.closed_at) = CURDATE()
          GROUP BY label
-         ORDER BY amount_minor DESC`
+         ORDER BY amount_minor DESC`,
+        [office]
       );
 
       res.json({ ...totals, recent, by_tender: byTender, by_department: byDept });
@@ -1109,37 +1673,49 @@ function backofficeRoutes({ pool, broadcast, secret }) {
     }
   });
 
-  /** The report breakdowns. Not time-boxed to today — this is the history. */
-  router.get('/reports', auth, async (_req, res, next) => {
+  /**
+   * The report breakdowns. Not time-boxed to today — this is the history.
+   *
+   * Every bucket carries the office, including the two joins. `pluid` and
+   * `pin_code` are unique within an office and not across the platform, so a
+   * join on either alone hands one venue another venue's product, group and
+   * staff names — a leak of the catalogue on top of the leak of the takings.
+   */
+  router.get('/reports', auth, async (req, res, next) => {
     try {
+      const office = scope(req, await tenantEmail(req));
       const bucket = (labelExpr, joinProducts) => `
         SELECT ${labelExpr} AS label,
                SUM(l.unit_price_minor * l.quantity) AS amount_minor
         FROM epos_order_lines l
         JOIN epos_orders o ON o.id = l.order_id
-        ${joinProducts ? 'LEFT JOIN bo_products pr ON pr.pluid = l.plu_id' : ''}
-        WHERE o.closed_at IS NOT NULL
+        ${joinProducts
+          ? 'LEFT JOIN bo_products pr ON pr.pluid = l.plu_id AND pr.email = o.email'
+          : ''}
+        WHERE o.email = ? AND o.closed_at IS NOT NULL
         GROUP BY label
         ORDER BY amount_minor DESC
         LIMIT 12`;
 
       const [groups] = await pool.query(
-        bucket("COALESCE(pr.group_name, 'Ungrouped')", true)
+        bucket("COALESCE(pr.group_name, 'Ungrouped')", true), [office]
       );
       const [departments] = await pool.query(
-        bucket("COALESCE(pr.department_name, 'Other')", true)
+        bucket("COALESCE(pr.department_name, 'Other')", true), [office]
       );
-      const [plu] = await pool.query(bucket('l.name', false));
+      const [plu] = await pool.query(bucket('l.name', false), [office]);
 
       const [clerks] = await pool.query(
         `SELECT COALESCE(c.clark_name, CONCAT('PIN ', o.clerk_pin), 'Unassigned') AS label,
                 SUM(o.total_minor) AS amount_minor
          FROM epos_orders o
-         LEFT JOIN bo_clarks c ON c.pin_code = o.clerk_pin
-         WHERE o.closed_at IS NOT NULL
+         LEFT JOIN bo_clarks c
+                ON c.pin_code = o.clerk_pin AND c.email = o.email
+         WHERE o.email = ? AND o.closed_at IS NOT NULL
          GROUP BY label
          ORDER BY amount_minor DESC
-         LIMIT 12`
+         LIMIT 12`,
+        [office]
       );
 
       res.json({ groups, departments, plu, clerks });
@@ -1167,18 +1743,31 @@ function backofficeRoutes({ pool, broadcast, secret }) {
 
       const params = q ? [email, q, q, q] : [email];
 
-      // `member_no` is added by schema_swipe_cards.sql, and deploy.ps1 applies
-      // the migrations only when it is asked to. So it is tried and fallen back
-      // from rather than assumed: naming a column that is not there yet is an
-      // error, not a degraded response, and it would take this whole page down
-      // for the sake of one extra field.
+      // `member_no` is added by schema_swipe_cards.sql and `photo_url` by
+      // schema_membership.sql, and deploy.ps1 applies the migrations only when
+      // it is asked to. So they are tried and fallen back from rather than
+      // assumed: naming a column that is not there yet is an error, not a
+      // degraded response, and it would take this whole page down for the sake
+      // of two extra fields.
+      //
+      // Narrowed one column at a time rather than dropping straight to the
+      // base set, because the two migrations are independent — a venue can
+      // easily have one and not the other, and an all-or-nothing fallback
+      // would throw away a field it actually has.
+      const ATTEMPTS = [
+        `${columns}, member_no, photo_url`,
+        `${columns}, member_no`,
+        `${columns}, photo_url`,
+        columns,
+      ];
       let rows;
-      try {
-        [rows] = await pool.query(
-          `SELECT ${columns}, member_no ${where}`, params);
-      } catch (e) {
-        if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
-        [rows] = await pool.query(`SELECT ${columns} ${where}`, params);
+      for (const select of ATTEMPTS) {
+        try {
+          [rows] = await pool.query(`SELECT ${select} ${where}`, params);
+          break;
+        } catch (e) {
+          if (e.code !== 'ER_BAD_FIELD_ERROR' || select === columns) throw e;
+        }
       }
       res.json(rows);
     } catch (e) {
@@ -1192,26 +1781,48 @@ function backofficeRoutes({ pool, broadcast, secret }) {
     try {
       const { randomUUID } = require('crypto');
       const id = c.id || randomUUID();
-      await pool.execute(
-        `INSERT INTO epos_customers
-           (id, email_key, name, phone, email, card_number,
-            discount_type, discount_value, points_balance,
-            membership_expiry, notes)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          id,
-          await tenantEmail(req),
-          c.name,
-          c.phone ?? null,
-          c.email ?? null,
-          c.card_number ?? null,
-          c.discount_type ?? 'none',
-          c.discount_value ?? 0,
-          c.points_balance ?? 0,
-          c.membership_expiry || null,
-          c.notes ?? null,
-        ]
-      );
+      const values = [
+        id,
+        await tenantEmail(req),
+        c.name,
+        c.phone ?? null,
+        c.email ?? null,
+        c.card_number ?? null,
+        c.discount_type ?? 'none',
+        c.discount_value ?? 0,
+        c.points_balance ?? 0,
+        c.membership_expiry || null,
+        c.notes ?? null,
+      ];
+      // `photo_url` arrives with schema_membership.sql, and the migrations are
+      // applied only when the deploy is asked to — so it is tried and fallen
+      // back from rather than assumed, exactly as `member_no` is on the list
+      // route above. Saving a customer is not a thing to lose for the sake of
+      // a field nobody has filled in yet.
+      //
+      // An empty string is a real instruction here: it is what the picker
+      // sends when a photograph has been removed, and it has to reach the
+      // database as NULL rather than as ''.
+      try {
+        await pool.execute(
+          `INSERT INTO epos_customers
+             (id, email_key, name, phone, email, card_number,
+              discount_type, discount_value, points_balance,
+              membership_expiry, notes, photo_url)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [...values, c.photo_url || null]
+        );
+      } catch (e) {
+        if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+        await pool.execute(
+          `INSERT INTO epos_customers
+             (id, email_key, name, phone, email, card_number,
+              discount_type, discount_value, points_balance,
+              membership_expiry, notes)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          values
+        );
+      }
       // Every member gets a number, whichever door they came in through. See
       // src/member_numbers.js for why this is not part of issuing a card.
       await ensureMemberNumber(pool, await tenantEmail(req), id);
@@ -1257,29 +1868,108 @@ function backofficeRoutes({ pool, broadcast, secret }) {
     }
   });
 
+  /**
+   * Set one field across a chosen list of customers.
+   *
+   * "Please allow a mass edit of customers so we can set expiry dates easier."
+   * A venue running a membership year renews two hundred people on the same
+   * date, and doing that through the edit form is two hundred modals.
+   *
+   * Deliberately narrow. It writes `membership_expiry` and nothing else: this
+   * is the one field a venue sets on a whole list at once, and every other
+   * column here — a name, a phone number, a points balance — describes one
+   * person and would be a mistake to write across a selection. The shape
+   * (`ids` plus `fields`) matches `PATCH /products/bulk` so a second field can
+   * be added later without changing the contract.
+   *
+   * Ids are UUIDs, not numbers: `epos_customers.id` is CHAR(36). They are
+   * matched as strings and scoped to the office in the same statement, so a
+   * crafted request cannot reach another venue's customers.
+   */
+  router.patch('/customers/bulk', auth, async (req, res, next) => {
+    try {
+      const office = await tenantEmail(req);
+      const ids = [...new Set(
+        (Array.isArray(req.body?.ids) ? req.body.ids : [])
+          .map((v) => String(v).trim())
+          .filter(Boolean)
+      )];
+      if (!ids.length) {
+        return res.status(400).json({ error: 'Choose some customers first.' });
+      }
+      // A cap, so a mistyped request cannot rewrite the whole customer book in
+      // one statement. The page selects what is on screen, which is 200 rows.
+      if (ids.length > 500) {
+        return res.status(400).json({ error: 'Too many customers in one edit.' });
+      }
+
+      const fields = req.body?.fields || {};
+      if (!('membership_expiry' in fields)) {
+        return res.status(400).json({ error: 'Nothing to change.' });
+      }
+
+      // Empty string and null both mean "no expiry", which is how a venue
+      // takes a date off a batch. Anything else has to be a real calendar date
+      // — `2026-02-30` parses in some places and is not a day.
+      const raw = fields.membership_expiry;
+      let expiry = null;
+      if (raw !== null && raw !== undefined && String(raw).trim() !== '') {
+        const text = String(raw).trim().slice(0, 10);
+        const parsed = /^\d{4}-\d{2}-\d{2}$/.test(text) ? new Date(`${text}T00:00:00Z`) : null;
+        if (!parsed || Number.isNaN(parsed.getTime())
+            || parsed.toISOString().slice(0, 10) !== text) {
+          return res.status(400).json({ error: 'That is not a date. Use YYYY-MM-DD.' });
+        }
+        expiry = text;
+      }
+
+      const [r] = await pool.execute(
+        `UPDATE epos_customers SET membership_expiry = ?
+          WHERE email_key = ? AND id IN (${ids.map(() => '?').join(',')})`,
+        [expiry, office, ...ids]
+      );
+
+      broadcast({ type: 'customers.updated' });
+      res.json({ ok: true, updated: r.affectedRows, membership_expiry: expiry });
+    } catch (e) {
+      next(e);
+    }
+  });
+
   router.put('/customers/:id', auth, async (req, res, next) => {
     const c = req.body || {};
     try {
-      const [r] = await pool.execute(
-        `UPDATE epos_customers
-         SET name = ?, phone = ?, email = ?, card_number = ?,
+      const common = [
+        c.name,
+        c.phone ?? null,
+        c.email ?? null,
+        c.card_number ?? null,
+        c.discount_type ?? 'none',
+        c.discount_value ?? 0,
+        c.points_balance ?? 0,
+        c.membership_expiry || null,
+        c.notes ?? null,
+      ];
+      const where = [req.params.id, await tenantEmail(req)];
+      const SETS = `name = ?, phone = ?, email = ?, card_number = ?,
              discount_type = ?, discount_value = ?, points_balance = ?,
-             membership_expiry = ?, notes = ?
-         WHERE id = ? AND email_key = ?`,
-        [
-          c.name,
-          c.phone ?? null,
-          c.email ?? null,
-          c.card_number ?? null,
-          c.discount_type ?? 'none',
-          c.discount_value ?? 0,
-          c.points_balance ?? 0,
-          c.membership_expiry || null,
-          c.notes ?? null,
-          req.params.id,
-          await tenantEmail(req),
-        ]
-      );
+             membership_expiry = ?, notes = ?`;
+
+      // Tried and fallen back from, for the same reason as the insert above.
+      let r;
+      try {
+        [r] = await pool.execute(
+          `UPDATE epos_customers SET ${SETS}, photo_url = ?
+            WHERE id = ? AND email_key = ?`,
+          [...common, c.photo_url || null, ...where]
+        );
+      } catch (e) {
+        if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+        [r] = await pool.execute(
+          `UPDATE epos_customers SET ${SETS} WHERE id = ? AND email_key = ?`,
+          [...common, ...where]
+        );
+      }
       if (r.affectedRows === 0) {
         return res.status(404).json({ error: 'No such customer' });
       }
@@ -1361,15 +2051,16 @@ function backofficeRoutes({ pool, broadcast, secret }) {
     }
   });
 
-  /** Sales history. */
-  router.get('/sales', auth, async (_req, res, next) => {
+  /** Sales history, for this office and no other. */
+  router.get('/sales', auth, async (req, res, next) => {
     try {
       const [rows] = await pool.query(
         `SELECT id, table_number, tax_minor, total_minor, closed_at
          FROM epos_orders
-         WHERE closed_at IS NOT NULL
+         WHERE email = ? AND closed_at IS NOT NULL
          ORDER BY closed_at DESC
-         LIMIT 100`
+         LIMIT 100`,
+        [scope(req, await tenantEmail(req))]
       );
       res.json(rows);
     } catch (e) {

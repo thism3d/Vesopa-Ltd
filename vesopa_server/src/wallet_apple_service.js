@@ -10,6 +10,7 @@ const QR = require('./qr');
 const P = require('./wallet_apple_push');
 const { appleWebServiceRoutes } = require('./wallet_apple_webservice');
 const { PAGE_FOR, pageLink } = require('./wallet_pages');
+const walletLog = require('./wallet_log');
 
 /**
  * Apple Wallet, beside Google Wallet rather than instead of it.
@@ -61,6 +62,14 @@ function appleWalletRoutes({ pool, secret, core }) {
 
   const { readBrand, readProgramBrand, loadSubject, shortLink } = core;
 
+  /*
+   * Keep the log from growing for ever.
+   *
+   * A timer rather than cron: the shared server's crontab belongs to the owner
+   * and is not ours to edit. It is unref'd, so it never holds a shutdown open.
+   */
+  walletLog.startPruning(pool);
+
   /**
    * Build one `.pkpass`, and remember the serial it was built with.
    *
@@ -69,7 +78,8 @@ function appleWalletRoutes({ pool, secret, core }) {
    * a second card and they end up with two. It is generated on the first issue
    * and read back on every one after that.
    */
-  async function build(office, kind, subjectId) {
+  async function build(office, kind, subjectId, req = null) {
+    const startedAt = Date.now();
     if (!G.PASS_TYPES[kind]) {
       throw Object.assign(new Error(`Unknown pass kind "${kind}"`), { status: 400 });
     }
@@ -183,7 +193,45 @@ function appleWalletRoutes({ pool, secret, core }) {
       ]
     );
 
+    /*
+     * The build, written down.
+     *
+     * Not awaited: signing already shells out to openssl, and the customer
+     * waiting at the counter should not also wait for a log row. See
+     * wallet_log.js — every failure in there is swallowed for the same reason.
+     */
+    walletLog.record(pool, {
+      office,
+      event: 'built',
+      kind,
+      subjectId: String(subjectId),
+      serial: built.serial,
+      bytes: built.bytes ? built.bytes.length : null,
+      ms: Date.now() - startedAt,
+      detail: built.passTypeIdentifier,
+      req,
+    });
+
     return { ...built, subject, brand, id };
+  }
+
+  /**
+   * Note that a pass could NOT be built.
+   *
+   * The failures matter more than the successes here: "that card could not be
+   * issued" is what the customer sees, and without this the reason existed for
+   * one HTTP response and then was gone.
+   */
+  function recordFailure(office, kind, subjectId, error, req) {
+    walletLog.record(pool, {
+      office,
+      event: 'error',
+      kind,
+      subjectId: subjectId === undefined ? null : String(subjectId),
+      detail: error && error.message,
+      ok: false,
+      req,
+    });
   }
 
   /** Send a built pass as a download. */
@@ -277,9 +325,19 @@ function appleWalletRoutes({ pool, secret, core }) {
     }
 
     try {
-      const built = await build(claims.office, claims.kind, claims.sub);
+      const built = await build(claims.office, claims.kind, claims.sub, req);
+      walletLog.record(pool, {
+        office: claims.office,
+        event: 'downloaded',
+        kind: claims.kind,
+        subjectId: String(claims.sub),
+        serial: built.serial,
+        bytes: built.bytes ? built.bytes.length : null,
+        req,
+      });
       return serve(res, claims.kind, built);
     } catch (e) {
+      recordFailure(claims.office, claims.kind, claims.sub, e, req);
       return res
         .status(e.status === 404 ? 404 : 502)
         .type('html')
@@ -293,10 +351,21 @@ function appleWalletRoutes({ pool, secret, core }) {
       const built = await build(
         String(req.params.office),
         String(req.params.kind),
-        String(req.params.subjectId)
+        String(req.params.subjectId),
+        req
       );
+      walletLog.record(pool, {
+        office: String(req.params.office),
+        event: 'downloaded',
+        kind: String(req.params.kind),
+        subjectId: String(req.params.subjectId),
+        serial: built.serial,
+        bytes: built.bytes ? built.bytes.length : null,
+        req,
+      });
       return serve(res, String(req.params.kind), built);
     } catch (e) {
+      recordFailure(String(req.params.office), String(req.params.kind), req.params.subjectId, e, req);
       return res
         .status(e.status || 502)
         .type('html')
@@ -320,6 +389,106 @@ function appleWalletRoutes({ pool, secret, core }) {
     }
     return req.user.email;
   }
+
+  /**
+   * The wallet's history for this venue.
+   *
+   * Every card built, every phone that registered, every push and every reason
+   * one failed — in the order it happened. Before this existed, the answer to
+   * "the customer says their card never updated" was a `last_error` column
+   * holding the most recent failure and nothing at all about the ones before
+   * it, plus Apple's own complaint lines going to a log file on the server that
+   * no venue can read.
+   *
+   * SCOPED TO THE CALLER'S OFFICE, always. The office is taken from the signed
+   * token, never from a query parameter: a venue asking for another venue's
+   * wallet history is a venue reading another venue's customer list.
+   */
+  router.get('/api/wallet/apple/events', auth, async (req, res, next) => {
+    try {
+      const office = await tenantEmail(req);
+
+      const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 500);
+      const where = ['office = ?'];
+      const params = [office];
+
+      // Narrowing, all optional. `serial` is the one support actually uses:
+      // it is printed on the pass and is what a customer can read out.
+      if (req.query.serial) {
+        where.push('serial_number = ?');
+        params.push(String(req.query.serial).slice(0, 64));
+      }
+      if (req.query.kind) {
+        where.push('kind = ?');
+        params.push(String(req.query.kind).slice(0, 16));
+      }
+      if (req.query.event) {
+        where.push('event = ?');
+        params.push(String(req.query.event).slice(0, 32));
+      }
+      // `?trouble=1` — only what went wrong, which is what somebody opening
+      // this screen at all is nearly always looking for.
+      if (String(req.query.trouble || '') === '1') {
+        where.push('ok = 0');
+      }
+
+      const [rows] = await pool.query(
+        `SELECT id, event, kind, subject_id, serial_number, device_id,
+                detail, bytes, ms, ok, user_agent, created_at
+           FROM epos_wallet_events
+          WHERE ${where.join(' AND ')}
+          ORDER BY id DESC
+          LIMIT ${limit}`,
+        params,
+      );
+
+      /*
+       * A summary of the last week beside the rows.
+       *
+       * The rows answer "what happened"; this answers "is it working" — and
+       * they are different questions. A screen of successful builds looks
+       * healthy until you notice none of them were ever downloaded.
+       */
+      const [[summary]] = await pool.query(
+        `SELECT SUM(event = 'built')         AS built,
+                SUM(event = 'downloaded')    AS downloaded,
+                SUM(event = 'registered')    AS registered,
+                SUM(event = 'unregistered')  AS unregistered,
+                SUM(event = 'refreshed')     AS refreshed,
+                SUM(event = 'pushed')        AS pushed,
+                SUM(event = 'push_failed')   AS push_failed,
+                SUM(event = 'device_log')    AS device_log,
+                SUM(ok = 0)                  AS failures,
+                AVG(NULLIF(ms, 0))           AS avg_build_ms
+           FROM epos_wallet_events
+          WHERE office = ? AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)`,
+        [office],
+      );
+
+      res.json({
+        events: rows,
+        summary: {
+          // Every count as a number. SUM() over an empty range returns null,
+          // and a screen that prints "null cards built" is worse than one that
+          // prints zero.
+          built: Number(summary.built || 0),
+          downloaded: Number(summary.downloaded || 0),
+          registered: Number(summary.registered || 0),
+          unregistered: Number(summary.unregistered || 0),
+          refreshed: Number(summary.refreshed || 0),
+          pushed: Number(summary.pushed || 0),
+          push_failed: Number(summary.push_failed || 0),
+          device_log: Number(summary.device_log || 0),
+          failures: Number(summary.failures || 0),
+          avg_build_ms: summary.avg_build_ms ? Math.round(summary.avg_build_ms) : null,
+          days: 7,
+        },
+        retain_days: walletLog.RETAIN_DAYS,
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
 
   /**
    * Whether Apple passes can be issued from this deployment, and what is

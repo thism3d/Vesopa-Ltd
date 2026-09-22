@@ -13,6 +13,43 @@ function programmingRoutes({ pool, broadcast, secret }) {
   const auth = requireAuth(secret);
 
   /**
+   * The office's contact email, which is the tenant key the catalogue and
+   * trading tables inherited from the PHP schema. Resolved per request rather
+   * than taken from the token, because the token carries the *user's* email and
+   * two managers in one shop must reach the same rows.
+   */
+  async function tenantEmail(req) {
+    if (req.user.officeId) {
+      const [[office]] = await pool.query(
+        'SELECT contact_email FROM offices WHERE id = ?',
+        [req.user.officeId]
+      );
+      if (office) return office.contact_email;
+    }
+    return req.user.email;
+  }
+
+  /**
+   * The office whose trading a report request may read.
+   *
+   * Every report below filters on this. They did not, once — `/sales-explorer`,
+   * `/till-report` and `/bill-report` selected from `epos_orders` with nothing
+   * but `closed_at IS NOT NULL`, so a venue that had never rung up a sale
+   * opened its Till Report and read somebody else's takings, bill by bill. Two
+   * of the three were even written `async (_req, ...)`: the request was not
+   * consulted, which is what let it go unnoticed.
+   *
+   * The platform admin is pinned to whichever office they name, or to their own
+   * address — which owns no trading rows — rather than being handed every
+   * office's bills in one undifferentiated list.
+   */
+  async function reportScope(req) {
+    return req.user.role === 'admin' && req.query.office_email
+      ? req.query.office_email
+      : await tenantEmail(req);
+  }
+
+  /**
    * Small CRUD factory — these tables are all shaped the same way.
    *
    * `sortable` tables carry a `sort_order` column the back office can drag to
@@ -23,26 +60,36 @@ function programmingRoutes({ pool, broadcast, secret }) {
     sortable = true,
     tenantColumn = null,
     tenantBy = 'officeId',
+    // A read-only expression added to the list query and nothing else — not an
+    // editable column, so the INSERT and UPDATE never see it. Mix & Match uses
+    // it for the count of products in a deal, which lives in a second table
+    // and which the list has to show: a deal with none never fires, and that
+    // is exactly the state a venue needs to be able to spot from the list.
+    extraSelect = null,
+    /*
+     * A last look at one column before it is written, or null.
+     *
+     * The factory writes whatever the form sent, which is right for a name and
+     * a price and wrong for a column whose value means something elsewhere in
+     * the system. `bo_error_reasons.applies_to` is the case in hand: it is a
+     * free VARCHAR, the till asks for a list BY that value, and a typo would
+     * create a reason that belongs to an action nothing ever asks for. It
+     * would be saved, listed in the back office, and simply never appear on a
+     * till — which is a fault nobody can see from either end.
+     *
+     * Deliberately one hook rather than per-column validators: this is the
+     * only table that has needed it, and a validation framework in a
+     * forty-line factory would be more machinery than the problem.
+     *
+     * Answers `{ body }` or `{ error }` rather than a body that might carry an
+     * `error` key of its own. A sentinel field would work for this table and
+     * break silently on the first table that has a column called `error`,
+     * which is the kind of trap that is only found by writing it.
+     */
+    clean = null,
   } = {}) {
     const orderBy = sortable ? 'sort_order, id' : 'id';
     const selectCols = sortable ? [...columns, 'sort_order'] : columns;
-
-    /**
-     * The office's contact email, which is the tenant key the catalogue tables
-     * inherited from the PHP schema. Resolved per request rather than taken
-     * from the token, because the token carries the *user's* email and two
-     * managers in one shop must reach the same rows.
-     */
-    async function tenantEmail(req) {
-      if (req.user.officeId) {
-        const [[office]] = await pool.query(
-          'SELECT contact_email FROM offices WHERE id = ?',
-          [req.user.officeId]
-        );
-        if (office) return office.contact_email;
-      }
-      return req.user.email;
-    }
 
     /**
      * The value this request's rows are owned by, or null when the table is
@@ -69,7 +116,8 @@ function programmingRoutes({ pool, broadcast, secret }) {
       try {
         const { sql, params } = await scope(req);
         const [rows] = await pool.query(
-          `SELECT id, ${selectCols.join(', ')} FROM ${table}
+          `SELECT id, ${selectCols.join(', ')}${extraSelect ? `, ${extraSelect}` : ''}
+             FROM ${table}
            WHERE 1 = 1${sql} ORDER BY ${orderBy}`,
           params
         );
@@ -87,14 +135,30 @@ function programmingRoutes({ pool, broadcast, secret }) {
     if (sortable) {
       router.put(`/${path}/reorder`, auth, async (req, res, next) => {
         const order = Array.isArray(req.body.order) ? req.body.order : [];
+        // Scoped like every other write here, and it was the one that was not.
+        // `WHERE id = ?` on its own accepted any id from any signed-in office,
+        // so one venue could hand this another venue's rows and rewrite the
+        // order their kitchen tickets print in. It answered 200 while doing it.
+        const { sql, params } = await scope(req);
         const conn = await pool.getConnection();
         try {
           await conn.beginTransaction();
+          let moved = 0;
           for (let i = 0; i < order.length; i++) {
-            await conn.execute(
-              `UPDATE ${table} SET sort_order = ? WHERE id = ?`,
-              [i + 1, order[i]]
+            const [r] = await conn.execute(
+              `UPDATE ${table} SET sort_order = ? WHERE id = ?${sql}`,
+              [i + 1, order[i], ...params]
             );
+            moved += r.affectedRows;
+          }
+          // An id that belongs to somebody else now matches nothing rather than
+          // moving their row, and a caller that sent one is told so instead of
+          // being quietly given a 200 for work that did not happen.
+          if (moved !== order.length) {
+            await conn.rollback();
+            return res
+              .status(404)
+              .json({ error: 'Some of those rows are not yours to reorder.' });
           }
           await conn.commit();
           if (event) broadcast({ type: event });
@@ -114,7 +178,9 @@ function programmingRoutes({ pool, broadcast, secret }) {
         // sort_order 0 would jump a brand-new deal above everything already
         // ordered.
         const insertCols = [...columns];
-        const values = columns.map((c) => req.body[c] ?? null);
+        const checked = clean ? clean(req.body) : { body: req.body };
+        if (checked.error) return res.status(400).json({ error: checked.error });
+        const values = columns.map((c) => checked.body[c] ?? null);
 
         // Stamp the owning office. Without this a voucher was created with a
         // NULL office_id, and the till's lookup joins through that column — so
@@ -158,7 +224,9 @@ function programmingRoutes({ pool, broadcast, secret }) {
 
     router.put(`/${path}/:id`, auth, async (req, res, next) => {
       try {
-        const values = columns.map((c) => req.body[c] ?? null);
+        const checked = clean ? clean(req.body) : { body: req.body };
+        if (checked.error) return res.status(400).json({ error: checked.error });
+        const values = columns.map((c) => checked.body[c] ?? null);
         const { sql, params } = await scope(req);
         const [r] = await pool.execute(
           `UPDATE ${table} SET ${columns.map((c) => `${c} = ?`).join(', ')}
@@ -193,9 +261,33 @@ function programmingRoutes({ pool, broadcast, secret }) {
 
   // `sort_order` is added automatically by the factory (both column list and
   // ordering), so it is never listed here.
-  crud('tax', 'bo_tax_rates', ['name', 'percentage', 'is_default'], 'programming.updated');
-  crud('finalise-keys', 'bo_finalise_keys', ['name', 'kind', 'opens_drawer'], 'programming.updated');
-  crud('error-reasons', 'bo_error_reasons', ['reason', 'applies_to'], 'programming.updated');
+  // All three carry `office_id` and none of them was told so, which meant the
+  // factory scoped nothing: `WHERE 1 = 1` on the list, `WHERE id = ?` on the
+  // update and the delete. A venue created that morning opened Tax and read
+  // three rates it had never entered, and could have deleted another venue's
+  // Cash key. Tenanted now, like everything else here.
+  crud('tax', 'bo_tax_rates', ['name', 'percentage', 'is_default'], 'programming.updated', { tenantColumn: 'office_id' });
+  crud('finalise-keys', 'bo_finalise_keys', ['name', 'kind', 'opens_drawer'], 'programming.updated', { tenantColumn: 'office_id' });
+  /*
+   * Five actions, and a reason belongs to exactly one of them.
+   *
+   * "Can we have reasons for No Sale, Refunds, Voids and Cancel." Cancel and
+   * no_sale are new here; void, refund and discount are what the form already
+   * offered. The whitelist matters because the till fetches a list BY this
+   * value — `/till/error-reasons?applies_to=no_sale` — so a row saved with a
+   * misspelt action is a reason that exists, lists, and never reaches a till.
+   */
+  const REASON_ACTIONS = ['void', 'cancel', 'refund', 'no_sale', 'discount', 'expense', 'wastage'];
+  crud('error-reasons', 'bo_error_reasons', ['reason', 'applies_to'], 'programming.updated', {
+    tenantColumn: 'office_id',
+    clean: (body) => {
+      const action = String(body.applies_to || 'void');
+      if (!REASON_ACTIONS.includes(action)) {
+        return { error: `An error reason applies to one of: ${REASON_ACTIONS.join(', ')}.` };
+      }
+      return { body: { ...body, applies_to: action } };
+    },
+  });
   // Every column the voucher editor shows has to be listed here, or it is
   // silently dropped on save: the factory builds its INSERT and UPDATE from
   // this list alone. It was the six original columns while the form offered
@@ -210,7 +302,141 @@ function programmingRoutes({ pool, broadcast, secret }) {
     'free_product_pluid', 'button_label', 'button_colour', 'button_size',
     'icon',
   ], 'programming.updated', { tenantColumn: 'office_id' });
-  crud('mix-match', 'bo_mix_match', ['name', 'trigger_qty', 'deal_price_minor', 'active'], 'programming.updated');
+  crud('mix-match', 'bo_mix_match', ['name', 'trigger_qty', 'deal_price_minor', 'active'], 'programming.updated', {
+    tenantColumn: 'office_id',
+    extraSelect: `(SELECT COUNT(*) FROM bo_mix_match_products mp
+                    WHERE mp.mix_match_id = bo_mix_match.id) AS product_count`,
+  });
+
+  // ---- Which products a Mix & Match deal applies to ------------------------
+  //
+  // "Mix & Match instead of using PLU numbers can this be set to select
+  // products from a drop down list with a search function."
+  //
+  // Worth being precise about what was there before, because the ask reads as
+  // a change to something that worked: `bo_mix_match_products` has existed
+  // since schema_layout.sql and the till sync has always read it
+  // (`src/server.js`, the deals block), but **nothing in the back office has
+  // ever written it**. There was no PLU box to be replaced — the rows on the
+  // live database were entered by hand. These two routes are the first write
+  // path this table has had.
+  //
+  // The deal is tenanted on `office_id` and the catalogue on `email`, which is
+  // the split the rest of this file lives with. Both are resolved, and a PLU
+  // that does not belong to this venue's catalogue is dropped rather than
+  // stored: `bo_mix_match_products` has no office column of its own, so what
+  // stops one venue's deal naming another's product is this check.
+
+  /** The office id a programming request belongs to, or null for an admin. */
+  async function dealOfficeId(req) {
+    return req.user.role === 'admin' ? null : (req.user.officeId ?? null);
+  }
+
+  /** The deal, if this request is allowed to see it. */
+  async function findDeal(req, id) {
+    const officeId = await dealOfficeId(req);
+    const [[deal]] = await pool.query(
+      `SELECT id FROM bo_mix_match WHERE id = ?${officeId == null ? '' : ' AND office_id = ?'}`,
+      officeId == null ? [id] : [id, officeId]
+    );
+    return deal || null;
+  }
+
+  /**
+   * The products in a deal, with enough to draw them.
+   *
+   * Left-joined on the catalogue, so a PLU whose product has since been
+   * deleted still comes back — as a row with no name. A deal quietly losing a
+   * line because somebody retired a product is exactly the sort of thing a
+   * venue finds out about at the till, and a picker that shows "PLU 412 —
+   * no longer in the catalogue" lets them fix it.
+   */
+  router.get('/mix-match/:id/products', auth, async (req, res, next) => {
+    try {
+      if (!(await findDeal(req, req.params.id))) {
+        return res.status(404).json({ error: 'No such deal' });
+      }
+      const email = await tenantEmail(req);
+      const [rows] = await pool.query(
+        `SELECT m.plu_id, p.product_name, p.price, p.department_name
+           FROM bo_mix_match_products m
+           LEFT JOIN bo_products p ON p.pluid = m.plu_id AND p.email = ?
+          WHERE m.mix_match_id = ?
+          ORDER BY p.product_name IS NULL, p.product_name, m.plu_id`,
+        [email, req.params.id]
+      );
+      res.json(rows);
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /**
+   * Replace a deal's product list.
+   *
+   * Replace rather than add-and-remove: the picker holds the whole list on
+   * screen and sends what it ends up with, so there is nothing for the two
+   * sides to disagree about. Done inside a transaction, because the moment
+   * between the DELETE and the INSERT is a moment when a till syncing would
+   * read a deal with no products in it and stop honouring it mid-service.
+   */
+  router.put('/mix-match/:id/products', auth, async (req, res, next) => {
+    const conn = await pool.getConnection();
+    try {
+      if (!(await findDeal(req, req.params.id))) {
+        conn.release();
+        return res.status(404).json({ error: 'No such deal' });
+      }
+      if (!Array.isArray(req.body?.plu_ids)) {
+        conn.release();
+        return res.status(400).json({ error: 'plu_ids must be a list.' });
+      }
+
+      const wanted = [...new Set(
+        req.body.plu_ids.map((v) => Number(v)).filter(Number.isFinite)
+      )];
+
+      // Only PLUs this venue actually sells. An id that is not in the
+      // catalogue is dropped and reported back rather than refused outright:
+      // the common cause is a product retired since the deal was set up, and
+      // refusing the whole save would leave the operator unable to remove it.
+      let allowed = [];
+      if (wanted.length) {
+        const email = await tenantEmail(req);
+        const [rows] = await conn.query(
+          `SELECT DISTINCT pluid FROM bo_products
+            WHERE email = ? AND pluid IN (${wanted.map(() => '?').join(',')})`,
+          [email, ...wanted]
+        );
+        allowed = rows.map((r) => Number(r.pluid));
+      }
+
+      await conn.beginTransaction();
+      await conn.execute(
+        'DELETE FROM bo_mix_match_products WHERE mix_match_id = ?',
+        [req.params.id]
+      );
+      for (const plu of allowed) {
+        await conn.execute(
+          'INSERT INTO bo_mix_match_products (mix_match_id, plu_id) VALUES (?, ?)',
+          [req.params.id, plu]
+        );
+      }
+      await conn.commit();
+
+      broadcast({ type: 'programming.updated' });
+      res.json({
+        ok: true,
+        stored: allowed.length,
+        dropped: wanted.filter((p) => !allowed.includes(p)),
+      });
+    } catch (e) {
+      try { await conn.rollback(); } catch { /* the connection is going back anyway */ }
+      next(e);
+    } finally {
+      conn.release();
+    }
+  });
   // Tenanted on `email`, not `office_id`: these two tables carry the office's
   // contact email as their owner, inherited from the PHP schema, and it is NOT
   // NULL on both. Running them untenanted meant every office read every other
@@ -218,6 +444,10 @@ function programmingRoutes({ pool, broadcast, secret }) {
   // "can't be null" a manager hit when they gave a category a button image.
   crud('departments', 'bo_product_departments', ['department_name', 'group_name', 'accounting_code', 'emoji', 'image_url', 'button_color'], 'catalogue.updated', { tenantColumn: 'email', tenantBy: 'email' });
   crud('groups', 'bo_product_groups', ['group_name', 'accounting_code'], 'catalogue.updated', { tenantColumn: 'email', tenantBy: 'email' });
+  // Printing categories: the order a kitchen ticket comes out in. Dragged
+  // rather than numbered, which is what `sortable` gives for free — a venue
+  // reorders Breakfast, Mains, Desserts by moving the rows.
+  crud('print-categories', 'bo_print_categories', ['name'], 'catalogue.updated', { tenantColumn: 'email', tenantBy: 'email' });
 
   // ---- Floor plan ---------------------------------------------------------
 
@@ -255,6 +485,113 @@ function programmingRoutes({ pool, broadcast, secret }) {
     return null;
   }
 
+  /**
+   * A room's outline, validated into something both designers can trust.
+   *
+   * The back office draws L-shapes, T-shapes and the odd bay window by dropping
+   * points; the till renders the same polygon. Neither may be handed a shape it
+   * cannot draw, so anything that is not a run of at least three finite points
+   * becomes null — which both ends already understand as "a plain rectangle",
+   * the behaviour every existing room has.
+   *
+   * Stored as compact JSON rather than as the object it arrived as: this string
+   * goes into a TEXT column and comes back out to two different clients, and a
+   * shape that round-trips differently on each is a shape that drifts.
+   */
+  /**
+   * A colour written by a colour picker, or null.
+   *
+   * Six hex digits with a hash, which is exactly what `input[type=color]`
+   * produces and exactly what goes back into CSS. Anything else is refused
+   * rather than corrected: this value is interpolated into a style attribute on
+   * a page other people read, and a "colour" that is really a string of CSS is
+   * a way of styling somebody else's screen.
+   *
+   * Empty means "no colour of its own" — the theme's, which is what every room
+   * and every table had before there was a picker at all.
+   */
+  function colourOf(raw) {
+    if (raw == null || raw === '') return null;
+    const text = String(raw).trim();
+    return /^#[0-9a-fA-F]{6}$/.test(text) ? text.toUpperCase() : null;
+  }
+
+  function outlineOf(raw) {
+    if (raw == null || raw === '') return null;
+    let points = raw;
+    if (typeof raw === 'string') {
+      try {
+        points = JSON.parse(raw);
+      } catch {
+        return null;
+      }
+    }
+    if (!Array.isArray(points) || points.length < 3) return null;
+
+    const clean = [];
+    for (const point of points) {
+      if (!Array.isArray(point) || point.length < 2) return null;
+      const x = Number(point[0]);
+      const y = Number(point[1]);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+      // Clamped to the grid the designer works in. A point at -4 or at 900 is a
+      // dragging accident, and a room extending off the plan cannot be dragged
+      // back because its handle is off the plan too.
+      clean.push([
+        Math.max(0, Math.min(200, Math.round(x))),
+        Math.max(0, Math.min(200, Math.round(y))),
+      ]);
+    }
+    // A shape with more than a couple of hundred corners is not a room.
+    return clean.length > 200 ? null : JSON.stringify(clean);
+  }
+
+  /**
+   * A table's public address: 32 hex characters, minted once.
+   *
+   * Random rather than a counter or a hash of the table number, because this is
+   * printed on a card that sits in a public room. A predictable one would let
+   * anybody in the building order onto any table by editing a URL — including
+   * a table they are not sitting at, and including one nobody has sat at all
+   * evening.
+   */
+  function newPublicId() {
+    return require('crypto').randomUUID().replace(/-/g, '');
+  }
+
+  /**
+   * Whether a table name is already taken in this venue.
+   *
+   * The venue asked for it plainly: one table name cannot be another table name
+   * in the same kitchen. Enforced here rather than by a unique index, because
+   * the index would have to cover a nullable `office_id` — and MySQL does not
+   * treat NULLs as equal, which is exactly how the duplicate table *numbers*
+   * got in before schema_fix_table_uq.sql. Doing it in code also lets the
+   * manager be told which room the other one is in, which an index cannot.
+   *
+   * Compared trimmed and case-insensitively: "Booth 3" and "booth 3 " are the
+   * same table to everybody except a database.
+   */
+  async function nameClash(officeId, name, exceptId) {
+    const clean = (name == null ? '' : String(name)).trim();
+    if (!clean || officeId == null) return null;
+
+    const [[row]] = await pool.query(
+      'SELECT t.id, r.name AS room' +
+        '  FROM floor_tables t' +
+        '  LEFT JOIN floor_rooms r ON r.id = t.room_id' +
+        ' WHERE t.office_id = ?' +
+        '   AND LOWER(TRIM(t.name)) = LOWER(?)' +
+        (exceptId == null ? '' : ' AND t.id <> ?') +
+        ' LIMIT 1',
+      exceptId == null ? [officeId, clean] : [officeId, clean, exceptId]
+    );
+    if (!row) return null;
+    return row.room
+      ? 'There is already a table called "' + clean + '" in ' + row.room + '.'
+      : 'There is already a table called "' + clean + '" here.';
+  }
+
   /** The whole plan: rooms with their tables. Read by the designer and by the till. */
   router.get('/floor', auth, async (req, res, next) => {
     try {
@@ -265,13 +602,15 @@ function programmingRoutes({ pool, broadcast, secret }) {
       const params = officeId == null ? [] : [officeId];
 
       const [rooms] = await pool.query(
-        `SELECT id, name, sort_order FROM floor_rooms${where}
+        `SELECT id, name, sort_order, outline, cols, \`rows\`,
+                floor_colour, wall_colour
+         FROM floor_rooms${where}
          ORDER BY sort_order, id`,
         params
       );
       const [tables] = await pool.query(
-        `SELECT id, room_id, table_number, label, pos_x, pos_y,
-                width, height, shape, seats
+        `SELECT id, room_id, table_number, label, name, public_id, qr_enabled,
+                pos_x, pos_y, width, height, shape, seats, colour
          FROM floor_tables${where} ORDER BY table_number`,
         params
       );
@@ -296,12 +635,152 @@ function programmingRoutes({ pool, broadcast, secret }) {
         });
       }
       const [r] = await pool.execute(
-        'INSERT INTO floor_rooms (office_id, name, sort_order) VALUES (?, ?, ?)',
-        [officeId, req.body.name, req.body.sort_order ?? 0]
+        `INSERT INTO floor_rooms (office_id, name, sort_order, outline, cols, \`rows\`)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          officeId,
+          req.body.name,
+          req.body.sort_order ?? 0,
+          outlineOf(req.body.outline),
+          Number(req.body.cols) || 12,
+          Number(req.body.rows) || 8,
+        ]
       );
       broadcast({ type: 'floor.updated' });
       res.status(201).json({ id: r.insertId });
     } catch (e) {
+      next(e);
+    }
+  });
+
+  /**
+   * Rename a room, or redraw its outline.
+   *
+   * Separate from the table drag: a room's shape changes when somebody puts a
+   * wall in, which is a deliberate act, and folding it into the handler that
+   * fires on every drag would mean a dropped table could reshape the room.
+   */
+  router.put('/floor/rooms/:id', auth, async (req, res, next) => {
+    try {
+      const officeId = await floorOfficeId(req);
+      const sets = [];
+      const params = [];
+      if (req.body.name !== undefined) {
+        sets.push('name = ?');
+        params.push(String(req.body.name).trim());
+      }
+      if (req.body.outline !== undefined) {
+        sets.push('outline = ?');
+        params.push(outlineOf(req.body.outline));
+      }
+      if (req.body.cols !== undefined) {
+        sets.push('cols = ?');
+        params.push(Math.max(4, Math.min(60, Number(req.body.cols) || 12)));
+      }
+      if (req.body.rows !== undefined) {
+        sets.push('`rows` = ?');
+        params.push(Math.max(4, Math.min(60, Number(req.body.rows) || 8)));
+      }
+      if (req.body.sort_order !== undefined) {
+        sets.push('sort_order = ?');
+        params.push(Number(req.body.sort_order) || 0);
+      }
+      for (const field of ['floor_colour', 'wall_colour']) {
+        if (req.body[field] === undefined) continue;
+        sets.push(field + ' = ?');
+        params.push(colourOf(req.body[field]));
+      }
+      if (!sets.length) return res.json({ ok: true, changed: 0 });
+
+      const [r] = await pool.execute(
+        'UPDATE floor_rooms SET ' + sets.join(', ') + ' WHERE id = ?' +
+          (officeId == null ? '' : ' AND office_id = ?'),
+        officeId == null
+          ? [...params, req.params.id]
+          : [...params, req.params.id, officeId]
+      );
+      if (!r.affectedRows) {
+        return res.status(404).json({ error: 'Room not found.' });
+      }
+      broadcast({ type: 'floor.updated' });
+      res.json({ ok: true, changed: r.affectedRows });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /**
+   * Rename one table, renumber it, or turn its QR code off.
+   *
+   * The name is checked against the whole venue before it is written — see
+   * [nameClash] — so a manager renaming Table 4 to "Window" is told which room
+   * the other Window is in rather than being allowed to create the ambiguity.
+   */
+  router.put('/floor/tables/:id', auth, async (req, res, next) => {
+    try {
+      const officeId = await floorOfficeId(req);
+      const [[table]] = await pool.query(
+        'SELECT id, office_id FROM floor_tables WHERE id = ?',
+        [req.params.id]
+      );
+      if (!table) return res.status(404).json({ error: 'Table not found.' });
+      if (officeId != null && table.office_id !== officeId) {
+        return res.status(403).json({ error: 'That table is not yours.' });
+      }
+
+      if (req.body.name !== undefined) {
+        const clash = await nameClash(table.office_id, req.body.name, table.id);
+        if (clash) return res.status(409).json({ error: clash });
+      }
+
+      const sets = [];
+      const params = [];
+      const changes = [
+        ['name', req.body.name === undefined
+          ? undefined
+          : (String(req.body.name).trim() || null)],
+        ['label', req.body.label],
+        ['table_number', req.body.table_number],
+        ['seats', req.body.seats],
+        ['qr_enabled', req.body.qr_enabled === undefined
+          ? undefined
+          : (req.body.qr_enabled ? 1 : 0)],
+        // Shape and size are laid out in the designer rather than typed, and
+        // until now only position came back from it — so a table dropped from
+        // the palette as a six-seat round was saved as the default rectangle
+        // the moment anything else about it was edited.
+        ['shape', req.body.shape === undefined
+          ? undefined
+          : (req.body.shape === 'circle' ? 'circle' : 'rect')],
+        ['width', req.body.width === undefined
+          ? undefined
+          : Math.max(1, Math.min(20, Number(req.body.width) || 2))],
+        ['height', req.body.height === undefined
+          ? undefined
+          : Math.max(1, Math.min(20, Number(req.body.height) || 2))],
+        ['colour', req.body.colour === undefined
+          ? undefined
+          : colourOf(req.body.colour)],
+      ];
+      for (const [field, value] of changes) {
+        if (value === undefined) continue;
+        sets.push(field + ' = ?');
+        params.push(value);
+      }
+      if (!sets.length) return res.json({ ok: true, changed: 0 });
+
+      const [r] = await pool.execute(
+        'UPDATE floor_tables SET ' + sets.join(', ') + ' WHERE id = ?',
+        [...params, table.id]
+      );
+      broadcast({ type: 'floor.updated' });
+      res.json({ ok: true, changed: r.affectedRows });
+    } catch (e) {
+      if (e.code === 'ER_DUP_ENTRY') {
+        return res.status(409).json({
+          error: 'Another table already has that number in this room.',
+        });
+      }
       next(e);
     }
   });
@@ -348,16 +827,30 @@ function programmingRoutes({ pool, broadcast, secret }) {
         return res.status(403).json({ error: 'That room is not yours.' });
       }
 
+      // A name has to be unique across the whole venue, not merely within the
+      // room. The customer-facing menu says "Table 12" and a runner carries
+      // food to it; two tables answering to that name in one building is a
+      // plate going to the wrong people, and the rooms they are in does not
+      // help anybody holding it.
+      const clash = await nameClash(officeId, t.name, null);
+      if (clash) return res.status(409).json({ error: clash });
+
       const [r] = await pool.execute(
         `INSERT INTO floor_tables
-           (office_id, room_id, table_number, label, pos_x, pos_y, width,
-            height, shape, seats)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (office_id, room_id, table_number, label, name, public_id,
+            qr_enabled, pos_x, pos_y, width, height, shape, seats)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           officeId,
           t.room_id,
           t.table_number,
           t.label ?? null,
+          (t.name ?? '').trim() || null,
+          // Minted here and never again. See schema_dinein.sql: this is the
+          // address printed on the card that sits on the table, so it must not
+          // change when the table is renamed, renumbered or moved rooms.
+          newPublicId(),
+          t.qr_enabled === false ? 0 : 1,
           t.pos_x ?? 0,
           t.pos_y ?? 0,
           t.width ?? 2,
@@ -386,6 +879,35 @@ function programmingRoutes({ pool, broadcast, secret }) {
   router.put('/floor/tables', auth, async (req, res, next) => {
     const tables = req.body.tables || [];
     const officeId = await floorOfficeId(req);
+
+    // The venue-wide name rule holds here too.
+    //
+    // This route is the designer's Save, and it carries names now — so without
+    // this a manager could do through a drag exactly what PUT /floor/tables/:id
+    // refuses: two tables answering to "Window" in one building, and a plate
+    // going to the wrong people. Checked before the transaction opens, so a
+    // clash costs nothing and reports the name that clashed.
+    //
+    // Both halves are needed: against the database, for the tables not in this
+    // payload, and against the payload itself, for two rows renamed in the same
+    // save — which the database cannot see because neither is written yet.
+    const seen = new Map();
+    for (const t of tables) {
+      if (t.name === undefined) continue;
+      const clean = String(t.name || '').trim();
+      if (!clean) continue;
+      const key = clean.toLowerCase();
+      if (seen.has(key)) {
+        return res.status(409).json({
+          error: 'Two tables in this layout are both called "' + clean + '".',
+        });
+      }
+      seen.set(key, t.id);
+
+      const clash = await nameClash(officeId, clean, t.id);
+      if (clash) return res.status(409).json({ error: clash });
+    }
+
     const conn = await pool.getConnection();
     try {
       await conn.beginTransaction();
@@ -395,11 +917,24 @@ function programmingRoutes({ pool, broadcast, secret }) {
         await conn.execute(
           `UPDATE floor_tables
            SET pos_x = ?, pos_y = ?, width = ?, height = ?,
-               shape = ?, seats = ?, label = ?, room_id = ?
+               shape = ?, seats = ?, label = ?, room_id = ?,
+               name = COALESCE(?, name),
+               qr_enabled = COALESCE(?, qr_enabled),
+               colour = ?
            WHERE id = ?${officeId == null ? '' : ' AND office_id = ?'}`,
           [
             t.pos_x, t.pos_y, t.width, t.height,
-            t.shape, t.seats, t.label ?? null, t.room_id, t.id,
+            t.shape, t.seats, t.label ?? null, t.room_id,
+            // COALESCE rather than a plain assignment: this route is the
+            // designer's drag handler, and a drag that omitted the name must
+            // not blank it. Only a payload that actually carries one changes it.
+            t.name === undefined ? null : (String(t.name).trim() || null),
+            t.qr_enabled === undefined ? null : (t.qr_enabled ? 1 : 0),
+            // Plainly assigned, not coalesced: null here means "no colour of
+            // its own", which is a real choice somebody makes by clearing the
+            // picker, and COALESCE would make that choice impossible to save.
+            colourOf(t.colour),
+            t.id,
             ...(officeId == null ? [] : [officeId]),
           ]
         );
@@ -459,8 +994,9 @@ function programmingRoutes({ pool, broadcast, secret }) {
   router.get('/sales-explorer', auth, async (req, res, next) => {
     const { from, to, department } = req.query;
     try {
-      const where = ['o.closed_at IS NOT NULL'];
-      const params = [];
+      const office = await reportScope(req);
+      const where = ['o.email = ?', 'o.closed_at IS NOT NULL'];
+      const params = [office];
       if (from) { where.push('DATE(o.closed_at) >= ?'); params.push(from); }
       if (to) { where.push('DATE(o.closed_at) <= ?'); params.push(to); }
       if (department) { where.push('pr.department_name = ?'); params.push(department); }
@@ -479,7 +1015,8 @@ function programmingRoutes({ pool, broadcast, secret }) {
                 (l.unit_price_minor * l.quantity) AS line_total_minor
          FROM epos_order_lines l
          JOIN epos_orders o ON o.id = l.order_id
-         LEFT JOIN bo_products pr ON pr.pluid = l.plu_id
+         LEFT JOIN bo_products pr
+                ON pr.pluid = l.plu_id AND pr.email = o.email
          WHERE ${where.join(' AND ')}
          ORDER BY o.closed_at DESC, l.id DESC
          LIMIT ${limit} OFFSET ${offset}`,
@@ -495,8 +1032,9 @@ function programmingRoutes({ pool, broadcast, secret }) {
   });
 
   /** Till report: a Z/X style summary per trading day. */
-  router.get('/till-report', auth, async (_req, res, next) => {
+  router.get('/till-report', auth, async (req, res, next) => {
     try {
+      const office = await reportScope(req);
       const [rows] = await pool.query(
         `SELECT DATE(o.closed_at)              AS day,
                 COUNT(*)                       AS orders,
@@ -504,10 +1042,11 @@ function programmingRoutes({ pool, broadcast, secret }) {
                 SUM(o.tax_minor)               AS tax_minor,
                 SUM(o.discount_minor)          AS discount_minor
          FROM epos_orders o
-         WHERE o.closed_at IS NOT NULL
+         WHERE o.email = ? AND o.closed_at IS NOT NULL
          GROUP BY day
          ORDER BY day DESC
-         LIMIT 60`
+         LIMIT 60`,
+        [office]
       );
       res.json(rows);
     } catch (e) {
@@ -529,6 +1068,7 @@ function programmingRoutes({ pool, broadcast, secret }) {
    */
   router.get('/bill-report', auth, async (req, res, next) => {
     try {
+      const office = await reportScope(req);
       const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 200);
       const offset = Math.max(Number(req.query.offset) || 0, 0);
 
@@ -538,14 +1078,15 @@ function programmingRoutes({ pool, broadcast, secret }) {
                 GROUP_CONCAT(DISTINCT p.method) AS methods
          FROM epos_orders o
          LEFT JOIN epos_payments p ON p.order_id = o.id
-         WHERE o.closed_at IS NOT NULL
+         WHERE o.email = ? AND o.closed_at IS NOT NULL
          GROUP BY o.id
          -- closed_at alone is not unique: a busy counter settles several bills
          -- in the same second, and LIMIT/OFFSET over an order that is only
          -- partly defined shows one of them twice and another never. The id
          -- breaks the tie.
          ORDER BY o.closed_at DESC, o.id DESC
-         LIMIT ${limit} OFFSET ${offset}`
+         LIMIT ${limit} OFFSET ${offset}`,
+        [office]
       );
       res.json(rows);
     } catch (e) {

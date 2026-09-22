@@ -151,6 +151,11 @@ app.use((req, res, next) => {
   // PRICING_PLANS is the keyed-by-term map the checkout page still indexes into.
   res.locals.PLANS = planList();
   res.locals.PRICING_PLANS = pricingPlans();
+  // What every plan includes, and the per-month lines that attach on top of
+  // whichever term a venue is on. Not plans: nobody buys a term of them, and
+  // putting them in web_plans would land them in the checkout's period picker.
+  res.locals.PLAN_INCLUDES = config.PLAN_INCLUDES;
+  res.locals.ADD_ONS = config.ADD_ONS;
   res.locals.money = config.money;
   res.locals.APP_VERSION = config.APP_VERSION;
 
@@ -253,6 +258,10 @@ app.use(
     // /pricing must never be shadowed by a stray pricing.html.
     extensions: false,
     index: false,
+    // Express ignores dotfiles by default, which would 404 the domain
+    // verification files (.well-known/microsoft-identity-association.json,
+    // apple-app-site-association, ACME challenges, ...) this directory holds.
+    dotfiles: 'allow',
   })
 );
 
@@ -272,9 +281,9 @@ app.use((req, res) => {
   }
   res.status(404).render('error', {
     title: 'Vesopa EPOS | Page Not Found',
-    heading: 'Page Not Found',
+    heading: 'That page is not here',
     brief:
-      "We couldn't find the page you were looking for. It may have moved, or the link may be out of date. Try the <a href=\"/\">home page</a>, or <a href=\"/help\">contact support</a> and we'll point you the right way.",
+      "There is nothing at this address. It may have moved, or the link may be out of date — the home page has everything, and support will point you the right way.",
   });
 });
 

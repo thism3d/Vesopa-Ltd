@@ -1,8 +1,88 @@
 const crypto = require('crypto');
 const express = require('express');
+const jwt = require('jsonwebtoken');
 const { requireAuth } = require('./auth');
 const applePush = require('./wallet_apple_push');
 const { ensureMemberNumber } = require('./member_numbers');
+const training = require('./training');
+const tillSeats = require('./till_seats');
+
+/**
+ * How long a till's hold on a gift card lasts.
+ *
+ * Long enough for a table's bill to be split three ways and paid over dinner,
+ * short enough that money a till never came back for is not locked up for a
+ * day. A capture after it lapses still succeeds when the money is still there;
+ * the expiry only stops a forgotten hold blocking another till.
+ */
+const HOLD_MINUTES = 60;
+
+/**
+ * The routes a TILL calls, which identify the venue by a query parameter.
+ *
+ * Exact method and path, not a prefix: /loyalty/customer/:id/transactions is a
+ * back-office route under the same stem, carries a session token, and must not
+ * be mistaken for a till.
+ */
+const TILL_CALLS = [
+  ['get', '/tender-settings/public'],
+  ['get', '/promotions/public'],
+  ['get', '/rules/public'],
+  ['get', '/loyalty/public'],
+  ['get', '/gift-cards/lookup'],
+  ['post', '/gift-cards/redeem'],
+  ['post', '/gift-cards/hold'],
+  ['post', '/gift-cards/capture'],
+  ['post', '/gift-cards/release'],
+  ['post', '/gift-cards/reverse'],
+  ['get', '/deposits/lookup'],
+  ['post', '/deposits/redeem'],
+  ['get', '/vouchers/validate'],
+  ['post', '/vouchers/redeem'],
+  ['get', '/loyalty/search'],
+  ['get', '/loyalty/customer'],
+  ['get', '/loyalty/card'],
+  ['post', '/loyalty/renew'],
+  ['post', '/loyalty/customer'],
+  ['post', '/loyalty/points'],
+];
+
+/** The ones that read somebody's money or somebody's details back. */
+const LOOKUPS = new Set([
+  '/gift-cards/lookup', '/deposits/lookup', '/vouchers/validate',
+  '/loyalty/search', '/loyalty/customer', '/loyalty/card',
+]);
+
+/**
+ * Lookups a minute: per address for an unsigned caller, per venue for a till.
+ *
+ * Generous on purpose. Every till in a venue shares one public address, and a
+ * clerk typing a member's name searches as they type, so a tight limit would
+ * stop a busy bar finding its own customers on a Saturday night. Guessing a
+ * gift card code at 240 a minute is still hopeless -- there are about 10^18 of
+ * them -- and the real answer to strangers is the terminal token, not a limit.
+ */
+const UNSIGNED_LOOKUPS = Number(process.env.COMMERCE_UNSIGNED_LOOKUPS_PER_MIN) || 240;
+const SIGNED_LOOKUPS = Number(process.env.COMMERCE_SIGNED_LOOKUPS_PER_MIN) || 1200;
+
+/**
+ * A fixed-window counter per key. In memory, because a restart forgiving
+ * everybody is fine and a table written on every lookup is not.
+ */
+const windows = new Map();
+function limited(key, perMinute) {
+  const now = Date.now();
+  const w = windows.get(key);
+  if (!w || now - w.start >= 60000) {
+    windows.set(key, { start: now, count: 1 });
+    if (windows.size > 5000) {
+      for (const [k, v] of windows) if (now - v.start >= 60000) windows.delete(k);
+    }
+    return false;
+  }
+  w.count += 1;
+  return w.count > perMinute;
+}
 
 /**
  * Commerce: gift cards, deposits, loyalty, promotions, rules and tender
@@ -18,6 +98,22 @@ function commerceRoutes({ pool, broadcast, secret }) {
   const router = express.Router();
   const auth = requireAuth(secret);
 
+  // Training mode moves no money. A till in training never calls these (it
+  // simulates the tender), so this only ever catches a till that got it wrong
+  // -- and a trainee spending a real customer's gift card or points is exactly
+  // the mistake that must be refused, loudly, rather than recorded.
+  router.post(
+    ['/gift-cards/redeem', '/deposits/redeem', '/vouchers/redeem',
+      '/loyalty/points', '/loyalty/renew'],
+    (req, res, next) => {
+      const b = req.body || {};
+      if (b.training === true || b.training === 1) {
+        return res.status(409).json({ error: training.REFUSED, training: true });
+      }
+      next();
+    }
+  );
+
   async function tenantEmail(req) {
     if (req.user.officeId) {
       const [[office]] = await pool.query(
@@ -29,11 +125,115 @@ function commerceRoutes({ pool, broadcast, secret }) {
     return req.user.email;
   }
 
-  /** Reads the office for an unauthenticated till call. */
+  /**
+   * The venue a till call is for.
+   *
+   * A signed till's own venue when it sent its token -- see tillIdentity -- and
+   * the `office` it named otherwise. The second is what every till did before
+   * the token existed, and is still accepted until every till sends one.
+   */
   function tillOffice(req) {
+    if (req.tillOffice) return req.tillOffice;
     const office = String(req.query.office || req.body?.office || '').trim();
     return office || null;
   }
+
+  // ---- Which till is calling ----------------------------------------------
+  //
+  // These routes used to trust whatever venue email they were handed. Anybody
+  // who knew a venue's contact address -- it is on its website -- and the code
+  // off a gift card could check the balance or spend it from anywhere, and the
+  // loyalty search would list a venue's members to them.
+  //
+  // A till has carried a signed terminal token since v1.3.1.0, so it can prove
+  // which venue it belongs to. When it sends one, that venue is the only one
+  // it can act for. When nothing is sent, the call is counted and -- until
+  // COMMERCE_REQUIRE_TERMINAL=1 -- allowed, because a till too old to send a
+  // token is still a till in a venue that is trading.
+
+  const unsignedSeen = new Map();
+  function noteUnsigned(req, route, reason) {
+    const office = String(req.query.office || req.body?.office || '').trim().slice(0, 190) || '?';
+    pool
+      .execute(
+        `INSERT INTO epos_commerce_unsigned (office, route, reason, day, calls, last_ip, last_at)
+         VALUES (?, ?, ?, CURDATE(), 1, ?, NOW())
+         ON DUPLICATE KEY UPDATE calls = calls + 1, last_ip = VALUES(last_ip), last_at = NOW()`,
+        [office, route.slice(0, 40), reason, String(req.ip || '').slice(0, 45)]
+      )
+      .catch(() => {});
+    const key = `${office}|${route}|${reason}`;
+    const last = unsignedSeen.get(key) || 0;
+    if (Date.now() - last > 60 * 60 * 1000) {
+      unsignedSeen.set(key, Date.now());
+      console.warn(`[commerce] unsigned till call: ${route} for ${office} (${reason})`);
+    }
+  }
+
+  function tooMany(res) {
+    res.setHeader('Retry-After', '60');
+    return res.status(429).json({ error: 'Too many lookups. Wait a minute and try again.' });
+  }
+
+  async function tillIdentity(req, res, next) {
+    const route = (req.route && req.route.path) || req.path;
+    const header = req.headers.authorization || '';
+    const token = header.startsWith('Bearer ') ? header.slice(7) : '';
+
+    let claims = null;
+    if (token) {
+      try {
+        const c = jwt.verify(token, secret);
+        if (c.scope === 'terminal' && c.office) {
+          claims = c;
+        } else if (!c.scope) {
+          // A back-office session. Not a till, and not a stranger either: it
+          // behaves exactly as it did before.
+          return next();
+        }
+      } catch {
+        claims = null;
+      }
+    }
+
+    if (claims) {
+      // A till signed out from the back office is turned away here as it is
+      // everywhere else. A lookup that fails lets it through: a licence count
+      // must never be what stops a venue taking a gift card.
+      try {
+        const seat = await tillSeats.seatFor(claims, token);
+        if (seat && seat.released) {
+          return res.status(401).json({
+            error: 'This till was signed out from the back office. Sign it in again to carry on.',
+            signed_out: true,
+          });
+        }
+      } catch (e) {
+        console.warn('[commerce] could not check a seat:', e.message);
+      }
+
+      const named = String(req.query.office || req.body?.office || '').trim();
+      if (named && named.toLowerCase() !== String(claims.office).toLowerCase()) {
+        return res.status(403).json({ error: 'That till belongs to a different venue.' });
+      }
+      req.tillOffice = claims.office;
+      req.terminal = claims;
+      if (LOOKUPS.has(route) && limited(`t:${claims.office}`, SIGNED_LOOKUPS)) return tooMany(res);
+      return next();
+    }
+
+    noteUnsigned(req, route, token ? 'bad-token' : 'none');
+    if (process.env.COMMERCE_REQUIRE_TERMINAL === '1') {
+      return res.status(401).json({
+        error: 'This till needs to be signed in again before it can take gift cards, vouchers or points.',
+        needs_terminal: true,
+      });
+    }
+    if (LOOKUPS.has(route) && limited(`ip:${req.ip}`, UNSIGNED_LOOKUPS)) return tooMany(res);
+    next();
+  }
+
+  for (const [method, path] of TILL_CALLS) router[method](path, tillIdentity);
 
   const money = (v) => Math.round(Number(v) || 0);
 
@@ -139,6 +339,50 @@ function commerceRoutes({ pool, broadcast, secret }) {
     } catch (e) { next(e); }
   });
 
+  /**
+   * What is held on a card by open bills, in pence.
+   *
+   * Bound by card id, never joined: the holds table and the cards table were
+   * created years apart and do not share a collation on live.
+   */
+  async function heldOn(db, cardId, exceptHoldId = null) {
+    try {
+      const [[row]] = await db.query(
+        `SELECT COALESCE(SUM(amount_minor), 0) AS held FROM epos_gift_card_holds
+          WHERE gift_card_id = ? AND status = 'held' AND expires_at > NOW()` +
+          (exceptHoldId ? ' AND id <> ?' : ''),
+        exceptHoldId ? [cardId, exceptHoldId] : [cardId]
+      );
+      return Number(row && row.held) || 0;
+    } catch (e) {
+      // A server that has not had schema_gift_shop.sql yet has no holds.
+      if (e.code === 'ER_NO_SUCH_TABLE') return 0;
+      throw e;
+    }
+  }
+
+  /** Why a card cannot be spent right now, or null when it can. */
+  function cardProblem(card) {
+    if (!card) return { error: 'No such gift card', status: 404 };
+    if (card.status !== 'active') return { error: `This card is ${card.status}`, status: 409 };
+    if (card.expires_on &&
+        new Date(card.expires_on) < new Date(new Date().toDateString())) {
+      return { error: 'This card has expired', status: 409 };
+    }
+    if (card.usable_from && new Date(card.usable_from) > new Date()) {
+      const when = new Date(card.usable_from).toLocaleString('en-GB', {
+        weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit',
+        timeZone: 'Europe/London',
+      });
+      return {
+        error: `This card can be used from ${when}`,
+        status: 409,
+        usable_from: card.usable_from,
+      };
+    }
+    return null;
+  }
+
   /** Look a card up by code. Used by the till before offering it as a tender. */
   router.get('/gift-cards/lookup', async (req, res, next) => {
     try {
@@ -158,10 +402,17 @@ function commerceRoutes({ pool, broadcast, secret }) {
       // the card out rather than letting a clerk try and be refused.
       const expired = card.expires_on &&
         new Date(card.expires_on) < new Date(new Date().toDateString());
+      const held = await heldOn(pool, card.id);
+      const problem = cardProblem(card);
       res.json({
         ...card,
         expired: !!expired,
-        redeemable: card.status === 'active' && !expired && card.balance_minor > 0,
+        // What another open bill has not already claimed. A till offers this,
+        // not the balance, so two tills cannot both promise the same money.
+        available_minor: Math.max(0, card.balance_minor - held),
+        not_yet: !!(card.usable_from && new Date(card.usable_from) > new Date()),
+        reason: problem && problem.status !== 404 ? problem.error : null,
+        redeemable: !problem && card.balance_minor - held > 0,
       });
     } catch (e) { next(e); }
   });
@@ -251,18 +502,14 @@ function commerceRoutes({ pool, broadcast, secret }) {
          WHERE office = ? AND ${id ? 'id = ?' : 'code = ?'} FOR UPDATE`,
         [office, id || code]
       );
-      if (!card) {
+      // A reload tops up a card that is not spendable YET -- an online order
+      // still inside its waiting period -- so only a redemption asks when.
+      const problem = kind === 'redeem'
+        ? cardProblem(card)
+        : (cardProblem(card) && cardProblem(card).usable_from ? null : cardProblem(card));
+      if (problem) {
         await conn.rollback();
-        return { error: 'No such gift card', status: 404 };
-      }
-      if (card.status !== 'active') {
-        await conn.rollback();
-        return { error: `This card is ${card.status}`, status: 409 };
-      }
-      if (card.expires_on &&
-          new Date(card.expires_on) < new Date(new Date().toDateString())) {
-        await conn.rollback();
-        return { error: 'This card has expired', status: 409 };
+        return problem;
       }
 
       const amount = money(amountMinor);
@@ -274,12 +521,18 @@ function commerceRoutes({ pool, broadcast, secret }) {
       // Redemptions and refunds take money off; reloads put it on.
       const delta = kind === 'redeem' ? -amount : amount;
 
-      if (kind === 'redeem' && amount > card.balance_minor) {
+      // An older till spends straight away rather than holding first, and must
+      // not spend money a newer till is holding for a bill it has open.
+      const available = kind === 'redeem'
+        ? card.balance_minor - await heldOn(conn, card.id)
+        : card.balance_minor;
+      if (kind === 'redeem' && amount > available) {
         await conn.rollback();
         return {
           error: 'Not enough left on this card',
           status: 409,
           balance_minor: card.balance_minor,
+          available_minor: Math.max(0, available),
         };
       }
       if (kind === 'reload' && !card.reloadable) {
@@ -343,6 +596,327 @@ function commerceRoutes({ pool, broadcast, secret }) {
       broadcast({ type: 'gift-cards' });
       res.json(result.card);
     } catch (e) { next(e); }
+  });
+
+  // ---- Hold, capture, release, reverse ------------------------------------
+  //
+  // The till used to spend a gift card the moment it was tendered, then record
+  // the tender. Undo took the tender off the till and left the money off the
+  // card: a customer who changed their mind about paying with it lost what they
+  // had tendered. The shape below is the one gift-card platforms settled on:
+  //
+  //   hold     reserve an amount while the bill is open; moves no money
+  //   capture  the sale completed -- spend exactly what was held
+  //   release  the tender was undone or the bill abandoned -- give it back
+  //   reverse  a finished sale was refunded -- put the money back on the card
+  //
+  // /gift-cards/redeem stays for tills that do not know about holds.
+
+  router.post('/gift-cards/hold', async (req, res, next) => {
+    const conn = await pool.getConnection();
+    try {
+      const office = tillOffice(req);
+      const code = String(req.body.code || '').trim().toUpperCase();
+      const amount = money(req.body.amount_minor);
+      if (!office || !code) {
+        return res.status(400).json({ error: 'office and code are required' });
+      }
+      if (amount <= 0) return res.status(400).json({ error: 'Amount must be more than zero' });
+
+      await conn.beginTransaction();
+      const [[card]] = await conn.query(
+        'SELECT * FROM epos_gift_cards WHERE office = ? AND code = ? FOR UPDATE',
+        [office, code]
+      );
+      const problem = cardProblem(card);
+      if (problem) {
+        await conn.rollback();
+        return res.status(problem.status).json(problem);
+      }
+
+      const held = await heldOn(conn, card.id);
+      const available = card.balance_minor - held;
+      if (amount > available) {
+        await conn.rollback();
+        return res.status(409).json({
+          error: 'Not enough left on this card',
+          balance_minor: card.balance_minor,
+          available_minor: Math.max(0, available),
+        });
+      }
+
+      const id = crypto.randomUUID();
+      await conn.execute(
+        `INSERT INTO epos_gift_card_holds
+           (id, gift_card_id, office, amount_minor, order_id, terminal, clerk_name, status, expires_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'held', DATE_ADD(NOW(), INTERVAL ? MINUTE))`,
+        [
+          id, card.id, office, amount,
+          req.body.order_id ? String(req.body.order_id).slice(0, 64) : null,
+          // What the till calls itself, or failing that its seat: enough for a
+          // manager to tell which of two tills is holding a card.
+          String(req.body.terminal || (req.terminal && req.terminal.jti) || '').slice(0, 80) || null,
+          req.body.clerk_name ? String(req.body.clerk_name).slice(0, 80) : null,
+          HOLD_MINUTES,
+        ]
+      );
+      await conn.commit();
+
+      res.json({
+        hold_id: id,
+        amount_minor: amount,
+        expires_in_s: HOLD_MINUTES * 60,
+        card: {
+          id: card.id,
+          code: card.code,
+          label: card.label || null,
+          balance_minor: card.balance_minor,
+          available_minor: available - amount,
+          expires_on: card.expires_on,
+        },
+      });
+    } catch (e) {
+      await conn.rollback().catch(() => {});
+      next(e);
+    } finally { conn.release(); }
+  });
+
+  router.post('/gift-cards/capture', async (req, res, next) => {
+    const conn = await pool.getConnection();
+    try {
+      const office = tillOffice(req);
+      const holdId = String(req.body.hold_id || '').trim();
+      if (!office || !holdId) {
+        return res.status(400).json({ error: 'office and hold_id are required' });
+      }
+
+      await conn.beginTransaction();
+      const [[hold]] = await conn.query(
+        'SELECT * FROM epos_gift_card_holds WHERE id = ? AND office = ? FOR UPDATE',
+        [holdId, office]
+      );
+      if (!hold) {
+        await conn.rollback();
+        return res.status(404).json({ error: 'No such hold' });
+      }
+
+      const [[card]] = await conn.query(
+        'SELECT * FROM epos_gift_cards WHERE id = ? AND office = ? FOR UPDATE',
+        [hold.gift_card_id, office]
+      );
+
+      // The same capture sent twice -- a retry after a dropped connection --
+      // answers as it did the first time rather than spending twice.
+      if (hold.status === 'captured') {
+        await conn.commit();
+        return res.json({ captured: true, repeated: true, txn_id: hold.txn_id, card: card || null });
+      }
+      if (hold.status === 'released') {
+        await conn.rollback();
+        return res.status(409).json({ error: 'That hold was already given back' });
+      }
+      if (!card || card.status === 'void') {
+        await conn.rollback();
+        return res.status(409).json({ error: 'This card has been cancelled' });
+      }
+
+      // A hold taken while the card was valid is honoured even if the card
+      // expired while the bill was open. What it cannot do is spend money that
+      // is no longer there, which only happens when the hold lapsed and
+      // somebody else spent it in the meantime.
+      const others = await heldOn(conn, card.id, hold.id);
+      if (hold.amount_minor > card.balance_minor - others) {
+        await conn.rollback();
+        return res.status(409).json({
+          error: 'Not enough left on this card',
+          balance_minor: card.balance_minor,
+          available_minor: Math.max(0, card.balance_minor - others),
+        });
+      }
+
+      const after = card.balance_minor - hold.amount_minor;
+      const status = after <= 0 && card.kind === 'paper' ? 'redeemed' : card.status;
+      const txnId = crypto.randomUUID();
+      await conn.execute(
+        'UPDATE epos_gift_cards SET balance_minor = ?, status = ? WHERE id = ?',
+        [after, status, card.id]
+      );
+      await conn.execute(
+        `INSERT INTO epos_gift_card_txns
+           (id, gift_card_id, office, kind, amount_minor, balance_after,
+            order_id, clerk_name, note, hold_id)
+         VALUES (?, ?, ?, 'redeem', ?, ?, ?, ?, ?, ?)`,
+        [
+          txnId, card.id, office, -hold.amount_minor, after,
+          String(req.body.order_id || hold.order_id || '').slice(0, 36) || null,
+          hold.clerk_name, 'Redeemed against sale', hold.id,
+        ]
+      );
+      await conn.execute(
+        `UPDATE epos_gift_card_holds SET status = 'captured', txn_id = ?, settled_at = NOW()
+          WHERE id = ?`,
+        [txnId, hold.id]
+      );
+      await conn.commit();
+
+      applePush
+        .notifyPassChanged({ pool, office, kind: 'giftcard', subjectId: card.id })
+        .catch(() => {});
+      broadcast({ type: 'gift-cards' });
+      res.json({ captured: true, txn_id: txnId, card: { ...card, balance_minor: after, status } });
+    } catch (e) {
+      await conn.rollback().catch(() => {});
+      next(e);
+    } finally { conn.release(); }
+  });
+
+  /** Give a hold back. Saying it twice is harmless. */
+  router.post('/gift-cards/release', async (req, res, next) => {
+    try {
+      const office = tillOffice(req);
+      const holdId = String(req.body.hold_id || '').trim();
+      if (!office || !holdId) {
+        return res.status(400).json({ error: 'office and hold_id are required' });
+      }
+      const [r] = await pool.execute(
+        `UPDATE epos_gift_card_holds SET status = 'released', settled_at = NOW()
+          WHERE id = ? AND office = ? AND status = 'held'`,
+        [holdId, office]
+      );
+      res.json({ released: r.affectedRows > 0 });
+    } catch (e) { next(e); }
+  });
+
+  /** What one sale took from one card, net of anything already put back. */
+  async function takenFor(conn, cardId, orderId) {
+    const [[sums]] = await conn.query(
+      `SELECT
+         COALESCE(SUM(CASE WHEN kind = 'redeem' THEN -amount_minor ELSE 0 END), 0) AS taken,
+         COALESCE(SUM(CASE WHEN kind = 'reverse' THEN amount_minor ELSE 0 END), 0) AS returned
+       FROM epos_gift_card_txns
+       WHERE gift_card_id = ? AND order_id = ?`,
+      [cardId, orderId]
+    );
+    return Number(sums.taken) - Number(sums.returned);
+  }
+
+  /** Put [amount] back on a locked card for [orderId]. Returns what changed. */
+  async function giveBack(conn, card, { office, orderId, amount, clerk, note }) {
+    const after = card.balance_minor + amount;
+    // A spent paper certificate comes back to life with what it was owed. A
+    // void card stays void: the money goes back on the record, and the
+    // venue decides what to do about a card it had cancelled.
+    const status = card.status === 'redeemed' ? 'active' : card.status;
+    const txnId = crypto.randomUUID();
+    await conn.execute(
+      'UPDATE epos_gift_cards SET balance_minor = ?, status = ? WHERE id = ?',
+      [after, status, card.id]
+    );
+    await conn.execute(
+      `INSERT INTO epos_gift_card_txns
+         (id, gift_card_id, office, kind, amount_minor, balance_after,
+          order_id, clerk_name, note)
+       VALUES (?, ?, ?, 'reverse', ?, ?, ?, ?, ?)`,
+      [
+        txnId, card.id, office, amount, after, orderId,
+        clerk ? String(clerk).slice(0, 80) : null,
+        String(note || 'Given back: sale undone').slice(0, 255),
+      ]
+    );
+    return { txnId, card: { ...card, balance_minor: after, status } };
+  }
+
+  /**
+   * Put money back on a card for a sale that was undone.
+   *
+   * Never more than that sale took from that card, net of anything already put
+   * back: a refund pressed twice, or a partial refund followed by a full one,
+   * cannot mint money onto a card.
+   *
+   * Without a `code`, every card that paid for the sale gets back what it paid,
+   * up to `amount_minor` in all. That is the refund screen's case: a finished
+   * sale records how it was paid, not which card, and the sale id is enough to
+   * find them.
+   */
+  router.post('/gift-cards/reverse', async (req, res, next) => {
+    const conn = await pool.getConnection();
+    try {
+      const office = tillOffice(req);
+      const code = String(req.body.code || '').trim().toUpperCase();
+      const orderId = String(req.body.order_id || '').trim().slice(0, 36);
+      if (!office || !orderId) {
+        return res.status(400).json({ error: 'office and order_id are required' });
+      }
+      const limit = req.body.amount_minor == null ? null : money(req.body.amount_minor);
+      if (limit != null && limit <= 0) {
+        return res.status(400).json({ error: 'Amount must be more than zero' });
+      }
+      const clerk = req.body.clerk_name;
+      const note = req.body.note;
+
+      await conn.beginTransaction();
+      let cards;
+      if (code) {
+        [cards] = await conn.query(
+          'SELECT * FROM epos_gift_cards WHERE office = ? AND code = ? FOR UPDATE',
+          [office, code]
+        );
+        if (!cards.length) {
+          await conn.rollback();
+          return res.status(404).json({ error: 'No such gift card' });
+        }
+      } else {
+        // The cards this sale was paid with, oldest spend first, locked.
+        [cards] = await conn.query(
+          `SELECT c.* FROM epos_gift_cards c
+            WHERE c.office = ? AND c.id IN (
+              SELECT t.gift_card_id FROM epos_gift_card_txns t
+               WHERE t.office = ? AND t.order_id = ? AND t.kind = 'redeem')
+            ORDER BY c.created_at
+            FOR UPDATE`,
+          [office, office, orderId]
+        );
+      }
+
+      let left = limit;
+      const moved = [];
+      for (const card of cards) {
+        if (left != null && left <= 0) break;
+        const outstanding = await takenFor(conn, card.id, orderId);
+        if (outstanding <= 0) continue;
+        const amount = left == null ? outstanding : Math.min(left, outstanding);
+        const r = await giveBack(conn, card, { office, orderId, amount, clerk, note });
+        moved.push({ amount, ...r });
+        if (left != null) left -= amount;
+      }
+      if (!moved.length) {
+        await conn.rollback();
+        return res.status(409).json({
+          error: code ? 'Nothing was taken from this card for that sale' : 'No gift card paid for that sale',
+        });
+      }
+      await conn.commit();
+
+      for (const m of moved) {
+        applePush
+          .notifyPassChanged({ pool, office, kind: 'giftcard', subjectId: m.card.id })
+          .catch(() => {});
+      }
+      broadcast({ type: 'gift-cards' });
+      const total = moved.reduce((s, m) => s + m.amount, 0);
+      res.json({
+        reversed_minor: total,
+        // The one-card shape older tills read, and every card for the rest.
+        txn_id: moved[0].txnId,
+        card: moved[0].card,
+        cards: moved.map((m) => ({
+          code: m.card.code, reversed_minor: m.amount, balance_minor: m.card.balance_minor, label: m.card.label || null,
+        })),
+      });
+    } catch (e) {
+      await conn.rollback().catch(() => {});
+      next(e);
+    } finally { conn.release(); }
   });
 
   router.post('/gift-cards/:id/reload', auth, async (req, res, next) => {
@@ -556,6 +1130,35 @@ function commerceRoutes({ pool, broadcast, secret }) {
     enabled: 1, points_per_pound: 1, point_value_minor: 1, min_spend_minor: 0,
     min_redeem_points: 100, redeem_step_points: 100, points_expire_months: 0,
     earn_on_gratuity: 0, require_phone: 1,
+    // Membership, which is a different thing from points and shares this row
+    // because it is the same scheme from the venue's side.
+    //
+    // A TERM *AND* A DATE, and which one applies is decided in /loyalty/renew.
+    //
+    // This used to be a term only, and the comment here argued the case: a
+    // fixed date is wrong for everybody who renews on a different day and has
+    // to be edited every year, whereas twelve months from the day the fee is
+    // taken needs setting once. That argument is sound and it answered the
+    // wrong question. A members' club does not run twelve rolling months per
+    // person; it runs a season, and every card in the place expires on the
+    // same night. The venue said so in their own example — "the card would
+    // expire on 31/08/2027" — which is a rugby season, not an anniversary.
+    //
+    // So both. `membership_renewal_date` wins while it is set and has not
+    // passed; the term is what a venue with no season gets, and what everybody
+    // gets back the moment the date is cleared. £10 is the venue's own figure.
+    membership_term_months: 12, membership_fee_minor: 1000,
+    // The night the season ends, or null for "no season, use the term".
+    //
+    // Null is a real answer and the default, not a value nobody has filled in
+    // yet: it is what every venue on 1.6.8.0 has, and clearing the field is
+    // how a venue goes back to rolling months.
+    membership_renewal_date: null,
+    // The product a renewal is rung up as, so the fee carries a VAT treatment,
+    // a department and a line in the Z report rather than being a bare number.
+    // Null is a real answer — the till then rings a plain line at the fee above
+    // with no VAT on it, and the settings form says so.
+    membership_plu: null,
   };
 
   async function readLoyalty(office) {
@@ -564,7 +1167,38 @@ function commerceRoutes({ pool, broadcast, secret }) {
     const [tiers] = await pool.query(
       `SELECT * FROM epos_loyalty_tiers WHERE office = ? AND active = 1
        ORDER BY min_spend_minor`, [office]);
-    return { ...(row || { office, ...LOYALTY_DEFAULTS }), tiers };
+    // Defaults first, so a stored row that predates a setting still answers
+    // for it. `SELECT *` returns whatever columns the database has; before
+    // schema_membership.sql has been applied that is nine settings rather than
+    // eleven, and the till would otherwise be told a membership costs
+    // `undefined`.
+    const settings = { ...LOYALTY_DEFAULTS, ...(row || { office }), tiers };
+
+    /*
+     * The season date, as a day rather than as a moment.
+     *
+     * `SELECT *` hands a DATE back as a JavaScript Date at local midnight, and
+     * JSON.stringify turns that into "2027-08-30T23:00:00.000Z" in British
+     * summer time — a day early, and only in summer, which is the worst way
+     * for a date bug to behave because it works all winter.
+     *
+     * Every other date on this row is read with DATE_FORMAT for exactly this
+     * reason; this one cannot be, because the query is a star. So it is
+     * normalised here instead, and the string is what the till and the form
+     * both compare against.
+     */
+    const day = settings.membership_renewal_date;
+    settings.membership_renewal_date = day
+      ? (day instanceof Date
+          ? [
+              day.getFullYear(),
+              String(day.getMonth() + 1).padStart(2, '0'),
+              String(day.getDate()).padStart(2, '0'),
+            ].join('-')
+          : String(day).slice(0, 10))
+      : null;
+
+    return settings;
   }
 
   router.get('/loyalty', auth, async (req, res, next) => {
@@ -586,9 +1220,66 @@ function commerceRoutes({ pool, broadcast, secret }) {
       const fields = Object.keys(LOYALTY_DEFAULTS)
         .filter((f) => Object.prototype.hasOwnProperty.call(req.body, f));
 
+      // The two membership settings are checked rather than merely rounded.
+      // A term of 0 renews a member to today — an expired card the moment it
+      // is paid for — and a negative fee is a line that takes money off the
+      // bill. Both are one typed character away in the settings form.
+      if (Object.prototype.hasOwnProperty.call(req.body, 'membership_term_months')) {
+        const months = Number(req.body.membership_term_months);
+        if (!Number.isInteger(months) || months < 1 || months > 60) {
+          return res.status(400).json({
+            error: 'A membership runs for between 1 and 60 months.',
+          });
+        }
+      }
+      if (Object.prototype.hasOwnProperty.call(req.body, 'membership_fee_minor')) {
+        const fee = Number(req.body.membership_fee_minor);
+        if (!Number.isFinite(fee) || fee < 0) {
+          return res.status(400).json({
+            error: 'A membership fee cannot be less than nothing.',
+          });
+        }
+      }
+
+      // The season date, if one was sent. An empty box clears it, which is how
+      // a venue goes back to rolling months, so '' and null are accepted and
+      // mean the same thing. Anything else has to be a real calendar date:
+      // a typo stored as-is would be read back by the renewal route and turn
+      // into a membership expiring on a day that does not exist.
+      //
+      // A date in the PAST is allowed through deliberately. A season end is
+      // entered months ahead and a venue that has not rolled it forward yet
+      // has made a mistake we should tell them about rather than refuse — the
+      // form warns, and /loyalty/renew ignores a date that has passed and uses
+      // the term, so nobody is ever issued an already-expired card.
+      if (Object.prototype.hasOwnProperty.call(req.body, 'membership_renewal_date')) {
+        const raw = req.body.membership_renewal_date;
+        if (raw !== null && raw !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(String(raw))) {
+          return res.status(400).json({
+            error: 'A renewal date must be a day, as YYYY-MM-DD, or empty.',
+          });
+        }
+      }
+
       if (fields.length) {
         const values = fields.map((f) => {
           const v = req.body[f];
+          // A day or nothing. Not through `money` — that would turn
+          // "2027-08-31" into a number and store 2027.
+          if (f === 'membership_renewal_date') {
+            return v === null || v === '' ? null : String(v).slice(0, 10);
+          }
+          // `membership_plu` is the one nullable setting here, and null is a
+          // real answer: it means "no product, ring a plain line". Everything
+          // else goes through `money`, which turns null into 0 — and a PLU of
+          // 0 is a product nobody has, so the till would look one up, fail to
+          // find it, and fall back silently for ever.
+          if (f === 'membership_plu') {
+            const plu = Number(v);
+            return v === null || v === '' || !Number.isFinite(plu) || plu <= 0
+              ? null
+              : Math.round(plu);
+          }
           return typeof v === 'boolean' ? (v ? 1 : 0) : money(v);
         });
         const cols = ['office', ...fields];
@@ -653,7 +1344,7 @@ function commerceRoutes({ pool, broadcast, secret }) {
       const [rows] = await pool.query(
         `SELECT id, name, phone, email, card_number, points_balance, tier_name,
                 lifetime_spend_minor, visits, discount_type, discount_value,
-                membership_expiry
+                membership_expiry, photo_url
          FROM epos_customers
          WHERE email_key = ?
            AND (name LIKE ? OR email LIKE ? OR card_number LIKE ?
@@ -689,7 +1380,7 @@ function commerceRoutes({ pool, broadcast, secret }) {
       const [[customer]] = await pool.query(
         `SELECT id, name, phone, email, points_balance, tier_name,
                 lifetime_spend_minor, visits, discount_type, discount_value,
-                membership_expiry
+                membership_expiry, photo_url
          FROM epos_customers
          WHERE email_key = ? AND REPLACE(phone, ' ', '') = ?`,
         [office, phone]
@@ -742,7 +1433,7 @@ function commerceRoutes({ pool, broadcast, secret }) {
       const [[customer]] = await pool.query(
         `SELECT id, name, phone, email, card_number, points_balance, tier_name,
                 lifetime_spend_minor, visits, discount_type, discount_value,
-                membership_expiry
+                membership_expiry, photo_url
          FROM epos_customers
          WHERE email_key = ? AND card_number = ?
          LIMIT 1`,
@@ -763,6 +1454,133 @@ function commerceRoutes({ pool, broadcast, secret }) {
         ...customer,
         points_value_minor: customer.points_balance * settings.point_value_minor,
         redeemable: customer.points_balance >= settings.min_redeem_points,
+        settings,
+      });
+    } catch (e) { next(e); }
+  });
+
+  /**
+   * Renew a membership, and say when it now runs to.
+   *
+   * "Say they expired and then paid £10 membership at the till, the till
+   * should then renew to a date we set in the back office."
+   *
+   * THE DATE IS COMPUTED HERE, NOT AT THE TILL
+   *
+   * Two tills and a back office would otherwise each add a term to whatever
+   * they last synced, on whatever their own clock says, and a member would end
+   * up with a different expiry depending on which terminal took the money. One
+   * server, one clock, one answer.
+   *
+   * AN EARLY RENEWAL EXTENDS, IT DOES NOT SHORTEN
+   *
+   * A member who pays in November for a card that runs to January gets January
+   * plus a year, not November plus a year. Renewing early must never cost
+   * somebody two months they have already paid for — and a venue that pushes
+   * renewals at Christmas would otherwise be quietly taking them.
+   *
+   * The money is not taken here. The fee is a line on the bill and goes
+   * through tendering like everything else, so it lands in the takings, on the
+   * receipt and in the Z. This route moves a date.
+   */
+  router.post('/loyalty/renew', async (req, res, next) => {
+    try {
+      const office = tillOffice(req);
+      const customerId = String(req.body?.customer_id || '').trim();
+      if (!office || !customerId) {
+        return res.status(400).json({ error: 'office and customer_id are required' });
+      }
+
+      const [[customer]] = await pool.query(
+        `SELECT id, DATE_FORMAT(membership_expiry, '%Y-%m-%d') AS membership_expiry
+           FROM epos_customers WHERE id = ? AND email_key = ?`,
+        [customerId, office]
+      );
+      if (!customer) return res.status(404).json({ error: 'No such customer' });
+
+      const settings = await readLoyalty(office);
+      const months = Math.min(
+        Math.max(Number(settings.membership_term_months) || 12, 1), 60);
+
+      // Today, or the expiry it already has if that is still ahead. Compared
+      // as text in the server's own day, which is what the till shows and what
+      // the back office badge reads.
+      const today = new Date();
+      const todayText = [
+        today.getFullYear(),
+        String(today.getMonth() + 1).padStart(2, '0'),
+        String(today.getDate()).padStart(2, '0'),
+      ].join('-');
+      const from = customer.membership_expiry && customer.membership_expiry > todayText
+        ? customer.membership_expiry
+        : todayText;
+
+      /*
+       * A SEASON, IF THE VENUE RUNS ONE.
+       *
+       * "If the expired card was swiped today and they paid for a membership
+       * the card would expire on 31/08/2027." A club's membership year ends
+       * on a night, the same night for everybody, and the alternative — twelve
+       * months from whenever each person happened to pay — is what the venue
+       * is asking us to stop doing.
+       *
+       * IGNORED ONCE IT HAS PASSED, and this is the guard that makes the
+       * feature safe to leave switched on. A season date is typed in months
+       * ahead and there will be a morning after it when nobody has rolled it
+       * forward yet. Renewing to it then would take ten pounds off somebody
+       * and hand them a card that had already expired — at the counter, in
+       * front of them. So a date in the past is treated as no date at all and
+       * the rolling term takes over, which is a card that certainly works.
+       * The back office warns about the stale date separately; the till must
+       * not be the thing that discovers it.
+       *
+       * Not run through the "extend, do not shorten" rule above, deliberately.
+       * That rule protects somebody renewing early under a rolling term. Under
+       * a season there is nothing to protect: the date IS the answer for every
+       * member, and a card already running to next August renews to next
+       * August, which is what a season means.
+       */
+      const season = settings.membership_renewal_date;
+      const useSeason = Boolean(season) && season >= todayText;
+
+      // Added in SQL rather than in JavaScript: MySQL's INTERVAL already knows
+      // that a year from the 29th of February is the 28th, and that a month
+      // from the 31st of January is the 28th too. Doing it here with a Date
+      // gives the 1st of March and the 3rd of March respectively, which is a
+      // day nobody chose.
+      const [[{ next_expiry: rolled }]] = await pool.query(
+        'SELECT DATE_FORMAT(DATE_ADD(?, INTERVAL ? MONTH), \'%Y-%m-%d\') AS next_expiry',
+        [from, months]
+      );
+      const expiry = useSeason ? season : rolled;
+
+      await pool.execute(
+        'UPDATE epos_customers SET membership_expiry = ? WHERE id = ? AND email_key = ?',
+        [expiry, customerId, office]
+      );
+      broadcast({ type: 'customers.updated' });
+
+      // The whole customer back, in the shape the till already reads from
+      // /loyalty/card, so a renewal refreshes the local copy from one response
+      // rather than needing a second lookup.
+      const [[row]] = await pool.query(
+        `SELECT id, name, phone, email, card_number, points_balance, tier_name,
+                lifetime_spend_minor, visits, discount_type, discount_value,
+                photo_url,
+                DATE_FORMAT(membership_expiry, '%Y-%m-%d') AS membership_expiry
+           FROM epos_customers WHERE id = ?`,
+        [customerId]
+      );
+      res.json({
+        ...row,
+        renewed_from: from,
+        term_months: months,
+        // Which rule actually applied, so the till can say "renewed to 31
+        // August 2027" rather than guessing, and so a support call about a
+        // date somebody did not expect has an answer in one response.
+        renewed_by: useSeason ? 'season' : 'term',
+        points_value_minor: row.points_balance * settings.point_value_minor,
+        redeemable: row.points_balance >= settings.min_redeem_points,
         settings,
       });
     } catch (e) { next(e); }
@@ -866,6 +1684,47 @@ function commerceRoutes({ pool, broadcast, secret }) {
       const delta = kind === 'redeem' ? -Math.abs(points) : points;
 
       if (kind === 'redeem') {
+        /*
+         * AN EXPIRED CARD CANNOT SPEND.
+         *
+         * "If a customer has expired, they can still use the loyalty card on
+         * the till." The till now refuses at every door it owns, but the till
+         * is a copy: it syncs customers and can be holding a membership that
+         * ran out while it was on the counter, or be a version behind. This is
+         * the door the venue's money actually goes through, so it is checked
+         * here as well.
+         *
+         * REDEEMING ONLY, AND EARNING DELIBERATELY LEFT ALONE.
+         *
+         * A bill that renews a membership awards its points BEFORE it posts
+         * the renewal — see the settle path in `ui/payment_page.dart`, where
+         * the order matters because the fee has to be taken before the date
+         * moves. Refusing to earn on an expired card would therefore rob the
+         * one person who has just paid ten pounds to stop being expired. And
+         * points earned onto a lapsed card cost the venue nothing: they are
+         * unspendable until it is renewed, which is this check.
+         *
+         * Compared as days in the server's own calendar, and inclusive: a card
+         * dated 31 March works all of the 31st. Told at the counter that their
+         * card ran out today, on the day it says, is an argument no clerk
+         * should have to have.
+         */
+        const [[{ expired }]] = await conn.query(
+          'SELECT (? IS NOT NULL AND ? < CURDATE()) AS expired',
+          [customer.membership_expiry, customer.membership_expiry]
+        );
+        if (expired) {
+          await conn.rollback();
+          return res.status(409).json({
+            error: 'That membership has run out, so those points cannot be spent yet.',
+            // A code as well as a sentence: the till turns this into the same
+            // dialog a swipe produces, and matching on English would break the
+            // first time anybody reworded it.
+            code: 'membership_expired',
+            points_balance: customer.points_balance,
+          });
+        }
+
         if (Math.abs(delta) > customer.points_balance) {
           await conn.rollback();
           return res.status(409).json({

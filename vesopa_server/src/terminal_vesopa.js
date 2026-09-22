@@ -1,0 +1,624 @@
+/**
+ * Commissioning a till with a Vesopa account — Phase 6, migration four.
+ *
+ * THE TILL IS A PUBLIC CLIENT AND HOLDS NO SECRET. It ships to venues, runs on
+ * a machine in a bar, and anything inside it can be read by whoever has the
+ * machine. So it does the authorisation-code flow itself, with PKCE and a
+ * loopback redirect, and never sees the back office's client secret.
+ *
+ * What it then does is hand the ID TOKEN it received to this endpoint, which
+ * verifies it and issues the back office's own long-lived terminal token. That
+ * is the only new thing here: everything downstream — the terminal token, the
+ * staff PINs that unlock it, the office scoping — is exactly as it was.
+ *
+ * WHY A TILL IS DIFFERENT FROM EVERY OTHER CLIENT, and why the terminal token
+ * still lasts ten years: a terminal is commissioned once and then runs for
+ * months without anybody signing into it. The thing it needs the token FOR is
+ * unlocking itself when a member of staff types a PIN, and a till that silently
+ * stopped being able to do that after twelve hours would be a till that cannot
+ * sell, discovered mid-service on a Saturday.
+ *
+ * THE THREE THINGS THAT STOP A CAPTURED ID TOKEN BEING REUSED HERE
+ *
+ *   1. The AUDIENCE must be the till application, not the back office. A token
+ *      minted for any other Vesopa application is refused, so the browser
+ *      session somebody has in the back office cannot be turned into a till.
+ *   2. It must be FRESH. These live ten minutes; anything older is refused
+ *      regardless of its signature.
+ *   3. It is SINGLE USE. The `jti` is remembered until it expires, so the same
+ *      token cannot commission a second terminal — which is what an attacker
+ *      who read one out of a log would try.
+ */
+
+const crypto = require('crypto');
+const express = require('express');
+
+const { linkAndFind } = require('./backoffice_auth');
+const jwt = require('jsonwebtoken');
+const tillSeats = require('./till_seats');
+const licences = require('./licences');
+const { resolveTillSite, sitePickToken, readSitePickToken } = require('./sites');
+
+/** Trimmed text of at most [max] characters, or null when there is none. */
+function clampText(value, max) {
+  const s = value == null ? '' : String(value).trim();
+  return s ? s.slice(0, max) : null;
+}
+
+const ISSUER = (process.env.VESOPA_AUTH_ISSUER || 'https://auth.vesopa.com').replace(/\/+$/, '');
+const TILL_CLIENT_ID = process.env.VESOPA_AUTH_TILL_CLIENT_ID || '';
+
+/*
+ * ONE CLIENT PER PRODUCT, AND WHY THE TILL'S IS STILL ACCEPTED.
+ *
+ * The till, the kitchen screen and the kiosk all used to sign in through the
+ * till's single client -- not a decision, but reuse: this function was written
+ * for the till and the other two called it because it worked. The evidence is
+ * the error a refused KIOSK was given: "that token was not minted for the
+ * till".
+ *
+ * Sharing one client disarmed the audience check. Its whole job is to say
+ * "this token was minted for THIS product", and it could not tell three
+ * products apart.
+ *
+ * Each now has its own. But EVERY DEVICE ALREADY IN A VENUE holds a token
+ * minted for the till's client, so the till's is accepted for all three until
+ * nothing is presenting it any more. Without that, deploying this would leave
+ * every kitchen screen and every kiosk unable to commission until somebody
+ * walked to it -- a flag day, on somebody's Saturday.
+ *
+ * An unset per-product id simply means that product has not moved yet, and it
+ * carries on using the till's.
+ */
+const CLIENT_IDS = {
+  till: TILL_CLIENT_ID,
+  kitchen: process.env.VESOPA_AUTH_KITCHEN_CLIENT_ID || '',
+  display: process.env.VESOPA_AUTH_DISPLAY_CLIENT_ID || '',
+  express: process.env.VESOPA_AUTH_EXPRESS_CLIENT_ID || '',
+};
+
+/** What a token for this product may say it was minted for. */
+function audiencesFor(kind) {
+  const own = CLIENT_IDS[kind] || '';
+  const legacy = TILL_CLIENT_ID;
+  return [own, legacy].filter(Boolean);
+}
+
+/** What each product is called when a token is refused, so the message is true. */
+const KIND_NOUNS = {
+  till: 'the till',
+  kitchen: 'the kitchen screen',
+  display: 'the display',
+  express: 'the kiosk',
+};
+const ENABLED =
+  String(process.env.VESOPA_AUTH_TILL_ENABLED || '').toLowerCase() === 'on' && Boolean(TILL_CLIENT_ID);
+
+// See the note on /api/terminal/vesopa/enabled. Ignored unless sign-in is live.
+const TILL_ONLY = ENABLED
+  && String(process.env.VESOPA_AUTH_TILL_ONLY || '').toLowerCase() === 'on';
+
+const MAX_TOKEN_AGE_SECONDS = 600;
+
+let jwksCache = { at: 0, keys: null };
+const JWKS_TTL_MS = 60 * 60 * 1000;
+
+/*
+ * Tokens already spent, until they expire anyway.
+ *
+ * In memory rather than a table: entries live at most ten minutes, and a
+ * restart losing them costs nothing an attacker could use — a token from before
+ * the restart has expired on its own by the time anybody could try it.
+ */
+const spent = new Map();
+
+function rememberSpent(jti, expSeconds) {
+  spent.set(jti, expSeconds * 1000);
+  const now = Date.now();
+  for (const [key, until] of spent) {
+    if (until < now) spent.delete(key);
+  }
+}
+
+async function jwks({ force = false } = {}) {
+  if (!force && jwksCache.keys && Date.now() - jwksCache.at < JWKS_TTL_MS) return jwksCache.keys;
+  try {
+    const response = await fetch(`${ISSUER}/jwks.json`, { signal: AbortSignal.timeout(8000) });
+    if (!response.ok) throw new Error(`jwks ${response.status}`);
+    const body = await response.json();
+    if (!body || !Array.isArray(body.keys) || !body.keys.length) throw new Error('jwks was empty');
+    jwksCache = { at: Date.now(), keys: body.keys };
+    return body.keys;
+  } catch (error) {
+    // Stale beats nothing: a key set from an hour ago verifies today's tokens,
+    // and a till being commissioned on a bad line should not fail for that.
+    if (jwksCache.keys) return jwksCache.keys;
+    throw error;
+  }
+}
+
+/**
+ * Verify an ID token minted for the TILL.
+ *
+ * The algorithm is taken from the key, never from the token's own header —
+ * trusting the header is the `alg: none` hole, where an attacker declares the
+ * token unsigned and every check after it passes.
+ */
+async function verifyTillToken(idToken, kind = 'till') {
+  const parts = String(idToken || '').split('.');
+  if (parts.length !== 3) throw new Error('that is not a token');
+
+  const header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
+
+  const find = async (force) => (await jwks({ force })).find((key) => key.kid === header.kid);
+  let jwk = await find(false);
+  if (!jwk) jwk = await find(true);
+  if (!jwk) throw new Error('signed with a key we do not know');
+  if (jwk.kty !== 'RSA') throw new Error('unexpected key type');
+
+  const ok = crypto.verify(
+    'RSA-SHA256',
+    Buffer.from(`${parts[0]}.${parts[1]}`, 'utf8'),
+    crypto.createPublicKey({ key: jwk, format: 'jwk' }),
+    Buffer.from(parts[2], 'base64url'),
+  );
+  if (!ok) throw new Error('the signature does not check out');
+
+  const claims = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+  const now = Math.floor(Date.now() / 1000);
+
+  if (claims.iss !== ISSUER) throw new Error('the token came from somewhere else');
+
+  const audience = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
+  const accepted = audiencesFor(kind);
+  if (!accepted.some((id) => audience.includes(id))) {
+    // Named for the product that actually refused it. The old wording said
+    // "the till" to a kiosk, which is how nobody noticed they shared a client.
+    throw new Error(`that token was not minted for ${KIND_NOUNS[kind] || kind}`);
+  }
+
+  if (typeof claims.exp !== 'number' || claims.exp + 30 < now) throw new Error('the token has expired');
+  if (typeof claims.iat === 'number' && now - claims.iat > MAX_TOKEN_AGE_SECONDS) {
+    throw new Error('the token is too old to commission a terminal');
+  }
+
+  if (!claims.jti) throw new Error('the token has no id, so it cannot be spent once');
+  if (spent.has(claims.jti)) throw new Error('that token has already been used');
+  rememberSpent(claims.jti, claims.exp);
+
+  return claims;
+}
+
+/**
+ * @param issueToken          the back office's own session-token function
+ * @param issueTerminalToken  and its terminal-token function
+ *
+ * Both are passed in and used verbatim, so a till commissioned this way is
+ * indistinguishable downstream from one commissioned with a password.
+ */
+function terminalVesopaRoutes({ pool, secret, issueToken, issueTerminalToken }) {
+  const router = express.Router();
+
+  /*
+   * VESOPA AND NOTHING ELSE, when the venue is ready for it.
+   *
+   * The owner's instruction for the whole platform: one way in, with the
+   * Vesopa mark on it. `only` tells the till to stop drawing the email and
+   * password fields beside the button.
+   *
+   * IT IS A FLAG AND NOT A DELETION, which is the same rule the back office
+   * follows. The password endpoint, its hashes and the till's own form all
+   * still exist; rolling back is turning this off and restarting, which is a
+   * thing somebody can do at seven on a Friday with a room full of covers.
+   * Deleting the code would make the rollback a deploy.
+   *
+   * It cannot turn itself on by accident: with Vesopa sign-in not live, `only`
+   * would leave a terminal with no way to be commissioned at all, so it is
+   * ignored.
+   */
+
+  /**
+   * What a KITCHEN SCREEN, DISPLAY or KIOSK needs to offer Continue with Vesopa.
+   *
+   * Its own client id, never the till's. All three used to fetch
+   * /api/terminal/vesopa/enabled and sign in as the till, which is how they
+   * came to share one client in the first place: a manager setting up a kiosk
+   * was asked to authorise "Vesopa EPOS", and the audience check could not
+   * tell the three apart.
+   *
+   * Answers `enabled: false` rather than an error where that product's client
+   * is not configured. An app that met an error on its setup screen is an app
+   * somebody gives up on; one told sign-in is off falls back to the door it
+   * has always had.
+   */
+  function enabledFor(kind) {
+    return (req, res) => {
+      res.set('Cache-Control', 'no-store');
+      const clientId = CLIENT_IDS[kind] || '';
+      res.json({
+        enabled: ENABLED && Boolean(clientId),
+        issuer: ISSUER,
+        clientId: clientId || null,
+      });
+    };
+  }
+
+  router.get('/api/display/vesopa/enabled', enabledFor('display'));
+  router.get('/api/kitchen/vesopa/enabled', enabledFor('kitchen'));
+  router.get('/api/express/vesopa/enabled', enabledFor('express'));
+  router.get('/api/terminal/vesopa/enabled', (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json({
+      enabled: ENABLED,
+      only: TILL_ONLY,
+      issuer: ISSUER,
+      clientId: ENABLED ? TILL_CLIENT_ID : null,
+    });
+  });
+
+  if (!ENABLED) {
+    router.use('/api/terminal/vesopa', (req, res) => res.status(404).end());
+    return router;
+  }
+
+  router.post('/api/terminal/vesopa/commission', express.json(), async (req, res, next) => {
+    try {
+      let claims;
+      try {
+        claims = await verifyTillToken((req.body || {}).id_token);
+      } catch (error) {
+        // Deliberately vague to the caller, specific in the log. A till being
+        // set up in a bar does not need to know which check failed, and an
+        // attacker probing certainly does not.
+        console.warn('[terminal_vesopa] refused a token:', error.message);
+        return res.status(401).json({ error: 'That sign-in could not be accepted.' });
+      }
+
+      if (!claims.email || claims.email_verified !== true) {
+        return res.status(403).json({
+          error: 'Your Vesopa account has no confirmed email address.',
+        });
+      }
+
+      /*
+       * The SAME matching, linking and access rules the browser door uses —
+       * the function itself, not a second copy of it. Approval, the office
+       * status, and the platform admin's exemption from the office check all
+       * come from there.
+       */
+      const user = await linkAndFind(pool, claims);
+
+      if (!user) {
+        return res.status(403).json({
+          error: 'There is no back-office user for that address. Ask your manager to add you.',
+        });
+      }
+      if (user.blocked) {
+        return res.status(403).json({ error: user.blocked });
+      }
+
+      /*
+       * A till sells from an office's catalogue, so a user with no office has
+       * nothing to commission a terminal FOR. The password door has the same
+       * rule — it only attaches a terminal token `if (terminal && officeEmail)`
+       * — but there it is silent, and here that would present as a till which
+       * signed in successfully and then could not check a single PIN.
+       */
+      if (!user.officeEmail) {
+        return res.status(403).json({
+          error: 'Your account is not attached to a venue, so it cannot set up a till.',
+        });
+      }
+
+      // Which site this till is for. A login that manages more than one site
+      // is asked -- by a till that says it can ask (1.7.3.0). The Vesopa token
+      // above is spent, so the till comes back with the site and a short pass
+      // instead (`/commission/site`). See src/sites.js.
+      const placed = await resolveTillSite(pool, user, {
+        canAsk: (req.body || {}).site_choice === true,
+        officeId: (req.body || {}).office_id,
+      });
+      if (placed.error) return res.status(403).json({ error: placed.error });
+      if (placed.choose) {
+        return res.json({
+          choose_site: true,
+          sites: placed.choose,
+          pick_token: sitePickToken(user.id, secret),
+        });
+      }
+
+      return finishCommission(placed.user, req.body || {}, res);
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  /**
+   * A till's credentials, for somebody already proved and placed at a site:
+   * a licence seat first (the venue's limit is checked here, and a machine
+   * signing in again keeps the seat it already had -- see src/till_seats.js),
+   * then the session and terminal tokens.
+   */
+  async function finishCommission(user, body, res) {
+    let seatId;
+    try {
+      seatId = await licences.signInDevice(pool, {
+        office: user.officeEmail,
+        // Which app. Absent on a release older than per-app licences, and every
+        // device that used this door before then was a till.
+        kind: clampText(body.device_kind, 24) || 'till',
+        deviceId: clampText(body.device_id, 64),
+        deviceName: clampText(body.device_name, 120),
+        // The machine itself, as a hash, and the key it was licensed with.
+        // Neither is required: see licences.js on why absent never refuses.
+        fingerprint: clampText(body.device_fingerprint, 64),
+        licenceKey: clampText(body.licence_key, 64),
+        by: user.email,
+      });
+    } catch (e) {
+      if (e instanceof tillSeats.SeatLimitError) {
+        return res.status(409).json({
+          error: e.message,
+          licences: e.limit,
+          seats: e.seats.map((s) => ({ name: s.device_name, last_seen_at: s.last_seen_at })),
+        });
+      }
+      // Somebody else's machine holds this key. Nothing can be signed out to
+      // make room, so this is a 403 and not a 409.
+      if (e.licenceKey) return res.status(403).json({ error: e.message, licence_key: true });
+      throw e;
+    }
+    return res.json({
+      token: issueToken(user, secret),
+      terminalToken: issueTerminalToken(user, secret, undefined, seatId),
+      user,
+    });
+  }
+
+  /**
+   * The second half of signing a till in for a login with more than one site:
+   * the site the manager chose, and the five-minute pass from the first half.
+   */
+  router.post('/api/terminal/vesopa/commission/site', express.json(), async (req, res, next) => {
+    try {
+      const body = req.body || {};
+      let userId;
+      try {
+        userId = readSitePickToken(body.pick_token, secret);
+      } catch {
+        return res.status(401).json({ error: 'That took too long. Sign the till in again.' });
+      }
+      const [[row]] = await pool.query(
+        `SELECT u.id, u.email, u.name, u.role, u.approved, u.office_id,
+                o.name AS office_name, o.contact_email AS office_email
+           FROM backoffice_users u LEFT JOIN offices o ON o.id = u.office_id
+          WHERE u.id = ?`,
+        [userId]
+      );
+      if (!row || row.approved !== 'Y') {
+        return res.status(403).json({ error: 'That account can no longer set up a till.' });
+      }
+      const user = {
+        id: row.id,
+        email: row.email,
+        name: row.name,
+        role: row.role || 'office',
+        officeId: row.office_id,
+        officeName: row.office_name,
+        officeEmail: row.office_email,
+      };
+      const placed = await resolveTillSite(pool, user, {
+        canAsk: true,
+        officeId: body.office_id,
+      });
+      if (placed.error) return res.status(403).json({ error: placed.error });
+      if (placed.choose) return res.status(400).json({ error: 'Which site is this till for?' });
+      return finishCommission(placed.user, body, res);
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  /*
+   * The same door, for a kitchen screen.
+   *
+   * WHAT A KITCHEN SIGN-IN IS, AND WHY THIS DOES NOT REPLACE IT WHOLESALE
+   *
+   * A kitchen screen's own credential -- the venue, a username and a password
+   * created in the back office under Kitchen screens -- belongs to the WALL and
+   * not to a person. That is deliberate and it is worth keeping: a screen can
+   * be turned off without turning a person off, and nobody's identity is left
+   * signed in on a display the whole kitchen can see for ninety days.
+   *
+   * What the venue asked for is one way in across the software, and this is
+   * that: a manager signs the screen in once with their Vesopa account and the
+   * server issues the screen's token. The typed credential comes off the
+   * screen; it is still what the token names, and still what the back office
+   * manages.
+   *
+   * A screen commissioned this way is marked `via: vesopa` on its token. That
+   * matters in one place: `PUT /kitchen/profile/branding` asks for the screen
+   * password before it will rebrand a display, and a screen with no typed
+   * password cannot answer. Those screens are rebranded from the back office
+   * instead, which is where every other venue-wide setting already lives.
+   */
+  /**
+   * A kitchen screen's own token, for a screen commissioned with Vesopa.
+   *
+   * The same shape `/api/kitchen/login` issues, so nothing downstream can tell
+   * which door a screen came through — `scope`, `office`, `user` and `name` are
+   * what every kitchen route reads.
+   *
+   * `user` is the person's address rather than a kitchen login's username,
+   * because that is the truth about who set this screen up, and `via` records
+   * how. See the note above for the one route that reads `via`.
+   */
+  function issueKitchenToken(office, claims, secret) {
+    if (!office) return null;
+    return jwt.sign(
+      {
+        scope: 'kitchen',
+        office,
+        user: String(claims.email).toLowerCase(),
+        name: claims.name || claims.email,
+        via: 'vesopa',
+      },
+      secret,
+      // Ninety days, matching the typed door. A wall screen signed in every
+      // week is a wall screen somebody props open.
+      { expiresIn: '90d' }
+    );
+  }
+
+  router.post('/api/kitchen/vesopa/commission', express.json(), async (req, res, next) => {
+    try {
+      let claims;
+      try {
+        claims = await verifyTillToken((req.body || {}).id_token, 'kitchen');
+      } catch (error) {
+        console.warn('[kitchen_vesopa] refused a token:', error.message);
+        return res.status(401).json({ error: 'That sign-in could not be accepted.' });
+      }
+
+      if (!claims.email || claims.email_verified !== true) {
+        return res.status(403).json({
+          error: 'Your Vesopa account has no confirmed email address.',
+        });
+      }
+
+      // The same matching, linking and access rules as every other door.
+      const user = await linkAndFind(pool, claims);
+      if (!user) {
+        return res.status(403).json({
+          error: 'There is no back-office user for that address. Ask your manager to add you.',
+        });
+      }
+      if (user.blocked) return res.status(403).json({ error: user.blocked });
+      if (!user.officeEmail) {
+        return res.status(403).json({
+          error: 'Your account is not attached to a venue, so it cannot set up a kitchen screen.',
+        });
+      }
+
+      const token = issueKitchenToken(user.officeEmail, claims, secret);
+      if (!token) {
+        return res.status(500).json({ error: 'That screen could not be set up.' });
+      }
+      return res.json({ token, office: user.officeEmail });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+
+  /**
+   * A customer display, signed in with Vesopa before it is paired.
+   *
+   * WHY A DISPLAY SIGNS IN AT ALL, WHEN IT NEVER USED TO.
+   *
+   * A display is paired by a till and has never had a credential of its own.
+   * That is why it could not be counted: a venue paying for one display could
+   * run six, and the display subscription was the one product whose screens
+   * worked perfectly while it sat expired.
+   *
+   * So the first screen is Continue with Vesopa, the licence is checked here,
+   * and the existing pairing with a till follows unchanged. Pairing is not
+   * replaced -- it is preceded.
+   *
+   * A DISPLAY IS BOUNCED, NOT REFUSED, when the licences are all in use. It
+   * holds nothing and shows only what a till sends it, so the newest screen
+   * wins and the one connected longest ago goes blank -- see POLICY in
+   * licences.js. That is the opposite of a till, which is refused, because a
+   * till bounced mid-sale loses work and a display loses a glance.
+   */
+  router.post('/api/display/vesopa/commission', express.json(), async (req, res, next) => {
+    try {
+      const body = req.body || {};
+      let claims;
+      try {
+        claims = await verifyTillToken(body.id_token, 'display');
+      } catch (error) {
+        console.warn('[display_vesopa] refused a token:', error.message);
+        return res.status(401).json({ error: 'That sign-in could not be accepted.' });
+      }
+
+      if (!claims.email || claims.email_verified !== true) {
+        return res.status(403).json({
+          error: 'Your Vesopa account has no confirmed email address.',
+        });
+      }
+
+      const user = await linkAndFind(pool, claims);
+      if (!user) {
+        return res.status(403).json({
+          error: 'There is no back-office user for that address. Ask your manager to add you.',
+        });
+      }
+      if (user.blocked) return res.status(403).json({ error: user.blocked });
+      if (!user.officeEmail) {
+        return res.status(403).json({
+          error: 'Your account is not attached to a venue, so it cannot set up a display.',
+        });
+      }
+
+      // The licence. Everything about this fails open -- an unlinked venue has
+      // no limit, and a venue whose entitlement could not be read keeps the
+      // last answer -- because a screen that would not start is worse than a
+      // screen that was not counted.
+      let seatId = null;
+      try {
+        seatId = await licences.signInDevice(pool, {
+          office: user.officeEmail,
+          kind: 'display',
+          deviceId: clampText(body.device_id, 64),
+          deviceName: clampText(body.device_name, 120),
+          fingerprint: clampText(body.device_fingerprint, 64),
+          licenceKey: clampText(body.licence_key, 64),
+          by: String(claims.email).toLowerCase(),
+        });
+      } catch (error) {
+        if (error.name === 'SeatLimitError') {
+          return res.status(409).json({
+            error: error.message,
+            licences: error.limit,
+            seats: (error.seats || []).map((x) => ({ name: x.device_name })),
+          });
+        }
+        if (error.licenceKey) {
+          return res.status(403).json({ error: error.message, licence_key: true });
+        }
+        throw error;
+      }
+
+      const token = jwt.sign(
+        {
+          scope: 'display',
+          office: user.officeEmail,
+          user: String(claims.email).toLowerCase(),
+          name: claims.name || claims.email,
+          via: 'vesopa',
+        },
+        secret,
+        // Ninety days, like the kitchen screen. A wall display asked to sign in
+        // every week is a wall display somebody props open.
+        seatId ? { expiresIn: '90d', jwtid: seatId } : { expiresIn: '90d' },
+      );
+
+      return res.json({
+        token,
+        office: user.officeEmail,
+        venue: user.officeName || null,
+        // So the screen can say "licensed" rather than only "signed in".
+        seat: Boolean(seatId),
+      });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  return router;
+}
+
+module.exports = {
+  terminalVesopaRoutes, ENABLED, ISSUER, TILL_CLIENT_ID, CLIENT_IDS, verifyTillToken,
+};

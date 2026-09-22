@@ -7,6 +7,13 @@ const mysql = require('mysql2/promise');
 const cors = require('cors');
 const { WebSocketServer } = require('ws');
 
+const { dineinRoutes } = require('./dinein');
+const { dineinPageRoutes, isMenuAddress } = require('./dinein_pages');
+const { dineinOtpRoutes } = require('./dinein_otp');
+const { dineinAuthRoutes, ENABLED: VESOPA_AUTH_ON } = require('./dinein_auth');
+const { backofficeAuthRoutes, LIVE: VESOPA_BACKOFFICE_LIVE } = require('./backoffice_auth');
+const { terminalVesopaRoutes, ENABLED: VESOPA_TILL_LIVE } = require('./terminal_vesopa');
+
 const {
   verifyPassword,
   issueToken,
@@ -23,6 +30,7 @@ const {
 const { backofficeRoutes } = require('./backoffice');
 const { adminRoutes } = require('./admin');
 const { programmingRoutes } = require('./programming');
+const { permissionRoutes, TILL_COLUMNS } = require('./permissions');
 const { commerceRoutes } = require('./commerce');
 const { analyticsRoutes } = require('./analytics');
 const { templateRoutes } = require('./templates');
@@ -39,8 +47,10 @@ const { dojoWebhookRoutes, webhookStatus } = require('./dojo');
 const { terminalRoutes, timesheetRoutes } = require('./terminals');
 const { deviceRoutes } = require('./devices');
 const { cardRoutes } = require('./cards');
+const { gymRoutes } = require('./gym');
 const { importRoutes } = require('./imports');
-const { reportRoutes } = require('./reports');
+const { reportRoutes, toPdf } = require('./reports');
+const { stockRoutes } = require('./stock');
 const {
   reportScheduleRoutes,
   startScheduler,
@@ -48,7 +58,24 @@ const {
 const { walletCore, walletRoutes, walletPublicRoutes } = require('./wallet');
 const { appleWalletRoutes } = require('./wallet_apple_service');
 const { ensureMemberNumber } = require('./member_numbers');
+const { priceLevelRoutes } = require('./price_levels');
+const { recordSale } = require('./sales');
+const training = require('./training');
+const tillSeats = require('./till_seats');
+const { siteRoutes, resolveTillSite } = require('./sites');
+const { demoRoutes } = require('./demo_venue');
+const { licenceRoutes, adminLicenceRoutes } = require('./licences');
+const licences = require('./licences');
+const { loyaltyAppRoutes, startLoyaltyScheduler } = require('./loyalty_app');
+const { privacyRoutes } = require('./privacy_provider');
+const { loyaltyHostGate } = require('./loyalty_host');
+const { loyaltySiteRoutes } = require('./loyalty_site');
+const { menuHostGate } = require('./menu_host');
+const { menuSiteRoutes } = require('./menu_site');
+const { notFoundPage } = require('./not_found');
+const { expressKioskRoutes } = require('./express_kiosk');
 const { walletPageRoutes } = require('./wallet_pages');
+const { giftIntegrationRoutes } = require('./gift_integration');
 
 const PORT = process.env.PORT || 4000;
 
@@ -87,12 +114,30 @@ const pool = mysql.createPool({
   charset: 'utf8mb4',
 });
 
+// Till licences read and write seats through this pool (src/till_seats.js).
+tillSeats.init(pool);
+
 const app = express();
 // Live runs behind nginx. Without this every request reports the proxy's own
 // address, so the password-reset throttle would see one caller and lock out
 // the whole platform after a handful of requests.
 app.set('trust proxy', 1);
 app.use(cors());
+/*
+ * loyalty.vesopa.com is served by this same process. The gate goes first so
+ * that on that name only the loyalty app, its API and its callbacks answer,
+ * and the old menu.vesopaepos.com/app/<venue>/ addresses redirect there.
+ * See src/loyalty_host.js.
+ */
+app.use(loyaltyHostGate());
+/*
+ * menu.vesopa.com is the menu host now; the old menu.vesopaepos.com answers
+ * every path with a 301 to the same path there (table cards, QR codes and
+ * kitchen links printed with the old name keep working). After the loyalty
+ * gate, which sends the old /app/<venue>/ addresses to loyalty.vesopa.com.
+ * See src/menu_host.js.
+ */
+app.use(menuHostGate());
 /*
  * The raw bytes are kept alongside the parsed body, for one caller.
  *
@@ -140,7 +185,9 @@ app.get('/health', (_req, res) => res.json({ ok: true }));
 // ---- Back office ----------------------------------------------------------
 
 app.post('/api/login', async (req, res, next) => {
-  const { email, password, remember, terminal } = req.body || {};
+  const {
+    email, password, remember, terminal, device_id, device_name, site_choice, office_id,
+  } = req.body || {};
   if (!email || !password) {
     return res.status(400).json({ error: 'Email and password are required' });
   }
@@ -156,9 +203,24 @@ app.post('/api/login', async (req, res, next) => {
     // the browser files it — a 12h JWT in localStorage still forces a fresh
     // sign-in tomorrow morning, which is exactly what the box promises not to.
     const ttl = remember ? REMEMBER_TTL : SESSION_TTL;
+
+    // A till being signed in by somebody who manages more than one site is
+    // asked which site it is for -- only a till that says it can ask (1.7.3.0);
+    // an older one gets the login's own office, as it always has.
+    let who = user;
+    if (terminal) {
+      const placed = await resolveTillSite(pool, user, {
+        canAsk: site_choice === true,
+        officeId: office_id,
+      });
+      if (placed.error) return res.status(403).json({ error: placed.error });
+      if (placed.choose) return res.json({ choose_site: true, sites: placed.choose });
+      who = placed.user;
+    }
+
     const body = {
-      token: issueToken(user, JWT_SECRET, ttl),
-      user,
+      token: issueToken(who, JWT_SECRET, ttl),
+      user: who,
       expiresIn: ttl,
     };
 
@@ -166,8 +228,25 @@ app.post('/api/login', async (req, res, next) => {
     // terminal read its venue's staff list later — long after this session
     // token has expired — so a PIN can be checked with no network. Only issued
     // when asked for, so a browser sign-in never receives one.
-    if (terminal && user.officeEmail) {
-      body.terminalToken = issueTerminalToken(user, JWT_SECRET);
+    if (terminal && who.officeEmail) {
+      // A licence seat first: the venue's limit is checked here, and a machine
+      // signing in again keeps the seat it already holds. See till_seats.js.
+      const clamp = (v, n) => (v == null ? null : String(v).trim().slice(0, n) || null);
+      const seatId = await licences.signInDevice(pool, {
+        office: who.officeEmail,
+        // Which app is signing in. Older releases send nothing and are tills,
+        // which is what every device using this door was until now.
+        kind: clamp(req.body.device_kind, 24) || 'till',
+        deviceId: clamp(device_id, 64),
+        deviceName: clamp(device_name, 120),
+        // What machine this really is (a hash, never the serials), and the key
+        // it was licensed with. Both absent on a release that cannot compute
+        // them, and absent is never a refusal -- see licences.js.
+        fingerprint: clamp(req.body.device_fingerprint, 64),
+        licenceKey: clamp(req.body.licence_key, 64),
+        by: who.email,
+      });
+      body.terminalToken = issueTerminalToken(who, JWT_SECRET, undefined, seatId);
     }
 
     res.json(body);
@@ -175,6 +254,17 @@ app.post('/api/login', async (req, res, next) => {
     if (e instanceof AccessDeniedError) {
       return res.status(403).json({ error: e.message });
     }
+    if (e instanceof tillSeats.SeatLimitError) {
+      return res.status(409).json({
+        error: e.message,
+        licences: e.limit,
+        seats: e.seats.map((s) => ({ name: s.device_name, last_seen_at: s.last_seen_at })),
+      });
+    }
+    // A licence key that belongs to another machine. 403 and not 409: there is
+    // nothing for the venue to sign out to make room, which is what a 409 here
+    // would have them try.
+    if (e.licenceKey) return res.status(403).json({ error: e.message, licence_key: true });
     next(e);
   }
 });
@@ -191,18 +281,39 @@ app.use('/api', passwordRoutes({ pool }));
 // carries the environment (/api/webhooks/dojo/sandbox|live) — sandbox and live
 // are separate subscriptions with separate signing secrets, and the handler has
 // to know which secret to check before it can trust anything in the payload.
-app.use(dojoWebhookRoutes({ pool, broadcast }));
+// Vesopa Express is built here, ahead of its mount below, because the Dojo
+// webhook needs its hook: a kiosk that was switched off mid-payment still
+// has its sale finished when Dojo reports the capture.
+const expressKiosk = expressKioskRoutes({ pool, broadcast, secret: JWT_SECRET });
+app.use(dojoWebhookRoutes({ pool, broadcast, onEvent: expressKiosk.onDojoEvent }));
 
 // The till's note keys. The authenticated half is office-scoped; the pull is
 // mounted at the root alongside /till/products.
 app.use('/api', denominationRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use(tillDenominationRoutes({ pool }));
 
+// Roles and permission groups, and the middleware that resolves what the
+// signed-in user may do. Mounted before the routes it guards so that every one
+// of them can read `req.access`.
+app.use('/api', permissionRoutes({ pool, broadcast, secret: JWT_SECRET }));
+
 app.use('/api', backofficeRoutes({ pool, broadcast, secret: JWT_SECRET }));
+// More than one site under one login: the list and the switch. See src/sites.js.
+app.use('/api', siteRoutes({ pool, broadcast, secret: JWT_SECRET }));
+// Its own paths (/api/demo and /till/demo/token), so mounted at the root.
+app.use(demoRoutes({ pool, secret: JWT_SECRET }));
+app.use('/api', licenceRoutes({ pool, secret: JWT_SECRET }));
 app.use('/api', programmingRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use('/api', commerceRoutes({ pool, broadcast, secret: JWT_SECRET }));
+// Repricing a catalogue a level at a time: preview, apply, and put back. See
+// the header of src/price_levels.js for why a preview and an undo are the
+// whole point rather than extras.
+app.use('/api', priceLevelRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use('/api', analyticsRoutes({ pool, secret: JWT_SECRET }));
 app.use('/api/admin', adminRoutes({ pool, broadcast, secret: JWT_SECRET }));
+// Licence limits and keys are the platform admin's to set, so they sit behind
+// the same admin gate as the offices they belong to.
+app.use('/api/admin', adminLicenceRoutes({ pool }));
 app.use('/api/admin', templateRoutes({ pool, broadcast, secret: JWT_SECRET }));
 
 // Kitchen screens. Three routers because they are authorised three different
@@ -250,13 +361,146 @@ app.use(deviceRoutes({ pool, broadcast, secret: JWT_SECRET }));
 // two views of one set of tables, and splitting them across two mounts would
 // put them in two places to read.
 app.use(cardRoutes({ pool, broadcast, secret: JWT_SECRET }));
+
+// The gym door. Mounted at the root for the same reason cards is: the till's
+// half and the back office's half read one set of tables. Every route inside
+// refuses with 404 until a venue switches the gym on, so mounting it here costs
+// a pub nothing.
+app.use(gymRoutes({ pool, broadcast, secret: JWT_SECRET }));
+
+// Vesopa Express, the self-service kiosk. Off for every venue until a manager
+// turns it on; see src/express_kiosk.js and schema_till_express.sql.
+app.use(expressKiosk);
 // Bringing a catalogue in from a spreadsheet. Mounted after the CRUD routes
 // it writes through, so nothing here can shadow /api/products.
 app.use('/api', importRoutes({ pool, broadcast, secret: JWT_SECRET }));
 
 // Reports a venue hands to its accountant, and the schedules that send them.
+// Dine-in: the QR menu a customer reads on their own phone, the orders they
+// place from it, and everything the back office needs to set it up.
+//
+// Mounted at the ROOT, and the router states its own full paths — the same
+// shape as cards.js and devices.js, and for the same reason. The back office
+// and the customer's phone are under /api; the till is not, because every
+// other route a till calls is at the root and one that was not simply 404ed.
+// The pages a customer actually opens are mounted further down, ahead of the
+// static middleware.
+app.use(dineinRoutes({ pool, broadcast, secret: JWT_SECRET }));
+// Signing in to a menu with a code. Mounted at the root like the rest of
+// dine-in, and beside it rather than inside it because it is a self-contained
+// piece with its own outside dependency.
+app.use(dineinOtpRoutes({ pool, secret: JWT_SECRET }));
+
+/*
+ * Signing in to a menu with a Vesopa account — the first product migration.
+ *
+ * NOT MOUNTED AT ALL unless VESOPA_AUTH_ENABLED is on AND the client
+ * credentials are present. That is rule 2 of the migration plan: legacy login
+ * ships dormant behind a flag, and rollback is flipping it back and restarting
+ * rather than a deploy under pressure with a room full of covers.
+ *
+ * It is an ADDITION to the code sign-in, never a replacement — and guest
+ * ordering, which is what most diners do, is untouched either way.
+ */
+if (VESOPA_AUTH_ON) {
+  app.use(dineinAuthRoutes({ pool, secret: JWT_SECRET }));
+  console.log('[boot] Vesopa account sign-in is ON for the menu');
+}
+
+/*
+ * The back office, migration two. Same rules as the menu: dormant behind its
+ * own flag, the password form untouched beside it, and the token it issues is
+ * the back office's own — so nothing downstream of sign-in can tell which door
+ * somebody came through, and turning it off is a flag rather than a rewrite.
+ */
+app.use(backofficeAuthRoutes({ pool, secret: JWT_SECRET, issueToken }));
+if (VESOPA_BACKOFFICE_LIVE) {
+  console.log('[boot] Vesopa account sign-in is ON for the back office');
+}
+
+/*
+ * The till, migration four — and the one that is not a browser.
+ *
+ * A till is a PUBLIC client: it ships to venues and holds no secret, so it runs
+ * the code flow itself with PKCE against a loopback address and hands the ID
+ * token here. This endpoint verifies it and issues the terminal token, which is
+ * the same credential `/api/login` hands a till that signed in with a password.
+ */
+app.use(terminalVesopaRoutes({ pool, secret: JWT_SECRET, issueToken, issueTerminalToken }));
+if (VESOPA_TILL_LIVE) {
+  console.log('[boot] Vesopa account commissioning is ON for tills');
+}
+
 app.use('/api', reportRoutes({ pool, secret: JWT_SECRET }));
 app.use('/api', reportScheduleRoutes({ pool, secret: JWT_SECRET }));
+
+/**
+ * Stock control: suppliers, pack sizes, the ledger and its documents. The
+ * till's wastage key posts through `stock.wastageFromTill` below so a wastage
+ * rung at the counter and one typed in the back office are the same document.
+ */
+const stock = stockRoutes({ pool, broadcast, secret: JWT_SECRET, toPdf });
+app.use('/api', stock);
+
+/**
+ * What the till does that is not a sale: a refund, a no-sale, an expense paid
+ * out of the drawer, cashback given. The till has kept these for its own Z
+ * report since 1.6 and never sent them; since 1.8.0.0 the outbox posts each
+ * one here so the back office can report on them. Idempotent on the id, and
+ * a trainee's are dropped, exactly like a void.
+ */
+app.post('/till/events', async (req, res, next) => {
+  const ev = req.body;
+  if (!ev || !ev.id || !ev.kind) {
+    return res.status(400).json({ error: 'id and kind are required' });
+  }
+  if (!['refund', 'no_sale', 'expense', 'cashback'].includes(ev.kind)) {
+    return res.status(400).json({ error: 'That is not a kind of till event.' });
+  }
+  try {
+    if (await training.isTrainingSale(pool, ev.office, ev)) {
+      return res.status(200).json(training.IGNORED);
+    }
+    await pool.execute(
+      `INSERT IGNORE INTO epos_till_events
+         (id, office, kind, amount_minor, note, reason, staff_name, terminal,
+          session_id, order_id, at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        ev.id,
+        ev.office || 'default',
+        ev.kind,
+        Math.abs(Number(ev.amount_minor) || 0),
+        ev.note ?? null,
+        ev.reason ?? null,
+        ev.staff_name ?? null,
+        ev.terminal ?? null,
+        ev.session_id ?? null,
+        ev.order_id ?? null,
+        ev.at ? new Date(ev.at) : new Date(),
+      ]
+    );
+    res.status(201).json({ ok: true });
+  } catch (e) {
+    next(e);
+  }
+});
+
+/** Wastage rung on the till: a completed one-line wastage document. */
+app.post('/till/wastage', async (req, res, next) => {
+  const w = req.body;
+  if (!w || !w.id) return res.status(400).json({ error: 'id is required' });
+  try {
+    if (await training.isTrainingSale(pool, w.office, w)) {
+      return res.status(200).json(training.IGNORED);
+    }
+    const result = await stock.wastageFromTill(w.office || 'default', w);
+    res.status(201).json(result);
+  } catch (e) {
+    if (e.status === 400) return res.status(400).json({ error: e.message });
+    next(e);
+  }
+});
 
 /**
  * Google Wallet passes.
@@ -285,6 +529,12 @@ app.use(appleWalletRoutes({ pool, secret: JWT_SECRET, core: wallet }));
 // and before the static middleware, for the same reason they are: /wallet/...
 // has to resolve here rather than being answered with the back-office SPA.
 app.use(walletPageRoutes({ pool, secret: JWT_SECRET, core: wallet }));
+
+// Vesopa Gift, the online voucher shop, issues and cancels the gift cards it
+// sells through this -- and nothing else. It shares the wallet core so a card
+// bought online gets the same Add to Wallet link a card issued at the counter
+// does. Answers 503 until GIFT_SERVICE_KEY is set. See src/gift_integration.js.
+app.use(giftIntegrationRoutes({ pool, broadcast, core: wallet }));
 
 // The pass artwork. Public on purpose and safe to be: it is the same branded
 // bands that go inside every .pkpass, with nothing in them that is not already
@@ -374,14 +624,60 @@ app.get('/till/customers', async (req, res, next) => {
 
   const q = req.query.q ? `%${req.query.q}%` : null;
   try {
-    const [rows] = await pool.query(
-      `SELECT id, name, phone, email, card_number, discount_type, discount_value
+    /*
+     * THE MEMBERSHIP AND THE FACE TRAVEL WITH THE NAME.
+     *
+     * This is the endpoint behind the Customer key, and until now it answered
+     * with a name, a phone number and a discount and nothing else. That is the
+     * whole of two of the venue's complaints:
+     *
+     *   "If a customer has expired, they can still use the loyalty card on the
+     *   till" — a clerk who picks the member off this list instead of swiping
+     *   their card attaches them with nothing checked, because the till was
+     *   never told the membership had run out.
+     *
+     *   "Photos of customers doesn't show on the till" — the till has drawn
+     *   `MemberFace` since 1.6.8.0 and it draws initials when there is no
+     *   photograph, which is exactly what a row with no `photo_url` in it
+     *   looks like.
+     *
+     * Both are fixed by sending the two columns. The gate itself lives on the
+     * till, in `OrderRepository.attachCustomer`, so that every door is closed
+     * by one check rather than four.
+     *
+     * `points_balance` comes too. It costs nothing here and it is what the
+     * customer display now shows beside their name.
+     *
+     * DATE_FORMAT, not the bare column. mysql2 hands a DATE back as a Date at
+     * local midnight and JSON turns that into the previous evening in British
+     * summer time — a membership that expires a day early, every summer. Every
+     * other read of this column in the codebase formats it for that reason.
+     *
+     * Falls back when the columns are not there. `photo_url` arrives with
+     * schema_membership.sql and the migrations are applied only when the
+     * deploy is asked to, so naming a column that does not exist yet would
+     * take the Customer key down completely rather than degrade it — the same
+     * treatment `member_no` gets on the back-office list route.
+     */
+    const base = `id, name, phone, email, card_number, discount_type,
+                  discount_value, points_balance,
+                  DATE_FORMAT(membership_expiry, '%Y-%m-%d') AS membership_expiry`;
+    const where = `
        FROM epos_customers
        WHERE email_key = ?
        ${q ? 'AND (name LIKE ? OR phone LIKE ? OR email LIKE ?)' : ''}
-       ORDER BY name LIMIT 50`,
-      q ? [office, q, q, q] : [office]
-    );
+       ORDER BY name LIMIT 50`;
+    const params = q ? [office, q, q, q] : [office];
+
+    let rows;
+    for (const select of [`${base}, photo_url`, base]) {
+      try {
+        [rows] = await pool.query(`SELECT ${select} ${where}`, params);
+        break;
+      } catch (e) {
+        if (e.code !== 'ER_BAD_FIELD_ERROR' || select === base) throw e;
+      }
+    }
     res.json(rows);
   } catch (e) {
     next(e);
@@ -424,12 +720,129 @@ app.post('/till/customers', async (req, res, next) => {
 });
 
 /** Void reasons for the till's confirmation dialog. */
-app.get('/till/void-reasons', async (_req, res, next) => {
-  try {
+/**
+ * The void reasons a till offers.
+ *
+ * SCOPED, LIKE EVERY OTHER TILL ENDPOINT, AND IT WAS NOT
+ *
+ * This read had no office on it at all — the handler took `_req`, so the
+ * request was never even looked at — and it therefore returned every reason
+ * belonging to every venue on the platform. Measured on live: 61 rows where a
+ * venue has nine, with "Customer changed their mind" appearing once per office.
+ *
+ * That is what was reported as the same reason listed over and over on the void
+ * dialog. It is not duplicated data — the table is clean, nine rows per venue —
+ * it is one venue being shown everybody's.
+ *
+ * And it is a leak as well as a mess: a reason is free text a manager types, so
+ * anything one venue called a reason was being read off every other venue's
+ * till.
+ *
+ * An office is required, as it is on /till/receipts, /till/customers,
+ * /till/deals and /till/departments. A till that names none gets the platform
+ * defaults rather than everybody's, because the alternative is a void dialog
+ * with nothing in it on a till that has not been updated yet — and a clerk who
+ * cannot void is a clerk who cannot serve.
+ */
+/*
+ * The five things a venue explains, and the one list each.
+ *
+ * "In Error Reasons, Can we have reasons for No Sale, Refunds, Voids and
+ * Cancel (Void and Cancel is already done just need to split them off."
+ *
+ * Cancel was not "already done" — the till has been showing the VOID list when
+ * a clerk cancels a check, which is why the venue reads it as done and why
+ * they want it split. "Rung up in error" explains one line coming off a bill
+ * and says nothing about why a whole check was abandoned, and a manager
+ * reading the Z report cannot tell the two apart afterwards.
+ *
+ * A whitelist rather than passing the query through. `applies_to` is a free
+ * string column, and a till asking for a value nothing seeds would get an
+ * empty list and a dialog a clerk cannot get past.
+ */
+const REASON_ACTIONS = ['void', 'cancel', 'refund', 'no_sale', 'discount', 'expense', 'wastage'];
+
+/**
+ * What a venue calls the reasons for one action.
+ *
+ * Scoped by office, like every other /till read, and for a reason worth
+ * repeating: this query once had no office on it at all — the handler took
+ * `_req` — so it returned every reason belonging to every venue on the
+ * platform. Measured on live: 61 rows where a venue has nine. That was
+ * reported as the same reason listed over and over on the void dialog, and it
+ * was not duplicated data but one venue being shown everybody's. It is a leak
+ * as well as a mess, because a reason is free text a manager types.
+ *
+ * A till that names no office gets the platform defaults rather than
+ * everybody's, because the alternative is an empty dialog on a till that has
+ * not been updated yet — and a clerk who cannot void is a clerk who cannot
+ * serve.
+ */
+async function reasonsFor(office, appliesTo) {
+  if (!office) {
     const [rows] = await pool.query(
-      "SELECT reason FROM bo_error_reasons WHERE applies_to = 'void' ORDER BY id"
+      'SELECT reason FROM bo_error_reasons' +
+        ' WHERE applies_to = ? AND office_id IS NULL ORDER BY sort_order, id',
+      [appliesTo]
     );
-    res.json(rows.map((r) => r.reason));
+    return rows.map((r) => r.reason);
+  }
+
+  const [rows] = await pool.query(
+    'SELECT e.reason FROM bo_error_reasons e' +
+      '  JOIN offices o ON o.id = e.office_id' +
+      ' WHERE e.applies_to = ? AND o.contact_email = ?' +
+      ' ORDER BY e.sort_order, e.id',
+    [appliesTo, office]
+  );
+  return rows.map((r) => r.reason);
+}
+
+/**
+ * One list, named by the action asking for it.
+ *
+ * Falls back to the void list for `cancel` when a venue has no cancel reasons
+ * of its own. The migration seeds one for every office that exists today, so
+ * this is for the office created between the migration running and somebody
+ * opening the Error Reasons page — and for the venue that deletes every cancel
+ * reason it has, which the back office lets them do. Either way the answer is
+ * the list the till used yesterday rather than a dialog with nothing in it.
+ *
+ * No such fallback for the other four: an empty refund or no-sale list is a
+ * venue that has not set any up, and the till carries on without asking rather
+ * than blocking the drawer. See ui/void_dialog.dart.
+ */
+app.get('/till/error-reasons', async (req, res, next) => {
+  const office = req.query.office;
+  const appliesTo = String(req.query.applies_to || 'void');
+  if (!REASON_ACTIONS.includes(appliesTo)) {
+    return res.status(400).json({
+      error: `applies_to must be one of ${REASON_ACTIONS.join(', ')}`,
+    });
+  }
+  try {
+    let reasons = await reasonsFor(office, appliesTo);
+    if (!reasons.length && appliesTo === 'cancel') {
+      reasons = await reasonsFor(office, 'void');
+    }
+    res.json(reasons);
+  } catch (e) {
+    next(e);
+  }
+});
+
+/**
+ * The old route, kept exactly as it was.
+ *
+ * Every till in every venue on 1.6.8.0 and earlier calls this and expects a
+ * bare JSON array of strings. It delegates rather than being rewritten, so the
+ * two can never drift, and it is not deprecated in any way a till can notice —
+ * a Store rollout takes days to reach every terminal and the ones still on the
+ * old build have to keep being able to void.
+ */
+app.get('/till/void-reasons', async (req, res, next) => {
+  try {
+    res.json(await reasonsFor(req.query.office, 'void'));
   } catch (e) {
     next(e);
   }
@@ -445,6 +858,11 @@ app.post('/till/voids', async (req, res, next) => {
     return res.status(400).json({ error: 'id and reason are required' });
   }
   try {
+    // A trainee's voids are practice, like their sales -- a manager reading the
+    // void log for the till that loses money must not find the training desk.
+    if (await training.isTrainingSale(pool, v.office, v)) {
+      return res.status(200).json(training.IGNORED);
+    }
     await pool.execute(
       `INSERT IGNORE INTO epos_void_log
          (id, email, order_id, clerk_pin, reason, items, scope, amount_minor,
@@ -564,27 +982,241 @@ app.get('/till/staff', requireTerminal(JWT_SECRET), async (req, res, next) => {
     //
     // A till that gets no swipe_card simply has no staff cards, which is
     // exactly true on a venue that has not run the migration.
+    // PERMISSIONS COME DOWN FOR THE SAME REASON THE PIN DOES
+    //
+    // A manager approving a void at eight on a Friday cannot wait for the
+    // broadband. So the group's switches travel with the staff list and the
+    // till decides locally, exactly as it already does for the PIN and the
+    // staff card.
+    const columns = TILL_COLUMNS.map((c) => `g.${c}`).join(', ');
+
+    // TRAINING ACCOUNTS, ONLY FOR A TILL THAT KNOWS WHAT ONE IS
+    //
+    // A till from 1.7.3.0 asks with `?features=training` and keeps a trainee's
+    // bills to itself. A till older than that would sell for real under a
+    // training account, so it is simply not given any: a trainee cannot sign on
+    // there at all, which is the only safe thing an older till can do. See
+    // src/training.js.
+    const withTraining = training.tillUnderstandsTraining(req);
+    const WITH_TRAINING = `
+      SELECT c.id, c.pluid, c.clark_name AS name, c.pin_code AS pin,
+             COALESCE(c.swipe_card, '') AS swipe_card,
+             COALESCE(c.training, 0) AS training,
+             c.permission_group_id, g.name AS permission_group, ${columns}
+        FROM bo_clarks c
+        LEFT JOIN epos_permission_groups g
+               ON g.id = c.permission_group_id AND g.email = c.email
+       WHERE c.email = ? AND COALESCE(c.active, 1) = 1
+             ${withTraining ? '' : 'AND COALESCE(c.training, 0) = 0'}
+       ORDER BY c.pluid, c.clark_name`;
+
     const WITH_CARD = `
-      SELECT id, pluid, clark_name AS name, pin_code AS pin,
-             COALESCE(swipe_card, '') AS swipe_card
-        FROM bo_clarks
-       WHERE email = ? AND COALESCE(active, 1) = 1
-       ORDER BY pluid, clark_name`;
+      SELECT c.id, c.pluid, c.clark_name AS name, c.pin_code AS pin,
+             COALESCE(c.swipe_card, '') AS swipe_card,
+             c.permission_group_id, g.name AS permission_group, ${columns}
+        FROM bo_clarks c
+        LEFT JOIN epos_permission_groups g
+               ON g.id = c.permission_group_id AND g.email = c.email
+       WHERE c.email = ? AND COALESCE(c.active, 1) = 1
+       ORDER BY c.pluid, c.clark_name`;
 
     const WITHOUT_CARD = `
+      SELECT c.id, c.pluid, c.clark_name AS name, c.pin_code AS pin,
+             c.permission_group_id, g.name AS permission_group, ${columns}
+        FROM bo_clarks c
+        LEFT JOIN epos_permission_groups g
+               ON g.id = c.permission_group_id AND g.email = c.email
+       WHERE c.email = ? AND COALESCE(c.active, 1) = 1
+       ORDER BY c.pluid, c.clark_name`;
+
+    // The oldest shape of all: no card column and no permissions table. A till
+    // talking to a server whose migrations have not been run must still be able
+    // to sign somebody on, so each fallback drops one thing rather than
+    // failing.
+    const PLAIN = `
       SELECT id, pluid, clark_name AS name, pin_code AS pin
         FROM bo_clarks
        WHERE email = ? AND COALESCE(active, 1) = 1
        ORDER BY pluid, clark_name`;
 
+    // Each step down drops one thing rather than failing. The training column
+    // is tried first and on its own, so a server that has not run its newest
+    // migration loses nothing but training accounts -- which it cannot have.
+    const isMissing = (e) =>
+      e.code === 'ER_BAD_FIELD_ERROR' || e.code === 'ER_NO_SUCH_TABLE';
     let rows;
     try {
-      [rows] = await pool.query(WITH_CARD, [req.office]);
+      [rows] = await pool.query(WITH_TRAINING, [req.office]);
+    } catch (e0) {
+      if (!isMissing(e0)) throw e0;
+      try {
+        [rows] = await pool.query(WITH_CARD, [req.office]);
+      } catch (e) {
+        if (!isMissing(e)) throw e;
+        try {
+          [rows] = await pool.query(WITHOUT_CARD, [req.office]);
+        } catch (e2) {
+          if (!isMissing(e2)) throw e2;
+          [rows] = await pool.query(PLAIN, [req.office]);
+        }
+      }
+    }
+
+    // A clerk in no group is unrestricted, which is what every clerk was before
+    // permission groups existed. Sent as a filled-in object rather than as a
+    // null the till has to interpret: "no group" and "a group with nothing
+    // ticked" are opposite answers, and the till must never have to guess which
+    // one an absent field meant.
+    rows = rows.map((row) => {
+      const grouped = row.permission_group_id != null && row.permission_group;
+      const permissions = {};
+      for (const column of TILL_COLUMNS) {
+        permissions[column] = grouped ? row[column] === 1 : true;
+      }
+      const clean = { ...row };
+      for (const column of TILL_COLUMNS) delete clean[column];
+      // A boolean, always present: an older server's rows have no column, and
+      // "not a trainee" is the truth about every one of them.
+      return { ...clean, training: Number(row.training) === 1, permissions };
+    });
+    res.json(rows);
+  } catch (e) {
+    next(e);
+  }
+});
+
+/**
+ * The roles a new member of staff can be given, for the till's own form.
+ *
+ * "This should ask for their name, role and either pin or to swipe a new staff
+ * card." Role means a permission group: it is what actually decides whether
+ * somebody may void a line or open the drawer, and picking one from a list is
+ * the only way a manager standing at the counter can get it right.
+ *
+ * Names only. The switches inside a group already travel with `/till/staff`,
+ * so there is nothing here worth a second copy of them.
+ */
+app.get('/till/permission-groups', requireTerminal(JWT_SECRET), async (req, res, next) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT id, name FROM epos_permission_groups
+        WHERE email = ? ORDER BY sort_order, name`,
+      [req.office]
+    );
+    res.json(rows);
+  } catch (e) {
+    // A venue whose migrations predate permission groups has no roles to
+    // offer, which is not an error — it is a venue where every clerk is
+    // unrestricted. An empty list lets the till draw the form without one.
+    if (e.code === 'ER_NO_SUCH_TABLE') return res.json([]);
+    next(e);
+  }
+});
+
+/**
+ * Take somebody on, from the till.
+ *
+ * "Ability to add staff members from the function screen." A new starter
+ * arrives at four on a Friday and cannot ring anything up until somebody with
+ * a back-office login has been found — which in a venue with one manager and
+ * no office computer means they cannot start.
+ *
+ * WHAT THIS DELIBERATELY DOES NOT DO
+ *
+ * It does not touch cards. `POST /till/cards/assign` already exists, already
+ * knows this venue's prefixes and already refuses a card that belongs to
+ * somebody else *by name*. The till creates the person here and then assigns
+ * the card there, so there is one implementation of what a staff card is.
+ *
+ * The rules are the back office's rules, enforced identically, because a
+ * member of staff created here has to be able to sign on there:
+ *
+ *   * a PIN is exactly four digits — the pad submits on the fourth key, so a
+ *     five-digit PIN creates somebody who can never sign on at all;
+ *   * a PIN already in use is refused, naming its holder, because two people
+ *     on one PIN means every sale either of them rings up is recorded against
+ *     whichever row was found first.
+ *
+ * A PIN is optional here and is not in the back office, and that is the one
+ * difference. It is the "or swipe a new staff card" half of the ask: the till
+ * creates the person, then writes the card onto them. The till is responsible
+ * for not leaving somebody with neither — see the Functions screen.
+ */
+app.post('/till/staff', requireTerminal(JWT_SECRET), async (req, res, next) => {
+  try {
+    const office = req.office;
+    const name = String(req.body?.name || '').trim().slice(0, 190);
+    if (!name) return res.status(400).json({ error: 'A name is required.' });
+
+    const pin = req.body?.pin == null ? '' : String(req.body.pin).trim();
+    if (pin && !/^\d{4}$/.test(pin)) {
+      return res.status(400).json({
+        error: 'A PIN must be exactly 4 digits, numbers only.',
+      });
+    }
+
+    if (pin) {
+      const [[clash]] = await pool.query(
+        'SELECT clark_name FROM bo_clarks WHERE email = ? AND pin_code = ?',
+        [office, pin]
+      );
+      if (clash) {
+        return res.status(409).json({
+          error: `That PIN is already in use by ${clash.clark_name}.`,
+        });
+      }
+    }
+
+    // The role, checked against this venue's own groups. An id from another
+    // venue would otherwise hand somebody that venue's switches.
+    let groupId = null;
+    if (req.body?.permission_group_id != null && req.body.permission_group_id !== '') {
+      const id = Number(req.body.permission_group_id);
+      if (!Number.isInteger(id) || id <= 0) {
+        return res.status(400).json({ error: 'That role does not exist.' });
+      }
+      const [[group]] = await pool.query(
+        'SELECT id FROM epos_permission_groups WHERE id = ? AND email = ?',
+        [id, office]
+      );
+      if (!group) return res.status(400).json({ error: 'That role does not exist.' });
+      groupId = id;
+    }
+
+    // The next clerk number, per venue. `pluid` is how the till's own reports
+    // group a shift, and two people sharing one would merge their takings.
+    const [[{ next_pluid: pluid }]] = await pool.query(
+      'SELECT COALESCE(MAX(pluid), 0) + 1 AS next_pluid FROM bo_clarks WHERE email = ?',
+      [office]
+    );
+
+    const values = [office, pluid, name, pin || null, 1];
+    let result;
+    try {
+      [result] = await pool.execute(
+        `INSERT INTO bo_clarks
+           (email, pluid, clark_name, pin_code, active, permission_group_id)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [...values, groupId]
+      );
     } catch (e) {
       if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
-      [rows] = await pool.query(WITHOUT_CARD, [req.office]);
+      [result] = await pool.execute(
+        `INSERT INTO bo_clarks (email, pluid, clark_name, pin_code, active)
+         VALUES (?, ?, ?, ?, ?)`,
+        values
+      );
     }
-    res.json(rows);
+
+    broadcast({ type: 'staff.updated' });
+    res.status(201).json({
+      id: result.insertId,
+      pluid,
+      name,
+      pin: pin || '',
+      swipe_card: '',
+      permission_group_id: groupId,
+    });
   } catch (e) {
     next(e);
   }
@@ -598,8 +1230,15 @@ app.get(['/till/floor', '/floor.json'], async (req, res, next) => {
 
   try {
     // Scoped: a till must show its own venue's rooms, not every venue's.
+    //
+    // The shape of the room and the colours come with it. This route used to
+    // select the name and nothing else, so a venue that had drawn an L in the
+    // designer saw it in the back office and on a customer's phone, and the
+    // till — the one screen staff actually work from — went on showing a plain
+    // rectangle. The till knew how to draw the walls; the walls were simply
+    // never sent to it.
     const [rooms] = await pool.query(
-      `SELECT r.id, r.name
+      `SELECT r.id, r.name, r.outline, r.floor_colour, r.wall_colour
        FROM floor_rooms r
        JOIN offices o ON o.id = r.office_id
        WHERE o.contact_email = ?
@@ -608,7 +1247,7 @@ app.get(['/till/floor', '/floor.json'], async (req, res, next) => {
     );
     const [tables] = await pool.query(
       `SELECT t.id, t.room_id, t.table_number, t.label, t.pos_x, t.pos_y,
-              t.width, t.height, t.shape, t.seats
+              t.width, t.height, t.shape, t.seats, t.colour
        FROM floor_tables t
        JOIN offices o ON o.id = t.office_id
        WHERE o.contact_email = ?
@@ -621,6 +1260,351 @@ app.get(['/till/floor', '/floor.json'], async (req, res, next) => {
         tables: tables.filter((t) => t.room_id === r.id),
       }))
     );
+  } catch (e) {
+    next(e);
+  }
+});
+
+/* ---------------------------------------------------------------------------
+   LAYING OUT THE FLOOR FROM THE TILL
+
+   The designer has always been a back-office screen, which means arranging a
+   room happens on a laptop in an office, from memory, about a room the person
+   is not standing in. The obvious place to do it is on the till, on the floor,
+   looking at the tables — so these are the same three writes the designer
+   makes, reachable by a commissioned terminal.
+
+   WHAT MAKES THIS SAFE ENOUGH TO EXPOSE
+
+   The office comes from the terminal's own token and never from the request.
+   requireTerminal puts it there after verifying the signature, so a till can
+   only ever rewrite its own venue's plan; passing somebody else's office in the
+   body changes nothing, because the body is not consulted for it.
+
+   Every row touched is matched on office_id as well as on id. That is belt and
+   braces over the first rule, and it is the rule that actually held the day the
+   designer's own reads were unscoped and one venue could see another's layout.
+
+   These do not replace the back office. A venue that would rather arrange its
+   floor on a big screen still can, and both write the same rows.
+   --------------------------------------------------------------------------- */
+
+/**
+ * A table's permanent public address.
+ *
+ * The same shape the designer mints, and for the same reason: this is what is
+ * printed on the card that sits on the table, so it is generated once and never
+ * again — a rename, a renumber or a move to another room must not invalidate a
+ * card somebody has already laminated.
+ *
+ * Spelled out here rather than shared with programming.js, where it is a
+ * closure inside the route factory. Exporting it would mean either widening
+ * that module's surface or restructuring it, and this is one line of crypto
+ * whose only requirement is that it does not collide.
+ */
+function newPublicId() {
+  return require('crypto').randomUUID().replace(/-/g, '');
+}
+
+/** The office id behind the email a terminal token carries. */
+async function terminalOfficeId(office) {
+  const [[row]] = await pool.query(
+    'SELECT id FROM offices WHERE contact_email = ?',
+    [office]
+  );
+  return row ? row.id : null;
+}
+
+/**
+ * A colour a picker wrote, or null.
+ *
+ * Six hex digits and a hash. Refused rather than corrected: this ends up in a
+ * style attribute on a page other people read, and a "colour" that is really a
+ * string of CSS is a way of styling somebody else's screen.
+ */
+function tillColour(raw) {
+  if (raw == null || raw === '') return null;
+  const text = String(raw).trim();
+  return /^#[0-9a-fA-F]{6}$/.test(text) ? text.toUpperCase() : null;
+}
+
+/** Corners in grid squares, clamped, as JSON text — or null for a rectangle. */
+function tillOutline(raw) {
+  if (raw == null || raw === '') return null;
+  let points = raw;
+  if (typeof raw === 'string') {
+    try {
+      points = JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  if (!Array.isArray(points) || points.length < 3) return null;
+
+  const clean = [];
+  for (const point of points) {
+    if (!Array.isArray(point) || point.length < 2) return null;
+    const x = Number(point[0]);
+    const y = Number(point[1]);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    // A corner at -4 or at 900 is a dragging accident, and a room drawn off the
+    // plan cannot be dragged back because its handles are off the plan too.
+    clean.push([
+      Math.max(0, Math.min(200, Math.round(x))),
+      Math.max(0, Math.min(200, Math.round(y))),
+    ]);
+  }
+  return JSON.stringify(clean);
+}
+
+/** Where the tables are, after a drag. */
+/**
+ * Create a product from the till, for a barcode nobody has met before.
+ *
+ * The venue's request: "if a new barcode is scanned on the till ask if you want
+ * to create a new product asking for product name, price, tax rate, sub
+ * department and department."
+ *
+ * WHY THIS ROUTE EXISTS AT ALL
+ *
+ * The till can already edit a product, but only in its own database — the
+ * Products screen says "updated on this terminal" and means it. That is fine
+ * for a stock adjustment nobody else needs. It is useless here: a product
+ * created only on the terminal that scanned it is wiped by the next catalogue
+ * sync, and does not exist on the till at the other end of the bar. A new
+ * product has to reach the back office or it is not a product.
+ *
+ * Terminal token, not a session: nobody is signed into a back office at the
+ * counter with a case of stock in front of them. `req.office` is the venue's
+ * contact email, which is exactly the key bo_products is scoped by — see
+ * terminalOfficeId for the one place that is not true.
+ *
+ * The PLU is allocated the same way the back office allocates one, and
+ * deliberately not accepted from the till: a terminal choosing its own numbers
+ * would collide with the next product a manager adds, and the collision would
+ * surface as two different things ringing up as each other.
+ */
+app.post('/till/products', requireTerminal(JWT_SECRET), async (req, res, next) => {
+  const body = req.body || {};
+  try {
+    const office = req.office;
+
+    const name = String(body.product_name ?? '').trim().slice(0, 190);
+    if (!name) return res.status(400).json({ error: 'Give the product a name.' });
+
+    // Digits and letters only, and never blank here: this route exists because
+    // a barcode was scanned, and a product created without one would be a
+    // product the scan that prompted it still cannot find.
+    const barcode = String(body.barcode ?? '')
+      .replace(/[^0-9A-Za-z-]/g, '')
+      .slice(0, 64);
+    if (!barcode) return res.status(400).json({ error: 'No barcode.' });
+
+    // Already known is not an error — two tills scanning the same new case at
+    // once is an ordinary Tuesday. Answer with the product that exists so the
+    // till rings it up instead of showing a failure nobody can act on.
+    const [[existing]] = await pool.query(
+      'SELECT pluid, product_name FROM bo_products WHERE email = ? AND barcode = ? LIMIT 1',
+      [office, barcode]
+    );
+    if (existing) {
+      return res.json({
+        pluid: existing.pluid,
+        product_name: existing.product_name,
+        already: true,
+      });
+    }
+
+    const price = Number(body.price);
+    if (!Number.isFinite(price) || price < 0) {
+      return res.status(400).json({ error: 'Give the product a price.' });
+    }
+    const tax = Number(body.tax_percentage);
+
+    const [[row]] = await pool.query(
+      'SELECT COALESCE(MAX(pluid), 0) + 1 AS next FROM bo_products WHERE email = ?',
+      [office]
+    );
+    const pluid = row.next;
+
+    await pool.execute(
+      `INSERT INTO bo_products
+         (email, pluid, product_name, department_name, group_name,
+          price, tax_percentage, stock_quantity, print_to_receipt, barcode)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1, ?)`,
+      [
+        office,
+        pluid,
+        name,
+        String(body.department_name ?? '').trim().slice(0, 190) || null,
+        String(body.group_name ?? '').trim().slice(0, 190) || null,
+        price,
+        Number.isFinite(tax) && tax >= 0 ? tax : 0,
+        barcode,
+      ]
+    );
+
+    // Every till, not just this one. The terminal that scanned it will pick the
+    // product up on the same refresh as the rest of them, so there is no path
+    // where one till has it and the others do not.
+    broadcast({ type: 'catalogue.updated' });
+    res.status(201).json({ pluid, product_name: name, already: false });
+  } catch (e) {
+    next(e);
+  }
+});
+
+app.put('/till/floor/tables', requireTerminal(JWT_SECRET), async (req, res, next) => {
+  const tables = Array.isArray(req.body && req.body.tables) ? req.body.tables : [];
+  if (!tables.length) return res.json({ ok: true, saved: 0 });
+
+  let conn;
+  try {
+    const officeId = await terminalOfficeId(req.office);
+    if (officeId == null) {
+      return res.status(400).json({ error: 'This terminal has no venue.' });
+    }
+
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+    for (const t of tables) {
+      // Matched on the office as well as the id, so a drag on one venue's till
+      // can never move a table belonging to another.
+      await conn.execute(
+        'UPDATE floor_tables' +
+          '   SET pos_x = ?, pos_y = ?, width = ?, height = ?,' +
+          '       shape = ?, seats = ?, colour = ?' +
+          ' WHERE id = ? AND office_id = ?',
+        [
+          Math.max(0, Math.min(200, Number(t.pos_x) || 0)),
+          Math.max(0, Math.min(200, Number(t.pos_y) || 0)),
+          Math.max(1, Math.min(20, Number(t.width) || 2)),
+          Math.max(1, Math.min(20, Number(t.height) || 2)),
+          t.shape === 'circle' ? 'circle' : 'rect',
+          Math.max(0, Math.min(99, Number(t.seats) || 4)),
+          tillColour(t.colour),
+          Number(t.id),
+          officeId,
+        ]
+      );
+    }
+    await conn.commit();
+
+    // Every other till in the venue, and the back office, at once.
+    broadcast({ type: 'floor.updated' });
+    res.json({ ok: true, saved: tables.length });
+  } catch (e) {
+    if (conn) await conn.rollback();
+    next(e);
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+/** A new table, put down on the floor somebody is standing on. */
+app.post('/till/floor/tables', requireTerminal(JWT_SECRET), async (req, res, next) => {
+  const body = req.body || {};
+  try {
+    const officeId = await terminalOfficeId(req.office);
+    if (officeId == null) {
+      return res.status(400).json({ error: 'This terminal has no venue.' });
+    }
+
+    const roomId = Number(body.room_id);
+    const [[room]] = await pool.query(
+      'SELECT id FROM floor_rooms WHERE id = ? AND office_id = ?',
+      [roomId, officeId]
+    );
+    if (!room) return res.status(400).json({ error: 'That room is not yours.' });
+
+    const number = Number(body.table_number);
+    if (!Number.isInteger(number) || number < 1) {
+      return res.status(400).json({ error: 'Give the table a number.' });
+    }
+
+    // A name has to be unique across the venue and not merely within the room:
+    // a runner carrying food to "Window" is not helped by being told there are
+    // two of them in different rooms.
+    const name = String(body.name || '').trim() || null;
+    if (name) {
+      const [[clash]] = await pool.query(
+        'SELECT id FROM floor_tables WHERE office_id = ? AND LOWER(name) = LOWER(?)',
+        [officeId, name]
+      );
+      if (clash) {
+        return res.status(409).json({
+          error: 'There is already a table called "' + name + '".',
+        });
+      }
+    }
+
+    const [r] = await pool.execute(
+      'INSERT INTO floor_tables' +
+        ' (office_id, room_id, table_number, name, public_id, qr_enabled,' +
+        '  pos_x, pos_y, width, height, shape, seats, colour)' +
+        ' VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        officeId,
+        roomId,
+        number,
+        name,
+        // Minted here and never again: this is the address printed on the card
+        // that sits on the table, so it has to survive every rename and move.
+        newPublicId(),
+        Math.max(0, Math.min(200, Number(body.pos_x) || 0)),
+        Math.max(0, Math.min(200, Number(body.pos_y) || 0)),
+        Math.max(1, Math.min(20, Number(body.width) || 2)),
+        Math.max(1, Math.min(20, Number(body.height) || 2)),
+        body.shape === 'circle' ? 'circle' : 'rect',
+        Math.max(0, Math.min(99, Number(body.seats) || 4)),
+        tillColour(body.colour),
+      ]
+    );
+
+    broadcast({ type: 'floor.updated' });
+    res.status(201).json({ id: r.insertId });
+  } catch (e) {
+    if (e.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({
+        error: 'Table ' + body.table_number + ' already exists.',
+      });
+    }
+    next(e);
+  }
+});
+
+/** The shape of the room, walked out on the floor it describes. */
+app.put('/till/floor/rooms/:id', requireTerminal(JWT_SECRET), async (req, res, next) => {
+  const body = req.body || {};
+  try {
+    const officeId = await terminalOfficeId(req.office);
+    if (officeId == null) {
+      return res.status(400).json({ error: 'This terminal has no venue.' });
+    }
+
+    const sets = [];
+    const params = [];
+    if (body.outline !== undefined) {
+      sets.push('outline = ?');
+      params.push(tillOutline(body.outline));
+    }
+    for (const field of ['floor_colour', 'wall_colour']) {
+      if (body[field] === undefined) continue;
+      sets.push(field + ' = ?');
+      params.push(tillColour(body[field]));
+    }
+    if (!sets.length) return res.json({ ok: true, changed: 0 });
+
+    const [r] = await pool.execute(
+      'UPDATE floor_rooms SET ' + sets.join(', ') + ' WHERE id = ? AND office_id = ?',
+      [...params, Number(req.params.id), officeId]
+    );
+    if (!r.affectedRows) {
+      return res.status(404).json({ error: 'That room is not yours.' });
+    }
+
+    broadcast({ type: 'floor.updated' });
+    res.json({ ok: true, changed: r.affectedRows });
   } catch (e) {
     next(e);
   }
@@ -658,6 +1642,81 @@ function sendShell(_req, res) {
 
 // Before the static middleware, or `express.static` answers /index.html with
 // the file on disk and the rewrite never runs.
+/**
+ * The customer-facing dine-in pages: /t/<table>, /m/<venue>, /o/<order>, and —
+ * on the menu host only — /<venue> and / itself.
+ *
+ * Mounted at the root and ahead of the shell, the static middleware and the
+ * back office's catch-all, because these are the addresses printed on cards
+ * that get laminated and stood on tables. Anything that could shadow them has
+ * to lose.
+ *
+ * Ahead of the `/` shell route specifically: menu.vesopaepos.com/ has its own
+ * page saying what that address is for, and with the shell registered first it
+ * was answered with the back office sign-in instead. Every route in here that
+ * is not host-guarded is a prefix no venue can claim — see RESERVED in
+ * dinein.js — and the host-guarded ones call next() on every other host, so the
+ * back office's own routing is untouched.
+ */
+// The loyalty app: its API (/loyalty/v1), its web build (loyalty.vesopa.com/<slug>/,
+// routed internally as /app/<slug>/ by the gate above) and the
+// back office's Loyalty app page (/api/loyalty-app). Ahead of the menu pages
+// and the menu-host guard below, because the web app and its API are served on
+// the menu address too -- menu.vesopaepos.com/app/<slug>/ -- where everything
+// not claimed before the guard is refused. See src/loyalty_app.js.
+// loyalty.vesopa.com's own page and its editor, on that host only.
+app.use(loyaltySiteRoutes({ pool }));
+// menu.vesopa.com's own page — what Vesopa Menu is, the demo, the prices —
+// and its editor, on that host only. Ahead of the menu pages, whose `/` is
+// the one-line "this is a menu address" that this replaces.
+app.use(menuSiteRoutes({ pool }));
+app.use(loyaltyAppRoutes({ pool, broadcast, secret: JWT_SECRET }));
+// Vesopa Auth's deletion requests reach members' data here (signed).
+app.use(privacyRoutes({ pool }));
+
+app.use(dineinPageRoutes({ pool }));
+
+/**
+ * The back office does not exist on a customer's menu address.
+ *
+ * `express.static` served the whole of public/ on every hostname, so
+ * menu.vesopaepos.com and a venue's own domain both handed out index.html,
+ * app.js and style.css — the entire back office bundle, on an address printed
+ * on a card and given to the public. No data leaked, because every API route
+ * behind it still refused without a token, but it is a hundred kilobytes of
+ * somebody else's application on a venue's own domain, and a sign-in page
+ * where a menu should be.
+ *
+ * Two prefixes stay, because the menu itself uses them: /assets for the marks
+ * and the icons, and /uploads for the venue's own photographs.
+ */
+const MENU_ONLY_PREFIXES = ['/assets/', '/uploads/'];
+app.use(async (req, res, next) => {
+  try {
+    if (!(await isMenuAddress(pool, req))) return next();
+  } catch (e) {
+    // A lookup that failed is not a reason to stop serving anything — but it
+    // is a reason to say so. This catch silently swallowed a ReferenceError
+    // for an import that was never added, which turned the whole guard into a
+    // no-op that looked deployed and tested clean.
+    console.warn('[menu-host] could not decide the host, serving anyway:', e.message);
+    return next();
+  }
+  if (MENU_ONLY_PREFIXES.some((prefix) => req.path.startsWith(prefix))) return next();
+  // Anything else here is the back office, and it is not what this address is
+  // for. Answered rather than passed on — with a page that says so and offers
+  // the way back, because the person here mistyped a table card or followed
+  // a stale link, and a bare "Not found" gave them nothing to press.
+  return res.status(404).type('html').send(notFoundPage({
+    product: 'Menu',
+    home: '/',
+    homeLabel: 'Back to menu.vesopa.com',
+    title: 'That menu is not here',
+    message: 'There is no menu at this address. Check the venue name on the card, or scan the code again — a letter out and the page is gone.',
+    links: [['See the demo menu', '/vesopakitchen'], ['What Vesopa Menu is', '/#features']],
+  }));
+});
+
 app.get(['/', '/index.html'], sendShell);
 
 app.use(express.static(PUBLIC_DIR, { setHeaders: staticCache }));
@@ -684,17 +1743,54 @@ app.get(['/till/products', '/products.json'], async (req, res, next) => {
       // `printer_route` rides along beside `printer_routes` for terminals on
       // the previous release, which only know the singular field. See
       // schema_product_printing.sql.
-      `SELECT pluid, product_name, department_name, group_name,
-              accounting_code, price, tax_percentage, stock_quantity,
-              button_position, button_color, printer_route, printer_routes,
-              print_to_receipt, emoji, image_url
-       FROM bo_products
-       WHERE email = ?
-       ORDER BY button_position IS NULL, button_position`,
+      // The category's *name and order*, not its id: the till prints a heading
+      // and sorts by a number, and neither is a foreign key it has any use for.
+      // Joined here so a terminal never has to hold a second table to render a
+      // ticket.
+      `SELECT p.pluid, p.product_name, p.department_name, p.group_name,
+              p.accounting_code, p.price, p.tax_percentage, p.stock_quantity,
+              p.button_position, p.button_color, p.printer_route,
+              p.printer_routes, p.print_to_receipt, p.emoji, p.image_url,
+              p.is_modifier, p.barcode, p.allergens,
+              p.price_2, p.price_3, p.price_4, p.price_5, p.price_6,
+              -- "Set a check box on a product (Renews membership)". Which
+              -- lines on a bill move a member's expiry when it is paid for.
+              -- Any number of products may carry it — full, concession,
+              -- junior and social are four products and one meaning, which is
+              -- what the single named PLU it replaces could not express.
+              p.renews_membership,
+              pc.name AS print_category, pc.sort_order AS print_category_order
+       FROM bo_products p
+       LEFT JOIN bo_print_categories pc
+              ON pc.id = p.print_category_id AND pc.email = p.email
+       WHERE p.email = ?
+       ORDER BY p.button_position IS NULL, p.button_position`,
       [office]
     );
     res.json(rows);
   } catch (err) {
+    if (err.code === 'ER_BAD_FIELD_ERROR') {
+      // The price-level columns arrive with schema_price_levels.sql, and
+      // deploy.sh applies migrations only when it is asked to. A till that
+      // cannot read its catalogue cannot sell, so a missing column costs the
+      // extra prices rather than the whole product list — the same fallback
+      // /till/staff makes for swipe_card, for the same reason.
+      try {
+        const [rows] = await pool.query(
+          `SELECT pluid, product_name, department_name, group_name,
+                  accounting_code, price, tax_percentage, stock_quantity,
+                  button_position, button_color, printer_route, printer_routes,
+                  print_to_receipt, emoji, image_url
+           FROM bo_products
+           WHERE email = ?
+           ORDER BY button_position IS NULL, button_position`,
+          [office]
+        );
+        return res.json(rows);
+      } catch (fallbackError) {
+        return next(fallbackError);
+      }
+    }
     next(err);
   }
 });
@@ -727,147 +1823,29 @@ app.post(['/till/orders', '/orders'], async (req, res, next) => {
     }
   }
 
+  // A training sale is taken and recorded nowhere: not in the ledger, not in a
+  // report, not on the kitchen screens. 200, so the till's outbox lets it go.
+  try {
+    if (await training.isTrainingSale(pool, order.email, order)) {
+      return res.status(200).json({ ...training.IGNORED, id: order.id });
+    }
+  } catch (e) {
+    return next(e);
+  }
+
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
 
-    const [result] = await conn.execute(
-      `INSERT IGNORE INTO epos_orders
-         (id, email, table_number, clerk_pin, subtotal_minor, discount_minor,
-          tax_minor, total_minor, covers, notes, customer_name, session_id,
-          closed_at, voucher_code, voucher_minor, service_minor, points_earned,
-          points_balance, clerk_name, order_note, gratuity_minor, gratuity_bp,
-          gift_card_minor, gift_card_code, deposit_minor, deposit_reference,
-          points_redeemed, points_value_minor, promo_minor, customer_id,
-          customer_phone, split_group, split_index, split_count, staff_id,
-          room_id, terminal)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-               ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        order.id,
-        order.email || 'default',
-        order.table_number ?? null,
-        order.clerk_pin ?? null,
-        order.subtotal_minor ?? 0,
-        order.discount_minor ?? 0,
-        order.tax_minor ?? 0,
-        order.total_minor ?? 0,
-        order.covers ?? null,
-        order.notes ?? null,
-        order.customer_name ?? null,
-        order.session_id ?? null,
-        order.closed_at ? new Date(order.closed_at) : null,
-        // Receipt context. Older tills do not send these; the defaults keep
-        // their sales inserting exactly as before.
-        order.voucher_code ?? null,
-        order.voucher_minor ?? 0,
-        // `service_minor` was the earlier name for the same money; accept both
-        // so a till on either version records its service charge.
-        order.service_minor ?? order.gratuity_minor ?? 0,
-        order.points_earned ?? 0,
-        order.points_balance ?? null,
-        order.clerk_name ?? null,
-        order.order_note ?? null,
-        // Commerce: gratuity, held money redeemed, points spent, offers, and
-        // which share of a split bill this is.
-        order.gratuity_minor ?? 0,
-        order.gratuity_bp ?? 0,
-        order.gift_card_minor ?? 0,
-        order.gift_card_code ?? null,
-        order.deposit_minor ?? 0,
-        order.deposit_reference ?? null,
-        order.points_redeemed ?? 0,
-        order.points_value_minor ?? 0,
-        order.promo_minor ?? 0,
-        order.customer_id ?? null,
-        order.customer_phone ?? null,
-        order.split_group ?? null,
-        order.split_index ?? 0,
-        order.split_count ?? 0,
-        // Which member of staff was signed on. Grouped by id in reports rather
-        // than by clerk_name, which can be edited or duplicated.
-        order.staff_id ?? null,
-        // Which room the table is in. A table number is only unique within one,
-        // so without this two rooms' Table 1 are the same table in every report
-        // that groups by it.
-        order.room_id ?? null,
-        // Which machine took the money. Null from a till on an older build,
-        // and left null rather than guessed -- reports show those as Unknown,
-        // which is the truth about a sale nobody recorded a terminal for.
-        order.terminal ?? null,
-      ]
-    );
-
-    // Zero rows means we already hold this sale. Report it as a duplicate and
-    // do NOT re-insert the lines, or a retry would double the takings.
-    if (result.affectedRows === 0) {
+    // The sale itself -- the order row, its lines, the stock it moves and the
+    // payments against it -- is written by src/sales.js, which Vesopa Express
+    // uses too, so a kiosk sale and a till sale are the same rows in every
+    // report. Zero rows means we already hold this sale: report a duplicate and
+    // write nothing, or a retry would double the takings.
+    const written = await recordSale(conn, order);
+    if (written.duplicate) {
       await conn.rollback();
       return res.status(409).json({ status: 'duplicate', id: order.id });
-    }
-
-    // Indexed, so the bill keeps the order it was rung in. The id is a UUID
-    // primary key and there is nothing else to sort by — see
-    // schema_screens_modifiers_lines.sql.
-    for (const [lineNo, line] of (order.lines || []).entries()) {
-      await conn.execute(
-        `INSERT INTO epos_order_lines
-           (id, order_id, plu_id, name, quantity, unit_price_minor,
-            tax_percentage, note, discount_minor, promotion_id, promotion_name,
-            added_by, added_at, is_modifier, line_no)
-         VALUES (UUID(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          order.id,
-          line.plu_id,
-          line.name,
-          line.quantity ?? 1,
-          line.unit_price_minor,
-          line.tax_percentage ?? 0,
-          line.note ?? null,
-          // What an offer took off this line, so the receipt and the
-          // promotion report can both explain the discount.
-          line.discount_minor ?? 0,
-          line.promotion_id ?? null,
-          line.promotion_name ?? null,
-          // Who put this item on the bill and when. Null from a till on the
-          // previous version, and from any line rung up before staff sign-on
-          // was switched on at that venue.
-          line.added_by ?? null,
-          line.added_at ? new Date(line.added_at) : null,
-          // Whether this line hangs off the one above it. A till on the
-          // previous version sends neither field, and every one of its lines is
-          // an item in its own right — which is what the defaults say.
-          line.is_modifier ? 1 : 0,
-          lineNo,
-        ]
-      );
-    }
-
-    for (const payment of order.payments || []) {
-      await conn.execute(
-        `INSERT INTO epos_payments
-           (id, order_id, method, amount_minor, cash_breakdown,
-            reference, gratuity_minor, entry_mode)
-         VALUES (UUID(), ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          order.id,
-          payment.method,
-          payment.amount_minor,
-          // Which notes were handed over, when the clerk counted them in on
-          // the till's cash keys. Null for card and for keyed-in cash.
-          payment.cash_breakdown ?? null,
-          // The acquirer's own id for this payment — Dojo's paymentIntentId.
-          // The column has existed since schema_commerce.sql but nothing ever
-          // wrote it, which left every card sale unlinkable to the acquirer:
-          // no matched refund, and no way for a Dojo webhook to find the sale
-          // it is talking about. Null for cash.
-          payment.reference ?? null,
-          payment.gratuity_minor ?? 0,
-          // 'terminal' | 'manual' | 'hosted' | 'native' — a keyed card carries
-          // different interchange and different liability from a dipped one,
-          // and the card report has to be able to tell them apart.
-          payment.entry_mode ?? null,
-        ]
-      );
     }
 
     await conn.commit();
@@ -891,8 +1869,18 @@ app.post(['/till/orders', '/orders'], async (req, res, next) => {
   }
 });
 
-/** End-of-day figures, computed from what was actually taken. */
+/**
+ * End-of-day figures, computed from what was actually taken.
+ *
+ * `office` is required, exactly as it is on `/till/receipts` above. Both are
+ * open routes a terminal reaches without a token, and this one answered with
+ * the day's takings of every venue on the platform added together — a figure
+ * that was wrong for whoever asked and private to everybody else.
+ */
 app.get('/reports/end-of-day', async (req, res, next) => {
+  const office = req.query.office;
+  if (!office) return res.status(400).json({ error: 'An office is required.' });
+
   const date = req.query.date || new Date().toISOString().slice(0, 10);
   try {
     const [[totals]] = await pool.query(
@@ -900,16 +1888,16 @@ app.get('/reports/end-of-day', async (req, res, next) => {
               COALESCE(SUM(total_minor), 0)   AS gross_minor,
               COALESCE(SUM(tax_minor), 0)     AS tax_minor
        FROM epos_orders
-       WHERE DATE(closed_at) = ?`,
-      [date]
+       WHERE email = ? AND DATE(closed_at) = ?`,
+      [office, date]
     );
     const [byMethod] = await pool.query(
       `SELECT p.method, COALESCE(SUM(p.amount_minor), 0) AS amount_minor
        FROM epos_payments p
        JOIN epos_orders o ON o.id = p.order_id
-       WHERE DATE(o.closed_at) = ?
+       WHERE o.email = ? AND DATE(o.closed_at) = ?
        GROUP BY p.method`,
-      [date]
+      [office, date]
     );
     res.json({ date, ...totals, by_method: byMethod });
   } catch (err) {
@@ -972,6 +1960,10 @@ verifyMail();
  * be the reason a deploy's restart hangs waiting for the process to exit.
  */
 startScheduler({ pool });
+
+// Loyalty-app notifications that are due, and the sweep that forgets old
+// locations and spent sign-in codes. Unref'd, like the report clock.
+startLoyaltyScheduler({ pool });
 
 /*
  * Say at boot which Dojo webhook environments can actually verify a delivery.

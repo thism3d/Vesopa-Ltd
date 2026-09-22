@@ -36,6 +36,10 @@ const ExcelJS = require('exceljs');
 const PDFDocument = require('pdfkit');
 
 const { requireAuth } = require('./auth');
+const { reportBuilders } = require('./report_builders');
+const { salesBuilders } = require('./report_builders_sales');
+const { stockBuilders } = require('./report_builders_stock');
+const { staffBuilders } = require('./report_builders_staff');
 
 // ---------------------------------------------------------------------------
 // Windows
@@ -328,6 +332,35 @@ async function terminalsInUse({ pool, office }) {
     });
   }
   return named;
+}
+
+/** The staff who have rung a sale, by the name the sale carries. */
+async function clerksInUse({ pool, office }) {
+  const [rows] = await pool
+    .query(
+      `SELECT o.clerk_name AS name, COUNT(*) AS sales
+         FROM epos_orders o
+        WHERE o.email = ? AND o.clerk_name IS NOT NULL AND o.clerk_name <> ''
+        GROUP BY o.clerk_name
+        ORDER BY o.clerk_name`,
+      [office]
+    )
+    .catch(() => [[]]);
+  return rows.map((r) => ({ value: r.name, label: r.name, sales: Number(r.sales) }));
+}
+
+/** The departments in the catalogue, for the department filter. */
+async function departmentsOf({ pool, office }) {
+  const [rows] = await pool
+    .query(
+      `SELECT DISTINCT TRIM(department_name) AS name
+         FROM bo_products
+        WHERE email = ? AND department_name IS NOT NULL AND TRIM(department_name) <> ''
+        ORDER BY name`,
+      [office]
+    )
+    .catch(() => [[]]);
+  return rows.map((r) => ({ value: r.name, label: r.name }));
 }
 
 /**
@@ -668,15 +701,63 @@ async function financialSummary({ pool, office, from, to, siteName, terminal }) 
  * One entry, one builder, one name. The scheduler stores the key, so renaming a
  * report's label never breaks a schedule somebody set up months ago.
  */
+/**
+ * The groups the Reports page shows the catalogue in, in this order. One key
+ * per group in permissions.js (`reports.sales` and so on); the five reports
+ * that predate the groups keep their own keys too, so a role made before
+ * 1.8.0.0 still opens what it opened.
+ */
+const GROUPS = {
+  sales: 'Sales & Finance',
+  stock: 'Stock',
+  staff: 'Staff & Attendance',
+  customers: 'Customers',
+};
+
+/**
+ * The extra filters a report can take, beyond a period and a terminal. A
+ * report names the ones that apply and the page shows only those. Every one
+ * is optional to the builder -- an absent filter means "all".
+ *
+ *   clerk       -- a member of staff, by the name the sale carries
+ *   product     -- one product, by PLU
+ *   department  -- one department, by name
+ *   week_start  -- a date; the report covers the seven days from it and the
+ *                  period picker is hidden
+ *   group_by    -- 'department' | 'sub_department'
+ */
+const FILTERS = ['clerk', 'product', 'department', 'week_start', 'group_by'];
+
+const helpers = { col, section, money, grouped, sqlDateTime, UNKNOWN_TERMINAL, taxWithin, totalOf };
+
 const REPORTS = {
   financial_summary: {
     label: 'Financial Summary',
+    group: 'sales',
     description:
       'Sales by department and sub department, with discounts, payments and ' +
       'spend per head — everything that has to reconcile against the takings.',
     build: financialSummary,
   },
+  // The builders live in their own files and are handed this file's `col`,
+  // `section`, `money` and `grouped` rather than importing them back, so there
+  // is one definition of what a column is and what a Summary Total means — a
+  // second copy is a copy that drifts, and two reports whose totals are
+  // computed differently is exactly the fault this whole module's opening
+  // note exists to prevent.
+  ...reportBuilders(helpers),
+  ...salesBuilders(helpers),
+  ...stockBuilders(helpers),
+  ...staffBuilders(helpers),
 };
+
+// Every report belongs to a group and names its filters, so the page and the
+// scheduler can ask the catalogue rather than know.
+for (const [key, def] of Object.entries(REPORTS)) {
+  if (!GROUPS[def.group]) def.group = 'sales';
+  def.filters = (def.filters || []).filter((f) => FILTERS.includes(f));
+  def.key = key;
+}
 
 // ---------------------------------------------------------------------------
 // Exports
@@ -686,7 +767,17 @@ const REPORTS = {
 function formatCell(row, column) {
   const value = row[column.key];
   if (column.type === 'money') return money(Number(value) || 0);
+  // A percentage a builder worked out itself -- GP %, sales mix -- and which
+  // a Summary Total therefore cannot add up. Blank where the builder set
+  // nothing, never "0.00%": a blank says "not this row", a zero says "none".
+  if (column.type === 'percent') {
+    return value === null || value === undefined || value === '' ? '' : `${(Number(value) || 0).toFixed(2)}%`;
+  }
   if (column.type === 'number') {
+    // An explicit null is a cell the builder blanked on purpose -- the
+    // Expected column of a variance total, which has no meaning summed.
+    // Undefined still reads as zero, as it always has.
+    if (value === null) return '';
     const number = Number(value) || 0;
     // Quantities can be fractional — half a kilo of something — but almost
     // never are, and "215.00" in a column of counts reads as an error.
@@ -708,7 +799,19 @@ function reportHeader(report) {
     // that is exactly the confusion that gets a manager shouting at the wrong
     // member of staff.
     ['Terminal', report.terminalLabel || 'All terminals'],
+    ...filterLines(report),
   ];
+}
+
+/** The extra filters a report ran under, as header lines. Nothing when none. */
+function filterLines(report) {
+  const f = report.filters || {};
+  const out = [];
+  if (f.clerk) out.push(['Clerk', f.clerk]);
+  if (f.product) out.push(['Product', report.productLabel || `PLU ${f.product}`]);
+  if (f.department) out.push(['Department', f.department]);
+  if (f.group_by) out.push(['Grouped by', f.group_by === 'department' ? 'Department' : 'Sub department']);
+  return out;
 }
 
 /**
@@ -1345,11 +1448,35 @@ async function runReport({
   to,
   now,
   terminal,
+  filters = {},
 }) {
   const definition = REPORTS[report];
   if (!definition) throw new Error(`No such report: ${report}`);
 
-  const range = resolveRange(period, { from, to, now });
+  // Only the filters this report names are read, and each is a short string.
+  const wants = new Set(definition.filters || []);
+  const clean = {};
+  for (const name of wants) {
+    const value = filters[name];
+    if (value === undefined || value === null || value === '') continue;
+    clean[name] = String(value).trim().slice(0, 190);
+  }
+
+  // A week-start report covers seven whole days from the date it was given,
+  // and the period picker does not apply. Given no date it takes the Monday of
+  // the week the period starts in, which is what "this week" means to it.
+  let range;
+  if (wants.has('week_start')) {
+    const anchor = clean.week_start
+      ? new Date(`${clean.week_start}T00:00:00`)
+      : (resolveRange(period, { from, to, now }) || { from: startOfDay(now || new Date()) }).from;
+    if (Number.isNaN(anchor.getTime())) throw new Error('That date range is not one we can run.');
+    const start = clean.week_start ? startOfDay(anchor) : startOfWeek(anchor);
+    range = { from: start, to: endOfDay(addDays(start, 6)) };
+    clean.week_start = sqlDateTime(start).slice(0, 10);
+  } else {
+    range = resolveRange(period, { from, to, now });
+  }
   if (!range) throw new Error('That date range is not one we can run.');
 
   const filter = (terminal || '').trim() || null;
@@ -1361,7 +1488,10 @@ async function runReport({
     from: range.from,
     to: range.to,
     terminal: filter,
+    ...clean,
+    filters: clean,
   });
+  built.filters = clean;
 
   // Carried on the report itself so every export renders the same header
   // without each format having to be told separately.
@@ -1401,10 +1531,13 @@ function reportRoutes({ pool, secret }) {
     try {
       const { office } = await site(req);
       res.json({
+        groups: Object.entries(GROUPS).map(([key, label]) => ({ key, label })),
         reports: Object.entries(REPORTS).map(([key, value]) => ({
           key,
           label: value.label,
           description: value.description,
+          group: value.group,
+          filters: value.filters,
         })),
         ranges: Object.entries(RANGES).map(([key, value]) => ({
           key,
@@ -1417,6 +1550,8 @@ function reportRoutes({ pool, secret }) {
         // Only the terminals this venue has actually taken money on, so the
         // list can never offer a choice that returns an empty report.
         terminals: await terminalsInUse({ pool, office }),
+        clerks: await clerksInUse({ pool, office }),
+        departments: await departmentsOf({ pool, office }),
       });
     } catch (e) {
       next(e);
@@ -1435,6 +1570,7 @@ function reportRoutes({ pool, secret }) {
         from: req.body.from,
         to: req.body.to,
         terminal: req.body.terminal,
+        filters: req.body.filters || req.body,
       });
 
       // Money crosses the wire in pence, with the formatted string beside it.
@@ -1483,6 +1619,7 @@ function reportRoutes({ pool, secret }) {
         from: req.body.from,
         to: req.body.to,
         terminal: req.body.terminal,
+        filters: req.body.filters || req.body,
       });
 
       const body = await format.render(report);
@@ -1514,7 +1651,11 @@ module.exports = {
   BRAND,
   brandLogo,
   RANGES,
+  GROUPS,
+  FILTERS,
   REPORTS,
+  clerksInUse,
+  departmentsOf,
   UNKNOWN_TERMINAL,
   terminalsInUse,
   FORMATS,
