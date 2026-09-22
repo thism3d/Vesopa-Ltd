@@ -19,7 +19,9 @@ const sso = require('../integrations/hestia-sso');
 const registrar = require('../integrations/domainnameapi');
 const pricing = require('../pricing');
 const linking = require('../domain-linking');
+const domainSetup = require('../domain-setup');
 const nameservers = require('../nameservers');
+const registrantVerification = require('../registrant-verification');
 const domainState = require('../domain-state');
 const notify = require('../notifications');
 const invoices = require('../invoices');
@@ -30,7 +32,7 @@ const mailboxes = require('../mailboxes');
 const { sendMail, shell, detailTable, escapeHtml, DEFAULT_TO } = require('../mailer');
 const { flash, field, rateLimited } = require('../http-utils');
 const {
-  NAMESERVERS, DOMAIN_NS_GRACE_DAYS, SITE_URL, POINT_HOSTNAME,
+  NAMESERVERS, DOMAIN_NS_GRACE_DAYS, SITE_URL, POINT_HOSTNAME, VESOPA_ONLY, MAIL_HOSTNAME,
 } = require('../config');
 
 const router = express.Router();
@@ -275,12 +277,21 @@ async function attachToService({ domain, service, customer, ip }) {
       fixLabel: 'Set it up on the server',
       dedupeKey: `domain:${domain.id}:not_built`,
     }).catch(() => {});
+    /*
+     * "Try 'Set it up on the server'" is the right advice for a transient
+     * failure and exactly the wrong advice for a plan that is full — pressing
+     * it again produces the same refusal for the same reason, forever.
+     * `explainNodeError` already says what to do about those, so it gets the
+     * last word and the retry hint is only offered where a retry could help.
+     */
+    const retryable = !/plan|disk space|suspended/i.test(why);
     return {
       ok: false,
       adopted,
       kind: 'warn',
       message: `${domain.domain} is now on your ${service.plan_name || 'hosting'} plan, but the website `
-        + `could not be created on the server (${why}). Try "Set it up on the server" on this page.`,
+        + `could not be created on the server. ${why}`
+        + (retryable ? ' Try "Set it up on the server" on this page.' : ''),
     };
   }
 
@@ -386,7 +397,7 @@ router.get('/', async (req, res, next) => {
     const grouped = domainState.group(domains);
 
     res.render('panel/dashboard', {
-      title: 'Your panel',
+      title: req.t('Your panel'),
       robots: 'noindex',
       services,
       domains,
@@ -439,7 +450,7 @@ router.get('/services', async (req, res, next) => {
     }
     services.forEach((s) => { s.stats = s.status === 'active' ? stats : null; });
 
-    res.render('panel/services', { title: 'Your hosting', robots: 'noindex', services });
+    res.render('panel/services', { title: req.t('Your hosting'), robots: 'noindex', services });
   } catch (err) {
     next(err);
   }
@@ -521,7 +532,7 @@ router.post('/services/:id/ssl', async (req, res, next) => {
     if (!service) return next();
 
     if (!service.primary_domain) {
-      flash(res, 'Add a domain to this site first.', 'warn');
+      flash(res, req.t('Add a domain to this site first.'), 'warn');
       return res.redirect(`/panel/services/${service.id}`);
     }
     if (service.status !== 'active') {
@@ -535,7 +546,7 @@ router.post('/services/:id/ssl', async (req, res, next) => {
       return res.redirect(`/panel/services/${service.id}`);
     }
     if (rateLimited(req.customer.id, 'ssl-retry', { max: 6, windowMs: 3600_000 })) {
-      flash(res, 'You have tried several times. Wait a few minutes and try again — DNS can take up to an hour.', 'warn');
+      flash(res, req.t('You have tried several times. Wait a few minutes and try again — DNS can take up to an hour.'), 'warn');
       return res.redirect(`/panel/services/${service.id}`);
     }
 
@@ -586,7 +597,7 @@ router.post('/services/:id/ssl', async (req, res, next) => {
         actorType: 'customer', actorId: req.customer.id, action: 'ssl.issued',
         target: service.primary_domain, ip: req.ip,
       });
-      flash(res, 'Certificate issued — your padlock should appear within a minute.');
+      flash(res, req.t('Certificate issued — your padlock should appear within a minute.'));
     } catch (err) {
       await db.logActivity({
         actorType: 'customer', actorId: req.customer.id, action: 'ssl.failed',
@@ -689,7 +700,7 @@ router.get('/services/:id/databases/:name/open', async (req, res, next) => {
     if (!user || service.status !== 'active') return next();
 
     if (!sso.configured()) {
-      flash(res, 'One-click database access is not set up on this server yet.', 'warn');
+      flash(res, req.t('One-click database access is not set up on this server yet.'), 'warn');
       return res.redirect(`/panel/services/${service.id}/databases`);
     }
 
@@ -732,7 +743,7 @@ router.post('/services/:id/email', async (req, res, next) => {
     if (!service) return next();
 
     if (service.status !== 'active') {
-      flash(res, 'This hosting account is not live yet.', 'warn');
+      flash(res, req.t('This hosting account is not live yet.'), 'warn');
       return res.redirect(back);
     }
 
@@ -741,7 +752,7 @@ router.post('/services/:id/email', async (req, res, next) => {
     const password = String(req.body.password || '');
 
     if (!/^[a-z0-9._-]{1,60}$/.test(account)) {
-      flash(res, 'A mailbox name can only contain letters, numbers, dots, hyphens and underscores.', 'error');
+      flash(res, req.t('A mailbox name can only contain letters, numbers, dots, hyphens and underscores.'), 'error');
       return res.redirect(back);
     }
     const problem = auth.passwordProblem(password);
@@ -754,7 +765,7 @@ router.post('/services/:id/email', async (req, res, next) => {
     const allowedDomains = await mailboxes.usableDomains(req.customer);
     const target = allowedDomains.find((d) => d.domain === domain) ? domain : '';
     if (!target) {
-      flash(res, 'Pick one of your own domains, pointed at us, to create the mailbox at.', 'error');
+      flash(res, req.t('Pick one of your own domains, pointed at us, to create the mailbox at.'), 'error');
       return res.redirect(back);
     }
 
@@ -832,13 +843,13 @@ router.post('/services/:id/backups', async (req, res, next) => {
     if (!service) return next();
 
     if (rateLimited(req.customer.id, 'backup', { max: 2, windowMs: 86_400_000 })) {
-      flash(res, 'You can take two manual backups a day. Automatic ones keep running as normal.', 'warn');
+      flash(res, req.t('You can take two manual backups a day. Automatic ones keep running as normal.'), 'warn');
       return res.redirect(`/panel/services/${service.id}/backups`);
     }
 
     try {
       await hestia.createBackup(req.customer.hestia_user);
-      flash(res, 'Backup started. It will appear here when it finishes — usually a few minutes.');
+      flash(res, req.t('Backup started. It will appear here when it finishes — usually a few minutes.'));
     } catch (err) {
       flash(res, `Could not start the backup: ${err.message}`, 'error');
     }
@@ -895,7 +906,7 @@ router.get('/services/:id/backups/:name/download', async (req, res, next) => {
     if (!service) return next();
     const name = String(req.params.name || '');
     if (!BACKUP_NAME_RE.test(name)) {
-      flash(res, 'That is not a backup we know about.', 'error');
+      flash(res, req.t('That is not a backup we know about.'), 'error');
       return res.redirect(back);
     }
 
@@ -942,7 +953,7 @@ router.post('/services/:id/backups/:name/restore', async (req, res, next) => {
     if (!service) return next();
     const name = String(req.params.name || '');
     if (!BACKUP_NAME_RE.test(name)) {
-      flash(res, 'That is not a backup we know about.', 'error');
+      flash(res, req.t('That is not a backup we know about.'), 'error');
       return res.redirect(back);
     }
 
@@ -954,7 +965,7 @@ router.post('/services/:id/backups/:name/restore', async (req, res, next) => {
      * whose other buttons are all harmless.
      */
     if (String(req.body.confirm || '').trim() !== name) {
-      flash(res, 'Type the backup name exactly to confirm the restore.', 'error');
+      flash(res, req.t('Type the backup name exactly to confirm the restore.'), 'error');
       return res.redirect(back);
     }
 
@@ -967,12 +978,12 @@ router.post('/services/:id/backups/:name/restore', async (req, res, next) => {
       udir: req.body.udir === 'on',
     };
     if (!Object.values(sections).some(Boolean)) {
-      flash(res, 'Choose at least one thing to restore.', 'error');
+      flash(res, req.t('Choose at least one thing to restore.'), 'error');
       return res.redirect(back);
     }
 
     if (rateLimited(req.customer.id, 'restore', { max: 3, windowMs: 86_400_000 })) {
-      flash(res, 'That is three restores today. Open a ticket if something is going wrong.', 'warn');
+      flash(res, req.t('That is three restores today. Open a ticket if something is going wrong.'), 'warn');
       return res.redirect(back);
     }
 
@@ -982,7 +993,7 @@ router.post('/services/:id/backups/:name/restore', async (req, res, next) => {
         actorType: 'customer', actorId: req.customer.id,
         action: 'backup.restored', target: name, ip: req.ip,
       }).catch(() => {});
-      flash(res, 'Restore started. It runs on the server and takes a few minutes — your site may be inconsistent until it finishes.');
+      flash(res, req.t('Restore started. It runs on the server and takes a few minutes — your site may be inconsistent until it finishes.'));
     } catch (err) {
       flash(res, `Could not start the restore: ${err.message}`, 'error');
     }
@@ -1000,12 +1011,12 @@ router.post('/services/:id/backups/:name/delete', async (req, res, next) => {
     if (!service) return next();
     const name = String(req.params.name || '');
     if (!BACKUP_NAME_RE.test(name)) {
-      flash(res, 'That is not a backup we know about.', 'error');
+      flash(res, req.t('That is not a backup we know about.'), 'error');
       return res.redirect(back);
     }
     try {
       await hestia.deleteBackup({ username: req.customer.hestia_user, backup: name });
-      flash(res, 'Backup deleted.');
+      flash(res, req.t('Backup deleted.'));
     } catch (err) {
       flash(res, `Could not delete it: ${err.message}`, 'error');
     }
@@ -1039,7 +1050,7 @@ router.use('/mail', require('./panel-mail'));
 router.get('/terminal', async (req, res, next) => {
   try {
     if (!req.customer.hestia_user) {
-      flash(res, 'There is no hosting on this account yet, so there is nothing to open a terminal on.', 'warn');
+      flash(res, req.t('There is no hosting on this account yet, so there is nothing to open a terminal on.'), 'warn');
       return res.redirect('/panel');
     }
     const service = await db.one(
@@ -1047,12 +1058,12 @@ router.get('/terminal', async (req, res, next) => {
       [req.customer.id],
     );
     if (!service) {
-      flash(res, 'Your hosting is not active yet — the terminal opens once it is set up.', 'warn');
+      flash(res, req.t('Your hosting is not active yet — the terminal opens once it is set up.'), 'warn');
       return res.redirect('/panel');
     }
 
     res.render('panel/terminal', {
-      title: 'Terminal',
+      title: req.t('Terminal'),
       robots: 'noindex',
       username: req.customer.hestia_user,
       // A label, not the node's address — the IP is shown nowhere, and the
@@ -1120,7 +1131,7 @@ router.get('/domains', async (req, res, next) => {
     });
 
     res.render('panel/domains', {
-      title: 'Your domains',
+      title: req.t('Your domains'),
       robots: 'noindex',
       groups,
       tree: [...byName.values()],
@@ -1162,13 +1173,14 @@ async function addFormData(req) {
     pointHostname: POINT_HOSTNAME,
     addresses: await nameservers.ourAddresses(POINT_HOSTNAME),
     graceDays: DOMAIN_NS_GRACE_DAYS,
+    mailHost: MAIL_HOSTNAME,
   };
 }
 
 router.get('/domains/add', async (req, res, next) => {
   try {
     res.render('panel/domain-add', {
-      title: 'Add a domain',
+      title: req.t('Add a domain'),
       robots: 'noindex',
       ...(await addFormData(req)),
       values: {},
@@ -1199,7 +1211,7 @@ router.post('/domains/add', async (req, res, next) => {
     if (!auth.checkCsrf(req)) return res.redirect('/panel/domains/add');
 
     if (rateLimited(req.customer.id, 'domain-add', { max: 20, windowMs: 3600_000 })) {
-      flash(res, 'That is a lot of names in one go. Try again in a little while.', 'warn');
+      flash(res, req.t('That is a lot of names in one go. Try again in a little while.'), 'warn');
       return res.redirect('/panel/domains');
     }
 
@@ -1259,7 +1271,7 @@ router.post('/domains/add', async (req, res, next) => {
           [attachTo, req.customer.id],
         );
         if (!service) {
-          flash(res, 'That hosting plan is not on your account.', 'warn');
+          flash(res, req.t('That hosting plan is not on your account.'), 'warn');
           return res.redirect(domainPath(mine));
         }
         const outcome = await attachToService({
@@ -1286,29 +1298,28 @@ router.post('/domains/add', async (req, res, next) => {
         serviceId: attachTo,
         wantDns: false,
         wantMail: false,
+        // Recorded here; built by the job below, where the customer can watch.
+        build: false,
       });
 
       if (!added.ok) {
         flash(res, added.error, 'warn');
         return res.redirect(added.id ? `/panel/domains/${added.id}` : '/panel/domains/add');
       }
-      if (!added.built.pointed) {
-        flash(res, `${added.domain} was added, but the website could not be created on the server. `
-          + 'Open a ticket and we will sort it.', 'warn');
-        return res.redirect(domainPath(added));
-      }
 
-      // Whether it RESOLVES is the thing worth saying. A "done" message for a
-      // name that answers nowhere is the most annoying kind of wrong.
-      const live = await linking.verify(added.row, { customer: req.customer });
-      flash(
-        res,
-        live.matched
-          ? `${added.domain} is set up and serving.`
-          : `${added.domain} is set up. One thing left: add an A record for it at whoever runs `
-            + `DNS for ${added.parent} — this page shows exactly what.`,
-        live.matched ? 'ok' : 'warn',
-      );
+      /*
+       * THE SLOW PART HAPPENS AFTER THIS RESPONSE, as a job (src/domain-setup).
+       * The page it redirects to shows each step as it happens, and leaving
+       * the page does not stop it. Nothing is flashed: the card on the page
+       * says what is going on, and a toast on top of it would say it twice.
+       * The sentences the old synchronous version flashed — "set up and
+       * serving", "one thing left: an A record" — are in describeSubdomain()
+       * there, word for word.
+       */
+      await domainSetup.start({
+        domainRow: added.row, customer: req.customer, subdomain: true, parent: added.parent,
+        wantDns: false, wantMail: false,
+      });
       return res.redirect(domainPath(added));
     }
 
@@ -1329,7 +1340,7 @@ router.post('/domains/add', async (req, res, next) => {
         return res.redirect(domainPath(added));
       }
       return res.status(400).render('panel/domain-add', {
-        title: 'Add a domain',
+        title: req.t('Add a domain'),
         robots: 'noindex',
         ...(await addFormData(req)),
         values: { domain: wanted, service_id: serviceId },
@@ -1338,32 +1349,42 @@ router.post('/domains/add', async (req, res, next) => {
     }
 
     /*
-     * Checked once, immediately. Most people add a domain AFTER pointing it, so
-     * this is usually the moment it goes live — and being told "you are all
-     * set" on the same screen is worth far more than the same message arriving
-     * from a sweep fifteen minutes later.
+     * Checked once, immediately — AS A JOB. Most people add a domain AFTER
+     * pointing it, so this is usually the moment it goes live, and the page
+     * they land on shows it happening step by step (src/domain-setup.js)
+     * rather than behind a button that spins for twenty seconds. The
+     * sentences the old synchronous version flashed live in
+     * describeExternal() there now, word for word.
      */
-    const verdict = await linking.verify(added.row, { customer: req.customer });
-
-    if (verdict.matched) {
-      flash(res, `${added.domain} is pointing at us — we are setting it up now.`);
-    } else if (wanted.split('.').length > 2) {
-      /*
-       * Looks like a subdomain, but of a domain this account does not hold. It
-       * is still perfectly addable — an A record aimed here is enough, and the
-       * new verification will pick that up — so it is added rather than
-       * refused. Saying why avoids the "it did not offer me the subdomain
-       * options" confusion.
-       */
-      flash(res, `${added.domain} has been added. We do not have its main domain on this account, `
-        + 'so point it here with an A record — this page shows the value to use.', 'warn');
-    } else {
-      flash(res, `${added.domain} has been added. Point it at us using either method shown on `
-        + 'this page; we check every few minutes and will email you when it is live.', 'warn');
-    }
+    await domainSetup.start({
+      domainRow: added.row, customer: req.customer,
+      wantDns: Boolean(req.body.want_dns), wantMail: Boolean(req.body.want_mail),
+    });
     res.redirect(domainPath(added));
   } catch (err) {
     next(err);
+  }
+});
+
+/**
+ * The setup card's feed: every step of a run, and the sentence at the end.
+ * Seen-ness is not decided here: the card refreshes its page when the run
+ * ends, and that render is where the outcome counts as shown.
+ */
+router.get('/domains/:id/setup/:run/status', async (req, res, next) => {
+  try {
+    const domain = await ownedDomain(req);
+    if (!domain) return next();
+    const run = await db.one(
+      'SELECT * FROM domain_setup_runs WHERE id = ? AND domain_id = ? AND customer_id = ? LIMIT 1',
+      [Number(req.params.run) || 0, domain.id, req.customer.id],
+    );
+    if (!run) return next();
+    const status = await domainSetup.status(run);
+    res.set('Cache-Control', 'no-store');
+    return res.json(status);
+  } catch (err) {
+    return next(err);
   }
 });
 
@@ -1395,6 +1416,15 @@ router.get('/domains/:id', async (req, res, next) => {
         .catch(() => null)
       : null;
     const hasHosting = Boolean(req.customer.hestia_user);
+
+    // The setup under way for this domain, or the last one whose outcome the
+    // customer has not seen. Drawn at the top of both pages; null draws nothing.
+    const setupRun = await domainSetup.current(domain.id);
+    res.locals.setupRun = setupRun;
+    res.locals.setupStatus = setupRun ? await domainSetup.status(setupRun) : null;
+    // A finished run is shown with its outcome ONCE — on the page the card's
+    // own refresh fetches — and then stands down.
+    if (setupRun && setupRun.status !== 'running') await domainSetup.markSeen(setupRun.id, req.customer.id);
 
     const [ssl, addresses, node] = await Promise.all([
       linking.refreshSsl(domain, req.customer),
@@ -1484,13 +1514,29 @@ router.get('/domains/:id', async (req, res, next) => {
        * beside it reads as optional — which is exactly how arpi.site came to
        * sit unverified for nine hours.
        */
-      verification: (domain.verification_deadline && !domain.registrant_verified_at)
-        ? {
+      /*
+       * READ AGAINST THE ADDRESS, not the domain row alone. ICANN's obligation
+       * is on the registrant's email address and it is discharged once — so a
+       * customer who confirmed while registering their first domain must not be
+       * asked again on their second. See registrant-verification.js; this is
+       * the arpi.site fault, where the banner had no way to clear at all.
+       */
+      verification: await (async () => {
+        if (!domain.verification_deadline || domain.registrant_verified_at) return null;
+        const address = registrantVerification.normaliseEmail(domain.registrant_email)
+          || registrantVerification.normaliseEmail(req.customer.email);
+        const known = await registrantVerification.verifiedAddresses([address]).catch(() => new Map());
+        if (known.has(address)) return null;
+        return {
           email: domain.registrant_email || req.customer.email,
           deadline: domain.verification_deadline,
           days_left: Math.ceil((new Date(domain.verification_deadline) - Date.now()) / 864e5),
-        }
-        : null,
+          // When a reminder last went out, so the page can show the cooldown
+          // rather than letting somebody press a button that will refuse them.
+          sent_at: domain.verification_sent_at || null,
+          checked_at: domain.verification_checked_at || null,
+        };
+      })(),
       // The plans this domain could be attached to, and the one it is on. A
       // domain with no service is not broken — but it is also not hosted, and
       // until now the panel had no control that could change that.
@@ -1525,7 +1571,7 @@ router.post('/domains/:id/ssl', async (req, res, next) => {
     // customer holding down the button would spend it and then be locked out
     // for an hour at the exact moment they need a certificate.
     if (rateLimited(req.customer.id, 'domain-ssl', { max: 5, windowMs: 3600_000 })) {
-      flash(res, 'We have tried a few times just now. Give it an hour — Let\'s Encrypt limits how often a domain may be asked for.', 'warn');
+      flash(res, req.t('We have tried a few times just now. Give it an hour — Let\'s Encrypt limits how often a domain may be asked for.'), 'warn');
       return res.redirect(back);
     }
 
@@ -1579,7 +1625,7 @@ router.post('/domains/:id/verify', async (req, res, next) => {
   const wantsJson = req.is('application/json') || (req.get('accept') || '').includes('application/json');
   try {
     if (!auth.checkCsrf(req)) {
-      if (wantsJson) return res.status(403).json({ ok: false, message: 'Your session expired. Reload the page.' });
+      if (wantsJson) return res.status(403).json({ ok: false, message: req.t('Your session expired. Reload the page.') });
       return res.redirect(`/panel/domains/${req.params.id}`);
     }
     const domain = await ownedDomain(req);
@@ -1614,7 +1660,7 @@ router.post('/domains/:id/verify', async (req, res, next) => {
       /*
        * A subdomain is never about nameservers, so its failure must never
        * mention them. Saying what it DOES answer with is the whole value of the
-       * message: "we can see 3.72.113.21" is a customer fixing it in two
+       * message: req.t("we can see 3.72.113.21") is a customer fixing it in two
        * minutes, where "not pointing here" is a support ticket.
        */
       return answer(false, verdict.addresses.length
@@ -1622,10 +1668,125 @@ router.post('/domains/:id/verify', async (req, res, next) => {
         : `Not yet — ${domain.domain} does not resolve anywhere yet. Add the A record shown on this page.`);
     }
 
+    if (verdict.unregistered) {
+      return answer(false, `Not yet — the registry says ${domain.domain} is not registered. `
+        + 'Check the spelling, or register it here and we will set it up for you.');
+    }
+
     return answer(false, verdict.nameservers.length
-      ? `Not yet — ${domain.domain} still points at ${verdict.nameservers.join(' and ')}. `
+      ? `Not yet — ${domain.domain} is delegated to ${verdict.nameservers.join(' and ')}. `
         + 'Either switch its nameservers to ours, or point an A record here.'
       : `Not yet — ${verdict.error || 'we could not read its nameservers.'}`);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/* ---------------------------------------------------------------------------
+   The registrant email verification: three buttons on one card.
+
+   Split into three routes rather than one with a mode, because they are three
+   different actions with three different risks: one reads, one sends mail, and
+   one writes down a fact about the account. See registrant-verification.js for
+   why the whole thing is keyed on the ADDRESS rather than the domain.
+   --------------------------------------------------------------------------- */
+
+/** Ask the registry what it currently says, and clear the card if it is settled. */
+router.post('/domains/:id/verification/check', async (req, res, next) => {
+  try {
+    if (!auth.checkCsrf(req)) return res.redirect(`/panel/domains/${req.params.id}`);
+    const domain = await ownedDomain(req);
+    if (!domain) return next();
+    const back = `${domainPath(domain)}#verification`;
+
+    if (rateLimited(req.customer.id, 'domain-verification-check', { max: 10, windowMs: 600_000 })) {
+      flash(res, req.t('We have just checked a few times. Give it a couple of minutes.'), 'warn');
+      return res.redirect(back);
+    }
+
+    const state = await registrantVerification.check(domain);
+
+    if (!state.outstanding) {
+      flash(
+        res,
+        state.source === 'registry'
+          ? `The registry still has ${domain.domain} live past the verification deadline, so the address `
+            + 'has been confirmed. We will stop asking.'
+          : `${state.email} has already been confirmed${state.via_domain ? ` on ${state.via_domain}` : ''}. `
+            + 'That covers every domain you hold on this address.',
+        'ok',
+      );
+      return res.redirect(domainPath(domain));
+    }
+
+    if (state.state === 'suspended') {
+      flash(res, `The registry has ${domain.domain} on hold (${state.registry.codes.join(', ')}), which means `
+        + 'the confirmation has not reached it. Open the registrar\'s email and click the link, or send it '
+        + 'again from here.', 'error');
+    } else if (state.state === 'unknown') {
+      flash(res, `We could not reach the registrar just now (${state.error}). Nothing has changed — try again `
+        + 'in a few minutes.', 'warn');
+    } else {
+      flash(res, `The registry shows ${domain.domain} as ${state.registry.status || 'active'} and has told us `
+        + 'nothing about the confirmation — it never does while the deadline is still running. If you have '
+        + 'already clicked the link, tell us and we will stop asking.', 'warn');
+    }
+    return res.redirect(back);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** Send the reminder again. Rate-limited in the module, not here. */
+router.post('/domains/:id/verification/resend', async (req, res, next) => {
+  try {
+    if (!auth.checkCsrf(req)) return res.redirect(`/panel/domains/${req.params.id}`);
+    const domain = await ownedDomain(req);
+    if (!domain) return next();
+    const back = `${domainPath(domain)}#verification`;
+
+    const sent = await registrantVerification.resend(domain, req.customer);
+    if (!sent.ok) {
+      flash(res, sent.error, 'warn');
+      return res.redirect(back);
+    }
+    flash(res, `Sent to ${sent.email}. It comes from the registrar, not from us, so look for the domain name `
+      + 'rather than for Vesopa — and check your spam folder, which is where it usually is.', 'ok');
+    return res.redirect(back);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * "I have already confirmed this."
+ *
+ * The customer is the only party who saw the registrar's email and the gateway
+ * offers no way to ask it — so their word is the evidence, and it is recorded
+ * as their word. Refused if the registry has the domain on hold, because then
+ * it demonstrably has not been confirmed and accepting the claim would leave a
+ * suspended domain looking healthy.
+ */
+router.post('/domains/:id/verification/confirm', async (req, res, next) => {
+  try {
+    if (!auth.checkCsrf(req)) return res.redirect(`/panel/domains/${req.params.id}`);
+    const domain = await ownedDomain(req);
+    if (!domain) return next();
+    const back = `${domainPath(domain)}#verification`;
+
+    const done = await registrantVerification.confirmByCustomer(domain, req.customer);
+    if (!done.ok) {
+      flash(res, done.error, done.held ? 'error' : 'warn');
+      return res.redirect(back);
+    }
+
+    await notify.resolve(req.customer.id, `domain:${domain.id}:registrant_verification`).catch(() => {});
+    live.publish(req.customer.id, `domain:${domain.id}`);
+
+    flash(res, done.cleared > 1
+      ? `Thank you — ${done.email} is marked confirmed, and that clears ${done.cleared} domains on this address.`
+      : `Thank you — ${done.email} is marked confirmed. We will stop asking.`, 'ok');
+    return res.redirect(domainPath(domain));
   } catch (err) {
     next(err);
   }
@@ -1688,7 +1849,7 @@ router.post('/domains/:id/service', async (req, res, next) => {
         [wanted, req.customer.id],
       );
       if (!service) {
-        flash(res, 'That hosting plan is not on your account.', 'warn');
+        flash(res, req.t('That hosting plan is not on your account.'), 'warn');
         return res.redirect(back);
       }
     }
@@ -1747,7 +1908,7 @@ router.post('/domains/:id/rebuild', async (req, res, next) => {
     // Three or four calls to the node and possibly one to Let's Encrypt. Cheap
     // enough to offer freely, expensive enough not to leave unbounded.
     if (rateLimited(req.customer.id, 'domain-rebuild', { max: 6, windowMs: 600_000 })) {
-      flash(res, 'We have just done that a few times. Give DNS a couple of minutes and try again.', 'warn');
+      flash(res, req.t('We have just done that a few times. Give DNS a couple of minutes and try again.'), 'warn');
       return res.redirect(back);
     }
 
@@ -1979,7 +2140,7 @@ router.post('/domains/:id/dns', async (req, res, next) => {
     {
       const target = await ownedDomain(req);
       if (target && linking.isSubdomain(target)) {
-        flash(res, 'A subdomain has no DNS zone of its own — change the record on its parent domain.', 'warn');
+        flash(res, req.t('A subdomain has no DNS zone of its own — change the record on its parent domain.'), 'warn');
         return res.redirect(domainPath(target));
       }
     }
@@ -2010,7 +2171,7 @@ router.post('/domains/:id/dns', async (req, res, next) => {
           actorType: 'customer', actorId: req.customer.id, action: 'dns.deleted',
           target: domain.domain, detail: `record ${id}`, ip: req.ip,
         });
-        flash(res, 'Record deleted. DNS changes reach everyone within the record’s TTL.');
+        flash(res, req.t('Record deleted. DNS changes reach everyone within the record’s TTL.'));
       } catch (err) {
         flash(res, `The server refused that: ${err.message}`, 'error');
       }
@@ -2083,13 +2244,13 @@ router.post('/domains/:id/nameservers', async (req, res, next) => {
       // A subdomain has no delegation of its own. `source` is checked before
       // 'external' below because a subdomain is neither registered here nor
       // there, and would otherwise fall through to the registrar call.
-      flash(res, 'A subdomain has no nameservers of its own — it follows whatever its parent domain does.', 'warn');
+      flash(res, req.t('A subdomain has no nameservers of its own — it follows whatever its parent domain does.'), 'warn');
       return res.redirect(domainPath(domain));
     }
     if (domain.source === 'external') {
       flash(
         res,
-        'This domain is registered elsewhere, so its nameservers are changed at that registrar, not here.',
+        req.t('This domain is registered elsewhere, so its nameservers are changed at that registrar, not here.'),
         'warn',
       );
       return res.redirect(domainPath(domain));
@@ -2100,7 +2261,7 @@ router.post('/domains/:id/nameservers', async (req, res, next) => {
       .filter(Boolean);
 
     if (ns.length < 2) {
-      flash(res, 'A domain needs at least two nameservers.', 'error');
+      flash(res, req.t('A domain needs at least two nameservers.'), 'error');
       return res.redirect(domainPath(domain));
     }
 
@@ -2123,7 +2284,7 @@ router.post('/domains/:id/nameservers', async (req, res, next) => {
         actorType: 'customer', actorId: req.customer.id, action: 'domain.nameservers_changed',
         target: domain.domain, detail: ns.join(', '), ip: req.ip,
       });
-      flash(res, 'Nameservers updated. It can take a few hours to take effect everywhere.');
+      flash(res, req.t('Nameservers updated. It can take a few hours to take effect everywhere.'));
     } catch (err) {
       flash(res, `Could not update the nameservers: ${err.message}`, 'error');
     }
@@ -2166,7 +2327,7 @@ router.post('/domains/:id/redirect', async (req, res, next) => {
     const back = domainPath(domain);
 
     if (!req.customer.hestia_user) {
-      flash(res, 'There is no hosting on this account yet, so there is no website to redirect.', 'error');
+      flash(res, req.t('There is no hosting on this account yet, so there is no website to redirect.'), 'error');
       return res.redirect(back);
     }
 
@@ -2193,11 +2354,11 @@ router.post('/domains/:id/redirect', async (req, res, next) => {
      */
     let target = raw.replace(/^https?:\/\//i, '').replace(/\/+$/, '');
     if (!target) {
-      flash(res, 'Type where visitors should go.', 'error');
+      flash(res, req.t('Type where visitors should go.'), 'error');
       return res.redirect(back);
     }
     if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+(\/[^\s?#]*)?$/i.test(target)) {
-      flash(res, 'That does not look like a web address. Try something like example.com, or example.com/page.', 'error');
+      flash(res, req.t('That does not look like a web address. Try something like example.com, or example.com/page.'), 'error');
       return res.redirect(back);
     }
     if (target.toLowerCase() === domain.domain.toLowerCase()) {
@@ -2277,7 +2438,7 @@ router.get('/notifications', async (req, res, next) => {
   try {
     const history = await notify.list(req.customer.id, { limit: 40 });
     res.render('panel/notifications', {
-      title: 'Notifications',
+      title: req.t('Notifications'),
       pageTitle: 'Notifications',
       pageSub: res.locals.warningSummary.count
         ? `${res.locals.warningSummary.count} thing${res.locals.warningSummary.count === 1 ? '' : 's'} need your attention`
@@ -2313,7 +2474,7 @@ router.post('/notifications/read', async (req, res, next) => {
   try {
     if (!auth.checkCsrf(req)) return res.redirect('/panel/notifications');
     await notify.markRead(req.customer.id);
-    flash(res, 'All caught up.', 'ok');
+    flash(res, req.t('All caught up.'), 'ok');
     res.redirect('/panel/notifications');
   } catch (err) {
     next(err);
@@ -2332,7 +2493,7 @@ router.get('/billing', async (req, res, next) => {
       [req.customer.id],
     );
     res.render('panel/billing', {
-      title: 'Billing',
+      title: req.t('Billing'),
       robots: 'noindex',
       orders,
       services,
@@ -2402,7 +2563,7 @@ router.get('/tickets', async (req, res, next) => {
       'SELECT * FROM tickets WHERE customer_id = ? ORDER BY updated_at DESC',
       [req.customer.id],
     );
-    res.render('panel/tickets', { title: 'Support tickets', robots: 'noindex', tickets });
+    res.render('panel/tickets', { title: req.t('Support tickets'), robots: 'noindex', tickets });
   } catch (err) {
     next(err);
   }
@@ -2416,7 +2577,7 @@ router.get('/tickets/new', async (req, res, next) => {
         WHERE s.customer_id = ? AND s.status <> 'terminated'`,
       [req.customer.id],
     );
-    res.render('panel/ticket-new', { title: 'Open a ticket', robots: 'noindex', services, values: {}, errors: {} });
+    res.render('panel/ticket-new', { title: req.t('Open a ticket'), robots: 'noindex', services, values: {}, errors: {} });
   } catch (err) {
     next(err);
   }
@@ -2446,7 +2607,7 @@ router.post('/tickets/new', async (req, res, next) => {
         [req.customer.id],
       );
       return res.status(400).render('panel/ticket-new', {
-        title: 'Open a ticket', robots: 'noindex', services, values, errors,
+        title: req.t('Open a ticket'), robots: 'noindex', services, values, errors,
       });
     }
 
@@ -2518,7 +2679,7 @@ router.post('/tickets/:id/reply', async (req, res, next) => {
 
     const body = field(req.body.body, 20_000);
     if (body.length < 2) {
-      flash(res, 'Write something first.', 'warn');
+      flash(res, req.t('Write something first.'), 'warn');
       return res.redirect(`/panel/tickets/${ticket.id}`);
     }
 
@@ -2536,7 +2697,7 @@ router.post('/tickets/:id/reply', async (req, res, next) => {
       replyTo: req.customer.email,
       subject: `[${ticket.reference}] Re: ${ticket.subject}`,
       html: shell({
-        title: 'Customer replied',
+        title: req.t('Customer replied'),
         intro: `${escapeHtml(name)} replied to ticket ${escapeHtml(ticket.reference)}.`,
         bodyHtml: `<p style="margin:0;font-size:14px;line-height:1.65;white-space:pre-wrap">${escapeHtml(body)}</p>`,
         ctaText: 'Open in admin',
@@ -2578,7 +2739,7 @@ router.get('/settings', async (req, res, next) => {
     }
 
     res.render('panel/settings', {
-      title: 'Account settings',
+      title: req.t('Account settings'),
       robots: 'noindex',
       errors: {},
       values: {},
@@ -2620,7 +2781,7 @@ router.post('/settings', async (req, res, next) => {
     if (!countries.isValid(values.country)) errors.country = 'Choose a country from the list.';
     if (Object.keys(errors).length) {
       return res.status(400).render('panel/settings', {
-        title: 'Account settings',
+        title: req.t('Account settings'),
         robots: 'noindex',
         errors,
         values,
@@ -2638,7 +2799,7 @@ router.post('/settings', async (req, res, next) => {
         req.customer.id,
       ],
     );
-    flash(res, 'Details saved.');
+    flash(res, req.t('Details saved.'));
     res.redirect('/panel/settings');
   } catch (err) {
     next(err);
@@ -2647,6 +2808,8 @@ router.post('/settings', async (req, res, next) => {
 
 router.post('/settings/password', async (req, res, next) => {
   try {
+    // There is no password when the Vesopa account is the way in.
+    if (VESOPA_ONLY) return res.redirect('/panel/settings');
     if (!auth.checkCsrf(req)) return res.redirect('/panel/settings');
 
     const current = String(req.body.current_password || '');
@@ -2655,11 +2818,11 @@ router.post('/settings/password', async (req, res, next) => {
 
     const ok = await auth.checkPassword(current, req.customer.password_hash);
     if (!ok) {
-      flash(res, 'Your current password is not right.', 'error');
+      flash(res, req.t('Your current password is not right.'), 'error');
       return res.redirect('/panel/settings');
     }
     if (next_ !== again) {
-      flash(res, 'The two new passwords do not match.', 'error');
+      flash(res, req.t('The two new passwords do not match.'), 'error');
       return res.redirect('/panel/settings');
     }
     const problem = auth.passwordProblem(next_);
@@ -2679,7 +2842,7 @@ router.post('/settings/password', async (req, res, next) => {
       to: req.customer.email,
       subject: 'Your password was changed — Vesopa Cloud',
       html: shell({
-        title: 'Your password was changed',
+        title: req.t('Your password was changed'),
         intro: 'The password on your Vesopa Cloud account has just been changed, and every other device has been signed out.',
         footNote: '<b>If this was not you</b>, reply to this email immediately.',
       }),
@@ -2689,7 +2852,7 @@ router.post('/settings/password', async (req, res, next) => {
     const updated = await db.one('SELECT * FROM customers WHERE id = ? LIMIT 1', [req.customer.id]);
     auth.issueCustomerSession(res, updated);
 
-    flash(res, 'Password changed. Other devices have been signed out.');
+    flash(res, req.t('Password changed. Other devices have been signed out.'));
     res.redirect('/panel/settings');
   } catch (err) {
     next(err);

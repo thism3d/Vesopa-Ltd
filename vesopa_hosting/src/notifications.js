@@ -59,6 +59,7 @@
  */
 
 const db = require('./db');
+const registrantVerification = require('./registrant-verification');
 
 /** The areas a notification can belong to, matching the ENUM in schema.sql. */
 const AREAS = ['account', 'hosting', 'domain', 'email', 'billing'];
@@ -236,6 +237,20 @@ async function collect(customer, { area = null } = {}) {
     ).catch(() => []),
   ]);
 
+  /*
+   * WHICH REGISTRANT ADDRESSES ARE ALREADY VERIFIED.
+   *
+   * One query for the whole account, because the obligation belongs to the
+   * ADDRESS and not to the domain: ICANN requires a registrant's email to be
+   * confirmed once, and every gTLD registered to that address afterwards is
+   * covered by it. A per-domain flag cannot express that, which is how arpi.site
+   * came to carry a red "Verify your email" banner for an address the registrar
+   * had already verified — with no control anywhere that could clear it.
+   */
+  const verifiedRegistrants = await registrantVerification
+    .verifiedAddresses(domains.map((d) => d.registrant_email))
+    .catch(() => new Map());
+
   // --- Account-level ------------------------------------------------------
   if (!customer.email_verified) {
     add({
@@ -287,7 +302,10 @@ async function collect(customer, { area = null } = {}) {
      * the consequence is not "a feature is unavailable" — it is the registry
      * turning the domain off.
      */
-    if (d.verification_deadline && !d.registrant_verified_at) {
+    const registrantAddress = registrantVerification.normaliseEmail(d.registrant_email);
+    const addressVerified = Boolean(d.registrant_verified_at) || verifiedRegistrants.has(registrantAddress);
+
+    if (d.verification_deadline && !addressVerified) {
       const daysLeft = Math.ceil((new Date(d.verification_deadline) - Date.now()) / 864e5);
       const overdue = daysLeft <= 0;
       add({
@@ -302,7 +320,8 @@ async function collect(customer, { area = null } = {}) {
             + 'Open the verification email from the registrar, or ask us to send it again.'
           : `The registry requires you to confirm ${d.registrant_email || customer.email} within `
             + `${daysLeft} day${daysLeft === 1 ? '' : 's'}, or ${d.domain} will be suspended. `
-            + 'Check your inbox for an email from the registrar — it is easy to miss.',
+            + 'Check your inbox for an email from the registrar — it is easy to miss. '
+            + 'Already done it? Say so on the domain and we will stop asking.',
         fix_url: `${base}#verification`,
         fix_label: 'How to verify',
         key: `domain:${d.id}:registrant_verification`,
@@ -324,7 +343,9 @@ async function collect(customer, { area = null } = {}) {
 
     // Delegated nowhere useful. Only for names the customer has to act on —
     // an external domain we are waiting on.
-    if (d.source === 'external' && !d.ns_verified_at && d.status !== 'pending') {
+    // An email-only domain (MX here, website elsewhere) is not waiting on
+    // anybody: it is in use, exactly as the customer meant it.
+    if (d.source === 'external' && !d.ns_verified_at && !d.mx_verified_at && d.status !== 'pending') {
       const deadline = d.ns_grace_until ? new Date(d.ns_grace_until) : null;
       const daysLeft = deadline ? Math.ceil((deadline - Date.now()) / 864e5) : null;
       add({
@@ -407,7 +428,10 @@ async function collect(customer, { area = null } = {}) {
      * arpi.site was in, and on its own it is invisible: the domain page looks
      * fine and the hosting page does not mention it.
      */
-    if (d.status === 'active' && !d.service_id && d.source !== 'subdomain' && services.length) {
+    // An email-only domain has its website elsewhere on purpose; "no website
+    // behind it" is the arrangement, not a gap.
+    const mailOnly = !d.ns_verified_at && Boolean(d.mx_verified_at);
+    if (d.status === 'active' && !d.service_id && d.source !== 'subdomain' && services.length && !mailOnly) {
       add({
         level: 'info',
         area: 'domain',

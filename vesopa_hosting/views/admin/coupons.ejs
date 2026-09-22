@@ -16,10 +16,21 @@
           <td>
             <span class="strong mono"><%= c.code %></span>
             <% if (c.first_order_only) { %> <span class="badge badge-blue">First order</span><% } %>
+            <% if (c.public_offer) { %> <span class="badge badge-green">Advertised</span><% } %>
+            <% if (c.countries) { %> <span class="badge badge-grey"><%= c.countries %></span><% } %>
+            <% if (c.kind === 'percent' && Number(c.value) >= 100 && !c.max_uses) { %>
+              <%# A code that takes everything off, that anyone may use, as many
+                  times as they like, is worth saying out loud on the one screen
+                  where somebody can fix it. %>
+              <span class="badge badge-red">Free, unlimited</span>
+            <% } %>
             <% if (c.description) { %><br><span class="tiny muted"><%= c.description %></span><% } %>
           </td>
           <td class="strong">
-            <%= c.kind === 'percent' ? c.value + '%' : money(c.value) %> off
+            <% if (c.kind === 'bundle') { %>
+              <%= money(c.value) %> the set<% if (Number(c.grants_months)) { %>,
+                incl. <%= c.grants_months %>m <%= c.grants_plan_slug %><% } %>
+            <% } else { %><%= c.kind === 'percent' ? c.value + '%' : money(c.value) %> off<% } %>
           </td>
           <td><span class="badge badge-grey"><%= c.applies_to %></span></td>
           <td class="num"><%= c.min_spend_pence ? money(c.min_spend_pence) : '—' %></td>
@@ -63,12 +74,39 @@
         <select class="select" id="kind" name="kind">
           <option value="percent">Percentage off</option>
           <option value="fixed">Fixed amount off</option>
+          <option value="bundle">Bundle — a price for the set</option>
         </select>
       </div>
       <div class="field">
         <label class="label" for="value">Amount</label>
         <input class="input" id="value" name="value" placeholder="20" required>
-        <p class="hint">A whole number for a percentage, or <%= currency.code %> (<%= currency.symbol %>) for a fixed amount.</p>
+        <p class="hint">
+          A whole number for a percentage, or <%= currency.code %> (<%= currency.symbol %>)
+          for a fixed amount. For a <b>bundle</b> it is what the whole set COSTS,
+          not what comes off — the discount is worked out from it every time a
+          basket is priced, so a price change never makes the offer a loss.
+        </p>
+      </div>
+    </div>
+
+    <%# The three fields a bundle needs and the other kinds ignore. Left
+        visible rather than hidden behind the Type box: an admin who cannot see
+        a field cannot discover the offer shape exists. %>
+    <div class="p-grid p-grid-3">
+      <div class="field">
+        <label class="label" for="requires_tld">Bundle — extension required</label>
+        <input class="input mono" id="requires_tld" name="requires_tld" maxlength="63" placeholder="site">
+        <p class="hint">Without the dot. The basket must contain one of these to qualify.</p>
+      </div>
+      <div class="field">
+        <label class="label" for="grants_plan_slug">Bundle — plan given free</label>
+        <input class="input mono" id="grants_plan_slug" name="grants_plan_slug" maxlength="40" placeholder="starter">
+        <p class="hint">The plan slug, e.g. <span class="mono">starter</span>.</p>
+      </div>
+      <div class="field">
+        <label class="label" for="grants_months">Bundle — months free</label>
+        <input class="input" id="grants_months" name="grants_months" type="number" min="0" max="36" value="0">
+        <p class="hint">The term that must be in the basket, and the term granted. 0 for no trial.</p>
       </div>
     </div>
 
@@ -111,6 +149,46 @@
           <span>First order only — refused if the customer has ordered before</span>
         </label>
       </div>
+    </div>
+
+    <%# Advertising a code and creating one are separate decisions. The box is
+        unticked by default because this table already held a 100%-off code:
+        publishing every active code would have given the shop away. %>
+    <div class="p-grid p-grid-2">
+      <div class="field">
+        <label class="label" for="headline">Headline on the offers page</label>
+        <input class="input" id="headline" name="headline" maxlength="120" placeholder="40% off your first year">
+        <p class="hint">Only used when the code is advertised. Blank falls back to the description.</p>
+      </div>
+      <div class="field">
+        <label class="label" for="headline_bn">Headline in Bangla</label>
+        <input class="input" id="headline_bn" name="headline_bn" maxlength="120" lang="bn" placeholder="প্রথম বছরের হোস্টিং">
+        <p class="hint">Shown on /bn/offers. Blank falls back to the English, which still sells the offer.</p>
+      </div>
+      <div class="field">
+        <label class="label" for="description_bn">Description in Bangla</label>
+        <input class="input" id="description_bn" name="description_bn" maxlength="190" lang="bn">
+        <p class="hint">The line under the headline, for Bangla readers.</p>
+      </div>
+    </div>
+
+    <div class="p-grid p-grid-2">
+      <div class="field">
+        <label class="label" for="countries">Only for these countries</label>
+        <input class="input" id="countries" name="countries" maxlength="190" placeholder="BD">
+        <p class="hint">
+          Two-letter codes, comma separated. Blank means anywhere. Checked against the
+          visitor's address, which a VPN changes — shape an offer with it, never protect
+          anything with it.
+        </p>
+      </div>
+    </div>
+
+    <div class="field">
+      <label class="check">
+        <input type="checkbox" name="public_offer">
+        <span><strong>Advertise this on /offers</strong> — anyone can see the code. Leave off for a code you hand out yourself.</span>
+      </label>
     </div>
 
     <button class="btn" type="submit" data-busy="Saving…">Save code</button>

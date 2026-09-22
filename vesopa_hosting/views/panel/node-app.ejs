@@ -12,7 +12,7 @@
   settings form when the customer came here because their site is broken has
   put the least useful thing at eye level.
 %>
-<%- include('../partials/head', { extraCss: '/assets/css/panel.css', sections: false }) %>
+<%- include('../partials/head', { nativeNav: true, extraCss: '/assets/css/panel.css', sections: false }) %>
 <link rel="stylesheet" href="<%= asset('/assets/css/apps.css') %>">
 <%- include('../partials/panel-shell', {
   pageTitle: app.name,
@@ -36,14 +36,14 @@
       <form method="post" action="/panel/apps/node/<%= encodeURIComponent(app.name) %>/action" class="row" style="gap:8px">
         <input type="hidden" name="_csrf" value="<%= csrf %>">
         <% if (app.status === 'stopped') { %>
-          <button class="btn btn-sm" name="action" value="start" type="submit"><%- icon('play', 15) %> Start</button>
+          <button class="btn btn-sm" name="action" value="start" type="submit"><%- icon('play', 15) %> <%= t('Start') %></button>
         <% } else { %>
-          <button class="btn btn-sm" name="action" value="restart" type="submit"><%- icon('refresh', 15) %> Restart</button>
-          <button class="btn btn-ghost btn-sm" name="action" value="stop" type="submit"><%- icon('power', 15) %> Stop</button>
+          <button class="btn btn-sm" name="action" value="restart" type="submit"><%- icon('refresh', 15) %> <%= t('Restart') %></button>
+          <button class="btn btn-ghost btn-sm" name="action" value="stop" type="submit"><%- icon('power', 15) %> <%= t('Stop') %></button>
         <% } %>
       </form>
       <% if (app.domain) { %>
-        <a class="btn btn-ghost btn-sm" href="https://<%= app.domain %>" target="_blank" rel="noopener"><%- icon('external', 15) %> Open</a>
+        <a class="btn btn-ghost btn-sm" href="https://<%= app.domain %>" target="_blank" rel="noopener"><%- icon('external', 15) %> <%= t('Open') %></a>
       <% } %>
     </span>
   </div>
@@ -61,15 +61,14 @@
 <%# ---- The log ----------------------------------------------------------- %>
 <div class="p-card mb-3">
   <div class="row-between mb-2" style="align-items:baseline;gap:12px;flex-wrap:wrap">
-    <h2 class="h3 mb-0">Log</h2>
+    <h2 class="h3 mb-0"><%= t('Log') %></h2>
     <div class="seg" role="tablist">
-      <button class="is-on" type="button" data-log-tab="err">Errors</button>
-      <button  type="button" data-log-tab="out">Output</button>
+      <button class="is-on" type="button" data-log-tab="err"><%= t('Errors') %></button>
+      <button  type="button" data-log-tab="out"><%= t('Output') %></button>
     </div>
   </div>
   <p class="small muted mb-2">
-    The most recent output pm2 wrote — errors first, because that is the half with the
-    answer in it.
+    <%= t('The most recent output pm2 wrote — errors first, because that is the half with the answer in it.') %>
   </p>
   <pre class="log" data-log-pane="err"><%= logs.err.length ? logs.err.join('\n') : 'Nothing on the error log. That is the good outcome.' %></pre>
   <pre class="log" data-log-pane="out" hidden><%= logs.out.length ? logs.out.join('\n') : 'Nothing on the output log.' %></pre>
@@ -78,38 +77,33 @@
 <div class="p-grid p-grid-2">
   <%# ---- Environment ----------------------------------------------------- %>
   <div class="p-card">
-    <h2 class="h3 mb-1">Environment</h2>
+    <h2 class="h3 mb-1"><%= t('Environment') %></h2>
     <p class="small muted mb-3">
-      The app's <code>.env</code>. Saving restarts the app — an environment that has been
-      written but not loaded is the most confusing state this page can be in.
+      <%- th("The app's <code>.env</code>. Saving restarts the app — an environment that has been written but not loaded is the most confusing state this page can be in.") %>
     </p>
     <div class="tip mb-3">
       <span class="tip-ic"></span>
       <div>
-        <b>Leave <code>PORT</code> alone.</b> nginx sends this site's traffic to that port and
-        we check it to decide whether the app is working. An app listening anywhere else is
-        unreachable, however healthy it is.
+        <%- th("<b>Leave <code>PORT</code> alone.</b> nginx sends this site's traffic to that port and we check it to decide whether the app is working. An app listening anywhere else is unreachable, however healthy it is.") %>
       </div>
     </div>
     <form method="post" action="/panel/apps/node/<%= encodeURIComponent(app.name) %>/env">
       <input type="hidden" name="_csrf" value="<%= csrf %>">
       <textarea class="input mono" name="env" rows="12" spellcheck="false"
                 style="font-size:.84rem;line-height:1.6"><%= env %></textarea>
-      <button class="btn btn-sm mt-2" type="submit"><%- icon('save', 15) %> Save and restart</button>
+      <button class="btn btn-sm mt-2" type="submit"><%- icon('save', 15) %> <%= t('Save and restart') %></button>
     </form>
   </div>
 
   <%# ---- Packages -------------------------------------------------------- %>
   <div class="p-card">
-    <h2 class="h3 mb-1">Packages</h2>
+    <h2 class="h3 mb-1"><%= t('Packages') %></h2>
     <p class="small muted mb-3">
-      What <code>package.json</code> asks for, and what is actually in
-      <code>node_modules</code>. A package listed as missing is the reason a lot of apps
-      will not boot.
+      <%- th('What <code>package.json</code> asks for, and what is actually in <code>node_modules</code>. A package listed as missing is the reason a lot of apps will not boot.') %>
     </p>
 
     <% if (!packages.length) { %>
-      <p class="small muted">No dependencies declared.</p>
+      <p class="small muted"><%= t('No dependencies declared.') %></p>
     <% } else { %>
       <div class="pkgs mb-3">
         <% packages.forEach(function (p) { %>
@@ -136,27 +130,25 @@
 
     <form method="post" action="/panel/apps/node/<%= encodeURIComponent(app.name) %>/packages">
       <input type="hidden" name="_csrf" value="<%= csrf %>">
-      <label class="label" for="package">Install a package</label>
+      <label class="label" for="package"><%= t('Install a package') %></label>
       <div class="row" style="gap:8px">
-        <input class="input mono" id="package" name="package" placeholder="express"
+        <input class="input mono" id="package" name="package" placeholder="<%= t('express') %>"
                pattern="[@a-zA-Z0-9][a-zA-Z0-9._@/-]*" required style="flex:1">
-        <button class="btn btn-sm" name="action" value="add" type="submit">Install</button>
+        <button class="btn btn-sm" name="action" value="add" type="submit"><%= t('Install') %></button>
       </div>
-      <p class="hint">Runs <code>npm install</code> in the app's folder and restarts it.</p>
+      <p class="hint"><%- th("Runs <code>npm install</code> in the app's folder and restarts it.") %></p>
     </form>
   </div>
 </div>
 
 <%# ---- The one destructive thing on the page, kept apart from the rest ---- %>
 <div class="p-card mt-3" style="border-color:#f0cfc9">
-  <h3 class="h3 mb-1">Remove from pm2</h3>
+  <h3 class="h3 mb-1"><%= t('Remove from pm2') %></h3>
   <p class="small muted mb-3">
-    Stops the app and takes it out of the process list, so it will not come back after a
-    reboot. <b>Your files are not touched</b> — the folder, the code and the database all
-    stay exactly where they are, and installing again picks them back up.
+    <%- th('Stops the app and takes it out of the process list, so it will not come back after a reboot. <b>Your files are not touched</b> — the folder, the code and the database all stay exactly where they are, and installing again picks them back up.') %>
   </p>
   <details class="inline-danger">
-    <summary class="btn btn-ghost btn-sm" style="color:var(--red)"><%- icon('trash', 15) %> Remove from pm2</summary>
+    <summary class="btn btn-ghost btn-sm" style="color:var(--red)"><%- icon('trash', 15) %> <%= t('Remove from pm2') %></summary>
     <form method="post" action="/panel/apps/node/<%= encodeURIComponent(app.name) %>/action" class="inline-danger-body">
       <input type="hidden" name="_csrf" value="<%= csrf %>">
       <p class="small mb-2">
@@ -164,7 +156,7 @@
         back after a reboot. The files stay.
       </p>
       <button class="btn btn-sm" name="action" value="delete" type="submit"
-              style="background:var(--red);color:#fff">Remove it</button>
+              style="background:var(--red);color:#fff"><%= t('Remove it') %></button>
     </form>
   </details>
 </div>

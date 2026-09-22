@@ -52,11 +52,18 @@ router.use(async (req, res, next) => {
 // ---------------------------------------------------------------------------
 router.get('/login', (req, res) => {
   if (req.admin) return res.redirect('/admin');
-  res.render('admin/login', { title: 'Admin sign in', robots: 'noindex', error: null, values: {} });
+  // A refusal from the Vesopa callback arrives as a flash — drawn inline, once.
+  const refused = res.locals.flash && res.locals.flash.kind === 'error' ? res.locals.flash.message : null;
+  if (refused) res.locals.flash = null;
+  res.render('admin/login', { title: 'Admin sign in', robots: 'noindex', error: refused, values: {} });
 });
 
 router.post('/login', async (req, res, next) => {
   try {
+    // Staff sign in with Vesopa (routes/vesopa-sso.js). The password form is
+    // off behind the same flag as the customers' one, and for the same reason.
+    if (config.VESOPA_ONLY) return res.redirect(303, '/admin/login');
+
     const email = field(req.body.email, 190).toLowerCase();
     const password = String(req.body.password || '');
 
@@ -659,6 +666,12 @@ router.post('/plans/email/:id', async (req, res, next) => {
         Number(req.body.sort_order) || 0,
         req.body.active ? 1 : 0,
         field(req.body.features, 4000),
+        // The same four in Bangla. Blank falls back to the English on /bn --
+        // a plan named in the wrong language still sells, an unnamed one does not.
+        field(req.body.name_bn, 80),
+        field(req.body.tagline_bn, 190),
+        field(req.body.badge_bn, 40),
+        field(req.body.features_bn, 4000),
         plan.id,
       ],
     );
@@ -697,7 +710,7 @@ router.post('/coupons', async (req, res, next) => {
       return res.redirect('/admin/coupons');
     }
 
-    const kind = req.body.kind === 'fixed' ? 'fixed' : 'percent';
+    const kind = ['fixed', 'bundle'].includes(req.body.kind) ? req.body.kind : 'percent';
     // A percentage is 1–100; a fixed amount is pounds in the form, pence here.
     const value = kind === 'percent'
       ? Math.max(1, Math.min(100, Number(req.body.value) || 0))
@@ -708,26 +721,58 @@ router.post('/coupons', async (req, res, next) => {
       return res.redirect('/admin/coupons');
     }
 
+    /*
+     * Advertising a code is a separate decision from creating one, and it is
+     * off unless the box is ticked. PROMO100 -- 100% off everything, no limit,
+     * no expiry -- was already sitting in this table when the public offers
+     * page was built; had "active" been enough to publish a code, that page
+     * would have handed the shop away on its first render.
+     */
+    const countries = String(req.body.countries || '')
+      .toUpperCase()
+      .split(',')
+      .map((c) => c.trim().replace(/[^A-Z]/g, '').slice(0, 2))
+      .filter((c) => c.length === 2)
+      .join(',')
+      .slice(0, 190);
+
     await db.query(
       `INSERT INTO coupons
-         (code, description, kind, value, min_spend_pence, applies_to,
-          max_uses, first_order_only, expires_at, active)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+         (code, description, headline, headline_bn, description_bn,
+          kind, value, min_spend_pence, applies_to,
+          max_uses, first_order_only, public_offer, countries, expires_at, active,
+          requires_tld, grants_plan_slug, grants_months)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
        ON DUPLICATE KEY UPDATE
-         description = VALUES(description), kind = VALUES(kind), value = VALUES(value),
+         description = VALUES(description), headline = VALUES(headline),
+         headline_bn = VALUES(headline_bn), description_bn = VALUES(description_bn),
+         kind = VALUES(kind), value = VALUES(value),
          min_spend_pence = VALUES(min_spend_pence), applies_to = VALUES(applies_to),
          max_uses = VALUES(max_uses), first_order_only = VALUES(first_order_only),
+         public_offer = VALUES(public_offer), countries = VALUES(countries),
+         requires_tld = VALUES(requires_tld), grants_plan_slug = VALUES(grants_plan_slug),
+         grants_months = VALUES(grants_months),
          expires_at = VALUES(expires_at), active = 1`,
       [
         code,
         field(req.body.description, 190),
+        field(req.body.headline, 120),
+        field(req.body.headline_bn, 120),
+        field(req.body.description_bn, 190),
         kind,
         value,
         toPence(req.body.min_spend),
         ['all', 'hosting', 'domain', 'email'].includes(req.body.applies_to) ? req.body.applies_to : 'all',
         Math.max(0, Number(req.body.max_uses) || 0),
         req.body.first_order_only ? 1 : 0,
+        req.body.public_offer ? 1 : 0,
+        countries,
         field(req.body.expires_at, 20) || null,
+        // The bundle's three. Stored whatever the kind is, so switching a code
+        // to a bundle and back again does not lose what was typed.
+        field(req.body.requires_tld, 63).toLowerCase().replace(/^[.]/, ''),
+        field(req.body.grants_plan_slug, 40).toLowerCase(),
+        Math.max(0, Math.min(36, Number(req.body.grants_months) || 0)),
       ],
     );
 
@@ -791,7 +836,8 @@ router.post('/plans/:id', async (req, res, next) => {
               triennial_pence=?,
               websites=?, storage_gb=?, bandwidth_gb=?, \`databases\`=?, mailboxes=?,
               free_domain=?, free_ssl=?, daily_backups=?, priority_support=?,
-              hestia_package=?, badge=?, sort_order=?, active=?, features=?
+              hestia_package=?, badge=?, sort_order=?, active=?, features=?,
+              name_bn=?, tagline_bn=?, badge_bn=?, features_bn=?
         WHERE id = ?`,
       [
         field(req.body.name, 80),

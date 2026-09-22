@@ -1,4 +1,4 @@
-<%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<%- include('../partials/head', { nativeNav: true, extraCss: '/assets/css/panel.css' }) %>
 <link rel="stylesheet" href="<%= asset('/assets/vendor/xterm/xterm.css') %>">
 <link rel="stylesheet" href="<%= asset('/assets/css/terminal.css') %>">
 <%- include('../partials/panel-shell', {
@@ -17,7 +17,7 @@
     <%# Shown only while the view is scrolled away from the end. Scrolling up in
         a shell and losing the prompt is the moment people assume it has hung. %>
     <button class="term-jump" type="button" id="term-jump" hidden>
-      <%- icon('arrow-down', 15) %> Jump to latest
+      <%- icon('arrow-down', 15) %> <%= t('Jump to latest') %>
     </button>
   </div>
 
@@ -26,14 +26,14 @@
     needs. Sequences are written as escapes and unescaped in JS so this stays
     readable; Ctrl is a sticky modifier because you cannot hold two soft keys.
   %>
-  <div class="term-keys" id="term-keys" role="toolbar" aria-label="Terminal keys">
-    <button type="button" data-ctrl>Ctrl</button>
-    <button type="button" data-send="\x1b">Esc</button>
-    <button type="button" data-send="\t">Tab</button>
-    <button type="button" data-send="\x1b[A" aria-label="Up">↑</button>
-    <button type="button" data-send="\x1b[B" aria-label="Down">↓</button>
-    <button type="button" data-send="\x1b[D" aria-label="Left">←</button>
-    <button type="button" data-send="\x1b[C" aria-label="Right">→</button>
+  <div class="term-keys" id="term-keys" role="toolbar" aria-label="<%= t('Terminal keys') %>">
+    <button type="button" data-ctrl><%= t('Ctrl') %></button>
+    <button type="button" data-send="\x1b"><%= t('Esc') %></button>
+    <button type="button" data-send="\t"><%= t('Tab') %></button>
+    <button type="button" data-send="\x1b[A" aria-label="<%= t('Up') %>">↑</button>
+    <button type="button" data-send="\x1b[B" aria-label="<%= t('Down') %>">↓</button>
+    <button type="button" data-send="\x1b[D" aria-label="<%= t('Left') %>">←</button>
+    <button type="button" data-send="\x1b[C" aria-label="<%= t('Right') %>">→</button>
     <button type="button" data-send="\x03">^C</button>
     <button type="button" data-send="\x04">^D</button>
     <button type="button" data-send="\x1a">^Z</button>
@@ -45,18 +45,17 @@
         are not PageUp keystrokes — sending those would page the file inside
         `less` and type junk at a prompt. %>
     <span class="term-keys-sep" aria-hidden="true"></span>
-    <button type="button" data-scroll="up" aria-label="Scroll up">Pg↑</button>
-    <button type="button" data-scroll="down" aria-label="Scroll down">Pg↓</button>
-    <button type="button" data-scroll="end" aria-label="Scroll to the end">End</button>
+    <button type="button" data-scroll="up" aria-label="<%= t('Scroll up') %>"><%= t('Pg↑') %></button>
+    <button type="button" data-scroll="down" aria-label="<%= t('Scroll down') %>"><%= t('Pg↓') %></button>
+    <button type="button" data-scroll="end" aria-label="<%= t('Scroll to the end') %>"><%= t('End') %></button>
     <span class="term-keys-sep" aria-hidden="true"></span>
-    <button type="button" data-zoom="out" aria-label="Smaller text">A−</button>
-    <button type="button" data-zoom="in" aria-label="Larger text">A+</button>
+    <button type="button" data-zoom="out" aria-label="<%= t('Smaller text') %>">A−</button>
+    <button type="button" data-zoom="in" aria-label="<%= t('Larger text') %>">A+</button>
   </div>
 
   <p class="term-gesture">
     <%- icon('info', 14) %>
-    On a phone or tablet, <b>drag with two fingers</b> to scroll back through the
-    output. One finger still selects text.
+    <%- th('On a phone or tablet, <b>drag with two fingers</b> to scroll back through the output. One finger still selects text.') %>
   </p>
 
   <p class="term-note">
@@ -66,7 +65,7 @@
     Sessions close after 15 minutes with nothing typed.
   </p>
 
-  <p><a class="btn btn-ghost btn-sm" href="#" id="term-reconnect" hidden>Reconnect</a></p>
+  <p><a class="btn btn-ghost btn-sm" href="#" id="term-reconnect" hidden><%= t('Reconnect') %></a></p>
 </div>
 
 <%#

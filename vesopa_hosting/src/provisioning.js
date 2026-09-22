@@ -35,7 +35,9 @@ const hestia = require('./integrations/hestia');
 const registrar = require('./integrations/domainnameapi');
 const auth = require('./auth');
 const linking = require('./domain-linking');
+const coupons = require('./coupons');
 const nameservers = require('./nameservers');
+const registrantVerification = require('./registrant-verification');
 const { sendMail, shell, detailTable, escapeHtml } = require('./mailer');
 const notify = require('./notifications');
 const { SITE_URL, NAMESERVERS } = require('./config');
@@ -236,6 +238,35 @@ async function materialiseOrder(orderId) {
     const created = { services: 0, domains: 0, emails: 0, skipped: [] };
 
     /*
+     * DID THIS ORDER COME WITH A FREE MONTH?
+     *
+     * A bundle code ("a .site and a month of hosting, 381 taka") grants a
+     * hosting term rather than only discounting one. What it granted is read
+     * here, once, and written onto the service below — for the same reason
+     * free_domain_eligible is stored rather than re-derived: an admin editing
+     * or retiring the coupon next week must not change what somebody was
+     * already given.
+     *
+     * Resolved to a plan id here because order lines carry ids, not slugs.
+     */
+    let grant = null;
+    let grantPlanId = 0;
+    if (order.coupon_code) {
+      const [[couponRow]] = await conn.query(
+        'SELECT * FROM coupons WHERE code = ? LIMIT 1', [order.coupon_code],
+      );
+      grant = coupons.grant(couponRow);
+      if (grant) {
+        const [[granted]] = await conn.query(
+          'SELECT id FROM plans WHERE slug = ? LIMIT 1', [grant.plan_slug],
+        );
+        grantPlanId = granted ? granted.id : 0;
+      }
+    }
+    // One free month per order, however many matching lines are in the basket.
+    let trialGiven = false;
+
+    /*
      * THE DOMAIN BOUGHT IN THE SAME BASKET.
      *
      * A hosting line carries `domain` only when the customer named one on the
@@ -272,16 +303,31 @@ async function materialiseOrder(orderId) {
       }
 
       if (line.kind === 'hosting' && line.plan_id) {
+        /*
+         * The granted month, if this is the line the bundle was for. Its price
+         * is recorded as nothing because nothing is what was paid for it: the
+         * 381 taka bought the domain, and this month came with it. Recording
+         * the list price instead would put a charge in the customer's billing
+         * history for something they were given.
+         */
+        const isTrial = Boolean(
+          grant && grantPlanId && !trialGiven
+          && line.plan_id === grantPlanId
+          && Number(line.term_months) === grant.months,
+        );
+        if (isTrial) trialGiven = true;
+
         await conn.query(
           `INSERT INTO services
              (customer_id, plan_id, order_id, primary_domain, status, term_months, price_pence,
-              currency, free_domain_eligible, free_domain_claimed, setup_step)
-           VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)`,
+              currency, free_domain_eligible, free_domain_claimed, setup_step,
+              is_trial, trial_code)
+           VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             order.customer_id, line.plan_id, order.id,
             // The hosting line's own domain, or the one bought alongside it.
             line.domain || orderedDomain?.domain || '',
-            line.term_months, line.total_pence, order.currency,
+            line.term_months, isTrial ? 0 : line.total_pence, order.currency,
             line.free_domain_eligible ? 1 : 0,
             line.free_domain_spent ? 1 : 0,
             /*
@@ -293,6 +339,8 @@ async function materialiseOrder(orderId) {
               || !(line.domain || orderedDomain?.domain)
               ? 'domain'
               : 'provisioning',
+            isTrial ? 1 : 0,
+            isTrial ? String(grant.code || '').slice(0, 40) : '',
           ],
         );
         created.services += 1;
@@ -641,7 +689,25 @@ async function provisionDomain(domainRow, customer) {
    * to ignore the ones that matter.
    */
   const { tld } = registrar.splitDomain(domainRow.domain);
-  const needsVerification = !CCTLDS_WITHOUT_RAA.has(String(tld || '').toLowerCase());
+  const carriesObligation = !CCTLDS_WITHOUT_RAA.has(String(tld || '').toLowerCase());
+
+  /*
+   * AND ONLY IF THIS ADDRESS HAS NOT ALREADY BEEN CONFIRMED.
+   *
+   * The obligation is on the registrant's EMAIL ADDRESS and it is discharged
+   * once — every gTLD afterwards registered to the same address is covered by
+   * that one confirmation, and the registrar sends no second email. So a
+   * customer buying their second domain would be shown a fifteen-day countdown
+   * for a verification that has already happened and for an email that is never
+   * going to arrive, which is the fastest way to teach somebody that this
+   * warning means nothing. See registrant-verification.js.
+   */
+  const alreadyVerified = carriesObligation
+    ? (await registrantVerification.verifiedAddresses([customer.email]).catch(() => new Map()))
+      .get(registrantVerification.normaliseEmail(customer.email)) || null
+    : null;
+
+  const needsVerification = carriesObligation && !alreadyVerified;
   const deadline = needsVerification
     ? new Date(Date.now() + RAA_VERIFY_DAYS * 864e5).toISOString().slice(0, 19).replace('T', ' ')
     : null;
@@ -651,11 +717,13 @@ async function provisionDomain(domainRow, customer) {
         SET status = 'active', registered_at = CURDATE(), expires_at = ?,
             registrar_ref = ?, ns1 = ?, ns2 = ?,
             registrant_email = ?, verification_deadline = ?,
+            registrant_verified_at = ?,
             contacts_verified = ?, contacts_warning = ?
       WHERE id = ?`,
     [
       result.expires_at || null, result.registrar_ref || '', NAMESERVERS[0], NAMESERVERS[1],
       customer.email || '', deadline,
+      alreadyVerified ? alreadyVerified.verified_at : null,
       result.contacts_verified ? 1 : 0,
       String(result.contacts_warning || '').slice(0, 300),
       domainRow.id,

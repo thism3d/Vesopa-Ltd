@@ -4,8 +4,8 @@
 <main id="main">
 <section class="section-sm" style="padding-top:44px">
   <div class="wrap">
-    <p class="kicker mb-2">Step 3 of 3</p>
-    <h1 class="h1 mb-3">Checkout</h1>
+    <p class="kicker mb-2"><%= t('Step 3 of 3') %></p>
+    <h1 class="h1 mb-3"><%= t('Checkout') %></h1>
 
     <% if (errors.form) { %>
       <div class="alert alert-error"><%- icon('warning', 19) %><div><%= errors.form %></div></div>
@@ -16,85 +16,89 @@
         <input type="hidden" name="_csrf" value="<%= csrf %>">
 
         <div class="card mb-3">
-          <h2 class="h3 mb-3"><%= customer ? 'Your account' : 'Create your account' %></h2>
+          <h2 class="h3 mb-3"><%= customer ? 'Your account' : t('Create your account') %></h2>
 
           <% if (customer) { %>
             <div class="chip mb-2"><%- icon('user', 16) %> Signed in as <b><%= customer.email %></b></div>
+          <% } else if (vesopaOnly && typeof vesopaSso !== 'undefined' && vesopaSso) { %>
+            <%# No password to choose: the Vesopa account IS the account. The
+                basket is a cookie, so it is still here when they come back. %>
+            <p class="small muted mb-2"><%= t('Your order is kept under your Vesopa account — one account for every Vesopa product.') %></p>
+            <%- include('../partials/vesopa-button', { href: '/auth/vesopa/start?next=' + encodeURIComponent('/checkout'), label: t('Sign in or create account') }) %>
           <% } else { %>
             <div class="field <%= errors.email ? 'field-error' : '' %>">
-              <label class="label" for="email">Email address</label>
+              <label class="label" for="email"><%= t('Email address') %></label>
               <input class="input" id="email" name="email" type="email" autocomplete="username"
                      value="<%= values.email || '' %>" required>
               <% if (errors.email) { %><p class="error-text"><%= errors.email %></p><% } %>
-              <p class="hint">This becomes your account. Everything important is sent here.</p>
+              <p class="hint"><%= t('This becomes your account. Everything important is sent here.') %></p>
             </div>
             <div class="field <%= errors.password ? 'field-error' : '' %>">
-              <label class="label" for="password">Choose a password</label>
+              <label class="label" for="password"><%= t('Choose a password') %></label>
               <input class="input" id="password" name="password" type="password" autocomplete="new-password" required data-pw-meter>
               <div class="pw-meter"><i></i><i></i><i></i></div>
               <% if (errors.password) { %><p class="error-text"><%= errors.password %></p>
-              <% } else { %><p class="hint">At least 10 characters, with a number.</p><% } %>
+              <% } else { %><p class="hint"><%= t('At least 10 characters, with a number.') %></p><% } %>
             </div>
             <p class="small muted mb-0">
-              Already have an account? <a href="/login?next=/checkout">Sign in first</a>.
+              <%- th('Already have an account? <a href="/login?next=/checkout">Sign in first</a>.') %>
             </p>
           <% } %>
         </div>
 
         <div class="card">
-          <h2 class="h3 mb-1">Billing details</h2>
+          <h2 class="h3 mb-1"><%= t('Billing details') %></h2>
           <p class="small muted mb-3">
             <% if (lines.some(function (l) { return l.kind === 'domain' || l.kind === 'domain_transfer'; })) { %>
-              A domain registration needs a real registrant address — that is a registry
-              rule, not a marketing form. It is not published if WHOIS privacy is on.
+              <%= t('A domain registration needs a real registrant address — that is a registry rule, not a marketing form. It is not published if WHOIS privacy is on.') %>
             <% } else { %>
-              Used on your invoices.
+              <%= t('Used on your invoices.') %>
             <% } %>
           </p>
 
           <div class="grid grid-2" style="gap:0 16px">
             <div class="field <%= errors.first_name ? 'field-error' : '' %>">
-              <label class="label" for="first_name">First name</label>
+              <label class="label" for="first_name"><%= t('First name') %></label>
               <input class="input" id="first_name" name="first_name" autocomplete="given-name" required value="<%= values.first_name || '' %>">
             </div>
             <div class="field <%= errors.last_name ? 'field-error' : '' %>">
-              <label class="label" for="last_name">Last name</label>
+              <label class="label" for="last_name"><%= t('Last name') %></label>
               <input class="input" id="last_name" name="last_name" autocomplete="family-name" required value="<%= values.last_name || '' %>">
             </div>
           </div>
 
           <div class="grid grid-2" style="gap:0 16px">
             <div class="field">
-              <label class="label" for="company">Company <span class="muted">(optional)</span></label>
+              <label class="label" for="company"><%- th('Company <span class="muted">(optional)</span>') %></label>
               <input class="input" id="company" name="company" autocomplete="organization" value="<%= values.company || '' %>">
             </div>
             <div class="field <%= errors.phone ? 'field-error' : '' %>">
-              <label class="label" for="phone">Phone</label>
+              <label class="label" for="phone"><%= t('Phone') %></label>
               <input class="input" id="phone" name="phone" autocomplete="tel" value="<%= values.phone || '' %>">
               <% if (errors.phone) { %><p class="error-text"><%= errors.phone %></p><% } %>
             </div>
           </div>
 
           <div class="field <%= errors.address1 ? 'field-error' : '' %>">
-            <label class="label" for="address1">Address</label>
+            <label class="label" for="address1"><%= t('Address') %></label>
             <input class="input" id="address1" name="address1" autocomplete="address-line1" value="<%= values.address1 || '' %>">
             <% if (errors.address1) { %><p class="error-text"><%= errors.address1 %></p><% } %>
           </div>
           <div class="field">
-            <input class="input" name="address2" autocomplete="address-line2" placeholder="Address line 2 (optional)" value="<%= values.address2 || '' %>">
+            <input class="input" name="address2" autocomplete="address-line2" placeholder="<%= t('Address line 2 (optional)') %>" value="<%= values.address2 || '' %>">
           </div>
 
           <div class="grid grid-3" style="gap:0 16px">
             <div class="field <%= errors.city ? 'field-error' : '' %>">
-              <label class="label" for="city">Town or city</label>
+              <label class="label" for="city"><%= t('Town or city') %></label>
               <input class="input" id="city" name="city" autocomplete="address-level2" value="<%= values.city || '' %>">
             </div>
             <div class="field <%= errors.postcode ? 'field-error' : '' %>">
-              <label class="label" for="postcode">Postcode</label>
+              <label class="label" for="postcode"><%= t('Postcode') %></label>
               <input class="input" id="postcode" name="postcode" autocomplete="postal-code" value="<%= values.postcode || '' %>">
             </div>
             <div class="field">
-              <label class="label" for="country">Country</label>
+              <label class="label" for="country"><%= t('Country') %></label>
               <%- include('../partials/country-select', {
                 selected: countries.pick(values.country, typeof geoCountry !== 'undefined' ? geoCountry : ''),
                 geo: typeof geoCountry !== 'undefined' ? geoCountry : '',
@@ -119,46 +123,43 @@
           <div class="biller">
             <label class="check biller-same">
               <input type="checkbox" name="bill_same" value="1" <%= values.bill_same === '0' ? '' : 'checked' %>>
-              <span class="small">
-                <b>Invoice to the same name and address</b>
-                <span class="muted">Uncheck if the invoice should be made out to someone else — a company or an accountant.</span>
-              </span>
+              <span class="small"><%- th('<b>Invoice to the same name and address</b> <span class="muted">Uncheck if the invoice should be made out to someone else — a company or an accountant.</span>') %></span>
             </label>
 
             <div class="biller-fields" <%= values.bill_same === '0' ? '' : 'hidden' %>>
               <div class="grid grid-2" style="gap:0 16px">
                 <div class="field">
-                  <label class="label" for="bill_name">Billed to</label>
+                  <label class="label" for="bill_name"><%= t('Billed to') %></label>
                   <input class="input" id="bill_name" name="bill_name" autocomplete="off" value="<%= values.bill_name || '' %>">
                 </div>
                 <div class="field">
-                  <label class="label" for="bill_company">Company <span class="muted">(optional)</span></label>
+                  <label class="label" for="bill_company"><%- th('Company <span class="muted">(optional)</span>') %></label>
                   <input class="input" id="bill_company" name="bill_company" autocomplete="off" value="<%= values.bill_company || '' %>">
                 </div>
               </div>
               <div class="field">
-                <label class="label" for="bill_email">Send the invoice to</label>
+                <label class="label" for="bill_email"><%= t('Send the invoice to') %></label>
                 <input class="input" id="bill_email" name="bill_email" type="email" autocomplete="off" value="<%= values.bill_email || '' %>">
-                <p class="hint">A copy of the invoice PDF goes to this address as well as to you.</p>
+                <p class="hint"><%= t('A copy of the invoice PDF goes to this address as well as to you.') %></p>
               </div>
               <div class="field">
-                <label class="label" for="bill_address1">Address</label>
+                <label class="label" for="bill_address1"><%= t('Address') %></label>
                 <input class="input" id="bill_address1" name="bill_address1" autocomplete="off" value="<%= values.bill_address1 || '' %>">
               </div>
               <div class="field">
-                <input class="input" name="bill_address2" autocomplete="off" placeholder="Address line 2 (optional)" value="<%= values.bill_address2 || '' %>">
+                <input class="input" name="bill_address2" autocomplete="off" placeholder="<%= t('Address line 2 (optional)') %>" value="<%= values.bill_address2 || '' %>">
               </div>
               <div class="grid grid-3" style="gap:0 16px">
                 <div class="field">
-                  <label class="label" for="bill_city">Town or city</label>
+                  <label class="label" for="bill_city"><%= t('Town or city') %></label>
                   <input class="input" id="bill_city" name="bill_city" autocomplete="off" value="<%= values.bill_city || '' %>">
                 </div>
                 <div class="field">
-                  <label class="label" for="bill_postcode">Postcode</label>
+                  <label class="label" for="bill_postcode"><%= t('Postcode') %></label>
                   <input class="input" id="bill_postcode" name="bill_postcode" autocomplete="off" value="<%= values.bill_postcode || '' %>">
                 </div>
                 <div class="field">
-                  <label class="label" for="bill_country">Country</label>
+                  <label class="label" for="bill_country"><%= t('Country') %></label>
                   <%- include('../partials/country-select', {
                     id: 'bill_country',
                     name: 'bill_country',
@@ -172,7 +173,7 @@
         </div>
 
         <div class="card mt-3">
-          <h2 class="h3 mb-2">Payment</h2>
+          <h2 class="h3 mb-2"><%= t('Payment') %></h2>
 
           <% if (isFree) { %>
             <%#
@@ -186,20 +187,19 @@
             <div class="alert alert-ok mb-3">
               <%- icon('check-circle', 19) %>
               <div>
-                <b>Nothing to pay.</b>
+                <b><%= t('Nothing to pay.') %></b>
                 <% if (couponCode) { %>
-                  <%= couponCode %> covers this order in full — there is no payment
-                  step and no card needed.
+                  <%= t('{code} covers this order in full — there is no payment step and no card needed.', { code: couponCode }) %>
                 <% } else { %>
-                  This order comes to <%= money(0) %>, so there is no payment step.
+                  <%= t('This order comes to {price}, so there is no payment step.', { price: money(0) }) %>
                 <% } %>
-                Your services are set up as soon as you place it.
+                <%= t('Your services are set up as soon as you place it.') %>
               </div>
             </div>
 
           <% } else if (canPayOnline) { %>
-            <h3 class="h4 mb-1">Choose a payment method</h3>
-            <p class="tiny muted mb-3 paypick-lead"><%- icon('lock', 13) %> Secure and encrypted payments</p>
+            <h3 class="h4 mb-1"><%= t('Choose a payment method') %></h3>
+            <p class="tiny muted mb-3 paypick-lead"><%- icon('lock', 13) %> <%= t('Secure and encrypted payments') %></p>
 
             <div class="paypick">
               <% gateways.forEach(function (g) { %>
@@ -243,8 +243,7 @@
                       <span class="paypick-secure">
                         <%- icon('lock', 13) %>
                         <% if (g.secure) { %><%= g.secure %><% } else { %>
-                          You are taken to <%= g.name %>'s own secure page to
-                          pay. Your card details are never sent to us and never touch this server.
+                          <%= t('You are taken to {gateway}’s own secure page to pay. Your card details are never sent to us and never touch this server.', { gateway: g.name }) %>
                         <% } %>
                       </span>
                     </span>
@@ -257,9 +256,7 @@
             <div class="alert alert-info mb-3">
               <%- icon('info', 19) %>
               <div>
-                <b>Card payment is not switched on yet.</b> Place the order and we will
-                email you an invoice with payment details. Your services go live the
-                moment payment clears — usually the same working day.
+                <%- th('<b>Card payment is not switched on yet.</b> Place the order and we will email you an invoice with payment details. Your services go live the moment payment clears — usually the same working day.') %>
               </div>
             </div>
           <% } %>
@@ -284,23 +281,23 @@
                 <span class="coupon-applied-ico"><%- icon('check', 16) %></span>
                 <span class="coupon-applied-txt">
                   <b><%= couponCode %></b>
-                  <span><% if (couponDiscount_pence > 0) { %>You saved <%= money(couponDiscount_pence) %> on this order<% } else { %>Discount applied<% } %></span>
+                  <span><% if (couponDiscount_pence > 0) { %><%= t('You saved {v} on this order', { v: money(couponDiscount_pence) }) %><% } else { %><%= t('Discount applied') %><% } %></span>
                 </span>
                 <button class="coupon-remove" type="submit" formaction="/cart/coupon/remove" formnovalidate
-                        aria-label="Remove discount code <%= couponCode %>">Remove</button>
+                        aria-label="Remove discount code <%= couponCode %>"><%= t('Remove') %></button>
               </div>
             <% } else { %>
               <details class="coupon-box"<%= typeof couponError !== 'undefined' && couponError ? ' open' : '' %>>
                 <summary class="coupon-toggle">
                   <span class="coupon-toggle-ico"><%- icon('tag', 17) %></span>
-                  <span class="coupon-toggle-txt">Have a discount code?</span>
-                  <span class="coupon-toggle-cta">Enter code</span>
+                  <span class="coupon-toggle-txt"><%= t('Have a discount code?') %></span>
+                  <span class="coupon-toggle-cta"><%= t('Enter code') %></span>
                 </summary>
                 <div class="coupon-form">
-                  <input class="input coupon-input" name="code" placeholder="e.g. WELCOME10"
+                  <input class="input coupon-input" name="code" placeholder="<%= t('e.g. WELCOME10') %>"
                          autocomplete="off" spellcheck="false" autocapitalize="characters"
-                         aria-label="Discount code">
-                  <button class="btn coupon-apply" type="submit" formaction="/cart/coupon" formnovalidate>Apply</button>
+                         aria-label="<%= t('Discount code') %>">
+                  <button class="btn coupon-apply" type="submit" formaction="/cart/coupon" formnovalidate><%= t('Apply') %></button>
                 </div>
                 <% if (typeof couponError !== 'undefined' && couponError) { %>
                   <p class="error-text mb-0 mt-2" style="padding:0 14px 12px"><%= couponError %></p>
@@ -312,21 +309,18 @@
           <label class="check mb-3">
             <input type="checkbox" name="agree" required>
             <span class="small">
-              I agree to the <a href="/terms" target="_blank">terms of service</a>,
-              <a href="/aup" target="_blank">acceptable use policy</a> and
-              <a href="/refunds" target="_blank">refund policy</a>. I understand that
-              domain registration fees cannot be refunded once the registry has taken them.
+              <%- th('I agree to the <a href="/terms" target="_blank">terms of service</a>, <a href="/aup" target="_blank">acceptable use policy</a> and <a href="/refunds" target="_blank">refund policy</a>. I understand that domain registration fees cannot be refunded once the registry has taken them.') %>
             </span>
           </label>
 
           <button class="btn btn-lg btn-block" type="submit"
-                  data-busy="<%= isFree ? 'Confirming your order…' : 'Taking you to payment…' %>">
+                  data-busy="<%= isFree ? t('Confirming your order…') : t('Taking you to payment…') %>">
             <% if (isFree) { %>
-              Confirm order — <%= money(0) %>
+              <%= t('Confirm order — {v}', { v: money(0) }) %>
             <% } else if (canPayOnline) { %>
               Pay <%= money(total_pence) %> <%- icon('arrow', 17) %>
             <% } else { %>
-              Place order — <%= money(total_pence) %>
+              <%= t('Place order — {v}', { v: money(total_pence) }) %>
             <% } %>
           </button>
         </div>
@@ -337,7 +331,7 @@
             to are laid out identically on the screen where they commit. A
             summary that reformats between the two invites a second look. %>
         <div class="cart-summary">
-          <h2 class="h3 mb-3">Order summary</h2>
+          <h2 class="h3 mb-3"><%= t('Order summary') %></h2>
 
           <% lines.forEach(function (l) { %>
             <div class="sum-row">
@@ -366,7 +360,7 @@
               it applies at all. %>
           <% if (showVat) { %>
             <div class="sum-row sum-row-vat">
-              <span><%= vatLabel %> (<%= vatPercent %>%) <span class="vat-tag">we pay this</span></span>
+              <span><%= vatLabel %> (<%= num(vatPercent) %>%) <span class="vat-tag"><%= t('we pay this') %></span></span>
               <span class="sum-val muted"><%= money(vat_pence) %></span>
             </div>
           <% } %>
@@ -385,23 +379,24 @@
           </div>
 
           <% if (saved_total_pence > 0) { %>
-            <p class="sum-saved"><%- icon('check-circle', 15) %> You are saving <b><%= money(saved_total_pence) %></b></p>
+            <p class="sum-saved"><%- icon('check-circle', 15) %> <%- th('You are saving <b>{v}</b>', { v: money(saved_total_pence) }) %></p>
           <% } %>
 
           <p class="tiny muted mt-2 mb-0">
-            This is the full amount<% if (showVat) { %>. <%= vatLabel %> is
-            included and accounted for by us — nothing further is added<% } else { %>,
-            charged in <%= currency.code %> (<%= currency.name %>).
-            Nothing further is added<% } %>.
+            <% if (showVat) { %>
+              <%= t('This is the full amount. {label} is included and accounted for by us — nothing further is added.', { label: vatLabel }) %>
+            <% } else { %>
+              <%= t('This is the full amount, charged in {code} ({name}). Nothing further is added.', { code: currency.code, name: currency.name }) %>
+            <% } %>
           </p>
 
           <ul class="cart-trust">
-            <li><%- icon('shield', 15) %><span>30-day money-back guarantee</span></li>
-            <li><%- icon('lock', 15) %><span>Free SSL, renewed automatically</span></li>
-            <li><%- icon('headset', 15) %><span>Free migration from your current host</span></li>
+            <li><%- icon('shield', 15) %><span><%= t('30-day money-back guarantee') %></span></li>
+            <li><%- icon('lock', 15) %><span><%= t('Free SSL, renewed automatically') %></span></li>
+            <li><%- icon('headset', 15) %><span><%= t('Free migration from your current host') %></span></li>
           </ul>
 
-          <a class="btn btn-ghost btn-sm btn-block mt-3" href="/cart">← Back to basket</a>
+          <a class="btn btn-ghost btn-sm btn-block mt-3" href="/cart"><%= t('← Back to basket') %></a>
         </div>
       </aside>
     </div>

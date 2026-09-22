@@ -23,14 +23,13 @@
         <input type="hidden" name="_csrf" value="<%= csrf %>">
 
         <div class="field <%= errors.domain ? 'field-error' : '' %>">
-          <label class="label" for="domain">Domain or subdomain</label>
+          <label class="label" for="domain"><%= t('Domain or subdomain') %></label>
           <input class="input mono" id="domain" name="domain" required autofocus
-                 placeholder="yourbusiness.co.uk" autocomplete="off" spellcheck="false"
+                 placeholder="<%= t('yourbusiness.co.uk') %>" autocomplete="off" spellcheck="false"
                  value="<%= values.domain || '' %>">
           <% if (errors.domain) { %><p class="error-text"><%= errors.domain %></p><% } %>
           <p class="hint" id="add-hint">
-            Type the whole name. We work out whether it is a domain or a subdomain —
-            you do not have to tell us.
+            <%= t('Type the whole name. We work out whether it is a domain or a subdomain — you do not have to tell us.') %>
           </p>
         </div>
 
@@ -47,9 +46,9 @@
 
         <% if (services.length) { %>
           <div class="field">
-            <label class="label" for="service_id">Host it on</label>
+            <label class="label" for="service_id"><%= t('Host it on') %></label>
             <select class="select" id="service_id" name="service_id">
-              <option value="">Decide later</option>
+              <option value=""><%= t('Decide later') %></option>
               <% services.forEach(function (s) { %>
                 <option value="<%= s.id %>" <%= String(values.service_id) === String(s.id) ? 'selected' : '' %>>
                   <%= s.primary_domain || s.plan_name %>
@@ -66,37 +65,35 @@
           zone or a mail domain, and hiding a checkbox is not a rule.
         %>
         <fieldset class="field" id="domain-only" style="border:0;padding:0;margin:0 0 18px">
-          <legend class="label" style="padding:0">What should we set up for it?</legend>
+          <legend class="label" style="padding:0"><%= t('What should we set up for it?') %></legend>
 
           <label class="check">
             <input type="checkbox" name="want_dns" value="1"
                    <%= values.want_dns === undefined || values.want_dns ? 'checked' : '' %>>
-            <span>
-              <span class="strong">DNS</span>
-              <span class="tiny muted" style="display:block">Host the domain's DNS here. Leave this on unless you are keeping DNS at your current provider.</span>
-            </span>
+            <span><%- th('<span class="strong">DNS</span> <span class="tiny muted" style="display:block">Host the domain\'s DNS here. Leave this on unless you are keeping DNS at your current provider.</span>') %></span>
           </label>
 
           <label class="check">
             <input type="checkbox" name="want_mail" value="1" <%= values.want_mail ? 'checked' : '' %>>
-            <span>
-              <span class="strong">Email</span>
-              <span class="tiny muted" style="display:block">Accept mail for this domain so you can create mailboxes. Leave off if your email is with Google, Microsoft or anyone else.</span>
-            </span>
+            <span><%- th('<span class="strong">Email</span> <span class="tiny muted" style="display:block">Accept mail for this domain so you can create mailboxes. Leave off if your email is with Google, Microsoft or anyone else.</span>') %></span>
           </label>
 
-          <p class="hint">The website is always set up. You can change your mind later.</p>
+          <p class="hint">
+            The website is set up when the domain points here. You can change your mind later.
+            <b>Email only?</b> Keep the website where it is and tick Email — an MX record pointed at
+            <span class="mono"><%= mailHost %></span> is all it takes; we check for it on the spot.
+          </p>
         </fieldset>
 
-        <button class="btn btn-lg" type="submit" data-busy="Adding…" id="add-submit">Add it</button>
+        <button class="btn btn-lg" type="submit" data-busy="Adding…" id="add-submit"><%= t('Add it') %></button>
       </form>
     </div>
 
     <div class="p-card">
-      <h2 class="h3 mb-2">How it works</h2>
+      <h2 class="h3 mb-2"><%= t('How it works') %></h2>
       <div class="how">
         <div class="how-row">
-          <span class="how-tag">Domain</span>
+          <span class="how-tag"><%= t('Domain') %></span>
           <p class="small muted mb-0">
             Point it at us one of two ways — use our nameservers, or aim an
             <span class="mono">A</span> record here and keep DNS where it is. Either is enough.
@@ -105,12 +102,9 @@
           </p>
         </div>
         <div class="how-row">
-          <span class="how-tag how-tag-sub">Subdomain</span>
+          <span class="how-tag how-tag-sub"><%= t('Subdomain') %></span>
           <p class="small muted mb-0">
-            Built immediately — there is nothing to wait for and no nameserver change to make.
-            It gets its own folder and its own certificate. It has
-            <b>no DNS zone and no mailboxes</b> of its own: its records live in the main
-            domain's zone, and email belongs on the main domain.
+            <%- th("Built immediately — there is nothing to wait for and no nameserver change to make. It gets its own folder and its own certificate. It has <b>no DNS zone and no mailboxes</b> of its own: its records live in the main domain's zone, and email belongs on the main domain.") %>
           </p>
         </div>
       </div>
@@ -119,24 +113,24 @@
 
   <aside>
     <div class="p-card" id="aside-domain">
-      <h2 class="h3 mb-2">Point a domain at us</h2>
-      <p class="small muted mb-2">Either one works. You do not need both.</p>
+      <h2 class="h3 mb-2"><%= t('Point a domain at us') %></h2>
+      <p class="small muted mb-2"><%= t('Either one works. You do not need both.') %></p>
 
-      <p class="label mb-1">1 &nbsp;Our nameservers <span class="badge badge-green" style="font-size:.62rem">recommended</span></p>
+      <p class="label mb-1"><%- th('1 &nbsp;Our nameservers <span class="badge badge-green" style="font-size:.62rem">recommended</span>') %></p>
       <% defaultNameservers.forEach(function (ns) { %>
         <div class="copyable">
           <span class="mono"><%= ns %></span>
-          <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= ns %>">Copy</button>
+          <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= ns %>"><%= t('Copy') %></button>
         </div>
       <% }); %>
 
-      <p class="label mb-1 mt-3">2 &nbsp;An A record, DNS stays with you</p>
+      <p class="label mb-1 mt-3"><%= t('2 &nbsp;An A record, DNS stays with you') %></p>
       <%# The node's address is never printed in the panel — see the note in
           views/panel/domain.ejs. The hostname is the same instruction with the
           indirection kept, so moving the node does not break anybody's zone. %>
       <div class="copyable">
         <span class="mono"><%= pointHostname %></span>
-        <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= pointHostname %>">Copy</button>
+        <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= pointHostname %>"><%= t('Copy') %></button>
       </div>
       <p class="tiny muted mt-2 mb-0">
         Prefer <span class="mono"><%= pointHostname %></span> if your DNS panel accepts a name —
@@ -146,9 +140,9 @@
 
     <% if (parents.length) { %>
       <div class="p-card">
-        <h2 class="h3 mb-2">Your domains</h2>
+        <h2 class="h3 mb-2"><%= t('Your domains') %></h2>
         <p class="small muted mb-2">
-          Anything typed under one of these is treated as a subdomain and set up straight away:
+          <%= t('Anything typed under one of these is treated as a subdomain and set up straight away:') %>
         </p>
         <ul class="plain-list">
           <% parents.forEach(function (p) { %>
@@ -159,9 +153,9 @@
     <% } %>
 
     <div class="p-card">
-      <h2 class="h3 mb-2">Would rather we held it?</h2>
-      <p class="small muted mb-2">Transfer the domain to us and renewals, DNS and hosting all sit in one place.</p>
-      <a class="btn btn-ghost btn-sm btn-block" href="/domains/transfer">Transfer a domain</a>
+      <h2 class="h3 mb-2"><%= t('Would rather we held it?') %></h2>
+      <p class="small muted mb-2"><%= t('Transfer the domain to us and renewals, DNS and hosting all sit in one place.') %></p>
+      <a class="btn btn-ghost btn-sm btn-block" href="/domains/transfer"><%= t('Transfer a domain') %></a>
     </div>
   </aside>
 </div>

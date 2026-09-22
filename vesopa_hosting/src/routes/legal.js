@@ -14,14 +14,28 @@
  */
 
 const express = require('express');
-const { CONTACT } = require('../config');
+const { CONTACT, AI } = require('../config');
 
 const router = express.Router();
 const UPDATED = '5 August 2026';
 
+/*
+ * A no-op that exists to be FOUND.
+ *
+ * The route below translates a document's name with `req.t(doc.title)`, which
+ * is the right thing to do — it has the request, and therefore the language —
+ * but a key built from a variable is invisible to `npm run i18n:extract`, and
+ * an invisible key is one nobody is ever asked to translate. Wrapping the
+ * English here marks it for the scanner and returns it unchanged, so the four
+ * names are in the catalogue and stay there.
+ *
+ * It does NOT translate anything. There is no language at module load.
+ */
+const t = (english) => english;
+
 const DOCS = {
   terms: {
-    title: 'Terms of service',
+    title: t('Terms of service'),
     body: `
 <h2>1. Who we are</h2>
 <p>These terms are between you and <strong>${CONTACT.company}</strong>, a company registered in England and Wales, whose address is ${CONTACT.address_line1}, ${CONTACT.address_line2} ("we", "us"). By ordering hosting, a domain or any other service from us you agree to them.</p>
@@ -72,7 +86,7 @@ const DOCS = {
   },
 
   privacy: {
-    title: 'Privacy policy',
+    title: t('Privacy policy'),
     body: `
 <h2>Who is responsible for your data</h2>
 <p><strong>${CONTACT.company}</strong>, ${CONTACT.address_line1}, ${CONTACT.address_line2}, is the data controller for the personal data described here. Contact us at <a href="mailto:${CONTACT.email}">${CONTACT.email}</a> about anything in this policy.</p>
@@ -89,6 +103,9 @@ const DOCS = {
 
 <h3>Support correspondence</h3>
 <p>Tickets and emails you send us, kept so that the next person to help you can see what has already been tried.</p>
+
+<h3>Vesopa AI, if you switch it on</h3>
+<p>The assistant on this site is off until you tap it. If you allow the microphone, what you say is sent to our AI provider (Amazon Web Services, Bedrock) to be written down and understood, and the audio is not kept by us or, under their terms, used to train anything. If you choose Bangla, your browser's own speech recognition writes down what you say where the browser has it (Google's service in Chrome and on Android, Microsoft's in Edge), under that company's terms.${AI.TTS_API_KEY ? " The assistant's spoken replies are made by Google (Gemini): the text of each reply is sent to them to be turned into speech, and nothing you say is." : ''} What you type or say, and what the assistant learned about your needs, is kept in your browser until you sign in and with your account afterwards, so it can carry on where you left off; you can wipe it from the assistant at any time. The assistant only ever sees the page you are on and your own account. Legal basis: your consent, which you give by allowing the microphone or typing to it, and can withdraw by switching it off.</p>
 
 <h3>Your customers' data</h3>
 <p>Whatever you store on your hosting account is yours. We do not access it except when you ask us to, when we must to fix a fault or investigate abuse, or when legally required. In respect of that data <strong>you are the controller and we are your processor</strong>.</p>
@@ -108,6 +125,8 @@ const DOCS = {
   <li><strong>Domain registries and our registrar</strong> — registrant details, because registration cannot happen otherwise.</li>
   <li><strong>Our payment provider</strong> — to take payment.</li>
   <li><strong>Microsoft Azure</strong> — our servers are hosted there, in a UK region.</li>
+  <li><strong>Amazon Web Services (Bedrock)</strong> — what you say or type to Vesopa AI, only while you use it.</li>${AI.TTS_API_KEY ? `
+  <li><strong>Google (Gemini)</strong> — the text of Vesopa AI's replies, to speak them aloud.</li>` : ''}
   <li><strong>Law enforcement or a court</strong> — where we are legally obliged.</li>
 </ul>
 
@@ -132,7 +151,7 @@ const DOCS = {
   },
 
   aup: {
-    title: 'Acceptable use policy',
+    title: t('Acceptable use policy'),
     body: `
 <p>This policy exists because our customers share infrastructure. Nearly all of it comes down to one idea: <strong>do not use our servers to harm other people, and do not use so much of a shared machine that your neighbours suffer.</strong></p>
 
@@ -168,7 +187,7 @@ const DOCS = {
   },
 
   refunds: {
-    title: 'Refund policy',
+    title: t('Refund policy'),
     body: `
 <h2>Hosting: 30 days, no questions</h2>
 <p>Cancel a new hosting plan within <strong>30 days</strong> of ordering and we will refund the hosting fee in full. Email us; there is no form to complete, no reason required, and nobody will telephone you to talk you out of it.</p>
@@ -202,8 +221,11 @@ const DOCS = {
 Object.entries(DOCS).forEach(([slug, doc]) => {
   router.get(`/${slug}`, (req, res) => {
     res.render('partials/legal-shell', {
-      title: doc.title,
-      description: `${doc.title} for Vesopa Cloud, part of ${CONTACT.company}.`,
+      // The document's own name is translated even though its body is not:
+      // the <title>, the heading and the footer link are the page, not the
+      // agreement. See the note in partials/legal-shell.ejs.
+      title: req.t(doc.title),
+      description: req.t('{document} for Vesopa Cloud, part of {company}.', { document: req.t(doc.title), company: CONTACT.company }),
       body: doc.body,
       updated: UPDATED,
     });

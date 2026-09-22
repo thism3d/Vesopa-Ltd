@@ -24,7 +24,7 @@
   <% if (!hestiaLive) { %>
     <div class="alert alert-info">
       <%- icon('info', 19) %>
-      <div><b>Demonstration mode.</b> This terminal is not connected to a live hosting node, so no records are listed and edits are recorded but not applied.</div>
+      <div><%- th('<b>Demonstration mode.</b> This terminal is not connected to a live hosting node, so no records are listed and edits are recorded but not applied.') %></div>
     </div>
   <% } %>
   <% if (error) { %>
@@ -36,21 +36,21 @@
 
   <div class="p-card p-card-flush">
     <div class="p-card-head">
-      <h2>Records</h2>
+      <h2><%= t('Records') %></h2>
       <span class="small muted"><%= records.length %> record<%= records.length === 1 ? '' : 's' %></span>
     </div>
 
     <% if (!records.length) { %>
       <div class="empty">
         <%- icon('globe', 46) %>
-        <h3>No records yet</h3>
-        <p>Add the first one below. Most sites need an <b>A</b> record at <b>@</b> and a <b>CNAME</b> at <b>www</b>.</p>
+        <h3><%= t('No records yet') %></h3>
+        <p><%- th('Add the first one below. Most sites need an <b>A</b> record at <b>@</b> and a <b>CNAME</b> at <b>www</b>.') %></p>
       </div>
     <% } else { %>
       <div class="table-wrap">
         <table class="table" style="font-size:.86rem">
           <thead>
-            <tr><th>Name</th><th>Type</th><th>Value</th><th>Priority</th><th>TTL</th><th></th></tr>
+            <tr><th><%= t('Name') %></th><th><%= t('Type') %></th><th><%= t('Value') %></th><th><%= t('Priority') %></th><th><%= t('TTL') %></th><th></th></tr>
           </thead>
           <tbody>
             <% records.forEach(function (r) { %>
@@ -62,7 +62,7 @@
                 <td><%= r.ttl %></td>
                 <td style="text-align:right;white-space:nowrap">
                   <details>
-                    <summary class="btn-link">Edit</summary>
+                    <summary class="btn-link"><%= t('Edit') %></summary>
                     <form method="post" action="/panel/domains/<%= domain.domain %>/dns" class="mt-2" data-guard>
                       <input type="hidden" name="_csrf" value="<%= csrf %>">
                       <input type="hidden" name="action" value="edit">
@@ -70,27 +70,27 @@
                       <input type="hidden" name="ttl" value="<%= r.ttl %>">
                       <div class="p-grid p-grid-2">
                         <div class="field">
-                          <label class="label" for="name-<%= r.id %>">Name</label>
+                          <label class="label" for="name-<%= r.id %>"><%= t('Name') %></label>
                           <input class="input mono" id="name-<%= r.id %>" name="name" value="<%= r.name %>" required>
                         </div>
                         <div class="field">
-                          <label class="label" for="type-<%= r.id %>">Type</label>
+                          <label class="label" for="type-<%= r.id %>"><%= t('Type') %></label>
                           <select class="select" id="type-<%= r.id %>" name="type">
-                            <% types.forEach(function (t) { %>
-                              <option value="<%= t %>" <%= r.type === t ? 'selected' : '' %>><%= t %></option>
+                            <% types.forEach(function (type) { %>
+                              <option value="<%= type %>" <%= r.type === type ? 'selected' : '' %>><%= type %></option>
                             <% }); %>
                           </select>
                         </div>
                       </div>
                       <div class="field">
-                        <label class="label" for="value-<%= r.id %>">Value</label>
+                        <label class="label" for="value-<%= r.id %>"><%= t('Value') %></label>
                         <input class="input mono" id="value-<%= r.id %>" name="value" value="<%= r.value %>" required>
                       </div>
                       <div class="field">
-                        <label class="label" for="priority-<%= r.id %>">Priority <span class="muted">(MX and SRV only)</span></label>
+                        <label class="label" for="priority-<%= r.id %>"><%- th('Priority <span class="muted">(MX and SRV only)</span>') %></label>
                         <input class="input" id="priority-<%= r.id %>" name="priority" value="<%= r.priority === null ? '' : r.priority %>">
                       </div>
-                      <button class="btn btn-sm" type="submit" data-busy="Saving…">Save record</button>
+                      <button class="btn btn-sm" type="submit" data-busy="Saving…"><%= t('Save record') %></button>
                     </form>
 
                     <form method="post" action="/panel/domains/<%= domain.domain %>/dns" class="mt-2"
@@ -98,7 +98,7 @@
                       <input type="hidden" name="_csrf" value="<%= csrf %>">
                       <input type="hidden" name="action" value="delete">
                       <input type="hidden" name="record_id" value="<%= r.id %>">
-                      <button class="btn-link" type="submit">Delete this record</button>
+                      <button class="btn-link" type="submit"><%= t('Delete this record') %></button>
                     </form>
                   </details>
                 </td>
@@ -111,42 +111,41 @@
   </div>
 
   <div class="p-card">
-    <h2 class="h3 mb-2">Add a record</h2>
+    <h2 class="h3 mb-2"><%= t('Add a record') %></h2>
     <p class="small muted mb-3">
-      Changes are live as soon as they are saved, but the internet remembers the old
-      answer until the record’s TTL runs out — usually an hour.
+      <%= t('Changes are live as soon as they are saved, but the internet remembers the old answer until the record’s TTL runs out — usually an hour.') %>
     </p>
     <form method="post" action="/panel/domains/<%= domain.domain %>/dns" data-guard>
       <input type="hidden" name="_csrf" value="<%= csrf %>">
       <input type="hidden" name="action" value="add">
       <div class="p-grid p-grid-2">
         <div class="field">
-          <label class="label" for="name">Name</label>
+          <label class="label" for="name"><%= t('Name') %></label>
           <input class="input mono" id="name" name="name" value="@" required>
           <p class="hint"><b>@</b> is <%= domain.domain %> itself. <b>www</b> is www.<%= domain.domain %>.</p>
         </div>
         <div class="field">
-          <label class="label" for="type">Type</label>
+          <label class="label" for="type"><%= t('Type') %></label>
           <select class="select" id="type" name="type">
-            <% types.forEach(function (t) { %><option value="<%= t %>"><%= t %></option><% }); %>
+            <% types.forEach(function (type) { %><option value="<%= type %>"><%= type %></option><% }); %>
           </select>
         </div>
       </div>
       <div class="field">
-        <label class="label" for="value">Value</label>
+        <label class="label" for="value"><%= t('Value') %></label>
         <input class="input mono" id="value" name="value" required placeholder="203.0.113.10">
       </div>
       <div class="p-grid p-grid-2">
         <div class="field">
-          <label class="label" for="priority">Priority <span class="muted">(MX and SRV only)</span></label>
+          <label class="label" for="priority"><%- th('Priority <span class="muted">(MX and SRV only)</span>') %></label>
           <input class="input" id="priority" name="priority" placeholder="10">
         </div>
         <div class="field">
-          <label class="label" for="ttl">TTL <span class="muted">(seconds)</span></label>
+          <label class="label" for="ttl"><%- th('TTL <span class="muted">(seconds)</span>') %></label>
           <input class="input" id="ttl" name="ttl" value="3600">
         </div>
       </div>
-      <button class="btn" type="submit" data-busy="Adding…">Add record</button>
+      <button class="btn" type="submit" data-busy="Adding…"><%= t('Add record') %></button>
     </form>
   </div>
 <% } %>

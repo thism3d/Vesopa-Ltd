@@ -14,7 +14,8 @@
  */
 
 const dns = require('node:dns');
-const { NAMESERVERS } = require('./config');
+const registry = require('./dns-registry');
+const { NAMESERVERS, NAMESERVER_ALIASES } = require('./config');
 
 /**
  * A resolver of our own rather than the process default.
@@ -51,12 +52,67 @@ function normalise(host) {
 }
 
 const OURS = NAMESERVERS.map(normalise).filter(Boolean);
+const ALIASES = NAMESERVER_ALIASES.map(normalise).filter((ns) => ns && !OURS.includes(ns));
+const SELF_TTL_MS = 5 * 60_000;
+
+/**
+ * The other names our nameservers answer to — accepted, never offered.
+ *
+ * `ns1/ns2.onzep.uk` are the same two machines as `ns1/ns2.vesopa.com`, and a
+ * number of the owner's own domains were delegated to them before this panel
+ * existed. A domain pointed at them is pointed at us, and must verify.
+ *
+ * BUT ONLY WHILE THAT IS TRUE, and the code checks rather than believes it.
+ * An alias counts only when the public DNS says it resolves to an address one
+ * of our own nameservers resolves to. This is not caution for its own sake:
+ * heat6.com was once delegated to `ns1.onzep.uk` when that name was a
+ * DIFFERENT box, whose copy of the zone happened to name our nameservers — and
+ * the domain read as verified while every visitor was served by the old
+ * server. A list that trusted the name would repeat that the day the name
+ * moves again. A list that checks the address cannot.
+ *
+ * Cached for a few minutes, like the self-check below: it is one answer for a
+ * whole sweep.
+ */
+let aliasCheck = { at: 0, accepted: [] };
+
+async function acceptedAliases({ fresh = false } = {}) {
+  if (!ALIASES.length) return [];
+  if (!fresh && Date.now() - aliasCheck.at < SELF_TTL_MS) return aliasCheck.accepted;
+
+  const resolver = makeResolver();
+  const lookup = (host) => resolver.resolve4(host).catch(() => []);
+  const ourAddrs = new Set((await Promise.all(OURS.map(lookup))).flat());
+
+  const accepted = [];
+  if (ourAddrs.size) {
+    for (const alias of ALIASES) {
+      const addrs = await lookup(alias);
+      if (addrs.length && addrs.every((ip) => ourAddrs.has(ip))) accepted.push(alias);
+    }
+  }
+  aliasCheck = { at: Date.now(), accepted };
+  return accepted;
+}
+
+/** The nameservers in a list that have no address at all. */
+async function deadOnes(names) {
+  const resolver = makeResolver();
+  const out = [];
+  for (const ns of names) {
+    const v4 = await resolver.resolve4(ns).catch(() => []);
+    const v6 = v4.length ? [] : await resolver.resolve6(ns).catch(() => []);
+    if (!v4.length && !v6.length) out.push(ns);
+  }
+  return out;
+}
 
 /**
  * Is this domain delegated to us?
  *
- * BOTH of ours have to be present. Extra nameservers alongside them do not
- * block it.
+ * TWO of ours have to be present — either name of each machine will do, so
+ * `ns1.vesopa.com + ns2.onzep.uk` verifies just as `ns1 + ns2.vesopa.com`
+ * does. Extra nameservers alongside them do not block it.
  *
  * This used to be the other way round — every nameserver found had to be one of
  * ours — and the reasoning was sound as far as it went: a domain delegated to
@@ -80,83 +136,185 @@ const OURS = NAMESERVERS.map(normalise).filter(Boolean);
  *
  * Callers that want to warn about the extras can have them from `check()`.
  */
-function matchesOurs(list) {
+function matchesOurs(list, aliases = [], dead = []) {
   const found = (list || []).map(normalise).filter(Boolean);
-  if (!found.length) return false;
-  return OURS.length > 0 && OURS.every((ns) => found.includes(ns));
+  if (!found.length || !OURS.length) return false;
+  /*
+   * A NAMESERVER THAT DOES NOT EXIST IS NOT A COMPETITOR. pasificgrowth.site
+   * was delegated to `ns.onzep.uk` (a typo with no address) and
+   * `ns1.onzep.uk` (ours): one live nameserver, and it is ours — refusing
+   * that as "half a delegation" kept a site down that resolved perfectly. A
+   * delegation whose only LIVE nameservers are ours is ours; the dead name is
+   * reported in `extras` so the customer can fix it at the registrar.
+   */
+  const live = found.filter((ns) => !dead.includes(ns));
+  const ours = new Set([...OURS, ...aliases]);
+  if (live.length && live.every((ns) => ours.has(ns))) return true;
+  /*
+   * Counted by MACHINE, not by name. NS1 and NS_ALIASES are aligned by
+   * position — `ns1.vesopa.com` and `ns1.onzep.uk` are the first machine
+   * under two names — so a delegation naming both of them is still only half
+   * a delegation, and does not pass.
+   */
+  const machines = new Set();
+  for (const ns of found) {
+    let at = OURS.indexOf(ns);
+    if (at < 0) at = aliases.indexOf(ns) >= 0 ? ALIASES.indexOf(ns) : -1;
+    if (at >= 0) machines.add(at);
+  }
+  return machines.size >= Math.min(2, OURS.length);
 }
 
 /** The nameservers in a delegation that are not ours. Never blocks; informs. */
-function extrasIn(list) {
-  return (list || []).map(normalise).filter((ns) => ns && !OURS.includes(ns));
+function extrasIn(list, aliases = []) {
+  const ours = new Set([...OURS, ...aliases]);
+  return (list || []).map(normalise).filter((ns) => ns && !ours.has(ns));
 }
 
-/**
- * Look up a domain's delegation.
- *
- * Never throws. A domain that does not resolve, a registry that is slow, a
- * resolver that is unreachable — all of them are "not verified yet, here is
- * why", because every caller of this treats an error the same way it treats a
- * mismatch: wait, and ask again later.
- *
- * @returns {Promise<{matched: boolean, nameservers: string[], extras: string[], error: string}>}
- */
-async function check(domain) {
-  const name = normalise(domain);
-  if (!name || !name.includes('.')) {
-    return {
-      matched: false, nameservers: [], extras: [], error: 'Not a domain name.', serverFailure: false, code: '',
-    };
-  }
-
+/** The recursive half: what a resolver on the internet answers today. */
+async function resolverAnswer(name) {
   try {
     const found = await makeResolver().resolveNs(name);
-    return {
-      matched: matchesOurs(found),
-      serverFailure: false,
-      code: '',
-      nameservers: found.map(normalise).sort(),
-      // Present but not blocking — a registrar's verification record, or a
-      // leftover delegation the customer has not cleaned up yet.
-      extras: extrasIn(found).sort(),
-      error: '',
-    };
+    return { nameservers: found.map(normalise).filter(Boolean), code: '', error: '' };
   } catch (err) {
+    const code = String(err.code || '');
     /*
      * NXDOMAIN is worth saying plainly. It usually means the name was mistyped
      * or has not been registered at all, and "we could not check" would send a
      * customer off looking at their registrar's nameserver form for a domain
      * that does not exist.
      */
-    const message = err.code === 'ENOTFOUND' || err.code === 'ENODATA'
+    const error = code === 'ENOTFOUND' || code === 'ENODATA'
       ? 'That domain does not resolve yet.'
-      : `Could not read the nameservers (${err.code || err.message}).`;
-    /*
-     * SERVFAIL IS ITS OWN ANSWER, and telling it apart from the others is what
-     * breaks the deadlock this whole module used to sit in.
-     *
-     * A domain delegated to ns1/ns2.vesopa.com that we do not yet have a zone
-     * for is REFUSED by our own nameserver, which every recursive resolver on
-     * the internet then reports as SERVFAIL. So the check fails — and the thing
-     * that would fix it is creating the zone, which the old code would only do
-     * AFTER the check passed. vesopa.site sat in exactly that state: correct
-     * delegation at the registry, nothing on the node, "could not read the
-     * nameservers (ESERVFAIL)" forever, and no button anywhere that helped.
-     *
-     * A flag rather than a decision. `servedByUs()` below settles whether we
-     * are the ones failing to answer, and domain-linking decides what to do
-     * about it.
-     */
-    const code = String(err.code || '');
+      : `Could not read the nameservers (${code || err.message}).`;
+    return { nameservers: [], code, error };
+  }
+}
+
+/**
+ * Look up a domain's delegation.
+ *
+ * ## THE REGISTRY IS ASKED FIRST, and it is the one that decides.
+ *
+ * `resolveNs` does not answer the question this is for. It returns the NS
+ * records held by whichever server ends up answering for the name, and that
+ * comes apart from the delegation recorded at the registry in BOTH directions —
+ * each of which has cost a real customer a real afternoon:
+ *
+ *   FALSE NEGATIVE. A domain delegated to ns1/ns2.vesopa.com that we have no
+ *   zone for is REFUSED by our own nameserver, so every recursive resolver
+ *   reports SERVFAIL, so the check fails — and the fix for it is creating the
+ *   zone, which only happened AFTER the check passed. Measured 2026-09-08:
+ *   sheve.site and muzahid.com.bd both ESERVFAIL, both delegated to us
+ *   perfectly. That is the "Not yet — Could not read the nameservers
+ *   (ESERVFAIL)" a customer sees on a domain they set up correctly.
+ *
+ *   FALSE POSITIVE. heat6.com was delegated at the registry to ns1.onzep.uk,
+ *   whose copy of the zone named ns1/ns2.vesopa.com — so `resolveNs` returned
+ *   OUR nameservers and the domain read as verified while every visitor was
+ *   being served by the old box. Measured on the same day, still true.
+ *
+ * The registry's delegation has neither failure mode. It is the record that
+ * decides which servers the internet asks, it is written by whoever controls
+ * the domain, and it is visible the moment they change it rather than after a
+ * cache expires. See dns-registry.js for why node:dns cannot read it.
+ *
+ * The recursive lookup still runs, in parallel, and what it saw is reported as
+ * `resolved` — it is the difference between "delegated to us, propagating" and
+ * "delegated to us and serving", which is worth being able to say.
+ *
+ * Never throws. A registry that is slow, a resolver that is unreachable — all
+ * of them are "not verified yet, here is why", because every caller treats an
+ * error the same way it treats a mismatch: wait, and ask again later.
+ *
+ * @returns {Promise<{matched: boolean, nameservers: string[], extras: string[],
+ *                    resolved: string[], via: string, error: string}>}
+ */
+async function check(domain) {
+  const name = normalise(domain);
+  if (!name || !name.includes('.')) {
     return {
       matched: false,
       nameservers: [],
       extras: [],
-      error: message,
-      serverFailure: ['ESERVFAIL', 'ETIMEOUT', 'ECONNREFUSED', 'EREFUSED', 'ENOTIMP'].includes(code),
-      code,
+      resolved: [],
+      via: '',
+      error: 'Not a domain name.',
+      serverFailure: false,
+      unregistered: false,
+      code: '',
     };
   }
+
+  const [live, atRegistry, aliases] = await Promise.all([
+    resolverAnswer(name),
+    registry.delegation(name).catch(() => ({ ok: false, nameservers: [], error: 'lookup failed' })),
+    acceptedAliases().catch(() => []),
+  ]);
+
+  // The registry answered and named somebody. That is the delegation.
+  if (atRegistry.ok && atRegistry.nameservers.length) {
+    const dead = await deadOnes(extrasIn(atRegistry.nameservers, aliases));
+    const matched = matchesOurs(atRegistry.nameservers, aliases, dead);
+    return {
+      matched,
+      via: 'registry',
+      nameservers: atRegistry.nameservers.slice().sort(),
+      // Present but not blocking — a registrar's verification record, or a
+      // leftover delegation the customer has not cleaned up yet.
+      extras: extrasIn(atRegistry.nameservers, aliases).sort(),
+      dead,
+      resolved: live.nameservers.slice().sort(),
+      /*
+       * DELEGATED TO US AND NOT ANSWERING is the state worth naming, because
+       * it is the one with a fix and the fix is ours. It means the registry
+       * sends the internet to our nameservers and our nameservers do not hold
+       * the zone yet — so `domain-linking.verify()` builds it.
+       */
+      serverFailure: matched && !live.nameservers.length,
+      unregistered: false,
+      code: live.code,
+      error: matched && !live.nameservers.length
+        ? 'Delegated to us at the registry; our nameservers are not answering for it yet.'
+        : '',
+    };
+  }
+
+  /*
+   * The registry answered and the name is not delegated anywhere — which for a
+   * TLD server means it is not registered. Said plainly, because "could not
+   * check" sends somebody to their registrar's nameserver form for a domain
+   * that does not exist.
+   */
+  if (atRegistry.ok && !atRegistry.nameservers.length && !live.nameservers.length) {
+    return {
+      matched: false,
+      via: 'registry',
+      nameservers: [],
+      extras: [],
+      resolved: [],
+      serverFailure: false,
+      unregistered: Boolean(atRegistry.nxdomain),
+      code: live.code,
+      error: atRegistry.nxdomain
+        ? 'That domain is not registered.'
+        : 'That domain has no nameservers set at its registry yet.',
+    };
+  }
+
+  // No usable registry answer: fall back to whatever the resolver said, which
+  // is exactly the behaviour this had before the registry lookup existed.
+  return {
+    matched: matchesOurs(live.nameservers, aliases),
+    via: live.nameservers.length ? 'resolver' : '',
+    nameservers: live.nameservers.slice().sort(),
+    extras: extrasIn(live.nameservers, aliases).sort(),
+    resolved: live.nameservers.slice().sort(),
+    serverFailure: ['ESERVFAIL', 'ETIMEOUT', 'ECONNREFUSED', 'EREFUSED', 'ENOTIMP'].includes(live.code),
+    unregistered: false,
+    code: live.code,
+    error: live.error,
+  };
 }
 
 /**
@@ -200,6 +358,54 @@ async function pointsAtUs(name, target) {
 }
 
 /**
+ * Is this domain's EMAIL delivered here?
+ *
+ * The question behind an email-only domain. A customer who keeps their
+ * website wherever it is and wants their mailboxes with us points ONE record
+ * at us — the MX — and that is all the proof that is needed: whoever controls
+ * the zone has said "deliver this domain's mail there". Nothing about the
+ * website, the nameservers or the A record comes into it.
+ *
+ * "Ours" is an exchanger that IS our mail hostname, or one that resolves to
+ * the same address it does (`mail.<their-domain>` aimed at us counts). Others
+ * — the previous provider's exchangers left in place, say — are reported, not
+ * refused: mail will be split between them and us until they are removed, and
+ * the page says so.
+ */
+async function mxPointsAtUs(name, mailHost) {
+  const host = normalise(name);
+  const ours = normalise(mailHost);
+  if (!host || !ours) return { pointed: false, exchangers: [], others: [], exclusive: false };
+
+  const resolver = makeResolver();
+  let records = [];
+  try {
+    records = await resolver.resolveMx(host);
+  } catch {
+    return { pointed: false, exchangers: [], others: [], exclusive: false };
+  }
+  const ourAddrs = new Set(await ourAddresses(ours).catch(() => []));
+  const exchangers = [];
+  for (const r of records) {
+    const exchange = normalise(r.exchange);
+    let mine = exchange === ours;
+    if (!mine && ourAddrs.size) {
+      const addrs = await resolver.resolve4(exchange).catch(() => []);
+      mine = addrs.length > 0 && addrs.every((ip) => ourAddrs.has(ip));
+    }
+    exchangers.push({ host: exchange, priority: Number(r.priority) || 0, ours: mine });
+  }
+  exchangers.sort((a, b) => a.priority - b.priority);
+  const others = exchangers.filter((e) => !e.ours).map((e) => e.host);
+  return {
+    pointed: exchangers.some((e) => e.ours),
+    exchangers,
+    others,
+    exclusive: exchangers.length > 0 && others.length === 0,
+  };
+}
+
+/**
  * Do OUR OWN nameservers exist?
  *
  * Asked before anything is decided on the strength of a customer's delegation,
@@ -217,7 +423,6 @@ async function pointsAtUs(name, target) {
  * and this runs at the top of each one.
  */
 let selfCheck = { at: 0, result: null };
-const SELF_TTL_MS = 5 * 60_000;
 
 async function ourNameserversResolve({ fresh = false } = {}) {
   if (!fresh && selfCheck.result && Date.now() - selfCheck.at < SELF_TTL_MS) return selfCheck.result;
@@ -336,5 +541,6 @@ async function servedByUs(domain) {
 module.exports = {
   ourAddresses,
   servedByUs,
-  check, matchesOurs, extrasIn, pointsAtUs, normalise, ourNameserversResolve, OURS, RESOLVERS,
+  registryDelegation: registry.delegation,
+  check, matchesOurs, extrasIn, acceptedAliases, pointsAtUs, mxPointsAtUs, normalise, ourNameserversResolve, OURS, ALIASES, RESOLVERS,
 };

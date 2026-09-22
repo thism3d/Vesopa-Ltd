@@ -244,9 +244,39 @@ function callbackUrls(gatewayId) {
   };
 }
 
-/** The default selection: the first gateway that can actually take money. */
+/**
+ * WHICH GATEWAYS A CUSTOMER IS OFFERED, as opposed to which exist.
+ *
+ * The owner's instruction (2026-09-17): "only keep the SSLCommerz Payment to
+ * the top and the stripe and rest of the payment channel hide." Asked how far
+ * that should go, they chose the checkout only -- so Stripe, PayPal and BTCPay
+ * stay configured, stay in the admin, and go on settling and refunding what
+ * they already took. They are simply never put in front of a customer buying
+ * something now.
+ *
+ * This replaces the older idea of listing the others as "coming soon": a
+ * checkout offering one live method and two greyed-out ones invites the
+ * question "why can't I use my card?", which is the opposite of the intent.
+ *
+ * It is a list rather than a boolean so a second method can be offered by
+ * adding its id, without going looking for which view filters what.
+ */
+const OFFERED_AT_CHECKOUT = String(process.env.CHECKOUT_GATEWAYS || 'sslcommerz')
+  .split(',')
+  .map((s) => s.trim().toLowerCase())
+  .filter(Boolean);
+
+/** The gateways a paying customer may choose from, in the order shown. */
+function checkoutGateways() {
+  const order = new Map(OFFERED_AT_CHECKOUT.map((id, i) => [id, i]));
+  return gateways()
+    .filter((g) => order.has(g.id))
+    .sort((a, b) => order.get(a.id) - order.get(b.id));
+}
+
+/** The default selection: the first offered gateway that can actually take money. */
 function defaultGateway() {
-  return gateways().find((g) => g.available)?.id || '';
+  return checkoutGateways().find((g) => g.available)?.id || '';
 }
 
 function gatewayById(id) {
@@ -255,7 +285,7 @@ function gatewayById(id) {
 
 /** Is there any way at all to pay online right now? */
 function anyGatewayAvailable() {
-  return gateways().some((g) => g.available);
+  return checkoutGateways().some((g) => g.available);
 }
 
 // ---------------------------------------------------------------------------
@@ -864,6 +894,7 @@ module.exports = {
   reconcilePayment,
   expirePayment,
   gateways,
+  checkoutGateways,
   gatewayById,
   callbackUrls,
   defaultGateway,

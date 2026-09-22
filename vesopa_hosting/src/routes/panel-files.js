@@ -45,7 +45,7 @@ const DEFAULT_PATH = 'web';
  */
 function guard(req, res, next) {
   if (!auth.checkCsrf(req)) {
-    return res.status(403).json({ ok: false, error: 'Your session expired. Reload the page and try again.' });
+    return res.status(403).json({ ok: false, error: req.t('Your session expired. Reload the page and try again.') });
   }
   next();
 }
@@ -61,7 +61,7 @@ function sendError(res, err, where) {
     return res.status(err.status).json({ ok: false, error: err.message, code: err.code });
   }
   console.error(`[files] ${where} failed:`, err.stack || err.message);
-  return res.status(500).json({ ok: false, error: 'Something went wrong. Please try again.' });
+  return res.status(500).json({ ok: false, error: req.t('Something went wrong. Please try again.') });
 }
 
 /** The account, or a thrown FileError. Every route starts with this. */
@@ -127,7 +127,7 @@ router.get('/', async (req, res, next) => {
     }
 
     res.render('panel/files', {
-      title: 'Files',
+      title: req.t('Files'),
       robots: 'noindex',
       username,
       sites,
@@ -140,7 +140,7 @@ router.get('/', async (req, res, next) => {
   } catch (err) {
     if (err instanceof files.FileError && err.code === 'nohosting') {
       const { flash } = require('../http-utils');
-      flash(res, 'There is no active hosting on this account yet, so there are no files to manage.', 'warn');
+      flash(res, req.t('There is no active hosting on this account yet, so there are no files to manage.'), 'warn');
       return res.redirect('/panel');
     }
     next(err);
@@ -191,7 +191,7 @@ router.get('/api/read', async (req, res) => {
     socket.on('end', () => {
       res.type('text/plain; charset=utf-8').send(Buffer.concat(chunks));
     });
-    socket.on('error', () => res.status(502).json({ ok: false, error: 'The file could not be read.' }));
+    socket.on('error', () => res.status(502).json({ ok: false, error: req.t('The file could not be read.') }));
   } catch (err) {
     sendError(res, err, 'read');
   }

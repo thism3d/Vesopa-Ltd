@@ -136,8 +136,33 @@ const isLive = () => MODE === 'live';
  * the catalogue carries some ninety dotted extensions rather than sixteen.
  */
 const MULTI_PART_TLDS = new Set([
+  // United Kingdom
   'co.uk', 'org.uk', 'me.uk', 'ltd.uk', 'plc.uk', 'net.uk', 'sch.uk', 'ac.uk', 'gov.uk',
-  'com.au', 'net.au', 'org.au', 'co.nz', 'co.za', 'com.br', 'co.in', 'co.jp',
+  // The rest of the English-speaking world
+  'com.au', 'net.au', 'org.au', 'id.au', 'co.nz', 'net.nz', 'org.nz',
+  'co.za', 'org.za', 'net.za', 'web.za', 'co.ke', 'or.ke', 'co.tz', 'co.ug',
+  'com.ng', 'org.ng', 'com.gh',
+  // South Asia — the reason this list grew. muzahid.com.bd parsed as
+  // sld `muzahid.com` under tld `bd`, which failed the label rules and could
+  // not be added to an account at all.
+  'com.bd', 'net.bd', 'org.bd', 'edu.bd', 'gov.bd', 'ac.bd', 'info.bd',
+  'co.in', 'net.in', 'org.in', 'firm.in', 'gen.in', 'ind.in',
+  'com.pk', 'net.pk', 'org.pk', 'com.np', 'com.lk', 'com.bt',
+  // East and South-East Asia
+  'co.jp', 'ne.jp', 'or.jp', 'co.kr', 'or.kr', 'ne.kr',
+  'com.cn', 'net.cn', 'org.cn', 'com.hk', 'com.tw', 'com.sg', 'com.my',
+  'com.ph', 'com.vn', 'co.id', 'or.id', 'co.th', 'in.th',
+  // Europe
+  'com.tr', 'net.tr', 'org.tr', 'com.ua', 'com.pl', 'net.pl', 'org.pl',
+  'com.ru', 'com.es', 'com.pt', 'com.gr', 'com.hr', 'com.cy', 'com.mt',
+  'co.il', 'org.il', 'net.il',
+  // The Americas
+  'com.br', 'net.br', 'org.br', 'com.mx', 'com.ar', 'com.co', 'com.pe',
+  'com.uy', 'com.ve', 'com.ec', 'com.bo', 'com.py', 'com.pa', 'com.do',
+  'com.gt', 'com.sv', 'com.ni', 'com.hn',
+  // Middle East and North Africa
+  'com.sa', 'com.eg', 'com.qa', 'com.kw', 'com.lb', 'com.bh', 'com.jo',
+  'co.ae', 'net.ae', 'org.ae',
 ]);
 
 /**
@@ -184,6 +209,53 @@ function validateLabel(sld) {
   if (!/^[a-z0-9-]+$/.test(sld)) return 'Use letters, numbers and hyphens only.';
   if (sld.startsWith('-') || sld.endsWith('-')) return 'A domain cannot start or end with a hyphen.';
   if (sld.includes('--') && !sld.startsWith('xn--')) return 'A domain cannot contain two hyphens together.';
+  return null;
+}
+
+/**
+ * Is this a syntactically valid domain name? A DIFFERENT QUESTION from
+ * `validateLabel`, and the right one for a name somebody already owns.
+ *
+ * `validateLabel` enforces the rules a REGISTRY applies to a name we are about
+ * to buy: one label, at least three characters, no double hyphen. Correct at
+ * checkout, wrong everywhere else — because it is only ever handed `sld`, and
+ * `sld` is whatever is left after the extension is stripped off. Get the
+ * extension wrong and the rules are applied to the wrong string:
+ *
+ *   muzahid.com.bd  ->  sld 'muzahid.com', tld 'bd'
+ *                   ->  "Use letters, numbers and hyphens only."
+ *
+ * The name is perfectly valid, delegated to ns1/ns2.vesopa.com, and there was
+ * no way to put it on an account. The list of dotted extensions above now
+ * covers `.com.bd`, but a list is a list: there are some four thousand of these
+ * and the next customer will bring one that is not on it.
+ *
+ * So a name the customer ALREADY OWNS is checked against the rules that
+ * actually apply to a hostname — every label 1–63 characters of letters,
+ * digits and hyphens, not starting or ending with one, at least two labels —
+ * and nothing is inferred from where we think the extension starts. Whether we
+ * may serve it is settled afterwards, by the delegation, which is a fact rather
+ * than a guess.
+ */
+function validateHostname(input) {
+  const name = String(input || '').trim().toLowerCase().replace(/\.$/, '');
+  if (!name) return 'Enter a domain name.';
+  if (name.length > 253) return 'That name is too long.';
+  if (!name.includes('.')) return 'Add an extension, like .com.';
+  if (name.includes('..')) return 'That name has an empty part in it — check the dots.';
+  if (/[^a-z0-9.-]/.test(name)) return 'Use letters, numbers, hyphens and dots only.';
+
+  const labels = name.split('.');
+  for (const label of labels) {
+    if (!label.length) return 'That name has an empty part in it — check the dots.';
+    if (label.length > 63) return 'One part of that name is longer than 63 characters.';
+    if (label.startsWith('-') || label.endsWith('-')) {
+      return 'No part of a domain can start or end with a hyphen.';
+    }
+  }
+  // The extension itself. A digit here means somebody pasted an IP address,
+  // which is the one wrong input this catches that the rules above do not.
+  if (/^[0-9]+$/.test(labels.at(-1))) return 'That looks like an IP address rather than a domain name.';
   return null;
 }
 
@@ -786,6 +858,15 @@ async function getDomain(domain) {
     ok: true,
     domain: name,
     status: data?.status || 'unknown',
+    /*
+     * The EPP status codes, as one string. `status` is the gateway's own
+     * summary ("Active"); this is the registry's, and it is where a hold shows
+     * up — `serverHold` or `clientHold` is how an unverified registrant
+     * actually manifests, and it is the only machine-readable evidence about
+     * verification the gateway exposes at all. See registrant-verification.js.
+     */
+    status_code: String(data?.statusCode || ''),
+    rgp_status: String(data?.rgpStatues || data?.rgpStatus || ''),
     expires_at: (data?.expirationDate || '').slice(0, 10) || null,
     // When the registry says the registration began. The RAA verification clock
     // runs from this, not from when we happen to notice the domain exists.
@@ -890,6 +971,7 @@ module.exports = {
   assertContacts,
   getDomainContacts,
   contactGaps,
+  validateHostname,
   toContact,
   CONTACT_TYPES,
   transfer,

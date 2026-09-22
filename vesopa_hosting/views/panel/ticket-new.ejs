@@ -10,7 +10,7 @@
     <input type="hidden" name="_csrf" value="<%= csrf %>">
 
     <div class="field <%= errors.subject ? 'field-error' : '' %>">
-      <label class="label" for="subject">Subject</label>
+      <label class="label" for="subject"><%= t('Subject') %></label>
       <input class="input" id="subject" name="subject" required autofocus
              value="<%= values.subject || (typeof query !== 'undefined' && query.subject) || '' %>">
       <% if (errors.subject) { %><p class="error-text"><%= errors.subject %></p><% } %>
@@ -18,31 +18,31 @@
 
     <div class="p-grid p-grid-2">
       <div class="field">
-        <label class="label" for="department">Department</label>
+        <label class="label" for="department"><%= t('Department') %></label>
         <select class="select" id="department" name="department">
-          <option value="support">Technical support</option>
-          <option value="billing" <%= values.department === 'billing' ? 'selected' : '' %>>Billing</option>
-          <option value="abuse" <%= values.department === 'abuse' ? 'selected' : '' %>>Report abuse</option>
+          <option value="support"><%= t('Technical support') %></option>
+          <option value="billing" <%= values.department === 'billing' ? 'selected' : '' %>><%= t('Billing') %></option>
+          <option value="abuse" <%= values.department === 'abuse' ? 'selected' : '' %>><%= t('Report abuse') %></option>
         </select>
       </div>
       <div class="field">
-        <label class="label" for="priority">Priority</label>
+        <label class="label" for="priority"><%= t('Priority') %></label>
         <select class="select" id="priority" name="priority">
-          <option value="low" <%= values.priority === 'low' ? 'selected' : '' %>>Low — a question</option>
-          <option value="normal" selected>Normal — something is wrong</option>
-          <option value="high" <%= values.priority === 'high' ? 'selected' : '' %>>High — my site is down</option>
+          <option value="low" <%= values.priority === 'low' ? 'selected' : '' %>><%= t('Low — a question') %></option>
+          <option value="normal" selected><%= t('Normal — something is wrong') %></option>
+          <option value="high" <%= values.priority === 'high' ? 'selected' : '' %>><%= t('High — my site is down') %></option>
         </select>
       </div>
     </div>
 
     <div class="field <%= errors.body ? 'field-error' : '' %>">
-      <label class="label" for="body">What is happening?</label>
+      <label class="label" for="body"><%= t('What is happening?') %></label>
       <textarea class="textarea" id="body" name="body" required style="min-height:180px"><%= values.body || '' %></textarea>
       <% if (errors.body) { %><p class="error-text"><%= errors.body %></p><% } %>
-      <p class="hint">Include the domain and what you expected to happen — that one sentence saves a whole round trip.</p>
+      <p class="hint"><%= t('Include the domain and what you expected to happen — that one sentence saves a whole round trip.') %></p>
     </div>
 
-    <button class="btn btn-lg" type="submit" data-busy="Sending…">Open ticket</button>
+    <button class="btn btn-lg" type="submit" data-busy="Sending…"><%= t('Open ticket') %></button>
   </form>
 </div>
 

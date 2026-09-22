@@ -1,0 +1,39 @@
+<%#
+  Offered once to somebody reading the Bangla site: the same page in English.
+
+  WHICH WAY ROUND, AND WHY IT CHANGED. This used to do the opposite -- everyone
+  landed on English and a visitor in Bangladesh was asked whether they would
+  rather read Bangla. The owner's judgement, and it is the right one: a
+  Bangladeshi customer who has arrived on an English page has already had to
+  work out that this shop is for them. So the site now SERVES Bangla to a
+  Bangladeshi visitor (i18n.redirectByCountry) and this is the way back.
+
+  IT ASKS ONCE. Choosing either language, or dismissing it, writes
+  `vh_lang_asked` and it never returns -- a bar that comes back on every page
+  is an argument rather than an offer. Choosing English goes through the
+  ordinary switcher (/lang/en), so it is remembered exactly as a click in the
+  footer would be, and i18n.redirectByCountry then leaves them alone for good.
+
+  It is rendered only where it applies, so no other page carries the markup,
+  and it needs no JavaScript to be correct -- the English choice is a link.
+%>
+<% if (locale === 'bn') { %>
+  <div class="lang-offer" id="lang-offer" hidden data-once="vh_lang_asked">
+    <div class="lang-offer-inner">
+      <p class="lang-offer-text">
+        <span class="lang-offer-bn" lang="bn">ইংরেজিতে পড়তে চান?</span>
+        <span class="lang-offer-en">Prefer to read this in English?</span>
+      </p>
+      <div class="lang-offer-actions">
+        <%# data-no-router, exactly as the footer's switcher has: a language
+            change must be a real navigation. Without it the no-reload router
+            swapped the page's contents and left <html lang> saying bn, so the
+            English page announced itself as Bangla to a screen reader and to
+            every crawler. Measured on live before this attribute was added. %>
+        <a class="btn btn-sm" href="<%= langHref('en') %>" rel="nofollow" data-no-router
+           data-lang-offer="en" lang="en">Read in English</a>
+        <button type="button" class="btn btn-ghost btn-sm" data-lang-offer="bn" lang="bn">বাংলাতেই থাক</button>
+      </div>
+    </div>
+  </div>
+<% } %>

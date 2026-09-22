@@ -134,6 +134,15 @@ CREATE TABLE IF NOT EXISTS plans (
   slug               VARCHAR(60)  CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   name               VARCHAR(80)  CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   tagline            VARCHAR(190) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  -- The same copy in Bangla. A plan's name, its tagline, its badge and its
+  -- feature list are text an admin types, so they are not translatable keys and
+  -- the i18n catalogue cannot reach them -- which is why the Bangla home page
+  -- still said "Starter / One website, done properly." in English.
+  -- Empty falls back to the English, which still sells the plan.
+  name_bn        VARCHAR(80) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  tagline_bn     VARCHAR(190) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  badge_bn       VARCHAR(40) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  features_bn    TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL,
   monthly_pence      INT UNSIGNED NOT NULL,
   annual_pence       INT UNSIGNED NOT NULL,
   biennial_pence     INT UNSIGNED NOT NULL,
@@ -259,6 +268,23 @@ CREATE TABLE IF NOT EXISTS coupons (
   max_uses       INT UNSIGNED NOT NULL DEFAULT 0,
   used           INT UNSIGNED NOT NULL DEFAULT 0,
   first_order_only TINYINT(1) NOT NULL DEFAULT 0,
+  -- Advertised on /offers, or handed out privately. OFF by default, and that
+  -- default is the point: PROMO100 takes 100% off everything, and an offers
+  -- page that listed every active code would have published it.
+  public_offer   TINYINT(1) NOT NULL DEFAULT 0,
+  -- What the offers page calls it. Empty falls back to `description`.
+  headline       VARCHAR(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  -- The same two in Bangla. An offer aimed at Bangladeshi customers that reads
+  -- in English on the Bangla edition of the site is the one page where the
+  -- translation matters most; these are free text an admin types, so they
+  -- cannot come from the i18n catalogue like the furniture around them.
+  -- Empty falls back to the English, which is better than an empty headline.
+  headline_bn    VARCHAR(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  description_bn VARCHAR(190) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  -- Comma-separated ISO country codes this code may be used from; empty means
+  -- anywhere. Geo is a guess, so this is a marketing boundary, not a security
+  -- one -- never put anything behind it that matters if it leaks.
+  countries      VARCHAR(190) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
   starts_at      DATETIME NULL,
   expires_at     DATETIME NULL,
   active         TINYINT(1) NOT NULL DEFAULT 1,
@@ -1049,6 +1075,92 @@ BEGIN
       ('BDT', 'Bangladeshi taka', '৳', 'en-BD', 149.000000, 'nearest100', 0.00, '',
        '', 0, 0, 0, 90);
   END IF;
+
+  -- -------------------------------------------------------------------------
+  -- The public offers page's own columns.
+  -- -------------------------------------------------------------------------
+  -- These went into CREATE TABLE and nowhere else, which is only half a
+  -- migration: `CREATE TABLE IF NOT EXISTS` does nothing to a table that
+  -- already exists, so a fresh database got them and every database that
+  -- predates them never would. Found by seeding an offer into a local copy and
+  -- being told `Unknown column 'description_bn'`. Live has them because live
+  -- was built after they were written; a restore from any older dump would
+  -- not, and the offers page would have thrown on its own SELECT.
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'coupons'
+       AND COLUMN_NAME = 'public_offer'
+  ) THEN
+    ALTER TABLE coupons
+      ADD COLUMN public_offer TINYINT(1) NOT NULL DEFAULT 0 AFTER first_order_only,
+      ADD COLUMN headline VARCHAR(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci
+                 NOT NULL DEFAULT '' AFTER public_offer,
+      ADD COLUMN headline_bn VARCHAR(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci
+                 NOT NULL DEFAULT '' AFTER headline,
+      ADD COLUMN description_bn VARCHAR(190) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci
+                 NOT NULL DEFAULT '' AFTER headline_bn,
+      ADD COLUMN countries VARCHAR(190) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci
+                 NOT NULL DEFAULT '' AFTER description_bn;
+  END IF;
+
+  -- -------------------------------------------------------------------------
+  -- Bundle offers: buy the domain, the first month of hosting comes with it.
+  -- -------------------------------------------------------------------------
+  -- A third kind of code. `percent` and `fixed` both take something OFF a
+  -- basket; a bundle says what the basket COSTS instead -- "a .site and a
+  -- month of hosting, 381 taka, whatever those two are priced at today". The
+  -- discount is then derived (what the lines come to, minus the bundle price)
+  -- rather than typed, so a price rise never quietly turns the offer into a
+  -- loss and a price cut never leaves the customer paying more than the
+  -- headline. Re-stating the whole ENUM is the only way to extend one.
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'coupons'
+       AND COLUMN_NAME = 'kind' AND COLUMN_TYPE LIKE '%bundle%'
+  ) THEN
+    ALTER TABLE coupons
+      MODIFY COLUMN kind ENUM('percent','fixed','bundle') NOT NULL DEFAULT 'percent';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'coupons'
+       AND COLUMN_NAME = 'requires_tld'
+  ) THEN
+    ALTER TABLE coupons
+      -- The extension the basket must contain for the bundle to apply, without
+      -- the dot. Empty means any.
+      ADD COLUMN requires_tld VARCHAR(63) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci
+                 NOT NULL DEFAULT '' AFTER applies_to,
+      -- The plan whose free months are granted, BY SLUG rather than id: a slug
+      -- survives a catalogue reimport and reads in the admin without a join.
+      ADD COLUMN grants_plan_slug VARCHAR(40) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci
+                 NOT NULL DEFAULT '' AFTER requires_tld,
+      ADD COLUMN grants_months INT UNSIGNED NOT NULL DEFAULT 0 AFTER grants_plan_slug;
+  END IF;
+
+  -- -------------------------------------------------------------------------
+  -- The trial itself, on the service it belongs to.
+  -- -------------------------------------------------------------------------
+  -- Recorded on the SERVICE for the same reason free_domain_eligible is: what
+  -- somebody was given must not be re-derived later from a coupon row that an
+  -- admin may since have edited or switched off.
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'services'
+       AND COLUMN_NAME = 'is_trial'
+  ) THEN
+    ALTER TABLE services
+      ADD COLUMN is_trial TINYINT(1) NOT NULL DEFAULT 0 AFTER free_domain_claimed,
+      -- Which offer gave it, so the admin can count what a campaign produced.
+      ADD COLUMN trial_code VARCHAR(40) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci
+                 NOT NULL DEFAULT '' AFTER is_trial,
+      -- Set when the "your free month is ending" email goes out, so it goes
+      -- out ONCE. A reminder sent every five minutes by the job loop is worse
+      -- than no reminder at all.
+      ADD COLUMN trial_warned_at DATETIME NULL AFTER trial_code,
+      ADD KEY idx_services_trial (is_trial, status, next_due_at);
+  END IF;
 END //
 DELIMITER ;
 CALL vesopa_migrate();
@@ -1160,6 +1272,14 @@ CALL vesopa_add_column('domains', 'ssl_error', "VARCHAR(300) CHARACTER SET utf8m
 -- reaches new installs only. Both defaults are 1, which describes a full domain
 -- correctly, so existing rows are right the moment the column appears.
 CALL vesopa_add_column('domains', 'dns_enabled', 'TINYINT(1) NOT NULL DEFAULT 1');
+
+-- Email-only domains. A domain whose MX points at us is verified for MAIL the
+-- way a nameserver change verifies it for a website: mailboxes may be created
+-- at it, it is listed as "Email here", and it is never dropped for not being
+-- pointed. Set by domain-linking.verify() from what the public DNS answers;
+-- `mx_observed` is the exchangers seen, ours and not.
+CALL vesopa_add_column('domains', 'mx_verified_at', 'DATETIME NULL DEFAULT NULL');
+CALL vesopa_add_column('domains', 'mx_observed', "VARCHAR(400) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT ''");
 CALL vesopa_add_column('domains', 'mail_enabled', 'TINYINT(1) NOT NULL DEFAULT 1');
 
 -- `subdomain` as a fourth value for `domains.source`.
@@ -1301,6 +1421,50 @@ CALL vesopa_add_column('domains', 'registrant_verified_at', 'DATETIME NULL');
 CALL vesopa_add_column('domains', 'verification_deadline', 'DATETIME NULL');
 CALL vesopa_add_column('domains', 'contacts_verified', 'TINYINT(1) NOT NULL DEFAULT 0');
 CALL vesopa_add_column('domains', 'contacts_warning', "VARCHAR(300) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT ''");
+-- When the registry was last asked about this domain's verification, and when
+-- a reminder was last sent. The second one is what rate-limits the resend
+-- button: without it, a customer who cannot find the email can send themselves
+-- thirty of them.
+CALL vesopa_add_column('domains', 'verification_checked_at', 'DATETIME NULL');
+CALL vesopa_add_column('domains', 'verification_sent_at', 'DATETIME NULL');
+
+-- ---------------------------------------------------------------------------
+-- Registrant verifications: tracked against the ADDRESS, not the domain.
+--
+-- This is the arpi.site fault, and it is a modelling mistake rather than a
+-- missing feature. ICANN's 2013 RAA obliges a registrar to verify the
+-- registrant's EMAIL ADDRESS, once. Every gTLD afterwards registered to that
+-- same address is covered by that one confirmation and no second email is ever
+-- sent — so a panel that records the obligation per domain counts down to a
+-- suspension that is not going to happen, and has nothing it can ever set.
+--
+-- `registrant_verified_at` on `domains` stays: it is the per-domain cache, and
+-- it is filled in from here. This table is the fact.
+--
+-- `source` is kept because the evidence is not all the same strength:
+--   registry   the deadline passed and the registry had not suspended it, which
+--              it is obliged to do for an unverified registrant
+--   registrar  the registrar told us directly (no endpoint offers this today)
+--   customer   the customer says they clicked the link. They are the only party
+--              who saw the email, and without this the banner can never clear.
+--   admin      support cleared it after chasing the registrar
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS registrant_verifications (
+  id            INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  email         VARCHAR(190) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  verified_at   DATETIME NULL,
+  source        ENUM('registry','registrar','customer','admin') NOT NULL DEFAULT 'customer',
+  -- The admin who cleared it, where one did. NULL for every other source.
+  noted_by      INT UNSIGNED NULL,
+  -- The domain the confirmation arrived on, so the panel can say "you
+  -- confirmed this address on example.com" rather than leaving it unexplained
+  -- when a brand-new domain arrives already clear.
+  first_domain  VARCHAR(190) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_registrant_email (email)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- Once a plan has adopted a domain, that domain is the plan's identity: the
 -- docroot, the certificate and the mail domain on the node are all named after
@@ -1423,6 +1587,82 @@ CALL vesopa_add_column('orders', 'bill_address2', "VARCHAR(160) CHARACTER SET ut
 CALL vesopa_add_column('orders', 'bill_city', "VARCHAR(80) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT ''");
 CALL vesopa_add_column('orders', 'bill_postcode', "VARCHAR(24) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT ''");
 CALL vesopa_add_column('orders', 'bill_country', "CHAR(2) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT ''");
+
+-- ---------------------------------------------------------------------------
+-- Adding a domain, watched live — src/domain-setup.js
+--
+-- Adding a domain takes ten to twenty seconds of real work on the node (the
+-- delegation lookup, the zone, the website, mail, a Let's Encrypt certificate)
+-- and used to happen INSIDE the form post, behind a spinning button that said
+-- nothing. The work now runs as a job: one row per run, one row per step, the
+-- same shape as setup_steps for the post-payment build, so the page can show
+-- each step as it happens, the domain list can say "Setting up…" while the
+-- customer is somewhere else, and the outcome survives their leaving.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS domain_setup_runs (
+  id           INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  domain_id    INT UNSIGNED NOT NULL,
+  customer_id  INT UNSIGNED NOT NULL,
+  status       ENUM('running','finished','failed') NOT NULL DEFAULT 'running',
+  -- What to say when it is over: a heading, a sentence, and how loudly.
+  headline     VARCHAR(190) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  message      VARCHAR(600) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  kind         ENUM('ok','warn','error') NOT NULL DEFAULT 'ok',
+  started_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  finished_at  DATETIME NULL,
+  -- Set once the customer has been shown the outcome, so the card does not
+  -- greet them with "all done" on every visit for a week.
+  seen_at      DATETIME NULL,
+  PRIMARY KEY (id),
+  KEY idx_domain_setup_domain (domain_id, id),
+  KEY idx_domain_setup_customer (customer_id, status),
+  CONSTRAINT fk_domain_setup_domain FOREIGN KEY (domain_id) REFERENCES domains (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE IF NOT EXISTS domain_setup_steps (
+  id           INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  run_id       INT UNSIGNED NOT NULL,
+  step_key     VARCHAR(40)  CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  label        VARCHAR(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  -- The line under the label while it runs ("Let's Encrypt usually takes ten
+  -- seconds"), replaced by what happened once it has.
+  detail       VARCHAR(400) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  status       ENUM('pending','running','ok','failed','skipped') NOT NULL DEFAULT 'pending',
+  sort_order   INT NOT NULL DEFAULT 0,
+  started_at   DATETIME NULL,
+  finished_at  DATETIME NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_domain_setup_step (run_id, step_key),
+  CONSTRAINT fk_domain_setup_step_run FOREIGN KEY (run_id) REFERENCES domain_setup_runs (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- ---------------------------------------------------------------------------
+-- Vesopa AI (src/ai/): what it remembers about a customer, and what was said.
+-- One memory row per customer -- a JSON list of short facts the assistant
+-- chose to keep ("trading as The Bridge", "wants example.co.uk"). The
+-- transcript is the last two hundred lines, for continuity between visits;
+-- the model reads only the last couple of dozen. A visitor who is not signed
+-- in has neither here: the browser holds theirs until they sign in, then
+-- hands it over (POST /ai/import). Both go with the customer row.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS ai_memory (
+  customer_id  INT UNSIGNED NOT NULL,
+  content      JSON NOT NULL,
+  updated_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (customer_id),
+  CONSTRAINT fk_ai_memory_customer FOREIGN KEY (customer_id) REFERENCES customers (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE IF NOT EXISTS ai_messages (
+  id           INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  customer_id  INT UNSIGNED NOT NULL,
+  role         ENUM('user','assistant') NOT NULL,
+  content      TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_ai_messages_customer (customer_id, id),
+  CONSTRAINT fk_ai_messages_customer FOREIGN KEY (customer_id) REFERENCES customers (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 CALL vesopa_fix_collations();
 DROP PROCEDURE IF EXISTS vesopa_fix_collations;

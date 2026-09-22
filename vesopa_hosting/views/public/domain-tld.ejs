@@ -18,7 +18,7 @@
     <p class="kicker" data-reveal="0" style="justify-content:center">
       <% if (category) { %>
         <a href="/domains/category/<%= category.slug %>" style="color:inherit"><%= category.label %></a>
-      <% } else { %>Domain names<% } %>
+      <% } else { %><%= t('Domain names') %><% } %>
     </p>
 
     <h1 class="dtldp-name" data-reveal="40"><span class="hl">.</span><%= tld.tld %></h1>
@@ -27,11 +27,9 @@
       <% if (tld.blurb) { %>
         <%= tld.blurb %>
       <% } else if (tld.promo) { %>
-        <%= tld.register_display %> for the first year, then <%= tld.renew_display %> a year.
-        Free WHOIS privacy and full DNS control, included rather than sold back to you.
+        <%= t('{first} for the first year, then {renew} a year. Free WHOIS privacy and full DNS control, included rather than sold back to you.', { first: tld.register_display, renew: tld.renew_display }) %>
       <% } else { %>
-        <%= tld.register_display %> a year, and it renews at <%= tld.renew_display %> —
-        close enough that there is no cliff waiting for you in twelve months.
+        <%= t('{first} a year, and it renews at {renew} — close enough that there is no cliff waiting for you in twelve months.', { first: tld.register_display, renew: tld.renew_display }) %>
       <% } %>
     </p>
 
@@ -40,19 +38,19 @@
         perverse. %>
     <dl class="dtldp-figures" data-reveal="120">
       <div class="dtldp-fig dtldp-fig-lead">
-        <dt>Register</dt>
+        <dt><%= t('Register') %></dt>
         <dd><%= tld.register_display %></dd>
         <small>first year<%= tld.promo ? ` · ${tld.promo_percent}% off` : '' %></small>
       </div>
       <div class="dtldp-fig">
-        <dt>Renews at</dt>
+        <dt><%= t('Renews at') %></dt>
         <dd><%= tld.renew_display %></dd>
-        <small>every year after</small>
+        <small><%= t('every year after') %></small>
       </div>
       <div class="dtldp-fig">
-        <dt>Transfer in</dt>
+        <dt><%= t('Transfer in') %></dt>
         <dd><%= tld.transfer_display %></dd>
-        <small>adds a year to what is left</small>
+        <small><%= t('adds a year to what is left') %></small>
       </div>
     </dl>
 
@@ -61,10 +59,10 @@
     <div class="dsearch dtldp-check" data-reveal="160">
       <form class="dsearch-form" data-tld-check action="/domains" method="get">
         <input class="dsearch-input" type="text" name="name" autocomplete="off" spellcheck="false"
-               data-tld-name maxlength="63" placeholder="yourbusiness"
-               aria-label="The name you want, without the extension">
+               data-tld-name maxlength="63" placeholder="<%= t('yourbusiness') %>"
+               aria-label="<%= t('The name you want, without the extension') %>">
         <span class="dtldp-suffix">.<%= tld.tld %></span>
-        <button class="btn btn-lg" type="submit"><%- icon('search', 19) %><span class="hide-sm">Check</span></button>
+        <button class="btn btn-lg" type="submit"><%- icon('search', 19) %><span class="hide-sm"><%= t('Check') %></span></button>
         <%# The real query the search page reads. Assembled from the box above on
             submit, and carrying the bare extension until then so a no-script
             submit still lands somewhere sensible. %>
@@ -80,10 +78,10 @@
     <div class="grid grid-4">
       <%
       const inc = [
-        ['shield', 'WHOIS privacy',   'Your name and address kept off the public record at no charge, wherever the registry allows it.'],
-        ['globe',  'Full DNS control', 'A, AAAA, CNAME, MX, TXT and SRV records you can edit yourself, from the same panel as everything else.'],
-        ['mail',   'Email forwarding', 'Point hello@ at an inbox you already use, without buying a mailbox first.'],
-        ['lock',   'Registrar lock',   'On by default. Nobody starts a transfer without the authorisation code, and we hand that over on request without a retention call.'],
+        ['shield', 'WHOIS privacy',   t('Your name and address kept off the public record at no charge, wherever the registry allows it.')],
+        ['globe',  'Full DNS control', t('A, AAAA, CNAME, MX, TXT and SRV records you can edit yourself, from the same panel as everything else.')],
+        ['mail',   'Email forwarding', t('Point hello@ at an inbox you already use, without buying a mailbox first.')],
+        ['lock',   'Registrar lock',   t('On by default. Nobody starts a transfer without the authorisation code, and we hand that over on request without a retention call.')],
       ];
       inc.forEach(function (f, i) { %>
         <article class="card card-hover" data-reveal="<%= i * 70 %>">
@@ -102,13 +100,7 @@
       <div class="alert alert-warn mt-4" data-reveal="0">
         <%- icon('info', 19) %>
         <div>
-          <b>.<%= tld.tld %> is a promotional first year.</b>
-          The registry sells the first year of a .<%= tld.tld %> at a discount to
-          drive adoption — you pay <b><%= tld.register_display %></b> now and
-          <b><%= tld.renew_display %></b> every year after that. We would rather
-          you saw both numbers here than found the second one in a renewal email.
-          It is a genuinely good way to start something cheaply; it is not a
-          <%= tld.register_display %>-a-year domain.
+          <%- th('<b>.{tld} is a promotional first year.</b> The registry sells the first year of a .{tld} at a discount to drive adoption — you pay <b>{first}</b> now and <b>{renew}</b> every year after that. We would rather you saw both numbers here than found the second one in a renewal email. It is a genuinely good way to start something cheaply; it is not a {first}-a-year domain.', { tld: tld.tld, first: tld.register_display, renew: tld.renew_display }) %>
         </div>
       </div>
     <% } %>
@@ -121,14 +113,14 @@
   <div class="wrap">
     <div class="row-between mb-3">
       <div>
-        <p class="kicker" data-reveal="0">Also worth a look</p>
+        <p class="kicker" data-reveal="0"><%= t('Also worth a look') %></p>
         <h2 class="h2 mt-2" data-reveal="40">
           <%= category ? `Other ${category.label.toLowerCase()} extensions` : 'Related extensions' %>
         </h2>
       </div>
       <% if (category) { %>
         <a class="btn btn-ghost btn-sm" href="/domains/category/<%= category.slug %>">
-          See all <%= category.label.toLowerCase() %> <%- icon('arrow', 16) %>
+          <%= t('See all {category}', { category: category.label.toLowerCase() }) %> <%- icon('arrow', 16) %>
         </a>
       <% } %>
     </div>
@@ -151,22 +143,22 @@
       const faqs = [
         [`How much does a .${tld.tld} domain cost?`,
          `${tld.register_display} for the first year and ${tld.renew_display} a year after that`
-         + `${tld.promo ? ' — the registry discounts the first year on this extension' : ''}. `
-         + 'WHOIS privacy, DNS and email forwarding are included, so that is the whole price.'],
+         + `${tld.promo ? t(' — the registry discounts the first year on this extension') : ''}. `
+         + t('WHOIS privacy, DNS and email forwarding are included, so that is the whole price.')],
         [`Do I have to host with you to register a .${tld.tld}?`,
-         'No. Register it here and point it anywhere you like — the DNS editor is included either way. '
-         + 'If you do host with us we point it at your site automatically.'],
+         t('No. Register it here and point it anywhere you like — the DNS editor is included either way. ')
+         + t('If you do host with us we point it at your site automatically.')],
         [`Can I move a .${tld.tld} I already own to Vesopa?`,
          `Yes, for ${tld.transfer_display}, and the transfer adds a year to whatever time is left `
-         + 'rather than replacing it. Unlock it at your current registrar, get the authorisation code, '
-         + 'and start it from the transfer page. DNS carries over unchanged, so nothing goes dark.'],
+         + t('rather than replacing it. Unlock it at your current registrar, get the authorisation code, ')
+         + t('and start it from the transfer page. DNS carries over unchanged, so nothing goes dark.')],
         [`How quickly does a .${tld.tld} start working?`,
-         'The registration itself is usually instant. DNS then propagates, which is typically minutes '
-         + 'but can be a few hours depending on your ISP.'],
-        ['Can I move it away later?',
-         'Yes, and we will not make it difficult. Unlock it in the panel, we email the authorisation '
-         + 'code, and you are gone. No fee and no retention call — a domain you cannot leave with is '
-         + 'not one you own.'],
+         t('The registration itself is usually instant. DNS then propagates, which is typically minutes ')
+         + t('but can be a few hours depending on your ISP.')],
+        [t('Can I move it away later?'),
+         t('Yes, and we will not make it difficult. Unlock it in the panel, we email the authorisation ')
+         + t('code, and you are gone. No fee and no retention call — a domain you cannot leave with is ')
+         + t('not one you own.')],
       ];
       faqs.forEach(function (f) { %>
         <div class="acc">
@@ -177,7 +169,7 @@
     </div>
 
     <p class="center mt-4">
-      <a class="btn btn-ghost" href="/domains/pricing">See all extensions <%- icon('arrow', 16) %></a>
+      <a class="btn btn-ghost" href="/domains/pricing"><%= t('See all extensions') %> <%- icon('arrow', 16) %></a>
     </p>
   </div>
 </section>

@@ -10,19 +10,14 @@
     pricing.currencyMatrix() and already carries the converted figure and any
     override for every field in every currency. %>
 <div class="p-card mt-3">
-  <h2 class="h3 mb-1">Prices in other currencies</h2>
+  <h2 class="h3 mb-1"><%= t('Prices in other currencies') %></h2>
   <p class="small muted mb-3">
-    Blank means <b>converted</b> — the sterling price above, run through that
-    currency's rate and rounding, and moving automatically whenever the rate
-    changes. Type a figure to fix it there instead, for a price that has to hit
-    a particular number regardless of the exchange rate. Clearing the box hands
-    it back to the converter.
+    <%- th("Blank means <b>converted</b> — the sterling price above, run through that currency's rate and rounding, and moving automatically whenever the rate changes. Type a figure to fix it there instead, for a price that has to hit a particular number regardless of the exchange rate. Clearing the box hands it back to the converter.") %>
   </p>
 
   <% if (!matrix.length) { %>
     <p class="small muted mb-0">
-      Only the base currency is set up. Add one under
-      <a href="/admin/currencies">Currencies</a>.
+      <%- th('Only the base currency is set up. Add one under <a href="/admin/currencies">Currencies</a>.') %>
     </p>
   <% } else { %>
     <form method="post" action="/admin/prices/<%= entity %>/<%= plan.id %>" data-guard>
@@ -31,7 +26,7 @@
       <div class="table-wrap"><table class="table mini">
         <thead>
           <tr>
-            <th>Currency</th>
+            <th><%= t('Currency') %></th>
             <% matrix[0].fields.forEach(function (f) { %>
               <th class="num"><%= f.field.charAt(0).toUpperCase() + f.field.slice(1) %></th>
             <% }); %>
@@ -67,7 +62,7 @@
         </tbody>
       </table></div>
 
-      <button class="btn btn-ghost mt-2" type="submit" data-busy="Saving…">Save currency prices</button>
+      <button class="btn btn-ghost mt-2" type="submit" data-busy="Saving…"><%= t('Save currency prices') %></button>
     </form>
   <% } %>
 </div>

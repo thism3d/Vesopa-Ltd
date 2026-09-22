@@ -738,12 +738,56 @@ async function rebuildWebDomain({ username, domain }) {
   return { ok: true };
 }
 
+/**
+ * Issue the certificate AND make the site use it.
+ *
+ * FORCING HTTPS IS PART OF ISSUING, NOT A SEPARATE FAVOUR. Hestia sets
+ * SSL='yes' and leaves SSL_FORCE='no', so before 2026-09-17 a site with a
+ * perfectly good certificate went on answering on port 80 with no redirect,
+ * and stayed that way until somebody noticed -- 36 of the 45 domains on the
+ * node were like that, bosheboshe.com among them, which is how it came up.
+ * The owner's instruction is that every domain redirects, so the redirect is
+ * turned on here, in the one place every caller goes through.
+ *
+ * A failure to force is logged, not thrown: a certificate that was issued is
+ * worth keeping even if the redirect has to be set on the next pass.
+ */
 async function enableSSL({ username, domain, aliases = '', mail = false }) {
-  await run(
-    'v-add-letsencrypt-domain',
-    [username, domain, aliases, mail ? 'yes' : 'no'],
-    { timeoutMs: SSL_TIMEOUT_MS },
-  );
+  try {
+    await run(
+      'v-add-letsencrypt-domain',
+      [username, domain, aliases, mail ? 'yes' : 'no'],
+      { timeoutMs: SSL_TIMEOUT_MS },
+    );
+  } catch (err) {
+    /*
+     * EXIT 15 MEANS "LET'S ENCRYPT SAID NO", NOT "COULD NOT CONNECT".
+     *
+     * v-add-letsencrypt-domain answers E_CONNECT for every refusal from the
+     * certificate authority — a name that does not resolve here yet, a failed
+     * challenge, AND the rate limit (five certificates for one exact name in
+     * a week; measured on a test subdomain issued five times in an afternoon).
+     * The real reason is only in /var/log/hestia/LE-<user>-<domain>.log on
+     * the node. So the generic sentence, which sends a customer looking at
+     * our network, is replaced with the two things it can actually mean.
+     */
+    if (err.code === 15) {
+      throw new HestiaError(
+        "Let's Encrypt did not issue the certificate. Either the name does not reach this server "
+          + 'from the public internet yet, or this name has hit their limit of five certificates a week. '
+          + 'It is retried automatically; nothing on your side is needed unless the name is not pointed here.',
+        { code: 15, cmd: err.cmd },
+      );
+    }
+    throw err;
+  }
+
+  try {
+    await forceHttps({ username, domain });
+  } catch (err) {
+    console.error(`[hestia] certificate issued for ${domain} but force-https failed: ${String(err.message).slice(0, 160)}`);
+  }
+
   return { ok: true, domain };
 }
 
@@ -1177,8 +1221,22 @@ async function dkimRecord({ username, domain }) {
  * That name has no certificate of its own and is not where we want anybody
  * sent: webmail, IMAP and SMTP are all one hostname for every customer, so the
  * per-domain alias is a broken door with our name on it.
+ *
+ * EXCEPT FOR THE DOMAIN THAT HOSTS THAT ONE HOSTNAME. `mail.vesopa.com` — the
+ * webmail every customer is sent to — IS the webmail alias of the `vesopa.com`
+ * mail domain: the same Hestia vhost, the same certificate. On 2026-09-08 a
+ * mailbox was added to vesopa.com through the panel, this ran against it, and
+ * the vhost that serves everybody's webmail was deleted. nginx kept serving it
+ * from memory until the next reload eight days later, at which point
+ * mail.vesopa.com fell through to the default server: a stranger's
+ * certificate and a "Success!" stub instead of an inbox. So the alias that IS
+ * the shared hostname is never touched, whoever asks.
  */
 async function removeWebmailAlias({ username, domain }) {
+  const shared = String(process.env.MAIL_HOSTNAME || 'mail.vesopa.com').trim().toLowerCase();
+  if (shared === `mail.${String(domain || '').trim().toLowerCase()}`) {
+    return { ok: true, kept: true };
+  }
   await run('v-delete-mail-domain-webmail', [username, domain]).catch((err) => {
     if (err.code !== 3 && err.code !== 5) throw err;   // not there is the goal
   });

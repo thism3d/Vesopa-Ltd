@@ -151,7 +151,7 @@ router.get('/', async (req, res, next) => {
       : (view ? await vault.knownFor(req.customer.id, addresses) : new Set());
 
     res.render('panel/mail', {
-      title: 'Email',
+      title: req.t('Email'),
       robots: 'noindex',
       usable,
       switcher,
@@ -187,7 +187,7 @@ router.get('/', async (req, res, next) => {
  */
 function welcomeHtml(address, settings) {
   return shell({
-    title: 'Your new mailbox',
+    title: req.t('Your new mailbox'),
     intro: `<strong>${escapeHtml(address)}</strong> is ready to use. Here is everything needed to `
       + 'read and send from it.',
     bodyHtml: `
@@ -244,11 +244,11 @@ router.post('/:domain/create', async (req, res, next) => {
     if (!auth.checkCsrf(req)) return res.redirect(back);
     const row = await ownedMailDomain(req, req.params.domain);
     if (!row) {
-      flash(res, 'Pick one of your own domains, pointed at us, to create the mailbox at.', 'error');
+      flash(res, req.t('Pick one of your own domains, pointed at us, to create the mailbox at.'), 'error');
       return res.redirect('/panel/mail');
     }
     if (rateLimited(req.customer.id, 'mailbox-create', { max: 20, windowMs: 3600_000 })) {
-      flash(res, 'That is a lot of mailboxes in one go. Try again in a little while.', 'warn');
+      flash(res, req.t('That is a lot of mailboxes in one go. Try again in a little while.'), 'warn');
       return res.redirect(back);
     }
 
@@ -263,7 +263,7 @@ router.post('/:domain/create', async (req, res, next) => {
      * here and silently fails to receive from elsewhere.
      */
     if (!ACCOUNT_RE.test(account)) {
-      flash(res, 'A mailbox name can use letters, numbers, dots, hyphens and underscores, '
+      flash(res, req.t('A mailbox name can use letters, numbers, dots, hyphens and underscores, ')
         + 'and must start and end with a letter or number.', 'error');
       return res.redirect(back);
     }
@@ -550,7 +550,7 @@ router.post('/:domain/catchall', async (req, res, next) => {
 
     const address = field(req.body.address, 190).toLowerCase();
     if (address && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(address)) {
-      flash(res, 'That is not an email address.', 'error');
+      flash(res, req.t('That is not an email address.'), 'error');
       return res.redirect(back);
     }
     try {
@@ -620,7 +620,7 @@ router.post('/:domain/check', async (req, res, next) => {
     if (check.mxOk && check.spfOk) {
       flash(res, `${row.domain} is set up correctly — mail will reach your mailboxes.`);
     } else if (check.mxOk) {
-      flash(res, 'The MX record is right. The SPF record is still missing or does not '
+      flash(res, req.t('The MX record is right. The SPF record is still missing or does not ')
         + `mention ${MAIL_HOSTNAME}, so some of your mail may be treated as spam.`, 'warn');
     } else {
       flash(res, check.mxSeen.length
@@ -693,7 +693,7 @@ router.get('/:domain/:account/open', async (req, res, next) => {
     }).catch(() => null);
 
     if (accounts === null) {
-      flash(res, 'We could not reach the mail server just now. Try again in a moment.', 'error');
+      flash(res, req.t('We could not reach the mail server just now. Try again in a moment.'), 'error');
       return res.redirect(`/panel/mail/${encodeURIComponent(row.domain)}`);
     }
     if (!accounts.some((a) => a.account === account)) {

@@ -91,7 +91,7 @@
 <% if (!hestiaLive) { %>
   <div class="alert alert-info">
     <%- icon('info', 19) %>
-    <div><b>Demonstration mode.</b> This panel is not connected to a live hosting node, so the usage figures below are examples.</div>
+    <div><%- th('<b>Demonstration mode.</b> This panel is not connected to a live hosting node, so the usage figures below are examples.') %></div>
   </div>
 <% } %>
 
@@ -112,11 +112,11 @@
     <span class="obj-acts">
       <% if (url && live) { %>
         <a class="btn btn-sm" href="<%= url %>" target="_blank" rel="noopener">
-          <%- icon('external', 16) %> Open site
+          <%- icon('external', 16) %> <%= t('Open site') %>
         </a>
       <% } %>
       <a class="btn btn-ghost btn-sm" href="/panel/files?path=<%= encodeURIComponent(docRoot) %>">
-        <%- icon('folder', 16) %> Files
+        <%- icon('folder', 16) %> <%= t('Files') %>
       </a>
     </span>
   </div>
@@ -159,7 +159,7 @@
 <%# ---- The checklist, while there is anything left on it ---- %>
 <% if (!setupDone) { %>
   <div class="p-card mb-3">
-    <h2 class="h3 mb-1">Finish setting up</h2>
+    <h2 class="h3 mb-1"><%= t('Finish setting up') %></h2>
     <p class="small muted mb-3">
       <%= steps.filter((st) => st.done).length %> of <%= steps.length %> done. This
       disappears once everything is ticked.
@@ -185,7 +185,7 @@
   <div>
     <div class="p-card">
       <div class="row-between mb-3">
-        <h2 class="h3">Usage</h2>
+        <h2 class="h3"><%= t('Usage') %></h2>
         <% if (statsError) { %><span class="badge badge-amber">Node unreachable</span><% } %>
       </div>
 
@@ -249,10 +249,10 @@
         : false;
     %>
     <div class="p-card">
-      <h2 class="h3 mb-2">SSL certificate</h2>
+      <h2 class="h3 mb-2"><%= t('SSL certificate') %></h2>
       <% if (!service.primary_domain) { %>
-        <p class="small muted mb-2">Add a domain to this site before a certificate can be issued.</p>
-        <a class="btn btn-ghost btn-sm" href="/panel/domains/add">Add a domain</a>
+        <p class="small muted mb-2"><%= t('Add a domain to this site before a certificate can be issued.') %></p>
+        <a class="btn btn-ghost btn-sm" href="/panel/domains/add"><%= t('Add a domain') %></a>
       <% } else if (service.status !== 'active') { %>
         <p class="small muted mb-0">
           Certificates are issued once this hosting account is live. It is
@@ -272,14 +272,14 @@
         </p>
         <form method="post" action="/panel/services/<%= service.id %>/ssl" data-guard>
           <input type="hidden" name="_csrf" value="<%= csrf %>">
-          <button class="btn btn-sm" type="submit" data-busy="Requesting…"><%- icon('lock', 16) %> Issue or retry SSL</button>
+          <button class="btn btn-sm" type="submit" data-busy="Requesting…"><%- icon('lock', 16) %> <%= t('Issue or retry SSL') %></button>
         </form>
       <% } %>
     </div>
 
     <% if (addonDomains.length) { %>
       <div class="p-card p-card-flush">
-        <div class="p-card-head"><h2>Other domains on this site</h2></div>
+        <div class="p-card-head"><h2><%= t('Other domains on this site') %></h2></div>
         <% addonDomains.forEach(function (d) { %>
           <a class="item" href="/panel/domains/<%= d.domain %>">
             <span class="item-icon"><%- icon('globe', 19) %></span>
@@ -292,29 +292,29 @@
 
   <aside>
     <div class="p-card">
-      <h2 class="h3 mb-2">Point your domain here</h2>
-      <p class="small muted mb-2">Set these two nameservers at whoever your domain is registered with.</p>
+      <h2 class="h3 mb-2"><%= t('Point your domain here') %></h2>
+      <p class="small muted mb-2"><%= t('Set these two nameservers at whoever your domain is registered with.') %></p>
       <% nameservers.forEach(function (ns) { %>
         <div class="copyable">
           <span><%= ns %></span>
-          <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= ns %>">Copy</button>
+          <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= ns %>"><%= t('Copy') %></button>
         </div>
       <% }); %>
     </div>
 
     <div class="p-card">
-      <h2 class="h3 mb-2">Plan</h2>
+      <h2 class="h3 mb-2"><%= t('Plan') %></h2>
       <div class="table-wrap"><table class="table" style="font-size:.86rem">
         <tbody>
-          <tr><td class="muted">Plan</td><td class="strong"><%= service.plan_name %></td></tr>
-          <tr><td class="muted">Term</td><td class="strong"><%= service.term_months %> months</td></tr>
-          <tr><td class="muted">Price</td><td class="strong"><%= money(service.price_pence, service.currency) %> <span class="tiny muted"><%= service.currency %></span></td></tr>
+          <tr><td class="muted"><%= t('Plan') %></td><td class="strong"><%= service.plan_name %></td></tr>
+          <tr><td class="muted"><%= t('Term') %></td><td class="strong"><%= service.term_months %> <%= t('months') %></td></tr>
+          <tr><td class="muted"><%= t('Price') %></td><td class="strong"><%= money(service.price_pence, service.currency) %> <span class="tiny muted"><%= service.currency %></span></td></tr>
           <% if (service.next_due_at) { %>
-            <tr><td class="muted">Renews</td><td class="strong"><%= when(service.next_due_at, { dateOnly: true }) %></td></tr>
+            <tr><td class="muted"><%= t('Renews') %></td><td class="strong"><%= when(service.next_due_at, { dateOnly: true }) %></td></tr>
           <% } %>
         </tbody>
       </table></div>
-      <a class="btn btn-ghost btn-sm btn-block mt-2" href="/hosting">Change plan</a>
+      <a class="btn btn-ghost btn-sm btn-block mt-2" href="/hosting"><%= t('Change plan') %></a>
     </div>
 
     <%#

@@ -59,14 +59,13 @@
   <div class="p-card">
     <div class="empty">
       <%- icon('globe', 46) %>
-      <h3>No domains yet</h3>
+      <h3><%= t('No domains yet') %></h3>
       <p>
-        Register one here and it is pointed at your hosting automatically — or
-        bring one you already own and point it at us.
+        <%= t('Register one here and it is pointed at your hosting automatically — or bring one you already own and point it at us.') %>
       </p>
       <div class="row mt-2" style="gap:10px;justify-content:center;flex-wrap:wrap">
-        <a class="btn" href="/domains">Search a domain</a>
-        <a class="btn btn-ghost" href="/panel/domains/add">Add one I own</a>
+        <a class="btn" href="/domains"><%= t('Search a domain') %></a>
+        <a class="btn btn-ghost" href="/panel/domains/add"><%= t('Add one I own') %></a>
       </div>
     </div>
   </div>
@@ -80,7 +79,7 @@
           <span style="color:#7a5510;display:grid;place-items:center"><%- icon('alert-circle', 19) %></span>
           Waiting on you
         </h2>
-        <span class="small" style="color:#7a5510">Nothing else on this page needs anything</span>
+        <span class="small" style="color:#7a5510"><%= t('Nothing else on this page needs anything') %></span>
       </div>
       <% groups.needsYou.forEach(function (d) { row(d, false); }); %>
     </div>
@@ -90,14 +89,14 @@
   <div class="p-card p-card-flush">
     <% if (groups.inFlight.length) { %>
       <div class="group-lab">
-        <%- icon('clock', 14) %> In progress — nothing for you to do
+        <%- icon('clock', 14) %> <%= t('In progress — nothing for you to do') %>
       </div>
       <% groups.inFlight.forEach(function (d) { row(d, false); }); %>
     <% } %>
 
     <% if (tree.length) { %>
       <% if (groups.inFlight.length || groups.needsYou.length) { %>
-        <div class="group-lab"><%- icon('check-circle', 14) %> Working</div>
+        <div class="group-lab"><%- icon('check-circle', 14) %> <%= t('Working') %></div>
       <% } %>
       <% tree.forEach(function (d) { %>
         <% row(d, false); %>
@@ -136,27 +135,16 @@
     <div class="fold-body">
       <div class="legend">
         <div class="legend-row">
-          <span class="state state-green"><i></i>Live</span>
-          <span>Working. It is serving from our machines and there is nothing to do.</span>
+          <%- th('<span class="state state-green"><i></i>Live</span> <span>Working. It is serving from our machines and there is nothing to do.</span>') %>
         </div>
         <div class="legend-row">
-          <span class="state state-amber"><i></i>Waiting for you</span>
-          <span>
-            We are waiting on a change only you can make — usually the
-            nameservers at your registrar. Open it and the page says exactly what
-            to set, and how long you have.
-          </span>
+          <%- th('<span class="state state-amber"><i></i>Waiting for you</span> <span> We are waiting on a change only you can make — usually the nameservers at your registrar. Open it and the page says exactly what to set, and how long you have. </span>') %>
         </div>
         <div class="legend-row">
-          <span class="state state-blue"><i></i>Registering</span>
-          <span>
-            We are buying it from the registry right now. Minutes, usually.
-            Nothing for you to do, and this page updates itself when it lands.
-          </span>
+          <%- th('<span class="state state-blue"><i></i>Registering</span> <span> We are buying it from the registry right now. Minutes, usually. Nothing for you to do, and this page updates itself when it lands. </span>') %>
         </div>
         <div class="legend-row">
-          <span class="state state-grey"><i></i>Parked</span>
-          <span>Registered to you and not pointed at a website. That is a choice, not a fault.</span>
+          <%- th('<span class="state state-grey"><i></i>Parked</span> <span>Registered to you and not pointed at a website. That is a choice, not a fault.</span>') %>
         </div>
       </div>
       <p class="small muted mt-3 mb-0">

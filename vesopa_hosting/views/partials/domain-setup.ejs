@@ -1,0 +1,81 @@
+<%#
+  Setting a domain up, watched live.
+
+  Drawn at the top of a domain's page while a run is under way, and once more
+  after it finishes so the outcome is seen. Everything below is rendered by the
+  server from the run's rows, so the card is complete with JavaScript off; with
+  it on, domain-setup.js polls the status endpoint and repaints the same
+  markup as each step lands, without reloading anything.
+
+  THE STEPS ARE ALL THERE FROM THE START, greyed. A list that grows one line
+  at a time says nothing about how long is left; a list of six where three are
+  ticked does.
+
+  Locals: setupRun (the row) and setupStatus (domain-setup.status()).
+%>
+<% if (typeof setupStatus !== 'undefined' && setupStatus) { %>
+<%
+  const dsFinished = setupStatus.finished;
+  const dsTone = !dsFinished ? 'running' : (setupStatus.kind === 'ok' ? 'ok' : (setupStatus.kind === 'error' ? 'error' : 'warn'));
+  const dsMark = {
+    pending: '',
+    running: '<span class="spinner"></span>',
+    ok: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>',
+    skipped: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14"/></svg>',
+    failed: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>',
+  };
+%>
+<section class="dsetup is-<%= dsTone %>"
+         data-domain-setup
+         data-status-url="/panel/domains/<%= domain.id %>/setup/<%= setupStatus.id %>/status"
+         data-finished="<%= dsFinished ? '1' : '0' %>"
+         data-started="<%= setupStatus.startedAt ? new Date(setupStatus.startedAt).toISOString() : '' %>"
+         aria-live="polite">
+  <div class="dsetup-head">
+    <div class="dsetup-icon" data-ds-icon>
+      <% if (!dsFinished) { %><span class="spinner"></span>
+      <% } else if (setupStatus.kind === 'ok') { %><%- icon('check', 22) %>
+      <% } else { %><%- icon('warning', 22) %><% } %>
+    </div>
+    <div class="dsetup-words">
+      <h2 class="dsetup-title" data-ds-title>
+        <% if (!dsFinished) { %>Setting up <%= domain.domain %><% } else { %><%= setupStatus.headline %><% } %>
+      </h2>
+      <p class="dsetup-sub" data-ds-sub>
+        <% if (!dsFinished) { %>
+          This takes ten to twenty seconds. You can leave this page — it carries on without you,
+          the Domains list shows how far it has got, and we tell you when it is done.
+        <% } else { %>
+          <%= setupStatus.message %>
+        <% } %>
+      </p>
+    </div>
+    <div class="dsetup-clock" data-ds-clock hidden>0s</div>
+  </div>
+
+  <div class="dsetup-bar<%= dsFinished ? (setupStatus.kind === 'ok' ? ' is-done' : ' is-done is-failed') : '' %>"
+       role="progressbar" aria-valuemin="0" aria-valuemax="100"
+       aria-valuenow="<%= setupStatus.percent %>" data-ds-bar>
+    <i style="width:<%= setupStatus.percent %>%"></i>
+  </div>
+
+  <ol class="dsetup-steps" data-ds-steps>
+    <% setupStatus.steps.forEach(function (s) { %>
+      <li class="dsetup-step is-<%= s.status %>">
+        <span class="dsetup-mark"><%- dsMark[s.status] || '' %></span>
+        <span class="dsetup-text"><b><%= s.label %></b><% if (s.detail) { %><span><%= s.detail %></span><% } %></span>
+      </li>
+    <% }); %>
+  </ol>
+
+  <div class="dsetup-actions" data-ds-actions>
+    <% if (!dsFinished) { %>
+      <a class="btn btn-ghost btn-sm" href="/panel/domains"><%= t('Continue in the background') %></a>
+      <a class="btn btn-ghost btn-sm" href="/panel/domains/add"><%= t('Add another domain') %></a>
+    <% } else { %>
+      <a class="btn btn-sm" href="/panel/domains/<%= domain.domain %>" data-ds-refresh><%= t('Show me the domain') %></a>
+      <a class="btn btn-ghost btn-sm" href="/panel/domains"><%= t('Back to domains') %></a>
+    <% } %>
+  </div>
+</section>
+<% } %>

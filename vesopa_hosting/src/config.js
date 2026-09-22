@@ -103,6 +103,39 @@ const NAMESERVERS = [
 ];
 
 /**
+ * Other names for the same two machines — accepted, never offered.
+ *
+ * The node also answers as `ns1.onzep.uk` and `ns2.onzep.uk`, and a number of
+ * the owner's own sites were delegated to those names before this panel
+ * existed. A domain pointed at them IS pointed at us: same addresses, same
+ * zones, same certificates. Refusing to serve it because the customer used
+ * the older spelling would put a working site on the four-day clock to be
+ * dropped from the account.
+ *
+ * So the check treats these as ours. Nothing else does. Every instruction, every
+ * email, every "set these at your registrar" prints NAMESERVERS and only
+ * NAMESERVERS — the customer is told one pair of names, and the other pair is a
+ * detail they never need to see.
+ */
+const NAMESERVER_ALIASES = String(process.env.NS_ALIASES ?? 'ns1.onzep.uk,ns2.onzep.uk')
+  .split(',')
+  .map((s) => s.trim().toLowerCase())
+  .filter(Boolean);
+
+/**
+ * The Vesopa account is the ONLY way in.
+ *
+ * The owner's standing direction for every product: Continue with Vesopa, and
+ * no other login or registration. On: the sign-in page draws one button, the
+ * password, register and forgotten-password routes answer with a redirect to
+ * it, checkout asks a stranger to continue with Vesopa before it takes their
+ * details, and the first Vesopa sign-in from an address we have never seen
+ * creates the customer. Off: everything above is exactly as it was during the
+ * soak, password form included — a flag and a restart, never a deploy.
+ */
+const VESOPA_ONLY = String(process.env.VESOPA_AUTH_PANEL_ONLY ?? 'on').toLowerCase() !== 'off';
+
+/**
  * The name a customer points a record at when they keep DNS elsewhere.
  *
  * THE HOSTNAME IS THE INSTRUCTION; the address is the footnote.
@@ -142,6 +175,41 @@ const POINT_HOSTNAME = process.env.POINT_HOSTNAME || 'point.vesopa.com';
  * same place it is read from.
  */
 const MAIL_HOSTNAME = process.env.MAIL_HOSTNAME || 'mail.vesopa.com';
+
+/*
+ * Vesopa AI -- the guide that hovers on every page (src/ai/). Off unless a
+ * key is set: the widget is not drawn and /ai/* answers 404, so a panel
+ * without credentials is exactly the panel there was before.
+ *
+ * The endpoint is Amazon Bedrock's OpenAI-compatible one; the two models
+ * were chosen and verified on 2026-09-17: Voxtral hears (a chat message
+ * carrying input_audio -- that endpoint has no /audio/transcriptions) and
+ * Qwen3-coder-next decides and calls tools. Nothing on it speaks: the
+ * spoken reply comes from Gemini TTS (src/ai/voice.js) when AI_TTS_API_KEY
+ * is set, and from the browser's own voices when it is not.
+ */
+const AI = {
+  API_KEY: process.env.AI_API_KEY || '',
+  BASE_URL: String(process.env.AI_BASE_URL || 'https://bedrock-mantle.ap-south-1.api.aws/v1').replace(/\/+$/, ''),
+  PROJECT_ID: process.env.AI_PROJECT_ID || '',
+  TASK_MODEL: process.env.AI_TASK_MODEL || 'qwen.qwen3-coder-next',
+  VOICE_MODEL: process.env.AI_VOICE_MODEL || 'mistral.voxtral-small-24b-2507',
+  // Words the reply (src/ai/agent.js talk()). Set AI_TALK_MODEL= empty to
+  // let the task model speak for itself, as it did at first.
+  TALK_MODEL: process.env.AI_TALK_MODEL !== undefined ? process.env.AI_TALK_MODEL : 'qwen.qwen3-235b-a22b-2507',
+  // Vesopa Studio's designer (src/builder/agent.js): writes the HTML, streamed.
+  STUDIO_MODEL: process.env.AI_STUDIO_MODEL || 'qwen.qwen3-coder-next',
+  // The assistant's own voice (Gemini's text-to-speech). Voices are Gemini's
+  // prebuilt names; each speaks both English and Bangla.
+  TTS_API_KEY: process.env.AI_TTS_API_KEY || '',
+  TTS_MODEL: process.env.AI_TTS_MODEL || 'gemini-2.5-flash-preview-tts',
+  TTS_VOICE_EN: process.env.AI_TTS_VOICE_EN || 'Sulafat',
+  TTS_VOICE_BN: process.env.AI_TTS_VOICE_BN || 'Sulafat',
+  SPEAKS_PER_10_MIN: Number(process.env.AI_SPEAKS_PER_10_MIN) || 80,
+  // How many turns one visitor may take in ten minutes, and how big a clip.
+  TURNS_PER_10_MIN: Number(process.env.AI_TURNS_PER_10_MIN) || 40,
+  MAX_AUDIO_BYTES: Number(process.env.AI_MAX_AUDIO_BYTES) || 1_500_000,
+};
 
 /** Where webmail lives. The same host — one name is one thing to remember. */
 const WEBMAIL_URL = process.env.WEBMAIL_URL || `https://${MAIL_HOSTNAME}`;
@@ -320,9 +388,12 @@ module.exports = {
   SITE_HOSTNAME,
   BRAND,
   NAMESERVERS,
+  NAMESERVER_ALIASES,
+  VESOPA_ONLY,
   POINT_HOSTNAME,
   MAIL_HOSTNAME,
   WEBMAIL_URL,
+  AI,
   MAIL_PORTS,
   DOMAIN_NS_GRACE_DAYS,
   PAYMENT_SESSION_MINUTES,

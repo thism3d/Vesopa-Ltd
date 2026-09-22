@@ -21,11 +21,77 @@ const currency = require('./currency');
 const geo = require('./geo');
 
 const COOKIE = 'vh_cur';
+/*
+ * The country is remembered beside the currency, because the geo lookup that
+ * found it is the only one this visitor will ever pay for -- the currency
+ * cookie stops it running again. Anything else that wants to know where
+ * somebody is (the Bangla offer, the language prompt) would otherwise either
+ * repeat the lookup on every page or go without.
+ *
+ * Not httpOnly: the language prompt is decided in the browser, and this is a
+ * two-letter country code, not a secret.
+ */
+const COUNTRY_COOKIE = 'vh_cc';
 const COOKIE_MAX_AGE = 365 * 24 * 60 * 60 * 1000;
 
 function writeCookie(res, code) {
   res.cookie(COOKIE, code, {
     httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: COOKIE_MAX_AGE,
+    path: '/',
+  });
+}
+
+/*
+ * THE COUNTRY COOKIE IS SIGNED, BECAUSE IT DECIDES WHO GETS MONEY OFF.
+ *
+ * It is not httpOnly — the language prompt is decided in the browser and has
+ * to read it — so the browser can write it too. That was fine while it only
+ * chose which language to offer. It stopped being fine the moment a country
+ * also chose who may claim a discount: `document.cookie = 'vh_cc=BD'` in the
+ * console was, measured on live on 2026-09-17, enough to make the Bangladesh
+ * offer appear for a visitor in any country, and enough to pass the same check
+ * at the basket. The code is about to be read out in an advert, so the whole
+ * world will know it.
+ *
+ * Signing keeps every property that made a cookie the right answer — one geo
+ * lookup per visitor, readable by the browser, survives a restart — and takes
+ * away the one that made it wrong. A forged value fails to verify and is
+ * ignored, exactly as if it had never been sent.
+ *
+ * It is still a MARKETING boundary, not a security one: a VPN moves somebody
+ * to Dhaka in a click and no cookie can know better. It is now a boundary that
+ * takes a VPN rather than a line of JavaScript.
+ */
+const crypto = require('node:crypto');
+
+const COUNTRY_SECRET = process.env.GEO_SALT || process.env.SESSION_SECRET || 'vesopa-geo';
+
+function sign(cc) {
+  return crypto.createHmac('sha256', COUNTRY_SECRET).update(`cc:${cc}`).digest('base64url').slice(0, 16);
+}
+
+/** 'BD.Ab3…' -> 'BD', and anything that does not verify -> ''. */
+function readCountryCookie(req) {
+  const raw = String(req.cookies?.[COUNTRY_COOKIE] || '');
+  const dot = raw.indexOf('.');
+  if (dot < 1) return '';
+  const cc = raw.slice(0, dot).toUpperCase().slice(0, 2);
+  const mac = raw.slice(dot + 1);
+  const expected = sign(cc);
+  // timingSafeEqual throws on a length mismatch, which a forged value will
+  // usually have; compare lengths first so it never becomes the exception path.
+  if (mac.length !== expected.length) return '';
+  if (!crypto.timingSafeEqual(Buffer.from(mac), Buffer.from(expected))) return '';
+  return cc;
+}
+
+function writeCountryCookie(res, cc) {
+  const code = String(cc || '').toUpperCase().slice(0, 2);
+  res.cookie(COUNTRY_COOKIE, `${code}.${sign(code)}`, {
+    httpOnly: false,
     sameSite: 'lax',
     secure: process.env.NODE_ENV === 'production',
     maxAge: COOKIE_MAX_AGE,
@@ -63,6 +129,14 @@ async function attach(req, res, next) {
      */
     let chosen = null;
     let source = 'default';
+    /*
+     * The country this request's own lookup found, if it did one.
+     *
+     * Kept because the cookie it is written to cannot be read back until the
+     * NEXT request, and the request that matters most is the first one. See
+     * where req.country is set below.
+     */
+    let found = '';
 
     if (req.path.startsWith('/admin')) {
       chosen = base;
@@ -77,6 +151,8 @@ async function attach(req, res, next) {
         const guess = await geo.currencyFor(req.ip);
         chosen = guess.currency;
         source = guess.country ? 'geo' : 'default';
+        found = String(guess.country || '');
+        if (guess.country) writeCountryCookie(res, guess.country);
         // Remembered either way. Writing the cookie even when the lookup failed
         // is what stops a visitor whose address we cannot place from paying the
         // timeout again on every page they open.
@@ -88,6 +164,44 @@ async function attach(req, res, next) {
 
     req.currency = chosen;
     req.currencySource = source;
+    /*
+     * Where they appear to be, for anything that is not about money: the offer
+     * shown to Bangladeshi visitors, and the prompt asking whether they would
+     * rather read the site in Bangla. Empty when we do not know, which must
+     * always read as "no special treatment" rather than as a default country.
+     */
+    /*
+     * THE COOKIE ALONE IS NOT ENOUGH, AND THE FIRST VISIT IS THE ONE THAT PAYS.
+     *
+     * This used to read the cookie and nothing else. The lookup a few lines up
+     * had already found the country and written it to that cookie — but a
+     * cookie set on THIS response cannot be read back from THIS request, so
+     * req.country was empty on everybody's first page view and only right from
+     * their second onwards.
+     *
+     * Measured on live, 2026-09-17, straight at the app behind nginx with a
+     * Bangladeshi address: /bn/offers carried BANGLADESH40 zero times on the
+     * first request and twice on the second. An advert's click is always a
+     * first request, so every visitor a campaign sent would have been shown
+     * "no offers running" on the very page the advert promised the offer on.
+     */
+    let country = readCountryCookie(req) || found.toUpperCase().slice(0, 2);
+
+    /*
+     * A visitor who chose a currency long ago has a currency cookie, so the
+     * branch above never runs a lookup for them — and before this they simply
+     * had no country at all, plus everyone carrying an old UNSIGNED cookie now
+     * verifies as unknown. Both would quietly lose the offer. One lookup, only
+     * when the country is genuinely unknown and the request is a page view,
+     * and it is remembered signed from then on.
+     */
+    if (!country && wantsGeo(req)) {
+      country = String(await geo.countryFor(req.ip) || '').toUpperCase().slice(0, 2);
+      if (country) writeCountryCookie(res, country);
+    }
+
+    req.country = country;
+    res.locals.country = req.country;
 
     // -----------------------------------------------------------------------
     // View helpers
@@ -102,17 +216,31 @@ async function attach(req, res, next) {
      * an amount in a currency other than the request's: an admin looking at a
      * dollar order, a renewal notice for a service sold in Canada.
      */
+    /*
+     * THE LOCALE IS PASSED, NOT LOOKED UP.
+     *
+     * currency.format() defaults its locale to i18n.currentLocale(), which
+     * reads an AsyncLocalStorage set around the route handler. A template is
+     * rendered AFTER that handler has returned, so by the time money() runs
+     * inside an EJS view the store is gone and every figure came out in
+     * English digits. The effect was visible and odd: on the Bangla home page
+     * the big plan price read ৳৪৪৬.০০ (from pricing's cached parts, computed
+     * inside the context) while the line directly beneath it read ৳5,352.00.
+     *
+     * Passing req.locale removes the dependency on where the call happens.
+     */
+    const locale = req.locale;
     const fmt = (minor, code) => {
-      if (!code || code === chosen.code) return currency.format(minor, chosen);
+      if (!code || code === chosen.code) return currency.format(minor, chosen, locale);
       const other = all.find((c) => c.code === String(code).toUpperCase());
-      return currency.format(minor, other || chosen);
+      return currency.format(minor, other || chosen, locale);
     };
 
     res.locals.money = fmt;
     res.locals.moneyParts = (minor, code) => {
-      if (!code || code === chosen.code) return currency.parts(minor, chosen);
+      if (!code || code === chosen.code) return currency.parts(minor, chosen, locale);
       const other = all.find((c) => c.code === String(code).toUpperCase());
-      return currency.parts(minor, other || chosen);
+      return currency.parts(minor, other || chosen, locale);
     };
     res.locals.currency = chosen;
     res.locals.currencies = all.filter((c) => c.active);

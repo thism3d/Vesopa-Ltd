@@ -6,37 +6,81 @@
       <span class="brand-sub">Hosting</span>
     </a>
 
-    <h1>Welcome back</h1>
-    <p class="lede">Sign in to manage your sites, domains and billing.</p>
-
     <% if (error) { %>
       <div class="alert alert-error"><%- icon('warning', 19) %><div><%= error %></div></div>
     <% } %>
 
-    <form method="post" action="/login" data-guard>
-      <input type="hidden" name="_csrf" value="<%= csrf %>">
-      <input type="hidden" name="next" value="<%= next %>">
+    <%
+      /*
+       * ONE WAY IN.
+       *
+       * The owner's direction for every Vesopa product: Continue with Vesopa,
+       * and no other login or registration. So with VESOPA_ONLY on there is
+       * no email field, no password, no "Forgotten?" and no "Create an
+       * account" — the first Vesopa sign-in from an address we have never
+       * seen IS the registration (routes/vesopa-sso.js). What is left is a
+       * page with one button, which is the point: nothing to fill in, nothing
+       * to get wrong, and nothing to resubmit on a reload.
+       *
+       * The password form below is kept for the flag being turned off, and
+       * for a server where the Vesopa client is not configured at all — a
+       * sign-in page with no way in is worse than the old one.
+       */
+      const nextTo = typeof next !== 'undefined' && next ? next : '/panel';
+      const onlyVesopa = vesopaOnly && typeof vesopaSso !== 'undefined' && vesopaSso;
+    %>
 
-      <div class="field">
-        <label class="label" for="email">Email address</label>
-        <input class="input" id="email" name="email" type="email" autocomplete="username"
-               value="<%= values.email || '' %>" required autofocus>
-      </div>
+    <% if (onlyVesopa) { %>
+      <h1><%= t('Sign in') %></h1>
+      <p class="lede"><%= t('Your Vesopa account opens your sites, domains and billing.') %></p>
 
-      <div class="field">
-        <div class="row-between" style="margin-bottom:6px">
-          <label class="label" for="password" style="margin:0">Password</label>
-          <a class="tiny" href="/forgot">Forgotten?</a>
+      <%- include('../partials/vesopa-button', { href: '/auth/vesopa/start?next=' + encodeURIComponent(nextTo), label: t('Sign in or create account') }) %>
+      <p class="auth-switch">
+        <a href="/auth/vesopa/start?switch=1&next=<%= encodeURIComponent(nextTo) %>" rel="external"><%= t('Use a different Vesopa account') %></a>
+      </p>
+
+      <p class="auth-alt mb-0">
+        <%= t('New to Vesopa Cloud? The same button sets your account up — one account for every Vesopa product.') %>
+      </p>
+    <% } else { %>
+      <h1><%= t('Welcome back') %></h1>
+      <p class="lede"><%= t('Sign in to manage your sites, domains and billing.') %></p>
+
+      <form method="post" action="/login" data-guard>
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <input type="hidden" name="next" value="<%= nextTo %>">
+
+        <div class="field">
+          <label class="label" for="email"><%= t('Email address') %></label>
+          <input class="input" id="email" name="email" type="email" autocomplete="username"
+                 value="<%= values.email || '' %>" required autofocus>
         </div>
-        <input class="input" id="password" name="password" type="password" autocomplete="current-password" required>
-      </div>
 
-      <button class="btn btn-block btn-lg" type="submit" data-busy="Signing in…">Sign in</button>
-    </form>
+        <div class="field">
+          <div class="row-between" style="margin-bottom:6px">
+            <label class="label" for="password" style="margin:0"><%= t('Password') %></label>
+            <a class="tiny" href="/forgot"><%= t('Forgotten?') %></a>
+          </div>
+          <input class="input" id="password" name="password" type="password" autocomplete="current-password" required>
+        </div>
 
-    <p class="auth-alt mb-0">
-      New here? <a href="/register">Create an account</a>
-    </p>
+        <button class="btn btn-block btn-lg" type="submit" data-busy="Signing in…"><%= t('Sign in') %></button>
+
+        <% if (typeof vesopaSso !== 'undefined' && vesopaSso) { %>
+        <div id="vesopa-sso" style="margin-top:14px">
+          <div class="or-divider"><span><%= t('or') %></span></div>
+          <%- include('../partials/vesopa-button', { cls: 'btn btn-block btn-lg btn-secondary', href: '/auth/vesopa/start?next=' + encodeURIComponent(nextTo) }) %>
+          <p class="auth-switch">
+            <a href="/auth/vesopa/start?switch=1&next=<%= encodeURIComponent(nextTo) %>" rel="external"><%= t('Use a different Vesopa account') %></a>
+          </p>
+        </div>
+        <% } %>
+      </form>
+
+      <p class="auth-alt mb-0">
+        <%- th('New here? <a href="/register">Create an account</a>') %>
+      </p>
+    <% } %>
   </div>
   <p class="auth-foot"><a href="/">← Back to the website</a> &nbsp;·&nbsp; <a href="/support">Need help?</a></p>
 </div>

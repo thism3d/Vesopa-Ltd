@@ -16,6 +16,8 @@ const { sendMail, shell, detailTable, escapeHtml, DEFAULT_TO } = require('../mai
 const { checkCsrf } = require('../auth');
 const { flash, rateLimited } = require('../http-utils');
 const currency = require('../currency');
+const cart = require('./cart');
+const i18n = require('../i18n');
 const { SITE_URL, CONTACT } = require('../config');
 
 const router = express.Router();
@@ -49,8 +51,7 @@ router.get('/', async (req, res, next) => {
     ]);
     res.render('public/index', {
       title: null, // the default title is the marketing one
-      description:
-        'Fast UK web hosting, domain names, business email and free SSL from Vesopa. One clear control panel, no cPanel to learn, and a free domain on every yearly plan.',
+      description: req.t('Fast UK web hosting, domain names, business email and free SSL from Vesopa. One clear control panel, no cPanel to learn, and a free domain on every yearly plan.'),
       plans: catalogue.plans,
       businessEmail: catalogue.businessEmail,
       marketingEmail: catalogue.marketingEmail,
@@ -79,10 +80,11 @@ router.get('/hosting', async (req, res, next) => {
       pricing.termsWithSavings(req.currency),
     ]);
     res.render('public/hosting', {
-      title: 'Web hosting',
-      description:
-        'UK shared hosting on NVMe storage, with free SSL, daily backups and email included. '
-        + `Plans from ${currency.format(cheapest(plans), req.currency)} a month.`,
+      title: req.t('Web hosting'),
+      description: req.t(
+        'UK shared hosting on NVMe storage, with free SSL, daily backups and email included. Plans from {price} a month.',
+        { price: currency.format(cheapest(plans), req.currency) },
+      ),
       plans,
       terms,
     });
@@ -99,11 +101,11 @@ router.get('/email', async (req, res, next) => {
     const { businessEmail, marketingEmail } = await pricing.load({ cur: req.currency });
     const fmt = (minor) => currency.format(minor, req.currency);
     res.render('public/email', {
-      title: 'Business and marketing email',
-      description:
-        `Email at your own domain from ${fmt(cheapest(businessEmail, [12, 1]))} a mailbox, `
-        + `and marketing campaigns from ${fmt(cheapest(marketingEmail, [12, 1]))} a month. `
-        + 'UK hosted, properly authenticated, no per-seat surprises.',
+      title: req.t('Business and marketing email'),
+      description: req.t(
+        'Email at your own domain from {mailbox} a mailbox, and marketing campaigns from {campaign} a month. UK hosted, properly authenticated, no per-seat surprises.',
+        { mailbox: fmt(cheapest(businessEmail, [12, 1])), campaign: fmt(cheapest(marketingEmail, [12, 1])) },
+      ),
       businessEmail,
       marketingEmail,
       emailTerms: pricing.EMAIL_TERMS,
@@ -126,29 +128,129 @@ router.get('/email', async (req, res, next) => {
 // ---------------------------------------------------------------------------
 router.get('/ssl', (req, res) => {
   res.render('public/ssl', {
-    title: 'SSL certificates',
-    description: 'Free SSL on every Vesopa site, issued and renewed automatically. Nothing to install and nothing to pay.',
+    title: req.t('SSL certificates'),
+    description: req.t('Free SSL on every Vesopa site, issued and renewed automatically. Nothing to install and nothing to pay.'),
   });
+});
+
+/*
+ * The offers page: what is on now, and the codes that claim it.
+ *
+ * ONLY CODES MARKED `public_offer` ARE LISTED, and that column defaults to 0.
+ * The database already held PROMO100 -- 100% off everything, no use limit, no
+ * expiry -- so a page built the obvious way, listing every active coupon,
+ * would have published a code that gives the shop away. Advertising a code is
+ * a decision somebody makes in the admin, one code at a time.
+ *
+ * A code restricted to a country is shown only to visitors in it, for the same
+ * reason it is refused at the basket: offering something and then rejecting it
+ * at checkout is worse than never having shown it.
+ */
+router.get('/offers', async (req, res, next) => {
+  try {
+    const country = String(req.country || '').toUpperCase();
+    const rows = await db.query(
+      `SELECT code, description, headline, headline_bn, description_bn,
+              kind, value, applies_to, min_spend_pence,
+              first_order_only, countries, starts_at, expires_at, max_uses, used,
+              requires_tld, grants_plan_slug, grants_months
+         FROM coupons
+        WHERE active = 1
+          AND public_offer = 1
+          AND (starts_at IS NULL OR starts_at <= NOW())
+          AND (expires_at IS NULL OR expires_at >= NOW())
+          AND (max_uses = 0 OR used < max_uses)
+        ORDER BY value DESC, id ASC`,
+    );
+
+    const mine = (row) => {
+      const only = String(row.countries || '').split(',').map((c) => c.trim().toUpperCase()).filter(Boolean);
+      return !only.length || only.includes(country);
+    };
+
+    /*
+     * The advertised copy in the language being read.
+     *
+     * The furniture around it comes from the i18n catalogue, but these two are
+     * free text an admin typed, so they need their own Bangla column. Falling
+     * back to the English rather than to nothing: a headline in the wrong
+     * language still sells the offer, and an empty one sells nothing.
+     */
+    const bn = res.locals.locale === 'bn';
+    const say = (bangla, english) => (bn && String(bangla || '').trim() ? bangla : english);
+
+    const offers = rows.filter(mine).map((row) => ({
+      code: row.code,
+      headline: say(row.headline_bn, row.headline || row.description),
+      detail: say(row.description_bn, row.description),
+      // A percentage reads the same in every currency; a fixed amount is a
+      // base-currency figure and has to be converted like any other price.
+      kind: row.kind,
+      amount: row.kind === 'percent'
+        ? `${Number(row.value)}%`
+        : currency.format(currency.convert(Number(row.value), req.currency), req.currency),
+      /*
+       * A bundle's figure is what you PAY, so the card must not print "off"
+       * after it — that would read as the whole bundle price coming off.
+       */
+      amountIsPrice: row.kind === 'bundle',
+      grantsMonths: Number(row.grants_months) || 0,
+      grantsPlan: String(row.grants_plan_slug || ''),
+      requiresTld: String(row.requires_tld || ''),
+      /*
+       * The one-click path. A bundle is two specific things in a basket, and
+       * asking a customer to assemble it from the wording is how an offer goes
+       * unclaimed; this builds it for them. See /offers/:code/start.
+       */
+      startUrl: `/offers/${encodeURIComponent(row.code)}/start`,
+      appliesTo: row.applies_to,
+      firstOrderOnly: Boolean(row.first_order_only),
+      minSpend: Number(row.min_spend_pence) > 0
+        ? currency.format(currency.convert(Number(row.min_spend_pence), req.currency), req.currency)
+        : '',
+      endsAt: row.expires_at || null,
+      forCountry: String(row.countries || '').trim(),
+      left: Number(row.max_uses) > 0 ? Number(row.max_uses) - Number(row.used) : 0,
+      /*
+       * Which drawing goes with it. The artwork carries no figure -- the
+       * discount is live HTML beside it -- so a change of percentage or an
+       * expiry never leaves a picture saying something the price contradicts.
+       */
+      art: String(row.countries || '').toUpperCase().includes('BD')
+        ? '/assets/img/offers/bangladesh.svg'
+        : '/assets/img/offers/generic.svg',
+    }));
+
+    res.render('public/offers', {
+      title: req.t('Offers and promo codes'),
+      description: req.t('Current Vesopa offers: what is included, what it costs and the code that claims it.'),
+      offers,
+      country,
+      inBangladesh: country === 'BD',
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
 router.get('/transfer', (req, res) => {
   res.render('public/migration', {
-    title: 'Move your site to us',
-    description: 'Free website migration. We copy your site, database and email, you check it, then we switch it over.',
+    title: req.t('Move your site to us'),
+    description: req.t('Free website migration. We copy your site, database and email, you check it, then we switch it over.'),
   });
 });
 
 router.get('/support', (req, res) => {
   res.render('public/support', {
-    title: 'Support',
-    description: 'Guides, status and a way to reach a person who can read a server log.',
+    title: req.t('Support'),
+    description: req.t('Guides, status and a way to reach a person who can read a server log.'),
   });
 });
 
 router.get('/about', (req, res) => {
   res.render('public/about', {
-    title: 'About',
-    description: 'Vesopa Cloud is run by Vesopa EPOS Ltd, a Welsh software company that has hosted its own systems since 2018.',
+    title: req.t('About'),
+    description: req.t('Vesopa Cloud is run by Vesopa EPOS Ltd, a Welsh software company that has hosted its own systems since 2018.'),
   });
 });
 
@@ -157,8 +259,8 @@ router.get('/about', (req, res) => {
 // ---------------------------------------------------------------------------
 router.get('/contact', (req, res) => {
   res.render('public/contact', {
-    title: 'Contact us',
-    description: 'Talk to Vesopa Cloud about a plan, a migration or anything that is not working.',
+    title: req.t('Contact us'),
+    description: req.t('Talk to Vesopa Cloud about a plan, a migration or anything that is not working.'),
     values: {},
     errors: {},
   });
@@ -184,7 +286,7 @@ router.post('/contact', async (req, res, next) => {
 
   if (Object.keys(errors).length) {
     return res.status(400).render('public/contact', {
-      title: 'Contact us',
+      title: req.t('Contact us'),
       values,
       errors,
     });
@@ -204,7 +306,7 @@ router.post('/contact', async (req, res, next) => {
       replyTo: values.email,
       subject: `Hosting enquiry — ${values.subject || values.name}`,
       html: shell({
-        title: 'New hosting enquiry',
+        title: req.t('New hosting enquiry'),
         bodyHtml:
           detailTable([
             ['Name', escapeHtml(values.name)],
@@ -227,10 +329,71 @@ router.post('/contact', async (req, res, next) => {
       }),
     });
 
-    flash(res, 'Thanks — we have your message and will reply shortly.');
+    flash(res, req.t('Thanks — we have your message and will reply shortly.'));
     res.redirect('/contact');
   } catch (err) {
     next(err);
+  }
+});
+
+/**
+ * Claim an offer in one click.
+ *
+ * A bundle is a price for a SET — "a .site and a month of hosting, 381 taka" —
+ * and the basket only reaches that price when both halves are in it. Leaving a
+ * customer to work that out from the card's wording is how an advertised offer
+ * goes unclaimed: they add the domain, the code says it needs a plan too, and
+ * they give up. So this puts the hosting half in, remembers the code, and
+ * drops them on the domain search to choose the name, which is the only part
+ * only they can do.
+ *
+ * It grants nothing by itself. The coupon is still evaluated on every basket
+ * price and again inside the checkout transaction, so a code that is expired,
+ * country-locked or fully redeemed refuses here exactly as it would if it had
+ * been typed by hand.
+ */
+router.get('/offers/:code/start', async (req, res, next) => {
+  try {
+    const code = String(req.params.code || '').trim().toUpperCase().slice(0, 40);
+    const row = await db.one(
+      `SELECT * FROM coupons
+        WHERE code = ? AND active = 1 AND public_offer = 1
+          AND (starts_at IS NULL OR starts_at <= NOW())
+          AND (expires_at IS NULL OR expires_at >= NOW())
+          AND (max_uses = 0 OR used < max_uses)
+        LIMIT 1`,
+      [code],
+    );
+    // An offer that has ended is not an error page: it is the offers page,
+    // which will say what IS on.
+    if (!row) return res.redirect('/offers');
+
+    const only = String(row.countries || '').split(',').map((c) => c.trim().toUpperCase()).filter(Boolean);
+    if (only.length && !only.includes(String(req.country || '').toUpperCase())) {
+      return res.redirect('/offers');
+    }
+
+
+    /*
+     * Put the granted plan in the basket at the granted term, so the only
+     * thing left is the name. Nothing is added for a code that grants no
+     * trial — an ordinary percentage code needs no particular basket.
+     */
+    const months = Number(row.grants_months) || 0;
+    const slug = String(row.grants_plan_slug || '').trim();
+    const plan = months > 0 && slug
+      ? await db.one('SELECT slug FROM plans WHERE slug = ? AND active = 1 LIMIT 1', [slug])
+      : null;
+    cart.startOffer(req, res, {
+      code,
+      planSlug: plan ? plan.slug : '',
+      months: plan ? months : 0,
+    });
+
+    const tld = String(row.requires_tld || '').trim().toLowerCase();
+    return res.redirect(tld ? `/domains?tld=${encodeURIComponent(tld)}` : '/domains');
+  } catch (err) {
+    return next(err);
   }
 });
 
@@ -239,7 +402,18 @@ router.post('/contact', async (req, res, next) => {
 // ---------------------------------------------------------------------------
 router.get('/robots.txt', (req, res) => {
   res.type('text/plain').send(
-    ['User-agent: *', 'Disallow: /panel/', 'Disallow: /admin/', 'Disallow: /cart/', '', `Sitemap: ${SITE_URL}/sitemap.xml`].join('\n'),
+    ['User-agent: *',
+      'Disallow: /panel/',
+      'Disallow: /admin/',
+      'Disallow: /cart/',
+      // The two switchers. Both are redirects that set a cookie and send the
+      // crawler back where it came from, so following them indexes nothing and
+      // multiplies every page by the number of currencies and languages. The
+      // links are rel="nofollow" too; this is the half that also covers a
+      // crawler that found the URL somewhere else.
+      'Disallow: /lang/',
+      'Disallow: /currency/',
+      '', `Sitemap: ${SITE_URL}/sitemap.xml`].join('\n'),
   );
 });
 
@@ -259,17 +433,43 @@ router.get('/robots.txt', (req, res) => {
  *
  * Priority is set rather than left off: without it every URL is equal and the
  * homepage competes with .abogado.
+ *
+ * EVERY PAGE IS LISTED ONCE PER LANGUAGE, and each entry names the others.
+ *
+ * Google's rule is that hreflang has to be reciprocal: /hosting must point at
+ * /bn/hosting and /bn/hosting must point back, or the pair is ignored and the
+ * two are judged as two sites with the same content. The <head> does that for
+ * anybody who fetches the page (views/partials/head.ejs), and this does it for
+ * the crawler that has only read the sitemap — which is how a page that has
+ * never been crawled gets its Bangla twin discovered at the same time.
+ *
+ * x-default is the English URL: it is what somebody whose language we do not
+ * publish should land on.
  */
 router.get('/sitemap.xml', async (req, res, next) => {
   try {
     const core = ['/', '/hosting', '/email', '/domains', '/domains/pricing', '/domains/transfer',
-      '/ssl', '/transfer', '/support', '/about', '/contact', '/terms', '/privacy', '/aup', '/refunds'];
+      '/ssl', '/transfer', '/build', '/support', '/about', '/contact', '/terms', '/privacy', '/aup', '/refunds'];
     const { tlds } = await pricing.load();
     const counts = await domainCatalogue.categoryCounts();
 
-    const entry = (path, priority, freq = 'weekly') =>
-      `  <url><loc>${SITE_URL}${path}</loc><changefreq>${freq}</changefreq>`
-      + `<priority>${priority}</priority></url>`;
+    const langs = Object.values(i18n.LOCALES);
+
+    /*
+     * One <url> per language per page. The alternates block is identical in
+     * each of them, which is what "reciprocal" means here and why it is built
+     * once per path rather than once per entry.
+     */
+    const entry = (path, priority, freq = 'weekly') => {
+      const alts = i18n.alternates(SITE_URL, path)
+        .map((a) => `    <xhtml:link rel="alternate" hreflang="${a.hreflang}" href="${escapeHtml(a.href)}"/>`)
+        .join('\n');
+      return langs.map((info) => (
+        `  <url>\n    <loc>${escapeHtml(SITE_URL + i18n.localizePath(path, info.code))}</loc>\n`
+        + `${alts}${alts ? '\n' : ''}`
+        + `    <changefreq>${freq}</changefreq><priority>${priority}</priority>\n  </url>`
+      )).join('\n');
+    };
 
     const urls = [
       ...core.map((p) => entry(p, p === '/' ? '1.0' : '0.8')),
@@ -281,7 +481,10 @@ router.get('/sitemap.xml', async (req, res, next) => {
 
     res
       .type('application/xml')
-      .send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>`);
+      .send('<?xml version="1.0" encoding="UTF-8"?>\n'
+        + '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"'
+        + ' xmlns:xhtml="http://www.w3.org/1999/xhtml">\n'
+        + `${urls}\n</urlset>`);
   } catch (err) {
     next(err);
   }

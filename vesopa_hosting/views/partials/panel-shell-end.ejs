@@ -8,7 +8,7 @@
 <% if (currentPath.indexOf('/admin') !== 0) { %>
 <div class="sheet" id="sheet-more" hidden>
   <div class="sheet-scrim" data-sheet-close></div>
-  <div class="sheet-card" role="dialog" aria-modal="true" aria-label="More">
+  <div class="sheet-card" role="dialog" aria-modal="true" aria-label="<%= t('More') %>">
     <div class="sheet-grab"></div>
     <a class="sheet-row" href="/panel/apps/node">
       <span class="sheet-ic"><%- icon('activity', 19) %></span>
@@ -18,6 +18,11 @@
     <a class="sheet-row" href="/panel/apps/runtime">
       <span class="sheet-ic"><%- icon('sliders', 19) %></span>
       <span><b>Languages &amp; settings</b><small>PHP and Node versions, limits, plugins</small></span>
+      <%- icon('chevron-right', 16) %>
+    </a>
+    <a class="sheet-row" href="/build">
+      <span class="sheet-ic"><%- icon('wand', 19) %></span>
+      <span><b>Site builder</b><small>Say what you want and watch your website build</small></span>
       <%- icon('chevron-right', 16) %>
     </a>
     <a class="sheet-row" href="/panel/files">
@@ -52,7 +57,7 @@
         <span><b>Sign out</b></span>
       </button>
     </form>
-    <button class="btn btn-ghost btn-block sheet-cancel" type="button" data-sheet-close>Close</button>
+    <button class="btn btn-ghost btn-block sheet-cancel" type="button" data-sheet-close><%= t('Close') %></button>
   </div>
 </div>
 <% } %>
@@ -61,8 +66,14 @@
   <span data-flash="<%= flash.message %>" data-flash-kind="<%= flash.kind || 'ok' %>" hidden></span>
 <% } %>
 
+<%# The bar first and the router second: the router uses the bar if it is
+    there, and each works without the other. Neither is deferred — they must
+    be running before the page's own scripts, which are. %>
+<script src="<%= asset('/assets/js/loadbar.js') %>"></script>
+<script src="<%= asset('/assets/js/nav.js') %>"></script>
 <script src="<%= asset('/assets/js/app.js') %>" defer></script>
 <script src="<%= asset('/assets/js/panel.js') %>" defer></script>
+<% if (typeof aiEnabled !== 'undefined' && aiEnabled) { %><script src="<%= asset('/assets/js/assistant.js') %>" defer></script><% } %>
 <% if (typeof extraJs !== 'undefined') { %><script src="<%= asset(extraJs) %>" defer></script><% } %>
 </body>
 </html>

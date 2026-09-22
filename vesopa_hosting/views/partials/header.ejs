@@ -8,12 +8,14 @@
  * notices until a customer says the menu on their phone is missing a page.
  */
 const navItems = [
-  ['/hosting',  'server', 'Web hosting', 'Fast UK NVMe hosting, SSL included'],
-  ['/domains',  'globe',  'Domains',     'Search, register and transfer names'],
-  ['/email',    'mail',   'Email',       'Mailboxes and campaigns at your domain'],
-  ['/ssl',      'lock',   'SSL',         'Free certificates, renewed automatically'],
-  ['/transfer', 'rocket', 'Transfer',    'Move your site to us, free'],
-  ['/support',  'headset','Support',     'Guides, status and a person to ask'],
+  ['/hosting',  'server', t('Web hosting'),  t('Fast UK NVMe hosting, SSL included')],
+  ['/build',    'wand',   t('Site builder'), t('Say what you want and watch your website build')],
+  ['/domains',  'globe',  t('Domains'),      t('Search, register and transfer names')],
+  ['/email',    'mail',   t('Email'),        t('Mailboxes and campaigns at your domain')],
+  ['/ssl',      'lock',   t('SSL'),          t('Free certificates, renewed automatically')],
+  ['/transfer', 'rocket', t('Transfer'),     t('Move your site to us, free')],
+  ['/offers',   'tag',    t('Offers'),       t('Current discounts and promo codes')],
+  ['/support',  'headset',t('Support'),      t('Guides, status and a person to ask')],
 ];
 const isOn = (href) => (href === '/domains'
   ? (currentPath || '').startsWith('/domains')
@@ -30,15 +32,15 @@ const over = typeof navOver !== 'undefined' && navOver;
 <header class="nav <%= over ? 'nav-over' : '' %>" data-nav>
   <div class="wrap nav-inner">
     <%# The lockup: wordmark, rule, product word, on one line and kept short. %>
-    <a class="brand" href="/" aria-label="Vesopa Cloud home">
-      <img class="brand-mark" src="/assets/img/brand/vesopa_logo.png" alt="Vesopa" width="160" height="23">
+    <a class="brand" href="/" aria-label="<%= t('Vesopa Cloud home') %>">
+      <img class="brand-mark" src="/assets/img/brand/vesopa_logo.png" alt="<%= t('Vesopa') %>" width="160" height="23">
       <%# The dark-background twin. Swapping the source with JavaScript would
           flash the wrong one on first paint, so both ship and CSS picks. %>
       <img class="brand-mark brand-mark-light" src="/assets/img/brand/vesopa_logo_on_dark.png" alt="" aria-hidden="true" width="160" height="23">
-      <span class="brand-sub">Hosting</span>
+      <span class="brand-sub"><%= t('Hosting') %></span>
     </a>
 
-    <nav class="nav-links" aria-label="Main">
+    <nav class="nav-links" aria-label="<%= t('Main') %>">
       <% navItems.forEach(function (item) { %>
         <a class="nav-link <%= isOn(item[0]) ? 'is-active' : '' %>" href="<%= item[0] %>"><%= item[2] %></a>
       <% }); %>
@@ -53,14 +55,47 @@ const over = typeof navOver !== 'undefined' && navOver;
           people wherever they were. The `to` parameter is what brings them back
           to this exact page instead of the homepage, and it is validated
           server-side before it is redirected to. %>
+      <%# The language switcher: the OTHER language, not a segmented control.
+
+          It was a two-segment toggle showing both languages, and it was
+          measured off the end of the screen. This bar was already full — in
+          English it wanted 1195px inside a 1180px wrap — so the 86px the
+          toggle added pushed "Get started" 36px past the right edge of a
+          1440px window. Showing only the language you are not reading costs
+          about half that, and says the same thing: the page you are on is
+          already in the language you are in.
+
+          It still loops, so a third language is a row in src/i18n's LOCALES
+          and nothing here — with three you get two links. Below 1400px even
+          this does not fit, and it comes out of the bar; the same choice is in
+          the currency menu beside it, in the phone sheet and in the footer, so
+          it is never the only way through.
+
+          `data-no-router` is load-bearing. The no-reload router swaps
+          body.innerHTML and leaves <head> and <html lang> alone, so a language
+          changed through it would keep the old lang attribute, never load the
+          Bangla font, and go on showing the old language's strings in anything
+          the browser's own scripts write. A language change is rare and a full
+          load is instant on a warm cache; correctness wins. %>
+      <% if (locales && locales.length > 1) { %>
+        <div class="lang-pick">
+          <% locales.filter(function (l) { return l.code !== locale; }).forEach(function (l) { %>
+            <a class="lang-opt" href="<%= langHref(l.code) %>" rel="nofollow" data-no-router
+               lang="<%= l.html %>" hreflang="<%= l.hreflang %>"
+               title="<%= l.native %>"
+               aria-label="<%= t('Read this page in {language}', { language: l.native }) %>"><%= l.short %></a>
+          <% }); %>
+        </div>
+      <% } %>
+
       <% if (currencies && currencies.length > 1) { %>
         <details class="cur-pick">
-          <summary aria-label="Change currency">
+          <summary aria-label="<%= t('Change currency') %>">
             <span class="cur-pick-code"><%= currency.code %></span>
             <span class="cur-pick-sym"><%= currency.symbol %></span>
           </summary>
           <div class="cur-pick-menu">
-            <p class="cur-pick-head">Show prices in</p>
+            <p class="cur-pick-head"><%= t('Show prices in') %></p>
             <% currencies.forEach(function (c) { %>
               <a class="cur-pick-item <%= c.code === currency.code ? 'is-active' : '' %>"
                  href="/currency/<%= c.code %>?to=<%= encodeURIComponent(currentUrl) %>"
@@ -72,34 +107,64 @@ const over = typeof navOver !== 'undefined' && navOver;
             <% }); %>
             <p class="cur-pick-foot">
               <% if (currencySource === 'geo') { %>
-                Picked from where you seem to be. Change it and we will remember.
+                <%= t('Picked from where you seem to be. Change it and we will remember.') %>
               <% } else { %>
-                We remember your choice on this device.
+                <%= t('We remember your choice on this device.') %>
               <% } %>
             </p>
+
+            <%# The language lives here too, and this is the copy that is
+                always reachable: the bar's own link comes out below 1400px,
+                where the row runs out of room, and this menu does not. The two
+                belong together anyway — currency and language are the same
+                question asked twice. %>
+            <% if (locales && locales.length > 1) { %>
+              <p class="cur-pick-head cur-pick-head-2"><%= t('Language') %></p>
+              <% locales.forEach(function (l) { %>
+                <a class="cur-pick-item <%= l.code === locale ? 'is-active' : '' %>"
+                   href="<%= langHref(l.code) %>" rel="nofollow" data-no-router
+                   lang="<%= l.html %>" hreflang="<%= l.hreflang %>">
+                  <span class="cur-pick-sym" aria-hidden="true"><%= l.short %></span>
+                  <span><b><%= l.native %></b></span>
+                  <% if (l.code === locale) { %><span class="cur-pick-tick">✓</span><% } %>
+                </a>
+              <% }); %>
+            <% } %>
           </div>
         </details>
       <% } %>
 
       <% if (customer) { %>
-        <a class="btn btn-ghost btn-sm" href="/panel">My account</a>
-        <a class="btn btn-sm" href="/panel/services">Dashboard</a>
+        <a class="btn btn-ghost btn-sm" href="/panel"><%= t('My account') %></a>
+        <a class="btn btn-sm" href="/panel/services"><%= t('Dashboard') %></a>
+      <% } else if (vesopaOnly && typeof vesopaSso !== 'undefined' && vesopaSso) { %>
+        <%# One way in. Signing in and opening an account are the same button,
+            so there is nothing to put a "Create account" beside it.
+
+            THE WORDS CHANGE FOR A STRANGER, THE DESTINATION DOES NOT. Somebody
+            who has never heard of Vesopa does not know what "Continue with
+            Vesopa" offers them, and on a shop's header that reads as a wall
+            rather than a way in. So the button a signed-OUT visitor sees says
+            what will happen; from the click onwards -- the Vesopa page itself
+            -- it is "Continue with Vesopa" exactly as before. (Owner, 2026-09-17.) %>
+        <%- include('./vesopa-button', { cls: 'btn btn-ghost btn-sm', label: t('Sign in or create account') }) %>
+        <a class="btn btn-sm" href="/hosting"><%= t('Get started') %></a>
       <% } else { %>
-        <a class="btn btn-ghost btn-sm" href="/login">Sign in</a>
+        <a class="btn btn-ghost btn-sm" href="/login"><%= t('Sign in') %></a>
         <%#
           Registration was reachable but linked from nowhere, so the only way to
           an account was to buy something first. Anyone may open one — that is
           how somebody moving a live site looks at the panel before committing.
         %>
-        <a class="btn btn-ghost btn-sm" href="/register">Create account</a>
-        <a class="btn btn-sm" href="/hosting">Get started</a>
+        <a class="btn btn-ghost btn-sm" href="/register"><%= t('Create account') %></a>
+        <a class="btn btn-sm" href="/hosting"><%= t('Get started') %></a>
       <% } %>
     </div>
 
     <%# The burger sits last in the source but first to the right in the layout,
         so tab order reaches the brand and the links before it. %>
     <button class="nav-toggle" type="button" data-nav-toggle
-            aria-label="Menu" aria-expanded="false" aria-controls="nav-sheet">
+            aria-label="<%= t('Menu') %>" aria-expanded="false" aria-controls="nav-sheet">
       <span class="nav-toggle-bars" aria-hidden="true"><i></i><i></i><i></i></span>
     </button>
   </div>
@@ -119,7 +184,7 @@ const over = typeof navOver !== 'undefined' && navOver;
     ===================================================================== %>
 <div class="nav-sheet" id="nav-sheet" data-nav-sheet hidden>
   <div class="nav-sheet-inner">
-    <nav class="nav-sheet-links" aria-label="Main">
+    <nav class="nav-sheet-links" aria-label="<%= t('Main') %>">
       <% navItems.forEach(function (item, i) { %>
         <a class="nav-sheet-link <%= isOn(item[0]) ? 'is-active' : '' %>"
            href="<%= item[0] %>" style="--i:<%= i %>">
@@ -134,9 +199,23 @@ const over = typeof navOver !== 'undefined' && navOver;
     </nav>
 
     <div class="nav-sheet-foot" style="--i:<%= navItems.length %>">
+      <%# The same two switches as the bar, laid out for a thumb. %>
+      <% if (locales && locales.length > 1) { %>
+        <div class="nav-sheet-cur">
+          <span class="nav-sheet-cur-label"><%= t('Language') %></span>
+          <div class="nav-sheet-cur-opts">
+            <% locales.forEach(function (l) { %>
+              <a class="nav-sheet-cur-opt <%= l.code === locale ? 'is-active' : '' %>"
+                 href="<%= langHref(l.code) %>" rel="nofollow" data-no-router
+                 lang="<%= l.html %>" hreflang="<%= l.hreflang %>"><%= l.native %></a>
+            <% }); %>
+          </div>
+        </div>
+      <% } %>
+
       <% if (currencies && currencies.length > 1) { %>
         <div class="nav-sheet-cur">
-          <span class="nav-sheet-cur-label">Prices in</span>
+          <span class="nav-sheet-cur-label"><%= t('Prices in') %></span>
           <div class="nav-sheet-cur-opts">
             <% currencies.forEach(function (c) { %>
               <a class="nav-sheet-cur-opt <%= c.code === currency.code ? 'is-active' : '' %>"
@@ -150,19 +229,23 @@ const over = typeof navOver !== 'undefined' && navOver;
 
       <div class="nav-sheet-cta">
         <% if (customer) { %>
-          <a class="btn btn-ghost btn-lg btn-block" href="/panel">My account</a>
-          <a class="btn btn-lg btn-block" href="/panel/services">Dashboard</a>
+          <a class="btn btn-ghost btn-lg btn-block" href="/panel"><%= t('My account') %></a>
+          <a class="btn btn-lg btn-block" href="/panel/services"><%= t('Dashboard') %></a>
+        <% } else if (vesopaOnly && typeof vesopaSso !== 'undefined' && vesopaSso) { %>
+          <%# Same wording as the bar above: see the note there. %>
+          <%- include('./vesopa-button', { cls: 'btn btn-ghost btn-lg btn-block', label: t('Sign in or create account') }) %>
+          <a class="btn btn-lg btn-block" href="/hosting"><%= t('Get started') %></a>
         <% } else { %>
-          <a class="btn btn-ghost btn-lg btn-block" href="/login">Sign in</a>
-          <a class="btn btn-ghost btn-lg btn-block" href="/register">Create account</a>
-          <a class="btn btn-lg btn-block" href="/hosting">Get started</a>
+          <a class="btn btn-ghost btn-lg btn-block" href="/login"><%= t('Sign in') %></a>
+          <a class="btn btn-ghost btn-lg btn-block" href="/register"><%= t('Create account') %></a>
+          <a class="btn btn-lg btn-block" href="/hosting"><%= t('Get started') %></a>
         <% } %>
       </div>
 
       <p class="nav-sheet-note">
         <%- icon('headset', 15) %>
         <a href="tel:<%= contact.phone_e164 %>"><%= contact.phone %></a>
-        · UK support, a person not a script
+        · <%= t('UK support, a person not a script') %>
       </p>
     </div>
   </div>

@@ -1,13 +1,20 @@
 <!doctype html>
-<html lang="en-GB">
+<html lang="<%= localeInfo.html %>" dir="<%= localeInfo.dir || 'ltr' %>">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
-  <title><%= typeof title !== 'undefined' && title ? title + ' — Vesopa Cloud' : 'Vesopa Cloud — UK domains, hosting and SSL' %></title>
-  <meta name="description" content="<%= typeof description !== 'undefined' && description ? description : 'Fast UK web hosting, domain names and free SSL from Vesopa. One clear control panel, no cPanel to learn, and support from people who answer.' %>">
+  <title><%= typeof title !== 'undefined' && title ? title + ' — Vesopa Cloud' : t('Vesopa Cloud — UK domains, hosting and SSL') %></title>
+  <meta name="description" content="<%= typeof description !== 'undefined' && description ? description : t('Fast UK web hosting, domain names and free SSL from Vesopa. One clear control panel, no cPanel to learn, and support from people who answer.') %>">
 
-  <link rel="canonical" href="<%= siteUrl %><%= typeof canonical !== 'undefined' ? canonical : (currentPath || '/') %>">
+  <link rel="canonical" href="<%= siteUrl %><%= localPath(typeof canonical !== 'undefined' ? canonical : (currentPath || '/')) %>">
+  <%# The same page in the other language, for search engines. Only public pages
+      have one (src/i18n isPublicPath), and a noindex page asks for nothing. %>
+  <% if ((typeof robots === 'undefined' || String(robots).indexOf('noindex') === -1) && alternates.length) { %>
+    <% alternates.forEach(function (alt) { %>
+  <link rel="alternate" hreflang="<%= alt.hreflang %>" href="<%= alt.href %>">
+    <% }); %>
+  <% } %>
   <meta name="theme-color" content="#111111">
   <meta name="robots" content="<%= typeof robots !== 'undefined' ? robots : 'index, follow' %>">
 
@@ -25,8 +32,8 @@
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Vesopa Cloud">
   <meta property="og:title" content="<%= typeof title !== 'undefined' && title ? title : 'Vesopa Cloud' %>">
-  <meta property="og:description" content="<%= typeof description !== 'undefined' && description ? description : 'Fast UK web hosting, domain names and free SSL from Vesopa.' %>">
-  <meta property="og:url" content="<%= siteUrl %><%= currentPath || '/' %>">
+  <meta property="og:description" content="<%= typeof description !== 'undefined' && description ? description : t('Fast UK web hosting, domain names and free SSL from Vesopa.') %>">
+  <meta property="og:url" content="<%= siteUrl %><%= localPath(currentPath || '/') %>">
   <%# 1200x630, because that is what `summary_large_image` means. It used to be
       the 512 square app icon, which every scraper either letterboxes into a
       grey slab or rejects outright for being under the minimum width — so a
@@ -37,8 +44,10 @@
   <meta property="og:image" content="<%= siteUrl %>/assets/img/brand/og.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="Vesopa Cloud — UK hosting, domains and email">
-  <meta property="og:locale" content="en_GB">
+  <meta property="og:image:alt" content="<%= t('Vesopa Cloud — UK hosting, domains and email') %>">
+  <meta property="og:locale" content="<%= localeInfo.og %>">
+  <% locales.forEach(function (l) { if (l.code !== locale) { %><meta property="og:locale:alternate" content="<%= l.og %>">
+  <% } }); %>
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:image" content="<%= siteUrl %>/assets/img/brand/og.png">
 
@@ -48,6 +57,51 @@
       admin opt out with `sections: false` rather than pay for it on every screen. %>
   <% if (typeof sections === 'undefined' || sections) { %><link rel="stylesheet" href="<%= asset('/assets/css/sections.css') %>"><% } %>
   <% if (typeof extraCss !== 'undefined') { %><link rel="stylesheet" href="<%= asset(extraCss) %>"><% } %>
+  <%# What this language needs and no other: its font, and the spacing its
+      script wants. Bangla is Noto Sans Bengali and bn.css; English is nothing
+      at all, and is not a byte heavier for the existence of either. Both come
+      off localeInfo (src/i18n LOCALES), so a language added there brings its
+      own stylesheet without touching this file. %>
+  <% (localeInfo.preload || []).forEach(function (p) { %>
+  <link rel="preload" href="<%= p.href %>" as="<%= p.as %>" type="<%= p.type %>" crossorigin>
+  <% }); %>
+  <% if (localeInfo.css) { %><link rel="stylesheet" href="<%= asset(localeInfo.css) %>"><% } %>
+  <%# Vesopa AI, the guide on the right of every page -- only when the server
+      has a key for it (res.locals.aiEnabled). The script comes with the
+      shared ones at the end of the body. %>
+  <% if (typeof aiEnabled !== 'undefined' && aiEnabled) { %><link rel="stylesheet" href="<%= asset('/assets/css/assistant.css') %>"><% } %>
+  <%#
+    The loading bar, before first paint.
+
+    loadbar.js is loaded at the end of the body, so on its own the Vesopa bar
+    could only ever describe a navigation that had already finished arriving —
+    it showed for a click and never for the page the click led to. On a slow
+    connection that is exactly backwards: the wait somebody notices is the
+    first one, and the only thing filling it was the browser's own bar, which
+    is the thing the owner asked to be rid of.
+
+    A few lines, inline, in the head, because that is the only place that runs
+    before first paint; the nonce is what the Content-Security-Policy admits it
+    on (src/server.js). It appends to <html> rather than <body>, which does not
+    exist yet. loadbar.js adopts it a moment later and finishes it on `load`.
+    Wrapped in try/catch: a page must not be taken down by its progress bar.
+  %>
+  <script nonce="<%= nonce %>">
+    try {
+      var vBar = document.createElement('div');
+      vBar.id = 'loadbar';
+      vBar.className = 'on';
+      vBar.setAttribute('aria-hidden', 'true');
+      vBar.style.width = '10%';
+      document.documentElement.appendChild(vBar);
+    } catch (e) {}
+  </script>
+  <%# The strings the page's own scripts show. i18n.js is tiny and always there,
+      so a script can call VT.t() in English too; the Bangla table only comes
+      with a Bangla page. Both before the body, so they exist before any script
+      that uses them. %>
+  <% if (locale !== 'en') { %><script src="<%= asset('/i18n/' + locale + '.js') %>"></script><% } %>
+  <script src="<%= asset('/assets/js/i18n.js') %>"></script>
 </head>
 <%# The active currency, for the handful of places a running total is worked
     out in the browser (the mailbox counter on the email pricing grid).
@@ -58,5 +112,9 @@
     when a 500-mailbox total runs past four figures. %>
 <body data-cur-symbol="<%= currency.symbol %>"
       data-cur-code="<%= currency.code %>"
-      data-cur-locale="<%= currency.locale %>"<% if (typeof bodyClass !== 'undefined') { %> class="<%= bodyClass %>"<% } %>>
-<a class="skip-link" href="#main">Skip to content</a>
+      data-cur-locale="<%= currency.locale %>"
+      data-ai="<%= (typeof aiEnabled !== 'undefined' && aiEnabled && (currentPath || '').indexOf('/admin') !== 0) ? '1' : '0' %>"<% if (typeof bodyClass !== 'undefined') { %> class="<%= bodyClass %>"<% } %><%#
+        A page whose script holds state the no-reload router would strand —
+        a websocket, a poller, its own history entries — is reached and left
+        by a real navigation. nav.js reads this and stands aside. %><% if (typeof nativeNav !== 'undefined' && nativeNav) { %> data-native-nav<% } %>>
+<a class="skip-link" href="#main"><%= t('Skip to content') %></a>

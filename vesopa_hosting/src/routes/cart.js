@@ -24,6 +24,7 @@ const payments = require('../payments');
 const {
   resolveTerm,
   termEarnsFreeDomain, tldQualifiesFree, TERMS, perMonth, FREE_DOMAIN_MAX_PENCE,
+  VESOPA_ONLY,
 } = require('../config');
 
 const router = express.Router();
@@ -112,6 +113,8 @@ function ctxOf(req) {
     couponCode: req.cookies?.vh_coupon || '',
     customer: req.customer || null,
     cur: req.currency,
+    // Where they appear to be, for a code that belongs to one country.
+    country: req.country || '',
   };
 }
 
@@ -122,7 +125,7 @@ function ctxOf(req) {
  * erroring — a plan retired between adding to the basket and checking out
  * should not produce a stack trace on a customer's screen.
  */
-async function priceCart(cart, { couponCode = '', customer = null, cur = null } = {}) {
+async function priceCart(cart, { couponCode = '', customer = null, cur = null, country = '' } = {}) {
   const active = cur || (await currency.base());
   const { plans, emailPlans, tldBy } = await pricing.load({ includeInactive: true, cur: active });
   const money = (minor) => currency.format(minor, active);
@@ -311,7 +314,7 @@ async function priceCart(cart, { couponCode = '', customer = null, cur = null } 
   let couponDiscount = 0;
   let couponError = '';
   if (couponCode) {
-    const verdict = await coupons.evaluate(couponCode, lines, gross0, customer, active);
+    const verdict = await coupons.evaluate(couponCode, lines, gross0, customer, active, country);
     if (verdict.ok) {
       coupon = verdict.coupon;
       couponDiscount = verdict.discount_pence;
@@ -482,7 +485,7 @@ router.get('/cart/add-domain', async (req, res, next) => {
   try {
     const { domain, sld, tld } = registrar.splitDomain(String(req.query.domain || ''));
     if (registrar.validateLabel(sld) || !tld) {
-      flash(res, 'That domain does not look right.', 'error');
+      flash(res, req.t('That domain does not look right.'), 'error');
       return res.redirect('/domains');
     }
     const price = await pricing.priceForTld(tld);
@@ -516,9 +519,9 @@ router.post('/cart/coupon', async (req, res, next) => {
 
     // Priced WITHOUT the code first, so the evaluation sees the basket the
     // coupon is being judged against rather than one it has already discounted.
-    const priced = await priceCart(req.cart, { customer: req.customer, cur: req.currency });
+    const priced = await priceCart(req.cart, { customer: req.customer, cur: req.currency, country: req.country || '' });
     const verdict = await coupons.evaluate(
-      code, priced.lines, priced.subtotal_pence, req.customer, req.currency,
+      code, priced.lines, priced.subtotal_pence, req.customer, req.currency, req.country || '',
     );
 
     if (!verdict.ok) {
@@ -548,7 +551,7 @@ router.post('/cart/coupon/remove', async (req, res, next) => {
   try {
     if (!auth.checkCsrf(req)) return res.redirect(backTo(req));
     writeCoupon(req, res, '');
-    await finishCart(req, res, { message: 'Discount code removed.' });
+    await finishCart(req, res, { message: req.t('Discount code removed.') });
   } catch (err) {
     next(err);
   }
@@ -560,7 +563,7 @@ router.post('/cart/remove', async (req, res, next) => {
     const index = Number(req.body.index);
     const cart = req.cart.filter((_, i) => i !== index);
     writeCart(req, res, cart);
-    await finishCart(req, res, { message: 'Removed from your basket.' });
+    await finishCart(req, res, { message: req.t('Removed from your basket.') });
   } catch (err) {
     next(err);
   }
@@ -701,7 +704,7 @@ function wantsFragment(req) {
 router.get('/cart', async (req, res, next) => {
   try {
     res.render('public/cart', {
-      title: 'Your basket',
+      title: req.t('Your basket'),
       robots: 'noindex',
       ...(await cartView(req)),
     });
@@ -723,7 +726,9 @@ router.get('/cart', async (req, res, next) => {
  * the next.
  */
 function paymentChoices(priced) {
-  const list = payments.gateways();
+  // checkoutGateways(), not gateways(): the admin and the renewal paths still
+  // see every adapter, a customer buying something sees only what is offered.
+  const list = payments.checkoutGateways();
   return {
     gateways: list,
     // A basket a coupon has taken to nothing skips the gateway entirely. There
@@ -757,7 +762,7 @@ router.get('/checkout', async (req, res, next) => {
     }
 
     res.render('public/checkout', {
-      title: 'Checkout',
+      title: req.t('Checkout'),
       robots: 'noindex',
       ...priced,
       geoCountry,
@@ -788,6 +793,19 @@ router.post('/checkout', async (req, res, next) => {
   try {
     const priced = await priceCart(req.cart, ctxOf(req));
     if (!priced.lines.length) return res.redirect('/cart');
+
+    /*
+     * A stranger at checkout continues with Vesopa first.
+     *
+     * With the Vesopa account as the only way in there is no password to set
+     * here, so there is no account this form can create. The page draws the
+     * button instead of the email and password fields; a POST that arrives
+     * without a session anyway — the fields have been removed from the page,
+     * so this is a script or a stale tab — goes to the same place.
+     */
+    if (!req.customer && VESOPA_ONLY) {
+      return res.redirect(303, `/auth/vesopa/start?next=${encodeURIComponent('/checkout')}`);
+    }
 
     const values = {
       email: field(req.body.email, 190).toLowerCase(),
@@ -904,7 +922,7 @@ router.post('/checkout', async (req, res, next) => {
 
     if (Object.keys(errors).length) {
       return res.status(400).render('public/checkout', {
-        title: 'Checkout',
+        title: req.t('Checkout'),
         robots: 'noindex',
         ...priced,
         // Whatever they picked is in `values`; no need to guess again.
@@ -1182,7 +1200,7 @@ router.post('/checkout', async (req, res, next) => {
      */
     if (err.code === 'COUPON_GONE') {
       writeCoupon(req, res, '');
-      flash(res, 'That discount code was fully redeemed while you were checking out. Your basket has been re-priced.', 'error');
+      flash(res, req.t('That discount code was fully redeemed while you were checking out. Your basket has been re-priced.'), 'error');
       return res.redirect('/cart');
     }
     next(err);
@@ -1202,4 +1220,31 @@ router.get('/order/complete/:id', (req, res) => {
   res.redirect(301, `/panel/setup/${req.params.id}`);
 });
 
+/**
+ * Build the basket an offer needs, in one step.
+ *
+ * Exported for the offers page's "Claim this offer" button (routes/pages.js).
+ * A bundle is a price for a SET, and the basket only reaches that price when
+ * both halves are in it; leaving a customer to work that out from the card's
+ * wording is how an advertised offer goes unclaimed. This remembers the code
+ * and adds the granted plan at the granted term, so the only thing left to do
+ * is choose the name — the one part only they can do.
+ *
+ * It grants nothing. The coupon is still evaluated on every basket price and
+ * again inside the checkout transaction, so an expired, country-locked or
+ * fully-redeemed code refuses here exactly as a typed one would.
+ */
+function startOffer(req, res, { code = '', planSlug = '', months = 0 } = {}) {
+  if (code) writeCoupon(req, res, code);
+  if (!planSlug || months <= 0) return;
+  const items = Array.isArray(req.cart) ? req.cart.slice() : [];
+  const already = items.some(
+    (i) => i.kind === 'hosting' && i.slug === planSlug && Number(i.term) === Number(months),
+  );
+  if (!already) items.unshift({ kind: 'hosting', slug: planSlug, term: Number(months) });
+  writeCart(req, res, items);
+}
+
 module.exports = router;
+module.exports.startOffer = startOffer;
+

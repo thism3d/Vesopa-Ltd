@@ -20,7 +20,7 @@
 %>
 <div class="p-card">
   <div class="row-between mb-2">
-    <h2 class="h3">Redirect</h2>
+    <h2 class="h3"><%= t('Redirect') %></h2>
     <% if (site && site.redirect) { %>
       <span class="badge badge-amber">On</span>
     <% } %>
@@ -57,7 +57,7 @@
     <form method="post" action="/panel/domains/<%= domain.id %>/redirect">
       <input type="hidden" name="_csrf" value="<%= csrf %>">
       <button class="btn btn-ghost btn-sm" name="action" value="clear" type="submit">
-        Turn it off and serve the website again
+        <%= t('Turn it off and serve the website again') %>
       </button>
     </form>
   <% } else { %>
@@ -71,45 +71,34 @@
       <input type="hidden" name="_csrf" value="<%= csrf %>">
 
       <div class="field mb-3">
-        <label class="label" for="rd-target">Send visitors to</label>
-        <input class="input mono" id="rd-target" name="target" placeholder="example.com"
+        <label class="label" for="rd-target"><%= t('Send visitors to') %></label>
+        <input class="input mono" id="rd-target" name="target" placeholder="<%= t('example.com') %>"
                autocomplete="off" spellcheck="false" required>
         <p class="hint">
-          A domain, or a domain and a page — <code>example.com</code> or
-          <code>example.com/welcome</code>. The <code>https://</code> is optional.
+          <%- th('A domain, or a domain and a page — <code>example.com</code> or <code>example.com/welcome</code>. The <code>https://</code> is optional.') %>
         </p>
       </div>
 
-      <p class="label mb-2">How permanent is this?</p>
+      <p class="label mb-2"><%= t('How permanent is this?') %></p>
       <div class="vers mb-3">
         <label class="ver">
           <input type="radio" name="code" value="301" required>
-          <span class="ver-n">Moved for good</span>
-          <span class="ver-t">
-            301. Search engines move your ranking across, and browsers remember it —
-            including if you change your mind. Right for a name you have left behind.
-          </span>
+          <%- th('<span class="ver-n">Moved for good</span> <span class="ver-t"> 301. Search engines move your ranking across, and browsers remember it — including if you change your mind. Right for a name you have left behind. </span>') %>
         </label>
         <label class="ver">
           <input type="radio" name="code" value="302">
-          <span class="ver-n">Just for now</span>
-          <span class="ver-t">
-            302. Nothing is cached and nothing is transferred, so you can change or
-            remove it at any time. Right while you are testing, or for a holding page.
-          </span>
+          <%- th('<span class="ver-n">Just for now</span> <span class="ver-t"> 302. Nothing is cached and nothing is transferred, so you can change or remove it at any time. Right while you are testing, or for a holding page. </span>') %>
         </label>
       </div>
 
       <div class="tip mb-3">
         <span class="tip-ic"></span>
         <div>
-          <b>Not sure? Choose "just for now".</b> You can always make it permanent later,
-          and a temporary redirect set by mistake is undone the moment you remove it —
-          a permanent one is not.
+          <%- th('<b>Not sure? Choose "just for now".</b> You can always make it permanent later, and a temporary redirect set by mistake is undone the moment you remove it — a permanent one is not.') %>
         </div>
       </div>
 
-      <button class="btn btn-sm" type="submit"><%- icon('arrow', 15) %> Set the redirect</button>
+      <button class="btn btn-sm" type="submit"><%- icon('arrow', 15) %> <%= t('Set the redirect') %></button>
     </form>
   <% } %>
 </div>

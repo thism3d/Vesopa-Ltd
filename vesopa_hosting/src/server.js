@@ -2,6 +2,7 @@ require('dotenv').config();
 
 const path = require('path');
 const http = require('node:http');
+const crypto = require('node:crypto');
 const express = require('express');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
@@ -13,6 +14,7 @@ const auth = require('./auth');
 const { icon } = require('./icons');
 const { asset } = require('./assets');
 const currencyContext = require('./currency-context');
+const i18n = require('./i18n');
 const geo = require('./geo');
 const registrar = require('./integrations/domainnameapi');
 const hestia = require('./integrations/hestia');
@@ -60,7 +62,11 @@ app.use(express.urlencoded({ extended: false, limit: '512kb' }));
  * per JSON request and it is the only way the signature check can be honest.
  */
 app.use(express.json({
-  limit: '512kb',
+  // 512 KB is plenty for every JSON body but one: a spoken turn to Vesopa AI
+  // carries a WAV clip (16 kHz mono, ~32 KB a second) as base64, and a
+  // fifteen-second sentence is 650 KB. /ai/turn is the only route that gets
+  // near it, and it checks the clip's own size again (config.AI).
+  limit: '2mb',
   verify: (req, _res, buf) => { req.rawBody = buf; },
 }));
 app.use(cookieParser());
@@ -77,11 +83,21 @@ app.use((req, res, next) => {
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
+  /*
+   * ONE inline script per page, and this is what lets it run.
+   *
+   * The loading bar has to be on screen before first paint, and the only
+   * place that runs before first paint is a script in the <head> — see
+   * partials/head.ejs. A nonce admits that one script and nothing else:
+   * `'unsafe-inline'` would admit an injected one too, and this origin holds
+   * a customer's hosting, mail and terminal.
+   */
+  res.locals.nonce = crypto.randomBytes(16).toString('base64');
   res.setHeader(
     'Content-Security-Policy',
     [
       "default-src 'self'",
-      "script-src 'self'",
+      `script-src 'self' 'nonce-${res.locals.nonce}'`,
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data:",
       "font-src 'self'",
@@ -144,11 +160,43 @@ app.use(
 );
 
 // ---------------------------------------------------------------------------
+// Language
+// ---------------------------------------------------------------------------
+// Before everything that reads req.path: it takes /bn off the front, so every
+// route below is written once and answers in both languages. See src/i18n.
+app.use(i18n.resolve);
+
+// ---------------------------------------------------------------------------
 // Locals every view can rely on
 // ---------------------------------------------------------------------------
 app.use(async (req, res, next) => {
+  /*
+   * A redirect, when the no-reload router is asking, is a 204 and a header.
+   *
+   * nav.js fetches links and posts forms itself so the browser never shows its
+   * own loading state. `fetch` follows a 303 silently, which leaves the router
+   * holding the destination's HTML with no idea what address it belongs to —
+   * so a route that redirects tells the router WHERE instead, and the router
+   * navigates there itself. Only the shape of the answer changes: every check
+   * and every write has already happened by the time a route calls redirect.
+   * A request without the header — every ordinary browser navigation, every
+   * gateway callback — gets the redirect it always got.
+   */
+  if (req.get('x-vesopa-nav') === '1') {
+    const sendRedirect = res.redirect.bind(res);
+    res.redirect = function navRedirect(statusOrUrl, maybeUrl) {
+      const url = typeof statusOrUrl === 'string' ? statusOrUrl : maybeUrl;
+      if (typeof url !== 'string') return sendRedirect(statusOrUrl, maybeUrl);
+      res.setHeader('X-Vesopa-Location', url);
+      return res.status(204).end();
+    };
+  }
+
   res.locals.siteUrl = config.SITE_URL;
   res.locals.mainSiteUrl = config.MAIN_SITE_URL;
+  // Whether the Vesopa account is the only way in — the sign-in page, the
+  // header and checkout all draw differently. See config.VESOPA_ONLY.
+  res.locals.vesopaOnly = config.VESOPA_ONLY;
   res.locals.contact = config.CONTACT;
   res.locals.brand = config.BRAND;
   res.locals.currentPath = req.path;
@@ -173,24 +221,57 @@ app.use(async (req, res, next) => {
    * Recent times are relative, because "4 minutes ago" is what somebody
    * watching a DNS check actually wants to know; older ones get a date.
    */
-  res.locals.when = (value, opts = {}) => {
-    if (!value) return opts.empty || '—';
-    const at = value instanceof Date ? value : new Date(value);
-    if (Number.isNaN(at.getTime())) return String(value);
-    const secs = Math.round((Date.now() - at.getTime()) / 1000);
-    if (!opts.dateOnly && secs >= 0 && secs < 60) return 'just now';
-    if (!opts.dateOnly && secs < 3600) {
-      const m = Math.round(secs / 60);
-      return `${m} minute${m === 1 ? '' : 's'} ago`;
+  res.locals.when = req.i18n.when;
+
+  /*
+   * TEXT THAT LIVES IN THE DATABASE, in the language being read.
+   *
+   * t() translates the furniture, because the English IS the key. It cannot
+   * touch a plan's name, its tagline, its badge, its feature list or an
+   * offer's headline: those are typed by an admin, they change without a
+   * deploy, and they are not keys. So `npm run i18n:check` reported the Bangla
+   * complete while the Bangla home page said "Starter", "One website, done
+   * properly." and seven English feature lines in the middle of a Bangla page.
+   *
+   * Each such column has a `_bn` twin. This picks it when the page is Bangla
+   * and there is something in it, and falls back to the English otherwise --
+   * falling back to the English rather than to nothing, because a plan named
+   * in the wrong language still sells and an unnamed one does not.
+   */
+  res.locals.dbT = (row, field) => {
+    if (!row) return '';
+    if (req.locale === 'bn') {
+      const alt = row[`${field}_bn`];
+      if (alt != null && String(alt).trim()) return alt;
     }
-    if (!opts.dateOnly && secs < 86400) {
-      const h = Math.round(secs / 3600);
-      return `${h} hour${h === 1 ? '' : 's'} ago`;
-    }
-    return at.toLocaleDateString('en-GB', {
-      day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Europe/London',
-    });
+    return row[field] == null ? '' : row[field];
   };
+
+  /*
+   * A billing term, said in the language being read.
+   *
+   * The labels in config.TERMS are English data ("1 year"), not translatable
+   * keys, so t(term.label) would be a lookup the extractor cannot see and
+   * nobody would ever translate. Built from the number of years instead: that
+   * is extractable, it takes the plural correctly, and it works for a term
+   * nobody has added yet. Shared from here because three pages print it and
+   * two copies of this would drift.
+   */
+  res.locals.termLabel = (term) => {
+    const months = Number(term && term.months) || 0;
+    if (months === 1) return res.locals.t('Monthly');
+    const years = Math.round(months / 12);
+    return res.locals.tn('{n} year', '{n} years', years, { n: res.locals.num(years) });
+  };
+
+  /** The same, for a column holding one item per line (a feature list). */
+  res.locals.dbList = (row, field) => String(res.locals.dbT(row, field) || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  // The page's own address in every language, for <link rel="alternate">.
+  res.locals.alternates = i18n.alternates(config.SITE_URL, req.path);
+  res.locals.localPath = (p) => i18n.localizePath(p, req.locale);
   // Every form that asks for a country renders from the same list.
   res.locals.countries = require('./countries');
   // Appends a deploy stamp to every asset URL. Without it the 7-day max-age
@@ -200,6 +281,8 @@ app.use(async (req, res, next) => {
   // currency middleware immediately below — they cannot be constants any more,
   // because what they mean depends on who is asking.
   res.locals.nameservers = config.NAMESERVERS;
+  // Whether the Vesopa AI widget is drawn (partials/head.ejs, footer.ejs).
+  res.locals.aiEnabled = Boolean(config.AI.API_KEY);
   res.locals.customer = null;
   res.locals.admin = null;
   res.locals.flash = null;
@@ -226,6 +309,28 @@ app.use(async (req, res, next) => {
   next();
 });
 
+// The remembered language on a public page's English address, and the switch.
+app.use(i18n.redirectRemembered);
+app.get('/lang/:code', i18n.switchTo);
+
+/*
+ * The strings the browser's own scripts show, as a script rather than inline:
+ * the Content-Security-Policy admits one inline script a page and this is not
+ * it, and as a file it is cached like every other asset.
+ */
+const CLIENT_I18N = Object.fromEntries(
+  Object.keys(i18n.LOCALES)
+    .filter((code) => code !== i18n.DEFAULT_LOCALE)
+    .map((code) => [code, `window.VESOPA_I18N=${JSON.stringify(i18n.clientPayload(code))};\n`]),
+);
+app.get('/i18n/:file', (req, res, next) => {
+  const code = String(req.params.file || '').replace(/\.js$/, '');
+  if (!CLIENT_I18N[code] || !req.params.file.endsWith('.js')) return next();
+  res.type('application/javascript');
+  res.set('Cache-Control', process.env.NODE_ENV === 'production' ? 'public, max-age=604800' : 'no-cache');
+  return res.send(CLIENT_I18N[code]);
+});
+
 /**
  * Which currency is this request in?
  *
@@ -236,6 +341,15 @@ app.use(async (req, res, next) => {
  */
 app.use(currencyContext.attach);
 app.get('/currency/:code', currencyContext.switchTo);
+
+/*
+ * A visitor in Bangladesh is served the Bangla site rather than offered it.
+ *
+ * Here and not beside i18n.resolve, because this needs req.country and that is
+ * the currency middleware's answer. Their own choice, if they have made one,
+ * outranks it -- see i18n.redirectByCountry.
+ */
+app.use(i18n.redirectByCountry);
 
 /** Attach the signed-in customer, if the cookie is valid and still current. */
 app.use(async (req, res, next) => {
@@ -273,6 +387,16 @@ app.use((req, res, next) => {
 // ---------------------------------------------------------------------------
 // Routes
 // ---------------------------------------------------------------------------
+/*
+ * Signing in with a Vesopa account — Phase 6, migration three.
+ *
+ * Mounted always, and BEFORE the sign-in page: its middleware is what tells
+ * the login view whether to draw the button (res.locals.vesopaSso). Mounted
+ * after auth-routes, the view rendered before the local was set and the
+ * button never appeared -- which is how cloud.vesopa.com sat without
+ * Continue with Vesopa while /auth/vesopa/enabled said true.
+ */
+app.use('/', require('./routes/vesopa-sso').router);
 app.use('/', require('./routes/pages'));
 app.use('/', require('./routes/domains'));
 app.use('/', require('./routes/legal'));
@@ -287,6 +411,16 @@ app.use('/', require('./routes/cart'));
  * customer-facing routes under here do their own signed-in check.
  */
 app.use('/', require('./routes/pay'));
+/*
+ * Vesopa AI -- the guide on every page. Only when a key is configured: with
+ * no key there is no widget (head.ejs reads res.locals.aiEnabled) and no
+ * route, so the panel is exactly what it was without it.
+ */
+if (require('./ai/bedrock').ENABLED) {
+  app.use('/ai', require('./routes/ai'));
+  // Vesopa Studio: build a website by talking (src/builder, routes/build.js).
+  app.use('/build', require('./routes/build'));
+}
 app.use('/panel', require('./routes/panel'));
 app.use('/admin', require('./routes/admin'));
 
@@ -295,13 +429,13 @@ app.use('/admin', require('./routes/admin'));
 // ---------------------------------------------------------------------------
 app.use((req, res) => {
   res.status(404);
-  if (req.path.startsWith('/api/')) return res.json({ error: 'Not found.' });
+  if (req.path.startsWith('/api/')) return res.json({ error: req.t('Not found.') });
   res.render('public/error', {
-    title: 'Page not found',
+    title: req.t('Page not found'),
     robots: 'noindex',
     code: 404,
-    heading: 'That page does not exist',
-    message: 'The link may be out of date, or the address mistyped.',
+    heading: req.t('That page does not exist'),
+    message: req.t('The link may be out of date, or the address mistyped.'),
   });
 });
 
@@ -309,14 +443,14 @@ app.use((err, req, res, _next) => {
   console.error('[error]', err.stack || err.message);
   res.status(err.status || 500);
   if (req.path.startsWith('/api/')) {
-    return res.json({ error: 'Something went wrong. Please try again.' });
+    return res.json({ error: i18n.translate(req.locale, 'Something went wrong. Please try again.') });
   }
   res.render('public/error', {
-    title: 'Something went wrong',
+    title: i18n.translate(req.locale, 'Something went wrong'),
     robots: 'noindex',
     code: 500,
-    heading: 'Something went wrong at our end',
-    message: 'The problem has been logged. Please try again, or contact support if it keeps happening.',
+    heading: i18n.translate(req.locale, 'Something went wrong at our end'),
+    message: i18n.translate(req.locale, 'The problem has been logged. Please try again, or contact support if it keeps happening.'),
   });
 });
 
@@ -426,6 +560,9 @@ app.use((err, req, res, _next) => {
    * middle of the boot log.
    */
   require('./jobs').start();
+  // Domain setups a previous process was running when it stopped are closed
+  // honestly rather than left spinning; the next sweep does the real work.
+  require('./domain-setup').sweepStale();
 
   /*
    * BIND TO LOOPBACK, NOT 0.0.0.0.

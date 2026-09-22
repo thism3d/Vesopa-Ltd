@@ -12,7 +12,7 @@
   detached process on the node writing to a file — which is said on the page,
   because otherwise everybody sits and watches.
 %>
-<%- include('../partials/head', { extraCss: '/assets/css/panel.css', sections: false }) %>
+<%- include('../partials/head', { nativeNav: true, extraCss: '/assets/css/panel.css', sections: false }) %>
 <link rel="stylesheet" href="<%= asset('/assets/css/apps.css') %>">
 <%- include('../partials/panel-shell', {
   pageTitle: app ? 'Installing ' + app.name : 'Installing',
@@ -22,14 +22,13 @@
 <%# The database, said once. It is in the app's own config already; this is a
     convenience copy for anybody who wants it in a password manager. %>
 <% if (flashData && flashData.database) { %>
-  <div class="p-card mb-3" style="border-color:var(--lime);box-shadow:var(--glow)">
+  <div class="p-card mb-3" style="border-color:var(--lime);box-shadow:var(--glow)" data-ai-private>
     <h2 class="h3 mb-1" style="display:flex;align-items:center;gap:9px">
       <span style="color:var(--lime-ink);display:grid;place-items:center"><%- icon('database', 20) %></span>
       Your database
     </h2>
     <p class="small muted mb-3">
-      Already written into the application's configuration — you do not need to type it
-      anywhere. Shown here once because we do not keep a copy.
+      <%= t("Already written into the application's configuration — you do not need to type it anywhere. Shown here once because we do not keep a copy.") %>
     </p>
     <div class="kv">
       <div class="kv-row"><span class="kv-k">Database</span><span class="kv-v mono"><%= flashData.database %></span></div>
@@ -39,11 +38,11 @@
         <span class="kv-v">
           <span class="copyable row" style="gap:8px">
             <span class="mono"><%= flashData.dbPassword %></span>
-            <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= flashData.dbPassword %>">Copy</button>
+            <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= flashData.dbPassword %>"><%= t('Copy') %></button>
           </span>
         </span>
       </div>
-      <div class="kv-row"><span class="kv-k">Host</span><span class="kv-v mono">127.0.0.1</span></div>
+      <div class="kv-row"><%- th('<span class="kv-k">Host</span><span class="kv-v mono">127.0.0.1</span>') %></div>
     </div>
   </div>
 <% } %>
@@ -88,14 +87,14 @@
         <a class="btn" href="https://<%= domain %>" target="_blank" rel="noopener"><%- icon('external', 16) %> Open <%= domain %></a>
       <% } %>
       <% if (app && app.kind === 'node') { %>
-        <a class="btn btn-ghost" href="/panel/apps/node"><%- icon('activity', 16) %> Node apps</a>
+        <a class="btn btn-ghost" href="/panel/apps/node"><%- icon('activity', 16) %> <%= t('Node apps') %></a>
       <% } %>
-      <a class="btn btn-ghost" href="/panel/apps">Install something else</a>
+      <a class="btn btn-ghost" href="/panel/apps"><%= t('Install something else') %></a>
     </div>
   <% } %>
 
   <details class="log-wrap" <%= job.state === 'failed' ? 'open' : '' %>>
-    <summary class="log-summary">Output</summary>
+    <summary class="log-summary"><%= t('Output') %></summary>
     <pre class="log" data-job-log><%= (job.log || []).join('\n') %></pre>
   </details>
 </div>

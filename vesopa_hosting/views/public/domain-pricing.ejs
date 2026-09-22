@@ -17,21 +17,20 @@
   <div class="hero-grid"></div>
   <div class="wrap hero-inner">
     <p class="kicker" data-reveal="0" style="justify-content:center">
-      <%= category ? category.label : 'Domain pricing' %>
+      <%= category ? category.label : t('Domain pricing') %>
     </p>
     <h1 class="display dcat-h1" data-reveal="60">
       <% if (category) { %>
-        <%= category.label %> domains<br><span class="hl"><%= total %> extensions</span>
+        <%- th('{category} domains<br><span class="hl">{v} extensions</span>', { category: category.label, v: num(total) }) %>
       <% } else { %>
-        Every extension we sell<br><span class="hl">and what it renews at</span>
+        <%- th('Every extension we sell<br><span class="hl">and what it renews at</span>') %>
       <% } %>
     </h1>
     <p class="lede hero-lede" data-reveal="100">
       <% if (category) { %>
         <%= category.blurb %>
       <% } else { %>
-        All <%= total %> of them, with the renewal price next to the first year —
-        because the second year is the one that surprises people.
+        <%= t('All {v} of them, with the renewal price next to the first year — because the second year is the one that surprises people.', { v: num(total) }) %>
       <% } %>
     </p>
 
@@ -40,13 +39,12 @@
         <div class="dsearch-form">
           <input class="dsearch-input" type="text" name="q" autocomplete="off" spellcheck="false"
                  data-name-input maxlength="63"
-                 placeholder="Type your name — then check it against any extension below"
-                 aria-label="The domain name you want to check">
-          <button class="btn btn-lg" type="submit"><%- icon('search', 19) %><span class="hide-sm">Search</span></button>
+                 placeholder="<%= t('Type your name — then check it against any extension below') %>"
+                 aria-label="<%= t('The domain name you want to check') %>">
+          <button class="btn btn-lg" type="submit"><%- icon('search', 19) %><span class="hide-sm"><%= t('Search') %></span></button>
         </div>
         <p class="dcat-name-hint">
-          Just the name, no extension — <b data-name-echo>yourname</b> is checked against
-          whichever one you press <em>Check</em> on.
+          <%- th('Just the name, no extension — <b data-name-echo>yourname</b> is checked against whichever one you press <em>Check</em> on.') %>
         </p>
       </form>
     </div>
@@ -64,23 +62,23 @@
       <div class="dcat-find">
         <%- icon('search', 17) %>
         <input type="search" class="dcat-find-input" data-filter="q" value="<%= filters.q %>"
-               placeholder="Filter extensions — try shop, uk, io" aria-label="Filter the extension list">
+               placeholder="<%= t('Filter extensions — try shop, uk, io') %>" aria-label="<%= t('Filter the extension list') %>">
       </div>
 
-      <div class="dcat-bands" role="group" aria-label="Maximum first-year price">
+      <div class="dcat-bands" role="group" aria-label="<%= t('Maximum first-year price') %>">
         <% bands.forEach(function (b) { %>
           <button type="button" class="dcat-chip <%= filters.band === b.slug ? 'is-on' : '' %>"
                   data-filter="band" data-value="<%= b.slug %>"><%= b.label %></button>
         <% }); %>
         <button type="button" class="dcat-chip <%= filters.featuredOnly ? 'is-on' : '' %>"
-                data-filter="popular" data-value="1"><%- icon('star', 14) %> Popular</button>
+                data-filter="popular" data-value="1"><%- icon('star', 14) %> <%= t('Popular') %></button>
         <button type="button" class="dcat-chip <%= filters.promoOnly ? 'is-on' : '' %>"
-                data-filter="promo" data-value="1"><%- icon('tag', 14) %> First-year deals</button>
+                data-filter="promo" data-value="1"><%- icon('tag', 14) %> <%= t('First-year deals') %></button>
       </div>
 
       <label class="dcat-sort">
-        <span class="sr-only">Sort by</span>
-        <select data-filter="sort" aria-label="Sort the extension list">
+        <span class="sr-only"><%= t('Sort by') %></span>
+        <select data-filter="sort" aria-label="<%= t('Sort the extension list') %>">
           <% sorts.forEach(function (s) { %>
             <option value="<%= s.slug %>" <%= filters.sort === s.slug ? 'selected' : '' %>><%= s.label %></option>
           <% }); %>
@@ -92,7 +90,7 @@
     <%# The shelves. A horizontal scroller rather than a wrapped block: nineteen
         categories wrapped to four rows push the actual results below the fold
         on a laptop, which is the content the page is for. %>
-    <div class="dcat-cats" role="group" aria-label="Category">
+    <div class="dcat-cats" role="group" aria-label="<%= t('Category') %>">
       <a class="dcat-cat <%= !filters.category ? 'is-on' : '' %>" href="/domains/pricing">
         All<span class="dcat-cat-n"><%= categoryCounts.reduce(function (s, c) { return s + c.count; }, 0) %></span>
       </a>
@@ -109,11 +107,21 @@
   <div class="wrap">
     <div class="dcat-meta">
       <p class="dcat-count" data-catalogue-count aria-live="polite">
-        <b><%= total %></b> extension<%= total === 1 ? '' : 's' %><%= filters.q ? ` matching “${filters.q}”` : '' %>
-        <% if (cheapest) { %> · from <b><%= cheapest.register_display %></b> a year<% } %>
+        <%# One sentence per case rather than fragments glued together: in
+            Bangla the price does not sit where it sits in English, and a
+            sentence assembled from pieces cannot be reordered by a translator. %>
+        <% if (filters.q && cheapest) { %>
+          <%- th('<b>{n}</b> extensions matching “{q}” · from <b>{price}</b> a year', { n: num(total), q: filters.q, price: cheapest.register_display }) %>
+        <% } else if (filters.q) { %>
+          <%- th('<b>{n}</b> extensions matching “{q}”', { n: num(total), q: filters.q }) %>
+        <% } else if (cheapest) { %>
+          <%- th('<b>{n}</b> extensions · from <b>{price}</b> a year', { n: num(total), price: cheapest.register_display }) %>
+        <% } else { %>
+          <%- th('<b>{n}</b> extensions', { n: num(total) }) %>
+        <% } %>
       </p>
       <% if (filters.category || filters.band || filters.q || filters.promoOnly || filters.featuredOnly) { %>
-        <a class="dcat-clear" href="/domains/pricing" data-clear-filters>Clear filters</a>
+        <a class="dcat-clear" href="/domains/pricing" data-clear-filters><%= t('Clear filters') %></a>
       <% } %>
     </div>
 
@@ -127,8 +135,8 @@
     <% if (!total) { %>
       <div class="empty">
         <%- icon('search', 46) %>
-        <h3>Nothing matches that</h3>
-        <p>Try a shorter word, a higher price, or <a href="/domains/pricing">clear the filters</a>.</p>
+        <h3><%= t('Nothing matches that') %></h3>
+        <p><%- th('Try a shorter word, a higher price, or <a href="/domains/pricing">clear the filters</a>.') %></p>
       </div>
     <% } %>
 
@@ -142,7 +150,7 @@
     <div class="dcat-more" data-catalogue-more <%= hasMore ? '' : 'hidden' %>>
       <div class="dcat-sentinel" data-catalogue-sentinel aria-hidden="true"></div>
       <button type="button" class="btn btn-ghost" data-catalogue-load>
-        Show more extensions
+        <%= t('Show more extensions') %>
       </button>
       <p class="dcat-progress" data-catalogue-progress>
         Showing <b><%= rows.length %></b> of <%= total %>
@@ -151,7 +159,7 @@
 
     <div class="dcat-end" data-catalogue-end <%= hasMore ? 'hidden' : '' %>>
       <%- icon('check-circle', 18) %>
-      <span>That is all <b><%= total %></b> of them.</span>
+      <span><%- th('That is all <b>{v}</b> of them.', { v: num(total) }) %></span>
     </div>
   </div>
 </section>
@@ -164,8 +172,8 @@
 <section class="section section-tint">
   <div class="wrap">
     <div class="center mb-4">
-      <p class="kicker" data-reveal="0" style="justify-content:center">Browse by what you do</p>
-      <h2 class="h1 mt-2" data-reveal="60">Pick a shelf</h2>
+      <p class="kicker" data-reveal="0" style="justify-content:center"><%= t('Browse by what you do') %></p>
+      <h2 class="h1 mt-2" data-reveal="60"><%= t('Pick a shelf') %></h2>
     </div>
     <div class="dcat-shelves">
       <% categoryCounts.forEach(function (c, i) { %>
@@ -173,7 +181,9 @@
           <span class="dcat-shelf-icon"><%- icon(c.icon, 20) %></span>
           <span class="dcat-shelf-body">
             <b><%= c.label %></b>
-            <span class="small muted"><%= c.count %> extensions<%= c.from_display ? ` · from ${c.from_display}` : '' %></span>
+            <span class="small muted"><%= c.from_display
+                  ? t('{n} extensions · from {price} a year', { n: num(c.count), price: c.from_display })
+                  : tn('{n} extension', '{n} extensions', c.count, { n: num(c.count) }) %></span>
           </span>
           <%- icon('arrow', 16) %>
         </a>
@@ -187,22 +197,17 @@
     <div class="alert alert-info" data-reveal="0">
       <%- icon('info', 19) %>
       <div>
-        <b>About the first-year deals.</b> On some extensions the registry itself
-        sells a heavily discounted first year to drive adoption, then charges the
-        standard rate from year two — .online, .shop, .store, .site and .tech are
-        the obvious ones. That is the registry's pricing, not a markup of ours,
-        and it is why both figures are on every card here rather than only on the
-        renewal notice. Filter by <b>First-year deals</b> to see every extension
-        that does it.
+        <%- th("<b>About the first-year deals.</b> On some extensions the registry itself sells a heavily discounted first year to drive adoption, then charges the standard rate from year two — .online, .shop, .store, .site and .tech are the obvious ones. That is the registry's pricing, not a markup of ours, and it is why both figures are on every card here rather than only on the renewal notice. Filter by <b>First-year deals</b> to see every extension that does it.") %>
       </div>
     </div>
 
     <p class="small muted mt-3">
-      All prices are per year and
-      <% if (showVat) { %>include <%= vatLabel %> at <%= vatPercent %>%<% } else { %>are shown in <%= currency.code %><% } %>.
-      Register and transfer prices are for the first year; renewal is what you pay
-      every year after that. Prices are reviewed when the registries change theirs,
-      and we email before we take a renewal.
+      <% if (showVat) { %>
+        <%= t('All prices are per year and include {label} at {v}%.', { label: vatLabel, v: num(vatPercent) }) %>
+      <% } else { %>
+        <%= t('All prices are per year and are shown in {code}.', { code: currency.code }) %>
+      <% } %>
+      <%= t('Register and transfer prices are for the first year; renewal is what you pay every year after that. Prices are reviewed when the registries change theirs, and we email before we take a renewal.') %>
     </p>
   </div>
 </section>

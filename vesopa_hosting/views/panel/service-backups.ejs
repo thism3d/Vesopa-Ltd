@@ -34,28 +34,27 @@
 <% if (!hestiaLive) { %>
   <div class="alert alert-info">
     <%- icon('info', 19) %>
-    <div><b>Demonstration mode.</b> This panel is not connected to a live hosting node, so no backups are listed.</div>
+    <div><%- th('<b>Demonstration mode.</b> This panel is not connected to a live hosting node, so no backups are listed.') %></div>
   </div>
 <% } %>
 
 <div class="row-between mb-3" style="align-items:flex-end;gap:12px;flex-wrap:wrap">
   <div>
-    <h2 class="h3 mb-1">Backups</h2>
+    <h2 class="h3 mb-1"><%= t('Backups') %></h2>
     <p class="small muted mb-0">
-      Taken automatically every night and kept for 30 days. Take one yourself before
-      any change you would not want to undo by hand.
+      <%= t('Taken automatically every night and kept for 30 days. Take one yourself before any change you would not want to undo by hand.') %>
     </p>
   </div>
   <form method="post" action="/panel/services/<%= service.id %>/backups" data-guard>
     <input type="hidden" name="_csrf" value="<%= csrf %>">
-    <button class="btn btn-sm" type="submit" data-busy="Starting…"><%- icon('backup', 15) %> Back up now</button>
+    <button class="btn btn-sm" type="submit" data-busy="Starting…"><%- icon('backup', 15) %> <%= t('Back up now') %></button>
   </form>
 </div>
 
 <% if (!items.length) { %>
   <div class="empty">
     <%- icon(pageIcon, 46) %>
-    <h3>Nothing here yet</h3>
+    <h3><%= t('Nothing here yet') %></h3>
     <p>
       <% if (service.status !== 'active') { %>
         This account is not live yet, so there is nothing to back up.
@@ -105,7 +104,7 @@
 
         <div class="appcard-acts">
           <a class="btn btn-sm" href="/panel/services/<%= service.id %>/backups/<%= encodeURIComponent(it.name) %>/download">
-            <%- icon('download', 15) %> Download
+            <%- icon('download', 15) %> <%= t('Download') %>
           </a>
 
           <%# ---- Restore: folded, sectioned, and typed to confirm ---- %>
@@ -130,7 +129,7 @@
               <form method="post" action="/panel/services/<%= service.id %>/backups/<%= encodeURIComponent(it.name) %>/restore">
                 <input type="hidden" name="_csrf" value="<%= csrf %>">
 
-                <p class="label mb-2">What to put back</p>
+                <p class="label mb-2"><%= t('What to put back') %></p>
                 <div class="mb-3">
                   <% has.forEach(function (sec) { %>
                     <label class="check mb-2">
@@ -152,31 +151,28 @@
                   <input class="input mono" id="confirm-<%= it.name %>" name="confirm"
                          autocomplete="off" spellcheck="false" placeholder="<%= it.name %>" required>
                   <p class="hint">
-                    Typed rather than ticked, because every other button on this page is
-                    harmless and this one is not.
+                    <%= t('Typed rather than ticked, because every other button on this page is harmless and this one is not.') %>
                   </p>
                 </div>
 
                 <button class="btn btn-sm" type="submit" style="background:var(--red);color:#fff">
-                  <%- icon('refresh', 15) %> Restore
+                  <%- icon('refresh', 15) %> <%= t('Restore') %>
                 </button>
                 <p class="tiny muted mt-2 mb-0">
-                  Runs on the server and takes a few minutes. Your site may be inconsistent
-                  while it does.
+                  <%= t('Runs on the server and takes a few minutes. Your site may be inconsistent while it does.') %>
                 </p>
               </form>
 
               <hr style="border:0;border-top:1px solid var(--rule-soft);margin:18px 0">
 
               <details class="inline-danger">
-                <summary class="btn btn-ghost btn-sm" style="color:var(--red)"><%- icon('trash', 14) %> Delete this backup</summary>
+                <summary class="btn btn-ghost btn-sm" style="color:var(--red)"><%- icon('trash', 14) %> <%= t('Delete this backup') %></summary>
                 <form method="post" action="/panel/services/<%= service.id %>/backups/<%= encodeURIComponent(it.name) %>/delete" class="inline-danger-body">
                   <input type="hidden" name="_csrf" value="<%= csrf %>">
                   <p class="small mb-2">
-                    Removes the archive from the server. Download it first if you want to
-                    keep it — this cannot be undone.
+                    <%= t('Removes the archive from the server. Download it first if you want to keep it — this cannot be undone.') %>
                   </p>
-                  <button class="btn btn-sm" type="submit" style="background:var(--red);color:#fff">Delete permanently</button>
+                  <button class="btn btn-sm" type="submit" style="background:var(--red);color:#fff"><%= t('Delete permanently') %></button>
                 </form>
               </details>
             </div>
@@ -189,9 +185,7 @@
   <div class="tip mt-3">
     <span class="tip-ic"></span>
     <div>
-      <b>Downloads are the whole account</b> — every website, database and mailbox in one
-      <code>.tar</code>. Keep one somewhere that is not this server; a backup that only
-      exists on the machine it is backing up is not a backup.
+      <%- th('<b>Downloads are the whole account</b> — every website, database and mailbox in one <code>.tar</code>. Keep one somewhere that is not this server; a backup that only exists on the machine it is backing up is not a backup.') %>
     </div>
   </div>
 <% } %>

@@ -36,6 +36,7 @@
     ['/panel/mail',     'mail',   'Email'],
   ];
   const railExtra = [
+    ['/build',          'wand',     'Site builder'],
     ['/panel/files',    'folder',   'Files'],
     ['/panel/terminal', 'code',     'Terminal'],
     ['/panel/billing',  'card',     'Billing'],
@@ -55,7 +56,7 @@
       <span class="rail-v"><%- include('./brand', { on: 'dark', size: 22, mark: true }) %></span>
     </a>
 
-    <nav class="rail-nav" aria-label="Panel">
+    <nav class="rail-nav" aria-label="<%= t('Panel') %>">
       <% railPrimary.forEach(function (item) { %>
         <a class="rail-link <%= railActive(item[0]) ? 'is-active' : '' %>" href="<%= item[0] %>">
           <span class="rail-icon"><%- icon(item[1], 19) %></span>

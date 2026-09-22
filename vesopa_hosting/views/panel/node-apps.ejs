@@ -15,7 +15,7 @@
   It refreshes itself every few seconds, because a page about whether something
   is up is worthless the moment it is stale.
 %>
-<%- include('../partials/head', { extraCss: '/assets/css/panel.css', sections: false }) %>
+<%- include('../partials/head', { nativeNav: true, extraCss: '/assets/css/panel.css', sections: false }) %>
 <link rel="stylesheet" href="<%= asset('/assets/css/apps.css') %>">
 <%- include('../partials/panel-shell', {
   pageTitle: 'Node.js apps',
@@ -26,23 +26,22 @@
 <% if (mock) { %>
   <div class="alert alert-info">
     <%- icon('info', 19) %>
-    <div><b>Demonstration mode.</b> These are example processes — this panel is not connected to a live node.</div>
+    <div><%- th('<b>Demonstration mode.</b> These are example processes — this panel is not connected to a live node.') %></div>
   </div>
 <% } %>
 
 <% if (!hasHosting) { %>
   <div class="empty">
-    <p class="mb-3">You need hosting before you can run an app on it.</p>
-    <a class="btn" href="/hosting">See the plans</a>
+    <p class="mb-3"><%= t('You need hosting before you can run an app on it.') %></p>
+    <a class="btn" href="/hosting"><%= t('See the plans') %></a>
   </div>
 <% } else if (!apps.length) { %>
   <div class="empty">
-    <p class="mb-2"><b>Nothing running yet.</b></p>
+    <p class="mb-2"><b><%= t('Nothing running yet.') %></b></p>
     <p class="mb-3">
-      Install a Node app on one of your sites and it appears here — with a process that
-      restarts it if it falls over and brings it back after a reboot.
+      <%= t('Install a Node app on one of your sites and it appears here — with a process that restarts it if it falls over and brings it back after a reboot.') %>
     </p>
-    <a class="btn" href="/panel/apps/install/node-starter"><%- icon('rocket', 16) %> Start an app</a>
+    <a class="btn" href="/panel/apps/install/node-starter"><%- icon('rocket', 16) %> <%= t('Start an app') %></a>
   </div>
 <% } else { %>
 
@@ -72,19 +71,19 @@
 
         <div class="appcard-acts">
           <a class="btn btn-ghost btn-sm" href="/panel/apps/node/<%= encodeURIComponent(a.name) %>">
-            <%- icon('list', 15) %> Logs &amp; settings
+            <%- icon('list', 15) %> <%= t('Logs &amp; settings') %>
           </a>
           <form method="post" action="/panel/apps/node/<%= encodeURIComponent(a.name) %>/action" class="row" style="gap:8px">
             <input type="hidden" name="_csrf" value="<%= csrf %>">
             <% if (a.status === 'stopped') { %>
-              <button class="btn btn-sm" name="action" value="start" type="submit"><%- icon('play', 15) %> Start</button>
+              <button class="btn btn-sm" name="action" value="start" type="submit"><%- icon('play', 15) %> <%= t('Start') %></button>
             <% } else { %>
-              <button class="btn btn-ghost btn-sm" name="action" value="restart" type="submit"><%- icon('refresh', 15) %> Restart</button>
-              <button class="btn btn-ghost btn-sm" name="action" value="stop" type="submit"><%- icon('power', 15) %> Stop</button>
+              <button class="btn btn-ghost btn-sm" name="action" value="restart" type="submit"><%- icon('refresh', 15) %> <%= t('Restart') %></button>
+              <button class="btn btn-ghost btn-sm" name="action" value="stop" type="submit"><%- icon('power', 15) %> <%= t('Stop') %></button>
             <% } %>
           </form>
           <% if (a.domain) { %>
-            <a class="btn btn-ghost btn-sm" href="https://<%= a.domain %>" target="_blank" rel="noopener"><%- icon('external', 15) %> Open</a>
+            <a class="btn btn-ghost btn-sm" href="https://<%= a.domain %>" target="_blank" rel="noopener"><%- icon('external', 15) %> <%= t('Open') %></a>
           <% } %>
         </div>
       </div>
@@ -92,8 +91,7 @@
   </div>
 
   <p class="tiny muted mt-3 mb-0" data-node-refreshed>
-    Checked just now. This page re-checks every few seconds — each check is a real HTTP
-    request to your app, not a guess from the process list.
+    <%= t('Checked just now. This page re-checks every few seconds — each check is a real HTTP request to your app, not a guess from the process list.') %>
   </p>
 <% } %>
 

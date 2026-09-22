@@ -1,7 +1,7 @@
 <%# The order summary. Re-rendered as a fragment alongside cart-main whenever
     the basket changes — the two always move together, because a line price
     that updated without its total would be worse than a page reload. %>
-<h2 class="h3 mb-3">Order summary</h2>
+<h2 class="h3 mb-3"><%= t('Order summary') %></h2>
 
 <% lines.forEach(function (line) { %>
   <div class="sum-row">
@@ -38,7 +38,7 @@
   <div class="sum-row sum-row-vat">
     <span>
       <%= vatLabel %> (<%= vatPercent %>%)
-      <span class="vat-tag">we pay this</span>
+      <span class="vat-tag"><%= t('we pay this') %></span>
     </span>
     <span class="sum-val muted"><%= money(vat_pence) %></span>
   </div>
@@ -53,16 +53,14 @@
 </div>
 
 <% if (saved_total_pence > 0) { %>
-  <p class="sum-saved"><%- icon('check-circle', 15) %> You are saving <b><%= money(saved_total_pence) %></b></p>
+  <p class="sum-saved"><%- icon('check-circle', 15) %> <%- th('You are saving <b>{v}</b>', { v: money(saved_total_pence) }) %></p>
 <% } %>
 
 <p class="tiny muted mt-2 mb-0">
   <% if (showVat) { %>
-    Nothing is added at checkout. <%= vatLabel %> is included in the
-    price above and accounted for by us.
+    <%= t('Nothing is added at checkout. {label} is included in the price above and accounted for by us.', { label: vatLabel }) %>
   <% } else { %>
-    Nothing is added at checkout. Prices are in <%= currency.code %>
-    (<%= currency.name %>) and are the full amount.
+    <%= t('Nothing is added at checkout. Prices are in {code} ({name}) and are the full amount.', { code: currency.code, name: currency.name }) %>
   <% } %>
 </p>
 
@@ -93,23 +91,23 @@
       <span class="coupon-applied-ico"><%- icon('check', 16) %></span>
       <span class="coupon-applied-txt">
         <b><%= couponCode %></b>
-        <span><% if (couponDiscount_pence > 0) { %>You saved <%= money(couponDiscount_pence) %><% } else { %>Discount applied<% } %></span>
+        <span><% if (couponDiscount_pence > 0) { %><%= t('You saved {v}', { v: money(couponDiscount_pence) }) %><% } else { %><%= t('Discount applied') %><% } %></span>
       </span>
-      <button class="coupon-remove" type="submit" aria-label="Remove discount code <%= couponCode %>">Remove</button>
+      <button class="coupon-remove" type="submit" aria-label="Remove discount code <%= couponCode %>"><%= t('Remove') %></button>
     </form>
   <% } else { %>
     <details class="coupon-box"<%= couponError ? ' open' : '' %>>
       <summary class="coupon-toggle">
         <span class="coupon-toggle-ico"><%- icon('tag', 17) %></span>
-        <span class="coupon-toggle-txt">Have a discount code?</span>
-        <span class="coupon-toggle-cta">Enter code</span>
+        <span class="coupon-toggle-txt"><%= t('Have a discount code?') %></span>
+        <span class="coupon-toggle-cta"><%= t('Enter code') %></span>
       </summary>
       <form method="post" action="/cart/coupon" class="coupon-form" data-cart-form>
         <input type="hidden" name="_csrf" value="<%= csrf %>">
-        <input class="input coupon-input" name="code" placeholder="e.g. WELCOME10"
+        <input class="input coupon-input" name="code" placeholder="<%= t('e.g. WELCOME10') %>"
                autocomplete="off" spellcheck="false" autocapitalize="characters"
-               aria-label="Discount code">
-        <button class="btn coupon-apply" type="submit">Apply</button>
+               aria-label="<%= t('Discount code') %>">
+        <button class="btn coupon-apply" type="submit"><%= t('Apply') %></button>
       </form>
       <% if (couponError) { %><p class="error-text mb-0 mt-2"><%= couponError %></p><% } %>
     </details>
@@ -117,12 +115,12 @@
 </div>
 
 <a class="btn btn-lg btn-block mt-3" href="/checkout">
-  Continue to payment <%- icon('arrow', 18) %>
+  <%= t('Continue to payment') %> <%- icon('arrow', 18) %>
 </a>
 
 <%# --- Reassurance, where the decision is actually made ----------------- %>
 <ul class="cart-trust">
-  <li><%- icon('shield', 15) %><span><%= moneyBackDays %>-day money-back guarantee</span></li>
-  <li><%- icon('lock', 15) %><span>Free SSL, issued automatically</span></li>
-  <li><%- icon('headset', 15) %><span>UK support — a person, not a script</span></li>
+  <li><%- icon('shield', 15) %><span><%= t('{n}-day money-back guarantee', { n: num(moneyBackDays) }) %></span></li>
+  <li><%- icon('lock', 15) %><span><%= t('Free SSL, issued automatically') %></span></li>
+  <li><%- icon('headset', 15) %><span><%= t('UK support — a person, not a script') %></span></li>
 </ul>

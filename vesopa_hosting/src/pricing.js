@@ -148,7 +148,11 @@ function decoratePlan(row, cur) {
     const total = Number(row[t.column]) || 0;
     price[t.months] = total;
     perMonthPence[t.months] = perMonth(total, t.months);
-    perMonthParts[t.months] = currency.parts(perMonthPence[t.months], cur);
+    // NOT localised here. This layer is cached per currency, not per language,
+    // so a figure formatted at cache time carries whichever language warmed it
+    // into every later request. The views call moneyParts(), which knows the
+    // language of the page being rendered.
+    perMonthParts[t.months] = currency.parts(perMonthPence[t.months], cur, 'en');
     saving[t.months] = savingPercent(row.monthly_pence, total, t.months);
   });
 
@@ -185,7 +189,11 @@ function decorateEmailPlan(row, cur) {
     const total = Number(row[t.column]) || 0;
     price[t.months] = total;
     perMonthPence[t.months] = perMonth(total, t.months);
-    perMonthParts[t.months] = currency.parts(perMonthPence[t.months], cur);
+    // NOT localised here. This layer is cached per currency, not per language,
+    // so a figure formatted at cache time carries whichever language warmed it
+    // into every later request. The views call moneyParts(), which knows the
+    // language of the page being rendered.
+    perMonthParts[t.months] = currency.parts(perMonthPence[t.months], cur, 'en');
     saving[t.months] = savingPercent(row.monthly_pence, total, t.months);
   });
 

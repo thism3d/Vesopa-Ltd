@@ -11,7 +11,7 @@
   rather than a sentence, and the copy says exactly where the old files go so
   that somebody who does it anyway knows they are recoverable.
 %>
-<%- include('../partials/head', { extraCss: '/assets/css/panel.css', sections: false }) %>
+<%- include('../partials/head', { nativeNav: true, extraCss: '/assets/css/panel.css', sections: false }) %>
 <link rel="stylesheet" href="<%= asset('/assets/css/apps.css') %>">
 <%- include('../partials/panel-shell', {
   pageTitle: 'Install ' + app.name,
@@ -22,9 +22,9 @@
 
 <% if (!sites.length) { %>
   <div class="empty">
-    <p class="mb-2"><b>No websites yet.</b></p>
-    <p class="mb-3">An app has to go somewhere. Add a domain first — register one with us, or point one you already own.</p>
-    <a class="btn" href="/panel/domains/add">Add a domain</a>
+    <p class="mb-2"><b><%= t('No websites yet.') %></b></p>
+    <p class="mb-3"><%= t('An app has to go somewhere. Add a domain first — register one with us, or point one you already own.') %></p>
+    <a class="btn" href="/panel/domains/add"><%= t('Add a domain') %></a>
   </div>
 <% } else { %>
 
@@ -33,11 +33,11 @@
     <form method="post" action="/panel/apps/install/<%= app.slug %>" class="p-card">
       <input type="hidden" name="_csrf" value="<%= csrf %>">
 
-      <h2 class="h3 mb-1">Where should it go?</h2>
-      <p class="small muted mb-3">Pick one of your sites. The app takes over the whole of it.</p>
+      <h2 class="h3 mb-1"><%= t('Where should it go?') %></h2>
+      <p class="small muted mb-3"><%= t('Pick one of your sites. The app takes over the whole of it.') %></p>
 
       <div class="field mb-3">
-        <label class="label" for="domain">Website</label>
+        <label class="label" for="domain"><%= t('Website') %></label>
         <select class="input select" id="domain" name="domain" required>
           <% sites.forEach(function (s, i) { %>
             <option value="<%= s.domain %>" <%= i === 0 ? 'selected' : '' %>><%= s.domain %></option>
@@ -47,7 +47,7 @@
 
       <% if (app.kind === 'php') { %>
         <div class="field mb-3">
-          <label class="label" for="php">PHP version</label>
+          <label class="label" for="php"><%= t('PHP version') %></label>
           <select class="input select" id="php" name="php">
             <% (runtimes.php || []).forEach(function (p) { %>
               <option value="<%= p.version %>" <%= p.recommended ? 'selected' : '' %>>
@@ -64,7 +64,7 @@
 
       <% if (app.kind === 'node') { %>
         <div class="field mb-3">
-          <label class="label" for="node">Node version</label>
+          <label class="label" for="node"><%= t('Node version') %></label>
           <select class="input select" id="node" name="node">
             <% (runtimes.node || []).forEach(function (n) { %>
               <option value="<%= n.major %>" <%= (app.needs.node === n.major || (app.needs.node === 'default' && n.recommended)) ? 'selected' : '' %>>
@@ -84,7 +84,7 @@
 
       <%# ---- The part that matters ---- %>
       <div class="danger-note mb-3">
-        <p class="mb-2"><b>This replaces whatever is on that site now.</b></p>
+        <p class="mb-2"><b><%= t('This replaces whatever is on that site now.') %></b></p>
         <p class="small mb-2">
           Nothing is deleted. Everything currently in the web root is moved to
           <code>~/.vesopa/replaced/</code> on your account, where you can get it back
@@ -130,7 +130,7 @@
     </div>
 
     <div class="p-card">
-      <h3 class="h3 mb-2">What we will set up</h3>
+      <h3 class="h3 mb-2"><%= t('What we will set up') %></h3>
       <div class="legend">
         <div class="legend-row">
           <span style="color:var(--green);flex:none"><%- icon('check', 16) %></span>

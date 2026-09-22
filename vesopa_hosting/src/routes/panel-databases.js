@@ -123,7 +123,7 @@ router.get('/', async (req, res, next) => {
       : null;
 
     res.render('panel/databases', {
-      title: 'Databases',
+      title: req.t('Databases'),
       robots: 'noindex',
       service,
       items,
@@ -144,17 +144,17 @@ router.post('/create', async (req, res, next) => {
     // Creating a database is cheap for us and expensive for the node's disk if
     // somebody loops it. Ten a minute is far above any honest use.
     if (rateLimited(req.ip, 'db-create', { max: 10, windowMs: 60_000 })) {
-      flash(res, 'That is a lot of databases at once. Give it a minute.', 'error');
+      flash(res, req.t('That is a lot of databases at once. Give it a minute.'), 'error');
       return res.redirect('/panel/databases');
     }
 
     const { service, user, items, error } = await context(req);
     if (!service || !user) {
-      flash(res, 'There is no live hosting on this account yet.', 'error');
+      flash(res, req.t('There is no live hosting on this account yet.'), 'error');
       return res.redirect('/panel/databases');
     }
     if (error) {
-      flash(res, 'We could not reach the hosting node just now. Try again in a moment.', 'error');
+      flash(res, req.t('We could not reach the hosting node just now. Try again in a moment.'), 'error');
       return res.redirect('/panel/databases');
     }
 
@@ -162,7 +162,7 @@ router.post('/create', async (req, res, next) => {
     const type = ENGINES[req.body.type] ? req.body.type : 'mysql';
 
     if (name.length < 3 || !/^[a-z]/.test(name)) {
-      flash(res, 'Give the database a name of at least three characters, starting with a letter. Letters, numbers and underscores only.', 'error');
+      flash(res, req.t('Give the database a name of at least three characters, starting with a letter. Letters, numbers and underscores only.'), 'error');
       return res.redirect('/panel/databases');
     }
 
@@ -265,7 +265,7 @@ router.post('/delete', async (req, res, next) => {
      * is no undo here — the data is gone the moment the node returns.
      */
     if (String(req.body.confirm || '').trim() !== target.name) {
-      flash(res, 'Type the database name exactly to confirm. Nothing was deleted.', 'error');
+      flash(res, req.t('Type the database name exactly to confirm. Nothing was deleted.'), 'error');
       return res.redirect('/panel/databases');
     }
 
@@ -300,7 +300,7 @@ router.get('/:name/open', async (req, res, next) => {
     const { service, user, items } = await context(req);
     if (!user || !service) return next();
     if (!sso.configured()) {
-      flash(res, 'One-click database access is not set up on this server yet.', 'warn');
+      flash(res, req.t('One-click database access is not set up on this server yet.'), 'warn');
       return res.redirect('/panel/databases');
     }
 

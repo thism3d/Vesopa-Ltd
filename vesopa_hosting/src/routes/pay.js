@@ -64,7 +64,7 @@ router.post('/pay/:id/start', async (req, res, next) => {
     // A 100%-off basket never reaches a gateway. See settleFree().
     if (Number(order.total_pence) === 0) {
       await payments.settleFree(order);
-      flash(res, 'No payment needed — your order is confirmed.');
+      flash(res, req.t('No payment needed — your order is confirmed.'));
       return res.redirect(back);
     }
 
@@ -104,7 +104,7 @@ router.get('/pay/return', async (req, res, next) => {
 
     if (!tranId || !trusted) {
       console.warn('[pay] rejected an unverified return', { tranId, outcome });
-      flash(res, 'We could not verify that payment. If money has left your account, contact us and we will sort it out today.', 'error');
+      flash(res, req.t('We could not verify that payment. If money has left your account, contact us and we will sort it out today.'), 'error');
       return res.redirect('/panel');
     }
 
@@ -152,7 +152,7 @@ router.get('/pay/stripe/return', async (req, res, next) => {
 
     if (outcome === 'cancel' || !sessionId) {
       const failed = sessionId ? await payments.fail(sessionId, 'CANCELLED', {}, 'cancelled') : null;
-      flash(res, 'Payment cancelled — nothing has been charged and your order is still here.', 'warn');
+      flash(res, req.t('Payment cancelled — nothing has been charged and your order is still here.'), 'warn');
       return res.redirect(failed ? `/panel/setup/${failed.order_id}` : '/panel');
     }
 
@@ -171,7 +171,7 @@ router.get('/pay/stripe/return', async (req, res, next) => {
         payload = await stripe.retrieveSession(sessionId);
       } catch (err) {
         console.error('[pay] stripe retrieve failed:', err.message);
-        flash(res, 'We could not verify that payment. If money has left your account, contact us and we will sort it out today.', 'error');
+        flash(res, req.t('We could not verify that payment. If money has left your account, contact us and we will sort it out today.'), 'error');
         return res.redirect('/panel');
       }
       paid = stripe.isPaidSession(payload);
@@ -186,7 +186,7 @@ router.get('/pay/stripe/return', async (req, res, next) => {
     }
 
     const failed = await payments.fail(sessionId, payload.payment_status || 'FAILED', payload);
-    flash(res, 'That payment did not go through. Nothing has been charged; you can try again.', 'error');
+    flash(res, req.t('That payment did not go through. Nothing has been charged; you can try again.'), 'error');
     res.redirect(failed ? `/panel/setup/${failed.order_id}` : '/panel');
   } catch (err) {
     next(err);
@@ -209,7 +209,7 @@ router.get('/pay/paypal/return', async (req, res, next) => {
 
     if (outcome === 'cancel' || !orderId) {
       const failed = orderId ? await payments.fail(orderId, 'CANCELLED', {}, 'cancelled') : null;
-      flash(res, 'Payment cancelled — nothing has been charged and your order is still here.', 'warn');
+      flash(res, req.t('Payment cancelled — nothing has been charged and your order is still here.'), 'warn');
       return res.redirect(failed ? `/panel/setup/${failed.order_id}` : '/panel');
     }
 
@@ -227,7 +227,7 @@ router.get('/pay/paypal/return', async (req, res, next) => {
         payload = await paypal.captureOrder(orderId);
       } catch (err) {
         console.error('[pay] paypal capture failed:', err.message);
-        flash(res, 'We could not verify that payment. If money has left your account, contact us and we will sort it out today.', 'error');
+        flash(res, req.t('We could not verify that payment. If money has left your account, contact us and we will sort it out today.'), 'error');
         return res.redirect('/panel');
       }
       paid = paypal.isPaidOrder(payload);
@@ -242,7 +242,7 @@ router.get('/pay/paypal/return', async (req, res, next) => {
     }
 
     const failed = await payments.fail(orderId, payload.status || 'FAILED', payload);
-    flash(res, 'That payment did not go through. Nothing has been charged; you can try again.', 'error');
+    flash(res, req.t('That payment did not go through. Nothing has been charged; you can try again.'), 'error');
     res.redirect(failed ? `/panel/setup/${failed.order_id}` : '/panel');
   } catch (err) {
     next(err);
@@ -289,7 +289,7 @@ router.get('/pay/crypto/return', async (req, res, next) => {
         return res.redirect(settled.ok ? `/panel/setup/${settled.orderId}` : back);
       }
       await payments.fail(payment.gateway_ref, outcome === 'cancel' ? 'CANCELLED' : 'FAILED', { mock: true }, outcome === 'cancel' ? 'cancelled' : 'failed');
-      flash(res, 'Payment cancelled — nothing has been charged and your order is still here.', 'warn');
+      flash(res, req.t('Payment cancelled — nothing has been charged and your order is still here.'), 'warn');
       return res.redirect(back);
     }
 
@@ -298,7 +298,7 @@ router.get('/pay/crypto/return', async (req, res, next) => {
       invoice = await btcpay.getInvoice(payment.gateway_ref);
     } catch (err) {
       console.error('[pay] btcpay lookup failed:', err.message);
-      flash(res, 'We could not check that payment just now. If you have sent the payment it will be picked up automatically — nothing is lost.', 'warn');
+      flash(res, req.t('We could not check that payment just now. If you have sent the payment it will be picked up automatically — nothing is lost.'), 'warn');
       return res.redirect(back);
     }
 
@@ -312,7 +312,7 @@ router.get('/pay/crypto/return', async (req, res, next) => {
     if (btcpay.isPendingInvoice(invoice) || btcpay.hasPartialPayment(invoice)) {
       flash(
         res,
-        'Payment received and waiting to confirm on the network. This usually takes a few minutes'
+        req.t('Payment received and waiting to confirm on the network. This usually takes a few minutes')
         + ' — your order starts automatically as soon as it does, and there is nothing else to do.',
         'warn',
       );
@@ -325,7 +325,7 @@ router.get('/pay/crypto/return', async (req, res, next) => {
      * marking the attempt failed would take away the "Pay now" they came back
      * for. The reconciler closes it once the session is genuinely dead.
      */
-    flash(res, 'No payment received yet. Your order is still here whenever you are ready.', 'warn');
+    flash(res, req.t('No payment received yet. Your order is still here whenever you are ready.'), 'warn');
     res.redirect(back);
   } catch (err) {
     next(err);
@@ -352,7 +352,7 @@ router.get('/pay/crypto/return', async (req, res, next) => {
 router.post('/pay/crypto/webhook', async (req, res) => {
   if (!btcpay.verifyWebhook(req.rawBody, req.get('BTCPay-Sig'))) {
     console.warn('[pay] rejected an unverified BTCPay webhook');
-    return res.status(401).json({ ok: false, error: 'Invalid signature' });
+    return res.status(401).json({ ok: false, error: req.t('Invalid signature') });
   }
 
   const invoiceId = String(req.body?.invoiceId || '');
@@ -411,7 +411,7 @@ router.post('/pay/ipn', async (req, res) => {
   const tranId = String(q.tran_id || '');
 
   if (!tranId || !(sslcommerz.MODE === 'mock' || sslcommerz.verifySignature(q))) {
-    return res.status(401).json({ ok: false, error: 'Invalid signature' });
+    return res.status(401).json({ ok: false, error: req.t('Invalid signature') });
   }
 
   try {
@@ -455,7 +455,7 @@ router.get('/pay/mock/:tranId', async (req, res, next) => {
   const { all } = await currency.load({ includeInactive: true });
   const cur = all.find((c) => c.code === payment.charged_currency) || (await currency.base());
   res.render('public/pay-mock', {
-    title: 'Test payment',
+    title: req.t('Test payment'),
     robots: 'noindex',
     bare: true,
     tranId: req.params.tranId,
