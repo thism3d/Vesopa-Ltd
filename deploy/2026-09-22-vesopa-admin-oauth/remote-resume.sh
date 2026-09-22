@@ -47,54 +47,29 @@ declare -A EXPECT=(
   [web:public/admin-library/panel.css]=8804611435c2f9d2cca95c230b5fa6153fb7c282919c12d6ea6803698aa7fdfe
 )
 
-# ---------------------------------------------------------------- rollback
-if [ "${1:-}" = "--rollback" ]; then
-  LAST=$(ls -d /root/vesopa-backups/deploy_oauth_admin_* 2>/dev/null | tail -1)
-  [ -n "$LAST" ] || die "no deploy backup to roll back to"
-  say "Rolling back from $LAST"
-  for f in "${REPLACED_AUTH[@]}"; do cp -a "$LAST/auth/$f" "$AUTH/$f"; done
-  for f in "${REPLACED_WEB[@]}";  do cp -a "$LAST/web/$f"  "$WEB/$f";  done
-  for f in "${ADDED_AUTH[@]}"; do rm -f "$AUTH/$f"; done
-  for f in "${ADDED_WEB[@]}";  do rm -f "$WEB/$f";  done
-  [ -f "$LAST/web/.env" ] && cp -a "$LAST/web/.env" "$WEB/.env"
-  pm2u "restart auth.vesopa.com --update-env" >/dev/null
-  pm2u "restart vesopaepos.com --update-env" >/dev/null
-  ok "Rolled back. Schema additions are left in place: new nullable columns and an app row, harmless unused."
-  exit 0
-fi
-
-# ---------------------------------------------------------------- guards
-say "Checking the live box is as reviewed"
-[ -d "$AUTH" ] && [ -d "$WEB" ] || die "app directories not where expected"
-for key in "${!EXPECT[@]}"; do
-  app=${key%%:*}; f=${key#*:}; root=$([ "$app" = auth ] && echo "$AUTH" || echo "$WEB")
-  got=$(sha256sum "$root/$f" | cut -d' ' -f1)
-  [ "$got" = "${EXPECT[$key]}" ] || die "$app/$f changed on the server since this was written — stopping, nothing changed"
+# ---------------------------------------------------------------- resume
+# The first run installed the code and stopped at the auth migration (the
+# column helper is not kept in the database). Confirm the code on disk is ours,
+# replace the one fixed migration, prove it on a scratch copy, then carry on.
+say "Resuming: confirming the installed code is this deploy's"
+for f in "${REPLACED_AUTH[@]}" "${ADDED_AUTH[@]}"; do
+  [ "$f" = schema/schema_024_venue_orgs_and_admin_client.sql ] && continue
+  cmp -s <(tar -xzOf "$HERE/auth.tgz" "$f") "$AUTH/$f" || die "auth/$f is not this deploy's version"
 done
-for f in "${ADDED_AUTH[@]}"; do [ ! -e "$AUTH/$f" ] || die "auth/$f already exists — stopping"; done
-for f in "${ADDED_WEB[@]}";  do [ ! -e "$WEB/$f"  ] || die "web/$f already exists — stopping";  done
-ok "Live files match; nothing to be added exists yet"
+for f in "${REPLACED_WEB[@]}" "${ADDED_WEB[@]}"; do
+  cmp -s <(tar -xzOf "$HERE/web.tgz" "$f") "$WEB/$f" || die "web/$f is not this deploy's version"
+done
+ok "Installed code matches the bundle"
+install -o "$APPUSER" -g "$APPUSER" -m 644 "$HERE/schema_024_venue_orgs_and_admin_client.sql" "$AUTH/schema/"
 
-# ---------------------------------------------------------------- backup
-say "Backing up what will be replaced → $BK"
-mkdir -p "$BK" && chmod 700 "$BK"
-for f in "${REPLACED_AUTH[@]}"; do mkdir -p "$BK/auth/$(dirname "$f")"; cp -a "$AUTH/$f" "$BK/auth/$f"; done
-for f in "${REPLACED_WEB[@]}";  do mkdir -p "$BK/web/$(dirname "$f")";  cp -a "$WEB/$f"  "$BK/web/$f";  done
-cp -a "$WEB/.env" "$BK/web/.env"
-mariadb-dump --single-transaction vesopasoftware_authdb organisations applications application_members \
-  application_redirect_uris application_roles | gzip > "$BK/authdb-touched-tables.sql.gz"
-mariadb-dump --single-transaction vesopasoftware_eposdb admin_table offices | gzip > "$BK/eposdb-touched-tables.sql.gz"
-chmod -R go-rwx "$BK"
-ok "Backed up"
-
-# ---------------------------------------------------------------- code
-say "Installing code"
-tar -xzf "$HERE/auth.tgz" -C "$AUTH"
-tar -xzf "$HERE/web.tgz"  -C "$WEB"
-for f in "${REPLACED_AUTH[@]}" "${ADDED_AUTH[@]}"; do chown "$APPUSER:$APPUSER" "$AUTH/$f"; done
-for f in "${REPLACED_WEB[@]}"  "${ADDED_WEB[@]}";  do chown "$APPUSER:$APPUSER" "$WEB/$f";  done
-chown "$APPUSER:$APPUSER" "$WEB/scripts" "$WEB/test" 2>/dev/null || true
-ok "Code in place"
+say "Proving the fixed migration on a scratch copy of the auth database"
+mariadb -e "DROP DATABASE IF EXISTS vesopa_scratch_mig; CREATE DATABASE vesopa_scratch_mig CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci"
+mariadb-dump --single-transaction --routines vesopasoftware_authdb | mariadb vesopa_scratch_mig
+mariadb vesopa_scratch_mig < "$AUTH/schema/schema_024_venue_orgs_and_admin_client.sql"
+mariadb vesopa_scratch_mig < "$AUTH/schema/schema_024_venue_orgs_and_admin_client.sql"   # re-runnable?
+mariadb -N -e "SELECT CONCAT('scratch: cols=', (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='vesopa_scratch_mig' AND table_name='organisations' AND column_name IN ('external_ref','managed_by_application_id')), ' apps=', (SELECT COUNT(*) FROM vesopa_scratch_mig.applications WHERE slug='vesopa-epos-admin'), ' members=', (SELECT COUNT(*) FROM vesopa_scratch_mig.application_members m JOIN vesopa_scratch_mig.applications a ON a.id=m.application_id WHERE a.slug='vesopa-epos-admin'), ' uris=', (SELECT COUNT(*) FROM vesopa_scratch_mig.application_redirect_uris r JOIN vesopa_scratch_mig.applications a ON a.id=r.application_id WHERE a.slug='vesopa-epos-admin'))"
+mariadb -e "DROP DATABASE vesopa_scratch_mig"
+ok "Migration applies cleanly and twice over on a copy"
 
 # ---------------------------------------------------------------- schema
 say "Schema: auth (organisations columns, admin client)"
