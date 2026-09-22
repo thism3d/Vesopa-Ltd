@@ -1,0 +1,106 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# -----------------------------------------------------------------------------
+# Secrets — added when this project joined the Vesopa-Ltd umbrella repo
+# -----------------------------------------------------------------------------
+# THE SIGNING KEYS ARE THE MOST DANGEROUS FILES IN THIS PROJECT.
+#
+# A leaked Android signing key lets anyone build an APK that Android accepts as
+# a genuine Vesopa update, and unlike a password it CANNOT be rotated: every
+# device with the app installed is pinned to that key for the life of the app.
+# A new key means a new listing and no upgrade path for existing users.
+#
+# They were untracked but unignored, which meant the next `git add -A` in this
+# repo would have published them.
+*.key
+*.keystore
+*.jks
+*.p12
+*.pfx
+*.pem
+key.properties
+keystore.properties
+keys/
+
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+google-services.json
+GoogleService-Info.plist
+*service-account*.json
+
+# -----------------------------------------------------------------------------
+# Windows desktop build output
+# -----------------------------------------------------------------------------
+# CMake caches, Visual Studio workspace state and compiled objects. Regenerated
+# by every build, and `cmake.db` and `CMakeCache.txt` carry absolute paths from
+# whichever machine last compiled — so they conflict on every pull for no gain.
+windows/runner/out/
+windows/runner/.vs/
+windows/flutter/ephemeral/
+
+# Golden-test diff artefacts. Written on every failed golden and regenerated
+# from scratch each run — evidence for the person looking at the failure, not
+# something the next clone needs.
+test/failures/
+
+# -----------------------------------------------------------------------------
+# Reference recordings from other vendors' software
+# -----------------------------------------------------------------------------
+# Screen captures and stills of a competitor's back office, kept while a feature
+# is being designed against them. Deliberately not committed, for the reason
+# vesopa_epos_kitchen/docs/reference-kitchen-demo.md gives about the kitchen
+# demo: several megabytes of phone footage in every clone is a poor way to carry
+# a handful of design decisions, and the decisions are what actually need to
+# survive. Write those into docs/ instead — the recording is the working
+# material, the notes are the artefact.
+#
+# They stay on disk; this only keeps them out of the history.
+VesopaScreenProgrammingDemo.MP4
+ScreenProgrammingDemoImages/

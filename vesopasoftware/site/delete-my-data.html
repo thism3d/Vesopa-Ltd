@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Delete my data — Vesopa Software Ltd</title>
+<meta name="description" content="Request deletion of your personal data held by Vesopa Software. No account needed and no charge.">
+<link rel="canonical" href="https://vesopasoftware.com/delete-my-data">
+<meta name="robots" content="index,follow">
+<meta property="og:title" content="Delete my data — Vesopa Software Ltd">
+<meta property="og:description" content="Request deletion of your personal data held by Vesopa Software. No account needed and no charge.">
+<meta property="og:url" content="https://vesopasoftware.com/delete-my-data">
+<meta property="og:type" content="website">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..700&family=Source+Serif+4:opsz,wght@8..60,300..600&family=Martian+Mono:wght@300;500&display=swap">
+<link rel="stylesheet" href="/css/page.css">
+</head>
+<body>
+
+<header class="bar">
+  <a class="home" href="/">Vesopa Software</a>
+  <nav><a href="/support">Support</a>
+    <a href="/terms">Terms</a>
+    <a href="/privacy">Privacy</a>
+    <a href="/cookies">Cookies</a>
+    <a href="/data-deletion">Data deletion</a>
+    <a href="/delete-my-data" aria-current="page">Delete my data</a>
+  </nav>
+</header>
+
+<main class="wrap">
+
+<span class="eyebrow">Your data</span>
+<h1>Delete my data</h1>
+<p class="lead">Ask us to delete your account and the personal data we hold about you. No account needed, no reason required, no charge.</p>
+
+<div class="key">
+  <p>We will email the address you give below to confirm the request is really from you, then delete within <b>30 days</b> and write to tell you when it is done. Read <a href="/data-deletion">what is deleted and what has to be kept</a> before you send this — invoices, in particular, we are legally required to keep for six years.</p>
+</div>
+
+<form class="form-card" id="delete-form" novalidate>
+  <div class="two">
+    <div class="fld"><label for="d-name">Your name</label><input id="d-name" name="name" required autocomplete="name"></div>
+    <div class="fld">
+      <label for="d-email">Email on the account</label>
+      <input id="d-email" name="email" type="email" required autocomplete="email">
+      <span class="hint">We reply here to confirm it is you.</span>
+    </div>
+  </div>
+
+  <div class="fld">
+    <label for="d-kind">What would you like us to do?</label>
+    <select id="d-kind" name="kind">
+      <option value="delete">Delete my account and my data</option>
+      <option value="export">Send me a copy of my data</option>
+      <option value="correct">Correct something that is wrong</option>
+      <option value="stop">Stop contacting me, keep the account</option>
+      <option value="object">Object to how my data is used</option>
+    </select>
+  </div>
+
+  <div class="fld">
+    <label>What should it cover?</label>
+    <label class="opt"><input type="checkbox" name="scope" value="portal"> My portal account, projects, messages and files</label>
+    <label class="opt"><input type="checkbox" name="scope" value="enquiries"> Enquiries, quotes and estimate requests I sent</label>
+    <label class="opt"><input type="checkbox" name="scope" value="apps"> Data held in a Vesopa application or hosted back office</label>
+    <label class="opt"><input type="checkbox" name="scope" value="marketing"> Marketing and mailing lists</label>
+    <label class="opt"><input type="checkbox" name="scope" value="all"> Everything you hold about me</label>
+  </div>
+
+  <div class="fld">
+    <label for="d-detail">Anything that helps us find it (optional)</label>
+    <textarea id="d-detail" name="message" placeholder="Other email addresses, a company name, a venue, an invoice reference — anything that identifies the records."></textarea>
+  </div>
+
+  <div class="fld">
+    <label class="opt">
+      <input type="checkbox" name="confirm" value="yes" required>
+      <span>I understand that deletion is permanent, that it cannot be undone, and that records we are legally required to keep — principally invoices, for six years — will be retained as described in the <a href="/data-deletion">deletion policy</a>.</span>
+    </label>
+  </div>
+
+  <div class="hp" aria-hidden="true"><label>Leave this empty<input name="website" tabindex="-1" autocomplete="off"></label></div>
+  <button class="btn" type="submit">Send request</button>
+  <div class="form-msg" role="status"></div>
+</form>
+
+<script>
+(function () {
+  var f = document.getElementById("delete-form");
+  if (!f) return;
+  var msg = f.querySelector(".form-msg");
+  var btn = f.querySelector("button[type=submit]");
+  f.addEventListener("submit", async function (e) {
+    e.preventDefault();
+    msg.className = "form-msg";
+    msg.textContent = "Sending…";
+    btn.disabled = true;
+    var data = {};
+    new FormData(f).forEach(function (v, k) {
+      if (data[k] === undefined) data[k] = v;
+      else if (Array.isArray(data[k])) data[k].push(v);
+      else data[k] = [data[k], v];
+    });
+    try {
+      var r = await fetch("/api/data-request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      var j = await r.json();
+      if (!r.ok || !j.ok) throw new Error(j.error || "That did not go through.");
+      msg.className = "form-msg ok";
+      msg.textContent = "Request received. Check your email — we have sent you a confirmation to reply to." + (j.ref ? " Your reference is " + j.ref + "." : "");
+      f.reset();
+    } catch (err) {
+      msg.className = "form-msg bad";
+      msg.textContent = err.message + " You can also email support@vesopasoftware.com directly.";
+    } finally {
+      btn.disabled = false;
+    }
+  });
+})();
+</script>
+
+<h2 id="post">Prefer to write?</h2>
+<p>Email <a href="mailto:support@vesopasoftware.com">support@vesopasoftware.com</a> from the address on the account with "Delete my data" in the subject, or write to Vesopa Software Ltd, Baglan, Port Talbot, SA12 7AX, Wales, United Kingdom. A letter takes longer only because the post does.</p>
+
+<h2 id="next">What happens next</h2>
+<ol>
+  <li>We acknowledge within one working day.</li>
+  <li>We email the address above to confirm the request is yours.</li>
+  <li>You reply to confirm.</li>
+  <li>We delete, and write to tell you it is done — within 30 days, usually within 7.</li>
+</ol>
+
+</main>
+
+<footer>
+  <div class="inner">
+    <nav>
+      <a href="/">Home</a>
+      <a href="/support">Support</a>
+      <a href="/terms">Terms</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/cookies">Cookies</a>
+      <a href="/data-deletion">Data deletion</a>
+      <a href="/delete-my-data">Delete my data</a>
+      <a href="/portal">Portal</a>
+    </nav>
+    <div class="legal">
+      <p><b>Vesopa Software Ltd</b> — a company registered in England and Wales, company number 17362206.</p>
+      <p>Baglan, Port Talbot, SA12 7AX, Wales, United Kingdom</p>
+      <p>support@vesopasoftware.com &nbsp;·&nbsp; <a href="tel:+441792316282">+44 1792 316282</a></p>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

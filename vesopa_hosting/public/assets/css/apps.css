@@ -1,0 +1,191 @@
+/*
+ * Applications, runtimes and the Node process manager.
+ *
+ * Loaded on top of panel.css, and it borrows that file's vocabulary rather than
+ * restating it: .p-card, .state, .btn, .kv, .fold and .tip are all defined
+ * there and used unchanged here. What is in this file is only the shapes that
+ * do not exist yet — an app card with a brand mark on it, a process card whose
+ * whole point is one verdict, and a log.
+ *
+ * The brand marks are <img>, not inline SVG, so each one is a cached file
+ * rather than a kilobyte of markup repeated on every render. That is also why
+ * each carries its brand colour baked in: an <img> cannot inherit currentColor.
+ */
+
+/* ---- The catalogue ------------------------------------------------------ */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
+  gap: 12px;
+}
+
+.card-app {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 16px; min-height: 148px;
+  text-decoration: none; color: inherit;
+  background: #fff; border: 1px solid var(--rule); border-radius: var(--radius);
+  transition: transform .2s var(--ease), border-color .2s var(--ease), box-shadow .2s var(--ease);
+}
+a.card-app:hover {
+  text-decoration: none; transform: translateY(-2px);
+  border-color: #cfd5bd; box-shadow: var(--shadow-1);
+}
+.card-app-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.card-app-logo {
+  width: 40px; height: 40px; border-radius: 11px; flex: none;
+  display: grid; place-items: center;
+  background: var(--bg-3); color: var(--ink-2);
+}
+a.card-app:hover .card-app-logo { background: var(--lime-soft); }
+.card-app-name { font-size: 1rem; font-weight: 800; margin-top: 4px; }
+.card-app-tag { font-size: .82rem; color: var(--ink-3); line-height: 1.4; flex: 1; }
+.card-app-foot {
+  display: flex; flex-wrap: wrap; gap: 4px 12px;
+  font-size: .72rem; color: var(--ink-3); padding-top: 8px;
+  border-top: 1px solid var(--rule-soft);
+}
+.card-app-foot > span { display: inline-flex; align-items: center; gap: 4px; }
+.card-app-foot svg { opacity: .7; }
+
+/* The one badge on the grid. Used sparingly — two of fifteen cards carry it,
+   which is what makes it mean anything. */
+.pill {
+  flex: none; font-size: .66rem; font-weight: 800; letter-spacing: .03em;
+  text-transform: uppercase; padding: 3px 8px; border-radius: 999px;
+  background: var(--lime-soft); color: var(--lime-deep);
+}
+
+/* ---- Running applications ----------------------------------------------- */
+.applist { display: flex; flex-direction: column; gap: 10px; }
+
+.approw {
+  display: flex; align-items: center; gap: 12px;
+  padding: 13px 15px; text-decoration: none; color: inherit;
+  background: #fff; border: 1px solid var(--rule); border-radius: var(--radius);
+}
+a.approw:hover { text-decoration: none; border-color: #cfd5bd; box-shadow: var(--shadow-1); }
+.approw-ic {
+  width: 38px; height: 38px; border-radius: 11px; flex: none;
+  display: grid; place-items: center; background: var(--bg-3);
+}
+.approw-b { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 1px; }
+.approw-n { font-weight: 700; font-size: .95rem; overflow-wrap: anywhere; }
+.approw-s { font-size: .78rem; color: var(--ink-3); line-height: 1.4; }
+
+.appcard {
+  background: #fff; border: 1px solid var(--rule); border-radius: var(--radius);
+  padding: 15px 16px;
+}
+.appcard-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.appcard-id { display: flex; align-items: center; gap: 12px; flex: 1 1 200px; min-width: 0;
+              text-decoration: none; color: inherit; }
+a.appcard-id:hover { text-decoration: none; }
+a.appcard-id:hover .approw-n { color: var(--lime-ink); }
+
+/*
+ * The sentence under the verdict. This is the part that stops a support ticket:
+ * "Crash looping" tells somebody something is wrong, and "started 19 times and
+ * has only stayed up 41 seconds" tells them what to go and look at.
+ */
+.appcard-why {
+  margin: 10px 0 0; font-size: .84rem; line-height: 1.5; color: var(--ink-2);
+}
+
+.appcard-stats {
+  display: flex; flex-wrap: wrap; gap: 8px 22px;
+  margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--rule-soft);
+}
+.appcard-stats > span { display: flex; flex-direction: column; gap: 1px; }
+.stat-k { font-size: .68rem; font-weight: 800; letter-spacing: .05em;
+          text-transform: uppercase; color: var(--ink-3); }
+.stat-v { font-size: .9rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+.appcard-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+
+/* ---- Facts about one app ------------------------------------------------ */
+.kv-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 14px 20px;
+  padding: 15px 17px; background: var(--bg-2);
+  border: 1px solid var(--rule); border-radius: var(--radius);
+}
+.kv-grid > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.kv-grid .kv-v { overflow-wrap: anywhere; }
+
+/* ---- Logs ---------------------------------------------------------------
+   Dark, because that is what a log looks like everywhere else a developer
+   reads one, and because the eye finds a stack trace faster against it. Fixed
+   height with its own scroll: a 400-line npm log must not push the rest of the
+   page off the screen. */
+.log {
+  margin: 0; padding: 14px 15px; border-radius: var(--radius-sm);
+  background: #14150f; color: #dfe3d2;
+  font-family: var(--mono); font-size: .78rem; line-height: 1.65;
+  max-height: 320px; overflow: auto;
+  white-space: pre-wrap; word-break: break-word;
+}
+.log:empty::before { content: 'Nothing yet.'; color: #7c8070; }
+.log-wrap { margin-top: 16px; }
+.log-summary {
+  cursor: pointer; font-size: .84rem; font-weight: 700; color: var(--ink-2);
+  padding: 6px 0; list-style: none;
+}
+.log-summary::-webkit-details-marker { display: none; }
+.log-summary::before { content: '▸ '; color: var(--ink-3); }
+.log-wrap[open] .log-summary::before { content: '▾ '; }
+
+/* ---- Packages and plugins ----------------------------------------------- */
+.pkgs { display: flex; flex-direction: column; }
+.pkg {
+  display: flex; align-items: center; gap: 12px;
+  padding: 9px 0; border-bottom: 1px solid var(--rule-soft);
+}
+.pkg:last-child { border-bottom: 0; }
+.pkg-n { flex: 1; min-width: 0; font-size: .87rem; font-weight: 600; overflow-wrap: anywhere; }
+.pkg-v { font-size: .8rem; color: var(--ink-3); flex: none; }
+
+/* ---- Version picker -----------------------------------------------------
+   Radios drawn as cards. A <select> was the first attempt and it hides the one
+   thing that makes the choice: which version is recommended and which is no
+   longer patched. */
+.vers { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 9px; }
+.ver {
+  display: flex; flex-direction: column; gap: 2px; cursor: pointer;
+  padding: 12px 14px; border: 1px solid var(--rule); border-radius: var(--radius-sm);
+  background: #fff; transition: border-color .18s var(--ease), background .18s var(--ease);
+}
+.ver:hover { border-color: #cfd5bd; }
+.ver input { position: absolute; opacity: 0; pointer-events: none; }
+.ver:has(input:checked) { border-color: var(--lime); background: var(--lime-soft); box-shadow: var(--glow); }
+.ver:has(input:focus-visible) { outline: 2px solid var(--lime-ink); outline-offset: 2px; }
+.ver-n { font-weight: 800; font-size: .93rem; }
+.ver-t { font-size: .75rem; color: var(--ink-3); line-height: 1.35; }
+
+/* ---- Extensions --------------------------------------------------------- */
+.exts { display: flex; flex-wrap: wrap; gap: 5px; }
+.ext {
+  font-size: .72rem; padding: 3px 8px; border-radius: 6px;
+  background: var(--bg-3); color: var(--ink-2);
+}
+
+/* ---- The install warning ------------------------------------------------
+   Bordered rather than filled. A solid red panel above a submit button reads
+   as an error that has already happened; this is a caution about one that has
+   not. */
+.danger-note {
+  border: 1px solid #f0cfc9; border-radius: var(--radius);
+  background: #fdf6f5; padding: 15px 16px;
+}
+.danger-note code { background: #fff; padding: .1em .35em; border-radius: 4px; }
+
+@media (max-width: 560px) {
+  .cards { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+  .card-app { min-height: 132px; padding: 14px; }
+  .appcard-stats { gap: 8px 16px; }
+}
+
+/* ---- Icons inside a line of text ----------------------------------------
+   The global reset sets `svg { display: block }`, which is right for a
+   standalone icon and wrong for one sitting in a sentence — a back-link's
+   chevron and an external-link mark both dropped onto their own line. */
+.linklike svg { display: inline-block; vertical-align: -.15em; }

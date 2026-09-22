@@ -1,0 +1,49 @@
+Subject: Dojo submission pack is ready - please ask them for live API access
+Attach:  Vesopa-EPOS-Dojo-Integration-Submission.pdf
+
+Plain-text version of dojo-pack-note-to-meirion.html, for a client that will
+not take HTML or for the text half of a multipart message.
+
+--------------------------------------------------------------------------
+
+Hi Meirion, Hi Nicky,
+
+The Dojo submission pack is finished. It is attached, and it is also here:
+
+  https://vesopaepos.com/app/Vesopa-EPOS-Dojo-Integration-Submission.pdf
+
+Everything on their checklists was tested end to end using Vesopa EPOS itself -
+the till taking the payment, and our back office receiving and recording what
+Dojo sent back. The pack sets out every scenario, and includes a walkthrough and
+a working test login so Dojo can reproduce all of it themselves rather than take
+our word for it.
+
+  Tested with   Vesopa EPOS 1.4.1.0, on our own Dojo sandbox account
+  Covers        Pay at Counter and Remote Payments, including card refunds
+  Result        47 scenarios passed, none failed
+  Webhooks      Live - 123 real events from Dojo, all verified and recorded
+  Still open    4 scenarios that need a physical card machine and test cards
+                - not failures, and explained in the pack
+
+Meirion - could you send this on to Dojo and ask them to move us to live API
+access? Three things worth asking for in the same message:
+
+  1. The production API key for the account.
+
+  2. A live webhook subscription and its signing secret. Our endpoint for it is
+     already deployed and waiting.
+
+  3. A session with a real card machine and test cards, to close the last four
+     scenarios. They cannot be done on their simulator.
+
+One thing to be aware of before it goes out: the pack contains a working
+back-office and till login, deliberately, so Dojo can verify everything
+themselves. Once we are accredited I will change that password.
+
+Anything you want worded differently, tell me and I will turn it round today.
+
+Thanks,
+
+Muzahid
+Onzep International Limited - development partner for Vesopa EPOS
+muzahid@onzep.uk

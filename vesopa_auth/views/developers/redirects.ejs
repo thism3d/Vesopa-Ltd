@@ -1,0 +1,140 @@
+<%- include('../partials/console-head') %>
+
+<h1 class="console-title">Redirect URIs</h1>
+<p class="console-lead">
+  <%= application.name %> — the addresses we may send an authorisation code to.
+</p>
+
+<% if (saved) { %>
+<div class="status status-good">
+  <span class="status-mark"><%- include('../partials/icon', { name: 'check' }) %></span>
+  <div><strong>Saved.</strong><p>Live immediately — the next sign-in uses it.</p></div>
+</div>
+<% } %>
+<% if (error) { %>
+<div class="status status-bad">
+  <span class="status-mark"><%- include('../partials/icon', { name: 'alert' }) %></span>
+  <div><strong>Not accepted</strong><p><%= error %></p></div>
+</div>
+<% } %>
+
+<%
+  /*
+   * THE RULES ARE ON THE PAGE, not in the documentation, because this is the
+   * field people get wrong and the failure is remote and late: a mismatch
+   * shows up as `invalid_request` in somebody else's browser, an hour later,
+   * with no indication of which character is different.
+   */
+%>
+<div class="status status-warn">
+  <span class="status-mark"><%- include('../partials/icon', { name: 'alert' }) %></span>
+  <div>
+    <strong>Matched exactly, character for character</strong>
+    <p>
+      <code>https://app.example.com/cb</code> and
+      <code>https://app.example.com/cb/</code> are different addresses. No
+      wildcards, no subdirectories, no <code>#fragment</code> — and
+      <code>https://</code> only, because an <code>http</code> address would put
+      the authorisation code on the wire in the clear.
+    </p>
+  </div>
+</div>
+
+<section class="card">
+  <h2 class="card-head">Sign-in addresses</h2>
+  <p class="card-note">Where a person comes back to after signing in.</p>
+
+  <% if (!detail.redirects.length) { %>
+  <div class="empty">
+    <span class="empty-mark"><%- include('../partials/icon', { name: 'link' }) %></span>
+    <strong>None registered</strong>
+    <p>Until there is one here, no sign-in to this application can complete.</p>
+  </div>
+  <% } %>
+
+  <% detail.redirects.forEach(function (row) { %>
+  <div class="row">
+    <span class="row-mark"><%- include('../partials/icon', { name: 'link' }) %></span>
+    <span class="row-lines">
+      <span class="row-title mono is-small"><%= row.uri %></span>
+    </span>
+    <span class="row-right">
+      <% if (role !== 'viewer') { %>
+      <form method="post" action="/developers/a/<%= application.client_id %>/redirects/<%= row.id %>/remove">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <button type="submit" class="btn-link">Remove</button>
+      </form>
+      <% } %>
+    </span>
+  </div>
+  <% }) %>
+
+  <% if (role !== 'viewer') { %>
+  <form method="post" action="/developers/a/<%= application.client_id %>/redirects">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <input type="hidden" name="kind" value="login">
+    <div class="card-body">
+      <div class="inline-form">
+        <input type="text" name="uri" maxlength="500" required
+               inputmode="url" spellcheck="false" autocapitalize="off"
+               placeholder="https://menu.vesopa.com/auth/callback"
+               aria-label="New sign-in redirect URI">
+        <button class="btn btn-primary btn-small" type="submit">Add</button>
+      </div>
+      <% if (application.client_type === 'native') { %>
+      <p class="hint mt-2">
+        This is a device app, so it may also register
+        <code>http://127.0.0.1/callback</code>. The port is ignored on a
+        loopback address — the operating system picks it at runtime, so only the
+        path is compared. Use <code>127.0.0.1</code> and not
+        <code>localhost</code>: the name goes through DNS and can be pointed
+        somewhere else.
+      </p>
+      <% } %>
+    </div>
+  </form>
+  <% } %>
+</section>
+
+<section class="card">
+  <h2 class="card-head">Sign-out addresses</h2>
+  <p class="card-note">
+    Optional. Where a person may be returned to after
+    <code>/oauth/logout</code>. Matched by the same rules.
+  </p>
+
+  <% detail.logoutRedirects.forEach(function (row) { %>
+  <div class="row">
+    <span class="row-mark"><%- include('../partials/icon', { name: 'signout' }) %></span>
+    <span class="row-lines">
+      <span class="row-title mono is-small"><%= row.uri %></span>
+    </span>
+    <span class="row-right">
+      <% if (role !== 'viewer') { %>
+      <form method="post" action="/developers/a/<%= application.client_id %>/redirects/<%= row.id %>/remove">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <button type="submit" class="btn-link">Remove</button>
+      </form>
+      <% } %>
+    </span>
+  </div>
+  <% }) %>
+
+  <% if (role !== 'viewer') { %>
+  <form method="post" action="/developers/a/<%= application.client_id %>/redirects">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <input type="hidden" name="kind" value="logout">
+    <div class="card-body">
+      <div class="inline-form">
+        <input type="text" name="uri" maxlength="500" required
+               inputmode="url" spellcheck="false" autocapitalize="off"
+               placeholder="https://menu.vesopa.com/"
+               aria-label="New sign-out redirect URI">
+        <button class="btn btn-quiet btn-small" type="submit">Add</button>
+      </div>
+    </div>
+  </form>
+  <% } %>
+</section>
+
+<%- include('../partials/console-foot') %>

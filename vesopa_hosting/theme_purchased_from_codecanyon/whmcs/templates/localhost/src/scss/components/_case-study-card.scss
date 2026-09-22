@@ -1,0 +1,18 @@
+@use "../global" as *;
+.case-study-card {
+	@include screen(md) {
+		&__img {
+			width: 45%;
+		}
+	}
+	@include screen(xl) {
+		&__img {
+			width: 40%;
+		}
+	}
+	@include screen(xxl) {
+		&__img {
+			width: 45%;
+		}
+	}
+}

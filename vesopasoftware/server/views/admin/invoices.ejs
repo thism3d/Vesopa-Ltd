@@ -1,0 +1,46 @@
+<%- include("../partials/head") %>
+<%- include("../partials/nav") %>
+<% const owed = invoices.filter(i => ["sent","part_paid"].includes(i.status)).reduce((s,i)=>s+balanceOf(i),0);
+   const collected = invoices.reduce((s,i)=>s+Number(i.amount_paid||0),0); %>
+<div class="wrap">
+  <div class="page-head">
+    <div class="grow"><span class="eyebrow">Raised, sent, chased, settled</span><h1>Invoices</h1></div>
+    <a class="btn" href="/portal/admin/invoices/new">New invoice</a>
+  </div>
+  <div class="grid g3" style="margin-bottom:1rem">
+    <div class="stat <%= owed ? 'warn' : '' %>"><b><%= moneyRound(owed, currency) %></b><span>Outstanding</span></div>
+    <div class="stat"><b><%= moneyRound(collected, currency) %></b><span>Collected on these</span></div>
+    <div class="stat plain"><b><%= invoices.length %></b><span>Invoices listed</span></div>
+  </div>
+  <div class="panel">
+    <div class="btn-row" style="margin-bottom:.9rem">
+      <% for (const s of ["", "draft", "sent", "part_paid", "paid", "void"]) { %>
+        <a class="btn <%= status === s ? '' : 'ghost' %> small" href="/portal/admin/invoices<%= s ? '?status=' + s : '' %>">
+          <%= s ? (STATUS_LABEL[s] || s) : "All" %></a>
+      <% } %>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Number</th><th>Customer</th><th>Project</th><th>Issued</th><th>Due</th>
+          <th>Status</th><th class="num">Total</th><th class="num">Outstanding</th></tr></thead>
+        <tbody>
+          <% if (!invoices.length) { %><tr><td colspan="8" class="t-empty">Nothing here.</td></tr><% } %>
+          <% for (const i of invoices) { %>
+            <tr>
+              <td><a href="/portal/admin/invoices/<%= i.id %>"><strong><%= i.number %></strong></a></td>
+              <td><a href="/portal/admin/customers/<%= i.user_id %>"><%= i.customer %></a></td>
+              <td class="muted"><%= i.project_title || "—" %></td>
+              <td><time datetime="<%= new Date(i.issue_date).toISOString() %>"></time></td>
+              <td><time datetime="<%= new Date(i.due_date).toISOString() %>"></time></td>
+              <td><% if (isOverdue(i)) { %><span class="pill bad">Overdue</span>
+                  <% } else { %><span class="pill <%= i.status === 'paid' ? 'ok' : i.status === 'draft' ? '' : 'warn' %>"><%= STATUS_LABEL[i.status] || i.status %></span><% } %></td>
+              <td class="num"><%= money(i.total, i.currency) %></td>
+              <td class="num"><%= balanceOf(i) > 0 ? money(balanceOf(i), i.currency) : "—" %></td>
+            </tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<%- include("../partials/foot") %>

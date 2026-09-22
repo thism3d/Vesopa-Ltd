@@ -1,0 +1,247 @@
+<%- include('partials/head') %>
+
+<%
+  /*
+   * One template, six states: start, code, choose, done, manage, missing.
+   *
+   * The start state is the page Google Play's reviewers read, so everything it
+   * requires is on it before anybody types anything: the app's name and the
+   * developer's, the steps, what is deleted, what is kept and for how long.
+   */
+  const niceDate = function (d) {
+    return d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/London' }) : '';
+  };
+  const statusText = {
+    awaiting_review: 'Waiting for our team to carry it out',
+    scheduled: 'Scheduled',
+    processing: 'Being deleted now',
+    completed: 'Deleted',
+    needs_attention: 'Being finished by our team',
+    cancelled: 'Cancelled',
+    rejected: 'Not carried out',
+  };
+%>
+
+<main class="auth-shell">
+  <div class="auth-card auth-card-wide">
+
+    <a class="brand" href="/" aria-label="Vesopa">
+      <img class="brand-mark" src="/brand/logo-light.svg" alt="" width="130" height="17" data-logo-light>
+      <img class="brand-mark" src="/brand/logo-dark.svg" alt="" width="130" height="17" data-logo-dark>
+    </a>
+
+    <% if (error) { %><p class="form-error" role="alert"><%= error %></p><% } %>
+
+    <% if (state === 'start') { %>
+
+    <h1 class="auth-title"><%= appLabel ? appLabel + ': delete your account and data' : 'Delete your account and data' %></h1>
+    <p class="auth-sub">
+      <% if (appLabel) { %><strong><%= appLabel %></strong> is published by <strong>Vesopa Software Limited</strong>.<% } else { %>For every app published by <strong>Vesopa Software Limited</strong>, and your Vesopa account.<% } %>
+      Use this page to ask us to delete your account and the data we hold about you.
+      You do not need the app installed.
+    </p>
+
+    <section class="del-section">
+      <h2>How it works</h2>
+      <ol class="del-steps">
+        <li><strong>Confirm it is you.</strong> Enter the email address you use with the app and we will email you a six-digit code.</li>
+        <li><strong>Choose what to delete.</strong> Your membership and data in each app we find for that address, and your Vesopa account if you have one.</li>
+        <li><strong>Choose when.</strong> Automatically after 7, 15 or 30 days — you can cancel until then — or as soon as possible, which our team reviews and carries out, normally within two working days.</li>
+      </ol>
+      <p class="del-note">We email you when we receive the request and again when it is done.</p>
+    </section>
+
+    <form method="post" action="/delete-account/start" class="del-form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="venue" value="<%= from.venue %>">
+      <div class="field">
+        <label for="email">Your email address</label>
+        <input type="email" id="email" name="email" autocomplete="email" required
+               value="<%= signedInEmail %>" spellcheck="false">
+      </div>
+      <button class="btn btn-primary" type="submit"><%= signedInEmail ? 'Continue' : 'Email me a code' %></button>
+    </form>
+
+    <section class="del-section">
+      <h2>What is deleted</h2>
+      <ul class="plain-list">
+        <li><strong>Your app membership:</strong> your name, email address, phone number and photo, your card and member number, your password and passkeys, the devices you signed in on, your notification and nearby-offer settings and the messages in your inbox.</li>
+        <li><strong>Your Vesopa account</strong>, if you choose it: your profile, email address and phone number, password, passkeys, authenticator app, saved devices and your connections to apps.</li>
+      </ul>
+
+      <h2>What is kept, and for how long</h2>
+      <ul class="plain-list">
+        <li><strong>Sales and points records.</strong> A venue must keep its sales records for six years for tax. Your purchases and points history stay with the venue, with your name and contact details removed.</li>
+        <li><strong>Gift card and deposit balances</strong>, so the money on them can still be used or refunded.</li>
+        <li><strong>Security logs</strong> of sign-ins, kept for 13 months to protect accounts from misuse, then deleted.</li>
+        <li><strong>A record that the request was carried out</strong>, with your email address shortened so it no longer identifies you.</li>
+      </ul>
+    </section>
+
+    <p class="small-print">
+      Signed in to the app? You can also ask from <strong>Account › Delete my account and data</strong>.
+      Questions: <a href="mailto:info@vesopasoftware.com">info@vesopasoftware.com</a>.
+    </p>
+
+    <% } else if (state === 'code') { %>
+
+    <h1 class="auth-title">Check your email</h1>
+    <p class="auth-sub">We sent a six-digit code to <strong><%= email %></strong>. It lasts ten minutes.</p>
+
+    <form method="post" action="/delete-account/code">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="field">
+        <label for="code">Six-digit code</label>
+        <input type="text" id="code" name="code" inputmode="numeric" autocomplete="one-time-code"
+               pattern="[0-9 ]{6,7}" maxlength="7" required>
+      </div>
+      <button class="btn btn-primary" type="submit">Continue</button>
+    </form>
+
+    <form method="post" action="/delete-account/start" class="del-form-inline">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="email" value="<%= email %>">
+      <input type="hidden" name="venue" value="<%= from.venue %>">
+      <input type="hidden" name="resend" value="1">
+      <p class="small-print">No email? Check your spam folder, or <button class="linklike" type="submit">send another code</button>.</p>
+    </form>
+
+    <% } else if (state === 'choose') { %>
+
+    <h1 class="auth-title">What should we delete?</h1>
+    <p class="auth-sub">For <strong><%= email %></strong>.</p>
+
+    <% if (open.length) { %>
+    <div class="notice-warn" role="status">
+      You already have a deletion request waiting for <%= open.map(function (o) { return o.label; }).join(', ') %>. We emailed you a link to see or cancel it.
+    </div>
+    <% } %>
+
+    <% if (!items.length) { %>
+    <p class="del-note">
+      We could not find an account or any app data for this address<% if (problems.length) { %>, and <%= problems.join(', ') %> could not be checked just now<% } %>.
+      If you used a different email address, <a href="<%= startPath %>">start again with that one</a>.
+      If you signed in with a phone number only, email <a href="mailto:info@vesopasoftware.com">info@vesopasoftware.com</a> from any address and we will help.
+    </p>
+    <% } else { %>
+
+    <form method="post" action="/delete-account/confirm">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+      <fieldset class="del-fieldset">
+        <legend>Delete</legend>
+        <div class="choice-list">
+          <% items.forEach(function (item) { %>
+          <label class="choice">
+            <input type="checkbox" name="items" value="<%= item.key %>" <%= preselect.has(item.key) ? 'checked' : '' %>>
+            <span class="choice-body">
+              <span class="choice-title"><%= item.label %></span>
+              <% if (item.detail) { %><span class="choice-detail"><%= item.detail %></span><% } %>
+            </span>
+          </label>
+          <% }) %>
+        </div>
+        <% if (problems.length) { %>
+        <p class="del-note"><%= problems.join(', ') %> could not be checked just now. Try again later, or email <a href="mailto:info@vesopasoftware.com">info@vesopasoftware.com</a>.</p>
+        <% } %>
+      </fieldset>
+
+      <fieldset class="del-fieldset">
+        <legend>When</legend>
+        <div class="choice-list">
+          <label class="choice">
+            <input type="radio" name="mode" value="scheduled" checked>
+            <span class="choice-body">
+              <span class="choice-title">Automatically after
+                <select name="days" class="del-days" aria-label="Number of days">
+                  <% dayChoices.forEach(function (d) { %>
+                  <option value="<%= d %>" <%= d === defaultDays ? 'selected' : '' %>><%= d %> days</option>
+                  <% }) %>
+                </select>
+              </span>
+              <span class="choice-detail">Nothing is deleted until then, and you can cancel from the email we send you.</span>
+            </span>
+          </label>
+          <label class="choice">
+            <input type="radio" name="mode" value="review">
+            <span class="choice-body">
+              <span class="choice-title">As soon as possible</span>
+              <span class="choice-detail">Our team reviews your request and deletes it, normally within two working days.</span>
+            </span>
+          </label>
+        </div>
+      </fieldset>
+
+      <label class="choice choice-plain">
+        <input type="checkbox" name="understand" value="yes">
+        <span class="choice-body">
+          <span class="choice-detail">I understand that once it is deleted it cannot be brought back, and any points or membership on the deleted app accounts are lost.</span>
+        </span>
+      </label>
+
+      <button class="btn btn-danger" type="submit">Request deletion</button>
+    </form>
+    <% } %>
+
+    <% } else if (state === 'done') { %>
+
+    <h1 class="auth-title"><%= existing ? 'You have already asked' : 'Request received' %></h1>
+    <% if (existing) { %>
+    <p class="auth-sub">A request for this is already waiting. The email we sent when you made it has a link to see or cancel it.</p>
+    <% } else { %>
+    <p class="auth-sub">We have emailed you a copy with a link to see or cancel it.</p>
+    <% } %>
+
+    <ul class="rows">
+      <% request.items.forEach(function (item) { %>
+      <li><span class="row-main"><%= item.label %></span><% if (item.detail) { %><span class="row-meta"><%= item.detail %></span><% } %></li>
+      <% }) %>
+    </ul>
+
+    <p class="del-note">
+      <% if (request.mode === 'scheduled') { %>
+        It will be deleted automatically on <strong><%= niceDate(request.due_at) %></strong>.
+      <% } else { %>
+        Our team will review it and delete it as soon as possible, normally within two working days.
+      <% } %>
+    </p>
+    <% if (manageUrl) { %><a class="btn btn-quiet" href="<%= manageUrl %>">View or cancel the request</a><% } %>
+
+    <% } else if (state === 'manage') { %>
+
+    <h1 class="auth-title">Your deletion request</h1>
+    <% if (cancelled) { %><p class="notice-good" role="status">Cancelled. Nothing will be deleted.</p><% } %>
+
+    <p class="auth-sub">
+      <strong><%= statusText[request.status] || request.status %></strong>
+      <% if (request.status === 'scheduled') { %> — it will be deleted on <%= niceDate(request.due_at) %>.<% } %>
+      <% if (request.status === 'completed') { %> on <%= niceDate(request.completed_at) %>.<% } %>
+      <% if (request.status === 'rejected' && request.decision_note) { %> — <%= request.decision_note %><% } %>
+    </p>
+
+    <ul class="rows">
+      <% request.items.forEach(function (item) { %>
+      <li><span class="row-main"><%= item.label %></span><% if (item.detail) { %><span class="row-meta"><%= item.detail %></span><% } %></li>
+      <% }) %>
+    </ul>
+    <p class="del-note">Asked for on <%= niceDate(request.created_at) %><%= request.app_label ? ' from ' + request.app_label : '' %>.</p>
+
+    <% if (['awaiting_review', 'scheduled', 'needs_attention'].includes(request.status)) { %>
+    <form method="post" action="/delete-account/requests/<%= request.public_id %>/cancel">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="token" value="<%= token %>">
+      <button class="btn btn-quiet" type="submit">Cancel this request</button>
+    </form>
+    <% } %>
+
+    <% } else { %>
+
+    <h1 class="auth-title">That link does not work</h1>
+    <p class="auth-sub">It may have been copied incompletely. Open it again from the email, or start a new request.</p>
+    <a class="btn btn-quiet" href="/delete-account">Delete your account and data</a>
+
+    <% } %>
+  </div>
+</main>
+
+<%- include('partials/foot') %>

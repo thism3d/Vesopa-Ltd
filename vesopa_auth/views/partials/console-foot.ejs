@@ -1,0 +1,17 @@
+  </main>
+</div>
+<%
+  /*
+   * The copy buttons.
+   *
+   * A client id, a redirect URI and a client secret are all retyped wrongly at
+   * least once if they cannot be copied, and a mistyped redirect URI does not
+   * fail here — it fails an hour later, on somebody else's machine, as
+   * `invalid_request` with no clue which character is wrong.
+   *
+   * Progressive: with the script blocked the text is still selectable, and the
+   * button is hidden rather than left there doing nothing.
+   */
+%>
+<script src="/js/copy.js?v=<%= config.version %>"></script>
+<%- include('foot') %>

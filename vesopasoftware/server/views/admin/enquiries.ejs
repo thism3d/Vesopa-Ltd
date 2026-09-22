@@ -1,0 +1,33 @@
+<%- include("../partials/head") %>
+<%- include("../partials/nav") %>
+<div class="wrap">
+  <div class="page-head"><div class="grow">
+    <span class="eyebrow">Straight from the website's contact form</span><h1>Enquiries</h1></div></div>
+  <% if (!enquiries.length) { %>
+    <div class="panel"><p class="t-empty">Nothing has come in yet.</p></div>
+  <% } %>
+  <% for (const e of enquiries) { %>
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <strong><%= e.name %></strong>
+          <span class="pill <%= e.status === 'replied' ? 'ok' : e.status === 'new' ? 'lime' : '' %>"><%= e.status %></span>
+          <div class="muted" style="font-size:.78rem"><%= e.email %><% if (e.phone) { %> · <%= e.phone %><% } %>
+            · <time datetime="<%= new Date(e.created_at).toISOString() %>"></time></div>
+        </div>
+        <span class="spacer"></span>
+      </div>
+      <% if (e.subject) { %><p style="font-weight:600;margin-bottom:.4rem"><%= e.subject %></p><% } %>
+      <p style="white-space:pre-wrap;font-size:.92rem"><%= e.message %></p>
+      <hr>
+      <form method="post" action="/portal/admin/enquiries/<%= e.id %>/reply">
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <div class="field"><label>Subject</label>
+          <input name="subject" value="Re: <%= e.subject || 'your message to Vesopa Software' %>"></div>
+        <div class="field"><label>Reply</label><textarea name="body" rows="3" required></textarea></div>
+        <button class="btn" type="submit">Send reply</button>
+      </form>
+    </div>
+  <% } %>
+</div>
+<%- include("../partials/foot") %>

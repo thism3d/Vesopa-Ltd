@@ -1,0 +1,216 @@
+<%#
+  Cookie consent banner and preferences dialog.
+
+  Under UK GDPR/PECR, anything beyond a strictly necessary cookie needs consent
+  that is freely given, specific and as easy to refuse as to give. So:
+
+    - "Reject all" is the same size and prominence as "Accept all". A reject
+      button that is smaller or greyer than accept is not a free choice.
+    - Nothing non-essential runs before a choice is made. There is no optional
+      third party on the site at present — the Intercom widget that used to load
+      unconditionally from partials/footer.ejs has been removed — so the two
+      optional categories currently gate nothing. They are kept because the
+      moment analytics or a chat widget is added it must be added *behind* a
+      consent gate, and `document.addEventListener('vesopa:consent', …)` is
+      where it goes. A banner retrofitted after the tracker never covers it.
+    - The choice is recorded with a version. Bumping CONSENT_VERSION re-asks
+      everyone, which is what has to happen when the cookies in use change.
+    - No cookie is set to store the answer — localStorage does the job without
+      itself needing consent.
+%>
+<div id="cc-banner" class="cc-banner" role="dialog" aria-modal="false"
+     aria-labelledby="cc-title" aria-describedby="cc-desc" hidden>
+    <div class="cc-copy">
+        <h2 id="cc-title">Cookies on vesopaepos.com</h2>
+        <p id="cc-desc">
+            We use strictly necessary cookies to run this site and keep your checkout secure.
+            We use no analytics or advertising cookies today — if that ever changes, these are
+            the switches that decide it. Read our <a href="/cookies">Cookie Policy</a>.
+        </p>
+    </div>
+    <div class="cc-actions">
+        <button type="button" class="cc-btn" data-cc="prefs">Manage preferences</button>
+        <button type="button" class="cc-btn" data-cc="reject">Reject all</button>
+        <button type="button" class="cc-btn primary" data-cc="accept">Accept all</button>
+    </div>
+</div>
+
+<div id="cc-modal" class="cc-modal" role="dialog" aria-modal="true" aria-labelledby="cc-modal-title" hidden>
+    <div class="cc-modal-card">
+        <h2 id="cc-modal-title">Cookie preferences</h2>
+        <p>Choose which cookies Vesopa EPOS may use. You can change this at any time from
+           the <em>Cookie settings</em> link in the footer.</p>
+
+        <div class="cc-cat">
+            <div class="cc-cat-text">
+                <h3>Strictly necessary</h3>
+                <p>Required for the site to work: your session, the security token on our
+                   forms, your checkout basket and this cookie choice. These cannot be
+                   switched off.</p>
+            </div>
+            <span class="cc-locked">Always on</span>
+        </div>
+
+        <div class="cc-cat">
+            <div class="cc-cat-text">
+                <h3>Analytics</h3>
+                <p>Anonymous statistics about which pages are visited and where visitors
+                   leave, so we know what to improve. Never used to identify you.</p>
+            </div>
+            <label class="cc-switch">
+                <input type="checkbox" id="cc-analytics" aria-label="Allow analytics cookies">
+                <span></span>
+            </label>
+        </div>
+
+        <div class="cc-cat">
+            <div class="cc-cat-text">
+                <h3>Support &amp; marketing</h3>
+                <p>Lets us run live chat and measure which campaigns bring businesses to us.
+                   We use none of these today; nothing will load unless you allow it.</p>
+            </div>
+            <label class="cc-switch">
+                <input type="checkbox" id="cc-marketing" aria-label="Allow support and marketing cookies">
+                <span></span>
+            </label>
+        </div>
+
+        <div class="cc-modal-actions">
+            <button type="button" class="cc-btn" data-cc="reject">Reject all</button>
+            <button type="button" class="cc-btn" data-cc="accept">Accept all</button>
+            <button type="button" class="cc-btn primary" data-cc="save">Save preferences</button>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    'use strict';
+
+    var KEY = 'vesopa_cookie_consent';
+    // Bump when the cookies in use change: consent to last year's set is not
+    // consent to this year's, so everyone is asked again.
+    var CONSENT_VERSION = 1;
+    // Regulators treat a stored consent older than a year as stale.
+    var MAX_AGE_MS = 365 * 24 * 60 * 60 * 1000;
+
+    var banner = document.getElementById('cc-banner');
+    var modal = document.getElementById('cc-modal');
+    var analyticsBox = document.getElementById('cc-analytics');
+    var marketingBox = document.getElementById('cc-marketing');
+    var lastFocus = null;
+
+    function read() {
+        try {
+            var saved = JSON.parse(localStorage.getItem(KEY) || 'null');
+            if (!saved || saved.version !== CONSENT_VERSION) return null;
+            if (Date.now() - saved.at > MAX_AGE_MS) return null;
+            return saved;
+        } catch (e) {
+            // Private mode, disabled storage, or something else wrote garbage
+            // here. Treat as "not asked yet" rather than breaking the page.
+            return null;
+        }
+    }
+
+    function write(consent) {
+        try {
+            localStorage.setItem(KEY, JSON.stringify({
+                version: CONSENT_VERSION,
+                at: Date.now(),
+                analytics: !!consent.analytics,
+                marketing: !!consent.marketing
+            }));
+        } catch (e) { /* storage unavailable — the choice holds for this page only */ }
+    }
+
+    // ---- Applying a decision -----------------------------------------------
+
+    // Set once anything is started off the back of consent. Withdrawing consent
+    // then has to reload: a third-party script cannot be un-run, and "we will
+    // stop next time" is not withdrawal.
+    var startedSomething = false;
+
+    /**
+     * Publish the decision. Nothing optional loads on the site today, so this
+     * only records the answer and announces it.
+     *
+     * Anything added later — analytics, a chat widget, a pixel — hangs off this
+     * event and must check the flag it cares about before doing anything:
+     *
+     *   document.addEventListener('vesopa:consent', function (e) {
+     *     if (!e.detail.analytics) return;
+     *     startedSomething = true;   // so a later withdrawal reloads
+     *     …load the tag…
+     *   });
+     */
+    function apply(consent, opts) {
+        var wasRunning = startedSomething;
+
+        window.vesopaConsent = consent;
+        document.dispatchEvent(new CustomEvent('vesopa:consent', { detail: consent }));
+
+        var withdrawn = wasRunning && !consent.analytics && !consent.marketing;
+        if (opts && opts.interactive && withdrawn) location.reload();
+    }
+
+    // ---- UI ----------------------------------------------------------------
+
+    function showBanner() { banner.hidden = false; }
+    function hideBanner() { banner.hidden = true; }
+
+    function openModal() {
+        var saved = read();
+        analyticsBox.checked = saved ? saved.analytics : false;
+        marketingBox.checked = saved ? saved.marketing : false;
+
+        lastFocus = document.activeElement;
+        modal.hidden = false;
+        document.body.style.overflow = 'hidden';
+        modal.querySelector('.cc-btn').focus();
+    }
+
+    function closeModal() {
+        modal.hidden = true;
+        document.body.style.overflow = '';
+        if (lastFocus && lastFocus.focus) lastFocus.focus();
+    }
+
+    function decide(consent) {
+        write(consent);
+        apply(consent, { interactive: true });
+        hideBanner();
+        closeModal();
+    }
+
+    document.addEventListener('click', function (e) {
+        var trigger = e.target.closest('[data-cc]');
+        if (!trigger) return;
+        e.preventDefault();
+
+        switch (trigger.dataset.cc) {
+            case 'accept': return decide({ analytics: true, marketing: true });
+            case 'reject': return decide({ analytics: false, marketing: false });
+            case 'save':   return decide({ analytics: analyticsBox.checked, marketing: marketingBox.checked });
+            case 'prefs':  return openModal();
+            // The footer link, which must work after a choice has been made.
+            case 'open':   return openModal();
+        }
+    });
+
+    // Escape closes the dialog without deciding, leaving the banner up if the
+    // visitor had not answered yet.
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && !modal.hidden) closeModal();
+    });
+
+    // ---- Boot --------------------------------------------------------------
+
+    var existing = read();
+    if (existing) {
+        apply(existing, { interactive: false });
+    } else {
+        showBanner();
+    }
+})();
+</script>

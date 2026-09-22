@@ -1,0 +1,137 @@
+<%#
+  The hero background: a network that is actually doing something.
+
+  WHY INLINE SVG AND NOT AN IMAGE OR A CANVAS.
+
+  An image cannot animate and would be a second download before first paint on
+  the one screen where that matters most. A canvas would need a requestAnimation
+  loop running for as long as the page is open — on a marketing page that is a
+  laptop fan spinning to draw decoration, and it draws nothing at all until
+  JavaScript has parsed.
+
+  Inline SVG with CSS animations paints with the document, costs no request,
+  keeps running with scripting blocked, is compositor-driven (transform and
+  opacity only, so nothing relayouts), and stops dead under
+  prefers-reduced-motion because the browser handles that for us.
+
+  It is masked away from the centre. Everything here sits behind a headline that
+  has to stay readable — a background that competes with the text it is behind
+  is a background that failed.
+%>
+<svg class="hero-net" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice"
+     aria-hidden="true" focusable="false">
+  <defs>
+    <%# Fades the mesh out of the middle third, where the headline lives. %>
+    <radialGradient id="net-fade" cx="50%" cy="46%" r="62%">
+      <stop offset="0%" stop-color="#000" stop-opacity="0"/>
+      <stop offset="34%" stop-color="#000" stop-opacity="0"/>
+      <stop offset="64%" stop-color="#fff" stop-opacity=".9"/>
+      <stop offset="100%" stop-color="#fff" stop-opacity="1"/>
+    </radialGradient>
+    <mask id="net-mask">
+      <rect width="1440" height="900" fill="url(#net-fade)"/>
+    </mask>
+
+    <linearGradient id="net-link" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#a5c715" stop-opacity=".85"/>
+      <stop offset="100%" stop-color="#a5c715" stop-opacity=".3"/>
+    </linearGradient>
+  </defs>
+
+  <g mask="url(#net-mask)">
+    <%#
+      The mesh. Coordinates are hand-placed rather than generated: a random
+      scatter reads as noise, and the eye picks out the accidental clusters it
+      always produces. These are spaced to read as a network of sites.
+    %>
+    <g class="net-links" stroke="url(#net-link)" fill="none" stroke-width="1">
+      <path d="M180 240 L420 140"/><path d="M420 140 L620 330"/>
+      <path d="M180 240 L330 470"/><path d="M330 470 L620 330"/>
+      <path d="M620 330 L880 200"/><path d="M880 200 L1080 420"/>
+      <path d="M880 200 L1220 250"/><path d="M1080 420 L1220 250"/>
+      <path d="M620 330 L760 620"/><path d="M760 620 L1080 420"/>
+      <path d="M760 620 L520 720"/><path d="M330 470 L520 720"/>
+      <path d="M330 470 L170 620"/><path d="M520 720 L170 620"/>
+      <path d="M1080 420 L1010 700"/><path d="M1010 700 L760 620"/>
+      <path d="M1080 420 L1300 600"/><path d="M1300 600 L1010 700"/>
+    </g>
+
+    <%#
+      Data in flight. Each packet is a plain circle translating from one node to
+      the next — the links are straight, so a translate is all a "packet moving
+      along the wire" needs, and translate is supported everywhere and composited
+      on the GPU. `offset-path` would be the fashionable way and buys nothing on
+      a straight line.
+    %>
+    <g class="net-packets" fill="#a5c715">
+      <circle r="2.6" class="pkt pkt-1"/>
+      <circle r="2.6" class="pkt pkt-2"/>
+      <circle r="2.2" class="pkt pkt-3"/>
+      <circle r="2.6" class="pkt pkt-4"/>
+      <circle r="2.2" class="pkt pkt-5"/>
+      <circle r="2.6" class="pkt pkt-6"/>
+    </g>
+
+    <%# The sites themselves. The larger ones pulse a ring, the way a status
+        map shows a node reporting in. %>
+    <g class="net-nodes">
+      <circle class="node" cx="180" cy="240" r="3"/>
+      <circle class="node node-big" cx="420" cy="140" r="4.5"/>
+      <circle class="node" cx="330" cy="470" r="3"/>
+      <circle class="node node-big" cx="620" cy="330" r="4.5"/>
+      <circle class="node" cx="880" cy="200" r="3"/>
+      <circle class="node node-big" cx="1080" cy="420" r="4.5"/>
+      <circle class="node" cx="760" cy="620" r="3"/>
+      <circle class="node" cx="1220" cy="250" r="3"/>
+      <circle class="node" cx="1010" cy="700" r="3"/>
+      <circle class="node" cx="520" cy="720" r="3"/>
+      <circle class="node" cx="170" cy="620" r="3"/>
+      <circle class="node" cx="1300" cy="600" r="3"/>
+
+      <circle class="ping" cx="420" cy="140" r="4.5"/>
+      <circle class="ping ping-2" cx="1080" cy="420" r="4.5"/>
+      <circle class="ping ping-3" cx="620" cy="330" r="4.5"/>
+    </g>
+
+    <%#
+      Two racks, because this is hosting and not an abstract constellation.
+      Drawn rather than illustrated: four units, a stack of drive slots, and an
+      activity light that blinks out of step with the other rack's — which is
+      the detail that makes a drawing of a server look like a server.
+    %>
+    <g class="net-rack" transform="translate(96 690)">
+      <rect class="rack-body" width="120" height="128" rx="9"/>
+      <g class="rack-units">
+        <rect y="12" x="12" width="96" height="20" rx="4"/>
+        <rect y="40" x="12" width="96" height="20" rx="4"/>
+        <rect y="68" x="12" width="96" height="20" rx="4"/>
+        <rect y="96" x="12" width="96" height="20" rx="4"/>
+      </g>
+      <circle class="rack-led" cx="98" cy="22" r="2.6"/>
+      <circle class="rack-led rack-led-b" cx="98" cy="50" r="2.6"/>
+      <circle class="rack-led rack-led-c" cx="98" cy="78" r="2.6"/>
+    </g>
+
+    <g class="net-rack net-rack-2" transform="translate(1236 92)">
+      <rect class="rack-body" width="108" height="100" rx="9"/>
+      <g class="rack-units">
+        <rect y="12" x="11" width="86" height="20" rx="4"/>
+        <rect y="40" x="11" width="86" height="20" rx="4"/>
+        <rect y="68" x="11" width="86" height="20" rx="4"/>
+      </g>
+      <circle class="rack-led rack-led-c" cx="88" cy="22" r="2.4"/>
+      <circle class="rack-led" cx="88" cy="50" r="2.4"/>
+      <circle class="rack-led rack-led-b" cx="88" cy="78" r="2.4"/>
+    </g>
+
+    <%# A globe, bottom right — the "your site, reachable from anywhere" half of
+        the idea. Meridians only; a filled sphere would compete with the text. %>
+    <g class="net-globe" transform="translate(1268 830)">
+      <circle class="globe-ring" r="86"/>
+      <ellipse class="globe-ring" rx="86" ry="30"/>
+      <ellipse class="globe-ring" rx="86" ry="58"/>
+      <ellipse class="globe-ring" rx="34" ry="86"/>
+      <ellipse class="globe-ring" rx="66" ry="86"/>
+    </g>
+  </g>
+</svg>

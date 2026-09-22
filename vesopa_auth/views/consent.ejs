@@ -1,0 +1,226 @@
+<%- include('partials/head') %>
+
+<%
+  /*
+   * THE CONSENT SCREEN, REBUILT TO FIT ON A PHONE.
+   *
+   * What was wrong with it, in the owner's words: *"the consent screen is too
+   * much height which should fit in only within a mobile screen"*. Measured on
+   * a 393px-wide Android, the Vesopa Menu screen ran to two and a half
+   * screenfuls — seven scope headings with a sentence each — and Allow was
+   * below all of it. That is not a long page; it is a consent screen where the
+   * decision is out of sight while the reasoning is being read, which is the one
+   * failure mode this page must not have.
+   *
+   * So the order is now: WHO is about to be signed in, WHAT is asking, WHAT it
+   * gets in one line, and the two buttons. The full list is one tap away and
+   * closed by default.
+   *
+   * IS A COLLAPSED LIST STILL INFORMED CONSENT? It is more informed than it
+   * was. Nothing is hidden — the summary says how many permissions there are
+   * and opens with a tap — and the alternative is not "everybody reads seven
+   * paragraphs", it is "everybody scrolls past seven paragraphs to reach the
+   * button", which is where consent screens go to die. A `<details>` element
+   * also means no script is involved, so it opens on a page where scripting
+   * failed.
+   *
+   * THE ACCOUNT IS SHOWN TWICE, AT THE TOP AND ABOVE THE BUTTON. That is
+   * deliberate rather than sloppy: the top chip is for somebody arriving, the
+   * line above Allow is for the moment of deciding, and on a shared phone or a
+   * back-office machine with two accounts the second is the one that catches a
+   * mistake — allowing an application onto a colleague's account is not
+   * something you get to undo by noticing afterwards.
+   */
+  const shownName = (session.display_name || '').trim();
+  const shownEmail = (typeof accountEmail !== 'undefined' && accountEmail) || '';
+  const chipInitial = (shownName || shownEmail || 'V').trim().charAt(0).toUpperCase();
+  // Back to this same authorisation after signing in as somebody else.
+  const here = '/oauth/authorize?' + new URLSearchParams(query).toString();
+%>
+
+<main class="auth-shell">
+  <div class="auth-card consent-card">
+
+    <header class="consent-head">
+      <a class="brand" href="/" aria-label="Vesopa">
+        <img class="brand-mark" src="/brand/logo-light.svg" alt="" width="104" height="14" data-logo-light>
+        <img class="brand-mark" src="/brand/logo-dark.svg" alt="" width="104" height="14" data-logo-dark>
+      </a>
+
+      <%
+        /*
+         * The account chip, and it is a CONTROL rather than a label — the
+         * owner asked for "circle click to change the account".
+         *
+         * IT NO LONGER SIGNS ANYBODY OUT TO DO IT. It used to POST to /logout
+         * with somewhere to come back to, which was the only thing possible
+         * when a browser could hold one account: changing who you were meant
+         * ending the session you had, and with it the till, the menu and the
+         * back office. Now it opens the chooser, and switching keeps every
+         * other account exactly as it was.
+         *
+         * A link, therefore, and not a form: opening a chooser changes nothing.
+         * The two destructive actions on that page are both POSTs with a CSRF
+         * token, which is where that protection belongs.
+         */
+      %>
+      <div class="account-switch">
+        <a class="account-chip" href="/account/choose?return_to=<%= encodeURIComponent(here) %>"
+           title="Choose a different Vesopa account"
+           aria-label="Signed in as <%= shownEmail || shownName %>. Choose a different account">
+          <% if (session.avatar_path) { %>
+          <img class="account-chip-face" src="<%= session.avatar_path %>" alt="" width="28" height="28">
+          <% } else { %>
+          <span class="account-chip-face account-chip-empty" aria-hidden="true"><%= chipInitial %></span>
+          <% } %>
+          <span class="account-chip-mail"><%= shownEmail || shownName || 'Your account' %></span>
+          <span class="account-chip-go" aria-hidden="true">
+            <%- include('partials/icon', { name: 'chevron' }) %>
+          </span>
+        </a>
+      </div>
+    </header>
+
+    <div class="consent-app">
+      <% if (application.logo_path) { %>
+      <img class="consent-logo" src="<%= application.logo_path %>" alt="" width="44" height="44">
+      <% } else { %>
+      <img class="consent-logo" src="/brand/app-logo.png" alt="" width="44" height="44">
+      <% } %>
+      <div>
+        <h1 class="auth-title"><%= application.name %></h1>
+        <p class="auth-sub">by <%= application.organisation_name %></p>
+      </div>
+    </div>
+
+    <p class="consent-lead">
+      wants to use your Vesopa account.
+    </p>
+
+    <%
+      /*
+       * THE ADMINISTRATOR WARNING.
+       *
+       * The owner's report: *"an administration of an app cannot accept a
+       * consent of the user account there show that warning and ask to switch
+       * the account"*. He was signed in as Vesopa Administrator and was being
+       * asked to grant Vesopa Menu access to a customer's orders — his own
+       * account, which is not a customer of anything.
+       *
+       * It is a warning and not a refusal, and the line is worth drawing
+       * carefully. There are real reasons to do this: checking what the consent
+       * screen actually says before a customer sees it is one, and blocking it
+       * outright would mean the only way to look at your own product's consent
+       * screen is to make a second account. What is wrong is doing it by
+       * ACCIDENT — pressing Allow on a machine that happens to be signed in as
+       * the administrator, and quietly attaching a venue's app to the account
+       * that administers every venue.
+       *
+       * So the decision is made harder rather than impossible: the warning is
+       * above the buttons, switching is the primary action, and Allow becomes
+       * the quiet one.
+       */
+    %>
+    <% if (typeof adminWarning !== 'undefined' && adminWarning) { %>
+    <div class="consent-warn" role="note">
+      <span class="consent-warn-mark" aria-hidden="true">
+        <%- include('partials/icon', { name: 'shield' }) %>
+      </span>
+      <div>
+        <strong>This is an administrator account</strong>
+        <p>
+          You administer <%= application.name %>, so this would connect it to
+          your own account rather than to a customer's. Fine if you are testing
+          it — switch first if you are not.
+        </p>
+      </div>
+    </div>
+    <% } %>
+
+    <%
+      /*
+       * The scope list, closed. The count is in the summary because "See what
+       * it can do" with no number gives no sense of whether opening it is worth
+       * the tap — and an application asking for eleven things should look
+       * different from one asking for two, before it is opened.
+       */
+    %>
+    <details class="consent-scopes"<%= scopes.length <= 3 ? ' open' : '' %>>
+      <summary>
+        <span>What <%= application.name %> will be able to do</span>
+        <span class="consent-count"><%= scopes.length %></span>
+      </summary>
+      <ul class="scopes">
+        <% scopes.forEach(function (scope) { %>
+        <li>
+          <span class="scope-title"><%= scope.title %></span>
+          <% if (scope.description) { %>
+          <span class="scope-desc"><%= scope.description %></span>
+          <% } %>
+        </li>
+        <% }) %>
+      </ul>
+    </details>
+
+    <%
+      /*
+       * "You do not have to do this."
+       *
+       * Shown only for an application that genuinely works without an account —
+       * the QR menu, where guest ordering is the default and always will be.
+       *
+       * It looks like a strange thing to put on a consent screen, and it is the
+       * most honest sentence on the page. Somebody has arrived here mid-meal,
+       * with food coming, and the alternative to reading a permissions list is
+       * abandoning a basket. Saying plainly that Deny is not the end of the
+       * evening is what makes the Allow that follows a real decision rather
+       * than a reflex.
+       */
+    %>
+    <% if (application.guest_allowed) { %>
+    <p class="consent-guest">
+      You do not need an account to use <%= application.name %> — carrying on as
+      a guest works exactly the same.
+    </p>
+    <% } %>
+
+    <form method="post" action="/oauth/consent" class="auth-form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="client_id" value="<%= query.client_id %>">
+      <input type="hidden" name="redirect_uri" value="<%= query.redirect_uri %>">
+      <input type="hidden" name="scope" value="<%= query.scope %>">
+      <input type="hidden" name="state" value="<%= query.state || '' %>">
+      <input type="hidden" name="nonce" value="<%= query.nonce || '' %>">
+      <input type="hidden" name="code_challenge" value="<%= query.code_challenge %>">
+
+      <p class="consent-as">
+        Continuing as <strong><%= shownEmail || shownName || 'your Vesopa account' %></strong>
+      </p>
+
+      <button class="btn <%= typeof adminWarning !== 'undefined' && adminWarning ? 'btn-quiet' : 'btn-primary' %>"
+              type="submit" name="decision" value="allow">
+        Allow
+      </button>
+      <button class="btn btn-quiet" type="submit" name="decision" value="deny">
+        Not now
+      </button>
+    </form>
+
+    <p class="consent-other">
+      <a href="/account/choose?return_to=<%= encodeURIComponent(here) %>"
+         class="<%= typeof adminWarning !== 'undefined' && adminWarning ? 'btn btn-primary' : 'linklike' %>">
+        Use a different account
+      </a>
+    </p>
+
+    <p class="small-print">
+      You can take this back at any time from
+      <a href="/account/apps">your connected apps</a>.
+      <% if (application.privacy_url) { %>
+      <br>Read <%= application.name %>'s <a href="<%= application.privacy_url %>" rel="noopener nofollow">privacy policy</a>.
+      <% } %>
+    </p>
+  </div>
+</main>
+
+<%- include('partials/foot') %>

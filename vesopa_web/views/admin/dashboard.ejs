@@ -1,0 +1,237 @@
+<%- include('partials/shell-top') %>
+
+<%
+  const totalTill = series.reduce((a, s) => a + s.gross_minor, 0);
+  const collected30 = series.reduce((a, s) => a + s.collected_minor, 0);
+  const attention = Number(officeStats.overdue || 0) + Number(officeStats.due_soon || 0);
+%>
+
+<%# ---- Vesopa's own money ------------------------------------------------ %>
+
+<div class="ap-grid cols-4">
+  <div class="ap-stat">
+    <p class="ap-stat-label">Recurring revenue</p>
+    <p class="ap-stat-value"><%= moneyShort(officeStats.mrr_minor) %><span class="ap-small ap-muted">/mo</span></p>
+    <p class="ap-stat-note"><%= officeStats.active || 0 %> active <%= Number(officeStats.active) === 1 ? 'office' : 'offices' %></p>
+  </div>
+
+  <div class="ap-stat is-info">
+    <p class="ap-stat-label">Collected this month</p>
+    <p class="ap-stat-value"><%= moneyShort(collection.month_minor) %></p>
+    <p class="ap-stat-note"><%= moneyShort(collection.quarter_minor) %> this quarter · <%= moneyShort(collection.year_minor) %> YTD</p>
+  </div>
+
+  <div class="ap-stat <%= Number(officeStats.overdue) ? 'is-danger' : '' %>">
+    <p class="ap-stat-label">Overdue</p>
+    <p class="ap-stat-value"><%= officeStats.overdue || 0 %></p>
+    <p class="ap-stat-note">Tills stay on — these need chasing</p>
+  </div>
+
+  <div class="ap-stat <%= Number(officeStats.due_soon) ? 'is-warn' : '' %>">
+    <p class="ap-stat-label">Renewing soon</p>
+    <p class="ap-stat-value"><%= officeStats.due_soon || 0 %></p>
+    <p class="ap-stat-note">Within the next 21 days</p>
+  </div>
+</div>
+
+<div class="ap-grid cols-2 ap-mt">
+  <div class="ap-card">
+    <div class="ap-card-head">
+      <h3>Subscription income collected</h3>
+      <div class="ap-spacer"></div>
+      <span class="ap-badge lime"><%= money(collected30) %> / 30d</span>
+    </div>
+    <%- include('partials/linechart', {
+          points: series.map(s => ({ date: s.date, value: s.collected_minor })),
+          color: '#a5c715',
+          legend: 'Payments received',
+          fmt: money,
+        }) %>
+  </div>
+
+  <div class="ap-card">
+    <div class="ap-card-head">
+      <h3>Till turnover across all sites</h3>
+      <div class="ap-spacer"></div>
+      <span class="ap-badge info"><%= money(totalTill) %> / 30d</span>
+    </div>
+    <%- include('partials/linechart', {
+          points: series.map(s => ({ date: s.date, value: s.gross_minor })),
+          color: '#4aa8ff',
+          legend: 'Gross taken through the tills',
+          fmt: money,
+        }) %>
+  </div>
+</div>
+
+<%# ---- What the tills are doing ------------------------------------------ %>
+
+<div class="ap-grid cols-4">
+  <div class="ap-stat is-info">
+    <p class="ap-stat-label">Orders · 30 days</p>
+    <p class="ap-stat-value"><%= Number(tillTotals.orders || 0).toLocaleString('en-GB') %></p>
+    <p class="ap-stat-note"><%= tillTotals.today_orders || 0 %> today</p>
+  </div>
+  <div class="ap-stat is-info">
+    <p class="ap-stat-label">Taken today</p>
+    <p class="ap-stat-value"><%= moneyShort(tillTotals.today_minor) %></p>
+    <p class="ap-stat-note">Across every connected till</p>
+  </div>
+  <div class="ap-stat is-info">
+    <p class="ap-stat-label">Sites trading</p>
+    <p class="ap-stat-value"><%= tillTotals.trading_sites || 0 %></p>
+    <p class="ap-stat-note">Rang a sale in the last 30 days</p>
+  </div>
+  <div class="ap-stat">
+    <p class="ap-stat-label">Average order</p>
+    <p class="ap-stat-value">
+      <%= money(Number(tillTotals.orders) ? Math.round(tillTotals.gross_minor / tillTotals.orders) : 0) %>
+    </p>
+    <p class="ap-stat-note">Last 30 days</p>
+  </div>
+</div>
+
+<%# ---- The chase queue ---------------------------------------------------- %>
+
+<div class="ap-card ap-mt">
+  <div class="ap-card-head">
+    <h3>Renewals needing attention</h3>
+    <div class="ap-spacer"></div>
+    <a class="ap-btn sm ghost" href="/admin/offices?filter=attention">See all</a>
+  </div>
+  <p class="ap-card-sub">
+    An expired subscription never switches a till off. These are the accounts to
+    email or ring — the shop keeps trading either way.
+  </p>
+
+<% if (!renewals.length) { %>
+  <p class="ap-empty">Nothing due in the next 21 days. <%= attention ? '' : 'Everything is paid up.' %></p>
+<% } else { %>
+  <div class="ap-table-wrap">
+    <table class="ap-table">
+      <thead>
+        <tr>
+          <th>Office</th>
+          <th>Registered email</th>
+          <th>Phone</th>
+          <th>Plan</th>
+          <th>Renews</th>
+          <th>Status</th>
+          <th class="actions">Chase</th>
+        </tr>
+      </thead>
+      <tbody>
+<% renewals.forEach(function (o) { %>
+        <tr>
+          <td>
+            <a class="ap-primary" href="/admin/offices/<%= o.id %>"><%= o.name %></a>
+            <% if (o.is_demo) { %><span class="ap-badge muted">demo</span><% } %>
+          </td>
+          <td><a href="mailto:<%= o.contact_email %>"><%= o.contact_email %></a></td>
+          <td>
+            <% if (o.contact_phone) { %>
+              <a href="tel:<%= o.contact_phone %>"><%= o.contact_phone %></a>
+            <% } else { %>
+              <span class="ap-muted">no number on file</span>
+            <% } %>
+          </td>
+          <td><%= o.plan || '—' %> · <%= o.term_months %>m</td>
+          <td class="ap-nowrap"><%= formatDate(o.next_due_on) %></td>
+          <td><span class="ap-badge <%= o.state.badge %>"><%= o.state.label %></span></td>
+          <td class="actions">
+            <a class="ap-btn sm" href="/admin/offices/<%= o.id %>#chase">
+              <span class="material-icons">outgoing_mail</span> Chase
+            </a>
+          </td>
+        </tr>
+<% }); %>
+      </tbody>
+    </table>
+  </div>
+<% } %>
+</div>
+
+<div class="ap-grid cols-2">
+  <%# ---- Busiest sites --------------------------------------------------- %>
+  <div class="ap-card">
+    <div class="ap-card-head"><h3>Busiest sites · 30 days</h3></div>
+<% if (!topOffices.length) { %>
+    <p class="ap-empty">No till activity recorded yet.</p>
+<% } else { %>
+    <div class="ap-bars">
+<% const topMax = Math.max(...topOffices.map(o => Number(o.gross_minor)), 1); %>
+<% topOffices.forEach(function (o) { %>
+      <div class="ap-bar-row">
+        <span class="ap-nowrap" style="overflow:hidden; text-overflow:ellipsis">
+          <% if (o.office_id) { %><a href="/admin/offices/<%= o.office_id %>"><%= o.name %></a>
+          <% } else { %><%= o.name %><% } %>
+        </span>
+        <span class="ap-bar-track">
+          <span class="ap-bar-fill" style="width: <%= Math.round((o.gross_minor / topMax) * 100) %>%"></span>
+        </span>
+        <span class="num"><%= money(o.gross_minor) %></span>
+      </div>
+<% }); %>
+    </div>
+<% } %>
+  </div>
+
+  <%# ---- Tender split ------------------------------------------------------ %>
+  <div class="ap-card">
+    <div class="ap-card-head"><h3>How customers paid · 30 days</h3></div>
+<% if (!methodSplit.length) { %>
+    <p class="ap-empty">No payments recorded yet.</p>
+<% } else { %>
+    <div class="ap-bars">
+<% const methodMax = Math.max(...methodSplit.map(m => Number(m.amount_minor)), 1); %>
+<% methodSplit.forEach(function (m) { %>
+      <div class="ap-bar-row">
+        <span style="text-transform: capitalize"><%= m.method %></span>
+        <span class="ap-bar-track">
+          <span class="ap-bar-fill" style="width: <%= Math.round((m.amount_minor / methodMax) * 100) %>%"></span>
+        </span>
+        <span class="num"><%= money(m.amount_minor) %> <span class="ap-muted ap-small">(<%= m.n %>)</span></span>
+      </div>
+<% }); %>
+    </div>
+<% } %>
+  </div>
+</div>
+
+<%# ---- Recent collection --------------------------------------------------- %>
+
+<div class="ap-card">
+  <div class="ap-card-head">
+    <h3>Recent payments in</h3>
+    <div class="ap-spacer"></div>
+    <a class="ap-btn sm ghost" href="/admin/collection">Full ledger</a>
+  </div>
+
+<% if (!recentPayments.length) { %>
+  <p class="ap-empty">
+    No subscription payments recorded yet. Record one from an office's page and
+    it will appear here and in the collection totals.
+  </p>
+<% } else { %>
+  <div class="ap-table-wrap">
+    <table class="ap-table">
+      <thead>
+        <tr><th>Paid</th><th>Office</th><th>Method</th><th>Reference</th><th class="num">Amount</th></tr>
+      </thead>
+      <tbody>
+<% recentPayments.forEach(function (p) { %>
+        <tr>
+          <td class="ap-nowrap"><%= formatDate(p.paid_on) %></td>
+          <td><a class="ap-primary" href="/admin/offices/<%= p.office_id %>"><%= p.office_name %></a></td>
+          <td style="text-transform: capitalize"><%= p.method %></td>
+          <td class="ap-mono"><%= p.reference || '—' %></td>
+          <td class="num"><strong><%= money(p.amount_minor, p.currency) %></strong></td>
+        </tr>
+<% }); %>
+      </tbody>
+    </table>
+  </div>
+<% } %>
+</div>
+
+<%- include('partials/shell-bottom') %>

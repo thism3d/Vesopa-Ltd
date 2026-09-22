@@ -1,0 +1,29 @@
+-- ---------------------------------------------------------------------------
+-- Vesopa Cloud opens its door.
+--
+-- WHAT CHANGED
+--
+-- cloud.vesopa.com used to have a password form and a Create-account page
+-- beside Continue with Vesopa, and this client was shut (allow_self_enroll 0):
+-- a hosting customer was a row the panel had already made, and Vesopa Auth's
+-- job was only to say "this person is that customer". A stranger pressing the
+-- button was turned away with "not been given access to Vesopa Cloud" -- which
+-- is what the owner met, as a stranger to his own product's member list.
+--
+-- The owner's direction for every product is one way in: the Vesopa account,
+-- and no other login or registration. So the password form and the sign-up
+-- page have come off the panel, and the first Continue with Vesopa from an
+-- address it has never seen now CREATES the hosting customer -- exactly what
+-- the sign-up page created, minus the password. For that to be reachable this
+-- client has to admit whoever holds a Vesopa account, the way the Gift shop
+-- (schema_019) and the loyalty client do. There is nothing on the other side
+-- of the door but an empty account; buying anything still means checkout.
+--
+-- Suspension still works: a member with status 'suspended' is refused as
+-- before, because self-enrolment only decides what happens to somebody with NO
+-- membership row.
+--
+-- Re-runnable.
+-- ---------------------------------------------------------------------------
+
+UPDATE applications SET allow_self_enroll = 1 WHERE slug = 'vesopa-cloud';

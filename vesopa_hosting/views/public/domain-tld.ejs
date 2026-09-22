@@ -1,0 +1,186 @@
+<%- include('../partials/head', { extraCss: '/assets/css/domains.css' }) %>
+<%- include('../partials/header') %>
+
+<main id="main">
+
+<%#
+  One extension, one page, one URL.
+
+  This is the page that answers "how much is a .agency domain" — the query the
+  catalogue browser cannot rank for because it is one URL for 715 answers. Every
+  number on it comes from the same catalogue row the browser and the basket use,
+  so a price quoted here cannot disagree with the price charged.
+%>
+<section class="hero dtldp-hero">
+  <div class="hero-aura hero-aura-1"></div>
+  <div class="hero-grid"></div>
+  <div class="wrap hero-inner">
+    <p class="kicker" data-reveal="0" style="justify-content:center">
+      <% if (category) { %>
+        <a href="/domains/category/<%= category.slug %>" style="color:inherit"><%= category.label %></a>
+      <% } else { %>Domain names<% } %>
+    </p>
+
+    <h1 class="dtldp-name" data-reveal="40"><span class="hl">.</span><%= tld.tld %></h1>
+
+    <p class="lede hero-lede" data-reveal="80">
+      <% if (tld.blurb) { %>
+        <%= tld.blurb %>
+      <% } else if (tld.promo) { %>
+        <%= tld.register_display %> for the first year, then <%= tld.renew_display %> a year.
+        Free WHOIS privacy and full DNS control, included rather than sold back to you.
+      <% } else { %>
+        <%= tld.register_display %> a year, and it renews at <%= tld.renew_display %> —
+        close enough that there is no cliff waiting for you in twelve months.
+      <% } %>
+    </p>
+
+    <%# The three figures, side by side and above the fold. This is the whole
+        reason somebody landed here; making them scroll for it would be
+        perverse. %>
+    <dl class="dtldp-figures" data-reveal="120">
+      <div class="dtldp-fig dtldp-fig-lead">
+        <dt>Register</dt>
+        <dd><%= tld.register_display %></dd>
+        <small>first year<%= tld.promo ? ` · ${tld.promo_percent}% off` : '' %></small>
+      </div>
+      <div class="dtldp-fig">
+        <dt>Renews at</dt>
+        <dd><%= tld.renew_display %></dd>
+        <small>every year after</small>
+      </div>
+      <div class="dtldp-fig">
+        <dt>Transfer in</dt>
+        <dd><%= tld.transfer_display %></dd>
+        <small>adds a year to what is left</small>
+      </div>
+    </dl>
+
+    <%# The search box, with the extension already locked on. Nobody arriving on
+        a .agency page wants to type ".agency". %>
+    <div class="dsearch dtldp-check" data-reveal="160">
+      <form class="dsearch-form" data-tld-check action="/domains" method="get">
+        <input class="dsearch-input" type="text" name="name" autocomplete="off" spellcheck="false"
+               data-tld-name maxlength="63" placeholder="yourbusiness"
+               aria-label="The name you want, without the extension">
+        <span class="dtldp-suffix">.<%= tld.tld %></span>
+        <button class="btn btn-lg" type="submit"><%- icon('search', 19) %><span class="hide-sm">Check</span></button>
+        <%# The real query the search page reads. Assembled from the box above on
+            submit, and carrying the bare extension until then so a no-script
+            submit still lands somewhere sensible. %>
+        <input type="hidden" name="q" value="<%= tld.tld %>" data-tld-q>
+      </form>
+    </div>
+  </div>
+</section>
+
+<%# --- What you get ------------------------------------------------------- %>
+<section class="section">
+  <div class="wrap">
+    <div class="grid grid-4">
+      <%
+      const inc = [
+        ['shield', 'WHOIS privacy',   'Your name and address kept off the public record at no charge, wherever the registry allows it.'],
+        ['globe',  'Full DNS control', 'A, AAAA, CNAME, MX, TXT and SRV records you can edit yourself, from the same panel as everything else.'],
+        ['mail',   'Email forwarding', 'Point hello@ at an inbox you already use, without buying a mailbox first.'],
+        ['lock',   'Registrar lock',   'On by default. Nobody starts a transfer without the authorisation code, and we hand that over on request without a retention call.'],
+      ];
+      inc.forEach(function (f, i) { %>
+        <article class="card card-hover" data-reveal="<%= i * 70 %>">
+          <div class="f-icon"><%- icon(f[0], 22) %></div>
+          <h3 class="h3 mb-1"><%= f[1] %></h3>
+          <p class="small muted mb-0"><%= f[2] %></p>
+        </article>
+      <% }); %>
+    </div>
+
+    <% if (tld.promo) { %>
+      <%# Said plainly on the page for the extension it applies to, not only in
+          a general note on the pricing page. A first year at a fifth of the
+          renewal is the single most important fact about buying one of these,
+          and burying it is how a renewal becomes a complaint. %>
+      <div class="alert alert-warn mt-4" data-reveal="0">
+        <%- icon('info', 19) %>
+        <div>
+          <b>.<%= tld.tld %> is a promotional first year.</b>
+          The registry sells the first year of a .<%= tld.tld %> at a discount to
+          drive adoption — you pay <b><%= tld.register_display %></b> now and
+          <b><%= tld.renew_display %></b> every year after that. We would rather
+          you saw both numbers here than found the second one in a renewal email.
+          It is a genuinely good way to start something cheaply; it is not a
+          <%= tld.register_display %>-a-year domain.
+        </div>
+      </div>
+    <% } %>
+  </div>
+</section>
+
+<%# --- Related extensions ------------------------------------------------- %>
+<% if (related.length) { %>
+<section class="section section-tint">
+  <div class="wrap">
+    <div class="row-between mb-3">
+      <div>
+        <p class="kicker" data-reveal="0">Also worth a look</p>
+        <h2 class="h2 mt-2" data-reveal="40">
+          <%= category ? `Other ${category.label.toLowerCase()} extensions` : 'Related extensions' %>
+        </h2>
+      </div>
+      <% if (category) { %>
+        <a class="btn btn-ghost btn-sm" href="/domains/category/<%= category.slug %>">
+          See all <%= category.label.toLowerCase() %> <%- icon('arrow', 16) %>
+        </a>
+      <% } %>
+    </div>
+
+    <div class="dcat-grid" data-catalogue-grid>
+      <%- include('../partials/tld-cards', { rows: related }) %>
+    </div>
+  </div>
+</section>
+<% } %>
+
+<%# --- FAQ ---------------------------------------------------------------- %>
+<section class="section" id="faq">
+  <div class="wrap wrap-narrow">
+    <div class="center mb-4">
+      <h2 class="h1" data-reveal="0">.<%= tld.tld %> questions</h2>
+    </div>
+    <div data-acc-group data-reveal="60">
+      <%
+      const faqs = [
+        [`How much does a .${tld.tld} domain cost?`,
+         `${tld.register_display} for the first year and ${tld.renew_display} a year after that`
+         + `${tld.promo ? ' — the registry discounts the first year on this extension' : ''}. `
+         + 'WHOIS privacy, DNS and email forwarding are included, so that is the whole price.'],
+        [`Do I have to host with you to register a .${tld.tld}?`,
+         'No. Register it here and point it anywhere you like — the DNS editor is included either way. '
+         + 'If you do host with us we point it at your site automatically.'],
+        [`Can I move a .${tld.tld} I already own to Vesopa?`,
+         `Yes, for ${tld.transfer_display}, and the transfer adds a year to whatever time is left `
+         + 'rather than replacing it. Unlock it at your current registrar, get the authorisation code, '
+         + 'and start it from the transfer page. DNS carries over unchanged, so nothing goes dark.'],
+        [`How quickly does a .${tld.tld} start working?`,
+         'The registration itself is usually instant. DNS then propagates, which is typically minutes '
+         + 'but can be a few hours depending on your ISP.'],
+        ['Can I move it away later?',
+         'Yes, and we will not make it difficult. Unlock it in the panel, we email the authorisation '
+         + 'code, and you are gone. No fee and no retention call — a domain you cannot leave with is '
+         + 'not one you own.'],
+      ];
+      faqs.forEach(function (f) { %>
+        <div class="acc">
+          <button class="acc-q" type="button" aria-expanded="false"><span><%= f[0] %></span><%- icon('chevron', 19) %></button>
+          <div class="acc-a"><div class="acc-a-inner"><%= f[1] %></div></div>
+        </div>
+      <% }); %>
+    </div>
+
+    <p class="center mt-4">
+      <a class="btn btn-ghost" href="/domains/pricing">See all extensions <%- icon('arrow', 16) %></a>
+    </p>
+  </div>
+</section>
+
+</main>
+<%- include('../partials/footer', { extraJs: '/assets/js/domain-tld.js' }) %>

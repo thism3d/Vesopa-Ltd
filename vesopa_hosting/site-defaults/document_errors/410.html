@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<!--
+  410 - deliberately removed and not coming back. Different from a 404, and worth saying so: it tells a search engine to stop asking.
+
+  SELF-CONTAINED, and that is the whole design constraint. An error page that
+  loads a stylesheet, a font or a logo is an error page that breaks in exactly
+  the situations it exists for — the 50x especially, where the thing that
+  serves assets is the thing that just failed. No request leaves this file.
+
+  NOINDEX because an error is not content. A 404 that gets indexed competes
+  with the real page it was supposed to replace.
+-->
+<meta name="robots" content="noindex, nofollow">
+<title>Gone</title>
+<meta name="description" content="This page has been permanently removed.">
+<meta name="theme-color" content="#a5c715" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#14170f" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23a5c715'/><path d='M8 9h5l3 8 3-8h5l-6 15h-4z' fill='%2310130a'/></svg>">
+<style>
+  *,*::before,*::after{box-sizing:border-box}
+  :root{
+    --accent:#a5c715; --accent-soft:#eff6d8; --accent-ink:#6e8a0e;
+    --ink:#14170f; --ink-2:#4a4c41; --ink-3:#787a6e;
+    --bg:#ffffff; --bg-2:#f8f9f4; --rule:#e4e7dd;
+    --font:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Roboto,Helvetica,Arial,sans-serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{--ink:#eef1e6;--ink-2:#b9bfae;--ink-3:#8b9280;--bg:#14170f;--bg-2:#1b2015;--rule:#2c3323;
+          --accent-soft:#232a16;--accent-ink:#c3e33a}
+  }
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0;min-height:100vh;font-family:var(--font);color:var(--ink);line-height:1.6;
+    background:radial-gradient(820px 460px at 50% -18%, var(--accent-soft) 0%, transparent 70%), var(--bg);
+    -webkit-font-smoothing:antialiased;
+    display:flex;align-items:center;justify-content:center;padding:40px 22px;text-align:center;
+  }
+  .wrap{max-width:34rem;width:100%}
+  .code{
+    display:inline-block;font-size:.74rem;font-weight:800;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--accent-ink);background:var(--accent-soft);
+    padding:5px 13px;border-radius:999px;margin-bottom:18px;
+  }
+  h1{font-size:clamp(1.55rem,4.6vw,2.15rem);line-height:1.2;letter-spacing:-.02em;margin:0 0 12px;font-weight:800}
+  p{color:var(--ink-2);margin:0 auto 26px;max-width:40ch}
+  .home{
+    display:inline-block;text-decoration:none;font-weight:700;font-size:.92rem;
+    color:var(--ink);background:var(--bg);border:1px solid var(--rule);
+    padding:11px 22px;border-radius:11px;
+  }
+  .home:hover{border-color:var(--accent)}
+  .foot{margin-top:32px;font-size:.74rem;color:var(--ink-3)}
+  .foot a{color:inherit;text-decoration:none}
+</style>
+</head>
+<body>
+  <main class="wrap">
+    <span class="code">Error 410</span>
+    <h1>This page is gone for good.</h1>
+    <p>It was here once and has been removed deliberately. There is no newer address for it, so a search is more likely to help than a retry.</p>
+    <a class="home" href="/">Back to the home page</a>
+    <p class="foot">Hosted on <a href="https://cloud.vesopa.com">Vesopa Cloud</a></p>
+  </main>
+</body>
+</html>

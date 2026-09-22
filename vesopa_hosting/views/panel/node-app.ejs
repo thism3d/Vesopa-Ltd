@@ -1,0 +1,173 @@
+<%#
+  One Node application.
+
+  Four things, in the order somebody needs them when a site is down:
+
+    1. Is it working, and why do we say so.
+    2. The log. Nothing else answers "why not".
+    3. The environment, because half of all Node failures are a missing value.
+    4. What is installed, because the other half is a missing package.
+
+  The log is first among the details rather than last. A page that opens on a
+  settings form when the customer came here because their site is broken has
+  put the least useful thing at eye level.
+%>
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css', sections: false }) %>
+<link rel="stylesheet" href="<%= asset('/assets/css/apps.css') %>">
+<%- include('../partials/panel-shell', {
+  pageTitle: app.name,
+  pageSub: 'Node.js application',
+}) %>
+
+<p class="mb-3"><a class="linklike small" href="/panel/apps/node"><%- icon('chevron-left', 14) %> All Node apps</a></p>
+
+<%# ---- Is it working ----------------------------------------------------- %>
+<div class="obj mb-3" data-node-app="<%= app.name %>">
+  <div class="obj-top">
+    <span class="obj-mark"><img src="<%= asset('/assets/img/apps/nodedotjs.svg') %>" alt="" width="22" height="22"></span>
+    <span class="obj-id">
+      <span class="obj-name"><%= app.name %></span>
+      <span class="obj-meta">
+        <span class="state state-<%= app.health.tone %>" data-health-chip><i></i><span data-health-label><%= app.health.label %></span></span>
+        &nbsp;<span data-health-why><%= app.health.why %></span>
+      </span>
+    </span>
+    <span class="obj-acts">
+      <form method="post" action="/panel/apps/node/<%= encodeURIComponent(app.name) %>/action" class="row" style="gap:8px">
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <% if (app.status === 'stopped') { %>
+          <button class="btn btn-sm" name="action" value="start" type="submit"><%- icon('play', 15) %> Start</button>
+        <% } else { %>
+          <button class="btn btn-sm" name="action" value="restart" type="submit"><%- icon('refresh', 15) %> Restart</button>
+          <button class="btn btn-ghost btn-sm" name="action" value="stop" type="submit"><%- icon('power', 15) %> Stop</button>
+        <% } %>
+      </form>
+      <% if (app.domain) { %>
+        <a class="btn btn-ghost btn-sm" href="https://<%= app.domain %>" target="_blank" rel="noopener"><%- icon('external', 15) %> Open</a>
+      <% } %>
+    </span>
+  </div>
+</div>
+
+<div class="kv-grid mb-4">
+  <div><span class="kv-k">Port</span><span class="kv-v mono" data-stat-port><%= app.port || 'not set' %></span></div>
+  <div><span class="kv-k">Node</span><span class="kv-v mono"><%= app.node || 'unknown' %></span></div>
+  <div><span class="kv-k">Script</span><span class="kv-v mono"><%= app.script || 'unknown' %></span></div>
+  <div><span class="kv-k">Restarts</span><span class="kv-v" data-stat-restarts><%= app.restarts %></span></div>
+  <div><span class="kv-k">Memory</span><span class="kv-v" data-stat-memory><%= app.memory_mb %> MB</span></div>
+  <div><span class="kv-k">Folder</span><span class="kv-v mono" style="font-size:.8rem"><%= (app.cwd || '').replace(/^\/home\/[^/]+/, '~') %></span></div>
+</div>
+
+<%# ---- The log ----------------------------------------------------------- %>
+<div class="p-card mb-3">
+  <div class="row-between mb-2" style="align-items:baseline;gap:12px;flex-wrap:wrap">
+    <h2 class="h3 mb-0">Log</h2>
+    <div class="seg" role="tablist">
+      <button class="is-on" type="button" data-log-tab="err">Errors</button>
+      <button  type="button" data-log-tab="out">Output</button>
+    </div>
+  </div>
+  <p class="small muted mb-2">
+    The most recent output pm2 wrote — errors first, because that is the half with the
+    answer in it.
+  </p>
+  <pre class="log" data-log-pane="err"><%= logs.err.length ? logs.err.join('\n') : 'Nothing on the error log. That is the good outcome.' %></pre>
+  <pre class="log" data-log-pane="out" hidden><%= logs.out.length ? logs.out.join('\n') : 'Nothing on the output log.' %></pre>
+</div>
+
+<div class="p-grid p-grid-2">
+  <%# ---- Environment ----------------------------------------------------- %>
+  <div class="p-card">
+    <h2 class="h3 mb-1">Environment</h2>
+    <p class="small muted mb-3">
+      The app's <code>.env</code>. Saving restarts the app — an environment that has been
+      written but not loaded is the most confusing state this page can be in.
+    </p>
+    <div class="tip mb-3">
+      <span class="tip-ic"></span>
+      <div>
+        <b>Leave <code>PORT</code> alone.</b> nginx sends this site's traffic to that port and
+        we check it to decide whether the app is working. An app listening anywhere else is
+        unreachable, however healthy it is.
+      </div>
+    </div>
+    <form method="post" action="/panel/apps/node/<%= encodeURIComponent(app.name) %>/env">
+      <input type="hidden" name="_csrf" value="<%= csrf %>">
+      <textarea class="input mono" name="env" rows="12" spellcheck="false"
+                style="font-size:.84rem;line-height:1.6"><%= env %></textarea>
+      <button class="btn btn-sm mt-2" type="submit"><%- icon('save', 15) %> Save and restart</button>
+    </form>
+  </div>
+
+  <%# ---- Packages -------------------------------------------------------- %>
+  <div class="p-card">
+    <h2 class="h3 mb-1">Packages</h2>
+    <p class="small muted mb-3">
+      What <code>package.json</code> asks for, and what is actually in
+      <code>node_modules</code>. A package listed as missing is the reason a lot of apps
+      will not boot.
+    </p>
+
+    <% if (!packages.length) { %>
+      <p class="small muted">No dependencies declared.</p>
+    <% } else { %>
+      <div class="pkgs mb-3">
+        <% packages.forEach(function (p) { %>
+          <div class="pkg">
+            <span class="pkg-n mono"><%= p.name %></span>
+            <span class="pkg-v mono">
+              <% if (p.missing) { %>
+                <span class="state state-red" style="padding:1px 7px"><i></i>missing</span>
+              <% } else { %>
+                <%= p.version %>
+              <% } %>
+            </span>
+            <form method="post" action="/panel/apps/node/<%= encodeURIComponent(app.name) %>/packages">
+              <input type="hidden" name="_csrf" value="<%= csrf %>">
+              <input type="hidden" name="package" value="<%= p.name %>">
+              <button class="btn btn-ghost btn-sm" name="action" value="remove" type="submit" aria-label="Remove <%= p.name %>">
+                <%- icon('trash', 14) %>
+              </button>
+            </form>
+          </div>
+        <% }); %>
+      </div>
+    <% } %>
+
+    <form method="post" action="/panel/apps/node/<%= encodeURIComponent(app.name) %>/packages">
+      <input type="hidden" name="_csrf" value="<%= csrf %>">
+      <label class="label" for="package">Install a package</label>
+      <div class="row" style="gap:8px">
+        <input class="input mono" id="package" name="package" placeholder="express"
+               pattern="[@a-zA-Z0-9][a-zA-Z0-9._@/-]*" required style="flex:1">
+        <button class="btn btn-sm" name="action" value="add" type="submit">Install</button>
+      </div>
+      <p class="hint">Runs <code>npm install</code> in the app's folder and restarts it.</p>
+    </form>
+  </div>
+</div>
+
+<%# ---- The one destructive thing on the page, kept apart from the rest ---- %>
+<div class="p-card mt-3" style="border-color:#f0cfc9">
+  <h3 class="h3 mb-1">Remove from pm2</h3>
+  <p class="small muted mb-3">
+    Stops the app and takes it out of the process list, so it will not come back after a
+    reboot. <b>Your files are not touched</b> — the folder, the code and the database all
+    stay exactly where they are, and installing again picks them back up.
+  </p>
+  <details class="inline-danger">
+    <summary class="btn btn-ghost btn-sm" style="color:var(--red)"><%- icon('trash', 15) %> Remove from pm2</summary>
+    <form method="post" action="/panel/apps/node/<%= encodeURIComponent(app.name) %>/action" class="inline-danger-body">
+      <input type="hidden" name="_csrf" value="<%= csrf %>">
+      <p class="small mb-2">
+        <b class="mono"><%= app.name %></b> will stop answering immediately and will not come
+        back after a reboot. The files stay.
+      </p>
+      <button class="btn btn-sm" name="action" value="delete" type="submit"
+              style="background:var(--red);color:#fff">Remove it</button>
+    </form>
+  </details>
+</div>
+
+<script src="<%= asset('/assets/js/apps.js') %>" defer></script>
+<%- include('../partials/panel-shell-end') %>

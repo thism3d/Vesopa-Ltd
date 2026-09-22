@@ -1,0 +1,28 @@
+<%# Shared furniture for the legal pages: same hero, same readable measure, and
+    a "last updated" line that comes from one constant rather than four. %>
+<%- include('head') %>
+<%- include('header') %>
+
+<main id="main">
+<section class="hero" style="padding:52px 0 58px">
+  <div class="hero-aura hero-aura-1"></div>
+  <div class="wrap hero-inner">
+    <p class="kicker" style="justify-content:center">Legal</p>
+    <h1 class="display" style="font-size:clamp(1.9rem,4.2vw,2.9rem)"><%= title %></h1>
+    <p class="lede hero-lede">Last updated <%= updated %>. <%= contact.company %>.</p>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap wrap-narrow legal-body">
+    <%- body %>
+    <hr class="divider">
+    <p class="small muted">
+      Questions about this document? Email
+      <a href="mailto:<%= contact.email %>"><%= contact.email %></a> or write to
+      <%= contact.company %>, <%= contact.address_line1 %>, <%= contact.address_line2 %>.
+    </p>
+  </div>
+</section>
+</main>
+<%- include('footer') %>

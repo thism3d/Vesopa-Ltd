@@ -1,0 +1,263 @@
+/* ===========================================================================
+   Vesopa Hosting — post-payment onboarding
+   ---------------------------------------------------------------------------
+   A single dark screen with one job. No rail, no nav, no footer: every other
+   door on this page is a way to abandon a setup half-finished.
+
+   Dark because it is a moment, not a workspace — the customer has just paid and
+   this is the one screen we want them to watch. It also lets the lime be a
+   light source rather than a highlighter, which is the only way that colour
+   works at speed.
+   =========================================================================== */
+
+.setup {
+  position: relative;
+  min-height: 100vh;
+  min-height: 100dvh;      /* mobile browser chrome eats the difference */
+  background: #0d0f0a;
+  color: #d6dcc9;
+  overflow: hidden;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+}
+
+.setup-aura {
+  position: absolute; z-index: -1; pointer-events: none;
+  width: 900px; height: 900px; top: -480px; left: 50%;
+  transform: translateX(-50%);
+  background: radial-gradient(circle, rgba(165, 199, 21, .3), transparent 66%);
+  filter: blur(100px);
+  animation: setup-breathe 9s ease-in-out infinite alternate;
+}
+@keyframes setup-breathe {
+  to { opacity: .55; transform: translateX(-50%) scale(1.15); }
+}
+
+.setup-top {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 20px 24px;
+  border-bottom: 1px solid #1e2218;
+  flex-wrap: wrap;
+}
+
+.setup-wrap {
+  width: 100%; max-width: 780px;
+  margin-inline: auto;
+  padding: 40px 22px 64px;
+  flex: 1;
+}
+
+/* ---- The three-stage rail ---------------------------------------------- */
+.setup-rail {
+  display: flex; align-items: center; justify-content: center;
+  gap: 0; list-style: none; margin: 0 0 36px; padding: 0;
+}
+.setup-rail-item {
+  display: flex; align-items: center; gap: 9px;
+  font-size: .84rem; font-weight: 700; color: #5f6854;
+  white-space: nowrap;
+}
+/* The connector. A pseudo-element rather than a border so it can sit between
+   items without a wrapper for each gap. */
+.setup-rail-item + .setup-rail-item::before {
+  content: ''; width: 44px; height: 2px; border-radius: 2px;
+  background: #23281c; margin: 0 12px;
+}
+.setup-rail-item.is-done + .setup-rail-item::before,
+.setup-rail-item.is-now::before { background: var(--lime); }
+
+.setup-rail-mark {
+  width: 30px; height: 30px; border-radius: 50%; flex: none;
+  display: grid; place-items: center;
+  background: #191d13; color: #5f6854;
+  border: 1.5px solid #262b1d;
+  transition: background .3s var(--ease), color .3s var(--ease), border-color .3s var(--ease);
+}
+.setup-rail-item.is-done { color: #9aa88a; }
+.setup-rail-item.is-done .setup-rail-mark {
+  background: rgba(165, 199, 21, .16); color: var(--lime); border-color: rgba(165, 199, 21, .45);
+}
+.setup-rail-item.is-now { color: #fff; }
+.setup-rail-item.is-now .setup-rail-mark {
+  background: var(--lime); color: var(--on-lime); border-color: var(--lime);
+  box-shadow: 0 0 0 5px rgba(165, 199, 21, .16);
+}
+
+/* ---- The card ----------------------------------------------------------- */
+.setup-card {
+  background: #14170f;
+  border: 1px solid #232819;
+  border-radius: 22px;
+  padding: 38px 34px;
+  text-align: center;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, .5);
+  animation: setup-in .5s var(--ease);
+}
+.setup-card-wide { text-align: left; }
+.setup-card-wide .setup-icon { margin-inline: 0; }
+@keyframes setup-in { from { opacity: 0; transform: translateY(16px); } }
+
+.setup-card h1 { color: #fff; }
+.setup-card .lede { color: #97a087; }
+.setup-card .label { color: #b6bfa6; }
+.setup-card .hint { color: #6f7862; }
+.setup-card .input {
+  background: #0f120b; border-color: #2a2f20; color: #fff;
+}
+.setup-card .input::placeholder { color: #5f6854; }
+.setup-card .divider { background: #232819; margin: 26px 0; }
+
+.setup-icon {
+  width: 60px; height: 60px; border-radius: 18px;
+  display: grid; place-items: center;
+  margin: 0 auto 18px;
+  background: rgba(165, 199, 21, .14); color: var(--lime);
+  border: 1px solid rgba(165, 199, 21, .3);
+}
+.setup-icon-amber { background: rgba(245, 179, 1, .13); color: var(--amber); border-color: rgba(245, 179, 1, .3); }
+.setup-icon-red { background: rgba(232, 65, 44, .13); color: #ff8b7a; border-color: rgba(232, 65, 44, .32); }
+
+.setup-summary {
+  text-align: left;
+  background: #0f120b; border: 1px solid #232819; border-radius: 14px;
+  padding: 18px 20px;
+}
+.setup-summary .row-between { margin-bottom: 9px; }
+.setup-summary .row-between:last-child { margin-bottom: 0; }
+.setup-summary .small { color: #97a087; }
+.setup-summary .strong { color: #fff; }
+
+.setup-alt {
+  background: #0f120b; border: 1px solid #232819; border-radius: 14px;
+  padding: 20px;
+}
+
+/*
+ * The ghost button on a dark surface.
+ *
+ * `.btn-ghost` sets --btn-fg to --ink (#111) for the white pages, which on this
+ * near-black card renders as black text on black — the label was invisible.
+ * Scoped to .setup rather than changed globally, because the light pages need
+ * it exactly as it is.
+ */
+.setup .btn-ghost { --btn-fg: #e4ead6; border-color: #2f3626; }
+.setup .btn-ghost:hover { --btn-bg: #1b2013; border-color: var(--lime); --btn-fg: #fff; }
+
+/* A text button that does not pretend to be a button. */
+.btn-link {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  font-size: .88rem; font-weight: 700; color: #7d8570;
+  text-decoration: underline; text-underline-offset: 3px;
+}
+.btn-link:hover { color: var(--lime); }
+
+/* ---- Free-domain results ------------------------------------------------ */
+.fd-list { display: grid; gap: 9px; margin: 4px 0 0; }
+.fd {
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 16px;
+  background: #0f120b; border: 1px solid #232819; border-radius: 13px;
+  animation: fd-in .38s var(--ease) backwards;
+}
+@keyframes fd-in { from { opacity: 0; transform: translateY(9px); } }
+.fd-name { font-weight: 700; color: #fff; word-break: break-all; min-width: 0; }
+.fd-name b { color: var(--lime); }
+.fd-end { margin-left: auto; flex: none; display: flex; align-items: center; gap: 12px; }
+.fd-worth { font-size: .78rem; color: #7d8570; text-align: right; }
+.fd-worth s { color: #5f6854; }
+.fd.is-taken { opacity: .5; }
+.fd.is-taken .fd-name { text-decoration: line-through; color: #7d8570; }
+.fd-free {
+  font-size: .7rem; font-weight: 900; letter-spacing: .06em; text-transform: uppercase;
+  background: var(--lime); color: var(--on-lime);
+  padding: 3px 9px; border-radius: 999px;
+}
+
+/* ---- Progress ----------------------------------------------------------- */
+.setup-bar {
+  height: 9px; border-radius: 5px; overflow: hidden;
+  background: #1c2016; border: 1px solid #232819;
+  margin: 22px 0 8px;
+}
+.setup-bar i {
+  display: block; height: 100%; width: 0;
+  border-radius: 5px;
+  background: linear-gradient(90deg, var(--lime-ink), var(--lime));
+  transition: width .6s var(--ease);
+  position: relative;
+}
+/* A sheen travelling along the filled part, so a slow step still looks alive. */
+.setup-bar i::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .35), transparent);
+  animation: bar-sheen 1.5s linear infinite;
+}
+@keyframes bar-sheen { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+.setup-bar.is-done i::after { display: none; }
+.setup-bar.is-failed i { background: linear-gradient(90deg, #a82a19, var(--red)); }
+
+.setup-steps { list-style: none; padding: 0; margin: 22px 0 0; display: grid; gap: 2px; }
+.setup-step {
+  display: flex; align-items: flex-start; gap: 13px;
+  padding: 13px 14px; border-radius: 12px;
+  transition: background .3s var(--ease);
+}
+.setup-step-mark {
+  width: 26px; height: 26px; border-radius: 50%; flex: none;
+  display: grid; place-items: center;
+  background: #1c2016; color: #5f6854;
+  border: 1.5px solid #262b1d;
+}
+.setup-step-mark svg { width: 14px; height: 14px; }
+.setup-step-text { min-width: 0; font-size: .93rem; color: #7d8570; }
+.setup-step-text b { display: block; color: #97a087; font-weight: 700; }
+.setup-step-text span { font-size: .82rem; }
+
+.setup-step.is-running { background: rgba(165, 199, 21, .07); }
+.setup-step.is-running .setup-step-mark {
+  background: rgba(165, 199, 21, .16); border-color: rgba(165, 199, 21, .4); color: var(--lime);
+}
+.setup-step.is-running .setup-step-text b { color: #fff; }
+
+.setup-step.is-ok .setup-step-mark { background: var(--lime); border-color: var(--lime); color: var(--on-lime); }
+.setup-step.is-ok .setup-step-text b { color: #cfd4c4; }
+/* A tick that draws itself rather than appearing. */
+.setup-step.is-ok .setup-step-mark svg { animation: tick-in .34s var(--ease-out-back); }
+@keyframes tick-in { from { transform: scale(.4); opacity: 0; } }
+
+.setup-step.is-skipped .setup-step-mark { color: #6f7862; }
+.setup-step.is-failed .setup-step-mark { background: rgba(232,65,44,.16); border-color: rgba(232,65,44,.45); color: #ff8b7a; }
+.setup-step.is-failed .setup-step-text b { color: #ff8b7a; }
+
+.spinner-dark { border-color: rgba(165, 199, 21, .25); border-top-color: var(--lime); width: 14px; height: 14px; border-width: 2px; }
+
+/* ---- Responsive --------------------------------------------------------- */
+@media (max-width: 640px) {
+  .setup-wrap { padding: 28px 16px 48px; }
+  .setup-card { padding: 28px 20px; border-radius: 18px; }
+  .setup-icon { width: 52px; height: 52px; border-radius: 15px; }
+  /* The rail keeps its dots but drops the connectors and the labels of the
+     stages that are not current — three labels do not fit across a phone and
+     truncating all of them tells the customer nothing. */
+  .setup-rail-item + .setup-rail-item::before { width: 22px; margin: 0 7px; }
+  .setup-rail-item .setup-rail-label { display: none; }
+  .setup-rail-item.is-now .setup-rail-label { display: inline; }
+}
+
+@media (max-width: 430px) {
+  .setup-top { padding: 15px 16px; }
+  .setup-card { padding: 24px 16px; }
+  .setup-step { padding: 11px 8px; gap: 10px; }
+  .setup-step-text { font-size: .88rem; }
+  .fd { padding: 12px 13px; gap: 10px; }
+  .fd-end { gap: 8px; }
+  .fd-worth { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .setup-aura { animation: none; }
+  .setup-bar i::after { animation: none; }
+  .setup-card, .fd, .setup-step.is-ok .setup-step-mark svg { animation: none; }
+  .setup-bar i { transition: none; }
+}

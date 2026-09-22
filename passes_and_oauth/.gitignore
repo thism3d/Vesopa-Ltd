@@ -1,0 +1,38 @@
+# =============================================================================
+# passes_and_oauth — Apple Wallet signing material
+# =============================================================================
+# The rule is the same one the root .gitignore states: a secret committed once
+# is public for ever, because it stays in the history and in every clone.
+#
+# What is safe here is narrow. A .cer is the PUBLIC half of a certificate and
+# cannot sign anything on its own. Everything that can — the private key, the
+# .p12 that pairs it with the certificate, the OAuth client secret — is denied
+# below, by extension rather than by filename, so that dropping a new file in
+# this directory does not quietly make it committable.
+# =============================================================================
+
+# Deny everything, then allow back the five public certificates by name.
+# Written this way round on purpose: a new secret dropped in here is ignored by
+# default, where an allow-list of denials would have to be remembered.
+*
+
+!.gitignore
+!README.md
+
+!giftcard_pass.cer
+!loyalty_pass.cer
+!membership_pass.cer
+!promotion_pass.cer
+!staffcard_pass.cer
+
+# Belt and braces. If one of the names above is ever reused for something that
+# is not a certificate, these still hold — and they document the intent.
+*.p12
+*.pfx
+*.key
+*.pem
+*.mobileprovision
+*.certSigningRequest
+client_secret*
+*secret*
+*.json

@@ -1,0 +1,40 @@
+<%- include('_shell') %>
+
+<% if (error) { %><p class="form-error" role="alert"><%= error %></p><% } %>
+
+<section class="panel">
+  <p class="row-meta mt-0">
+    Replacing
+    <strong class="row-main"><%= identity.identifier %></strong>
+  </p>
+  <p class="hint">
+    The new one is confirmed by a code before anything changes, and the old one
+    is only removed once that has worked — so there is never a moment when you
+    have no way back into the account.
+  </p>
+
+  <form method="post" action="/account/linked/add" class="mt-3">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <input type="hidden" name="recovery" value="1">
+    <input type="hidden" name="replaces" value="<%= identity.id %>">
+    <input type="hidden" name="type" value="<%= identity.type %>">
+
+    <div class="field">
+      <label for="value">
+        New recovery <%= identity.type === 'phone' ? 'mobile number' : 'email address' %>
+      </label>
+      <input type="text" id="value" name="value" autocomplete="off" autofocus
+             placeholder="<%= identity.type === 'phone' ? '07911 123456' : 'you@example.com' %>">
+      <p class="hint">
+        Use something you can still reach if you lose this device — a different
+        address from the one you sign in with, ideally.
+      </p>
+    </div>
+
+    <button class="btn btn-primary" type="submit">Send a confirmation code</button>
+  </form>
+</section>
+
+<p class="small-print"><a href="/account/linked">Cancel</a></p>
+
+<%- include('../partials/console-foot') %>

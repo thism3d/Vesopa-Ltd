@@ -1,0 +1,83 @@
+<%- include("../partials/head") %>
+<%- include("../partials/nav") %>
+<div class="wrap">
+  <div class="page-head">
+    <div class="grow"><span class="eyebrow">Retainers, hosting, support cover</span><h1>Recurring revenue</h1>
+      <p>The sweep runs on boot and once a day. It raises and emails an invoice for anything due.</p></div>
+    <form method="post" action="/portal/admin/subscriptions/run">
+      <input type="hidden" name="_csrf" value="<%= csrf %>">
+      <button class="btn ghost" type="submit">Run the sweep now</button>
+    </form>
+  </div>
+
+  <div class="grid g3" style="margin-bottom:1rem">
+    <div class="stat"><b><%= moneyRound(mrr, currency) %></b><span>Monthly recurring revenue</span></div>
+    <div class="stat plain"><b><%= moneyRound(mrr * 12, currency) %></b><span>Annualised</span></div>
+    <div class="stat plain"><b><%= subs.filter(s => s.status === "active").length %></b><span>Active subscriptions</span></div>
+  </div>
+
+  <div class="split">
+    <div class="panel">
+      <h2>All subscriptions</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>What</th><th>Customer</th><th>Every</th><th>Next</th><th>Status</th><th class="num">Amount</th><th></th></tr></thead>
+        <tbody>
+          <% if (!subs.length) { %><tr><td colspan="7" class="t-empty">None set up.</td></tr><% } %>
+          <% for (const s of subs) { %>
+            <tr>
+              <td><strong><%= s.name %></strong>
+                <% if (s.project_title) { %><div class="muted" style="font-size:.72rem"><%= s.project_title %></div><% } %></td>
+              <td><a href="/portal/admin/customers/<%= s.user_id %>"><%= s.customer %></a></td>
+              <td><%= s.interval_unit %></td>
+              <td><time datetime="<%= new Date(s.next_charge_date).toISOString() %>"></time></td>
+              <td><span class="pill <%= s.status === 'active' ? 'ok' : s.status === 'paused' ? 'warn' : '' %>"><%= s.status %></span></td>
+              <td class="num"><%= money(s.amount, s.currency) %></td>
+              <td class="num">
+                <form method="post" action="/portal/admin/subscriptions/<%= s.id %>/status" style="display:flex;gap:.3rem">
+                  <input type="hidden" name="_csrf" value="<%= csrf %>">
+                  <select name="status" style="font-size:.74rem;padding:.25rem">
+                    <% for (const st of ["active","paused","cancelled"]) { %>
+                      <option value="<%= st %>" <%= s.status === st ? "selected" : "" %>><%= st %></option>
+                    <% } %>
+                  </select>
+                  <button class="btn ghost small" type="submit">Set</button>
+                </form>
+              </td>
+            </tr>
+          <% } %>
+        </tbody>
+      </table></div>
+    </div>
+
+    <div class="panel">
+      <h3>New recurring charge</h3>
+      <form method="post" action="/portal/admin/subscriptions">
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <div class="field"><label for="user_id">Customer</label>
+          <select id="user_id" name="user_id" required>
+            <option value="">Choose…</option>
+            <% for (const c of customers) { %><option value="<%= c.id %>"><%= c.name %><%= c.company ? " — " + c.company : "" %></option><% } %>
+          </select></div>
+        <div class="field"><label for="project_id">Project <span class="muted">(optional)</span></label>
+          <select id="project_id" name="project_id">
+            <option value="">None</option>
+            <% for (const p of projects) { %><option value="<%= p.id %>"><%= p.ref %> — <%= p.title %></option><% } %>
+          </select></div>
+        <div class="field"><label for="name">What it is</label>
+          <input id="name" name="name" required placeholder="Hosting and support cover"></div>
+        <div class="field"><label for="description">Detail</label><input id="description" name="description"></div>
+        <div class="fields">
+          <div class="field"><label for="amount">Amount</label><input id="amount" name="amount" type="number" step="0.01" required></div>
+          <div class="field"><label for="interval_unit">Every</label>
+            <select id="interval_unit" name="interval_unit">
+              <option value="monthly">Month</option><option value="quarterly">Quarter</option><option value="yearly">Year</option>
+            </select></div>
+        </div>
+        <div class="field"><label for="next_charge_date">First charge on</label>
+          <input id="next_charge_date" name="next_charge_date" type="date"></div>
+        <button class="btn" type="submit" style="width:100%;justify-content:center">Create it</button>
+      </form>
+    </div>
+  </div>
+</div>
+<%- include("../partials/foot") %>

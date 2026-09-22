@@ -1,0 +1,158 @@
+<%- include('../partials/console-head') %>
+
+<h1 class="console-title">Invitations</h1>
+<p class="console-lead">
+  How somebody becomes a developer or an administrator. An invitation grants
+  things — it does not sign anybody in, and the link is worth nothing to anyone
+  who cannot also receive at the address it was sent to.
+</p>
+
+<% if (saved) { %><p class="notice-good">Done.</p><% } %>
+<% if (error) { %><p class="form-error" role="alert"><%= error %></p><% } %>
+
+<% if (sent) { %>
+<div class="secret-once">
+  <h2>Invitation sent — here is the link</h2>
+  <p>
+    It has gone to their inbox. Copy it if you need to pass it on another way —
+    somebody whose email is the thing that is broken is one of the commonest
+    reasons to send one of these.
+  </p>
+  <div class="copy">
+    <code class="code"><%= sent %></code>
+    <button type="button" class="copy-btn" data-copy="<%= sent %>">Copy</button>
+  </div>
+</div>
+<% } %>
+
+<div class="card">
+  <div class="card-head">
+    <h2><%= showAll ? 'Every invitation' : 'Waiting to be accepted' %></h2>
+    <a class="btn-link" href="?<%= showAll ? '' : 'all=1' %>">
+      <%= showAll ? 'Only the ones waiting' : 'Show accepted and expired too' %>
+    </a>
+  </div>
+  <div class="card-body">
+    <% if (!invitations.length) { %>
+    <div class="empty">
+      <span class="empty-mark"><%- include('../partials/icon', { name: 'mail' }) %></span>
+      <p>Nothing waiting.</p>
+    </div>
+    <% } %>
+
+    <% invitations.forEach(function (invite) { %>
+    <div class="row">
+      <span class="row-mark"><%- include('../partials/icon', { name: 'mail' }) %></span>
+      <div class="row-lines">
+        <span class="row-title"><%= invite.email %></span>
+        <span class="row-sub">
+          <%
+            const grants = [];
+            if (invite.grants_staff) grants.push('administrator');
+            if (invite.grants_developer) grants.push('developer');
+            if (invite.organisation_name) grants.push(invite.organisation_name + ' (' + invite.organisation_role + ')');
+            if (invite.application_name) grants.push(invite.application_name);
+          %>
+          <%= grants.length ? grants.join(' · ') : 'no extra access' %>
+          · invited by <%= invite.invited_by_name || 'somebody' %>
+          <%= invite.sent_count > 1 ? '· sent ' + invite.sent_count + ' times' : '' %>
+        </span>
+        <% if (invite.message) { %>
+        <span class="row-sub">“<%= invite.message %>”</span>
+        <% } %>
+      </div>
+      <div class="row-right">
+        <% if (invite.accepted_at) { %>
+          <span class="pill">accepted <%= String(invite.accepted_at).slice(0, 10) %></span>
+        <% } else if (invite.revoked_at) { %>
+          <span class="pill pill-bad">revoked</span>
+        <% } else if (new Date(invite.expires_at) < new Date()) { %>
+          <span class="pill pill-bad">expired</span>
+        <% } else { %>
+          <span class="pill">expires <%= String(invite.expires_at).slice(0, 10) %></span>
+          <form method="post" action="/admin/invitations/<%= invite.public_id %>/resend">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <button class="btn-link" type="submit">Resend</button>
+          </form>
+          <form method="post" action="/admin/invitations/<%= invite.public_id %>/revoke">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <button class="btn-link" type="submit">Revoke</button>
+          </form>
+        <% } %>
+      </div>
+    </div>
+    <% }) %>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head"><h2>Invite somebody</h2></div>
+  <div class="card-body">
+    <form method="post" action="/admin/invitations">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+      <div class="field">
+        <label for="email">Their email address</label>
+        <input type="email" id="email" name="email" required autocomplete="off">
+        <p class="hint">
+          They will have to prove they can receive at this address before
+          anything is granted. If they already have a Vesopa account, this adds
+          to it rather than making a second one.
+        </p>
+      </div>
+
+      <div class="field">
+        <label for="message">A line from you (optional)</label>
+        <input type="text" id="message" name="message" maxlength="500"
+               placeholder="Come and help with the till app">
+      </div>
+
+      <div class="field">
+        <label for="organisation_id">Add to an organisation's portal</label>
+        <select id="organisation_id" name="organisation_id">
+          <option value="">No — just Vesopa access</option>
+          <% organisations.forEach(function (org) { %>
+          <option value="<%= org.id %>"><%= org.name %></option>
+          <% }) %>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="organisation_role">As</label>
+        <select id="organisation_role" name="organisation_role">
+          <option value="developer">Developer — can build and change applications</option>
+          <option value="admin">Admin — can also manage the team</option>
+          <option value="viewer">Viewer — can look, and cannot mint a credential</option>
+        </select>
+      </div>
+
+      <label class="tickbox">
+        <input type="checkbox" name="grants_developer" value="1">
+        <span>Let them use the developer portal</span>
+      </label>
+
+      <%
+        /*
+         * Administrator access is a tickbox with a warning beside it rather
+         * than a separate hidden screen. Somebody granting it should see, at
+         * the moment they grant it, exactly what it means — and "can read every
+         * account and help anybody back in" is the sentence that makes people
+         * pause where "staff: yes" does not.
+         */
+      %>
+      <label class="tickbox">
+        <input type="checkbox" name="grants_staff" value="1">
+        <span>Make them an administrator</span>
+      </label>
+      <p class="hint">
+        An administrator can search every account, suspend one, and help somebody
+        back in after they have lost their second factor. Give it to as few
+        people as possible.
+      </p>
+
+      <button class="btn btn-primary btn-small" type="submit">Send the invitation</button>
+    </form>
+  </div>
+</div>
+
+<%- include('../partials/console-foot') %>

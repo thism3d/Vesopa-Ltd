@@ -1,0 +1,557 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Vesopa Software — scroll spine prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..700&family=Source+Serif+4:opsz,wght@8..60,300..600&family=Martian+Mono:wght@300;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<style>
+:root{
+  --ink:#0B0E0A;
+  --paper:#F2EFE6;
+  --lime:#A5C715;
+  --signal:#E4761B;
+  --slate:#2A312B;
+  --fg:#F2EFE6;
+  --bg:#0B0E0A;
+  --rule:rgba(242,239,230,.16);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:auto;-webkit-text-size-adjust:100%}
+body{
+  background:var(--bg);color:var(--fg);
+  font-family:"Source Serif 4",Georgia,serif;
+  font-size:17px;line-height:1.55;
+  overflow-x:hidden;
+  transition:background-color .12s linear,color .12s linear;
+}
+#gl{position:fixed;inset:0;width:100vw;height:100vh;z-index:0;pointer-events:none}
+main{position:relative;z-index:1}
+
+section{
+  min-height:100svh;
+  display:flex;align-items:center;
+  padding:14vh 6vw;
+  position:relative;
+}
+.col{max-width:34rem}
+.wide{max-width:52rem}
+
+h1,h2,h3,.mark{
+  font-family:"Archivo",Helvetica,Arial,sans-serif;
+  font-variation-settings:"wdth" 118,"wght" 620;
+  line-height:.98;letter-spacing:-.015em;
+  text-wrap:balance;
+}
+h1{font-size:clamp(2.9rem,8.2vw,6rem)}
+h2{font-size:clamp(2.1rem,5.4vw,3.9rem)}
+h3{font-size:1.05rem;font-variation-settings:"wdth" 112,"wght" 600;line-height:1.25}
+p{margin-top:1.1rem;max-width:32rem}
+p.lead{font-size:clamp(1.05rem,2.4vw,1.3rem);line-height:1.5}
+a{color:inherit}
+
+.mark{
+  position:fixed;top:0;left:0;right:0;z-index:3;
+  padding:1.15rem 6vw;
+  display:flex;justify-content:space-between;align-items:baseline;
+  font-size:.86rem;font-variation-settings:"wdth" 122,"wght" 640;
+  letter-spacing:.02em;
+  mix-blend-mode:difference;color:#fff;
+  pointer-events:none;
+}
+.mark span:last-child{font-family:"Martian Mono",monospace;font-weight:300;font-size:.66rem;opacity:.8}
+
+.num{
+  font-family:"Martian Mono",monospace;font-weight:300;
+  font-size:.7rem;letter-spacing:.06em;opacity:.62;
+  display:block;margin-bottom:1.6rem;
+}
+
+.facts{display:flex;flex-wrap:wrap;gap:1.6rem 2.4rem;margin-top:2.4rem}
+.fact{min-width:7.5rem}
+.fact b{
+  display:block;font-family:"Martian Mono",monospace;font-weight:500;
+  font-size:1.35rem;line-height:1;letter-spacing:-.03em;color:var(--lime);
+}
+.fact i{display:block;font-style:normal;font-size:.83rem;opacity:.66;margin-top:.4rem;max-width:9rem}
+
+.cta{
+  display:inline-block;margin-top:2.6rem;
+  font-family:"Archivo",sans-serif;font-variation-settings:"wdth" 112,"wght" 600;
+  font-size:.95rem;
+  padding:.72rem 1.5rem;border-radius:2px;
+  background:var(--lime);color:var(--ink);text-decoration:none;
+  pointer-events:auto;
+}
+.cta.ghost{background:transparent;color:inherit;box-shadow:inset 0 0 0 1px var(--rule);margin-left:.5rem}
+
+.hold{
+  margin-top:2rem;padding:1rem 1.2rem;
+  border-left:2px solid var(--lime);
+  font-family:"Martian Mono",monospace;font-size:.72rem;line-height:1.7;
+  opacity:.75;max-width:30rem;
+}
+
+/* story */
+#story{display:block;padding-top:12vh}
+.beats{margin-top:4rem;display:grid;gap:0}
+.beat{
+  display:grid;grid-template-columns:3.2rem 1fr;gap:1.4rem;
+  padding:1.9rem 0;border-top:1px solid var(--rule);
+  max-width:44rem;
+}
+.beat:last-child{border-bottom:1px solid var(--rule)}
+.beat em{font-family:"Martian Mono",monospace;font-style:normal;font-size:.7rem;opacity:.55;padding-top:.3rem}
+.beat p{margin-top:.4rem;font-size:.98rem;opacity:.82}
+
+/* light half */
+.light{--fg:#0B0E0A;--rule:rgba(11,14,10,.18)}
+.light .fact b{color:#5E7A0E}
+.light .cta{background:var(--ink);color:var(--paper)}
+.light .cta.ghost{background:transparent;color:var(--ink)}
+.pay .fact b{color:var(--signal)}
+.pay .cta{background:var(--signal);color:#fff}
+
+.plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(11rem,1fr));gap:1px;margin-top:2.6rem;background:var(--rule);max-width:46rem}
+.plan{background:var(--paper);padding:1.3rem}
+.plan b{display:block;font-family:"Archivo",sans-serif;font-variation-settings:"wdth" 112,"wght" 620;font-size:1rem}
+.plan u{display:block;text-decoration:none;font-family:"Martian Mono",monospace;font-size:1.15rem;margin:.5rem 0 .3rem}
+.plan i{font-style:normal;font-size:.78rem;opacity:.62}
+
+#perf{
+  position:fixed;right:.7rem;bottom:.7rem;z-index:5;
+  font-family:"Martian Mono",monospace;font-size:.6rem;line-height:1.5;
+  padding:.4rem .55rem;border-radius:3px;
+  background:rgba(120,120,120,.22);color:#fff;mix-blend-mode:difference;
+  pointer-events:none;white-space:pre;
+}
+
+@media (max-width:640px){
+  body{font-size:16px}
+  section{padding:12vh 7vw}
+  .beat{grid-template-columns:2.4rem 1fr;gap:.9rem}
+}
+@media (prefers-reduced-motion:reduce){
+  body{transition:none}
+}
+</style>
+
+<canvas id="gl"></canvas>
+
+<div class="mark"><span>Vesopa Software</span><span id="tier">—</span></div>
+
+<main>
+
+<section id="s0"><div class="col">
+  <span class="num">Baglan, Port Talbot · est. Wales</span>
+  <h1>We build it, then we run it.</h1>
+  <p class="lead">Three products in the field: a till system trading in Welsh pubs tonight, a hosting platform, and a live payment network. We build the same way for other people's problems.</p>
+  <a class="cta" href="#s7">Start a project</a>
+  <a class="cta ghost" href="#s5">See the hosting</a>
+</div></section>
+
+<section id="s1"><div class="col">
+  <span class="num">01 — Vesopa EPOS</span>
+  <h2>A till that keeps trading when the line goes down.</h2>
+  <p>The catalogue, the prices and the open bills sit on the terminal itself. Lose the broadband mid-service and the till carries on selling, then syncs the moment it's back. Nothing lost, nothing typed twice.</p>
+  <p>Counter, floor, kitchen pass and back office, all reading the same data — so what a clerk rings through is on the manager's dashboard before the drawer shuts.</p>
+  <div class="facts">
+    <div class="fact"><b>Offline</b><i>Keeps trading</i></div>
+    <div class="fact"><b>Dojo</b><i>Card payments driven from the till</i></div>
+    <div class="fact"><b>24/7</b><i>UK support, real people in Swansea</i></div>
+    <div class="fact"><b>4</b><i>Windows, macOS, iOS, Android</i></div>
+  </div>
+</div></section>
+
+<section id="s2"><div class="col">
+  <span class="num">02 — Microsoft Store application</span>
+  <h2>Section reserved.</h2>
+  <p>Held for the first of your two Microsoft applications. Layout, particle target and scroll timing are already allocated — this section will take copy and two screenshots without any structural change.</p>
+  <div class="hold">NEEDED
+  · product name
+  · one sentence: what it does
+  · who buys it
+  · Microsoft Store link
+  · 2 screenshots @ 2560×1600 PNG</div>
+</div></section>
+
+<section id="s3"><div class="col">
+  <span class="num">03 — Microsoft Store application</span>
+  <h2>Section reserved.</h2>
+  <p>Same for the second application. Two reserved sections is deliberate — three shipped products carries far more weight with a build client than one product described three ways.</p>
+  <div class="hold">NEEDED
+  · product name
+  · one sentence: what it does
+  · who buys it
+  · Microsoft Store link
+  · 2 screenshots @ 2560×1600 PNG</div>
+</div></section>
+
+<section id="story"><div class="wide">
+  <span class="num">04 — How this happened</span>
+  <h2>Nobody set out to build a payment network.</h2>
+  <p class="lead">It started with a till that couldn't do what a landlord needed. Everything after that is consequence.</p>
+  <div class="beats">
+    <div class="beat"><em>i</em><div><h3>The problem</h3><p>An old register on a bar, doing about a third of what the person behind it actually needed.</p></div></div>
+    <div class="beat"><em>ii</em><div><h3>The build</h3><p>A prototype on a kitchen table, written against the way a real service night actually runs rather than a spec.</p></div></div>
+    <div class="beat"><em>iii</em><div><h3>First install</h3><p>One venue, one terminal, one Friday night. It either takes money under pressure or it doesn't.</p></div></div>
+    <div class="beat"><em>iv</em><div><h3>Iteration</h3><p>Version after version, shipped against what the floor asked for. The release notes are still public.</p></div></div>
+    <div class="beat"><em>v</em><div><h3>Going wider</h3><p>Into the Microsoft Store, onto Mac, iPad and Android handhelds. The same till, wherever the work is.</p></div></div>
+    <div class="beat"><em>vi</em><div><h3>The stack closes</h3><p>Hosting for the sites, then payments for the money. EPOS, Cloud and Pay, all ours end to end.</p></div></div>
+  </div>
+  <div class="hold">PLACEHOLDER PROSE — the shape is right, the specifics are invented.
+  Send real dates, the first venue, and the Store listing date before this ships.</div>
+</div></section>
+
+<section id="s5" class="light"><div class="col">
+  <span class="num">05 — Vesopa Cloud</span>
+  <h2>Your website, online in minutes.</h2>
+  <p class="lead">Find a domain, pick a plan, and we do the rest — SSL, email and backups included. One clear panel. No cPanel to learn.</p>
+  <p>Describe what you want to Claude, Cursor, v0 or Lovable, watch it build, then put it online here. No pipeline to configure, no container to learn, no DevOps engineer for a site that took an afternoon to imagine.</p>
+  <div class="plans">
+    <div class="plan"><b>Starter</b><u>$2.89</u><i>per month on 3 years · 1 site · 25 GB NVMe</i></div>
+    <div class="plan"><b>Business</b><u>$5.79</u><i>per month on 3 years · 25 sites · daily backups</i></div>
+    <div class="plan"><b>Pro</b><u>$11.69</u><i>per month on 3 years · 100 sites · dedicated IP</i></div>
+  </div>
+  <div class="facts">
+    <div class="fact"><b>99.9%</b><i>Uptime commitment</i></div>
+    <div class="fact"><b>&lt;200ms</b><i>Average UK response</i></div>
+    <div class="fact"><b>Free</b><i>Domain on any yearly plan</i></div>
+    <div class="fact"><b>30-day</b><i>Money back, no retention call</i></div>
+  </div>
+  <a class="cta" href="https://cloud.vesopa.com/hosting">Start building</a>
+  <a class="cta ghost" href="https://cloud.vesopa.com/transfer">Move an existing site</a>
+</div></section>
+
+<section id="s6" class="light pay"><div class="col">
+  <span class="num">06 — Vesopa Pay</span>
+  <h2>Live, and settling.</h2>
+  <p class="lead">A unified payment layer across BTC, Lightning and USDT — built because the till needed somewhere for the money to go that we controlled end to end.</p>
+  <p>It runs today, in production, taking real payments. Not a roadmap item and not a waitlist.</p>
+  <div class="facts">
+    <div class="fact"><b>BTC</b><i>On-chain settlement</i></div>
+    <div class="fact"><b>Lightning</b><i>Instant, low fee</i></div>
+    <div class="fact"><b>USDT</b><i>Stable-value rails</i></div>
+  </div>
+  <div class="hold">WORDING GATE — this section states Pay is live and taking payments.
+  Before launch, confirm what may be claimed publicly about permissions,
+  registration and jurisdictions. I'll write to whatever the true position is,
+  but I won't write it vaguely.</div>
+</div></section>
+
+<section id="s7" class="light"><div class="col">
+  <span class="num">07</span>
+  <h2>Bring us the problem.</h2>
+  <p class="lead">If it takes money, tracks stock, runs on a counter or needs to stay up, we've built it once already.</p>
+  <div class="facts">
+    <div class="fact"><b>Wales</b><i>Baglan, Port Talbot SA12 7AX</i></div>
+    <div class="fact"><b>Call</b><i>+44 1792 316282</i></div>
+    <div class="fact"><b>Email</b><i>info@vesopa.com</i></div>
+  </div>
+  <a class="cta" href="mailto:info@vesopa.com">Start a project</a>
+</div></section>
+
+</main>
+
+<div id="perf">boot…</div>
+
+<script>
+(function(){
+"use strict";
+const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* ---------- tier ---------- */
+const w = innerWidth, dpr0 = devicePixelRatio || 1;
+const coarse = matchMedia("(pointer: coarse)").matches;
+let TIER, COUNT;
+if (coarse && w < 820){ TIER="mobile";  COUNT=4096;  }
+else if (coarse)      { TIER="tablet";  COUNT=16384; }
+else if (w < 1500)    { TIER="laptop";  COUNT=32768; }
+else                  { TIER="desktop"; COUNT=65536; }
+const DPR = Math.min(dpr0, TIER==="mobile" ? 2 : 2);
+let drawCount = COUNT;
+
+/* ---------- shape builders ----------
+   Every shape returns Float32Array(COUNT*3), normalised roughly to a
+   2-unit-tall box. These are PLACEHOLDERS. On delivery of the GLBs
+   (M1 till, M5/M6 rack, M7 token) these are replaced by surface samples
+   baked from the real meshes at the same point count.                */
+
+function boxSurface(out, off, n, cx,cy,cz, sx,sy,sz){
+  const A=[sy*sz, sy*sz, sx*sz, sx*sz, sx*sy, sx*sy];
+  const T=A.reduce((a,b)=>a+b,0);
+  for(let i=0;i<n;i++){
+    let r=Math.random()*T, f=0; while(r>A[f]){r-=A[f];f++;}
+    let x=(Math.random()-.5)*sx, y=(Math.random()-.5)*sy, z=(Math.random()-.5)*sz;
+    if(f===0)x=-sx/2; else if(f===1)x=sx/2;
+    else if(f===2)y=-sy/2; else if(f===3)y=sy/2;
+    else if(f===4)z=-sz/2; else z=sz/2;
+    const k=(off+i)*3; out[k]=cx+x; out[k+1]=cy+y; out[k+2]=cz+z;
+  }
+}
+
+/* 2D silhouette sampler — draw anything on a canvas, get a point cloud */
+const SC=256;
+function silhouette(drawFn, depth){
+  const c=document.createElement("canvas"); c.width=c.height=SC;
+  const g=c.getContext("2d"); g.fillStyle="#fff"; drawFn(g,SC);
+  const d=g.getImageData(0,0,SC,SC).data;
+  const hits=[];
+  for(let y=0;y<SC;y++) for(let x=0;x<SC;x++) if(d[(y*SC+x)*4+3]>128) hits.push(x,y);
+  const out=new Float32Array(COUNT*3), n=hits.length/2;
+  for(let i=0;i<COUNT;i++){
+    const j=((Math.random()*n)|0)*2;
+    const k=i*3;
+    out[k]  = (hits[j]/SC-.5)*2.4 + (Math.random()-.5)*.012;
+    out[k+1]= (.5-hits[j+1]/SC)*2.4 + (Math.random()-.5)*.012;
+    out[k+2]= (Math.random()-.5)*(depth||.12);
+  }
+  return out;
+}
+
+/* S0 — dispersed field (idle / hero) */
+function fieldShape(){
+  const o=new Float32Array(COUNT*3);
+  for(let i=0;i<COUNT;i++){
+    const k=i*3, r=.75+Math.pow(Math.random(),.6)*1.15;
+    const th=Math.random()*Math.PI*2, ph=Math.acos(2*Math.random()-1);
+    o[k]=Math.sin(ph)*Math.cos(th)*r*1.5;
+    o[k+1]=Math.sin(ph)*Math.sin(th)*r*.85;
+    o[k+2]=Math.cos(ph)*r*.6;
+  }
+  return o;
+}
+
+/* S1 — till terminal: screen + neck + base */
+function tillShape(){
+  const o=new Float32Array(COUNT*3);
+  const a=Math.floor(COUNT*.62), b=Math.floor(COUNT*.13), c=COUNT-a-b;
+  boxSurface(o,0,a, 0,.42,0, 1.55,1.0,.09);
+  boxSurface(o,a,b, 0,-.24,.06, .17,.62,.17);
+  boxSurface(o,a+b,c, 0,-.6,.06, .95,.09,.62);
+  return o;
+}
+
+/* S2 — application window */
+function windowShape(){
+  return silhouette((g,s)=>{
+    g.fillRect(s*.10,s*.20,s*.80,s*.60);
+    g.clearRect(s*.13,s*.29,s*.74,s*.48);
+    g.fillRect(s*.13,s*.29,s*.20,s*.48);
+    for(let i=0;i<5;i++) g.fillRect(s*.36,s*.33+i*s*.085,s*.48,s*.028);
+    g.beginPath(); g.arc(s*.135,s*.245,s*.012,0,7); g.fill();
+    g.beginPath(); g.arc(s*.175,s*.245,s*.012,0,7); g.fill();
+  },.14);
+}
+
+/* S3 — code braces */
+function codeShape(){
+  return silhouette((g,s)=>{
+    g.font="700 "+(s*.72)+"px ui-monospace, monospace";
+    g.textAlign="center"; g.textBaseline="middle";
+    g.fillText("{ }", s*.5, s*.52);
+  },.2);
+}
+
+/* S4 — rack column */
+function rackShape(){
+  const o=new Float32Array(COUNT*3);
+  const units=11, per=Math.floor(COUNT*.86/units);
+  let off=0;
+  for(let i=0;i<units;i++){
+    boxSurface(o,off,per, 0, 1.02-i*.19, 0, 1.18,.135,.5); off+=per;
+  }
+  const rail=Math.floor((COUNT-off)/2);
+  boxSurface(o,off,rail, -.66,.05,0, .07,2.25,.55); off+=rail;
+  boxSurface(o,off,COUNT-off, .66,.05,0, .07,2.25,.55);
+  return o;
+}
+
+/* S5 — lightning bolt */
+function boltShape(){
+  return silhouette((g,s)=>{
+    g.beginPath();
+    g.moveTo(s*.60,s*.06); g.lineTo(s*.24,s*.55); g.lineTo(s*.46,s*.55);
+    g.lineTo(s*.38,s*.96); g.lineTo(s*.76,s*.43); g.lineTo(s*.52,s*.43);
+    g.closePath(); g.fill();
+  },.18);
+}
+
+/* S6 — wordmark (placeholder for your SVG, which I'll extrude properly) */
+function markShape(){
+  return silhouette((g,s)=>{
+    g.font="700 "+(s*.30)+"px Archivo, Helvetica, sans-serif";
+    g.textAlign="center"; g.textBaseline="middle";
+    g.fillText("VESOPA", s*.5, s*.5);
+  },.1);
+}
+
+const SHAPES=[fieldShape(),tillShape(),windowShape(),codeShape(),rackShape(),boltShape(),markShape()];
+const NS=SHAPES.length;
+
+/* ---------- three ---------- */
+const canvas=document.getElementById("gl");
+const renderer=new THREE.WebGLRenderer({canvas,alpha:true,antialias:false,powerPreference:"high-performance"});
+renderer.setPixelRatio(DPR);
+renderer.setSize(innerWidth,innerHeight,false);
+
+const scene=new THREE.Scene();
+const camera=new THREE.PerspectiveCamera(46,innerWidth/innerHeight,.1,60);
+camera.position.z=4.3;
+
+const geo=new THREE.BufferGeometry();
+geo.setAttribute("position",new THREE.BufferAttribute(SHAPES[0],3));
+geo.setAttribute("aA",new THREE.BufferAttribute(SHAPES[0],3));
+geo.setAttribute("aB",new THREE.BufferAttribute(SHAPES[1],3));
+const stag=new Float32Array(COUNT), seed=new Float32Array(COUNT), vary=new Float32Array(COUNT);
+for(let i=0;i<COUNT;i++){stag[i]=Math.random();seed[i]=Math.random()*100;vary[i]=Math.random();}
+geo.setAttribute("aStag",new THREE.BufferAttribute(stag,1));
+geo.setAttribute("aSeed",new THREE.BufferAttribute(seed,1));
+geo.setAttribute("aVary",new THREE.BufferAttribute(vary,1));
+geo.setDrawRange(0,drawCount);
+geo.boundingSphere=new THREE.Sphere(new THREE.Vector3(),6);
+
+const uni={
+  uMorph:{value:0}, uTime:{value:0},
+  uSize:{value: TIER==="mobile"?3.0 : TIER==="tablet"?2.4 : TIER==="laptop"?2.0 : 1.6},
+  uDpr:{value:DPR},
+  uColA:{value:new THREE.Color("#A5C715")},
+  uColB:{value:new THREE.Color("#F2EFE6")},
+  uOpacity:{value:1},
+  uDrift:{value:1}
+};
+
+const mat=new THREE.ShaderMaterial({
+  uniforms:uni, transparent:true, depthWrite:false, depthTest:false,
+  blending:THREE.AdditiveBlending,
+  vertexShader:`
+    attribute vec3 aA; attribute vec3 aB;
+    attribute float aStag; attribute float aSeed; attribute float aVary;
+    uniform float uMorph,uTime,uSize,uDpr,uDrift;
+    varying float vV;
+    void main(){
+      float t = clamp((uMorph - aStag*0.34)/0.66, 0.0, 1.0);
+      t = t*t*(3.0-2.0*t);
+      vec3 p = mix(aA,aB,t);
+      // bloom outward at the midpoint of the transition
+      float burst = sin(3.14159*t);
+      p += normalize(p+vec3(0.0001)) * burst * (0.34 + aVary*0.5);
+      // idle drift — cheap curl stand-in, entirely on the GPU
+      float s=aSeed, tt=uTime;
+      p.x += sin(tt*0.31 + s)*0.028*uDrift;
+      p.y += cos(tt*0.27 + s*1.7)*0.028*uDrift;
+      p.z += sin(tt*0.22 + s*0.6)*0.030*uDrift;
+      vV = aVary;
+      vec4 mv = modelViewMatrix * vec4(p,1.0);
+      gl_PointSize = uSize * uDpr * (300.0 / -mv.z);
+      gl_Position = projectionMatrix * mv;
+    }`,
+  fragmentShader:`
+    precision mediump float;
+    uniform vec3 uColA,uColB; uniform float uOpacity;
+    varying float vV;
+    void main(){
+      vec2 d = gl_PointCoord - 0.5;
+      float a = 1.0 - smoothstep(0.22,0.5,length(d));
+      if(a<0.01) discard;
+      gl_FragColor = vec4(mix(uColA,uColB,vV*0.55), a*uOpacity);
+    }`
+});
+scene.add(new THREE.Points(geo,mat));
+
+/* ---------- scroll → morph ---------- */
+let idxA=0, idxB=1;
+function setPair(a,b){
+  if(a===idxA && b===idxB) return;
+  idxA=a; idxB=b;
+  geo.attributes.aA.array.set(SHAPES[a]); geo.attributes.aA.needsUpdate=true;
+  geo.attributes.aB.array.set(SHAPES[b]); geo.attributes.aB.needsUpdate=true;
+}
+
+const INK=new THREE.Color("#0B0E0A"), PAPER=new THREE.Color("#F2EFE6");
+const LIME=new THREE.Color("#A5C715"), SIGNAL=new THREE.Color("#E4761B");
+const DARKP=new THREE.Color("#1E2A12");
+let lightMode=false;
+
+function onScroll(){
+  const max=Math.max(1,document.body.scrollHeight-innerHeight);
+  const p=Math.min(1,Math.max(0,scrollY/max));
+  const f=p*(NS-1);
+  const a=Math.min(NS-2,Math.floor(f));
+  setPair(a,a+1);
+  uni.uMorph.value=f-a;
+
+  // inversion: begins as section 05 (Cloud) enters, completes quickly
+  const s5=document.getElementById("s5");
+  const r=s5.getBoundingClientRect();
+  const k=Math.min(1,Math.max(0,1-(r.top/(innerHeight*0.72))));
+  const bg=new THREE.Color().copy(INK).lerp(PAPER,k);
+  const fg=new THREE.Color().copy(PAPER).lerp(INK,k);
+  document.body.style.backgroundColor="#"+bg.getHexString();
+  document.body.style.color="#"+fg.getHexString();
+
+  // particles must survive the inversion: additive on ink, normal on paper
+  const nowLight = k>0.5;
+  if(nowLight!==lightMode){
+    lightMode=nowLight;
+    mat.blending = nowLight?THREE.NormalBlending:THREE.AdditiveBlending;
+    mat.needsUpdate=true;
+  }
+  const payK = Math.min(1,Math.max(0,1-(document.getElementById("s6").getBoundingClientRect().top/(innerHeight*0.6))));
+  uni.uColA.value.copy(LIME).lerp(SIGNAL,payK*0.9);
+  if(nowLight) uni.uColB.value.copy(DARKP); else uni.uColB.value.copy(PAPER);
+  uni.uOpacity.value = nowLight?0.85:1.0;
+  camera.position.y = -p*0.35;
+}
+addEventListener("scroll",onScroll,{passive:true});
+addEventListener("resize",()=>{
+  renderer.setSize(innerWidth,innerHeight,false);
+  camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
+  onScroll();
+},{passive:true});
+
+/* pointer parallax, desktop only */
+let px=0,py=0,tx=0,ty=0;
+if(!coarse) addEventListener("pointermove",e=>{
+  tx=(e.clientX/innerWidth-.5)*0.36; ty=(e.clientY/innerHeight-.5)*0.24;
+},{passive:true});
+
+/* ---------- loop + adaptive downgrade ---------- */
+const perf=document.getElementById("perf");
+document.getElementById("tier").textContent=TIER+" / "+COUNT.toLocaleString();
+let last=performance.now(), acc=0, frames=0, fps=0, settled=0;
+
+function frame(now){
+  const dt=now-last; last=now;
+  acc+=dt; frames++;
+  if(acc>500){
+    fps=Math.round(1000/(acc/frames));
+    // if we can't hold 55fps once warmed up, cut the field rather than stutter
+    if(settled>6 && fps<52 && drawCount>2048){
+      drawCount=Math.floor(drawCount*0.72);
+      geo.setDrawRange(0,drawCount);
+      uni.uSize.value*=1.12;
+    }
+    settled++;
+    perf.textContent=fps+" fps\n"+drawCount.toLocaleString()+" pts\n"+TIER;
+    acc=0; frames=0;
+  }
+  uni.uTime.value=now*0.001;
+  px+=(tx-px)*0.045; py+=(ty-py)*0.045;
+  camera.position.x=px; camera.rotation.y=-px*0.08; camera.rotation.x=py*0.06;
+  renderer.render(scene,camera);
+  requestAnimationFrame(frame);
+}
+
+onScroll();
+if(reduced){
+  uni.uDrift.value=0;
+  renderer.render(scene,camera);
+  perf.textContent="reduced motion\nstatic frame";
+  addEventListener("scroll",()=>renderer.render(scene,camera),{passive:true});
+}else{
+  requestAnimationFrame(frame);
+}
+})();
+</script>

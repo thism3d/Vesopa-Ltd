@@ -1,0 +1,119 @@
+<%- include('_shell') %>
+
+<%
+  /*
+   * WHAT THIS PAGE IS ACTUALLY FOR, and what it did not do.
+   *
+   * The question somebody opens it with is "is one of these not me?". It used
+   * to answer with `103.146.42.205 · started 2026-09-09 10:30:34`, and an IP
+   * address answers that question for approximately nobody. The owner asked for
+   * the country and for a different mark per kind of device, and both are the
+   * same idea: make the row that is wrong LOOK wrong, so it is noticed by
+   * somebody who was not looking for it.
+   *
+   * The address stays. It is the thing you quote when you report something, and
+   * removing it to make room for the country would be trading the useful for
+   * the legible when there is room for both.
+   */
+  const place = (code) => {
+    const name = geo.nameFor(code);
+    if (!name) return '';
+    const flag = geo.flagFor(code);
+    return flag ? `${flag} ${name}` : name;
+  };
+%>
+
+<section class="panel">
+  <h2>Remembered devices</h2>
+  <p class="row-meta mb-2">
+    These are machines where you ticked "remember me". Being remembered lets a
+    device skip the second step — it never skips signing in.
+  </p>
+
+  <% if (!devices.length) { %>
+  <p class="row-meta">None.</p>
+  <% } %>
+
+  <ul class="rows">
+    <% devices.forEach(function (device) { %>
+    <li class="row-with-action device-row">
+      <span class="device-mark" aria-hidden="true">
+        <%- include('../partials/icon', { name: sessions.kindOf(device.user_agent || device.name, device.platform) }) %>
+      </span>
+      <div>
+        <span class="row-main"><%= device.name || sessions.describeDevice(device.user_agent) %></span>
+        <span class="row-meta">
+          <% if (place(device.last_country)) { %><span class="where"><%= place(device.last_country) %></span> · <% } %><%
+          %>Last seen <%= device.last_seen_at %><%
+          %><%= device.last_ip ? ' from ' + device.last_ip : '' %>
+        </span>
+      </div>
+      <form method="post" action="/account/devices/<%= device.id %>/remove">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <button type="submit" class="linklike">Remove</button>
+      </form>
+    </li>
+    <% }) %>
+  </ul>
+</section>
+
+<section class="panel">
+  <h2>Where you are signed in now</h2>
+  <ul class="rows">
+    <% liveSessions.forEach(function (item) { %>
+    <li class="device-row">
+      <span class="device-mark" aria-hidden="true">
+        <%- include('../partials/icon', { name: sessions.kindOf(item.user_agent) }) %>
+      </span>
+      <div>
+        <span class="row-main">
+          <%= item.device_name || sessions.describeDevice(item.user_agent) %>
+          <% if (item.public_id === session.public_id) { %>
+          <span class="pill pill-good">This device</span>
+          <% } %>
+        </span>
+        <span class="row-meta">
+          <% if (place(item.country)) { %><span class="where"><%= place(item.country) %></span> · <% } %><%
+          %><%= item.ip || 'unknown address' %> · started <%= item.created_at %> ·
+          last active <%= item.last_seen_at %>
+        </span>
+      </div>
+    </li>
+    <% }) %>
+  </ul>
+  <%
+    /*
+     * Said only when there is nothing to say it about. A country that is blank
+     * looks like a fault otherwise — and the commonest reasons for it are
+     * completely ordinary.
+     */
+  %>
+  <p class="hint mt-2">
+    A country is worked out from the address and is not exact — a VPN, a company
+    network or a mobile carrier can put you somewhere you have never been. It is
+    blank when we cannot tell.
+  </p>
+</section>
+
+<section class="panel danger">
+  <h2>Sign out everywhere</h2>
+  <%
+    /*
+     * Honest about what this does. It ends every session here and revokes every
+     * application's refresh tokens — but an application that has just been
+     * given an access token can keep using it until it expires, which is why
+     * they last ten minutes. Promising more than that would be a lie the person
+     * would only discover at the worst moment.
+     */
+  %>
+  <p class="row-meta">
+    Ends every session and disconnects every app. Apps you are using may take up
+    to ten minutes to notice.
+  </p>
+  <form method="post" action="/account/signout-everywhere" class="mt-2">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <button class="btn btn-quiet" type="submit">Sign out everywhere</button>
+  </form>
+</section>
+
+<%- include('../partials/console-foot') %>

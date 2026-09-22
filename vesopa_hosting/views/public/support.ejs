@@ -1,0 +1,78 @@
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+
+<main id="main">
+<%- include('../partials/page-hero', {
+  kicker: 'Support',
+  heading: 'Stuck? <span class="hl">Start here</span>',
+  sub: 'The quick answers are below. If none of them fit, open a ticket from your panel and a person will read it.',
+  heroCta: { href: '/panel/tickets/new', label: 'Open a ticket', secondary: { href: '/contact', label: 'Not a customer yet' } },
+}) %>
+
+<section class="section">
+  <div class="wrap">
+    <div class="grid grid-3">
+      <%
+      const guides = [
+        ['globe',  'Point a domain at us',   'Set your nameservers to ours and wait for propagation. The exact two values are on your service page.'],
+        ['lock',   'Get the padlock working','SSL is issued automatically once DNS resolves here. If it has not, retry it from the site page.'],
+        ['mail',   'Set up your email',      'Create a mailbox in the panel, then use the IMAP and SMTP settings shown next to it.'],
+        ['wordpress','Install WordPress',    'One click from the site page. We set the database up and keep the core patched.'],
+        ['backup', 'Restore a backup',       'Pick a date on the Backups tab and restore files, the database, or both. No ticket needed.'],
+        ['key',    'Reset your password',    'Use the forgotten-password link on the sign-in page. Resets expire after an hour.'],
+      ];
+      guides.forEach(function (g, i) { %>
+        <article class="card card-hover card-accent" data-reveal="<%= (i % 3) * 70 %>">
+          <div class="f-icon"><%- icon(g[0], 22) %></div>
+          <h2 class="h3 mb-1"><%= g[1] %></h2>
+          <p class="small muted mb-0"><%= g[2] %></p>
+        </article>
+      <% }); %>
+    </div>
+  </div>
+</section>
+
+<section class="section section-tint">
+  <div class="wrap">
+    <div class="grid grid-2" style="gap:40px;align-items:center">
+      <div data-reveal="0">
+        <p class="kicker">Response times</p>
+        <h2 class="h1 mt-2 mb-2">What to expect</h2>
+        <p class="lede">
+          We would rather state these and meet them than promise instant and miss.
+        </p>
+      </div>
+      <div class="card card-flush" data-reveal="60">
+        <div class="table-wrap"><table class="table">
+          <tbody>
+            <tr><td class="strong">Site down</td><td class="num">Within 1 hour</td></tr>
+            <tr><td class="strong">Email not working</td><td class="num">Within 4 hours</td></tr>
+            <tr><td class="strong">General ticket</td><td class="num">Within 1 working day</td></tr>
+            <tr><td class="strong">Migration request</td><td class="num">Same working day</td></tr>
+            <tr><td class="strong">Billing question</td><td class="num">Within 1 working day</td></tr>
+          </tbody>
+        </table></div>
+      </div>
+    </div>
+    <p class="small muted mt-3">
+      Pro plans are answered first in every queue. Outside working hours, "site
+      down" is monitored and escalated; the rest waits until morning.
+    </p>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap center">
+    <h2 class="h1 mb-2" data-reveal="0">Still stuck?</h2>
+    <p class="lede mb-3" data-reveal="40" style="max-width:46ch;margin-inline:auto">
+      Tell us the domain and what you expected to happen. That one sentence saves
+      a whole round trip.
+    </p>
+    <div class="row" style="justify-content:center" data-reveal="80">
+      <a class="btn btn-lg" href="/panel/tickets/new">Open a ticket</a>
+      <a class="btn btn-ghost btn-lg" href="mailto:<%= contact.support_email %>">Email us</a>
+    </div>
+  </div>
+</section>
+</main>
+<%- include('../partials/footer') %>

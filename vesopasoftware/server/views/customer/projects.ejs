@@ -1,0 +1,44 @@
+<%- include("../partials/head") %>
+<%- include("../partials/nav") %>
+<div class="wrap">
+  <div class="page-head">
+    <div class="grow">
+      <span class="eyebrow">Everything we are building for you</span>
+      <h1>Projects</h1>
+      <p>Each project is billed separately and has its own conversation, files and tasks.</p>
+    </div>
+    <% if (can("project.create")) { %><a class="btn" href="/portal/projects/new">Start another project</a><% } %>
+  </div>
+  <div class="panel">
+    <% if (!projects.length) { %>
+      <p class="t-empty">Nothing here yet.</p>
+    <% } else { %>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Project</th><th>Status</th><th>Progress</th><th>Due</th><th class="num">Budget</th></tr></thead>
+          <tbody>
+            <% for (const p of projects) { %>
+              <tr>
+                <td>
+                  <a href="/portal/projects/<%= p.id %>"><strong><%= p.title %></strong></a>
+                  <div class="mono muted" style="font-size:.66rem"><%= p.ref %> · <%= p.service_type %></div>
+                </td>
+                <td><span class="pill <%= p.status === 'complete' ? 'ok' : p.status === 'on_hold' ? 'warn' : 'info' %>">
+                  <%= PROJECT_STATUS[p.status] ? PROJECT_STATUS[p.status].label : p.status %></span></td>
+                <td style="min-width:9rem">
+                  <div class="progress-line">
+                    <div class="bar" data-progress="<%= p.id %>"><i style="width:<%= p.progress_pct %>%"></i></div>
+                    <b data-progress-label="<%= p.id %>"><%= p.progress_pct %>%</b>
+                  </div>
+                </td>
+                <td><% if (p.target_date) { %><time datetime="<%= new Date(p.target_date).toISOString() %>"></time><% } else { %><span class="muted">—</span><% } %></td>
+                <td class="num"><%= moneyRound(p.budget_amount, p.currency) %></td>
+              </tr>
+            <% } %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+  </div>
+</div>
+<%- include("../partials/foot") %>

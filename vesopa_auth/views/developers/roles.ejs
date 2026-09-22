@@ -1,0 +1,142 @@
+<%- include('../partials/console-head') %>
+
+<h1 class="console-title">Roles</h1>
+<p class="console-lead">
+  <%= application.name %> — what a person can be, inside this application.
+</p>
+
+<% if (saved) { %>
+<div class="status status-good">
+  <span class="status-mark"><%- include('../partials/icon', { name: 'check' }) %></span>
+  <div><strong>Saved.</strong></div>
+</div>
+<% } %>
+<% if (error) { %>
+<div class="status status-bad">
+  <span class="status-mark"><%- include('../partials/icon', { name: 'alert' }) %></span>
+  <div><strong>Not saved</strong><p><%= error %></p></div>
+</div>
+<% } %>
+
+<%
+  /*
+   * WHY ROLES RATHER THAN SEPARATE APPLICATIONS, since this is the question the
+   * owner asked and the answer is not obvious.
+   *
+   * "Vesopa EPOS" could have been three applications — till, kitchen, back
+   * office — with the people separated between them. It is one application with
+   * roles instead, because the alternative means a manager who also works the
+   * till holds three accounts and has to remember which one she used. Roles
+   * separate colleagues; applications separate audiences.
+   */
+%>
+<section class="card">
+  <h2 class="card-head">What a role is</h2>
+  <div class="card-body">
+    <p class="mt-0 hint">
+      Only the <b>key</b> travels, in the <code>roles</code> claim of the token.
+      Your application decides what each one may do — that way you can rename
+      "Supervisor" to "Duty Manager", or split one role in two, without hunting
+      through your code for a string.
+    </p>
+    <p class="hint mb-0">
+      A role marked <b>default</b> is given to everybody who signs in for the
+      first time. Without one, a new user arrives holding nothing.
+    </p>
+  </div>
+</section>
+
+<section class="card">
+  <h2 class="card-head">Roles in this application</h2>
+
+  <% if (!detail.roles.length) { %>
+  <div class="empty">
+    <span class="empty-mark"><%- include('../partials/icon', { name: 'people' }) %></span>
+    <strong>None yet</strong>
+    <p>Every user looks the same to this application, which is fine for many.</p>
+  </div>
+  <% } %>
+
+  <% detail.roles.forEach(function (row) { %>
+  <div class="row">
+    <span class="row-mark"><%- include('../partials/icon', { name: 'people' }) %></span>
+    <span class="row-lines">
+      <span class="row-title">
+        <span class="mono is-small"><%= row.role_key %></span>
+        <% if (row.is_default) { %><span class="pill pill-good">default</span><% } %>
+      </span>
+      <span class="row-sub">
+        <%= row.name %><% if (row.description) { %> — <%= row.description %><% } %>
+        · held by <%= row.held %>
+      </span>
+    </span>
+    <span class="row-right">
+      <% if (role !== 'viewer') { %>
+      <%
+        /*
+         * The consequence is in the button, not behind it. A role held by
+         * three people is taken from all three, and their next token is
+         * missing a claim the application checks for — so the button says so
+         * rather than asking a question the person will answer by reflex.
+         */
+      %>
+      <form method="post" action="/developers/a/<%= application.client_id %>/roles/<%= row.id %>/remove">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <input type="hidden" name="confirm" value="yes">
+        <button type="submit" class="btn-link"><%= Number(row.held) > 0
+          ? 'Remove from ' + row.held + (Number(row.held) === 1 ? ' person' : ' people')
+          : 'Remove' %></button>
+      </form>
+      <% } %>
+    </span>
+  </div>
+  <% }) %>
+
+  <% if (role !== 'viewer') { %>
+  <form method="post" action="/developers/a/<%= application.client_id %>/roles">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <div class="card-body">
+      <div class="grid-2">
+        <div class="field">
+          <label for="role_key">Key</label>
+          <input type="text" id="role_key" name="role_key" maxlength="64" required
+                 spellcheck="false" autocapitalize="off"
+                 placeholder="till.manager">
+          <p class="hint">Lowercase, with dots. This is what your code checks.</p>
+        </div>
+        <div class="field">
+          <label for="name">Name</label>
+          <input type="text" id="name" name="name" maxlength="120" placeholder="Till manager">
+          <p class="hint">What a human calls it.</p>
+        </div>
+      </div>
+      <div class="field">
+        <label for="description">What it means</label>
+        <input type="text" id="description" name="description" maxlength="255"
+               placeholder="Can refund, void and open the drawer without a sale.">
+      </div>
+      <label class="check">
+        <input type="checkbox" name="is_default" value="1">
+        <span><b>Give this to everybody who signs in</b>
+        <span>Adding a second default gives new people both.</span></span>
+      </label>
+      <button class="btn btn-quiet btn-small" type="submit">Add or update role</button>
+    </div>
+  </form>
+  <% } %>
+</section>
+
+<section class="card">
+  <h2 class="card-head">Reading them in your app</h2>
+  <div class="card-body">
+    <p class="hint mt-0">
+      Ask for the <code>roles</code> scope, and the ID token carries them:
+    </p>
+    <pre class="code">{
+  "sub": "…",
+  "roles": [<%= detail.roles.length ? detail.roles.slice(0, 2).map(function (r) { return '"' + r.role_key + '"'; }).join(', ') : '"example.role"' %>]
+}</pre>
+  </div>
+</section>
+
+<%- include('../partials/console-foot') %>

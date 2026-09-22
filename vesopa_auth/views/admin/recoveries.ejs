@@ -1,0 +1,77 @@
+<%- include('../partials/console-head') %>
+
+<h1 class="console-title">Account recoveries</h1>
+<p class="console-lead">
+  Every time somebody was helped back in after losing their second factor.
+</p>
+
+<%
+  /*
+   * WHY THIS PAGE EXISTS AT ALL.
+   *
+   * Administrator-assisted recovery is the one action that deliberately weakens
+   * an account, and it is the way MFA systems are actually defeated — over the
+   * telephone, not over the network. A single audit line among thousands is not
+   * oversight. A list of nothing but recoveries, readable in ten seconds, is:
+   * "who has been doing a lot of these lately" is a question that should have
+   * an answer without anybody writing a query.
+   */
+%>
+<div class="card">
+  <div class="card-head"><h2>How this is kept safe</h2></div>
+  <div class="card-body">
+    <ul class="plain-list">
+      <li>A password alone will not sign the person in for <%= pauseHours %> hours afterwards — they must prove they can receive a code.</li>
+      <li>Every session and every application token is ended at the moment of the reset.</li>
+      <li>The person is emailed immediately, and it appears in their own sign-in history.</li>
+      <li>Nobody can do it to their own account.</li>
+    </ul>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head"><h2>Recent</h2></div>
+  <div class="card-body">
+    <% if (!recoveries.length) { %>
+    <div class="empty">
+      <span class="empty-mark"><%- include('../partials/icon', { name: 'key' }) %></span>
+      <p>None yet.</p>
+    </div>
+    <% } %>
+
+    <% recoveries.forEach(function (row) { %>
+    <div class="row">
+      <span class="row-mark"><%- include('../partials/icon', { name: 'key' }) %></span>
+      <div class="row-lines">
+        <span class="row-title">
+          <a href="/admin/people/<%= row.subject_public_id %>"><%= row.subject_name || row.subject_public_id %></a>
+        </span>
+        <span class="row-sub">
+          <%= String(row.created_at).slice(0, 16) %> ·
+          by <%= row.actor_name || 'unknown' %> ·
+          <%
+            const did = [];
+            if (row.removed_totp) did.push('authenticator removed');
+            if (row.removed_passkeys) did.push(row.removed_passkeys + ' passkey(s) removed');
+            if (row.reissued_codes) did.push('new recovery codes');
+          %>
+          <%= did.join(', ') %>
+        </span>
+        <span class="row-sub">
+          Checked by: <%= verification[row.verified_by] || row.verified_by %>
+        </span>
+        <span class="row-sub">“<%= row.reason %>”</span>
+      </div>
+      <div class="row-right">
+        <% if (row.notified_at) { %>
+        <span class="pill">told them</span>
+        <% } else { %>
+        <span class="pill pill-bad">not notified</span>
+        <% } %>
+      </div>
+    </div>
+    <% }) %>
+  </div>
+</div>
+
+<%- include('../partials/console-foot') %>

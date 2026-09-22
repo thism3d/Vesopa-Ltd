@@ -1,0 +1,11 @@
+<%
+/* Closing partial for the signed-out pages.
+ *
+ * They use head.ejs but not nav.ejs, so they never open the `.shell` /
+ * `<main>` that nav.ejs does — and the ordinary foot.ejs closes both. Sharing
+ * one foot between the two would emit stray closing tags on every login page.
+ * The file viewer is omitted too: there is nothing to preview before sign-in. */
+%>
+<script src="/portal/static/portal.js" defer></script>
+</body>
+</html>

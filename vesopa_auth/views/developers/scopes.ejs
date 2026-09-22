@@ -1,0 +1,95 @@
+<%- include('../partials/console-head') %>
+
+<h1 class="console-title">Data it may ask for</h1>
+<p class="console-lead">
+  <%= application.name %> — the scopes this application is allowed to request.
+  Ticking one does not grant it: the person still sees it on the consent screen
+  and can refuse.
+</p>
+
+<% if (saved) { %>
+<div class="status status-good">
+  <span class="status-mark"><%- include('../partials/icon', { name: 'check' }) %></span>
+  <div><strong>Saved.</strong><p>The consent screen shows the new list from the next sign-in.</p></div>
+</div>
+<% } %>
+<% if (error) { %>
+<div class="status status-bad">
+  <span class="status-mark"><%- include('../partials/icon', { name: 'alert' }) %></span>
+  <div><strong>Not saved</strong><p><%= error %></p></div>
+</div>
+<% } %>
+
+<%
+  /*
+   * The wording shown to the person is shown to the developer, verbatim.
+   *
+   * A scope list written in protocol vocabulary — "profile", "email" — tells a
+   * developer nothing about what their user will be asked, and the consent
+   * screen is where an over-broad request costs them a sign-up. Putting the
+   * exact sentence here is the cheapest way to make somebody tick one box
+   * fewer.
+   */
+%>
+<form method="post" action="/developers/a/<%= application.client_id %>/scopes">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+  <section class="card">
+    <h2 class="card-head">Scopes</h2>
+    <p class="card-note">Under each name is the sentence the person actually reads.</p>
+    <div class="card-body">
+      <div class="check-grid">
+        <% detail.scopes.forEach(function (scope) { %>
+        <label class="check">
+          <input type="checkbox" name="scope" value="<%= scope.id %>"
+                 <%= scope.chosen ? 'checked' : '' %>
+                 <%= scope.name === 'openid' || role === 'viewer' ? 'disabled' : '' %>>
+          <span>
+            <b>
+              <%= scope.name %>
+              <% if (scope.name === 'openid') { %><span class="pill">always on</span><% } %>
+              <% if (scope.is_sensitive) { %><span class="pill pill-bad">needs review</span><% } %>
+            </b>
+            <span>
+              &ldquo;<%= scope.description %>&rdquo;
+            </span>
+          </span>
+        </label>
+        <% if (scope.name === 'openid') { %>
+        <input type="hidden" name="scope" value="<%= scope.id %>">
+        <% } %>
+        <% }) %>
+      </div>
+
+      <p class="hint">
+        <b>openid</b> is what makes this OpenID Connect rather than plain OAuth,
+        so it cannot be turned off. A scope marked <b>needs review</b> has to be
+        approved before an application may ask for it — write to
+        <a href="mailto:developers@vesopa.com">developers@vesopa.com</a>.
+      </p>
+
+      <% if (role !== 'viewer') { %>
+      <button class="btn btn-quiet btn-small" type="submit">Save</button>
+      <% } %>
+    </div>
+  </section>
+</form>
+
+<section class="card">
+  <h2 class="card-head">Asking for one at sign-in</h2>
+  <div class="card-body">
+    <p class="mt-0 hint">
+      Space-separated, in the <code>scope</code> parameter. Anything this
+      application is not allowed is <b>dropped silently</b> rather than refused,
+      so a client that asks for one scope too many still works for everything
+      else — and the missing claim is far easier to debug than a blanket
+      failure.
+    </p>
+    <div class="copy">
+      <code>scope=<%= detail.scopes.filter(function (s) { return s.chosen; }).map(function (s) { return s.name; }).join(' ') %></code>
+      <button type="button" class="copy-btn">Copy</button>
+    </div>
+  </div>
+</section>
+
+<%- include('../partials/console-foot') %>

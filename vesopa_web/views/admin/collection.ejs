@@ -1,0 +1,174 @@
+<%- include('partials/shell-top') %>
+
+<%
+  const owed = outstanding.reduce((a, o) => a + Number(o.due_minor || 0), 0);
+  const monthMax = Math.max(...byMonth.map(m => Number(m.amount_minor)), 1);
+%>
+
+<form class="ap-search" method="get" action="/admin/collection">
+  <div>
+    <label class="ap-label">From</label>
+    <input class="ap-input" type="date" name="from" value="<%= from %>">
+  </div>
+  <div>
+    <label class="ap-label">To</label>
+    <input class="ap-input" type="date" name="to" value="<%= to %>">
+  </div>
+  <div style="align-self:flex-end">
+    <button class="ap-btn" type="submit"><span class="material-icons">filter_alt</span> Apply</button>
+  </div>
+  <div style="flex:1"></div>
+  <div style="align-self:flex-end">
+    <a class="ap-btn ghost" href="/admin/collection.csv?from=<%= from %>&to=<%= to %>">
+      <span class="material-icons">download</span> Export CSV
+    </a>
+  </div>
+</form>
+
+<div class="ap-grid cols-4">
+  <div class="ap-stat">
+    <p class="ap-stat-label">Collected</p>
+    <p class="ap-stat-value"><%= moneyShort(totals.total_minor) %></p>
+    <p class="ap-stat-note"><%= from %> → <%= to %></p>
+  </div>
+  <div class="ap-stat is-info">
+    <p class="ap-stat-label">Payments</p>
+    <p class="ap-stat-value"><%= totals.n %></p>
+    <p class="ap-stat-note">From <%= totals.offices %> office<%= Number(totals.offices) === 1 ? '' : 's' %></p>
+  </div>
+  <div class="ap-stat is-info">
+    <p class="ap-stat-label">Average payment</p>
+    <p class="ap-stat-value"><%= moneyShort(Number(totals.n) ? totals.total_minor / totals.n : 0) %></p>
+    <p class="ap-stat-note">Across the period</p>
+  </div>
+  <div class="ap-stat <%= owed ? 'is-danger' : '' %>">
+    <p class="ap-stat-label">Outstanding</p>
+    <p class="ap-stat-value"><%= moneyShort(owed) %></p>
+    <p class="ap-stat-note"><%= outstanding.length %> office<%= outstanding.length === 1 ? '' : 's' %> past their date</p>
+  </div>
+</div>
+
+<div class="ap-grid cols-2 ap-mt">
+  <div class="ap-card">
+    <div class="ap-card-head"><h3>By month</h3></div>
+<% if (!byMonth.length) { %>
+    <p class="ap-empty">Nothing in this period.</p>
+<% } else { %>
+    <div class="ap-bars">
+<% byMonth.forEach(function (m) { %>
+      <div class="ap-bar-row">
+        <span><%= m.month %></span>
+        <span class="ap-bar-track">
+          <span class="ap-bar-fill" style="width: <%= Math.round((m.amount_minor / monthMax) * 100) %>%"></span>
+        </span>
+        <span class="num"><%= money(m.amount_minor) %> <span class="ap-muted ap-small">(<%= m.n %>)</span></span>
+      </div>
+<% }); %>
+    </div>
+<% } %>
+  </div>
+
+  <div class="ap-card">
+    <div class="ap-card-head"><h3>By method</h3></div>
+<% if (!byMethod.length) { %>
+    <p class="ap-empty">Nothing in this period.</p>
+<% } else { %>
+    <div class="ap-bars">
+<% const methodMax = Math.max(...byMethod.map(m => Number(m.amount_minor)), 1); %>
+<% byMethod.forEach(function (m) { %>
+      <div class="ap-bar-row">
+        <span style="text-transform:capitalize"><%= m.method %></span>
+        <span class="ap-bar-track">
+          <span class="ap-bar-fill" style="width: <%= Math.round((m.amount_minor / methodMax) * 100) %>%"></span>
+        </span>
+        <span class="num"><%= money(m.amount_minor) %> <span class="ap-muted ap-small">(<%= m.n %>)</span></span>
+      </div>
+<% }); %>
+    </div>
+<% } %>
+  </div>
+</div>
+
+<%# ---- What is owed -------------------------------------------------------- %>
+
+<div class="ap-card">
+  <div class="ap-card-head">
+    <h3>Past their renewal date</h3>
+    <div class="ap-spacer"></div>
+    <span class="ap-badge <%= owed ? 'danger' : 'ok' %>"><%= money(owed) %> outstanding</span>
+  </div>
+  <p class="ap-card-sub">
+    Still trading — an overdue term has never switched a till off. This is the
+    call list.
+  </p>
+
+<% if (!outstanding.length) { %>
+  <p class="ap-empty">Everyone is inside their term.</p>
+<% } else { %>
+  <div class="ap-table-wrap">
+    <table class="ap-table">
+      <thead>
+        <tr><th>Office</th><th>Email</th><th>Phone</th><th>Was due</th><th>Plan</th>
+            <th class="num">Owed</th><th class="actions"></th></tr>
+      </thead>
+      <tbody>
+<% outstanding.forEach(function (o) { %>
+        <tr>
+          <td><a class="ap-primary" href="/admin/offices/<%= o.id %>"><%= o.name %></a></td>
+          <td><a href="mailto:<%= o.contact_email %>"><%= o.contact_email %></a></td>
+          <td><% if (o.contact_phone) { %><a href="tel:<%= o.contact_phone %>"><%= o.contact_phone %></a>
+              <% } else { %><span class="ap-muted">—</span><% } %></td>
+          <td class="ap-nowrap"><%= formatDate(o.next_due_on) %></td>
+          <td><%= o.plan || '—' %></td>
+          <td class="num"><strong><%= money(o.due_minor) %></strong></td>
+          <td class="actions">
+            <a class="ap-btn sm" href="/admin/offices/<%= o.id %>#chase">
+              <span class="material-icons">outgoing_mail</span> Chase
+            </a>
+          </td>
+        </tr>
+<% }); %>
+      </tbody>
+    </table>
+  </div>
+<% } %>
+</div>
+
+<%# ---- Ledger --------------------------------------------------------------- %>
+
+<div class="ap-card">
+  <div class="ap-card-head"><h3>Ledger</h3><div class="ap-spacer"></div>
+    <span class="ap-muted ap-small"><%= rows.length %> row<%= rows.length === 1 ? '' : 's' %><%= rows.length === 500 ? ' (capped)' : '' %></span>
+  </div>
+
+<% if (!rows.length) { %>
+  <p class="ap-empty">No payments recorded between those dates.</p>
+<% } else { %>
+  <div class="ap-table-wrap">
+    <table class="ap-table">
+      <thead>
+        <tr><th>Paid</th><th>Office</th><th>Method</th><th>Reference</th><th>Covers</th>
+            <th>Recorded by</th><th class="num">Amount</th></tr>
+      </thead>
+      <tbody>
+<% rows.forEach(function (p) { %>
+        <tr>
+          <td class="ap-nowrap"><%= formatDate(p.paid_on) %></td>
+          <td><a class="ap-primary" href="/admin/offices/<%= p.office_id %>"><%= p.office_name %></a></td>
+          <td style="text-transform:capitalize"><%= p.method %></td>
+          <td class="ap-mono"><%= p.reference || '—' %></td>
+          <td class="ap-small">
+            <% if (p.period_start) { %><%= formatDate(p.period_start) %> → <%= formatDate(p.period_end) %>
+            <% } else { %><span class="ap-muted">—</span><% } %>
+          </td>
+          <td class="ap-small ap-muted"><%= p.recorded_by || '—' %></td>
+          <td class="num"><strong><%= money(p.amount_minor, p.currency) %></strong></td>
+        </tr>
+<% }); %>
+      </tbody>
+    </table>
+  </div>
+<% } %>
+</div>
+
+<%- include('partials/shell-bottom') %>

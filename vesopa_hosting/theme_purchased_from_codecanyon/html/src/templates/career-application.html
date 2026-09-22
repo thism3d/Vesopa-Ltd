@@ -1,0 +1,163 @@
+{% extends "layouts/default.html" %}
+{% set dataTheme = "domain" %}
+{% set bodyClass = "bg-light dark:bg-dark-subtle" %}
+{% set navbar = true %} 
+{% set navBtnColor = "fw-medium" %}
+{% set primaryHeader = "primary-header--light primary-header--boxed primary-header--fixed top-md-3 primary-header-crossed:top-0" %}
+{% set rtlLink = "career-application-rtl.html" %}
+{% set logoLight = "logo-dark.png" %}
+{% set logoDark = "logo-light.png" %}
+<!-- Content Block -->
+{% block content %}
+
+<!-- Banner -->
+{% include "partials/banner-5.html" %}
+<!-- Banner End -->
+
+<!-- Application Form -->
+<div class="section-space-y">
+	<div class="container">
+		<div class="row justify-content-center">
+			<div class="col-md-8">
+				<div class="bg-body rounded-3 p-4 p-md-6 p-xl-12">
+					<h6 class="mb-6">Personal Information</h6>
+					<form class="row g-4">
+						<div class="col-12">
+							<label for="full-name" class="form-label fw-medium fs-14">
+								Full Name
+								<span class="text-danger">*</span>
+							</label>
+							<input
+								type="text"
+								class="form-control"
+								id="full-name"
+								placeholder="First Name"
+							/>
+						</div>
+						<div class="col-12">
+							<label for="email-address" class="form-label fw-medium fs-14">
+								Email
+								<span class="text-danger">*</span>
+							</label>
+							<input
+								type="text"
+								class="form-control"
+								id="email-address"
+								placeholder="Email Address"
+							/>
+						</div>
+						<div class="col-12">
+							<label for="phone-number" class="form-label fw-medium fs-14">
+								Mobile No.
+								<span class="text-danger">*</span>
+							</label>
+							<input
+								type="text"
+								class="form-control"
+								id="phone-number"
+								placeholder="+8801 794 840 884"
+							/>
+						</div>
+						<div class="col-12">
+							<label for="position" class="form-label fw-medium fs-14">
+								Position
+								<span class="text-danger">*</span>
+							</label>
+							<input
+								type="text"
+								class="form-control"
+								id="position"
+								placeholder="Developer"
+							/>
+						</div>
+						<div class="col-12">
+							<label class="form-label fw-medium fs-14">
+								CV
+								<span class="text-danger">*</span>
+							</label>
+							<input type="file" class="form-control" />
+						</div>
+						<div class="col-12">
+							<label for="salary" class="form-label fw-medium fs-14">
+								Expected Salary
+							</label>
+							<input
+								type="text"
+								class="form-control"
+								id="salary"
+								placeholder="Type Here.."
+							/>
+						</div>
+						<div class="col-12">
+							<button
+								type="button"
+								class="btn btn-dark-emphasis align-items-center w-100 justify-content-center"
+							>
+								<span class="d-inline-block"> Submit Application </span>
+								<iconify-icon
+									icon="entypo:paper-plane"
+									class="align-middle fs-20 flex-shrink-0"
+								></iconify-icon>
+							</button>
+						</div>
+					</form>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+<!-- Application Form End -->
+
+<!-- CTA  -->
+<div class="cta-7">
+	<div class="container">
+		<div class="row">
+			<div class="col-12">
+				<div
+					class="section-space-y px-4 px-sm-6 px-md-12 bg-body rounded-4 text-center position-relative z-1"
+				>
+					<div class="row justify-content-center">
+						<div class="col-md-11">
+							<h3>Get a free web host migration</h3>
+							<p class="mb-8 max-text-15 mx-auto">
+								We'll take care of the process of moving your website from
+								your old web hosting company to our platform so you can
+								focus on what matters
+							</p>
+							<div
+								class="d-flex align-items-center justify-content-center gap-4 flex-wrap"
+							>
+								<a
+									href="{{root}}sign-in-2.html"
+									class="btn btn-secondary text-light"
+								>
+									Get Started now
+								</a>
+								<a
+									href="{{root}}contact.html"
+									class="btn btn-dark-emphasis"
+								>
+									Contact Us
+								</a>
+							</div>
+						</div>
+					</div>
+					<img
+						src="{{root}}assets/img/cta-img-16.png"
+						alt="image"
+						class="img-fluid d-none d-xl-block position-absolute start-0 top-50 translate-middle-y z-n1 pointer-none"
+					/>
+					<img
+						src="{{root}}assets/img/cta-img-17.png"
+						alt="image"
+						class="img-fluid d-none d-xl-block position-absolute end-0 top-50 translate-middle-y z-n1 pointer-none"
+					/>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+<!-- CTA End -->
+
+{% include "partials/footer-7.html" %} 
+{% endblock %}

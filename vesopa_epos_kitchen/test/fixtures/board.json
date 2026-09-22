@@ -1,0 +1,150 @@
+{
+  "serverTime": "2026-08-21T09:08:38.173Z",
+  "stationNames": {
+    "kp1": "Grill",
+    "kp3": "Fryer"
+  },
+  "tickets": [
+    {
+      "id": "64705728-6aa7-4c7d-8646-98ca3d79aac4",
+      "orderId": "7e9b0ce4-5d69-4824-8d16-1c8640405756",
+      "ticketNo": "7C41A9",
+      "kind": "table",
+      "tableNumber": 4,
+      "roomName": "Lounge",
+      "staffName": "sophie",
+      "covers": 2,
+      "note": "allergy: nuts",
+      "rushed": true,
+      "placedAt": "2026-08-21T09:01:57.000Z",
+      "lines": [
+        {
+          "id": "8a5583d1-faf5-49f3-a0d4-091d0bd51ffa",
+          "seq": 0,
+          "quantity": 1,
+          "name": "Crispy Chicken Burger",
+          "note": "no tomato, no garlic",
+          "stations": [
+            "kp1"
+          ]
+        },
+        {
+          "id": "b104ad49-899e-407f-902c-bd0f742b4523",
+          "seq": 1,
+          "quantity": 1,
+          "name": "Kids Breakfast",
+          "note": null,
+          "stations": [
+            "kp1"
+          ]
+        },
+        {
+          "id": "07856e2e-e797-4f69-8060-2a7f4d257ae4",
+          "seq": 2,
+          "quantity": 2.5,
+          "name": "Chips",
+          "note": null,
+          "stations": [
+            "kp3"
+          ]
+        }
+      ],
+      "stations": [
+        {
+          "station": "kp1",
+          "status": "open",
+          "doneAt": null,
+          "doneBy": null
+        },
+        {
+          "station": "kp3",
+          "status": "open",
+          "doneAt": null,
+          "doneBy": null
+        }
+      ]
+    },
+    {
+      "id": "430bb98a-eaf0-4483-a881-b4e2052ff7ff",
+      "orderId": "fe96159f-5443-472e-ac15-b736b4421c84",
+      "ticketNo": "F5A6B7",
+      "kind": "table",
+      "tableNumber": 8,
+      "roomName": "Bar",
+      "staffName": "steff",
+      "covers": null,
+      "note": null,
+      "rushed": false,
+      "placedAt": "2026-08-21T08:53:37.000Z",
+      "lines": [
+        {
+          "id": "54c5fe2b-da45-484e-9836-77a0209d0873",
+          "seq": 0,
+          "quantity": 1,
+          "name": "Soup",
+          "note": null,
+          "stations": [
+            "kp1"
+          ]
+        }
+      ],
+      "stations": [
+        {
+          "station": "kp1",
+          "status": "done",
+          "doneAt": "2026-08-21T09:08:38.000Z",
+          "doneBy": "Grill screen"
+        }
+      ]
+    },
+    {
+      "id": "4db56c33-5533-46b3-b492-fc18fdf5ce26",
+      "orderId": "b2118826-2436-4efc-abff-75227df9d28e",
+      "ticketNo": "B2D3E4",
+      "kind": "sale",
+      "tableNumber": null,
+      "roomName": null,
+      "staffName": null,
+      "covers": null,
+      "note": null,
+      "rushed": false,
+      "placedAt": "2026-08-21T09:06:57.000Z",
+      "lines": [
+        {
+          "id": "2b9d99bb-c48c-4825-98c8-9efb545b36ed",
+          "seq": 0,
+          "quantity": 3,
+          "name": "Crispy Chicken Burger",
+          "note": null,
+          "stations": [
+            "kp1"
+          ]
+        },
+        {
+          "id": "4397ceda-802a-4d30-9f41-241e41e06f95",
+          "seq": 1,
+          "quantity": 1,
+          "name": "Onion Rings",
+          "note": null,
+          "stations": [
+            "kp3"
+          ]
+        }
+      ],
+      "stations": [
+        {
+          "station": "kp1",
+          "status": "done",
+          "doneAt": "2026-08-21T09:08:38.000Z",
+          "doneBy": "Grill screen"
+        },
+        {
+          "station": "kp3",
+          "status": "open",
+          "doneAt": null,
+          "doneBy": null
+        }
+      ]
+    }
+  ]
+}

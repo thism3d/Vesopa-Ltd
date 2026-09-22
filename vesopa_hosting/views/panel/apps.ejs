@@ -1,0 +1,111 @@
+<%#
+  Install an app.
+
+  THE ORDER OF THIS PAGE IS THE ARGUMENT. What is already running comes first,
+  because somebody arriving here twice out of three times wants the thing they
+  installed last week, not a new one. The catalogue is underneath, grouped by
+  runtime, with Node first — every other panel on the market buries Node behind
+  a wall of PHP CMSes, and the customers asking for this one are asking for Node.
+
+  Nothing on a card is a promise the machine cannot keep: the minutes are
+  measured on this node, the "needs a database" line is what the installer will
+  actually create, and an app whose runtime is missing from the server is shown
+  as unavailable rather than clicking through to a failure.
+%>
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css', sections: false }) %>
+<link rel="stylesheet" href="<%= asset('/assets/css/apps.css') %>">
+<%- include('../partials/panel-shell', {
+  pageTitle: 'Apps',
+  pageSub: 'Install something on one of your sites, in about a minute.',
+}) %>
+
+<% if (mock) { %>
+  <div class="alert alert-info">
+    <%- icon('info', 19) %>
+    <div><b>Demonstration mode.</b> This panel is not connected to a live hosting node, so nothing here will actually be installed.</div>
+  </div>
+<% } %>
+
+<% if (!service) { %>
+  <div class="empty">
+    <p class="mb-3">You need hosting before you can install anything on it.</p>
+    <a class="btn" href="/hosting">See the plans</a>
+  </div>
+<% } else { %>
+
+  <%# ---- What is already running ------------------------------------------ %>
+  <% if (nodeApps.length) { %>
+    <div class="row-between mb-2" style="align-items:baseline">
+      <h2 class="h3 mb-0">Your Node apps</h2>
+      <a class="linklike small" href="/panel/apps/node">Manage all <%= nodeApps.length %></a>
+    </div>
+    <div class="applist mb-4">
+      <% nodeApps.slice(0, 4).forEach(function (a) { %>
+        <a class="approw" href="/panel/apps/node/<%= encodeURIComponent(a.name) %>">
+          <span class="approw-ic"><img src="<%= asset('/assets/img/apps/nodedotjs.svg') %>" alt="" width="22" height="22"></span>
+          <span class="approw-b">
+            <span class="approw-n"><%= a.name %></span>
+            <span class="approw-s"><%= a.health.why %></span>
+          </span>
+          <span class="state state-<%= a.health.tone %>"><i></i><%= a.health.label %></span>
+        </a>
+      <% }); %>
+    </div>
+  <% } %>
+
+  <%# ---- The catalogue ----------------------------------------------------- %>
+  <% groups.forEach(function (group) { %>
+    <div class="group-lab"><%= group.title %></div>
+    <p class="small muted mb-3" style="margin-top:-6px"><%= group.note %></p>
+    <div class="cards mb-4">
+      <% (appsByKind[group.kind] || []).forEach(function (app) { %>
+        <a class="card-app" href="/panel/apps/install/<%= app.slug %>">
+          <span class="card-app-top">
+            <span class="card-app-logo">
+              <% if (app.logo) { %>
+                <img src="<%= asset('/assets/img/apps/' + app.logo) %>" alt="" width="26" height="26">
+              <% } else { %>
+                <%- icon(app.icon || 'box', 22) %>
+              <% } %>
+            </span>
+            <% if (app.popular) { %><span class="pill">Most installed</span><% } %>
+          </span>
+          <span class="card-app-name"><%= app.name %></span>
+          <span class="card-app-tag"><%= app.tagline %></span>
+          <span class="card-app-foot">
+            <span><%- icon('clock', 13) %> <%= app.minutes %> min</span>
+            <% if (app.needs.database) { %><span><%- icon('database', 13) %> database</span><% } %>
+            <% if (app.needs.node) { %><span><%- icon('cpu', 13) %> Node</span><% } %>
+            <% if (app.needs.php) { %><span><%- icon('cpu', 13) %> PHP <%= app.needs.php %>+</span><% } %>
+          </span>
+        </a>
+      <% }); %>
+    </div>
+  <% }); %>
+
+  <%# ---- The two things people go looking for next -------------------------- %>
+  <div class="tools">
+    <a class="tool" href="/panel/apps/node">
+      <span class="tool-ic"><%- icon('activity', 18) %></span>
+      <span class="tool-name">Node apps</span>
+      <span class="tool-note">Status, logs, restart</span>
+    </a>
+    <a class="tool" href="/panel/apps/runtime">
+      <span class="tool-ic"><%- icon('sliders', 18) %></span>
+      <span class="tool-name">Languages</span>
+      <span class="tool-note">PHP and Node versions, settings, plugins</span>
+    </a>
+    <a class="tool" href="/panel/databases">
+      <span class="tool-ic"><%- icon('database', 18) %></span>
+      <span class="tool-name">Databases</span>
+      <span class="tool-note">MySQL and PostgreSQL</span>
+    </a>
+    <a class="tool" href="/panel/files">
+      <span class="tool-ic"><%- icon('folder', 18) %></span>
+      <span class="tool-name">Files</span>
+      <span class="tool-note">Upload your own site</span>
+    </a>
+  </div>
+<% } %>
+
+<%- include('../partials/panel-shell-end') %>

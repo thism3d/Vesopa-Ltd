@@ -1,0 +1,45 @@
+<%- include('../partials/head', { extraCss: '/assets/css/cart.css' }) %>
+<%- include('../partials/header') %>
+
+<main id="main">
+<section class="section-sm" style="padding-bottom:70px">
+  <div class="wrap">
+
+    <% if (!lines.length) { %>
+      <%# Empty. Offered a way forward rather than a dead end. %>
+      <div class="card card-pad-lg center" style="max-width:520px;margin-inline:auto">
+        <div class="f-icon" style="margin-inline:auto"><%- icon('card', 24) %></div>
+        <h1 class="h2 mb-2">Your basket is empty</h1>
+        <p class="lede mb-3">Pick a plan and you can be online this afternoon.</p>
+        <div class="row" style="justify-content:center">
+          <a class="btn btn-lg" href="/hosting">See hosting plans</a>
+          <a class="btn btn-ghost btn-lg" href="/domains">Find a domain</a>
+        </div>
+      </div>
+
+    <% } else { %>
+      <h1 class="h2 mb-3">Your basket</h1>
+
+      <%# The two columns are swapped in place by cart.js when anything changes,
+          so both carry an id and neither holds anything the fragment does not
+          render. A stray element left outside a partial would survive every
+          update and quietly go stale. %>
+      <div class="cart-layout" data-cart>
+        <div class="cart-main" id="cart-main">
+          <%- include('../partials/cart-main') %>
+        </div>
+
+        <%# Sticky on desktop, so the total stays in view while the left column
+            is read. %>
+        <aside class="cart-side">
+          <div class="cart-summary" id="cart-summary">
+            <%- include('../partials/cart-summary') %>
+          </div>
+        </aside>
+      </div>
+    <% } %>
+  </div>
+</section>
+</main>
+
+<%- include('../partials/footer', { extraJs: '/assets/js/cart.js' }) %>

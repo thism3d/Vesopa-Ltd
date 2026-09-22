@@ -1,0 +1,48 @@
+# Line-ending policy.
+#
+# Flutter's build tooling and its CMake migrators assume LF. On Windows, git's
+# default core.autocrlf rewrites checked-out files to CRLF; the migrator then
+# fails to recognise the already-modern windows/flutter/CMakeLists.txt, assumes
+# it is an old template, and its LF-based rewrite corrupts the CRLF file into a
+# "Parse error. Expected \"(\", got right paren" at configure time.
+#
+# Pin every file the tooling reads to LF on all platforms so a Windows checkout
+# can never trigger that. Let git detect text vs binary for anything not listed.
+* text=auto
+
+# Build + tooling: must stay LF everywhere.
+*.cmake        text eol=lf
+CMakeLists.txt text eol=lf
+*.dart         text eol=lf
+*.sh           text eol=lf
+*.yaml         text eol=lf
+*.yml          text eol=lf
+*.gradle       text eol=lf
+*.kt           text eol=lf
+*.java         text eol=lf
+*.properties   text eol=lf
+*.xml          text eol=lf
+*.json         text eol=lf
+
+# Visual Studio is happiest with CRLF for the files it owns.
+*.sln          text eol=crlf
+*.vcxproj      text eol=crlf
+*.vcxproj.filters text eol=crlf
+
+# Binary assets: never normalize.
+*.png      binary
+*.jpg      binary
+*.jpeg     binary
+*.gif      binary
+*.ico      binary
+*.ttf      binary
+*.otf      binary
+*.pfx      binary
+*.crt      binary
+*.csr      binary
+*.key      binary
+*.keystore binary
+*.jks      binary
+*.so       binary
+*.dll      binary
+*.exe      binary

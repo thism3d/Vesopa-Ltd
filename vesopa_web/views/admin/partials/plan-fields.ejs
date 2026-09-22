@@ -1,0 +1,152 @@
+<%#
+  Every editable field on a package.
+
+  Rendered once per plan card and once inside the "new package" dialog, so the
+  two can never drift apart. `idPrefix` keeps the checkbox ids unique when six
+  copies of this are on one page — without it, clicking a label on the third
+  card toggles the checkbox on the first.
+
+  Locals: p (the plan row, or a blank shape), fromMinor, idPrefix
+%>
+<div class="ap-form-grid">
+  <div class="ap-field">
+    <label>Name</label>
+    <input class="ap-input" name="name" value="<%= p.name %>" required maxlength="120"
+           data-slug-source="slug">
+  </div>
+
+  <div class="ap-field">
+    <label>Id (used in URLs)</label>
+    <input class="ap-input ap-mono" name="slug" value="<%= p.slug %>" maxlength="64" data-slug-target>
+    <p class="hint">Locked once an office or a payment references it.</p>
+  </div>
+
+  <div class="ap-field">
+    <label>Term — months</label>
+    <input class="ap-input" type="number" name="period_months" min="1" max="60"
+           value="<%= p.period_months %>" required>
+    <p class="hint">3 is the standard Vesopa term.</p>
+  </div>
+
+  <div class="ap-field">
+    <label>Currency</label>
+    <input class="ap-input" name="currency" value="<%= p.currency %>" maxlength="3" size="3">
+  </div>
+
+  <div class="ap-field">
+    <label>Billing interval shown to PayPal</label>
+    <select class="ap-select" name="interval_label">
+<% ['Day', 'Week', 'Month', 'Year'].forEach(function (u) { %>
+      <option value="<%= u %>" <%= p.interval_label === u ? 'selected' : '' %>><%= u %></option>
+<% }); %>
+    </select>
+    <p class="hint">A 24-month plan is "every 2 <em>Year</em>s", not 24 months.</p>
+  </div>
+
+  <div class="ap-field">
+    <label>…every</label>
+    <input class="ap-input" type="number" name="interval_count" min="1" max="24"
+           value="<%= p.interval_count %>">
+  </div>
+
+  <div class="ap-field">
+    <label>Price per month</label>
+    <div class="ap-prefix">
+      <span>£</span>
+      <input class="ap-input" name="price_per_month" value="<%= fromMinor(p.price_per_month_minor) %>" required>
+    </div>
+    <p class="hint">The big number on the pricing card.</p>
+  </div>
+
+  <div class="ap-field">
+    <label>Full term price</label>
+    <div class="ap-prefix">
+      <span>£</span>
+      <input class="ap-input" name="total" value="<%= p.total_minor ? fromMinor(p.total_minor) : '' %>"
+             placeholder="auto: per month × term">
+    </div>
+    <p class="hint">The struck-through "before" price.</p>
+  </div>
+
+  <div class="ap-field">
+    <label>Discounted term price</label>
+    <div class="ap-prefix">
+      <span>£</span>
+      <input class="ap-input" name="discounted"
+             value="<%= p.discounted_minor ? fromMinor(p.discounted_minor) : '' %>"
+             placeholder="auto: same as full">
+    </div>
+    <p class="hint">What they actually pay. The saving badge is worked out from this.</p>
+  </div>
+
+  <div class="ap-field">
+    <label>VAT</label>
+    <div class="ap-prefix">
+      <span>£</span>
+      <input class="ap-input" name="vat" value="<%= p.vat_minor ? fromMinor(p.vat_minor) : '' %>"
+             placeholder="or use the rate below">
+    </div>
+  </div>
+
+  <div class="ap-field">
+    <label>…or a VAT rate</label>
+    <div class="ap-prefix">
+      <span>%</span>
+      <input class="ap-input" name="vat_rate" placeholder="20">
+    </div>
+    <p class="hint">Only used when the VAT box above is empty.</p>
+  </div>
+
+  <div class="ap-field">
+    <label>Total including VAT</label>
+    <div class="ap-prefix">
+      <span>£</span>
+      <input class="ap-input" name="total_with_vat"
+             value="<%= p.total_with_vat_minor ? fromMinor(p.total_with_vat_minor) : '' %>"
+             placeholder="auto: discounted + VAT">
+    </div>
+  </div>
+
+  <div class="ap-field span-2">
+    <label>One-line blurb</label>
+    <input class="ap-input" name="blurb" value="<%= p.blurb || '' %>" maxlength="500">
+  </div>
+
+  <div class="ap-field span-2">
+    <label>Features — one per line</label>
+    <textarea class="ap-textarea" name="features" rows="6" maxlength="4000"><%= p.features || '' %></textarea>
+    <p class="hint">Rendered as the tick list on the pricing card.</p>
+  </div>
+
+  <div class="ap-field">
+    <label>Sort order</label>
+    <input class="ap-input" type="number" name="sort_order" value="<%= p.sort_order %>">
+    <p class="hint">Low numbers first.</p>
+  </div>
+
+  <div class="ap-field">
+    <label>PayPal button image URL</label>
+    <input class="ap-input" name="paypal_image" value="<%= p.paypal_image || '' %>" maxlength="255">
+  </div>
+
+  <div class="span-2">
+    <div class="ap-check">
+      <input type="checkbox" id="<%= idPrefix %>Active" name="is_active" value="1" <%= p.is_active ? 'checked' : '' %>>
+      <label for="<%= idPrefix %>Active">On sale — show it on the public pricing page</label>
+    </div>
+    <div class="ap-check">
+      <input type="checkbox" id="<%= idPrefix %>Popular" name="is_popular" value="1" <%= p.is_popular ? 'checked' : '' %>>
+      <label for="<%= idPrefix %>Popular">Flag as “Most popular” <span class="ap-muted">(clears it from the others)</span></label>
+    </div>
+    <div class="ap-check">
+      <input type="checkbox" id="<%= idPrefix %>Default" name="is_default" value="1" <%= p.is_default ? 'checked' : '' %>>
+      <label for="<%= idPrefix %>Default">Default for new offices <span class="ap-muted">(clears it from the others)</span></label>
+    </div>
+<% if (!p.is_archived) { %>
+    <div class="ap-check">
+      <input type="checkbox" id="<%= idPrefix %>Archived" name="is_archived" value="1">
+      <label for="<%= idPrefix %>Archived">Archive it — keeps existing customers resolvable, removes it from sale</label>
+    </div>
+<% } %>
+  </div>
+</div>

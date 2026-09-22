@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 48" width="200" height="48" role="img" aria-label="PayPal">
+  <title>PayPal</title>
+  <rect x="4" y="8" width="32" height="32" rx="9" fill="#003087"/>
+  <!-- The two overlapping strokes PayPal's own mark is built from, not a copy of the wordmark. -->
+  <path d="M14 30l2.4-13.4c.2-1.1 1.1-1.9 2.2-1.9h4.6c3 0 4.9 1.8 4.4 4.6-.5 3.1-2.9 4.9-6 4.9h-2.1l-.9 5.1c-.1.6-.6 1-1.2 1H15c-.6 0-1.1-.6-1-1.3z" fill="#009cde"/>
+  <path d="M17.2 27l2.1-11.8c.2-1.1 1.1-1.9 2.2-1.9h4.6c1.8 0 3.2.6 3.9 1.7-.5 3.4-2.9 5.3-6.2 5.3h-2.1l-1 5.4c-.1.6-.6 1-1.2 1h-2.3z" fill="#fff" opacity=".55"/>
+
+  <text x="45" y="26" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif"
+        font-size="17" font-weight="700" letter-spacing="-.4" fill="#111111">PayPal</text>
+  <text x="45.5" y="38" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif"
+        font-size="9.5" font-weight="500" letter-spacing=".2" fill="#787a6e">Pay with your PayPal account</text>
+</svg>

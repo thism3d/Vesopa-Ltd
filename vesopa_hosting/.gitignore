@@ -1,0 +1,31 @@
+node_modules/
+.env
+.env.*
+!.env.example
+*.log
+public/uploads/*
+!public/uploads/.gitkeep
+.DS_Store
+logs/
+
+# The production TEMPLATE ships; it has no values in it, only the shape and the
+# notes. `.env.*` above blocks every real env file, and a nested .gitignore
+# wins over the repository root one for paths beneath it — so the exception has
+# to be stated here rather than at the root.
+!.env.production.example
+!.env.*.example
+
+# Python bytecode from the brokers.
+__pycache__/
+*.pyc
+
+# Generated invoice PDFs.
+#
+# These are customer documents, not source: a name, a postal address and what
+# somebody spent, one file per purchase. They belong on the server's disk and
+# in nobody's git history — `git rm --cached` does not remove a file from past
+# commits, so a single accidental commit here is permanent.
+#
+# The directory itself is tracked, so a fresh deploy has somewhere to write.
+files/invoices/*
+!files/invoices/.gitkeep

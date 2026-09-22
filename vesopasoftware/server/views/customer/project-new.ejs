@@ -1,0 +1,129 @@
+<%- include("../partials/head") %>
+<%- include("../partials/nav") %>
+<div class="wrap">
+  <div class="page-head">
+    <div class="grow">
+      <span class="eyebrow">A new piece of work</span>
+      <h1>Start a project</h1>
+      <p>Answer these and you get a costed estimate straight away. A person reads every brief.</p>
+    </div>
+  </div>
+  <% if (error) { %><div class="notice bad"><%= error %></div><% } %>
+
+  <form method="post" action="/portal/projects/new" id="brief">
+    <input type="hidden" name="_csrf" value="<%= csrf %>">
+    <div class="split">
+      <div>
+        <div class="panel">
+          <h2>What are we building?</h2>
+          <div class="field">
+            <label for="title">Give it a name</label>
+            <input id="title" name="title" required placeholder="e.g. Booking site for the Baglan venue"
+                   value="<%= form.title || '' %>">
+          </div>
+          <div class="field">
+            <label for="service_type">Kind of work</label>
+            <select id="service_type" name="service_type">
+              <% for (const s of services) { %>
+                <option value="<%= s.id %>" <%= form.service_type === s.id ? "selected" : "" %>>
+                  <%= s.label %> — <%= s.blurb %>
+                </option>
+              <% } %>
+            </select>
+          </div>
+          <div class="fields">
+            <div class="field">
+              <label for="scope_tier">How big</label>
+              <select id="scope_tier" name="scope_tier">
+                <% for (const t of tiers) { %>
+                  <option value="<%= t.id %>" <%= (form.scope_tier || "standard") === t.id ? "selected" : "" %>>
+                    <%= t.label %> — <%= t.blurb %>
+                  </option>
+                <% } %>
+              </select>
+            </div>
+            <div class="field">
+              <label for="timeline">When</label>
+              <select id="timeline" name="timeline">
+                <% for (const t of timelines) { %>
+                  <option value="<%= t.id %>" <%= (form.timeline || "normal") === t.id ? "selected" : "" %>>
+                    <%= t.label %> — <%= t.blurb %>
+                  </option>
+                <% } %>
+              </select>
+            </div>
+          </div>
+          <div class="field">
+            <label for="target_date">Date you need it by <span class="muted">(optional)</span></label>
+            <input id="target_date" name="target_date" type="date" value="<%= form.target_date || '' %>">
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>What it needs to do</h2>
+          <div class="grid g2">
+            <% for (const f of features) { %>
+              <label class="check">
+                <input type="checkbox" name="features" value="<%= f.id %>">
+                <span><strong><%= f.label %></strong><small><%= f.blurb %></small></span>
+              </label>
+            <% } %>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Tell us properly</h2>
+          <div class="field">
+            <label for="description">What is the problem, and what does good look like?</label>
+            <textarea id="description" name="description" rows="7"
+              placeholder="What you have now, what is wrong with it, who uses it, and what it must do."><%= form.description || '' %></textarea>
+          </div>
+          <p class="hint">You can attach files once the project is open.</p>
+        </div>
+      </div>
+
+      <div>
+        <div class="panel" style="position:sticky;top:4.5rem">
+          <span class="eyebrow">Working estimate</span>
+          <div class="stat" style="border:0;padding:0;background:transparent">
+            <b id="est">—</b>
+            <span>Updates as you answer. An estimate, not a price.</span>
+          </div>
+          <hr>
+          <p class="hint">We come back with a firm figure and a plan, usually within one working day.</p>
+          <button class="btn" type="submit" style="width:100%;justify-content:center;margin-top:.8rem">Send the brief</button>
+        </div>
+      </div>
+    </div>
+  </form>
+</div>
+
+<script>
+/* The estimate is priced by the server, from the same table that prices the
+   public quote form — the browser never carries its own copy of the numbers. */
+(() => {
+  const form = document.getElementById("brief");
+  const out = document.getElementById("est");
+  let inFlight = null;
+  const price = async () => {
+    const fd = new FormData(form);
+    const body = new URLSearchParams();
+    body.set("service_type", fd.get("service_type") || "");
+    body.set("scope_tier", fd.get("scope_tier") || "");
+    body.set("timeline", fd.get("timeline") || "");
+    for (const v of fd.getAll("features")) body.append("features", v);
+    inFlight?.abort();
+    inFlight = new AbortController();
+    try {
+      const r = await fetch("/api/estimate", { method: "POST", body, signal: inFlight.signal,
+        headers: { "content-type": "application/x-www-form-urlencoded" } });
+      const d = await r.json();
+      const f = n => "£" + Math.round(n).toLocaleString("en-GB");
+      out.textContent = `${f(d.min)} – ${f(d.max)}`;
+    } catch (e) { if (e.name !== "AbortError") out.textContent = "—"; }
+  };
+  form.addEventListener("change", price);
+  price();
+})();
+</script>
+<%- include("../partials/foot") %>

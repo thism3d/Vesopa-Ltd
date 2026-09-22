@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light" >
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="some description about the site">
+    <meta name="keywords" content="some, keywords, for, the, site">
+    <meta name="author" content="Asaduzzaman Sarker">
+    <title>Localhost - Web Hosting Template with WHMCS + RTL</title>
+    <link rel="icon" href="assets/img/favicon.png" type="image/png">
+    <link rel="stylesheet" href="assets/css/bootstrap-icons.css">
+    <link rel="stylesheet" href="assets/css/bootstrap.css">
+    <link rel="stylesheet" href="assets/css/swiper-bundle.css">
+    <link rel="stylesheet" href="assets/css/simplebar.css">
+    <link rel="stylesheet" href="assets/css/prism.css">
+    <link rel="stylesheet" href="assets/css/ff-1.css">
+    <link rel="stylesheet" href="assets/css/ff-2.css">
+    <link rel="stylesheet" href="assets/css/ff-3.css">
+    <link rel="stylesheet" href="assets/css/style.css">
+</head>
+
+<body >
+    
+        <header class="navbar navbar-expand-lg primary-header primary-header--light primary-header--sticky top-0">
+	<div class="container align-items-lg-center py-3 ">
+		<a class="logo" href="index.html">
+			<img
+				src="assets/img/logo-dark.png"
+				alt="image"
+				class="logo__img logo__img--light"
+			/>
+			<img
+				src="assets/img/logo-light.png"
+				alt="image"
+				class="logo__img logo__img--dark"
+			/>
+		</a>
+		<button
+			class="navbar-toggler border-0"
+			type="button"
+			data-bs-toggle="collapse"
+			data-bs-target="#navbar0"
+			aria-controls="navbar0"
+			aria-expanded="false"
+			aria-label="Toggle navigation"
+		>
+			<iconify-icon icon="solar:hamburger-menu-line-duotone"></iconify-icon>
+		</button>
+		<nav class="collapse navbar-collapse" id="navbar0">
+			<div class="d-flex align-items-center gap-3 ms-lg-auto">
+				<a
+					href="#"
+					class="btn btn-sm btn-primary order-lg-2 "
+				>
+					Buy Now
+				</a>
+				<div class="dropdown dropdown-modifier dropdown-xsm order-lg-1">
+					<button
+						class="btn dropdown-toggle px-4 px-lg-0 fs-14 border-0 align-items-center gap-1"
+						type="button"
+						data-bs-toggle="dropdown"
+						aria-haspopup="true"
+						aria-expanded="false"
+					>
+						<iconify-icon id="themeDropdownIcon" icon="bi:sun"></iconify-icon>
+					</button>
+					<ul
+						class="dropdown-menu dropdown-menu-end dropdown-menu-light mw-unset"
+					>
+						<li>
+							<button
+								type="button"
+								class="dropdown-item d-flex align-items-center gap-2 fs-14"
+								id="lightTheme"
+							>
+								<span class="d-block flex-shrink-0">
+									<iconify-icon icon="bi:sun"></iconify-icon>
+								</span>
+								<span class="d-block flex-grow-1"> Light </span>
+							</button>
+						</li>
+						<li>
+							<button
+								type="button"
+								class="dropdown-item d-flex align-items-center gap-2 fs-14"
+								id="darkTheme"
+							>
+								<span class="d-block flex-shrink-0">
+									<iconify-icon icon="bi:moon-stars"></iconify-icon>
+								</span>
+								<span class="d-block flex-grow-1"> Dark </span>
+							</button>
+						</li>
+					</ul>
+				</div>
+			</div>
+		</nav>
+	</div>
+</header>
+
+    
+
+    <div class="pt-4 pt-lg-0">
+        <div class="container">
+            <div class="row g-4">
+                <div class="col-lg-3">
+                    <div class="d-flex d-lg-none align-items-center justify-content-center gap-4 px-2 py-2 rounded-1 bg-dark-subtle">
+    <span class="d-block flex-grow-1 fs-14 text-dark-emphasis">
+        Document Sidebar
+    </span>
+    <button class="btn btn-icon btn-dark doc-nav-toggler">
+        <iconify-icon icon="gg:menu-right"></iconify-icon>
+    </button>
+</div>
+                    <div class="doc-sidebar d-flex gap-4 align-items-start p-4">
+	<div class="doc-sidebar__body flex-grow-1">
+		<ul class="list gap-4">
+			<li>
+				<span class="d-flex align-items-center gap-2">
+					<span class="d-grid text-success fs-24">
+						<iconify-icon
+							icon="solar:notebook-bookmark-bold-duotone"
+						></iconify-icon>
+					</span>
+					<span class="d-inline-block text-dark-emphasis fs-14 fw-medium">
+						Getting Started
+					</span>
+				</span>
+				<ul class="list ps-3 gap-1 mt-2">
+					<li>
+						<a
+							href="index.html"
+							class="link d-flex fs-14 text-body hover:text-primary-emphasis hover:bg-primary-subtle py-1 px-4 rounded-1 "
+						>
+							Installation
+						</a>
+					</li>
+					<li>
+						<a
+							href="whmcs-installation.html"
+							class="link d-flex fs-14 text-body hover:text-primary-emphasis hover:bg-primary-subtle py-1 px-4 rounded-1 "
+						>
+							WHMCS Installation
+						</a>
+					</li>
+					<li>
+						<a
+							href="changelog.html"
+							class="link d-flex fs-14 text-body hover:text-primary-emphasis hover:bg-primary-subtle py-1 px-4 rounded-1 "
+						>
+							Changelog
+						</a>
+					</li>
+					<li>
+						<a
+							href="credits.html"
+							class="link d-flex fs-14 text-body hover:text-primary-emphasis hover:bg-primary-subtle py-1 px-4 rounded-1 "
+						>
+							Credits
+						</a>
+					</li>
+				</ul>
+			</li>
+			<li>
+				<span class="d-flex align-items-center gap-2">
+					<span class="d-grid text-info fs-24">
+						<iconify-icon
+							icon="solar:palette-round-bold-duotone"
+						></iconify-icon>
+					</span>
+					<span class="d-inline-block text-dark-emphasis fs-14 fw-medium">
+						Style Guide
+					</span>
+				</span>
+				<ul class="list ps-3 gap-1 mt-2">
+					<li>
+						<a
+							href="colors.html"
+							class="link d-flex fs-14 text-body hover:text-primary-emphasis hover:bg-primary-subtle py-1 px-4 rounded-1 "
+						>
+							Colors
+						</a>
+					</li>
+					<li>
+						<a
+							href="fonts.html"
+							class="link d-flex fs-14 text-body hover:text-primary-emphasis hover:bg-primary-subtle py-1 px-4 rounded-1 "
+						>
+							Fonts
+						</a>
+					</li>
+					<li>
+						<a
+							href="misc.html"
+							class="link d-flex fs-14 text-body hover:text-primary-emphasis hover:bg-primary-subtle py-1 px-4 rounded-1 "
+						>
+							Misc
+						</a>
+					</li>
+				</ul>
+			</li>
+			<li>
+				<span class="d-flex align-items-center gap-2">
+					<span class="d-grid text-primary fs-24">
+						<iconify-icon icon="solar:layers-bold-duotone"></iconify-icon>
+					</span>
+					<span class="d-inline-block text-dark-emphasis fs-14 fw-medium">
+						Customization
+					</span>
+				</span>
+				<ul class="list ps-3 gap-1 mt-2">
+					<li>
+						<a
+							href="file-structure.html"
+							class="link d-flex fs-14 text-body hover:text-primary-emphasis hover:bg-primary-subtle py-1 px-4 rounded-1 "
+						>
+							File Structure
+						</a>
+					</li>
+					<li>
+						<a
+							href="html-editing.html"
+							class="link d-flex fs-14 text-body hover:text-primary-emphasis hover:bg-primary-subtle py-1 px-4 rounded-1 text-primary-emphasis bg-primary-subtle"
+						>
+							HTML Editing
+						</a>
+					</li>
+					<li>
+						<a
+							href="style-editing.html"
+							class="link d-flex fs-14 text-body hover:text-primary-emphasis hover:bg-primary-subtle py-1 px-4 rounded-1 "
+						>
+							Style Editing
+						</a>
+					</li>
+				</ul>
+			</li>
+		</ul>
+	</div>
+	<button class="btn btn-icon btn-dark flex-shrink-0 d-lg-none doc-nav-toggler">
+		<iconify-icon icon="carbon:close-large"></iconify-icon>
+	</button>
+</div>
+
+                </div>
+                <div class="col-lg-9">
+                    <div class="doc-content">
+                        
+<h4 class="mb-6">HTML Structure</h4>
+<div
+	class="rounded p-4 bg-body-tertiary bg-opacity-80 border border-secondary border-opacity-30"
+>
+	<p>
+		Localhost template is based on Bootstrap Framework, It is the most popular HTML,
+		CSS, and JS framework for developing responsive, mobile first projects on the web.
+		<a
+			target="_blank"
+			href="https://getbootstrap.com/"
+			class="badge text-light bg-opacity-90 bg-secondary ff-2"
+		>
+			Bootstrap <iconify-icon icon="hugeicons:copy-link"></iconify-icon>
+		</a>
+	</p>
+	We use
+	<a
+		target="_blank"
+		href="https://mozilla.github.io/nunjucks/"
+		class="badge text-light bg-opacity-90 bg-secondary ff-2"
+	>
+		Nunjucks <iconify-icon icon="hugeicons:copy-link"></iconify-icon>
+	</a>
+	as our HTML site generator. This is used to streamline the creation of static HTML
+	pages, layouts, and reusable components. Nunjucks is a flat-file compiler (static site
+	generator) designed to simplify building HTML pages with reusable components. It works
+	by:
+	<ol class="mt-6">
+		<li class="lh-1/7">
+			Combining layouts, pages, partials, and data into static HTML files.
+		</li>
+		<li class="lh-1/7">Integrating with build tools like Vite.</li>
+	</ol>
+</div>
+<h4 class="mt-8 mb-6">Nunjucks Basics: Templates & Pages</h4>
+<div
+	class="rounded p-4 bg-body-tertiary bg-opacity-80 border border-secondary border-opacity-30"
+>
+	<p>
+		A <strong>template</strong> is a common layout that every page in your design
+		shares. It's possible to have multiple templates, but generally you'll only need
+		one, and a page can only use one template. In the prototyping template, the
+		default layout is found under
+		<span class="badge text-light bg-opacity-90 bg-secondary ff-2"
+			>src/layouts/default.html</span
+		>
+		.
+	</p>
+	<p>Here's what a basic template might look like:</p>
+	<div class="tab-group my-4">
+		<div
+			class="tab__header d-flex align-items-center justify-content-between gap-4 border-bottom"
+		>
+			<div class="tab flex-grow-1">
+				<button
+					class="tab__links position-relative z-1 btn btn-sm hover:text-primary border-0"
+				>
+					HTML
+				</button>
+			</div>
+			<button
+				class="btn btn-sm border-0 text-primary hover:text-primary-emphasis align-items-center gap-1 code-snippet-expand"
+			>
+				<iconify-icon icon="quill:expand"></iconify-icon> Expand Code View
+			</button>
+		</div>
+		<div class="tab__body mt-4">
+			<div class="tab__content">
+				<div
+					class="code-snippet code-snippet--md overflow-x-auto p-4 rounded-1 bg-body-secondary bg-opacity-40 my-1"
+				>
+					
+					<pre><code class="language-html"><!--
+                                                <html>
+                                                    <head>
+                                                        <title>Definitely a Website!</title>
+                                                    </head>
+                                                    <body>
+                                                        <header class="primary-header">...</header>
+                                                        {% block content %}{% endblock %}
+                                                        <footer class="footer">...</footer>
+                                                    </body>
+                                                </html>
+                                            --></code></pre>
+					
+				</div>
+			</div>
+		</div>
+	</div>
+	<p>
+		In the middle of the HTML is a bit of Nunjucks code:
+		<span class="badge text-light bg-opacity-90 bg-secondary ff-2"
+			>{ % block content % }{ % endblock % }</span
+		>
+		. This is where the pages you write are injected when Nunjucks runs, giving you a
+		series of complete HTML files at the end.
+	</p>
+	<p>
+		The pages make up the guts of your layouts. These files will just have the middle
+		section of the design, since the layout already covers the top and bottom. The
+		prototyping template includes one blank page to get you started, under
+		<span class="badge text-light bg-opacity-90 bg-secondary ff-2"
+			>src/pages/index.html</span
+		>
+		.
+	</p>
+	<p>A basic page might look like this:</p>
+	<div class="tab-group my-4">
+		<div
+			class="tab__header d-flex align-items-center justify-content-between gap-4 border-bottom"
+		>
+			<div class="tab flex-grow-1">
+				<button
+					class="tab__links position-relative z-1 btn btn-sm hover:text-primary border-0"
+				>
+					HTML
+				</button>
+			</div>
+			<button
+				class="btn btn-sm border-0 text-primary hover:text-primary-emphasis align-items-center gap-1 code-snippet-expand"
+			>
+				<iconify-icon icon="quill:expand"></iconify-icon> Expand Code View
+			</button>
+		</div>
+		<div class="tab__body mt-4">
+			<div class="tab__content">
+				<div
+					class="code-snippet code-snippet--md overflow-x-auto p-4 rounded-1 bg-body-secondary bg-opacity-40 my-1"
+				>
+					<pre><code class="language-html"><!--
+                                                <h1>Page Title</h1>
+                                                <p>Lorem ipsum dolor sit amet, consectetur adipisicing elit. Praesentium ducimus eligendi, reiciendis corporis quam facere quaerat qui, aspernatur molestiae velit, vero ea quisquam laborum corrupti repudiandae totam, at aliquam esse.</p>
+                                            --></code></pre>
+				</div>
+			</div>
+		</div>
+	</div>
+	<p>
+		Note that there's no <code class="language-html"><!--<html>--></code> or
+		<code class="language-html"><!--<body>--></code> tags, and no header or footer.
+		This code will be injected into the
+		<span class="badge text-light bg-opacity-90 bg-secondary ff-2"
+			>{ % block content % }{ % endblock % }</span
+		>
+		declaration when Nunjucks assembles your pages.
+	</p>
+	<p class="mb-0">
+		In the prototyping template, these finished files are compiled into a standalone
+		folder called
+		<span class="badge text-light bg-opacity-90 bg-secondary ff-2">
+			<iconify-icon icon="bi:folder"></iconify-icon> dist
+		</span>
+		(short for "distribution"), which also includes your processed CSS, JavaScript,
+		and images. This folder can easily be uploaded to any web server, or Notable's
+		Hosted Prototypes service.
+	</p>
+</div>
+<hr class="my-6" />
+<h4 class="mb-6">Nunjucks Basics: Partials</h4>
+<div
+	class="rounded p-4 bg-body-tertiary bg-opacity-80 border border-secondary border-opacity-30"
+>
+	<p>
+		Partials are a feature of Handlebars which allow you to inject HTML anywhere in a
+		page or layout. They're really useful when you need to repeat certain chunks of
+		code throughout your pages, or to keep individual files from getting too cluttered
+		with HTML.
+	</p>
+	<p>Here's an example of a layout file that divides its key sections into partials:</p>
+	<div class="tab-group my-4">
+		<div
+			class="tab__header d-flex align-items-center justify-content-between gap-4 border-bottom"
+		>
+			<div class="tab flex-grow-1">
+				<button
+					class="tab__links position-relative z-1 btn btn-sm hover:text-primary border-0"
+				>
+					HTML
+				</button>
+			</div>
+			<button
+				class="btn btn-sm border-0 text-primary hover:text-primary-emphasis align-items-center gap-1 code-snippet-expand"
+			>
+				<iconify-icon icon="quill:expand"></iconify-icon> Expand Code View
+			</button>
+		</div>
+		<div class="tab__body mt-4">
+			<div class="tab__content">
+				<div
+					class="code-snippet code-snippet--md overflow-x-auto p-4 rounded-1 bg-body-secondary bg-opacity-40 my-1"
+				>
+					
+					<pre><code class="language-html"><!--
+                                            <html>
+                                                <head>
+                                                    <title>Definitely a Website!</title>
+                                                </head>
+                                                <body>
+                                                    {% include "partials/preloader.html" %}
+                                                    {% include "partials/header.html" %}
+                                                    {% include "partials/footer.html" %}
+                                                </body>
+                                            </html>
+                                        --></code></pre>
+					
+				</div>
+			</div>
+		</div>
+	</div>
+	<p class="mb-0">
+		The
+		<span class="badge text-light bg-opacity-90 bg-secondary ff-2"
+			>{ % include "partials/..." % }</span
+		>
+		syntax tells Nunjucks to look for an HTML file with that name, and inject it at
+		that place. In this example, we have files called
+		<span class="badge text-light bg-opacity-90 bg-secondary ff-2"
+			>preloader.html</span
+		>
+		,
+		<span class="badge text-light bg-opacity-90 bg-secondary ff-2">header.html</span>
+		, and
+		<span class="badge text-light bg-opacity-90 bg-secondary ff-2">footer.html</span>
+		. In the prototyping template, these files all exist within
+		<span class="badge text-light bg-opacity-90 bg-secondary ff-2">src/partials</span
+		>.
+	</p>
+</div>
+<hr class="my-6" />
+<h6>Variables</h6>
+<p>
+	A variable looks up a value from the template context. If you wanted to simply display
+	a variable, you would do:
+</p>
+<div
+	class="code-snippet code-snippet--md overflow-x-auto p-4 rounded-1 bg-body-secondary bg-opacity-40 my-1"
+>
+	
+	<pre><code class="language-html"><!--{{ username }}--></code></pre>
+	
+</div>
+<p class="mt-4">
+	This looks up
+	<span class="badge bg-light-emphasis-rgb bg-opacity-10 text-light-emphasis">
+		username
+	</span>
+	from the context and displays it. Variable names can have dots in them which lookup
+	properties, just like javascript. You can also use the square bracket syntax.
+</p>
+<div
+	class="code-snippet code-snippet--md overflow-x-auto p-4 rounded-1 bg-body-secondary bg-opacity-40 my-1"
+>
+	
+	<pre><code class="language-html"><!--
+		{{ foo.bar }}
+		{{ foo["bar"] }}
+		--></code></pre>
+	
+</div>
+<p class="mt-4">These two forms to the exact same thing, just like javascript.</p>
+<p>
+	If a value is
+	<span class="badge bg-light-emphasis-rgb bg-opacity-10 text-light-emphasis ff-2">
+		undefined
+	</span>
+	or
+	<span class="badge bg-light-emphasis-rgb bg-opacity-10 text-light-emphasis ff-2">
+		null
+	</span>
+	, nothing is displayed. The same behavior occurs when referencing undefined or null
+	objects. The following all output nothing if foo is undefined:
+</p>
+<h6 class="mt-6">Template Inheritance</h6>
+<p>
+	Template inheritance is a way to make it easy to reuse templates. When writing a
+	template, you can define "blocks" that child templates can override. The inheritance
+	chain can be as long as you like.
+</p>
+<p>
+	If we have a template
+	<span class="badge bg-light-emphasis-rgb bg-opacity-10 text-light-emphasis ff-2">
+		parent.html
+	</span>
+	that looks like this:
+</p>
+<div
+	class="code-snippet code-snippet--md overflow-x-auto p-4 rounded-1 bg-body-secondary bg-opacity-40 my-1"
+>
+	
+	<pre><code class="language-html"><!--
+		{% block header %}
+	This is the default content
+{% endblock %}
+
+<section class="left">
+  {% block left %}{% endblock %}
+</section>
+
+<section class="right">
+  {% block right %}
+  This is more content
+  {% endblock %}
+</section>
+		--></code></pre>
+	
+</div>
+<p class="mt-4">And we render this template:</p>
+<div
+	class="code-snippet code-snippet--md overflow-x-auto p-4 rounded-1 bg-body-secondary bg-opacity-40 my-1"
+>
+	
+	<pre><code class="language-html"><!--
+{% extends "parent.html" %}
+
+{% block left %}
+This is the left side!
+{% endblock %}
+
+{% block right %}
+This is the right side!
+{% endblock %}
+		--></code></pre>
+	
+</div>
+<p class="mt-4">The output would be:</p>
+<div
+	class="code-snippet code-snippet--md overflow-x-auto p-4 rounded-1 bg-body-secondary bg-opacity-40 my-1"
+>
+	
+	<pre><code class="language-html"><!--
+This is the default content
+
+<section class="left">
+  This is the left side!
+</section>
+
+<section class="right">
+  This is the right side!
+</section>
+		--></code></pre>
+	
+</div>
+<h6 class="mt-6">if</h6>
+<p>
+	<span class="badge bg-light-emphasis-rgb bg-opacity-10 text-light-emphasis ff-2">
+		if
+	</span>
+	tests a condition and lets you selectively display content. It behaves exactly as
+	javascript's
+	<span class="badge bg-light-emphasis-rgb bg-opacity-10 text-light-emphasis ff-2">
+		if
+	</span>
+	behaves.
+</p>
+<div
+	class="code-snippet code-snippet--md overflow-x-auto p-4 rounded-1 bg-body-secondary bg-opacity-40 my-1"
+>
+	
+	<pre><code class="language-html"><!--
+		{% if variable %}
+  It is true
+{% endif %}
+	--></code></pre>
+	
+</div>
+<p class="mt-4">
+	If variable is defined and evaluates to true, "It is true" will be displayed.
+	Otherwise, nothing will be.
+</p>
+<p>
+	You can specify alternate conditions with
+	<span class="badge bg-light-emphasis-rgb bg-opacity-10 text-light-emphasis ff-2">
+		elif
+	</span>
+	(or
+	<span class="badge bg-light-emphasis-rgb bg-opacity-10 text-light-emphasis ff-2">
+		elseif </span
+	>, which is simply an alias of
+	<span class="badge bg-light-emphasis-rgb bg-opacity-10 text-light-emphasis ff-2">
+		elif </span
+	>) and
+	<span class="badge bg-light-emphasis-rgb bg-opacity-10 text-light-emphasis ff-2">
+		else </span
+	>:
+</p>
+<div
+	class="code-snippet code-snippet--md overflow-x-auto p-4 rounded-1 bg-body-secondary bg-opacity-40 my-1"
+>
+	
+	<pre><code class="language-html"><!--
+{% if hungry %}
+  I am hungry
+{% elif tired %}
+  I am tired
+{% else %}
+  I am good!
+{% endif %}
+	--></code></pre>
+	
+</div>
+<p class="mt-4">
+	You can specify multiple conditions with
+	<span class="badge bg-light-emphasis-rgb bg-opacity-10 text-light-emphasis ff-2">
+		and
+	</span>
+	and
+	<span class="badge bg-light-emphasis-rgb bg-opacity-10 text-light-emphasis ff-2">
+		or
+	</span>
+	:
+</p>
+<div
+	class="code-snippet code-snippet--md overflow-x-auto p-4 rounded-1 bg-body-secondary bg-opacity-40 my-1"
+>
+	
+	<pre><code class="language-html"><!--
+{% if happy and hungry %}
+  I am happy *and* hungry; both are true.
+{% endif %}
+
+{% if happy or hungry %}
+  I am either happy *or* hungry; one or the other is true.
+{% endif %}
+	--></code></pre>
+	
+</div>
+<h6 class="mt-6">set</h6>
+<p>
+	<span class="badge bg-light-emphasis-rgb bg-opacity-10 text-light-emphasis ff-2">
+		set
+	</span>
+	lets you create/modify a variable.
+</p>
+<div
+	class="code-snippet code-snippet--md overflow-x-auto p-4 rounded-1 bg-body-secondary bg-opacity-40 my-1"
+>
+	
+	<pre><code class="language-html"><!--
+{{ username }}
+{% set username = "joe" %}
+{{ username }}
+	--></code></pre>
+	
+</div>
+<p class="mt-4">
+	If
+	<span class="badge bg-light-emphasis-rgb bg-opacity-10 text-light-emphasis ff-2">
+		username
+	</span>
+	was initially "james', this would print "james joe".
+</p>
+<h6>extends</h6>
+<p>
+	<span class="badge bg-light-emphasis-rgb bg-opacity-10 text-light-emphasis ff-2">
+		extends
+	</span>
+	is used to specify template inheritance. The specified template is used as a base
+	template
+</p>
+<div
+	class="code-snippet code-snippet--md overflow-x-auto p-4 rounded-1 bg-body-secondary bg-opacity-40 my-1"
+>
+	
+	<pre><code class="language-html"><!--
+{% extends "base.html" %}
+	--></code></pre>
+	
+</div>
+<h6 class="mt-6">block</h6>
+<p>
+	<span class="badge bg-light-emphasis-rgb bg-opacity-10 text-light-emphasis ff-2">
+		block
+	</span>
+	defines a section on the template and identifies it with a name. This is used by
+	template inheritance. Base templates can specify blocks and child templates can
+	override them with new content
+</p>
+<div
+	class="code-snippet code-snippet--md overflow-x-auto p-4 rounded-1 bg-body-secondary bg-opacity-40 my-1"
+>
+	
+	<pre><code class="language-html"><!--
+{% block css %}
+<link rel="stylesheet" href="app.css" />
+{% endblock %}
+	--></code></pre>
+	
+</div>
+<h6 class="mt-6">include</h6>
+<p>
+	<span class="badge bg-light-emphasis-rgb bg-opacity-10 text-light-emphasis ff-2">
+		include
+	</span> pulls in other templates in place. It's useful when you need to share smaller
+	chunks across several templates that already inherit other templates.
+</p>
+<div
+	class="code-snippet code-snippet--md overflow-x-auto p-4 rounded-1 bg-body-secondary bg-opacity-40 my-1"
+>
+	
+	<pre><code class="language-html"><!--
+{% include "item.html" %}
+	--></code></pre>
+	
+</div>
+
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="assets/js/bootstrap.bundle.js"></script>
+    <script src="assets/js/swiper.js"></script>
+    <script src="assets/js/iconify.js"></script>
+    <script src="assets/js/simplebar.js"></script>
+    <script src="assets/js/prism.js"></script>
+    <script src="assets/js/app.js"></script>
+</body>
+
+</html>

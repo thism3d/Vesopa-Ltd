@@ -1,0 +1,194 @@
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+
+<main id="main">
+
+<section class="hero" style="padding:64px 0 74px">
+  <div class="hero-aura hero-aura-1"></div>
+  <div class="hero-grid"></div>
+  <div class="wrap hero-inner">
+    <p class="kicker" data-reveal="0" style="justify-content:center">Shared hosting</p>
+    <h1 class="display" style="font-size:clamp(2.1rem,5vw,3.4rem)" data-reveal="60">
+      Fast UK hosting,<br><span class="hl">priced honestly</span>
+    </h1>
+    <p class="lede hero-lede" data-reveal="120">
+      NVMe storage, free SSL, email and backups on every plan. The renewal price
+      is the signup price — always.
+    </p>
+  </div>
+</section>
+
+<section class="section" id="plans">
+  <div class="wrap">
+    <div class="center" data-reveal="0">
+      <div class="term-toggle" data-term-toggle role="group" aria-label="Billing term">
+        <span class="term-pill" aria-hidden="true"></span>
+        <% terms.forEach(function (t) { %>
+          <button type="button" class="term-btn <%= t.months === 12 ? 'is-active' : '' %>"
+                  data-term="<%= t.months %>" aria-pressed="<%= t.months === 12 %>">
+            <%= t.label %>
+            <% if (t.maxSaving > 0) { %><span class="term-save">−<%= t.maxSaving %>%</span><% } %>
+          </button>
+        <% }); %>
+      </div>
+    </div>
+
+    <div class="plans">
+      <% plans.forEach(function (plan, i) { %>
+        <div class="plan <%= plan.badge ? 'plan-featured' : '' %>" data-reveal="<%= i * 90 %>">
+          <% if (plan.badge) { %><span class="plan-badge"><%= plan.badge %></span><% } %>
+          <h2 class="plan-name"><%= plan.name %></h2>
+          <p class="plan-tagline"><%= plan.tagline %></p>
+
+          <% terms.forEach(function (t) { %>
+            <div data-price-for="<%= t.months %>" <%= t.months === 12 ? '' : 'hidden' %>>
+              <div class="plan-was">
+                <% if (plan.saving[t.months] > 0) { %><s><%= money(plan.monthly_pence) %></s> save <%= plan.saving[t.months] %>%<% } else { %>&nbsp;<% } %>
+              </div>
+              <div class="plan-price">
+                <span class="cur"><%= plan.perMonthParts[t.months].symbol %></span>
+                <span class="amt"><%= plan.perMonthParts[t.months].whole %></span>
+                <span class="frac">.<%= plan.perMonthParts[t.months].frac %></span>
+                <span class="per">/month</span>
+              </div>
+              <p class="plan-term-note">
+                <% if (t.months === 1) { %>Billed monthly. Cancel any time.
+                <% } else { %><%= money(plan.price[t.months]) %> for <%= t.label.toLowerCase() %>, renews at the same price.<% } %>
+              </p>
+            </div>
+          <% }); %>
+
+          <div class="plan-cta">
+            <a class="btn btn-block <%= plan.badge ? '' : 'btn-dark' %>" data-buy-link
+               href="/order/<%= plan.slug %>?term=12">Choose <%= plan.name %></a>
+          </div>
+
+          <div class="plan-spec">
+            <div><b><%= plan.websites %></b><span><%= plan.websites === 1 ? 'Website' : 'Websites' %></span></div>
+            <div><b><%= plan.storage_gb %> GB</b><span>NVMe storage</span></div>
+            <div><b><%= plan.databases %></b><span>Databases</span></div>
+            <div><b><%= plan.mailboxes %></b><span>Mailboxes</span></div>
+          </div>
+
+          <ul class="plan-features">
+            <% plan.featureList.forEach(function (f) { %>
+              <li><%- icon('check', 16) %><span><%= f %></span></li>
+            <% }); %>
+          </ul>
+        </div>
+      <% }); %>
+    </div>
+
+    <p class="center small muted mt-3">
+      Prices exclude VAT at <%= vatPercent %>%. A free domain is included on
+      12-month terms and above for .co.uk, .uk and .com.
+    </p>
+  </div>
+</section>
+
+<!-- Comparison table -->
+<section class="section section-tint" id="compare">
+  <div class="wrap">
+    <div class="center mb-4">
+      <p class="kicker" data-reveal="0" style="justify-content:center">Side by side</p>
+      <h2 class="h1 mt-2" data-reveal="60">What is different between the plans</h2>
+    </div>
+
+    <div class="card card-flush" data-reveal="100">
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th style="min-width:190px">Feature</th>
+              <% plans.forEach(function (p) { %>
+                <th class="center"><%= p.name %></th>
+              <% }); %>
+            </tr>
+          </thead>
+          <tbody>
+            <%
+            const rows = [
+              ['Websites',          (p) => p.websites],
+              ['NVMe storage',      (p) => p.storage_gb + ' GB'],
+              ['Bandwidth',         (p) => p.bandwidth_gb === 0 ? 'Unmetered' : p.bandwidth_gb + ' GB'],
+              ['Databases',         (p) => p.databases],
+              ['Mailboxes',         (p) => p.mailboxes],
+              ['Free SSL',          (p) => p.free_ssl ? true : false],
+              ['Free domain (12m+)',(p) => p.free_domain ? true : false],
+              ['Daily backups',     (p) => p.daily_backups ? true : 'Weekly'],
+              ['Priority support',  (p) => p.priority_support ? true : false],
+            ];
+            rows.forEach(function (r) { %>
+              <tr>
+                <td class="strong"><%= r[0] %></td>
+                <% plans.forEach(function (p) {
+                     const v = r[1](p); %>
+                  <td class="center">
+                    <% if (v === true) { %>
+                      <span style="color:var(--lime-ink)"><%- icon('check', 19) %></span>
+                    <% } else if (v === false) { %>
+                      <span style="color:#c3c6b8"><%- icon('x', 17) %></span>
+                    <% } else { %>
+                      <span class="strong"><%= v %></span>
+                    <% } %>
+                  </td>
+                <% }); %>
+              </tr>
+            <% }); %>
+            <tr>
+              <td></td>
+              <% plans.forEach(function (p) { %>
+                <td class="center">
+                  <a class="btn btn-sm <%= p.badge ? '' : 'btn-ghost' %>" href="/order/<%= p.slug %>?term=12">Choose</a>
+                </td>
+              <% }); %>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Stack -->
+<section class="section">
+  <div class="wrap">
+    <div class="center mb-4">
+      <p class="kicker" data-reveal="0" style="justify-content:center">Under the bonnet</p>
+      <h2 class="h1 mt-2" data-reveal="60">What you are actually running on</h2>
+    </div>
+    <div class="grid grid-4">
+      <%
+      const stack = [
+        ['server', 'Ubuntu 24.04 LTS', 'Long-term support to 2029, patched on a schedule rather than when something breaks.'],
+        ['bolt',   'NVMe SSD',         'Not SATA marketed as "SSD". Database-heavy sites feel this the most.'],
+        ['shield', 'Isolated accounts','Every account is a separate system user. A neighbour being compromised is not your problem.'],
+        ['globe',  'HTTP/2 + Brotli',  'Modern transport and compression on by default, no configuration needed.'],
+      ];
+      stack.forEach(function (s, i) { %>
+        <article class="card card-hover" data-reveal="<%= i * 70 %>">
+          <div class="f-icon"><%- icon(s[0], 22) %></div>
+          <h3 class="h3 mb-1"><%= s[1] %></h3>
+          <p class="small muted mb-0"><%= s[2] %></p>
+        </article>
+      <% }); %>
+    </div>
+  </div>
+</section>
+
+<section class="section section-dark">
+  <div class="wrap center">
+    <h2 class="h1 mb-2" data-reveal="0">Not sure which plan?</h2>
+    <p class="lede mb-3" data-reveal="60" style="max-width:52ch;margin-inline:auto">
+      Start on Business. It is the one that fits almost everybody, and moving up
+      or down later takes one click and costs only the difference.
+    </p>
+    <div class="row" style="justify-content:center" data-reveal="100">
+      <a class="btn btn-lg" href="/order/business?term=12">Start with Business</a>
+      <a class="btn btn-ghost btn-lg" style="border-color:#3a3a35;color:#fff" href="/contact">Ask us</a>
+    </div>
+  </div>
+</section>
+
+</main>
+<%- include('../partials/footer') %>

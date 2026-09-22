@@ -1,0 +1,225 @@
+<%- include('../partials/console-head') %>
+
+<h1 class="console-title">How people sign in</h1>
+<p class="console-lead">
+  <%= application.name %> — which ways in this application offers, and which one
+  it puts in front of people first.
+</p>
+
+<% if (saved) { %>
+<div class="status status-good">
+  <span class="status-mark"><%- include('../partials/icon', { name: 'check' }) %></span>
+  <div><strong>Saved.</strong><p>The next person to sign in sees it. No deploy, no restart.</p></div>
+</div>
+<% } %>
+<% if (error) { %>
+<div class="status status-bad">
+  <span class="status-mark"><%- include('../partials/icon', { name: 'alert' }) %></span>
+  <div><strong>Not saved</strong><p><%= error %></p></div>
+</div>
+<% } %>
+
+<% if (detail.methodsInherited) { %>
+<div class="status">
+  <span class="status-mark"><%- include('../partials/icon', { name: 'alert' }) %></span>
+  <div>
+    <strong>Running on the defaults</strong>
+    <p>
+      Nothing has been chosen for this application yet, so it offers the standard
+      set below. Saving this page makes the choice its own.
+    </p>
+  </div>
+</div>
+<% } %>
+
+<form method="post" action="/developers/a/<%= application.client_id %>/signin">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+  <%
+    /*
+     * WHAT LEADS, which is a different question from what is possible.
+     *
+     * The owner's instruction was that applications ask for a password by
+     * default and that it be "highly configurable from the Admin". This is the
+     * per-application half of that; the global default is on /admin/settings
+     * and this inherits it until somebody changes it here.
+     *
+     * `password_first` still offers a code underneath. It is ignored for
+     * anybody who has no password, because showing an empty password box to
+     * somebody who never set one is asking a question with no answer.
+     */
+  %>
+  <section class="card">
+    <h2 class="card-head">What it asks for first</h2>
+    <p class="card-note">
+      This decides what somebody is looking at when the page finishes loading —
+      never what is possible. Password first still offers a code underneath.
+    </p>
+    <div class="card-body">
+      <div class="check-grid">
+        <label class="check">
+          <input type="radio" name="auth_policy" value="password_first"
+                 <%= application.auth_policy === 'password_first' ? 'checked' : '' %>
+                 <%= role === 'viewer' ? 'disabled' : '' %>>
+          <span><b>Password first</b>
+          <span>Find the person, then ask for their password, with "Email me a code instead" underneath. The default for anything staff use.</span></span>
+        </label>
+        <label class="check">
+          <input type="radio" name="auth_policy" value="code_first"
+                 <%= application.auth_policy === 'code_first' ? 'checked' : '' %>
+                 <%= role === 'viewer' ? 'disabled' : '' %>>
+          <span><b>Code first</b>
+          <span>Send a code straight away. Right for the QR menu, where a diner has no password and is not about to invent one.</span></span>
+        </label>
+        <label class="check">
+          <input type="radio" name="auth_policy" value="provider_only"
+                 <%= application.auth_policy === 'provider_only' ? 'checked' : '' %>
+                 <%= role === 'viewer' ? 'disabled' : '' %>>
+          <span><b>Provider only</b>
+          <span>No password and no code — Continue with Google, Microsoft or the rest, and nothing else.</span></span>
+        </label>
+      </div>
+      <p class="hint mb-0">
+        The service-wide default is <b><%= String(globalPolicy).replace(/_/g, ' ') %></b>,
+        set on <a href="/admin/settings">the sign-in page settings</a>.
+      </p>
+    </div>
+  </section>
+
+  <%
+    /*
+     * The list is generated from `authmethods.KNOWN`, not written out here.
+     * That is the whole design: "anything that comes later, keep the scope
+     * open" means adding a provider is one entry in that file and it appears
+     * on this page, in the database and on the sign-in page at once — with no
+     * template to edit and no migration to run.
+     */
+    const byKind = {
+      credential: methods.filter(function (m) { return m.kind === 'credential'; }),
+      code: methods.filter(function (m) { return m.kind === 'code'; }),
+      device: methods.filter(function (m) { return m.kind === 'device'; }),
+      provider: methods.filter(function (m) { return m.kind === 'provider'; }),
+    };
+    const marks = {
+      password: 'lock', code_email: 'mail', code_sms: 'phone', passkey: 'key',
+      google: 'globe', microsoft: 'globe', apple: 'globe', github: 'code',
+    };
+    const words = {
+      password: 'A password they set on their Vesopa account.',
+      code_email: 'A six-digit code to their email address. Everybody can use this; it needs nothing set up.',
+      code_sms: 'A six-digit code by text. UK mobiles only, and it costs money per message.',
+      passkey: 'Face, fingerprint or a security key. The only phishing-proof option here.',
+      google: 'Vesopa OAuth Google login — the person signs in at Google and comes back.',
+      microsoft: 'Vesopa OAuth Microsoft login, for work and personal Microsoft accounts.',
+      apple: 'Sign in with Apple, including its private relay addresses.',
+      github: 'Vesopa OAuth GitHub login. Useful for developer tools.',
+    };
+  %>
+
+  <section class="card">
+    <h2 class="card-head">Ways in</h2>
+    <p class="card-note">
+      Leave at least one on. A method whose credentials are missing from this
+      server is shown but cannot be switched on — a button we cannot complete is
+      worse than no button.
+    </p>
+
+    <% ['credential', 'code', 'device', 'provider'].forEach(function (kind) { %>
+      <% byKind[kind].forEach(function (m) { %>
+      <%- include('../partials/switch', {
+        name: 'method',
+        value: m.key,
+        on: m.on,
+        icon: marks[m.key] || 'key',
+        title: m.label,
+        sub: words[m.key] || '',
+        locked: role === 'viewer' || !m.available,
+        why: !m.available
+          ? 'Not available on this server — its credentials are not configured.'
+          : 'You have read-only access to this application.',
+      }) %>
+      <%
+        /*
+         * A DISABLED CHECKBOX IS NOT SUBMITTED, and that would have quietly
+         * changed a setting nobody touched.
+         *
+         * "Text a code" is on for this application and disabled here because
+         * the server has no SMS configured. Without this hidden field, opening
+         * the page and pressing Save would drop the row — a setting switched
+         * off by looking at it. The same applies to a viewer, whose whole
+         * point is that they change nothing.
+         *
+         * So anything that is ON and locked is carried through untouched.
+         */
+      %>
+      <% if (m.on && (role === 'viewer' || !m.available)) { %>
+      <input type="hidden" name="method" value="<%= m.key %>">
+      <% } %>
+      <% }) %>
+    <% }) %>
+  </section>
+
+  <%
+    /*
+     * Only for a desktop application. A web app has no scheme to hand back to,
+     * and showing the field anyway would invite somebody to fill it in.
+     */
+  %>
+  <% if (application.client_type === 'native') { %>
+  <section class="card">
+    <h2 class="card-head">Handing back to the app</h2>
+    <p class="card-note">
+      After somebody signs in in their browser, this is what the browser is
+      asked to open. It is the flow people already know from signing in to
+      VS&nbsp;Code with Google.
+    </p>
+    <div class="card-body">
+      <div class="grid-2">
+        <div class="field">
+          <label for="app_scheme">Desktop app scheme</label>
+          <input type="text" id="app_scheme" name="app_scheme" maxlength="64"
+                 spellcheck="false" autocapitalize="off"
+                 value="<%= application.app_scheme || '' %>"
+                 placeholder="vesopa-epos"
+                 <%= role === 'viewer' ? 'disabled' : '' %>>
+          <p class="hint">Without the <code>://</code>. Your app registers this with the operating system.</p>
+        </div>
+        <div class="field">
+          <label for="app_display_name">What the dialog calls it</label>
+          <input type="text" id="app_display_name" name="app_display_name" maxlength="120"
+                 value="<%= application.app_display_name || '' %>"
+                 placeholder="Vesopa EPOS"
+                 <%= role === 'viewer' ? 'disabled' : '' %>>
+          <p class="hint">The page says "Open <b>this</b>". Match what the OS prompt says.</p>
+        </div>
+      </div>
+      <p class="hint mb-0">
+        Register <code>https://auth.vesopa.com/device/callback?client_id=<%= application.client_id %></code>
+        as a redirect URI to use it. Loopback
+        (<code>http://127.0.0.1:0/callback</code>) still works and is the safer
+        of the two — a custom scheme can be claimed by any app on the machine,
+        which is survivable only because PKCE means a stolen code cannot be spent.
+      </p>
+    </div>
+  </section>
+  <% } %>
+
+  <section class="card">
+    <h2 class="card-head">Consent</h2>
+    <%- include('../partials/switch', {
+      name: 'show_consent',
+      on: !!application.show_consent,
+      icon: 'shield',
+      title: 'Show the consent screen every time it asks for access',
+      sub: 'Even for Vesopa\'s own products. Being able to see what the till is asking for is worth more than one saved tap.',
+      locked: role === 'viewer',
+      why: 'You have read-only access to this application.',
+    }) %>
+  </section>
+
+  <% if (role !== 'viewer') { %>
+  <button class="btn btn-primary btn-small" type="submit">Save</button>
+  <% } %>
+</form>
+
+<%- include('../partials/console-foot') %>

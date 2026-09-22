@@ -1,0 +1,42 @@
+[Unit]
+Description=Vesopa Cloud application and runtime broker
+Documentation=file:/opt/vesopa-apps/broker.py
+After=network.target
+
+[Service]
+Type=simple
+# Root, because installing an application AS a customer means becoming that
+# customer, and nothing but root can change user. Everything else in this file
+# exists to make sure that is all it can do.
+User=root
+ExecStart=/usr/bin/python3 /opt/vesopa-apps/broker.py
+Restart=always
+RestartSec=2
+
+Environment=VESOPA_APPS_GROUP=vesopasoftware
+Environment=VESOPA_APPS_SOCKET=/run/vesopa-apps/broker.sock
+Environment=VESOPA_NODE_ROOT=/opt/nodejs
+Environment=PYTHONUNBUFFERED=1
+
+# A single step in a recipe — an npm install on a cold cache, a composer
+# create-project — and a whole install. Both generous, because being killed
+# halfway is worse than being slow.
+Environment=VESOPA_APPS_STEP_TIMEOUT=900
+Environment=VESOPA_APPS_JOB_TIMEOUT=2400
+
+RuntimeDirectory=vesopa-apps
+RuntimeDirectoryMode=0755
+
+# NoNewPrivileges is deliberately NOT set: the broker has to setuid, which is
+# precisely what it would forbid.
+ProtectHome=false
+ProtectSystem=false
+PrivateTmp=false
+
+# Installs fork detached workers that outlive the connection that started them.
+# Without this systemd kills them when the request's process exits, and every
+# install dies four seconds in.
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target

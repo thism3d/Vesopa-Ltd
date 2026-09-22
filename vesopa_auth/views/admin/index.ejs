@@ -1,0 +1,151 @@
+<%- include('../partials/head') %>
+
+<main class="account admin">
+  <header class="account-head">
+    <a class="brand" href="/" aria-label="Vesopa">
+      <img class="brand-mark" src="/brand/logo-light.svg" alt="" width="130" height="17" data-logo-light>
+      <img class="brand-mark" src="/brand/logo-dark.svg" alt="" width="130" height="17" data-logo-dark>
+    </a>
+    <nav class="site-nav" aria-label="Admin">
+      <a href="/account/profile">My account</a>
+      <form method="post" action="/logout" style="display:inline">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <button type="submit" class="linklike">Sign out</button>
+      </form>
+    </nav>
+  </header>
+
+  <h1>Administration</h1>
+  <p class="auth-sub">Signed in as <%= session.display_name || session.user_public_id %></p>
+
+  <% if (saved) { %><p class="notice-good">Saved. The change is live within a minute.</p><% } %>
+  <% if (error) { %><p class="form-error" role="alert"><%= error %></p><% } %>
+
+  <!-- ------------------------------------------------------------ numbers -->
+  <section class="panel">
+    <h2>Right now</h2>
+    <div class="stat-grid">
+      <div class="stat"><span class="stat-number"><%= totals.people %></span><span class="stat-label">People</span></div>
+      <div class="stat"><span class="stat-number"><%= totals.live_sessions %></span><span class="stat-label">Signed in</span></div>
+      <div class="stat"><span class="stat-number"><%= totals.applications %></span><span class="stat-label">Applications</span></div>
+      <div class="stat"><span class="stat-number"><%= totals.passkeys %></span><span class="stat-label">Passkeys</span></div>
+      <div class="stat"><span class="stat-number"><%= totals.authenticators %></span><span class="stat-label">Authenticators</span></div>
+      <div class="stat"><span class="stat-number"><%= totals.events_today %></span><span class="stat-label">Attempts, 24h</span></div>
+      <div class="stat<%= totals.failures_today > 0 ? ' stat-warn' : '' %>">
+        <span class="stat-number"><%= totals.failures_today %></span><span class="stat-label">Failures, 24h</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ----------------------------------------------------------- settings -->
+  <section class="panel">
+    <h2>Sign-in page</h2>
+    <form method="post" action="/admin/settings">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+      <% Object.entries(definitions).forEach(function (entry) {
+           const name = entry[0];
+           const definition = entry[1];
+      %>
+      <div class="field">
+        <label for="set-<%= name %>"><%= definition.label %></label>
+
+        <% if (definition.options) { %>
+        <select id="set-<%= name %>" name="<%= name %>">
+          <% definition.options.forEach(function (option) { %>
+          <option value="<%= option %>" <%= settings[name] === option ? 'selected' : '' %>>
+            <%= option.charAt(0).toUpperCase() + option.slice(1) %>
+          </option>
+          <% }) %>
+        </select>
+        <% } else { %>
+        <input type="text" id="set-<%= name %>" name="<%= name %>" value="<%= settings[name] %>" maxlength="120">
+        <% } %>
+
+        <p class="hint"><%= definition.help %></p>
+      </div>
+      <% }) %>
+
+      <button class="btn btn-quiet" type="submit">Save</button>
+    </form>
+
+    <p class="hint" style="margin-top:14px">
+      See the result at <a href="/login" target="_blank" rel="noopener">the sign-in page</a>.
+    </p>
+  </section>
+
+  <!-- ------------------------------------------------------ method mix -->
+  <section class="panel">
+    <h2>How people signed in — last 30 days</h2>
+    <% if (!methods.length) { %>
+    <p class="row-meta">Nothing yet.</p>
+    <% } else { %>
+    <%
+      /*
+       * A bar per row, drawn as a div rather than a chart library. The widths
+       * are a percentage of the largest count, which is honest for comparison
+       * and needs no axis to read.
+       */
+      const largest = Math.max.apply(null, methods.map(function (m) { return Number(m.total); }));
+    %>
+    <ul class="rows bars">
+      <% methods.forEach(function (row) { %>
+      <li>
+        <div class="bar-row">
+          <span class="bar-label">
+            <%= String(row.method).replace(/_/g, ' ') %>
+            <span class="bar-outcome bar-<%= row.outcome %>"><%= row.outcome %></span>
+          </span>
+          <span class="bar-count"><%= row.total %></span>
+        </div>
+        <div class="bar-track">
+          <div class="bar-fill bar-<%= row.outcome %>"
+               style="width: <%= Math.max(2, Math.round((Number(row.total) / largest) * 100)) %>%"></div>
+        </div>
+      </li>
+      <% }) %>
+    </ul>
+    <% } %>
+  </section>
+
+  <!-- ----------------------------------------------------------- audit -->
+  <section class="panel">
+    <h2>Recent administrative activity</h2>
+    <ul class="rows">
+      <% recent.forEach(function (row) { %>
+      <li>
+        <span class="row-main"><%= String(row.action).replace(/\./g, ' · ') %></span>
+        <span class="row-meta">
+          <%= row.created_at %> · <%= row.actor_type %><%
+          %><%= row.target_type ? ' · ' + row.target_type : '' %><%
+          %><%= row.ip ? ' · ' + row.ip : '' %>
+        </span>
+      </li>
+      <% }) %>
+    </ul>
+  </section>
+
+  <%
+    /*
+     * Said plainly rather than shown as empty panels. A console full of
+     * placeholder furniture reads as broken; a short honest list reads as
+     * unfinished, which is what it is.
+     */
+  %>
+  <section class="panel">
+    <h2>Not built yet</h2>
+    <ul class="plain-list">
+      <li>User search and detail, with the ability to reset a factor</li>
+      <li>Invitations, and granting developer access</li>
+      <li>The developer portal — creating applications and rotating secrets</li>
+      <li>Charts over rolled-up daily figures rather than live counts</li>
+      <li>Third-party application approval</li>
+    </ul>
+    <p class="row-meta">
+      Applications are created by <code>scripts/seed.js</code> for now, and
+      client secrets are minted by hand.
+    </p>
+  </section>
+</main>
+
+<%- include('../partials/foot') %>

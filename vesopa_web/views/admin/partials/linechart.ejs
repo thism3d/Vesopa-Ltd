@@ -1,0 +1,74 @@
+<%#
+  A line chart as plain SVG.
+
+  No charting library: the panel would otherwise pull a 200KB bundle from a CDN
+  to draw thirty points, and vesopa_server's charts.js — the one place a library
+  was used — is still on the retired magenta palette because nobody wants to
+  touch it.
+
+  Locals:
+    points  [{ date, value }]  oldest first
+    color   stroke colour
+    fmt     fn(value) -> label for the peak marker and the tooltip
+    height  px, defaults to 200
+%>
+<%
+  const H = typeof height === 'undefined' ? 200 : height;
+  const W = 1000;                 // viewBox units; the SVG scales to its box
+  const PAD_T = 14, PAD_B = 26, PAD_L = 4, PAD_R = 4;
+  const plotH = H - PAD_T - PAD_B;
+  const plotW = W - PAD_L - PAD_R;
+
+  const values = points.map(p => Number(p.value) || 0);
+  // A flat run of zeros would divide by zero; 1 keeps the baseline at the bottom.
+  const peak = Math.max(1, ...values);
+  const step = points.length > 1 ? plotW / (points.length - 1) : 0;
+
+  const x = i => PAD_L + i * step;
+  const y = v => PAD_T + plotH - (v / peak) * plotH;
+
+  const line = values.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+  const area = `${line} L${x(values.length - 1).toFixed(1)},${(PAD_T + plotH).toFixed(1)} L${PAD_L},${(PAD_T + plotH).toFixed(1)} Z`;
+
+  const peakIndex = values.indexOf(Math.max(...values));
+  const gid = 'g' + Math.random().toString(36).slice(2, 8);
+%>
+<svg class="ap-chart" viewBox="0 0 <%= W %> <%= H %>" preserveAspectRatio="none" role="img"
+     aria-label="<%= points.length %> day trend">
+  <defs>
+    <linearGradient id="<%= gid %>" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="<%= color %>" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="<%= color %>" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <%# Four gridlines. preserveAspectRatio="none" stretches the stroke, so these
+      are drawn thin enough that the distortion is invisible. %>
+  <% for (let i = 0; i <= 3; i++) { const gy = PAD_T + (plotH / 3) * i; %>
+  <line x1="<%= PAD_L %>" y1="<%= gy.toFixed(1) %>" x2="<%= W - PAD_R %>" y2="<%= gy.toFixed(1) %>"
+        stroke="#2a353e" stroke-width="1" vector-effect="non-scaling-stroke"/>
+  <% } %>
+
+  <path d="<%= area %>" fill="url(#<%= gid %>)"/>
+  <path d="<%= line %>" fill="none" stroke="<%= color %>" stroke-width="2"
+        stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
+
+  <% if (peak > 1) { %>
+  <circle cx="<%= x(peakIndex).toFixed(1) %>" cy="<%= y(values[peakIndex]).toFixed(1) %>"
+          r="3.5" fill="<%= color %>" vector-effect="non-scaling-stroke"/>
+  <% } %>
+
+  <%# Hover targets: one invisible column per point, carrying a native tooltip.
+      Cheaper and more accessible than a JS tooltip layer. %>
+  <% points.forEach(function (p, i) { %>
+  <rect x="<%= (x(i) - step / 2).toFixed(1) %>" y="<%= PAD_T %>"
+        width="<%= Math.max(step, 1).toFixed(1) %>" height="<%= plotH %>" fill="transparent">
+    <title><%= p.date %> — <%= fmt(p.value) %></title>
+  </rect>
+  <% }); %>
+</svg>
+
+<div class="ap-chart-legend">
+  <span><i style="background: <%= color %>"></i><%= legend %></span>
+  <span class="ap-muted">Peak <%= fmt(Math.max(...values)) %> · <%= points[0].date %> → <%= points[points.length - 1].date %></span>
+</div>

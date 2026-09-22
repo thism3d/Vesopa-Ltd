@@ -1,0 +1,2236 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Vesopa EPOS — Back Office</title>
+    <link rel="icon" href="/assets/favicon.png" />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <!-- Sign in.
+         Two columns: the form on the left, a brand stage on the right. The
+         wordmark appears exactly once (above the form) — the stage carries the
+         cropped product shot, which has no lockup baked into it, so the two
+         never compete. -->
+    <div id="login" class="login-wrap">
+      <div class="login-side">
+        <form id="login-form" class="login-card" novalidate>
+          <img src="/assets/vesopa_logo.png" alt="Vesopa" class="login-logo" />
+
+          <h1>Sign in to Back Office</h1>
+          <p class="login-sub">Manage your tills, catalogue and reporting.</p>
+
+          <div class="field">
+            <label for="email">Email</label>
+            <input type="email" id="email" required autocomplete="username"
+                   autocapitalize="off" spellcheck="false"
+                   placeholder="you@company.com" />
+          </div>
+
+          <div class="field">
+            <label for="password">Password</label>
+            <div class="field-pw">
+              <input type="password" id="password" required minlength="4"
+                     autocomplete="current-password" placeholder="••••••••" />
+              <button type="button" id="pw-toggle" class="pw-toggle"
+                      aria-label="Show password" aria-pressed="false">Show</button>
+            </div>
+          </div>
+
+          <div class="login-row">
+            <label class="check" for="remember">
+              <input type="checkbox" id="remember" checked />
+              Keep me signed in
+            </label>
+            <button type="button" id="forgot" class="link-quiet">
+              Forgot password?
+            </button>
+          </div>
+
+          <p id="login-note" class="login-hint" hidden></p>
+
+          <button class="btn primary block" type="submit">Sign in</button>
+          <p id="login-error" class="error" role="alert" aria-live="polite"></p>
+
+          <p class="login-foot">
+            Don't have an account?
+            <a href="https://vesopaepos.com/#try-vesopa" target="_blank"
+               rel="noopener">Request a demo</a>
+          </p>
+        </form>
+
+        <!-- Step 2: ask for the link. Swapped in place of the sign-in form so
+             the column never changes width or jumps. -->
+        <form id="forgot-form" class="login-card" hidden novalidate>
+          <img src="/assets/vesopa_logo.png" alt="Vesopa" class="login-logo" />
+
+          <h1>Reset your password</h1>
+          <p class="login-sub">
+            Enter the email you sign in with and we'll send you a link.
+          </p>
+
+          <div class="field">
+            <label for="forgot-email">Email</label>
+            <input type="email" id="forgot-email" required autocomplete="username"
+                   autocapitalize="off" spellcheck="false"
+                   placeholder="you@company.com" />
+          </div>
+
+          <button class="btn primary block" type="submit" id="forgot-submit">
+            Send reset link
+          </button>
+          <p id="forgot-note" class="login-hint" hidden></p>
+          <p id="forgot-error" class="error" role="alert" aria-live="polite"></p>
+
+          <p class="login-foot">
+            <button type="button" id="forgot-back" class="link-quiet">
+              Back to sign in
+            </button>
+          </p>
+        </form>
+
+        <!-- Step 3: shown when the page is opened as /reset?token=… -->
+        <form id="reset-form" class="login-card" hidden novalidate>
+          <img src="/assets/vesopa_logo.png" alt="Vesopa" class="login-logo" />
+
+          <h1>Choose a new password</h1>
+          <p class="login-sub" id="reset-sub">
+            Pick something you don't use anywhere else.
+          </p>
+
+          <div class="field">
+            <label for="reset-password">New password</label>
+            <div class="field-pw">
+              <input type="password" id="reset-password" required minlength="8"
+                     autocomplete="new-password" placeholder="At least 8 characters" />
+              <button type="button" id="reset-pw-toggle" class="pw-toggle"
+                      aria-label="Show password" aria-pressed="false">Show</button>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="reset-confirm">Confirm new password</label>
+            <input type="password" id="reset-confirm" required minlength="8"
+                   autocomplete="new-password" placeholder="Type it again" />
+          </div>
+
+          <button class="btn primary block" type="submit" id="reset-submit">
+            Save new password
+          </button>
+          <p id="reset-note" class="login-hint" hidden></p>
+          <p id="reset-error" class="error" role="alert" aria-live="polite"></p>
+
+          <p class="login-foot">
+            <button type="button" id="reset-back" class="link-quiet">
+              Back to sign in
+            </button>
+          </p>
+        </form>
+      </div>
+
+      <!-- Decorative: everything here is duplicated or expanded on the form
+           side, so it is hidden from assistive tech rather than narrated. -->
+      <aside class="login-stage" aria-hidden="true">
+        <div class="stage-inner">
+          <figure class="stage-shot">
+            <img src="/assets/vesopa_login_system.jpg" alt="" />
+          </figure>
+          <h2 class="stage-title">The whole counter,<br />one back office.</h2>
+          <ul class="stage-points">
+            <li>Live takings the moment a till rings them</li>
+            <li>Products, stock and pricing across every site</li>
+            <li>Till, bill and sales reports that reconcile</li>
+          </ul>
+        </div>
+      </aside>
+    </div>
+
+    <!-- App -->
+    <div id="app" hidden>
+      <!-- Phone/tablet chrome. Off-canvas below 960px, so the rail stops eating
+           the width the tables need; inert (display:none) on the desktop. -->
+      <header class="topbar">
+        <button id="rail-toggle" class="rail-toggle" type="button"
+                aria-label="Open menu" aria-expanded="false" aria-controls="rail">
+          <span class="rail-toggle-bars" aria-hidden="true"></span>
+        </button>
+        <!-- Reversed lockup: the top bar is the same near-black as the rail. -->
+        <img src="/assets/vesopa_logo_on_dark.png" alt="Vesopa" class="topbar-logo" />
+        <span id="live-dot-m" class="dot offline" title="Realtime connection"></span>
+      </header>
+      <div id="rail-scrim" class="rail-scrim" hidden></div>
+
+      <aside class="rail" id="rail">
+        <div style="padding:0 22px 20px">
+          <!-- The on-dark lockup, not a filtered copy of the light one:
+               brightness(0) invert(1) flattens the lime tail to white and
+               throws the brand accent away. -->
+          <img src="/assets/vesopa_logo_on_dark.png" alt="Vesopa" class="brand-logo" />
+        </div>
+
+        <nav>
+          <button class="nav active" data-view="dashboard">Dashboard</button>
+
+          <button class="nav-group" data-group="reports">Reports<span class="caret">▼</span></button>
+          <button class="nav" data-view="run_report">Financial Summary</button>
+          <button class="nav" data-view="report_schedules">Scheduled reports</button>
+          <button class="nav" data-view="report">Report</button>
+          <button class="nav" data-view="sales_explorer">Sales Explorer</button>
+          <button class="nav" data-view="till_report">Till Report</button>
+          <button class="nav" data-view="bill_report">Bill Report</button>
+          <button class="nav" data-view="timesheets">Timesheets</button>
+
+          <button class="nav-group" data-group="catalogue">Catalogue<span class="caret">▼</span></button>
+          <button class="nav" data-view="products">Products</button>
+          <button class="nav" data-view="stock">Stock</button>
+
+          <button class="nav-group" data-group="programming">Programming<span class="caret">▼</span></button>
+          <button class="nav" data-view="screens">Screen programming</button>
+          <button class="nav" data-view="program_departments">Departments</button>
+          <button class="nav" data-view="program_groups">Sub Departments</button>
+          <button class="nav" data-view="import">Import</button>
+          <button class="nav" data-view="modifiers">Modifiers</button>
+          <button class="nav" data-view="mix_match">Mix &amp; Match</button>
+          <button class="nav" data-view="finalise_keys">Finalise Keys</button>
+          <button class="nav" data-view="error_reasons">Error Reasons</button>
+          <button class="nav" data-view="tax">Tax</button>
+          <button class="nav" data-view="idle">Till &amp; printers</button>
+          <button class="nav" data-view="kitchen">Kitchen screens</button>
+          <button class="nav" data-view="devices">Devices</button>
+
+          <button class="nav-group" data-group="floor">Floor<span class="caret">▼</span></button>
+          <button class="nav" data-view="tables">Table Designer</button>
+
+          <button class="nav-group" data-group="people">People<span class="caret">▼</span></button>
+          <button class="nav" data-view="users">Back Office Users</button>
+          <button class="nav" data-view="staff">Staff</button>
+          <button class="nav" data-view="customers">Customers</button>
+          <button class="nav" data-view="vouchers">Vouchers</button>
+          <button class="nav" data-view="receipt_designer">Receipt designer</button>
+
+          <button class="nav-group" data-group="commerce">Commerce<span class="caret">▼</span></button>
+          <button class="nav" data-view="promotions">Promotions</button>
+          <button class="nav" data-view="gift_cards">Gift cards</button>
+          <button class="nav" data-view="deposits">Deposits</button>
+          <button class="nav" data-view="loyalty">Loyalty</button>
+          <button class="nav" data-view="cards">Cards</button>
+          <button class="nav" data-view="wallet">Wallet passes</button>
+          <button class="nav" data-view="tender">Tender &amp; gratuity</button>
+          <button class="nav" data-view="rules">Automation rules</button>
+
+          <div id="admin-group" hidden>
+            <button class="nav-group" data-group="administration">Administration<span class="caret">▼</span></button>
+            <button class="nav" data-view="offices">Offices</button>
+            <button class="nav" data-view="billing">Billing</button>
+            <button class="nav" data-view="templates">Templates</button>
+            <button class="nav" data-view="subscriptions">Subscriptions</button>
+          </div>
+        </nav>
+
+        <div class="rail-foot">
+          <span id="live-dot" class="dot offline" title="Realtime connection"></span>
+          <span id="live-text" class="small">connecting…</span>
+          <button id="logout" class="link">Sign out</button>
+        </div>
+
+        <!-- Day or Night. An office and a bar are not the same room, so the
+             choice is the manager's and it is remembered on this computer;
+             leaving it alone follows whatever the machine is set to. -->
+        <div class="rail-theme">
+          <div class="theme-switch" role="group" aria-label="Appearance">
+            <button type="button" data-theme-set="light" aria-pressed="false">Day</button>
+            <button type="button" data-theme-set="dark" aria-pressed="false">Night</button>
+            <button type="button" data-theme-set="system" aria-pressed="false">Auto</button>
+          </div>
+        </div>
+      </aside>
+
+      <main>
+        <!-- Dashboard -->
+        <section id="view-dashboard" class="view">
+          <div class="page-head">
+            <div><h2>Dashboard</h2><p class="muted small" id="who"></p></div>
+          </div>
+          <div class="dash-toolbar">
+            <!-- Today first, and selected: the question a manager opens this
+                 page to answer is almost always "how are we doing today?", and
+                 a dashboard that opens on the last thirty days answers a
+                 different one. The longer ranges are a click away for when the
+                 question really is about the trend. -->
+            <div class="seg" id="dash-range">
+              <button class="seg-btn active" data-days="1">Today</button>
+              <button class="seg-btn" data-days="7">Last 7 days</button>
+              <button class="seg-btn" data-days="30">Last 30 days</button>
+              <button class="seg-btn" data-days="90">90 days</button>
+              <button class="seg-btn" data-days="365">Year</button>
+            </div>
+            <span class="muted small" id="dash-window"></span>
+          </div>
+
+          <div class="grid-cards" id="dash-stats"></div>
+
+          <div class="card panel">
+            <div class="panel-head"><h3>Takings</h3><span class="muted small" id="dash-trend"></span></div>
+            <div id="dash-line" class="chart-box"></div>
+          </div>
+
+          <div class="grid-2" style="margin-top:16px">
+            <div class="card panel"><h3>Trade by hour</h3><div id="dash-hourly" class="chart-box"></div></div>
+            <div class="card panel"><h3>Payment breakdown</h3><div id="dash-tenders" class="chart-box"></div></div>
+          </div>
+
+          <div class="grid-2" style="margin-top:16px">
+            <div class="card panel"><h3>Top products</h3><div id="dash-products"></div></div>
+            <div class="card panel"><h3>Departments</h3><div id="dash-departments"></div></div>
+          </div>
+
+          <div class="grid-2" style="margin-top:16px">
+            <div class="card panel"><h3>Takings by weekday</h3><div id="dash-weekday" class="chart-box"></div></div>
+            <div class="card panel"><h3>Held liabilities</h3><div id="dash-liabilities"></div></div>
+          </div>
+
+          <h3 style="margin:28px 0 14px">Live Sales</h3>
+          <div class="card"><table>
+            <thead><tr><th>Time</th><th>Table</th><th>Order</th><th class="right">Total</th></tr></thead>
+            <tbody id="recent"></tbody>
+          </table></div>
+        </section>
+
+        <!-- Report -->
+        <section id="view-report" class="view" hidden>
+          <div class="page-head"><div><h2>Report</h2><p class="muted small">Your biggest sellers across every closed bill, by group, department, staff member and product.</p></div></div>
+          <div class="grid-2">
+            <div class="card panel"><h3>Group Sales Total</h3><div class="bars" id="r-groups"></div></div>
+            <div class="card panel"><h3>Department Sales Total</h3><div class="bars" id="r-depts"></div></div>
+            <div class="card panel"><h3>Staff Breakdown</h3><div class="bars" id="r-clerks"></div></div>
+            <div class="card panel"><h3>PLU Sales</h3><div class="bars" id="r-plu"></div></div>
+          </div>
+        </section>
+
+        <!-- Sales Explorer -->
+        <!-- A report a venue hands to its accountant: pick a window, run it,
+             export it. See vesopa_server/src/reports.js. -->
+        <section id="view-run_report" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Financial Summary</h2>
+              <p class="muted small">
+                Sales by department and sub department for any period, with the discounts,
+                payments and spend per head that have to reconcile against them.
+              </p>
+            </div>
+          </div>
+
+          <!-- The fields and the buttons are two rows, not one.
+               They were one flex line with the actions pushed right by
+               `margin-left:auto`, which is fine at 1400px and nonsense at 900:
+               the Export button wrapped underneath on its own, half a row of
+               white space appeared beside Terminal, and on a tablet the date
+               boxes ended up narrower than the year they hold. Fields wrap in
+               a grid that gives every one of them a whole column; the actions
+               sit on their own rule under it and stay together. -->
+          <div class="card rd-card">
+            <div class="rr-controls">
+              <label>Report
+                <select id="rr-report"></select>
+              </label>
+              <label>Period
+                <select id="rr-period"></select>
+              </label>
+              <label>Terminal
+                <select id="rr-terminal"></select>
+              </label>
+              <label id="rr-from-field" hidden>From
+                <input type="date" id="rr-from">
+              </label>
+              <label id="rr-to-field" hidden>To
+                <input type="date" id="rr-to">
+              </label>
+            </div>
+
+            <div class="rr-actions">
+              <button type="button" class="btn primary" id="rr-run">Run report</button>
+              <div class="rr-export-group">
+                <label class="rr-format-field">
+                  <span class="sr-only">Export format</span>
+                  <select id="rr-format" aria-label="Export format"></select>
+                </label>
+                <button type="button" class="btn ghost" id="rr-view" disabled>View PDF</button>
+                <button type="button" class="btn ghost" id="rr-export" disabled>Download</button>
+              </div>
+            </div>
+          </div>
+
+          <div id="rr-result" style="margin-top:var(--stack)"></div>
+        </section>
+
+        <!-- Reports that run themselves and arrive by email. -->
+        <section id="view-report_schedules" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Scheduled reports</h2>
+              <p class="muted small">
+                A report that runs on a clock and emails itself. Nothing has to be remembered
+                on a Monday morning.
+              </p>
+            </div>
+            <button class="btn primary" id="rs-new">New schedule</button>
+          </div>
+
+          <p class="muted small" id="rs-mail-warning" hidden></p>
+
+          <!-- Nine columns and six actions do not fit a laptop, let alone a
+               tablet. The table scrolls inside its own card rather than pushing
+               the page sideways, which would take the Name column — the one
+               that says which schedule the row is — off the left edge. -->
+          <div class="card">
+            <div class="rr-scroll">
+              <table class="table rs-table table-cards" id="rs-table">
+                <thead>
+                  <tr>
+                    <th>Name</th><th>Report</th><th>Terminal</th><th>Frequency</th><th>Time</th>
+                    <th>Covers</th><th>Last run</th><th>Next run</th><th class="right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="rs-rows"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div id="rs-runs" style="margin-top:var(--stack)"></div>
+        </section>
+
+        <section id="view-sales_explorer" class="view" hidden>
+          <div class="page-head"><div><h2>Sales Explorer</h2><p class="muted small">Every product line sold, searchable by date and department. Click a row to see the receipt it came from.</p></div></div>
+          <!-- The same filter bar as the catalogue's, built out of the same
+               parts. It used to be a `.row` of four labels, the fourth holding
+               a non-breaking space and the Search button: every other label's
+               input is `width: 100%`, so it cannot sit beside its own wording
+               and drops to a line of its own, while a button is only as wide as
+               its word and stayed up on the line the label text was on. Search
+               was drawn a line higher than the three fields it searches, and
+               the `margin-top: 6px` written on it to mimic an input could not
+               reach across that. A bar that aligns its controls on their own
+               bottom edge has nothing to mimic. -->
+          <div class="tbl-bar">
+            <label class="sp-pick">From
+              <input type="date" id="ex-from">
+            </label>
+            <label class="sp-pick">To
+              <input type="date" id="ex-to">
+            </label>
+            <label class="sp-pick">Department
+              <input id="ex-dept" placeholder="All">
+            </label>
+            <button type="button" class="btn primary" id="ex-run">Search</button>
+          </div>
+          <div class="card"><table>
+            <thead><tr><th>When</th><th>Item</th><th>Department</th><th class="right">Qty</th><th class="right">Line total</th></tr></thead>
+            <tbody id="explorer"></tbody>
+          </table></div>
+          <!-- The foot of the list, and what the next page is fetched off:
+               app.js watches this with 500px of margin, so the rows are already
+               on their way before the scroll reaches the end of what is drawn.
+               It doubles as where "Loading more…" and the final count are said. -->
+          <p class="ex-more" id="ex-more" aria-live="polite"></p>
+        </section>
+
+        <!-- Timesheets.
+             The other side of the till's Clock in / out key. Under Reports
+             rather than People because it is something a manager reads weekly
+             against a wage, not something they edit day to day. -->
+        <section id="view-timesheets" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Timesheets</h2>
+              <p class="muted small">
+                Shifts clocked in and out on your tills. A shift still running counts up to
+                now. This is not the same as signing on to a till &mdash; that happens twenty
+                times a service and is not what a wage is paid against.
+              </p>
+            </div>
+            <div class="denom-actions">
+              <label class="small">From <input type="date" id="ts-from"></label>
+              <label class="small">To <input type="date" id="ts-to"></label>
+              <button class="btn" id="ts-run">Show</button>
+              <button class="btn ghost" data-print-report>Export PDF</button>
+            </div>
+          </div>
+
+          <div class="cards" id="ts-summary"></div>
+
+          <div class="card"><table>
+            <thead><tr>
+              <th>Who</th><th>In</th><th>Out</th><th class="right">Hours</th>
+              <th>Where</th><th>Note</th><th></th>
+            </tr></thead>
+            <tbody id="timesheets"></tbody>
+          </table></div>
+        </section>
+
+        <!-- Till Report -->
+        <section id="view-till_report" class="view" hidden>
+          <div class="page-head"><div><h2>Till Report</h2><p class="muted small">One row per trading day, with the takings behind it.</p></div><button class="btn ghost" data-print-report>Export PDF</button></div>
+          <div class="card"><table>
+            <thead><tr><th>Day</th><th class="right">Orders</th><th class="right">Discounts</th><th class="right">VAT</th><th class="right">Gross</th></tr></thead>
+            <tbody id="tillreport"></tbody>
+          </table></div>
+        </section>
+
+        <!-- Bill Report -->
+        <section id="view-bill_report" class="view" hidden>
+          <div class="page-head"><div><h2>Bill Report</h2><p class="muted small">Click a bill to view or print its receipt.</p></div><button class="btn ghost" data-print-report>Export PDF</button></div>
+          <div class="card"><table>
+            <thead><tr><th>When</th><th>Bill</th><th>Table</th><th>Covers</th><th>Tender</th><th class="right">Total</th></tr></thead>
+            <tbody id="billreport"></tbody>
+          </table></div>
+          <!-- The foot of the list, and what the next page is fetched off —
+               the same sentinel the Sales Explorer uses. Always present, so the
+               space it needs is reserved rather than appearing under the last
+               row and nudging the page as it arrives. -->
+          <p class="ex-more" id="br-more" aria-live="polite"></p>
+        </section>
+
+        <!-- Products -->
+        <section id="view-products" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Products</h2>
+              <p class="muted small">Button order, colour and kitchen routing all push to the tills instantly.</p>
+            </div>
+            <button class="btn primary" id="add-product">Add product</button>
+          </div>
+
+          <!-- A catalogue is the one table here that grows without limit, and a
+               venue with nine hundred products was being handed all of them in
+               one unsorted list. Search and department are held in the browser
+               rather than sent to the server: the whole list is already in hand,
+               and a round trip per keystroke would be slower than the filter. -->
+          <div class="tbl-bar">
+            <label class="sp-pick">Search
+              <input id="prod-q" type="search" placeholder="Name, PLU or department" autocomplete="off">
+            </label>
+            <label class="sp-pick">Department
+              <select id="prod-dept"></select>
+            </label>
+            <button type="button" class="btn ghost small" id="prod-clear">Clear</button>
+            <span class="sp-spacer"></span>
+            <span class="muted small" id="prod-count"></span>
+            <span class="bulk-bar" id="prod-bulk" hidden>
+              <span class="bulk-count" id="prod-bulk-count"></span>
+              <button class="btn small primary" id="prod-bulk-edit">Edit selected</button>
+              <button class="btn small ghost" id="prod-bulk-clear">Clear</button>
+            </span>
+          </div>
+
+          <!-- This one is edited in place, so on a phone it becomes cards whose
+               editable cells stack: the label on its own line and the control full
+               width under it. Sorting is a column-heading gesture and the headings
+               are gone there — the search box above is what narrows it down. -->
+          <div class="card"><table class="sortable">
+            <thead><tr>
+              <th class="pick-col"><input type="checkbox" id="prod-pick-all" title="Select every product shown"></th>
+              <th data-sort="product_name">Name</th>
+              <th data-sort="department_name">Department</th>
+              <th data-sort="group_name">Sub Department</th>
+              <th class="right" data-sort="price">Price</th>
+              <th class="right" data-sort="tax_percentage">VAT</th>
+              <th>Printing</th><th></th>
+            </tr></thead>
+            <tbody id="products"></tbody>
+          </table></div>
+        </section>
+
+        <!-- Stock -->
+        <section id="view-stock" class="view" hidden>
+          <div class="page-head"><div><h2>Stock</h2><p class="muted small">How many of each product remain, and the department it sells under.</p></div></div>
+          <div class="card"><table>
+            <thead><tr><th>PLU</th><th>Product</th><th>Department</th><th class="right">In stock</th></tr></thead>
+            <tbody id="stock"></tbody>
+          </table></div>
+        </section>
+
+        <!-- Programming: simple CRUD tables. The leading blank <th> is the drag
+             handle column; rows drag to reorder and the order pushes to tills. -->
+        <section id="view-program_departments" class="view" hidden>
+          <div class="page-head"><div><h2>Departments</h2><p class="muted small">Drag rows to set the order they appear on the till. A button image or emoji shows on the till’s category rail.</p></div><button class="btn primary" data-add="departments">Add department</button></div>
+          <div class="card"><table><thead><tr><th class="drag-col"></th><th>Department</th><th>Sub Department</th><th>Accounting code</th><th>Button image</th><th>Emoji</th><th>Colour</th><th></th></tr></thead><tbody id="departments"></tbody></table></div>
+        </section>
+
+        <section id="view-program_groups" class="view" hidden>
+          <div class="page-head"><div><h2>Sub Departments</h2><p class="muted small">Drag rows to set the order.</p></div><button class="btn primary" data-add="groups">Add sub department</button></div>
+          <div class="card"><table><thead><tr><th class="drag-col"></th><th>Sub Department</th><th>Accounting code</th><th></th></tr></thead><tbody id="groups"></tbody></table></div>
+        </section>
+
+        <!-- Modifiers -->
+        <!-- Catalogue import. Three sheets, in dependency order, and a
+             preview that writes nothing — see src/imports.js. -->
+        <section id="view-import" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Import</h2>
+              <p class="muted small">
+                Bring your departments, sub departments and products in from a spreadsheet
+                instead of typing them one at a time. Nothing is ever deleted by an import.
+              </p>
+            </div>
+          </div>
+
+          <div class="import-grid">
+            <div class="card rd-card">
+              <h3>1. Start from the template</h3>
+              <p class="muted small" style="margin:0 0 12px">
+                The template carries the exact column headings we read, so a file filled in
+                from it cannot be rejected for a heading you could not have guessed. It has a
+                sheet explaining each column and a few example rows showing the format.
+              </p>
+              <button type="button" class="btn ghost" id="import-template">
+                Download the template
+              </button>
+            </div>
+
+            <div class="card rd-card">
+              <h3>2. Upload your file</h3>
+              <p class="muted small" style="margin:0 0 12px">
+                An .xlsx workbook. Sheets you leave out are simply not imported — to change
+                only your prices, upload a workbook with just the Products sheet in it.
+              </p>
+              <input type="file" id="import-file"
+                     accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+              <div class="denom-actions" style="margin-top:12px">
+                <button type="button" class="btn ghost" id="import-check" disabled>
+                  Check the file
+                </button>
+                <!-- Deliberately disabled until a check has run. An import is the
+                     one action here that can rewrite a whole catalogue, and it
+                     should not be reachable in one click from an unread file. -->
+                <button type="button" class="btn primary" id="import-apply" disabled>
+                  Import
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div id="import-result" class="card rd-card" hidden style="margin-top:var(--stack)">
+            <h3 id="import-result-title">What this file would do</h3>
+            <div id="import-summary"></div>
+            <div id="import-problems"></div>
+          </div>
+        </section>
+
+        <section id="view-modifiers" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Modifiers</h2>
+              <p class="muted small">The question a product asks before it goes on the bill — which mixer, how the steak is cooked. Lay out the answers with <strong>Edit answers</strong>, then attach the question to a product on the Products page.</p>
+            </div>
+            <button class="btn primary" data-add="modifiers">Add modifier group</button>
+          </div>
+          <div class="card"><table><thead><tr>
+            <th>Question</th><th>Fewest</th><th>Most</th><th>Answers</th><th>Used by</th><th></th>
+          </tr></thead><tbody id="modifiers"></tbody></table></div>
+        </section>
+
+        <section id="view-mix_match" class="view" hidden>
+          <div class="page-head"><div><h2>Mix &amp; Match</h2><p class="muted small">Drag rows to set the order deals are tried on the till.</p></div><button class="btn primary" data-add="mix-match">Add deal</button></div>
+          <div class="card"><table><thead><tr><th class="drag-col"></th><th>Deal</th><th class="right">Qty</th><th class="right">Deal price</th><th>Active</th><th></th></tr></thead><tbody id="mix-match"></tbody></table></div>
+        </section>
+
+        <section id="view-finalise_keys" class="view" hidden>
+          <div class="page-head"><div><h2>Finalise Keys</h2><p class="muted small">Drag rows to set button order on the till.</p></div><button class="btn primary" data-add="finalise-keys">Add key</button></div>
+          <div class="card"><table><thead><tr><th class="drag-col"></th><th>Name</th><th>Kind</th><th>Opens drawer</th><th></th></tr></thead><tbody id="finalise-keys"></tbody></table></div>
+        </section>
+
+        <section id="view-error_reasons" class="view" hidden>
+          <div class="page-head"><div><h2>Error Reasons</h2><p class="muted small">Drag rows to set the order.</p></div><button class="btn primary" data-add="error-reasons">Add reason</button></div>
+          <div class="card"><table><thead><tr><th class="drag-col"></th><th>Reason</th><th>Applies to</th><th></th></tr></thead><tbody id="error-reasons"></tbody></table></div>
+        </section>
+
+        <section id="view-tax" class="view" hidden>
+          <div class="page-head"><div><h2>Tax</h2><p class="muted small">Drag rows to set the order.</p></div><button class="btn primary" data-add="tax">Add rate</button></div>
+          <div class="card"><table><thead><tr><th class="drag-col"></th><th>Name</th><th class="right">Rate</th><th>Default</th><th></th></tr></thead><tbody id="tax"></tbody></table></div>
+        </section>
+
+        <!-- Table designer -->
+        <section id="view-tables" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Table Designer</h2>
+              <p class="muted small">Drag tables to lay out the room. <span id="dirty"></span></p>
+            </div>
+            <div style="display:flex;gap:10px">
+              <button class="btn ghost" id="add-room">New room</button>
+              <button class="btn ghost" id="add-table">Add table</button>
+              <button class="btn primary" id="save-floor">Save layout</button>
+            </div>
+          </div>
+
+          <div class="room-tabs" id="room-tabs"></div>
+
+          <div class="designer">
+            <div id="canvas"></div>
+            <div class="card inspector">
+              <h3>Table</h3>
+              <div id="inspector-body">
+                <p class="muted small">Select a table to edit it.</p>
+              </div>
+              <div class="hint">
+                Changes are pushed to every till the moment you save — no
+                restart needed.
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- People -->
+        <section id="view-users" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Back Office Users</h2>
+              <p class="muted small">Managers and employees who sign into this back office. Clerks who only use the till are managed under Clerks.</p>
+            </div>
+            <button class="btn primary" id="add-user">Add user</button>
+          </div>
+          <div class="card"><table>
+            <thead><tr><th>Name</th><th>Email</th><th>Office</th><th>Role</th><th></th></tr></thead>
+            <tbody id="users"></tbody>
+          </table></div>
+        </section>
+
+        <section id="view-staff" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Staff</h2>
+              <p class="muted small">
+                The people who work the till. They sign on at the terminal with a PIN, not an email —
+                and whoever is signed on is the name that prints as “Served by”.
+                Permissions and rota will be added to this section later.
+              </p>
+            </div>
+            <button class="btn primary" id="add-staff">Add staff</button>
+          </div>
+          <div class="card"><table>
+            <thead><tr><th>Name</th><th>ID</th><th>PIN</th><th>Status</th><th></th></tr></thead>
+            <tbody id="staff"></tbody>
+          </table></div>
+          <p class="muted small" style="margin-top:12px">
+            PINs must be exactly 4 digits and no two people can share one — the till pad signs
+            someone on the moment the fourth digit lands, so a longer PIN could never be used and
+            a shared one would attribute sales to whoever was found first.
+          </p>
+        </section>
+
+        <!-- Idle screen: what the terminal shows between customers, and how
+             long it waits before signing the current staff member off. -->
+        <section id="view-idle" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Till &amp; printers</h2>
+              <p class="muted small">What every terminal in this venue does between customers, and what the venue calls each printer.</p>
+            </div>
+            <button class="btn primary" id="idle-save">Save settings</button>
+          </div>
+          <div class="rd-layout">
+            <div class="rd-editor">
+              <div class="card rd-card">
+                <h3>Background</h3>
+                <p class="muted small" style="margin:0 0 10px">
+                  Leave this empty for the built-in Vesopa screen, which is drawn on the terminal
+                  rather than loaded — so it always renders, even on a till with no network.
+                </p>
+                <div id="idle-preview" class="idle-preview"></div>
+                <div class="denom-actions" style="margin-top:10px">
+                  <label class="btn ghost small" for="idle-image">Choose an image…</label>
+                  <input type="file" id="idle-image" accept="image/*" hidden>
+                  <button type="button" class="btn ghost small" id="idle-image-clear">Use the Vesopa screen</button>
+                </div>
+                <label style="margin-top:12px">Message under the logo
+                  <input data-idle="idle_message" maxlength="160" placeholder="Touch to begin">
+                </label>
+              </div>
+
+              <div class="card rd-card">
+                <h3>When it appears</h3>
+                <label class="check"><input type="checkbox" data-idle="idle_enabled"> Use an idle screen on this venue’s tills</label>
+                <label class="check"><input type="checkbox" data-idle="idle_after_sale"> Show it as soon as a sale is completed</label>
+                <label class="check"><input type="checkbox" data-idle="idle_require_pin"> Ask for a staff PIN to come back in</label>
+                <p class="muted small" style="margin:6px 0 0">
+                  Turn the PIN off for a fast counter where one entry per customer costs more than
+                  the attribution is worth — the idle screen then clears on any touch.
+                </p>
+              </div>
+
+              <div class="card rd-card">
+                <h3>Automatic sign off</h3>
+                <label>Sign the current staff member off after this many seconds of no activity
+                  <input type="number" min="0" max="3600" data-idle="signoff_seconds">
+                </label>
+                <p class="muted small" style="margin:6px 0 0">
+                  0 turns it off. Anything from 20 to 3600 seconds is accepted; 180 (three minutes)
+                  is the default. This never closes the cash session and never clears the bill on
+                  screen — whoever signs back on picks it up exactly where it was left.
+                </p>
+              </div>
+
+              <div class="card rd-card">
+                <h3>Change window</h3>
+                <label>Show the change to hand back for this many seconds
+                  <input type="number" min="0" max="300" data-idle="change_window_seconds">
+                </label>
+                <p class="muted small" style="margin:6px 0 0">
+                  After a sale settles the till shows what to hand back, then counts down. When it
+                  reaches zero it signs the staff member off and drops to the idle screen, so the
+                  terminal is ready for the next customer without anyone touching it. 30 seconds is
+                  the default; 5 to 300 is accepted. 0 leaves the box up until it is tapped.
+                </p>
+              </div>
+
+              <div class="card rd-card">
+                <h3>Receipt printing</h3>
+                <label class="check">
+                  <input type="checkbox" data-idle="receipt_auto_print">
+                  <span>Print a receipt automatically after every sale</span>
+                </label>
+                <p class="muted small" style="margin:6px 0 0">
+                  The till no longer asks the clerk whether the customer wants a receipt — that
+                  question was being put over the head of the next person in the queue, several
+                  hundred times a day, and the answer is the same every time in any given venue.
+                  Leave this off and no paper comes out at the counter; staff print one on request
+                  from the Receipts screen or the Last Bill key.
+                </p>
+              </div>
+
+              <!-- Naming only. Which IP or USB device a printer actually is
+                   stays on the terminal, because that is physical to a
+                   counter — but the *vocabulary* belongs to the venue, or
+                   "KP 3" means a different station in every room. -->
+              <div class="card rd-card">
+                <h3>Printer names</h3>
+                <p class="muted small" style="margin:0 0 10px">
+                  What this venue calls each printer. These names appear on the product
+                  editor, in the catalogue, and on every till — so a station called
+                  “Fryer” here is “Fryer” everywhere. Leave one blank to use its
+                  standard name. Which printer is physically plugged in where is set on
+                  each till, under Settings › Printing.
+                </p>
+                <div class="rd-fields">
+                  <label>KP 1 <input data-idle="printer_name_kp1" maxlength="40" placeholder="KP 1"></label>
+                  <label>KP 2 <input data-idle="printer_name_kp2" maxlength="40" placeholder="KP 2"></label>
+                  <label>KP 3 <input data-idle="printer_name_kp3" maxlength="40" placeholder="KP 3"></label>
+                  <label>KP 4 <input data-idle="printer_name_kp4" maxlength="40" placeholder="KP 4"></label>
+                  <label>KP 5 <input data-idle="printer_name_kp5" maxlength="40" placeholder="KP 5"></label>
+                  <label>KP 6 <input data-idle="printer_name_kp6" maxlength="40" placeholder="KP 6"></label>
+                  <label>Receipt printer <input data-idle="printer_name_receipt" maxlength="40" placeholder="Receipt printer"></label>
+                </div>
+                <p class="muted small" style="margin:8px 0 0">
+                  The receipt printer is a routing destination too: tick it on a product
+                  and the counter gets its own ticket for that item, as well as the
+                  kitchen getting theirs.
+                </p>
+              </div>
+
+              <div class="card rd-card">
+                <h3>Product buttons</h3>
+                <label class="check">
+                  <input type="checkbox" data-idle="buttons_show_prices">
+                  <span>Show prices on product buttons</span>
+                </label>
+                <p class="muted small" style="margin:6px 0 0">
+                  On by default. Turn it off for a cleaner grid where staff know the menu, or where
+                  prices change often enough that the button is not where anyone should be reading
+                  them. The price still shows on the bill as soon as the item is rung up.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Vesopa EPOS Kitchen.
+             Sits next to Till & printers because it is the same decision seen
+             from the other end: what a station *is*, and where its tickets come
+             out. See vesopa_epos_kitchen/docs/architecture.md. -->
+        <section id="view-kitchen" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Kitchen screens</h2>
+              <p class="muted small">
+                Vesopa Kitchen shows a station its orders on a touch screen instead of
+                printing them. Products are still routed to KP&nbsp;1 to KP&nbsp;6 in the product
+                editor exactly as they are now — this decides where each station’s ticket comes out.
+              </p>
+            </div>
+            <button class="btn primary" id="kitchen-save-modes">Save delivery</button>
+          </div>
+
+          <div class="rd-layout">
+            <div class="rd-editor">
+              <div class="card rd-card">
+                <h3>Where each station delivers</h3>
+                <p class="muted small" style="margin:0 0 10px">
+                  Every station starts on <strong>Printer</strong>, which is what your tills do
+                  today — nothing changes until you move one. <strong>Both</strong> is worth
+                  running for a week or two before you unplug anything.
+                </p>
+                <div id="kitchen-modes" class="kds-modes"></div>
+                <p class="muted small" style="margin:10px 0 0">
+                  Which printer is physically plugged in where is still set on each till, under
+                  Settings › Printing — that is a fact about a counter, not about the venue. A
+                  station set to <em>Screen</em> needs no printer at all.
+                </p>
+              </div>
+
+              <div class="card rd-card">
+                <h3>Kitchen logins</h3>
+                <p class="muted small" style="margin:0 0 10px">
+                  What gets typed into the screen on the wall. These belong to the screen, not to a
+                  member of staff — one per kitchen is usually right. Keep the username short: it is
+                  typed on glass with a finger.
+                </p>
+                <div id="kitchen-users"></div>
+                <div class="denom-actions" style="margin-top:10px">
+                  <button type="button" class="btn ghost small" id="kitchen-user-add">
+                    Add a kitchen login
+                  </button>
+                </div>
+              </div>
+
+              <div class="card rd-card">
+                <h3>Screens</h3>
+                <p class="muted small" style="margin:0 0 10px">
+                  A named board: which stations it shows, and how it behaves. Each machine picks
+                  which of these it is when it is signed in, so “the grill screen” means one thing
+                  in the venue and you can change it from here without touching the wall.
+                </p>
+                <p class="muted small" style="margin:0 0 10px">
+                  A kitchen with one screen needs none of this — an unconfigured screen shows every
+                  station, which is the right answer for them.
+                </p>
+                <div id="kitchen-screens"></div>
+                <div class="denom-actions" style="margin-top:10px">
+                  <button type="button" class="btn ghost small" id="kitchen-screen-add">
+                    Add a screen
+                  </button>
+                </div>
+              </div>
+
+              <!-- White-label branding for the screens themselves.
+                   Separate from the receipt designer's logo and venue name on
+                   purpose: restyling the screen above a pass must not restyle
+                   every VAT receipt the venue hands a customer. See
+                   schema_kitchen_branding.sql. -->
+              <div class="card rd-card">
+                <h3>Start screen &amp; branding</h3>
+                <p class="muted small" style="margin:0 0 10px">
+                  What the screens in this venue call themselves, and what they show while they
+                  start up. Leave a box empty and the screen falls back — to your receipt logo,
+                  then to the built-in Vesopa mark. This applies to every kitchen screen on the
+                  site, and takes effect on each one within a few seconds.
+                </p>
+
+                <div class="rd-logo-row">
+                  <div class="rd-logo-preview" id="kitchen-logo-preview">
+                    <span class="muted small">No logo</span>
+                  </div>
+                  <div class="rd-logo-actions">
+                    <input type="file" id="kitchen-logo-file" accept="image/*" hidden>
+                    <button type="button" class="btn" id="kitchen-logo-pick">Upload logo</button>
+                    <button type="button" class="btn danger-ghost" id="kitchen-logo-clear">Remove</button>
+                    <p class="muted small">PNG with a transparent background works best. Shown on
+                      glass at about 120&nbsp;px, so a mark reads better than a wordmark.</p>
+                  </div>
+                </div>
+
+                <label style="margin-top:12px">What the screen calls itself
+                  <input data-kb="appName" maxlength="40" placeholder="Vesopa Kitchen">
+                </label>
+                <label style="margin-top:10px">The line under it
+                  <input data-kb="tagline" maxlength="80" placeholder="Your venue’s name">
+                </label>
+
+                <div class="kb-colours">
+                  <label>Background
+                    <input type="color" data-kb="splashBg">
+                  </label>
+                  <label>Accent
+                    <input type="color" data-kb="accent">
+                  </label>
+                  <button type="button" class="btn ghost small" id="kitchen-colours-clear">
+                    Use the built-in colours
+                  </button>
+                </div>
+
+                <label class="check" style="margin-top:12px">
+                  <input type="checkbox" data-kb="splashEnabled"> Show the start screen when a screen launches
+                </label>
+                <label class="check">
+                  <input type="checkbox" data-kb="showPoweredBy"> Show “Powered by Vesopa” on it
+                </label>
+
+                <label style="margin-top:10px">Hold it on screen for this many milliseconds
+                  <input type="number" min="0" max="6000" step="100" data-kb="splashMs">
+                </label>
+                <p class="muted small" style="margin:6px 0 0">
+                  0 lets it clear the moment the board is ready. The board is fetched behind the
+                  start screen either way, so this never delays the orders arriving — it only
+                  decides how long they wait to be looked at. Six seconds is the most allowed.
+                </p>
+
+                <div class="denom-actions" style="margin-top:12px">
+                  <button type="button" class="btn primary small" id="kitchen-branding-save">
+                    Save branding
+                  </button>
+                  <button type="button" class="btn ghost small" id="kitchen-branding-reset">
+                    Revert
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- The live board.
+                 Here so a manager can answer "is the kitchen actually getting
+                 these?" without walking into the kitchen, which is the first
+                 question anybody asks after switching a station to Screen. -->
+            <div class="rd-preview">
+              <!-- What the wall will look like. Drawn from the same values
+                   the screens read, so a manager is not guessing at a colour
+                   pair they cannot see until they walk into the kitchen. -->
+              <div class="card rd-card">
+                <div class="panel-head">
+                  <h3>Start screen</h3>
+                  <span class="muted small">As the wall will see it</span>
+                </div>
+                <div id="kitchen-splash-preview" class="kds-splash-preview"></div>
+              </div>
+
+              <div class="card rd-card">
+                <div class="panel-head">
+                  <h3>Live board</h3>
+                  <span class="muted small" id="kitchen-board-status">—</span>
+                </div>
+                <div id="kitchen-board" class="kds-board"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Screen programming.
+             The venue lays out its own sale screen; every till in the venue
+             draws it. See vesopa_epos/docs/screen-programming.md — in
+             particular for why there is no screen in this list called Default,
+             and why the pay page is not here. -->
+        <section id="view-screens" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Screen programming</h2>
+              <p class="muted small">
+                Lay out what your tills show. The sale screen is a grid of buttons — each one a
+                product, a jump to another screen, or a till function — and the two strips of
+                chrome around it are laid out the same way: the <strong>top bar</strong> that
+                carries your open tables, and the <strong>bottom bar</strong> that carries Pay.
+              </p>
+            </div>
+            <div class="denom-actions">
+              <button type="button" class="btn ghost small" id="sp-undo" title="Undo (Ctrl+Z)">↶ Undo</button>
+              <button type="button" class="btn ghost small" id="sp-redo" title="Redo (Ctrl+Y)">↷ Redo</button>
+              <button type="button" class="btn ghost" id="sp-popout" title="Open the editor in a window of its own">⤢ Own window</button>
+              <button type="button" class="btn ghost" id="sp-revert">Revert</button>
+              <button type="button" class="btn primary" id="sp-save">Save layout</button>
+            </div>
+          </div>
+
+          <!-- Where the editor went.
+               Shown in place of everything below it once the editor has been
+               handed to a window of its own, which is what happens by default.
+               A tab that simply went blank would read as a page that failed to
+               load; this one says what happened and carries both ways out. -->
+          <div class="card sp-handover" id="sp-handover" hidden>
+            <h3>The editor is open in its own window</h3>
+            <p class="muted small">
+              Screen programming wants the whole screen — a grid, an inspector beside it and a
+              till preview under it — so it opens in a window of its own. Look for the
+              <strong>Vesopa screen editor</strong> window behind this one.
+            </p>
+            <div class="denom-actions">
+              <button type="button" class="btn primary" id="sp-handover-focus">Bring that window forward</button>
+              <button type="button" class="btn ghost" id="sp-handover-here">Edit in this tab instead</button>
+            </div>
+            <p class="muted small" style="margin:10px 0 0">
+              “Edit in this tab instead” is remembered on this computer. The <strong>⤢ Own
+              window</strong> key above puts it back.
+            </p>
+          </div>
+
+          <!-- What the tills wear.
+               First on the page and its own card, because "how do I choose the
+               screen my tills open on?" was being asked by people looking
+               straight at the tick box that does it. A tick box on the screen
+               you happen to be editing answers "is this one the default"; it
+               never answers "which one is". Three named choices, in one place,
+               with the till drawn beside them, do. -->
+          <div class="card sp-defaults">
+            <div class="sp-defaults-head">
+              <h3>What your tills open with</h3>
+              <span class="muted small">
+                Every till in this venue. <em>Built-in</em> leaves that part exactly as it is today.
+              </span>
+              <span class="sp-flag" id="sp-defaults-state" hidden></span>
+            </div>
+            <div class="sp-defaults-grid">
+              <label>Sale screen
+                <select id="sp-def-home"></select>
+              </label>
+              <label>Top bar
+                <select id="sp-def-top"></select>
+              </label>
+              <label>Bottom bar
+                <select id="sp-def-bottom"></select>
+              </label>
+              <!-- A drawing of the till, not a list of names. Which of three
+                   layouts is the bottom one is a question a picture answers and
+                   a dropdown does not. -->
+              <div class="sp-till" id="sp-till-preview" aria-hidden="true">
+                <div class="sp-till-top" data-part="topbar"></div>
+                <div class="sp-till-body">
+                  <div class="sp-till-bill"></div>
+                  <div class="sp-till-grid" data-part="sale"></div>
+                </div>
+                <div class="sp-till-bottom" data-part="bottombar"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="sp-bar">
+            <!-- Which kind of layout is being edited. Tabs rather than a fourth
+                 dropdown: a bar and a sale screen are not two rows in one list,
+                 they are different things that happen to be built the same way,
+                 and mixing them in one picker is how a manager opens a bottom
+                 bar expecting a sale page.
+
+                 In the toolbar rather than on a row of their own, because three
+                 stacked strips of chrome pushed the bottom of the grid off a
+                 1000px window — and the grid is the thing this page is for. -->
+            <div class="sp-surfaces" role="tablist">
+              <button type="button" class="sp-surface on" role="tab" data-surface="sale" title="Pages of products">
+                <span class="sp-surface-art sale"></span>
+                Screens
+              </button>
+              <button type="button" class="sp-surface" role="tab" data-surface="topbar" title="The strip that carries your open tables">
+                <span class="sp-surface-art top"></span>
+                Top bars
+              </button>
+              <button type="button" class="sp-surface" role="tab" data-surface="bottombar" title="The strip that carries Pay">
+                <span class="sp-surface-art bottom"></span>
+                Bottom bars
+              </button>
+            </div>
+            <label class="sp-pick">Screen
+              <select id="sp-screen"></select>
+            </label>
+            <button type="button" class="btn ghost small" id="sp-new">New…</button>
+            <button type="button" class="btn ghost small" id="sp-rename">Rename</button>
+            <button type="button" class="btn ghost small" id="sp-duplicate" title="Copy this screen, buttons and all">Duplicate</button>
+            <button type="button" class="btn danger-ghost small" id="sp-delete">Delete</button>
+            <span class="sp-order">
+              <button type="button" class="btn ghost small" id="sp-up" title="Move this screen earlier in the list">↑</button>
+              <button type="button" class="btn ghost small" id="sp-down" title="Move this screen later in the list">↓</button>
+            </span>
+            <span class="sp-spacer"></span>
+            <label class="sp-pick">Rows
+              <input type="number" id="sp-rows" min="1" max="10" step="1">
+            </label>
+            <label class="sp-pick">Columns
+              <input type="number" id="sp-cols" min="1" max="16" step="1">
+            </label>
+            <!-- Per-screen bars. Hidden on the bar surfaces themselves, where
+                 the question makes no sense, and hidden until a venue has a bar
+                 to choose — an empty dropdown offering nothing is a feature
+                 that looks broken. -->
+            <span class="sp-perscreen" id="sp-perscreen" hidden>
+              <label class="sp-pick" title="Give just this screen a different top bar from the rest of the venue.">Top bar
+                <select id="sp-screen-top"></select>
+              </label>
+              <label class="sp-pick" title="Give just this screen a different bottom bar from the rest of the venue.">Bottom bar
+                <select id="sp-screen-bottom"></select>
+              </label>
+            </span>
+            <span class="sp-spacer"></span>
+            <label class="check" title="Hide the editor's empty cells and see the grid as a clerk does.">
+              <input type="checkbox" id="sp-preview"> Preview
+            </label>
+            <label class="check" id="sp-home-wrap" title="The screen a till opens on. Off means the built-in Default, which is drawn from your product list.">
+              <input type="checkbox" id="sp-home"> Tills open on this
+            </label>
+          </div>
+
+
+          <div class="sp-layout">
+            <div>
+              <!-- The stage: the grid, with a dimmed drawing of the rest of the
+                   till around it when a bar is being edited. A bottom bar laid
+                   out in a box on its own is eleven keys in a vacuum; laid out
+                   under a ghost of the sale screen it is obviously the strip
+                   along the bottom of a till, and how wide each key wants to be
+                   becomes a thing you can see rather than work out. -->
+              <div class="sp-stage" id="sp-stage">
+                <div class="sp-ghost sp-ghost-top" id="sp-ghost-top" hidden>
+                  <span>the sale screen sits here</span>
+                </div>
+                <!-- The grid, with the till's own fixed key beside it when a
+                     top bar is being laid out.
+
+                     `display: contents` on the wrapper everywhere else, so on
+                     a sale screen and a bottom bar the grid is still a direct
+                     child of the stage and every rule about how it is sized
+                     applies exactly as it did. -->
+                <div class="sp-bar-row" id="sp-bar-row">
+                  <!-- Not a key, and not yours.
+                       Every top bar wears this, at its left, and no layout can
+                       remove it: it is how staff move between Sale, Tables,
+                       Reports and the rest, and how they reach the menu on a
+                       terminal with the side rail tucked away. A venue that
+                       could delete it could arrange a till nobody can
+                       navigate — and would find out at a counter.
+                       It takes width from the bar rather than a column, so the
+                       keys laid out here are all still here; they are drawn a
+                       little narrower. -->
+                  <div class="sp-fixed-nav" id="sp-fixed-nav" hidden
+                       title="Fixed on every top bar. Staff use it to move between sections and to reach the menu.">
+                    <span class="sp-fixed-nav-key">
+                      <span class="sp-fixed-nav-icon">☰</span>
+                      <span class="sp-fixed-nav-label">Sale</span>
+                      <span class="sp-fixed-nav-caret">▾</span>
+                    </span>
+                    <span class="sp-fixed-nav-note">always here</span>
+                  </div>
+                  <div id="sp-grid" class="sp-grid" tabindex="0"></div>
+                </div>
+                <div class="sp-ghost sp-ghost-bottom" id="sp-ghost-bottom" hidden>
+                  <span>the sale screen sits here</span>
+                </div>
+              </div>
+              <!-- What the layout holds, and whether it is saved. Under the
+                   grid rather than in the panel: it is about the screen, not
+                   about the selection. -->
+              <div id="sp-status" class="sp-status"></div>
+              <p class="muted small" id="sp-hint" style="margin:8px 0 0">
+                <strong>Double-click a key</strong> to search for what it should be — any product,
+                page or till function, by name. Drag the <strong>handle in its corner</strong> to make
+                it bigger or smaller.
+                Click a key to select it, or drag a box across several. <strong>Shift</strong> extends
+                the box, <strong>Ctrl</strong> adds one at a time. To move keys, select them and then
+                drag the selection — hold <strong>Alt</strong> to copy instead. Arrow keys walk the grid,
+                <strong>Alt+arrows</strong> nudge what is selected, and
+                <strong>Ctrl+Z</strong>, <strong>Ctrl+C</strong>, <strong>Ctrl+V</strong>,
+                <strong>Ctrl+D</strong> and <strong>Ctrl+S</strong> do what they do everywhere else.
+                Backspace clears the selection.
+              </p>
+            </div>
+
+            <!-- The inspector.
+                 Always reflects the current selection, rather than the
+                 reference's double-click-for-a-modal — the common act here is
+                 "colour these six the same", and a modal per button makes that
+                 six modals. -->
+            <div class="sp-panel">
+              <div class="card rd-card">
+                <h3 id="sp-sel-title">Nothing selected</h3>
+                <p class="muted small" id="sp-sel-hint" style="margin:0 0 10px">
+                  Pick a button on the left to change what it does.
+                </p>
+
+                <div id="sp-inspector" hidden>
+                  <label>What this does
+                    <select id="sp-kind">
+                      <option value="blank">Nothing (empty)</option>
+                      <option value="product">Ring up a product</option>
+                      <option value="page">Go to another screen</option>
+                      <option value="function">Till function</option>
+                      <option value="modifier">Ask a modifier question</option>
+                    </select>
+                  </label>
+
+                  <!-- A search, because a select holding every product in a
+                       venue is a list nobody scrolls twice. -->
+                  <div class="sp-field" data-for="product" hidden>
+                    <label>Product
+                      <input id="sp-product-q" placeholder="Search by name, department or PLU">
+                    </label>
+                    <select id="sp-product" size="8"></select>
+                    <p class="muted small" id="sp-product-count" style="margin:4px 0 0"></p>
+                  </div>
+
+                  <div class="sp-field" data-for="page" hidden>
+                    <label>Screen
+                      <select id="sp-target"></select>
+                    </label>
+                    <!-- The way to the page this key leads to.
+                         Without it, following a venue's own menu means reading
+                         the name off this dropdown and then finding it again in
+                         the picker at the top — twice per level, on a menu that
+                         is often three deep. -->
+                    <div class="denom-actions" style="margin-top:8px">
+                      <button type="button" class="btn ghost small" id="sp-open-target">
+                        Edit that screen →
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- A modifier key asks one of the venue's questions against
+                       whatever is on the bill. The answers are already a screen
+                       of their own, so the only thing to choose here is which
+                       question — and the way to go and lay its answers out. -->
+                  <div class="sp-field" data-for="modifier" hidden>
+                    <label>Question
+                      <select id="sp-modifier"></select>
+                    </label>
+                    <div class="denom-actions" style="margin-top:8px">
+                      <button type="button" class="btn ghost small" id="sp-open-modifier">
+                        Edit its answers &rarr;
+                      </button>
+                    </div>
+                    <p class="muted small" id="sp-modifier-note" style="margin:6px 0 0"></p>
+                  </div>
+
+                  <div class="sp-field" data-for="function" hidden>
+                    <label>Function
+                      <select id="sp-function"></select>
+                    </label>
+                    <p class="muted small" id="sp-function-note" style="margin:4px 0 0"></p>
+                  </div>
+
+                  <label style="margin-top:10px">Label
+                    <input id="sp-label" maxlength="40" placeholder="Leave empty to use its own name">
+                  </label>
+
+                  <!-- The key's face.
+                       Until now the only way a key could carry a picture was to
+                       be a product that had one, so a page key could never be
+                       anything but a word — and the venue that photographed its
+                       menu could not put its own picture on the FOOD key that
+                       leads to it. -->
+                  <div class="sp-face">
+                    <div class="sp-face-head">
+                      <span>Picture on the key</span>
+                      <button type="button" class="btn ghost small" id="sp-face-clear">Remove</button>
+                    </div>
+                    <div class="sp-emoji-row">
+                      <input id="sp-emoji" maxlength="16" placeholder="Emoji, or a couple of characters">
+                      <div class="sp-emoji-palette" id="sp-emoji-palette"></div>
+                    </div>
+                    <div class="sp-image-row">
+                      <span class="sp-image-preview" id="sp-image-preview"></span>
+                      <div class="sp-image-actions">
+                        <button type="button" class="btn ghost small" id="sp-image-upload">Upload a picture…</button>
+                        <input type="file" id="sp-image-file" accept="image/*" hidden>
+                      </div>
+                    </div>
+                    <div class="sp-gallery" id="sp-gallery"></div>
+
+                    <!-- Framing the picture on this key.
+                         The reason this exists: a venue lays its screen out in
+                         whatever sizes suit it, and one photograph has to look
+                         right in all of them. A tall bottle shot on a wide key
+                         was a label of glass with the bottle cropped out of
+                         frame, and there was nothing anybody could do about it.
+
+                         The stage is drawn at the key's *own* shape — a 2x2
+                         preview is square, a 1x3 is a strip — because "does
+                         this picture work here" is a question only the real
+                         proportions answer. Drag it to pan, scroll or pinch to
+                         zoom; nothing is uploaded and nothing is cropped, so
+                         the same picture frames differently on two keys. -->
+                    <div class="sp-frame" id="sp-frame" hidden>
+                      <div class="sp-frame-head">
+                        <span>How it sits on the key</span>
+                        <button type="button" class="btn ghost small" id="sp-frame-reset">Reset</button>
+                      </div>
+                      <div class="sp-frame-stage" id="sp-frame-stage"
+                           title="Drag to move the picture. Scroll or pinch to zoom.">
+                        <img id="sp-frame-img" alt="" draggable="false">
+                        <span class="sp-frame-hint" id="sp-frame-hint">drag to move · scroll to zoom</span>
+                      </div>
+                      <label class="sp-frame-zoom">Zoom
+                        <input type="range" id="sp-frame-zoom" min="20" max="400" step="1" value="100">
+                        <output id="sp-frame-zoom-out">100%</output>
+                      </label>
+                      <div class="sp-frame-presets">
+                        <button type="button" class="btn ghost small" id="sp-frame-fill"
+                                title="Fill the key and crop whatever will not fit. Right for a photograph.">Fill the key</button>
+                        <button type="button" class="btn ghost small" id="sp-frame-whole"
+                                title="Fit the whole picture inside the key. Right for a logo or a bottle shot.">Whole picture</button>
+                      </div>
+                      <label class="check" id="sp-show-label-wrap"
+                             title="Off means the picture speaks for itself, which is what a photographed menu wants. On letters the key's name over it.">
+                        <input type="checkbox" id="sp-show-label"> Show the name as well
+                      </label>
+                    </div>
+
+                    <p class="muted small" id="sp-face-note" style="margin:6px 0 0"></p>
+                  </div>
+
+                  <div class="sp-swatches" id="sp-fills"></div>
+                  <!-- The wheel, beside the swatches rather than instead of
+                       them. Eight named colours are what a venue that wants a
+                       tidy screen should use and are one press each; a brand
+                       is a hex nobody can pick off a row of eight. Both, and
+                       the swatch row lights up when the wheel lands on one. -->
+                  <div class="sp-wheel-row">
+                    <label class="sp-wheel" title="Any colour at all.">
+                      <input type="color" id="sp-fill-wheel" value="#2b313d">
+                      <span>Custom…</span>
+                    </label>
+                    <input id="sp-fill-hex" class="sp-hex" maxlength="7" spellcheck="false"
+                           autocomplete="off" placeholder="#2b313d"
+                           title="Type a colour from your brand book.">
+                  </div>
+
+                  <label style="margin-top:10px">Lettering
+                    <select id="sp-ink">
+                      <option value="auto">The till decides</option>
+                      <option value="light">Light</option>
+                      <option value="dark">Dark</option>
+                      <option value="custom">A colour of my own…</option>
+                    </select>
+                  </label>
+                  <div class="sp-wheel-row" id="sp-ink-wheel-row" hidden>
+                    <label class="sp-wheel">
+                      <input type="color" id="sp-ink-wheel" value="#ffffff">
+                      <span>Lettering colour</span>
+                    </label>
+                    <input id="sp-ink-hex" class="sp-hex" maxlength="7" spellcheck="false"
+                           autocomplete="off" placeholder="#ffffff">
+                  </div>
+
+                  <!-- The typeface. Both boxes are “leave it alone” by default,
+                       which is the right answer for most keys: the till already
+                       fits a label to the key it is on, and a size set on a
+                       desktop monitor is a size nobody checked on a 10-inch
+                       terminal. -->
+                  <div class="sp-type">
+                    <label>Font
+                      <select id="sp-font"></select>
+                    </label>
+                    <label>Size
+                      <input type="number" id="sp-font-size" min="8" max="72" step="1"
+                             placeholder="Auto"
+                             title="Points. Leave it empty for the key’s own size. The till caps whatever you set against the height of the key, so the same layout still reads on a small terminal.">
+                    </label>
+                  </div>
+
+                  <div class="denom-actions" style="margin-top:8px">
+                    <button type="button" class="btn ghost small" id="sp-clear-style">Use the till’s colours</button>
+                  </div>
+                  <!-- An empty cell is not stored, so a colour on one goes
+                       nowhere. Said here rather than discovered on a save. -->
+                  <p class="muted small" id="sp-style-note" style="margin:8px 0 0" hidden>
+                    Choose what these buttons do first — a colour or a label on an empty cell is
+                    not kept.
+                  </p>
+
+                  <div class="denom-actions" style="margin-top:10px">
+                    <button type="button" class="btn ghost small" id="sp-copy" title="Ctrl+C">Copy</button>
+                    <button type="button" class="btn ghost small" id="sp-paste" title="Ctrl+V">Paste</button>
+                    <button type="button" class="btn danger-ghost small" id="sp-clear">Clear these buttons</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- What is wrong with this layout, if anything. Hidden when the
+                   screen is sound, because a panel that is always empty is one
+                   nobody reads on the day it fills up. -->
+              <div class="card rd-card" id="sp-issues-card" hidden>
+                <h3>Needs attention</h3>
+                <p class="muted small" style="margin:0 0 10px">
+                  Things a clerk would meet at the counter. A key that points at something no
+                  longer there refuses the press.
+                </p>
+                <div id="sp-issues" class="sp-issues"></div>
+              </div>
+
+              <!-- Lettering, for the venue rather than for one key.
+                   Here rather than under Settings because this is where a
+                   manager is when they decide the buttons look wrong, and a
+                   font picked two screens away is a font picked blind. -->
+              <div class="card rd-card" id="sp-fonts-card">
+                <h3>Fonts</h3>
+                <p class="muted small" style="margin:0 0 10px">
+                  What your tills letter everything in. A button can be given a font of its own;
+                  the rest follow this one.
+                </p>
+                <label>Your tills’ font
+                  <select id="sp-till-font"></select>
+                </label>
+                <div class="sp-font-list" id="sp-font-list"></div>
+                <div class="denom-actions" style="margin-top:10px">
+                  <button type="button" class="btn ghost small" id="sp-font-add">Upload a font…</button>
+                  <input type="file" id="sp-font-file" accept=".ttf,.otf,font/ttf,font/otf,application/font-sfnt" hidden>
+                </div>
+                <p class="muted small" style="margin:8px 0 0">
+                  TrueType (.ttf) or OpenType (.otf). A .woff2 works in a browser but not on a
+                  till, so it is refused rather than quietly ignored. Uploading a font is you
+                  saying you hold a licence to install it on your tills.
+                </p>
+              </div>
+
+              <!-- Bulk fill. The reference's best idea, and the one thing that
+                   turns laying out a screen from an afternoon into a minute. -->
+              <div class="card rd-card" id="sp-fill-card">
+                <h3>Fill from a department</h3>
+                <p class="muted small" style="margin:0 0 10px">
+                  Select some empty buttons, choose a department, and its products drop in — in
+                  the order they appear on your product list. Narrow it to one sub department to
+                  lay out a single shelf — lagers, not the whole bar.
+                </p>
+                <label>Department
+                  <select id="sp-dept"></select>
+                </label>
+                <label>Sub department
+                  <select id="sp-subdept"></select>
+                </label>
+                <!-- Which of them, not just how many. A department is the
+                     fast way in; this is the way to lay out eight of its
+                     fourteen lagers without deleting six keys afterwards. -->
+                <div class="sp-fill-picker">
+                  <div class="sp-fill-tools">
+                    <input id="sp-fill-search" type="search" placeholder="Find a product"
+                           spellcheck="false" autocomplete="off">
+                    <button type="button" class="btn ghost small" id="sp-fill-all">All</button>
+                    <button type="button" class="btn ghost small" id="sp-fill-none">None</button>
+                  </div>
+                  <div id="sp-fill-list" class="sp-fill-list"></div>
+                </div>
+                <p class="muted small" id="sp-fill-count" style="margin:6px 0 0"></p>
+                <div class="denom-actions" style="margin-top:10px">
+                  <button type="button" class="btn ghost small" id="sp-fill">Fill the selection</button>
+                </div>
+              </div>
+
+              <!-- The same idea for a bar, and the reason a venue ever gets one
+                   finished: eleven keys typed in one at a time is where this
+                   feature would otherwise be abandoned. -->
+              <div class="card rd-card" id="sp-preset-card" hidden>
+                <h3>Start from the built-in bar</h3>
+                <p class="muted small" style="margin:0 0 10px">
+                  Drops in the bar your tills show today, key for key, so you can move one thing
+                  rather than rebuild ten.
+                </p>
+                <div class="denom-actions">
+                  <button type="button" class="btn ghost small" id="sp-preset">Lay out the built-in bar</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="view-customers" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Customers</h2>
+              <p class="muted small">A standing discount here is applied automatically when the customer is attached to a sale on the till.</p>
+            </div>
+            <button class="btn primary" id="add-customer">Add customer</button>
+          </div>
+          <div class="card"><table>
+            <thead><tr><th>Name</th><th>Card</th><th>Phone</th><th>Email</th><th>Discount</th><th class="right">Points</th><th>Membership</th><th></th></tr></thead>
+            <tbody id="customers"></tbody>
+          </table></div>
+        </section>
+
+        <section id="view-vouchers" class="view" hidden>
+          <div class="page-head"><div><h2>Vouchers</h2><p class="muted small">Drag rows to set the order.</p></div><button class="btn primary" data-add="vouchers">Add voucher</button></div>
+          <div class="card"><table><thead><tr><th class="drag-col"></th><th>Code</th><th>Name</th><th>Type</th><th>Value</th><th>Expires</th><th>Active</th><th></th></tr></thead><tbody id="vouchers"></tbody></table></div>
+        </section>
+
+        <!-- Receipt designer -->
+        <section id="view-receipt_designer" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Receipt designer</h2>
+              <p class="muted small">Changes appear on every till as soon as you save.</p>
+            </div>
+            <div class="rd-head-actions">
+              <button class="btn" id="rd-reset">Revert</button>
+              <button class="btn primary" id="rd-save">Save receipt</button>
+            </div>
+          </div>
+
+          <div class="rd-layout">
+            <!-- Editor -->
+            <div class="rd-editor">
+              <div class="card rd-card">
+                <h3>Logo</h3>
+                <div class="rd-logo-row">
+                  <div class="rd-logo-preview" id="rd-logo-preview">
+                    <span class="muted small">No logo</span>
+                  </div>
+                  <div class="rd-logo-actions">
+                    <input type="file" id="rd-logo-file" accept="image/*" hidden>
+                    <button class="btn" id="rd-logo-pick">Upload logo</button>
+                    <button class="btn danger-ghost" id="rd-logo-clear">Remove</button>
+                    <p class="muted small">PNG or JPG, up to 4&nbsp;MB. Printed in black
+                      and white on thermal paper, so high contrast works best.</p>
+                  </div>
+                </div>
+                <label class="check"><input type="checkbox" data-rd="show_logo"> Print the logo</label>
+              </div>
+
+              <div class="card rd-card">
+                <h3>Venue details</h3>
+                <div class="grid2">
+                  <label>Venue name<input data-rd="venue_name" maxlength="120"></label>
+                  <label>Phone<input data-rd="phone" maxlength="40"></label>
+                  <label>Address line 1<input data-rd="address_line1" maxlength="120"></label>
+                  <label>Address line 2<input data-rd="address_line2" maxlength="120"></label>
+                  <label>Town / city<input data-rd="city" maxlength="80"></label>
+                  <label>Postcode<input data-rd="postcode" maxlength="16"></label>
+                  <label>Website<input data-rd="website" maxlength="120"></label>
+                  <label>VAT number<input data-rd="vat_number" maxlength="40"></label>
+                  <label>Company number<input data-rd="company_number" maxlength="40"></label>
+                </div>
+              </div>
+
+              <div class="card rd-card">
+                <h3>Wording</h3>
+                <label>Header note<input data-rd="header_note" maxlength="255"
+                  placeholder="e.g. Table service until 9pm"></label>
+                <label>Footer message<input data-rd="footer_message" maxlength="255"
+                  placeholder="Thank you for your custom"></label>
+                <label>Footer small print<textarea data-rd="footer_note" rows="2" maxlength="500"
+                  placeholder="e.g. Returns within 14 days with this receipt"></textarea></label>
+                <label>Social line<input data-rd="social_line" maxlength="160"
+                  placeholder="@yourvenue"></label>
+              </div>
+
+              <div class="card rd-card">
+                <h3>Layout</h3>
+                <label>Paper width
+                  <select data-rd="paper_width_mm">
+                    <option value="80">80mm — standard receipt roll</option>
+                    <option value="58">58mm — narrow roll</option>
+                  </select>
+                </label>
+                <label class="check"><input type="checkbox" data-rd="show_vat_breakdown"> VAT analysis by rate</label>
+                <label class="check"><input type="checkbox" data-rd="show_served_by"> "Served by" line</label>
+                <label class="check"><input type="checkbox" data-rd="show_barcode"> Receipt barcode</label>
+                <label class="check"><input type="checkbox" data-rd="show_qr"> QR code</label>
+                <label>QR links to<input data-rd="qr_url" maxlength="255"
+                  placeholder="https://…"></label>
+                <label class="check"><input type="checkbox" data-rd="show_powered_by"> "Powered by Vesopa EPOS"</label>
+              </div>
+            </div>
+
+            <!-- Live preview -->
+            <div class="rd-preview-pane">
+              <div class="rd-preview-head">
+                <span class="small muted">Live preview</span>
+                <button class="btn small" id="rd-print">Print test</button>
+              </div>
+              <div class="rd-paper-wrap">
+                <div class="rd-paper" id="rd-paper"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Promotions -->
+        <section id="view-promotions" class="view" hidden>
+          <div class="page-head">
+            <div><h2>Promotions</h2><p class="muted small">Offers and multi-buy deals. Live offers show on the till buttons.</p></div>
+            <button class="btn primary" id="promo-add">New promotion</button>
+          </div>
+          <div class="grid-cards" id="promo-stats"></div>
+          <div class="card"><table>
+            <thead><tr><th>Name</th><th>Type</th><th>Applies to</th><th>Value</th><th>Runs</th><th>Badge</th><th>Active</th><th></th></tr></thead>
+            <tbody id="promotions"></tbody>
+          </table></div>
+          <div class="card rd-card">
+            <h3>Performance</h3>
+            <div id="promo-chart" class="chart-box"></div>
+          </div>
+        </section>
+
+        <!-- Gift cards -->
+        <section id="view-gift_cards" class="view" hidden>
+          <div class="page-head">
+            <div><h2>Gift cards</h2><p class="muted small">Smart cards keep a balance and can be topped up. Paper certificates redeem once.</p></div>
+            <button class="btn primary" id="gift-add">Issue card</button>
+          </div>
+          <div class="grid-cards" id="gift-stats"></div>
+          <div class="card"><table>
+            <thead><tr><th>Code</th><th>Type</th><th>Recipient</th><th class="right">Issued</th><th class="right">Balance</th><th>Expires</th><th>Status</th><th></th></tr></thead>
+            <tbody id="gift-cards"></tbody>
+          </table></div>
+        </section>
+
+        <!-- Deposits -->
+        <section id="view-deposits" class="view" hidden>
+          <div class="page-head">
+            <div><h2>Deposits</h2><p class="muted small">Money taken in advance, redeemed against the final bill.</p></div>
+            <button class="btn primary" id="deposit-add">Take deposit</button>
+          </div>
+          <div class="grid-cards" id="deposit-stats"></div>
+          <div class="card"><table>
+            <thead><tr><th>Reference</th><th>Customer</th><th>For</th><th class="right">Amount</th><th class="right">Redeemed</th><th>Due</th><th>Status</th><th></th></tr></thead>
+            <tbody id="deposits"></tbody>
+          </table></div>
+        </section>
+
+        <!-- Loyalty -->
+        <section id="view-loyalty" class="view" hidden>
+          <div class="page-head">
+            <div><h2>Loyalty</h2><p class="muted small">Points are earned when a customer gives their phone number at the till.</p></div>
+            <button class="btn primary" id="loyalty-save">Save loyalty</button>
+          </div>
+          <div class="grid-cards" id="loyalty-stats"></div>
+          <div class="rd-layout">
+            <div class="rd-editor">
+              <div class="card rd-card">
+                <h3>Earning</h3>
+                <label class="check"><input type="checkbox" data-loy="enabled"> Loyalty programme enabled</label>
+                <div class="grid2">
+                  <label>Points per £1 spent<input type="number" min="0" data-loy="points_per_pound"></label>
+                  <label>Value of 1 point (pence)<input type="number" min="0" data-loy="point_value_minor"></label>
+                  <label>Minimum spend to earn (pence)<input type="number" min="0" data-loy="min_spend_minor"></label>
+                  <label>Points expire after (months, 0 = never)<input type="number" min="0" data-loy="points_expire_months"></label>
+                </div>
+                <label class="check"><input type="checkbox" data-loy="earn_on_gratuity"> Earn points on gratuity too</label>
+                <label class="check"><input type="checkbox" data-loy="require_phone"> Require a phone number</label>
+              </div>
+              <div class="card rd-card">
+                <h3>Redeeming</h3>
+                <div class="grid2">
+                  <label>Minimum points to redeem<input type="number" min="0" data-loy="min_redeem_points"></label>
+                  <label>Redeem in steps of<input type="number" min="1" data-loy="redeem_step_points"></label>
+                </div>
+                <p class="muted small" id="loyalty-example"></p>
+              </div>
+              <div class="card rd-card">
+                <h3>Tiers</h3>
+                <p class="muted small">Customers move up automatically as their lifetime spend grows.</p>
+                <div id="loyalty-tiers"></div>
+                <button class="btn" id="tier-add">Add tier</button>
+              </div>
+            </div>
+            <div class="rd-preview-pane">
+              <div class="rd-preview-head"><span class="small muted">Points movement</span></div>
+              <div class="card rd-card"><div id="loyalty-chart" class="chart-box"></div></div>
+              <div class="card rd-card">
+                <h3>Top customers</h3>
+                <div id="loyalty-top"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Wallet passes: Apple and Google, one set of branding. -->
+        <!--
+          Wallet passes.
+
+          Five tabs rather than one column. What was here was every field this
+          feature has, stacked: the programme, the colours, the five switches,
+          nine boxes of card-back text, a photograph, a map reference, the Apple
+          status and the issued list, in one scroll. Nothing on it was wrong and
+          all of it was in the way of everything else -- a manager who came to
+          change the colour of the gift card scrolled past the sign-up code and
+          the certificate table to get there, and there was no way to change the
+          gift card on its own anyway.
+
+          So the work is split by the question being asked. "Design the cards" is
+          the first tab because it is the one people come here for, and it is the
+          one that did not exist: epos_wallet_programs has held a per-card design
+          since the table was added and nothing was ever routed to it.
+        -->
+        <section id="view-wallet" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Wallet passes</h2>
+              <p class="muted small">
+                A card on the customer's phone. The barcode carries the same
+                number as the plastic, so a phone and a card scan to the same
+                person at the till.
+              </p>
+            </div>
+            <button class="btn primary" id="wallet-save">Save branding</button>
+          </div>
+          <div class="grid-cards" id="wallet-stats"></div>
+
+          <div class="wal-tabs" role="tablist">
+            <button class="wal-tab on" data-waltab="design" role="tab">Design the cards</button>
+            <button class="wal-tab" data-waltab="programme" role="tab">Programme &amp; sign-up</button>
+            <button class="wal-tab" data-waltab="back" role="tab">On the back of the card</button>
+            <button class="wal-tab" data-waltab="apple" role="tab">Apple &amp; Google</button>
+            <button class="wal-tab" data-waltab="issued" role="tab">Issued</button>
+          </div>
+
+          <!-- ---- Design one card at a time ---------------------------- -->
+          <div class="wal-panel" data-walpanel="design">
+            <div class="wal-design">
+              <nav class="wal-kinds" id="wal-kinds" aria-label="Which card"></nav>
+              <div class="wal-design-editor" id="wal-design-editor"></div>
+              <div class="wal-design-preview">
+                <div class="rd-preview-head"><span class="small muted">What the customer gets</span></div>
+                <div id="wal-design-card"></div>
+                <p class="muted small">
+                  Drawn at 375 points wide, which is the width Apple lays a pass
+                  out at. A value that overflows here overflows on the phone.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- ---- The venue's own look, and how people join ------------- -->
+          <div class="wal-panel" data-walpanel="programme" hidden>
+            <div class="rd-layout">
+              <div class="rd-editor">
+                <div class="card rd-card">
+                  <h3>The programme</h3>
+                  <label class="check"><input type="checkbox" data-wal="enabled"> Issue wallet passes</label>
+                  <div class="grid2">
+                    <label>Programme name<input type="text" maxlength="120" data-wal="program_name" placeholder="Crown Rewards"></label>
+                    <label>Venue name<input type="text" maxlength="120" data-wal="issuer_name" placeholder="The Crown"></label>
+                  </div>
+                  <p class="muted small">
+                    The programme name is the big line on the card; the venue name
+                    sits under it. Both fall back to your receipt branding, and
+                    either can be overridden on one card in Design the cards.
+                  </p>
+                </div>
+
+                <div class="card rd-card">
+                  <h3>Colours</h3>
+                  <p class="muted small">
+                    The look every card starts from. Apple needs all three and
+                    works none of them out. Leave them blank for the Vesopa
+                    palette — a dark card with lime labels — rather than Apple's
+                    default, which is grey on near-black.
+                  </p>
+                  <div class="grid3 wal-colours">
+                    <label>Background<input type="color" data-wal="hex_background" value="#111111"></label>
+                    <label>Text<input type="color" data-wal="hex_foreground" value="#F2F4F0"></label>
+                    <label>Labels<input type="color" data-wal="hex_label" value="#A5C715"></label>
+                  </div>
+                </div>
+
+                <div class="card rd-card">
+                  <h3>Which cards</h3>
+                  <p class="muted small">A venue may want a loyalty card and nothing else.</p>
+                  <label class="check"><input type="checkbox" data-wal="loyalty_enabled"> Loyalty card</label>
+                  <label class="check"><input type="checkbox" data-wal="customer_enabled"> Membership card</label>
+                  <label class="check"><input type="checkbox" data-wal="giftcard_enabled"> Gift card</label>
+                  <label class="check"><input type="checkbox" data-wal="staff_enabled"> Staff card</label>
+                  <label class="check"><input type="checkbox" data-wal="promo_enabled"> Promotional offer</label>
+                </div>
+
+                <div class="card rd-card">
+                  <h3>Pictures</h3>
+                  <p class="muted small">
+                    The band across every card, and the small mark beside your
+                    name. Choose a picture and you get a frame to move and zoom
+                    it in — what you frame is what is saved, at the sizes Apple
+                    needs and the one Google fetches, so both phones show the
+                    same thing. Either can be overridden on a single card in
+                    Design the cards.
+                  </p>
+                  <div class="wal-art" data-artfield="photo_url" data-artshape="strip">
+                    <div class="wal-art-preview"></div>
+                    <div class="wal-art-actions">
+                      <span class="small muted">Band across the card</span>
+                      <label class="btn small">Choose a picture
+                        <input type="file" accept="image/*" hidden>
+                      </label>
+                      <button type="button" class="btn small ghost" data-artclear>Remove</button>
+                    </div>
+                  </div>
+                  <div class="wal-art" data-artfield="logo_url" data-artshape="logo">
+                    <div class="wal-art-preview logo"></div>
+                    <div class="wal-art-actions">
+                      <span class="small muted">Mark beside your name</span>
+                      <label class="btn small">Choose a picture
+                        <input type="file" accept="image/*" hidden>
+                      </label>
+                      <button type="button" class="btn small ghost" data-artclear>Remove</button>
+                    </div>
+                  </div>
+                  <p class="muted small">
+                    Leave both empty and the cards use the artwork Vesopa
+                    generates for each kind, which is branded rather than blank.
+                  </p>
+                </div>
+
+                <div class="card rd-card">
+                  <h3>Where you are</h3>
+                  <p class="muted small">
+                    Apple puts the card on the customer's lock screen when their
+                    phone is near you, so it is ready before they reach the till.
+                    Right-click your venue in Google Maps and paste the two
+                    numbers it copies. Leave blank and the card still works —
+                    it just waits to be opened.
+                  </p>
+                  <div class="grid2">
+                    <label>Latitude<input type="text" inputmode="decimal" data-wal="latitude" placeholder="51.621400"></label>
+                    <label>Longitude<input type="text" inputmode="decimal" data-wal="longitude" placeholder="-3.785600"></label>
+                  </div>
+                </div>
+              </div>
+
+              <div class="rd-preview-pane">
+                <!--
+                  The venue's own look, on every card they have switched on.
+                  Restored after the tab split dropped it: the colours above are
+                  edited against this, and a colour picker with nothing to look
+                  at is a colour picker being used blind.
+                -->
+                <div class="rd-preview-head"><span class="small muted">What the customer gets</span></div>
+                <div class="card rd-card">
+                  <div id="wallet-preview"></div>
+                </div>
+                <div class="card rd-card">
+                  <h3>Sign-up code</h3>
+                  <p class="muted small">
+                    Put this on a table card or a poster. It opens a page where a
+                    customer joins with a name and a phone number, and the card
+                    lands straight in their wallet.
+                  </p>
+                  <label class="small muted" for="wallet-join-slug">Your code</label>
+                  <div class="wal-slug">
+                    <span class="wal-slug-prefix">/wallet/join/</span>
+                    <input id="wallet-join-slug" data-wal="join_slug" type="text"
+                           spellcheck="false" autocapitalize="none" autocomplete="off"
+                           maxlength="64" placeholder="your-venue">
+                  </div>
+                  <p class="muted small">
+                    Letters, numbers and hyphens. Change it and the old link stops
+                    working, so reprint anything already on a table.
+                  </p>
+                  <div id="wallet-join-qr" class="wal-qr"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ---- The questions staff get asked at the counter ---------- -->
+          <div class="wal-panel" data-walpanel="back" hidden>
+            <div class="card rd-card">
+              <h3>On the back of the card</h3>
+              <p class="muted small">
+                The questions your staff get asked at the counter. Every one of
+                these is optional — leave it blank and the card simply does not
+                show that line, rather than showing an empty one.
+              </p>
+              <div class="grid2">
+                <label>Website<input type="url" maxlength="255" data-wal="homepage_url" placeholder="https://…"></label>
+                <label>Contact number<input type="text" maxlength="40" data-wal="support_phone"></label>
+              </div>
+              <div class="grid2">
+                <label>Where you are<input type="text" maxlength="255" data-wal="address_text" placeholder="1 High Street, Swansea SA1 1AA"></label>
+                <label>When you're open<input type="text" maxlength="255" data-wal="hours_text" placeholder="Noon till late, every day"></label>
+              </div>
+              <label>How points are earned<textarea rows="2" data-wal="earning_text" placeholder="A point for every £1 you spend."></textarea></label>
+              <label>How points are spent<textarea rows="2" data-wal="redeeming_text" placeholder="Redeem from 200 points — just ask at the till."></textarea></label>
+              <label>What each tier gets<textarea rows="2" data-wal="tier_text" placeholder="Gold members get 10% off food, all week."></textarea></label>
+              <label>When points expire<textarea rows="2" data-wal="expiry_text" placeholder="Points last 24 months from the day you earn them."></textarea></label>
+              <label>If the scan fails
+                <textarea rows="2" data-wal="scanfail_text"
+                  placeholder="Read out the number under the QR. Staff can key it in and nothing is lost."></textarea>
+              </label>
+              <p class="muted small">
+                That last one is the only line on the card about the card. A QR
+                that will not read is the moment this looks broken to somebody
+                holding up a queue — and neither they nor your staff
+                necessarily know the number underneath can just be typed in.
+                Left blank, the card says exactly the sentence in the box above.
+              </p>
+              <label>Terms<textarea rows="3" data-wal="terms" placeholder="Points expire after 24 months."></textarea></label>
+            </div>
+          </div>
+
+          <!-- ---- Whether either phone can actually be handed a card ---- -->
+          <div class="wal-panel" data-walpanel="apple" hidden>
+            <div class="card rd-card">
+              <h3>Apple Wallet</h3>
+              <label class="check"><input type="checkbox" data-wal="apple_enabled"> Issue Apple passes</label>
+              <div id="wallet-apple-status"></div>
+            </div>
+          </div>
+
+          <!-- ---- Every card handed out -------------------------------- -->
+          <div class="wal-panel" data-walpanel="issued" hidden>
+            <div class="card rd-card">
+              <h3>Passes issued</h3>
+              <p class="muted small">
+                Every card handed out, newest first. Scan a code to see what the
+                customer sees — the link works on both an iPhone and an Android
+                phone.
+              </p>
+              <div id="wallet-passes"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Swipe cards: what each prefix means, and every card issued. -->
+        <section id="view-cards" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Cards</h2>
+              <p class="muted small">
+                A card reader on a till counter behaves as a keyboard: swipe a
+                card and it types <code>;999800001?</code>. The digits it starts
+                with are what tell the till which programme the card belongs to.
+              </p>
+            </div>
+            <button class="btn primary" id="cards-save">Save cards</button>
+          </div>
+          <div class="grid-cards" id="cards-stats"></div>
+          <div class="rd-layout">
+            <div class="rd-editor">
+              <div class="card rd-card">
+                <h3>Prefixes</h3>
+                <p class="muted small">
+                  Set once for the venue and followed by every till, so the same
+                  card does the same thing at both ends of the bar. Leave one
+                  empty to switch that programme off — an empty prefix matches
+                  nothing.
+                </p>
+                <label class="check"><input type="checkbox" data-card="enabled"> Read cards at the till</label>
+                <div class="grid2">
+                  <label>Staff (clerk)<input type="text" inputmode="numeric" maxlength="8" data-card="clerk_prefix" placeholder="9999"></label>
+                  <label>Loyalty<input type="text" inputmode="numeric" maxlength="8" data-card="loyalty_prefix" placeholder="9998"></label>
+                  <label>Gift<input type="text" inputmode="numeric" maxlength="8" data-card="gift_prefix" placeholder="9878"></label>
+                  <label>Membership<input type="text" inputmode="numeric" maxlength="8" data-card="membership_prefix" placeholder="not used"></label>
+                </div>
+                <p class="muted small" id="cards-example"></p>
+              </div>
+              <div class="card rd-card">
+                <h3>Issuing</h3>
+                <div class="grid2">
+                  <label>Digits after the prefix<input type="number" min="4" max="12" data-card="number_digits"></label>
+                </div>
+                <label class="check"><input type="checkbox" data-card="auto_enrol"> Offer to create a member when an unknown loyalty card is swiped</label>
+                <p class="muted small">
+                  A number is never handed out twice, even after a card is
+                  cancelled — the lost card is still out there.
+                </p>
+              </div>
+              <div class="card rd-card">
+                <h3>At the till</h3>
+                <p class="muted small">
+                  The same two buttons the back office puts on a customer, a
+                  member of staff, a gift card and an offer — and whether the
+                  counter gets them. A venue that hands out plastic and never
+                  puts a card on a phone wants one of these; a venue with no card
+                  printer wants the other.
+                </p>
+                <label class="check"><input type="checkbox" data-card="till_wallet_button"> Offer to put a card on the customer's phone</label>
+                <label class="check"><input type="checkbox" data-card="till_print_button"> Offer to print a card</label>
+                <label class="check"><input type="checkbox" data-card="wallet_on_display"> Show the code on the customer's screen, not the till's</label>
+                <p class="muted small">
+                  The last one needs a customer display paired to that till. Where
+                  there is not one, the code appears on the till's own screen
+                  instead rather than nowhere.
+                </p>
+              </div>
+              <div class="card rd-card">
+                <h3>Cards issued</h3>
+                <p class="muted small">
+                  Every card this venue has given out. Cancelling one detaches
+                  it from whoever held it, so it stops working at the till.
+                </p>
+                <div id="cards-issues"></div>
+              </div>
+            </div>
+            <div class="rd-preview-pane">
+              <div class="rd-preview-head"><span class="small muted">What a card looks like</span></div>
+              <div class="card rd-card">
+                <div id="cards-preview"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Machines: which tills and screens a venue has, and what happened. -->
+        <section id="view-devices" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Devices</h2>
+              <p class="muted small">
+                The machines in this venue. A till registers itself and every
+                customer display paired to it, so this is what is actually
+                plugged in rather than what somebody wrote down.
+              </p>
+            </div>
+            <button class="btn" id="devices-refresh">Refresh</button>
+          </div>
+          <div class="grid-cards" id="devices-stats"></div>
+          <div class="card rd-card">
+            <div id="devices-list"></div>
+          </div>
+          <div class="card rd-card">
+            <h3>What has happened</h3>
+            <p class="muted small">
+              Append-only. Nothing here can be edited or deleted, which is the
+              point of keeping it.
+            </p>
+            <div id="devices-log"></div>
+          </div>
+        </section>
+
+        <!-- Tender & gratuity -->
+        <section id="view-tender" class="view" hidden>
+          <div class="page-head">
+            <div><h2>Tender &amp; gratuity</h2><p class="muted small">How the till takes money: service charge, cash keys, split and partial payments.</p></div>
+            <button class="btn primary" id="tender-save">Save settings</button>
+          </div>
+          <div class="rd-layout">
+            <div class="rd-editor">
+              <div class="card rd-card">
+                <h3>Gratuity / service charge</h3>
+                <label class="check"><input type="checkbox" data-tender="gratuity_enabled"> Offer gratuity</label>
+                <label>How it is applied
+                  <select data-tender="gratuity_mode">
+                    <option value="prompt">Ask the clerk at payment</option>
+                    <option value="auto">Add automatically to every bill</option>
+                    <option value="off">Do not offer</option>
+                  </select>
+                </label>
+                <label>Percentages offered (comma separated)<input data-tender="gratuity_presets" placeholder="5,10,12.5,15,20"></label>
+                <label>Default percentage (tenths, e.g. 125 = 12.5%)<input type="number" min="0" data-tender="gratuity_default_bp"></label>
+                <label>Apply automatically from this many covers (0 = always)<input type="number" min="0" data-tender="gratuity_min_covers"></label>
+                <label class="check"><input type="checkbox" data-tender="gratuity_removable"> Clerk can remove it (discretionary)</label>
+              </div>
+              <div class="card rd-card">
+                <h3>Cash</h3>
+                <label>Quick-cash keys, in pence (comma separated)<input data-tender="cash_presets" placeholder="500,1000,2000,5000"></label>
+                <label class="check"><input type="checkbox" data-tender="cash_quick_round"> Offer a round-up key</label>
+              </div>
+
+              <!-- Note keys. These are the picture buttons the clerk taps as
+                   the customer hands notes over, so the artwork and the value
+                   are edited together. -->
+              <div class="card rd-card">
+                <h3>Note keys</h3>
+                <p class="muted small" style="margin:0 0 10px" id="denom-origin"></p>
+                <div id="denom-rows" class="denom-rows"></div>
+                <div class="denom-actions">
+                  <button type="button" class="btn ghost small" id="denom-add">Add a note</button>
+                  <button type="button" class="btn ghost small" id="denom-reset">Reset to Vesopa defaults</button>
+                  <button type="button" class="btn primary small" id="denom-save">Save note keys</button>
+                </div>
+                <p id="denom-error" class="error"></p>
+              </div>
+              <div class="card rd-card">
+                <h3>Card &amp; splitting</h3>
+                <label class="check"><input type="checkbox" data-tender="allow_partial_card"> Allow partial card payments</label>
+                <label class="check"><input type="checkbox" data-tender="allow_split_bill"> Allow bills to be split</label>
+              </div>
+            </div>
+            <div class="rd-preview-pane">
+              <div class="rd-preview-head"><span class="small muted">How the till will look</span></div>
+              <div class="card rd-card"><div id="tender-preview"></div></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Automation rules -->
+        <section id="view-rules" class="view" hidden>
+          <div class="page-head">
+            <div><h2>Automation rules</h2><p class="muted small">If this happens, then that applies.</p></div>
+            <button class="btn primary" id="rule-add">New rule</button>
+          </div>
+          <div class="card"><table>
+            <thead><tr><th>Name</th><th>When</th><th>Then</th><th>Priority</th><th>Active</th><th></th></tr></thead>
+            <tbody id="rules"></tbody>
+          </table></div>
+        </section>
+
+        <!-- Templates (super admin) -->
+        <section id="view-templates" class="view" hidden>
+          <div class="page-head">
+            <div><h2>Starter templates</h2><p class="muted small">Pre-set catalogues assigned when an office is created.</p></div>
+            <button class="btn primary" id="template-add">New template</button>
+          </div>
+          <div class="card"><table>
+            <thead><tr><th>Name</th><th>Kind</th><th>Contents</th><th>Default</th><th>Active</th><th></th></tr></thead>
+            <tbody id="templates"></tbody>
+          </table></div>
+        </section>
+
+        <!-- Subscriptions (super admin) -->
+        <section id="view-subscriptions" class="view" hidden>
+          <div class="page-head">
+            <div><h2>Subscriptions</h2><p class="muted small">Joined date, monthly fee and next due date for every office.</p></div>
+          </div>
+          <div class="grid-cards" id="subscription-stats"></div>
+          <div class="card"><table>
+            <thead><tr><th>Office</th><th>Contact</th><th>Joined</th><th>Template</th><th class="right">Monthly</th><th>Billing day</th><th>Next due</th><th>Status</th><th></th></tr></thead>
+            <tbody id="subscriptions"></tbody>
+          </table></div>
+        </section>
+
+        <!-- Admin -->
+        <section id="view-offices" class="view" hidden>
+          <div class="page-head"><div><h2>Offices</h2><p class="muted small">Every office on this installation, what it is charged, and when it is next due.</p></div><button class="btn primary" id="add-office">New office</button></div>
+          <div class="card"><table>
+            <thead><tr><th>Office</th><th>Contact</th><th>Status</th><th>Users</th><th class="right">Charge</th><th>Next due</th><th></th></tr></thead>
+            <tbody id="offices"></tbody>
+          </table></div>
+        </section>
+
+        <section id="view-billing" class="view" hidden>
+          <div class="page-head"><div><h2>Billing</h2><p class="muted small">Invoices raised against each office. Flag overdue marks anything still due after its date has passed.</p></div><button class="btn ghost" id="sweep">Flag overdue</button></div>
+          <div class="card"><table>
+            <thead><tr><th>Office</th><th>Due</th><th class="right">Amount</th><th>Status</th><th></th></tr></thead>
+            <tbody id="invoices"></tbody>
+          </table></div>
+        </section>
+      </main>
+    </div>
+
+    <div id="modal-root"></div>
+    <div id="cropper-root"></div>
+
+    <!-- The report viewer.
+         A report is read far more often than it is filed, and until this
+         existed the only way to read one was to download it and go looking in
+         a downloads folder. The route is behind the session token, so the file
+         cannot simply be linked: app.js posts for it, holds the bytes as a
+         blob, and points this frame at that. Same bytes as the download, so
+         what is on screen is what gets saved. -->
+    <div id="pdfv" class="pdfv" hidden>
+      <div class="pdfv-back" data-pdfv-close></div>
+      <div class="pdfv-panel" role="dialog" aria-modal="true" aria-labelledby="pdfv-title">
+        <header class="pdfv-head">
+          <img src="/assets/vesopa_logo_on_dark.png" alt="Vesopa" class="pdfv-logo">
+          <div class="pdfv-titles">
+            <h3 id="pdfv-title">Report</h3>
+            <p class="pdfv-sub" id="pdfv-sub"></p>
+          </div>
+          <div class="pdfv-actions">
+            <button type="button" class="btn small ghost" id="pdfv-tab">Open in a tab</button>
+            <button type="button" class="btn small primary" id="pdfv-download">Download</button>
+            <button type="button" class="btn small ghost" id="pdfv-close"
+                    data-pdfv-close aria-label="Close the preview">Close</button>
+          </div>
+        </header>
+        <div class="pdfv-body">
+          <p class="pdfv-state" id="pdfv-state">Building the report…</p>
+          <iframe id="pdfv-frame" title="Report preview" hidden></iframe>
+        </div>
+      </div>
+    </div>
+    <!-- app.js LAST, and that is load-bearing rather than tidiness.
+         It signs in and opens a view as it parses, so its navigation table has
+         to be able to resolve `loadScreens` there and then. With screens.js
+         loaded after it, a refresh — or a bookmark — straight onto
+         /screen-programming threw a ReferenceError out of render() and left
+         the whole page blank, taking the nav folding with it. Every other view
+         was fine, which is what made it look like the screen editor's fault.
+
+         The two files below use app.js's `$`, `api`, `esc` and `modal`, and
+         may go on doing so: they only reach for them when something is
+         rendered, which is always after everything has parsed. -->
+    <script src="/charts.js"></script>
+    <script src="/screens.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>

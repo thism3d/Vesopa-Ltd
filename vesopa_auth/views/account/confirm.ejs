@@ -1,0 +1,102 @@
+<%- include('_shell') %>
+
+<p class="console-lead">
+  You are already signed in — this is the one extra step before changing how you
+  get back into the account. It takes a moment and it is what stops somebody who
+  found this device signed in from locking you out of it.
+</p>
+
+<% if (error) { %><p class="form-error" role="alert"><%= error %></p><% } %>
+<% if (sent) { %><p class="notice-good">We have sent you a code. It lasts <%= minutes %> minutes.</p><% } %>
+
+<% if (held.password) { %>
+<section class="card">
+  <h2 class="card-head">Your password</h2>
+  <form method="post" action="/account/confirm" class="card-body">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <input type="hidden" name="next" value="<%= next %>">
+    <input type="hidden" name="method" value="password">
+    <div class="field">
+      <label for="password">Password</label>
+      <input type="password" id="password" name="password"
+             autocomplete="current-password" autofocus>
+    </div>
+    <button class="btn btn-primary" type="submit">Confirm</button>
+  </form>
+</section>
+<% } %>
+
+<% if (held.totp) { %>
+<section class="card">
+  <h2 class="card-head">Your authenticator app</h2>
+  <form method="post" action="/account/confirm" class="card-body">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <input type="hidden" name="next" value="<%= next %>">
+    <input type="hidden" name="method" value="totp">
+    <div class="field">
+      <label for="totp-code">The six digits it is showing now</label>
+      <input type="text" id="totp-code" name="code" inputmode="numeric"
+             autocomplete="one-time-code" maxlength="6" class="code-input">
+    </div>
+    <button class="btn <%= held.password ? 'btn-quiet' : 'btn-primary' %>" type="submit">Confirm</button>
+  </form>
+</section>
+<% } %>
+
+<%
+  /*
+   * The emailed code is LAST, and the wording says why rather than pretending
+   * the three are equivalent. Somebody who has already got into the mailbox can
+   * pass this one — so it is the fallback, not the suggestion, and it is sent
+   * to the account's ordinary address and never to a recovery-only one. Using a
+   * recovery address to authorise changing recovery addresses would be a
+   * circle with nobody outside it.
+   */
+%>
+<% if (held.address) { %>
+<section class="card">
+  <h2 class="card-head">A code to <%= held.address.identifier %></h2>
+  <div class="card-body">
+    <% if (!sent) { %>
+    <form method="post" action="/account/confirm/code">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="next" value="<%= next %>">
+      <p class="hint mt-0">
+        Use this if you have no password or your authenticator is not to hand.
+      </p>
+      <button class="btn btn-quiet mt-2" type="submit">Email me a code</button>
+    </form>
+    <% } else { %>
+    <form method="post" action="/account/confirm">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="next" value="<%= next %>">
+      <input type="hidden" name="method" value="email">
+      <div class="field">
+        <label for="email-code">Your code</label>
+        <input type="text" id="email-code" name="code" inputmode="numeric"
+               autocomplete="one-time-code" maxlength="<%= config.codes.length %>"
+               class="code-input" autofocus>
+      </div>
+      <button class="btn btn-primary" type="submit">Confirm</button>
+    </form>
+    <% } %>
+  </div>
+</section>
+<% } %>
+
+<% if (!held.password && !held.totp && !held.address) { %>
+<section class="card">
+  <div class="empty">
+    <span class="empty-mark"><%- include('../partials/icon', { name: 'alert' }) %></span>
+    <strong>There is nothing on this account to check against</strong>
+    <p>
+      Add a password or a confirmed email address first, and this step will be
+      available.
+    </p>
+  </div>
+</section>
+<% } %>
+
+<p class="small-print"><a href="/account">Back to your account</a></p>
+
+<%- include('../partials/console-foot') %>

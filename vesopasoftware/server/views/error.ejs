@@ -1,0 +1,11 @@
+<%- include("partials/head") %>
+<% if (typeof user !== "undefined" && user) { %><%- include("partials/nav") %><% } %>
+<div class="wrap">
+  <div class="panel" style="max-width:34rem">
+    <span class="eyebrow">Vesopa Software</span>
+    <h1><%= title %></h1>
+    <p class="muted" style="margin-top:.6rem;white-space:pre-wrap"><%= message %></p>
+    <p style="margin-top:1.2rem"><a class="btn" href="<%= back || '/portal' %>">Go back</a></p>
+  </div>
+</div>
+<%- include("partials/foot") %>

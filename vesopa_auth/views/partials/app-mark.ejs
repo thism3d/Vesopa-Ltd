@@ -1,0 +1,20 @@
+<%
+  /*
+   * How an application is shown in a list: its own logo where it has one, and
+   * a mark for what KIND of thing it is where it does not.
+   *
+   * The fallback is by client type rather than a single generic square, because
+   * "a till", "a website" and "a background job" are genuinely different things
+   * and the shape is the fastest way to tell them apart in a list of nine.
+   *
+   * Takes: app (needs logo_path and client_type).
+   */
+  const shape = app.client_type === 'native'
+    ? 'till'
+    : (app.client_type === 'service' ? 'bolt' : 'globe');
+%>
+<% if (app.logo_path) { %>
+<img class="app-logo" src="<%= app.logo_path %>" alt="" width="32" height="32">
+<% } else { %>
+<%- include('icon', { name: shape }) %>
+<% } %>

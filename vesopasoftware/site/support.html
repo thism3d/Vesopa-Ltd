@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Support — Vesopa Software Ltd</title>
+<meta name="description" content="Contact Vesopa Software support at support@vesopasoftware.com. A person replies within one working day.">
+<link rel="canonical" href="https://vesopasoftware.com/support">
+<meta name="robots" content="index,follow">
+<meta property="og:title" content="Support — Vesopa Software Ltd">
+<meta property="og:description" content="Contact Vesopa Software support at support@vesopasoftware.com. A person replies within one working day.">
+<meta property="og:url" content="https://vesopasoftware.com/support">
+<meta property="og:type" content="website">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..700&family=Source+Serif+4:opsz,wght@8..60,300..600&family=Martian+Mono:wght@300;500&display=swap">
+<link rel="stylesheet" href="/css/page.css">
+</head>
+<body>
+
+<header class="bar">
+  <a class="home" href="/">Vesopa Software</a>
+  <nav><a href="/support" aria-current="page">Support</a>
+    <a href="/terms">Terms</a>
+    <a href="/privacy">Privacy</a>
+    <a href="/cookies">Cookies</a>
+    <a href="/data-deletion">Data deletion</a>
+    <a href="/delete-my-data">Delete my data</a>
+  </nav>
+</header>
+
+<main class="wrap">
+
+<span class="eyebrow">Support</span>
+<h1>Talk to a person.</h1>
+<p class="lead">Every message reaches the people who build and run the software. There is no ticket maze and no first-line script.</p>
+
+<div class="key">
+  <p class="big"><a href="mailto:support@vesopasoftware.com">support@vesopasoftware.com</a></p>
+  <p>The fastest way to reach us, for anything at all — a fault, a question, billing, an account, or a request about your data.</p>
+</div>
+
+<div class="cards">
+  <div class="card">
+    <h3>Email</h3>
+    <p><a href="mailto:support@vesopasoftware.com">support@vesopasoftware.com</a></p>
+  </div>
+  <div class="card">
+    <h3>Phone</h3>
+    <p><a href="tel:+441792316282">+44 1792 316282</a><br>Monday to Friday, 9am – 6pm UK time</p>
+  </div>
+  <div class="card">
+    <h3>Post</h3>
+    <p>Vesopa Software Ltd<br>Baglan, Port Talbot, SA12 7AX, Wales, United Kingdom</p>
+  </div>
+</div>
+
+<h2 id="response">What to expect</h2>
+<div class="rows">
+  <div class="row"><b>Anything</b><div><p>A reply from a person within one working day. Most arrive the same day.</p></div></div>
+  <div class="row"><b>Till down</b><div><p>If a till, kitchen screen or customer display is out of service in a live venue, say so in the first line and call the number above. That is treated as an emergency, not a queue position.</p></div></div>
+  <div class="row"><b>Billing</b><div><p>Invoices, receipts and payment questions are answered from the same address, or from inside your portal where the whole history sits.</p></div></div>
+  <div class="row"><b>Your data</b><div><p>Access, correction, export and deletion requests are answered within 30 days, and usually within a few. See <a href="/data-deletion">data deletion</a>.</p></div></div>
+</div>
+
+<h2 id="apps">The apps we support</h2>
+<p>Vesopa EPOS, Vesopa Kitchen and Vesopa Customer Display, distributed through the Microsoft Store; the Vesopa customer portal at <a href="/portal">vesopasoftware.com/portal</a>; and any site, app or system we have built for you under a project.</p>
+<p>If you bought a Vesopa product through a reseller or an app store, you can still come straight to us — you do not have to go back through them.</p>
+
+<h2 id="before">Before you write</h2>
+<p>Two lines make almost every fault faster to fix: what you were doing, and what happened instead. If you can, add the venue name, the device (till, kitchen screen, customer display, phone, browser) and the time it happened. Screenshots are always welcome.</p>
+
+<h2 id="message">Send a message</h2>
+<p>This reaches the same inbox as the address above. If you would rather use your own mail client, do — nothing here is required.</p>
+
+<form class="form-card" id="support-form" novalidate>
+  <div class="two">
+    <div class="fld"><label for="s-name">Your name</label><input id="s-name" name="name" required autocomplete="name"></div>
+    <div class="fld"><label for="s-email">Email</label><input id="s-email" name="email" type="email" required autocomplete="email"></div>
+  </div>
+  <div class="two">
+    <div class="fld"><label for="s-phone">Phone (optional)</label><input id="s-phone" name="phone" type="tel" autocomplete="tel"></div>
+    <div class="fld"><label for="s-subject">Subject</label><input id="s-subject" name="subject" placeholder="What is this about?"></div>
+  </div>
+  <div class="fld">
+    <label for="s-message">Message</label>
+    <textarea id="s-message" name="message" required></textarea>
+    <span class="hint">What you were doing, and what happened instead.</span>
+  </div>
+  <div class="hp" aria-hidden="true"><label>Leave this empty<input name="website" tabindex="-1" autocomplete="off"></label></div>
+  <button class="btn" type="submit">Send message</button>
+  <div class="form-msg" role="status"></div>
+</form>
+
+<script>
+(function () {
+  var f = document.getElementById("support-form");
+  if (!f) return;
+  var msg = f.querySelector(".form-msg");
+  var btn = f.querySelector("button[type=submit]");
+  f.addEventListener("submit", async function (e) {
+    e.preventDefault();
+    msg.className = "form-msg";
+    msg.textContent = "Sending…";
+    btn.disabled = true;
+    var data = {};
+    new FormData(f).forEach(function (v, k) {
+      if (data[k] === undefined) data[k] = v;
+      else if (Array.isArray(data[k])) data[k].push(v);
+      else data[k] = [data[k], v];
+    });
+    try {
+      var r = await fetch("/api/contact", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      var j = await r.json();
+      if (!r.ok || !j.ok) throw new Error(j.error || "That did not go through.");
+      msg.className = "form-msg ok";
+      msg.textContent = "Thank you — that reached us and a person will read it." + (j.ref ? " Your reference is " + j.ref + "." : "");
+      f.reset();
+    } catch (err) {
+      msg.className = "form-msg bad";
+      msg.textContent = err.message + " You can also email support@vesopasoftware.com directly.";
+    } finally {
+      btn.disabled = false;
+    }
+  });
+})();
+</script>
+
+</main>
+
+<footer>
+  <div class="inner">
+    <nav>
+      <a href="/">Home</a>
+      <a href="/support">Support</a>
+      <a href="/terms">Terms</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/cookies">Cookies</a>
+      <a href="/data-deletion">Data deletion</a>
+      <a href="/delete-my-data">Delete my data</a>
+      <a href="/portal">Portal</a>
+    </nav>
+    <div class="legal">
+      <p><b>Vesopa Software Ltd</b> — a company registered in England and Wales, company number 17362206.</p>
+      <p>Baglan, Port Talbot, SA12 7AX, Wales, United Kingdom</p>
+      <p>support@vesopasoftware.com &nbsp;·&nbsp; <a href="tel:+441792316282">+44 1792 316282</a></p>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

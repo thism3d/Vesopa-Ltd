@@ -1,0 +1,280 @@
+<%- include('../partials/console-head') %>
+
+<h1 class="console-title">Webhooks</h1>
+<p class="console-lead">
+  <%= application.name %> — how we tell you when something changes about one of
+  your users, without you having to ask.
+</p>
+
+<% if (saved) { %><p class="notice-good">Saved.</p><% } %>
+<% if (error) { %><p class="form-error" role="alert"><%= error %></p><% } %>
+
+<% if (shown) { %>
+<%
+  /*
+   * THE ONE MOMENT THIS SECRET IS VISIBLE, the same as a client secret and for
+   * the same reason: it is encrypted, not hashed, but it is never shown twice.
+   * The panel is loud on purpose, and the warning is ABOVE the value rather
+   * than below it, so nobody closes the tab and has to rotate.
+   */
+%>
+<div class="secret-once">
+  <h2>Copy this now — it is not shown again</h2>
+  <p>
+    This is how you check a delivery really came from us. Keep it where your
+    application keeps its other secrets, never in the front end.
+  </p>
+  <div class="copy">
+    <code class="code"><%= shown %></code>
+    <button type="button" class="copy-btn" data-copy="<%= shown %>">Copy</button>
+  </div>
+</div>
+<% } %>
+
+<!-- ------------------------------------------------------------ endpoints -->
+<div class="card">
+  <div class="card-head"><h2>Where we send them</h2></div>
+  <div class="card-body">
+
+    <% if (!endpoints.length) { %>
+    <div class="empty">
+      <span class="empty-mark"><%- include('../partials/icon', { name: 'bolt' }) %></span>
+      <p>No endpoints yet. Add one below and we will start telling you things.</p>
+    </div>
+    <% } %>
+
+    <% endpoints.forEach(function (endpoint) { %>
+    <div class="row">
+      <span class="row-mark"><%- include('../partials/icon', { name: 'bolt' }) %></span>
+      <div class="row-lines">
+        <span class="row-title mono"><%= endpoint.url %></span>
+        <span class="row-sub">
+          <%= endpoint.description || endpoint.events.length + ' event' + (endpoint.events.length === 1 ? '' : 's') %>
+          · secret ends <span class="mono">…<%= endpoint.secret_hint %></span>
+          <% if (endpoint.last_success_at) { %>
+          · last delivered <%= String(endpoint.last_success_at).slice(0, 16) %>
+          <% } %>
+        </span>
+      </div>
+      <div class="row-right">
+        <% if (!endpoint.is_enabled) { %>
+        <%
+          /*
+           * An endpoint we switched off ourselves says WHY, here, where the
+           * developer is looking — rather than only in a log they will never
+           * read. Twenty failures in a row is a domain that has expired or a
+           * server that is not coming back, and we stop knocking.
+           */
+        %>
+        <span class="pill pill-bad">off<%= endpoint.disabled_reason ? ' — ' + endpoint.disabled_reason : '' %></span>
+        <% } else if (endpoint.consecutive_failures > 0) { %>
+        <span class="pill pill-bad"><%= endpoint.consecutive_failures %> failing</span>
+        <% } %>
+        <a class="btn-link" href="?e=<%= endpoint.public_id %>">Attempts</a>
+      </div>
+    </div>
+    <% }) %>
+  </div>
+</div>
+
+<!-- ---------------------------------------------------------------- add -->
+<div class="card">
+  <div class="card-head"><h2>Add an endpoint</h2></div>
+  <div class="card-body">
+    <form method="post" action="/developers/a/<%= application.client_id %>/webhooks">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+      <div class="field">
+        <label for="url">URL</label>
+        <input type="url" id="url" name="url" placeholder="https://your.app/vesopa/webhook" required>
+        <p class="hint">
+          Must be https and reachable from the internet. We do not follow
+          redirects — if it moves, change it here.
+        </p>
+      </div>
+
+      <div class="field">
+        <label for="description">What is it for?</label>
+        <input type="text" id="description" name="description" maxlength="160"
+               placeholder="Production order service">
+      </div>
+
+      <fieldset class="field">
+        <legend>Which events?</legend>
+        <% Object.entries(eventTypes).forEach(function (entry) { %>
+        <label class="tickbox">
+          <input type="checkbox" name="events" value="<%= entry[0] %>"
+                 <%= entry[0] === 'user.deleted' ? 'checked' : '' %>>
+          <span><span class="mono"><%= entry[0] %></span> — <%= entry[1] %></span>
+        </label>
+        <% }) %>
+        <%
+          /*
+           * `user.deleted` is ticked by default and the others are not. It is
+           * the one an application is not merely helped by but legally needs:
+           * the person exercised a right to erasure and every application
+           * holding a copy of them has to act. Defaults are advice, and this is
+           * the advice worth giving.
+           */
+        %>
+        <p class="hint">
+          <span class="mono">user.deleted</span> is ticked because you have to
+          act on it — somebody asked to be erased and you are holding a copy.
+        </p>
+      </fieldset>
+
+      <button class="btn btn-primary btn-small" type="submit">Add endpoint</button>
+    </form>
+  </div>
+</div>
+
+<% if (chosen) { %>
+<!-- ------------------------------------------------------------- settings -->
+<div class="card">
+  <div class="card-head"><h2>Settings — <span class="mono"><%= chosen.url %></span></h2></div>
+  <div class="card-body">
+    <form method="post" action="/developers/a/<%= application.client_id %>/webhooks/<%= chosen.public_id %>/update">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+      <div class="field">
+        <label for="edit-url">URL</label>
+        <input type="url" id="edit-url" name="url" value="<%= chosen.url %>" required>
+      </div>
+      <div class="field">
+        <label for="edit-description">What is it for?</label>
+        <input type="text" id="edit-description" name="description" maxlength="160"
+               value="<%= chosen.description %>">
+      </div>
+
+      <fieldset class="field">
+        <legend>Events</legend>
+        <% Object.entries(eventTypes).forEach(function (entry) { %>
+        <label class="tickbox">
+          <input type="checkbox" name="events" value="<%= entry[0] %>"
+                 <%= chosen.events.includes(entry[0]) ? 'checked' : '' %>>
+          <span><span class="mono"><%= entry[0] %></span> — <%= entry[1] %></span>
+        </label>
+        <% }) %>
+      </fieldset>
+
+      <label class="tickbox">
+        <input type="checkbox" name="enabled" value="1" <%= chosen.is_enabled ? 'checked' : '' %>>
+        <span>Enabled</span>
+      </label>
+
+      <button class="btn btn-primary btn-small" type="submit">Save</button>
+    </form>
+
+    <div class="inline-form" style="margin-top:16px">
+      <form method="post" action="/developers/a/<%= application.client_id %>/webhooks/<%= chosen.public_id %>/test">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <button class="btn btn-quiet btn-small" type="submit">Send a test</button>
+      </form>
+      <form method="post" action="/developers/a/<%= application.client_id %>/webhooks/<%= chosen.public_id %>/rotate">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <button class="btn btn-quiet btn-small" type="submit">New signing secret</button>
+      </form>
+      <form method="post" action="/developers/a/<%= application.client_id %>/webhooks/<%= chosen.public_id %>/remove">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <button class="btn-link" type="submit">Remove</button>
+      </form>
+    </div>
+    <p class="hint mt-2">
+      A new signing secret takes effect immediately — deliveries in flight are
+      signed with the old one, so update your end promptly.
+    </p>
+  </div>
+</div>
+
+<!-- ------------------------------------------------------------ attempts -->
+<div class="card">
+  <div class="card-head"><h2>Recent attempts</h2></div>
+  <div class="card-body">
+    <% if (!deliveries.length) { %>
+    <div class="empty">
+      <span class="empty-mark"><%- include('../partials/icon', { name: 'history' }) %></span>
+      <p>Nothing sent yet. Press "Send a test" above to prove the endpoint works.</p>
+    </div>
+    <% } %>
+
+    <% deliveries.forEach(function (delivery) { %>
+    <div class="row">
+      <span class="row-mark">
+        <%- include('../partials/icon', { name: delivery.status === 'delivered' ? 'check' : 'alert' }) %>
+      </span>
+      <div class="row-lines">
+        <span class="row-title">
+          <span class="mono"><%= delivery.event_type %></span>
+          <% if (delivery.replay_of) { %><span class="pill">replay</span><% } %>
+        </span>
+        <span class="row-sub">
+          <%= String(delivery.created_at).slice(0, 19) %> ·
+          attempt <%= delivery.attempt %> of <%= delivery.max_attempts %> ·
+          <% if (delivery.response_code) { %>HTTP <%= delivery.response_code %><% } %>
+          <% if (delivery.duration_ms !== null) { %> · <%= delivery.duration_ms %>ms<% } %>
+          <% if (delivery.error) { %> · <%= delivery.error %><% } %>
+          <% if (delivery.status === 'pending' && delivery.next_attempt_at) { %>
+          · next try <%= String(delivery.next_attempt_at).slice(11, 19) %>
+          <% } %>
+        </span>
+        <% if (delivery.response_body) { %>
+        <span class="row-sub mono"><%= delivery.response_body.slice(0, 160) %></span>
+        <% } %>
+      </div>
+      <div class="row-right">
+        <span class="pill <%= delivery.status === 'delivered' ? '' : 'pill-bad' %>"><%= delivery.status %></span>
+        <form method="post"
+              action="/developers/a/<%= application.client_id %>/webhooks/<%= chosen.public_id %>/replay/<%= delivery.public_id %>">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <button class="btn-link" type="submit">Send again</button>
+        </form>
+      </div>
+    </div>
+    <% }) %>
+  </div>
+</div>
+<% } %>
+
+<!-- ------------------------------------------------------------- how-to -->
+<div class="card">
+  <div class="card-head"><h2>Checking a delivery is really from us</h2></div>
+  <div class="card-body">
+    <p class="card-note">
+      Every request carries <span class="mono">Vesopa-Signature</span>. Compute
+      the same HMAC over the timestamp and the raw body, and compare it — on the
+      <strong>raw bytes</strong>, before any JSON parsing, because re-serialising
+      changes them.
+    </p>
+    <pre class="code-block"><code>const crypto = require('crypto');
+
+function verify(rawBody, header, secret) {
+  const parts = Object.fromEntries(
+    header.split(',').map(function (p) { return p.split('='); })
+  );
+
+  // Reject anything older than five minutes: a genuine delivery captured
+  // yesterday must not still be replayable at your endpoint today.
+  if (Math.abs(Date.now() / 1000 - Number(parts.t)) > 300) return false;
+
+  const expected = crypto
+    .createHmac('sha256', secret)
+    .update(parts.t + '.' + rawBody)
+    .digest('hex');
+
+  // Constant time, so the comparison itself does not leak the answer.
+  return crypto.timingSafeEqual(
+    Buffer.from(expected),
+    Buffer.from(parts.v1)
+  );
+}</code></pre>
+    <p class="card-note">
+      Answer <span class="mono">2xx</span> quickly and do the work afterwards —
+      we time out at ten seconds and retry with backoff for about a day.
+      Deliveries are <strong>at least once</strong>, never exactly once, so key
+      on <span class="mono">Vesopa-Event-Id</span> and ignore one you have
+      already handled.
+    </p>
+  </div>
+</div>
+
+<%- include('../partials/console-foot') %>

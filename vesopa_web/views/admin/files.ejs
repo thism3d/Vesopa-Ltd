@@ -1,0 +1,270 @@
+<%- include('partials/shell-top') %>
+
+<%
+  const ICONS = {
+    app: 'download_for_offline',
+    image: 'image',
+    document: 'description',
+    other: 'insert_drive_file',
+  };
+%>
+
+<div class="ap-grid cols-4">
+  <div class="ap-stat">
+    <p class="ap-stat-label">Files &amp; links</p>
+    <p class="ap-stat-value"><%= stats.n %></p>
+    <p class="ap-stat-note"><%= rows.filter(r => r.kind === 'link').length %> shown are links</p>
+  </div>
+  <div class="ap-stat is-info">
+    <p class="ap-stat-label">Stored</p>
+    <p class="ap-stat-value"><%= bytes(stats.total_bytes) %></p>
+    <p class="ap-stat-note">On disk under public/</p>
+  </div>
+  <div class="ap-stat is-info">
+    <p class="ap-stat-label">Attached to pages</p>
+    <p class="ap-stat-value"><%= rows.filter(r => r.attach_to).length %></p>
+    <p class="ap-stat-note">Rendering somewhere on the site</p>
+  </div>
+  <div class="ap-stat">
+    <p class="ap-stat-label">Max upload</p>
+    <p class="ap-stat-value" style="font-size:20px"><%= maxLabel %></p>
+    <p class="ap-stat-note">Per file</p>
+  </div>
+</div>
+
+<%# ---- Upload -------------------------------------------------------------- %>
+
+<div class="ap-grid cols-2 ap-mt">
+  <div class="ap-card">
+    <div class="ap-card-head"><h3>Upload a file</h3></div>
+
+    <form method="post" action="/admin/files/upload" enctype="multipart/form-data">
+      <div class="ap-drop" data-drop="fileInput" style="margin-bottom:14px">
+        <span class="material-icons" style="font-size:34px">cloud_upload</span>
+        <p data-drop-label data-default="Drop a file here, or choose one below" style="margin:8px 0 0">
+          Drop a file here, or choose one below
+        </p>
+      </div>
+
+      <div class="ap-field">
+        <input class="ap-input" type="file" name="file" id="fileInput" required>
+        <p class="hint">
+          Allowed: <%= allowed.join(', ') %>. Installers go to <span class="ap-mono">/app/</span>,
+          everything else to <span class="ap-mono">/uploads/</span> — both are protected from
+          being wiped by a deploy.
+        </p>
+      </div>
+
+      <div class="ap-form-grid">
+        <div class="ap-field">
+          <label>Title</label>
+          <input class="ap-input" name="title" maxlength="255" placeholder="Defaults to the filename">
+        </div>
+        <div class="ap-field">
+          <label>Version</label>
+          <input class="ap-input" name="version" maxlength="32" placeholder="1.1.0">
+        </div>
+        <div class="ap-field">
+          <label>Attach to</label>
+          <select class="ap-select" name="attach_to">
+<% attachTargets.forEach(function (t) { %>
+            <option value="<%= t[0] %>"><%= t[1] %></option>
+<% }); %>
+          </select>
+        </div>
+        <div class="ap-field">
+          <label>Button label</label>
+          <input class="ap-input" name="label" maxlength="255" placeholder="Download for Windows">
+        </div>
+      </div>
+
+      <button class="ap-btn primary" type="submit">
+        <span class="material-icons">upload</span> Upload
+      </button>
+    </form>
+  </div>
+
+  <div class="ap-card">
+    <div class="ap-card-head"><h3>Save a link</h3></div>
+    <p class="ap-card-sub">
+      For anything hosted elsewhere — the Microsoft Store listing, a Play Store
+      page, a Dropbox share.
+    </p>
+
+    <form method="post" action="/admin/files/link">
+      <div class="ap-field">
+        <label>URL</label>
+        <input class="ap-input" name="url" required maxlength="700"
+               placeholder="https://apps.microsoft.com/store/detail/…">
+      </div>
+      <div class="ap-form-grid">
+        <div class="ap-field">
+          <label>Title</label>
+          <input class="ap-input" name="title" required maxlength="255">
+        </div>
+        <div class="ap-field">
+          <label>Category</label>
+          <select class="ap-select" name="category">
+            <option value="app">App / installer</option>
+            <option value="image">Image</option>
+            <option value="document">Document</option>
+            <option value="other" selected>Other</option>
+          </select>
+        </div>
+        <div class="ap-field">
+          <label>Attach to</label>
+          <select class="ap-select" name="attach_to">
+<% attachTargets.forEach(function (t) { %>
+            <option value="<%= t[0] %>"><%= t[1] %></option>
+<% }); %>
+          </select>
+        </div>
+        <div class="ap-field">
+          <label>Button label</label>
+          <input class="ap-input" name="label" maxlength="255">
+        </div>
+      </div>
+      <button class="ap-btn primary" type="submit">
+        <span class="material-icons">add_link</span> Save link
+      </button>
+    </form>
+  </div>
+</div>
+
+<%# ---- Library -------------------------------------------------------------- %>
+
+<div class="ap-tabs">
+  <a href="/admin/files" class="<%= !category ? 'is-active' : '' %>">Everything</a>
+  <a href="/admin/files?category=app" class="<%= category === 'app' ? 'is-active' : '' %>">Apps &amp; installers</a>
+  <a href="/admin/files?category=image" class="<%= category === 'image' ? 'is-active' : '' %>">Images</a>
+  <a href="/admin/files?category=document" class="<%= category === 'document' ? 'is-active' : '' %>">Documents</a>
+  <a href="/admin/files?category=other" class="<%= category === 'other' ? 'is-active' : '' %>">Other</a>
+</div>
+
+<form class="ap-search" method="get" action="/admin/files">
+  <input type="hidden" name="category" value="<%= category %>">
+  <input class="ap-input" type="search" name="q" value="<%= q %>" placeholder="Search files…">
+  <button class="ap-btn" type="submit"><span class="material-icons">search</span> Search</button>
+</form>
+
+<% if (!rows.length) { %>
+<div class="ap-card"><p class="ap-empty">Nothing here yet.</p></div>
+<% } else { %>
+<div class="ap-files">
+<% rows.forEach(function (f) { %>
+  <div class="ap-file">
+    <div class="ap-file-thumb">
+<% if (f.category === 'image') { %>
+      <img src="<%= f.url %>" alt="<%= f.title %>">
+<% } else { %>
+      <span class="material-icons"><%= ICONS[f.category] || ICONS.other %></span>
+<% } %>
+    </div>
+
+    <div class="ap-file-meta">
+      <p class="ap-file-title"><%= f.title %></p>
+      <p class="ap-file-sub">
+        <%= f.kind === 'link' ? 'link' : bytes(f.size_bytes) %>
+        <% if (f.version) { %> · v<%= f.version %><% } %>
+        <% if (!f.is_public) { %> · <span style="color:var(--warn)">private</span><% } %>
+      </p>
+      <% if (f.attach_to) { %>
+      <p class="ap-file-sub"><span class="ap-badge lime"><%= f.attach_to %></span></p>
+      <% } %>
+
+      <div class="ap-clip" style="margin-top:9px">
+        <input value="<%= f.url %>" readonly onclick="this.select()">
+      </div>
+    </div>
+
+    <div class="ap-file-foot">
+      <button class="ap-icon-btn" type="button" title="Copy link" data-copy="<%= f.url %>">
+        <span class="material-icons">content_copy</span>
+      </button>
+      <a class="ap-icon-btn" href="<%= f.url %>" target="_blank" rel="noopener" title="Open">
+        <span class="material-icons">open_in_new</span>
+      </a>
+      <button class="ap-icon-btn" type="button" title="Edit"
+              data-modal-template="tplEditFile"
+              data-modal-title="Edit <%= f.title %>"
+              data-set-id="<%= f.id %>"
+              data-set-title="<%= f.title %>"
+              data-set-label="<%= f.label || '' %>"
+              data-set-version="<%= f.version || '' %>"
+              data-set-attach_to="<%= f.attach_to || '' %>"
+              data-set-category="<%= f.category %>"
+              data-set-sort_order="<%= f.sort_order %>"
+              data-set-is_public="<%= f.is_public ? '1' : '0' %>">
+        <span class="material-icons">edit</span>
+      </button>
+      <div class="ap-spacer"></div>
+      <form method="post" action="/admin/files/<%= f.id %>/delete">
+        <button class="ap-icon-btn danger" type="submit" title="Delete"
+                data-confirm="Delete <%= f.title %>?<%= f.kind === 'file' ? ' The file is removed from the server, and any page or email linking to it will break.' : '' %>">
+          <span class="material-icons">delete_outline</span>
+        </button>
+      </form>
+    </div>
+  </div>
+<% }); %>
+</div>
+<% } %>
+
+<template id="tplEditFile">
+  <h3>Edit file</h3>
+  <form method="post" action="/admin/files/0" data-id-action="/admin/files/">
+    <input type="hidden" name="id">
+    <div class="ap-form-grid">
+      <div class="ap-field span-2">
+        <label>Title</label>
+        <input class="ap-input" name="title" required maxlength="255">
+      </div>
+      <div class="ap-field">
+        <label>Category</label>
+        <select class="ap-select" name="category">
+          <option value="app">App / installer</option>
+          <option value="image">Image</option>
+          <option value="document">Document</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div class="ap-field">
+        <label>Version</label>
+        <input class="ap-input" name="version" maxlength="32">
+      </div>
+      <div class="ap-field">
+        <label>Attach to</label>
+        <select class="ap-select" name="attach_to">
+<% attachTargets.forEach(function (t) { %>
+          <option value="<%= t[0] %>"><%= t[1] %></option>
+<% }); %>
+        </select>
+      </div>
+      <div class="ap-field">
+        <label>Sort order</label>
+        <input class="ap-input" type="number" name="sort_order">
+      </div>
+      <div class="ap-field span-2">
+        <label>Button label</label>
+        <input class="ap-input" name="label" maxlength="255">
+      </div>
+      <div class="ap-field span-2">
+        <label>Visibility</label>
+        <select class="ap-select" name="is_public">
+          <option value="1">Public — usable on the site</option>
+          <option value="0">Private — admin only</option>
+        </select>
+        <p class="hint">
+          Private hides it from the pages, but the file is still served by URL
+          to anyone who has the link.
+        </p>
+      </div>
+    </div>
+    <div class="ap-btn-row" style="justify-content:flex-end">
+      <button class="ap-btn ghost" type="button" data-modal-close>Cancel</button>
+      <button class="ap-btn primary" type="submit">Save</button>
+    </div>
+  </form>
+</template>
+
+<%- include('partials/shell-bottom') %>

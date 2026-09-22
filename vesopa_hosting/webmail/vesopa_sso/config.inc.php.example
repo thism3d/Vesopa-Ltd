@@ -1,0 +1,20 @@
+<?php
+
+/**
+ * vesopa_sso — the four values it needs.
+ *
+ * Written by webmail/install-sso.sh; there is no reason to edit it by hand
+ * except to rotate a secret. Owned by root, readable by the web server only:
+ * between them these values open any mailbox on this node.
+ */
+
+// Shared with the panel's WEBMAIL_SSO_KEY. 32 bytes, hex.
+$config['vesopa_sso_key'] = '';
+
+// The Dovecot master user from /etc/dovecot/master-users, and its password.
+$config['vesopa_sso_master_user'] = 'vesopasso';
+$config['vesopa_sso_master_pass'] = '';
+
+// Which IMAP host to open. Left empty, Roundcube's own imap_host is used,
+// which is what you want unless this node talks to a separate mail server.
+$config['vesopa_sso_host'] = 'localhost:143';

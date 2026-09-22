@@ -1,0 +1,201 @@
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<%- include('../partials/admin-shell', { pageTitle: 'Overview', pageSub: 'How the business is doing right now.' }) %>
+
+<%
+  /*
+    A gateway in test mode is the one that costs money to miss.
+
+    A mocked registrar or node announces itself the first time somebody orders,
+    because nothing appears. A gateway quietly in test mode does the opposite:
+    the checkout works, the order goes green, the account is built and nobody
+    is ever charged. So it is banner-worthy on its own, and named — "payments
+    are in test mode" without saying which of four is useless to act on.
+  */
+  const testGateways = gateways.filter(function (g) { return g.available && g.mock; });
+  const liveGateways = gateways.filter(function (g) { return g.available && !g.mock; });
+  /*
+    Held back rather than broken: configured, but in a mode that cannot take
+    money, so production refuses to offer it at all. Worth its own sentence —
+    "Off" on the settings page otherwise sends somebody to check credentials
+    that are perfectly correct.
+  */
+  const heldBack = gateways.filter(function (g) { return !g.available && g.mock; });
+%>
+<% if (missingPackages && missingPackages.length) { %>
+  <%#
+    Its own banner, above the mode one, and worded as an instruction rather
+    than a status. This is the only warning on the site that describes an order
+    that will take money and then fail — everything else in the mode banner is
+    the opposite, work that quietly does not happen.
+  %>
+  <div class="mode-banner">
+    <%- icon('warning', 19) %>
+    <div>
+      <b>An order for some plans will be paid for and then fail to provision.</b>
+      The hosting node has no package called
+      <% missingPackages.forEach(function (p, i) { %><code><%= p %></code><%= i < missingPackages.length - 1 ? ', ' : '' %><% }); %>,
+      which the plan asks for — <code>v-add-user</code> refuses an unknown package,
+      and it refuses it after the customer has been charged. Run
+      <code>scripts/create-hestia-packages.sh</code> on the node to create them
+      from the plan limits.
+    </div>
+  </div>
+<% } %>
+
+<% if (!registrarStatus.live || !hestiaStatus.live || testGateways.length || heldBack.length || !liveGateways.length) { %>
+  <div class="mode-banner">
+    <%- icon('warning', 19) %>
+    <div>
+      <b>Some integrations are not taking real traffic.</b>
+      <% if (!registrarStatus.live) { %> No domain will actually be registered (DNA_MODE=mock).<% } %>
+      <% if (!hestiaStatus.live) { %> No hosting account will actually be created (HESTIA_MODE=mock).<% } %>
+      <% if (!liveGateways.length) { %>
+        <b>No payment gateway can take real money.</b>
+      <% } else if (testGateways.length) { %>
+        <%= testGateways.map(function (g) { return g.name; }).join(' and ') %>
+        <%= testGateways.length > 1 ? 'are' : 'is' %> in test mode — an order paid
+        that way is marked paid and provisioned without being charged.
+      <% } %>
+      <% if (heldBack.length) { %>
+        <%= heldBack.map(function (g) { return g.name; }).join(' and ') %>
+        <%= heldBack.length > 1 ? 'are' : 'is' %> configured but in test mode, so
+        <%= heldBack.length > 1 ? 'they are' : 'it is' %> not offered at checkout at all —
+        an order paid that way would cost the customer nothing.
+      <% } %>
+      Set them to <code>live</code> in <code>.env</code> when the credentials are in.
+    </div>
+  </div>
+<% } %>
+
+<div class="p-grid p-grid-3 mb-3">
+  <a class="tile" href="/admin/orders?status=pending">
+    <div class="tile-label">Awaiting payment</div>
+    <div class="tile-value"><%= counts.pending_orders %></div>
+    <div class="tile-note">Orders to action</div>
+  </a>
+  <a class="tile" href="/admin/tickets">
+    <div class="tile-label">Open tickets</div>
+    <div class="tile-value"><%= counts.open_tickets %></div>
+    <div class="tile-note"><%= counts.new_enquiries %> unread enquiries</div>
+  </a>
+  <%# Revenue is the BASE-currency figure. Orders taken in dollars are counted
+      at the rate that applied the day each was placed, never re-converted at
+      today's — otherwise last quarter's number changes every time somebody
+      edits a rate. The split underneath says what actually arrived. %>
+  <a class="tile" href="/admin/currencies">
+    <div class="tile-label">Revenue, 30 days</div>
+    <div class="tile-value"><%= money(counts.revenue_30d) %></div>
+    <div class="tile-note">
+      <% if (revenueByCurrency.length > 1) { %>
+        <%= revenueByCurrency.map(function (r) { return r.orders + ' ' + r.currency; }).join(' · ') %>
+      <% } else { %>
+        Paid orders, inc. VAT
+      <% } %>
+    </div>
+  </a>
+  <a class="tile" href="/admin/customers">
+    <div class="tile-label">Customers</div>
+    <div class="tile-value"><%= counts.customers %></div>
+    <div class="tile-note">Active accounts</div>
+  </a>
+  <a class="tile" href="/admin/services">
+    <div class="tile-label">Websites</div>
+    <div class="tile-value"><%= counts.services %></div>
+    <div class="tile-note">Live hosting accounts</div>
+  </a>
+  <a class="tile" href="/admin/domains">
+    <div class="tile-label">Domains</div>
+    <div class="tile-value"><%= counts.domains %></div>
+    <div class="tile-note">Under management</div>
+  </a>
+</div>
+
+<div class="p-grid p-grid-side">
+  <div>
+    <div class="p-card p-card-flush">
+      <div class="p-card-head"><h2>Latest orders</h2><a class="btn btn-ghost btn-sm" href="/admin/orders">All orders</a></div>
+      <% if (!recentOrders.length) { %>
+        <div class="p-card-body"><p class="muted small mb-0">No orders yet.</p></div>
+      <% } else { %>
+        <div class="table-wrap"><table class="table mini">
+          <thead><tr><th>Ref</th><th>Customer</th><th>Status</th><th class="num">Total</th></tr></thead>
+          <tbody>
+            <% recentOrders.forEach(function (o) { %>
+              <tr>
+                <td><a class="mono strong" href="/admin/orders/<%= o.id %>"><%= o.reference %></a></td>
+                <td><%= o.first_name %> <%= o.last_name %><br><span class="tiny muted"><%= o.email %></span></td>
+                <td>
+                  <% if (o.status === 'pending') { %><span class="badge badge-amber">Awaiting payment</span>
+                  <% } else if (o.status === 'active') { %><span class="badge badge-green">Complete</span>
+                  <% } else if (o.status === 'provisioning') { %><span class="badge badge-red">Needs attention</span>
+                  <% } else { %><span class="badge badge-grey"><%= o.status %></span><% } %>
+                </td>
+                <td class="num strong"><%= money(o.total_pence, o.currency) %></td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table></div>
+      <% } %>
+    </div>
+
+    <div class="p-card p-card-flush">
+      <div class="p-card-head"><h2>Tickets needing a reply</h2><a class="btn btn-ghost btn-sm" href="/admin/tickets">All tickets</a></div>
+      <% if (!recentTickets.length) { %>
+        <div class="p-card-body"><p class="muted small mb-0">Nothing outstanding. Good.</p></div>
+      <% } else { %>
+        <% recentTickets.forEach(function (t) { %>
+          <a class="item" href="/admin/tickets/<%= t.id %>">
+            <span class="item-icon"><%- icon('ticket', 18) %></span>
+            <span class="item-main">
+              <span class="item-title"><%= t.subject %></span>
+              <span class="item-sub"><%= t.reference %> · <%= t.email %></span>
+            </span>
+            <span class="item-end">
+              <% if (t.priority === 'high') { %><span class="badge badge-red">High</span><% } %>
+              <% if (t.status === 'customer_reply') { %><span class="badge badge-blue">Replied</span><% } %>
+            </span>
+          </a>
+        <% }); %>
+      <% } %>
+    </div>
+  </div>
+
+  <aside>
+    <% if (expiring.length) { %>
+      <div class="p-card p-card-flush">
+        <div class="p-card-head"><h2>Domains expiring</h2></div>
+        <% expiring.forEach(function (d) { %>
+          <div class="item">
+            <span class="item-main">
+              <span class="item-title" style="font-size:.88rem"><%= d.domain %></span>
+              <span class="item-sub"><%= d.email %></span>
+            </span>
+            <span class="item-end">
+              <span class="badge <%= d.auto_renew ? 'badge-soft' : 'badge-red' %>"><%= when(d.expires_at, { dateOnly: true }) %></span>
+            </span>
+          </div>
+        <% }); %>
+      </div>
+    <% } %>
+
+    <div class="p-card p-card-flush">
+      <div class="p-card-head"><h2>Recent activity</h2><a class="btn btn-ghost btn-sm" href="/admin/log">Full log</a></div>
+      <div class="p-card-body">
+        <% if (!activity.length) { %>
+          <p class="muted small mb-0">Nothing logged yet.</p>
+        <% } else { %>
+          <% activity.forEach(function (a) { %>
+            <div class="mb-2" style="font-size:.83rem">
+              <span class="strong"><%= a.action %></span>
+              <% if (!a.ok) { %> <span class="badge badge-red">failed</span><% } %>
+              <br>
+              <span class="muted"><%= a.target %> · <%= new Date(a.created_at).toLocaleString('en-GB') %></span>
+            </div>
+          <% }); %>
+        <% } %>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<%- include('../partials/panel-shell-end') %>

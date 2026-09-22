@@ -1,0 +1,256 @@
+<%- include('partials/shell-top') %>
+
+<div class="ap-grid cols-4">
+  <div class="ap-stat">
+    <p class="ap-stat-label">Logins</p>
+    <p class="ap-stat-value"><%= rows.length %></p>
+    <p class="ap-stat-note"><%= rows.filter(u => u.approved === 'Y').length %> active</p>
+  </div>
+  <div class="ap-stat is-info">
+    <p class="ap-stat-label">Platform admins</p>
+    <p class="ap-stat-value"><%= rows.filter(u => u.role === 'admin').length %></p>
+    <p class="ap-stat-note">Can see every office</p>
+  </div>
+  <div class="ap-stat is-warn">
+    <p class="ap-stat-label">Disabled</p>
+    <p class="ap-stat-value"><%= rows.filter(u => u.approved === 'N').length %></p>
+    <p class="ap-stat-note">Cannot sign in</p>
+  </div>
+  <div class="ap-stat is-danger">
+    <p class="ap-stat-label">No office linked</p>
+    <p class="ap-stat-value"><%= rows.filter(u => !u.office_id).length %></p>
+    <p class="ap-stat-note">Invisible to billing</p>
+  </div>
+</div>
+
+<form class="ap-search ap-mt" method="get" action="/admin/users">
+  <input class="ap-input" type="search" name="q" value="<%= q %>" placeholder="Search name, email or company…">
+  <select class="ap-select" name="role" data-autosubmit>
+    <option value="">Any role</option>
+    <option value="admin"  <%= role === 'admin'  ? 'selected' : '' %>>Platform admin</option>
+    <option value="office" <%= role === 'office' ? 'selected' : '' %>>Office</option>
+  </select>
+  <select class="ap-select" name="status" data-autosubmit>
+    <option value="">Any status</option>
+    <option value="Y" <%= status === 'Y' ? 'selected' : '' %>>Active</option>
+    <option value="N" <%= status === 'N' ? 'selected' : '' %>>Disabled</option>
+  </select>
+  <button class="ap-btn" type="submit"><span class="material-icons">search</span> Search</button>
+  <div style="flex:1"></div>
+  <button class="ap-btn primary" type="button" data-modal-template="tplNewUser">
+    <span class="material-icons">person_add</span> Register a user
+  </button>
+</form>
+
+<div class="ap-table-wrap">
+  <table class="ap-table">
+    <thead>
+      <tr>
+        <th>Name</th><th>Registered email</th><th>Office</th><th>Role</th>
+        <th>Status</th><th class="num">Sub-users</th><th>Last sale</th><th class="actions"></th>
+      </tr>
+    </thead>
+    <tbody>
+<% if (!rows.length) { %>
+      <tr><td colspan="8" class="ap-empty">No back-office logins match that.</td></tr>
+<% } %>
+<% rows.forEach(function (u) { %>
+      <tr>
+        <td>
+          <strong><%= u.name %></strong>
+          <% if (u.company) { %><br><span class="ap-small ap-muted"><%= u.company %></span><% } %>
+        </td>
+        <td><a href="mailto:<%= u.email %>"><%= u.email %></a></td>
+        <td>
+          <% if (u.office_id) { %>
+            <a href="/admin/offices/<%= u.office_id %>"><%= u.office_name %></a>
+            <% if (u.next_due_on) { %><br><span class="ap-small ap-muted">renews <%= formatDate(u.next_due_on) %></span><% } %>
+          <% } else { %>
+            <span class="ap-badge danger">unlinked</span>
+          <% } %>
+        </td>
+        <td><span class="ap-badge <%= u.role === 'admin' ? 'lime' : 'muted' %>"><%= u.role %></span></td>
+        <td><span class="ap-badge <%= u.approved === 'Y' ? 'ok' : 'danger' %>">
+          <%= u.approved === 'Y' ? 'active' : 'disabled' %></span></td>
+        <td class="num"><%= u.clerks %></td>
+        <td class="ap-nowrap ap-small"><%= u.last_order_at ? formatDate(u.last_order_at) : '—' %></td>
+        <td class="actions">
+          <button class="ap-icon-btn" type="button" title="Edit"
+                  data-modal-template="tplEditUser"
+                  data-modal-title="Edit <%= u.name %>"
+                  data-set-id="<%= u.id %>"
+                  data-set-name="<%= u.name %>"
+                  data-set-email="<%= u.email %>"
+                  data-set-company="<%= u.company || '' %>"
+                  data-set-role="<%= u.role %>"
+                  data-set-approved="<%= u.approved === 'Y' ? '1' : '0' %>"
+                  data-set-office_id="<%= u.office_id || '' %>">
+            <span class="material-icons">edit</span>
+          </button>
+
+          <button class="ap-icon-btn" type="button" title="Reset password"
+                  data-modal-template="tplResetPassword"
+                  data-modal-title="Reset the password for <%= u.name %>"
+                  data-set-id="<%= u.id %>">
+            <span class="material-icons">key</span>
+          </button>
+
+          <form method="post" action="/admin/users/<%= u.id %>/disable" style="display:inline">
+            <button class="ap-icon-btn" type="submit"
+                    title="<%= u.approved === 'Y' ? 'Disable' : 'Re-enable' %>"
+                    data-confirm="<%= u.approved === 'Y'
+                      ? 'Disable ' + u.email + '? They will not be able to sign in to the back office. Their tills are not affected.'
+                      : 'Let ' + u.email + ' sign in again?' %>">
+              <span class="material-icons"><%= u.approved === 'Y' ? 'block' : 'check_circle' %></span>
+            </button>
+          </form>
+
+          <form method="post" action="/admin/users/<%= u.id %>/delete" style="display:inline">
+            <button class="ap-icon-btn danger" type="submit" title="Delete"
+                    data-confirm="Delete the login for <%= u.email %>? Their orders, products and clerks are keyed by this email and will stay in the database but become unreachable from the back office. Disabling is nearly always the better choice.">
+              <span class="material-icons">delete_outline</span>
+            </button>
+          </form>
+        </td>
+      </tr>
+<% }); %>
+    </tbody>
+  </table>
+</div>
+
+<%# ---- Dialogs ------------------------------------------------------------- %>
+
+<%
+  // The office <select> is identical in three dialogs.
+  const officeOptions = (extra) => {
+    let out = extra || '';
+    offices.forEach(function (o) {
+      out += `<option value="${o.id}">${o.name} — ${o.contact_email}</option>`;
+    });
+    return out;
+  };
+%>
+
+<template id="tplNewUser">
+  <h3>Register a back office user</h3>
+  <p class="ap-card-sub">Creates the login the customer signs into the back office with.</p>
+
+  <form method="post" action="/admin/users/new">
+    <div class="ap-form-grid">
+      <div class="ap-field">
+        <label>Full name</label>
+        <input class="ap-input" name="name" required maxlength="255">
+      </div>
+      <div class="ap-field">
+        <label>Email</label>
+        <input class="ap-input" type="email" name="email" required maxlength="255">
+      </div>
+      <div class="ap-field">
+        <label>Company</label>
+        <input class="ap-input" name="company" maxlength="255">
+      </div>
+      <div class="ap-field">
+        <label>Password</label>
+        <input class="ap-input" name="password" required minlength="8" maxlength="72">
+        <p class="hint">At least 8 characters. Stored as a bcrypt hash.</p>
+      </div>
+      <div class="ap-field">
+        <label>Role</label>
+        <select class="ap-select" name="role">
+          <option value="office">Office — sees only their own data</option>
+          <option value="admin">Platform admin — sees every office</option>
+        </select>
+      </div>
+      <div class="ap-field">
+        <label>Office</label>
+        <select class="ap-select" name="office_id">
+          <option value="new">Create a new office from these details</option>
+          <option value="">No office — link it later</option>
+          <%- officeOptions() %>
+        </select>
+        <p class="hint">A new office starts on the default package.</p>
+      </div>
+    </div>
+
+    <div class="ap-check">
+      <input type="checkbox" id="nuNotify" name="notify" value="1" checked>
+      <label for="nuNotify">Email them their sign-in details now</label>
+    </div>
+
+    <div class="ap-btn-row" style="justify-content:flex-end">
+      <button class="ap-btn ghost" type="button" data-modal-close>Cancel</button>
+      <button class="ap-btn primary" type="submit">Register</button>
+    </div>
+  </form>
+</template>
+
+<template id="tplEditUser">
+  <h3>Edit user</h3>
+  <%# The action carries the id, so the form posts to a path built by JS from
+      the hidden field the button seeds. %>
+  <form method="post" action="/admin/users/0" data-id-action="/admin/users/">
+    <input type="hidden" name="id">
+    <div class="ap-form-grid">
+      <div class="ap-field">
+        <label>Full name</label>
+        <input class="ap-input" name="name" required maxlength="255">
+      </div>
+      <div class="ap-field">
+        <label>Email</label>
+        <input class="ap-input" type="email" name="email" required maxlength="255">
+      </div>
+      <div class="ap-field">
+        <label>Company</label>
+        <input class="ap-input" name="company" maxlength="255">
+      </div>
+      <div class="ap-field">
+        <label>Role</label>
+        <select class="ap-select" name="role">
+          <option value="office">Office</option>
+          <option value="admin">Platform admin</option>
+        </select>
+      </div>
+      <div class="ap-field">
+        <label>Status</label>
+        <select class="ap-select" name="approved">
+          <option value="1">Active</option>
+          <option value="0">Disabled</option>
+        </select>
+      </div>
+      <div class="ap-field">
+        <label>Office</label>
+        <select class="ap-select" name="office_id">
+          <option value="">Not linked</option>
+          <%- officeOptions() %>
+        </select>
+      </div>
+    </div>
+    <div class="ap-btn-row" style="justify-content:flex-end">
+      <button class="ap-btn ghost" type="button" data-modal-close>Cancel</button>
+      <button class="ap-btn primary" type="submit">Save</button>
+    </div>
+  </form>
+</template>
+
+<template id="tplResetPassword">
+  <h3>Reset password</h3>
+  <p class="ap-card-sub">The old password cannot be recovered — it is only stored hashed.</p>
+
+  <form method="post" action="/admin/users/0/password" data-id-action="/admin/users/" data-id-suffix="/password">
+    <input type="hidden" name="id">
+    <div class="ap-field">
+      <label>New password</label>
+      <input class="ap-input" name="password" required minlength="8" maxlength="72">
+    </div>
+    <div class="ap-check">
+      <input type="checkbox" id="rpNotify" name="notify" value="1" checked>
+      <label for="rpNotify">Email the new password to them</label>
+    </div>
+    <div class="ap-btn-row" style="justify-content:flex-end">
+      <button class="ap-btn ghost" type="button" data-modal-close>Cancel</button>
+      <button class="ap-btn primary" type="submit">Reset password</button>
+    </div>
+  </form>
+</template>
+
+<%- include('partials/shell-bottom') %>

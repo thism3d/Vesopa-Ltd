@@ -1,0 +1,46 @@
+<%
+  /*
+   * One setting, as a row you press.
+   *
+   * Takes: name, on, title, sub, icon, and optional `value`, `locked`, `why`.
+   *
+   * `value` matters where several switches share one `name` — the three grant
+   * types do, so that unticking one simply leaves it out of the submission and
+   * the route rebuilds the set from what arrived. Without it every one of them
+   * would submit "1" and the server could not tell them apart.
+   *
+   * THE ORDER OF THESE CHILDREN IS LOAD-BEARING, and getting it wrong is
+   * invisible until you look at a screenshot. The switch is styled by
+   * `input:checked ~ .switch`, which is a SIBLING selector — so `.switch` has
+   * to be a direct child of the row, beside the input, and not nested inside a
+   * wrapper. It was inside one at first, and every switch rendered permanently
+   * off while the label beside it said "On".
+   *
+   * The whole row is the label, so the hit target is the row rather than a
+   * 20-pixel square — on a phone that is the difference between a setting
+   * people change and one they give up on. The input underneath is a real
+   * checkbox: focusable, keyboard-operable, announced as a checkbox, and
+   * submitted with its form, so this still works with scripting blocked.
+   */
+%>
+<label class="switch-row">
+  <input type="checkbox" name="<%= name %>"
+         value="<%= typeof value !== 'undefined' ? value : '1' %>"
+         <%= on ? 'checked' : '' %>
+         <%= locked ? 'disabled' : '' %>>
+  <span class="row-mark"><%- include('icon', { name: icon }) %></span>
+  <span class="row-lines">
+    <span class="switch-title"><%= title %></span>
+    <span class="switch-sub"><%= locked && why ? why : sub %></span>
+  </span>
+  <%
+    /*
+     * Both words are rendered and CSS shows one. The alternative — printing
+     * whichever is true at render time — is a label that says "On" next to a
+     * switch the person has just moved to off, because nothing has been saved
+     * yet. Letting the checkbox drive both keeps them telling the same story.
+     */
+  %>
+  <span class="switch-state"><i class="on-word">On</i><i class="off-word">Off</i></span>
+  <span class="switch"></span>
+</label>

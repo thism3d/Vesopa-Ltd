@@ -1,0 +1,1608 @@
+/*
+ * The signed-in console: your account, the administrator's, and the developer
+ * portal. One shell, three sets of navigation.
+ *
+ * THE MODEL IS THE GOOGLE ACCOUNT PAGE, and the reason is not fashion. That
+ * layout solves a specific problem this site has: an identity provider has a
+ * lot of small, unrelated settings, and a person arrives looking for exactly
+ * one of them. A left rail of named destinations with a distinct mark against
+ * each is scannable in a way a wall of headings is not — you find "Security"
+ * by its colour and shape before you have read the word.
+ *
+ * WHAT IS BORROWED IS THE PATTERN, NOT THE PAINT. The colours are Vesopa's:
+ * lime green and black, with the tints below derived to sit against both. A
+ * page that copied Google's blues would look like a phishing page for Google,
+ * which on a sign-in domain is the one thing it must never look like.
+ *
+ * A ROW IS A DESTINATION OR IT IS A FACT, never both. Every row that can be
+ * clicked has a chevron; every row without one is text. The failure this
+ * prevents is somebody tapping a line that shows their email address and
+ * nothing happening, then concluding the page is broken.
+ *
+ * Loaded alongside auth.css, which owns the colour tokens, the buttons and the
+ * form controls. This sheet adds only the shell.
+ */
+
+/* --------------------------------------------------------------------------
+ * Tints
+ * --------------------------------------------------------------------------
+ * Each navigation entry and each row mark gets one, and it stays with that
+ * meaning everywhere: security is always the same green, developer tools are
+ * always the same violet. The colour is doing work — it is how somebody finds
+ * the row again next week — so it must not be reassigned per page.
+ *
+ * Every pair is a pale ground with dark ink on it in light mode, and a dark
+ * ground with light ink in dark mode. Both directions are checked for contrast:
+ * an icon is a shape, and a shape at 2:1 on a pale wash is a smudge.
+ * ------------------------------------------------------------------------ */
+
+:root {
+  --tint-brand-bg: #e8f2c4;  --tint-brand-fg: #3f4d05;
+  --tint-blue-bg:  #dbe8fb;  --tint-blue-fg:  #17418a;
+  --tint-violet-bg:#e6e0fb;  --tint-violet-fg:#40268f;
+  --tint-amber-bg: #fbe8cd;  --tint-amber-fg: #7a4708;
+  --tint-teal-bg:  #d3ecea;  --tint-teal-fg:  #0b4f4a;
+  --tint-pink-bg:  #fadfe9;  --tint-pink-fg:  #7d1740;
+  --tint-slate-bg: #e2e5e9;  --tint-slate-fg: #303840;
+  --tint-red-bg:   #fbdedb;  --tint-red-fg:   #8a1f18;
+
+  --rail-current: #e8f2c4;
+  --rail-hover: rgba(0, 0, 0, .05);
+  --card-radius: 16px;
+
+  /*
+   * Green that may be TEXT.
+   *
+   * The brand lime (#a5c715) is a background colour — auth.css says so at the
+   * top, and the numbers back it: it is about 1.8:1 on white, which fails every
+   * contrast rule there is. The subscriptions page needs the product name to
+   * read as a link in the brand's colour, so this is the darkest green that
+   * still reads as the same family and clears 4.5:1 on both grounds.
+   */
+  --link-green: #4f6b06;
+}
+
+/*
+ * The two dark blocks must stay IDENTICAL — the same rule auth.css records,
+ * and for the same reason. One applies when the device asks for dark and the
+ * person has expressed no preference; the other when they chose dark
+ * themselves. Letting them drift means the same page looks different depending
+ * on how you arrived at it, which nobody reports and everybody notices.
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --tint-brand-bg: #2e3a08;  --tint-brand-fg: #cfe57c;
+    --tint-blue-bg:  #14243f;  --tint-blue-fg:  #a8c6f5;
+    --tint-violet-bg:#221a41;  --tint-violet-fg:#c3b2f7;
+    --tint-amber-bg: #3a2708;  --tint-amber-fg: #f0c489;
+    --tint-teal-bg:  #0d2b29;  --tint-teal-fg:  #8fd3cd;
+    --tint-pink-bg:  #37131f;  --tint-pink-fg:  #f4aac6;
+    --tint-slate-bg: #21252a;  --tint-slate-fg: #c3ccd5;
+    --tint-red-bg:   #3a1310;  --tint-red-fg:   #f6a9a2;
+
+    --rail-current: #2e3a08;
+    --rail-hover: rgba(255, 255, 255, .07);
+    --link-green: #b6d442;
+  }
+}
+
+:root[data-theme="dark"] {
+  --tint-brand-bg: #2e3a08;  --tint-brand-fg: #cfe57c;
+  --tint-blue-bg:  #14243f;  --tint-blue-fg:  #a8c6f5;
+  --tint-violet-bg:#221a41;  --tint-violet-fg:#c3b2f7;
+  --tint-amber-bg: #3a2708;  --tint-amber-fg: #f0c489;
+  --tint-teal-bg:  #0d2b29;  --tint-teal-fg:  #8fd3cd;
+  --tint-pink-bg:  #37131f;  --tint-pink-fg:  #f4aac6;
+  --tint-slate-bg: #21252a;  --tint-slate-fg: #c3ccd5;
+  --tint-red-bg:   #3a1310;  --tint-red-fg:   #f6a9a2;
+
+  --rail-current: #2e3a08;
+  --rail-hover: rgba(255, 255, 255, .07);
+  /* On black the lime is legible; it is white grounds it fails on. */
+  --link-green: #b6d442;
+}
+
+/* The ground behind the cards. Slightly off the card white so a card has an
+   edge even where its border is invisible on a bright screen. */
+body.console-body { background: var(--bg); }
+
+/* --------------------------------------------------------------------------
+ * The bar across the top
+ * ------------------------------------------------------------------------ */
+
+.topbar {
+  /* A direct child of <body>, which is a column flexbox — without this it
+     shrinks to its content and sits marooned in the middle. That has happened
+     here before; see the README. */
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.topbar .brand { margin: 0; display: flex; align-items: center; }
+.topbar-name {
+  font-size: 19px;
+  letter-spacing: -.01em;
+  color: var(--text-muted);
+  font-weight: 400;
+  /* Nothing at 320px: the wordmark alone identifies the site, and the section
+     name is repeated as the page heading two centimetres below. */
+  display: none;
+}
+@media (min-width: 560px) { .topbar-name { display: block; } }
+
+.topbar-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+
+.topbar-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  display: grid;
+  place-items: center;
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--text-muted);
+  text-decoration: none;
+  flex: 0 0 auto;
+}
+
+/* --------------------------------------------------------------------------
+ * Rail and page
+ * ------------------------------------------------------------------------ */
+
+.console {
+  flex: 1;
+  width: 100%;
+  display: grid;
+  grid-template-columns: 268px minmax(0, 1fr);
+  align-items: start;
+  gap: 0;
+}
+
+.rail {
+  position: sticky;
+  top: 59px;
+  padding: 18px 12px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rail-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 7px 16px 7px 8px;
+  border-radius: 999px;
+  text-decoration: none;
+  color: var(--text);
+  font-size: 14.5px;
+  font-weight: 500;
+  /* The rail is a list of destinations, and a destination that reflows when it
+     becomes current is a rail that jumps as you use it. */
+  border: 1px solid transparent;
+}
+.rail-item:hover { background: var(--rail-hover); }
+.rail-item[aria-current="page"] { background: var(--rail-current); font-weight: 600; }
+.rail-item:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+.rail-icon {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--tint-slate-bg);
+  color: var(--tint-slate-fg);
+}
+.rail-icon svg { width: 19px; height: 19px; }
+
+.rail-sep {
+  margin: 14px 16px 8px;
+  font-size: 11.5px;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 650;
+}
+
+.console-main {
+  padding: 26px 24px 64px;
+  min-width: 0;
+  /* About 90 characters at this size — wide enough for a table of redirect
+     URIs, narrow enough that a sentence is still readable. */
+  max-width: 812px;
+  /* Centred in the space the rail leaves, rather than pinned to its edge. On a
+     wide screen the pinned version leaves a third of the window empty on the
+     right and the page reads as though it failed to load the rest.
+     *
+     * `width: 100%` is load-bearing and its absence was a real bug. A grid item
+     * with `margin-inline: auto` is sized to its CONTENT rather than stretched,
+     * so one wide child made the whole column wider than the track — measured
+     * at 431px inside a 360px grid column. Capping without stretching caps
+     * nothing. */
+  width: 100%;
+  margin-inline: auto;
+}
+
+/* A button in a console is a control, not a call to action.
+ *
+ * `.btn` is full width because it was written for the sign-in card, where one
+ * button IS the page. Carrying that into a settings form gives "Save" the
+ * visual weight of a sign-up page and makes a row of two impossible. */
+/*
+ * `display: inline-flex`, not just `width: auto`.
+ *
+ * `.btn` is `display: flex`, which is block-level — so `width: auto` on it
+ * still fills the line, and the button looks exactly as wide as it did before
+ * the rule was added. Only changing the outer display to an inline box makes it
+ * shrink to its label. That cost a round trip to work out, hence the note.
+ */
+.console-main .btn {
+  display: inline-flex;
+  width: auto;
+  min-width: 148px;
+}
+.console-main .btn-small { min-width: 0; }
+
+.console-title {
+  margin: 0 0 6px;
+  font-size: 30px;
+  line-height: 1.2;
+  letter-spacing: -.02em;
+  font-weight: 500;
+}
+.console-lead {
+  margin: 0 0 26px;
+  color: var(--text-muted);
+  font-size: 15px;
+  max-width: 60ch;
+}
+.console-title:focus-visible { outline: none; }
+
+/* The rail becomes a strip above the page on a narrow screen. Not a hamburger:
+   six destinations fit, and a menu that has to be opened is a menu whose
+   contents nobody learns. */
+@media (max-width: 900px) {
+  .console { grid-template-columns: minmax(0, 1fr); }
+  .rail {
+    position: static;
+    flex-direction: row;
+    overflow-x: auto;
+    padding: 10px 12px;
+    gap: 6px;
+    border-bottom: 1px solid var(--border);
+    scrollbar-width: none;
+  }
+  .rail::-webkit-scrollbar { display: none; }
+  .rail-item { flex: 0 0 auto; padding: 5px 14px 5px 6px; font-size: 14px; }
+  .rail-icon { width: 28px; height: 28px; }
+  .rail-icon svg { width: 16px; height: 16px; }
+  .rail-sep { display: none; }
+  .console-main { padding: 22px 16px 56px; }
+  .console-title { font-size: 25px; }
+}
+
+/* --------------------------------------------------------------------------
+ * The hero on the home page
+ * ------------------------------------------------------------------------ */
+
+.hero { text-align: center; padding: 22px 0 34px; }
+.hero-avatar {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  object-fit: cover;
+  margin: 0 auto 16px;
+  display: grid;
+  place-items: center;
+  background: var(--green);
+  color: var(--ink);
+  font-size: 36px;
+  font-weight: 650;
+  letter-spacing: -.02em;
+  border: 0;
+}
+.hero h1 { margin: 0 0 4px; font-size: 30px; font-weight: 500; letter-spacing: -.02em; }
+.hero p { margin: 0; color: var(--text-muted); font-size: 15px; }
+.hero-note {
+  margin: 22px auto 0;
+  max-width: 52ch;
+  font-size: 13.5px;
+  color: var(--text-muted);
+}
+
+/* --------------------------------------------------------------------------
+ * Cards, and the rows inside them
+ * ------------------------------------------------------------------------ */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius);
+  margin: 0 0 18px;
+  overflow: hidden;
+}
+
+.card-head {
+  padding: 16px 20px 4px;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -.005em;
+}
+.card-head + .card-note { padding-top: 0; }
+.card-note {
+  margin: 0;
+  padding: 6px 20px 14px;
+  color: var(--text-muted);
+  font-size: 13.5px;
+}
+.card-body { padding: 14px 20px 18px; }
+.card-body > :first-child { margin-top: 0; }
+.card-body > :last-child { margin-bottom: 0; }
+
+/* A row. Three lanes: mark, words, and whatever is on the right. */
+.row {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+  color: inherit;
+  text-decoration: none;
+  min-height: 60px;
+}
+.card-head + .row, .card-note + .row, .card > .row:first-child { border-top: 0; }
+a.row:hover, button.row:hover { background: var(--surface-2); }
+a.row:focus-visible, button.row:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+
+button.row {
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-top: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.row-mark { color: var(--text-muted); display: grid; place-items: center; }
+.row-mark svg { width: 21px; height: 21px; }
+.row-lines { min-width: 0; }
+.row-title { display: block; font-size: 15px; font-weight: 500; }
+.row-sub {
+  display: block;
+  font-size: 13.5px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  /* An address or a URI is long and must not push the chevron off the row. */
+  overflow-wrap: anywhere;
+}
+.row-right { display: flex; align-items: center; gap: 12px; color: var(--text-muted); font-size: 13.5px; }
+
+/* The chevron is the promise that a row goes somewhere. Only rows that do get
+   one — see the note at the top of this file. */
+.row-go { color: var(--text-muted); flex: 0 0 auto; }
+.row-go svg { width: 18px; height: 18px; display: block; }
+
+@media (max-width: 560px) {
+  .row { grid-template-columns: 24px minmax(0, 1fr) auto; gap: 14px; padding: 13px 16px; }
+  .card-head, .card-note, .card-body { padding-left: 16px; padding-right: 16px; }
+}
+
+/* --------------------------------------------------------------------------
+ * The status card at the top of a section
+ * ------------------------------------------------------------------------ */
+
+.status {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  padding: 18px 20px;
+  border-radius: var(--card-radius);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  margin: 0 0 20px;
+}
+.status-mark { display: grid; place-items: center; margin-top: 1px; }
+.status-mark svg { width: 22px; height: 22px; }
+.status strong { display: block; font-size: 15.5px; font-weight: 600; }
+.status p { margin: 3px 0 0; color: var(--text-muted); font-size: 13.5px; }
+.status-good .status-mark { color: #2f7d32; }
+.status-warn .status-mark { color: #9a6205; }
+.status-bad  .status-mark { color: var(--danger); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .status-good .status-mark { color: #86d189; }
+  :root:not([data-theme="light"]) .status-warn .status-mark { color: #efbc63; }
+}
+:root[data-theme="dark"] .status-good .status-mark { color: #86d189; }
+:root[data-theme="dark"] .status-warn .status-mark { color: #efbc63; }
+
+/* --------------------------------------------------------------------------
+ * Figures
+ * ------------------------------------------------------------------------ */
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(158px, 1fr));
+  gap: 14px;
+  margin: 0 0 20px;
+}
+.tile {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius);
+  padding: 18px;
+  text-decoration: none;
+  color: inherit;
+  display: block;
+}
+a.tile:hover { background: var(--surface-2); }
+.tile-mark {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  margin-bottom: 12px;
+  background: var(--tint-slate-bg);
+  color: var(--tint-slate-fg);
+}
+.tile-mark svg { width: 19px; height: 19px; }
+.tile-number {
+  display: block;
+  font-size: 29px;
+  font-weight: 600;
+  letter-spacing: -.025em;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+}
+.tile-label { display: block; margin-top: 3px; font-size: 13px; color: var(--text-muted); }
+.tile-foot { display: block; margin-top: 8px; font-size: 12.5px; color: var(--text-muted); }
+.tile-alert .tile-number { color: var(--danger); }
+
+/* The tint classes, usable on any mark. */
+.t-brand  { background: var(--tint-brand-bg);  color: var(--tint-brand-fg); }
+.t-blue   { background: var(--tint-blue-bg);   color: var(--tint-blue-fg); }
+.t-violet { background: var(--tint-violet-bg); color: var(--tint-violet-fg); }
+.t-amber  { background: var(--tint-amber-bg);  color: var(--tint-amber-fg); }
+.t-teal   { background: var(--tint-teal-bg);   color: var(--tint-teal-fg); }
+.t-pink   { background: var(--tint-pink-bg);   color: var(--tint-pink-fg); }
+.t-slate  { background: var(--tint-slate-bg);  color: var(--tint-slate-fg); }
+.t-red    { background: var(--tint-red-bg);    color: var(--tint-red-fg); }
+
+/* --------------------------------------------------------------------------
+ * A horizontal bar chart, drawn as divs
+ * --------------------------------------------------------------------------
+ * No chart library. The Content-Security-Policy on this origin forbids
+ * external scripts, and a bar whose width is a percentage of the largest value
+ * is honest, readable without an axis, and cannot fail to load.
+ * ------------------------------------------------------------------------ */
+
+.meter { padding: 12px 20px 16px; }
+.meter-row { margin-bottom: 13px; }
+.meter-row:last-child { margin-bottom: 0; }
+.meter-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 5px;
+  font-size: 13.5px;
+}
+.meter-count { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.meter-track { height: 8px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
+.meter-fill { height: 100%; background: var(--green); border-radius: 999px; min-width: 3px; }
+.meter-fill.is-bad { background: var(--danger); }
+.meter-fill.is-idle { background: var(--border-strong); }
+
+.pill {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: .01em;
+  background: var(--tint-slate-bg);
+  color: var(--tint-slate-fg);
+  vertical-align: 1px;
+}
+.pill-good { background: var(--tint-brand-bg); color: var(--tint-brand-fg); }
+.pill-bad  { background: var(--tint-red-bg);   color: var(--tint-red-fg); }
+.pill-info { background: var(--tint-blue-bg);  color: var(--tint-blue-fg); }
+
+/* --------------------------------------------------------------------------
+ * Things a developer copies
+ * --------------------------------------------------------------------------
+ * A client id, a redirect URI, a curl command. Every one of these is retyped
+ * wrongly at least once if it cannot be copied, and a mistyped redirect URI
+ * fails with `invalid_request` an hour later on somebody else's machine.
+ * ------------------------------------------------------------------------ */
+
+.copy {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 8px 8px 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  overflow: hidden;
+}
+.copy code {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: thin;
+}
+/* Hidden until scripting says otherwise: a Copy button that cannot copy is
+   worse than none, because it is pressed and appears to have worked. The flag
+   is on <html>, set before first paint, so the button never flashes in. */
+.copy-btn { display: none; }
+:root[data-js="1"] .copy-btn { display: inline-block; }
+
+.copy-btn {
+  flex: 0 0 auto;
+  font: inherit;
+  font-family: var(--font);
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 5px 11px;
+  border-radius: 7px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+.copy-btn:hover { background: var(--surface-2); }
+.copy-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+pre.code {
+  margin: 12px 0;
+  padding: 14px 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+
+/* The one-time secret. Shown once, never stored in the clear, and said so in
+   the same breath — a panel that shows a secret without saying it will not be
+   shown again is how a developer closes the tab and loses it. */
+.secret-once {
+  border: 1px solid var(--green);
+  background: var(--tint-brand-bg);
+  border-radius: var(--card-radius);
+  padding: 18px 20px;
+  margin: 0 0 20px;
+}
+.secret-once h2 { margin: 0 0 6px; font-size: 16px; color: var(--tint-brand-fg); }
+.secret-once p { margin: 0 0 12px; font-size: 13.5px; color: var(--tint-brand-fg); }
+.secret-once .copy { background: var(--surface); }
+
+/* --------------------------------------------------------------------------
+ * Forms inside cards, and small tables
+ * ------------------------------------------------------------------------ */
+
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+@media (max-width: 620px) { .grid-2 { grid-template-columns: 1fr; } }
+
+.check-grid { display: grid; gap: 10px; margin: 4px 0 16px; }
+.check {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  font-size: 14.5px;
+}
+.check input { width: 18px; height: 18px; margin: 1px 0 0; accent-color: var(--green); }
+.check b { font-weight: 550; display: block; }
+.check span { display: block; color: var(--text-muted); font-size: 13px; margin-top: 1px; }
+
+.inline-form { display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; }
+.inline-form input[type="text"], .inline-form input[type="url"] { flex: 1; min-width: 240px; }
+.inline-form .btn { width: auto; flex: 0 0 auto; }
+
+.btn-small {
+  display: inline-flex;
+  width: auto;
+  /* `.btn` fixes a 48px height for the sign-in card. A control beside a text
+     input in a settings row has to match the input, not the sign-in button. */
+  height: auto;
+  min-height: 38px;
+  padding: 7px 16px;
+  font-size: 13.5px;
+  border-radius: 8px;
+}
+.btn-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--danger);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.empty {
+  padding: 30px 20px 34px;
+  text-align: center;
+  color: var(--text-muted);
+}
+.empty-mark {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  margin: 0 auto 12px;
+  display: grid;
+  place-items: center;
+  background: var(--tint-slate-bg);
+  color: var(--tint-slate-fg);
+}
+.empty-mark svg { width: 24px; height: 24px; }
+.empty strong { display: block; color: var(--text); font-size: 15.5px; margin-bottom: 4px; }
+.empty p { margin: 0 auto; max-width: 44ch; font-size: 13.5px; }
+
+.section-gap { margin-top: 30px; }
+
+/* --------------------------------------------------------------------------
+ * The sparkline
+ * --------------------------------------------------------------------------
+ * `preserveAspectRatio="none"` stretches the drawing to whatever width the
+ * card is, which is right for a shape read as a trend and wrong for anything
+ * with a circle in it. The strokes are therefore drawn with
+ * `vector-effect: non-scaling-stroke`, or a wide card would render a hairline
+ * and a narrow one a slab.
+ * ------------------------------------------------------------------------ */
+
+.spark { margin: 0; padding: 4px 20px 14px; }
+.spark svg { width: 100%; height: 96px; display: block; overflow: visible; }
+.spark-area { fill: var(--tint-brand-bg); stroke: none; }
+.spark-line {
+  fill: none;
+  stroke: var(--green);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+.spark-good {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  stroke-dasharray: 3 3;
+  vector-effect: non-scaling-stroke;
+  opacity: .55;
+}
+.spark-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.spark-key { display: inline-flex; align-items: center; gap: 5px; }
+.spark-key i { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
+.spark-swatch-total { background: var(--green); }
+.spark-swatch-good { background: var(--text); opacity: .55; }
+@media (max-width: 560px) { .spark-key { display: none; } }
+
+/* --------------------------------------------------------------------------
+ * A definition-style list, for the health page and the account detail
+ * ------------------------------------------------------------------------ */
+
+.facts { margin: 0; padding: 4px 20px 16px; display: grid; gap: 0; }
+.facts div {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 14px;
+  padding: 9px 0;
+  border-top: 1px solid var(--border);
+  font-size: 14px;
+}
+.facts div:first-child { border-top: 0; }
+.facts dt { color: var(--text-muted); }
+.facts dd { margin: 0; overflow-wrap: anywhere; }
+@media (max-width: 560px) {
+  .facts div { grid-template-columns: 1fr; gap: 2px; }
+}
+
+/* --------------------------------------------------------------------------
+ * The account pages, inside the console shell
+ * --------------------------------------------------------------------------
+ * Those pages are built from `.panel` and were written before this sheet
+ * existed. Rather than rewrite eight templates — and risk breaking forms that
+ * are covered by the login smoke test — the panel is given the card's shape
+ * here. One rule, one place, and the markup underneath is untouched.
+ * ------------------------------------------------------------------------ */
+
+.console-main .panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius);
+  padding: 18px 20px;
+  margin: 0 0 18px;
+  box-shadow: none;
+}
+.console-main .panel h2 {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -.005em;
+  margin: 0 0 12px;
+  text-transform: none;
+}
+.console-main .account-nav { display: none; }
+.console-main .notice-good,
+.console-main .form-error { border-radius: var(--card-radius); }
+
+/* The account pages still use `.account` as their wrapper on a couple of
+   sub-pages. Inside the console it must not re-centre or re-pad. */
+.console-main .account { max-width: none; margin: 0; padding: 0; width: 100%; }
+.console-main .account-head { display: none; }
+
+
+/* --------------------------------------------------------------------------
+ * Utilities, because the Content-Security-Policy forbids `style=`
+ * --------------------------------------------------------------------------
+ * `style-src 'self' 'nonce-…'` blocks inline style ATTRIBUTES as well as
+ * inline <style> blocks, and a nonce cannot rescue an attribute — the browser
+ * refuses it silently and the page renders with the declaration missing. On a
+ * meter bar that means every bar is the same width and the chart is a lie.
+ *
+ * Weakening the policy to `unsafe-inline` would fix all of these at the cost of
+ * the control that stops an injected `style` from covering the page with an
+ * invisible overlay over the sign-in button. On the domain that holds every
+ * Vesopa login, that trade is not worth making for a margin.
+ * ------------------------------------------------------------------------ */
+
+.mt-0 { margin-top: 0 !important; }
+.mt-1 { margin-top: 6px; }
+.mt-2 { margin-top: 10px; }
+.mt-3 { margin-top: 16px; }
+.mt-tight { margin-top: -8px; }
+.mb-0 { margin-bottom: 0 !important; }
+.mb-1 { margin-bottom: 6px; }
+.m-0 { margin: 0 !important; }
+.m-label { margin: 16px 0 6px; }
+.m-back { margin: 0 0 10px; }
+.is-danger { color: var(--danger); }
+.is-small { font-size: 13.5px; }
+.is-smaller { font-size: 13px; }
+.is-clickable { cursor: pointer; }
+.fill { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+
+/* --------------------------------------------------------------------------
+ * Meter widths, as classes
+ * --------------------------------------------------------------------------
+ * A bar's length is data, and data cannot reach CSS through an attribute the
+ * policy forbids. Twenty-one widths at five-percent steps is the resolution a
+ * bar chart read at arm's length actually carries — the number beside it is
+ * there for anybody who needs the exact figure, and it is exact.
+ * ------------------------------------------------------------------------ */
+.w-0 { width: 0%; }
+.w-5 { width: 5%; }
+.w-10 { width: 10%; }
+.w-15 { width: 15%; }
+.w-20 { width: 20%; }
+.w-25 { width: 25%; }
+.w-30 { width: 30%; }
+.w-35 { width: 35%; }
+.w-40 { width: 40%; }
+.w-45 { width: 45%; }
+.w-50 { width: 50%; }
+.w-55 { width: 55%; }
+.w-60 { width: 60%; }
+.w-65 { width: 65%; }
+.w-70 { width: 70%; }
+.w-75 { width: 75%; }
+.w-80 { width: 80%; }
+.w-85 { width: 85%; }
+.w-90 { width: 90%; }
+.w-95 { width: 95%; }
+.w-100 { width: 100%; }
+
+/* Never nothing: a category with one event in ten thousand still gets a
+   visible sliver, because a bar of zero width reads as "no data" rather than
+   as "almost none". */
+.w-0 { width: 3px; }
+.mb-2 { margin-bottom: 14px; }
+
+/* --------------------------------------------------------------------------
+ * An application's own logo
+ * --------------------------------------------------------------------------
+ * Uploaded by its developer, so it is somebody else's artwork on a Vesopa page:
+ * boxed to a fixed square with `object-fit: contain` so a tall image cannot
+ * stretch a row, and given a hairline so a white logo on the white card still
+ * reads as an object rather than as nothing.
+ * ------------------------------------------------------------------------ */
+
+.app-logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 7px;
+  object-fit: contain;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  display: block;
+}
+
+.logo-preview {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.logo-preview img {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  object-fit: contain;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.logo-empty {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: var(--tint-slate-bg);
+  color: var(--tint-slate-fg);
+  flex: 0 0 auto;
+}
+.logo-empty svg { width: 26px; height: 26px; }
+
+/* A file picker is drawn by the platform and never matches a button beside it.
+   Sizing it here keeps the row one height, the same fix the back office made. */
+.inline-form input[type="file"] {
+  flex: 1;
+  min-width: 220px;
+  font-size: 13.5px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+/* --------------------------------------------------------------------------
+ * Toggles
+ * --------------------------------------------------------------------------
+ * A row with a mark, a name, a sentence saying what it does, and a switch. The
+ * same shape as every other row on the site, so a setting reads as a thing you
+ * change rather than as a form field you fill in.
+ *
+ * IT IS A REAL CHECKBOX UNDERNEATH. The input is visually hidden and still
+ * focusable, still keyboard-operable, still announced as a checkbox, and still
+ * submitted with its form — so this works with scripting blocked, which a
+ * div-and-JavaScript switch does not. The `<label>` wraps everything, so the
+ * whole row is the hit target: on a phone that is the difference between a
+ * setting people change and one they give up on.
+ * ------------------------------------------------------------------------ */
+
+.switch-row {
+  display: grid;
+  /* mark · words · the word On/Off · the switch. Four columns, and every one of
+     them a DIRECT child — the checked state is styled through a sibling
+     selector, which cannot reach into a wrapper. */
+  grid-template-columns: 26px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 18px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+  cursor: pointer;
+  min-height: 62px;
+}
+.card-head + .switch-row,
+.card-note + .switch-row,
+.card > .switch-row:first-child { border-top: 0; }
+.switch-row:hover { background: var(--surface-2); }
+
+.switch-row input {
+  /* Hidden from sight, not from the keyboard or a screen reader. `display:none`
+     and `visibility:hidden` both remove it from the tab order, which would make
+     this unusable without a mouse. */
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--border-strong);
+  transition: background .16s ease;
+}
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .3);
+  transition: transform .16s ease;
+}
+.switch-row input:checked ~ .switch { background: var(--green); }
+.switch-row input:checked ~ .switch::after { transform: translateX(18px); }
+
+/* The word follows the checkbox, not the render. Both are in the markup and
+   CSS picks — otherwise the label still says "On" beside a switch the person
+   has just moved to off, because nothing has been saved yet. */
+.switch-state i { font-style: normal; }
+.switch-state .on-word { display: none; }
+.switch-row input:checked ~ .switch-state .on-word { display: inline; }
+.switch-row input:checked ~ .switch-state .off-word { display: none; }
+
+/* Focus goes on the switch, because the input it belongs to is invisible.
+   Without this the setting is reachable by keyboard and gives no sign of it. */
+.switch-row input:focus-visible ~ .switch {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+}
+
+/* A setting somebody may look at and not change. Dimmed rather than removed:
+   knowing a switch exists and is off is worth more than not knowing it exists. */
+.switch-row input:disabled ~ .switch { opacity: .45; }
+.switch-row:has(input:disabled) { cursor: default; }
+.switch-row:has(input:disabled):hover { background: none; }
+
+.switch-title { display: block; font-size: 15px; font-weight: 500; }
+.switch-sub { display: block; font-size: 13.5px; color: var(--text-muted); margin-top: 2px; }
+
+/* The word beside the switch, for anybody who reads state rather than shape. */
+.switch-state {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  min-width: 26px;
+  text-align: right;
+}
+.switch-row input:checked ~ .switch-state { color: var(--text); }
+
+@media (prefers-reduced-motion: reduce) {
+  .switch, .switch::after { transition: none; }
+}
+
+@media (max-width: 560px) {
+  .switch-row { grid-template-columns: 24px minmax(0, 1fr) auto; gap: 14px; padding: 13px 16px; }
+}
+
+/* --------------------------------------------------------------------------
+ * The profile picture, which is its own control
+ * --------------------------------------------------------------------------
+ * reference_design §6.3 and `…730`: the avatar with a badge on its corner, and
+ * the picture itself is what you press.
+ *
+ * The rule it replaces was measured rather than judged. `.avatar-row` — avatar,
+ * "Choose an image", a raw file input and an Upload button in one non-wrapping
+ * flex row — had a min-content width of 357px, which pushed its panel to 399
+ * and `.console-main` to 431 on a 360px viewport. That control was the reason
+ * every account page scrolled sideways.
+ *
+ * Nothing here has an intrinsic minimum wider than the avatar itself, so the
+ * whole thing fits at 320px.
+ * ------------------------------------------------------------------------ */
+
+.avatar-control {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  position: relative;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 14px;
+  max-width: 100%;
+}
+.avatar-control:hover .avatar { filter: brightness(.94); }
+.avatar-control:focus-within {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* The real input, present and reachable, just not drawn. `display:none` would
+   take it out of the tab order and make the control keyboard-dead. */
+.avatar-control input[type="file"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.avatar-control .avatar {
+  width: 96px;
+  height: 96px;
+  /*
+   * `flex: 0 0 auto` is the fix, and the rest of this rule was never the
+   * problem.
+   *
+   * Measured on the live page, the avatar rendered 96 x 72 — a 96px box with
+   * `border-radius: 50%` and a height of 72 is an ELLIPSE, which is exactly
+   * what it looked like. `.avatar-control` is a column flexbox, this is a flex
+   * item, and a flex item's `flex-shrink` defaults to 1: when the column was
+   * short of room the browser did as it was told and took 24px off the height.
+   * The declared `height: 96px` is a starting size, not a floor.
+   *
+   * `aspect-ratio` is belt and braces — if a future change removes one of the
+   * two lengths, the shape still cannot go oval.
+   */
+  flex: 0 0 auto;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.avatar-control .avatar-empty {
+  /* `display: grid` here overrides the `display: block` above — same
+     specificity, later in the file — so the shrink guard has to be repeated
+     rather than inherited. */
+  display: grid;
+  flex: 0 0 auto;
+  aspect-ratio: 1;
+  place-items: center;
+  font-size: 38px;
+  font-weight: 650;
+  color: var(--ink);
+  background: var(--green);
+  border-color: transparent;
+}
+
+/* The badge that says the picture is a button. Bottom-right of the circle,
+   which is where `…730` puts it and where a thumb reaches. */
+.avatar-badge {
+  position: absolute;
+  top: 68px;
+  left: 68px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .18);
+}
+.avatar-badge svg { width: 16px; height: 16px; }
+
+.avatar-cta { font-size: 14px; font-weight: 550; color: var(--text); }
+
+.picture-panel { text-align: center; }
+.picture-panel h2, .picture-panel .hint { text-align: left; }
+.picture-panel .hint { margin-top: 12px; }
+
+
+/* --------------------------------------------------------------------------
+ * Nothing wider than the viewport, ever
+ * --------------------------------------------------------------------------
+ * The reference document's last decision, and the one worth enforcing rather
+ * than remembering: a grid or flex ITEM defaults to `min-width: auto`, which
+ * means it refuses to shrink below its content. One long email address, one
+ * unbreakable client id, one row of buttons that will not wrap, and the whole
+ * page scrolls sideways on a phone.
+ *
+ * `minmax(0, 1fr)` is already used on the grid tracks. This is the same fix for
+ * everything inside them, plus the two kinds of content that genuinely cannot
+ * wrap on their own.
+ * ------------------------------------------------------------------------ */
+
+.console-main .panel,
+.console-main .card,
+.console-main section,
+.console-main form,
+.console-main .row-lines { min-width: 0; }
+
+/* An address, a client id, a redirect URI: long, unbreakable, and pasted in by
+   somebody who was not thinking about layout. */
+.console-main .row-sub,
+.console-main .mono,
+.console-main code { overflow-wrap: anywhere; }
+
+/* ==========================================================================
+ * THE ACCOUNT HUB — reference_design/…730 and …729
+ * ==========================================================================
+ * An identity card, then rows in colour-grouped clusters. The grouping is done
+ * with SPACE, not with headings or boxes: ~4px between rows in a group, ~32px
+ * between groups. That is measured off the reference and it is why the page
+ * reads as five things rather than eleven.
+ * ======================================================================== */
+
+.hub-identity {
+  text-align: center;
+  padding: 8px 0 34px;
+}
+
+.hub-avatar {
+  position: relative;
+  display: inline-block;
+  margin: 0 0 16px;
+  border-radius: 50%;
+}
+.hub-avatar img,
+.hub-avatar-empty {
+  width: 88px;
+  height: 88px;
+  flex: 0 0 auto;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  object-fit: cover;
+  display: grid;
+  place-items: center;
+  background: var(--green);
+  color: var(--ink);
+  font-size: 34px;
+  font-weight: 650;
+  border: 1px solid var(--border);
+}
+.hub-avatar img { background: var(--surface-2); }
+.hub-avatar:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+
+/* The badge on the corner. It is the whole answer to "how do I change my
+   picture" — the picture is the control, and this says so. */
+.hub-avatar-badge {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .2);
+}
+.hub-avatar-badge svg { width: 16px; height: 16px; }
+
+.hub-name {
+  margin: 0 0 4px;
+  font-size: 26px;
+  font-weight: 500;
+  letter-spacing: -.02em;
+}
+.hub-email { margin: 0; color: var(--text-muted); font-size: 15px; overflow-wrap: anywhere; }
+.hub-plan { margin: 12px 0 0; }
+
+/* --------------------------------------------------------------------------
+ * THE ACCOUNT LOOKS LIKE VESOPA
+ * --------------------------------------------------------------------------
+ * What was here was a Google Account tracing: eight pastel circles, white
+ * cards floating on grey, one colour per section. It was a reasonable way to
+ * learn the STRUCTURE — rows, groups, a hub — and the wrong thing to ship,
+ * because the structure was the part worth borrowing and the surface was not.
+ *
+ * Vesopa is not pastel. The wordmark is a hard geometric cut: acid green on
+ * black, every diagonal at the same 31 degrees, no soft edges anywhere. It is
+ * the badge on a till in a bar, and the account that opens it should feel like
+ * the same company made it.
+ *
+ * So, three deliberate departures:
+ *
+ *   THE MARKS ARE CHAMFERED SQUARES, NOT CIRCLES. One corner cut at the
+ *   wordmark's own angle. A circle is the most generic shape there is; this
+ *   one is a signature, and it costs nothing to draw.
+ *
+ *   COLOUR MEANS SOMETHING AGAIN. Eight pastel tints spend the whole palette
+ *   on decoration and leave nothing to say "this one, now" with. Here the
+ *   marks are monochrome and the green is kept for three jobs only: who you
+ *   are, where you are, and what you are about to press.
+ *
+ *   THE ROWS ARE ONE SURFACE. A stack of separately-bordered cards is eight
+ *   rectangles the eye has to reconcile. A single panel divided by hairlines
+ *   reads as one instrument — which is what the till software beside it looks
+ *   like, and what this is a control panel for.
+ * ------------------------------------------------------------------------ */
+
+.hub-group:last-of-type { margin-bottom: 24px; }
+
+.hub-group {
+  display: grid;
+  gap: 0;
+  margin: 0 0 22px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.hub-row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 20px;
+  align-items: center;
+  gap: 16px;
+  min-height: 72px;
+  padding: 13px 18px;
+  text-decoration: none;
+  color: var(--text);
+  position: relative;
+}
+
+/* The hairline between rows, and never above the first one. */
+.hub-row + .hub-row { border-top: 1px solid var(--border); }
+
+/*
+ * The green edge on hover.
+ *
+ * A 3px bar down the leading edge rather than a background wash: it points at
+ * the row you are on without repainting a quarter of the screen, and it is the
+ * same gesture the till uses for a selected line.
+ */
+.hub-row::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: 3px;
+  background: var(--green);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform .12s ease;
+}
+.hub-row:hover::before,
+.hub-row:focus-visible::before { transform: scaleX(1); }
+.hub-row:hover { background: var(--surface-2); }
+.hub-row:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .hub-row::before { transition: none; }
+}
+
+/*
+ * The chamfered mark. The clip cuts the bottom-left corner at 31 degrees —
+ * `logo.svg` runs 9.95 across for 16.54 down, and 12px across for 20px down is
+ * the same slope at this size.
+ */
+.hub-mark {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 34% 100%, 0 68%);
+}
+.hub-mark svg { width: 21px; height: 21px; }
+
+/* The mark takes the brand colour on the row you are pointing at — the only
+   place colour appears in this list. */
+.hub-row:hover .hub-mark,
+.hub-row:focus-visible .hub-mark {
+  color: var(--ink);
+  background: var(--green);
+  border-color: var(--green);
+}
+
+/*
+ * The tint classes still exist because the rail and other pages use them, but
+ * the hub no longer asks for them. Neutralised here rather than stripped from
+ * the markup: the day somebody wants one section coloured again, it is one
+ * line, not a template change.
+ */
+.hub-mark[class*="t-"] { background: var(--surface-2); }
+.hub-row:hover .hub-mark[class*="t-"] { background: var(--green); }
+
+.hub-lines { min-width: 0; }
+.hub-title { display: block; font-size: 17px; font-weight: 550; letter-spacing: -.005em; }
+.hub-sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 14px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.hub-foot {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+  max-width: 46ch;
+  margin-inline: auto;
+}
+
+/* --------------------------------------------------------------------------
+ * NO TAB STRIP ON A PHONE
+ * --------------------------------------------------------------------------
+ * The reference has no navigation rail and no tab strip anywhere on a phone.
+ * Vesopa's rail turned into a horizontally-scrolling strip below 900px, and
+ * that strip is what sliced "How you s…" in half in design_mistakes/…735.
+ *
+ * On a phone the HUB is the navigation: tap a row, get a page, come back. The
+ * rail stays on a wide screen, where there is room for it and where losing it
+ * would waste a third of the window.
+ * ------------------------------------------------------------------------ */
+@media (max-width: 900px) {
+  .console .rail { display: none; }
+  .console-main { padding-top: 20px; }
+}
+
+/* --------------------------------------------------------------------------
+ * ONE MENU, NOT TWO
+ * --------------------------------------------------------------------------
+ * On an iPad the hub showed the rail AND the hub's own rows — the same nine
+ * destinations, twice, side by side. Reported from a real device, and obvious
+ * once seen: "Personal info, Security, How you sign in, Devices, Sign-in
+ * history, Connected apps" runs down the left, and the identical list fills
+ * the middle.
+ *
+ * The hub IS the menu. So the rail is gone on that page at EVERY width, not
+ * just on a phone — a duplicate is no more useful on a desktop than on a
+ * tablet, it merely has room to be ignored in. Everywhere else the rail stays
+ * on a wide screen, where it is navigation rather than a repeat of the page
+ * you are looking at.
+ * ------------------------------------------------------------------------ */
+.console.is-hub { grid-template-columns: minmax(0, 1fr); }
+.console.is-hub .rail { display: none; }
+
+/* Coming back, on a phone. The reference puts the arrow on the title line
+   rather than in the bar above it. */
+.page-back {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 10px;
+  font-size: 14.5px;
+  color: var(--text-muted);
+  text-decoration: none;
+}
+.page-back svg { width: 18px; height: 18px; }
+@media (max-width: 900px) { .page-back { display: inline-flex; } }
+
+/* ==========================================================================
+ * SUBSCRIPTIONS — reference_design/…711 and …712
+ * ==========================================================================
+ * The one place in this design that uses hairline RULES between rows instead
+ * of gaps, because that is what the reference does: a subscriptions list reads
+ * as one ledger, and gaps would make six products look like six unrelated
+ * cards. The state is a plain-text heading above each group rather than a badge
+ * on every row — one word, said once.
+ * ======================================================================== */
+
+.sub-heading {
+  margin: 26px 0 10px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: .01em;
+}
+.sub-heading:first-of-type { margin-top: 6px; }
+
+.sub-list { padding: 0; }
+
+.sub-row {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--border);
+}
+.sub-list .sub-row:first-child { border-top: 0; }
+
+/* 56px, squared with a 12px radius — the reference's product tile, not a
+   circle. A circle reads as a person; a rounded square reads as a product. */
+.sub-mark {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+}
+.sub-mark svg { width: 26px; height: 26px; }
+
+.sub-lines { min-width: 0; }
+
+/* The product name is in the ACCENT colour because it is a link — and Vesopa's
+   accent is a lime that fails every contrast rule as text on white. So the link
+   colour here is the darker green, which reads as the same family and is
+   actually legible. The brand book's rule holds: the lime is a background. */
+.sub-product {
+  display: block;
+  font-size: 18px;
+  font-weight: 550;
+  color: var(--link-green);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.sub-product:hover { text-decoration: underline; }
+.sub-product-plain {
+  display: block;
+  font-size: 18px;
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+.sub-plan { display: block; margin-top: 2px; font-size: 15px; }
+.sub-status { display: block; margin-top: 3px; font-size: 13.5px; color: var(--text-muted); }
+
+@media (max-width: 560px) {
+  .sub-row { grid-template-columns: 44px minmax(0, 1fr); gap: 13px; padding: 14px 16px; }
+  .sub-mark { width: 44px; height: 44px; border-radius: 10px; }
+  .sub-mark svg { width: 21px; height: 21px; }
+  .sub-product, .sub-product-plain { font-size: 16.5px; }
+}
+
+
+/* ==========================================================================
+ * A two-way toggle with no script at all
+ * ==========================================================================
+ * Used by "Add an email address or phone number". The sign-in page has the same
+ * control and drives it from login.js; this one cannot, because the router
+ * replaces the body on every navigation and a toggle whose script has to
+ * rebind itself is a toggle that stops working on the second page somebody
+ * visits.
+ *
+ * So the radios come FIRST in the markup and `:checked ~` reaches forward to
+ * both the labels and the panes. The order looks odd in the template and is the
+ * whole mechanism.
+ * ======================================================================== */
+
+.seg-form { margin: 0; }
+
+/* Present and reachable, just not drawn. `display: none` would take them out of
+   the tab order and make the control keyboard-dead. */
+.seg-radio {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.seg {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+}
+.seg label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 9px 8px;
+  border-radius: 8px;
+  font-size: 14.5px;
+  font-weight: 550;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+.seg label svg { width: 17px; height: 17px; }
+.seg label:hover { color: var(--text); }
+
+#add-email:checked ~ .seg label[for="add-email"],
+#add-phone:checked ~ .seg label[for="add-phone"] {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .08);
+}
+/* Keyboard focus has to be visible on the LABEL, because the input it belongs
+   to is the invisible one. */
+#add-email:focus-visible ~ .seg label[for="add-email"],
+#add-phone:focus-visible ~ .seg label[for="add-phone"] {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* Both panes are shown when this stylesheet does not load, which is the right
+   fallback: two labelled fields and a person who fills in one of them. */
+.seg-pane { display: none; }
+#add-email:checked ~ .seg-pane-email,
+#add-phone:checked ~ .seg-pane-phone { display: block; }
+
+/* Two actions on one row — "Change" and "Remove" on a recovery address. */
+.row-actions { display: flex; align-items: center; gap: 14px; flex: 0 0 auto; }
+.row-actions form { margin: 0; }
+
+
+/* The "who can join" banner at the top of an application's people page. It is
+   a statement rather than a control, so it is a row of text with a mark and not
+   a card that looks pressable. */
+.access-state { display: flex; gap: 14px; align-items: flex-start; }
+.access-state > div { min-width: 0; }
+.access-state strong { display: block; font-size: 15px; margin-bottom: 3px; }
+.access-mark {
+  display: grid;
+  place-items: center;
+  flex: 0 0 38px;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+}
+.access-mark svg { width: 19px; height: 19px; }
+
+
+/* ==========================================================================
+ * A value that opens its own page
+ * ==========================================================================
+ * The personal-info rows. Same treatment as the account hub's rows, with the
+ * two lines the other way up: the LABEL is the small grey one and the VALUE is
+ * the large one, because the value is what somebody is scanning for. A row
+ * with nothing in it says so in the same grey as the label, so an empty
+ * account does not read as a page that failed to load.
+ * ======================================================================== */
+
+/* TWO COLUMNS, NOT THREE.
+ *
+ * `.hub-row` is `grid-template-columns: 44px minmax(0,1fr) 20px` — a mark, the
+ * lines, a chevron. A value row has no mark, so its lines landed in the 44px
+ * column and its chevron in the flexible one: measured on the live page, the
+ * text column was 44px wide and "Vesopa Administrator" came down it one
+ * syllable at a time. Nothing about `flex` on the child could have fixed that,
+ * because the parent is a grid and the child's width was never its own to
+ * choose. */
+.value-rows .hub-row { padding-block: 14px; grid-template-columns: minmax(0, 1fr) 20px; }
+/* A flex column, because `order` is what puts the label above the value and it
+   does nothing to a pair of block-level spans.
+ *
+ * `flex: 1 1 auto` is not optional and was the bug: `.hub-row` is a flex row,
+ * and a flex ITEM that is itself a flex container stops filling the row and
+ * shrinks to its content's minimum. Measured on the live page, "Vesopa
+ * Administrator" came out one letter per line down a 60px column. The block
+ * version filled the row for free; this one has to be told to. */
+.value-rows .hub-lines { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
+.value-rows .hub-sub { order: -1; margin: 0 0 3px; font-size: 12.5px; }
+/* `break-word`, not `anywhere`: a long address should wrap rather than widen
+   the row, and a name should never be hyphenated mid-word to achieve it. */
+.value-rows .hub-title { font-size: 16px; font-weight: 500; overflow-wrap: break-word; }
+.value-rows .hub-title.is-blank { color: var(--text-muted); font-weight: 400; }
+
+/* The picture, its button and its note stack. Left as an inline row, "Upload
+   this picture" sat in the avatar's armpit. */
+.picture-panel form { display: flex; flex-direction: column; align-items: flex-start; }
+.picture-panel .avatar-control { align-self: flex-start; }
+
+/* Save and Cancel, side by side, Save first. */
+.edit-actions { display: flex; align-items: center; gap: 10px; margin-top: 20px; }
+.edit-actions .btn { width: auto; min-width: 104px; }
+
+/* Deletion requests (/admin/deletions). A button that is only as wide as its
+   words, and room between the two forms on a request. */
+.btn-inline { width: auto; display: inline-flex; padding: 0 18px; }
+.del-admin-action + .del-admin-action { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--border); }
+.del-admin-action .hint { margin: 0 0 10px; }

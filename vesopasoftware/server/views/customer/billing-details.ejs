@@ -1,0 +1,59 @@
+<%- include("../partials/head") %>
+<%- include("../partials/nav") %>
+<div class="wrap">
+  <div class="page-head">
+    <div class="grow"><span class="eyebrow">What we print on your invoices</span><h1>Billing details</h1></div>
+    <a class="btn ghost" href="/portal/invoices">Back to billing</a>
+  </div>
+  <div class="split">
+    <div class="panel">
+      <h2>Your company</h2>
+      <% if (!org) { %>
+        <p class="t-empty">Your account has no organisation attached.</p>
+      <% } else { %>
+        <form method="post" action="/portal/billing-details">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <div class="field"><label for="name">Company name</label>
+            <input id="name" name="name" value="<%= org.name %>" required <%= can("org.edit") ? "" : "disabled" %>></div>
+          <div class="fields">
+            <div class="field"><label for="vat_number">VAT number</label>
+              <input id="vat_number" name="vat_number" value="<%= org.vat_number || '' %>" <%= can("org.edit") ? "" : "disabled" %>></div>
+            <div class="field"><label for="reg_number">Company number</label>
+              <input id="reg_number" name="reg_number" value="<%= org.reg_number || '' %>" <%= can("org.edit") ? "" : "disabled" %>></div>
+          </div>
+          <div class="fields">
+            <div class="field"><label for="billing_contact">Billing contact</label>
+              <input id="billing_contact" name="billing_contact" value="<%= org.billing_contact || '' %>" <%= can("org.edit") ? "" : "disabled" %>></div>
+            <div class="field"><label for="billing_email">Where invoices go</label>
+              <input id="billing_email" name="billing_email" type="email" value="<%= org.billing_email || '' %>" <%= can("org.edit") ? "" : "disabled" %>></div>
+          </div>
+          <div class="field"><label for="address">Billing address</label>
+            <textarea id="address" name="address" rows="3" <%= can("org.edit") ? "" : "disabled" %>><%= org.address || '' %></textarea></div>
+          <div class="field"><label for="country">Country</label>
+            <input id="country" name="country" value="<%= org.country || '' %>" <%= can("org.edit") ? "" : "disabled" %>></div>
+          <% if (can("org.edit")) { %><button class="btn" type="submit">Save details</button><% } %>
+        </form>
+      <% } %>
+    </div>
+    <div class="panel">
+      <h2>Paying by transfer</h2>
+      <p class="muted" style="font-size:.88rem;margin-bottom:.8rem">Send to whichever account matches the invoice currency, and quote the invoice number.</p>
+      <% for (const b of banks) { %>
+        <div style="border:1px solid var(--rule);border-radius:3px;padding:.8rem;margin-bottom:.7rem">
+          <b><%= b.label %></b>
+          <table style="margin-top:.5rem;font-size:.84rem">
+            <tr><td class="muted">Account name</td><td><%= b.account_name %></td></tr>
+            <% if (b.bank_name) { %><tr><td class="muted">Bank</td><td><%= b.bank_name %></td></tr><% } %>
+            <% if (b.sort_code) { %><tr><td class="muted">Sort code</td><td class="mono"><%= b.sort_code %></td></tr><% } %>
+            <% if (b.account_number) { %><tr><td class="muted">Account</td><td class="mono"><%= b.account_number %></td></tr><% } %>
+            <% if (b.iban) { %><tr><td class="muted">IBAN</td><td class="mono"><%= b.iban %></td></tr><% } %>
+            <% if (b.swift) { %><tr><td class="muted">SWIFT</td><td class="mono"><%= b.swift %></td></tr><% } %>
+          </table>
+          <% if (b.instructions) { %><p class="hint"><%= b.instructions %></p><% } %>
+        </div>
+      <% } %>
+      <% if (!banks.length) { %><p class="t-empty">No transfer details published yet.</p><% } %>
+    </div>
+  </div>
+</div>
+<%- include("../partials/foot") %>

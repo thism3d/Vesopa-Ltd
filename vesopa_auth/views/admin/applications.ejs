@@ -1,0 +1,75 @@
+<%- include('../partials/console-head') %>
+
+<h1 class="console-title">Applications</h1>
+<p class="console-lead">
+  Every OAuth client on this server. Editing one happens in the
+  <a href="/developers">developer portal</a> — this is the list, not a second
+  set of forms for the same rows.
+</p>
+
+<section class="card">
+  <% applications.forEach(function (app) { %>
+  <a class="row" href="/developers/a/<%= app.client_id %>">
+    <span class="row-mark"><%- include('../partials/app-mark', { app: app }) %></span>
+    <span class="row-lines">
+      <span class="row-title">
+        <%= app.name %>
+        <% if (app.is_first_party) { %><span class="pill pill-good">Vesopa</span><% } %>
+        <% if (app.deleted_at) { %><span class="pill pill-bad">archived</span>
+        <% } else if (app.status !== 'active') { %><span class="pill pill-bad"><%= app.status %></span><% } %>
+      </span>
+      <span class="row-sub">
+        <span class="mono"><%= app.client_id %></span>
+      </span>
+      <span class="row-sub">
+        <%= app.organisation_name %> · <%= app.client_type %> ·
+        <%= app.people %> <%= Number(app.people) === 1 ? 'user' : 'users' %> ·
+        <%= app.redirects %> redirect <%= Number(app.redirects) === 1 ? 'URI' : 'URIs' %><%
+        %><% if (Number(app.secrets)) { %> · <%= app.secrets %> live <%= Number(app.secrets) === 1 ? 'secret' : 'secrets' %><% } %>
+        <% if (!Number(app.redirects) && app.client_type !== 'service') { %>
+        · <span class="pill pill-bad">no redirect URI — cannot sign anybody in</span>
+        <% } %>
+      </span>
+    </span>
+    <span class="row-right"><span class="row-go"><%- include('../partials/icon', { name: 'chevron' }) %></span></span>
+  </a>
+  <% }) %>
+</section>
+
+<%
+  /*
+   * A subject type is not a setting the portal offers, because changing it
+   * orphans every row a developer has stored against the old `sub`. It is shown
+   * here so that "why does this app see a different id" has an answer somebody
+   * can look up rather than work out.
+   */
+%>
+<section class="card">
+  <h2 class="card-head">What each one sees as <code>sub</code></h2>
+  <p class="card-note">
+    Not changeable from the portal: changing it would orphan every row a
+    developer has stored against the old value.
+  </p>
+  <% applications.filter(function (a) { return !a.deleted_at; }).forEach(function (app) { %>
+  <div class="row">
+    <span class="row-mark"><%- include('../partials/icon', { name: 'person' }) %></span>
+    <span class="row-lines">
+      <span class="row-title"><%= app.name %></span>
+      <span class="row-sub">
+        <% if (app.subject_type === 'public') { %>
+          <b>public</b> — the same id every other first-party product sees, because
+          the till and the back office must agree who a staff member is
+        <% } else { %>
+          <b>pairwise</b> — an id derived for this application alone, so two
+          unrelated developers cannot compare user lists
+        <% } %>
+      </span>
+    </span>
+    <span class="row-right">
+      <span class="pill<%= app.subject_type === 'public' ? ' pill-info' : '' %>"><%= app.subject_type %></span>
+    </span>
+  </div>
+  <% }) %>
+</section>
+
+<%- include('../partials/console-foot') %>

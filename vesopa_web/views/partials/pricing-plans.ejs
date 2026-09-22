@@ -1,0 +1,81 @@
+<%#
+  The plan cards.
+
+  index.php and pricing.php each carried a copy of this markup that had already
+  drifted apart (one had alt text on the refund icon, the other did not), so it
+  became one partial. It then hardcoded the three periods 24 / 12 / 1, which
+  stopped being true the moment packages became editable in /admin/plans — a
+  quarterly plan added there simply did not appear on the site.
+
+  Driven by PLANS now: whatever the admin has on sale. Longest term first,
+  because the cheapest per-month rate reads best on the left; the plan flagged
+  Most Popular takes the highlight wherever it lands.
+%>
+<%
+  const cards = [...PLANS].sort((a, b) => b.period_months - a.period_months);
+
+  // "for the first year" / "for the first three months" — the line under the
+  // struck-through price. Derived rather than stored, so an admin adding a
+  // six-month plan does not have to know this sentence exists.
+  const WORDS = { 1: 'one', 2: 'two', 3: 'three', 4: 'four', 5: 'five', 6: 'six', 9: 'nine', 18: 'eighteen' };
+  const termBlurb = (months) => {
+    if (months === 1) return 'for the first month';
+    if (months === 12) return 'for the first year';
+    if (months % 12 === 0) {
+      const years = months / 12;
+      return years === 1 ? 'for the first year' : `for the first ${WORDS[years] || years} years`;
+    }
+    return `for the first ${WORDS[months] || months} months`;
+  };
+%>
+<div id="pricing_plans" class="pricing_plan">
+    <div class="pricing_plan_heading">
+        <h2 class="plan_header">Maximize Sales <span>Minimize Hassle Today</span></h2>
+        <p class="select_plan">Select a plan</p>
+    </div>
+
+    <div class="pricing_items_keeper">
+<% cards.forEach(function (plan) {
+     const popular = !!plan.is_popular; %>
+
+        <div class="pricing_single_item">
+            <a href="/checkout?period=<%= plan.period %>" class="pricing_single_item_inside<%= popular ? ' pricing_si_popular' : '' %>">
+                <p class="highlighted_popular_pricing_text<%= popular ? '' : ' pricing_mobile_hide' %>"><%= popular ? 'Most Popular' : '' %></p>
+                <div class="pricing_single_item_wrapper<%= popular ? ' psiw_popular' : '' %>">
+                    <div class="pricing_siw_inside">
+                        <div class="pricing_top_bar">
+                            <div class="pricing_item_left">
+<% if (plan.save_percentage > 0) { %>
+                                <p class="pricing_single_save_text pricing_mobile_hide">Save <%= plan.save_percentage %>%</p>
+<% } %>
+                                <p class="pricing_duration"><%= plan.name %></p>
+
+                                <p class="pricing_price pricing_mobile_hide">£<%= money(plan.price_per_month) %><span>/mo</span></p>
+
+                                <p class="pricing_final_desc">
+                                    <%# A struck-through price only means something when there is a discount. %>
+<% if (plan.total_price > plan.discounted_price) { %><del>£<%= money(plan.total_price) %></del> <% } %>
+                                    <span>£<%= money(plan.discounted_price) %></span> <%= termBlurb(plan.period_months) %>
+                                </p>
+                                <p class="pricing_vat_may">VAT may apply</p>
+                            </div>
+                            <div class="pricing_item_right">
+                                <p class="pricing_price">£<%= money(plan.price_per_month) %><span>/mo</span></p>
+<% if (plan.save_percentage > 0) { %>
+                                <p class="pricing_single_save_text">Save <%= plan.save_percentage %>%</p>
+<% } %>
+                            </div>
+                        </div>
+
+                        <div class="pricing_bottom_bar">
+                            <button class="pricing_button_started<%= popular ? ' pricing_button_started_popular' : '' %>">Get <%= plan.name %></button>
+                            <p class="pricing_money_back"><img src="/assets/icons/refund.svg" class="pricing_refund_icon" alt="Vesopa EPOS Money Back Guarantee"> 30-day money back guarantee</p>
+                        </div>
+                    </div>
+                </div>
+            </a>
+        </div>
+<% }); %>
+
+    </div>
+</div>

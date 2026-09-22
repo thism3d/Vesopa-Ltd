@@ -1,0 +1,885 @@
+/**
+ * The administrator's console — Phase 5.
+ *
+ * Gated on `users.is_staff`, which only the seed sets and only an existing
+ * administrator can grant.
+ *
+ * IT IS LAID OUT LIKE THE ACCOUNT AREA, on purpose. An identity provider's
+ * console is a lot of small unrelated things, and somebody arrives looking for
+ * exactly one of them — so it is a rail of named destinations with a distinct
+ * mark against each, the same shape a person already knows from managing their
+ * own account. Nobody has to learn a second layout to run the service.
+ *
+ * THE FIGURES COME FROM ROLLUPS, NEVER FROM A `GROUP BY` OVER RAW EVENTS. That
+ * is the rule from the plan and it is not a preference: `login_events` is kept
+ * for thirteen months, and a dashboard that scans it is the thing that falls
+ * over first on a busy Saturday — at which point the dashboard is the outage.
+ * The live counts that remain are bounded lookups on indexed columns.
+ *
+ * WHAT IS DELIBERATELY NOT HERE. Signing in as another person. It is the
+ * feature every admin console grows and the one that most quietly undermines an
+ * identity provider, because it makes "the account did this" untrue. What is
+ * built instead is read-only: an administrator can see what a person's account
+ * looks like and cannot act as them.
+ */
+
+const express = require('express');
+
+const config = require('../config');
+const db = require('../db');
+const sessions = require('../sessions');
+const settings = require('../settings');
+const events = require('../events');
+const rollups = require('../rollups');
+const portal = require('../portal');
+const recovery = require('../recovery');
+const invitations = require('../invitations');
+const deletion = require('../deletion');
+const csrf = require('../csrf');
+const { normaliseEmail, normalisePhone } = require('../normalise');
+
+const router = express.Router();
+
+const RAIL = [
+  { href: '/admin', label: 'Overview', icon: 'home', tint: 'brand' },
+  { href: '/admin/people', label: 'People', icon: 'people', tint: 'blue' },
+  { href: '/admin/applications', label: 'Applications', icon: 'apps', tint: 'violet' },
+  { href: '/admin/activity', label: 'Activity', icon: 'chart', tint: 'teal' },
+  { href: '/admin/health', label: 'Health', icon: 'shield', tint: 'amber' },
+  { href: '/admin/invitations', label: 'Invitations', icon: 'mail', tint: 'green' },
+  { href: '/admin/recoveries', label: 'Recoveries', icon: 'key', tint: 'amber' },
+  { href: '/admin/deletions', label: 'Deletion requests', icon: 'trash', tint: 'red' },
+  { href: '/admin/settings', label: 'Sign-in page', icon: 'settings', tint: 'pink' },
+  { group: 'Elsewhere' },
+  { href: '/developers', label: 'Developer portal', icon: 'code', tint: 'slate' },
+  { href: '/account/profile', label: 'Your account', icon: 'person', tint: 'slate' },
+];
+
+async function requireAdmin(req, res) {
+  const session = await sessions.load(req);
+  if (!session) {
+    res.redirect(303, `/login?return_to=${encodeURIComponent(req.originalUrl)}`);
+    return null;
+  }
+  if (!session.is_staff) {
+    /*
+     * 404, not 403. Telling somebody "this exists and you may not have it"
+     * confirms there is an administration area at this address and invites
+     * them to go looking for a way in.
+     */
+    res.status(404).render('error', {
+      title: 'Page not found',
+      heading: 'That page is not here',
+      message: 'The link may be old, or it may have been mistyped.',
+      config,
+      nonce: res.locals.nonce,
+      noindex: true,
+    });
+    return null;
+  }
+  await sessions.touch(session);
+  return session;
+}
+
+function page(res, view, session, extra = {}) {
+  return res.render(view, {
+    nonce: res.locals.nonce,
+    config,
+    session,
+    noindex: true,
+    railTitle: 'Administration',
+    railHome: '/admin',
+    rail: RAIL,
+    styles: ['console'],
+    saved: false,
+    error: '',
+    ...extra,
+  });
+}
+
+// ===========================================================================
+// Overview
+// ===========================================================================
+
+router.get('/admin', async (req, res, next) => {
+  try {
+    const session = await requireAdmin(req, res);
+    if (!session) return undefined;
+
+    // At most once an hour, and never blocking: a stale chart is better than a
+    // slow page, and far better than a failed one.
+    await rollups.refreshIfStale();
+
+    const [totals, series, mix, recent] = await Promise.all([
+      db.one(`
+        SELECT
+          (SELECT COUNT(*) FROM users WHERE status = 'active')            AS people,
+          (SELECT COUNT(*) FROM users
+            WHERE status = 'active'
+              AND created_at > DATE_SUB(NOW(), INTERVAL 30 DAY))          AS people_new,
+          (SELECT COUNT(*) FROM applications
+            WHERE status = 'active' AND deleted_at IS NULL)               AS applications,
+          (SELECT COUNT(*) FROM sso_sessions
+            WHERE revoked_at IS NULL AND expires_at > NOW()
+              AND idle_expires_at > NOW())                                AS live_sessions,
+          (SELECT COUNT(*) FROM user_passkeys WHERE revoked_at IS NULL)   AS passkeys,
+          (SELECT COUNT(*) FROM user_totp
+            WHERE confirmed_at IS NOT NULL AND revoked_at IS NULL)        AS authenticators,
+          (SELECT COUNT(*) FROM login_events
+            WHERE created_at > DATE_SUB(NOW(), INTERVAL 24 HOUR))         AS events_today,
+          (SELECT COUNT(*) FROM login_events
+            WHERE outcome = 'failure'
+              AND created_at > DATE_SUB(NOW(), INTERVAL 24 HOUR))         AS failures_today
+      `),
+      rollups.series(14),
+      rollups.methodMix(30),
+      db.query(`
+        SELECT action, actor_type, target_type, target_id, ip, created_at
+          FROM audit_log
+         ORDER BY id DESC
+         LIMIT 8
+      `),
+    ]);
+
+    /*
+     * How many people can survive losing their phone.
+     *
+     * The single most useful number on this page, and not one any dashboard
+     * shows by default: an account whose only way in is an emailed code is an
+     * account that is exactly as secure as its mailbox. Watching it rise is how
+     * you know the MFA work was worth doing.
+     */
+    const strong = await db.one(`
+      SELECT COUNT(DISTINCT u.id) AS total
+        FROM users u
+        LEFT JOIN user_passkeys k ON k.user_id = u.id AND k.revoked_at IS NULL
+        LEFT JOIN user_totp t ON t.user_id = u.id
+             AND t.confirmed_at IS NOT NULL AND t.revoked_at IS NULL
+       WHERE u.status = 'active' AND (k.id IS NOT NULL OR t.id IS NOT NULL)
+    `);
+
+    return page(res, 'admin/overview', session, {
+      title: 'Administration',
+      path: '/admin',
+      totals,
+      strong: strong.total,
+      series,
+      mix,
+      recent,
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// ===========================================================================
+// People
+// ===========================================================================
+
+router.get('/admin/people', async (req, res, next) => {
+  try {
+    const session = await requireAdmin(req, res);
+    if (!session) return undefined;
+
+    const search = String(req.query.q || '').trim().slice(0, 190);
+    let people = [];
+
+    /*
+     * NOTHING IS LISTED UNTIL SOMETHING IS SEARCHED FOR.
+     *
+     * A console that opens on "every account, newest first" turns a curious
+     * afternoon into a browse of the customer list, and every one of those
+     * views is a person's data. Searching is an act with an intent behind it,
+     * and it is the act this page audits.
+     */
+    if (search) {
+      /*
+       * Matched three ways, in one query, because an administrator handed a
+       * detail by a customer on the telephone does not know which kind it is.
+       * The identifier is normalised the same way it was when it was stored —
+       * `Bob@Gmail.com` and `b.ob@gmail.com` are the same mailbox, and a search
+       * that misses that is a search that fails on the commonest address in
+       * Britain.
+       */
+      people = await db.query(
+        `SELECT DISTINCT u.id, u.public_id, u.display_name, u.status, u.is_staff,
+                u.is_developer, u.created_at, u.last_login_at,
+                (SELECT i.identifier FROM user_identities i WHERE i.id = u.primary_email_id) AS email
+           FROM users u
+           LEFT JOIN user_identities i ON i.user_id = u.id AND i.revoked_at IS NULL
+          WHERE u.public_id = ?
+             OR i.identifier_norm = ?
+             OR i.identifier_norm = ?
+             OR u.display_name LIKE ?
+          ORDER BY u.last_login_at IS NULL, u.last_login_at DESC
+          LIMIT 50`,
+        [search, normaliseEmail(search), normalisePhone(search) || ' ', `%${search}%`],
+      );
+
+      await events.recordAudit({
+        actorUserId: session.user_id,
+        actorType: 'admin',
+        action: 'admin.searched',
+        targetType: 'users',
+        targetId: search.slice(0, 64),
+        ip: req.clientIp,
+        userAgent: req.userAgent,
+      });
+    }
+
+    return page(res, 'admin/people', session, {
+      title: 'People',
+      path: '/admin/people',
+      search,
+      people,
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.get('/admin/people/:publicId', async (req, res, next) => {
+  try {
+    const session = await requireAdmin(req, res);
+    if (!session) return undefined;
+
+    const person = await db.one('SELECT * FROM users WHERE public_id = ?', [req.params.publicId]);
+    if (!person) {
+      return res.status(404).render('error', {
+        title: 'Page not found',
+        heading: 'No such account',
+        message: 'It may have been deleted.',
+        config,
+        nonce: res.locals.nonce,
+        session,
+        noindex: true,
+      });
+    }
+
+    const [identities, factors, memberships, history, devices] = await Promise.all([
+      db.query(
+        `SELECT id, type, identifier, provider_id, verified_at, revoked_at, created_at
+           FROM user_identities WHERE user_id = ? ORDER BY revoked_at IS NOT NULL, id`,
+        [person.id],
+      ),
+      db.one(
+        `SELECT
+           (SELECT COUNT(*) FROM user_passwords WHERE user_id = ?)                     AS passwords,
+           (SELECT COUNT(*) FROM user_passkeys
+             WHERE user_id = ? AND revoked_at IS NULL)                                 AS passkeys,
+           (SELECT COUNT(*) FROM user_totp
+             WHERE user_id = ? AND confirmed_at IS NOT NULL AND revoked_at IS NULL)    AS totp,
+           (SELECT COUNT(*) FROM user_recovery_codes
+             WHERE user_id = ? AND used_at IS NULL)                                    AS recovery`,
+        [person.id, person.id, person.id, person.id],
+      ),
+      db.query(
+        `SELECT a.name, a.client_id, m.status, m.last_seen_at
+           FROM application_members m
+           JOIN applications a ON a.id = m.application_id
+          WHERE m.user_id = ? ORDER BY m.last_seen_at IS NULL, m.last_seen_at DESC`,
+        [person.id],
+      ),
+      db.query(
+        `SELECT method, outcome, failure_reason, ip, country, created_at
+           FROM login_events WHERE user_id = ? ORDER BY id DESC LIMIT 20`,
+        [person.id],
+      ),
+      db.query(
+        `SELECT id, name, platform, browser, last_seen_at, last_ip, revoked_at
+           FROM devices WHERE user_id = ? ORDER BY last_seen_at DESC LIMIT 10`,
+        [person.id],
+      ),
+    ]);
+
+    /*
+     * Looking at somebody's account is recorded, and the person can see it.
+     * An admin-assisted route into an account is only safe because it is
+     * observable — and observable by the customer, not only by us.
+     */
+    await events.recordAudit({
+      actorUserId: session.user_id,
+      actorType: 'admin',
+      action: 'admin.viewed_account',
+      targetType: 'user',
+      targetId: person.public_id,
+      ip: req.clientIp,
+      userAgent: req.userAgent,
+    });
+
+    return page(res, 'admin/person', session, {
+      title: person.display_name || 'Account',
+      path: '/admin/people',
+      person,
+      identities,
+      factors,
+      memberships,
+      history,
+      devices,
+      /*
+       * What could be removed, and what would be left. Shown BEFORE the button
+       * is pressed, because "remove their passkeys" reads very differently when
+       * the answer is "they have three" and when it is "that is the only way
+       * they can sign in at all".
+       */
+      recoverySummary: await recovery.summarise(person.id),
+      recoveries: await recovery.historyFor(person.id),
+      verification: recovery.VERIFICATION,
+      pauseHours: recovery.PASSWORD_PAUSE_HOURS,
+      // New recovery codes exist in readable form for exactly this render.
+      codes: portal.claim(req.query.codes),
+      saved: req.query.saved === '1',
+      error: req.query.error || '',
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+/**
+ * Suspend or restore an account, and grant or withdraw staff and developer
+ * access. The four things an administrator genuinely needs and none of the ones
+ * that would let them become somebody else.
+ */
+router.post('/admin/people/:publicId', csrf.verify, async (req, res, next) => {
+  try {
+    const session = await requireAdmin(req, res);
+    if (!session) return undefined;
+
+    const person = await db.one('SELECT * FROM users WHERE public_id = ?', [req.params.publicId]);
+    if (!person) return res.redirect(303, '/admin/people');
+
+    const action = String(req.body.action || '');
+    const to = (query) => res.redirect(303, `/admin/people/${person.public_id}?${query}`);
+
+    /*
+     * An administrator cannot suspend or demote themselves. Not paternalism —
+     * it is the one mistake with no way back, because the page that could undo
+     * it is the page they have just locked themselves out of.
+     */
+    if (person.id === session.user_id && action !== 'note') {
+      return to(`error=${encodeURIComponent('You cannot change your own access from here.')}`);
+    }
+
+    if (action === 'suspend' || action === 'restore') {
+      const status = action === 'suspend' ? 'suspended' : 'active';
+      await db.execute('UPDATE users SET status = ?, suspended_reason = ? WHERE id = ?', [
+        status,
+        action === 'suspend' ? String(req.body.reason || '').slice(0, 255) : '',
+        person.id,
+      ]);
+      if (action === 'suspend') {
+        // Suspending somebody who is signed in and leaving their session alive
+        // is not suspending them.
+        await db.execute(
+          "UPDATE sso_sessions SET revoked_at = NOW(), revoked_reason = 'suspended' WHERE user_id = ? AND revoked_at IS NULL",
+          [person.id],
+        );
+        await db.execute(
+          'UPDATE oauth_refresh_tokens SET revoked_at = NOW() WHERE user_id = ? AND revoked_at IS NULL',
+          [person.id],
+        );
+      }
+    } else if (action === 'staff' || action === 'developer') {
+      const column = action === 'staff' ? 'is_staff' : 'is_developer';
+      const value = req.body.value === '1' ? 1 : 0;
+      await db.execute(`UPDATE users SET ${column} = ? WHERE id = ?`, [value, person.id]);
+    } else {
+      return to('error=' + encodeURIComponent('Unknown action.'));
+    }
+
+    await events.recordAudit({
+      actorUserId: session.user_id,
+      actorType: 'admin',
+      action: `admin.${action}`,
+      targetType: 'user',
+      targetId: person.public_id,
+      detail: { value: req.body.value, reason: req.body.reason },
+      ip: req.clientIp,
+      userAgent: req.userAgent,
+    });
+
+    return to('saved=1');
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// ===========================================================================
+// Applications
+// ===========================================================================
+
+router.get('/admin/applications', async (req, res, next) => {
+  try {
+    const session = await requireAdmin(req, res);
+    if (!session) return undefined;
+
+    const applications = await db.query(`
+      SELECT a.*, o.name AS organisation_name,
+             (SELECT COUNT(*) FROM application_members m
+               WHERE m.application_id = a.id AND m.status = 'active') AS people,
+             (SELECT COUNT(*) FROM application_secrets s
+               WHERE s.application_id = a.id AND s.revoked_at IS NULL) AS secrets,
+             (SELECT COUNT(*) FROM application_redirect_uris r
+               WHERE r.application_id = a.id AND r.kind = 'login') AS redirects
+        FROM applications a
+        JOIN organisations o ON o.id = a.organisation_id
+       ORDER BY a.deleted_at IS NOT NULL, a.is_first_party DESC, a.name
+    `);
+
+    return page(res, 'admin/applications', session, {
+      title: 'Applications',
+      path: '/admin/applications',
+      applications,
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// ===========================================================================
+// Activity
+// ===========================================================================
+
+router.get('/admin/activity', async (req, res, next) => {
+  try {
+    const session = await requireAdmin(req, res);
+    if (!session) return undefined;
+    await rollups.refreshIfStale();
+
+    const [mix, series, audit] = await Promise.all([
+      rollups.methodMix(30),
+      rollups.series(30),
+      db.query(`
+        SELECT a.action, a.actor_type, a.target_type, a.target_id, a.ip, a.created_at,
+               u.display_name AS actor_name
+          FROM audit_log a
+          LEFT JOIN users u ON u.id = a.actor_user_id
+         ORDER BY a.id DESC
+         LIMIT 60
+      `),
+    ]);
+
+    const state = await db.one("SELECT ran_at FROM rollup_state WHERE name = 'login_daily'");
+
+    return page(res, 'admin/activity', session, {
+      title: 'Activity',
+      path: '/admin/activity',
+      mix,
+      series,
+      audit,
+      ranAt: state ? state.ran_at : null,
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// ===========================================================================
+// Health
+// ===========================================================================
+
+router.get('/admin/health', async (req, res, next) => {
+  try {
+    const session = await requireAdmin(req, res);
+    if (!session) return undefined;
+
+    /*
+     * The four things that break a sign-in for everybody at once, checked
+     * rather than assumed. Each one has taken this service down at least
+     * conceptually, and none of them is visible from the outside: the site
+     * answers 200 all the way through.
+     */
+    const providers = require('../providers');
+
+    let database = null;
+    try {
+      database = await db.check();
+    } catch (error) {
+      database = { error: error.message };
+    }
+
+    const keys = await db.query(
+      `SELECT kid, algorithm, status, created_at, activated_at, retired_at
+         FROM signing_keys ORDER BY FIELD(status,'active','next','retired'), id DESC`,
+    );
+
+    const enabled = providers.enabled();
+    const all = ['google', 'apple', 'microsoft', 'github'];
+
+    const mail = await db.one(`
+      SELECT COUNT(*) AS sent_24h FROM verification_challenges
+       WHERE created_at > DATE_SUB(NOW(), INTERVAL 24 HOUR)
+    `);
+
+    // One person, one account — asked of the data, not assumed of the code.
+    const doubled = await require('../selfcheck').duplicateAddresses();
+
+    return page(res, 'admin/health', session, {
+      title: 'Health',
+      path: '/admin/health',
+      database,
+      keys,
+      doubled,
+      providers: all.map((key) => ({
+        key,
+        on: enabled.some((row) => row.key === key),
+        name: (enabled.find((row) => row.key === key) || {}).name || key,
+      })),
+      mail,
+      version: config.version,
+      issuer: config.issuer,
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// ===========================================================================
+// The sign-in page
+// ===========================================================================
+
+router.get('/admin/settings', async (req, res, next) => {
+  try {
+    const session = await requireAdmin(req, res);
+    if (!session) return undefined;
+
+    return page(res, 'admin/settings', session, {
+      title: 'Sign-in page',
+      path: '/admin/settings',
+      settings: await settings.all(),
+      definitions: settings.DEFINITIONS,
+      saved: req.query.saved === '1',
+      error: req.query.error || '',
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/admin/settings', csrf.verify, async (req, res, next) => {
+  try {
+    const session = await requireAdmin(req, res);
+    if (!session) return undefined;
+
+    const changed = [];
+    for (const name of Object.keys(settings.DEFINITIONS)) {
+      if (!(name in req.body)) continue;
+      // eslint-disable-next-line no-await-in-loop -- a handful of settings
+      const result = await settings.set(name, req.body[name], session.user_id);
+      if (!result.ok) {
+        return res.redirect(
+          303,
+          `/admin/settings?error=${encodeURIComponent(`${name} could not be set: ${result.error}`)}`,
+        );
+      }
+      changed.push(name);
+    }
+
+    /*
+     * Audited like everything else an administrator does. A change to how the
+     * sign-in page behaves is a change every user sees, and "who turned that
+     * on, and when" should never be a matter of memory.
+     */
+    await events.recordAudit({
+      actorUserId: session.user_id,
+      actorType: 'admin',
+      action: 'settings.updated',
+      targetType: 'settings',
+      targetId: changed.join(','),
+      detail: Object.fromEntries(changed.map((name) => [name, req.body[name]])),
+      ip: req.clientIp,
+      userAgent: req.userAgent,
+    });
+
+    return res.redirect(303, '/admin/settings?saved=1');
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// ===========================================================================
+// Invitations
+//
+// The only way somebody becomes an administrator or a developer other than the
+// seed. It grants; it does not sign anybody in — see src/invitations.js for why
+// that distinction is the whole security of the feature.
+// ===========================================================================
+
+router.get('/admin/invitations', async (req, res, next) => {
+  try {
+    const session = await requireAdmin(req, res);
+    if (!session) return undefined;
+
+    const showAll = req.query.all === '1';
+    return page(res, 'admin/invitations', session, {
+      title: 'Invitations',
+      path: '/admin/invitations',
+      invitations: await invitations.list({ includeSettled: showAll }),
+      showAll,
+      organisations: await db.query(
+        "SELECT id, name FROM organisations WHERE status = 'active' ORDER BY is_first_party DESC, name",
+      ),
+      sent: portal.claim(req.query.sent),
+      saved: req.query.saved === '1',
+      error: req.query.error || '',
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/admin/invitations', csrf.verify, async (req, res, next) => {
+  try {
+    const session = await requireAdmin(req, res);
+    if (!session) return undefined;
+
+    const result = await invitations.create({
+      email: req.body.email,
+      invitedBy: session.user_id,
+      organisationId: req.body.organisation_id ? Number(req.body.organisation_id) : null,
+      organisationRole: req.body.organisation_role || 'developer',
+      grantsDeveloper: req.body.grants_developer === '1',
+      grantsStaff: req.body.grants_staff === '1',
+      message: req.body.message,
+      ip: req.clientIp,
+    });
+
+    if (!result.ok) {
+      return res.redirect(303, `/admin/invitations?error=${encodeURIComponent(result.error)}`);
+    }
+
+    /*
+     * The link is stashed and shown once, the same way a secret is.
+     *
+     * It is emailed as well — but somebody whose email is the thing that is
+     * broken is one of the commonest reasons to send an invitation at all, and
+     * an administrator on the telephone needs to be able to read it out.
+     */
+    return res.redirect(303, `/admin/invitations?sent=${portal.stash(result.url)}`);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/admin/invitations/:id/revoke', csrf.verify, async (req, res, next) => {
+  try {
+    const session = await requireAdmin(req, res);
+    if (!session) return undefined;
+    await invitations.revoke(req.params.id, session.user_id, req.clientIp);
+    return res.redirect(303, '/admin/invitations?saved=1');
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/admin/invitations/:id/resend', csrf.verify, async (req, res, next) => {
+  try {
+    const session = await requireAdmin(req, res);
+    if (!session) return undefined;
+    const result = await invitations.resend(req.params.id, session.user_id, req.clientIp);
+    if (!result.ok) {
+      return res.redirect(303, `/admin/invitations?error=${encodeURIComponent(result.error)}`);
+    }
+    return res.redirect(303, `/admin/invitations?sent=${portal.stash(result.url)}`);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// ===========================================================================
+// Helping somebody back in
+// ===========================================================================
+
+router.get('/admin/recoveries', async (req, res, next) => {
+  try {
+    const session = await requireAdmin(req, res);
+    if (!session) return undefined;
+    return page(res, 'admin/recoveries', session, {
+      title: 'Account recoveries',
+      path: '/admin/recoveries',
+      recoveries: await recovery.recent(50),
+      verification: recovery.VERIFICATION,
+      pauseHours: recovery.PASSWORD_PAUSE_HOURS,
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/admin/people/:publicId/recover', csrf.verify, async (req, res, next) => {
+  try {
+    const session = await requireAdmin(req, res);
+    if (!session) return undefined;
+
+    const person = await db.one('SELECT * FROM users WHERE public_id = ?', [req.params.publicId]);
+    if (!person) {
+      return res.status(404).render('error', {
+        title: 'Page not found',
+        heading: 'No such account',
+        message: 'It may have been deleted.',
+        config,
+        nonce: res.locals.nonce,
+        session,
+        noindex: true,
+      });
+    }
+
+    const result = await recovery.reset({
+      userId: person.id,
+      actorUserId: session.user_id,
+      removeTotp: req.body.remove_totp === '1',
+      removePasskeys: req.body.remove_passkeys === '1',
+      reissueCodes: req.body.reissue_codes === '1',
+      reason: req.body.reason,
+      verifiedBy: req.body.verified_by,
+      ip: req.clientIp,
+      userAgent: req.userAgent,
+    });
+
+    if (!result.ok) {
+      return res.redirect(
+        303,
+        `/admin/people/${encodeURIComponent(req.params.publicId)}?error=${encodeURIComponent(result.error)}`,
+      );
+    }
+
+    /*
+     * If new recovery codes were issued they exist in readable form for exactly
+     * this render — nowhere else, ever. Stashed and claimed once, like every
+     * other secret in this system.
+     */
+    const shown = result.recoveryCodes ? `&codes=${portal.stash(result.recoveryCodes.join('\n'))}` : '';
+    return res.redirect(
+      303,
+      `/admin/people/${encodeURIComponent(req.params.publicId)}?saved=1${shown}`,
+    );
+  } catch (error) {
+    return next(error);
+  }
+});
+
+
+// ===========================================================================
+// Deletion requests
+//
+// Every request to delete an account or an app's data (src/deletion.js). The
+// "as soon as possible" ones wait here for an administrator; the scheduled ones
+// are listed with the day they will run, and can be brought forward.
+// ===========================================================================
+
+async function deletionOr404(req, res, session) {
+  const request = await deletion.getByPublicId(req.params.publicId);
+  if (!request) {
+    res.status(404).render('error', {
+      title: 'Page not found', heading: 'That request is not here',
+      message: 'It may have been mistyped.', config, nonce: res.locals.nonce, noindex: true,
+    });
+    return null;
+  }
+  return request;
+}
+
+router.get('/admin/deletions', async (req, res, next) => {
+  try {
+    const session = await requireAdmin(req, res);
+    if (!session) return undefined;
+    const rows = await deletion.list();
+    const live = await settings.all();
+    return page(res, 'admin/deletions', session, {
+      title: 'Deletion requests',
+      path: '/admin/deletions',
+      waiting: rows.filter((r) => ['awaiting_review', 'needs_attention', 'processing'].includes(r.status)),
+      scheduled: rows.filter((r) => r.status === 'scheduled'),
+      finished: rows.filter((r) => ['completed', 'cancelled', 'rejected'].includes(r.status)).slice(0, 100),
+      counts: await deletion.counts(),
+      providers: await deletion.providers(),
+      defaultDays: live.deletion_default_days,
+      notifyEmail: live.deletion_notify_email,
+      dayChoices: deletion.DAY_CHOICES,
+      saved: req.query.saved === '1',
+      error: String(req.query.error || '').slice(0, 200),
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/admin/deletions/settings', csrf.verify, async (req, res, next) => {
+  try {
+    const session = await requireAdmin(req, res);
+    if (!session) return undefined;
+    const email = normaliseEmail(String(req.body.deletion_notify_email || ''));
+    if (!email || !email.includes('@')) {
+      return res.redirect(303, '/admin/deletions?error=Enter+an+email+address+to+tell+about+new+requests.');
+    }
+    const days = await settings.set('deletion_default_days', String(req.body.deletion_default_days || ''), session.user_id);
+    if (!days.ok) return res.redirect(303, '/admin/deletions?error=Choose+7%2C+15+or+30+days.');
+    await settings.set('deletion_notify_email', email, session.user_id);
+    await events.recordAudit({
+      actorUserId: session.user_id, actorType: 'admin', action: 'settings.updated',
+      targetType: 'settings', targetId: 'deletion_default_days,deletion_notify_email',
+      detail: { deletion_default_days: req.body.deletion_default_days, deletion_notify_email: email },
+      ip: req.clientIp, userAgent: req.userAgent,
+    });
+    return res.redirect(303, '/admin/deletions?saved=1');
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.get('/admin/deletions/:publicId', async (req, res, next) => {
+  try {
+    const session = await requireAdmin(req, res);
+    if (!session) return undefined;
+    const request = await deletionOr404(req, res, session);
+    if (!request) return undefined;
+    const decidedBy = request.decided_by_user_id
+      ? await db.one('SELECT display_name FROM users WHERE id = ?', [request.decided_by_user_id])
+      : null;
+    return page(res, 'admin/deletion', session, {
+      title: 'Deletion request',
+      path: '/admin/deletions',
+      request,
+      decidedBy: decidedBy ? decidedBy.display_name : '',
+      done: String(req.query.done || ''),
+      error: String(req.query.error || '').slice(0, 300),
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/admin/deletions/:publicId/:action', csrf.verify, async (req, res, next) => {
+  try {
+    const session = await requireAdmin(req, res);
+    if (!session) return undefined;
+    const request = await deletionOr404(req, res, session);
+    if (!request) return undefined;
+    const back = `/admin/deletions/${request.public_id}`;
+    const note = String(req.body.note || '').trim().slice(0, 500);
+
+    switch (req.params.action) {
+      case 'approve': {
+        const result = await deletion.approve(request, session.user_id, note);
+        if (result.reason === 'not_open') return res.redirect(303, `${back}?error=${encodeURIComponent('This request is no longer open.')}`);
+        return res.redirect(303, `${back}?done=${result.ok ? 'deleted' : 'partial'}`);
+      }
+      case 'cancel': {
+        const ok = await deletion.cancel(request, { byUserId: session.user_id, note });
+        return res.redirect(303, ok ? `${back}?done=cancelled` : `${back}?error=${encodeURIComponent('This request is no longer open.')}`);
+      }
+      case 'reject': {
+        if (!note) return res.redirect(303, `${back}?error=${encodeURIComponent('Say why, so the person is told a reason.')}`);
+        const ok = await deletion.reject(request, session.user_id, note);
+        return res.redirect(303, ok ? `${back}?done=rejected` : `${back}?error=${encodeURIComponent('This request is no longer open.')}`);
+      }
+      default:
+        return res.redirect(303, back);
+    }
+  } catch (error) {
+    return next(error);
+  }
+});
+
+module.exports = router;

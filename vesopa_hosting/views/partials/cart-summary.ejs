@@ -1,0 +1,128 @@
+<%# The order summary. Re-rendered as a fragment alongside cart-main whenever
+    the basket changes — the two always move together, because a line price
+    that updated without its total would be worse than a page reload. %>
+<h2 class="h3 mb-3">Order summary</h2>
+
+<% lines.forEach(function (line) { %>
+  <div class="sum-row">
+    <span><%= line.kind === 'hosting' ? line.plan.name + ' — ' + line.term.label
+           : line.kind === 'email' ? line.emailPlan.name
+           : line.domain %></span>
+    <span class="sum-val">
+      <% if (line.freeWithPlan) { %>
+        <s><%= money(line.unit_pence) %></s> <b class="free"><%= money(0) %></b>
+      <% } else { %>
+        <% if (line.was_pence) { %><s><%= money(line.was_pence) %></s> <% } %>
+        <b><%= money(line.total_pence) %></b>
+      <% } %>
+    </span>
+  </div>
+<% }); %>
+
+<% if (couponDiscount_pence > 0) { %>
+  <div class="sum-row sum-row-off">
+    <span><%- icon('bolt', 14) %> <%= couponCode %></span>
+    <span class="sum-val"><b>−<%= money(couponDiscount_pence) %></b></span>
+  </div>
+<% } %>
+
+<hr class="divider" style="margin:16px 0">
+
+<%# VAT is INSIDE the total, never added to it. This row reports the portion we
+    account for and deliberately does not change the total below it.
+
+    It is drawn only when the currency carries VAT at all. A dollar price has no
+    UK VAT inside it, so there is nothing to report and a "VAT (0%)" line would
+    only raise a question whose answer is better given by its absence. %>
+<% if (showVat) { %>
+  <div class="sum-row sum-row-vat">
+    <span>
+      <%= vatLabel %> (<%= vatPercent %>%)
+      <span class="vat-tag">we pay this</span>
+    </span>
+    <span class="sum-val muted"><%= money(vat_pence) %></span>
+  </div>
+<% } %>
+
+<div class="sum-total">
+  <span>Total</span>
+  <span class="sum-val">
+    <% if (was_total_pence) { %><s><%= money(was_total_pence) %></s><% } %>
+    <b><%= money(total_pence) %></b>
+  </span>
+</div>
+
+<% if (saved_total_pence > 0) { %>
+  <p class="sum-saved"><%- icon('check-circle', 15) %> You are saving <b><%= money(saved_total_pence) %></b></p>
+<% } %>
+
+<p class="tiny muted mt-2 mb-0">
+  <% if (showVat) { %>
+    Nothing is added at checkout. <%= vatLabel %> is included in the
+    price above and accounted for by us.
+  <% } else { %>
+    Nothing is added at checkout. Prices are in <%= currency.code %>
+    (<%= currency.name %>) and are the full amount.
+  <% } %>
+</p>
+
+<%# --- Coupon -------------------------------------------------------------
+    THIS WAS BEING MISSED BY EVERYONE, INCLUDING US.
+
+    It used to be a bare <details> whose summary was an 0.88rem line of lime
+    text with a "+" in front of it, sitting between the total and the payment
+    button — the one strip of a checkout page that the eye crosses on its way
+    to the button it is aiming for. It read as a footnote, so it was treated
+    as one, and customers with a working code paid full price.
+
+    So it is now a panel: its own tinted card, a bordered edge, a tag icon and
+    a real button rather than a text link. It looks like a thing you can use,
+    which is the entire requirement.
+
+    It stays collapsed by default. An open input on a checkout is its own
+    problem — an empty box labelled "discount code" invites people to leave and
+    go looking for one — but collapsed is not the same as hidden, and the
+    difference is whether the closed state is visibly a control.
+%>
+<div class="cart-coupon">
+  <% if (couponCode) { %>
+    <%# Applied. Loud and green, because the saving it produced is the reason
+        somebody would check this area at all. %>
+    <form method="post" action="/cart/coupon/remove" class="coupon-applied" data-cart-form>
+      <input type="hidden" name="_csrf" value="<%= csrf %>">
+      <span class="coupon-applied-ico"><%- icon('check', 16) %></span>
+      <span class="coupon-applied-txt">
+        <b><%= couponCode %></b>
+        <span><% if (couponDiscount_pence > 0) { %>You saved <%= money(couponDiscount_pence) %><% } else { %>Discount applied<% } %></span>
+      </span>
+      <button class="coupon-remove" type="submit" aria-label="Remove discount code <%= couponCode %>">Remove</button>
+    </form>
+  <% } else { %>
+    <details class="coupon-box"<%= couponError ? ' open' : '' %>>
+      <summary class="coupon-toggle">
+        <span class="coupon-toggle-ico"><%- icon('tag', 17) %></span>
+        <span class="coupon-toggle-txt">Have a discount code?</span>
+        <span class="coupon-toggle-cta">Enter code</span>
+      </summary>
+      <form method="post" action="/cart/coupon" class="coupon-form" data-cart-form>
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <input class="input coupon-input" name="code" placeholder="e.g. WELCOME10"
+               autocomplete="off" spellcheck="false" autocapitalize="characters"
+               aria-label="Discount code">
+        <button class="btn coupon-apply" type="submit">Apply</button>
+      </form>
+      <% if (couponError) { %><p class="error-text mb-0 mt-2"><%= couponError %></p><% } %>
+    </details>
+  <% } %>
+</div>
+
+<a class="btn btn-lg btn-block mt-3" href="/checkout">
+  Continue to payment <%- icon('arrow', 18) %>
+</a>
+
+<%# --- Reassurance, where the decision is actually made ----------------- %>
+<ul class="cart-trust">
+  <li><%- icon('shield', 15) %><span><%= moneyBackDays %>-day money-back guarantee</span></li>
+  <li><%- icon('lock', 15) %><span>Free SSL, issued automatically</span></li>
+  <li><%- icon('headset', 15) %><span>UK support — a person, not a script</span></li>
+</ul>

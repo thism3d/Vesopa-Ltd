@@ -1,0 +1,8 @@
+# Test tags.
+#
+# `live` talks to a real back office, so it is never part of an ordinary run:
+# it needs credentials passed in as --dart-define and it puts load on a server
+# a venue is using. Run it deliberately, with `flutter test --tags live`.
+tags:
+  live:
+    skip: false

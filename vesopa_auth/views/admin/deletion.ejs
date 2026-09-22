@@ -1,0 +1,124 @@
+<%- include('../partials/console-head') %>
+
+<%
+  const niceDate = function (d) {
+    return d ? new Date(d).toLocaleString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' }) : '';
+  };
+  const statusText = {
+    awaiting_review: 'Waiting for you to approve',
+    needs_attention: 'Could not be finished automatically',
+    processing: 'Running now',
+    scheduled: 'Scheduled',
+    completed: 'Deleted',
+    cancelled: 'Cancelled',
+    rejected: 'Rejected',
+  };
+  const itemText = { pending: 'To do', done: 'Deleted', failed: 'Failed', cancelled: 'Not done' };
+  const open = ['awaiting_review', 'scheduled', 'needs_attention'].includes(request.status);
+%>
+
+<p class="m-back"><a href="/admin/deletions">← All deletion requests</a></p>
+
+<h1 class="console-title"><%= statusText[request.status] || request.status %></h1>
+<p class="console-lead">
+  <%= request.email || request.contact_label || 'No email' %> ·
+  asked <%= niceDate(request.created_at) %>
+  <%= request.source === 'app' ? 'in the app' : 'on the web page' %><%= request.app_label ? ' (' + request.app_label + ')' : '' %>
+</p>
+
+<% if (done === 'deleted') { %>
+<div class="status status-good">
+  <span class="status-mark"><%- include('../partials/icon', { name: 'check' }) %></span>
+  <div><strong>Deleted.</strong><p>The person has been emailed.</p></div>
+</div>
+<% } else if (done === 'partial') { %>
+<div class="status status-warn">
+  <span class="status-mark"><%- include('../partials/icon', { name: 'alert' }) %></span>
+  <div><strong>Not everything could be deleted.</strong><p>Each item below says why. Fix the cause, then run it again.</p></div>
+</div>
+<% } else if (done) { %>
+<div class="status status-good">
+  <span class="status-mark"><%- include('../partials/icon', { name: 'check' }) %></span>
+  <div><strong><%= done === 'cancelled' ? 'Cancelled.' : 'Rejected.' %></strong><p>The person has been emailed.</p></div>
+</div>
+<% } %>
+<% if (error) { %>
+<div class="status status-bad">
+  <span class="status-mark"><%- include('../partials/icon', { name: 'alert' }) %></span>
+  <div><strong>Not done</strong><p><%= error %></p></div>
+</div>
+<% } %>
+
+<div class="card">
+  <div class="card-head"><h2>When</h2></div>
+  <div class="card-body">
+    <ul class="plain-list">
+      <% if (request.mode === 'scheduled') { %>
+      <li>Chose automatic deletion after <strong><%= request.delay_days %> days</strong><% if (request.due_at) { %>: <strong><%= niceDate(request.due_at) %></strong><% } %>.</li>
+      <% } else { %>
+      <li>Chose <strong>as soon as possible</strong>, for an administrator to review.</li>
+      <% } %>
+      <% if (request.decided_at) { %><li>Decided <%= niceDate(request.decided_at) %><%= decidedBy ? ' by ' + decidedBy : '' %><%= request.decision_note ? ': “' + request.decision_note + '”' : '' %></li><% } %>
+      <% if (request.completed_at) { %><li>Finished <%= niceDate(request.completed_at) %>.</li><% } %>
+      <% if (request.cancelled_at) { %><li>Cancelled <%= niceDate(request.cancelled_at) %>.</li><% } %>
+      <li class="hint">From <span class="mono"><%= request.requested_ip || 'unknown' %></span> · reference <span class="mono"><%= request.public_id %></span></li>
+    </ul>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head"><h2>What to delete</h2></div>
+  <% request.items.forEach(function (item) { %>
+  <div class="row">
+    <span class="row-mark"><%- include('../partials/icon', { name: item.kind === 'vesopa_account' ? 'person' : 'apps' }) %></span>
+    <div class="row-lines">
+      <span class="row-title"><%= item.label %></span>
+      <% if (item.detail) { %><span class="row-sub"><%= item.detail %></span><% } %>
+      <span class="row-sub"><%= item.kind === 'vesopa_account' ? 'Vesopa account' : (item.application_name || 'App data') %></span>
+      <% if (item.result) { %><span class="row-sub"><%= item.result %></span><% } %>
+    </div>
+    <div class="row-right">
+      <span class="pill <%= item.status === 'done' ? 'pill-good' : item.status === 'failed' ? 'pill-bad' : '' %>"><%= itemText[item.status] || item.status %></span>
+    </div>
+  </div>
+  <% }) %>
+</div>
+
+<% if (open) { %>
+<div class="card">
+  <div class="card-head"><h2>Decide</h2></div>
+  <div class="card-body">
+    <form method="post" action="/admin/deletions/<%= request.public_id %>/approve" class="del-admin-action">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <p class="hint">
+        <% if (request.status === 'scheduled') { %>
+          Deletes everything above now instead of on <%= niceDate(request.due_at) %>.
+        <% } else if (request.status === 'needs_attention') { %>
+          Runs the items that failed again. The ones already deleted are not repeated.
+        <% } else { %>
+          Deletes everything above now and emails the person.
+        <% } %>
+        It cannot be undone.
+      </p>
+      <button class="btn btn-danger btn-inline" type="submit">
+        <%= request.status === 'scheduled' ? 'Delete now' : request.status === 'needs_attention' ? 'Try again' : 'Approve and delete now' %>
+      </button>
+    </form>
+
+    <form method="post" action="/admin/deletions/<%= request.public_id %>/cancel" class="del-admin-action">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="field">
+        <label for="note">Note to the person (optional for cancelling, required for rejecting)</label>
+        <input type="text" id="note" name="note" maxlength="500">
+      </div>
+      <div class="inline-form">
+        <button class="btn btn-quiet btn-inline" type="submit">Cancel the request</button>
+        <button class="btn btn-quiet btn-inline" type="submit" formaction="/admin/deletions/<%= request.public_id %>/reject">Reject</button>
+      </div>
+      <p class="hint">Cancel when the person asks you to. Reject when it must not be done — for example a legal hold — and say why.</p>
+    </form>
+  </div>
+</div>
+<% } %>
+
+<%- include('../partials/console-foot') %>

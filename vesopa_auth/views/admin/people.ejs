@@ -1,0 +1,76 @@
+<%- include('../partials/console-head') %>
+
+<h1 class="console-title">People</h1>
+<p class="console-lead">
+  Search by email address, mobile number, name, or Vesopa user id.
+</p>
+
+<%
+  /*
+   * THE PAGE OPENS EMPTY, AND THAT IS THE FEATURE.
+   *
+   * A console that lists every account newest-first turns a curious afternoon
+   * into a browse of the customer list, and every one of those views is a
+   * person's data being read for no reason. A search is an act with an intent
+   * behind it — and it is the act this page writes to the audit log.
+   */
+%>
+<section class="card">
+  <form method="get" action="/admin/people" data-no-loadbar>
+    <div class="card-body">
+      <div class="inline-form">
+        <input type="search" name="q" value="<%= search %>" maxlength="190" autofocus
+               spellcheck="false" autocapitalize="off"
+               placeholder="them@example.com, 07911 123456, or a user id"
+               aria-label="Search for a person">
+        <button class="btn btn-primary btn-small" type="submit">Search</button>
+      </div>
+      <p class="hint mt-2">
+        An address is matched the way it was stored — <code>Bob@Gmail.com</code>
+        and <code>b.ob@gmail.com</code> find the same person, because Google
+        says they are one mailbox.
+      </p>
+    </div>
+  </form>
+</section>
+
+<% if (search) { %>
+<section class="card">
+  <h2 class="card-head"><%= people.length %> <%= people.length === 1 ? 'match' : 'matches' %></h2>
+
+  <% if (!people.length) { %>
+  <div class="empty">
+    <span class="empty-mark"><%- include('../partials/icon', { name: 'person' }) %></span>
+    <strong>Nobody found</strong>
+    <p>
+      If they signed in with Google, the address on their Vesopa account may not
+      be the one they gave you.
+    </p>
+  </div>
+  <% } %>
+
+  <% people.forEach(function (row) { %>
+  <a class="row" href="/admin/people/<%= row.public_id %>">
+    <span class="row-mark"><%- include('../partials/icon', { name: 'person' }) %></span>
+    <span class="row-lines">
+      <span class="row-title">
+        <%= row.display_name || 'No name given' %>
+        <% if (row.status !== 'active') { %><span class="pill pill-bad"><%= row.status %></span><% } %>
+        <% if (row.is_staff) { %><span class="pill pill-info">staff</span><% } %>
+        <% if (row.is_developer) { %><span class="pill">developer</span><% } %>
+      </span>
+      <span class="row-sub">
+        <%= row.email || 'no email on the account' %> ·
+        joined <%= new Date(row.created_at).toISOString().slice(0, 10) %>
+      </span>
+    </span>
+    <span class="row-right">
+      <%= row.last_login_at ? new Date(row.last_login_at).toISOString().slice(0, 10) : 'never signed in' %>
+      <span class="row-go"><%- include('../partials/icon', { name: 'chevron' }) %></span>
+    </span>
+  </a>
+  <% }) %>
+</section>
+<% } %>
+
+<%- include('../partials/console-foot') %>

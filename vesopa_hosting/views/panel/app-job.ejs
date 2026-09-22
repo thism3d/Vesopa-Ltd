@@ -1,0 +1,106 @@
+<%#
+  An install, while it happens.
+
+  THE LOG IS ON THE PAGE, not behind a "show details" link. Three reasons, in
+  order of how much they cost when ignored: an install that fails with a
+  progress bar and no output is a support ticket that starts with "it didn't
+  work"; a customer watching npm print package names can see it is alive rather
+  than hung; and the same lines are what we ask them to paste when it does go
+  wrong, so they had better be selectable text.
+
+  The page polls and updates itself. Closing it changes nothing — the work is a
+  detached process on the node writing to a file — which is said on the page,
+  because otherwise everybody sits and watches.
+%>
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css', sections: false }) %>
+<link rel="stylesheet" href="<%= asset('/assets/css/apps.css') %>">
+<%- include('../partials/panel-shell', {
+  pageTitle: app ? 'Installing ' + app.name : 'Installing',
+  pageSub: domain,
+}) %>
+
+<%# The database, said once. It is in the app's own config already; this is a
+    convenience copy for anybody who wants it in a password manager. %>
+<% if (flashData && flashData.database) { %>
+  <div class="p-card mb-3" style="border-color:var(--lime);box-shadow:var(--glow)">
+    <h2 class="h3 mb-1" style="display:flex;align-items:center;gap:9px">
+      <span style="color:var(--lime-ink);display:grid;place-items:center"><%- icon('database', 20) %></span>
+      Your database
+    </h2>
+    <p class="small muted mb-3">
+      Already written into the application's configuration — you do not need to type it
+      anywhere. Shown here once because we do not keep a copy.
+    </p>
+    <div class="kv">
+      <div class="kv-row"><span class="kv-k">Database</span><span class="kv-v mono"><%= flashData.database %></span></div>
+      <div class="kv-row"><span class="kv-k">Username</span><span class="kv-v mono"><%= flashData.dbUser %></span></div>
+      <div class="kv-row">
+        <span class="kv-k">Password</span>
+        <span class="kv-v">
+          <span class="copyable row" style="gap:8px">
+            <span class="mono"><%= flashData.dbPassword %></span>
+            <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= flashData.dbPassword %>">Copy</button>
+          </span>
+        </span>
+      </div>
+      <div class="kv-row"><span class="kv-k">Host</span><span class="kv-v mono">127.0.0.1</span></div>
+    </div>
+  </div>
+<% } %>
+
+<div class="p-card" data-job="<%= job.id %>">
+  <div class="row-between mb-2" style="align-items:center;gap:12px;flex-wrap:wrap">
+    <h2 class="h3 mb-0" data-job-step><%= job.step || 'Starting' %></h2>
+    <span class="state state-<%= job.state === 'done' ? 'green' : job.state === 'failed' ? 'red' : 'blue' %>" data-job-chip>
+      <i></i><span data-job-state><%= job.state === 'done' ? 'Finished' : job.state === 'failed' ? 'Stopped' : 'Working' %></span>
+    </span>
+  </div>
+
+  <div class="meter mb-3"><i data-job-bar style="width:<%= job.percent || 2 %>%"></i></div>
+
+  <p class="small muted mb-3" data-job-note>
+    <% if (job.state === 'running') { %>
+      This runs on the server, not in this tab. You can close the page and come back — nothing stops.
+    <% } else if (job.state === 'failed') { %>
+      Nothing was changed on your site. The output below says why.
+    <% } else { %>
+      Done.
+    <% } %>
+  </p>
+
+  <% if (job.state === 'failed' && job.error) { %>
+    <div class="alert alert-error mb-3" data-job-error>
+      <%- icon('warning', 19) %>
+      <div><%= job.error %></div>
+    </div>
+  <% } %>
+
+  <% if (job.state === 'done') { %>
+    <div class="tip tip-ok mb-3" data-job-next>
+      <span class="tip-ic"></span>
+      <div>
+        <b>Installed.</b>
+        <%= job.next || '' %>
+      </div>
+    </div>
+    <div class="row" style="gap:10px;flex-wrap:wrap">
+      <% if (domain) { %>
+        <a class="btn" href="https://<%= domain %>" target="_blank" rel="noopener"><%- icon('external', 16) %> Open <%= domain %></a>
+      <% } %>
+      <% if (app && app.kind === 'node') { %>
+        <a class="btn btn-ghost" href="/panel/apps/node"><%- icon('activity', 16) %> Node apps</a>
+      <% } %>
+      <a class="btn btn-ghost" href="/panel/apps">Install something else</a>
+    </div>
+  <% } %>
+
+  <details class="log-wrap" <%= job.state === 'failed' ? 'open' : '' %>>
+    <summary class="log-summary">Output</summary>
+    <pre class="log" data-job-log><%= (job.log || []).join('\n') %></pre>
+  </details>
+</div>
+
+<%# Before the shell-end, matching files.ejs and terminal.ejs. The site's CSP
+    is `script-src 'self'`, so nothing here can be inline. %>
+<script src="<%= asset('/assets/js/apps.js') %>" defer></script>
+<%- include('../partials/panel-shell-end') %>

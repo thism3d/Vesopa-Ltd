@@ -1,0 +1,101 @@
+<%#
+  Node applications.
+
+  THE WHOLE PAGE IS ONE QUESTION: is it working? Everything else — the port,
+  the memory, the Node version — is context for the answer, and sits smaller
+  than it.
+
+  The answer is not pm2's word for it. pm2 says `online` about a process that
+  exists, and a process that is crash-looping, that never bound its port, or
+  that throws on every request is `online` too. So the chip here is a verdict
+  built from three facts that can disagree — the status, the restart count read
+  against uptime, and an HTTP probe of the port — and the pessimistic one wins.
+  See health() in src/apps.js.
+
+  It refreshes itself every few seconds, because a page about whether something
+  is up is worthless the moment it is stale.
+%>
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css', sections: false }) %>
+<link rel="stylesheet" href="<%= asset('/assets/css/apps.css') %>">
+<%- include('../partials/panel-shell', {
+  pageTitle: 'Node.js apps',
+  pageSub: 'What is running on your account, and whether it is actually answering.',
+  topAction: { href: '/panel/apps/install/node-starter', icon: 'plus', label: 'New app' },
+}) %>
+
+<% if (mock) { %>
+  <div class="alert alert-info">
+    <%- icon('info', 19) %>
+    <div><b>Demonstration mode.</b> These are example processes — this panel is not connected to a live node.</div>
+  </div>
+<% } %>
+
+<% if (!hasHosting) { %>
+  <div class="empty">
+    <p class="mb-3">You need hosting before you can run an app on it.</p>
+    <a class="btn" href="/hosting">See the plans</a>
+  </div>
+<% } else if (!apps.length) { %>
+  <div class="empty">
+    <p class="mb-2"><b>Nothing running yet.</b></p>
+    <p class="mb-3">
+      Install a Node app on one of your sites and it appears here — with a process that
+      restarts it if it falls over and brings it back after a reboot.
+    </p>
+    <a class="btn" href="/panel/apps/install/node-starter"><%- icon('rocket', 16) %> Start an app</a>
+  </div>
+<% } else { %>
+
+  <div class="applist" data-node-list>
+    <% apps.forEach(function (a) { %>
+      <div class="appcard" data-node-app="<%= a.name %>">
+        <div class="appcard-top">
+          <a class="appcard-id" href="/panel/apps/node/<%= encodeURIComponent(a.name) %>">
+            <span class="approw-ic"><img src="<%= asset('/assets/img/apps/nodedotjs.svg') %>" alt="" width="22" height="22"></span>
+            <span class="approw-b">
+              <span class="approw-n"><%= a.name %></span>
+              <span class="approw-s mono"><%= a.script || 'unknown script' %><%= a.node ? ' · Node ' + a.node : '' %></span>
+            </span>
+          </a>
+          <span class="state state-<%= a.health.tone %>" data-health-chip><i></i><span data-health-label><%= a.health.label %></span></span>
+        </div>
+
+        <p class="appcard-why" data-health-why><%= a.health.why %></p>
+
+        <div class="appcard-stats">
+          <span><span class="stat-k">Port</span><span class="stat-v mono" data-stat-port><%= a.port || '—' %></span></span>
+          <span><span class="stat-k">Uptime</span><span class="stat-v" data-stat-uptime><%= a.uptime_ms ? Math.floor(a.uptime_ms / 86400000) ? Math.floor(a.uptime_ms / 86400000) + 'd' : Math.floor(a.uptime_ms / 3600000) ? Math.floor(a.uptime_ms / 3600000) + 'h' : Math.max(1, Math.floor(a.uptime_ms / 60000)) + 'm' : '—' %></span></span>
+          <span><span class="stat-k">Restarts</span><span class="stat-v" data-stat-restarts><%= a.restarts %></span></span>
+          <span><span class="stat-k">Memory</span><span class="stat-v" data-stat-memory><%= a.memory_mb %> MB</span></span>
+          <span><span class="stat-k">CPU</span><span class="stat-v" data-stat-cpu><%= a.cpu %>%</span></span>
+        </div>
+
+        <div class="appcard-acts">
+          <a class="btn btn-ghost btn-sm" href="/panel/apps/node/<%= encodeURIComponent(a.name) %>">
+            <%- icon('list', 15) %> Logs &amp; settings
+          </a>
+          <form method="post" action="/panel/apps/node/<%= encodeURIComponent(a.name) %>/action" class="row" style="gap:8px">
+            <input type="hidden" name="_csrf" value="<%= csrf %>">
+            <% if (a.status === 'stopped') { %>
+              <button class="btn btn-sm" name="action" value="start" type="submit"><%- icon('play', 15) %> Start</button>
+            <% } else { %>
+              <button class="btn btn-ghost btn-sm" name="action" value="restart" type="submit"><%- icon('refresh', 15) %> Restart</button>
+              <button class="btn btn-ghost btn-sm" name="action" value="stop" type="submit"><%- icon('power', 15) %> Stop</button>
+            <% } %>
+          </form>
+          <% if (a.domain) { %>
+            <a class="btn btn-ghost btn-sm" href="https://<%= a.domain %>" target="_blank" rel="noopener"><%- icon('external', 15) %> Open</a>
+          <% } %>
+        </div>
+      </div>
+    <% }); %>
+  </div>
+
+  <p class="tiny muted mt-3 mb-0" data-node-refreshed>
+    Checked just now. This page re-checks every few seconds — each check is a real HTTP
+    request to your app, not a guess from the process list.
+  </p>
+<% } %>
+
+<script src="<%= asset('/assets/js/apps.js') %>" defer></script>
+<%- include('../partials/panel-shell-end') %>

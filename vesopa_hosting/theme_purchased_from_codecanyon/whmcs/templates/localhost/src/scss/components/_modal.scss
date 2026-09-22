@@ -1,0 +1,8 @@
+@use "../global" as *;
+.modal {
+	&-sm {
+		@include screen(sm) {
+			--bs-modal-width: 350px;
+		}
+	}
+}

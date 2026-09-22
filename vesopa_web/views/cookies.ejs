@@ -1,0 +1,90 @@
+<%- include('partials/header') %>
+
+<div class="privacy_policy_section">
+    <div class="privacy_policy_section_inside">
+        <h1 class="privacy_policy_heading">Vesopa EPOS Cookie Policy</h1>
+        <p class="privacy_item_sub_heading">
+            This policy explains what cookies and similar technologies
+            <%= CONTACT.company %> uses on <%= SITE_URL.replace(/^https?:\/\//, '') %>, why we use
+            them, and how you control them. It sits alongside our
+            <a href="/privacy">Privacy Policy</a>.
+        </p>
+
+        <h2 class="privacy_item_heading">1. What cookies are</h2>
+        <p class="privacy_item_sub_heading">
+            A cookie is a small text file a website stores on your device so it can recognise
+            you on your next request — to keep you signed in, remember your basket, or count
+            visits. This policy also covers similar technologies such as
+            <code>localStorage</code>, which we use to remember your cookie choice.
+        </p>
+
+        <h2 class="privacy_item_heading">2. The cookies we use</h2>
+
+        <h3 class="privacy_item_heading">Strictly necessary — always on</h3>
+        <p class="privacy_item_sub_heading">
+            These make the site work. Without them you could not sign in to the admin panel
+            or complete a checkout, so they are set without consent, as the law allows.
+        </p>
+        <ul>
+            <li><b>Session cookie</b> — keeps you signed in to the admin panel. Expires when
+                you sign out or the session ends.</li>
+            <li><b>Checkout state</b> — remembers which plan you selected while you complete
+                payment.</li>
+            <li><b>PayPal</b> — set by PayPal when you pay, to process the transaction and
+                prevent fraud.</li>
+            <li><b>vesopa_cookie_consent</b> — a <code>localStorage</code> entry recording the
+                choice you made here, so we stop asking. Kept for 12 months.</li>
+        </ul>
+
+        <h3 class="privacy_item_heading">Analytics — optional</h3>
+        <p class="privacy_item_sub_heading">
+            Aggregated statistics about which pages are viewed and where visitors leave, so we
+            know what to improve. We do not use these to identify you, and we do not sell the
+            data. Off unless you turn them on.
+        </p>
+
+        <h3 class="privacy_item_heading">Support &amp; marketing — optional</h3>
+        <p class="privacy_item_sub_heading">
+            Would cover live chat and measuring which campaigns bring businesses to us.
+            Off unless you turn them on.
+        </p>
+
+        <p class="privacy_item_sub_heading">
+            <b>We currently use no analytics, advertising or third-party tracking cookies at
+            all.</b> The optional categories above are listed so the choice is already yours
+            if we add any — and nothing in either category will load unless you have allowed
+            it first. If that changes we will update this policy and ask you again.
+        </p>
+
+        <h2 class="privacy_item_heading">3. Changing your mind</h2>
+        <p class="privacy_item_sub_heading">
+            You can change or withdraw your choice at any time using
+            <a href="#" data-cc="open">Cookie Settings</a>, also linked in the footer of every
+            page. Withdrawing consent is as easy as giving it, and takes effect immediately.
+            We ask again after 12 months, and whenever the cookies we use change.
+        </p>
+        <p class="privacy_item_sub_heading">
+            You can also block or delete cookies in your browser settings. Blocking strictly
+            necessary cookies will stop parts of the site — sign-in and checkout — from
+            working.
+        </p>
+
+        <h2 class="privacy_item_heading">4. Cookies in the Vesopa EPOS software</h2>
+        <p class="privacy_item_sub_heading">
+            This policy covers our public website. The Vesopa EPOS till application and the
+            Back Office are business tools you sign in to; they use a session token to keep
+            you signed in and store your terminal's settings locally on the device. They carry
+            no analytics, advertising or third-party tracking cookies.
+        </p>
+
+        <h2 class="privacy_item_heading">5. Contact us</h2>
+        <p class="privacy_item_sub_heading">
+            Questions about this policy, or a request about your data, can go to
+            <a href="mailto:<%= CONTACT.support_email %>"><%= CONTACT.support_email %></a> or
+            <a href="tel:<%= CONTACT.emergency_phone_e164 %>"><%= CONTACT.emergency_phone %></a>.
+            <%= CONTACT.company %>, <%= CONTACT.address_line1 %>, <%= CONTACT.address_line2 %>.
+        </p>
+    </div>
+</div>
+
+<%- include('partials/footer') %>

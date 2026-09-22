@@ -1,0 +1,5 @@
+name: "localhost"
+author: "bPlugins"
+description: "A child theme of Twenty-One using Bootstrap 5 for WHMCS"
+config:
+    parent: twenty-one

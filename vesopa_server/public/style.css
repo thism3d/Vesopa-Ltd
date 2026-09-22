@@ -1,0 +1,4400 @@
+/* Vesopa Back Office — dark rail, light canvas, generous whitespace. */
+
+:root {
+  --rail: #111111;
+  --rail-text: #9c9c9a;
+  --rail-active: #ffffff;
+  --bg: #f5f4f7;
+  --card: #ffffff;
+  --line: #e6e3ea;
+  --text: #17141c;
+  --muted: #78717f;
+
+  /* Taken from the Vesopa mark: the lime tail on the "V". */
+  --brand: #a5c715;
+  --brand-soft: #eff6d8;
+  /* Lime is a light colour — white type on it lands near 1.9:1. Anything
+     sitting ON the brand uses this ink, and brand-coloured *text* on a light
+     canvas uses --brand-deep, because the lime itself is too pale to read. */
+  --on-brand: #10130a;
+  --brand-deep: #6e8a0e;
+  --blue: #4b8ef5;
+  --amber: #f5a524;
+  --red: #e5484d;
+  --green: #30a46c;
+
+  /* Surfaces the cards sit on and inside. `--panel` and `--surface-2` were
+     already being referenced with literal fallbacks in a dozen places before
+     they existed; naming them here is what makes the dark theme below a list
+     of colours rather than a rewrite. */
+  --panel: #ffffff;
+  --surface-2: #f7f8fa;
+  --input-bg: #ffffff;
+  --hover: #fbfafc;
+  --ink: var(--text);
+  --flash: #fff4d6;
+  --track: #eeecf1;
+
+  /* Status washes. Held as tokens because a badge that reads as a pale tint on
+     white has to become a dark tint on near-black, and the ink on it moves the
+     other way. */
+  --ok-wash: #e3f6ec;
+  --warn-wash: #fff3e0;
+  --warn-ink: #b06d00;
+  --bad-wash: #fdeceb;
+
+  --radius: 12px;
+  --shadow: 0 1px 2px rgba(20, 18, 26, .04), 0 4px 16px rgba(20, 18, 26, .04);
+
+  /* One interior padding for every card, whatever is inside it — a form, a
+     stat, a table. Before this only `.panel` and `.inspector` carried one and
+     `.rd-card` carried none, so seven whole sections put their headings hard
+     against the border while the rest breathed. A token rather than a number
+     in six places, because the next card type will forget too. */
+  --card-pad: 20px;
+  /* The gap between the blocks stacked down a view. */
+  --stack: 18px;
+}
+
+* { box-sizing: border-box; }
+
+/* An explicit `display` on an element beats the `hidden` attribute, so the
+   login screen stayed on top of the app forever. This puts hidden back in
+   charge. */
+[hidden] { display: none !important; }
+
+body {
+  margin: 0;
+  font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4 { margin: 0; font-weight: 650; letter-spacing: -.01em; }
+h2 { font-size: 24px; }
+h3 { font-size: 16px; }
+.muted { color: var(--muted); }
+.small { font-size: 12.5px; }
+.right { text-align: right; }
+.error { color: var(--red); font-size: 13px; min-height: 18px; margin: 10px 0 0; }
+
+/* ---------- Login ----------
+   Split screen: form left, brand stage right.
+
+   The old version used `minmax(420px, 44%) 1fr` with a full-bleed cover photo.
+   On a 27" display that gave a ~1100px white column holding a 380px form — a
+   lake of dead space — while `background-size: cover` cropped the photo to a
+   meaningless slice. Both halves are now capped: the form column tops out via
+   clamp(), and the stage centres its own bounded composition. Neither one
+   keeps growing once the screen is bigger than the content needs. */
+
+.login-wrap {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  /* Never narrower than the form plus its gutters, never so wide that the
+     form drifts away from the fold. */
+  grid-template-columns: clamp(400px, 42vw, 620px) 1fr;
+  background: var(--card);
+}
+
+.login-side {
+  display: grid;
+  place-items: center;
+  padding: clamp(28px, 5vw, 56px);
+}
+
+.login-card { width: 100%; max-width: 384px; }
+
+/* The mark, sized the responsive way round: a width it may not exceed and a
+   height that follows from it, rather than a fixed height and whatever width
+   the aspect ratio makes of it. The lockup is 900x130 — nearly seven to one —
+   so a "34px tall" logo is 235px wide, and on a narrow screen that is a picture
+   which cannot shrink pushing everything beside it out of the way. Each of
+   these is a flex item, and an image with an intrinsic width does not shrink
+   below it unless it is told it may. */
+.login-logo {
+  display: block;
+  width: 100%;
+  max-width: 220px;
+  height: auto;
+  margin: 0 0 30px;
+}
+
+.login-card h1 {
+  font-size: clamp(24px, 2.2vw, 28px);
+  letter-spacing: -.02em;
+  margin-bottom: 6px;
+}
+.login-sub { color: var(--muted); margin: 0 0 28px; font-size: 14.5px; }
+
+/* The app's forms space their inputs with a global `input { margin-top: 6px }`.
+   Login opts out of it: the show/hide toggle is centred against the input's
+   own box, and a margin on the input (which collapses through .field-pw)
+   would drag that centre off by a few pixels. The gap moves to the label. */
+.field { margin-top: 18px; }
+.field:first-of-type { margin-top: 0; }
+.field > label { display: block; margin: 0 0 6px; }
+.field input { margin-top: 0; }
+
+/* The toggle sits inside the input's box; the padding-right on the input is
+   what keeps a long password from running underneath it. */
+.field-pw { position: relative; }
+.field-pw input { padding-right: 66px; }
+
+.pw-toggle {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  border: 0;
+  background: transparent;
+  padding: 6px 8px;
+  border-radius: 7px;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+}
+.pw-toggle:hover { color: var(--text); background: var(--bg); }
+
+.login-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
+  font-size: 13.5px;
+}
+
+/* A button, not an <a href="#">, because there is no reset page to link to —
+   it discloses the hint below instead. Styled to read as a link anyway. */
+.link-quiet {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--brand-deep);
+  font-weight: 550;
+  cursor: pointer;
+}
+.link-quiet:hover { text-decoration: underline; }
+
+.login-hint {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: var(--brand-soft);
+  color: #3f4d16;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.login-hint strong { font-weight: 650; }
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--muted);
+  cursor: pointer;
+}
+.check input { width: auto; margin: 0; accent-color: var(--brand-deep); }
+
+.login-foot {
+  margin-top: 26px;
+  text-align: center;
+  font-size: 13.5px;
+  color: var(--muted);
+}
+.login-foot a { color: var(--brand-deep); font-weight: 600; text-decoration: none; }
+.login-foot a:hover { text-decoration: underline; }
+.logo { font-size: 26px; font-weight: 750; letter-spacing: -.02em; }
+.logo span { color: var(--brand); }
+
+/* ---------- Login stage ----------
+   Near-black ground with the brand's lime arc sweeping through it, echoing
+   the curve in the Vesopa key visual. The photo is a crop of that same
+   visual with the lockup removed, so the wordmark is never doubled. */
+
+.login-stage {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  padding: clamp(40px, 4vw, 72px);
+  /* The glow sits behind where the photo lands, so the product looks lit
+     rather than pasted onto a flat panel. An earlier version put it in the
+     top-right corner, which only made the empty area above look muddy. */
+  background:
+    radial-gradient(70% 45% at 50% 34%, rgba(165, 199, 21, .17) 0%,
+                    rgba(165, 199, 21, 0) 70%),
+    linear-gradient(165deg, #16190f 0%, #0a0c07 100%);
+}
+
+/* The arc, echoing the curve that sweeps under the logo in the Vesopa key
+   visual. A plain ring clipped by the panel: no banding on wide gamuts, and
+   it stays smooth at any size because nothing about it is rasterised. */
+.login-stage::before,
+.login-stage::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+}
+.login-stage::before {
+  width: 165%;
+  aspect-ratio: 1;
+  left: -34%;
+  top: 46%;
+  border: 3px solid rgba(165, 199, 21, .38);
+  /* Keeps the sweep where it enters bottom-left and lets it dissolve before
+     it can close into an obvious circle. */
+  -webkit-mask-image: linear-gradient(105deg, #000 8%, transparent 58%);
+          mask-image: linear-gradient(105deg, #000 8%, transparent 58%);
+}
+/* A second, fainter arc just inside it — reads as motion rather than a
+   drawn shape. */
+.login-stage::after {
+  width: 148%;
+  aspect-ratio: 1;
+  left: -25%;
+  top: 58%;
+  border: 1px solid rgba(165, 199, 21, .22);
+  -webkit-mask-image: linear-gradient(105deg, #000 8%, transparent 50%);
+          mask-image: linear-gradient(105deg, #000 8%, transparent 50%);
+}
+
+.stage-inner {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  /* The cap that fixes the wide-screen problem: past this the stage grows,
+     the composition inside it does not. */
+  max-width: 520px;
+}
+
+.stage-shot {
+  margin: 0 0 40px;
+  border-radius: 18px;
+  overflow: hidden;
+  /* The source crop is 620×522. Held at its own aspect ratio it never
+     stretches, and it is never scaled past roughly 1:1 on a 1x display. */
+  aspect-ratio: 620 / 522;
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, .4),
+    0 30px 70px -20px rgba(0, 0, 0, .8);
+  outline: 1px solid rgba(255, 255, 255, .08);
+  outline-offset: -1px;
+}
+.stage-shot img { display: block; width: 100%; height: 100%; object-fit: cover; }
+
+.stage-title {
+  color: #fff;
+  font-size: clamp(26px, 2.5vw, 34px);
+  line-height: 1.2;
+  letter-spacing: -.025em;
+  font-weight: 650;
+  margin: 0 0 22px;
+}
+
+.stage-points {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 11px;
+  color: rgba(255, 255, 255, .68);
+  font-size: 14.5px;
+}
+.stage-points li {
+  position: relative;
+  padding-left: 26px;
+  line-height: 1.45;
+}
+/* A lime tick, drawn rather than shipped as an icon font. */
+.stage-points li::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 5px;
+  width: 5px;
+  height: 10px;
+  border: solid var(--brand);
+  border-width: 0 2px 2px 0;
+  transform: rotate(43deg);
+}
+
+/* Short viewports run out of vertical room long before horizontal. Shrinking
+   the whole composition keeps the photo — a 1280×800 laptop is a normal way to
+   open this, and dropping the product shot there loses the point of the panel.
+   Only when there is genuinely no room does the photo go. */
+@media (max-height: 860px) {
+  .stage-inner { max-width: 430px; }
+  .stage-shot { margin-bottom: 32px; }
+}
+@media (max-height: 740px) {
+  .stage-inner { max-width: 360px; }
+  .stage-shot { margin-bottom: 26px; }
+  .stage-title { font-size: clamp(22px, 2vw, 27px); margin-bottom: 18px; }
+  .stage-points { font-size: 13.5px; gap: 9px; }
+}
+@media (max-height: 600px) {
+  .stage-shot { display: none; }
+  .stage-inner { max-width: 420px; }
+}
+
+/* Below a tablet the stage has nowhere to go; the form takes the screen. */
+@media (max-width: 980px) {
+  .login-wrap { grid-template-columns: 1fr; }
+  .login-stage { display: none; }
+}
+
+/* On a small phone "Keep me signed in" and "Forgot password?" together are
+   wider than the column, and flex items do not shrink past their text — so
+   let the row break instead of pushing the page sideways. */
+@media (max-width: 400px) {
+  .login-side { padding: 24px 20px; }
+  .login-row { flex-wrap: wrap; gap: 10px 12px; }
+}
+
+label {
+  display: block;
+  margin-top: 18px;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--muted);
+}
+input, select {
+  width: 100%;
+  margin-top: 6px;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  font-size: 15px;
+  background: var(--input-bg);
+  color: var(--text);
+}
+input:focus, select:focus {
+  outline: none;
+  border-color: var(--brand);
+  /* Left over from an earlier teal palette — the ring now matches the lime it
+     is drawn around. */
+  box-shadow: 0 0 0 3px rgba(165, 199, 21, .28);
+}
+
+.btn {
+  border: 0;
+  border-radius: 9px;
+  padding: 10px 18px;
+  font-size: 14.5px;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--line);
+  color: var(--text);
+}
+.btn.primary { background: var(--brand); color: var(--on-brand); }
+.btn.danger { background: var(--red); color: #fff; }
+.btn.ghost { background: transparent; border: 1px solid var(--line); }
+.btn.block { width: 100%; margin-top: 24px; padding: 12px; }
+.btn:hover { filter: brightness(1.06); }
+.btn.small { padding: 6px 12px; font-size: 13px; }
+
+/* ---------- Shell ---------- */
+
+#app { display: flex; min-height: 100vh; }
+
+.rail {
+  width: 236px;
+  flex: none;
+  background: var(--rail);
+  color: var(--rail-text);
+  display: flex;
+  flex-direction: column;
+  padding: 22px 0;
+}
+.rail .logo { padding: 0 22px 22px; color: #fff; font-size: 20px; }
+
+.rail nav { display: flex; flex-direction: column; gap: 2px; padding: 0 12px; }
+.nav-group {
+  padding: 18px 10px 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: #5f596b;
+}
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--rail-text);
+  font-size: 14.5px;
+  cursor: pointer;
+}
+.nav:hover { background: rgba(255, 255, 255, .05); color: #fff; }
+.nav.active { background: var(--brand); color: var(--on-brand); font-weight: 600; }
+
+.rail-foot {
+  margin-top: auto;
+  padding: 18px 22px 0;
+  border-top: 1px solid rgba(255, 255, 255, .07);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.link {
+  border: 0;
+  background: none;
+  color: var(--rail-text);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 0;
+  text-decoration: underline;
+  margin-left: auto;
+}
+
+/* The operator must be able to tell at a glance whether the figures in front
+   of them are live or stale. */
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.dot.online { background: #35d07f; box-shadow: 0 0 0 3px rgba(53, 208, 127, .18); }
+.dot.offline { background: #6b6478; }
+
+/* `min-width: 0` is the whole reason the back office used to slide under its
+   own sidebar on an iPad.
+
+   A flex item defaults to `min-width: auto`, which means it refuses to become
+   narrower than its content. One wide table therefore made <main> wider than
+   its share, which made #app wider than the viewport, which gave the *page* a
+   horizontal scrollbar — and the rail is `position: sticky`, which only sticks
+   vertically. Scroll right to reach a Delete button and the rail stays put
+   while the content slides underneath it, cutting the heading in half. That is
+   exactly the screenshot: "epartments", "ag rows to set the order".
+   
+   Nothing may make this column wider than the space it has. Anything too wide
+   scrolls inside its own box — see the table rule below. */
+main { flex: 1; min-width: 0; padding: 30px 36px 60px; overflow: auto; }
+
+.page-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+/* The heading and its paragraph take what is left; the buttons keep their own
+   width and drop to a line of their own when there is not enough for both.
+   Without this the buttons were the half that gave way, and a page head with
+   five of them (screen programming) came out as a ragged vertical stack down
+   the right-hand edge with the description text running underneath it. */
+.page-head > div:first-child { flex: 1 1 min(100%, 380px); min-width: 0; }
+.page-head > .denom-actions,
+.page-head > div:last-child:not(:first-child) {
+  flex: 0 0 auto;
+  margin-top: 0;
+  justify-content: flex-end;
+}
+
+/* Vertical rhythm down a view.
+
+   Cards carry no margin of their own, so two of them in a row touched unless
+   somebody remembered an inline `margin-top` — which some sections had and
+   others did not. Sibling margins collapse, so the page head's larger gap and
+   the stat strip's still win; this only fills the gaps nobody set. */
+.view > * + * { margin-top: var(--stack); }
+
+/* ---------- Cards & stats ---------- */
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 16px;
+  margin-bottom: 28px;
+}
+.stat { padding: 18px 20px; display: flex; flex-direction: column; gap: 8px; }
+.stat .label { font-size: 13px; color: var(--muted); font-weight: 550; }
+.stat .value { font-size: 27px; font-weight: 700; letter-spacing: -.02em; }
+.stat .accent { height: 3px; width: 34px; border-radius: 3px; background: var(--brand); }
+.stat.blue .accent { background: var(--blue); }
+.stat.amber .accent { background: var(--amber); }
+.stat.red .accent { background: var(--red); }
+
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+@media (max-width: 1100px) { .grid-2 { grid-template-columns: 1fr; } }
+
+.panel { padding: var(--card-pad); }
+.panel h3 { margin-bottom: 14px; }
+
+/* ---------- Tables ---------- */
+
+table { width: 100%; border-collapse: collapse; }
+th, td {
+  padding: 12px var(--card-pad);
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+}
+th {
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--muted);
+  font-weight: 650;
+  background: var(--hover);
+}
+tbody tr:last-child td { border-bottom: 0; }
+tbody tr:hover { background: var(--hover); }
+td.right, th.right { text-align: right; }
+/* A table wider than its card scrolls inside the card. At EVERY width.
+
+   This rule existed already and was inside `@media (max-width: 960px)`, which
+   is the one thing wrong with it: an iPad in landscape is 1024–1366 CSS pixels,
+   so the device this was reported from was the device the fix excluded. A wide
+   table can overflow a 1440px desktop too — the width it needs depends on the
+   catalogue, not on the screen.
+
+   `overflow: hidden` used to sit on the table itself, to keep its corners
+   inside the rounded card. What it actually did was clip: a product called
+   Carlsberg came out as "Carli", a price as "3.0(", and the Edit / Duplicate /
+   Delete buttons were painted outside the card where nothing could reach them.
+   The card clips now, and it scrolls. */
+.card:has(> table) { overflow-x: auto; }
+.card > table {
+  border-radius: var(--radius);
+  /* At least fill the card; wider if the content needs it. The standard
+     responsive-table pairing with the scroll container above — and it is what
+     stops every cell being squeezed until "Store Manager", a gift-card code and
+     "Catering, 20 covers" each wrap onto three lines. */
+  min-width: 100%;
+  width: max-content;
+}
+/* …with a ceiling, so one long note cannot make a table two thousand pixels
+   wide. Anything past this wraps; everything else stays on one line. */
+.card > table td { max-width: 42ch; }
+
+/* A row's buttons are one line, never a stack. With the table at its natural
+   width they already fit; this is the belt to that braces, because a stack of
+   buttons overlapping a card's rounded corner is the thing that looks broken. */
+td .btn { white-space: nowrap; }
+
+/* ---- …and they do not scroll away either ---------------------------------
+
+   The rule above lets a wide table scroll inside its card, which is right. What
+   it does not say is which column goes first, and the answer is always the last
+   one — which on every list in this application is the row's own buttons. So on
+   an iPad, Edit and Delete on Departments, Top up and History on Gift cards,
+   Edit on Deposits, Delete on Automation rules and all six icons on Scheduled
+   reports were painted past the right-hand edge of the card, with nothing on
+   screen to say they were there. Six separate bug reports, one cause.
+
+   The catalogue is the worst of them: 1303px of table in a 776px card on an
+   iPad in portrait. Scrolling 527px to reach Delete also takes the product's
+   name off the left-hand side, so by the time the button is under your thumb
+   the row no longer says what it is — which is how you delete the wrong one.
+
+   The actions column stays put. Nothing has to be scrolled to act on a row, so
+   the column that says which row it is stops being scrolled away to get there.
+
+   Asked of the markup — `.row-actions-cell` is put on the last cell by
+   cardsOnPhone() for the phone layout — so a list added later gets this without
+   anyone remembering to, and a table whose last column is data (Stock, the
+   report tables) is left alone. Not scoped to `.card > table`, because
+   Scheduled reports puts its table inside a `.rr-scroll` of its own and that
+   is the very table with six buttons in the cell. */
+table:has(tbody > tr > .row-actions-cell) tr > :last-child {
+  position: sticky;
+  right: 0;
+  z-index: 1;
+  background: var(--card);
+  /* `border-collapse: collapse` and `position: sticky` disagree: a collapsed
+     border belongs to the table, not the cell, so it does not travel with a
+     cell that has been lifted out of the flow and the column loses its row
+     lines. Drawn inside the cell instead. The second shadow is the edge the
+     column floats above — soft enough to read as a seam when the table fits
+     and as a lifted edge when it does not. */
+  box-shadow:
+    inset 0 -1px 0 var(--line),
+    -10px 0 12px -10px rgba(20, 18, 26, .28);
+}
+table:has(tbody > tr > .row-actions-cell) thead tr > :last-child {
+  /* Above its own column, and above the rest of the heading row. */
+  z-index: 2;
+  background: var(--hover);
+}
+/* The hover wash is painted on the row, and the row is underneath this cell. */
+table:has(tbody > tr > .row-actions-cell) tbody tr:hover > :last-child {
+  background: var(--hover);
+}
+/* The last row owns the card's bottom corners; a line drawn under it sits on
+   the border and reads as a stray rule. */
+table:has(tbody > tr > .row-actions-cell) tbody tr:last-child > :last-child {
+  box-shadow: -10px 0 12px -10px rgba(20, 18, 26, .28);
+}
+td .btn + .btn { margin-left: 6px; }
+
+/* A row that just arrived over the socket. */
+@keyframes flash { from { background: var(--flash); } to { background: transparent; } }
+tr.new { animation: flash 1.6s ease-out; }
+
+/* ---------- Bars (a chart without a chart library) ---------- */
+
+.bars { display: flex; flex-direction: column; gap: 12px; }
+.bar-row { display: grid; grid-template-columns: 120px 1fr 76px; align-items: center; gap: 12px; }
+.bar-track { height: 9px; background: var(--track); border-radius: 5px; overflow: hidden; }
+.bar-fill { height: 100%; border-radius: 5px; background: var(--brand); }
+.bar-row .amount { text-align: right; font-variant-numeric: tabular-nums; font-size: 13.5px; }
+
+/* ---------- Badges ---------- */
+
+.badge {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.badge.active { background: var(--ok-wash); color: var(--green); }
+.badge.paused { background: var(--bad-wash); color: var(--red); }
+.badge.archived { background: var(--track); color: var(--muted); }
+.badge.due { background: var(--warn-wash); color: var(--warn-ink); }
+.badge.paid { background: var(--ok-wash); color: var(--green); }
+.badge.overdue { background: var(--bad-wash); color: var(--red); }
+
+/* ---------- Modal ---------- */
+
+.modal-back {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 18, 26, .45);
+  display: grid;
+  place-items: center;
+  z-index: 50;
+}
+.modal {
+  width: 440px;
+  max-height: 86vh;
+  overflow: auto;
+  background: var(--card);
+  border-radius: 14px;
+  padding: 26px;
+  box-shadow: 0 30px 70px rgba(0, 0, 0, .3);
+}
+.modal h3 { margin-bottom: 6px; }
+.modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 24px; }
+.row { display: flex; gap: 12px; }
+.row > * { flex: 1; }
+/* Stretch is the flex default, and in a row mixing a label-above-a-field with
+   anything of its own height — a button, a checkbox — it aligns the tops of
+   boxes that are not the same height and leaves the shorter control floating
+   above the fields it belongs to. Controls line up on the bottom edge, which
+   is where the fields end. Same rule as `.tbl-bar` and `.sp-bar`, for the same
+   reason. */
+.row { align-items: flex-end; }
+
+.empty { padding: 40px; text-align: center; color: var(--muted); }
+
+.thumb {
+  width: 26px;
+  height: 26px;
+  border-radius: 5px;
+  object-fit: cover;
+  vertical-align: -8px;
+  margin-right: 6px;
+}
+.emoji { font-size: 20px; vertical-align: -3px; margin-right: 4px; }
+
+.img-field { display: flex; align-items: center; gap: 12px; margin-top: 6px; }
+.img-preview {
+  width: 54px;
+  height: 54px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid var(--line);
+}
+
+.swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  margin-right: 6px;
+  vertical-align: -1px;
+  border: 1px solid rgba(0, 0, 0, .12);
+}
+
+/* ---------- Brand ---------- */
+
+/* 192px is the rail's content box: 236 wide, less 22 of padding either side.
+   At `height: 30px` this mark came out 208px and had been hanging 16px out of
+   its own column. */
+.brand-logo { display: block; width: 100%; max-width: 192px; height: auto; }
+.login-card .brand-logo { max-width: 240px; margin: 0 auto 6px; }
+
+/* ---------- Floor designer ---------- */
+
+.designer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 250px;
+  gap: 20px;
+  align-items: start;
+}
+/* An iPad in landscape has about 700px left after the rail and the inspector,
+   which is not a floor plan — it is a third of one. The inspector goes under
+   the canvas well before the layout gets that tight.
+
+   `minmax(0, 1fr)` above rather than `1fr` for the same reason <main> needs
+   `min-width: 0`: a grid track sized `1fr` still refuses to go below its
+   content's minimum, so the canvas pushed the whole page sideways. */
+@media (max-width: 1200px) {
+  .designer { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* The canvas is a grid so tables land on whole units — a free-pixel drag looks
+   tidy to whoever drew it and ragged to everyone else.
+
+   IT SCROLLS, AND THE ROOM HAS A FIXED SIZE. Both halves of that were wrong,
+   and together they are the fault reported from an iPad: "the Table Designer is
+   cut off and I cannot go to the right side, so I cannot set anything there".
+
+   `overflow: hidden` meant a table beyond the visible width was painted and
+   then clipped — there, on the till, and unreachable here. And the room had no
+   size of its own: it was as wide as the browser happened to be, so a plan
+   arranged on a desktop had tables outside the room on a tablet. A floor plan
+   has to mean the same thing on every screen, because it describes a floor.
+
+   So the room is a fixed number of grid units (see ROOM_COLS in app.js, which
+   also stretches it to hold whatever a venue has already saved), and the box
+   around it scrolls. `background-attachment: local` keeps the grid lines under
+   the tables as it scrolls rather than painting them on the window. */
+#canvas {
+  position: relative;
+  height: 620px;
+  max-height: 70vh;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  background-color: var(--hover);
+  background-image:
+    linear-gradient(to right, var(--line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--line) 1px, transparent 1px);
+  background-size: 40px 40px;
+  background-attachment: local;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+/* The room itself. Sized by app.js so it is never smaller than the plan it has
+   to hold — a spacer rather than a wrapper element, so the tables keep their
+   existing absolute coordinates and nothing about the saved data changes. */
+#canvas::after {
+  content: '';
+  display: block;
+  width: var(--room-w, 960px);
+  height: var(--room-h, 600px);
+}
+
+/* `touch-action: none` so a finger on a table drags the table. Without it the
+   browser claims the gesture and scrolls the canvas instead — which is the
+   right thing to do on the empty grid between tables, and exactly the wrong
+   thing on a table. Both work now: drag a table to move it, drag the floor to
+   look around it. */
+.tbl {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  touch-action: none;
+  background: var(--card);
+  border: 2px solid var(--brand);
+  color: var(--text);
+  border-radius: 8px;
+  cursor: grab;
+  user-select: none;
+  box-shadow: var(--shadow);
+  transition: box-shadow .12s;
+}
+.tbl:hover { box-shadow: 0 4px 14px rgba(165, 199, 21, .28); }
+.tbl.dragging { cursor: grabbing; opacity: .85; z-index: 10; }
+.tbl.circle { border-radius: 50%; }
+.tbl.selected { border-color: var(--amber); box-shadow: 0 0 0 3px rgba(245, 165, 36, .25); }
+.tbl .num { font-weight: 700; font-size: 17px; }
+.tbl .seats { font-size: 11px; color: var(--muted); }
+
+.room-tabs { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+.room-tab {
+  padding: 7px 14px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 13.5px;
+}
+.room-tab.active { background: var(--brand); color: var(--on-brand); border-color: var(--brand); }
+
+.inspector { padding: var(--card-pad); }
+.inspector h3 { margin-bottom: 12px; }
+.inspector label { margin-top: 12px; }
+.hint {
+  font-size: 12.5px;
+  color: var(--muted);
+  background: var(--brand-soft);
+  padding: 10px 12px;
+  border-radius: 8px;
+  margin-top: 14px;
+}
+.unsaved { color: var(--amber); font-weight: 600; }
+
+/* ---------- Fixed, collapsible sidebar ---------- */
+
+/* The rail stays put while the page scrolls, and scrolls internally when the
+   nav is taller than the viewport, so long menus never push the sign-out
+   button off-screen. */
+.rail {
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  height: 100vh;
+  overflow: hidden;
+}
+.rail nav {
+  flex: 1;
+  overflow-y: auto;
+  /* A thin scrollbar that does not draw attention on the dark rail. */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, .18) transparent;
+}
+.rail nav::-webkit-scrollbar { width: 6px; }
+.rail nav::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, .18);
+  border-radius: 3px;
+}
+
+/* A nav group heading is now a button that folds its section away. The caret
+   rotates to show state; a collapsed group hides every .nav until the next
+   heading. */
+.nav-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  user-select: none;
+}
+.nav-group .caret {
+  transition: transform .15s ease;
+  font-size: 9px;
+  opacity: .7;
+}
+.nav-group.collapsed .caret { transform: rotate(-90deg); }
+.nav.hidden-by-group { display: none; }
+
+/* ---------- Mobile: off-canvas rail ----------
+   The rail is a fixed 236px column, so on a phone it left ~140px for the
+   content and every table scrolled sideways under it. Below 960px it becomes a
+   drawer over the page instead: hidden by default, slid in by #rail-toggle in
+   the top bar, dismissed by the scrim, Escape, or picking a view. */
+
+/* Desktop keeps the rail permanently open, so the mobile chrome is not rendered
+   at all — no stray toggle, no scrim capturing clicks. */
+.topbar,
+.rail-scrim { display: none; }
+
+@media (max-width: 960px) {
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 56px;
+    padding: 0 14px;
+    background: var(--rail);
+    z-index: 45;
+  }
+  /* Caps at the size it has always looked, and shrinks below it on a phone
+     narrow enough that the menu button and the connection dot would otherwise
+     be pushed off the end of the bar. */
+  .topbar-logo {
+    width: 100%;
+    max-width: 160px;
+    height: auto;
+    min-width: 0;
+    margin-right: auto;
+  }
+
+  .rail-toggle {
+    width: 40px;
+    height: 40px;
+    flex: none;
+    display: grid;
+    place-items: center;
+    border: 0;
+    border-radius: 9px;
+    background: rgba(255, 255, 255, .08);
+    cursor: pointer;
+    /* Comfortably past the 44px touch target once the padding is counted. */
+    margin: 0 -2px;
+  }
+  /* Three bars drawn from one element: the middle is the box, the outer two are
+     its pseudo-elements, so the button needs no inner markup to animate. */
+  .rail-toggle-bars,
+  .rail-toggle-bars::before,
+  .rail-toggle-bars::after {
+    content: "";
+    display: block;
+    width: 18px;
+    height: 2px;
+    border-radius: 2px;
+    background: #fff;
+    transition: transform .2s ease, opacity .2s ease;
+  }
+  .rail-toggle-bars { position: relative; }
+  .rail-toggle-bars::before { position: absolute; top: -6px; }
+  .rail-toggle-bars::after { position: absolute; top: 6px; }
+
+  /* Open state folds the bars into a cross, so the same control closes it. */
+  #app.rail-open .rail-toggle-bars { background: transparent; }
+  #app.rail-open .rail-toggle-bars::before { top: 0; transform: rotate(45deg); }
+  #app.rail-open .rail-toggle-bars::after { top: 0; transform: rotate(-45deg); }
+
+  #app { display: block; }
+
+  .rail {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 272px;
+    max-width: 84vw;
+    height: 100dvh;
+    z-index: 60;
+    transform: translateX(-100%);
+    transition: transform .22s ease;
+    box-shadow: 0 0 40px rgba(0, 0, 0, .4);
+    /* A drawer that cannot reach its own sign-out button is worse than no
+       drawer; the nav scrolls inside the fixed frame. */
+    overflow: hidden;
+  }
+  #app.rail-open .rail { transform: none; }
+
+  .rail-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    background: rgba(0, 0, 0, .5);
+  }
+
+  /* Clear the fixed top bar. */
+  main { padding: 76px 16px 48px; }
+
+  /* Same rhythm, tightened: 20px of inset either side of a 360px screen spends
+     a ninth of the width on nothing. */
+  :root { --card-pad: 16px; --stack: 14px; }
+  .page-head { flex-wrap: wrap; gap: 12px; }
+  h2 { font-size: 21px; }
+
+  /* Wide report tables scroll in their own box rather than the page body —
+     which `.card:has(> table)` above now does, at the card, and is why the
+     table itself must NOT also be `display: block` here.
+
+     That is what made Stock, and every other short table, stop at about a
+     third of the screen with the rest of the card empty beside it. A <table>
+     set to `display: block` keeps its rows and cells as table parts, so the
+     browser wraps them in an anonymous table box inside the block — and that
+     inner box shrink-wraps its content. `min-width: 100%` then applies to the
+     outer block, which was already full width, and the columns everyone can
+     actually see stay bunched against the left edge. Four short columns of
+     PLUs and quantities is the worst case and Stock is exactly that.
+
+     Left as a real table, `min-width: 100%` reaches the columns and the card
+     does the scrolling when the content is genuinely wider. */
+  .panel-body { display: block; overflow-x: auto; }
+  th, td { padding: 10px 12px; white-space: nowrap; }
+
+  .modal { width: 92vw; padding: 20px; }
+  .row { flex-wrap: wrap; }
+  .row > * { flex: 1 1 160px; }
+  .designer { grid-template-columns: 1fr; }
+  .bar-row { grid-template-columns: 92px 1fr 66px; }
+}
+
+/* Someone who has asked for less motion still needs the drawer — it just
+   arrives rather than slides. */
+@media (prefers-reduced-motion: reduce) {
+  .rail, .rail-toggle-bars,
+  .rail-toggle-bars::before, .rail-toggle-bars::after { transition: none; }
+}
+
+/* ---------- Drag-to-reorder rows ---------- */
+
+.drag-col { width: 34px; }
+.drag-cell { width: 34px; text-align: center; color: var(--muted); }
+.drag-handle {
+  cursor: grab;
+  user-select: none;
+  letter-spacing: -2px;
+  font-size: 15px;
+  line-height: 1;
+  opacity: .55;
+}
+.drag-handle:hover { opacity: 1; }
+tr.dragging { opacity: .5; background: var(--brand-soft); }
+tr[draggable="true"] { cursor: grabbing; }
+.nowrap { white-space: nowrap; }
+
+/* ---------- Checkbox field in the modal ---------- */
+
+.check-field { display: inline-flex; align-items: center; }
+.check-field input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--brand);
+  cursor: pointer;
+}
+
+/* ---------- Receipt / detail viewer ---------- */
+
+.receipt-view {
+  font-variant-numeric: tabular-nums;
+  max-width: 340px;
+  margin: 0 auto;
+}
+.receipt-view h3 { text-align: center; margin-bottom: 4px; }
+.receipt-view .r-sub { text-align: center; color: var(--muted); font-size: 12.5px; margin-bottom: 14px; }
+.receipt-view table { margin: 8px 0; }
+.receipt-view td, .receipt-view th { padding: 5px 4px; border: 0; font-size: 13px; }
+.receipt-view .r-tot td { border-top: 1px dashed var(--line); font-weight: 700; padding-top: 8px; }
+.receipt-view .r-line-tot { text-align: right; }
+.linkish { cursor: pointer; color: var(--brand-deep); text-decoration: underline; }
+
+/* ---------- Image cropper ---------- */
+
+.cropper { text-align: center; }
+.crop-stage {
+  position: relative;
+  margin: 14px auto;
+  border-radius: 10px;
+  overflow: hidden;
+  touch-action: none;
+  /* A checkerboard, not the flat #111 this used to be. Zooming out past the
+     frame is now allowed, so a picture can have clear space around it — and
+     that space has to read as "nothing here" rather than as a black band the
+     manager thinks they are about to upload. */
+  background-color: #fff;
+  background-image:
+    linear-gradient(45deg, #e9edf3 25%, transparent 25%, transparent 75%, #e9edf3 75%),
+    linear-gradient(45deg, #e9edf3 25%, transparent 25%, transparent 75%, #e9edf3 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 8px 8px;
+}
+#crop-canvas { display: block; cursor: grab; }
+#crop-canvas:active { cursor: grabbing; }
+/* A subtle frame + darkened surround so the framed square reads as the crop. */
+.crop-frame {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .5) inset;
+  border-radius: 10px;
+}
+.crop-zoom {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 320px;
+  margin: 6px auto 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.crop-zoom input[type="range"] { flex: 1; accent-color: var(--brand); }
+
+tr.clickable { cursor: pointer; }
+tr.clickable:hover { background: var(--brand-soft); }
+
+/* When printing a receipt, hide everything except the receipt node so the
+   browser's "Save as PDF" produces a clean slip, not the whole back office. */
+@media print {
+  body.printing-receipt #app,
+  body.printing-receipt #login { display: none !important; }
+  body.printing-receipt #modal-root .modal-back {
+    position: static;
+    background: none;
+    display: block;
+  }
+  body.printing-receipt #modal-root .modal {
+    box-shadow: none;
+    max-width: none;
+    padding: 0;
+  }
+  body.printing-receipt .modal-actions { display: none !important; }
+}
+
+/* A print area for the report tables (Till Report / Bill Report export). */
+.report-print-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+@media print {
+  body.printing-report .rail,
+  body.printing-report .page-head .btn,
+  body.printing-report #modal-root { display: none !important; }
+  body.printing-report main { padding: 0; }
+  body.printing-report .view[hidden] { display: none; }
+}
+
+/* ---- Receipt designer ---------------------------------------------------- */
+
+.rd-head-actions { display: flex; gap: 8px; }
+
+/* Editor beside a paper preview. The preview sticks so it stays visible while
+   the long form is scrolled — the whole point is watching edits land. */
+.rd-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 18px;
+  align-items: start;
+}
+/* An editor with nothing to preview is one column, not one column and a hole.
+
+   Four of the five screens built on this — Kitchen screens, Receipt designer,
+   Loyalty, Tender — put a preview pane in the second track. Till & printers
+   never had one: its preview is the phone-shaped panel inside the first card,
+   so the 340px track sat empty and the page stopped 358px short of the right
+   edge on every desktop, which is the gap that gets reported. Asked of the
+   markup rather than fixed by giving the idle view a class of its own, so the
+   next single-pane editor is right the day it is written. */
+.rd-layout:not(:has(> * + *)) { grid-template-columns: minmax(0, 1fr); }
+
+/* …and then it has to do something with the width it just got back.
+
+   A settings form 1100px across is its own kind of wrong: a tick box and the
+   sentence explaining it end up a monitor apart, and a printer name capped at
+   forty characters gets a box wide enough for four hundred. Two columns of
+   about 550px is the measure the two-pane editors already read at, so the
+   single-pane one is not a different page — it is the same page using the
+   space the preview pane was holding. Below 1101px the preview pane would have
+   dropped under the editor anyway, and one column is right again. */
+@media (min-width: 1101px) {
+  .rd-layout:not(:has(> * + *)) .rd-editor {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+}
+
+/* A set of names that belong together, laid out as a set. Seven printers down
+   a page as seven full-width boxes reads as seven unrelated questions. */
+.rd-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 6px 14px;
+}
+.rd-card .rd-fields label { margin-bottom: 4px; }
+
+.rd-editor { display: flex; flex-direction: column; gap: var(--stack); min-width: 0; }
+
+/* The form card. `.card` draws the box; this is what makes it habitable. */
+.rd-card { padding: var(--card-pad); }
+.rd-card h3 { margin: 0 0 12px; font-size: 15px; }
+.rd-card label { display: block; margin-bottom: 10px; font-size: 13px; }
+.rd-card label.check { display: flex; align-items: center; gap: 8px; }
+.rd-card input[type="text"], .rd-card input:not([type]),
+.rd-card select, .rd-card textarea {
+  width: 100%; margin-top: 4px;
+}
+.rd-card textarea { resize: vertical; font: inherit; }
+
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+
+/* ---------- Note keys ----------
+   One row per denomination: the picture as it will appear on the till, the
+   value, the label, and the way out. The thumbnail is a real banknote crop, so
+   it keeps a note's ~2:1 shape rather than being squeezed into a square. */
+.denom-rows { display: flex; flex-direction: column; gap: 10px; }
+
+.denom-row {
+  display: grid;
+  grid-template-columns: 104px 110px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+}
+.denom-row label { margin: 0; }
+
+.denom-thumb {
+  width: 104px;
+  aspect-ratio: 2 / 1;
+  border-radius: 6px;
+  border: 1px dashed var(--line);
+  background: var(--card) center/cover no-repeat;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--muted);
+  text-align: center;
+  overflow: hidden;
+}
+.denom-thumb.has-image { border-style: solid; }
+.denom-thumb:hover { border-color: var(--brand); }
+
+.denom-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+  /* Stretch is the flex default, and it is wrong the moment this row holds a
+     label-above-a-field beside a plain button: on Timesheets the From and To
+     columns are two lines tall, so Show and Export PDF were drawn 60px high,
+     towering over the boxes they act on. Every button in here is its own
+     height and sits on the same line the fields end on. */
+  align-items: flex-end;
+}
+
+@media (max-width: 720px) {
+  .denom-row { grid-template-columns: 84px 1fr; }
+  .denom-thumb { width: 84px; }
+}
+
+.rd-logo-row { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 10px; }
+.rd-logo-preview {
+  width: 120px; height: 90px; flex: none;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px dashed var(--line, #d4d7dd); border-radius: 8px;
+  background: var(--surface-2, #f7f8fa); overflow: hidden;
+}
+.rd-logo-preview img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.rd-logo-actions { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.btn.danger-ghost { color: #b3261e; }
+
+/* A PIN read back to a member of staff who forgot it. Tabular and spaced, so
+   four digits can be read aloud without a misread. */
+.staff-pin { font-family: ui-monospace, Menlo, Consolas, monospace; letter-spacing: 0.14em; }
+.pin-warn {
+  font-family: inherit; letter-spacing: 0; font-size: 11px; font-weight: 600;
+  color: #8a5300; background: #fff3d6; border-radius: 5px; padding: 1px 6px;
+  white-space: nowrap;
+}
+
+/* Idle screen preview. Drawn at 16:9 on black, because that is what a till
+   panel actually is — a preview on a white card would flatter an image that
+   turns out to be unreadable on the terminal. */
+.idle-preview {
+  aspect-ratio: 16 / 9;
+  width: 100%;
+  max-width: 460px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--line, #d4d7dd); border-radius: 10px;
+  background: #000; overflow: hidden; position: relative;
+}
+.idle-preview img { width: 100%; height: 100%; object-fit: cover; }
+.idle-preview .idle-fallback {
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+}
+.idle-preview .idle-fallback img { width: 55%; height: auto; object-fit: contain; }
+/* The lime rule from the splash, so the preview reads as the same screen. */
+.idle-preview .idle-rule { width: 55%; height: 3px; background: #c3ff00; border-radius: 2px; }
+.idle-preview .idle-msg {
+  position: absolute; bottom: 10px; left: 0; right: 0; text-align: center;
+  color: rgba(255, 255, 255, 0.85); font-size: 12px; letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.rd-preview-pane {
+  position: sticky;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.rd-preview-head {
+  display: flex; align-items: center; justify-content: space-between;
+}
+.rd-paper-wrap {
+  background: var(--surface-2, #eef0f4);
+  border-radius: 12px; padding: 18px;
+  max-height: calc(100vh - 160px); overflow: auto;
+}
+
+/* The paper itself. Width is set in millimetres so the preview is a true
+   representation of an 80mm or 58mm roll rather than an approximation. */
+.rd-paper {
+  width: 72mm; margin: 0 auto; padding: 5mm 4mm;
+  background: #fff; color: #000;
+  font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+  font-size: 10px; line-height: 1.35;
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.18);
+}
+.rd-paper.narrow { width: 51mm; font-size: 9px; }
+
+.rp-logo { text-align: center; margin-bottom: 6px; }
+.rp-logo img { max-height: 46px; max-width: 70%; object-fit: contain; }
+.rp-name { text-align: center; font-weight: 700; font-size: 13px; letter-spacing: 0.5px; }
+.rd-paper.narrow .rp-name { font-size: 11px; }
+.rp-centre { text-align: center; }
+.rp-note { color: #444; font-size: 0.9em; }
+.rp-row { display: flex; justify-content: space-between; gap: 8px; }
+.rp-row > span:first-child { flex: 1; min-width: 0; word-break: break-word; }
+.rp-sub { color: #444; font-size: 0.9em; padding-left: 10px; }
+.rp-italic { font-style: italic; }
+.rp-rule { border-top: 1px dashed #999; margin: 5px 0; }
+.rp-rule.heavy { border-top: 2px solid #000; }
+.rp-total {
+  display: flex; justify-content: space-between;
+  font-weight: 700; font-size: 1.25em;
+  background: #eee; padding: 3px 4px; margin: 4px 0;
+}
+.rp-footer { text-align: center; font-weight: 700; margin-top: 4px; }
+
+/* Stand-ins: the real barcode and QR are generated by the till's PDF builder,
+   and drawing them here would only duplicate that logic. */
+.rp-barcode {
+  height: 30px; margin: 8px auto 4px; width: 70%;
+  background: repeating-linear-gradient(
+    90deg, #000 0 2px, #fff 2px 4px, #000 4px 5px, #fff 5px 8px);
+}
+.rp-qr {
+  width: 46px; height: 46px; margin: 6px auto;
+  display: flex; align-items: center; justify-content: center;
+  border: 2px solid #000; font-size: 9px; letter-spacing: 1px;
+}
+
+@media (max-width: 1100px) {
+  .rd-layout { grid-template-columns: 1fr; }
+  .rd-preview-pane { position: static; }
+  .grid2 { grid-template-columns: 1fr; }
+}
+
+/* ---- Charts -------------------------------------------------------------- */
+
+.chart-box { width: 100%; overflow: hidden; }
+.chart { width: 100%; height: auto; display: block; }
+.chart-grid { stroke: var(--line, #e3e6ea); stroke-width: 1; }
+.chart-axis { font-size: 11px; fill: var(--muted, #7a828c); }
+.chart-empty { padding: 22px 4px; }
+
+.donut-wrap { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
+.donut { flex: none; }
+.donut-total { font-size: 20px; font-weight: 700; fill: var(--ink, #16181d); }
+.donut-caption { font-size: 10px; fill: var(--muted, #7a828c); letter-spacing: 1px; }
+
+.chart-legend { list-style: none; margin: 0; padding: 0; flex: 1; min-width: 160px; }
+.chart-legend li {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 0; font-size: 13px;
+}
+.chart-legend .swatch {
+  width: 11px; height: 11px; border-radius: 3px; flex: none;
+}
+.chart-legend .legend-label { flex: 1; }
+.chart-legend .legend-value { font-weight: 600; }
+
+.ranked { display: flex; flex-direction: column; gap: 8px; }
+.ranked-row {
+  display: grid;
+  grid-template-columns: 20px minmax(80px, 1.4fr) 2fr auto;
+  align-items: center; gap: 10px; font-size: 13px;
+}
+.ranked-rank { color: var(--muted, #7a828c); font-size: 11px; text-align: right; }
+.ranked-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ranked-track {
+  height: 8px; border-radius: 4px;
+  background: var(--surface-2, #eef0f4); overflow: hidden;
+}
+.ranked-fill { display: block; height: 100%; border-radius: 4px; }
+.ranked-value { font-weight: 600; white-space: nowrap; }
+.ranked-meta {
+  grid-column: 2 / -1; font-size: 11px; color: var(--muted, #7a828c);
+  margin-top: -4px;
+}
+
+/* ---- Stat cards ---------------------------------------------------------- */
+
+.grid-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
+  gap: 12px; margin-bottom: 18px;
+}
+.stat-card {
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 14px 16px; border-left: 3px solid var(--line, #d9dce1);
+}
+.stat-card.primary { border-left-color: var(--brand); }
+.stat-card.blue    { border-left-color: #4361ee; }
+.stat-card.amber   { border-left-color: #f77f00; }
+.stat-card.green   { border-left-color: #06d6a0; }
+.stat-card.red     { border-left-color: #ef476f; }
+.stat-label {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px;
+  color: var(--muted, #7a828c);
+}
+.stat-value { font-size: 22px; font-weight: 700; }
+.stat-hint { font-size: 11px; color: var(--muted, #7a828c); }
+.stat-delta { font-size: 12px; font-weight: 600; }
+.stat-delta.up { color: #06a77d; }
+.stat-delta.down { color: #d1495b; }
+
+/* ---- Dashboard toolbar --------------------------------------------------- */
+
+.dash-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; margin-bottom: 14px; flex-wrap: wrap;
+}
+.seg {
+  display: inline-flex; border: 1px solid var(--line, #d9dce1);
+  border-radius: 8px; overflow: hidden;
+}
+.seg-btn {
+  border: 0; background: transparent; padding: 7px 14px;
+  font: inherit; font-size: 13px; cursor: pointer;
+  border-right: 1px solid var(--line, #d9dce1);
+}
+.seg-btn:last-child { border-right: 0; }
+.seg-btn.active { background: var(--brand); color: var(--on-brand); font-weight: 600; }
+
+.panel-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.mini-list { display: flex; flex-direction: column; gap: 9px; }
+.mini-list > div {
+  display: flex; justify-content: space-between; gap: 12px;
+  font-size: 13px; padding-bottom: 8px;
+  border-bottom: 1px solid var(--line, #eef0f4);
+}
+.mini-list > div:last-child { border-bottom: 0; padding-bottom: 0; }
+.mini-list .warn b { color: #d1495b; }
+
+/* ---- Commerce tables ----------------------------------------------------- */
+
+.pill {
+  display: inline-block; padding: 2px 9px; border-radius: 11px;
+  font-size: 11px; background: var(--surface-2, #eef0f4);
+  color: var(--muted, #7a828c); text-transform: capitalize;
+}
+.pill.on { background: #e4f7ef; color: #06784f; }
+
+.promo-badge {
+  display: inline-block; padding: 3px 9px; border-radius: 5px;
+  font-size: 11px; font-weight: 700; color: #fff;
+}
+
+td code {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px; background: var(--surface-2, #f2f4f7);
+  padding: 2px 6px; border-radius: 4px;
+}
+.pos { color: #06784f; }
+.neg { color: #d1495b; }
+
+/* ---- Loyalty tiers ------------------------------------------------------- */
+
+.tier-row {
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  padding: 9px 0; border-bottom: 1px solid var(--line, #eef0f4);
+}
+.tier-row .tier-name { flex: 1; min-width: 110px; }
+.tier-field {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 12px; margin: 0; color: var(--muted, #7a828c);
+}
+.tier-field input { width: 68px; }
+.tier-row input[type="color"] {
+  width: 34px; height: 30px; padding: 2px; border-radius: 6px;
+}
+
+/* ---- Tender preview ------------------------------------------------------ */
+
+.till-preview {
+  background: #12141a; color: #fff; border-radius: 10px; padding: 16px;
+}
+.till-preview .muted { color: #9aa3af; }
+.till-row {
+  display: flex; justify-content: space-between;
+  font-size: 17px; padding-bottom: 10px;
+  border-bottom: 1px solid #2a2f3a;
+}
+.till-keys { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.till-key {
+  padding: 7px 11px; border-radius: 7px; font-size: 12px;
+  background: #232734; border: 1px solid #313747;
+}
+.till-key.cash { background: #16351f; border-color: #1f5130; }
+
+/* ---- Wide modal ---------------------------------------------------------- */
+
+.modal.wide { max-width: 760px; width: 92vw; }
+.panel-body { max-height: 62vh; overflow: auto; }
+table.plain { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.plain th, table.plain td {
+  text-align: left; padding: 7px 9px;
+  border-bottom: 1px solid var(--line, #eef0f4);
+}
+table.plain th { color: var(--muted, #7a828c); font-weight: 600; font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.5px; }
+
+.colour-field { display: flex; gap: 8px; align-items: center; }
+.colour-field input[type="color"] {
+  width: 40px; height: 34px; padding: 2px; border-radius: 6px; flex: none;
+}
+.colour-field input[type="text"] { flex: 1; font-family: ui-monospace, monospace; }
+
+/* ---- Kitchen printer routing --------------------------------------------
+   Six tick boxes that have to read as a set of physical printers, not as a
+   list of settings. Laid out as a grid of cards so a routed station is
+   legible at a glance across the form, which is how a manager checks their
+   work: they scan for the lit ones rather than reading every label. */
+.station-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 8px;
+  margin-top: 6px;
+}
+.station {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.12s, border-color 0.12s;
+}
+.station:hover { border-color: var(--brand-deep); }
+/* Ticked: the lime wash plus a solid edge. Filling the whole card with the
+   brand lime would make six selected stations the loudest thing on a form
+   whose subject is the product, so the fill stays a wash. */
+.station.on {
+  background: var(--brand-soft);
+  border-color: var(--brand-deep);
+  font-weight: 600;
+}
+.station input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+  flex: none;
+  accent-color: var(--brand-deep);
+}
+.station span { flex: 1; }
+
+/* A routed station in the catalogue table. */
+.chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--brand-soft);
+  color: var(--brand-deep);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+/* The unusual setting, so it must not read the same as a routing chip. */
+.chip.warn { background: var(--bad-wash); color: var(--red); }
+
+/* ---- Kitchen screens ------------------------------------------------------
+   Vesopa EPOS Kitchen: where each station's tickets come out, the logins, the
+   named boards, and a live monitor of what the kitchen is looking at. */
+
+.kds-modes { display: flex; flex-direction: column; gap: 4px; }
+
+.kds-mode-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+}
+.kds-mode-row:last-child { border-bottom: 0; }
+
+.kds-mode-name { font-weight: 600; }
+/* The slot number under the venue's own name for it. The product editor lists
+   both, and a manager cross-referencing the two screens needs the key that
+   appears on each. */
+.kds-mode-name span { display: block; font-weight: 400; }
+
+/* How many products point at this station. Next to the toggle rather than in a
+   tooltip, because it is the number that decides whether the toggle matters —
+   a station nothing routes to can stay on Printer for ever. */
+.kds-routed {
+  display: block;
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* Products routed here, and still going to paper. This is the exact shape of
+   the fault the page could not explain: a venue whose whole menu pointed at
+   one station, that station left on Printer, and a kitchen screen that stayed
+   empty all service. Amber rather than red — it is correct for a venue that
+   prints, and only suspicious for one that has just set a screen up. */
+.kds-stranded .kds-routed {
+  color: #9a6206;
+  font-weight: 600;
+}
+.kds-stranded .kds-routed::after {
+  content: ' routed here, still going to paper';
+  font-weight: 400;
+}
+
+/* The three-way control has to survive a narrow rail without wrapping into
+   something unreadable, so it shrinks rather than reflows. */
+.kds-mode-seg { flex: none; }
+.kds-mode-seg .seg-btn { padding: 6px 12px; font-size: 12.5px; }
+
+/* On a phone it stops shrinking and starts stacking.
+   "Cold Larder" plus three buttons plus the routed-products note is more than
+   360px of row, and side by side the name was down to a couple of words per
+   line with the control jammed against it. The station is a heading and the
+   three choices are a full-width control under it, which is also three targets
+   a thumb can hit rather than three 60px ones. */
+@media (max-width: 760px) {
+  .kds-mode-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 12px 0;
+  }
+  .kds-mode-seg { display: flex; }
+  .kds-mode-seg .seg-btn { flex: 1 1 0; padding: 9px 8px; }
+}
+
+/* ---- The live monitor -----------------------------------------------------
+   Read-only, and deliberately: bumping an order is a decision made by somebody
+   who can see the plate. This answers "is the kitchen actually getting these?",
+   which is the first question anybody asks after moving a station to a screen. */
+
+.kds-board {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  /* Bounded, because this is a panel beside a form rather than the board
+     itself — a busy service would otherwise push the page metres long. */
+  max-height: 520px;
+  overflow-y: auto;
+}
+
+.kds-ticket {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 9px 11px;
+  background: var(--card);
+}
+
+.kds-ticket-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 5px;
+}
+
+.kds-ticket-line {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  font-size: 13.5px;
+  padding: 1px 0;
+}
+
+/* A fixed column, so item names line up down the ticket. A ragged left edge
+   costs a fraction of a second per line to read. */
+.kds-qty {
+  min-width: 20px;
+  text-align: right;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+/* The modifier. Red here as on the screen itself, because it is the one thing
+   on a ticket that is not the recipe — and a manager checking a complaint is
+   looking for exactly this line. */
+.kds-note {
+  color: var(--red);
+  font-style: normal;
+  font-weight: 600;
+}
+
+/* ---- Kitchen: white-label branding --------------------------------------
+   The colour pair and a preview of the start screen the wall will show.
+   Drawn here rather than left to the app so a manager choosing a background
+   and an accent can see the pair together — the two failure modes are a lime
+   accent on a white ground, which vanishes, and a dark accent on a dark
+   ground, which never appears at all. */
+
+.kb-colours {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.kb-colours label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12.5px;
+  margin: 0;
+}
+
+.kb-colours input[type='color'] {
+  width: 64px;
+  height: 34px;
+  padding: 2px;
+  border: 1px solid var(--line, #d7dbe2);
+  border-radius: 6px;
+  background: var(--card);
+  cursor: pointer;
+}
+
+.kds-splash-preview {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  border-radius: 10px;
+  border: 1px solid var(--line, #d7dbe2);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+  padding: 18px;
+}
+
+.kds-splash-preview .kds-splash-mark {
+  width: 84px;
+  height: 84px;
+  border-radius: 19px;
+  object-fit: contain;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 44px;
+  line-height: 1;
+}
+
+.kds-splash-preview .kds-splash-name {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.kds-splash-preview .kds-splash-tagline {
+  font-size: 13px;
+  opacity: 0.75;
+}
+
+/* The accent's own job on the real screen: a sweep under the name. Shown here
+   as a static bar, because an animation in a settings preview is a thing a
+   manager waits for rather than reads. */
+.kds-splash-preview .kds-splash-rule {
+  width: 120px;
+  height: 4px;
+  border-radius: 2px;
+}
+
+.kds-splash-preview .kds-splash-powered {
+  position: absolute;
+  bottom: 12px;
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  opacity: 0.55;
+}
+
+/* The cropper's two shortcuts, either end of the zoom slider.
+   Kept as buttons as well as slider positions because "fit the whole picture"
+   is a thing a manager wants by name, not a place on a scale they are expected
+   to find by dragging. */
+.crop-presets {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+/* ---------- Screen programming ----------
+   The grid is drawn at the till's own proportions, so what a manager arranges
+   here is what a clerk sees. Selection is the interaction — drag a box, or hold
+   Shift — so the panel beside it can act on several buttons at once. */
+
+.sp-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line, #d7dbe2);
+  border-radius: 10px;
+  background: var(--panel, #fff);
+}
+/* `.tbl-bar` above a table is the same furniture as `.sp-bar` above the screen
+   editor and borrows its parts by name — but this rule was scoped to `.sp-bar`
+   alone, so the spacer in a filter bar spaced nothing. The row count and the
+   bulk-edit strip, which the markup puts after the spacer precisely so they
+   sit at the far end, were bunched against the Clear button with the rest of
+   the bar empty beside them. */
+.sp-bar .sp-spacer,
+.tbl-bar .sp-spacer { flex: 1 1 auto; }
+.sp-pick { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; margin: 0; }
+/* A date field, a text field and a select are three different heights in the
+   same browser — Chrome gives `type="date"` 44px for its calendar indicator and
+   a plain text box 41px. The bar aligns them on their bottom edge, which is
+   what matters, but their *labels* then sit on three different lines: on the
+   Sales Explorer "Department" was drawn 3px below "From" and "To". One height
+   for every control in a filter bar, which is also the 44px touch target. */
+.sp-pick select, .sp-pick input { min-width: 90px; min-height: 44px; }
+.sp-bar .check { margin: 0; }
+
+.sp-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 1100px) { .sp-layout { grid-template-columns: 1fr; } }
+
+.sp-panel { display: flex; flex-direction: column; gap: var(--stack); }
+
+.sp-grid {
+  display: grid;
+  gap: 6px;
+  /* 16:9, the shape of the space a sale grid actually occupies on a till.
+     Fixing it here is what stops a 4-row screen drawing keys twice the height
+     of a 8-row one and giving a false impression of both. */
+  aspect-ratio: 16 / 9;
+  padding: 8px;
+  border-radius: 12px;
+  background: #1b1f27;
+  outline: none;
+  /* The drag-select gesture: without this the browser starts a text selection
+     the moment a pointer moves across the grid. */
+  user-select: none;
+  touch-action: none;
+}
+.sp-grid:focus-visible { box-shadow: 0 0 0 3px rgba(165, 199, 21, .5); }
+
+.sp-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 4px;
+  border-radius: 8px;
+  border: 1px dashed rgba(255, 255, 255, .18);
+  background: rgba(255, 255, 255, .04);
+  color: rgba(255, 255, 255, .35);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.15;
+  text-align: center;
+  cursor: pointer;
+  overflow: hidden;
+}
+.sp-cell span {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+/* A programmed button: solid, and in the till's default key colour until the
+   manager gives it one of its own. */
+.sp-cell.filled {
+  border-style: solid;
+  border-color: rgba(255, 255, 255, .14);
+  background: #2b313d;
+  color: #fff;
+}
+/* A space set aside: sized by the manager, not yet given anything to do.
+   Deliberately not `.filled` — it is an empty cell that happens to be bigger,
+   and drawing it as a key would have a manager hunting for the product on it.
+   It draws nothing at all on the till and nothing in Preview, which the
+   `:not(.filled)` rule further down already takes care of. */
+.sp-cell.reserved {
+  border-style: dashed;
+  border-color: rgba(165, 199, 21, .5);
+  background:
+    repeating-linear-gradient(
+      135deg,
+      rgba(165, 199, 21, .07),
+      rgba(165, 199, 21, .07) 7px,
+      transparent 7px,
+      transparent 14px
+    ),
+    rgba(255, 255, 255, .03);
+  color: rgba(255, 255, 255, .5);
+}
+.sp-reserved-size {
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  letter-spacing: .04em;
+  opacity: .8;
+}
+.sp-cell.selected {
+  outline: 3px solid var(--brand, #a5c715);
+  outline-offset: -3px;
+}
+/* A product or screen that no longer exists. Called out here rather than left
+   to be found on a till, which is the whole reason the editor knows about it. */
+.sp-cell.missing {
+  border-color: #d03227;
+  color: #ffd7d2;
+  background: repeating-linear-gradient(
+    45deg, #4a1f1c, #4a1f1c 6px, #3a1815 6px, #3a1815 12px
+  );
+}
+.sp-arrow { font-style: normal; font-size: 11px; opacity: .8; letter-spacing: 1px; }
+
+.sp-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+.sp-swatch {
+  width: 34px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid var(--line, #d7dbe2);
+  cursor: pointer;
+  padding: 0;
+}
+.sp-swatch.on { outline: 3px solid var(--brand, #a5c715); outline-offset: -3px; }
+
+.sp-spans { display: flex; gap: 10px; margin-top: 12px; }
+.sp-spans label { flex: 1; font-size: 12.5px; }
+
+/* The screen editor, part two: the states the grid gained when it learned to
+   be dragged around rather than only clicked on.
+
+   `caret` is where the keyboard is, which is not the same as what is selected —
+   arrow keys walk it, Shift extends from it. `drop` is where a dragged block
+   would land, drawn before the drop rather than after it, because a move that
+   cannot be previewed is a move that gets undone. */
+.sp-cell.caret { box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .55); }
+.sp-cell.drop {
+  outline: 2px dashed var(--brand, #a5c715);
+  outline-offset: -2px;
+  opacity: .85;
+}
+.sp-grid.moving { cursor: grabbing; }
+.sp-grid.moving .sp-cell { cursor: grabbing; }
+
+/* Preview: the grid as a clerk meets it, without the editor's empty keys. The
+   layout does not move — only the scaffolding stops being drawn — so what is
+   being checked is what a till will show. */
+.sp-grid.preview .sp-cell:not(.filled) {
+  border-color: transparent;
+  background: transparent;
+}
+.sp-grid.preview .sp-cell.selected { outline-color: transparent; }
+.sp-grid.preview .sp-cell.caret { box-shadow: none; }
+
+.sp-order { display: flex; gap: 4px; }
+
+/* The line under the grid: what the layout holds, and whether it is saved. */
+.sp-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  font-size: 12.5px;
+  color: var(--muted, #6b7280);
+}
+.sp-flag {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 11.5px;
+}
+.sp-flag.ok { background: rgba(33, 167, 62, .14); color: #21a73e; }
+.sp-flag.warn { background: rgba(206, 122, 10, .16); color: #b56a08; }
+.sp-flag.bad { background: rgba(208, 50, 39, .14); color: #d03227; }
+
+/* The check list. Each row selects the key it names, which is the only reason
+   the list is worth having — "row 3, column 5" is not a thing anybody counts
+   across a grid by eye. */
+.sp-issues { display: flex; flex-direction: column; gap: 6px; }
+.sp-issue {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--line, #d7dbe2);
+  border-left: 3px solid #d03227;
+  border-radius: 8px;
+  background: var(--panel, #fff);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.sp-issue:hover { border-color: #d03227; }
+
+/* ---------------------------------------------------------------------------
+   Screen programming, part two: the bars, and pictures on keys.
+
+   A bar is a screen — one or two rows of the same buttons — so almost nothing
+   here is new machinery. What is new is shape: a bar has to be drawn as the
+   strip it is, in the place it sits, or a manager sizes an eleven-key action
+   bar as though it were a page of products.
+   --------------------------------------------------------------------------- */
+
+/* What the tills wear. First card on the page, because "which screen do my
+   tills open on" was being asked by people looking straight at the tick box
+   that sets it. */
+.sp-defaults { margin-bottom: 12px; padding: 12px 14px; }
+.sp-defaults-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.sp-defaults-head h3 { margin: 0; }
+.sp-defaults-head .sp-flag { margin-left: auto; }
+.sp-defaults-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) 180px;
+  gap: 12px;
+  align-items: end;
+  margin-top: 10px;
+}
+@media (max-width: 1100px) {
+  .sp-defaults-grid { grid-template-columns: 1fr; }
+}
+.sp-defaults-grid > label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12.5px;
+  margin: 0;
+  min-width: 0;
+}
+
+/* A drawing of a till, not a list of names. Which of three layouts is the
+   bottom one is a question a picture answers and a dropdown does not — and each
+   part of it is the way in to editing that part. */
+.sp-till {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 5px;
+  border-radius: 10px;
+  background: #1b1f27;
+  border: 1px solid rgba(255, 255, 255, .1);
+  grid-row: span 1;
+}
+.sp-till-body { display: flex; gap: 3px; flex: 1 1 auto; min-height: 38px; }
+.sp-till-bill {
+  width: 34%;
+  border-radius: 5px;
+  background: repeating-linear-gradient(
+    to bottom, rgba(255, 255, 255, .1), rgba(255, 255, 255, .1) 2px,
+    transparent 2px, transparent 7px
+  );
+}
+.sp-till [data-part] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 6px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, .06);
+  border: 1px dashed rgba(255, 255, 255, .16);
+  color: rgba(255, 255, 255, .5);
+  font-size: 10.5px;
+  font-weight: 700;
+  text-align: center;
+  line-height: 1.1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.sp-till-grid { flex: 1 1 auto; }
+.sp-till [data-part].custom {
+  border-style: solid;
+  background: rgba(165, 199, 21, .16);
+  border-color: rgba(165, 199, 21, .5);
+  color: #cfe86b;
+}
+.sp-till [data-part].editing { outline: 2px solid var(--brand, #a5c715); outline-offset: 1px; }
+
+/* Which kind of layout. Tabs, because a bar and a sale screen are different
+   things that happen to be built the same way. */
+/* In the toolbar, so they cost a row's padding rather than a row. */
+.sp-surfaces { display: flex; gap: 6px; flex-wrap: wrap; align-self: center; }
+.sp-surface {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line, rgba(0, 0, 0, .14));
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.sp-surface:hover { border-color: var(--brand, #a5c715); }
+.sp-surface.on {
+  background: var(--brand, #a5c715);
+  border-color: var(--brand, #a5c715);
+  color: #131a04;
+}
+/* A tiny picture of the thing each tab holds, so the three read apart at a
+   glance rather than by their words. */
+.sp-surface-art {
+  width: 22px;
+  height: 16px;
+  border-radius: 3px;
+  border: 1px solid currentColor;
+  opacity: .65;
+  background-repeat: no-repeat;
+}
+.sp-surface-art.sale {
+  background-image:
+    linear-gradient(currentColor, currentColor), linear-gradient(currentColor, currentColor),
+    linear-gradient(currentColor, currentColor), linear-gradient(currentColor, currentColor);
+  background-size: 7px 5px;
+  background-position: 2px 2px, 11px 2px, 2px 8px, 11px 8px;
+}
+.sp-surface-art.top {
+  background-image: linear-gradient(currentColor, currentColor);
+  background-size: 16px 4px;
+  background-position: 2px 2px;
+}
+.sp-surface-art.bottom {
+  background-image: linear-gradient(currentColor, currentColor);
+  background-size: 16px 4px;
+  background-position: 2px 8px;
+}
+
+/* Just this screen's bars, alongside the venue's rather than under them. */
+.sp-perscreen {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  padding-left: 12px;
+  border-left: 1px solid var(--line, #d7dbe2);
+}
+.sp-perscreen[hidden] { display: none; }
+
+/* The stage. A bar laid out in a box on its own is eleven keys in a vacuum;
+   laid out under a ghost of the sale screen it is obviously the strip along
+   the bottom of a till. */
+.sp-stage { display: flex; flex-direction: column; gap: 6px; }
+.sp-stage.framed .sp-grid { aspect-ratio: auto; }
+
+/* The till's own fixed key, beside the top bar being laid out.
+   `display: contents` everywhere else, so on a sale screen and a bottom bar
+   the grid is still a direct flex child of the stage and every rule about how
+   it is sized — including the pop-out's — applies exactly as it did. */
+.sp-bar-row { display: contents; }
+.sp-stage.with-nav .sp-bar-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  min-height: 0;
+}
+.sp-stage.with-nav .sp-bar-row > .sp-grid {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-inline: 0;
+}
+.sp-fixed-nav {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px dashed rgba(255, 255, 255, .22);
+  background: rgba(255, 255, 255, .05);
+  cursor: not-allowed;
+}
+.sp-fixed-nav[hidden] { display: none; }
+.sp-fixed-nav-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 9px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .1);
+  color: rgba(255, 255, 255, .9);
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.sp-fixed-nav-icon { color: var(--brand, #a5c715); }
+.sp-fixed-nav-caret { opacity: .6; font-size: 10px; }
+.sp-fixed-nav-note {
+  font-size: 10px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, .4);
+}
+
+/* A grid taller than the window is one whose bottom row a manager cannot see
+   without scrolling the toolbar off — and the toolbar is where Save lives. The
+   16:9 shape is kept by giving back width rather than by stretching, so what is
+   arranged here is still the shape a clerk meets. */
+.sp-stage:not(.framed) .sp-grid {
+  max-height: 62vh;
+  width: min(100%, calc(62vh * 16 / 9));
+  margin-inline: auto;
+}
+.sp-ghost {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  border-radius: 12px;
+  border: 1px dashed var(--line, rgba(0, 0, 0, .16));
+  background: repeating-linear-gradient(
+    -45deg, rgba(127, 127, 127, .05), rgba(127, 127, 127, .05) 8px,
+    transparent 8px, transparent 16px
+  );
+  color: var(--muted, #7a8394);
+  font-size: 12px;
+  font-style: italic;
+}
+
+/* The grid, when it is a bar. Row height fixed rather than derived from an
+   aspect ratio: a bar is as tall as a bar, and a 1-row 16-column grid at 16:9
+   would draw keys a manager could not read the labels in. */
+.sp-grid.bar {
+  aspect-ratio: auto;
+  grid-auto-rows: 74px;
+}
+
+/* The key's face: the picture or emoji, above the words, exactly as the till
+   stacks them. */
+.sp-face-art {
+  display: block;
+  flex: 0 0 auto;
+  font-size: 20px;
+  line-height: 1;
+  max-width: 100%;
+}
+/* A picture *is* the key, not a stamp above its name.
+   Absolutely positioned behind everything else in the cell, so the label —
+   when the venue has asked for one — letters over it rather than beside it.
+   This is the till's own stacking; see `_media` in programmed_grid.dart. */
+.sp-face-fill {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+}
+.sp-face-fill img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* object-fit and transform are set per key from spFrameStyle(). The
+     transform is `translate(x%, y%) scale(s)`, which CSS applies right to
+     left — scaled first, then shifted by a percentage of the *key's* size.
+     The till composes the same two steps in the same order, and if the two
+     ever disagree the editor's preview is lying about what a clerk will see. */
+  transform-origin: center;
+}
+/* Lettering over a photograph, when the venue has asked for the name as well.
+   The scrim is the whole reason this is readable: a white label on a picture
+   that happens to be pale is a key nobody can read, and which keys those are
+   depends on the photograph rather than on anything the editor knows. */
+.sp-over-art {
+  position: relative;
+  z-index: 1;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: rgba(12, 15, 20, .62);
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .6);
+}
+/* Borrowed from the product rather than given to the key. Faded so that "this
+   key has a picture" and "this key was given one" stay apart — otherwise
+   clearing a key's own emoji looks like it did nothing. */
+.sp-face-art.inherited { opacity: .5; }
+/* Faded a little rather than halved: a photograph at 50% on a dark grid is
+   barely a picture at all, and the point of drawing the borrowed one is that a
+   manager can see what the key will actually look like. */
+.sp-face-fill.inherited { opacity: .72; }
+
+/* ---------------------------------------------------------------------------
+   Framing a picture on a key
+
+   Drawn at the key's own proportions — a 2x2 stage is square, a 1x3 is a strip
+   — because "does this picture work here" is a question only the real shape
+   answers. `aspect-ratio` is set from the grid by spRenderFrame().
+   --------------------------------------------------------------------------- */
+.sp-frame {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line, rgba(0, 0, 0, .12));
+}
+.sp-frame-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.sp-frame-stage {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 10px;
+  border: 1px solid var(--line, rgba(0, 0, 0, .16));
+  /* The chequerboard shows through wherever the picture does not reach, which
+     is what "Whole picture" looks like on a key whose shape does not match it.
+     A flat colour here would read as part of the photograph. */
+  background:
+    repeating-conic-gradient(rgba(128, 128, 128, .18) 0% 25%, transparent 0% 50%)
+      50% / 16px 16px;
+  cursor: grab;
+  touch-action: none;
+}
+.sp-frame-stage.dragging { cursor: grabbing; }
+.sp-frame-stage img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform-origin: center;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.sp-frame-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 6px;
+  transform: translateX(-50%);
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(12, 15, 20, .6);
+  color: #fff;
+  font-size: 10.5px;
+  letter-spacing: .02em;
+  pointer-events: none;
+  opacity: .85;
+  transition: opacity .15s;
+}
+.sp-frame-stage.dragging .sp-frame-hint,
+.sp-frame-stage:hover .sp-frame-hint { opacity: 0; }
+.sp-frame-zoom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--muted, #7a8394);
+}
+.sp-frame-zoom input[type='range'] { flex: 1 1 auto; min-width: 0; }
+.sp-frame-zoom output {
+  flex: 0 0 auto;
+  min-width: 44px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.sp-frame-presets { display: flex; gap: 6px; margin-top: 8px; }
+.sp-frame-presets .btn { flex: 1 1 0; }
+.sp-frame-presets .btn.on {
+  outline: 2px solid var(--brand, #a5c715);
+  outline-offset: -2px;
+}
+#sp-show-label-wrap { margin-top: 10px; }
+
+/* A live display is not a key. Drawn as a sketch of what the till will put
+   there, so a manager sizes the open-tables strip like a strip. */
+.sp-cell.widget {
+  border-style: solid;
+  border-color: rgba(75, 87, 232, .55);
+  background: rgba(75, 87, 232, .16);
+  color: #cfd4ff;
+}
+.sp-widget {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  overflow: hidden;
+  max-width: 100%;
+  font-size: 10px;
+  font-style: normal;
+}
+.sp-widget i { font-style: normal; opacity: .85; white-space: nowrap; }
+.sp-widget .sp-chip {
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .12);
+}
+.sp-widget .sp-chip.on { background: var(--brand, #a5c715); color: #131a04; }
+.sp-widget .sp-mono { font-variant-numeric: tabular-nums; font-weight: 700; }
+
+/* The face editor in the inspector. */
+.sp-face {
+  margin-top: 12px;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line, rgba(0, 0, 0, .12));
+}
+.sp-face-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.sp-emoji-row { display: flex; flex-direction: column; gap: 8px; }
+.sp-emoji-palette { display: flex; flex-wrap: wrap; gap: 4px; }
+.sp-emoji-key {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  background: rgba(127, 127, 127, .1);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.sp-emoji-key:hover { border-color: var(--brand, #a5c715); }
+.sp-emoji-key.on { border-color: var(--brand, #a5c715); background: rgba(165, 199, 21, .22); }
+
+.sp-image-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.sp-image-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 54px;
+  height: 40px;
+  flex: 0 0 auto;
+  border-radius: 8px;
+  border: 1px solid var(--line, rgba(0, 0, 0, .14));
+  background: rgba(127, 127, 127, .08);
+  background-size: cover;
+  background-position: center;
+  font-size: 20px;
+}
+.sp-image-preview.empty { color: var(--muted, #7a8394); font-size: 13px; }
+.sp-image-preview.inherited { opacity: .55; }
+.sp-image-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* Pictures this venue already has, offered as a strip to click rather than a
+   path to type. */
+.sp-gallery { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
+.sp-gallery-key {
+  width: 40px;
+  height: 30px;
+  padding: 0;
+  border-radius: 6px;
+  border: 1px solid var(--line, rgba(0, 0, 0, .14));
+  background-size: cover;
+  background-position: center;
+  cursor: pointer;
+}
+.sp-gallery-key:hover { border-color: var(--brand, #a5c715); }
+.sp-gallery-key.on { outline: 2px solid var(--brand, #a5c715); outline-offset: 1px; }
+
+/* An advisory about the layout as a whole — "no Pay key on this bar" — rather
+   than a key pointing at something deleted. Worth showing, but it is not a
+   link and must not look like one. */
+.sp-issue.warn { border-color: rgba(206, 122, 10, .5); cursor: default; }
+.sp-issue.warn:hover { border-color: rgba(206, 122, 10, .5); }
+
+
+/* The product picker is a list box now, not a one-line select: a search above
+   it and eight rows visible is the difference between choosing a product and
+   scrolling past nine hundred of them. */
+#sp-product { width: 100%; margin-top: 6px; }
+#sp-product-q { width: 100%; }
+
+/* A filter bar above a table. Same furniture as the screen editor's bar, which
+   is why it borrows .sp-pick and .sp-spacer rather than growing a second set of
+   names for a label above a control. */
+.tbl-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border: 1px solid var(--line, #d7dbe2);
+  border-radius: 10px;
+  background: var(--panel, #fff);
+}
+.tbl-bar input[type="search"] { min-width: 240px; }
+
+/* Sortable headings. The arrow only appears on the column actually in use —
+   three greyed arrows across a header row is decoration, not information. */
+table.sortable th[data-sort] {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+table.sortable th[data-sort]:hover { color: var(--ink, #10131a); }
+table.sortable th.sorted::after {
+  content: ' ▲';
+  font-size: 10px;
+}
+table.sortable th.sorted[data-dir="down"]::after { content: ' ▼'; }
+
+/* ---------------------------------------------------------------------------
+   The ordered modifier picker on the product form.
+
+   A numbered list, deliberately: the order is the meaning — "single or double"
+   is asked before "which mixer" — so the numbers are the field's own label for
+   what it does, not decoration.
+   --------------------------------------------------------------------------- */
+.mod-field { margin-top: 6px; }
+.mod-list {
+  margin: 0 0 8px;
+  padding-left: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mod-list:empty { display: none; }
+.mod-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.mod-name { font-weight: 500; }
+/* Pushes the keys to the right whatever the name's length. */
+.mod-keys { margin-left: auto; display: flex; gap: 4px; }
+.mod-add { display: flex; gap: 8px; align-items: center; }
+.mod-add select { flex: 1; }
+
+/* ---------------------------------------------------------------------------
+   Picking several products at once, and editing a cell where it sits.
+   --------------------------------------------------------------------------- */
+.pick-col { width: 34px; }
+/* `input, select { width: 100% }` near the top of this file is a bare element
+   selector, so it reaches every control in the application including the tick
+   boxes — and a checkbox is not a field that wants filling. It went unnoticed
+   only because the column above is 34px wide and a 34px checkbox still looks
+   like a checkbox. Give the same box the full width of a card on a phone and
+   it is drawn adrift in the middle of a 650px row, which is where this was
+   found. A checkbox is its own size, wherever it is put. */
+.pick-col input[type="checkbox"] { width: auto; margin: 0; }
+.bulk-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 12px;
+  padding: 4px 4px 4px 10px;
+  border-radius: 999px;
+  background: var(--brand-soft, rgba(94, 53, 177, 0.08));
+}
+.bulk-count { font-size: 13px; font-weight: 600; }
+
+/* An inline cell reads as text until it is being changed, so a table of two
+   hundred products does not look like a form. */
+.cell-edit {
+  width: 100%;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 6px;
+  padding: 3px 6px;
+  font: inherit;
+  color: inherit;
+}
+/* A number is not a sentence.
+
+   `input, select { width: 100% }` hands every inline editor the browser's
+   default field width as its *intrinsic* size, and a table sized to its
+   content then asks for that: the price column wanted 208px to show "3.00",
+   and the catalogue came out 1303px wide inside a card 776px across on an iPad
+   in portrait. Half the width of that table was empty boxes. */
+.cell-edit[type="number"] { max-width: 96px; }
+.cell-edit:hover { border-color: var(--line); }
+.cell-edit:focus {
+  border-color: var(--brand-deep);
+  background: var(--card, #fff);
+  outline: none;
+}
+.cell-edit.saving { opacity: 0.5; }
+.cell-edit.saved { border-color: #2e7d32; }
+select.cell-edit { cursor: pointer; }
+
+/* ---------------------------------------------------------------------------
+   The screen editor's search palette — double-click a key.
+   --------------------------------------------------------------------------- */
+.sp-palette-back {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(15, 15, 20, 0.45);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 10vh;
+}
+.sp-palette {
+  width: min(620px, 92vw);
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--card, #fff);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+}
+.sp-palette-q {
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  padding: 14px 16px;
+  font-size: 16px;
+  outline: none;
+  background: transparent;
+  color: inherit;
+}
+.sp-palette-list {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  overflow-y: auto;
+  flex: 1;
+}
+.sp-palette-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.sp-palette-row.on { background: var(--brand-soft, rgba(94, 53, 177, 0.1)); }
+.sp-palette-kind {
+  flex: 0 0 82px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  opacity: 0.65;
+}
+.sp-palette-label { font-weight: 600; }
+.sp-palette-note { margin-left: auto; }
+.sp-palette-empty { padding: 14px; }
+.sp-palette-hint { margin: 0; padding: 8px 14px; border-top: 1px solid var(--line); }
+
+/* ---------------------------------------------------------------------------
+   The editor in a window of its own (?popup=1).
+
+   Same page, same editor, without the furniture: no sidebar, no page heading,
+   no explanation. The point is that the grid, the inspector and the till
+   preview all fit at once — the manager was scrolling up to change a key and
+   down to see what it did.
+   --------------------------------------------------------------------------- */
+body.sp-popup .rail,
+body.sp-popup .topbar,
+body.sp-popup #view-screens .page-head > div:first-child { display: none !important; }
+
+body.sp-popup main { padding: 0; }
+
+body.sp-popup #view-screens {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px;
+  gap: 8px;
+  overflow: hidden;
+}
+
+/* The action row keeps its natural height; everything below shares what is
+   left and scrolls inside itself rather than pushing the page taller. */
+body.sp-popup #view-screens .page-head {
+  flex: 0 0 auto;
+  margin: 0;
+  justify-content: flex-end;
+}
+
+/* The defaults card is a setup step, not part of laying a screen out - it is
+   the first thing to give up its height in a window sized for the grid. */
+body.sp-popup .sp-defaults { display: none; }
+
+body.sp-popup .sp-layout {
+  flex: 1 1 auto;
+  min-height: 0;
+  align-items: stretch;
+}
+body.sp-popup .sp-layout > * { min-height: 0; }
+
+/* The inspector is a list of controls and is allowed to scroll — it is read
+   top to bottom and the manager knows there is more of it. */
+body.sp-popup .sp-panel { overflow-y: auto; }
+
+/* The grid is not, and making it fit is most of why this window exists.
+
+   In the page, the grid is width-driven: it takes the column it is in and its
+   16:9 shape decides how tall it comes out. In a window sized for it that is
+   backwards — a wide window makes a tall grid, the bottom row goes under the
+   fold, and the manager is scrolling again in the window that existed to stop
+   them scrolling.
+
+   So in the pop-out the stage takes whatever height is left over and the grid
+   is height-driven instead: `height: 100%` with the aspect ratio deciding the
+   width, capped at the column so a short wide window gives back height rather
+   than overflowing sideways. The shape is the same either way, which is the
+   whole point — what is arranged here is the shape a clerk meets. */
+body.sp-popup .sp-layout > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+}
+body.sp-popup .sp-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+body.sp-popup .sp-stage:not(.framed) .sp-grid {
+  max-height: none;
+  height: 100%;
+  width: auto;
+  max-width: 100%;
+  margin-inline: auto;
+}
+/* A bar has a fixed row height, so it cannot be stretched to fill — it keeps
+   its own size and the leftover height goes to the ghost of the sale screen
+   above or below it, which is what that ghost is for.
+
+   Which means the ghost has to be able to *take* it, and to give it back: at
+   120px fixed it is the thing that pushes an eleven-key bar off the bottom of a
+   short window. It shrinks to 60 and grows to whatever is left. */
+body.sp-popup .sp-stage.framed { justify-content: center; }
+body.sp-popup .sp-ghost {
+  flex: 1 1 auto;
+  min-height: 60px;
+}
+body.sp-popup .sp-status { flex: 0 0 auto; }
+
+
+/* ---------------------------------------------------------------------------
+   The corner handle
+
+   Bottom-right, on the selected key only, and drawn half outside its own
+   corner so there is something to grab on a key one cell wide. It is a real
+   element rather than a `resize` CSS property because the grid is cells and
+   not pixels: what is being dragged is a span, and it snaps.
+
+   The touch target is deliberately larger than the mark. A manager laying out
+   a screen on a Windows tablet is doing this with a thumb, and a 10px square
+   is not a thing a thumb can hit.
+   --------------------------------------------------------------------------- */
+.sp-handle {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  border: 2px solid #12151b;
+  background: var(--brand, #a5c715);
+  cursor: nwse-resize;
+  z-index: 3;
+}
+/* The hit area, not the mark. Invisible, and twice the size. */
+.sp-handle::after {
+  content: '';
+  position: absolute;
+  inset: -10px;
+}
+/* The cell has to be a containing block for the handle to sit in its corner.
+   `position: relative` on every cell rather than only on the selected one, so
+   selecting a key does not reflow it.
+
+   And the selected one gives up `overflow: hidden`, which is load-bearing
+   rather than tidy: the handle and the invisible square around it both sit
+   *outside* the key's corner so a one-cell-wide key still has something to
+   grab, and a clipped handle is one that cannot be pressed at all. The label
+   inside does its own clipping (see `.sp-cell span`), so nothing else escapes. */
+.sp-cell { position: relative; }
+.sp-cell.selected { overflow: visible; }
+.sp-grid.resizing,
+.sp-grid.resizing .sp-cell { cursor: nwse-resize; }
+
+/* ---------------------------------------------------------------------------
+   The colour wheel, and the box beside it
+
+   Neither half is enough alone: the wheel hides the value a venue needs to
+   read back, and the box is unusable for anybody choosing rather than pasting.
+   --------------------------------------------------------------------------- */
+.sp-wheel-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+/* Its own width, not a share of the row: the hex box beside it is the half
+   that should give, and a wheel narrower than its own swatch is not usable. */
+.sp-wheel {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted, #7a8394);
+  white-space: nowrap;
+}
+.sp-wheel input[type='color'] {
+  width: 34px;
+  height: 30px;
+  padding: 2px;
+  border: 1px solid var(--line, rgba(0, 0, 0, .16));
+  border-radius: 8px;
+  background: none;
+  cursor: pointer;
+}
+.sp-hex {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-transform: lowercase;
+}
+
+/* ---------------------------------------------------------------------------
+   The type controls, and the venue's fonts
+   --------------------------------------------------------------------------- */
+.sp-type {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 88px;
+  gap: 8px;
+  margin-top: 10px;
+}
+.sp-type label { margin: 0; }
+
+.sp-font-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.sp-font-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--line, rgba(0, 0, 0, .16));
+  border-radius: 8px;
+}
+/* The name, lettered in the font it names. A list of font names all set in the
+   same face is a list that cannot answer the only question being asked of it. */
+.sp-font-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 17px;
+}
+.sp-font-row .btn { flex: 0 0 auto; }
+
+/* ---------------------------------------------------------------------------
+   Touch
+
+   Not "mobile". `pointer: coarse` is the question actually being asked — is the
+   thing pressing this a finger — and it is true of an iPad in landscape at
+   1366px, which every width-based breakpoint in this file treats as a desktop.
+   That is why the back office felt wrong on a tablet while measuring fine on a
+   laptop at the same width.
+   --------------------------------------------------------------------------- */
+@media (pointer: coarse) {
+  /* Apple's own floor is 44pt. A `.btn.small` was 29px tall, and a row with
+     Edit / Duplicate / Delete in it was three 29px targets 6px apart — which is
+     a mis-tap waiting to happen, and one of them deletes a product. */
+  .btn { min-height: 42px; }
+  .btn.small { min-height: 38px; padding: 8px 14px; font-size: 13.5px; }
+  .nav { min-height: 44px; }
+  .nav-group { min-height: 38px; }
+
+  /* THE ONE THAT MAKES A TABLET FEEL BROKEN.
+
+     iOS Safari zooms the whole page in when a form control smaller than 16px
+     takes focus, and it does not zoom back out. Tap the product search, and the
+     back office is suddenly 1.2x too big with the rail off the left edge — and
+     nothing on screen explains why. Every control in here was 14px.
+
+     16px is not a design choice here, it is the threshold. */
+  input, select, textarea, .cell-edit {
+    font-size: 16px;
+    min-height: 42px;
+  }
+  /* Inline table editing keeps its own smaller frame, but not its own font
+     size — see above. */
+  .cell-edit { min-height: 36px; }
+
+  /* A checkbox at 13px is not something a thumb can hit, and the pick column of
+     the products table is nothing but checkboxes. */
+  input[type="checkbox"], input[type="radio"] {
+    width: 22px;
+    height: 22px;
+  }
+
+  /* Momentum scrolling inside the boxes that now scroll rather than the page. */
+  .card, #canvas, .sp-panel { -webkit-overflow-scrolling: touch; }
+}
+
+/* ---------------------------------------------------------------------------
+   Tablets: the gap between the phone drawer and the desktop rail
+
+   The off-canvas drawer stops at 960px and the desktop layout starts at 961px
+   with a 236px rail — so an iPad in portrait (1024px) keeps the full rail and
+   gets 788px of page, and in landscape (1366px) it gets 1130px. Neither is
+   wrong, but both are tighter than the desktop this was laid out on, and the
+   two places that assumed otherwise are here.
+   --------------------------------------------------------------------------- */
+@media (min-width: 961px) and (max-width: 1400px) {
+  /* The rail gives back 32px. It is a list of one-line labels and none of them
+     needs 236px. */
+  .rail { width: 204px; }
+  main { padding: 26px 22px 56px; }
+
+  /* Two-up panels are a desktop idea. At this width each half is ~450px and a
+     chart in one of them is unreadable. */
+  .grid-2 { grid-template-columns: 1fr; }
+}
+
+/* ---------- The editor, handed to a window of its own ----------
+
+   Screen programming opens in its own window by default, and the tab it was
+   opened from draws a card saying so. Everything the editor is made of is
+   hidden rather than removed: coming back to the tab is a class change, not a
+   reload, so a layout part-way through is still where it was left. */
+body.sp-handed-over #view-screens .sp-defaults,
+body.sp-handed-over #view-screens .sp-layout,
+body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
+  display: none;
+}
+
+.sp-handover {
+  max-width: 640px;
+  padding: var(--card-pad);
+}
+.sp-handover h3 { margin: 0 0 8px; }
+
+/* ---------------------------------------------------------------------------
+   Night
+   ---------------------------------------------------------------------------
+   The whole theme is a list of colours because everything above it goes
+   through the tokens. Two rules govern what is *not* in here:
+
+     * A picture of a thing keeps its own colours. The receipt preview is a
+       photograph of paper and stays white in both themes; the till preview and
+       the screen editor's grid are pictures of a till, which was always dark.
+       Inverting either would show a manager something no customer will ever
+       see, which is the one job those panels have.
+
+     * The rail does not move. It was already near-black, and it is the one
+       part of the page that is the same in both themes -- which is what stops
+       a switch reading as a different application.
+
+   Applied by `data-theme` on <html> rather than by `prefers-color-scheme`
+   alone, because a venue's office and its bar are not the same room and the
+   manager gets the choice. The default follows the system; see the media query
+   below it, which is guarded so an explicit "light" always wins.
+*/
+:root[data-theme="dark"] {
+  --bg: #0d1014;
+  --card: #151a20;
+  --panel: #151a20;
+  --surface-2: #1b222a;
+  --input-bg: #10151a;
+  --hover: #1b222a;
+  --track: #262f39;
+  --line: #262f39;
+  --text: #e8edf1;
+  --muted: #94a2ae;
+
+  /* Lime on near-black reads well as a fill and badly as small text, so the
+     deep variant moves the other way in the dark: it has to be *lighter* than
+     the brand here, not darker. */
+  --brand-soft: #26310a;
+  --brand-deep: #b7db2a;
+
+  --blue: #6ba4ff;
+  --amber: #ffb648;
+  --red: #ff6b6f;
+  --green: #46c78c;
+
+  --ok-wash: #10281c;
+  --warn-wash: #2e2110;
+  --warn-ink: #ffb648;
+  --bad-wash: #2e1517;
+  --flash: #2f2712;
+
+  /* A shadow the colour of the page beneath it. The light theme's near-black
+     shadow is invisible on a dark canvas, so cards would lose their edges
+     entirely; this is deeper and relies on the border to do most of the work. */
+  --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 6px 20px rgba(0, 0, 0, .3);
+}
+
+/* The default, for anybody who has never touched the switch. Guarded on
+   `:not([data-theme="light"])` so an explicit choice of Day survives a laptop
+   set to dark. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1014;
+    --card: #151a20;
+    --panel: #151a20;
+    --surface-2: #1b222a;
+    --input-bg: #10151a;
+    --hover: #1b222a;
+    --track: #262f39;
+    --line: #262f39;
+    --text: #e8edf1;
+    --muted: #94a2ae;
+    --brand-soft: #26310a;
+    --brand-deep: #b7db2a;
+    --blue: #6ba4ff;
+    --amber: #ffb648;
+    --red: #ff6b6f;
+    --green: #46c78c;
+    --ok-wash: #10281c;
+    --warn-wash: #2e2110;
+    --warn-ink: #ffb648;
+    --bad-wash: #2e1517;
+    --flash: #2f2712;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 6px 20px rgba(0, 0, 0, .3);
+  }
+}
+
+/* The receipt designer's paper. A preview of something printed on white paper
+   in black ink, so it is stated rather than inherited -- in either theme. */
+:root[data-theme="dark"] .rd-paper,
+:root[data-theme="dark"] .rd-paper * {
+  color: #000;
+}
+
+/* Two controls the browser draws itself. Without this the dark theme gets a
+   white scrollbar down the side of every table and a light date picker. */
+:root[data-theme="dark"] { color-scheme: dark; }
+:root[data-theme="light"] { color-scheme: light; }
+
+/* The switch itself: a two-key segmented control in the rail's footer, beside
+   the online dot. Small, because it is set once and then never touched. */
+.theme-switch {
+  display: inline-flex;
+  border: 1px solid rgba(255, 255, 255, .14);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.theme-switch button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--rail-text);
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.theme-switch button + button { border-left: 1px solid rgba(255, 255, 255, .14); }
+.theme-switch button:hover { color: var(--rail-active); }
+.theme-switch button[aria-pressed="true"] {
+  background: var(--brand);
+  color: var(--on-brand);
+}
+
+.rail-theme { padding: 12px 22px 20px; }
+
+/* The bulk-fill product picker.
+   ----------------------------------------------------------------------------
+   A department is the fast way to fill a screen and was, for a while, the only
+   way: it dropped in everything on the shelf and a manager who wanted eight of
+   the fourteen lagers deleted six keys afterwards. The list below is the answer,
+   so it has to stay a *list* — scrolling inside its own box rather than pushing
+   "Fill the selection" off the bottom of a panel that is already tall. */
+.sp-fill-picker { margin-top: 10px; }
+
+.sp-fill-tools {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.sp-fill-tools input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.sp-fill-list {
+  max-height: 210px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 4px;
+  background: var(--card);
+}
+
+.sp-fill-list .check {
+  margin: 0;
+  padding: 4px 6px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  gap: 8px;
+}
+
+.sp-fill-list .check:hover { background: rgba(127, 127, 127, .1); }
+
+/* The price sits at the end of the row, greyed, so a manager can tell two
+   similarly named products apart without opening the catalogue. */
+.sp-fill-list .sp-fill-price {
+  margin-left: auto;
+  opacity: .6;
+  font-variant-numeric: tabular-nums;
+}
+
+.sp-fill-list .sp-fill-empty {
+  padding: 10px 6px;
+  opacity: .65;
+  font-size: 12.5px;
+}
+
+/* The catalogue import.
+   ----------------------------------------------------------------------------
+   Two cards side by side, because the order is the instruction: get the
+   template, then upload the file. They stack on a narrow screen rather than
+   shrinking, since a file input has a minimum useful width and a squeezed one
+   is a button nobody can read. */
+.import-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--stack);
+}
+
+.import-grid input[type="file"] {
+  width: 100%;
+  font-size: 13px;
+}
+
+.import-summary {
+  margin: 0;
+  padding-left: 20px;
+  line-height: 1.9;
+}
+
+/* Errors are a list somebody works down with the spreadsheet open beside them,
+   so the row numbers line up and the list scrolls rather than running the page
+   off the bottom. */
+.import-errors {
+  margin: 6px 0 0;
+  padding-left: 20px;
+  max-height: 260px;
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+#import-problems .error { margin: 14px 0 0; }
+
+/* Reports.
+   ----------------------------------------------------------------------------
+   The screen and the PDF are the same document in two media, and they are held
+   in step deliberately: the dark band, the lime rule under it, the four meta
+   cells and the six figure tiles are the same furniture in the same order as
+   vesopa_server/src/reports.js draws on paper. Somebody who ran a report on
+   screen and then opens the file they exported should not have to work out
+   whether it is the same report. */
+
+/* Visible to a screen reader, gone from the page. The export format select
+   needs a label; the word "Format" beside a dropdown that says PDF does not
+   earn its width. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* The fields, then the actions, in two rows.
+   These were one flex line with the actions pushed over by `margin-left:auto`.
+   That works at 1400px and falls apart below it: the buttons wrap to their own
+   line anyway but without the rule above them, and the gap left behind sits in
+   the middle of the fields. A grid gives every field a whole column and drops
+   to one column on a phone, where a squeezed date input is one nobody can read
+   the year in. */
+.rr-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px 14px;
+  align-items: end;
+}
+
+.rr-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+  margin: 0;
+  min-width: 0;
+}
+
+.rr-controls select,
+.rr-controls input {
+  width: 100%;
+  min-width: 0;
+}
+
+.rr-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+/* Format, view and download belong together — they are one sentence: "this
+   format, look at it or save it". Kept in their own box so a wrap moves all
+   three, rather than leaving a lone dropdown under Run report looking like a
+   fourth filter. */
+.rr-export-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-left: auto;
+}
+
+.rr-format-field select { min-width: 92px; }
+
+@media (max-width: 720px) {
+  /* Nothing is pushed right on a phone: `margin-left:auto` there means the
+     buttons are two thirds of the way across a 360px screen with a hole beside
+     them. Full-width, in the order they are used. */
+  .rr-export-group { margin-left: 0; width: 100%; }
+  .rr-actions > .btn { width: 100%; }
+  .rr-export-group .btn { flex: 1 1 120px; }
+  .rr-format-field { flex: 1 1 100%; }
+  .rr-format-field select { width: 100%; }
+}
+
+/* ---- The report's own header ---------------------------------------------
+   The same band the PDF opens with, so the screen and the file are recognisably
+   one document. Stated in absolute colours rather than in theme tokens: this is
+   the brand's near-black with the brand's lime on it, in both themes, exactly
+   as it prints. */
+.rr-head {
+  background: #111111;
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+  margin-bottom: var(--stack);
+}
+
+.rr-head-band {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 22px var(--card-pad) 20px;
+  border-bottom: 4px solid var(--brand);
+}
+
+.rr-head-logo {
+  display: block;
+  width: 100%;
+  max-width: 175px;
+  height: auto;
+  margin-bottom: 14px;
+}
+.rr-head h3 { color: #fff; font-size: 21px; margin: 0; }
+.rr-head-kicker {
+  margin: 4px 0 0;
+  font-size: 10.5px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: #b8bcb0;
+}
+.rr-head-site {
+  text-align: right;
+  min-width: 0;
+  flex: 1 1 220px;
+}
+.rr-head-site strong { color: var(--brand); font-size: 15px; }
+.rr-head-site span { display: block; color: #b8bcb0; font-size: 12px; margin-top: 3px; }
+
+/* The four things every export prints in its header, in the same order. */
+.rr-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1px;
+  background: rgba(255, 255, 255, .09);
+}
+.rr-meta > div { background: #111111; padding: 14px var(--card-pad); min-width: 0; }
+.rr-meta dt {
+  font-size: 9.5px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: #8f948a;
+  margin: 0 0 5px;
+  font-weight: 700;
+}
+.rr-meta dd {
+  margin: 0;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+/* ---- The headline figures ------------------------------------------------
+   Six of them, three across, the first one lime — the same tiles the PDF puts
+   under its meta strip and the same order, because a manager reading the screen
+   and an accountant reading the file quote these at each other. */
+.rr-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+  margin-bottom: var(--stack);
+}
+
+.rr-tile {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px 18px 14px;
+  min-width: 0;
+}
+.rr-tile.hero { background: var(--brand); border-color: var(--brand); }
+.rr-tile-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.rr-tile.hero .rr-tile-label,
+.rr-tile.hero .rr-tile-hint { color: rgba(16, 19, 10, .66); }
+.rr-tile-value {
+  font-size: 25px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.rr-tile.hero .rr-tile-value { color: var(--on-brand); }
+.rr-tile-hint { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
+
+/* The heading tick, the same lime mark the PDF puts beside a section title. */
+.rr-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.rr-section-head h3 {
+  margin: 0;
+  font-size: 15px;
+  padding-left: 11px;
+  border-left: 3.5px solid var(--brand);
+  line-height: 1.25;
+}
+
+/* A report has seven columns and a venue may be reading it on a laptop. The
+   table scrolls inside its own card rather than pushing the page sideways —
+   a horizontally scrolling page loses the left-hand column, which is the one
+   that says which department the row is. */
+.rr-scroll { overflow-x: auto; }
+
+.rr-table { min-width: 640px; }
+
+.rr-table thead th {
+  background: var(--brand-soft);
+  color: var(--brand-deep);
+  font-size: 10.5px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  border-bottom: 0;
+}
+
+/* Figures right-aligned and tabular, so the decimal points line up down the
+   column. A money column that does not is a money column nobody can scan. */
+.rr-table td.num,
+.rr-table th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.rr-table tbody tr:nth-child(even) { background: var(--surface-2); }
+
+/* The zebra out-specifies the shared `tbody tr:hover`, so without this the
+   pointer stops responding on every other row. */
+.rr-table tbody tr:hover,
+.rr-table tbody tr:nth-child(even):hover { background: var(--hover); }
+
+/* The solid total bar the PDF prints, in the brand near-black rather than in
+   `--ink` — which is `--text`, and in the dark theme that is a near-white bar
+   with white type on it. `--rail` is #111 in both themes, which is the point
+   of it. */
+.rr-table tfoot td {
+  font-weight: 700;
+  background: var(--rail);
+  color: #fff;
+  border-top: 0;
+}
+.rr-table tfoot td:first-child { border-radius: 0 0 0 8px; }
+.rr-table tfoot td:last-child { border-radius: 0 0 8px 0; }
+
+/* ---- Row actions ---------------------------------------------------------
+   A scheduled report has six things you can do to it, and six labelled buttons
+   in one cell is a row that is wider than the screen. Icons with a tooltip and
+   an accessible name, wrapping in place, in one predictable order: look, save,
+   send, history, edit, delete. */
+.row-actions {
+  display: flex;
+  /* NOT `wrap`.
+
+     Nine columns and six buttons is wider than `min-width: 900px` allows, so
+     the table layout gave this cell about the width of one icon and the six
+     of them wrapped into a vertical stack — a 234px column of buttons holding
+     a 250px-tall row open for one line of text, with `vertical-align: middle`
+     centring the other eight cells in the middle of all that emptiness. It
+     read as a table with one enormous blank row in it.
+
+     A row of actions is one line. Held to it, the cell's min-content width is
+     the six buttons, the table asks for the width it actually needs, and the
+     card scrolls — which is what the card is for. */
+  flex-wrap: nowrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+/* And they keep their size while it happens: `width: 34px` is not a floor on
+   its own, because a flex item may still shrink below its width. */
+.row-actions .icon-btn { flex: none; }
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--card);
+  color: var(--text);
+  cursor: pointer;
+}
+.icon-btn svg { width: 16px; height: 16px; display: block; }
+.icon-btn:hover { background: var(--brand-soft); border-color: var(--brand); }
+.icon-btn:disabled { opacity: .45; cursor: default; }
+.icon-btn.danger { color: var(--red); }
+.icon-btn.danger:hover { background: var(--bad-wash); border-color: var(--red); }
+
+@media (pointer: coarse) {
+  /* Same floor as .btn.small below — a 34px target is a mis-tap on a tablet. */
+  .icon-btn { width: 40px; height: 40px; }
+}
+
+.rs-table td { vertical-align: middle; }
+.rs-table { min-width: 900px; }
+
+/* ---- A wide table on a phone ---------------------------------------------
+   Scrolling a table sideways on a 360px screen is the worst of both: the
+   columns hold it open, whatever is at the right — which on every table here
+   is the row's own buttons — is off screen, and finding it means scrolling
+   past the column that says which row you are on. On Departments and
+   Modifiers that put Edit and Delete out of reach entirely.
+
+   So a table carrying `.table-cards` stops being a table below 760px and each
+   row becomes a card. The heading row goes and every cell carries its own
+   heading instead, out of the `data-label` the row was rendered with — which
+   is why that attribute is not decoration, and why a cell without one shows
+   its value alone rather than an empty label.
+
+   Applied to the scheduled reports table in the markup, and by loadCrud to
+   every programming table it draws, so this is written once for all of them.
+
+   Kept off the product catalogue and the report tables on purpose: those are
+   read as a grid, column against column, and stacking them loses the very
+   comparison they exist for. They still scroll. */
+@media (max-width: 760px) {
+  .table-cards,
+  .table-cards tbody,
+  .table-cards tr,
+  .table-cards td {
+    display: block;
+    width: auto;
+  }
+
+  /* The headings live on the cells now. */
+  .table-cards thead { display: none; }
+
+  /* Full width, said loudly enough to be heard.
+     `.card > table` sets `width: max-content` for the desktop table and, being
+     a class *and* an element, it out-specifies a bare `.table-cards` — so the
+     table went on shrink-wrapping to its widest label/value pair and every card
+     had a 129px hole down its right-hand side, which is what all that "padding"
+     on the right actually was. Matching its shape here is what wins. */
+  .card > .table-cards,
+  .table-cards {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .table-cards tr {
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    margin-bottom: 12px;
+    background: var(--card);
+  }
+  .table-cards tr:last-child { margin-bottom: 0; }
+  /* The shared `tbody tr:hover` wash makes a card look pressed on a touch
+     screen, where there is no pointer to explain it. */
+  .table-cards tbody tr:hover { background: var(--card); }
+
+  .table-cards td {
+    border: 0;
+    padding: 5px 0;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 14px;
+    font-size: 13.5px;
+    min-width: 0;
+    /* The narrow-screen block above sets `nowrap` on every cell, which is
+       right for a scrolling table and wrong for a card: a long department name
+       would run out of the side of it. */
+    white-space: normal;
+    overflow-wrap: anywhere;
+    /* THE HOLE DOWN THE RIGHT-HAND SIDE OF EVERY CARD.
+
+       `.card > table td { max-width: 42ch }` is a ceiling on a *column*: it
+       stops one long note making a desktop table two thousand pixels wide.
+       Here there are no columns. Every cell is a full-width row of the card,
+       and 42ch is about 357px — so on anything from a large phone to a tablet
+       in portrait each row stopped dead at 357px and the rest of the card, up
+       to 335px of it, was empty. Products, Stock, Staff, Customers, Vouchers,
+       Promotions, Gift cards, Deposits, Departments, Tax, Offices, Billing:
+       every table this layout touches, which is why it read as a whole app
+       with a margin down one side rather than as one broken page.
+
+       It survived the rule above it because `.card > table td` is a class and
+       two elements and `.table-cards td` is a class and one, so the ceiling
+       out-specified the layout meant to replace it, and saying `max-width: none`
+       on `.table-cards td` alone loses the same argument for the same reason.
+       Lifted in the rule below, which carries a class more than the ceiling
+       does and so actually reaches it. */
+  }
+
+  /* (0,2,1) against the ceiling's (0,1,2) — this is the rule that lifts it.
+     The bare `.table-cards td` is for the tables drawn into a plain <div>
+     rather than straight into a card, on the kitchen screens: no `.card >`
+     ancestor, so no ceiling to lift, but no reason to differ either. */
+  .card > .table-cards td,
+  .table-cards td { max-width: none; }
+  .table-cards td::before {
+    content: attr(data-label);
+    flex: none;
+    /* `justify-content: space-between` spaces *every* item, which is right for
+       a cell holding one value and wrong for one holding two: the Printing
+       cell put its routing badge in the middle of the card and "Not on
+       receipt" against the far edge, as though they were unrelated. An auto
+       margin takes the free space before the split does, so the heading goes
+       left and everything the cell actually contains stays together on the
+       right, however many pieces it comes in. */
+    margin-right: auto;
+    color: var(--muted);
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  /* A cell nobody gave a heading to — a computed column, an empty spacer —
+     reads better with no label than with a blank one. */
+  .table-cards td:not([data-label])::before,
+  .table-cards td[data-label=""]::before { content: none; }
+
+  /* `.right` aligns a money column under its heading — a desktop idea, and it
+     needs a column to mean anything. In a card it only pushed the heading to
+     the far edge, so Price alone read right-to-left while Name, Department and
+     Sub Department read left-to-right, and the value landed underneath on the
+     other side. The flex row already puts the value on the right. */
+  .table-cards td.right { text-align: left; }
+
+  /* The first column is the card's title, not another label/value pair. */
+  .table-cards td.card-title {
+    display: block;
+    font-size: 16px;
+    font-weight: 650;
+    padding: 0 0 8px;
+    margin-bottom: 6px;
+    border-bottom: 1px solid var(--line);
+  }
+  .table-cards td.card-title::before { content: none; }
+
+  /* Reordering is a mouse gesture — the handle arms `draggable` on mousedown,
+     which no touch screen sends — so the grip is hidden rather than left there
+     as a control that does nothing. The order is still set on a desktop and
+     still pushes to the tills. */
+  .table-cards .drag-cell { display: none; }
+
+  /* The buttons get the whole width of the card and share it evenly, instead
+     of being the thing hiding off the right-hand edge. */
+  .table-cards td.row-actions-cell {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 12px 0 0;
+    margin-top: 8px;
+    border-top: 1px solid var(--line);
+    text-align: left;
+    white-space: normal;
+  }
+  .table-cards td.row-actions-cell::before { content: none; }
+  .table-cards td.row-actions-cell .btn {
+    flex: 1 1 96px;
+    /* `td .btn + .btn` adds a left margin for the inline row; here the gap
+       does that job and the margin only makes the last button short. */
+    margin-left: 0;
+  }
+  .table-cards td.row-actions-cell .row-actions {
+    flex: 1 1 100%;
+    flex-wrap: nowrap;
+    justify-content: space-between;
+    gap: 6px;
+  }
+  .table-cards td.row-actions-cell .row-actions .icon-btn {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  /* The sticky actions column is a rule about a table that scrolls sideways.
+     Down here there is no table and no sideways: the cell is a block at the
+     foot of a card, and left floating it would sit over the row above it. */
+  .card > .table-cards tr > :last-child,
+  .table-cards tr > :last-child {
+    position: static;
+    background: none;
+    box-shadow: none;
+  }
+
+  /* "Nothing yet." is a colspan cell with no heading of its own. */
+  .table-cards td[colspan] { display: block; padding: 4px 0; }
+  .table-cards td[colspan]::before { content: none; }
+
+  /* ---- Cells that are edited in place ------------------------------------
+     The catalogue keeps its inline inputs and selects on a phone, and squeezed
+     into whatever is left beside their label they are unreadable and unhittable
+     — a select showing "Draught Beer" in 90px. So an editable cell stops being
+     a label/value row and becomes a little form field: heading on its own line,
+     control full width under it. */
+  /* cellSelect() returns a <select class="cell-edit">, so the one class covers
+     the text boxes and the dropdowns alike. */
+  .table-cards td:has(> .cell-edit) { display: block; }
+  .table-cards td:has(> .cell-edit)::before {
+    display: block;
+    margin-bottom: 5px;
+  }
+  .table-cards td .cell-edit {
+    width: 100%;
+    max-width: 100%;
+    text-align: left;
+  }
+
+  /* The bulk-select box is under a heading that is itself a checkbox, so there
+     is no word to take. It is the one column that gets told what it is here. */
+  .table-cards td.pick-col {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    /* The one cell whose value is a control rather than a fact. Sent to the far
+       side of a 690px card the box reads as belonging to nothing, and a
+       checkbox is a flex item with no intrinsic stretch — so it was drawn in
+       the middle of the space it had been given instead. It sits against its
+       own word. */
+    justify-content: flex-start;
+  }
+  .table-cards td.pick-col input { flex: none; }
+  .table-cards td.pick-col::before {
+    margin-right: 0;
+    content: 'Select';
+    color: var(--muted);
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+
+  /* The product picture sits above its name rather than beside a full-width
+     input it would otherwise be pushed off the end of. */
+  .table-cards td .thumb { margin: 0 0 8px; }
+
+}
+
+/* The foot of a list that loads as it is scrolled. Always present, so the
+   space it needs is reserved rather than appearing under the last row and
+   nudging the page as it arrives. */
+.ex-more {
+  min-height: 34px;
+  padding: 12px 4px 4px;
+  color: var(--muted);
+  font-size: 12.5px;
+  text-align: center;
+}
+.ex-more.loading::before {
+  content: '';
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  margin-right: 8px;
+  vertical-align: -1px;
+  border: 2px solid var(--line);
+  border-top-color: var(--brand);
+  border-radius: 50%;
+  animation: ex-spin .7s linear infinite;
+}
+@keyframes ex-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .ex-more.loading::before { animation: none; }
+}
+
+/* ---- The report viewer ---------------------------------------------------
+   Full screen with the chrome kept to a strip, because the thing worth looking
+   at is the report. */
+.pdfv {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(16px, 2.5vh) max(12px, 2vw);
+}
+.pdfv-back {
+  position: absolute;
+  inset: 0;
+  background: rgba(12, 12, 14, .62);
+  backdrop-filter: blur(3px);
+}
+.pdfv-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(1080px, 100%);
+  height: min(96vh, 100%);
+  background: var(--card);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .45);
+}
+
+.pdfv-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 14px 18px;
+  background: #111111;
+  border-bottom: 3px solid var(--brand);
+}
+/* Shrinks rather than shoves: the viewer header carries three buttons that
+   matter more than the mark does. */
+.pdfv-logo { width: 100%; max-width: 135px; height: auto; flex: 0 1 auto; min-width: 60px; }
+.pdfv-titles { flex: 1 1 200px; min-width: 0; }
+.pdfv-titles h3 { color: #fff; font-size: 15px; }
+.pdfv-sub { margin: 2px 0 0; font-size: 11.5px; color: #b8bcb0; }
+.pdfv-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.pdfv-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  background: var(--surface-2);
+  display: flex;
+}
+.pdfv-body iframe { flex: 1 1 auto; width: 100%; height: 100%; border: 0; }
+.pdfv-state {
+  margin: auto;
+  padding: 24px;
+  color: var(--muted);
+  font-size: 13.5px;
+  text-align: center;
+}
+
+@media (max-width: 720px) {
+  .pdfv { padding: 0; }
+  .pdfv-panel { height: 100%; border-radius: 0; }
+  .pdfv-actions { width: 100%; }
+  .pdfv-actions .btn { flex: 1 1 0; }
+}
+
+
+/* ---- Swipe cards ---------------------------------------------------------
+   A worked example of each card, on the Cards page. The number is set in a
+   monospaced face on purpose: this is a string somebody compares against a card
+   in their hand, digit by digit, and a proportional font makes 1 and 7 and a
+   run of zeroes harder to count than they need to be. */
+.card-eg {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.card-eg:last-of-type { border-bottom: 0; }
+.card-eg-label {
+  min-width: 92px;
+  font-weight: 600;
+}
+.card-eg-track {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: .02em;
+}
+/* A programme the venue has switched off. Shown rather than hidden, because
+   "not used" is an answer and a missing row is a question. */
+.card-eg.off .card-eg-label { font-weight: 500; opacity: .65; }
+
+
+/* ---- Wallet passes -------------------------------------------------------
+   A preview of the card, not a mock-up of Apple's chrome. iOS draws the real
+   thing and its rendering is not ours to promise; what this shows is the three
+   things the venue actually controls -- the artwork, the colours and the words
+   -- in the arrangement the pass puts them in. */
+/* A pass, at the size a phone gives it.
+   Apple lays out at 375pt wide; anything wider here is a preview that flatters
+   a design which will not fit. Centred rather than stretched, so the panel can
+   be any width without the card following it. */
+.wal-pass {
+  width: 100%;
+  max-width: 320px;
+  margin: 0 auto 16px;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .28);
+  font-size: .9rem;
+}
+.wal-pass-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 13px 8px;
+}
+/* The chevron, at the size Apple actually draws it.
+   22pt, against the 160pt wordmark that used to fill the whole logo slot and
+   made every card -- whoever issued it -- read as an advertisement for Vesopa.
+   Fixed height so a venue swapping in its own mark cannot resize the header. */
+.wal-pass-mark {
+  height: 22px;
+  width: auto;
+  flex: none;
+  display: block;
+}
+.wal-pass-logo {
+  font-weight: 700;
+  letter-spacing: .01em;
+  font-size: .82rem;
+  /* The venue's name now, not the programme's. Truncates rather than wrapping
+     the header onto two lines, which is what Wallet itself does with it. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The header field, top right. Right-aligned and pushed there by the margin
+   rather than by justify-content, so the venue name keeps the space it needs
+   and this takes what is left. */
+.wal-pass-header {
+  margin-left: auto;
+  flex: none;
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-width: 45%;
+}
+.wal-pass-kind {
+  font-size: .62rem;
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  font-weight: 700;
+  white-space: nowrap;
+}
+/* The band of artwork, with the headline value sitting on it — which is where
+   Apple puts the primary field, and why the points were missing from this
+   preview before: there was nowhere for them to go.
+   375x98, not 375x123. Every card is an eventTicket now — the only style
+   besides boardingPass that honours groupingIdentifier, which is what collapses
+   a venue's five cards into one stack — and an eventTicket strip is 98pt. The
+   shipped artwork is rendered at exactly this ratio by tools/wallet_art, so a
+   preview at the old height would be showing a crop the phone never makes. */
+.wal-pass-strip {
+  position: relative;
+  aspect-ratio: 375 / 98;
+  background-size: cover;
+  background-position: center;
+}
+/* A scrim under the headline value.
+   The strip is a photograph whose brightness is the venue's choice, and the
+   label sits in the brand colour -- lime on a bright gold gradient is
+   unreadable, and no amount of text-shadow fixes a mid-tone. Darkening the
+   bottom third is what Apple does with its own strip layouts, and it is the
+   only approach that works for artwork this code has never seen. */
+.wal-pass-strip::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(0, 0, 0, .72) 0%, rgba(0, 0, 0, .35) 28%, transparent 58%);
+  pointer-events: none;
+}
+.wal-pass-primary {
+  z-index: 1;
+  position: absolute;
+  left: 13px;
+  bottom: 10px;
+  right: 13px;
+  /* The artwork underneath is a photograph and its brightness is the venue's
+     choice, so the text carries its own shadow rather than trusting contrast
+     it cannot check. */
+  text-shadow: 0 1px 4px rgba(0, 0, 0, .75);
+}
+.wal-pass-label {
+  display: block;
+  font-size: .58rem;
+  text-transform: uppercase;
+  letter-spacing: .14em;
+  font-weight: 700;
+  margin-bottom: 1px;
+}
+.wal-pass-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.05;
+  display: block;
+}
+/* The secondary row. Wraps rather than scrolling: three fields is what fits on
+   a phone, and a fourth belongs on the back of the card. */
+.wal-pass-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  padding: 11px 13px 4px;
+}
+.wal-pass-field { min-width: 0; }
+.wal-pass-small {
+  font-size: .8rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+}
+.wal-pass-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 13px 13px;
+  font-size: .68rem;
+}
+.wal-pass-venue {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Stands in for the barcode. Deliberately abstract: drawing a fake barcode
+   would invite somebody to try scanning the preview. */
+.wal-pass-code {
+  flex: 1;
+  height: 24px;
+  border-radius: 4px;
+  background: repeating-linear-gradient(
+    90deg, currentColor 0 2px, transparent 2px 5px);
+  opacity: .35;
+}
+
+.wal-qr { text-align: center; }
+.wal-qr img {
+  border-radius: 10px;
+  background: #fff;
+  padding: 8px;
+}
+.wal-qr p { word-break: break-all; margin-top: 8px; }
+
+/* The QR arrives as inline SVG rather than an <img>, because /api/qr.svg is
+   behind the session and an <img> cannot send the bearer token. Same white
+   card the <img> rule above gives it. */
+.wal-qr-img {
+  display: inline-block;
+  border-radius: 10px;
+  background: #fff;
+  padding: 8px;
+  line-height: 0;
+}
+.wal-qr-img svg { display: block; width: 220px; height: 220px; }
+
+/* The sign-up code, shown as the tail of a URL so it reads as one. */
+.wal-slug {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--line, #263244);
+  border-radius: 10px;
+  overflow: hidden;
+  margin: 6px 0;
+}
+.wal-slug-prefix {
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  font-size: .82rem;
+  color: var(--muted, #9aa7b4);
+  background: rgba(255, 255, 255, .04);
+  white-space: nowrap;
+}
+.wal-slug input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.grid3 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 12px;
+}
+/* A colour input is a small swatch by default and impossible to aim at on a
+   touch screen, which the back office is used on. */
+.wal-colours input[type="color"] {
+  width: 100%;
+  height: 40px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: none;
+}
+
+.callout.warn {
+  border-left: 3px solid #f77f00;
+  background: rgba(247, 127, 0, .08);
+  padding: 12px 14px;
+  border-radius: 8px;
+  margin: 10px 0;
+}
+.callout.warn ul { margin: 8px 0 0; padding-left: 1.1rem; }
+
+/* The code, shown big enough to scan off the screen from across a desk. */
+.wal-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, .6);
+}
+.wal-modal-card {
+  background: var(--card, #fff);
+  color: inherit;
+  border-radius: 16px;
+  padding: 24px;
+  text-align: center;
+  max-width: 22rem;
+}
+.wal-modal-card img {
+  background: #fff;
+  border-radius: 10px;
+  padding: 10px;
+  margin: 10px 0;
+}
+
+/* ---------------------------------------------------------------------------
+   Row actions: a card on a phone, and a card on paper
+   ---------------------------------------------------------------------------
+   These two sit at the end of six different lists, so they are icons rather
+   than words: "Wallet pass" and "Print card" in every row of a customer list
+   pushes the name -- the thing being scanned for -- off the left of a tablet.
+   Icon-only needs the tooltip and the aria-label that rowCardActions() gives
+   them, which is why they are never drawn without one. */
+.icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--muted);
+  cursor: pointer;
+  vertical-align: middle;
+  transition: color .12s, border-color .12s, background .12s;
+}
+.icon-btn + .icon-btn,
+.icon-btn + .btn,
+.btn + .icon-btn { margin-left: 6px; }
+.icon-btn svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.icon-btn:hover:not(:disabled) {
+  color: var(--brand-deep);
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+.icon-btn:disabled { opacity: .35; cursor: not-allowed; }
+
+.wal-qr-box {
+  background: #fff;
+  border-radius: 10px;
+  padding: 10px;
+  margin: 10px 0;
+  min-height: 260px;
+  display: grid;
+  place-items: center;
+}
+.wal-qr-box svg { display: block; width: 260px; height: 260px; }
+
+/* The printed card, at the size a card actually is: 85.6 x 54mm, the same
+   rectangle as a bank card, so what comes out of the printer can be held
+   against a blank and cut to it. */
+.print-card-wrap { display: grid; gap: 14px; justify-items: center; }
+.print-card {
+  width: 85.6mm;
+  height: 54mm;
+  box-sizing: border-box;
+  padding: 5mm;
+  border: 1px solid var(--line);
+  border-radius: 3mm;
+  background: #fff;
+  color: #111;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.pc-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.pc-venue { font-weight: 700; font-size: 11pt; }
+.pc-prog { font-size: 8pt; color: #555; }
+.pc-body { display: flex; align-items: center; gap: 5mm; }
+.pc-qr svg { display: block; width: 26mm; height: 26mm; }
+.pc-who { display: flex; flex-direction: column; gap: 2mm; min-width: 0; }
+.pc-name { font-size: 12pt; font-weight: 600; }
+.pc-line { font-size: 8pt; color: #555; }
+.pc-num { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 10pt; letter-spacing: .5px; }
+
+/* A voucher or a deposit receipt: taller than a card, because it is read
+   rather than carried, and the conditions are the point. */
+.print-slip {
+  width: 80mm;
+  box-sizing: border-box;
+  padding: 8mm 6mm;
+  border: 1px solid var(--line);
+  border-radius: 2mm;
+  background: #fff;
+  color: #111;
+  text-align: center;
+}
+.print-slip h4 { margin: 0 0 4mm; font-size: 12pt; letter-spacing: .04em; text-transform: uppercase; }
+.ps-qr svg { display: block; width: 34mm; height: 34mm; margin: 0 auto; }
+.ps-code {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 13pt;
+  letter-spacing: 1px;
+  margin: 3mm 0 5mm;
+}
+.ps-lines {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 1.5mm 4mm;
+  text-align: left;
+  margin: 0;
+  font-size: 9pt;
+}
+.ps-lines dt { color: #666; }
+.ps-lines dd { margin: 0; font-weight: 600; }
+
+/* ---------------------------------------------------------------------------
+   The Wallet screen: five tabs, and a designer inside the first
+   --------------------------------------------------------------------------- */
+.wal-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 18px 0 16px;
+  border-bottom: 1px solid var(--line);
+}
+.wal-tab {
+  border: 0;
+  background: none;
+  padding: 10px 14px;
+  font: inherit;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.wal-tab:hover { color: var(--text); }
+.wal-tab.on { color: var(--brand-deep); border-bottom-color: var(--brand); }
+
+/* Which card, what it is, and the card itself — left to right, because that is
+   the order the question is asked in. */
+.wal-design {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr) 375px;
+  gap: 18px;
+  align-items: start;
+}
+@media (max-width: 1200px) {
+  .wal-design { grid-template-columns: 200px minmax(0, 1fr); }
+  .wal-design-preview { grid-column: 1 / -1; }
+}
+@media (max-width: 780px) {
+  .wal-design { grid-template-columns: minmax(0, 1fr); }
+  .wal-kinds { flex-direction: row; overflow-x: auto; }
+}
+
+.wal-kinds { display: flex; flex-direction: column; gap: 6px; }
+.wal-kind {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+  text-align: left;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.wal-kind:hover { border-color: var(--brand); }
+.wal-kind.on { border-color: var(--brand); background: var(--brand-soft); }
+.wal-kind-name { font-weight: 600; }
+.wal-kind-meta { display: flex; gap: 4px; flex-wrap: wrap; }
+.wal-kind-meta .pill { font-size: 10.5px; }
+
+.wal-colours-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+.wal-colour { display: grid; gap: 4px; }
+.wal-colour .check.small { font-size: 12px; }
+
+.wal-art { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.wal-art-preview {
+  width: 250px;
+  height: 82px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: var(--bg);
+}
+.wal-art-preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.wal-art-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+/* A <label> wrapping a hidden file input has to look and behave like the button
+   it is standing in for, including the pointer. */
+.wal-art-actions label.btn { cursor: pointer; }
+
+.wal-design-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.wal-design-editor h4 {
+  margin: 18px 0 8px;
+  font-size: 13px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.pill.amber { background: rgba(247, 127, 0, .14); color: #a35200; }
+.print-card-actions { display: flex; gap: 10px; justify-content: center; }
+
+/* The venue's two pictures, on the Programme tab. A logo is a small mark and
+   is shown at its own shape rather than stretched into the band's frame. */
+.wal-art-preview.logo { width: 160px; height: 50px; }
+.wal-art-preview.logo img { object-fit: contain; }
+.wal-art [data-artclear][hidden] { display: none !important; }
+
+/* The designer's colour swatches. Without a height an <input type="color">
+   collapses to a line, which is a control nobody recognises as one. */
+.wal-colours-grid input[type="color"] {
+  width: 100%;
+  height: 40px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: none;
+  cursor: pointer;
+}

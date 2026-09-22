@@ -1,0 +1,96 @@
+<%- include('../partials/console-head') %>
+<%
+  /*
+   * A bar's length is DATA, and data cannot reach CSS through a `style`
+   * attribute here — the Content-Security-Policy on this origin blocks inline
+   * styles, and a nonce cannot rescue an attribute. So the percentage is
+   * rounded to one of twenty-one class names.
+   *
+   * Five-percent steps is the resolution a bar chart read at arm's length
+   * actually carries, and the exact figure is printed beside every bar anyway.
+   * `w-0` is three pixels rather than nothing: a category with one event in ten
+   * thousand should read as "almost none", not as "no data".
+   */
+  function barWidth(value, largest) {
+    const share = largest > 0 ? (Number(value) / largest) * 100 : 0;
+    return 'w-' + Math.round(share / 5) * 5;
+  }
+%>
+
+<h1 class="console-title">Activity</h1>
+<p class="console-lead">
+  Sign-ins over the last thirty days, and everything an administrator or a
+  developer has changed.
+</p>
+
+<section class="card">
+  <h2 class="card-head">Sign-ins per day</h2>
+  <p class="card-note">
+    From <code>login_event_daily</code>, rolled up
+    <%= ranAt ? 'at ' + new Date(ranAt).toISOString().slice(11, 16) + ' UTC' : 'not yet' %>.
+    The raw events are kept for thirteen months so a person can answer "was that
+    me?" — but nothing draws a chart from them.
+  </p>
+  <%- include('../partials/sparkline', { series: series, label: 'Sign-in attempts per day, 30 days' }) %>
+</section>
+
+<section class="card">
+  <h2 class="card-head">By method</h2>
+  <% if (!mix.length) { %>
+  <div class="empty">
+    <span class="empty-mark"><%- include('../partials/icon', { name: 'chart' }) %></span>
+    <strong>Nothing in the last thirty days</strong>
+    <p>The rollup runs at most once an hour, so a sign-in a minute ago may not be here yet.</p>
+  </div>
+  <% } else { %>
+  <div class="meter">
+    <% const largest = Math.max.apply(null, mix.map(function (m) { return Number(m.total); })); %>
+    <% mix.forEach(function (row) { %>
+    <div class="meter-row">
+      <div class="meter-head">
+        <span>
+          <%= String(row.method).replace(/_/g, ' ') %>
+          <span class="pill<%= row.outcome === 'success' ? ' pill-good' : (row.outcome === 'failure' || row.outcome === 'blocked' ? ' pill-bad' : '') %>"><%= row.outcome %></span>
+        </span>
+        <span class="meter-count"><%= row.total %></span>
+      </div>
+      <div class="meter-track">
+        <div class="meter-fill <%= barWidth(row.total, largest) %><%= row.outcome === 'success' ? '' : (row.outcome === 'failure' || row.outcome === 'blocked' ? ' is-bad' : ' is-idle') %>"></div>
+      </div>
+    </div>
+    <% }) %>
+  </div>
+  <% } %>
+</section>
+
+<%
+  /*
+   * THE AUDIT TRAIL IS THE REASON ADMIN-ASSISTED ANYTHING IS SAFE.
+   *
+   * Support work on an identity provider is a way into somebody's account by
+   * definition. What makes it acceptable is not that it is rare, it is that it
+   * is observable — here, and on the person's own history page.
+   */
+%>
+<section class="card">
+  <h2 class="card-head">Audit trail</h2>
+  <p class="card-note">The last sixty changes, newest first.</p>
+  <% audit.forEach(function (row) { %>
+  <div class="row">
+    <span class="row-mark"><%- include('../partials/icon', { name: 'clipboard' }) %></span>
+    <span class="row-lines">
+      <span class="row-title"><%= String(row.action).replace(/\./g, ' · ') %></span>
+      <span class="row-sub">
+        <%= row.actor_name || row.actor_type %>
+        <%= row.target_type ? ' · ' + row.target_type : '' %>
+        <%= row.target_id ? ' ' + row.target_id : '' %>
+        <%= row.ip ? ' · ' + row.ip : '' %>
+      </span>
+    </span>
+    <span class="row-right"><%= new Date(row.created_at).toISOString().slice(0, 16).replace('T', ' ') %></span>
+  </div>
+  <% }) %>
+  <% if (!audit.length) { %><p class="card-note">Nothing recorded yet.</p><% } %>
+</section>
+
+<%- include('../partials/console-foot') %>

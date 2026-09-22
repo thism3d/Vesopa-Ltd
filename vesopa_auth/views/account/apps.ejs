@@ -1,0 +1,38 @@
+<%- include('_shell') %>
+
+<section class="panel">
+  <% if (!apps.length) { %>
+  <p class="row-meta">You have not used your Vesopa account with any app yet.</p>
+  <% } %>
+
+  <ul class="rows">
+    <% apps.forEach(function (app) { %>
+    <li class="row-with-action">
+      <div>
+        <span class="row-main">
+          <%= app.name %>
+          <% if (app.is_first_party) { %><span class="tag">Vesopa</span><% } %>
+        </span>
+        <span class="row-meta">
+          by <%= app.organisation_name %><%
+          %><%= app.last_seen_at ? ' · last used ' + String(app.last_seen_at).slice(0, 10) : '' %>
+          <% if (app.scope) { %>
+          <br>Can see: <%= app.scope.split(' ').filter(function (s) { return s !== 'openid'; }).join(', ') || 'who you are' %>
+          <% } %>
+        </span>
+      </div>
+      <form method="post" action="/account/apps/<%= app.id %>/revoke">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <button type="submit" class="linklike">Disconnect</button>
+      </form>
+    </li>
+    <% }) %>
+  </ul>
+
+  <p class="hint mt-3">
+    Disconnecting removes the app's access straight away. You can always sign in
+    to it again — it will ask your permission afresh.
+  </p>
+</section>
+
+<%- include('../partials/console-foot') %>

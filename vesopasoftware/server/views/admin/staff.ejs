@@ -1,0 +1,34 @@
+<%- include("../partials/head") %>
+<%- include("../partials/nav") %>
+<div class="wrap">
+  <div class="page-head"><div class="grow">
+    <span class="eyebrow">Who at Vesopa can see all of this</span><h1>Staff</h1></div></div>
+  <div class="split">
+    <div class="panel">
+      <h2>Accounts</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Name</th><th>Email</th><th>Last signed in</th><th>Status</th></tr></thead>
+        <tbody>
+          <% for (const s of staff) { %>
+            <tr><td><strong><%= s.name %></strong></td><td><%= s.email %></td>
+              <td><% if (s.last_login_at) { %><time datetime="<%= new Date(s.last_login_at).toISOString() %>"></time><% } else { %><span class="muted">never</span><% } %></td>
+              <td><span class="pill <%= s.status === 'active' ? 'ok' : 'bad' %>"><%= s.status %></span></td></tr>
+          <% } %>
+        </tbody>
+      </table></div>
+    </div>
+    <div class="panel">
+      <h3>Add a staff account</h3>
+      <form method="post" action="/portal/admin/staff">
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <div class="field"><label for="name">Name</label><input id="name" name="name" required></div>
+        <div class="field"><label for="email">Email</label><input id="email" name="email" type="email" required></div>
+        <div class="field"><label for="password">Password</label>
+          <input id="password" name="password" type="password" required minlength="8"></div>
+        <button class="btn" type="submit" style="width:100%;justify-content:center">Create</button>
+      </form>
+      <p class="hint">Staff accounts see every customer, project and invoice.</p>
+    </div>
+  </div>
+</div>
+<%- include("../partials/foot") %>

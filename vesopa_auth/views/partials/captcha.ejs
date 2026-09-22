@@ -1,0 +1,29 @@
+<%
+  /*
+   * reCAPTCHA v3, added to whichever form is on the page.
+   *
+   * NOTHING IS RENDERED WHEN IT IS NOT CONFIGURED, which is the state a
+   * development machine and a fresh install are in. The page must not carry a
+   * dead script tag pointing at Google on an identity provider.
+   *
+   * THE WORK IS IN /js/captcha.js, NOT HERE, and the reason is the router: it
+   * re-runs a page's `script[src]` after a swap and cannot re-run an inline
+   * one. While this was inline it ran only for somebody who loaded the sign-in
+   * page directly — anybody who pressed "Sign in" on the landing page submitted
+   * with no token at all. All that is left in the markup is the field and the
+   * two facts the script needs.
+   *
+   * The site key is public by design; it identifies the site to Google and is
+   * visible in the page of every site that uses reCAPTCHA. The secret never
+   * leaves the server. Google's script is the one exception to
+   * `script-src 'self'` in the policy — it has to be, because only Google's own
+   * code can mint a token — and the exception is narrow. See middleware.js.
+   */
+  const siteKey = config.captcha && config.captcha.siteKey;
+%>
+<% if (siteKey) { %>
+<input type="hidden" name="captcha_token" id="captcha-token" value=""
+       data-site-key="<%= siteKey %>"
+       data-action="<%= typeof action !== 'undefined' && action ? action : 'signin' %>">
+<script src="/js/captcha.js?v=<%= config.version %>"></script>
+<% } %>

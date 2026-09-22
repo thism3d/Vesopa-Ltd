@@ -1,0 +1,115 @@
+<%- include('partials/header') %>
+
+<%#
+  The blog listing. Styling lives in brand.css under .bl-*, alongside the rest
+  of the dark theme, rather than in a stylesheet of its own — the site already
+  loads three and a fourth would be one more thing to keep in step.
+%>
+
+<section class="bl">
+  <div class="bl-inside">
+
+    <header class="bl-head">
+      <h1 class="bl-title">
+        <%= kind === 'update' ? 'Product updates' : 'News & updates' %>
+      </h1>
+      <p class="bl-sub">
+        <% if (kind === 'update') { %>
+          What's new in Vesopa EPOS — every release, what changed, and why.
+        <% } else { %>
+          Guides for running a busy till, notes on what we're building, and
+          everything new in Vesopa EPOS.
+        <% } %>
+      </p>
+
+      <nav class="bl-filters">
+        <a href="/blog" class="<%= !kind && !tag ? 'is-active' : '' %>">Everything</a>
+        <a href="/blog?kind=post" class="<%= kind === 'post' ? 'is-active' : '' %>">Articles</a>
+        <a href="/blog?kind=update" class="<%= kind === 'update' ? 'is-active' : '' %>">Product updates</a>
+        <% if (tag) { %><a href="/blog" class="is-active">#<%= tag %> ✕</a><% } %>
+      </nav>
+    </header>
+
+<% if (!posts.length && !lead) { %>
+    <p class="bl-empty">
+      Nothing published here yet. <a href="/help">Get in touch</a> if there's
+      something you'd like us to write about.
+    </p>
+<% } else { %>
+
+<%#
+  The lead card. Set on the unfiltered first page only — see the note in
+  src/routes/blog-pages.js about why it does not appear under a filter.
+%>
+<% if (lead) { %>
+    <article class="bl-lead">
+      <a class="bl-lead-link" href="/blog/<%= lead.slug %>">
+<% if (lead.cover_url) { %>
+        <div class="bl-lead-media">
+          <img src="<%= lead.cover_url %>" alt="">
+        </div>
+<% } %>
+        <div class="bl-lead-body">
+          <p class="bl-card-meta">
+            <span class="bl-chip <%= lead.kind === 'update' ? 'is-update' : '' %>">
+              <%= lead.kind === 'update' ? 'Update' : 'Article' %>
+            </span>
+            <% if (lead.version) { %><span class="bl-chip is-version">v<%= lead.version %></span><% } %>
+            <% if (lead.is_featured) { %><span class="bl-chip is-featured">Featured</span><% } %>
+            <time datetime="<%= isoDateTime(lead.published_at) %>"><%= formatDate(lead.published_at) %></time>
+          </p>
+          <h2 class="bl-lead-title"><%= lead.title %></h2>
+          <p class="bl-lead-excerpt"><%= lead.excerpt %></p>
+          <p class="bl-card-more">Read more →</p>
+        </div>
+      </a>
+    </article>
+<% } %>
+
+    <div class="bl-grid">
+<% posts.forEach(function (p) { %>
+      <article class="bl-card">
+        <a class="bl-card-link" href="/blog/<%= p.slug %>">
+<% if (p.cover_url) { %>
+          <div class="bl-card-media">
+            <img src="<%= p.cover_url %>" alt="" loading="lazy">
+          </div>
+<% } %>
+          <div class="bl-card-body">
+            <p class="bl-card-meta">
+              <span class="bl-chip <%= p.kind === 'update' ? 'is-update' : '' %>">
+                <%= p.kind === 'update' ? 'Update' : 'Article' %>
+              </span>
+              <% if (p.version) { %><span class="bl-chip is-version">v<%= p.version %></span><% } %>
+              <time datetime="<%= isoDateTime(p.published_at) %>"><%= formatDate(p.published_at) %></time>
+            </p>
+            <h2 class="bl-card-title"><%= p.title %></h2>
+            <p class="bl-card-excerpt"><%= p.excerpt %></p>
+            <p class="bl-card-more">Read more →</p>
+          </div>
+        </a>
+      </article>
+<% }); %>
+    </div>
+
+<% if (pages > 1) { %>
+    <nav class="bl-pager">
+<%# Filters carried through, or page 2 of "Product updates" silently becomes
+    page 2 of everything. %>
+<% var qs = (kind ? 'kind=' + kind + '&' : '') + (tag ? 'tag=' + encodeURIComponent(tag) + '&' : ''); %>
+<% for (let i = 1; i <= pages; i++) { %>
+      <a href="/blog?<%= qs %>page=<%= i %>"
+         class="<%= i === page ? 'is-active' : '' %>"><%= i %></a>
+<% } %>
+    </nav>
+<% } %>
+
+<% } %>
+
+    <p class="bl-feed">
+      <a href="/blog/feed.xml">RSS feed</a>
+    </p>
+  </div>
+</section>
+
+<%- include('partials/footer') %>

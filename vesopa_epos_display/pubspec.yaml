@@ -1,0 +1,160 @@
+name: vesopa_epos_display
+# Plain ASCII, deliberately. The msix tool copies this straight into
+# AppxManifest.xml's Description and mangles a non-ASCII character on the way -
+# an em-dash in the kitchen app's description came out as a replacement glyph on
+# the Store tile.
+description: "Vesopa Customer Display: the customer-facing screen for Vesopa EPOS."
+# Private, like the till and the kitchen screen. Never published to pub.dev.
+publish_to: 'none'
+
+# Tracks the till's release line rather than starting at 1.0.0, for the same
+# reason the kitchen screen does: the two ship together, and a display and a
+# till on different major versions is a support question nobody can answer over
+# the phone. The build number is this app's own.
+version: 1.6.2+3
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # State. The same choice as the till and the kitchen screen, so a developer
+  # moving between the three repositories is reading the same idioms.
+  riverpod: ^3.3.2
+  flutter_riverpod: ^3.3.2
+
+  # This screen's own memory: where the till's basket file is, which folder the
+  # adverts are in, and how long to wait before going full screen. All local to
+  # this device - there is nothing here another machine needs to know.
+  shared_preferences: ^2.5.5
+
+  # Money and clocks, formatted the way the till formats them.
+  intl: ^0.20.3
+
+  # The customer's QR code - "scan to join", or a link to a wallet pass.
+  #
+  # The encoder only, not qr_flutter: this needs about forty lines of
+  # CustomPainter (see ui/customer_qr.dart) and a widget package would bring a
+  # dependency, its own theming and its own opinions for the sake of them. `qr`
+  # is pure Dart, has no plugin and no platform code, which matters on a screen
+  # whose Store package declares no capabilities at all.
+  qr: ^3.0.2
+
+  # Opening the Microsoft Store when Vesopa EPOS is not installed on this PC.
+  #
+  # The one thing this application ever asks Windows to do for it. It is not a
+  # network capability - nothing is fetched here - it is ShellExecute on a
+  # ms-windows-store:// URI, which hands the job to the Store app.
+  url_launcher: ^6.3.2
+
+  # Putting this window on the right monitor, full screen, without anybody
+  # dragging it there.
+  #
+  # This is the whole deployment: one PC, two screens, the till on one and this
+  # on the other. A window that opens 1280x720 on the primary screen every
+  # morning is a window somebody has to move, and the person opening up at seven
+  # is not the person who was shown how.
+  #
+  # screen_retriever is what enumerates the monitors so the settings screen can
+  # offer them by name and size rather than by an index nobody can map to a
+  # piece of glass.
+  window_manager: ^0.5.2
+  screen_retriever: ^0.2.2
+
+  # Video adverts. A venue that has had a promo cut for its own screens has an
+  # MP4, not a folder of stills, and telling them to export frames is not an
+  # answer.
+  #
+  # media_kit rather than video_player, and that was learned the hard way.
+  # video_player on Windows goes through Media Foundation, which is not present
+  # on every machine a till runs on - it is absent on Windows Server and on the
+  # N editions of Windows, and it wants a GPU it can talk to. On a machine
+  # without it the open failed and took the whole process down, which on a
+  # customer display means a black screen with nobody watching it for faults.
+  #
+  # media_kit brings its own decoder. It is tens of megabytes in the Store
+  # package and worth every one of them: the venue's promo is whatever their
+  # agency exported, on whatever PC is under the counter, and it has to play.
+  media_kit: ^1.2.6
+  media_kit_video: ^2.0.1
+  media_kit_libs_windows_video: ^1.0.11
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  msix: ^3.18.0
+  image: ^4.9.2
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/brand/
+
+# Microsoft Store packaging.
+#
+#     dart run msix:create --store
+#
+# The identity values below are assigned by the Store (Partner Center ->
+# Product -> Product identity) and must match it character for character. The
+# publisher is the GUID the Store issues, not the company name.
+#
+# The identity below is the one Partner Center issued for this product. It is
+# not the display name and does not have to look like it: three names are
+# reserved for this app - Vesopa Display, Vesopa EPOS Display and Vesopa
+# Customer Display - and the identity was cut from the first while the tile,
+# the window and the taskbar all say the third.
+#
+#   Store ID   9P8JCLQ5M3SQ
+#   Listing    https://apps.microsoft.com/detail/9P8JCLQ5M3SQ
+#   PFN        MeirionDavies.VesopaDisplay_nyzwpk2n60a5j
+msix_config:
+  display_name: Vesopa Customer Display
+  publisher_display_name: Vesopa EPOS Ltd
+  identity_name: MeirionDavies.VesopaDisplay
+  publisher: CN=3AD172E6-2CBA-4B09-AD50-B52C88D57FB3
+
+  # Four parts, and the last must be 0 — the Store reserves the revision field
+  # and rejects anything else. Tracks `version:` at the top of this file.
+  msix_version: 1.6.2.0
+
+  logo_path: assets/brand/512x512.png
+
+  # No network capability at all, and that is the point rather than an omission.
+  # This screen reads one file the till writes and plays media off a local
+  # folder; it has no business reaching the internet, and a customer-facing
+  # screen with no network is one fewer thing to think about.
+  #
+  # Opening the Store is not an exception to that. It is a ShellExecute on a
+  # ms-windows-store:// URI - Windows does the fetching, in its own application,
+  # and this one still never opens a socket.
+  capabilities: ""
+
+  # Deep link. Reverse DNS, matching the web host the same app answers on:
+  #
+  #     display.vesopa.com   ->  com.vesopa.display
+  #     epos.vesopa.com      ->  com.vesopa.epos
+  #     kitchen.vesopa.com   ->  com.vesopa.kitchen   (when there is one)
+  #
+  # So `com.vesopa.display:` typed in a browser, or followed from a link, opens
+  # this screen. The runner already passes the URI through to `main`, which
+  # takes a screen that was opened deliberately straight to its setup card
+  # rather than to whatever it happened to be showing.
+  protocol_activation: com.vesopa.display
+
+  # Passed straight through to the `flutter build windows` that msix runs for
+  # itself. `flutter build` already defaults to release, so this pins intent
+  # rather than changing behaviour -- a Store package built in debug is accepted
+  # by the packer and rejected by certification, and that is not a thing to
+  # leave resting on a default. The till pins it for the same reason.
+  windows_build_args: --release
+
+  # The Store signs the package, so no local certificate is used or needed.
+  store: true
+
+  architecture: x64
+  languages: en-gb

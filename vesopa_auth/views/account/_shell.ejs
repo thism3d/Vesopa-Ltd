@@ -1,0 +1,64 @@
+<%
+  /*
+   * Your Vesopa account — the same shell as the administrator's console and the
+   * developer portal.
+   *
+   * The navigation names things as the person thinks of them: "How you sign
+   * in", not "Identities". The words on these pages are the only explanation
+   * most people will ever read of how their account works, and a rail written
+   * in the vocabulary of the database teaches them nothing.
+   *
+   * The rail is built here rather than passed in from the route, because it is
+   * the same on every page of this section and a copy per route is how one of
+   * them ends up missing an entry.
+   */
+  const accountRail = [
+    { href: '/account', label: 'Home', icon: 'home', tint: 'slate' },
+    { href: '/account/profile', label: 'Personal info', icon: 'person', tint: 'brand' },
+    { href: '/account/security', label: 'Security', icon: 'lock', tint: 'blue' },
+    { href: '/account/linked', label: 'How you sign in', icon: 'link', tint: 'violet' },
+    { href: '/account/devices', label: 'Devices', icon: 'device', tint: 'teal' },
+    { href: '/account/history', label: 'Sign-in history', icon: 'history', tint: 'amber' },
+    { href: '/account/apps', label: 'Connected apps', icon: 'apps', tint: 'pink' },
+  ];
+
+  /*
+   * The two links that only some people have. They are appended rather than
+   * always shown and greyed out: an entry somebody can never use is an entry
+   * they read every time and learn nothing from.
+   */
+  if (session && (session.is_developer || session.is_staff)) {
+    accountRail.push({ group: 'Elsewhere' });
+    if (session.is_developer) {
+      accountRail.push({ href: '/developers', label: 'Developer portal', icon: 'code', tint: 'slate' });
+    }
+    if (session.is_staff) {
+      accountRail.push({ href: '/admin', label: 'Administration', icon: 'shield', tint: 'slate' });
+    }
+  }
+%>
+<%- include('../partials/console-head', {
+  railTitle: 'Account',
+  railHome: '/account',
+  rail: accountRail,
+  // The hub suppresses the rail; every other account page keeps it.
+  consoleClass: path === '/account' ? 'is-hub' : '',
+}) %>
+
+<%
+  /*
+   * Back to the hub — shown only on a phone, where the rail is not.
+   *
+   * Without it there is no way out of a section but the browser's own back
+   * button, and the reference puts this arrow on the title line rather than in
+   * the bar above it.
+   */
+%>
+<% if (path !== '/account') { %>
+<a class="page-back" href="/account">
+  <%- include('../partials/icon', { name: 'back' }) %>
+  <span>Account</span>
+</a>
+<% } %>
+
+<h1 class="console-title"><%= title %></h1>

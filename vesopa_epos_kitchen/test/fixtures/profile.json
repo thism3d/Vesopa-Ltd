@@ -1,0 +1,38 @@
+{
+  "user": {
+    "username": "grill",
+    "name": "Grill screen"
+  },
+  "office": "kds-capture@example.invalid",
+  "officeName": "The Capture Arms",
+  "stationNames": {
+    "kp1": "Grill",
+    "kp3": "Fryer"
+  },
+  "screens": [
+    {
+      "id": 6,
+      "name": "Grill",
+      "stations": [
+        "kp1"
+      ],
+      "columns_count": 0,
+      "warn_seconds": 300,
+      "late_seconds": 600,
+      "recall_minutes": 45,
+      "sound": 1,
+      "sort_order": 0
+    },
+    {
+      "id": 7,
+      "name": "Pass",
+      "stations": [],
+      "columns_count": 3,
+      "warn_seconds": 480,
+      "late_seconds": 900,
+      "recall_minutes": 60,
+      "sound": 1,
+      "sort_order": 0
+    }
+  ]
+}
