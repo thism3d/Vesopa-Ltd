@@ -66,6 +66,15 @@ function mayPoint(domainRow) {
   if (!domainRow) return false;
   if (domainRow.source === 'external') return Boolean(domainRow.ns_verified_at);
   /*
+   * A name we are registering is ours to serve only once it IS registered.
+   * wintk999.com (2026-09-22) was refused by the registry for insufficient
+   * balance and sat at 'pending', and a hosting order two minutes later built a
+   * website, a DNS zone and a mail domain for it anyway — for a name nobody
+   * owned. Provisioning already copes: the account is created without the
+   * domain and the sweep builds it once the registration goes through.
+   */
+  if (domainRow.source === 'registered' && domainRow.status !== 'active') return false;
+  /*
    * A subdomain is served on sight. The delegation check asks "has whoever
    * controls this name pointed it at us", and for `shop.example.com` that
    * question was already answered by example.com being on this account — you

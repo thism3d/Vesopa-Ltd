@@ -15,6 +15,7 @@ const crypto = require('crypto');
 const db = require('../db');
 const pricing = require('../pricing');
 const registrar = require('../integrations/domainnameapi');
+const registrarFunds = require('../registrar-funds');
 const auth = require('../auth');
 const { sendMail, shell, detailTable, escapeHtml, DEFAULT_TO } = require('../mailer');
 const { flash, field, isEmail } = require('../http-utils');
@@ -917,6 +918,24 @@ router.post('/checkout', async (req, res, next) => {
       } else {
         const problem = auth.passwordProblem(values.password);
         if (problem) errors.password = problem;
+      }
+    }
+
+    /*
+     * Can the reseller account pay the registry for these domains? Asked last,
+     * once the form is otherwise good, and before anything is written — so a
+     * short balance is a message on this page, not a "paid" order for a name
+     * that can never be registered. See registrar-funds.js for 2026-09-22.
+     */
+    if (!Object.keys(errors).length && hasDomain) {
+      const funds = await registrarFunds.check(priced.lines);
+      if (!funds.ok) {
+        errors.form = req.t(funds.message);
+        await registrarFunds.logRefusal(funds, {
+          customerId: customer && customer.id,
+          domains: priced.lines.filter((l) => l.kind === 'domain' || l.kind === 'domain_transfer').map((l) => l.domain),
+          ip: req.ip,
+        });
       }
     }
 

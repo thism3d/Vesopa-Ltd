@@ -21,6 +21,7 @@ const db = require('../db');
 const auth = require('../auth');
 const pricing = require('../pricing');
 const registrar = require('../integrations/domainnameapi');
+const registrarFunds = require('../registrar-funds');
 const provisioning = require('../provisioning');
 const linking = require('../domain-linking');
 const payments = require('../payments');
@@ -162,6 +163,16 @@ router.post('/setup/:id/domain', async (req, res, next) => {
       const check = await registrar.checkAvailability(domain).catch(() => null);
       if (check && !check.available) {
         flash(res, `${domain} has just been taken. Try another.`, 'error');
+        return res.redirect(back);
+      }
+
+      // The free domain still costs US money at the registry. If the reseller
+      // balance cannot cover it, say so now rather than claim it and let the
+      // registration fail after the customer has been told it is theirs.
+      const funds = await registrarFunds.check([{ kind: 'domain', domain, years: 1 }]);
+      if (!funds.ok) {
+        await registrarFunds.logRefusal(funds, { customerId: req.customer.id, domains: [domain], ip: req.ip });
+        flash(res, 'We can’t register domains at the moment. Your free domain is still yours to claim — please try again a little later.', 'error');
         return res.redirect(back);
       }
 

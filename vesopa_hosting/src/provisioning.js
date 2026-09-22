@@ -853,10 +853,36 @@ async function provisionOrder(orderId, { actorType = 'admin', actorId = null, ip
         r.skipped ? r.reason : `${domainRow.domain} is yours`);
     } catch (err) {
       outcome.domains.push({ id: domainRow.id, domain: domainRow.domain, ok: false, error: err.message });
-      await stepEnd(orderId, key, 'failed', err.message);
+      /*
+       * "Insufficient balance" is OUR account at the registry running dry, not
+       * anything the customer did. Checkout now refuses the sale when the
+       * balance is short (registrar-funds.js), so reaching this means it ran out
+       * in between — tell the customer plainly, on the checklist and in their
+       * panel, instead of echoing the registrar and leaving the order looking
+       * finished.
+       */
+      const ourFunds = /insufficient\s+balance/i.test(err.message);
+      await stepEnd(orderId, key, 'failed', ourFunds
+        ? `We could not register ${domainRow.domain} yet. Our team has been alerted and will complete it or refund you.`
+        : err.message);
+      if (ourFunds) {
+        await notify.raise({
+          customerId: customer.id,
+          level: 'error',
+          area: 'domain',
+          title: `${domainRow.domain} is not registered yet`,
+          body: 'The registration did not go through on our side. Our team has been alerted and will either '
+            + 'complete it or refund you — you do not need to do anything.',
+          fixUrl: `/panel/domains/${domainRow.id}`,
+          fixLabel: 'See the domain',
+          dedupeKey: `domain:${domainRow.id}:register_failed`,
+        }).catch(() => {});
+      }
       await db.logActivity({
         actorType, actorId, action: 'domain.register_failed',
-        target: domainRow.domain, detail: err.message, ok: false, ip,
+        target: domainRow.domain,
+        detail: ourFunds ? `${err.message} — top up the Domain Name API reseller balance, then retry.` : err.message,
+        ok: false, ip,
       });
     }
   }
