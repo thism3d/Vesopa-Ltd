@@ -1028,6 +1028,38 @@ async function sendWelcome(order, customer, outcome) {
 
   const sslPending = outcome.services.some((s) => (s.steps || []).some((st) => st.step === 'ssl' && !st.ok));
 
+  /*
+   * NOT EVERY ORDER IS HOSTING. This email used to say "Your hosting is live"
+   * to somebody who had bought a domain and nothing else (2026-09-22). With no
+   * hosting on the order it says what they actually bought.
+   */
+  if (!service) {
+    const mailboxes = outcome.emails.filter((e) => e.ok || e.manual);
+    const onlyDomain = registered.length && !mailboxes.length;
+    const subject = onlyDomain
+      ? (registered.length === 1 ? `${registered[0]} is registered — Vesopa Cloud` : 'Your domains are registered — Vesopa Cloud')
+      : 'Your email is set up — Vesopa Cloud';
+    await sendMail({
+      to: customer.email,
+      subject,
+      html: shell({
+        title: onlyDomain
+          ? `${escapeHtml(registered.length === 1 ? registered[0] : 'Your domains')} ${registered.length === 1 ? 'is' : 'are'} yours, ${escapeHtml(customer.first_name || 'there')}`
+          : `Your mailboxes are ready, ${escapeHtml(customer.first_name || 'there')}`,
+        intro: onlyDomain
+          ? 'Your domain is registered and on your account, with our nameservers already set. You can manage its DNS, email and renewal from your control panel.'
+          : 'Your email is set up. Everything below is also in your control panel.',
+        bodyHtml: detailTable(rows),
+        ctaText: onlyDomain ? 'Manage your domain' : 'Open your control panel',
+        ctaUrl: `${SITE_URL}${onlyDomain ? '/panel/domains' : '/panel/mail'}`,
+        footNote: onlyDomain
+          ? 'Want a website on it? Add hosting from your panel and it goes live on this domain straight away.'
+          : 'Need a hand connecting your phone or laptop? Reply to this email and we will walk you through it.',
+      }),
+    });
+    return;
+  }
+
   await sendMail({
     to: customer.email,
     subject: 'Your hosting is live — Vesopa Cloud',

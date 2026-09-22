@@ -72,7 +72,25 @@ async function loadSetup(req) {
   else if (service && service.setup_step === 'domain') state = 'domain';
   else state = 'provisioning';
 
-  return { order, service, paid, state, cur };
+  /*
+   * What this order actually BUYS, so the screen talks about that. It used to
+   * say "Setting up your hosting", draw a rocket and offer "See my hosting" for
+   * every order — including a domain on its own, where there is no hosting and
+   * "done" should mean the domain is registered (2026-09-22).
+   */
+  const kinds = await db.query('SELECT kind, domain FROM order_items WHERE order_id = ?', [order.id]);
+  const domains = kinds.filter((k) => k.kind === 'domain' || k.kind === 'domain_transfer').map((k) => k.domain).filter(Boolean);
+  const hasEmail = kinds.some((k) => k.kind === 'email');
+  const buys = {
+    hosting: Boolean(service),
+    domains,
+    email: hasEmail,
+    // The one word the screen is about: hosting wins when present, since the
+    // domain and mailboxes on such an order are part of setting it up.
+    kind: service ? 'hosting' : domains.length ? 'domain' : hasEmail ? 'email' : 'hosting',
+  };
+
+  return { order, service, paid, state, cur, buys };
 }
 
 /** Extensions cheap enough to be given away, for the free-domain search. */
@@ -229,6 +247,13 @@ router.post('/setup/:id/domain', async (req, res, next) => {
        */
       const wanted = field(req.body.existing_domain, 190);
       const { domain: existing } = registrar.splitDomain(wanted);
+
+      // Chose "I already have one" and typed nothing: ask, rather than
+      // quietly carrying on as if they had picked "later".
+      if (!existing) {
+        flash(res, req.t('Enter the domain you already own — for example yourname.com or yourname.com.bd.'), 'error');
+        return res.redirect(back);
+      }
 
       if (existing) {
         const added = await linking.addExternal({

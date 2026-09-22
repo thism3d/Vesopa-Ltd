@@ -152,7 +152,9 @@
     }
     if (pct) {
       pct.textContent = data.finished
-        ? (data.failed ? 'Finished with something to look at' : 'All done')
+        ? (data.failed
+          ? (run.dataset.something || VT.t('Finished with something to look at'))
+          : (run.dataset.allDone || VT.t('All done')))
         : `${data.percent}% — this usually takes under a minute`;
     }
 
@@ -170,12 +172,16 @@
     if (data.finished) {
       if (done) done.hidden = false;
       if (data.failed) {
-        if (title) title.textContent = VT.t('Almost there');
-        if (sub) sub.textContent = VT.t('Most of your setup is done. A couple of steps need us to look at them — we have been told, and we will email you shortly. Nothing is lost.');
+        // The page says what to show (data-fail-*): it knows what was bought
+        // and has already translated it. VT.t is the fallback for an old page.
+        if (title) title.textContent = run.dataset.failTitle || VT.t('Almost there');
+        if (sub) sub.textContent = run.dataset.failSub || VT.t('Most of your setup is done. A couple of steps need us to look at them — we have been told, and we will email you shortly. Nothing is lost.');
         if (iconWrap) iconWrap.className = 'setup-icon setup-icon-amber';
       } else {
-        if (title) title.textContent = VT.t('Your hosting is ready');
-        if (sub) sub.textContent = VT.t('Everything is set up and your welcome email is on its way. Open your account to add a site.');
+        // Not always hosting: a domain on its own finishes as "<domain> is
+        // yours" (data-done-*, from what the order bought — 2026-09-22).
+        if (title) title.textContent = run.dataset.doneTitle || VT.t('Your hosting is ready');
+        if (sub) sub.textContent = run.dataset.doneSub || VT.t('Everything is set up and your welcome email is on its way. Open your account to add a site.');
       }
     }
   }

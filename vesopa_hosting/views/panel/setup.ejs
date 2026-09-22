@@ -24,12 +24,16 @@
         ------------------------------------------------------------------ %>
     <ol class="setup-rail" aria-label="<%= t('Setup progress') %>">
       <%
-      const stages = [
-        ['pay', 'Payment', 'card'],
-        ['domain', 'Your domain', 'globe'],
-        ['provisioning', 'Building', 'rocket'],
-      ];
-      const order_ = ['pay', 'domain', 'provisioning'];
+      // "Your domain" is the free-domain question a HOSTING plan asks. An order
+      // with no hosting never reaches it, so it is not drawn as a step still to
+      // come — a domain on its own is Payment, then Registering, then done.
+      const k = buys.kind;
+      const buildLabel = k === 'domain' ? t('Registering') : k === 'email' ? t('Setting up') : t('Building');
+      const buildIcon = k === 'domain' ? 'globe' : k === 'email' ? 'mail' : 'rocket';
+      const stages = buys.hosting
+        ? [['pay', t('Payment'), 'card'], ['domain', t('Your domain'), 'globe'], ['provisioning', buildLabel, buildIcon]]
+        : [['pay', t('Payment'), 'card'], ['provisioning', buildLabel, buildIcon]];
+      const order_ = stages.map(function (s) { return s[0]; });
       const at = order_.indexOf(state);
       stages.forEach(function (s, i) {
         const cls = i < at ? 'is-done' : i === at ? 'is-now' : '';
@@ -236,16 +240,53 @@
     <% } else { %>
       <%# ---------------------------------------------------------------
           Building. The page starts the work, then watches it.
+
+          The words follow what was BOUGHT (buys, from routes/setup.js). A
+          domain on its own is registered, not "set up as hosting": its title,
+          icon, finish message and buttons all say domain, and done is done.
+          The finish messages live here rather than in setup.js so they are
+          translated like everything else on the page.
           --------------------------------------------------------------- %>
+      <%
+        const k = buys.kind;
+        const oneDomain = buys.domains.length === 1 ? buys.domains[0] : '';
+        const copy = k === 'domain' ? {
+          icon: 'globe',
+          title: oneDomain ? t('Registering {domain}', { domain: oneDomain }) : t('Registering your domains'),
+          doneTitle: oneDomain ? t('{domain} is yours', { domain: oneDomain }) : t('Your domains are registered'),
+          doneSub: t('It is registered and on your account, with our nameservers already set. Manage its DNS and email from your panel.'),
+          primary: ['/panel/domains', t('See my domains')],
+        } : k === 'email' ? {
+          icon: 'mail',
+          title: t('Setting up your mailboxes'),
+          doneTitle: t('Your mailboxes are ready'),
+          doneSub: t('Everything is set up and your welcome email is on its way. Open your panel to see how to sign in.'),
+          primary: ['/panel/mail', t('See my email')],
+        } : {
+          icon: 'rocket',
+          title: t('Setting up your hosting'),
+          doneTitle: t('Your hosting is ready'),
+          doneSub: t('Everything is set up and your welcome email is on its way. Open your account to add a site.'),
+          primary: ['/panel/services', t('See my hosting')],
+        };
+      %>
       <section class="setup-card setup-card-wide"
                data-setup-run
                data-order="<%= order.id %>"
                data-csrf="<%= csrf %>"
-               data-started="<%= order.status === 'paid' ? '0' : '1' %>">
-        <div class="setup-icon" data-run-icon><%- icon('rocket', 26) %></div>
-        <h1 class="h1 mb-2" data-run-title><%= t('Setting up your hosting') %></h1>
+               data-started="<%= order.status === 'paid' ? '0' : '1' %>"
+               data-done-title="<%= copy.doneTitle %>"
+               data-done-sub="<%= copy.doneSub %>"
+               data-fail-title="<%= t('Almost there') %>"
+               data-fail-sub="<%= k === 'domain' ? t('The registration did not finish on our side. Our team has been told and will complete it or refund you — nothing is lost.') : t('Most of your setup is done. A couple of steps need us to look at them — we have been told, and we will email you shortly. Nothing is lost.') %>"
+               data-all-done="<%= t('All done') %>"
+               data-something="<%= t('Finished with something to look at') %>">
+        <div class="setup-icon" data-run-icon><%- icon(copy.icon, 26) %></div>
+        <h1 class="h1 mb-2" data-run-title><%= copy.title %></h1>
         <p class="lede mb-3" data-run-sub>
-          <%= t('This takes under a minute. You can leave this page — it carries on without you and we will email you when it is done.') %>
+          <%= k === 'domain'
+            ? t('This takes a few seconds. You can leave this page — it carries on without you.')
+            : t('This takes under a minute. You can leave this page — it carries on without you and we will email you when it is done.') %>
         </p>
 
         <div class="setup-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" data-run-bar>
@@ -260,8 +301,8 @@
         </ul>
 
         <div class="row mt-4" style="justify-content:center" data-run-done hidden>
-          <a class="btn btn-lg" href="/panel"><%= t('Open my account') %></a>
-          <a class="btn btn-ghost btn-lg" href="/panel/services"><%= t('See my hosting') %></a>
+          <a class="btn btn-lg" href="<%= copy.primary[0] %>"><%= copy.primary[1] %></a>
+          <a class="btn btn-ghost btn-lg" href="/panel"><%= t('Open my account') %></a>
         </div>
       </section>
     <% } %>

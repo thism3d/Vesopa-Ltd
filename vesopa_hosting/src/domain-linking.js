@@ -32,6 +32,7 @@
 const db = require('./db');
 const hestia = require('./integrations/hestia');
 const registrar = require('./integrations/domainnameapi');
+const reality = require('./domain-reality');
 const nameservers = require('./nameservers');
 const { sendMail, shell, detailTable, escapeHtml } = require('./mailer');
 const {
@@ -156,6 +157,14 @@ async function addExternal({
   if (existing && !['removed', 'cancelled'].includes(existing.status)) {
     return { ok: false, error: 'That domain is already on your account.', id: existing.id };
   }
+
+  /*
+   * A real extension, and a name that exists. The shape rules above let
+   * `mysite.comm` through; a plan attached to it would wait for ever on a
+   * delegation that cannot happen. See domain-reality.js.
+   */
+  const unreal = await reality.checkRealDomain(domain);
+  if (unreal) return { ok: false, error: unreal };
 
   const deadline = graceDeadline();
 
