@@ -173,3 +173,7 @@ ClientAllCredentialsForAllBusinessWeHaveWithExplanation.md
 # correspondence rather than project documentation, and it has already
 # served its purpose as the spec — it stays on this machine.
 Conversation I had with my client regarding this.pdf
+
+# Per-run command files written by deploy kits.
+deploy/**/.mk
+deploy/**/.run

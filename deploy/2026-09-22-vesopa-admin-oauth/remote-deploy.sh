@@ -124,7 +124,8 @@ set_env() { # name value — replace or append, value never on a command line vi
 }
 set_env VESOPA_AUTH_ISSUER https://auth.vesopa.com
 set_env VESOPA_AUTH_ADMIN_CLIENT_ID "$CLIENT_ID"
-set_env VESOPA_AUTH_ADMIN_CLIENT_SECRET "$(tr -d '\r\n' < "$SECRET_FILE")"
+# mint-client-secret.js writes TWO lines: the client id, then the secret.
+set_env VESOPA_AUTH_ADMIN_CLIENT_SECRET "$(sed -n 2p "$SECRET_FILE" | tr -d '\r\n')"
 set_env VESOPA_AUTH_ADMIN_ENABLED on
 # Both doors during the soak — the owner's decision. Switch to `on` later.
 set_env VESOPA_AUTH_ADMIN_ONLY off
