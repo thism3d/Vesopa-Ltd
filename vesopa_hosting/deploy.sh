@@ -20,27 +20,11 @@
 set -euo pipefail
 
 # ---- Config ---------------------------------------------------------------
-# DO NOT just change this IP — read the header of deploy-cloud.sh first.
-# Two boxes are in play (checked 2026-09-22):
-#
-#   3.72.113.21   what this script deploys to. STILL ALIVE (HTTP 200 / 301).
-#   34.63.118.67  where DNS for hosting.vesopaepos.com AND cloud.vesopa.com now
-#                 points. cloud.vesopa.com is deployed by deploy-cloud.sh, which
-#                 uses the Hestia layout this script does not.
-#
-# Repointing is NOT a one-line IP edit: on the newer box the app lives under
-# /home/vesopasoftware/web/<domain>/private/nodeapp and pm2 runs PER HESTIA USER
-# via `su - vesopasoftware`. Running pm2 as root there starts a SECOND copy
-# beside the running one and the two fight over port 5075.
-#
-# Override for a one-off:  VESOPA_SERVER_IP=1.2.3.4 ./deploy.sh
-SERVER="root@${VESOPA_SERVER_IP:-3.72.113.21}"
+SERVER="root@3.72.113.21"
 DOMAIN="hosting.vesopaepos.com"
 
 REMOTE_APP="${REMOTE_APP:-/home/vesopa/web/$DOMAIN/private/nodeapp}"
-# This script's own directory, so the rsync source is right on whichever machine
-# runs it. The old /Users/onzep path existed on one laptop only.
-LOCAL_APP="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOCAL_APP="/Users/onzep/development/Vesopa/vesopa_hosting"
 
 # Must match ecosystem.config.cjs, or pm2 starts a second copy alongside the
 # running one and two processes fight over port 5075.

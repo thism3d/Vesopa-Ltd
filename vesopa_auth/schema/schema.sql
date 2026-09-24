@@ -427,15 +427,11 @@ CREATE TABLE IF NOT EXISTS organisations (
   owner_user_id INT UNSIGNED NOT NULL,
   is_first_party TINYINT(1) NOT NULL DEFAULT 0,  -- Vesopa's own
   status        ENUM('active','suspended') NOT NULL DEFAULT 'active',
-  -- A venue's own stable name at the application that made it (schema_024).
-  external_ref  VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NULL DEFAULT NULL,
-  managed_by_application_id INT UNSIGNED NULL DEFAULT NULL,
   created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
   PRIMARY KEY (id),
   UNIQUE KEY uq_org_public_id (public_id),
   UNIQUE KEY uq_org_slug (slug),
-  UNIQUE KEY uq_org_external_ref (external_ref),
   KEY idx_org_owner (owner_user_id),
   CONSTRAINT fk_org_owner FOREIGN KEY (owner_user_id) REFERENCES users (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;

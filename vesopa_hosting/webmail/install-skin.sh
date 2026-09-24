@@ -11,7 +11,9 @@
 # WHAT IT TOUCHES
 #
 #   /var/lib/roundcube/skins/vesopa/styles/      the stylesheet (new)
-#   /var/lib/roundcube/skins/vesopa/templates/   about.html
+#   /var/lib/roundcube/skins/vesopa/templates/   about.html, login.html
+#   /var/lib/roundcube/skins/vesopa/login.js     the sign-in fields: Email,
+#                                                the show/hide eye, floating labels
 #
 # It does NOT edit /etc/roundcube/config.inc.php — the skin is already selected
 # there and forced for every user with $config['dont_override'].
@@ -40,7 +42,7 @@ RC_OWNER="$(stat -c '%U:%G' "$RC_CONF" 2>/dev/null || echo root:www-data)"
 RC_USER="${RC_OWNER%%:*}"
 
 step "Backing up what is there"
-for f in styles templates; do
+for f in styles templates login.js; do
   [ -e "$SKIN/$f" ] && cp -a "$SKIN/$f" "$SKIN/$f.bak-$STAMP"
 done
 ok "kept as *.bak-$STAMP"
@@ -61,10 +63,16 @@ for t in "$SRC"/templates/*.html; do
   ok "$(basename "$t")"
 done
 
-chown -R "$RC_OWNER" "$SKIN/styles" "$SKIN/templates"
+step "Installing the sign-in script"
+# login.html loads it as /login.js, which Roundcube resolves to this skin's
+# folder and serves through static.php with a ?s=<mtime> cache-buster.
+install -m 0644 "$SRC/login.js" "$SKIN/login.js"
+ok "login.js"
+
+chown -R "$RC_OWNER" "$SKIN/styles" "$SKIN/templates" "$SKIN/login.js"
 
 step "Checking Roundcube can read it"
-su -s /bin/sh "$RC_USER" -c "head -c 1 '$SKIN/styles/styles.min.css' >/dev/null" 2>/dev/null \
+su -s /bin/sh "$RC_USER" -c "head -c 1 '$SKIN/styles/styles.min.css' >/dev/null && head -c 1 '$SKIN/login.js' >/dev/null" 2>/dev/null \
   || die "$RC_USER cannot read the skin. Roundcube would fall back to elastic with only a line in errors.log."
 ok "$RC_USER can read the skin"
 

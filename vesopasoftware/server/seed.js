@@ -13,17 +13,35 @@ import { recalc } from "./lib/invoices.js";
 import { config } from "./lib/config.js";
 
 // ---------------------------------------------------------------------------
-// These two passwords are in plain text in a file that goes into git. That is
-// fine for a local development seed and NOT fine the moment this database is
-// reachable from anywhere else. Before this server faces the internet:
-//   1. sign in as each of these and change the password, or
-//   2. delete these constants and create the real accounts by hand.
-// The seed resets the password on every run, so leaving it wired up in
-// production would silently undo any password change the next time it ran.
+// THE PASSWORDS ARE NOT IN THIS FILE ANY MORE, AND THIS IS WHY.
+//
+// They were, in plain text, with a comment saying that was "fine for a local
+// development seed". It was not: this repository is PUBLIC on GitHub, so the
+// value was readable by anyone at
+// raw.githubusercontent.com/thism3d/Vesopa-Ltd/main/vesopasoftware/server/seed.js
+// — and it was the same password as the auth database user, the Vesopa admin
+// login and the mail accounts. One string, four doors, on the open internet.
+//
+// Removing it here does NOT un-publish it. It is in the git history, which is
+// public too, so it must be treated as compromised and rotated everywhere.
+// What this change does is stop the next commit re-publishing it and stop the
+// seed re-imposing a known password on a live database.
+//
+// They come from the environment now. Without SEED_ADMIN_PASSWORD set, the
+// seed refuses to touch a password at all rather than inventing one — an
+// account whose password nobody chose is worse than an account with none.
 // ---------------------------------------------------------------------------
-const ADMIN = { email: "info@vesopasoftware.com", password: "@Vesopa2026", name: "Vesopa Admin" };
+const SEED_PASSWORD = process.env.SEED_ADMIN_PASSWORD || "";
+
+const ADMIN = {
+  email: process.env.SEED_ADMIN_EMAIL || "info@vesopasoftware.com",
+  password: SEED_PASSWORD,
+  name: "Vesopa Admin",
+};
 const CUSTOMER = {
-  email: "muzahid@onzep.uk", password: "@Vesopa2026", name: "Md Muzahidul Islam",
+  email: process.env.SEED_CUSTOMER_EMAIL || "muzahid@onzep.uk",
+  password: SEED_PASSWORD,
+  name: "Md Muzahidul Islam",
   company: "Onzep", phone: "+44 1792 316282",
 };
 
@@ -33,10 +51,24 @@ const daysAhead = (n) => new Date(Date.now() + n * 86400000);
 
 async function upsertUser({ email, password, name, role, company = null, phone = null }) {
   const existing = await one("SELECT * FROM users WHERE email = ?", [email]);
-  const hash = await hashPassword(password);
+
+  /*
+   * NO PASSWORD IN THE ENVIRONMENT MEANS THE PASSWORD IS LEFT ALONE.
+   *
+   * Hashing "" would give every seeded account the same empty-string password,
+   * which is worse than the plain-text constant this replaced. An existing
+   * account keeps whatever it has; a new one is created with no password and
+   * has to be given one deliberately.
+   */
+  const hash = password ? await hashPassword(password) : null;
   if (existing) {
-    await exec("UPDATE users SET password_hash=?, name=?, role=?, status='active' WHERE id=?",
-      [hash, name, role, existing.id]);
+    if (hash) {
+      await exec("UPDATE users SET password_hash=?, name=?, role=?, status='active' WHERE id=?",
+        [hash, name, role, existing.id]);
+    } else {
+      await exec("UPDATE users SET name=?, role=?, status='active' WHERE id=?",
+        [name, role, existing.id]);
+    }
     return existing.id;
   }
   const res = await exec(

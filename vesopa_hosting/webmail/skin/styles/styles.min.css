@@ -196,27 +196,362 @@ html.dark-mode #layout > div > .header {
 }
 html.dark-mode #layout > div > .header a.button { color: #cdd6d2 !important; }
 
-/* ---- The login screen ---------------------------------------------------
-   The first thing anybody sees. Elastic's is a bare form on grey. */
-#layout-content.no-navbar {
-  background:
-    radial-gradient(900px 460px at 50% -12%, var(--v-lime-soft) 0%, rgba(239, 246, 216, 0) 70%),
-    var(--v-bg-2);
+/* =========================================================================
+   The login screen
+   =========================================================================
+   The first thing anybody sees, and Elastic's is a bare form on grey. This
+   one is a frosted card on a slowly drifting lime wash, with Material-style
+   fields: the label sits inside the field and floats up when it is focused or
+   filled, the field lifts to white with a lime ring, and the card's shadow
+   deepens and warms while anything in it has focus. login.js supplies the
+   floating labels, the Email field and the show/hide eye; everything that
+   moves is here, and all of it stops for prefers-reduced-motion.
+
+   Elastic positions the logo and the form with `top: 16vh` / `top: 20vh`,
+   which pushes the button off a short landscape phone. This lays the page out
+   as one centred column that scrolls instead.
+   ========================================================================= */
+.task-login {
+  --v-card: rgba(255, 255, 255, .82);
+  --v-card-rule: rgba(26, 31, 20, .08);
+  --v-field: #f3f5ee;
+  --v-field-rule: #dfe3d6;
+  --v-field-hover: #ccd3be;
+  --v-field-focus: #ffffff;
+  --v-label: #6f7266;
+  --v-ring: rgba(165, 199, 21, .22);
+  --v-wash-1: rgba(165, 199, 21, .30);
+  --v-wash-2: rgba(214, 232, 120, .38);
+  --v-wash-1-mid: rgba(165, 199, 21, .12);
+  --v-wash-2-mid: rgba(214, 232, 120, .14);
+  --v-wash-3: rgba(47, 59, 5, .06);
+  --v-ease: cubic-bezier(.2, .8, .2, 1);
+  background: var(--v-bg-2);
 }
-#login-form {
-  max-width: 30rem; margin: 0 auto;
-  background: var(--v-bg);
-  border: 1px solid var(--v-rule);
-  border-radius: 18px;
-  padding: 26px 24px 22px;
-  box-shadow: 0 2px 6px rgba(17, 17, 17, .05), 0 14px 40px rgba(17, 17, 17, .07);
+html.dark-mode .task-login {
+  --v-card: rgba(30, 37, 40, .80);
+  --v-card-rule: rgba(255, 255, 255, .07);
+  --v-field: rgba(255, 255, 255, .045);
+  --v-field-rule: rgba(255, 255, 255, .12);
+  --v-field-hover: rgba(255, 255, 255, .22);
+  --v-field-focus: rgba(255, 255, 255, .07);
+  --v-label: #9aa59f;
+  --v-ring: rgba(165, 199, 21, .20);
+  --v-wash-1: rgba(165, 199, 21, .16);
+  --v-wash-2: rgba(110, 138, 14, .20);
+  --v-wash-1-mid: rgba(165, 199, 21, .06);
+  --v-wash-2-mid: rgba(110, 138, 14, .08);
+  --v-wash-3: rgba(0, 0, 0, .35);
+  background: #161c1e;
 }
-#login-form .input-group { margin-bottom: 12px; }
-#login-footer { margin-top: 18px; font-size: .84rem; color: var(--v-ink-3); }
-html.dark-mode #layout-content.no-navbar {
-  background: radial-gradient(900px 460px at 50% -12%, rgba(165,199,21,.10) 0%, rgba(0,0,0,0) 70%), #1b2224;
+
+/* The wash: three soft blobs, each drifting on its own clock so the light
+   never repeats the same way twice. Fixed, behind everything, never clickable.
+   No filter: blur() -- blurring three screen-sized layers every frame is what
+   makes a cheap phone stutter, and the gradients are already soft. The grain
+   on ::after is there to dither the banding an 8-bit gradient shows as rings. */
+.task-login .v-aurora {
+  position: fixed; inset: 0; z-index: 0;
+  overflow: hidden; pointer-events: none;
 }
-html.dark-mode #login-form { background: #21292c; border-color: #33403f; box-shadow: none; }
+.task-login .v-aurora::after {
+  content: ""; position: absolute; inset: 0; opacity: .5;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 .06 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.task-login .v-aurora span {
+  position: absolute; border-radius: 50%;
+  will-change: transform;
+}
+.task-login .v-aurora span:nth-child(1) {
+  width: 62vmax; height: 62vmax; left: -18vmax; top: -30vmax;
+  background: radial-gradient(circle, var(--v-wash-1) 0%, var(--v-wash-1-mid) 38%, transparent 70%);
+  animation: v-drift-a 26s ease-in-out infinite alternate;
+}
+.task-login .v-aurora span:nth-child(2) {
+  width: 54vmax; height: 54vmax; right: -20vmax; top: -12vmax;
+  background: radial-gradient(circle, var(--v-wash-2) 0%, var(--v-wash-2-mid) 40%, transparent 70%);
+  animation: v-drift-b 32s ease-in-out infinite alternate;
+}
+.task-login .v-aurora span:nth-child(3) {
+  width: 70vmax; height: 70vmax; left: 10vmax; bottom: -52vmax;
+  background: radial-gradient(circle, var(--v-wash-3) 0%, transparent 70%);
+  animation: v-drift-c 38s ease-in-out infinite alternate;
+}
+@keyframes v-drift-a { to { transform: translate3d(14vmax, 10vmax, 0) scale(1.15); } }
+@keyframes v-drift-b { to { transform: translate3d(-12vmax, 16vmax, 0) scale(.9); } }
+@keyframes v-drift-c { to { transform: translate3d(-10vmax, -8vmax, 0) scale(1.1); } }
+
+.task-login #layout { position: relative; z-index: 1; background: transparent; }
+.task-login #layout-content,
+.task-login #layout-content.no-navbar {
+  position: relative; z-index: 1;
+  display: flex !important; flex-direction: column; align-items: center;
+  min-height: 100%; overflow-y: auto;
+  padding: clamp(28px, 9vh, 96px) 16px 28px;
+  background: transparent !important;
+  border-radius: 0;
+}
+
+/* ---- The lockup ---- */
+.task-login #brand-lockup {
+  width: 100%; text-align: center;
+  animation: v-rise .7s var(--v-ease) both;
+}
+.task-login #brand-lockup .lockup {
+  display: inline-block; position: static;
+  width: 100%; max-width: 230px;
+}
+.task-login #brand-lockup #logo {
+  display: block; position: static;
+  width: 100%; height: auto; max-height: none; opacity: 1;
+}
+.task-login #brand-lockup .lockup-word {
+  margin: 0; text-align: right;
+  font-size: 36px; line-height: 1; letter-spacing: -.01em;
+  color: #1d1d1b;
+}
+html.dark-mode .task-login #brand-lockup .lockup-word { color: #fff; }
+
+/* ---- The card ---- */
+.task-login #login-form {
+  position: relative; top: auto;
+  width: 100%; max-width: 408px;
+  margin: 30px auto 0; padding: 28px 26px 22px;
+  text-align: left;
+  background: var(--v-card);
+  -webkit-backdrop-filter: blur(22px) saturate(1.25);
+  backdrop-filter: blur(22px) saturate(1.25);
+  border: 1px solid var(--v-card-rule);
+  border-radius: 26px;
+  box-shadow:
+    0 1px 2px rgba(20, 24, 10, .04),
+    0 14px 34px -12px rgba(20, 24, 10, .14),
+    0 40px 90px -40px rgba(90, 115, 10, .22);
+  transition: box-shadow .6s var(--v-ease), transform .6s var(--v-ease);
+  animation: v-rise .7s .08s var(--v-ease) both;
+}
+.task-login #login-form:focus-within {
+  box-shadow:
+    0 1px 2px rgba(20, 24, 10, .04),
+    0 22px 44px -14px rgba(20, 24, 10, .18),
+    0 60px 120px -36px rgba(135, 170, 12, .42);
+}
+html.dark-mode .task-login #login-form {
+  box-shadow: 0 24px 60px -24px rgba(0, 0, 0, .7), inset 0 1px 0 rgba(255, 255, 255, .04);
+}
+html.dark-mode .task-login #login-form:focus-within {
+  box-shadow: 0 30px 70px -24px rgba(0, 0, 0, .75), 0 0 90px -20px rgba(165, 199, 21, .28),
+    inset 0 1px 0 rgba(255, 255, 255, .05);
+}
+@keyframes v-rise {
+  from { opacity: 0; transform: translate3d(0, 14px, 0); }
+  to { opacity: 1; transform: none; }
+}
+
+.task-login .v-login-head { margin: 0 2px 20px; }
+.task-login .v-login-title {
+  margin: 0; font-size: 21px; font-weight: 700; letter-spacing: -.015em;
+  color: var(--v-ink);
+}
+.task-login .v-login-sub { margin: 4px 0 0; font-size: 14px; color: var(--v-ink-3); }
+html.dark-mode .task-login .v-login-title { color: #f2f5ee; }
+html.dark-mode .task-login .v-login-sub { color: #9aa59f; }
+
+/* ---- The fields ----
+   The whole cell is the field: icon, input, eye and floating label inside one
+   rounded box, so focus colours the box rather than one part of it. */
+.task-login #login-form table,
+.task-login #login-form tbody { display: block; width: 100%; }
+.task-login #login-form tr.form-group {
+  display: block; margin: 0 0 14px;
+}
+.task-login #login-form td.input {
+  position: relative;
+  display: flex !important; flex-wrap: nowrap; align-items: stretch;
+  width: 100%; height: 60px; padding: 0;
+  background: var(--v-field);
+  border: 1.5px solid var(--v-field-rule);
+  border-radius: 16px;
+  transition: background-color .3s var(--v-ease), border-color .3s var(--v-ease),
+    box-shadow .45s var(--v-ease), transform .3s var(--v-ease);
+}
+.task-login #login-form td.input:hover { border-color: var(--v-field-hover); }
+.task-login #login-form td.input:focus-within {
+  background: var(--v-field-focus);
+  border-color: var(--v-lime);
+  box-shadow: 0 0 0 4px var(--v-ring), 0 12px 26px -14px rgba(110, 138, 14, .55);
+}
+
+.task-login #login-form td.input .input-group-prepend { display: flex; margin: 0; }
+.task-login #login-form td.input .input-group-text {
+  display: flex; align-items: center; justify-content: center;
+  width: 50px; height: 100%; padding: 0 0 0 4px;
+  background: transparent !important; border: 0 !important; border-radius: 0;
+  font-size: 17px; color: var(--v-label);
+  transition: color .3s var(--v-ease), transform .3s var(--v-ease);
+}
+.task-login #login-form td.input:focus-within .input-group-text {
+  color: var(--v-lime-ink); transform: scale(1.06);
+}
+html.dark-mode .task-login #login-form td.input:focus-within .input-group-text { color: #c3e33a; }
+
+.task-login #login-form td.input input.form-control {
+  flex: 1 1 auto; min-width: 0;
+  height: 100% !important;
+  padding: 23px 14px 5px 2px !important;
+  font-size: 16px !important; /* 16px or iOS zooms the page on focus */
+  line-height: 1.3;
+  color: var(--v-ink) !important;
+  background: transparent !important;
+  border: 0 !important; border-radius: 0 16px 16px 0 !important;
+  box-shadow: none !important; outline: 0;
+}
+html.dark-mode .task-login #login-form td.input input.form-control { color: #eef2ea !important; }
+.task-login #login-form td.input input.form-control::placeholder { color: transparent !important; }
+.task-login #login-form td.input input.form-control::-webkit-input-placeholder { color: transparent !important; }
+/* Keep Chrome's autofill from painting a pale blue slab inside the field. */
+.task-login #login-form td.input input:-webkit-autofill {
+  -webkit-text-fill-color: var(--v-ink);
+  transition: background-color 600000s 0s, color 600000s 0s;
+}
+html.dark-mode .task-login #login-form td.input input:-webkit-autofill { -webkit-text-fill-color: #eef2ea; }
+
+.task-login .v-float {
+  position: absolute; left: 52px; top: 50%;
+  max-width: calc(100% - 110px);
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  font-size: 16px; line-height: 1; color: var(--v-label);
+  pointer-events: none;
+  transform: translate3d(0, -50%, 0);
+  transform-origin: left center;
+  transition: transform .28s var(--v-ease), color .28s var(--v-ease), font-weight .28s;
+}
+.task-login td.input:focus-within .v-float,
+.task-login td.input input:not(:placeholder-shown) ~ .v-float,
+.task-login td.input input:-webkit-autofill ~ .v-float {
+  transform: translate3d(0, calc(-50% - 13px), 0) scale(.76);
+  font-weight: 600; letter-spacing: .02em;
+}
+.task-login td.input:focus-within .v-float { color: var(--v-lime-ink); }
+html.dark-mode .task-login td.input:focus-within .v-float { color: #c3e33a; }
+
+/* ---- The eye ---- */
+.task-login .v-eye {
+  flex: 0 0 44px; align-self: center;
+  display: grid; place-items: center;
+  width: 44px; height: 44px; margin: 0 6px 0 0; padding: 0;
+  color: var(--v-label); background: transparent;
+  border: 0; border-radius: 12px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: color .2s var(--v-ease), background-color .2s var(--v-ease), transform .15s var(--v-ease);
+}
+.task-login .v-eye:hover { color: var(--v-ink); background: rgba(26, 31, 20, .06); }
+/* Elastic's dark mode fills every <button> grey; the eye is part of the field. */
+html.dark-mode .task-login #login-form .v-eye { background: transparent; border: 0; box-shadow: none; }
+html.dark-mode .task-login #login-form .v-eye:hover { color: #eef2ea; background: rgba(255, 255, 255, .08); }
+.task-login .v-eye:active { transform: scale(.9); }
+.task-login .v-eye:focus-visible { outline: 2px solid var(--v-lime); outline-offset: -2px; }
+.task-login .v-eye svg {
+  width: 22px; height: 22px; overflow: visible;
+  fill: none; stroke: currentColor; stroke-width: 1.8;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.task-login .v-eye .v-eye-pupil { transition: transform .3s var(--v-ease); transform-origin: 12px 12px; }
+.task-login .v-eye .v-eye-slash {
+  stroke-dasharray: 24; stroke-dashoffset: 24;
+  transition: stroke-dashoffset .3s var(--v-ease);
+}
+.task-login .v-eye[aria-pressed="true"] { color: var(--v-lime-ink); }
+html.dark-mode .task-login .v-eye[aria-pressed="true"] { color: #c3e33a; }
+.task-login .v-eye[aria-pressed="true"] .v-eye-slash { stroke-dashoffset: 0; }
+.task-login .v-eye[aria-pressed="true"] .v-eye-pupil { transform: scale(.7); }
+/* A readable password, not a line of dots, while it is shown. */
+.task-login td.input.v-revealed input.form-control { letter-spacing: .04em; }
+
+.task-login .v-caps {
+  max-height: 0; margin: -6px 4px 0; overflow: hidden; opacity: 0;
+  font-size: 12.5px; font-weight: 600; color: #9a6a00;
+  transition: max-height .25s var(--v-ease), opacity .25s var(--v-ease), margin .25s var(--v-ease);
+}
+.task-login .v-caps.v-on { max-height: 24px; margin: -4px 4px 12px; opacity: 1; }
+html.dark-mode .task-login .v-caps { color: #f0c24b; }
+
+/* ---- The button ---- */
+.task-login #login-form .formbuttons { margin: 6px 0 0; }
+.task-login #rcmloginsubmit {
+  position: relative; overflow: hidden;
+  height: 56px; border-radius: 16px !important;
+  font-size: 16px; font-weight: 700; letter-spacing: .01em;
+  text-transform: none !important;
+  box-shadow: 0 12px 26px -12px rgba(110, 138, 14, .75), inset 0 1px 0 rgba(255, 255, 255, .35);
+  transition: transform .2s var(--v-ease), box-shadow .35s var(--v-ease), background-color .2s;
+}
+.task-login #rcmloginsubmit:hover {
+  transform: translate3d(0, -1px, 0);
+  box-shadow: 0 18px 34px -14px rgba(110, 138, 14, .85), inset 0 1px 0 rgba(255, 255, 255, .4);
+}
+.task-login #rcmloginsubmit:active { transform: scale(.985); box-shadow: 0 6px 16px -10px rgba(110, 138, 14, .8); }
+.task-login #rcmloginsubmit:focus-visible { box-shadow: 0 0 0 4px var(--v-ring), 0 12px 26px -12px rgba(110, 138, 14, .75); }
+/* A sheen that crosses the button on hover. */
+.task-login #rcmloginsubmit::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(105deg, transparent 35%, rgba(255, 255, 255, .5) 50%, transparent 65%);
+  transform: translate3d(-110%, 0, 0);
+  transition: transform .9s var(--v-ease);
+  pointer-events: none;
+}
+.task-login #rcmloginsubmit:hover::after { transform: translate3d(110%, 0, 0); }
+
+/* ---- Under the card ---- */
+.task-login #login-footer {
+  margin-top: 16px; text-align: center;
+  font-size: 13px; color: var(--v-ink-3);
+}
+.task-login #login-footer > div { margin: 0; padding: 0; background: none; }
+.task-login #login-footer a { color: var(--v-lime-ink); font-weight: 600; }
+html.dark-mode .task-login #login-footer { color: #8e9a95; }
+html.dark-mode .task-login #login-footer a { color: #c3e33a; }
+.task-login .vesopa-legal {
+  margin: 18px 0 0; text-align: center;
+  font-size: 12px; color: var(--v-ink-3); opacity: .85;
+  animation: v-rise .7s .16s var(--v-ease) both;
+}
+.task-login .vesopa-legal a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+html.dark-mode .task-login .vesopa-legal { color: #8e9a95; }
+
+@media screen and (max-width: 480px) {
+  .task-login #layout-content,
+  .task-login #layout-content.no-navbar { padding-top: clamp(24px, 7vh, 64px); }
+  .task-login #brand-lockup .lockup { max-width: 196px; }
+  .task-login #brand-lockup .lockup-word { font-size: 30px; }
+  .task-login #login-form { margin-top: 24px; padding: 24px 18px 18px; border-radius: 24px; }
+  .task-login .v-login-title { font-size: 19px; }
+}
+
+/* A phone on its side: 390px of height. Tighten everything above the button
+   so it sits on the first screen rather than just below it. */
+@media screen and (max-height: 520px) {
+  .task-login #layout-content,
+  .task-login #layout-content.no-navbar { padding-top: 14px; }
+  .task-login #brand-lockup .lockup { max-width: 150px; }
+  .task-login #brand-lockup .lockup-word { font-size: 22px; }
+  .task-login #login-form { margin-top: 12px; padding: 16px 18px 14px; }
+  .task-login .v-login-head { margin-bottom: 12px; }
+  .task-login .v-login-sub { display: none; }
+  .task-login #login-form tr.form-group { margin-bottom: 10px; }
+  .task-login #login-form td.input { height: 52px; }
+  .task-login #rcmloginsubmit { height: 48px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-login .v-aurora span,
+  .task-login #brand-lockup,
+  .task-login #login-form,
+  .task-login .vesopa-legal { animation: none !important; }
+  .task-login #login-form *,
+  .task-login #login-form { transition-duration: .01ms !important; }
+  .task-login #rcmloginsubmit::after { display: none; }
+}
 
 /* =========================================================================
    The compose toolbar, and why this block exists

@@ -57,11 +57,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 # ---- Config (mirrors deploy.sh) -------------------------------------------
-# DO NOT just change this IP — see the long note in deploy.sh. Two boxes exist:
-# 3.72.113.21 (this one, still alive but no DNS points at it) and 34.63.118.67
-# (where backoffice.vesopaepos.com actually resolves, Hestia layout, per-user
-# pm2). Repointing needs the path and pm2 model changed too, not the IP alone.
-$Server    = if ($env:VESOPA_SERVER_IP) { "root@$($env:VESOPA_SERVER_IP)" } else { 'root@3.72.113.21' }
+$Server    = 'root@3.72.113.21'
 $Domain    = 'backoffice.vesopaepos.com'
 $RemoteApp = if ($env:REMOTE_APP) { $env:REMOTE_APP } else { "/home/vesopa/web/$Domain/private/nodeapp" }
 $Pm2App    = 'vesopa_backoffice'

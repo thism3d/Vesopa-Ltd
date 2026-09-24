@@ -26,14 +26,6 @@
  * into a tool for enumerating everybody who has ever held a Vesopa account, and
  * an application only ever sees the people who have a membership row for it.
  *
- * ONE DELIBERATE EXCEPTION: `/api/app/venues/provision` (see src/venues.js).
- * Its report says when it had to create an account, which does reveal whether
- * an address already had one. It is accepted there because that route answers
- * only to the applications on venues.PROVISIONERS — Vesopa Software's own
- * admin console, whose operators can already see every account at /admin — and
- * to no venue's application. Adding a slug to that list is handing out exactly
- * that ability, and should be read as such.
- *
  * THE INVITATION IS STILL NOT A WAY IN. It grants a membership to whoever
  * proves they own the address, and the proving is the ordinary sign-in. An
  * application with stolen credentials can post invitations to addresses; it
@@ -46,7 +38,6 @@ const express = require('express');
 const db = require('../db');
 const clients = require('../oauth/clients');
 const invitations = require('../invitations');
-const venues = require('../venues');
 const events = require('../events');
 const rateLimit = require('../ratelimit');
 const { normaliseEmail } = require('../normalise');
@@ -343,66 +334,6 @@ router.post('/api/app/entitlements', async (req, res, next) => {
       products,
       as_at: new Date().toISOString(),
     });
-  } catch (error) {
-    return next(error);
-  }
-});
-
-// ---------------------------------------------------------------------------
-// Make a venue an organisation — see src/venues.js
-// ---------------------------------------------------------------------------
-
-/*
- * Authenticated like the other routes here, then narrowed twice: first-party,
- * and on the PROVISIONERS list by slug. A venue's own back office is
- * first-party and confidential too, and must still not be able to mint
- * organisations or write what somebody pays.
- *
- * `dry_run` defaults to TRUE. A caller has to ask for a real write in so many
- * words, so a half-finished integration that forgets the flag reports what it
- * would do instead of doing it.
- */
-router.post('/api/app/venues/provision', async (req, res, next) => {
-  try {
-    const auth = await authenticate(req);
-    if (auth.error) {
-      return problem(res, 401, auth.error, auth.description || 'Client authentication failed.');
-    }
-    const application = auth.application;
-    if (!Number(application.is_first_party) || !venues.PROVISIONERS.has(application.slug)) {
-      return problem(res, 403, 'forbidden', 'This application may not provision venues.');
-    }
-
-    const attempt = await rateLimit.hit('app-venues', String(application.id), {
-      limit: 300,
-      windowSeconds: 3600,
-    });
-    if (!attempt.allowed) {
-      return problem(res, 429, 'rate_limited', 'Too many venue changes from this application this hour.');
-    }
-
-    const dryRun = req.body.dry_run !== false;
-    let result;
-    try {
-      result = await venues.provision(req.body, { applicationId: application.id, dryRun });
-    } catch (error) {
-      if (error instanceof venues.InvalidVenue) return problem(res, 400, 'invalid_request', error.message);
-      throw error;
-    }
-
-    if (!dryRun && result.actions.length) {
-      await events.recordAudit({
-        actorType: 'application',
-        action: result.created ? 'organisation.provisioned' : 'organisation.updated',
-        targetType: 'organisation',
-        targetId: result.public_id,
-        applicationId: application.id,
-        detail: { venue_ref: String(req.body.venue_ref || ''), actions: result.actions.length },
-        ip: req.clientIp,
-      });
-    }
-
-    return res.status(result.created && !dryRun ? 201 : 200).json(result);
   } catch (error) {
     return next(error);
   }

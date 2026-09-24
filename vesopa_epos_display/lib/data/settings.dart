@@ -40,7 +40,11 @@ class DisplaySettings {
     this.advertVolume = 0,
     this.billOnRight = false,
     this.billShare = 50,
-    this.fillScreen = false,
+    this.fillScreen = true,
+    this.fillScreenVideo = true,
+    this.statusHideSeconds = 10,
+    this.saleAdvertsSameFolder = true,
+    this.saleAdvertFolder = '',
     this.standingMessage = '',
     this.customerQr = '',
     this.customerQrCaption = 'Scan to join',
@@ -107,9 +111,39 @@ class DisplaySettings {
   /// is used, so a hand-edited file cannot produce a bill with no width.
   final int billShare;
 
-  /// Whether adverts fill their panel, cropping to fit, instead of sitting
-  /// inside it with bars around them.
+  /// Whether still adverts fill their panel, cropping to fit, instead of
+  /// sitting inside it with bars around them.
+  ///
+  /// On by default. A customer display is a poster, and a poster with grey
+  /// bars down both sides looks like a screen that is broken rather than one
+  /// that is being careful with somebody's aspect ratio. A venue that has had
+  /// artwork made to an exact size can turn it off and get the whole frame.
   final bool fillScreen;
+
+  /// The same choice for clips, kept separate from the stills.
+  ///
+  /// They are separate because the material usually is: a venue's promo video
+  /// is cut 16:9 by whoever made it, while its photographs are whatever came
+  /// off a phone. One switch for both would force a compromise on one of them.
+  final bool fillScreenVideo;
+
+  /// How long the status panel stays up after a tap before hiding itself.
+  ///
+  /// Zero means never hide it, which is what somebody setting a screen up
+  /// wants while they are standing at it. Everything else is a customer-facing
+  /// screen with a panel on it, so it goes away on its own.
+  final int statusHideSeconds;
+
+  /// Whether a sale on screen keeps the same adverts as the idle loop.
+  ///
+  /// True is the ordinary answer. False is for a venue that wants its idle
+  /// screen selling the room — the Sunday roast, the function suite — and
+  /// something quieter beside a bill a customer is reading, where a photograph
+  /// of food competes with the prices they are checking.
+  final bool saleAdvertsSameFolder;
+
+  /// The folder used beside a bill, when [saleAdvertsSameFolder] is false.
+  final String saleAdvertFolder;
 
   /// A line the venue sets, shown across the bottom of the adverts.
   final String standingMessage;
@@ -159,6 +193,21 @@ class DisplaySettings {
   Directory? get advertDirectory =>
       advertFolder.trim().isEmpty ? null : Directory(advertFolder.trim());
 
+  /// The folder to play from while a bill is on screen.
+  ///
+  /// Falls back to the idle folder whenever the venue has not set a separate
+  /// one, so turning the switch on and then not choosing anything leaves the
+  /// screen showing what it showed before rather than going blank.
+  Directory? get saleAdvertDirectory {
+    if (saleAdvertsSameFolder) return advertDirectory;
+    final path = saleAdvertFolder.trim();
+    return path.isEmpty ? advertDirectory : Directory(path);
+  }
+
+  /// How long the status panel lingers, or null for "until it is dismissed".
+  Duration? get statusHideAfter =>
+      statusHideSeconds <= 0 ? null : Duration(seconds: statusHideSeconds);
+
   DisplaySettings copyWith({
     String? advertFolder,
     String? screenKey,
@@ -172,6 +221,10 @@ class DisplaySettings {
     bool? billOnRight,
     int? billShare,
     bool? fillScreen,
+    bool? fillScreenVideo,
+    int? statusHideSeconds,
+    bool? saleAdvertsSameFolder,
+    String? saleAdvertFolder,
     String? standingMessage,
     String? customerQr,
     String? customerQrCaption,
@@ -190,6 +243,10 @@ class DisplaySettings {
     billOnRight: billOnRight ?? this.billOnRight,
     billShare: billShare ?? this.billShare,
     fillScreen: fillScreen ?? this.fillScreen,
+    fillScreenVideo: fillScreenVideo ?? this.fillScreenVideo,
+    statusHideSeconds: statusHideSeconds ?? this.statusHideSeconds,
+    saleAdvertsSameFolder: saleAdvertsSameFolder ?? this.saleAdvertsSameFolder,
+    saleAdvertFolder: saleAdvertFolder ?? this.saleAdvertFolder,
     standingMessage: standingMessage ?? this.standingMessage,
     customerQr: customerQr ?? this.customerQr,
     customerQrCaption: customerQrCaption ?? this.customerQrCaption,

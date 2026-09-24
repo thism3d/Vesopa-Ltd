@@ -26,23 +26,7 @@
 set -euo pipefail
 
 # ---- Config ---------------------------------------------------------------
-# DO NOT just change this IP. Two boxes are in play (checked 2026-09-22):
-#
-#   3.72.113.21   what this script has always deployed to. STILL ALIVE and
-#                 still answering (HTTP 200 / HTTPS 301).
-#   34.63.118.67  where DNS for vesopaepos.com — and every other Vesopa
-#                 hostname except pay.vesopaepos.com — now points.
-#
-# Public traffic therefore reaches 34.63.118.67 while this script still writes
-# to 3.72.113.21. Repointing is NOT a one-line IP edit: the newer box uses a
-# different layout — the app lives under
-# /home/vesopasoftware/web/<domain>/private/nodeapp and pm2 runs PER HESTIA
-# USER via `su - vesopasoftware`. Running pm2 as root there starts a SECOND
-# copy beside the running one and the two fight over the port. See
-# vesopa_hosting/deploy-cloud.sh, which does it correctly for cloud.vesopa.com.
-#
-# Override for a one-off:  VESOPA_SERVER_IP=1.2.3.4 ./deploy.sh
-SERVER="root@${VESOPA_SERVER_IP:-3.72.113.21}"
+SERVER="root@3.72.113.21"
 DOMAIN="vesopaepos.com"
 
 # Where the app lives on the server. Override without editing this file:
@@ -50,9 +34,7 @@ DOMAIN="vesopaepos.com"
 REMOTE_APP="${REMOTE_APP:-/home/vesopa/web/$DOMAIN/private/nodeapp}"
 REMOTE_BACKUP="$REMOTE_APP/backup"
 
-# This script's own directory, so the rsync source is right on whichever machine
-# runs it. The old /Users/onzep path existed on one laptop only.
-LOCAL_APP="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOCAL_APP="/Users/onzep/development/Vesopa/vesopa_web"
 LOCAL_BACKUP="$LOCAL_APP/backup"
 
 # From ecosystem.config.cjs — must match, or pm2 starts a second copy alongside

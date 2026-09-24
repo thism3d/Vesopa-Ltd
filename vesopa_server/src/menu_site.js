@@ -321,7 +321,7 @@ function editor(content, admin, notice) {
     </div>
     <button class="btn btn-lime" type="submit">Save and publish</button>
   </form>
-</main>`);
+</main>`, 'Vesopa Menu');
 }
 
 function menuSiteRoutes({ pool }) {
