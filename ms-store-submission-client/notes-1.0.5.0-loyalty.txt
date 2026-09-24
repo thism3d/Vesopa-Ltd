@@ -1,0 +1,7 @@
+Version 1.0.5.0 - Kept in step with the iPhone app
+
+This update brings the Windows app level with the new iPhone and Apple Watch release, so both are built from the same card, account and news.
+
+Your privacy: when a venue sends "near us now" news, your position is only compared with the venue's at that moment. The app keeps no record of where you were, only whether you were nearby, and only for a few hours.
+
+Smaller fixes to how the app talks to the venue, so your card, your photo and your news load reliably.
