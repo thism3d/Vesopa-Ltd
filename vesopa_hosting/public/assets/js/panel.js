@@ -14,8 +14,32 @@
 (function () {
   'use strict';
 
+  /*
+   * ONCE PER DOCUMENT, and once per PAGE — the same shape as app.js.
+   *
+   * nav.js swaps the body without reloading. Everything that faces a page is
+   * in setup(), run now and on every `vesopa:navigated`; every listener on
+   * `document` or `window` is bound with the page's AbortSignal so the last
+   * page's listeners stop when the next one arrives; and the live socket is
+   * closed with the page it was watching, so each page opens exactly one.
+   */
+  if (window.__vesopaPanelReady) return;
+  window.__vesopaPanelReady = true;
+
   const $ = (sel, root) => (root || document).querySelector(sel);
   const $$ = (sel, root) => Array.prototype.slice.call((root || document).querySelectorAll(sel));
+
+  let page = new AbortController();
+  window.addEventListener('vesopa:navigating', () => {
+    page.abort();
+    page = new AbortController();
+  });
+  window.addEventListener('vesopa:navigated', () => setup());
+
+  function setup() {
+  const { signal } = page;
+  const on = (target, type, fn, opts) =>
+    target.addEventListener(type, fn, typeof opts === 'boolean' ? { capture: opts, signal } : { ...(opts || {}), signal });
 
   /* =======================================================================
      Bottom sheet — the phone's "More"
@@ -28,7 +52,7 @@
     document.body.style.overflow = '';
   }
 
-  document.addEventListener('click', (e) => {
+  on(document, 'click', (e) => {
     const opener = e.target.closest('[data-sheet-open]');
     if (opener) {
       const sheet = document.getElementById('sheet-' + opener.dataset.sheetOpen);
@@ -45,7 +69,7 @@
     if (closer) closeSheet(closer.closest('.sheet'));
   });
 
-  document.addEventListener('keydown', (e) => {
+  on(document, 'keydown', (e) => {
     if (e.key === 'Escape') $$('.sheet.is-open').forEach(closeSheet);
   });
 
@@ -62,7 +86,7 @@
     });
   }
 
-  document.addEventListener('click', (e) => {
+  on(document, 'click', (e) => {
     const btn = e.target.closest('.qmark > button');
     if (!btn) { closeQmarks(); return; }
     const wrap = btn.parentNode;
@@ -108,7 +132,18 @@
      the page looks dead and people press the button again, which is how a
      domain gets two certificate requests and a rate limit.
      ======================================================================= */
-  document.addEventListener('submit', (e) => {
+
+  /* Put a button back exactly as it was found — INCLUDING the pinned width,
+     which the old restore left behind. A button that came back 140px wide
+     because that is what "Rebuild on the server" measured, and then had its
+     label swapped by a re-render, sat in a row of buttons at the wrong size. */
+  function restore(btn) {
+    btn.classList.remove('is-working');
+    btn.disabled = false;
+    btn.style.minWidth = '';
+  }
+
+  on(document, 'submit', (e) => {
     const form = e.target;
     if (form.dataset.noBusy !== undefined) return;
     const btn = form.querySelector('button[type="submit"]:not([data-no-busy]), button:not([type]):not([data-no-busy])');
@@ -125,6 +160,7 @@
   window.addEventListener('pageshow', () => {
     $$('.is-working').forEach((b) => { b.classList.remove('is-working'); b.disabled = false; });
   });
+  on(window, 'pageshow', () => { $$('.is-working').forEach(restore); });
 
   /* =======================================================================
      Instant DNS check
@@ -280,15 +316,21 @@
 
     // A backgrounded tab's socket is often killed by the browser. Coming back
     // to a panel that stopped updating an hour ago is worse than no panel.
-    document.addEventListener('visibilitychange', () => {
+    on(document, 'visibilitychange', () => {
       if (document.visibilityState === 'visible' && ws && ws.readyState > 1) { attempt = 0; open(); }
+    });
+
+    // The page this socket was watching has gone; the next page opens its own.
+    signal.addEventListener('abort', () => {
+      closed = true;
+      try { if (ws) ws.close(); } catch { /* already gone */ }
     });
   }());
 
   /* =======================================================================
      Reveal a password without a round trip
      ======================================================================= */
-  document.addEventListener('click', (e) => {
+  on(document, 'click', (e) => {
     const btn = e.target.closest('[data-reveal]');
     if (!btn) return;
     const target = document.getElementById(btn.dataset.reveal);
@@ -298,4 +340,7 @@
     target.textContent = shown ? '••••••••••••' : (target.dataset.value || '');
     btn.textContent = shown ? 'Show' : 'Hide';
   });
+  }
+
+  setup();
 }());

@@ -1,0 +1,18 @@
+#!/bin/bash
+# info: list all provisioned Node.js apps
+# options: [USER]
+set -o pipefail
+REGISTRY=/usr/local/hestia/data/nodeapp/ports.conf
+filter="${1:-}"
+[[ -f "$REGISTRY" ]] || { echo "No Node.js apps provisioned."; exit 0; }
+printf '%-16s %-28s %-6s %-10s %s\n' USER DOMAIN PORT NODE STATUS
+while read -r u d p; do
+	[[ -n "$filter" && "$u" != "$filter" ]] && continue
+	home=$(getent passwd "$u" | cut -d: -f6)
+	eco="$home/web/$d/private/nodeapp/ecosystem.config.cjs"
+	[[ -f "$eco" ]] || eco="$home/web/$d/private/nodeapp/ecosystem.config.js"
+	nv=$(grep -oP "opt/nodejs/\K[0-9]+" "$eco" 2>/dev/null | head -1)
+	st=$(runuser -u "$u" -- /bin/bash -lc "cd ~ && pm2 jlist 2>/dev/null" \
+		| jq -r --arg n "$d" 'try (map(select(.name==$n)) | .[0].pm2_env.status // "stopped") catch "unknown"' 2>/dev/null)
+	printf '%-16s %-28s %-6s %-10s %s\n' "$u" "$d" "$p" "${nv:-?}" "${st:-unknown}"
+done < "$REGISTRY"

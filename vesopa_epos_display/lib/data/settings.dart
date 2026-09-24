@@ -36,6 +36,7 @@ class DisplaySettings {
     this.dwellSeconds = 12,
     this.showPrices = true,
     this.thankYou = 'Thank you',
+    this.thankYouSeconds = 20,
     this.advertVolume = 0,
     this.billOnRight = false,
     this.billShare = 50,
@@ -43,6 +44,8 @@ class DisplaySettings {
     this.standingMessage = '',
     this.customerQr = '',
     this.customerQrCaption = 'Scan to join',
+    this.childLock = false,
+    this.notifications = false,
   });
 
   /// The folder of images and clips to play. Empty means none chosen.
@@ -81,6 +84,18 @@ class DisplaySettings {
   /// What the screen says when a sale has just been paid for.
   final String thankYou;
 
+  /// How long the finished sale and the thank-you stay up before the adverts
+  /// take the screen back.
+  ///
+  /// Its own number rather than [idleSeconds], because they answer different
+  /// questions. Idle asks how long a bill nobody is adding to stays up, and the
+  /// answer is generous — the clerk is mid-conversation and the bill is live.
+  /// This asks how long the total stays up after the money has changed hands,
+  /// which is a customer checking their change and then walking away.
+  ///
+  /// Twenty seconds is the venue's own figure. Zero holds for ever.
+  final int thankYouSeconds;
+
   /// How loud video adverts play, 0 to 100. Silent by default.
   final int advertVolume;
 
@@ -108,6 +123,28 @@ class DisplaySettings {
   final String customerQr;
   final String customerQrCaption;
 
+  /// Whether the screen ignores being touched.
+  ///
+  /// A customer display lives at hand height on a counter, and the people
+  /// nearest it are queueing children, somebody leaning on it while they find
+  /// their card, and a cloth at the end of the night. Any of those brings the
+  /// status bars up, and a determined one gets into Settings and points the
+  /// screen at an empty folder.
+  ///
+  /// Locked, a tap says the screen is locked and does nothing else. It is
+  /// turned on and off from the till — deliberately not from here, because a
+  /// lock the locked screen can undo is not a lock.
+  final bool childLock;
+
+  /// Whether this screen may raise a Windows toast when the till goes quiet.
+  ///
+  /// Off, and off is the right default for a screen facing a queue: a pop-up
+  /// over somebody's bill is a notification aimed at nobody. It is here for
+  /// the venue that mounts a display in a back office or a service corridor,
+  /// where there is somebody to tell. The back office has to allow it too —
+  /// see `data/notifications.dart`.
+  final bool notifications;
+
   /// The bill's share of the screen, as a usable fraction.
   double get billFraction => (billShare.clamp(20, 80)) / 100;
 
@@ -130,6 +167,7 @@ class DisplaySettings {
     int? dwellSeconds,
     bool? showPrices,
     String? thankYou,
+    int? thankYouSeconds,
     int? advertVolume,
     bool? billOnRight,
     int? billShare,
@@ -137,6 +175,8 @@ class DisplaySettings {
     String? standingMessage,
     String? customerQr,
     String? customerQrCaption,
+    bool? childLock,
+    bool? notifications,
   }) => DisplaySettings(
     advertFolder: advertFolder ?? this.advertFolder,
     screenKey: screenKey ?? this.screenKey,
@@ -145,6 +185,7 @@ class DisplaySettings {
     dwellSeconds: dwellSeconds ?? this.dwellSeconds,
     showPrices: showPrices ?? this.showPrices,
     thankYou: thankYou ?? this.thankYou,
+    thankYouSeconds: thankYouSeconds ?? this.thankYouSeconds,
     advertVolume: advertVolume ?? this.advertVolume,
     billOnRight: billOnRight ?? this.billOnRight,
     billShare: billShare ?? this.billShare,
@@ -152,6 +193,8 @@ class DisplaySettings {
     standingMessage: standingMessage ?? this.standingMessage,
     customerQr: customerQr ?? this.customerQr,
     customerQrCaption: customerQrCaption ?? this.customerQrCaption,
+    childLock: childLock ?? this.childLock,
+    notifications: notifications ?? this.notifications,
   );
 }
 
@@ -167,8 +210,26 @@ const _keyIdle = 'display.idle_seconds';
 const _keyDwell = 'display.dwell_seconds';
 const _keyPrices = 'display.show_prices';
 const _keyThanks = 'display.thank_you';
+const _keyThanksSeconds = 'display.thank_you_seconds';
 const _keyQr = 'display.customer_qr';
 const _keyQrCaption = 'display.customer_qr_caption';
+
+// These five were on the model and in copyWith and in neither of the two
+// methods below, so every one of them was set by a manager, applied for the
+// rest of the session, and gone by the morning. `fillScreen` in particular
+// reverted to letterboxing a screen somebody had deliberately set to fill.
+const _keyVolume = 'display.advert_volume';
+const _keyBillRight = 'display.bill_on_right';
+const _keyBillShare = 'display.bill_share';
+const _keyFill = 'display.fill_screen';
+const _keyStanding = 'display.standing_message';
+
+const _keyFillVideo = 'display.fill_screen_video';
+const _keyStatusHide = 'display.status_hide_seconds';
+const _keySaleSame = 'display.sale_adverts_same';
+const _keySaleFolder = 'display.sale_advert_folder';
+const _keyChildLock = 'display.child_lock';
+const _keyNotifications = 'display.notifications';
 
 class DisplaySettingsController extends AsyncNotifier<DisplaySettings> {
   @override
@@ -182,8 +243,22 @@ class DisplaySettingsController extends AsyncNotifier<DisplaySettings> {
       dwellSeconds: prefs.getInt(_keyDwell) ?? 12,
       showPrices: prefs.getBool(_keyPrices) ?? true,
       thankYou: prefs.getString(_keyThanks) ?? 'Thank you',
+      thankYouSeconds: prefs.getInt(_keyThanksSeconds) ?? 20,
       customerQr: prefs.getString(_keyQr) ?? '',
       customerQrCaption: prefs.getString(_keyQrCaption) ?? 'Scan to join',
+      advertVolume: prefs.getInt(_keyVolume) ?? 0,
+      billOnRight: prefs.getBool(_keyBillRight) ?? false,
+      billShare: prefs.getInt(_keyBillShare) ?? 50,
+      fillScreen: prefs.getBool(_keyFill) ?? true,
+      standingMessage: prefs.getString(_keyStanding) ?? '',
+      fillScreenVideo: prefs.getBool(_keyFillVideo) ?? true,
+      statusHideSeconds: prefs.getInt(_keyStatusHide) ?? 10,
+      saleAdvertsSameFolder: prefs.getBool(_keySaleSame) ?? true,
+      saleAdvertFolder: prefs.getString(_keySaleFolder) ?? '',
+      // Remembered across a restart on purpose. A screen that unlocked itself
+      // every time the venue rebooted would be locked in name only.
+      childLock: prefs.getBool(_keyChildLock) ?? false,
+      notifications: prefs.getBool(_keyNotifications) ?? false,
     );
   }
 
@@ -201,8 +276,20 @@ class DisplaySettingsController extends AsyncNotifier<DisplaySettings> {
       await prefs.setInt(_keyDwell, next.dwellSeconds);
       await prefs.setBool(_keyPrices, next.showPrices);
       await prefs.setString(_keyThanks, next.thankYou);
+      await prefs.setInt(_keyThanksSeconds, next.thankYouSeconds);
       await prefs.setString(_keyQr, next.customerQr);
       await prefs.setString(_keyQrCaption, next.customerQrCaption);
+      await prefs.setInt(_keyVolume, next.advertVolume);
+      await prefs.setBool(_keyBillRight, next.billOnRight);
+      await prefs.setInt(_keyBillShare, next.billShare);
+      await prefs.setBool(_keyFill, next.fillScreen);
+      await prefs.setString(_keyStanding, next.standingMessage);
+      await prefs.setBool(_keyFillVideo, next.fillScreenVideo);
+      await prefs.setInt(_keyStatusHide, next.statusHideSeconds);
+      await prefs.setBool(_keySaleSame, next.saleAdvertsSameFolder);
+      await prefs.setString(_keySaleFolder, next.saleAdvertFolder);
+      await prefs.setBool(_keyChildLock, next.childLock);
+      await prefs.setBool(_keyNotifications, next.notifications);
     } catch (_) {
       // Nothing to tell the customer standing in front of this.
     }

@@ -1,0 +1,32 @@
+#!/bin/bash
+# info: remove a Node.js app from a web domain
+# options: USER DOMAIN [KEEP_FILES]
+#
+# Stops the app in the user's own pm2, frees the port and returns the domain
+# to the default proxy template. Pass KEEP_FILES=yes to leave the code alone.
+set -o pipefail
+user="${1:-}"; domain="${2:-}"; keep="${3:-yes}"
+
+source /etc/hestiacp/hestia.conf
+source "$HESTIA/func/main.sh"
+source_conf "$HESTIA/conf/hestia.conf"
+
+[[ -n "$user" && -n "$domain" ]] || { echo "usage: v-delete-nodejs-app USER DOMAIN [KEEP_FILES]" >&2; exit 1; }
+id "$user" &>/dev/null || { echo "ERROR: no such user: $user" >&2; exit 1; }
+HOME_DIR=$(getent passwd "$user" | cut -d: -f6)
+APP_DIR="$HOME_DIR/web/$domain/private/nodeapp"
+
+runuser -u "$user" -- /bin/bash -lc "cd ~ && pm2 delete '$domain' >/dev/null 2>&1; pm2 save --force >/dev/null 2>&1" || true
+
+rm -f "$HOME_DIR/conf/web/$domain/nodeapp.conf"
+$HESTIA/bin/v-change-web-domain-proxy-tpl "$user" "$domain" default '' no >/dev/null 2>&1
+$HESTIA/bin/v-release-nodejs-port "$user" "$domain"
+
+if [[ "$keep" == "no" ]]; then
+	rm -rf "$APP_DIR"
+	echo "  removed   $APP_DIR"
+fi
+
+nginx -t >/dev/null 2>&1 && systemctl reload nginx
+$HESTIA/bin/v-log-action "$user" "Info" "Web" "Node.js app removed ($domain)." 2>/dev/null
+echo "OK"

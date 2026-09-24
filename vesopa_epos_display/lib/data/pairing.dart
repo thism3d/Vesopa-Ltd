@@ -532,7 +532,7 @@ const _keyDeviceName = 'display.device_name';
 ///
 /// Kept in step with `version:` in pubspec.yaml by hand, the same way
 /// `data/control.dart` keeps its own copy.
-const pairingAppVersion = '1.6.1';
+const pairingAppVersion = '1.6.4';
 
 /// This screen's identity and its pairing, kept current.
 ///
@@ -675,11 +675,24 @@ class PairingController extends AsyncNotifier<PairingState> {
     // re-written by the till with the same path in it must not rebuild the feed
     // and restart a playing advert, and a presence file rewritten every five
     // seconds must not rebuild anything at all.
+    //
+    // Whether the till is *running* is part of "something a screen would draw",
+    // and it caught this rule out. Suppressing the republish keeps the old
+    // presence record in the published state, timestamp and all — so anything
+    // asking `till.isRunning` was reading a clock frozen at the last publish,
+    // and got `false` twenty seconds later however fresh the file on disk was.
+    // The status panel duly announced a working till as not running.
+    //
+    // Comparing the liveness rather than the timestamp keeps the original
+    // intent: this flips only when the till actually goes away or comes back,
+    // not on every heartbeat. The advert loop is unaffected either way — the
+    // feed and the library are rebuilt from their own signature, not from this.
     if (next.stage != current.stage ||
         next.basketPath != current.basketPath ||
         next.pairing?.terminalName != current.pairing?.terminalName ||
         next.till?.terminalName != current.till?.terminalName ||
-        next.till?.signedIn != current.till?.signedIn) {
+        next.till?.signedIn != current.till?.signedIn ||
+        (next.till?.isRunning ?? false) != (current.till?.isRunning ?? false)) {
       state = AsyncData(next.copyWith(justConnected: false));
     }
   }
@@ -734,6 +747,10 @@ class PairingController extends AsyncNotifier<PairingState> {
   /// Thirty-two hex characters from the platform's secure source. Not a UUID,
   /// only because a UUID would mean a dependency for one string nothing ever
   /// parses — it is compared, and that is all.
+  /// Public so `displayDeviceId()` can reuse it rather than invent a second
+  /// way of making the same id.
+  static Future<String> deviceIdFrom(SharedPreferences prefs) => _deviceId(prefs);
+
   static Future<String> _deviceId(SharedPreferences prefs) async {
     final existing = prefs.getString(_keyDeviceId)?.trim();
     if (existing != null && existing.length >= 8) return existing;
@@ -749,6 +766,29 @@ class PairingController extends AsyncNotifier<PairingState> {
   }
 }
 
+/// This screen's permanent id, for anything outside the pairing controller.
+///
+/// Signing in with Vesopa needs the same id the pairing uses, or the back
+/// office would see one machine as two devices -- one holding a licence and
+/// one paired to a till. The generation lives in PairingController and is not
+/// repeated here: this reads what that wrote, and only creates one if pairing
+/// never has.
+Future<String> displayDeviceId() async {
+  final prefs = await SharedPreferences.getInstance();
+  return PairingController.deviceIdFrom(prefs);
+}
+
+/// What this screen calls itself, as shown in the back office's device list.
+Future<String> displayDeviceName() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getString(_keyDeviceName)?.trim();
+    if (stored != null && stored.isNotEmpty) return stored;
+  } catch (_) {
+    // Fall through to the default, which is derived and always available.
+  }
+  return PairingController.defaultName();
+}
 final pairingProvider = AsyncNotifierProvider<PairingController, PairingState>(
   PairingController.new,
 );

@@ -1,0 +1,52 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; background: #f5f4f7; color: #17141c; font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif; -webkit-font-smoothing: antialiased; }
+    a { color: #17141c; }
+    a:hover { color: #000000; }
+    h1, h2, p { margin: 0; }
+  </style>
+</helmet>
+<div style="width: 1440px; height: 900px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); background: #ffffff;">
+
+  <!-- The form. One button, because there is one way in. -->
+  <div style="display: flex; align-items: center; justify-content: center; padding: 48px;">
+    <div style="width: 380px; display: flex; flex-direction: column; gap: 22px;">
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <svg width="44" height="44" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#17141c"></rect><path d="M20 18H48a4 4 0 0 1 4 4V42a4 4 0 0 1-4 4H20L10 32Z" fill="#a5c715"></path><circle cx="19" cy="32" r="2.6" fill="#17141c"></circle><g transform="translate(27 25) scale(0.2)" fill="#17141c"><path d="M0,0 L22.7,0 L50.7,49 L77.3,0 L100,0 L62,70 L40,70 Z"></path></g></svg>
+        <div style="display: flex; flex-direction: column;">
+          <span style="font-size: 20px; font-weight: 650; letter-spacing: -.01em;">Vesopa Gift</span>
+          <span style="font-size: 13px; color: #78717f;">Vouchers and tickets</span>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 18px;">
+        <h1 style="font-size: 28px; font-weight: 650; letter-spacing: -.01em;">Sign in</h1>
+        <p style="color: #78717f;">Manage your venue’s vouchers, tickets and orders.</p>
+      </div>
+      <a style="display: flex; align-items: center; justify-content: center; gap: 10px; height: 48px; border-radius: 9px; background: #a5c715; color: #10130a; font-weight: 600; font-size: 15px; text-decoration: none;">
+        <svg width="20" height="20" viewBox="0 0 20 20" style="border-radius: 5px;"><rect width="20" height="20" rx="5" fill="#ffffff"></rect><g transform="translate(3 5) scale(0.14)"><path fill="#a5c715" d="M0,0 L22.7,0 L50.7,49 L77.3,0 L100,0 L62,70 L40,70 Z"></path><path fill="#111111" d="M58.3,35 L81,35 L62,70 L40,70 L50.7,49 Z"></path></g></svg>
+        Continue with Vesopa
+      </a>
+      <p style="font-size: 13px; color: #78717f; text-wrap: pretty;">Only people who have been given access can sign in. If you should have it, ask whoever runs Vesopa Gift for your venue.</p>
+    </div>
+  </div>
+
+  <!-- The stage: what they are here to look after. -->
+  <div style="background: #f5f4f7; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden;">
+    <div style="position: relative; width: 520px; height: 420px;">
+      <div style="position: absolute; left: 10px; top: 30px; width: 320px; height: 202px; border-radius: 16px; overflow: hidden; box-shadow: 0 20px 40px rgba(20,18,26,.16); transform: rotate(-7deg);"><img src="card-winter.jpg" alt="" style="width: 100%; height: 100%; object-fit: cover;"></div>
+      <div style="position: absolute; right: 0; top: 0; width: 320px; height: 202px; border-radius: 16px; overflow: hidden; box-shadow: 0 20px 40px rgba(20,18,26,.16); transform: rotate(6deg);"><img src="card-thanks.jpg" alt="" style="width: 100%; height: 100%; object-fit: cover;"></div>
+      <div style="position: absolute; left: 90px; top: 170px; width: 340px; height: 214px; border-radius: 16px; overflow: hidden; box-shadow: 0 26px 50px rgba(20,18,26,.24);"><img src="card-celebration.jpg" alt="" style="width: 100%; height: 100%; object-fit: cover;"></div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

@@ -1,0 +1,118 @@
+/* ===========================================================================
+   Bangla.
+   ---------------------------------------------------------------------------
+   Loaded only on a Bangla page (views/partials/head.ejs), so an English
+   visitor pays nothing for it — not the 105 KB of font, and not one selector.
+
+   TWO THINGS THIS FILE EXISTS FOR
+   -------------------------------
+   1. A FONT THAT IS ACTUALLY THERE. Bengali has no system font on Windows
+      before Nirmala UI, none at all on most Linux, and a machine without one
+      draws every conjunct as an empty box. The page cannot be "mostly right"
+      in that state: it is unreadable. Noto Sans Bengali is self-hosted beside
+      this file rather than fetched from Google — one fewer third party in
+      front of a customer, and the privacy page has nobody new to name.
+
+   2. ROOM. Bengali sits on a headline stroke (মাত্রা) and hangs vowel signs
+      above and below it, so the same 16px that is comfortable in Latin clips
+      the ে-ৌ pair and crowds two lines into each other. Everything below is
+      that: a little more size, a lot more line-height, and looser letters
+      where a heading is set tight.
+   =========================================================================== */
+
+/* One variable file, weight 100–900, so a bold heading costs no second
+   download. `swap`: the Latin fallback is legible from the first paint and the
+   text never disappears while the font arrives — on Bengali a blank period is
+   worse than a reflow, because the fallback shows boxes, not words, and people
+   reload a page that looks broken. */
+@font-face {
+  font-family: 'Noto Sans Bengali';
+  src: url('/assets/fonts/noto-sans-bengali-wght.woff2') format('woff2-variations');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+  /* The Bengali block, its supplement, and the punctuation and digits that are
+     shared with Latin. Anything outside it keeps the Latin font, so an English
+     brand name in a Bangla sentence still looks like the rest of the site. */
+  unicode-range: U+0964-0965, U+0980-09FF, U+200B-200D, U+25CC, U+A8F1;
+}
+
+/* The Bengali face goes FIRST, so Bengali is drawn with it, and the Latin
+   stack stays behind it for every English word inside a Bangla sentence — a
+   domain name, a plan called Pro, "SSL". The unicode-range above is what makes
+   that split happen per character rather than per element. */
+:root {
+  --font-bn: 'Noto Sans Bengali', 'Hind Siliguri', 'Nirmala UI', 'Kohinoor Bangla', 'Shonar Bangla';
+  --font: var(--font-bn), -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif;
+}
+
+body {
+  /* Bengali counts as slightly smaller than Latin at the same em, and its
+     ascenders and descenders are taller. 16.5px and 1.75 is where a paragraph
+     of it reads at the same pace as the English page. */
+  font-size: 16.5px;
+  line-height: 1.75;
+}
+
+/* Headings are set tight in the English design (--headline line-heights near
+   1.05), which in Bengali cuts the vowel signs off the line above. Each one
+   gets the room its own size needs rather than one blanket rule, so the
+   typographic scale still looks deliberate. */
+h1, .h1, .hero-title { line-height: 1.3; letter-spacing: 0; }
+h2, .h2 { line-height: 1.35; letter-spacing: 0; }
+h3, .h3, h4, h5, h6 { line-height: 1.4; letter-spacing: 0; }
+
+/* Bengali has no case, so every uppercase trick in the design is either
+   invisible or actively harmful: `text-transform: uppercase` does nothing to
+   Bengali but does mangle the English words sitting inside the same label, and
+   the wide tracking that makes a Latin eyebrow look considered just pulls
+   Bengali conjuncts apart. Both are dropped. */
+.eyebrow, .tag, .pill, .badge, .kicker, .cur-pick-head, .nav-sheet-cur-label,
+.label, .form-label, th, .table th, .step-label {
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* Buttons and nav links are laid out for short English words. Bengali runs
+   longer — "Get started" is "শুরু করুন" — so they need the vertical room, and
+   nothing may be forced onto one line at a width where it does not fit. */
+.btn, .nav-link, .nav-sheet-link b {
+  letter-spacing: 0;
+  line-height: 1.5;
+}
+.btn { padding-top: .58em; padding-bottom: .58em; }
+
+/* Bengali does not hyphenate, and breaking a word between a consonant and its
+   dependent vowel is a spelling mistake rather than a line break. Let the
+   browser break between words only. */
+body, p, li, td, th, .btn, h1, h2, h3, h4 {
+  hyphens: none;
+  -webkit-hyphens: none;
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+
+/* A number, a price, a domain, a DNS record, an amount of disk: all of these
+   stay in the Latin font and Latin digits inside .mono, because a Bengali
+   numeral in a monospace table would neither line up nor be what somebody is
+   about to copy into a terminal. `t()` output is Bengali-numbered; this is the
+   deliberate exception. */
+.mono, code, pre, kbd, samp, input[type="password"], .fm-mono, .term {
+  font-family: var(--mono);
+  letter-spacing: 0;
+  line-height: 1.6;
+}
+
+/* The three places a fixed height was measured against a Latin cap-height and
+   now clips a মাত্রা: the nav bar's links, the pill in a table row, and the
+   small badge on a service card. Min-height rather than height, so nothing
+   moves on the English page's measurements. */
+.nav-link { min-height: 2.2em; height: auto; display: inline-flex; align-items: center; }
+.pill, .badge, .chip { min-height: 1.9em; height: auto; padding-top: .18em; padding-bottom: .18em; }
+
+/* Form fields: the same room, and a placeholder that is not cut off. */
+input, select, textarea, .input {
+  font-family: var(--font);
+  line-height: 1.6;
+}
+input::placeholder, textarea::placeholder { line-height: 1.6; }

@@ -1,0 +1,9 @@
+Version 1.8.0.0 - Stock control, and 33 more reports
+
+Two new keys under Functions. Paid Out records money taken out of the drawer that is not a refund - the window cleaner, a taxi - with who it went to and why, then opens the drawer; it shows on the Z report and the cash expected in the drawer comes down by it. Wastage records something dropped, spilled or sent back: find the product, say how many and why, and the back office takes it off the stock and costs it. Both follow the Paid Out and Wastage staff permissions.
+
+Refunds, no sales and paid outs now reach the back office, so there are Refunds, Expenses and Cashback reports there for the first time, and cashback given on a card payment is recorded with the payment.
+
+The back office gains a Stock Control section: stock levels with value at cost, suppliers, pack sizes such as a case of 24 or an 11 gallon keg, purchase orders with a suggested order from your minimums, deliveries booked in against them, wastage, adjustments, stock takes with a printable count sheet, and spot checks. Every change is kept in a stock ledger, and seven stock reports read it.
+
+The Reports page now offers 38 reports in four groups with a search box - department and sub department sales, payment types, tax, sales by time, clerk and table, covers, profit and GP summaries, weekly grids, sales comparison, clerk attendance and wage percentage among them - and any of them can be scheduled by email.

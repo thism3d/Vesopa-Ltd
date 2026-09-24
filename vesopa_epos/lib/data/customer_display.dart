@@ -35,18 +35,23 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 
 import 'local/database.dart';
+import 'terminal_identity.dart';
 
 /// The file's own version, so a newer till and an older display can recognise
 /// each other rather than mis-reading a shape that has changed.
 const customerDisplayFormat = 1;
 
-/// Where the file lives, under the till's own application support folder.
+/// The folder the till and the display meet in, under %PROGRAMDATA%\Vesopa.
 ///
-/// Named `display` rather than dropped beside the database on purpose: it is
-/// the one thing in that folder another program is meant to open, and a folder
-/// makes that obvious to whoever is looking at it during a support call.
+/// Named `display` because it is the one part of the till's data another
+/// program is meant to open, and a folder makes that obvious to whoever is
+/// looking at it during a support call.
 const customerDisplayFolder = 'display';
 const customerDisplayFile = 'basket.json';
+
+/// The root both applications can reach. Shared with the pairing handshake,
+/// which already meets here — see `display_pairing.dart`.
+const customerDisplayRootFolder = 'Vesopa';
 
 /// One line as the customer should read it.
 ///
@@ -60,6 +65,7 @@ class DisplayLine {
     required this.quantity,
     required this.totalMinor,
     this.isModifier = false,
+    this.allergens = const [],
   });
 
   final String name;
@@ -70,11 +76,26 @@ class DisplayLine {
   /// receipt panel.
   final bool isModifier;
 
+  /// What is in it, in the words a customer reads.
+  ///
+  /// WORDS, not codes, and that is the opposite of what everything else in
+  /// this system carries. The customer display is deliberately an offline
+  /// application: it reads a file this till writes and has no HTTP client at
+  /// all, so it cannot turn `tree_nuts` into "Tree nuts" and a screen facing a
+  /// customer must never show a database code. The till resolves them, from
+  /// the server's own list, and sends the result.
+  ///
+  /// Empty is not "contains none of the fourteen" — it is "nothing to say
+  /// here", which covers both an unanswered product and a till that has never
+  /// managed to read the list. The display words itself accordingly.
+  final List<String> allergens;
+
   Map<String, Object?> toJson() => {
     'name': name,
     'quantity': quantity,
     'total_minor': totalMinor,
     if (isModifier) 'modifier': true,
+    if (allergens.isNotEmpty) 'allergens': allergens,
   };
 }
 
@@ -82,6 +103,7 @@ class DisplayLine {
 class DisplaySnapshot {
   const DisplaySnapshot({
     required this.state,
+    this.notifyDisplay = false,
     this.lines = const [],
     this.subtotalMinor = 0,
     this.discountMinor = 0,
@@ -91,16 +113,27 @@ class DisplaySnapshot {
     this.changeMinor = 0,
     this.message,
     this.terminalName,
+    this.customerName,
+    this.customerPoints,
+    this.greeting,
   });
 
   /// A till with nothing rung up. The display shows adverts full screen for
   /// this, without waiting for its own idle timer — an empty basket is not
   /// something a customer needs to look at.
-  const DisplaySnapshot.idle({String? terminalName})
-    : this(state: 'idle', terminalName: terminalName);
+  const DisplaySnapshot.idle({String? terminalName, bool notifyDisplay = false})
+    : this(
+        state: 'idle',
+        terminalName: terminalName,
+        notifyDisplay: notifyDisplay,
+      );
 
   /// 'idle' | 'sale' | 'paid'
   final String state;
+
+  /// What the back office says about toasts on the customer display. Passed
+  /// through to the file for the display to read. See [toJson].
+  final bool notifyDisplay;
 
   final List<DisplayLine> lines;
   final int subtotalMinor;
@@ -119,6 +152,26 @@ class DisplaySnapshot {
 
   final String? terminalName;
 
+  /// Who is on this bill, and what they have saved up.
+  ///
+  /// Null when nobody is attached, which is most sales — and the display then
+  /// draws nothing at all rather than an empty greeting. Only a member the
+  /// clerk has actually put on the check appears here.
+  ///
+  /// The points are the balance as the till last synced it, not a live figure.
+  /// A customer looking at this screen has not earned this sale's points yet;
+  /// they are added when the bill settles.
+  final String? customerName;
+  final int? customerPoints;
+
+  /// What the venue says above the name -- "Welcome", "Croeso", whatever they
+  /// set in the back office.
+  ///
+  /// Travels in the basket rather than being configured on the display,
+  /// because a venue with four counters has four displays and a greeting typed
+  /// into each of them ends up different on all four.
+  final String? greeting;
+
   Map<String, Object?> toJson() => {
     'format': customerDisplayFormat,
     'updated_at': DateTime.now().toIso8601String(),
@@ -132,6 +185,33 @@ class DisplaySnapshot {
     'paid_minor': paidMinor,
     'change_minor': changeMinor,
     'message': message,
+    // Whether the venue lets its customer displays raise a Windows toast.
+    //
+    // Carried in the file because the display application has no network of
+    // its own — it reads what this till writes and nothing else — and the
+    // venue asked for one place in the back office that decides which
+    // notification goes where. Off by default; see
+    // schema_till_notifications.sql for why a screen facing a queue is the one
+    // surface that should not interrupt anybody.
+    'notify_display': notifyDisplay,
+    /*
+     * The member on this bill.
+     *
+     * ADDITIVE, AND `format` DELIBERATELY DOES NOT MOVE.
+     *
+     * A venue updates its tills and its customer displays on the Store's own
+     * schedule, which means both mismatches happen: a new till writing for an
+     * old display, and an old till writing for a new one. An old display
+     * ignores keys it has never heard of, and a new display draws nothing when
+     * they are absent — so both directions are the screen the venue had
+     * yesterday rather than a screen that will not draw.
+     *
+     * Bumping `format` would have been the other choice and it breaks the
+     * first of those two: the old display checks the version.
+     */
+    'customer_name': customerName,
+    'customer_points': customerPoints,
+    'greeting': greeting,
   };
 
   /// Whether two snapshots would draw the same screen.
@@ -149,6 +229,13 @@ class DisplaySnapshot {
       paidMinor == other.paidMinor &&
       changeMinor == other.changeMinor &&
       message == other.message &&
+      // A customer attached or taken off changes the screen, so it has to
+      // count as a change. Without this the display would keep showing the
+      // last member's name after the clerk removed them — the write is skipped
+      // when nothing "visible" moved, and this is visible.
+      customerName == other.customerName &&
+      customerPoints == other.customerPoints &&
+      greeting == other.greeting &&
       lines.length == other.lines.length &&
       () {
         for (var i = 0; i < lines.length; i++) {
@@ -171,6 +258,40 @@ class DisplaySnapshot {
 ///   * `settings.json` — the till writes, the display reads. How to show it.
 ///   * `status.json`   — the display writes, the till reads. What it is doing.
 ///
+/// WHY THIS MOVED OUT OF THE TILL'S OWN DATA FOLDER
+///
+/// It used to be `getApplicationSupportDirectory()/display`, and the display was
+/// handed that path by the pairing grant. On a machine where both are installed
+/// from the Store that path is a lie the moment it crosses the counter: an MSIX
+/// package's AppData is virtualised into its own package container, so the till
+/// writes to a folder only the till can see. The display would pair — the
+/// handshake is in ProgramData and works — and then follow a basket file that
+/// never changed, showing adverts with "Waiting for the till" in the corner. A
+/// venue reported exactly that on three terminals.
+///
+/// Handing over the path could not fix it, because the problem was never that
+/// the display did not know the path. It was that the file was somewhere the
+/// display is not allowed to look.
+///
+/// So the data moves to where the handshake already is. ProgramData is not
+/// redirected and is reachable by both packages with no shared identity and no
+/// capability declared on either side — which the pairing folder has been
+/// demonstrating for as long as pairing has worked.
+///
+/// PER TILL, NOT PER MACHINE
+///
+/// The path carries the terminal's device id. ProgramData is one folder for the
+/// whole machine, and a venue that runs two tills on one PC would otherwise
+/// have both writing one basket.json — two counters' baskets in one file, each
+/// overwriting the other several times a second. The pairing grant names the
+/// full path, so a display follows its own till and no other.
+///
+/// MOVING IS AUTOMATIC
+///
+/// A display already paired keeps the old path only until the till next starts:
+/// `refreshGrants` rewrites every grant with wherever the till writes *today*,
+/// which is what that function is for. Nobody re-pairs anything.
+///
 /// Created if it is not there, so the till's settings screen can configure a
 /// display that has not been installed yet — which is the order these things
 /// actually happen in on install day.
@@ -179,17 +300,70 @@ class DisplaySnapshot {
 /// treats that as "no customer display", which is the truth.
 Future<Directory?> customerDisplayDirectory({Directory? override}) async {
   try {
-    final base =
-        override ??
-        await getApplicationSupportDirectory().timeout(
-          const Duration(seconds: 5),
-        );
+    if (override != null) {
+      final folder = Directory('${override.path}/$customerDisplayFolder');
+      await folder.create(recursive: true);
+      return folder;
+    }
+
+    final shared = await _sharedDisplayDirectory();
+    if (shared != null) return shared;
+
+    // Not Windows, or a Windows with no ProgramData — neither of which is a
+    // machine a customer display is plugged into. The till's own folder still
+    // works for everything on this side of the boundary, and a display that
+    // cannot reach it was never going to reach anything.
+    final base = await getApplicationSupportDirectory().timeout(
+      const Duration(seconds: 5),
+    );
     final folder = Directory('${base.path}/$customerDisplayFolder');
     await folder.create(recursive: true);
     return folder;
   } catch (_) {
     return null;
   }
+}
+
+/// Where this till publishes, as a path: no disk touched and nothing created.
+///
+/// Separate from the directory below so that it can be asserted on. A test that
+/// had to call the real thing would create `C:\ProgramData\Vesopa\display\...`
+/// on whatever machine ran it, and a suite that leaves folders behind on the
+/// build agent is one nobody runs twice.
+///
+/// [programData] is the machine's ProgramData root and [deviceId] the
+/// terminal's permanent id. Null off Windows and null where ProgramData is
+/// unknown — both of which fall back to the till's own folder rather than
+/// failing.
+String? sharedDisplayPath({
+  required String? programData,
+  required String deviceId,
+  bool windows = true,
+}) {
+  if (!windows) return null;
+  if (programData == null || programData.isEmpty) return null;
+  if (deviceId.trim().isEmpty) return null;
+
+  const sep = r'\';
+  return '$programData$sep$customerDisplayRootFolder$sep'
+      '$customerDisplayFolder$sep${deviceId.trim()}';
+}
+
+/// `%PROGRAMDATA%\Vesopa\display\<terminal device id>`, created.
+Future<Directory?> _sharedDisplayDirectory() async {
+  // The id is a preferences read that has already happened by the time any
+  // basket is published — the shell resolves it on start — so this is a cache
+  // hit in practice rather than a disk seek per bill.
+  final path = sharedDisplayPath(
+    programData: Platform.environment['PROGRAMDATA'],
+    deviceId: await terminalDeviceId(),
+    windows: Platform.isWindows,
+  );
+  if (path == null) return null;
+
+  final folder = Directory(path);
+  await folder.create(recursive: true);
+  return folder;
 }
 
 /// Where the till leaves a note saying where it writes.
@@ -324,10 +498,52 @@ class CustomerDisplayFeed {
   /// and on a till whose data folder could not be opened.
   File? get file => _file;
 
+  /// How long a finished sale is held on screen before anything may clear it.
+  ///
+  /// Set from the venue's customer-display settings. Zero holds it until the
+  /// next sale; the display's own timer is what eventually takes it down.
+  Duration thankYouHold = const Duration(seconds: 20);
+
+  /// When the last `paid` snapshot went out, or null if the last thing
+  /// published was not one.
+  DateTime? _paidAt;
+
+  /// Whether a finished sale is still inside its hold.
+  bool get _holdingThankYou {
+    final at = _paidAt;
+    if (at == null) return false;
+    // Zero means hold until something replaces it.
+    if (thankYouHold <= Duration.zero) return true;
+    return DateTime.now().difference(at) < thankYouHold;
+  }
+
   /// Write [snapshot], unless it would draw the same screen as the last one.
+  ///
+  /// A FINISHED SALE IS NOT CLEARED BY THE NEXT EMPTY BILL
+  ///
+  /// This is the whole reason the thank-you hold appeared to do nothing. The
+  /// display's rule was right and never got the chance to run: the moment a
+  /// sale settled, the till published `paid`, closed the change window, called
+  /// [clear], and then started a new empty bill which published `idle` on top
+  /// of that. The screen went to adverts before the display had drawn anything.
+  ///
+  /// So the *publisher* holds. Inside the window, an `idle` is dropped — a new
+  /// empty bill is not news to a customer who is still looking at their change.
+  /// A real sale is published at once and cancels the hold, which is exactly
+  /// what the venue asked for: "if the till is used before 20 seconds it will
+  /// show the new transaction".
+  ///
+  /// Held here rather than in the display because this is the thing that owns
+  /// the file. A display second-guessing what it has been told would be a
+  /// second rule to keep in step with this one.
   Future<void> publish(DisplaySnapshot snapshot) async {
+    if (snapshot.state == 'idle' && _holdingThankYou) return;
+
     final previous = _last;
     if (previous != null && snapshot.sameAs(previous)) return;
+
+    // Recorded before the write, so a slow disk cannot shorten the hold.
+    _paidAt = snapshot.state == 'paid' ? DateTime.now() : null;
 
     await _resolve();
     final file = _file;
@@ -347,8 +563,15 @@ class CustomerDisplayFeed {
 
   /// Put the display back to adverts. Called when a sale is finished with, and
   /// when the till shuts down.
-  Future<void> clear({String? terminalName}) =>
-      publish(DisplaySnapshot.idle(terminalName: terminalName));
+  ///
+  /// Honours the thank-you hold, so the change window closing does not wipe the
+  /// screen the customer is reading their change off. [force] is for the till
+  /// shutting down, where there is no next sale to wait for and the last bill
+  /// of the night must not be left up.
+  Future<void> clear({String? terminalName, bool force = false}) {
+    if (force) _paidAt = null;
+    return publish(DisplaySnapshot.idle(terminalName: terminalName));
+  }
 }
 
 /// Build a snapshot from what the sale screen is holding.
@@ -357,21 +580,54 @@ class CustomerDisplayFeed {
 /// row carries forty columns this screen has no business knowing about — a
 /// clerk's PIN among them — and naming the four it does need is what keeps a
 /// change to the schema from quietly altering what a customer is shown.
+/// [paidMinor] and [changeMinor] make it a *finished* sale rather than a live
+/// one — the items stay on screen, with what was handed over and what is coming
+/// back underneath, and the venue's thank-you under that.
+///
+/// The items matter. A `paid` snapshot with no lines is not a sale as far as
+/// the display is concerned (`Basket.hasSale` wants a state and some items), so
+/// one sent without them is thrown away by the very rule meant to hold it up —
+/// which is exactly what used to happen, and why the thank-you never appeared.
 DisplaySnapshot snapshotFor({
   required List<OrderLine> lines,
+  bool notifyDisplay = false,
+  /// PLU to the allergens declared for it, already in the words a customer
+  /// reads. See [DisplayLine.allergens] for why they are resolved on this side.
+  ///
+  /// Passed in rather than looked up here so this stays a pure function of
+  /// what it is given — it is driven directly by the display tests, and a
+  /// database read inside it would mean standing one up for every case.
+  Map<int, List<String>> allergensByPlu = const {},
   int subtotalMinor = 0,
   int discountMinor = 0,
   int taxMinor = 0,
   int totalMinor = 0,
+  int paidMinor = 0,
+  int changeMinor = 0,
+  bool paid = false,
   String? terminalName,
   String? message,
+  String? customerName,
+  int? customerPoints,
+  String? greeting,
 }) {
-  if (lines.isEmpty) return DisplaySnapshot.idle(terminalName: terminalName);
+  if (lines.isEmpty) {
+    return DisplaySnapshot.idle(
+      terminalName: terminalName,
+      notifyDisplay: notifyDisplay,
+    );
+  }
 
   return DisplaySnapshot(
-    state: 'sale',
+    state: paid ? 'paid' : 'sale',
+    notifyDisplay: notifyDisplay,
+    paidMinor: paidMinor,
+    changeMinor: changeMinor,
     terminalName: terminalName,
     message: message,
+    customerName: customerName,
+    customerPoints: customerPoints,
+    greeting: greeting,
     lines: [
       for (final line in lines)
         DisplayLine(
@@ -387,6 +643,7 @@ DisplaySnapshot snapshotFor({
           // gin. The display indents those under the item they belong to, the
           // same way the till's own check does.
           isModifier: line.parentLineId != null,
+          allergens: allergensByPlu[line.pluId] ?? const [],
         ),
     ],
     subtotalMinor: subtotalMinor,

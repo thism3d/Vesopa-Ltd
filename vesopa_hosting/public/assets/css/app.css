@@ -588,6 +588,57 @@ ul, ol { margin: 0 0 1em; padding-left: 1.15em; }
 }
 .nav-actions { display: flex; align-items: center; gap: 9px; flex: none; }
 
+/* ---- Language switcher -------------------------------------------------- */
+/* THE OTHER LANGUAGE, not a segmented control showing both.
+
+   It was a two-segment toggle, and it was measured 36px off the right edge of
+   a 1440px window: this bar was already full — in English it wanted 1195px
+   inside an 1180px wrap — and the toggle added 86px to it. One link is about
+   half that, and it says the same thing, because the language you are reading
+   is the page you are on.
+
+   Below 1400px even one link does not fit, and it comes out of the bar. The
+   same choice is in the currency menu next to it, in the phone sheet and in
+   the footer, so it is never the only way through. */
+.lang-pick { display: flex; flex: none; align-items: center; }
+.lang-opt {
+  padding: 6px 9px; border-radius: 9px;
+  font-size: .8rem; font-weight: 700; line-height: 1.2;
+  color: var(--ink-2); text-decoration: none; white-space: nowrap;
+  border: 1px solid var(--rule); background: #fff;
+  transition: color .18s var(--ease), border-color .18s var(--ease);
+}
+.lang-opt + .lang-opt { margin-left: 5px; }
+.lang-opt:hover { color: var(--ink); border-color: var(--ink-3); text-decoration: none; }
+
+.nav-over .lang-opt {
+  color: rgba(255, 255, 255, .8);
+  background: rgba(255, 255, 255, .1);
+  border-color: rgba(255, 255, 255, .18);
+}
+.nav-over .lang-opt:hover { color: #fff; border-color: rgba(255, 255, 255, .4); }
+.nav-over.is-stuck .lang-opt { color: var(--ink-2); background: #fff; border-color: var(--rule); }
+.nav-over.is-stuck .lang-opt:hover { color: var(--ink); border-color: var(--ink-3); }
+
+/* The width where the row runs out, measured rather than guessed.
+
+   English is the long one — seven nav labels, three buttons — and with this
+   link its last button ends at 1452px in a 1440px window and 1482px in a
+   1500px one. So it shows from 1500 up and comes out below that. 1400 was
+   tried first and still clipped "Get started" by 12px in English, which is
+   why the number is where it is. */
+@media (max-width: 1499px) { .lang-pick { display: none; } }
+
+/* The language section inside the currency menu. */
+.cur-pick-head-2 { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--rule-soft); }
+
+/* In the footer it is a list like every other column, but the current language
+   is marked — otherwise the only way to know which one you are reading is to
+   read it. */
+.footer-lang-head { margin-top: 22px; }
+.footer-langs .is-active { font-weight: 700; opacity: 1; }
+.footer-langs .is-active::before { content: '✓'; margin-right: 6px; opacity: .8; }
+
 /* ---- Currency switcher ------------------------------------------------- */
 /* A <details> disclosure rather than a JS dropdown: it opens, closes, traps
    nothing, and works with scripting off. The only JavaScript anywhere near it
@@ -812,12 +863,16 @@ body.nav-open .nav-sheet-foot {
 /* Just above the breakpoint the switcher shows its symbol only. Thirty-eight
    pixels back, at the widths where thirty-eight pixels is the difference
    between fitting and not. */
-@media (max-width: 1240px) and (min-width: 1141px) {
+/* Seven links since "Site builder" joined: between the phone sheet and a wide
+   screen the row tightens rather than pushing "Get started" off the edge
+   (it was cut off at 1280px the moment the link was added). */
+@media (max-width: 1380px) and (min-width: 1181px) {
   .cur-pick > summary { padding: 7px 8px; }
   .cur-pick > summary .cur-pick-code { display: none; }
+  .nav-link { padding: 8px 8px; font-size: .89rem; }
 }
 
-@media (max-width: 1140px) {
+@media (max-width: 1180px) {
   .nav-toggle { display: grid; }
   .nav-links, .nav-actions { display: none; }
   .nav-inner { gap: 14px; }
@@ -825,7 +880,7 @@ body.nav-open .nav-sheet-foot {
 
 /* Tablet: the sheet has room for two columns, so it uses them rather than
    leaving a single 700px-wide list stranded in the middle of the screen. */
-@media (min-width: 620px) and (max-width: 1140px) {
+@media (min-width: 620px) and (max-width: 1180px) {
   .nav-sheet-links { grid-template-columns: 1fr 1fr; gap: 8px; }
   .nav-sheet-cta { grid-template-columns: 1fr 1fr; }
   .nav-sheet-foot { padding-top: 28px; }
@@ -1444,7 +1499,102 @@ body.nav-open .nav-sheet-foot {
   border: 2.5px solid rgba(255, 255, 255, .3); border-top-color: currentColor;
   animation: spin .7s linear infinite;
 }
-@keyframes spin { to { transform: rotate(360deg); } }
+/* BOTH ENDS DECLARED, and the `from` is doing real work.
+   A keyframe set with only a `to` interpolates from the element's own computed
+   transform — which on a `.btn` pseudo-element is the hover sheen's
+   `translateX(-120%)`. So the spinner interpolated from "19px to the left" to
+   "rotated 360°", i.e. it slid across the button while turning. Measured on the
+   live sign-in button: `transform: matrix(1, 0, 0, 1, -19.2, 0)`. */
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+/* ---- The busy button ----------------------------------------------------
+   ONE TREATMENT FOR THE WHOLE PRODUCT, defined here rather than in panel.css
+   because data-guard forms exist on the public checkout too — where panel.css
+   is not loaded, so the class was being added with nothing to style it.
+
+   The label is hidden and a spinner is drawn CENTRED OVER THE BUTTON, which is
+   why the width is pinned in JS before the class goes on: `color: transparent`
+   collapses nothing, but a button whose text is hidden and whose padding is
+   unchanged still needs its measured width held or it jumps.
+
+   `!important` on the colour is doing real work — it has to beat `.btn`'s own
+   `--btn-fg` colour, which is set on the element.
+   ------------------------------------------------------------------------ */
+.is-working {
+  position: relative;
+  color: transparent !important;
+  pointer-events: none;
+  /* An icon inside the label would otherwise keep its own fill and sit there
+     next to the spinner. */
+  --icon-hidden: 1;
+}
+.is-working > * { visibility: hidden; }
+
+/* ---- The spinner, on ::after, WHICH `.btn` ALREADY OWNS -----------------
+   `.btn::after` is the decorative hover sheen, and it and this rule are the
+   same pseudo-element on the same element with the same specificity. The later
+   rule wins property by property — so everything the sheen declares and this
+   does not was still applying to the spinner. Three of them mattered, all
+   measured on the live site on 2026-09-08:
+
+     transform      translateX(-120%) — the spinner sat 19px left of centre and,
+                    because @keyframes spin had no `from`, animated FROM there
+                    to rotate(360deg). It slid across the button.
+     background     the sheen's white diagonal gradient, painted inside the
+                    16px ring.
+     display: none  from `.btn-ghost::after`, which switches the sheen off on
+                    ghost buttons. The label is transparent and the spinner was
+                    not drawn at all, so EVERY ghost button in the panel went
+                    completely blank the moment it was pressed. That is the
+                    "loading shows a wrong UI" report.
+
+   So every one of them is re-stated here rather than left to inheritance, and
+   the display is re-stated again at `.btn.is-working::after` so it beats
+   `.btn-ghost::after` on specificity rather than on source order.
+   ------------------------------------------------------------------------ */
+.is-working::after {
+  content: '';
+  display: block;
+  position: absolute; inset: 0; margin: auto;
+  width: 16px; height: 16px; border-radius: 999px;
+  border: 2px solid currentColor; border-top-color: transparent;
+  background: none;
+  transform: none;
+  transition: none;
+  opacity: 1;
+  color: var(--ink-2);
+  animation: spin .7s linear infinite;
+  /* ::after inherits `color: transparent` from the rule above unless it is
+     re-stated, which is precisely how the spinner came to be invisible. */
+}
+.btn.is-working::after,
+.btn-ghost.is-working::after { display: block; transform: none; background: none; }
+.btn.is-working::after { color: var(--on-lime); }
+.btn-ghost.is-working::after,
+.btn-light.is-working::after { color: var(--ink); }
+.btn-dark.is-working::after { color: #fff; }
+
+/* ---- Why there is no busy LABEL, only a spinner --------------------------
+   `data-busy="Saving…"` sits on some ninety buttons and nothing reads it. It is
+   tempting to draw it with `content: attr(data-busy)` — app.js's comment used
+   to claim that is what happens — and it does not work, for a reason worth
+   writing down so it is not tried a third time.
+
+   A pseudo-element is out of flow, so it cannot make the button wider. The busy
+   word is nearly always LONGER than the label it replaces ("Save" -> "Saving…",
+   "Add it" -> "Adding…"), `.btn` sets `overflow: hidden`, and the JS pins
+   min-width to the measured width — a floor, not a ceiling, but nothing pushes
+   past it. So the text clips on every small button.
+
+   Putting it back in flow means replacing the button's innerHTML, which is
+   exactly what the version before last did: it fought with `.is-working`, hid
+   its own spinner, and produced the unreadable button described in app.js. A
+   centred spinner on a button that keeps its size is the treatment that works.
+   ------------------------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  .is-working::after { animation: spin 1.6s linear infinite; }
+}
 
 /* ---- The busy button ----------------------------------------------------
    ONE TREATMENT FOR THE WHOLE PRODUCT, defined here rather than in panel.css
@@ -1674,3 +1824,239 @@ body.nav-open .nav-sheet-foot {
   white-space: nowrap;
   border: 0;
 }
+
+/* ---- The loading bar ------------------------------------------------------
+   One line across the top, the same one auth.vesopa.com draws, started by a
+   three-line script in the <head> before first paint and driven afterwards by
+   loadbar.js and nav.js. It is the ONLY "wait" on the site: the no-reload
+   router means the browser's own spinner never has anything to show. */
+#loadbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 3px;
+  width: 0;
+  z-index: 1000;
+  background: linear-gradient(90deg, var(--lime), var(--lime-ink));
+  box-shadow: 0 0 8px rgba(165, 199, 21, .6);
+  opacity: 0;
+  transition: width .2s ease, opacity .25s ease;
+  pointer-events: none;
+  border-radius: 0 2px 2px 0;
+}
+#loadbar.on { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  #loadbar { transition: opacity .25s ease; }
+}
+
+/* ---- Continue with Vesopa -------------------------------------------------
+   partials/vesopa-button.ejs. The mark is a white tile so it reads the same on
+   every button colour; the ghost version in the header shows a bordered tile
+   so it does not vanish into the page. */
+.btn-vesopa { gap: 10px; }
+.btn-vesopa-mark { flex: 0 0 auto; border-radius: 5px; box-shadow: 0 0 0 1px rgba(17, 17, 17, .08); }
+.btn-ghost .btn-vesopa-mark { box-shadow: 0 0 0 1px rgba(17, 17, 17, .14); }
+.btn-sm.btn-vesopa .btn-vesopa-mark { width: 16px; height: 16px; }
+.auth-switch { margin: 12px 0 0; text-align: center; font-size: .87rem; }
+.auth-switch a { color: var(--ink-3); }
+
+/* ---------------------------------------------------------------------------
+   The Bangla offer: shown once to a visitor whose address places them in
+   Bangladesh (views/partials/bangla-offer.ejs).
+
+   It sits at the bottom rather than the top on purpose. A bar that pushes the
+   page down the moment it loads moves what somebody was already reading, and
+   on a phone the top of the screen is where the address bar and the site's own
+   header already are. The bottom is reachable with a thumb and interrupts
+   nothing.
+
+   `hidden` comes off in app.js only when the choice has not been made before,
+   so a visitor who has answered never sees it again.
+   --------------------------------------------------------------------------- */
+.lang-offer {
+  position: fixed;
+  left: 50%;
+  /* Clear of the assistant, which lives bottom-right and opens a bubble
+     leftwards: centred at this width the two overlapped and the "Keep English"
+     button ended up underneath it. */
+  bottom: calc(96px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 60;
+  width: min(560px, calc(100vw - 32px));
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-2);
+  animation: lang-offer-in .28s ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lang-offer { animation: none; }
+}
+@keyframes lang-offer-in {
+  from { opacity: 0; transform: translate(-50%, 12px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+.lang-offer-inner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+}
+.lang-offer-text {
+  margin: 0;
+  flex: 1 1 14rem;
+  line-height: 1.45;
+}
+/* The Bangla asks the question and the English explains it, so somebody who
+   reads only one of them still understands the choice. */
+.lang-offer-bn { display: block; font-weight: 600; color: var(--ink); }
+.lang-offer-en { display: block; font-size: .92rem; color: var(--ink-3); }
+.lang-offer-actions {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+/* Below ~430px the two buttons and the text will not share a line without the
+   words wrapping to four; the actions take their own row and fill it. */
+@media (max-width: 430px) {
+  .lang-offer-actions { flex: 1 1 100%; }
+  .lang-offer-actions .btn { flex: 1 1 0; justify-content: center; }
+}
+/* On a wide screen there is room to move out of the assistant's way entirely
+   rather than just sitting above it. */
+@media (min-width: 1024px) {
+  .lang-offer {
+    left: 24px;
+    transform: none;
+    bottom: max(24px, env(safe-area-inset-bottom, 0px));
+  }
+  @keyframes lang-offer-in-left {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: none; }
+  }
+  .lang-offer { animation-name: lang-offer-in-left; }
+}
+
+/* ---------------------------------------------------------------------------
+   Offer cards (/offers).
+
+   The discount is the headline and the code is the thing to act on, so those
+   two are the only elements given weight; the conditions underneath are
+   deliberately quiet, because their job is to be true rather than to sell.
+   --------------------------------------------------------------------------- */
+/* The leading offer, given the width to be worth reading. Text on the left,
+   its drawing on the right, and on a narrow screen the drawing goes first --
+   it is what stops the page reading as a wall of conditions. */
+.offer-feature {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, .92fr);
+  align-items: center;
+  gap: clamp(20px, 4vw, 56px);
+  padding: clamp(22px, 3.4vw, 44px);
+  background: linear-gradient(135deg, var(--lime-soft) 0%, var(--bg) 62%);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
+}
+.offer-feature-quiet { background: var(--bg-2); }
+.offer-feature-h {
+  margin: 0 0 10px;
+  font-size: clamp(1.5rem, 3vw, 2.1rem);
+  line-height: 1.15;
+  letter-spacing: -.02em;
+}
+.offer-feature-lede { margin: 0 0 18px; max-width: 46ch; }
+.offer-feature-cta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+.offer-feature-art { min-width: 0; }
+.offer-feature-art img { display: block; width: 100%; height: auto; }
+
+@media (max-width: 820px) {
+  .offer-feature { grid-template-columns: 1fr; gap: 18px; }
+  /* The picture first on a phone: it is the reason to keep reading. */
+  .offer-feature-art { order: -1; }
+  .offer-feature-art img { max-width: 420px; margin: 0 auto; }
+}
+
+.offer-card { display: flex; flex-direction: column; }
+/* A band of the same drawing across the top of each smaller card, cropped so
+   the tag reads at this size rather than the whole scene shrinking to nothing. */
+.offer-card-art {
+  margin: -20px -20px 14px;
+  height: 116px;
+  overflow: hidden;
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: var(--lime-soft);
+}
+.offer-card-art img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 62% 46%;
+}
+.offer-paymark { display: block; max-width: 160px; height: 28px; object-fit: contain; object-position: left center; }
+.offer-amount {
+  margin: 0 0 6px;
+  font-size: clamp(2rem, 4vw, 2.6rem);
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: -.02em;
+  color: var(--lime-ink);
+}
+.offer-amount span {
+  font-size: .95rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--ink-3);
+}
+.offer-code {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 14px 0;
+}
+.offer-code-label {
+  font-size: .82rem;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--ink-3);
+}
+/* A button, not a span: it copies, so it must be reachable by keyboard and
+   announced as something that does a thing. */
+.offer-code-value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: .06em;
+  color: var(--lime-deep);
+  background: var(--lime-soft);
+  border: 1px dashed var(--lime-ink);
+  border-radius: var(--radius-sm);
+  padding: 7px 12px;
+  cursor: pointer;
+}
+.offer-code-value:hover { background: #e7f2c4; }
+.offer-code-value:focus-visible { outline: 2px solid var(--lime-ink); outline-offset: 2px; }
+.offer-terms {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.offer-terms li { padding-left: 16px; position: relative; }
+.offer-terms li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: .55em;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--rule);
+}
+/* The button sits on the floor of the card so a row of cards of different
+   heights still lines its actions up. */
+.offer-card .btn-block { margin-top: auto; }

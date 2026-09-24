@@ -14,6 +14,8 @@
  */
 
 const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
 const express = require('express');
 const jwt = require('jsonwebtoken');
 
@@ -643,6 +645,84 @@ async function check(name, fn) {
     assert.match(res.body.error, /bottombar/);
   });
 
+  await check('the keys the venue asked for are on offer', async () => {
+    const bar = functionKeysFor('bottombar');
+    const grid = functionKeysFor('sale');
+
+    // Four requests, each described as "added to the top and bottom bars if a
+    // customer requests it".
+    for (const key of [
+      'table_plan',
+      'price_check',
+      'product_search',
+      'price_override',
+    ]) {
+      assert.ok(bar.includes(key), `${key} is not offered on a bar`);
+    }
+
+    // Three of them are equally sale-grid keys: a venue running one screen
+    // with no bars at all would otherwise be unable to reach any of them.
+    for (const key of ['price_check', 'product_search', 'price_override']) {
+      assert.ok(grid.includes(key), `${key} is not offered on the sale grid`);
+    }
+
+    // table_plan leaves the sale screen, and the grid list carries no
+    // navigation — which is the same reason go_* is absent from it.
+    assert.ok(!grid.includes('table_plan'), 'the grid took a navigation key');
+
+    // Already there, and the venue asked for it: "can the functions page have a
+    // function setup so it can be added to the top and bottom bars".
+    assert.ok(bar.includes('go_functions'), 'Functions cannot be put on a bar');
+  });
+
+  await check('every key the server accepts has a name in the back office',
+    async () => {
+      // These two lists are edited in different files and drift silently: a key
+      // the server accepts with no label in the editor is a key a manager can
+      // never place, and nothing fails to tell them so.
+      //
+      // Checked *per surface*, not "labelled somewhere in the file". The first
+      // version of this test sliced every ['key', 'Label'] pair out of the
+      // whole editor and passed happily when the bar labels were deleted —
+      // because the same two keys were still labelled in the sale-grid list.
+      // A test that cannot fail is worse than no test, so the two lists are
+      // read separately.
+      const editor = fs.readFileSync(
+        path.join(__dirname, '..', 'public', 'screens.js'),
+        'utf8'
+      );
+
+      /** The keys inside one `const NAME = [ … ];` block. */
+      const keysIn = (name) => {
+        const at = editor.indexOf(`const ${name} = [`);
+        assert.notStrictEqual(at, -1, `${name} is gone from the editor`);
+        // `];` and not a newline-anchored marker, because no entry inside
+        // a block ends that way: the rows end `],` and the groups `]],`.
+        const close = editor.indexOf('];', at);
+        assert.notStrictEqual(close, -1, `${name} is not terminated`);
+        const block = editor.slice(at, close);
+        return new Set(
+          [...block.matchAll(/\['([a-z_]+)',\s*'/g)].map((m) => m[1])
+        );
+      };
+
+      const gridLabels = keysIn('SP_FUNCTIONS');
+      const barLabels = keysIn('SP_BAR_GROUPS');
+
+      assert.deepStrictEqual(
+        functionKeysFor('sale').filter((k) => !gridLabels.has(k)),
+        [],
+        'sale-grid keys with no label in the editor'
+      );
+      for (const surface of ['topbar', 'bottombar']) {
+        assert.deepStrictEqual(
+          functionKeysFor(surface).filter((k) => !barLabels.has(k)),
+          [],
+          `${surface} keys with no label in the editor`
+        );
+      }
+    });
+
   // -------------------------------------------------------------------------
   // What the tills wear
   // -------------------------------------------------------------------------
@@ -727,6 +807,61 @@ async function check(name, fn) {
     assert.strictEqual(res.status, 404);
   });
 
+  await check('the payment screen wears its own bars', async () => {
+    // Its own pair, not the sale screen's. A sale bar carries Void, Save Table
+    // and Covers, and none of those mean anything once the bill is being
+    // settled — so a venue that arranges one for the payment screen must be
+    // able to arrange a different one.
+    const pool = fakePool([OFFICE, BAR]);
+    const server = await listen(appWith(pool));
+    const res = await call(server, 'PUT', '/api/screens/defaults', {
+      token: sessionToken,
+      body: { payBottomBarScreenId: 9 },
+    });
+    server.close();
+
+    assert.strictEqual(res.status, 200);
+    const write = pool.asked.find((a) =>
+      a.sql.includes('INSERT INTO epos_till_settings')
+    );
+    assert.ok(
+      write.sql.includes('pay_bottom_bar_screen_id'),
+      'the payment bottom bar was never written'
+    );
+    assert.deepStrictEqual(write.params, ['venue@example.com', 9]);
+  });
+
+  await check('the payment bars are held to the same surfaces', async () => {
+    // The check is per slot now rather than per surface, and this is what
+    // proves the table did not lose the surface each slot demands.
+    const pool = fakePool([OFFICE, SCREEN]);
+    const server = await listen(appWith(pool));
+    const res = await call(server, 'PUT', '/api/screens/defaults', {
+      token: sessionToken,
+      body: { payTopBarScreenId: 3 },
+    });
+    server.close();
+
+    assert.strictEqual(res.status, 400);
+    assert.match(res.body.error, /not a topbar one/);
+  });
+
+  await check('the sale bars and the payment bars are set independently',
+    async () => {
+      const pool = fakePool([OFFICE, BAR]);
+      const server = await listen(appWith(pool));
+      await call(server, 'PUT', '/api/screens/defaults', {
+        token: sessionToken,
+        body: { bottomBarScreenId: 9, payBottomBarScreenId: null },
+      });
+      server.close();
+
+      const write = pool.asked.find((a) =>
+        a.sql.includes('INSERT INTO epos_till_settings')
+      );
+      assert.deepStrictEqual(write.params, ['venue@example.com', 9, null]);
+    });
+
   await check('a deleted bar stops being worn', async () => {
     // Without this a venue that deletes the bar it was wearing gets tills
     // pointing at a row that is not there — and no foreign key to catch it,
@@ -741,6 +876,13 @@ async function check(name, fn) {
       a.sql.includes('top_bar_screen_id = IF')
     );
     assert.strictEqual(cleared.length, 1, 'the tills still wear a deleted bar');
+    // And on the payment screen. A bar released from the sale screen but left
+    // attached to the payment screen is a till drawing a row that is gone.
+    assert.ok(
+      cleared[0].sql.includes('pay_top_bar_screen_id = IF') &&
+        cleared[0].sql.includes('pay_bottom_bar_screen_id = IF'),
+      'the payment screen still wears a deleted bar'
+    );
     const pages = pool.asked.filter((a) => a.sql.includes('top_bar_id = IF'));
     assert.strictEqual(pages.length, 1, 'a page still asks for a deleted bar');
   });

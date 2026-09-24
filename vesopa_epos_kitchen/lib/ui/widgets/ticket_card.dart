@@ -39,6 +39,7 @@ class TicketCard extends StatefulWidget {
     this.onDetails,
     this.onRush,
     this.onLineMade,
+    this.allergenLabels = const {},
   });
 
   final Ticket ticket;
@@ -60,6 +61,13 @@ class TicketCard extends StatefulWidget {
   /// Cross one item off, or put it back. Null on the Completed tab, where the
   /// work is already done and the only useful action is recall.
   final void Function(TicketLine line, bool made)? onLineMade;
+
+  /// Allergen codes to the words a person reads, from the venue's own server.
+  ///
+  /// Passed down rather than looked up here so that every card on the board is
+  /// drawn from the same map, and a screen that has not reached the server yet
+  /// shows the codes it has rather than an empty chip.
+  final Map<String, String> allergenLabels;
 
   @override
   State<TicketCard> createState() => _TicketCardState();
@@ -233,7 +241,12 @@ class _TicketCardState extends State<TicketCard>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  ..._lineRowsFor(lines, _stationChipFor, widget.onLineMade),
+                  ..._lineRowsFor(
+                    lines,
+                    _stationChipFor,
+                    widget.onLineMade,
+                    widget.allergenLabels,
+                  ),
 
                   if (ticket.note != null) ...[
                     const Divider(height: 12, indent: 12, endIndent: 12),
@@ -439,6 +452,7 @@ List<Widget> _lineRowsFor(
   List<TicketLine> lines,
   String? Function(TicketLine) stationChipFor,
   void Function(TicketLine line, bool made)? onLineMade,
+  Map<String, String> allergenLabels,
 ) {
   final rows = <Widget>[];
   var dishMade = false;
@@ -449,6 +463,7 @@ List<Widget> _lineRowsFor(
     rows.add(
       _LineRow(
         line: line,
+        allergenLabels: allergenLabels,
         dishMade: line.isModifier ? dishMade : null,
         // Only when this board watches more than one station. On a
         // single-station screen every chip would say the same thing, which is
@@ -468,12 +483,14 @@ List<Widget> _lineRowsFor(
 class _LineRow extends StatelessWidget {
   const _LineRow({
     required this.line,
+    required this.allergenLabels,
     this.station,
     this.onMade,
     this.dishMade,
   });
 
   final TicketLine line;
+  final Map<String, String> allergenLabels;
   final String? station;
   final VoidCallback? onMade;
 
@@ -602,6 +619,48 @@ class _LineRow extends StatelessWidget {
                   decorationColor: made ? Kds.modifierMuted : Kds.modifier,
                   decorationThickness: 2,
                 ),
+              ),
+            ),
+
+          // What is in it.
+          //
+          // Amber, not red: red on this card means "read this, it changes what
+          // you cook", and an allergen does not change the dish — it changes
+          // who may be handed it, and what the pass has to say when it goes
+          // out. Two colours that both mean "urgent" would flatten each other.
+          //
+          // Only when something is declared. A dish nobody has filled in draws
+          // nothing at all, because a chip reading "Contains: nothing" over an
+          // unanswered question is worse than silence.
+          if (line.allergens.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(left: 36, top: 3),
+              child: Wrap(
+                spacing: 5,
+                runSpacing: 4,
+                children: [
+                  for (final code in line.allergens)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Kds.allergenBack,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: Kds.allergen, width: 1),
+                      ),
+                      child: Text(
+                        allergenLabels[code] ?? code,
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                          color: Kds.allergen,
+                          height: 1.15,
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
         ],

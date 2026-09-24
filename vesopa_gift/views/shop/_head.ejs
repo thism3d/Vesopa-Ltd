@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title><%= title %></title>
+<meta name="robots" content="noindex">
+<% if (locals.brand && brand.icon) { %><link rel="icon" href="<%= brand.icon %>"><% } else { %><link rel="icon" href="<%= asset('/img/icon.svg') %>" type="image/svg+xml"><% } %>
+<link rel="stylesheet" href="<%= asset('/css/shop.css') %>">
+<script src="<%= asset('/js/theme.js') %>"></script>
+<% if (locals.theme) { %>
+<style nonce="<%= nonce %>">
+<% (theme.faces || []).forEach(function (f) { %>@font-face { font-family: "<%= theme.headingFamily %>"; src: url("<%= f.url %>"); font-weight: <%= f.weight %>; font-display: swap; }
+<% }) %>:root { --accent: <%= theme.accent %>; --on-accent: <%= theme.onAccent %>; --accent-ink: <%= theme.accentInk %>;<% if (theme.headingFamily) { %> --heading: "<%= theme.headingFamily %>", Georgia, "Times New Roman", serif;<% } %> }
+</style>
+<% } %>
+</head>
+<body class="<%= locals.bodyClass || '' %>">
+<%- include('../_theme') %>

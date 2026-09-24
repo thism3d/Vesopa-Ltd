@@ -1,0 +1,119 @@
+<%- include('_head') %>
+
+<div class="bar"><div class="narrow">
+  <a class="back" href="/<%= venue.slug %>" aria-label="Back to <%= brand.name %>"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></a>
+  <%- include('_logo', { size: 's30', brand: brand, initials: initials }) %>
+  <a class="name" href="/<%= venue.slug %>"><%= brand.name %></a>
+</div></div>
+
+<main class="narrow">
+  <form class="form" method="post" action="/<%= venue.slug %>/buy<%= product ? '/' + product.id : '' %>" novalidate data-buy>
+    <div class="group intro">
+      <h1 class="serif">
+        <%= product ? product.name : 'A gift voucher' %>
+      </h1>
+      <p class="pretty"><%= product ? (product.description || 'A voucher for one named thing, spent in one go.') : 'Spent on anything on the menu, a bit at a time if they like.' %></p>
+    </div>
+
+    <% if (error) { %><div class="group"><div class="error-box" role="alert"><%= error %></div></div><% } %>
+
+    <% if (!product) { %>
+    <div role="group" class="group <%= field === 'design' ? 'field-error' : '' %>">
+      <span class="label">Choose a design</span>
+      <div class="designs">
+        <% designs.forEach(function (d, i) { %>
+        <label class="choice">
+          <input type="radio" name="design" value="<%= d.id %>" <%= String(values.design || designs[0].id) === String(d.id) ? 'checked' : '' %>>
+          <span class="pic"><img src="<%= designUrl(d) %>" alt=""></span>
+          <span><%= d.name %></span>
+        </label>
+        <% }) %>
+      </div>
+    </div>
+
+    <div role="group" class="group <%= field === 'amount' || field === 'custom_amount' ? 'field-error' : '' %>">
+      <span class="label">How much?</span>
+      <div class="chips">
+        <% amounts.forEach(function (a) { %>
+        <label class="choice"><input type="radio" name="amount" value="<%= a %>" <%= String(values.amount || amounts[1] || amounts[0]) === String(a) ? 'checked' : '' %>><span><%= money(a) %></span></label>
+        <% }) %>
+      </div>
+      <% if (venue.allow_custom) { %>
+      <label class="field-label">
+        <span class="sr">Another amount</span>
+        <span class="money-input"><span>£</span><input class="input" name="custom_amount" inputmode="decimal" autocomplete="off" placeholder="Another amount, <%= money(venue.min_minor) %> to <%= money(venue.max_minor) %>" value="<%= values.custom_amount || '' %>" data-custom></span>
+      </label>
+      <% } %>
+    </div>
+    <% } else { %>
+    <input type="hidden" name="design" value="<%= product.design_id || (designs[0] && designs[0].id) %>">
+    <div class="group">
+      <%- include('_card', { image: designUrl(productDesign), brand: brand, initials: initials, caption: product.name, value: money(product.price_minor) }) %>
+    </div>
+    <% } %>
+
+    <div role="group" class="group">
+      <span class="label">Who should we send it to?</span>
+      <div class="segment">
+        <label class="choice"><input type="radio" name="send_to" value="recipient" <%= values.send_to !== 'buyer' ? 'checked' : '' %> data-send><span>Straight to them</span></label>
+        <label class="choice"><input type="radio" name="send_to" value="buyer" <%= values.send_to === 'buyer' ? 'checked' : '' %> data-send><span>To me, to hand over</span></label>
+      </div>
+      <label class="field-label <%= field === 'recipient_name' ? 'field-error' : '' %>">Their name
+        <input class="input" name="recipient_name" autocomplete="off" maxlength="120" value="<%= values.recipient_name || '' %>">
+      </label>
+      <label class="field-label <%= field === 'recipient_email' ? 'field-error' : '' %>" data-recipient>Their email address
+        <input class="input" type="email" name="recipient_email" autocomplete="off" maxlength="190" value="<%= values.recipient_email || '' %>">
+      </label>
+      <label class="field-label"><span>A message <span class="muted">(optional)</span></span>
+        <textarea class="textarea" name="message" maxlength="300" rows="3" data-message><%= values.message || '' %></textarea>
+        <span class="hint center-right" data-count>0 / 300</span>
+      </label>
+    </div>
+
+    <% if (venue.allow_schedule) { %>
+    <div role="group" class="group <%= field === 'deliver_date' || field === 'when' ? 'field-error' : '' %>" data-when-group>
+      <span class="label">When should it arrive?</span>
+      <label class="option">
+        <span class="head"><input class="sr" type="radio" name="when" value="now" <%= values.when !== 'later' ? 'checked' : '' %> data-when><span class="dot"></span><span>Straight away</span></span>
+      </label>
+      <label class="option">
+        <span class="head"><input class="sr" type="radio" name="when" value="later" <%= values.when === 'later' ? 'checked' : '' %> data-when><span class="dot"></span><span>On a day I choose</span></span>
+        <span class="two" data-later>
+          <input class="input" type="date" name="deliver_date" min="<%= today %>" max="<%= lastDay %>" value="<%= values.deliver_date || '' %>" aria-label="Day">
+          <input class="input" type="time" name="deliver_time" value="<%= values.deliver_time || '09:00' %>" aria-label="Time">
+        </span>
+      </label>
+    </div>
+    <% } %>
+
+    <div role="group" class="group">
+      <span class="label">Your details</span>
+      <label class="field-label <%= field === 'buyer_name' ? 'field-error' : '' %>">Your name
+        <input class="input" name="buyer_name" autocomplete="name" maxlength="120" value="<%= values.buyer_name || '' %>">
+      </label>
+      <label class="field-label <%= field === 'buyer_email' ? 'field-error' : '' %>">Your email address
+        <input class="input" type="email" name="buyer_email" autocomplete="email" maxlength="190" value="<%= values.buyer_email || '' %>">
+        <span class="hint">Your receipt goes here, and we tell you when their voucher has been sent.</span>
+      </label>
+    </div>
+
+    <div class="summary" data-summary>
+      <div class="row"><span><%= product ? product.name : 'Gift voucher' %><% if (!product) { %><span data-sum-design></span><% } %></span><span data-sum-value><%= product ? money(product.price_minor, { always: true }) : '' %></span></div>
+      <div class="row muted" data-sum-arrives hidden><span>Arrives</span><span></span></div>
+      <div class="row muted"><span>Valid until</span><span><%= validUntil %></span></div>
+      <div class="rule"></div>
+      <div class="row total"><span>Total</span><span data-sum-total><%= product ? money(product.price_minor, { always: true }) : '' %></span></div>
+    </div>
+
+    <div class="pay">
+      <button class="btn primary block big" type="submit">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+        <span data-pay-label>Pay<%= product ? ' ' + money(product.price_minor, { always: true }) : '' %></span>
+      </button>
+      <p class="hint center pretty">Card, Apple Pay or Google Pay, taken securely by Dojo and paid straight to <%= brand.name %>.</p>
+      <p class="hint center">By paying you accept the <a href="/<%= venue.slug %>/terms">voucher terms</a>.</p>
+    </div>
+  </form>
+</main>
+
+<%- include('_foot') %>

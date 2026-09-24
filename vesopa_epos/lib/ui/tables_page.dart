@@ -5,10 +5,13 @@ import '../data/floor_repository.dart';
 import '../data/local/database.dart';
 import '../data/terminal_service.dart';
 import '../main.dart';
+import 'floor_editor_page.dart';
 import 'payment_page.dart';
 import 'placeholder_page.dart';
 import 'theme.dart';
+import 'transfer_table.dart';
 import 'widgets/pos_message.dart';
+import 'room_walls.dart';
 import 'widgets/basket_panel.dart' show money;
 
 final parkedOrdersProvider = StreamProvider<List<Order>>(
@@ -111,6 +114,15 @@ class TablesPage extends ConsumerWidget {
                       tooltip: 'Refresh plan',
                       icon: const Icon(Icons.refresh),
                       onPressed: () => ref.invalidate(floorPlanProvider),
+                    ),
+                    // Editing is a mode entered on purpose, not something this
+                    // screen slips into: a clerk crossing it mid-service is
+                    // parking bills, and a plan a stray finger could rearrange
+                    // is a plan that will be rearranged by one.
+                    IconButton(
+                      tooltip: 'Lay out the room',
+                      icon: const Icon(Icons.edit_location_alt_outlined),
+                      onPressed: () => openFloorEditor(context, ref),
                     ),
                   ],
                 ),
@@ -230,15 +242,12 @@ class TablesPage extends ConsumerWidget {
       case 'recall':
         // onRecall (the shell) performs the recall and switches to the bill.
         onRecall(order.id);
+      // The same flow the Transfer bar key runs, so the two cannot drift.
+      // This used to ask for a number and refuse outright when the destination
+      // was taken; it now shows the floor and offers to merge, which is what
+      // the venue asked for and is the more useful half of the two answers.
       case 'transfer':
-        final to = await _askNumber(context, 'Transfer to table');
-        if (to == null) return;
-        try {
-          await tables.transfer(order.id, to);
-        } on StateError catch (e) {
-          if (!context.mounted) return;
-          PosMessenger.error(context, e.message);
-        }
+        await transferTable(context, ref, orderId: order.id);
       case 'split':
         if (!context.mounted) return;
         await _splitDialog(context, ref, order);
@@ -328,11 +337,20 @@ class _RoomPlan extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // How far the plan extends, so it can be scaled to the space available.
+    //
+    // The walls count towards it as well as the tables. Without them an
+    // L-shaped room would be cropped to whichever limb happened to have tables
+    // on it, and the far end of the room — the part a member of staff is
+    // walking towards — would be off the screen.
     var maxX = 1;
     var maxY = 1;
     for (final t in room.tables) {
       maxX = t.x + t.width > maxX ? t.x + t.width : maxX;
       maxY = t.y + t.height > maxY ? t.y + t.height : maxY;
+    }
+    for (final point in room.outline ?? const <List<int>>[]) {
+      maxX = point[0] > maxX ? point[0] : maxX;
+      maxY = point[1] > maxY ? point[1] : maxY;
     }
 
     return LayoutBuilder(
@@ -364,6 +382,23 @@ class _RoomPlan extends StatelessWidget {
               height: planH + 16,
               child: Stack(
                 children: [
+                  // Under everything and taking no taps: this is the room, and
+                  // a tap on the floor is not a tap on a table.
+                  if (room.outline != null)
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: CustomPaint(
+                          painter: WallsPainter(
+                            outline: room.outline!,
+                            unit: unit,
+                            floor: colourOf(room.floorColour)
+                                ?? Theme.of(context).colorScheme.surfaceContainerHighest,
+                            wall: colourOf(room.wallColour)
+                                ?? Theme.of(context).colorScheme.outlineVariant,
+                          ),
+                        ),
+                      ),
+                    ),
                   for (final table in room.tables)
                     Positioned(
                       left: table.x * unit,
@@ -408,7 +443,18 @@ class _TableShape extends StatelessWidget {
     // colour. Doing it the other way round is how the total ended up hardcoded
     // to white on the brand lime, at 1.7:1 — the number was there, but a clerk
     // glancing at the floor plan could not read it.
-    final surface = occupied ? Pos.brand : Theme.of(context).posIdle;
+    // The venue's own colour for this table, when it has chosen one — but only
+    // while the table is free.
+    //
+    // An occupied table stays the brand lime whatever the venue painted it.
+    // That colour is the till's single most important signal, read across a
+    // room at a glance while carrying something, and a venue that painted its
+    // window seats a similar green would have quietly turned it off. The
+    // custom colour says which table this is; the lime says what is happening
+    // on it, and the second must never be lost to the first.
+    final surface = occupied
+        ? Pos.brand
+        : (colourOf(table.colour) ?? Theme.of(context).posIdle);
     final ink = occupied
         ? Pos.inkOn(surface)
         : Theme.of(context).colorScheme.onSurface;

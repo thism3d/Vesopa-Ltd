@@ -196,9 +196,18 @@ check('the row of buttons is the cell that gets the treatment', () => {
 });
 
 check('every action in the row has a name a screen reader can read', () => {
-  const helper = app.slice(app.indexOf('const iconButton ='), app.indexOf('async function loadRunReport'));
-  assert.ok(helper.includes('aria-label='), 'icon buttons with no accessible name');
-  assert.ok(helper.includes('title='), 'icon buttons with no tooltip');
+  // These rows had their own icon-button helper, which is now a shim onto the
+  // one component every other row uses — so the guarantee lives there, and
+  // reading it out of the shim would only prove the shim exists.
+  const fn = app.slice(app.indexOf('function iconBtn('));
+  const body = fn.slice(0, fn.indexOf('\n}'));
+  assert.ok(body.includes('aria-label='), 'icon buttons with no accessible name');
+  assert.ok(body.includes('title='), 'icon buttons with no tooltip');
+
+  // And the shim still routes here rather than drawing its own button.
+  const shim = app.slice(app.indexOf('const iconButton ='));
+  assert.match(shim.slice(0, 200), /iconBtn\(/,
+    'the scheduled-reports rows have grown a second button component again');
 });
 
 check('the controls wrap into columns rather than one shrinking line', () => {

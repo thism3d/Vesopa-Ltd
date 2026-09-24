@@ -6,15 +6,73 @@ import 'package:uuid/uuid.dart';
 import 'local/database.dart';
 import 'mix_match_engine.dart';
 import 'modifier_layout.dart';
+import 'price_levels.dart';
+import 'pricing_engine.dart';
+import 'commerce.dart';
 
 /// Owns the sale lifecycle. Every write lands in the local database first and
 /// is queued for the server second, both inside one transaction: the till is
 /// authoritative for its own sales and never blocks on the network.
+/// The six prices a catalogue row carries.
+///
+/// An extension rather than a field on [Product], because [Product] is drift's
+/// generated row and every column on it is one the till syncs. This is a way of
+/// *reading* five of those columns together, which is a different thing.
+extension ProductPricing on Product {
+  ProductPrices get prices => ProductPrices(
+    priceMinor: priceMinor,
+    price2Minor: price2Minor,
+    price3Minor: price3Minor,
+    price4Minor: price4Minor,
+    price5Minor: price5Minor,
+    price6Minor: price6Minor,
+  );
+
+  /// What to charge for this product at [level], falling back to Price 1 where
+  /// the venue has not set one. See `data/price_levels.dart`.
+  int priceAt(int level) => prices.at(level);
+}
+
 class OrderRepository {
-  OrderRepository(this._db);
+  OrderRepository(
+    this._db, {
+    List<Promotion> Function()? promotions,
+    bool Function()? trainingMode,
+    bool Function()? inDemoVenue,
+  })  : promotionsAvailable = promotions ?? _noPromotions,
+        _training = trainingMode ?? _notTraining,
+        _inDemo = inDemoVenue ?? _notTraining;
 
   final AppDatabase _db;
+
+  /// The venue's live offers, read at the moment a bill is totalled.
+  ///
+  /// A function rather than a list because promotions are cached in
+  /// `CommerceRepository` and refreshed when the back office changes them, and
+  /// a repository built once at start-up would otherwise hold the set that
+  /// existed then — a happy hour that began at five would never apply.
+  ///
+  /// Defaults to none, so a test or a tool that builds a bare repository
+  /// prices exactly as it did before offers existed.
+  final List<Promotion> Function() promotionsAvailable;
+
+  static List<Promotion> _noPromotions() => const [];
+  static bool _notTraining() => false;
   static const _uuid = Uuid();
+
+  /// Whether a training account is signed on right now. Read when a bill is
+  /// opened and when something is logged, never captured -- a trainee signs on
+  /// and off all day. See `data/training_mode.dart`.
+  final bool Function() _training;
+
+  /// Whether this till is working inside its venue's practice copy.
+  ///
+  /// Not the same question as [_training], and the difference decides where a
+  /// practice sale goes. A trainee is signed on the moment they touch their
+  /// PIN; the till is only *in* the practice venue once that venue's token has
+  /// arrived. Practice with the broadband down stays on the till, exactly as it
+  /// always did. See `data/demo_session.dart`.
+  final bool Function() _inDemo;
 
   Future<String> openOrder({
     int? tableNumber,
@@ -28,9 +86,54 @@ class OrderRepository {
             tableNumber: Value(tableNumber),
             roomId: Value(roomId),
             clerkPin: Value(clerkPin),
+            // A bill opened by a trainee is a practice bill for its whole life.
+            training: Value(_training()),
           ),
         );
     return id;
+  }
+
+  /// Make an empty bill match who is signed on.
+  ///
+  /// Only an empty one: a bill with something on it keeps what it was opened
+  /// as, because everything about it -- whether it is ever sent to the server --
+  /// follows from that. See the shell, which clears a practice bill rather than
+  /// letting a live clerk take money on it.
+  Future<void> matchTraining(String orderId, bool training) async {
+    final order = await orderOnce(orderId);
+    if (order == null || order.training == training) return;
+    final lines = await linesOnce(orderId);
+    if (lines.isNotEmpty) return;
+    await (_db.update(_db.orders)..where((o) => o.id.equals(orderId)))
+        .write(OrdersCompanion(training: Value(training)));
+  }
+
+  /// Throw a practice bill away, lines and all.
+  ///
+  /// Only ever a practice bill -- a real one is voided, with a reason, through
+  /// [voidOrder], and this refuses anything else. Nothing is logged: practice
+  /// is not an event anybody reads a report for.
+  Future<void> discardPracticeBill(String orderId) async {
+    await _db.transaction(() async {
+      final order = await orderOnce(orderId);
+      if (order == null || !order.training) return;
+      await (_db.delete(_db.payments)..where((p) => p.orderId.equals(orderId))).go();
+      await (_db.delete(_db.orderLines)..where((l) => l.orderId.equals(orderId))).go();
+      await (_db.delete(_db.orders)..where((o) => o.id.equals(orderId))).go();
+    });
+  }
+
+  /// Practice bills left behind -- a till switched off mid-training -- are
+  /// cleared after a day. They were never going anywhere.
+  Future<int> sweepPracticeBills({Duration olderThan = const Duration(days: 1)}) async {
+    final cutoff = DateTime.now().subtract(olderThan);
+    final stale = await (_db.select(_db.orders)
+          ..where((o) => o.training.equals(true) & o.createdAt.isSmallerThanValue(cutoff)))
+        .get();
+    for (final order in stale) {
+      await discardPracticeBill(order.id);
+    }
+    return stale.length;
   }
 
   /// Ring an item. Tapping the same product again bumps the quantity of the
@@ -51,12 +154,27 @@ class OrderRepository {
   /// taxes, prints and reports as what it is. A product carrying answers is
   /// never merged into an existing line; see below.
   /// See OrderLines.parentLineId.
+  /// [priceLevel] is which of the product's six prices to charge. It is the
+  /// till's current level, or the customer's tier where their tier names one —
+  /// the caller decides, because only the caller knows whose bill this is. See
+  /// `data/price_levels.dart`.
+  ///
+  /// The price is still snapshotted onto the line: what is charged at the
+  /// counter is what the bill says for ever, whatever the room switches to
+  /// afterwards.
+  /// [consolidate] is the venue's answer to "3 x Carling, or Carling three
+  /// times". True is what every till has always done and what most venues
+  /// want. False writes a line per tap, which some venues ask for because the
+  /// bill then reads as the order was called — and because a line each is a
+  /// line each to void, rather than editing a quantity.
   Future<void> addLine(
     String orderId,
     Product product, {
     double qty = 1,
     String? addedBy,
     List<Product> modifiers = const [],
+    int priceLevel = minPriceLevel,
+    bool consolidate = true,
   }) async {
     await _db.transaction(() async {
       final now = DateTime.now();
@@ -66,7 +184,9 @@ class OrderRepository {
       // tonic are two different things that happen to share a PLU, and adding
       // the second to the first would quietly change what the first customer
       // ordered.
-      final line = modifiers.isEmpty
+      //
+      // Nor is anything merged when the venue has turned consolidation off.
+      final line = modifiers.isEmpty && consolidate
           ? await _mergeableLine(orderId, product.pluId)
           : null;
 
@@ -86,8 +206,9 @@ class OrderRepository {
               name: product.name,
               quantity: Value(qty),
               // Snapshot the price: a later back-office edit must not restate
-              // takings that have already been rung up.
-              unitPriceMinor: product.priceMinor,
+              // takings that have already been rung up — and neither must a
+              // later change of price level.
+              unitPriceMinor: product.priceAt(priceLevel),
               taxPercentage: Value(product.taxPercentage),
               // Who rang it and when. Null on a venue that does not use staff
               // sign-on, and the check view simply shows no header for it.
@@ -107,7 +228,10 @@ class OrderRepository {
                 // and a kitchen reading "2 Steak / 1 Rare" cannot tell which
                 // steak is which.
                 quantity: Value(qty),
-                unitPriceMinor: choice.priceMinor,
+                // An answer is priced at the same level as the thing it is an
+                // answer to. A gin on happy hour with a full-price mixer would
+                // be a bill nobody could explain.
+                unitPriceMinor: choice.priceAt(priceLevel),
                 taxPercentage: Value(choice.taxPercentage),
                 parentLineId: Value(parentId),
                 addedBy: Value(addedBy),
@@ -228,30 +352,157 @@ class OrderRepository {
   /// Counted rather than valued: the amount is always zero, and the number of
   /// times it happened is the whole point. Beside the void count on the Z
   /// report because they are read together and for the same reason.
-  Future<void> logNoSale({required String sessionId, String? staffName}) =>
-      _logEvent(kind: 'no_sale', sessionId: sessionId, staffName: staffName);
+  Future<void> logNoSale({
+    required String sessionId,
+    String? staffName,
+    String? note,
+  }) => _logEvent(
+        kind: 'no_sale',
+        sessionId: sessionId,
+        staffName: staffName,
+        // Why the drawer was opened, where the clerk said. Nullable, and
+        // deliberately so: the count is what the Z report reads, and a drawer
+        // that would not open because a reason list was unreachable would be a
+        // till that stops working over an audit field.
+        note: note,
+      );
+
+  /// Record money handed back.
+  ///
+  /// A refund is not a negative sale and is deliberately not stored as one. It
+  /// goes on the Z beside the voids and the no-sales, where a manager reads it,
+  /// and it does not touch the takings for the period: a bill settled last
+  /// Tuesday was taken last Tuesday, and rewriting today's gross to account for
+  /// it would make two days both wrong.
+  ///
+  /// [note] carries what was refunded and why — the receipt it came off where
+  /// there is one, or the reason where there is not. It is the whole audit
+  /// trail for the one operation on this till that takes money out of the
+  /// drawer without a customer standing over it, so it is not optional in
+  /// practice even though the column allows null.
+  ///
+  /// [amountMinor] is positive. The sign belongs to the report, which knows a
+  /// refund is money out; storing it negative would mean every reader had to
+  /// know that too, and one of them would not.
+  Future<void> logRefund({
+    required String sessionId,
+    required int amountMinor,
+    String? note,
+    String? staffName,
+  }) =>
+      _logEvent(
+        kind: 'refund',
+        sessionId: sessionId,
+        amountMinor: amountMinor.abs(),
+        note: note,
+        staffName: staffName,
+      );
+
+  /// Money paid out of the drawer that is not a refund: the window cleaner,
+  /// a taxi for a customer, milk from the shop. Recorded against who it went
+  /// to and why, and sent up for the Expenses report.
+  Future<void> logExpense({
+    required String sessionId,
+    required int amountMinor,
+    required String paidTo,
+    String? reason,
+    String? staffName,
+  }) =>
+      _logEvent(
+        kind: 'expense',
+        sessionId: sessionId,
+        amountMinor: amountMinor.abs(),
+        note: paidTo,
+        reason: reason,
+        staffName: staffName,
+      );
+
+  /// Stock thrown away, spilled or sent back, rung at the counter.
+  ///
+  /// The till keeps no stock count of its own, so nothing local moves: the
+  /// event goes up and the back office takes the units off the shelf and
+  /// costs them. [amountMinor] is zero -- the value is the server's to work
+  /// out from the cost it holds, not the till's to guess from a price.
+  Future<void> logWastage({
+    required String sessionId,
+    required int pluId,
+    required String productName,
+    required double quantity,
+    String? reason,
+    String? staffName,
+  }) =>
+      _logEvent(
+        kind: 'wastage',
+        sessionId: sessionId,
+        note: productName,
+        reason: reason,
+        staffName: staffName,
+        pluId: pluId,
+        quantity: quantity,
+      );
 
   /// Record something that is not a sale but belongs on the Z report.
   ///
   /// Kept locally and never deleted by the sync, unlike the outbox entry beside
   /// it — see TillEvents for why that mattered.
+  ///
+  /// SENT UP AS WELL, since 1.8.0.0. Every one of these is queued to the
+  /// outbox and posted to the back office, which until now never heard of a
+  /// refund, a no-sale or an expense and so could not report on them. The
+  /// local row is the Z report's; the outbox entry is the server's; the id is
+  /// shared, so a retry cannot land twice.
   Future<void> _logEvent({
     required String kind,
     required String sessionId,
     int amountMinor = 0,
     String? note,
+    String? reason,
     String? staffName,
+    int? pluId,
+    double? quantity,
   }) async {
-    await _db.into(_db.tillEvents).insert(
-          TillEventsCompanion.insert(
-            id: _uuid.v4(),
-            sessionId: sessionId,
-            kind: kind,
-            amountMinor: Value(amountMinor),
-            note: Value(note),
-            staffName: Value(staffName),
-          ),
-        );
+    // Practice is not counted: a trainee's voids, no-sales and refunds do not
+    // belong on the Z a manager reconciles the drawer against.
+    if (_training()) return;
+    final id = _uuid.v4();
+    final at = DateTime.now();
+    await _db.transaction(() async {
+      await _db.into(_db.tillEvents).insert(
+            TillEventsCompanion.insert(
+              id: id,
+              sessionId: sessionId,
+              kind: kind,
+              amountMinor: Value(amountMinor),
+              note: Value(note),
+              reason: Value(reason),
+              staffName: Value(staffName),
+              pluId: Value(pluId),
+              quantity: Value(quantity),
+              at: Value(at),
+            ),
+          );
+      await _db.into(_db.outboxEntries).insert(
+            OutboxEntriesCompanion.insert(
+              id: _uuid.v4(),
+              // A wastage has its own endpoint: it is a stock document on the
+              // server, not a line on a report.
+              entity: kind == 'wastage' ? 'wastage' : 'event',
+              entityId: id,
+              payload: jsonEncode({
+                'id': id,
+                'kind': kind,
+                'amount_minor': amountMinor,
+                'note': note,
+                'reason': reason,
+                'staff_name': staffName,
+                'session_id': sessionId,
+                'plu_id': pluId,
+                'quantity': quantity,
+                'at': at.toIso8601String(),
+              }),
+            ),
+          );
+    });
   }
 
   /// Void selected lines off an open check, leaving the rest of the sale alone.
@@ -273,6 +524,20 @@ class OrderRepository {
       final order =
           await (_db.select(_db.orders)..where((o) => o.id.equals(orderId)))
               .getSingle();
+      // A practice bill's lines just go: nothing is logged or sent, because a
+      // void on a bill that was never a sale is not a void anybody audits.
+      if (order.training) {
+        final practice = await _withModifiers(orderId, lineIds);
+        var removed = 0;
+        for (final line in await (_db.select(_db.orderLines)
+              ..where((l) => l.orderId.equals(orderId) & l.id.isIn(practice)))
+            .get()) {
+          removed += (line.unitPriceMinor * line.quantity).round() - line.lineDiscountMinor;
+        }
+        await (_db.delete(_db.orderLines)..where((l) => l.id.isIn(practice))).go();
+        await recalculate(orderId);
+        return removed;
+      }
       // A modifier cannot survive the item it modifies: "Dash Coke" left on a
       // bill whose gin was voided is a line nobody can account for, and one the
       // kitchen would still be told about. Valued with the rest, so the void
@@ -351,8 +616,8 @@ class OrderRepository {
 
       // Queue the audit record first, with the amount that was on the bill —
       // after we zero it, that figure is gone. Only a bill that had something
-      // on it is worth logging.
-      if (order.totalMinor > 0) {
+      // on it is worth logging -- and never a practice bill.
+      if (order.totalMinor > 0 && !order.training) {
         await _db.into(_db.outboxEntries).insert(
               OutboxEntriesCompanion.insert(
                 id: _uuid.v4(),
@@ -439,13 +704,42 @@ class OrderRepository {
 
   /// Attach a customer to the sale, carrying their standing discount so it
   /// applies to the total automatically.
+  ///
+  /// [membershipExpiry] is REQUIRED, and it is required rather than optional on
+  /// purpose. The venue reported that an expired card still worked at the till,
+  /// and the reason was that the expiry check lived in one of the four places a
+  /// customer can reach a bill from. A parameter with a default would have let
+  /// the fifth door be written without anybody thinking about it; one that has
+  /// to be filled in makes the question unavoidable, and the compiler asks it.
+  ///
+  /// Pass null for a customer with no membership at all — a points customer,
+  /// who never expires.
+  ///
+  /// Throws [MembershipExpired] rather than attaching. This is a backstop and
+  /// not the user interface: `ui/membership_gate.dart` is what a clerk actually
+  /// meets, and it offers to renew. Reaching this exception means a caller
+  /// skipped it.
   Future<void> attachCustomer(
     String orderId, {
     required String? id,
     required String name,
+    required DateTime? membershipExpiry,
     String discountType = 'none',
     int discountValue = 0,
+    String? phone,
+    String? email,
+    String? cardNumber,
+    int? pointsBalance,
   }) async {
+    if (membershipExpiry != null) {
+      final now = DateTime.now();
+      // The expiry day itself counts: a card that says 31 March works all of
+      // the 31st. Compared as calendar days so British summer time cannot
+      // expire somebody the evening before.
+      if (membershipExpiry.isBefore(DateTime(now.year, now.month, now.day))) {
+        throw MembershipExpired(name, membershipExpiry);
+      }
+    }
     await _db.transaction(() async {
       await (_db.update(_db.orders)..where((o) => o.id.equals(orderId))).write(
         OrdersCompanion(
@@ -453,6 +747,14 @@ class OrderRepository {
           customerName: Value(name),
           customerDiscountType: Value(discountType),
           customerDiscountValue: Value(discountValue),
+          // Copied down with the name, because the till has nowhere to look
+          // them up again — see Orders.customerPhone.
+          customerPhone: Value(phone),
+          customerEmail: Value(email),
+          customerCardNumber: Value(cardNumber),
+          // For the screen facing the customer, which has no network of its
+          // own and reads only what this till writes to a file.
+          customerPoints: Value(pointsBalance),
         ),
       );
       await recalculate(orderId);
@@ -468,6 +770,14 @@ class OrderRepository {
           customerName: Value(null),
           customerDiscountType: Value('none'),
           customerDiscountValue: Value(0),
+          // Every column attachCustomer writes, or taking a customer off a bill
+          // leaves their phone number and email address on it.
+          customerPhone: Value(null),
+          customerEmail: Value(null),
+          customerCardNumber: Value(null),
+          // Every column attachCustomer writes. A balance left behind would
+          // greet the next customer by the last one's points.
+          customerPoints: Value(null),
         ),
       );
       await recalculate(orderId);
@@ -530,6 +840,32 @@ class OrderRepository {
       (_db.update(_db.orderLines)..where((l) => l.id.equals(lineId)))
           .write(OrderLinesCompanion(notes: Value(note)));
 
+  /// Charge a different price for one line.
+  ///
+  /// A price override, not a discount, and the difference is what the reports
+  /// say afterwards. A discount records "this cost £4.00 and £1.00 came off";
+  /// an override records "this cost £3.00". A venue price-matching a
+  /// competitor, or honouring a shelf label that is wrong, means the second —
+  /// and putting it through as a discount would show up in the discount
+  /// column all week and be queried.
+  ///
+  /// Guarded by TillPermission.setPrice at the call site, because this is
+  /// somebody deciding what the till charges.
+  ///
+  /// Refuses a negative price. Zero is allowed and is a real thing — a comped
+  /// item goes on the bill at nothing so the kitchen still makes it and the
+  /// stock still moves — but a line that pays the customer is never what was
+  /// meant, and the arithmetic below it would balance perfectly all the way to
+  /// the drawer being short.
+  Future<void> setLinePrice(String orderId, String lineId, int minor) async {
+    if (minor < 0) return;
+    await _db.transaction(() async {
+      await (_db.update(_db.orderLines)..where((l) => l.id.equals(lineId)))
+          .write(OrderLinesCompanion(unitPriceMinor: Value(minor)));
+      await recalculate(orderId);
+    });
+  }
+
   Future<void> setLineDiscount(String orderId, String lineId, int minor) async {
     await _db.transaction(() async {
       await (_db.update(_db.orderLines)..where((l) => l.id.equals(lineId)))
@@ -555,6 +891,26 @@ class OrderRepository {
   /// stored, so a reprint or an end-of-day report never disagrees with what the
   /// customer was actually charged. Public because splitting and merging bills
   /// move lines between orders and must restate both.
+  /// Work out what this bill comes to, and store it.
+  ///
+  /// ONE ENGINE, AND IT IS NOT THIS FUNCTION.
+  ///
+  /// This used to do its own arithmetic: gross, minus the clerk's manual
+  /// discount, minus mix & match, minus per-line discounts, minus the
+  /// customer's standing rate. It never applied PROMOTIONS, because those live
+  /// in a cache the data layer could not see — and `PricingEngine`, which the
+  /// check panel and the payment screen use, applied promotions and had never
+  /// heard of deals or per-line discounts.
+  ///
+  /// So the two answered different numbers for the same bill, and both were
+  /// wrong. The venue filmed it: a check panel reading TOTAL £31.77 beside a
+  /// Pay key reading £30.80, on a basket where a 10% offer took £3.53 and
+  /// "2 Cocktails for £16" took £4.50. The panel had the promotion and not the
+  /// deal; the stored total had the deal and not the promotion.
+  ///
+  /// Now there is one engine and this asks it. What is stored here is what the
+  /// customer is charged at the payment screen, what the Pay key says, what the
+  /// open-bills strip says and what the reports read.
   Future<void> recalculate(String orderId) async {
     final lines = await (_db.select(_db.orderLines)
           ..where((l) => l.orderId.equals(orderId)))
@@ -563,50 +919,43 @@ class OrderRepository {
         await (_db.select(_db.orders)..where((o) => o.id.equals(orderId)))
             .getSingle();
 
-    // Gross is what the customer is asked for; the mockup's "Subtotal" is that
-    // figure, with VAT shown as the portion already inside it.
-    var gross = 0;
-    var lineDiscounts = 0;
-    for (final line in lines) {
-      gross += (line.unitPriceMinor * line.quantity).round();
-      // A per-line discount can never exceed that line's own value.
-      final lineTotal = (line.unitPriceMinor * line.quantity).round();
-      lineDiscounts += line.lineDiscountMinor.clamp(0, lineTotal);
-    }
+    final gross = lines.fold<int>(
+      0,
+      (sum, l) => sum + (l.unitPriceMinor * l.quantity).round(),
+    );
 
-    // Mix & match deals from the back office. These are a discount the till
-    // works out, on top of the per-line and order-level ones the clerk keyed.
+    // Mix & match deals from the back office, worked out on the whole basket
+    // before anything is priced: a deal reprices the items themselves.
     final dealSaving = (await mixMatch()).apply(lines).totalSavingMinor;
 
-    // The attached customer's standing discount, on the gross.
-    final customerDiscount = customerDiscountOn(order, gross);
-
-    // A discount can never take the bill below zero.
-    final discount = (order.manualDiscountMinor +
-            dealSaving +
-            lineDiscounts +
-            customerDiscount)
-        .clamp(0, gross);
-    final payable = gross - discount;
-
-    // Prices are tax-inclusive, so back the VAT out of the discounted total
-    // rather than adding it on top — otherwise the customer is charged twice,
-    // and the tax must follow the amount actually taken, not the pre-discount
-    // figure, or the VAT return overstates what was collected.
-    var tax = 0;
-    for (final line in lines) {
-      final lineGross = (line.unitPriceMinor * line.quantity).round();
-      final share = gross == 0 ? 0.0 : lineGross / gross;
-      final lineNet = payable * share;
-      tax += (lineNet - lineNet / (1 + line.taxPercentage / 100)).round();
-    }
+    final totals = PricingEngine(promotions: promotionsAvailable()).price(
+      [
+        for (final l in lines)
+          PricedLine(
+            id: l.id,
+            pluid: l.pluId,
+            name: l.name,
+            quantity: l.quantity,
+            unitPriceMinor: l.unitPriceMinor,
+            taxPercentage: l.taxPercentage,
+            note: l.notes,
+            parentLineId: l.parentLineId,
+            lineDiscountMinor: l.lineDiscountMinor,
+          ),
+      ],
+      dealMinor: dealSaving,
+      manualDiscountMinor: order.manualDiscountMinor,
+      customerDiscountMinor: customerDiscountOn(order, gross),
+    );
 
     await (_db.update(_db.orders)..where((o) => o.id.equals(orderId))).write(
       OrdersCompanion(
-        subtotalMinor: Value(gross),
-        discountMinor: Value(discount),
-        taxMinor: Value(tax),
-        totalMinor: Value(payable),
+        subtotalMinor: Value(totals.grossMinor),
+        // Everything taken off, which is what every reader of this column
+        // means by it: the gap between the shelf price and what is owed.
+        discountMinor: Value(totals.grossMinor - totals.totalMinor),
+        taxMinor: Value(totals.taxMinor),
+        totalMinor: Value(totals.totalMinor),
       ),
     );
   }
@@ -648,6 +997,7 @@ class OrderRepository {
     String? reference,
     int gratuityMinor = 0,
     String? entryMode,
+    int cashbackMinor = 0,
   }) async {
     await _db.transaction(() async {
       await _db.into(_db.payments).insert(
@@ -664,6 +1014,7 @@ class OrderRepository {
               reference: Value(reference),
               gratuityMinor: Value(gratuityMinor),
               entryMode: Value(entryMode),
+              cashbackMinor: Value(cashbackMinor),
             ),
           );
 
@@ -682,6 +1033,21 @@ class OrderRepository {
           staffName: Value(staffName),
         ),
       );
+
+      // A practice sale goes to the PRACTICE venue, or nowhere.
+      //
+      // Queued when this till is in one: the token the outbox sends is that
+      // venue's, so the sale lands on its X and Z and in its reports, where a
+      // trainee can be shown what they did and a manager can check they can do
+      // it. That is the whole point of a practice venue over throwing the sale
+      // away, which is what happened before.
+      //
+      // Not queued when it is not -- practice with no network, or a server too
+      // old to have practice venues. It stays on the till, the X and Z leave it
+      // out (see SessionRepository), and it is in no figure anywhere. The live
+      // venue never sees it either way, because the server throws away a
+      // practice sale that reaches it (src/training.js).
+      if (order.training && !_inDemo()) return;
 
       await _enqueue(orderId);
     });
@@ -767,6 +1133,7 @@ class OrderRepository {
             'reference': pay.reference,
             'gratuity_minor': pay.gratuityMinor,
             'entry_mode': pay.entryMode,
+            'cashback_minor': pay.cashbackMinor,
           },
       ],
     });
@@ -808,4 +1175,22 @@ class OrderRepository {
   Stream<Order> watchOrder(String orderId) =>
       (_db.select(_db.orders)..where((o) => o.id.equals(orderId)))
           .watchSingle();
+}
+
+/// An expired membership reached a bill without going through the gate.
+///
+/// Thrown rather than swallowed, because the alternative is exactly the fault
+/// the venue reported: a lapsed member served as though they were paid up,
+/// quietly, for months. Whoever sees this has added a new way onto a bill and
+/// needs to call `checkMembership` first — see `ui/membership_gate.dart`.
+class MembershipExpired implements Exception {
+  const MembershipExpired(this.name, this.expiry);
+
+  final String name;
+  final DateTime? expiry;
+
+  @override
+  String toString() =>
+      "$name's membership has run out and was not renewed, so they were not "
+      'put on the bill.';
 }

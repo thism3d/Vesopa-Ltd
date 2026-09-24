@@ -1,0 +1,31 @@
+{
+  "name": "vesopa_gift",
+  "version": "1.0.0",
+  "description": "Vesopa Gift — vouchers and tickets sold on a venue's own page, spent at the Vesopa till",
+  "main": "src/server.js",
+  "private": true,
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test test/"
+  },
+  "license": "UNLICENSED",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "compression": "^1.8.1",
+    "cookie-parser": "^1.4.7",
+    "dotenv": "^17.4.2",
+    "ejs": "^3.1.10",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "jsqr": "^1.4.0",
+    "multer": "^2.2.0",
+    "mysql2": "^3.22.6",
+    "nodemailer": "^7.0.13",
+    "pdfkit": "^0.20.2",
+    "sharp": "^0.34.5"
+  }
+}

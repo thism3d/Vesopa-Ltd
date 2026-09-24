@@ -6,6 +6,9 @@ import '../data/local/database.dart';
 import '../main.dart';
 import 'tables_page.dart' show parkedOrdersProvider;
 import 'theme.dart';
+import 'widgets/on_screen_keyboard.dart';
+import 'widgets/pos_text_field.dart';
+import 'room_walls.dart';
 import 'widgets/basket_panel.dart' show money;
 
 /// Pick a table to save the current sale onto, from the actual floor plan
@@ -208,11 +211,11 @@ class _NoPlanFallback extends StatelessWidget {
             style: Theme.of(context).textTheme.bodyMedium,
           ),
           const SizedBox(height: 16),
-          TextField(
+          PosTextField(
             controller: controller,
-            keyboardType: TextInputType.number,
+            mode: PosKeyboardMode.number,
             autofocus: true,
-            textAlign: TextAlign.center,
+            submitLabel: 'Open',
             decoration: const InputDecoration(
               hintText: 'Table number',
               border: OutlineInputBorder(),
@@ -271,6 +274,12 @@ class _PickerRoomPlan extends StatelessWidget {
       maxX = t.x + t.width > maxX ? t.x + t.width : maxX;
       maxY = t.y + t.height > maxY ? t.y + t.height : maxY;
     }
+    // The walls count too, or an L-shaped room is cropped to whichever limb
+    // has tables on it. Same reasoning as the floor screen.
+    for (final point in room.outline ?? const <List<int>>[]) {
+      maxX = point[0] > maxX ? point[0] : maxX;
+      maxY = point[1] > maxY ? point[1] : maxY;
+    }
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -307,6 +316,21 @@ class _PickerRoomPlan extends StatelessWidget {
                 height: planH < availH ? availH : planH,
                 child: Stack(
                   children: [
+                    if (room.outline != null)
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: CustomPaint(
+                            painter: WallsPainter(
+                              outline: room.outline!,
+                              unit: unit,
+                              floor: colourOf(room.floorColour)
+                                  ?? Theme.of(context).colorScheme.surfaceContainerHighest,
+                              wall: colourOf(room.wallColour)
+                                  ?? Theme.of(context).colorScheme.outlineVariant,
+                            ),
+                          ),
+                        ),
+                      ),
                     for (final table in room.tables)
                       Positioned(
                         left: table.x * unit,
@@ -358,7 +382,12 @@ class _PickableTable extends StatelessWidget {
     // Same rule as the floor plan in tables_page.dart: surface first, ink
     // derived from it. The two screens draw the same tile and had drifted into
     // disagreeing about what colour the total should be.
-    final surface = booked ? Pos.brand : Theme.of(context).posIdle;
+    // The venue's colour while free; the brand lime the moment it is booked —
+    // see the note on the floor screen, which makes the same choice for the
+    // same reason.
+    final surface = booked
+        ? Pos.brand
+        : (colourOf(table.colour) ?? Theme.of(context).posIdle);
     final ink = booked
         ? Pos.inkOn(surface)
         : Theme.of(context).colorScheme.onSurface;

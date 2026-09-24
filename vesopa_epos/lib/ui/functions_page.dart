@@ -1,15 +1,27 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/staff_session.dart';
+import '../data/price_level_controller.dart';
 import '../main.dart';
 import 'card_machine_page.dart';
+import 'cash_drawer_sheets.dart';
 import 'clock_sheet.dart';
+import 'paid_out_sheet.dart';
+import 'refund_page.dart';
+import 'reprint_z_sheet.dart';
+import 'wastage_sheet.dart';
 import 'layout.dart';
 import 'sign_on_pad.dart';
+import 'staff_admin.dart';
 import 'theme.dart';
+import 'widgets/basket_panel.dart' show money;
 import 'till_actions.dart';
 import 'widgets/pos_message.dart';
+import 'price_level_sheet.dart';
+import 'dinein_sheet.dart';
 
 /// Till functions — the actions a clerk reaches for that are not part of ringing
 /// up a sale: park the current bill, reprint, open the drawer for a no-sale, and
@@ -70,6 +82,19 @@ class FunctionsPage extends ConsumerWidget {
           onGoToTables,
         ),
       ]),
+      // Reachable whether or not anything is waiting. The badge on the bar
+      // draws nothing when the list is empty — which is right, a permanent zero
+      // is noise — so without an entry here a clerk who wanted to check would
+      // have nowhere to look.
+      _Group('Dine-in', [
+        _Function(
+          'Table Orders',
+          Icons.qr_code_2,
+          Pos.amber,
+          'What customers have sent from the codes on their tables.',
+          () => unawaited(showDineInOrders(context)),
+        ),
+      ]),
       _Group('Receipts', [
         _Function(
           'Reprint Last',
@@ -87,12 +112,43 @@ class FunctionsPage extends ConsumerWidget {
         ),
       ]),
       _Group('Cash & card', [
+        // The float has been on the session and printed on the Z since sessions
+        // existed, and there has never been a way to enter it. It was always
+        // zero, so "cash expected" was always the takings rather than what
+        // should actually be in the drawer.
+        _Function(
+          'Float',
+          Icons.savings_outlined,
+          Pos.teal,
+          'What is being put in the drawer to start the shift.',
+          () => unawaited(_setFloat(context, ref)),
+        ),
+        // Money out of the drawer. Under the refund key, and the no-receipt
+        // path under a manager's on top of it — see RefundPage.
+        _Function(
+          'Refund',
+          Icons.undo,
+          Pos.red,
+          'Give money back, off a receipt or without one.',
+          () => unawaited(showRefund(context, ref)),
+        ),
         _Function(
           'No Sale',
           Icons.point_of_sale,
           Pos.amber,
           'Open the drawer without ringing up a sale.',
           () => TillActions.openCashDrawer(context, ref),
+        ),
+        // The other way money leaves the drawer without a sale. Recorded as
+        // an expense so the Z's cash-expected line comes down by it, and sent
+        // up for the Expenses report -- see paid_out_sheet.dart.
+        _Function(
+          'Paid Out',
+          Icons.payments_outlined,
+          Pos.red,
+          'Pay somebody out of the drawer — the window cleaner, a taxi — and '
+              'record who and why.',
+          () => unawaited(showPaidOut(context, ref)),
         ),
         // The card machine's own end of day can only be started from the till
         // on an integrated reader, so it needs a key of its own or the venue
@@ -105,6 +161,19 @@ class FunctionsPage extends ConsumerWidget {
           () => Navigator.of(context).push(
             MaterialPageRoute<void>(builder: (_) => const CardMachinePage()),
           ),
+        ),
+      ]),
+      _Group('Stock', [
+        // Wastage is seen at the counter and forgotten by the back office,
+        // which is why the key is here. The till moves no stock itself; the
+        // event goes up and the back office takes it off the shelf.
+        _Function(
+          'Wastage',
+          Icons.delete_sweep_outlined,
+          Pos.amber,
+          'Record something dropped, spilled or sent back, so it comes off '
+              'the stock and onto the Wastage Report.',
+          () => unawaited(showWastage(context, ref)),
         ),
       ]),
       _Group('Terminal', [
@@ -121,6 +190,23 @@ class FunctionsPage extends ConsumerWidget {
           () => TillActions.refreshData(context, ref),
         ),
       ]),
+      _Group('Pricing', [
+        // "…or a setting on the till in functions to swap price levels."
+        // This is that setting, in the place it was asked for.
+        // The key says which level the till is ON, in the venue's own words.
+        // "Price Level" is the name of a setting; "Price Level — Happy Hour"
+        // is an answer to the question a clerk actually has, which is what
+        // this till is charging right now.
+        _Function(
+          _priceLevelKeyLabel(ref),
+          Icons.sell_outlined,
+          Pos.teal,
+          'Switch this terminal between the six prices a product can carry — a '
+              'happy hour, a function tariff, a staff rate. Bills already open '
+              'keep what they were rung up at.',
+          () => showPriceLevelSheet(context, ref),
+        ),
+      ]),
       _Group('End of day', [
         _Function(
           'X Report',
@@ -135,6 +221,18 @@ class FunctionsPage extends ConsumerWidget {
           Pos.red,
           'Close the trading period and reset the totals.',
           onGoToReports,
+        ),
+        // A Z is the document a venue hands their accountant, and it is printed
+        // once on thermal paper beside a cash drawer. "The printer had no
+        // paper", "it printed and somebody binned it" and "we need last
+        // Tuesday's again" are all ordinary Monday mornings, and until now none
+        // of them had an answer.
+        _Function(
+          'Reprint Z',
+          Icons.print,
+          Pos.indigo,
+          'Another copy of a Z report from the last few days.',
+          () => showReprintZSheet(context, ref),
         ),
       ]),
     ];
@@ -178,13 +276,34 @@ class FunctionsPage extends ConsumerWidget {
           // reason it is its own key: signing on says "I am about to ring
           // something up on this machine" and happens twenty times a service;
           // this is what a wage is paid against.
+          //
+          // Two keys, because there are two jobs and they belong to different
+          // people. The bar's Clock key punches whoever is signed on and shows
+          // their own hours in green or red — that is the twenty-times-a-day
+          // case. This is the other one: everybody at the venue, who is on, and
+          // the ability to punch somebody else, which needs their PIN. The
+          // venue asked for exactly this split — "the list you got now would be
+          // good for managers to see a full list in the functions screen".
           _Function(
-            'Clock In / Out',
-            Icons.schedule,
+            'Staff On Shift',
+            Icons.groups_outlined,
             Pos.graphite,
-            'Start or end your shift. Nothing to do with signing on to the '
-                'till — a manager reads these in the back office.',
+            'Everybody at the venue and who is currently clocked in. To start '
+                'or end your own shift, use the Clock key on the bar.',
             () => showClockSheet(context, ref),
+          ),
+          // Taking somebody on, from the counter. Asked for by name: "ability
+          // to add staff members from the function screen". It sits in this
+          // group because it is the same subject as the two keys above it, and
+          // it needs a manager for the same reason a void does.
+          _Function(
+            'Add Staff',
+            Icons.person_add_alt,
+            Pos.brandDeep,
+            'Take somebody on and give them a PIN or a card, without walking '
+                'to the back office. A card that has been lost can be '
+                'replaced here too.',
+            () => unawaited(showStaffAdmin(context, ref)),
           ),
         ]),
       );
@@ -264,6 +383,12 @@ class FunctionsPage extends ConsumerWidget {
 
   /// "Save Memory" — park the current bill against a table number so the clerk
   /// can begin a fresh sale and come back to this one from Tables.
+  Future<void> _setFloat(BuildContext context, WidgetRef ref) async {
+    final minor = await showFloatSheet(context, ref);
+    if (minor == null || !context.mounted) return;
+    PosMessenger.success(context, 'Float set to ${money(minor)}.');
+  }
+
   Future<void> _saveToTable(BuildContext context, WidgetRef ref) async {
     final lines = await ref.read(orderRepositoryProvider).watchLines(orderId).first;
     if (!context.mounted) return;
@@ -426,4 +551,15 @@ class _FunctionTile extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The Price Level key's label, carrying the level the till is charging.
+///
+/// A venue that has named nothing gets "Price Level", exactly as before —
+/// "Price Level — Price 1" would be a key repeating itself. A venue that has
+/// named one gets the name, which is the whole of what was asked for.
+String _priceLevelKeyLabel(WidgetRef ref) {
+  final level = ref.watch(currentPriceLevelProvider);
+  final named = ref.watch(priceLevelNamesProvider).nameFor(level);
+  return named == 'Price $level' ? 'Price Level' : 'Price Level — $named';
 }

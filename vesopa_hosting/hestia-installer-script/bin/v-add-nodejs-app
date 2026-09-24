@@ -1,0 +1,134 @@
+#!/bin/bash
+# info: provision a Node.js app for a web domain
+# options: USER DOMAIN [NODE_MAJOR] [START_SCRIPT]
+#
+# example: v-add-nodejs-app developer test.vesopa.com 22 "npm run start"
+#
+# Runs the app as the domain owner under that user's own pm2 daemon, so the
+# customer can manage it with plain `pm2` over SSH. Nothing here runs the
+# customer's code as root.
+set -o pipefail
+
+user="${1:-}"; domain="${2:-}"; node_major="${3:-}"; start_script="${4:-}"
+
+source /etc/hestiacp/hestia.conf
+source "$HESTIA/func/main.sh"
+source_conf "$HESTIA/conf/hestia.conf"
+
+OPT=/opt/nodejs
+[[ -n "$user" && -n "$domain" ]] || { echo "usage: v-add-nodejs-app USER DOMAIN [NODE_MAJOR] [START_SCRIPT]" >&2; exit 1; }
+
+# Default to the newest installed line rather than a hardcoded version.
+[[ -z "$node_major" ]] && node_major=$(basename "$(readlink -f $OPT/default)")
+[[ -d "$OPT/$node_major" ]] || { echo "ERROR: Node $node_major is not installed. Available: $(ls -1 $OPT | grep -E '^[0-9]+$' | tr '\n' ' ')" >&2; exit 1; }
+[[ -z "$start_script" ]] && start_script="index.js"
+
+id "$user" &>/dev/null || { echo "ERROR: no such user: $user" >&2; exit 1; }
+HOME_DIR=$(getent passwd "$user" | cut -d: -f6)
+DOMAIN_DIR="$HOME_DIR/web/$domain"
+[[ -d "$DOMAIN_DIR" ]] || { echo "ERROR: $user does not own web domain $domain" >&2; exit 1; }
+
+APP_DIR="$DOMAIN_DIR/private/nodeapp"
+CONF_DIR="$HOME_DIR/conf/web/$domain"
+NODE_BIN="$OPT/$node_major/bin"
+
+as_user() { runuser -u "$user" -- /bin/bash -lc "$1"; }
+
+port=$($HESTIA/bin/v-alloc-nodejs-port "$user" "$domain") || exit 1
+echo "  port      $port"
+echo "  node      $($NODE_BIN/node -v) ($OPT/$node_major)"
+
+# --- app directory, owned by the customer -------------------------------
+as_user "mkdir -p '$APP_DIR/logs'"
+
+# Starter app, so the domain answers immediately after provisioning.
+if [[ -z "$(ls -A "$APP_DIR" 2>/dev/null | grep -v '^logs$')" ]]; then
+	as_user "cat > '$APP_DIR/index.js' <<'EOF'
+const http = require('http');
+const port = process.env.PORT || 3000;
+http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('Node ' + process.version + ' is running on ' + (process.env.APP_DOMAIN || 'this domain') + '\n');
+}).listen(port, '127.0.0.1', () => console.log('listening on 127.0.0.1:' + port));
+EOF"
+	as_user "cat > '$APP_DIR/package.json' <<'EOF'
+{
+  \"name\": \"nodeapp\",
+  \"version\": \"1.0.0\",
+  \"private\": true,
+  \"main\": \"index.js\",
+  \"scripts\": { \"start\": \"node index.js\" }
+}
+EOF"
+	echo "  starter   index.js + package.json created"
+fi
+
+# --- pm2 ecosystem, with this app's Node pinned as the interpreter ------
+#
+# WRITTEN AS .cjs, NOT .js. This file is CommonJS (`module.exports`), and a
+# project whose package.json says "type": "module" makes Node read every .js
+# file as an ES module — so pm2 answered "ecosystem.config.js malformated:
+# module is not defined in ES module scope" and the app never started. The
+# first Vite frontend to come through did exactly that. A .cjs file is
+# CommonJS whatever the package says. A stale .js from an earlier version is
+# removed so pm2 cannot pick the wrong one.
+as_user "rm -f '$APP_DIR/ecosystem.config.js'"
+as_user "cat > '$APP_DIR/ecosystem.config.cjs' <<'EOF'
+module.exports = {
+  apps: [{
+    name: '$domain',
+    script: '$start_script',
+    cwd: '$APP_DIR',
+    interpreter: '$NODE_BIN/node',
+    // fork, not cluster: pm2's cluster mode forks the daemon and would
+    // silently ignore the interpreter setting, pinning apps to the daemon's Node.
+    exec_mode: 'fork',
+    instances: 1,
+    autorestart: true,
+    max_memory_restart: '512M',
+    error_file: '$APP_DIR/logs/error.log',
+    out_file: '$APP_DIR/logs/out.log',
+    env: {
+      NODE_ENV: 'production',
+      PORT: '$port',
+      APP_DOMAIN: '$domain',
+      PATH: '$NODE_BIN:/usr/local/bin:/usr/bin:/bin'
+    }
+  }]
+}
+EOF"
+as_user "printf 'PORT=%s\nNODE_ENV=production\n' '$port' > '$APP_DIR/.env'"
+
+# --- nginx include: only the port lives here ---------------------------
+mkdir -p "$CONF_DIR"
+cat > "$CONF_DIR/nodeapp.conf" <<EOF
+location / {
+	proxy_pass http://127.0.0.1:$port;
+	proxy_http_version 1.1;
+	proxy_set_header Upgrade \$http_upgrade;
+	proxy_set_header Connection \$connection_upgrade;
+	proxy_set_header Host \$host;
+	proxy_set_header X-Real-IP \$remote_addr;
+	proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+	proxy_set_header X-Forwarded-Proto \$scheme;
+	proxy_cache_bypass \$http_upgrade;
+	proxy_read_timeout 300s;
+}
+EOF
+chown "$user:$user" "$CONF_DIR/nodeapp.conf"
+
+# --- switch the domain onto the Node template --------------------------
+$HESTIA/bin/v-change-web-domain-proxy-tpl "$user" "$domain" NodeJS '' no >/dev/null \
+	|| { echo "ERROR: could not switch $domain to the NodeJS proxy template" >&2; exit 1; }
+
+# --- the user's own pm2 daemon, supervised by systemd -------------------
+$HESTIA/bin/v-init-nodejs-user "$user" || exit 1
+systemctl restart "pm2-hestia@$user" >/dev/null 2>&1
+as_user "cd '$APP_DIR' && pm2 startOrRestart ecosystem.config.cjs --update-env >/dev/null && pm2 save >/dev/null"
+if [[ $? -ne 0 ]]; then echo "ERROR: pm2 failed to start the app" >&2; exit 1; fi
+
+nginx -t >/dev/null 2>&1 && systemctl reload nginx
+
+$HESTIA/bin/v-log-action "$user" "Info" "Web" "Node.js app provisioned ($domain, node $node_major, port $port)." 2>/dev/null
+echo "  pm2       running as $user"
+echo "OK"

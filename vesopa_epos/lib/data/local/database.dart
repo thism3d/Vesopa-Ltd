@@ -18,7 +18,63 @@ class Products extends Table {
   TextColumn get accountingCode => text().nullable()();
 
   /// Minor units (pence). Money is never stored as a double.
+  ///
+  /// This is Price 1 — the price a venue has always had. See
+  /// `data/price_levels.dart`.
   IntColumn get priceMinor => integer()();
+
+  /// Prices 2 to 6, or null where the venue has not set one.
+  ///
+  /// Null is "no special price at this level, charge Price 1" and not "free".
+  /// The difference is money: a default of zero would mean a venue switching
+  /// the till to Price 2 started giving away every product nobody had got round
+  /// to filling in — silently, at the counter.
+  IntColumn get price2Minor => integer().nullable()();
+  IntColumn get price3Minor => integer().nullable()();
+  IntColumn get price4Minor => integer().nullable()();
+  IntColumn get price5Minor => integer().nullable()();
+  IntColumn get price6Minor => integer().nullable()();
+
+  /// The printing category this product belongs to, and where that category
+  /// prints.
+  ///
+  /// The *name and the order*, not an id: the till prints a heading and sorts
+  /// by a number, and a foreign key would mean holding a second table to render
+  /// a ticket. Null means the product is in no category — it prints last, under
+  /// no heading, exactly as it did before categories existed. See
+  /// `printing/print_categories.dart`.
+  TextColumn get printCategory => text().nullable()();
+  IntColumn get printCategoryOrder => integer().nullable()();
+
+  /// The allergens declared for this product, as a JSON array of codes.
+  ///
+  /// A snapshot of what the back office says, refreshed with the rest of the
+  /// catalogue. It is here rather than fetched when a bill is drawn because
+  /// the customer display has to be able to show it on a till whose network
+  /// has gone — a declaration about food is not something to hide behind a
+  /// working connection.
+  ///
+  /// NULL and '[]' mean different things and the difference is the point:
+  /// NULL is "nobody has said", '[]' is "somebody looked and it contains none
+  /// of the fourteen". See vesopa_server/src/allergens.js.
+  TextColumn get allergens => text().nullable()();
+
+  /// Whether paying for this product moves a member's expiry forward.
+  ///
+  /// "Set a check box on a product (Renews membership)." Any number of a
+  /// venue's products may carry it -- a club sells full, concession, junior and
+  /// social memberships, which is four products, four prices and one meaning.
+  ///
+  /// It replaces the single PLU named in the loyalty settings, which could
+  /// express exactly one of those four. The old setting is carried forward by
+  /// the back office's own migration, so a venue that named a PLU has that
+  /// product flagged and behaves identically.
+  ///
+  /// False on every existing row and filled in on the next catalogue sync,
+  /// which is the safe direction: a product that wrongly renewed a membership
+  /// would move somebody's expiry a year for buying a pint.
+  BoolColumn get renewsMembership =>
+      boolean().withDefault(const Constant(false))();
   RealColumn get taxPercentage => real().withDefault(const Constant(0))();
   RealColumn get stockQuantity => real().withDefault(const Constant(0))();
 
@@ -49,6 +105,35 @@ class Products extends Table {
   /// which takes precedence over the emoji when present.
   TextColumn get emoji => text().nullable()();
   TextColumn get imageUrl => text().nullable()();
+
+  /// Whether this product may only be sold attached to another one.
+  ///
+  /// "No ice", "Extra shot", "Well done" — real products with real PLUs and
+  /// sometimes a real price, but never a sale on their own. Ringing one onto an
+  /// empty bill is always a mistake, and the till refuses it and says why.
+  ///
+  /// Not the same feature as `epos_modifier_groups`, which is a *question a
+  /// product asks* when it is rung. This is the other half, and the venue
+  /// described it exactly: pick a line already on the bill, then tap the thing
+  /// you want to say about it. Nothing was asked, and it can be said about any
+  /// product after the fact. Both exist; neither replaces the other.
+  ///
+  /// False for every existing row, which is true: before this, every product
+  /// was sellable on its own.
+  BoolColumn get isModifier => boolean().withDefault(const Constant(false))();
+
+  /// The barcode on the packet, or null.
+  ///
+  /// Nullable and not blank-by-default: "has no barcode" is a question worth
+  /// being able to ask, and a blank string is an answer that cannot be
+  /// distinguished from an empty one.
+  ///
+  /// Scanners are keyboards (see `data/swipe_cards.dart`), so this arrives the
+  /// same way a loyalty card does — a run of characters and a Return. What
+  /// tells them apart is the prefix: a code that matches none of the venue's
+  /// card programmes is looked for here before the till says it does not
+  /// recognise it.
+  TextColumn get barcode => text().nullable()();
 
   @override
   Set<Column> get primaryKey => {pluId};
@@ -123,7 +208,7 @@ class TillEvents extends Table {
   /// The trading period this belongs to, so a Z can total its own and no more.
   TextColumn get sessionId => text()();
 
-  /// void | no_sale | refund
+  /// void | no_sale | refund | expense | wastage
   TextColumn get kind => text()();
 
   /// What it was worth, in pence. Zero for a no-sale, which has a count and no
@@ -137,6 +222,17 @@ class TillEvents extends Table {
   TextColumn get staffName => text().nullable()();
 
   DateTimeColumn get at => dateTime().withDefault(currentDateAndTime)();
+
+  /// Why, from the venue's own list, where [note] carries what: "Window
+  /// cleaner" is the note on an expense and "Sundries" its reason. Since
+  /// 1.8.0.0, when these events started going up to the back office and
+  /// being reported on.
+  TextColumn get reason => text().nullable()();
+
+  /// For a wastage: which product, and how many units. Null for everything
+  /// else. The server takes the units off the shelf; the till keeps no count.
+  IntColumn get pluId => integer().nullable()();
+  RealColumn get quantity => real().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -295,6 +391,56 @@ class Orders extends Table {
   IntColumn get customerDiscountValue =>
       integer().withDefault(const Constant(0))();
 
+  /// The attached customer's contact details, copied onto the order.
+  ///
+  /// Denormalised for the same reason [customerName] and the discount are, and
+  /// for one more that is specific to these: **the till has nowhere to look
+  /// them up.** Customers are server-backed (`/till/customers`), the server
+  /// offers search and create and nothing by id, and none of it is cached
+  /// locally — so a bill saved to a table at seven o'clock has no way to say
+  /// who it is for at nine, on a line that may by then be down.
+  ///
+  /// Copying also gets the semantics right. A bill records the customer as they
+  /// were when the sale was made; a number changed next month does not
+  /// retrospectively change who was standing at the counter.
+  ///
+  /// Points are deliberately *not* here. A balance moves, and a figure frozen
+  /// onto a parked bill would be quoted back to a customer as though it were
+  /// current. It is shown only where the till has it live.
+  TextColumn get customerPhone => text().nullable()();
+  TextColumn get customerEmail => text().nullable()();
+  TextColumn get customerCardNumber => text().nullable()();
+
+  /// What this member had saved up when they were put on the bill.
+  ///
+  /// "Can we add the customer's name and points to the customer display
+  /// screen." The screen facing the customer reads a file this till writes and
+  /// has no network of its own, so the figure has to travel with the bill.
+  ///
+  /// Copied down with the name for the same reason the phone number and the
+  /// card number are: the till has nowhere to look it up again. A bill can be
+  /// parked on a table and picked up on a second terminal an hour later, and
+  /// the local customers table is empty — every lookup on this till goes
+  /// straight to the back office.
+  ///
+  /// A snapshot, and honestly so: it is the balance BEFORE this sale, because
+  /// the points for this sale are not earned until it settles.
+  IntColumn get customerPoints => integer().nullable()();
+
+  /// A practice bill, rung up by a training account.
+  ///
+  /// "Sales made in Training Mode should not be sent to the back office and
+  /// should not count towards the sales figures on the till." Set when the bill
+  /// is opened (a training account is signed on) and never changed after it
+  /// has anything on it, because everything about the bill follows from it:
+  /// it is never queued for the server, never shared with another till, never
+  /// sent to the kitchen, takes no card payment, prints as TRAINING, and is
+  /// left out of the X and Z. See `data/training_mode.dart`.
+  ///
+  /// False on every bill already on the till, which is the truth: none of them
+  /// were practice.
+  BoolColumn get training => boolean().withDefault(const Constant(false))();
+
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
   DateTimeColumn get closedAt => dateTime().nullable()();
   DateTimeColumn get syncedAt => dateTime().nullable()();
@@ -389,6 +535,11 @@ class Payments extends Table {
   /// cash and for anything taken on a platform that does not issue one.
   TextColumn get reference => text().nullable()();
 
+  /// Cashback handed over with this payment, in pence. The card machine adds
+  /// it on top of the sale and the drawer is short by it; since 1.8.0.0 it is
+  /// kept here and sent up, so the back office's Cashback report has it.
+  IntColumn get cashbackMinor => integer().withDefault(const Constant(0))();
+
   /// The tip inside [amountMinor], so the takings report can separate what the
   /// business earned from what belongs to the staff.
   IntColumn get gratuityMinor => integer().withDefault(const Constant(0))();
@@ -479,6 +630,27 @@ class Staff extends Table {
   /// with no card and a reader that sent nothing.
   TextColumn get swipeCard => text().withDefault(const Constant(''))();
 
+  /// The permission group's switches, as JSON, or empty for somebody in no
+  /// group.
+  ///
+  /// Cached here for the reason the PIN and the card are: a manager approving a
+  /// void at eight on a Friday cannot wait for the broadband, and a till that
+  /// could only check a permission online would start refusing them at the one
+  /// moment that matters. See `data/till_permissions.dart`.
+  ///
+  /// Empty means every key — not none. Every member of staff at every venue
+  /// trading today has no group, so an empty column has to keep meaning what it
+  /// has always meant.
+  TextColumn get permissions => text().withDefault(const Constant(''))();
+
+  /// A training account: signing on with it puts the till in training mode.
+  ///
+  /// Only ever true for a till that asked for training accounts
+  /// (`/till/staff?features=training`); an older till is never sent one. False
+  /// on every existing row until the next staff pull, which is correct --
+  /// nobody is a trainee until the back office says so.
+  BoolColumn get training => boolean().withDefault(const Constant(false))();
+
   @override
   Set<Column> get primaryKey => {id};
 }
@@ -508,7 +680,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 17;
+  int get schemaVersion => 27;
 
 
   /// Add a column only if the table has not already got it.
@@ -670,6 +842,87 @@ class AppDatabase extends _$AppDatabase {
             // until the back office says they do, and a till that guessed would
             // be a till where an empty column signs somebody on.
             await _addColumnIfMissing(m, staff, staff.swipeCard);
+          }
+          if (from < 18) {
+            // Permission groups. Empty on every existing row, which is
+            // "unrestricted" — see `data/till_permissions.dart`. A default of
+            // "no keys" here would take the refund key off every member of
+            // staff on the next launch of the till.
+            await _addColumnIfMissing(m, staff, staff.permissions);
+          }
+          if (from < 19) {
+            // Price levels 2 to 6. Null on every existing row, which means
+            // "charge Price 1" — see `data/price_levels.dart`. Nothing a venue
+            // is selling today changes price when this runs.
+            await _addColumnIfMissing(m, products, products.price2Minor);
+            await _addColumnIfMissing(m, products, products.price3Minor);
+            await _addColumnIfMissing(m, products, products.price4Minor);
+            await _addColumnIfMissing(m, products, products.price5Minor);
+            await _addColumnIfMissing(m, products, products.price6Minor);
+          }
+          if (from < 20) {
+            // Printing categories. Null on every existing row, which means the
+            // product prints under no heading — the ticket a venue gets today.
+            await _addColumnIfMissing(m, products, products.printCategory);
+            await _addColumnIfMissing(m, products, products.printCategoryOrder);
+          }
+          if (from < 26) {
+            // Training mode. False on every existing member of staff and every
+            // bill already on the till: nobody was a trainee and nothing was
+            // practice before this existed.
+            await _addColumnIfMissing(m, staff, staff.training);
+            await _addColumnIfMissing(m, orders, orders.training);
+          }
+          if (from < 25) {
+            // Which products renew a membership, and what a member looks like.
+            //
+            // Both false/null on every existing row and filled in by the next
+            // sync -- the catalogue pull and the customer lookup respectively.
+            // That is the safe direction for the flag in particular: a product
+            // that arrived wrongly flagged would move somebody's membership on
+            // a year for buying a pint.
+            await _addColumnIfMissing(m, products, products.renewsMembership);
+            // Null on every bill that is already open, which is the truth: the
+            // balance was never captured for those, and there is nowhere to
+            // fetch it from now. Those bills go on showing the name, which is
+            // what they always showed.
+            await _addColumnIfMissing(m, orders, orders.customerPoints);
+          }
+          if (from < 24) {
+            // What is in the food. Null on every existing row, which reads as
+            // "nobody has said" — deliberately not as "contains nothing" — and
+            // fills in on the next catalogue sync.
+            await _addColumnIfMissing(m, products, products.allergens);
+          }
+          if (from < 23) {
+            // The barcode on the packet. Null everywhere until a catalogue
+            // that carries one arrives.
+            await _addColumnIfMissing(m, products, products.barcode);
+          }
+          if (from < 22) {
+            // Products that can only be sold attached to another. False on
+            // every existing row: before this, everything was sellable alone.
+            await _addColumnIfMissing(m, products, products.isModifier);
+          }
+          if (from < 21) {
+            // The customer's contact details on the bill. Null on every
+            // existing order, including ones with a customer attached: the
+            // details were never captured, and there is nowhere to fetch them
+            // from now. Those bills go on showing the name and the discount,
+            // which is what they always showed.
+            await _addColumnIfMissing(m, orders, orders.customerPhone);
+            await _addColumnIfMissing(m, orders, orders.customerEmail);
+            await _addColumnIfMissing(m, orders, orders.customerCardNumber);
+          }
+          if (from < 27) {
+            // 1.8.0.0: till events go up to the back office and two new
+            // kinds join them (an expense paid out, a wastage), and a
+            // payment remembers the cashback given with it. Every existing
+            // row reads as before: no reason, no product, no cashback.
+            await _addColumnIfMissing(m, tillEvents, tillEvents.reason);
+            await _addColumnIfMissing(m, tillEvents, tillEvents.pluId);
+            await _addColumnIfMissing(m, tillEvents, tillEvents.quantity);
+            await _addColumnIfMissing(m, payments, payments.cashbackMinor);
           }
         },
       );

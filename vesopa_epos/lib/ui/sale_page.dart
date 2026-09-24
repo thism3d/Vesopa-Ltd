@@ -7,18 +7,21 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/kitchen_printing.dart';
 import '../data/local/database.dart';
 import '../data/mix_match_engine.dart';
+import '../data/modifier_layout.dart';
 import '../data/modifiers.dart';
 import '../data/order_repository.dart';
 import '../data/staff_session.dart';
 import '../main.dart';
 import 'layout.dart';
 import 'modifier_prompt.dart';
-import 'clock_sheet.dart';
 import 'customer_picker.dart';
+import 'membership_gate.dart';
+import 'membership_prompt.dart';
 import 'payment_page.dart';
 import 'sign_on_pad.dart';
 import 'table_picker.dart';
 import 'theme.dart';
+import 'transfer_table.dart';
 import 'till_actions.dart';
 import 'void_dialog.dart';
 import 'widgets/action_bar.dart';
@@ -27,6 +30,10 @@ import '../data/commerce.dart';
 import '../data/fonts.dart';
 import '../data/pricing_engine.dart';
 import 'widgets/basket_panel.dart';
+import 'price_override_dialog.dart';
+import 'product_lookup_sheet.dart';
+import 'refund_page.dart';
+import 'widgets/customer_card.dart';
 import 'widgets/live_receipt.dart';
 import 'widgets/line_editor.dart';
 import '../data/screens.dart';
@@ -35,9 +42,43 @@ import 'widgets/pos_message.dart';
 import 'widgets/open_bills_strip.dart';
 import 'widgets/programmed_bar.dart';
 import 'widgets/programmed_grid.dart';
+import '../data/till_permissions.dart';
+import 'permission_gate.dart';
+import 'widgets/clock_punch_button.dart';
+import '../data/price_level_controller.dart';
+import 'price_level_sheet.dart';
+import 'display_lock.dart';
 
 /// Live catalogue, straight from the local database so the grid renders with
 /// no network at all.
+/// A product a barcode scan found, waiting to be rung up.
+///
+/// The scanner is heard by the shell — it wraps the whole till, because a code
+/// is scanned whenever somebody holds one out and a listener on the sale screen
+/// would be a reader that works only when nobody needed it. But *ringing* an
+/// item is the sale screen's job: `ring` asks a product's modifier questions and
+/// honours the venue's consolidation setting, and a second path in the shell
+/// that did neither would be a scanner behaving differently from a key.
+///
+/// So the shell puts the product here and shows the sale screen, and the sale
+/// screen rings it with the same closure a button press uses. One path, and a
+/// scan from the Reports page takes the clerk where the bill is rather than
+/// telling them to walk there.
+class PendingScan extends Notifier<Product?> {
+  @override
+  Product? build() => null;
+
+  void found(Product product) => state = product;
+
+  /// Cleared by the sale screen the moment it has rung it, so a rebuild does
+  /// not ring the same bottle twice.
+  void taken() => state = null;
+}
+
+final pendingScanProvider = NotifierProvider<PendingScan, Product?>(
+  PendingScan.new,
+);
+
 final productsProvider = StreamProvider<List<Product>>((ref) {
   final db = ref.watch(databaseProvider);
   return db.select(db.products).watch();
@@ -215,6 +256,60 @@ class SalePage extends ConsumerWidget {
         g.id: g,
     };
 
+    /// Put a modifier product onto a line that is already on the bill.
+    ///
+    /// The venue's own description: "you would select say Vodka & Coke and then
+    /// tap this in the check view and click no ice for it to attach to this
+    /// product."
+    ///
+    /// Which line, and why it is not simply "the last one": a modifier attaches
+    /// to the **selected** line when there is one, and to the last item when
+    /// there is not. That is the same rule [askAbout] follows, and it is worth
+    /// holding in both places — "gin, then no ice" is the order somebody
+    /// actually presses the two keys in, and making them select the gin first
+    /// would be a step for the common case in order to disambiguate the rare
+    /// one. Selecting a line stays the way to say "not that one, this one".
+    ///
+    /// An empty bill is refused, out loud. Ringing "No ice" onto nothing is
+    /// always a mistake, and a key that silently does nothing is a key a clerk
+    /// presses four more times and then asks somebody about.
+    Future<void> attachModifier(Product p, String? addedBy) async {
+      final lines = await repo.linesOnce(orderId);
+      final items = lines.where((l) => l.parentLineId == null).toList();
+      if (items.isEmpty) {
+        if (context.mounted) {
+          PosMessenger.info(
+            context,
+            '${p.name} goes onto an item. Ring the item up first.',
+          );
+        }
+        return;
+      }
+
+      // Only a selection made against *this* bill counts, for the reason
+      // askAbout gives: ids left over from the bill before would pick a line
+      // that is not on screen.
+      final picked = ref.read(selectedLinesProvider);
+      final ids = picked.orderId == orderId ? picked.ids : const <String>{};
+      final target = modifierTarget(items, ids, idOf: (l) => l.id);
+      if (target == null) return;
+
+      final ok = await repo.addModifiersTo(
+        orderId,
+        target.id,
+        [p],
+        addedBy: addedBy,
+      );
+      if (!context.mounted) return;
+      if (!ok) {
+        PosMessenger.error(context, 'That line is no longer on the bill.');
+        return;
+      }
+      // Said out loud because the item lands *under* the line rather than at
+      // the bottom of the bill, which is not where a clerk's eye is.
+      PosMessenger.success(context, '${p.name} added to ${target.name}.');
+    }
+
     /// Ring an item — the one way onto the bill, whichever grid the key was
     /// pressed on.
     ///
@@ -231,11 +326,29 @@ class SalePage extends ConsumerWidget {
       final addedBy = ref.read(staffSessionProvider).name ??
           ref.read(sessionProvider).name;
 
+      // A product that is only ever an answer goes onto a line, not onto the
+      // bill. "No ice", "Extra shot", "Well done" — see Products.isModifier.
+      //
+      // Handled here rather than at the key, so it holds however the product
+      // was reached: the catalogue grid, a programmed screen, a bar key, or
+      // Product Search. A rule enforced at one of four doors is a rule a venue
+      // discovers is missing at the counter.
+      if (p.isModifier) {
+        await attachModifier(p, addedBy);
+        return;
+      }
+
       final groups = (ref.read(modifiersProvider).value ??
               ModifierSet.empty)
           .forPlu(p.pluId);
       if (groups.isEmpty) {
-        await repo.addLine(orderId, p, addedBy: addedBy);
+        await repo.addLine(
+          orderId,
+          p,
+          addedBy: addedBy,
+          priceLevel: ref.read(currentPriceLevelProvider),
+          consolidate: ref.read(tillSettingsProvider).consolidateLines,
+        );
         return;
       }
 
@@ -251,8 +364,28 @@ class SalePage extends ConsumerWidget {
       // so nothing reaches the bill. See askModifiers.
       if (answers == null) return;
 
-      await repo.addLine(orderId, p, addedBy: addedBy, modifiers: answers);
+      await repo.addLine(
+        orderId,
+        p,
+        addedBy: addedBy,
+        modifiers: answers,
+        priceLevel: ref.read(currentPriceLevelProvider),
+        // Moot on this path — a product carrying answers is never merged
+        // anyway — but passed so the two calls cannot drift apart.
+        consolidate: ref.read(tillSettingsProvider).consolidateLines,
+      );
     }
+
+    // A scan the shell heard, rung here so it goes through `ring` like a key.
+    //
+    // ref.listen and not a watch: this is an event, not state to draw from, and
+    // watching it would ring the same product again on every rebuild until
+    // something cleared it.
+    ref.listen<Product?>(pendingScanProvider, (_, scanned) {
+      if (scanned == null) return;
+      ref.read(pendingScanProvider.notifier).taken();
+      unawaited(ring(scanned));
+    });
 
     /// Ask one of the venue's questions about a line already on the bill.
     ///
@@ -282,10 +415,11 @@ class SalePage extends ConsumerWidget {
       // bill before would otherwise pick a line that is not on screen.
       final picked = ref.read(selectedLinesProvider);
       final ids = picked.orderId == orderId ? picked.ids : const <String>{};
-      final target = items.lastWhere(
-        (l) => ids.contains(l.id),
-        orElse: () => items.last,
-      );
+      // The same rule the attach above follows, stated once — see
+      // modifierTarget. Two keys asking the same question must not answer it
+      // two ways.
+      final target = modifierTarget(items, ids, idOf: (l) => l.id);
+      if (target == null) return;
 
       if (!context.mounted) return;
       final answers = await askModifiers(
@@ -473,6 +607,7 @@ class SalePage extends ConsumerWidget {
                             lines: lines,
                             selected: selectedLines,
                             order: order,
+                            onRing: ring,
                           ),
                         ),
                       ),
@@ -541,6 +676,7 @@ class SalePage extends ConsumerWidget {
                         lines: lines,
                         selected: selectedLines,
                         order: order,
+                        onRing: ring,
                       ),
                       ),
                     ),
@@ -581,8 +717,18 @@ class SalePage extends ConsumerWidget {
                               // 15-inch panel, and bigger type in the old width
                               // truncated half the product names — the two changes
                               // only work together.
+                              //
+                              // A share of the width since v1.6.6, not a
+                              // constant: 420px is a fifth of a widescreen till
+                              // and two fifths of a square one. See
+                              // PosLayoutX.checkWidth — and note that the same
+                              // release taught LiveReceipt to size its type from
+                              // the width as well as the height, because
+                              // narrowing this box without that would truncate
+                              // the product names all over again. Still the two
+                              // changes only work together.
                               SizedBox(
-                                width: 420,
+                                width: context.checkWidth,
                                 child: Padding(
                                   padding: const EdgeInsets.fromLTRB(
                                     10,
@@ -620,8 +766,21 @@ class SalePage extends ConsumerWidget {
                                                 addedBy: l.addedBy,
                                                 addedAt: l.addedAt,
                                                 parentLineId: l.parentLineId,
+                                                lineDiscountMinor:
+                                                    l.lineDiscountMinor,
                                               ),
                                           ],
+                                          // What the venue's deals save on this
+                                          // basket. Zero until the answer lands,
+                                          // which is one frame -- and the stored
+                                          // total this panel is drawn beside is
+                                          // priced the same way, so the two agree
+                                          // rather than arguing.
+                                          dealMinor: ref
+                                                  .watch(dealsProvider(orderId))
+                                                  .value
+                                                  ?.totalSavingMinor ??
+                                              0,
                                           manualDiscountMinor:
                                               order?.manualDiscountMinor ?? 0,
                                           customerDiscountMinor: order == null
@@ -641,7 +800,14 @@ class SalePage extends ConsumerWidget {
                                     branding: ref.watch(brandingProvider),
                                     tableNumber: order?.tableNumber,
                                     covers: order?.covers,
-                                    customerName: order?.customerName,
+                                    customer: BillCustomer.of(order),
+                                    onChangeCustomer: () =>
+                                        _promptCustomer(context, ref),
+                                    onRemoveCustomer: () => _removeCustomer(
+                                      context,
+                                      ref,
+                                      order?.customerName,
+                                    ),
                                     emptyMessage: 'Ring up an item to start',
                                     selectedLineIds: selectedLines,
                                     // Tap picks the line out for Void; tap it
@@ -740,6 +906,7 @@ class SalePage extends ConsumerWidget {
                         lines: lines,
                         selected: selectedLines,
                         order: order,
+                        onRing: ring,
                       ),
                     )
                   else
@@ -999,6 +1166,14 @@ class SalePage extends ConsumerWidget {
     required List<OrderLine> lines,
     required Set<String> selected,
     Order? order,
+    // How this screen rings an item up.
+    //
+    // Passed in rather than rebuilt here, and that is the point: `ring` asks a
+    // product's modifier questions before the line lands. A second path that
+    // called addLine directly would be a Product Search key that skips "which
+    // mixer?" — working, and quietly wrong, on exactly the products where the
+    // question matters most.
+    Future<void> Function(Product)? onRing,
   }) async {
     switch (key) {
       // ---- The keys a bar carries ----------------------------------------
@@ -1017,6 +1192,20 @@ class SalePage extends ConsumerWidget {
         );
         return;
       case 'void':
+        // Whether there is anything to void is settled *before* anybody is
+        // asked to approve one. Pressing Void with nothing selected used to put
+        // "Needs approval" up, take a manager's PIN, and then say "tap the
+        // items first" — a manager fetched across the room to authorise
+        // nothing. Cheap checks first, then the one that costs somebody's time.
+        if (selected.isEmpty) {
+          PosMessenger.error(
+            context,
+            'Tap the item(s) on the bill first, then Void.',
+          );
+          return;
+        }
+        if (!await allowed(context, ref, TillPermission.voidLine)) return;
+        if (!context.mounted) return;
         return _voidSelected(
           context,
           ref,
@@ -1024,6 +1213,15 @@ class SalePage extends ConsumerWidget {
           selected: selected,
         );
       case 'cancel':
+        // Same order, and the same reason: an empty bill is nothing to cancel.
+        if (lines.isEmpty) {
+          PosMessenger.error(context, 'There is nothing on this bill yet.');
+          return;
+        }
+        // Cancelling a whole check is a void of every line on it, so it asks
+        // for the same key rather than a weaker one.
+        if (!await allowed(context, ref, TillPermission.voidLine)) return;
+        if (!context.mounted) return;
         return _cancelCheck(context, ref, lines: lines);
       case 'save_table':
         return _saveTable(context, ref, order);
@@ -1087,7 +1285,140 @@ class SalePage extends ConsumerWidget {
       // somebody walks away, and a wage is not paid against either of those.
       case 'clock_in_out':
         if (!context.mounted) return;
-        await showClockSheet(context, ref);
+        // Straight to the signed-on person's own shift. The list of everybody
+        // is under Functions › Staff On Shift, where a manager looks for it.
+        await punchSignedOnStaff(context, ref);
+        return;
+
+      // The customer screen, locked and unlocked from here.
+      //
+      // A toggle rather than two keys, because it is pressed in pairs — on when
+      // a family arrives at the counter, off when they have gone — and a venue
+      // should not have to find room on a bar for both halves of one thought.
+      case 'display_lock':
+        await toggleCustomerScreenLock(context);
+        return;
+
+      // Swapping what the terminal charges. On the bar because a venue that
+      // runs a happy hour switches at the counter, twice a day, and Functions
+      // is two taps further away than that deserves.
+      case 'price_level':
+        return showPriceLevelSheet(context, ref);
+
+      // ---- The four the venue asked for by name ---------------------------
+
+      // The floor plan, always.
+      //
+      // Deliberately not `save_table`, which saves silently when the bill
+      // already has a table and only shows the plan when it does not. That is
+      // right for saving and wrong for "show me the floor", and the venue said
+      // their customers find the one key doing both confusing. This one always
+      // opens the plan, so a bill can also be moved to a different table.
+      case 'table_plan':
+        return _promptTable(context, ref);
+
+      // Money out of the drawer. The key itself is gated inside showRefund, so
+      // a venue can place it anywhere without placing the permission with it.
+      case 'refund':
+        return showRefund(context, ref);
+
+      // Move this bill onto another table, and offer to merge when that table
+      // already has a party on it.
+      //
+      // The same flow the floor plan's own Transfer runs — see
+      // ui/transfer_table.dart. A bill with nothing on it is refused rather
+      // than moved: "transferring" an empty check does nothing a clerk can see
+      // and leaves them believing something happened.
+      case 'transfer':
+        if (order == null || lines.isEmpty) {
+          PosMessenger.info(
+            context,
+            'There is nothing on this bill to transfer.',
+          );
+          return;
+        }
+        await transferTable(context, ref, orderId: orderId);
+        return;
+
+      // Divide the bill before anybody pays, which is what a restaurant table
+      // asks for. The board is where the split is applied, so this goes there
+      // and opens it — rather than splitting here and handing a half-made
+      // decision across a screen boundary.
+      case 'split':
+        if (order == null || order.totalMinor == 0) {
+          PosMessenger.info(context, 'There is nothing on this bill to split.');
+          return;
+        }
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => PaymentPage(
+              orderId: orderId,
+              onSettled: onNewOrder,
+              openSplit: true,
+            ),
+          ),
+        );
+        return;
+
+      // "How much is the Malbec?", asked across the bar. Adds nothing to the
+      // bill whatever is tapped — see ProductLookupSheet.
+      case 'price_check':
+        await showProductLookup(
+          context,
+          ref,
+          mode: LookupMode.priceCheck,
+          products: ref.read(productsProvider).value ?? const [],
+        );
+        return;
+
+      // The same list, where a tap rings the item up. For the catalogue of five
+      // hundred where nobody knows which page the item is on.
+      case 'product_search':
+        final found = await showProductLookup(
+          context,
+          ref,
+          mode: LookupMode.ring,
+          products: ref.read(productsProvider).value ?? const [],
+        );
+        if (found == null) return;
+        if (onRing == null) {
+          // No way to ring from here. Said plainly rather than silently
+          // dropping the item the clerk just went looking for.
+          if (context.mounted) {
+            PosMessenger.info(context, 'Items cannot be rung up from here.');
+          }
+          return;
+        }
+        await onRing(found);
+        return;
+
+      // Charge something else for a line already on the bill.
+      //
+      // The order of the checks is the same one Void follows and for the same
+      // reason: cheap checks first, then the one that costs somebody's time. A
+      // manager fetched across the room to authorise nothing is the failure
+      // being avoided.
+      case 'price_override':
+        if (selected.isEmpty) {
+          PosMessenger.info(context, 'Pick a line on the bill first.');
+          return;
+        }
+        if (selected.length > 1) {
+          PosMessenger.info(
+            context,
+            'One line at a time — a price override is a price, not a rule.',
+          );
+          return;
+        }
+        final line = lines.where((l) => l.id == selected.first).firstOrNull;
+        if (line == null) return;
+        if (!await allowed(context, ref, TillPermission.setPrice)) return;
+        if (!context.mounted) return;
+        final priced = await showPriceOverride(context, line);
+        if (priced == null) return;
+        await ref
+            .read(orderRepositoryProvider)
+            .setLinePrice(orderId, line.id, priced);
         return;
 
       case 'covers':
@@ -1097,7 +1428,21 @@ class SalePage extends ConsumerWidget {
       case 'note':
         return _noteSelected(context, ref, lines: lines, selected: selected);
       case 'open_drawer':
-        return TillActions.openCashDrawer(context, ref);
+        if (!await allowed(context, ref, TillPermission.noSale)) return;
+        if (!context.mounted) return;
+        // Why the drawer is being opened with nothing sold. Asked before it
+        // opens, because afterwards the clerk has their hands in it — and
+        // skipping is allowed, because a drawer that will not open over an
+        // audit field is a till that has stopped working.
+        final why = await askReason(
+          context,
+          ref,
+          ReasonFor.noSale,
+          title: 'Opening the drawer',
+          subtitle: 'This is recorded on the Z report with the voids.',
+        );
+        if (!context.mounted) return;
+        return TillActions.openCashDrawer(context, ref, reason: why);
       case 'print_bill':
         return TillActions.printCurrentBill(context, ref, orderId);
 
@@ -1137,23 +1482,129 @@ class SalePage extends ConsumerWidget {
     }
   }
 
+  /// The Customer key.
+  ///
+  /// THIS IS THE DOOR THE VENUE FOUND OPEN. A card swipe has checked the
+  /// membership since 1.6.8.0; this one attached whoever was tapped, expired or
+  /// not, because the search it reads was not even told there was an expiry.
+  /// Both halves are fixed: `/till/customers` now sends the membership and the
+  /// photograph, and this goes through the same gate the swipe does.
   Future<void> _promptCustomer(BuildContext context, WidgetRef ref) async {
     final customer = await pickCustomer(context, ref);
-    if (customer == null) return;
+    if (customer == null || !context.mounted) return;
+
+    // The venue's fee and term, which the name search does not carry. Cached
+    // for the session, and answers its defaults when the back office cannot be
+    // reached rather than stopping the sale.
+    final settings =
+        await ref.read(commerceRepositoryProvider).membershipSettings();
+    if (!context.mounted) return;
+
+    final member = ExpiredMember.fromTill(
+      customer,
+      feeMinor: settings.feeMinor,
+      termMonths: settings.termMonths,
+      renewalDate: settings.renewalDate,
+    );
+
+    final gate = await checkMembership(
+      context,
+      ref,
+      orderId: orderId,
+      member: member,
+    );
+    if (!context.mounted) return;
+    if (gate == MembershipGate.refused) {
+      sayMembership(context, gate, member: member);
+      return;
+    }
+
     await ref
         .read(orderRepositoryProvider)
         .attachCustomer(
           orderId,
           id: customer.id,
           name: customer.name,
+          // Being renewed on this bill, so the expiry it carries now is the
+          // one being replaced — see the same note in card_actions.dart.
+          membershipExpiry: gate == MembershipGate.renewing
+              ? null
+              : customer.membershipExpiry,
           discountType: customer.discountType,
           discountValue: customer.discountValue,
+          phone: customer.phone,
+          email: customer.email,
+          cardNumber: customer.cardNumber,
+          pointsBalance: customer.pointsBalance,
         );
-    if (context.mounted && customer.hasDiscount) {
+    if (!context.mounted) return;
+
+    if (gate == MembershipGate.renewing) {
+      sayMembership(context, gate, member: member);
+      return;
+    }
+
+    // A face, where the venue has taken one. The same treatment a swipe gets,
+    // and for the same reason: a photograph is what tells a clerk they are
+    // serving the person the card belongs to.
+    if (member.photoUrl != null) {
+      await showMemberOnBill(
+        context,
+        member: member,
+        apiBase: ref.read(apiBaseProvider),
+        footnote: customer.hasDiscount
+            ? 'On this bill with ${customer.discountLabel}.'
+            : 'On this bill.',
+      );
+      return;
+    }
+
+    if (customer.hasDiscount) {
       PosMessenger.success(
         context,
         '${customer.name} attached — ${customer.discountLabel} applied.',
       );
+    }
+  }
+
+  /// Take the customer off the bill, and their standing discount with them.
+  ///
+  /// Confirmed, because the total moves when it happens: a mis-tap that
+  /// silently put £6 back onto a bill a customer has already been quoted is
+  /// worse than one more press.
+  Future<void> _removeCustomer(
+    BuildContext context,
+    WidgetRef ref,
+    String? customerName,
+  ) async {
+    final name = (customerName ?? '').trim().isEmpty
+        ? 'The customer'
+        : customerName!.trim();
+
+    final yes = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Take the customer off this bill?'),
+        content: Text(
+          '$name comes off, and any discount they carry goes with them.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Keep'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Take off'),
+          ),
+        ],
+      ),
+    );
+    if (yes != true) return;
+
+    await ref.read(orderRepositoryProvider).clearCustomer(orderId);
+    if (context.mounted) {
+      PosMessenger.success(context, 'Customer taken off the bill.');
     }
   }
 

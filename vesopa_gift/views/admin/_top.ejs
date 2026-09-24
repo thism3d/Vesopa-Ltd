@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title><%= title %> · Vesopa Gift</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="<%= asset('/img/icon.svg') %>" type="image/svg+xml">
+<link rel="stylesheet" href="<%= asset('/css/admin.css') %>">
+<script src="<%= asset('/js/theme.js') %>"></script>
+</head>
+<body>
+<div class="app">
+<aside class="rail">
+  <a class="logo" href="/admin"><%- include('_icon', { size: 30 }) %><span>Vesopa Gift</span></a>
+  <% if (locals.venue) { %>
+  <a class="venue-pill" href="/admin/v/<%= venue.office_id %>"><small>Venue</small><span><%= venueName %></span></a>
+  <% } %>
+  <nav>
+    <% if (session.everyVenue) { %>
+      <span class="nav-group">Vesopa</span>
+      <a class="nav <%= nav === 'venues' ? 'active' : '' %>" href="/admin/venues"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10l8-6 8 6v10H4z"/><path d="M9 20v-6h6v6"/></svg>Venues</a>
+      <% if (session.isOwner) { %>
+      <a class="nav <%= nav === 'website' ? 'active' : '' %>" href="/admin/website"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 3 2.5 15 0 18M12 3c-2.5 3-2.5 15 0 18"/></svg>Website</a>
+      <% } %>
+      <% if (session.isOwner && peopleUrl) { %>
+      <a class="nav" href="<%= peopleUrl %>" target="_blank" rel="noopener"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14c2 .8 3 2.8 3 6"/></svg>People<svg class="ext" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8a8494" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17L17 7M9 7h8v8"/></svg></a>
+      <% } %>
+    <% } else if (locals.myVenues && myVenues.length > 1) { %>
+      <span class="nav-group">Your venues</span>
+      <% myVenues.forEach(function (v) { %><a class="nav" href="/admin/v/<%= v.office_id %>"><%= v.name %></a><% }) %>
+    <% } %>
+    <% if (locals.venue) { var base = '/admin/v/' + venue.office_id; %>
+      <span class="nav-group">Sell</span>
+      <a class="nav <%= nav === 'dashboard' ? 'active' : '' %>" href="<%= base %>"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>Dashboard</a>
+      <a class="nav <%= nav === 'orders' ? 'active' : '' %>" href="<%= base %>/orders"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12l1 18H5z"/><path d="M9 7a3 3 0 0 0 6 0"/></svg>Orders</a>
+      <a class="nav <%= nav === 'vouchers' ? 'active' : '' %>" href="<%= base %>/vouchers"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M8 6v12" stroke-dasharray="2 2.5"/></svg>Vouchers</a>
+      <span class="nav-group">Shop</span>
+      <a class="nav <%= nav === 'experiences' ? 'active' : '' %>" href="<%= base %>/experiences"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l2.4 5 5.6.8-4 3.9.9 5.5L12 15.6 7.1 18.2l.9-5.5-4-3.9 5.6-.8z"/></svg>Experiences</a>
+      <a class="nav <%= nav === 'events' ? 'active' : '' %>" href="<%= base %>/events"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8a2 2 0 0 0 0 4v5h18v-5a2 2 0 0 0 0-4V5H3z"/><path d="M14 5v12" stroke-dasharray="2 2.5"/></svg>Events</a>
+      <a class="nav <%= nav === 'designs' ? 'active' : '' %>" href="<%= base %>/designs"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-8 8"/></svg>Designs</a>
+      <a class="nav <%= nav === 'settings' ? 'active' : '' %>" href="<%= base %>/settings"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>Settings</a>
+    <% } %>
+  </nav>
+  <div class="rail-foot">
+    <strong><%= session.name %></strong>
+    <span class="small muted"><%= session.isOwner ? 'Owner' : (session.isSupport ? 'Support' : 'Manager') %></span>
+    <div class="rail-links"><a class="link" href="/admin/start?switch=1">Switch account</a><form method="post" action="/admin/signout"><input type="hidden" name="_csrf" value="<%= session.csrf %>"><button class="link" type="submit">Sign out</button></form></div>
+    <%- include('../_theme', { themeClass: 'in-rail' }) %>
+  </div>
+</aside>
+<main>
+<% if (locals.flash) { %><div class="flash <%= flash.kind %>" role="status"><%= flash.text %></div><% } %>

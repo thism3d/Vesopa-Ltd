@@ -26,6 +26,7 @@ class CompletedBoard extends ConsumerWidget {
     final session = ref.watch(kitchenSessionProvider).value;
     final profile = session?.screen;
     if (profile == null || session == null) return const SizedBox.shrink();
+    final allergens = ref.watch(allergenLabelsProvider).value ?? const {};
 
     final tickets = board.completed(profile);
 
@@ -54,6 +55,7 @@ class CompletedBoard extends ConsumerWidget {
           ticket: ticket,
           profile: profile,
           now: board.now,
+          allergenLabels: allergens,
           labelFor: session.labelFor,
           onRecall: () => ref.read(ticketBoardProvider.notifier).recall(ticket),
           onDetails: () => showTicketDetail(context, ref, ticket),

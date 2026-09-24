@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!--
+    One build, every venue. The server (src/loyalty_app.js) serves this page at
+    loyalty.vesopa.com/<slug>/ and writes the venue in: its address over the
+    SLUG placeholder, its name, description, colour, background, icon and public
+    address over the others. Built with a base href of the SLUG placeholder so
+    every file is fetched from the venue's own address.
+  -->
+  <base href="$FLUTTER_BASE_HREF">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="description" content="__DESCRIPTION__">
+  <meta name="theme-color" content="__THEME__">
+  <link rel="canonical" href="__URL__">
+
+  <!-- What a link to the app shows when it is shared: a message, a social post. -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="__APP_NAME__">
+  <meta property="og:title" content="__APP_NAME__">
+  <meta property="og:description" content="__DESCRIPTION__">
+  <meta property="og:url" content="__URL__">
+  <meta property="og:image" content="__OG_IMAGE__">
+  <meta property="og:locale" content="en_GB">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="__APP_NAME__">
+  <meta name="twitter:description" content="__DESCRIPTION__">
+  <meta name="twitter:image" content="__OG_IMAGE__">
+
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="__APP_NAME__">
+  <link rel="apple-touch-icon" href="__ICON__">
+  <link rel="icon" type="image/png" href="__ICON__">
+
+  <title>__APP_NAME__</title>
+  <link rel="manifest" href="manifest.webmanifest">
+
+  <style>
+    html, body { margin: 0; height: 100%; background: __BACKGROUND__; }
+    /* The wait is real -- a Flutter web app is a couple of megabytes over 4G --
+       so the splash says WHOSE app is loading rather than showing a bare mark.
+       Somebody who tapped a link wants to know they are in the right place, and
+       a logo alone does not tell them that when the logo is a fallback. */
+    #splash { position: fixed; inset: 0; display: flex; flex-direction: column;
+              align-items: center; justify-content: center; gap: 18px;
+              font: 500 17px/1.35 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+              color: __THEME__; text-align: center; padding: 24px; }
+    #splash img { width: 96px; height: 96px; object-fit: contain; border-radius: 22px; }
+    #splash .name { opacity: .92; }
+    /* Only after a moment: on a fast connection the app is up before this
+       matters, and a "loading" that flashes reads as a stutter. */
+    #splash .wait { font-size: 14px; opacity: 0; animation: showWait .3s ease 1.2s forwards; }
+    @keyframes showWait { to { opacity: .6; } }
+    @media (prefers-reduced-motion: reduce) { #splash .wait { animation: none; opacity: .6; } }
+  </style>
+
+  <script>
+    /*
+     * Browser notifications and position, for the Dart side (lib/platform/).
+     * Plain JS rather than interop classes: small, and the same on every
+     * browser that has them at all.
+     */
+    window.vesopaPush = {
+      supported: function () {
+        return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+      },
+      permission: function () {
+        return 'Notification' in window ? Notification.permission : 'unsupported';
+      },
+      _key: function (base64) {
+        const pad = '='.repeat((4 - (base64.length % 4)) % 4);
+        const raw = atob((base64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
+        const out = new Uint8Array(raw.length);
+        for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+        return out;
+      },
+      _worker: async function () {
+        const scope = document.baseURI;
+        return navigator.serviceWorker.register(new URL('push-sw.js', scope).href, { scope: new URL('.', scope).pathname });
+      },
+      // Resolves to the subscription as JSON text, or '' when refused.
+      subscribe: async function (vapidKey) {
+        if (!window.vesopaPush.supported()) return '';
+        const allowed = await Notification.requestPermission();
+        if (allowed !== 'granted') return '';
+        const reg = await window.vesopaPush._worker();
+        await navigator.serviceWorker.ready;
+        let sub = await reg.pushManager.getSubscription();
+        if (!sub) {
+          sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: window.vesopaPush._key(vapidKey) });
+        }
+        return JSON.stringify(sub.toJSON());
+      },
+      // Resolves to the endpoint that was dropped, or ''.
+      unsubscribe: async function () {
+        if (!('serviceWorker' in navigator)) return '';
+        const reg = await navigator.serviceWorker.getRegistration(new URL('.', document.baseURI).href);
+        if (!reg) return '';
+        const sub = await reg.pushManager.getSubscription();
+        if (!sub) return '';
+        const endpoint = sub.endpoint;
+        await sub.unsubscribe();
+        return endpoint;
+      },
+      current: async function () {
+        if (!('serviceWorker' in navigator)) return '';
+        const reg = await navigator.serviceWorker.getRegistration(new URL('.', document.baseURI).href);
+        const sub = reg ? await reg.pushManager.getSubscription() : null;
+        return sub ? JSON.stringify(sub.toJSON()) : '';
+      },
+    };
+
+    // A tapped notification, when the app is already open: the worker posts the
+    // address and the app follows it (lib/platform/push_web.dart onOpenRequest).
+    window.vesopaPush.onOpen = function (callback) { window.vesopaPush._open = callback; };
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', function (e) {
+        if (e.data && e.data.type === 'open' && e.data.url) {
+          const hash = new URL(e.data.url).hash.replace(/^#/, '');
+          if (window.vesopaPush._open) window.vesopaPush._open(hash);
+        }
+      });
+    }
+
+    /*
+     * PASSKEYS.
+     *
+     * WebAuthn speaks ArrayBuffers and the server speaks base64url, so every
+     * field has to be converted on the way in and back on the way out. It is
+     * half a page of fiddly JavaScript that reads far better here than
+     * through Dart interop -- same reason the push helper lives here.
+     *
+     * Everything answers a JSON string, and an empty one means "cancelled".
+     * The browser throws the same DOMException for a cancel, a timeout and a
+     * refusal, and tells them apart only in wording that differs by browser,
+     * so none of them is worth reporting as an error.
+     */
+    const b64urlToBuf = function (value) {
+      const pad = value.replace(/-/g, '+').replace(/_/g, '/');
+      const raw = atob(pad + '==='.slice((pad.length + 3) % 4));
+      const out = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i += 1) out[i] = raw.charCodeAt(i);
+      return out.buffer;
+    };
+    const bufToB64url = function (buf) {
+      const bytes = new Uint8Array(buf);
+      let raw = '';
+      for (let i = 0; i < bytes.length; i += 1) raw += String.fromCharCode(bytes[i]);
+      return btoa(raw).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    };
+
+    window.vesopaPasskey = {
+      supported: function () {
+        return !!(window.PublicKeyCredential && navigator.credentials
+          && typeof navigator.credentials.create === 'function'
+          && window.isSecureContext);
+      },
+
+      create: async function (optionsJson) {
+        const o = JSON.parse(optionsJson);
+        o.challenge = b64urlToBuf(o.challenge);
+        o.user.id = b64urlToBuf(o.user.id);
+        (o.excludeCredentials || []).forEach(function (c) { c.id = b64urlToBuf(c.id); });
+        const cred = await navigator.credentials.create({ publicKey: o });
+        if (!cred) return '';
+        return JSON.stringify({
+          id: cred.id,
+          rawId: bufToB64url(cred.rawId),
+          type: cred.type,
+          // Present where the browser knows how the key is reached (usb,
+          // internal, hybrid). The server keeps it so a later sign-in can
+          // tell the browser where to look.
+          transports: cred.response.getTransports ? cred.response.getTransports() : [],
+          clientExtensionResults: cred.getClientExtensionResults(),
+          response: {
+            clientDataJSON: bufToB64url(cred.response.clientDataJSON),
+            attestationObject: bufToB64url(cred.response.attestationObject),
+          },
+        });
+      },
+
+      get: async function (optionsJson) {
+        const o = JSON.parse(optionsJson);
+        o.challenge = b64urlToBuf(o.challenge);
+        (o.allowCredentials || []).forEach(function (c) { c.id = b64urlToBuf(c.id); });
+        const cred = await navigator.credentials.get({ publicKey: o });
+        if (!cred) return '';
+        return JSON.stringify({
+          id: cred.id,
+          rawId: bufToB64url(cred.rawId),
+          type: cred.type,
+          clientExtensionResults: cred.getClientExtensionResults(),
+          response: {
+            clientDataJSON: bufToB64url(cred.response.clientDataJSON),
+            authenticatorData: bufToB64url(cred.response.authenticatorData),
+            signature: bufToB64url(cred.response.signature),
+            userHandle: cred.response.userHandle ? bufToB64url(cred.response.userHandle) : null,
+          },
+        });
+      },
+    };
+  </script>
+</head>
+<body>
+  <div id="splash">
+    <img src="__ICON__" alt="" onerror="this.remove()">
+    <div class="name">__APP_NAME__</div>
+    <div class="wait">Loading your card…</div>
+  </div>
+  <script>
+    window.addEventListener('flutter-first-frame', function () {
+      const s = document.getElementById('splash');
+      if (s) s.remove();
+    });
+  </script>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>

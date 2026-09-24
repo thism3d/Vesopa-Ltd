@@ -9,6 +9,7 @@ import 'data/kitchen_branding.dart';
 import 'data/providers.dart';
 import 'ui/kitchen_shell.dart';
 import 'ui/sign_in_page.dart';
+import 'ui/licence_panel.dart';
 import 'ui/splash_screen.dart';
 import 'ui/theme.dart';
 import 'ui/theme_controller.dart';
@@ -125,7 +126,7 @@ class _VesopaKitchenAppState extends ConsumerState<VesopaKitchenApp> {
         // old one's state — which would leave the previous kitchen's orders on
         // screen until the first poll landed.
         data: (data) => data.signedIn
-            ? KitchenShell(key: ValueKey(data.office))
+            ? const _LicensedShell()
             : const SignInPage(),
       ),
     );
@@ -154,5 +155,34 @@ class _Booting extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// The board, unless this venue's kitchen licence has lapsed past its grace.
+///
+/// Replaces the shell rather than sitting inside it: a screen that may not be
+/// used has no orders worth showing, and leaving the board up invites a chef
+/// to work from tickets that are no longer being kept.
+///
+/// `.value` is null while it loads and when the server could not be asked, and
+/// both carry on into the board. Locking is something we were TOLD, never
+/// assumed from silence -- a kitchen must not go dark because a licence lookup
+/// timed out mid-service.
+class _LicensedShell extends ConsumerWidget {
+  const _LicensedShell();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final licence = ref.watch(kitchenLicenceProvider).value;
+    if (licence != null && licence.locked) {
+      return LicenceLockedPage(
+        state: licence,
+        onRetry: () => ref.invalidate(kitchenLicenceProvider),
+      );
+    }
+    final office = ref.watch(kitchenSessionProvider).value?.office ?? '';
+    // Keyed on the office, as before: signing into a different venue builds a
+    // fresh shell rather than handing the new venue's board to the old state.
+    return KitchenShell(key: ValueKey(office));
   }
 }

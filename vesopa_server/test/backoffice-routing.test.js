@@ -134,4 +134,113 @@ check('and the routes it would otherwise swallow are declared before it', () => 
   assert.ok(endOfDay < at, 'end-of-day is now unreachable behind the fallback');
 });
 
+check('the printed table codes are not swallowed by the fallback', () => {
+  // /t/<32 hex> is what is printed on a card and screwed to a table, and it
+  // matches the fallback pattern exactly — lower-case letters, digits, two
+  // segments. It reaches the menu only because dineinPageRoutes() is mounted
+  // first, so this is the assertion standing between a customer's scan and a
+  // page of back office HTML.
+  const card = '/t/' + 'a1b2c3d4'.repeat(4);
+  assert.ok(fallback.test(card), 'no longer overlapping — check this test');
+
+  const at = server.indexOf(found[0]);
+  const pages = server.search(/app\.use\(dineinPageRoutes\(/);
+  assert.ok(pages > -1, 'the dine-in pages are no longer mounted');
+  assert.ok(pages < at, 'a scanned table code would be answered with the back office');
+});
+
+check('and neither is a venue address or an order link', () => {
+  assert.ok(fallback.test('/m/the-bridge'));
+  assert.ok(fallback.test('/o/' + 'f'.repeat(32)));
+  const at = server.indexOf(found[0]);
+  assert.ok(server.search(/app\.use\(dineinPageRoutes\(/) < at);
+});
+
+check('the dine-in pages are mounted ahead of the static middleware too', () => {
+  // express.static answers before anything after it, and a file that happened
+  // to be called `t` would otherwise shadow every table on the estate.
+  const pages = server.search(/app\.use\(dineinPageRoutes\(/);
+  const statics = server.indexOf('app.use(express.static(PUBLIC_DIR');
+  assert.ok(statics > -1, 'the static middleware has moved');
+  assert.ok(pages < statics, 'the dine-in pages are behind express.static');
+});
+
+check('a nav press works wherever inside the button it lands', () => {
+  // This read data-view off the clicked element, which worked only while a nav
+  // button held nothing but a bare text node. A <span> was put inside them for
+  // an icon-only rail; from then on clicking the words hit the span, which
+  // carries no data-view, and the press did nothing — while clicking the
+  // padding around them still worked. A nav that answers about one press in
+  // three, which is how it was reported.
+  //
+  // closest() is what makes it survive anything being put inside a button, and
+  // sooner or later something will be.
+  assert.ok(
+    app.includes("t.closest?.('[data-view]')"),
+    'the nav branch reads the clicked element rather than the button around it'
+  );
+  assert.ok(
+    !app.includes('if (t.dataset.view)'),
+    'the old element-only test is back'
+  );
+});
+
+check('nothing wraps a nav button’s text any more', () => {
+  // The span that caused it belonged to a design that was replaced. Comments
+  // are stripped first, because the note explaining all this names it.
+  const code = app.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+  assert.ok(!code.includes('nav-word'), 'nav-word is back in the code');
+});
+
+// ---- Every page in the rail can actually be got to -------------------------
+//
+// The other direction, and the one that was missing.
+//
+// The checks above go ROUTES -> server: every path app.js knows about is served
+// the shell. Nothing went the other way -- nav button -> ROUTES -- and the Gym
+// page shipped through that gap. It was added to the rail with `hidden` on it
+// (to be revealed once a venue switched the gym on), and it was never added to
+// ROUTES. So the button was invisible, /gym fell through to the dashboard, and
+// the only switch that turns the gym on lives on the page nobody could open.
+// A whole feature, unreachable, with every one of its own tests passing.
+//
+// Three things have to line up for a view to exist at all, and now all three
+// are asserted for every button in the rail.
+
+const html = read('public', 'index.html');
+
+const navViews = [...html.matchAll(/<button class="nav" data-view="([^"]+)"([^>]*)>/g)]
+  .map((m) => ({ view: m[1], attrs: m[2] }));
+
+check('there are nav buttons to check', () => {
+  assert.ok(navViews.length > 20, `found ${navViews.length} nav buttons`);
+});
+
+check('every page in the rail has a section to show', () => {
+  const missing = navViews
+    .filter((n) => !html.includes(`id="view-${n.view}"`))
+    .map((n) => n.view);
+  assert.deepStrictEqual(missing, [], `no <section id="view-..."> for: ${missing}`);
+});
+
+check('every page in the rail has a URL of its own', () => {
+  // Without one, the address bar says /dashboard whatever you are looking at,
+  // a refresh throws the page away, and the page cannot be linked to or
+  // bookmarked -- or reached at all if its button is ever hidden.
+  const routes = app.slice(app.indexOf('const ROUTES'), app.indexOf('const viewForPath'));
+  const missing = navViews
+    .filter((n) => !new RegExp(`\\b${n.view}:\\s*'`).test(routes))
+    .map((n) => n.view);
+  assert.deepStrictEqual(missing, [], `not in ROUTES: ${missing}`);
+});
+
+check('no page in the rail is hidden in the markup', () => {
+  // `hidden` here is a page nobody can navigate to. Whether a role may see a
+  // view is applyAccess's job and it does it at runtime; a hidden attribute in
+  // the file is a page that is off for everybody, including the person who
+  // needs to switch it on.
+  const hidden = navViews.filter((n) => /\bhidden\b/.test(n.attrs)).map((n) => n.view);
+  assert.deepStrictEqual(hidden, [], `hidden in index.html: ${hidden}`);
+});
+
 console.log(`\n${passed} checks passed`);

@@ -76,6 +76,8 @@ class vesopa_sso extends rcube_plugin
 
         $this->add_hook('startup', [$this, 'on_startup']);
         $this->add_hook('storage_init', [$this, 'on_storage_init']);
+        $this->add_hook('smtp_connect', [$this, 'on_smtp_connect']);
+        $this->add_hook('managesieve_connect', [$this, 'on_managesieve_connect']);
         $this->add_hook('logout_after', [$this, 'on_logout']);
     }
 
@@ -89,25 +91,83 @@ class vesopa_sso extends rcube_plugin
      */
     public function on_storage_init($args)
     {
-        if (empty($_SESSION['vesopa_sso'])) {
-            return $args;
-        }
-
-        $rcmail = rcmail::get_instance();
-        $user = $rcmail->config->get('vesopa_sso_master_user');
-        $pass = $rcmail->config->get('vesopa_sso_master_pass');
-
-        if ($user && $pass) {
+        $master = $this->master_credentials();
+        if ($master) {
             // PLAIN is the only mechanism that carries an authorization
             // identity separate from the authentication one, which is the
             // whole mechanism. Naming it explicitly stops Roundcube's
             // capability sniffing from choosing something else.
             $args['auth_type'] = 'PLAIN';
-            $args['auth_cid'] = $user;
-            $args['auth_pw'] = $pass;
+            $args['auth_cid'] = $master[0];
+            $args['auth_pw'] = $master[1];
         }
 
         return $args;
+    }
+
+    /**
+     * Sending, the same way reading works.
+     *
+     * ---------------------------------------------------------------------
+     * THE FIRST VERSION ONLY ARMED IMAP, and every SSO customer could read
+     * mail and not send it.
+     * ---------------------------------------------------------------------
+     * Roundcube opens a separate SMTP connection for every send and logs in
+     * with smtp_user '%u' and smtp_pass '%p' — the session's password, which
+     * for an SSO session is the throwaway from on_startup(). Exim hands that to
+     * Dovecot, Dovecot says "Password mismatch", and the customer sees
+     * "SMTP Error (535): Authentication failed" on a mailbox they are plainly
+     * signed into (rk@onzep.uk, 2026-09-17).
+     *
+     * Exim's dovecot authenticator passes the SASL exchange through untouched,
+     * so the master passdb works for SMTP exactly as it does for IMAP, and
+     * $authenticated_id comes back as the mailbox — the rate limits and the
+     * sender checks see the customer, never the master account. rcube_smtp
+     * turns smtp_auth_cid into the authorization split itself.
+     */
+    public function on_smtp_connect($args)
+    {
+        $master = $this->master_credentials();
+        if ($master) {
+            $args['smtp_auth_type'] = 'PLAIN';
+            $args['smtp_auth_cid'] = $master[0];
+            $args['smtp_auth_pw'] = $master[1];
+        }
+
+        return $args;
+    }
+
+    /** Filters and the out-of-office reply: ManageSieve logs in on its own too. */
+    public function on_managesieve_connect($args)
+    {
+        $master = $this->master_credentials();
+        if ($master) {
+            $args['auth_type'] = 'PLAIN';
+            $args['auth_cid'] = $master[0];
+            $args['auth_pw'] = $master[1];
+        }
+
+        return $args;
+    }
+
+    /**
+     * [master user, master password] for an SSO session, or null.
+     *
+     * Null for a customer who typed their own password into the login form:
+     * their session holds the real password and every connection should keep
+     * using it.
+     */
+    private function master_credentials()
+    {
+        if (empty($_SESSION['vesopa_sso'])) {
+            return null;
+        }
+
+        $rcmail = rcmail::get_instance();
+        $user = (string) $rcmail->config->get('vesopa_sso_master_user');
+        $pass = (string) $rcmail->config->get('vesopa_sso_master_pass');
+
+        return ($user !== '' && $pass !== '') ? [$user, $pass] : null;
     }
 
     /**

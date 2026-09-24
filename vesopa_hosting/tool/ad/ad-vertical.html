@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="bn">
+<head>
+<meta charset="utf-8">
+<title>Vesopa Cloud — GoDigital, 9:16</title>
+<!--
+  THE VERTICAL ADVERT, DRAWN ONE FRAME AT A TIME.
+
+  Same contract as ad.html and for the same reasons: nothing here animates
+  itself. No CSS animation, no requestAnimationFrame. Every position, opacity
+  and number is a pure function of `t`; the renderer calls seek(t) and
+  photographs the result. A frame is therefore reproducible whether it took
+  eighty milliseconds to capture or eight hundred, which is the only way a
+  picture can be cut to a voice track recorded before it.
+
+  WHAT IS DIFFERENT FROM THE 16x9, beyond the shape. A phone is held close and
+  watched with the sound off as often as not, so this cut is built around one
+  large thing per screen, captions that carry the sentence on their own, and a
+  price that is legible at thumbnail size. The safe area keeps everything clear
+  of the top and bottom thirds, where a platform puts its own chrome, the
+  author's handle and the "Sponsored" label.
+
+  The timeline comes from timing-vertical.json, measured off the synthesised
+  speech, and is injected as window.__timeline before the first seek.
+-->
+<style>
+  @font-face {
+    font-family: 'Noto Sans Bengali';
+    src: url('../../public/assets/fonts/noto-sans-bengali-wght.woff2') format('woff2-variations');
+    font-weight: 100 900;
+    font-display: block;
+  }
+  /* `block` rather than `swap`: a frame captured mid-swap would show the
+     fallback, and one frame of the wrong font in a finished advert is a defect
+     nobody can explain afterwards. */
+
+  :root {
+    --lime: #a5c715;
+    --lime-soft: #d6ef5a;
+    --lime-deep: #2f3b05;
+    --ink: #0b0b0a;
+    --paper: #ffffff;
+    --muted: rgba(255, 255, 255, .62);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    width: 1080px; height: 1920px;
+    background: var(--ink);
+    color: var(--paper);
+    font-family: 'Noto Sans Bengali', system-ui, sans-serif;
+    overflow: hidden;
+  }
+
+  /* ---- backdrop ---------------------------------------------------------- */
+  #grid {
+    position: absolute; inset: -160px;
+    background-image:
+      linear-gradient(rgba(255,255,255,.028) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,.028) 1px, transparent 1px);
+    background-size: 80px 80px;
+  }
+  #aura {
+    position: absolute; width: 1500px; height: 1500px; left: -220px; top: -260px;
+    background: radial-gradient(circle, rgba(165,199,21,.30) 0%, rgba(165,199,21,.10) 38%, transparent 68%);
+    filter: blur(28px);
+  }
+  #vignette {
+    position: absolute; inset: 0; pointer-events: none;
+    background: radial-gradient(ellipse at 50% 42%, transparent 44%, rgba(0,0,0,.62) 100%);
+  }
+
+  /* ---- the stage --------------------------------------------------------- */
+  /* The safe area: platforms overlay the top ~180px and bottom ~420px. */
+  .stage { position: absolute; left: 0; right: 0; top: 300px; bottom: 420px; }
+  .scene {
+    position: absolute; inset: 0;
+    display: grid; place-items: center;
+    padding: 0 88px;
+    text-align: center;
+  }
+  .wrap { width: 100%; display: grid; justify-items: center; gap: 34px; }
+
+  h1 { font-size: 104px; line-height: 1.06; letter-spacing: -.02em; font-weight: 800; }
+  h2 { font-size: 82px;  line-height: 1.14; letter-spacing: -.015em; font-weight: 800; }
+  .hl { color: var(--lime); }
+  .lede { font-size: 46px; line-height: 1.45; color: var(--muted); max-width: 20ch; }
+
+  .kicker {
+    display: inline-flex; align-items: center; gap: 18px;
+    font-size: 32px; font-weight: 700; letter-spacing: .10em;
+    text-transform: uppercase; color: var(--lime);
+  }
+  .rule { width: 58px; height: 3px; background: var(--lime); display: inline-block; }
+
+  /* ---- the price, the one thing that must read at thumbnail size --------- */
+  .pricerow { display: flex; align-items: baseline; justify-content: center; gap: 10px; }
+  .taka { font-size: 150px; font-weight: 800; color: var(--lime); line-height: 1; }
+  .bignum {
+    font-size: 260px; font-weight: 800; line-height: .92; letter-spacing: -.04em;
+    color: var(--paper);
+    text-shadow: 0 0 90px rgba(165,199,21,.30);
+  }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 18px;
+    padding: 22px 38px; border-radius: 999px;
+    background: rgba(255,255,255,.055); border: 2px solid rgba(255,255,255,.12);
+    font-size: 40px; font-weight: 700;
+  }
+  .pill .tick {
+    width: 44px; height: 44px; border-radius: 50%; flex: none;
+    background: var(--lime); color: var(--lime-deep);
+    display: grid; place-items: center; font-size: 26px; font-weight: 900;
+  }
+  .stack { display: grid; gap: 20px; justify-items: center; }
+
+  /* ---- the assistant, drawn rather than screenshotted -------------------- */
+  #orb {
+    width: 250px; height: 250px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, var(--lime-soft) 0, var(--lime) 48%, #6e8a0e 100%);
+    box-shadow: 0 40px 120px -28px rgba(165,199,21,.85);
+    display: grid; place-items: center;
+  }
+  #orb svg { width: 96px; height: 96px; color: var(--lime-deep); }
+  .bubble {
+    max-width: 760px; padding: 30px 36px; border-radius: 30px 30px 30px 8px;
+    background: rgba(255,255,255,.07); border: 2px solid rgba(255,255,255,.12);
+    font-size: 40px; line-height: 1.4; text-align: right;
+  }
+
+  /* ---- the builder ------------------------------------------------------- */
+  .browser {
+    width: 100%; max-width: 860px; border-radius: 28px; overflow: hidden;
+    background: #14160f; border: 2px solid rgba(255,255,255,.10);
+    box-shadow: 0 60px 140px -40px rgba(0,0,0,.9);
+  }
+  .chrome { height: 74px; display: flex; align-items: center; gap: 16px; padding: 0 26px; background: #22261d; }
+  .dot { width: 16px; height: 16px; border-radius: 50%; background: #3a3d34; }
+  .addr { flex: 1; height: 42px; border-radius: 21px; background: rgba(255,255,255,.07); }
+  .screen { padding: 40px 36px 46px; display: grid; gap: 22px; justify-items: start; }
+  .bar { height: 26px; border-radius: 13px; background: #2f3529; }
+  .cards { display: flex; gap: 20px; width: 100%; }
+  .card { flex: 1; height: 150px; border-radius: 20px; background: #22261d; border: 2px solid #333829; }
+
+  .code {
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 72px; font-weight: 800; letter-spacing: .10em;
+    color: var(--lime-deep); background: var(--lime);
+    padding: 26px 52px; border-radius: 26px;
+  }
+  .url { font-size: 52px; font-weight: 800; letter-spacing: -.01em; }
+  .terms {
+    position: absolute; left: 88px; right: 88px; bottom: -150px;
+    font-size: 26px; line-height: 1.5; color: rgba(255,255,255,.45);
+  }
+
+  /* ---- persistent lockup ------------------------------------------------- */
+  #lockup {
+    position: absolute; left: 0; right: 0; top: 150px;
+    display: flex; align-items: center; justify-content: center; gap: 22px;
+  }
+  #lockup img { height: 54px; width: auto; }
+  #lockup .sub {
+    font-size: 30px; font-weight: 700; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--muted);
+  }
+</style>
+</head>
+<body>
+  <div id="grid"></div>
+  <div id="aura"></div>
+
+  <div class="stage">
+    <!-- 1. the hook -->
+    <section class="scene" data-scene="hook">
+      <div class="wrap">
+        <h1 data-el="hook-line">ব্যবসা<br><span class="hl">অনলাইনে আনবেন?</span></h1>
+        <p class="lede" data-el="hook-sub">এখন সবচেয়ে সহজ।</p>
+      </div>
+    </section>
+
+    <!-- 2. the assistant, in Bangla -->
+    <section class="scene" data-scene="ai">
+      <div class="wrap">
+        <div id="orb" data-el="ai-orb">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="9" y="2" width="6" height="11" rx="3"/>
+            <path d="M5 10a7 7 0 0 0 14 0"/><path d="M12 17v4"/>
+          </svg>
+        </div>
+        <div class="bubble" data-el="ai-bubble">“আমার ব্যবসার জন্য একটা ডোমেইন দরকার”</div>
+        <h2 data-el="ai-head">ভেসোপা <span class="hl">এআই</span>-কে<br>বাংলায় বলুন</h2>
+      </div>
+    </section>
+
+    <!-- 3. the site builder -->
+    <section class="scene" data-scene="builder">
+      <div class="wrap">
+        <h2 data-el="b-head">মুখে বলুন,<br><span class="hl">ওয়েবসাইট তৈরি</span></h2>
+        <div class="browser" data-el="b-browser">
+          <div class="chrome">
+            <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+            <span class="addr"></span>
+          </div>
+          <div class="screen">
+            <div class="bar" data-el="b1" style="width:62%"></div>
+            <div class="bar" data-el="b2" style="width:44%; background:var(--lime)"></div>
+            <div class="cards">
+              <div class="card" data-el="b3"></div>
+              <div class="card" data-el="b4"></div>
+              <div class="card" data-el="b5"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. the bundle -->
+    <section class="scene" data-scene="offer">
+      <div class="wrap">
+        <p class="kicker" data-el="o-kicker"><span class="rule"></span>বাংলাদেশের জন্য</p>
+        <div class="pricerow">
+          <span class="taka" data-el="o-taka">৳</span>
+          <span class="bignum" data-el="o-num">৩৮১</span>
+        </div>
+        <div class="stack">
+          <div class="pill" data-el="o-1"><span class="tick">✓</span>ডট সাইট ডোমেইন</div>
+          <div class="pill" data-el="o-2"><span class="tick">✓</span>প্রথম মাসের হোস্টিং</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. the code -->
+    <section class="scene" data-scene="cta">
+      <div class="wrap">
+        <p class="kicker" data-el="c-kicker"><span class="rule"></span>বাস্কেটে কোডটি দিন</p>
+        <div class="code" data-el="c-code">GODIGITAL</div>
+        <p class="url" data-el="c-url">cloud.vesopa.com<span class="hl">/bn/offers</span></p>
+      </div>
+      <p class="terms" data-el="c-terms">নতুন গ্রাহক · বাংলাদেশ থেকে অর্ডার · একটি .site ডোমেইন ও স্টার্টার প্ল্যানের প্রথম মাস · দাম টাকায়, VAT সহ</p>
+    </section>
+  </div>
+
+  <div id="lockup">
+    <img src="../../public/assets/img/brand/vesopa_logo_on_dark.png" alt="Vesopa">
+    <span class="sub">ক্লাউড</span>
+  </div>
+  <div id="vignette"></div>
+
+<script>
+/* ---------------------------------------------------------------------------
+   The whole animation, as arithmetic on t. Identical contract to ad.html:
+   buildTimeline() reads window.__timeline, seek(t) draws, window.__total says
+   how long the finished film is.
+   --------------------------------------------------------------------------- */
+const $ = (sel) => document.querySelector(sel);
+const el = (name) => document.querySelector(`[data-el="${name}"]`);
+const scene = (name) => document.querySelector(`[data-scene="${name}"]`);
+
+const clamp = (v, lo = 0, hi = 1) => Math.min(hi, Math.max(lo, v));
+const easeOut = (p) => 1 - Math.pow(1 - clamp(p), 3);
+
+/* THE PRICE IS IN BENGALI NUMERALS, and the code is not.
+ *
+ * ৳৩৮১ is how cloud.vesopa.com writes money to a Bangladeshi visitor -- the
+ * formatter does it, the offers page does it, and an advert that said ৳381
+ * would look like a different shop. GODIGITAL is the opposite case: it is
+ * typed into a form, character for character, so it appears exactly as it must
+ * be entered. The percentage argument in ad.html does not apply here, because
+ * ৩৮১ has no Latin lookalike the way ৪০ does. */
+
+let TL = [];
+function buildTimeline() {
+  const t = window.__timeline;
+  const GAP = 0.45;      // breath between lines
+  const LEAD = 0.35;     // picture arrives a beat before the word
+  const TAIL = 0.55;     // and holds a beat after it
+  let at = 0.6;          // a moment of backdrop before anyone speaks
+  TL = t.lines.map((line) => {
+    const start = at;
+    const dur = line.seconds + TAIL;
+    at = start + dur + GAP;
+    return { name: line.show, start, end: start + dur, audioAt: start + LEAD };
+  });
+  window.__total = at + 0.8;   // a breath at the end before the fade
+  return TL;
+}
+
+function at(name) { return TL.find((s) => s.name === name); }
+
+/** Opacity and progress for a scene that fades in, holds, and fades out. */
+function envelope(t, s, fadeIn = .5, fadeOut = .4) {
+  if (!s || t < s.start - fadeIn || t > s.end + fadeOut) return { o: 0, p: 0, out: 0 };
+  const inP = easeOut((t - (s.start - fadeIn)) / fadeIn);
+  const outP = t > s.end ? easeOut((t - s.end) / fadeOut) : 0;
+  return { o: clamp(inP) * (1 - clamp(outP)), p: clamp(inP), out: clamp(outP) };
+}
+
+/** Place a scene and its lift in one go. */
+function place(name, t, fade = .5) {
+  const s = at(name);
+  const e = envelope(t, s, fade);
+  const node = scene(name);
+  node.style.opacity = e.o.toFixed(4);
+  node.style.visibility = e.o < 0.002 ? 'hidden' : 'visible';
+  return e;
+}
+
+/** A child that rises into place a little after its scene does. */
+function rise(name, e, delay = 0, travel = 44) {
+  const p = clamp((e.p - delay) / (1 - delay || 1));
+  const node = el(name);
+  node.style.opacity = (p * (1 - e.out)).toFixed(4);
+  node.style.transform = `translateY(${((1 - easeOut(p)) * travel).toFixed(2)}px)`;
+}
+
+function seek(t) {
+  if (!TL.length) buildTimeline();
+  const total = window.__total;
+
+  /* ---- backdrop: always on, always moving a little --------------------- */
+  const drift = t / total;
+  $('#aura').style.transform =
+    `translate(${-60 + drift * 220}px, ${120 + Math.sin(drift * 3.1) * 160}px)`;
+  $('#grid').style.transform = `translate(${-drift * 40}px, ${-drift * 70}px)`;
+
+  /* The opening fade up from black, and the closing fade down. */
+  const openFade = easeOut(t / 0.5);
+  const closeFade = t > total - 0.6 ? easeOut((t - (total - 0.6)) / 0.6) : 0;
+  document.body.style.opacity = (openFade * (1 - closeFade)).toFixed(4);
+
+  /* The lockup sits under everything for the whole film, and lifts once. */
+  $('#lockup').style.opacity = (easeOut(t / 1.1) * (1 - closeFade) * 0.9).toFixed(4);
+
+  /* ---- 1. hook --------------------------------------------------------- */
+  {
+    const e = place('hook', t);
+    rise('hook-line', e, 0, 54);
+    rise('hook-sub', e, .35, 34);
+  }
+
+  /* ---- 2. the assistant ------------------------------------------------ */
+  {
+    const e = place('ai', t);
+    /* The orb breathes: a slow scale that never stops while the scene is up,
+       so the assistant reads as listening rather than as a printed circle. */
+    const s = at('ai');
+    const inScene = s ? clamp((t - s.start) / Math.max(0.001, s.end - s.start)) : 0;
+    const breathe = 1 + Math.sin(inScene * Math.PI * 2.2) * 0.035;
+    el('ai-orb').style.opacity = (e.p * (1 - e.out)).toFixed(4);
+    el('ai-orb').style.transform = `scale(${(easeOut(e.p) * breathe).toFixed(4)})`;
+    rise('ai-bubble', e, .30, 40);
+    rise('ai-head', e, .50, 40);
+  }
+
+  /* ---- 3. the builder -------------------------------------------------- */
+  {
+    const e = place('builder', t);
+    rise('b-head', e, 0, 46);
+    rise('b-browser', e, .22, 56);
+    /* The page inside the browser draws itself in, block by block, across the
+       scene -- the whole point of the product being sold. */
+    const s = at('builder');
+    const p = s ? clamp((t - s.start) / Math.max(0.001, (s.end - s.start) * 0.82)) : 0;
+    ['b1', 'b2', 'b3', 'b4', 'b5'].forEach((name, i) => {
+      const step = clamp((p - i * 0.15) / 0.28);
+      const node = el(name);
+      node.style.opacity = (step * (1 - e.out)).toFixed(4);
+      node.style.transform = `scaleX(${(0.3 + 0.7 * easeOut(step)).toFixed(3)})`;
+      node.style.transformOrigin = 'left center';
+    });
+  }
+
+  /* ---- 4. the bundle --------------------------------------------------- */
+  {
+    const e = place('offer', t);
+    rise('o-kicker', e, 0, 30);
+    /* The figure lands rather than fades: it is the one thing a scroller must
+       take away, so it arrives with a little overshoot and settles. */
+    const p = easeOut(clamp((e.p - .12) / .88));
+    const scale = 0.72 + 0.28 * p + Math.sin(clamp(p) * Math.PI) * 0.045;
+    ['o-taka', 'o-num'].forEach((name) => {
+      const node = el(name);
+      node.style.opacity = (p * (1 - e.out)).toFixed(4);
+      node.style.transform = `scale(${scale.toFixed(4)})`;
+    });
+    rise('o-1', e, .48, 36);
+    rise('o-2', e, .62, 36);
+  }
+
+  /* ---- 5. the code ----------------------------------------------------- */
+  {
+    const e = place('cta', t);
+    rise('c-kicker', e, 0, 28);
+    rise('c-code', e, .22, 42);
+    rise('c-url', e, .42, 34);
+    rise('c-terms', e, .60, 22);
+  }
+}
+
+window.buildTimeline = buildTimeline;
+window.seek = seek;
+</script>
+</body>
+</html>

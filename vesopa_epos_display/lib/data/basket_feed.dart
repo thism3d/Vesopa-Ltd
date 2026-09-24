@@ -40,6 +40,7 @@ class BasketLine {
     required this.quantity,
     required this.totalMinor,
     this.isModifier = false,
+    this.allergens = const [],
   });
 
   final String name;
@@ -50,6 +51,18 @@ class BasketLine {
   /// indented and without a price, the way the till's own check draws it.
   final bool isModifier;
 
+  /// What is in it, already in the words a customer reads.
+  ///
+  /// The till resolves the codes before writing the file. This application is
+  /// deliberately offline — it reads a file and has no HTTP client — so it
+  /// could not turn `tree_nuts` into "Tree nuts", and a screen facing a
+  /// customer must never show a database code.
+  ///
+  /// Empty means "nothing to say", which covers both a product nobody has
+  /// filled in and a till that has never managed to read the list. It never
+  /// means "contains none of the fourteen", so nothing here prints that.
+  final List<String> allergens;
+
   static BasketLine? fromJson(Object? raw) {
     if (raw is! Map) return null;
     final name = raw['name'];
@@ -59,6 +72,10 @@ class BasketLine {
       quantity: (raw['quantity'] as num?)?.toDouble() ?? 1,
       totalMinor: (raw['total_minor'] as num?)?.toInt() ?? 0,
       isModifier: raw['modifier'] == true,
+      allergens: [
+        for (final a in (raw['allergens'] as List?) ?? const [])
+          if (a is String && a.isNotEmpty) a,
+      ],
     );
   }
 }
@@ -77,6 +94,10 @@ class Basket {
     this.changeMinor = 0,
     this.message,
     this.terminal,
+    this.notifyAllowed = false,
+    this.customerName,
+    this.customerPoints,
+    this.greeting,
   });
 
   /// The state before the till has ever written a file: a display switched on
@@ -100,10 +121,30 @@ class Basket {
   final String? message;
   final String? terminal;
 
+  /// The member on this bill, and what they had saved up when they went on it.
+  ///
+  /// Both null on most sales, and on every sale written by a till that has not
+  /// been updated yet. The panel draws nothing at all for null rather than an
+  /// empty greeting -- see bill_panel.dart -- so an old till against this
+  /// build shows exactly the screen it showed yesterday.
+  final String? customerName;
+  final int? customerPoints;
+
+  /// What the venue says above the name. Null for the built-in "Welcome".
+  final String? greeting;
+
   /// Whether there is a bill worth showing a customer.
   ///
   /// An empty basket is not a sale in progress. It is a till somebody has just
   /// walked up to, and the right thing on the screen is the venue's advert.
+  /// Whether the venue lets this screen raise a Windows toast.
+  ///
+  /// Decided in the back office and carried in the file, because this
+  /// application has no network of its own. Off unless somebody turns it on:
+  /// a screen facing a queue is the one surface in the building that should
+  /// not interrupt anybody. See schema_till_notifications.sql.
+  final bool notifyAllowed;
+
   bool get hasSale => state != 'idle' && lines.isNotEmpty;
 
   static Basket? fromJson(Map<String, Object?> raw) {
@@ -128,7 +169,23 @@ class Basket {
       paidMinor: (raw['paid_minor'] as num?)?.toInt() ?? 0,
       changeMinor: (raw['change_minor'] as num?)?.toInt() ?? 0,
       message: raw['message'] as String?,
+      // Absent is null, which is what a till on the previous release writes
+      // and what a bill with nobody on it writes. Unknown keys are ignored by
+      // this parser either way, so a NEW till against an OLD display is the
+      // screen that venue had yesterday rather than one that will not draw.
+      customerName: switch (raw['customer_name']) {
+        final String s when s.trim().isNotEmpty => s.trim(),
+        _ => null,
+      },
+      customerPoints: (raw['customer_points'] as num?)?.toInt(),
+      greeting: switch (raw['greeting']) {
+        final String s when s.trim().isNotEmpty => s.trim(),
+        _ => null,
+      },
       terminal: raw['terminal'] as String?,
+      // Absent on a till that predates this, and absent means off — which is
+      // also the default for a venue that has one and has not turned it on.
+      notifyAllowed: raw['notify_display'] == true,
     );
   }
 }

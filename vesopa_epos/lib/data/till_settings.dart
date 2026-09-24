@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../printing/print_targets.dart';
+import 'notifications.dart';
+import 'price_levels.dart';
 
 /// How the terminal behaves *between* sales: the idle screen it drops to, and
 /// how long it waits before signing the current member of staff off.
@@ -27,7 +29,16 @@ class TillSettings {
     this.homeScreenId,
     this.topBarScreenId,
     this.bottomBarScreenId,
+    this.consolidateLines = true,
+    this.cashDeclaration = CashDeclaration.off,
+    this.payTopBarScreenId,
+    this.payBottomBarScreenId,
     this.fontFamily,
+    this.priceLevelNames = PriceLevelNames.empty,
+    this.notify = NotifyPolicy.standard,
+    this.notifyDisplayEnabled = false,
+    this.customerDisplayGreeting,
+    this.customerDisplayShowMember = true,
   });
 
   /// The programmed screen this venue's tills open on, or null.
@@ -49,6 +60,26 @@ class TillSettings {
   final int? topBarScreenId;
   final int? bottomBarScreenId;
 
+  /// The bars the *payment* screen wears, or null for its built-in ones.
+  ///
+  /// A separate pair rather than the sale screen's, because the two screens are
+  /// different jobs. A sale bar carries Void, Save Table and Covers; none of
+  /// those mean anything once the bill is being settled, and offering them
+  /// there would be a bar of keys that do nothing.
+  /// Whether the check adds repeats up, or lists them.
+  ///
+  /// True is what every till has always done — tap Carling three times and the
+  /// bill says "3  Carling". False writes a line per tap, which some venues ask
+  /// for because the bill then reads as the order was called, and because a
+  /// line each is a line each to void rather than a quantity to edit down.
+  final bool consolidateLines;
+
+  /// Whether the till counts the drawer before a Z report, and how.
+  final CashDeclaration cashDeclaration;
+
+  final int? payTopBarScreenId;
+  final int? payBottomBarScreenId;
+
   /// The slug of the font this venue's tills letter everything in, or null for
   /// the app's own typeface.
   ///
@@ -58,6 +89,30 @@ class TillSettings {
   /// data/fonts.dart is the one place that turns this into something the engine
   /// can be handed.
   final String? fontFamily;
+
+  /// What this venue calls price levels 2 to 6.
+  ///
+  /// Empty is the ordinary state and reads as "Price 2", "Price 3" and so on —
+  /// a venue that has named no levels has named none. Names matter on the till
+  /// key: "Happy Hour" tells a clerk what they are switching to and "Price 2"
+  /// tells them nothing. See `data/price_levels.dart`.
+  final PriceLevelNames priceLevelNames;
+
+  /// What the screen facing the customer says above a member's name, or null
+  /// for the built-in "Welcome".
+  ///
+  /// Null rather than the word itself, so a venue that clears the box gets the
+  /// default back instead of being left with a field it cannot empty — the
+  /// same rule the printer names follow.
+  final String? customerDisplayGreeting;
+
+  /// Whether that screen names the member at all.
+  ///
+  /// On by default, because a greeting with no name under it is a screen
+  /// saying "Welcome" to nobody. Off is a real choice: the display faces a
+  /// room, and "Welcome Mrs Protheroe — 1,240 points" is a sentence the next
+  /// person in the queue can read.
+  final bool customerDisplayShowMember;
 
   final bool idleEnabled;
 
@@ -164,6 +219,10 @@ class TillSettings {
           other.homeScreenId == homeScreenId &&
           other.topBarScreenId == topBarScreenId &&
           other.bottomBarScreenId == bottomBarScreenId &&
+          other.consolidateLines == consolidateLines &&
+          other.cashDeclaration == cashDeclaration &&
+          other.payTopBarScreenId == payTopBarScreenId &&
+          other.payBottomBarScreenId == payBottomBarScreenId &&
           other.fontFamily == fontFamily &&
           other.idleEnabled == idleEnabled &&
           other.idleImageUrl == idleImageUrl &&
@@ -205,6 +264,10 @@ class TillSettings {
         homeScreenId,
         topBarScreenId,
         bottomBarScreenId,
+        consolidateLines,
+        cashDeclaration,
+        payTopBarScreenId,
+        payBottomBarScreenId,
         idleEnabled,
         idleImageUrl,
         idleAfterSale,
@@ -230,9 +293,34 @@ class TillSettings {
   // rather than a bool.
   static bool _flag(Object? v) => v == 1 || v == true || v == '1';
 
+  /// Which notifications this venue's tills are allowed to raise.
+  ///
+  /// Read from the same row as everything else here, because the venue asked
+  /// for one place in the back office that decides which notification goes
+  /// where — and a second fetch would be a second thing to be out of date. See
+  /// `data/notifications.dart` for how it combines with this terminal's own
+  /// switches.
+  final NotifyPolicy notify;
+
+  /// Whether this venue lets its customer displays raise a Windows toast.
+  ///
+  /// Off unless a manager turns it on. A customer display is a screen facing a
+  /// queue: a toast sliding over somebody's bill is a notification aimed at
+  /// nobody, because the person who needs to know is behind the counter. It
+  /// exists for the venue that mounts one in a back office.
+  ///
+  /// Read here and written into the snapshot file, because the display
+  /// application has no network of its own.
+  final bool notifyDisplayEnabled;
+
   factory TillSettings.fromJson(Map<String, dynamic> j) {
     final url = (j['idle_image_url'] as String?)?.trim();
     return TillSettings(
+      notify: NotifyPolicy.fromSettings(j),
+      notifyDisplayEnabled:
+          j['notify_display_enabled'] == 1 ||
+          j['notify_display_enabled'] == true ||
+          j['notify_display_enabled'] == '1',
       homeScreenId: (j['home_screen_id'] as num?)?.toInt(),
       // Absent — a server that has not run schema_till_fonts.sql — reads as
       // null, which is "the app's own lettering". Which is what every till
@@ -242,8 +330,41 @@ class TillSettings {
         '' => null,
         final slug => slug,
       },
+      // Absent on a server that has not run schema_price_levels.sql, which
+      // reads as "nothing named" — the state every venue is in until it names
+      // one.
+      priceLevelNames: PriceLevelNames.parse(j['price_level_names']),
+      // Trimmed, and empty is null. A greeting of spaces would draw a gap
+      // above the name and look like a fault.
+      customerDisplayGreeting: switch (j['customer_display_greeting']) {
+        final String s when s.trim().isNotEmpty => s.trim(),
+        _ => null,
+      },
+      // Absent means on — a server that predates the column must not be read
+      // as "this venue has switched the name off".
+      customerDisplayShowMember: switch (j['customer_display_show_member']) {
+        final bool v => v,
+        final num v => v != 0,
+        final String v => v == '1' || v == 'true',
+        _ => true,
+      },
       topBarScreenId: (j['top_bar_screen_id'] as num?)?.toInt(),
       bottomBarScreenId: (j['bottom_bar_screen_id'] as num?)?.toInt(),
+      // Absent on a server that has not run schema_till_pay_bars.sql, which
+      // reads as null — the payment screen's built-in bars, which is what
+      // every venue has today.
+      // Absent means "as it has always been": consolidated, and never asking
+      // for a cash declaration. A server that has not run the migration must
+      // not change how a venue's tills behave.
+      // Absent means true, which _flag cannot express: it answers false for
+      // anything it does not recognise, and that is right for every other flag
+      // here. A server without the migration must not switch consolidation off
+      // for every venue on it.
+      consolidateLines:
+          j['consolidate_lines'] == null || _flag(j['consolidate_lines']),
+      cashDeclaration: CashDeclaration.parse(j['cash_declaration']),
+      payTopBarScreenId: (j['pay_top_bar_screen_id'] as num?)?.toInt(),
+      payBottomBarScreenId: (j['pay_bottom_bar_screen_id'] as num?)?.toInt(),
       idleEnabled: _flag(j['idle_enabled']),
       idleImageUrl: url == null || url.isEmpty ? null : url,
       idleAfterSale: _flag(j['idle_after_sale']),
@@ -421,4 +542,36 @@ class KitchenDeliveryClient {
     }
     return 'The back office refused the change (HTTP $status).';
   }
+}
+
+/// Whether the till counts the drawer before a Z report, and how.
+///
+/// The venue chooses, which is the answer they gave when asked. Venues differ
+/// on how much they trust a fast close, and a setting is cheaper than being
+/// wrong for half of them.
+enum CashDeclaration {
+  /// Never ask. What every till does today.
+  off,
+
+  /// One figure typed in. Fast at close — and when the till is down, there is
+  /// nothing on the Z to say where.
+  total,
+
+  /// The denomination grid the venue already has, so a miscount shows up as a
+  /// wrong denomination rather than a wrong total. See CashNotesPanel.
+  count;
+
+  bool get asks => this != CashDeclaration.off;
+
+  static CashDeclaration parse(Object? raw) => switch (raw) {
+        'total' => CashDeclaration.total,
+        'count' => CashDeclaration.count,
+        // Anything else, including a value from a newer back office than this
+        // build knows, means do not ask. A till that invented a way of counting
+        // money it did not understand would be worse than one that asked
+        // nothing.
+        _ => CashDeclaration.off,
+      };
+
+  String get wire => name;
 }

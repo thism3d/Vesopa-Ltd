@@ -1,0 +1,38 @@
+<%- include('_top', { nav: 'designs' }) %>
+<% var base = '/admin/v/' + venue.office_id; %>
+
+<div class="page-head">
+  <div>
+    <h2>Designs</h2>
+    <p class="muted">The pictures a buyer chooses between. Your name and the amount sit on the left, so keep that part of your own pictures calm.</p>
+  </div>
+</div>
+
+<div class="design-grid">
+  <% designs.forEach(function (d, i) { %>
+  <div class="card design-tile">
+    <img class="<%= d.on_sale ? '' : 'off' %>" src="<%= designUrl(d) %>" alt="">
+    <div class="foot">
+      <div>
+        <strong><%= d.name %></strong>
+        <span class="small <%= i === 0 && d.on_sale ? 'lime-ink' : 'muted' %>"><%= !d.on_sale ? 'Hidden' : (i === 0 ? 'Shown first' : 'On sale') %></span>
+      </div>
+      <% if (i !== 0 && d.on_sale) { %>
+      <form method="post" action="<%= base %>/designs/<%= d.id %>/first"><input type="hidden" name="_csrf" value="<%= session.csrf %>"><button class="btn small ghost" type="submit">Show first</button></form>
+      <% } %>
+      <form method="post" action="<%= base %>/designs/<%= d.id %>/toggle"><input type="hidden" name="_csrf" value="<%= session.csrf %>"><button class="switch <%= d.on_sale ? 'on' : '' %>" type="submit" aria-label="<%= d.on_sale ? 'Hide' : 'Show' %> <%= d.name %>" aria-pressed="<%= d.on_sale ? 'true' : 'false' %>"></button></form>
+    </div>
+  </div>
+  <% }) %>
+
+  <form class="upload-tile" method="post" enctype="multipart/form-data" action="<%= base %>/designs?_csrf=<%= session.csrf %>">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#8a8494" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-8 8"/></svg>
+    <strong>Add your own</strong>
+    <span class="small">JPEG or PNG, 1600 × 1000 or larger, under 5 MB</span>
+    <input class="in" name="name" maxlength="80" placeholder="A name for this picture" required>
+    <input class="in" type="file" name="image" accept="image/jpeg,image/png" required>
+    <button class="btn primary" type="submit">Upload</button>
+  </form>
+</div>
+
+<%- include('_bottom') %>

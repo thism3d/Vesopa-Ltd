@@ -59,6 +59,13 @@ class _CustomerDisplayPageState extends ConsumerState<CustomerDisplayPage> {
   List<DisplayPairRequest> _pending = const [];
   List<PairedDisplay> _paired = const [];
 
+  /// Whether the two lists above have actually been read yet.
+  ///
+  /// Empty because nothing is connected and empty because nobody has looked are
+  /// the same empty list and completely different things to say to a manager.
+  /// Without this the page answers the first one before it has done the second.
+  bool _pairingRead = false;
+
   /// Screens that have been told "not now". Still listed, and marked, because
   /// the prompt being off is worth seeing.
   Set<String> _declined = const {};
@@ -107,10 +114,28 @@ class _CustomerDisplayPageState extends ConsumerState<CustomerDisplayPage> {
   Future<void> _load() async {
     final control = await readDisplayControl();
     final status = await readDisplayStatus();
+
+    // The pairing lists are read here as well as on the timer.
+    //
+    // They used to arrive only on the first tick, two seconds after the page
+    // opened — and for those two seconds `_paired` was empty while `_status`
+    // already said a display was connected. So the page opened saying
+    // "Customer display connected · 1 screen attached" at the top and
+    // "No customer display is asking to be connected" underneath it, which is
+    // the page contradicting itself in front of whoever just opened it.
+    final pairing = ref.read(displayPairingProvider);
+    final pending = await pairing.pending(includeDeclined: true);
+    final paired = await pairing.paired();
+    final declined = await pairing.declined();
+
     if (!mounted) return;
     setState(() {
       _control = control;
       _status = status;
+      _pending = pending;
+      _paired = paired;
+      _declined = declined;
+      _pairingRead = true;
       _adverts.text = control.advertFolder;
       _thanks.text = control.thankYou;
       _standing.text = control.standingMessage;
@@ -262,6 +287,58 @@ class _CustomerDisplayPageState extends ConsumerState<CustomerDisplayPage> {
     setState(() => _writeFailed = !written);
   }
 
+  /// What one connected screen is doing, in one line.
+  ///
+  /// A venue can have more than one of these — a screen on the bar and another
+  /// at the door — and the only way to tell them apart from behind the till is
+  /// what they say about themselves. So this leads with the facts that differ
+  /// between two screens (the size it is running at, how many adverts it has,
+  /// whether it is locked) and falls back to when it was connected, which is
+  /// all an older display can report.
+  ///
+  /// The status file is the *current* display's, so these facts are attached
+  /// to whichever paired screen is actually running. With two paired and one
+  /// switched off, the one that is off keeps the connection line and does not
+  /// borrow the other's size — see [_statusBelongsTo].
+  String _describe(PairedDisplay display) {
+    final status = _statusBelongsTo(display) ? _status : null;
+
+    final bits = <String>[
+      if (status != null && status.runningAt.isNotEmpty) status.runningAt,
+      if (status != null)
+        status.advertCount == 0
+            ? 'no adverts'
+            : '${status.advertCount} advert'
+                  '${status.advertCount == 1 ? '' : 's'}',
+      if (status != null && status.childLock) 'locked',
+      if (status != null && status.appVersion.isNotEmpty)
+        'v${status.appVersion}',
+    ];
+
+    if (bits.isEmpty) {
+      return 'Connected ${_when(display.pairedAt)}. This till tells it where '
+          'to look on every start, so it keeps working after an update.';
+    }
+    return '${bits.join('  ·  ')}\nConnected ${_when(display.pairedAt)}';
+  }
+
+  /// Whether the status file on disk is this screen's.
+  ///
+  /// There is one status file per shared folder, and it is written by whichever
+  /// display is currently running. A display that has been switched off leaves
+  /// its last one behind, so a stale file must not be read as a live report
+  /// about a screen that is not there — and with two paired screens the running
+  /// one's report must not be printed under the other one's name.
+  bool _statusBelongsTo(PairedDisplay display) {
+    final status = _status;
+    if (status == null || !status.isLive) return false;
+    // One paired screen and a live status: it can only be that one.
+    if (_paired.length <= 1) return true;
+    // More than one, and the file does not say which wrote it. Report the
+    // shared facts against none of them rather than against the wrong one.
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!_loaded) {
@@ -304,12 +381,18 @@ class _CustomerDisplayPageState extends ConsumerState<CustomerDisplayPage> {
               children: [
                 for (final display in _paired)
                   ListTile(
-                    leading: const Icon(Icons.tv_outlined),
+                    leading: Icon(
+                      _status != null && _status!.childLock
+                          ? Icons.lock_outline
+                          : Icons.tv_outlined,
+                    ),
                     title: Text(display.name),
+                    // What it is actually running, not only when it was
+                    // connected. A manager standing in front of two screens
+                    // needs to tell them apart, and "1920 x 1080, 9 adverts"
+                    // does that where "connected on Tuesday" does not.
                     subtitle: Text(
-                      'Connected ${_when(display.pairedAt)}. This till tells it '
-                      'where to look on every start, so it keeps working after '
-                      'an update.',
+                      _describe(display),
                       style: const TextStyle(fontSize: 12.5),
                     ),
                     trailing: TextButton(
@@ -322,7 +405,8 @@ class _CustomerDisplayPageState extends ConsumerState<CustomerDisplayPage> {
           ),
         ],
 
-        if (_pending.isEmpty && _paired.isEmpty) ...[
+        // Only once the lists have been read. See [_pairingRead].
+        if (_pairingRead && _pending.isEmpty && _paired.isEmpty) ...[
           const SizedBox(height: 28),
           const _SectionTitle('Connecting a screen'),
           Card(
@@ -418,6 +502,59 @@ class _CustomerDisplayPageState extends ConsumerState<CustomerDisplayPage> {
             fullScreen: _control.fullScreen,
             onChosen: (key) => _push(_control.copyWith(screenKey: key)),
             onFullScreen: (on) => _push(_control.copyWith(fullScreen: on)),
+          ),
+        ),
+
+        const SizedBox(height: 28),
+        const _SectionTitle('Lock the customer screen'),
+        Card(
+          margin: EdgeInsets.zero,
+          child: Column(
+            children: [
+              SwitchListTile(
+                value: _control.childLock,
+                title: const Text('Ignore touches on the customer screen'),
+                subtitle: const Text(
+                  'The screen keeps showing the bill and the adverts and stops '
+                  'responding to being touched. For a counter with children '
+                  'at it, and for the end of the night when it gets wiped.',
+                  style: TextStyle(fontSize: 12.5),
+                ),
+                secondary: Icon(
+                  _control.childLock ? Icons.lock : Icons.lock_open,
+                  color: _control.childLock ? Pos.brandDeep : null,
+                ),
+                onChanged: (on) => _push(_control.copyWith(childLock: on)),
+              ),
+              // What the screen says about itself, rather than what it was told.
+              // Between the two there is a two-second gap, and a manager who
+              // pressed the switch and walked off should be able to come back
+              // and see whether it actually took.
+              if (_status != null && _status!.isLive)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                  child: Row(
+                    children: [
+                      Icon(
+                        _status!.childLock
+                            ? Icons.check_circle_outline
+                            : Icons.radio_button_unchecked,
+                        size: 16,
+                        color: _status!.childLock ? Pos.green : null,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _status!.childLock
+                              ? 'The screen reports that it is locked.'
+                              : 'The screen reports that it is not locked.',
+                          style: const TextStyle(fontSize: 12.5),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
           ),
         ),
 
@@ -643,6 +780,34 @@ class _CustomerDisplayPageState extends ConsumerState<CustomerDisplayPage> {
                   ),
                 ),
               ),
+              // How long that message stays up.
+              //
+              // Its own number rather than the idle slider above, because they
+              // answer different questions: a bill nobody is adding to is a
+              // conversation still going on, a paid one is somebody checking
+              // their change and walking away.
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                child: _Slider(
+                  label: 'Keep the finished sale up for',
+                  value: _control.thankYouSeconds.toDouble(),
+                  min: 0,
+                  max: 120,
+                  suffix: _control.thankYouSeconds == 0
+                      ? 'until the next sale'
+                      : '${_control.thankYouSeconds} seconds',
+                  onChanged: (v) =>
+                      _push(_control.copyWith(thankYouSeconds: v.round())),
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: Text(
+                  'Ringing anything up before then shows the new sale straight '
+                  'away.',
+                  style: TextStyle(fontSize: 12.5, color: Pos.graphite),
+                ),
+              ),
             ],
           ),
         ),
@@ -825,17 +990,27 @@ class _StatusCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final live = status?.isLive ?? false;
+    final theme = Theme.of(context);
 
     return Card(
       margin: EdgeInsets.zero,
-      color: live ? Pos.brandSoft : null,
+      // Theme-aware. A solid pale green with the theme's own ink on it is
+      // near-white on near-white in Night — the card was there, and everything
+      // written in it was not.
+      color: live ? theme.posBrandSoft : null,
       child: ListTile(
         leading: Icon(
           live ? Icons.desktop_windows : Icons.desktop_access_disabled,
-          color: live ? Pos.brandDeep : Pos.graphite,
+          color: live ? theme.posOnBrandSoft : Pos.graphite,
         ),
         title: Text(
           live ? 'Customer display connected' : 'No customer display running',
+          // Stated rather than inherited, so this cannot drift back to
+          // whatever the card's default happens to be next time the theme moves.
+          style: TextStyle(
+            color: theme.colorScheme.onSurface,
+            fontWeight: FontWeight.w600,
+          ),
         ),
         subtitle: Text(
           live
@@ -852,7 +1027,10 @@ class _StatusCard extends StatelessWidget {
                     'Anything set here is waiting for it when it starts.'
               : 'It was running, but has not reported in for a while. It has '
                     'been closed, or the PC it is on is off.',
-          style: const TextStyle(fontSize: 12.5),
+          style: TextStyle(
+            fontSize: 12.5,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
         ),
       ),
     );

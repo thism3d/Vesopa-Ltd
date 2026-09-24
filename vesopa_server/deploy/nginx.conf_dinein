@@ -1,0 +1,23 @@
+# Dine-in on the apex domain — the plain-HTTP half.
+#
+# Redirect only. The matching `nginx.ssl.conf_dinein` does the proxying; this
+# file exists so the same four paths cannot be served unencrypted.
+#
+# It matters more here than on an ordinary page: a customer can leave a name and
+# a phone number when they order, and the printed card is scanned by whatever
+# camera app the customer happens to have. The code itself encodes https, but a
+# typed address or an app that strips the scheme would otherwise land on port 80
+# and be served quite happily.
+#
+# The apex vhost on :80 proxies rather than redirects — its template is NodeJS,
+# not NodeJSForceSSL — so without these four blocks that is exactly what would
+# happen. The marketing site's own behaviour is left alone; only these paths
+# change.
+#
+# $host rather than a literal, so www.vesopaepos.com redirects to itself rather
+# than bouncing somebody between two names. The certificate covers both.
+
+location ^~ /t/ { return 301 https://$host$request_uri; }
+location ^~ /m/ { return 301 https://$host$request_uri; }
+location ^~ /o/ { return 301 https://$host$request_uri; }
+location ^~ /api/public/dinein/ { return 301 https://$host$request_uri; }

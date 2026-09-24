@@ -1,0 +1,81 @@
+<%- include('_top', { nav: 'venues' }) %>
+
+<div class="page-head">
+  <div>
+    <h2>Venues</h2>
+    <p class="muted">A venue’s shop, and everything about it, stays hidden until it is switched on here.</p>
+  </div>
+</div>
+
+<div class="stats">
+  <div class="card stat"><span class="label">Shops switched on</span><span class="value"><%= totals.on %> of <%= rows.length %></span><span class="accent"></span></div>
+  <div class="card stat"><span class="label">Sold, last 30 days</span><span class="value"><%= money(totals.sold30) %></span><span class="accent"></span></div>
+  <div class="card stat amber"><span class="label">Still to be spent</span><span class="value"><%= money(totals.outstanding) %></span><span class="accent"></span></div>
+  <div class="card stat blue"><span class="label">Tickets sold, last 30 days</span><span class="value"><%= totals.tickets30 %></span><span class="accent"></span></div>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Venue</th><th>Shop address</th><th>Payments</th><th class="right">Sold · 30 days</th><th class="right">Outstanding</th><th class="right">Shop</th></tr></thead>
+      <tbody>
+        <% rows.forEach(function (r) { %>
+        <tr>
+          <td><a class="rowlink" href="/admin/v/<%= r.id %>"><%= r.name %></a><% if (r.test) { %> <span class="badge lime">Test venue</span><% } %></td>
+          <td class="<%= r.enabled ? '' : 'muted' %>"><%= r.enabled && r.slug ? shopHost + '/' + r.slug : 'Not published' %></td>
+          <td>
+            <% if (r.payments.source === 'venue') { %><span class="badge ok">Venue’s Dojo<%= r.payments.hint ? ' ····' + r.payments.hint : '' %></span>
+            <% } else if (r.payments.source === 'platform') { %><span class="badge warn">Vesopa sandbox key</span>
+            <% } else { %><span class="muted">Not set up</span><% } %>
+          </td>
+          <td class="right num"><%= r.enabled ? money(r.sold30) : '—' %></td>
+          <td class="right num"><%= r.enabled && r.outstanding != null ? money(r.outstanding) : '—' %></td>
+          <td class="right">
+            <% if (session.isOwner) { %>
+            <form method="post" action="/admin/venues/<%= r.id %>/<%= r.enabled ? 'disable' : 'enable' %>" data-confirm="<%= r.enabled ? '' : 'Switch ' + r.name + '’s shop on? It goes live at ' + shopHost + '/' + (r.slug || r.suggestedSlug) + '.' %>">
+              <input type="hidden" name="_csrf" value="<%= session.csrf %>">
+              <button class="switch <%= r.enabled ? 'on' : '' %>" type="submit" aria-label="<%= r.enabled ? 'Switch off' : 'Switch on' %> <%= r.name %>" aria-pressed="<%= r.enabled ? 'true' : 'false' %>"></button>
+            </form>
+            <% } else { %>
+            <span class="badge <%= r.enabled ? 'ok' : 'plain' %>"><%= r.enabled ? 'On' : 'Off' %></span>
+            <% } %>
+          </td>
+        </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<% if (session.isOwner) { %>
+<div class="card pad">
+  <h3>Who can manage a venue</h3>
+  <p class="muted">Two steps, because Vesopa Gift keeps its door shut. Invite the person in <a href="<%= peopleUrl %>" target="_blank" rel="noopener">Vesopa Auth → People</a> with the <strong>Venue manager</strong> role, then name them on their venue here. The address must be the one they sign in with.</p>
+  <form class="row3" method="post" action="/admin/staff">
+    <input type="hidden" name="_csrf" value="<%= session.csrf %>">
+    <label class="lbl">Venue
+      <select class="in" name="office_id" required>
+        <% rows.forEach(function (r) { %><option value="<%= r.id %>"><%= r.name %></option><% }) %>
+      </select>
+    </label>
+    <label class="lbl">Their email address<input class="in" type="email" name="email" required maxlength="190"></label>
+    <label class="lbl">&nbsp;<button class="btn primary" type="submit">Add</button></label>
+  </form>
+  <% if (staff.length) { %>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Venue</th><th>Manager</th><th class="right"></th></tr></thead>
+      <tbody>
+      <% staff.forEach(function (s) { %>
+        <tr><td><%= s.venueName %></td><td><%= s.email %></td><td class="right">
+          <form method="post" action="/admin/staff/remove"><input type="hidden" name="_csrf" value="<%= session.csrf %>"><input type="hidden" name="office_id" value="<%= s.office_id %>"><input type="hidden" name="email" value="<%= s.email %>"><button class="btn small ghost" type="submit">Remove</button></form>
+        </td></tr>
+      <% }) %>
+      </tbody>
+    </table>
+  </div>
+  <% } %>
+</div>
+<% } %>
+
+<%- include('_bottom') %>

@@ -2,10 +2,21 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../data/commerce.dart';
-import '../data/tender_engine.dart';
+import 'widgets/on_screen_keyboard.dart';
+import 'widgets/pos_text_field.dart';
 
 String _money(int minor) =>
     NumberFormat.currency(locale: 'en_GB', symbol: '£').format(minor / 100);
+
+/// Who the card is for, and how much of it another open bill is holding.
+String? _giftCardSubtitle(GiftCard card, int heldElsewhere) {
+  final parts = [
+    if ((card.recipientName ?? '').isNotEmpty) card.recipientName!,
+    if (heldElsewhere > 0)
+      '${_money(heldElsewhere)} of ${_money(card.balanceMinor)} is on another bill',
+  ];
+  return parts.isEmpty ? null : parts.join(' · ');
+}
 
 /// What a redemption dialog agreed to take.
 class RedemptionResult {
@@ -25,8 +36,9 @@ class RedemptionResult {
 /// Redeem a gift card.
 ///
 /// The card is looked up before anything is taken, so a clerk finds out the
-/// balance is short *before* telling the customer their card covers it. The
-/// server is still the authority — this is a check, not a reservation.
+/// balance is short *before* telling the customer their card covers it. This
+/// is a check, not a reservation: pressing Take holds the money on the card
+/// (see PaymentPage._takeGiftCard), and the server can still refuse then.
 Future<RedemptionResult?> showGiftCardDialog(
   BuildContext context, {
   required CommerceRepository commerce,
@@ -78,13 +90,18 @@ class _GiftCardDialogState extends State<_GiftCardDialog> {
       if (!mounted) return;
       setState(() {
         _card = card;
+        // The server's own reason first: it knows about a voucher bought for
+        // a day that has not come yet, and money another till is holding.
         _error = card.redeemable
             ? null
-            : card.expired
-                ? 'This card has expired'
-                : card.balanceMinor <= 0
-                    ? 'This card has no balance left'
-                    : 'This card is ${card.status}';
+            : (card.reason ??
+                (card.expired
+                    ? 'This card has expired'
+                    : card.balanceMinor <= 0
+                        ? 'This card has no balance left'
+                        : card.spendableMinor <= 0
+                            ? 'Everything on this card is being used on another bill'
+                            : 'This card is ${card.status}'));
       });
     } on CommerceException catch (e) {
       if (mounted) setState(() => _error = e.message);
@@ -100,22 +117,24 @@ class _GiftCardDialogState extends State<_GiftCardDialog> {
   @override
   Widget build(BuildContext context) {
     final card = _card;
-    // Never take more than the bill needs, nor more than the card holds.
+    // Never take more than the bill needs, nor more than the card has free --
+    // what another open bill is holding is not this bill's to take.
     final take = card == null
         ? 0
-        : card.balanceMinor < widget.outstandingMinor
-            ? card.balanceMinor
+        : card.spendableMinor < widget.outstandingMinor
+            ? card.spendableMinor
             : widget.outstandingMinor;
+    final heldElsewhere = card == null ? 0 : card.balanceMinor - card.spendableMinor;
 
     return AlertDialog(
-      title: const Text('Gift card'),
+      title: const Text('Gift Card'),
       content: SizedBox(
         width: 380,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            TextField(
+            PosTextField(
               controller: _code,
               autofocus: true,
               textCapitalization: TextCapitalization.characters,
@@ -140,9 +159,11 @@ class _GiftCardDialogState extends State<_GiftCardDialog> {
             if (card != null && card.redeemable) ...[
               const SizedBox(height: 14),
               _BalanceCard(
-                title: 'Balance on card',
-                amountMinor: card.balanceMinor,
-                subtitle: card.recipientName,
+                // A voucher for one thing says what it is for, so the clerk
+                // rings up the Sunday lunch rather than guessing.
+                title: card.label ?? 'Balance on card',
+                amountMinor: card.spendableMinor,
+                subtitle: _giftCardSubtitle(card, heldElsewhere),
               ),
               const SizedBox(height: 8),
               _Banner(
@@ -250,7 +271,7 @@ class _VoucherDialogState extends State<_VoucherDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            TextField(
+            PosTextField(
               controller: _code,
               autofocus: true,
               textCapitalization: TextCapitalization.characters,
@@ -386,7 +407,7 @@ class _DepositDialogState extends State<_DepositDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            TextField(
+            PosTextField(
               controller: _reference,
               autofocus: true,
               textCapitalization: TextCapitalization.characters,
@@ -622,10 +643,10 @@ class _LoyaltyDialogState extends State<_LoyaltyDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              TextField(
+              PosTextField(
                 controller: _search,
                 autofocus: true,
-                textInputAction: TextInputAction.search,
+                submitLabel: 'Search',
                 decoration: InputDecoration(
                   labelText: 'Phone, name or card number',
                   hintText: 'Search the loyalty scheme',
@@ -681,14 +702,15 @@ class _LoyaltyDialogState extends State<_LoyaltyDialog> {
                   isError: false,
                 ),
                 const SizedBox(height: 10),
-                TextField(
+                PosTextField(
                   controller: _name,
+                  textCapitalization: TextCapitalization.words,
                   decoration: const InputDecoration(labelText: 'Name'),
                 ),
                 const SizedBox(height: 10),
-                TextField(
+                PosTextField(
                   controller: _phone,
-                  keyboardType: TextInputType.phone,
+                  mode: PosKeyboardMode.number,
                   decoration: const InputDecoration(labelText: 'Phone number'),
                 ),
                 const SizedBox(height: 10),
@@ -1081,9 +1103,9 @@ class _GratuityDialogState extends State<_GratuityDialog> {
               ],
             ),
             const SizedBox(height: 14),
-            TextField(
+            PosTextField(
               controller: _custom,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              mode: PosKeyboardMode.decimal,
               decoration: const InputDecoration(
                 labelText: 'Or a set amount (£)',
                 prefixText: '£ ',
@@ -1124,171 +1146,6 @@ class _GratuityDialogState extends State<_GratuityDialog> {
         FilledButton(
           onPressed: () => Navigator.pop(context, _bp),
           child: const Text('Apply'),
-        ),
-      ],
-    );
-  }
-}
-
-/// Choose how to split a bill.
-Future<SplitChoice?> showSplitDialog(
-  BuildContext context, {
-  required TenderState state,
-}) =>
-    showDialog<SplitChoice>(
-      context: context,
-      builder: (_) => _SplitDialog(state: state),
-    );
-
-/// How the clerk decided to split.
-class SplitChoice {
-  const SplitChoice({required this.mode, this.ways = 0, this.groups});
-
-  final SplitMode mode;
-  final int ways;
-  final List<List<String>>? groups;
-}
-
-class _SplitDialog extends StatefulWidget {
-  const _SplitDialog({required this.state});
-
-  final TenderState state;
-
-  @override
-  State<_SplitDialog> createState() => _SplitDialogState();
-}
-
-class _SplitDialogState extends State<_SplitDialog> {
-  int _ways = 2;
-
-  /// For an item split: which share each line has been assigned to.
-  final Map<String, int> _assignment = {};
-  bool _byItem = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final outstanding = widget.state.outstandingMinor;
-    final each = _ways > 0 ? outstanding ~/ _ways : 0;
-
-    return AlertDialog(
-      title: const Text('Split the bill'),
-      content: SizedBox(
-        width: 440,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              SegmentedButton<bool>(
-                segments: const [
-                  ButtonSegment(value: false, label: Text('Equally')),
-                  ButtonSegment(value: true, label: Text('By item')),
-                ],
-                selected: {_byItem},
-                onSelectionChanged: (s) => setState(() => _byItem = s.first),
-              ),
-              const SizedBox(height: 16),
-
-              if (!_byItem) ...[
-                Text('${_money(outstanding)} between $_ways',
-                    style: Theme.of(context).textTheme.bodyMedium),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final ways in [2, 3, 4, 5, 6, 8])
-                      ChoiceChip(
-                        label: Text('$ways'),
-                        selected: _ways == ways,
-                        onSelected: (_) => setState(() => _ways = ways),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color:
-                        Theme.of(context).colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(9),
-                  ),
-                  child: Row(
-                    children: [
-                      const Expanded(child: Text('Each pays about')),
-                      Text(_money(each),
-                          style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 17)),
-                    ],
-                  ),
-                ),
-              ] else ...[
-                Text(
-                  'Tap an item to move it between shares.',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                const SizedBox(height: 10),
-                for (final line in widget.state.totals.lines)
-                  ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(line.name),
-                    subtitle: Text(_money(line.netMinor)),
-                    trailing: Wrap(
-                      spacing: 4,
-                      children: [
-                        for (var share = 0; share < _ways; share++)
-                          ChoiceChip(
-                            label: Text('${share + 1}'),
-                            selected: (_assignment[line.id] ?? 0) == share,
-                            onSelected: (_) =>
-                                setState(() => _assignment[line.id] = share),
-                          ),
-                      ],
-                    ),
-                  ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    const Text('Shares: '),
-                    for (final ways in [2, 3, 4])
-                      Padding(
-                        padding: const EdgeInsets.only(left: 6),
-                        child: ChoiceChip(
-                          label: Text('$ways'),
-                          selected: _ways == ways,
-                          onSelected: (_) => setState(() => _ways = ways),
-                        ),
-                      ),
-                  ],
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () {
-            if (_byItem) {
-              // Group the lines by the share they were assigned to. Anything
-              // untouched stays on share 1.
-              final groups = List.generate(_ways, (i) => <String>[]);
-              for (final line in widget.state.totals.lines) {
-                groups[_assignment[line.id] ?? 0].add(line.id);
-              }
-              Navigator.pop(context,
-                  SplitChoice(mode: SplitMode.byItem, groups: groups));
-            } else {
-              Navigator.pop(
-                  context, SplitChoice(mode: SplitMode.equally, ways: _ways));
-            }
-          },
-          child: const Text('Split'),
         ),
       ],
     );

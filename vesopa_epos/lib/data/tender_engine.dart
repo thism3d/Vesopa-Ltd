@@ -1,5 +1,6 @@
 import 'commerce.dart';
 import 'pricing_engine.dart';
+import 'split_portions.dart';
 
 /// One payment taken against a bill.
 class TenderEntry {
@@ -11,6 +12,7 @@ class TenderEntry {
     this.cashbackMinor = 0,
     this.gratuityMinor = 0,
     this.cashBreakdown,
+    this.holdId,
   });
 
   final TenderKind kind;
@@ -19,6 +21,11 @@ class TenderEntry {
   /// A gift-card code, deposit reference or card auth code — whatever makes
   /// this payment traceable afterwards.
   final String? reference;
+
+  /// For a gift card: the money reserved on it while the bill is open. Spent
+  /// when the sale is recorded, given back on Undo or if the bill is left.
+  /// Null for a card spent outright by a back office too old to hold.
+  final String? holdId;
 
   /// 'terminal' | 'manual' | 'hosted' | 'native'. A manually keyed card
   /// carries different liability from a dipped one, so the receipt and the
@@ -213,6 +220,19 @@ class TenderState {
     );
   }
 
+  /// Take one payment off, wherever it sits. For a gift card that could not
+  /// be charged at the end of a sale, which need not be the last payment.
+  ///
+  /// The last one is [removeLastTender]. Any other is refused on a split bill
+  /// (this state is returned unchanged): shares record how much each person
+  /// has paid, not which payments, so there is no telling whose it was.
+  TenderState removeTenderAt(int index) {
+    if (index < 0 || index >= tenders.length) return this;
+    if (index == tenders.length - 1) return removeLastTender();
+    if (isSplit) return this;
+    return copyWith(tenders: [...tenders]..removeAt(index));
+  }
+
   /// Divide what is outstanding into [ways] equal shares.
   ///
   /// Pennies that do not divide evenly go onto the first share rather than
@@ -234,44 +254,118 @@ class TenderState {
     );
   }
 
+  /// What one id on a share is worth.
+  ///
+  /// A whole line is its own net. A **portion** — `<lineId>#2`, one glass out
+  /// of a round of three — is that line's net divided by its quantity, with the
+  /// odd penny placed deterministically. See `split_portions.dart` for the
+  /// arithmetic and for why the remainder goes where it does.
+  ///
+  /// Resolved here rather than in the split screen because this is the one
+  /// place that decides what a share costs, and a second implementation of
+  /// "what is a portion worth" is a second answer waiting to disagree with this
+  /// one in front of a table.
+  int valueOfId(String id, Map<String, PricedLine> byId) {
+    final line = byId[baseLineId(id)];
+    if (line == null) return 0;
+    final index = portionIndex(id);
+    if (index == 0) return line.netMinor;
+    // Quantities are held as doubles because a line can be 1.5 kg; a portion is
+    // only ever offered on a whole number, so rounding here is reading the
+    // count rather than changing it.
+    final count = line.quantity.round();
+    return portionValue(line.netMinor, count < 1 ? 1 : count, index);
+  }
+
   /// Split by putting named lines on their own shares.
+  ///
+  /// An id in a group may be a whole line or one portion of one — see
+  /// [valueOfId]. Whichever it is, the portions of a line always add back to
+  /// the line, so the shares still sum to the bill to the penny and
+  /// [_apportion] needs to know nothing about any of this.
   TenderState splitByItems(List<List<String>> groups) {
     if (groups.length < 2) {
       return copyWith(splitMode: SplitMode.none, shares: const []);
     }
 
     final byId = {for (final l in totals.lines) l.id: l};
-    final shares = <SplitShare>[];
+    final itemised = <int>[
+      for (final group in groups)
+        group
+            .map((id) => valueOfId(id, byId))
+            .fold<int>(0, (s, v) => s + v),
+    ];
 
-    for (var i = 0; i < groups.length; i++) {
-      final amount = groups[i]
-          .map((id) => byId[id]?.netMinor ?? 0)
-          .fold<int>(0, (s, v) => s + v);
-      shares.add(SplitShare(
-        index: i,
-        amountMinor: amount,
-        lineIds: groups[i],
-      ));
-    }
-
-    // Service and any bill-level reductions are not attached to a line, so
-    // whatever the item shares do not cover is added to the first share. This
-    // keeps the shares summing to the bill.
-    final covered = shares.fold<int>(0, (s, x) => s + x.amountMinor);
-    final unallocated = outstandingMinor - covered;
-    if (unallocated != 0 && shares.isNotEmpty) {
-      shares[0] = SplitShare(
-        index: 0,
-        amountMinor: shares[0].amountMinor + unallocated,
-        lineIds: shares[0].lineIds,
-      );
-    }
+    // Service, and any reduction taken against the bill rather than a line, is
+    // attached to nothing — so it has to be placed, and the shares have to go
+    // on summing to the bill either way.
+    final covered = itemised.fold<int>(0, (s, v) => s + v);
+    final amounts = _apportion(itemised, outstandingMinor - covered, covered);
 
     return copyWith(
       splitMode: SplitMode.byItem,
       activeShare: 0,
-      shares: shares,
+      shares: [
+        for (var i = 0; i < groups.length; i++)
+          SplitShare(index: i, amountMinor: amounts[i], lineIds: groups[i]),
+      ],
     );
+  }
+
+  /// Spread [extra] across shares in proportion to what each is worth.
+  ///
+  /// This used to put the whole of it on share 1, which is wrong in the case
+  /// that actually turns up: a table with a bill-wide offer. Table 1 carrying
+  /// −£6.05 across £60.50 gave the entire discount to whoever paid first, so
+  /// two people splitting the same bill down the middle paid £24.20 and
+  /// £30.25 — and the till gave no reason why.
+  ///
+  /// Pro-rata by share value instead, decided with the venue on 2026-09-07:
+  /// each share carries its portion of the offer in proportion to what it is
+  /// worth. Nobody is asked to make a judgement with a table waiting, and the
+  /// shares always add back to the bill.
+  ///
+  /// [extra] is routinely negative — a discount is the common case — and every
+  /// step below is written to hold for both signs.
+  static List<int> _apportion(List<int> itemised, int extra, int covered) {
+    final out = [...itemised];
+    if (extra == 0 || out.isEmpty) return out;
+
+    // Nothing to be proportional *to*. Every share is worth nothing — a bill of
+    // zero-priced items carrying a service charge — so there is no ratio to be
+    // fair with, and it goes on the first share as it always did.
+    if (covered == 0) {
+      out[0] += extra;
+      return out;
+    }
+
+    var handed = 0;
+    for (var i = 0; i < out.length; i++) {
+      // Truncating towards zero, deliberately and in both directions: this can
+      // only ever hand out less than [extra] in magnitude, never more, so what
+      // is left below is a remainder to place rather than an overdraft to claw
+      // back off somebody who has already been quoted a figure.
+      final portion = (extra * itemised[i]) ~/ covered;
+      out[i] += portion;
+      handed += portion;
+    }
+
+    // The pennies that would not divide, onto the largest share.
+    //
+    // They have to go somewhere or the split stops adding up to the bill, and
+    // the largest share is where a penny is least likely to be noticed against
+    // the figure it is attached to. At most one penny per share can be at
+    // stake, so this is a rounding decision, not a fairness one.
+    final remainder = extra - handed;
+    if (remainder != 0) {
+      var largest = 0;
+      for (var i = 1; i < itemised.length; i++) {
+        if (itemised[i] > itemised[largest]) largest = i;
+      }
+      out[largest] += remainder;
+    }
+
+    return out;
   }
 
   /// Abandon a split and go back to one bill.

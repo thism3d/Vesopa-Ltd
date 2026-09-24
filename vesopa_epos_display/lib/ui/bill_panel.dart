@@ -108,6 +108,22 @@ class _BillPanelState extends State<BillPanel> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // The member, above their own bill.
+          //
+          // "Can we add the customer's name and points to the customer display
+          // screen. Maybe a custom field above it so we can change it to like
+          // Welcome... etc."
+          //
+          // Drawn only when the till actually sent a name — which means never
+          // for a sale with nobody attached, and never for a till that has not
+          // been updated yet. An empty band with a greeting and no name in it
+          // would be worse than no band.
+          if (basket.customerName != null)
+            _MemberGreeting(
+              greeting: basket.greeting ?? 'Welcome',
+              name: basket.customerName!,
+              points: basket.customerPoints,
+            ),
           Expanded(
             child: ListView.builder(
               controller: _scroll,
@@ -163,14 +179,45 @@ class _Line extends StatelessWidget {
               ),
             ),
           Expanded(
-            child: Text(
-              line.name,
-              style: TextStyle(
-                fontSize: modifier ? 20 : 26,
-                fontWeight: modifier ? FontWeight.w400 : FontWeight.w600,
-                color: modifier ? Brand.inkSoft : Brand.ink,
-                height: 1.2,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  line.name,
+                  style: TextStyle(
+                    fontSize: modifier ? 20 : 26,
+                    fontWeight: modifier ? FontWeight.w400 : FontWeight.w600,
+                    color: modifier ? Brand.inkSoft : Brand.ink,
+                    height: 1.2,
+                  ),
+                ),
+
+                // What is in it, under the item.
+                //
+                // On the screen the customer is looking at, because this is
+                // the one screen in the building they can read for themselves
+                // — the menu they ordered from may have been a printed card,
+                // and asking across a counter is exactly what somebody with an
+                // allergy would rather not have to do.
+                //
+                // Only ever what has been declared. Nothing is drawn for a
+                // product nobody has filled in, because a customer reading
+                // "no allergens" over an unanswered question is the one
+                // failure this whole feature must not have.
+                if (line.allergens.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      'Contains ${line.allergens.join(', ').toLowerCase()}',
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                        color: Brand.inkSoft,
+                        height: 1.25,
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
           if (showPrice && !(modifier && line.totalMinor == 0)) ...[
@@ -331,6 +378,80 @@ class _Row extends StatelessWidget {
         children: [
           Text(label, style: style),
           Text(value, style: style),
+        ],
+      ),
+    );
+  }
+}
+
+/// The member's welcome, across the top of their bill.
+///
+/// Read from three or four feet away by somebody who is not wearing their
+/// glasses, like everything else on this screen — so the name is the size of a
+/// heading and the points sit under it rather than beside it, where a long
+/// name would push them off the edge.
+class _MemberGreeting extends StatelessWidget {
+  const _MemberGreeting({
+    required this.greeting,
+    required this.name,
+    required this.points,
+  });
+
+  final String greeting;
+  final String name;
+
+  /// Null when the till did not send one — an older till, or a customer with
+  /// no points scheme. The line is simply left off rather than showing a zero,
+  /// which would be a claim about a balance nobody has checked.
+  final int? points;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(28, 22, 28, 18),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: Brand.line, width: 1),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            greeting,
+            style: TextStyle(
+              fontSize: 20,
+              height: 1.1,
+              color: Brand.inkSoft,
+              letterSpacing: 0.4,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 34,
+              height: 1.15,
+              fontWeight: FontWeight.w700,
+              color: Brand.ink,
+            ),
+          ),
+          if (points != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              "$points point${points == 1 ? '' : 's'}",
+              style: TextStyle(
+                fontSize: 20,
+                height: 1.2,
+                color: Brand.lime,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
         ],
       ),
     );

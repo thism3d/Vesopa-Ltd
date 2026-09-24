@@ -32,6 +32,7 @@ void main() {
     totalMinor: 1000,
     customerDiscountType: 'none',
     customerDiscountValue: 0,
+    training: false,
     createdAt: DateTime(2026, 8, 22, 19, 30),
   );
 

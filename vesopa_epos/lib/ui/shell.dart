@@ -1,10 +1,14 @@
+import 'licence_panel.dart';
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../config/constants.dart';
 import '../data/customer_display.dart';
+import '../data/dinein_orders.dart' show allergenLabelsProvider;
+import '../data/local/database.dart';
 import '../data/customer_display_control.dart' show clearCustomerCode;
 import '../data/device_registry.dart';
 import '../data/display_pairing.dart';
@@ -13,11 +17,14 @@ import '../data/staff_session.dart';
 import '../data/sync_service.dart';
 import '../data/terminal_identity.dart';
 import '../data/terminal_service.dart';
+import '../data/till_seat.dart';
+import '../data/training_mode.dart';
 import '../main.dart';
 import 'layout.dart';
 import 'about_page.dart';
 import 'card_actions.dart';
 import 'functions_page.dart';
+import 'gym_page.dart';
 import 'logout_dialog.dart';
 import 'nav_panel_controller.dart';
 import 'pair_request_overlay.dart';
@@ -34,6 +41,7 @@ import 'theme.dart';
 import 'widgets/pos_message.dart';
 import 'widgets/nav_rail.dart';
 import 'widgets/till_top_bar.dart';
+import 'dinein_toasts.dart';
 
 /// The till frame: fixed nav rail on the left, the selected page beside it.
 class PosShell extends ConsumerStatefulWidget {
@@ -63,6 +71,14 @@ class _PosShellState extends ConsumerState<PosShell> {
   /// few seconds, and the display judges by the timestamp. See
   /// data/display_pairing.dart.
   Timer? _presence;
+
+  /// Asks the back office, every couple of minutes, whether this till has been
+  /// signed out from Devices. See data/till_seat.dart.
+  Timer? _seatWatch;
+
+  /// Set once the till knows it has been signed out, so the message is said
+  /// once and the sign-out is not started twice.
+  bool _releasing = false;
 
   /// Held for [dispose], which cannot `ref.read` a container that may already
   /// have gone.
@@ -99,8 +115,64 @@ class _PosShellState extends ConsumerState<PosShell> {
     _display = ref.read(customerDisplayProvider);
     unawaited(_announceThisMachine());
     unawaited(_readCardRules());
+    unawaited(_readGymRules());
     unawaited(_startPresence());
+    // Practice bills left from a till switched off mid-training. Cleared before
+    // the first bill opens; a failure here costs nothing but a stale practice
+    // table, seen only by the next trainee.
+    unawaited(
+      ref
+          .read(orderRepositoryProvider)
+          .sweepPracticeBills()
+          .then<void>((_) {}, onError: (Object _) {}),
+    );
     _newOrder();
+    _seatWatch = Timer.periodic(
+      const Duration(minutes: 2),
+      (_) => unawaited(_checkSeat()),
+    );
+    unawaited(_checkSeat());
+  }
+
+  /// Follow a sign-out made from the back office.
+  ///
+  /// The sales go first: they are sent without the terminal token (they are
+  /// keyed by the venue), so a released till can still deliver every one. Only
+  /// when none is left does the till go back to the sign-in screen. Until then
+  /// it says what it is waiting for, and tries again on the next check.
+  Future<void> _checkSeat() async {
+    final token = ref.read(sessionProvider).terminalToken;
+    if (token == null) return;
+    final seat = await checkTillSeat(ref.read(apiBaseProvider), token);
+    if (seat.status != SeatStatus.signedOut || !mounted) return;
+
+    final sync = ref.read(syncServiceProvider);
+    try {
+      await sync.flush();
+    } catch (_) {
+      // Counted below either way.
+    }
+    final db = ref.read(databaseProvider);
+    final pending = (await db.select(db.outboxEntries).get()).length;
+    if (!mounted) return;
+    if (pending > 0) {
+      if (!_releasing) {
+        _releasing = true;
+        PosMessenger.error(
+          context,
+          'This till was signed out from the back office. It will sign out '
+          'as soon as its last $pending sale(s) reach the server.',
+        );
+      }
+      return;
+    }
+
+    _releasing = true;
+    _seatWatch?.cancel();
+    await db.delete(db.products).go();
+    await db.delete(db.mixMatchProducts).go();
+    await db.delete(db.mixMatchDeals).go();
+    await ref.read(sessionControllerProvider.notifier).signOut();
   }
 
   /// Load the venue's card prefixes, then refresh them.
@@ -150,6 +222,81 @@ class _PosShellState extends ConsumerState<PosShell> {
     // mutates in place and so never looks changed. See cardRulesRevisionProvider.
     ref.read(cardRulesRevisionProvider.notifier).bump();
     setState(() {});
+  }
+
+  /// The sections this venue's rail carries.
+  ///
+  /// Read from the gym rules rather than held in state, because they arrive
+  /// from the back office some seconds after the till has drawn its first
+  /// frame, and can change again while somebody is standing at the till.
+  ///
+  /// Every use of the list goes through here, including the ones that look up
+  /// an index -- see [_sectionLabel] for why that matters.
+  List<NavDestination> get _destinations => navDestinationsFor(
+    gym: ref.watch(gymRepositoryProvider).settings.enabled,
+  );
+
+  /// The label of whichever section is showing.
+  ///
+  /// Clamped, and that is not defensive tidiness. `_index` is a position in a
+  /// list whose LENGTH changes: a manager switching the gym on adds a row, and
+  /// switching it off takes one away underneath a till that is sitting on
+  /// About. Without this, that till reads one past the end and crashes.
+  String get _sectionLabel {
+    final list = _destinations;
+    if (list.isEmpty) return 'Sale';
+    return list[_index.clamp(0, list.length - 1)].label;
+  }
+
+  /// Load the venue's gym rules, then refresh them.
+  ///
+  /// Stored first and pulled second, exactly as the card rules are, and for a
+  /// sharper version of the same reason: this is a door. A gym that could not
+  /// let anybody in until the broadband came up would be a gym that cannot open
+  /// at six in the morning, which is when a good half of its members arrive.
+  ///
+  /// The pull also re-reads the member roster and drains anything that was
+  /// queued while the line was down. Nothing waits on any of it.
+  Future<void> _readGymRules() async {
+    final before = _sectionLabel;
+    final gym = ref.read(gymRepositoryProvider);
+    await gym.load();
+    if (!mounted) return;
+    await gym.sync();
+    if (!mounted) return;
+    // Anything laid out from these rules -- the Gym page, the nav rail, the gym
+    // section in Settings -- watches this rather than the repository, which
+    // mutates in place and so never looks changed.
+    ref.read(gymSettingsRevisionProvider.notifier).bump();
+
+    // Hold the section the operator is actually looking at.
+    //
+    // Adding or removing Gym shifts every index after it, so a till sitting on
+    // Settings would silently become a till sitting on Reports the moment a
+    // manager saved the gym switch in the back office. The label is the thing
+    // that means something; the index is only where it happens to live.
+    final was = before;
+    setState(() {
+      final now = _destinations.indexWhere((d) => d.label == was);
+      if (now >= 0) _index = now;
+    });
+  }
+
+  /// Re-read the gym rules when the back office changes them.
+  ///
+  /// `gym` is the event PUT /api/gym/settings broadcasts. Switching the gym on
+  /// has to make the section appear on every till in the venue without anybody
+  /// restarting one -- and switching it off has to take it away just as
+  /// promptly, because a Gym page still sitting there is a page whose every
+  /// request now answers 404.
+  ///
+  /// `cards` as well, because the gym prefix lives on the card settings row and
+  /// a manager who changes it there has changed which cards open the door.
+  void _watchGymRules() {
+    ref.listen(syncEventsProvider, (_, next) {
+      final type = next.value?.type;
+      if (type == 'gym' || type == 'cards') unawaited(_readGymRules());
+    });
   }
 
   /// Re-read the card rules when the back office changes them.
@@ -232,6 +379,7 @@ class _PosShellState extends ConsumerState<PosShell> {
   @override
   void dispose() {
     _presence?.cancel();
+    _seatWatch?.cancel();
     // Say the till has gone, so a display on this machine stops offering a code
     // the moment the till closes rather than twenty seconds later. Best effort:
     // a till that loses power says nothing, which is why the display judges by
@@ -243,7 +391,10 @@ class _PosShellState extends ConsumerState<PosShell> {
     _displayFeed?.cancel();
     // Put the customer's screen back to adverts rather than leaving the last
     // bill of the night on it.
-    unawaited(_display.clear());
+    //
+    // Forced past the thank-you hold: the till is closing, so there is no next
+    // sale to replace it and nothing left running to take it down later.
+    unawaited(_display.clear(force: true));
     super.dispose();
   }
 
@@ -262,16 +413,42 @@ class _PosShellState extends ConsumerState<PosShell> {
     }
 
     final repo = ref.read(orderRepositoryProvider);
+    final db = ref.read(databaseProvider);
     _displayFeed = repo
         .watchOrder(orderId)
         .asyncMap((order) async {
           final lines = await repo.watchLines(orderId).first;
           return snapshotFor(
             lines: lines,
+            notifyDisplay: ref.read(tillSettingsProvider).notifyDisplayEnabled,
+            // Only the products on this bill, so a large catalogue is not read
+            // into memory to draw four lines on a screen that repaints on
+            // every tap.
+            allergensByPlu: await _allergensFor(
+              db,
+              lines,
+              ref.read(allergenLabelsProvider).value ?? const {},
+            ),
             subtotalMinor: order.subtotalMinor,
             discountMinor: order.discountMinor,
             taxMinor: order.taxMinor,
             totalMinor: order.totalMinor,
+            // Who is on the bill, for the screen facing them. Both null on
+            // most sales, and the display then draws nothing rather than an
+            // empty greeting -- see bill_panel.dart.
+            //
+            // The venue can turn the name off and keep the greeting: a screen
+            // that says "Welcome Mrs Protheroe -- 1,240 points" is a sentence
+            // the next person in the queue can read from the other side of the
+            // counter, and that is their objection to make.
+            customerName: ref.read(tillSettingsProvider).customerDisplayShowMember
+                ? order.customerName
+                : null,
+            customerPoints:
+                ref.read(tillSettingsProvider).customerDisplayShowMember
+                    ? order.customerPoints
+                    : null,
+            greeting: ref.read(tillSettingsProvider).customerDisplayGreeting,
           );
         })
         .listen(
@@ -281,6 +458,50 @@ class _PosShellState extends ConsumerState<PosShell> {
           onError: (Object _) {},
           cancelOnError: false,
         );
+  }
+
+  /// The allergens declared for the products on this bill, PLU by PLU.
+  ///
+  /// Read from the till's own catalogue rather than from the server, so the
+  /// screen facing the customer keeps saying what is in the food on a terminal
+  /// whose network has gone. A declaration about food is not something to hide
+  /// behind a working connection.
+  ///
+  /// A row with nothing stored is left out of the map entirely, which the
+  /// display reads as "nobody has declared anything" — deliberately not as
+  /// "this contains none of the fourteen".
+  static Future<Map<int, List<String>>> _allergensFor(
+    AppDatabase db,
+    List<OrderLine> lines,
+    Map<String, String> labels,
+  ) async {
+    // No words, nothing to draw. A raw code on a screen facing a customer —
+    // "tree_nuts" — is worse than a line that is not there, and the display
+    // cannot resolve one itself: it has no network by design.
+    if (labels.isEmpty) return const {};
+
+    final plus = lines.map((l) => l.pluId).toSet();
+    if (plus.isEmpty) return const {};
+    try {
+      final rows = await (db.select(
+        db.products,
+      )..where((p) => p.pluId.isIn(plus))).get();
+      final out = <int, List<String>>{};
+      for (final row in rows) {
+        final stored = row.allergens;
+        if (stored == null || stored.trim().isEmpty) continue;
+        final decoded = jsonDecode(stored);
+        if (decoded is! List || decoded.isEmpty) continue;
+        final words = [for (final code in decoded) ?labels['$code']];
+        if (words.isNotEmpty) out[row.pluId] = words;
+      }
+      return out;
+    } catch (_) {
+      // A catalogue read that fails must not stop the customer seeing their
+      // bill. They get the bill without the allergen line, which is what every
+      // release before this one showed.
+      return const {};
+    }
   }
 
   Future<void> _newOrder() async {
@@ -299,6 +520,50 @@ class _PosShellState extends ConsumerState<PosShell> {
     }
   }
 
+  /// A training account has signed on, or signed off.
+  ///
+  /// Every part of the till acts on the bill's own flag, not on who is signed
+  /// on, so the bill on screen has to change kind with the person:
+  ///
+  ///  * an empty bill simply becomes the other kind;
+  ///  * a trainee signing on over a real bill with something on it is signed
+  ///    straight off again -- that bill is a real customer's, and a practice
+  ///    sale on it would never reach the back office;
+  ///  * a trainee signing off leaves a practice bill behind, which is cleared:
+  ///    it was never going to be paid for.
+  Future<void> _trainingChanged(bool training) async {
+    final id = _orderId;
+    if (id == null) return;
+    final orders = ref.read(orderRepositoryProvider);
+    final order = await orders.orderOnce(id);
+    if (order == null || order.training == training || !mounted) return;
+
+    final lines = await orders.linesOnce(id);
+    if (lines.isEmpty) {
+      await orders.matchTraining(id, training);
+      return;
+    }
+
+    if (training) {
+      ref.read(staffSessionProvider.notifier).signOff();
+      if (mounted) {
+        PosMessenger.error(
+          context,
+          'Training cannot start on a bill with something on it. Pay or park '
+          'this bill, then sign on for training.',
+        );
+      }
+      return;
+    }
+
+    await orders.discardPracticeBill(id);
+    if (!mounted) return;
+    await _newOrder();
+    if (mounted) {
+      PosMessenger.info(context, 'Training over: the practice bill was cleared.');
+    }
+  }
+
   /// Sign out. The dialog verifies the password against the live server and
   /// refuses while this terminal still holds sales the server has never seen.
   Future<void> _logout() async {
@@ -309,6 +574,13 @@ class _PosShellState extends ConsumerState<PosShell> {
     );
 
     if (done == true) {
+      // Give the till licence back, so another machine can be signed in
+      // without a manager releasing this one from Devices.
+      final token = ref.read(sessionProvider).terminalToken;
+      if (token != null) {
+        await releaseTillSeat(ref.read(apiBaseProvider), token);
+      }
+
       // Wipe this venue's cached catalogue and deals. Without this, a terminal
       // re-commissioned to another office would open showing the previous
       // office's products.
@@ -336,6 +608,25 @@ class _PosShellState extends ConsumerState<PosShell> {
     // across rebuilds -- Riverpod replaces the subscription rather than adding
     // a second one.
     _watchCardRules();
+    _watchGymRules();
+
+    /*
+     * A LAPSED LICENCE REPLACES THE SHELL, for the same reason a failure to
+     * open a bill does: a till that may not sell cannot do anything the tabs
+     * behind it offer either, and leaving them there invites somebody to try.
+     *
+     * `.value` is null while it loads AND when the server could not be asked,
+     * so both of those carry on into the till. Locking has to be something we
+     * were TOLD, never something we assumed from silence -- a venue must not
+     * lose its till because a licence lookup timed out.
+     */
+    final licence = ref.watch(licenceProvider).value;
+    if (licence != null && licence.locked) {
+      return LicenceLockedPage(
+        state: licence,
+        onRetry: () => ref.invalidate(licenceProvider),
+      );
+    }
 
     // Shown instead of the shell, not inside it: a till that cannot open a bill
     // cannot do anything the tabs offer either.
@@ -361,6 +652,14 @@ class _PosShellState extends ConsumerState<PosShell> {
       unawaited(_switchToOrder(next));
     });
 
+    // A trainee signing on or off. The bill on screen must be the kind the
+    // person in front of it is allowed to ring -- see [_trainingChanged].
+    ref.listen<bool>(trainingModeProvider, (previous, next) {
+      if (previous == next) return;
+      unawaited(_trainingChanged(next));
+    });
+    final training = ref.watch(trainingModeProvider);
+
     final orderId = _orderId;
 
     // Whether the side menu is fixed on screen or opens from the menu key is
@@ -381,7 +680,7 @@ class _PosShellState extends ConsumerState<PosShell> {
     // page selector pinned at its left where no layout can delete it, and the
     // Sale screen fills the middle of it with the venue's own top bar. See that
     // widget for what happened to everything the fixed strip was carrying.
-    final saleScreen = navDestinations[_index].label == 'Sale';
+    final saleScreen = _sectionLabel == 'Sale';
 
     // The drawer, for when the rail is not fixed. A fixed rail costs ~208px of
     // width permanently, on the screen where the product grid and the bill are
@@ -415,6 +714,7 @@ class _PosShellState extends ConsumerState<PosShell> {
         : Drawer(
             child: SafeArea(
               child: PosNavRail(
+                destinations: _destinations,
                 selected: _index,
                 onSelect: (i) {
                   setState(() => _index = i);
@@ -431,6 +731,7 @@ class _PosShellState extends ConsumerState<PosShell> {
     // The fixed rail has no drawer to close, so selecting must not pop — that
     // would take the current route off the navigator instead.
     final fixedRail = PosNavRail(
+      destinations: _destinations,
       selected: _index,
       onSelect: (i) => setState(() => _index = i),
       onLogout: _logout,
@@ -443,7 +744,8 @@ class _PosShellState extends ConsumerState<PosShell> {
     // this build has already worked out, and a method would have to watch those
     // providers again from inside another widget's build.
     Widget topBarChrome({Widget? body, bool trailing = true}) => TillTopBar(
-      section: navDestinations[_index],
+      section: _destinations[_index.clamp(0, _destinations.length - 1)],
+      destinations: _destinations,
       onSelectSection: (i) => setState(() => _index = i),
       // No menu key when the rail is already on screen: a button that opens a
       // copy of what is visible beside it is noise.
@@ -482,7 +784,7 @@ class _PosShellState extends ConsumerState<PosShell> {
                 : VenueTopBarBody(
                     bar: venueBar,
                     orderId: orderId,
-                    sectionName: navDestinations[_index].label,
+                    sectionName: _sectionLabel,
                     onSwitchOrder: _switchToOrder,
                     onNavigate: _goTo,
                   ),
@@ -495,6 +797,7 @@ class _PosShellState extends ConsumerState<PosShell> {
           drawer: drawer,
           body: Column(
             children: [
+              if (training) const TrainingBar(),
               ?topBar,
               Expanded(child: body),
             ],
@@ -509,6 +812,7 @@ class _PosShellState extends ConsumerState<PosShell> {
         drawer: drawer,
         body: Column(
           children: [
+            if (training) const TrainingBar(),
             ?topBar,
             Expanded(
               child: pinned
@@ -551,12 +855,34 @@ class _PosShellState extends ConsumerState<PosShell> {
   /// signing on to answer the prompt is exactly the sort of thing that happens
   /// on install day.
   Widget _withCounterHardware(Widget child) =>
-      PairRequestOverlay(child: _hearingCards(child));
+      // Orders from tables announce themselves over whatever section is open,
+      // so the layer wraps the shell rather than sitting on the sale screen.
+      // Inside PairRequestOverlay on purpose: a screen asking to be connected
+      // is a full-screen prompt somebody is standing in front of, and an order
+      // notification must not land on top of it.
+      PairRequestOverlay(
+        child: DineInToastLayer(child: _hearingCards(child)),
+      );
 
   Widget _hearingCards(Widget child) => SwipeCardListener(
     enabled: ref.watch(cardRepositoryProvider).settings.enabled,
-    onCard: (card) =>
-        handleSwipedCard(context, ref, card, orderId: _orderId),
+    onCard: (card) => handleSwipedCard(
+      context,
+      ref,
+      card,
+      orderId: _orderId,
+      // A scan that turned out to be a product. Handed to the sale screen
+      // rather than rung here — see pendingScanProvider — and the till moves
+      // there, because a clerk who scanned a bottle from the Reports page
+      // wanted it on the bill, not a message about where the bill is.
+      onScannedProduct: (product) async {
+        ref.read(pendingScanProvider.notifier).found(product);
+        final sale = _destinations.indexWhere((d) => d.label == 'Sale');
+        if (sale >= 0 && _index != sale && mounted) {
+          setState(() => _index = sale);
+        }
+      },
+    ),
     child: child,
   );
 
@@ -570,6 +896,24 @@ class _PosShellState extends ConsumerState<PosShell> {
     // them -- so the check is here rather than in four places that could
     // disagree.
     final order = await ref.read(orderRepositoryProvider).orderOnce(id);
+
+    // A practice bill only in training and a real one only out of it. The
+    // table plan already shows only the right kind; this is the funnel every
+    // other route comes through, so it is checked here as well.
+    if (order != null && order.training != ref.read(trainingModeProvider)) {
+      if (mounted) {
+        PosMessenger.error(
+          context,
+          order.training
+              ? 'That is a practice bill from training mode. It can only be '
+                    'opened by a training account.'
+              : 'Not in training mode. That is a real bill: sign off training '
+                    'to open it.',
+        );
+      }
+      return;
+    }
+
     if (order?.heldBy != null) {
       try {
         await ref.read(billSyncProvider).claim(id);
@@ -583,7 +927,7 @@ class _PosShellState extends ConsumerState<PosShell> {
     if (!mounted) return;
     setState(() {
       _orderId = id;
-      _index = navDestinations.indexWhere((d) => d.label == 'Sale');
+      _index = _destinations.indexWhere((d) => d.label == 'Sale');
     });
     _followOnDisplay(id);
   }
@@ -594,7 +938,7 @@ class _PosShellState extends ConsumerState<PosShell> {
   ) {
     // Routed by label rather than index, so adding a nav item cannot silently
     // shift what each screen points to.
-    switch (navDestinations[_index].label) {
+    switch (_sectionLabel) {
       case 'Sale':
         return SalePage(
           orderId: orderId,
@@ -612,6 +956,8 @@ class _PosShellState extends ConsumerState<PosShell> {
         );
       case 'Table':
         return TablesPage(currentOrderId: orderId, onRecall: _switchToOrder);
+      case 'Gym':
+        return const GymPage();
       case 'Receipts':
         return const ReceiptsPage();
       case 'Settings':
@@ -634,14 +980,14 @@ class _PosShellState extends ConsumerState<PosShell> {
 
   /// Jump to another nav section by its label, from a button inside a page.
   void _goTo(String label) {
-    final i = navDestinations.indexWhere((d) => d.label == label);
+    final i = _destinations.indexWhere((d) => d.label == label);
     if (i != -1) setState(() => _index = i);
   }
 
   /// Sections driven from the back office. Each explains what it does rather
   /// than showing an empty screen.
   Widget _sectionInfo(int index) {
-    switch (navDestinations[index].label) {
+    switch (_destinations[index].label) {
       case 'Product':
         return PlaceholderPage(
           title: 'Products',
@@ -673,8 +1019,8 @@ class _PosShellState extends ConsumerState<PosShell> {
         return const AboutPage();
       default:
         return PlaceholderPage(
-          title: navDestinations[index].label,
-          icon: navDestinations[index].icon,
+          title: _destinations[index].label,
+          icon: _destinations[index].icon,
           description: 'Managed from the Vesopa Back Office.',
         );
     }
@@ -696,6 +1042,39 @@ class _PosShellState extends ConsumerState<PosShell> {
 ///
 /// Draws nothing when the terminal has nobody to sign on — see the note in the
 /// shell's build about why that is the only case still guarded.
+/// The amber strip a till wears while a training account is signed on.
+///
+/// On every screen and above everything else, because the one mistake that
+/// matters is somebody taking a real customer's money on a till that will not
+/// record it.
+class TrainingBar extends StatelessWidget {
+  const TrainingBar({super.key});
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    liveRegion: true,
+    label: 'Training mode',
+    child: Container(
+      width: double.infinity,
+      color: const Color(0xFFF59E0B),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+      child: const Text(
+        'TRAINING MODE  ·  practice sales are not sent to the back office '
+        'and are not counted on this till',
+        textAlign: TextAlign.center,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: Color(0xFF1F1300),
+          fontWeight: FontWeight.w700,
+          fontSize: 13,
+          letterSpacing: 0.3,
+        ),
+      ),
+    ),
+  );
+}
+
 class StaffChip extends ConsumerWidget {
   const StaffChip({
     super.key,

@@ -77,6 +77,23 @@ abstract class Kds {
   /// that was never flagged.
   static const modifierMuted = Color(0x8CD32F2F);
 
+  /// An allergen declared on a line, and the wash behind the chip.
+  ///
+  /// Amber, deliberately not the modifier red. Red on this card means "read
+  /// this, it changes what you cook"; an allergen changes nothing about the
+  /// cooking and everything about who may be handed the plate and what the
+  /// pass says when it goes out. Two colours that both meant "urgent" would
+  /// flatten each other, and the one that would lose is the modifier — which
+  /// appears on far more tickets.
+  static const allergen = Color(0xFF8A5300);
+  static const allergenBack = Color(0xFFFFF2D6);
+
+  /// A QR order waiting to be accepted. The venue's own green is taken by
+  /// "completed", so waiting orders use the header blue that means "somebody
+  /// has to do something with this".
+  static const waiting = Color(0xFF0B6BCB);
+  static const waitingBack = Color(0xFFE7F1FC);
+
   /// The selected segment in the header.
   static const selected = Color(0xFF4B57E8);
   static const selectedTrack = Color(0xFFDDE0FB);

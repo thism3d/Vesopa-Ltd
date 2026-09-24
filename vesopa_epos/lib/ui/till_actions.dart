@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/kitchen_printing.dart';
 import '../data/receipt_repository.dart';
+import '../data/training_mode.dart';
 import '../main.dart';
 import '../printing/printer_transport.dart';
 import '../printing/receipt_builder.dart';
@@ -27,8 +28,24 @@ abstract final class TillActions {
   /// and it is reported as such rather than as a generic error.
   static Future<void> openCashDrawer(
     BuildContext context,
-    WidgetRef ref,
-  ) async {
+    WidgetRef ref, {
+    /// Why the drawer is being opened, from the venue's No Sale list.
+    ///
+    /// Null is a real answer and is not refused: the clerk skipped the
+    /// question, or the list could not be reached. The event is still recorded
+    /// — the COUNT is what the Z report is for, and a no-sale with no reason
+    /// on it is still a no-sale.
+    String? reason,
+  }) async {
+    // Training opens no drawer: the drawer holds the venue's real takings, and
+    // practice is not a reason to open it.
+    if (ref.read(trainingModeProvider)) {
+      if (context.mounted) {
+        _toast(context, 'Training: the drawer was not opened.');
+      }
+      return;
+    }
+
     final settings = await ref.read(printerSettingsProvider.future);
     final printer = settings.receiptPrinter;
 
@@ -56,6 +73,7 @@ abstract final class TillActions {
       await ref.read(orderRepositoryProvider).logNoSale(
             sessionId: session.id,
             staffName: ref.read(servedByProvider),
+            note: reason,
           );
 
       if (context.mounted) _toast(context, 'Drawer opened.');
@@ -85,6 +103,8 @@ abstract final class TillActions {
   /// Never throws. A sale is not undone by a drawer, and by this point it
   /// cannot be undone at all.
   static Future<void> openCashDrawerQuietly(WidgetRef ref) async {
+    // A practice cash sale moves no real cash, so the drawer stays shut.
+    if (ref.read(trainingModeProvider)) return;
     try {
       final settings = await ref.read(printerSettingsProvider.future);
       final printer = settings.receiptPrinter;
@@ -121,6 +141,15 @@ abstract final class TillActions {
     required KitchenFire reason,
   }) async {
     final status = ref.read(printStatusProvider.notifier);
+
+    // A practice bill is not cooked. Said on the chip rather than silently
+    // skipped, so a trainee learns that this is where the kitchen would hear.
+    final order = await ref.read(orderRepositoryProvider).orderOnce(orderId);
+    if (order != null && order.training) {
+      status.note('Training: nothing was sent to the kitchen.');
+      return;
+    }
+
     final printers = await ref.read(printerSettingsProvider.future);
     final settings = ref.read(tillSettingsProvider);
 
@@ -293,18 +322,49 @@ abstract final class TillActions {
   /// This is the customer's bill on a restaurant table, not a receipt: the
   /// money has not been taken, so it is marked as a request for payment rather
   /// than proof of one.
+  /// [onlyLines] limits the bill to those line ids — one share of a split.
+  ///
+  /// The whole point of splitting a bill in a restaurant is that each party
+  /// gets a piece of paper with their own items on it, and asks for it before
+  /// anybody pays. A split that could only be paid and not printed would send
+  /// three people to the counter to argue about one slip.
+  ///
+  /// [title] and [totalMinor] are supplied for a share because neither can be
+  /// worked out from the order: the order's own total is the whole table, and
+  /// a share's total carries its portion of any bill-wide offer, which only the
+  /// tender engine knows. Passing them in keeps the figure on the paper the
+  /// same as the figure on the screen and the figure that gets charged.
+  /// [lineQuantities] overrides how many of a line to print, by line id.
+  ///
+  /// One line of a bill can now be divided between shares — three glasses of
+  /// prosecco rung up together, one on each of three cards. The order still
+  /// holds a single `3 × Prosecco` row, because dividing is something the split
+  /// screen does rather than something the sale does, so a share's bill would
+  /// otherwise be handed to somebody paying for one glass with a three on it.
   static Future<void> printCurrentBill(
     BuildContext context,
     WidgetRef ref,
-    String orderId,
-  ) async {
+    String orderId, {
+    Set<String>? onlyLines,
+    String? title,
+    int? totalMinor,
+    Map<String, double> lineQuantities = const {},
+  }) async {
     final repo = ref.read(orderRepositoryProvider);
     final order = await repo.watchOrder(orderId).first;
-    final lines = await repo.watchLines(orderId).first;
+    final all = await repo.watchLines(orderId).first;
+    final lines = onlyLines == null
+        ? all
+        : [for (final l in all) if (onlyLines.contains(l.id)) l];
     if (!context.mounted) return;
 
     if (lines.isEmpty) {
-      _toast(context, 'Nothing on this bill yet.');
+      _toast(
+        context,
+        onlyLines == null
+            ? 'Nothing on this bill yet.'
+            : 'Nothing on that share yet.',
+      );
       return;
     }
 
@@ -312,7 +372,7 @@ abstract final class TillActions {
     final detail = ReceiptDetail(
       summary: ReceiptSummary(
         id: order.id,
-        totalMinor: order.totalMinor,
+        totalMinor: totalMinor ?? order.totalMinor,
         taxMinor: order.taxMinor,
         discountMinor: order.discountMinor,
         tableNumber: order.tableNumber,
@@ -322,12 +382,13 @@ abstract final class TillActions {
         clerkName: ref.read(servedByProvider),
         customerName: order.customerName,
         orderNote: order.notes,
+        training: order.training,
       ),
       lines: [
         for (final l in lines)
           ReceiptLine(
             name: l.name,
-            quantity: l.quantity,
+            quantity: lineQuantities[l.id] ?? l.quantity,
             unitPriceMinor: l.unitPriceMinor,
             taxPercentage: l.taxPercentage,
             note: l.notes,
@@ -344,7 +405,7 @@ abstract final class TillActions {
       venueName: session.venueName,
       branding: ref.read(brandingProvider),
       isBill: true,
-      title: 'Customer bill',
+      title: title ?? 'Customer bill',
       showKitchenOption: order.tableNumber != null,
     );
   }

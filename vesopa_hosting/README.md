@@ -394,6 +394,49 @@ through us is a purchase and goes through checkout; naming one you own is not,
 and gating it behind a sale would mean a customer moving a live site cannot see
 the panel they are being asked to trust. `/panel/domains/add`.
 
+**Adding a domain is a job you can watch.** The form post records the domain
+and starts a run (`src/domain-setup.js`); the domain's page opens on a card
+listing every step the run will take — the delegation lookup, the zone, the
+website, mail, the certificate — and lights them up as they happen, with a
+line under each saying what is going on and then what happened, an elapsed
+clock, and "Continue in the background". Leaving does not stop it: the Domains
+list shows "Setting up…" with the current step over the live channel, and a
+notification carries the outcome. When the run ends the card refreshes the
+page through the no-reload router so the cards below agree with it. Runs and
+steps live in `domain_setup_runs` / `domain_setup_steps`; a run a restart
+left open is closed at boot. `tool/cloud_domain_add_drive.py` adds a test
+subdomain through the form, photographs the steps, and removes it.
+
+For a subdomain the order is website → A record → certificate: Let's Encrypt
+has to reach the name, and a subdomain resolves nowhere until its record is
+in the parent's zone. Removing a subdomain takes that record with it (only the
+one pointing at us). Hestia reports every Let's Encrypt refusal as exit 15
+"could not connect"; the real reason is in `/var/log/hestia/LE-<user>-<domain>.log`
+— five certificates for one exact name in a week is their limit, and a test
+loop hits it.
+
+**Email-only domains.** A customer who keeps their website elsewhere and wants
+only mailboxes here points ONE record at us — the MX, at `MAIL_HOSTNAME` — and
+that is the whole proof. `verify()` checks the MX for every domain
+(`nameservers.mxPointsAtUs`), writes `mx_verified_at`, and a domain that is
+not pointed at us but whose MX is becomes `active` with a mail domain on the
+node and nothing else: no zone, no site, no certificate, and never the
+four-day clock. It is listed as "Email here", `mayHaveMail` allows mailboxes,
+and the Email page shows the SPF/DKIM records to paste at their provider
+(`needsRecords`, as for a domain verified by A record). Exchangers that are
+not ours are reported — mail is split until they go — never refused.
+
+**Two names for the same two machines.** `ns1/ns2.onzep.uk` are the same
+nameservers as `ns1/ns2.vesopa.com`, and a domain delegated to either pair —
+or one of each — verifies. Nothing ever prints the `onzep.uk` names: every
+instruction, email and "Point it at us" card shows `NS1`/`NS2` only. The
+aliases live in `NS_ALIASES`, aligned by position with `NS1`/`NS2`, and an
+alias only counts while the public DNS says it resolves to the same address as
+our own nameservers (`nameservers.acceptedAliases`) — heat6.com was once falsely
+verified because `ns1.onzep.uk` was a *different* box whose zone happened to
+name ours, and a list that trusted the name would do it again the day the name
+moves.
+
 **It gets them nothing until the nameservers agree.** A domain typed into a form
 is a claim, not a fact — the person typing it may not own it, and a platform
 that will serve a site, accept mail and issue a certificate for any name it is
@@ -701,6 +744,146 @@ re-renders them on their own after every basket change and hands them back as
 fragments — see below.
 
 ---
+
+## One way in
+
+**The Vesopa account is the only sign-in.** `/login` is one button — *(mark)
+Continue with Vesopa* — and nothing else: no email field, no password, no
+"Forgotten?", no "Create an account". The first Vesopa sign-in from an address
+the panel has never seen creates the customer (`src/routes/vesopa-sso.js`),
+which is exactly what `/register` used to create minus the password. Checkout
+asks a stranger to continue with Vesopa before it takes their billing details;
+the basket is a cookie and survives the round trip. Staff sign in to `/admin`
+the same way, matched against `hosting_admins` by verified address and never
+created.
+
+For that to work, the `vesopa-cloud` client on auth.vesopa.com has
+`allow_self_enroll = 1` (its `schema_020`). With it at 0, everybody who is not
+already on that client's member list is turned away on auth.vesopa.com with
+"not been given access to Vesopa Cloud" — which is what the owner met, as a
+stranger to his own product's list.
+
+`VESOPA_AUTH_PANEL_ONLY=off` brings every password form back exactly as it was:
+the routes are still there behind the flag (`config.VESOPA_ONLY`), so rolling
+back is a restart, not a deploy.
+
+**A refusal is a redirect, never a render.** The Vesopa callback used to render
+the sign-in page ON the callback address when something went wrong. That
+address carries a one-time code, so a reload replayed it with a dead code, and
+Safari — which had the old password form in its history — asked "Confirm form
+resubmission". Every failure now sets a flash and redirects to `/login`, which
+draws the message inline and where a reload does nothing.
+
+**The browser's own loading state never shows.** `public/assets/js/loadbar.js`
+draws the same green line auth.vesopa.com draws, started by an inline script in
+the `<head>` before first paint (admitted by a per-request CSP nonce), and
+`nav.js` fetches links and posts forms itself so the browser has nothing to
+spin for. A route that redirects answers a router request with `204` and
+`X-Vesopa-Location` (see `src/server.js`). `app.js` and `panel.js` run once per
+document and re-decorate each page on `vesopa:navigated`, with their
+document-level listeners bound to a per-page AbortSignal. Pages whose script
+holds state a swap would strand — the file manager, the terminal, the app-job
+pages, onboarding — carry `data-native-nav` on `<body>` and are always reached
+and left by a real navigation, bar included.
+
+## Two languages
+
+The site is published in English and Bangla. Bangla has addresses of its own —
+`/bn/hosting`, `/bn/domains/tld/com` — because a search engine never sends a
+cookie, and a language that lived only in a cookie is a language Google never
+sees. The panel, the basket, sign-in and the payment returns have one address
+each and follow the remembered choice instead; none of them is ever indexed.
+
+**The English text is the key.** Every string is written in the template as it
+reads in English and wrapped — `<%= t('Web hosting') %>` — and the Bangla lives
+in `src/i18n/bn/*.json` under that same English. It is the gettext arrangement,
+chosen over `t('nav.hosting')` for one reason: this codebase is read and edited
+in English, and a template full of dotted keys is a template nobody can review
+without a second file open. Whitespace is collapsed before lookup, so a
+paragraph may stay wrapped across lines in the source.
+
+    t()     plain text, printed with <%= %>
+    th()    a string that carries its own markup, printed with <%- %>
+    tn()    one and many
+    req.t() the same thing in a route, where the request knows the language
+    VT.t()  the same thing in a browser script (public/assets/js/i18n.js)
+
+A string with no Bangla falls back to its English, so a half-finished catalogue
+is never a broken page — which is exactly why it needs a check that fails:
+
+```bash
+npm run i18n:extract              # find new strings, merge them in
+npm run i18n:extract -- --prune   # and delete keys the source no longer has
+npm run i18n:check                # exit 1 until it is finished and sound
+```
+
+`i18n:check` fails on four things, in the order they cost a customer something:
+a string with no translation; a `{placeholder}` that does not match its English
+(a dropped one prints a sentence with a hole in it, an invented one prints a
+literal `{days}`); a `<tag>` that does not match (these are printed with `<%- %>`,
+so an unbalanced tag breaks the page around it); and one English string with two
+different translations in two files, where the loader picks whichever sorts last.
+
+**A fifth test exists because of a bug that passed the other four.**
+`clientMessages` serves only `client.json`, but the extractor leaves a key in
+whichever file it is already in — so a string that was server-side first and
+later became a `VT.t()` call stays in `panel.json`, is translated, passes every
+other check, and is still English in the browser. "Add it" did exactly that.
+**NOT SERVED** catches it now.
+
+**Adding a third language is a row in `LOCALES` and a folder of JSON.** That row
+carries the language's numerals, the stylesheet only its pages load, the fonts
+to preload, whether it abbreviates a month and its text direction — and
+`head.ejs`, `currency.js`, the browser's `i18n.js`, the switcher, the sitemap
+and both scripts all read from it. There is no `if (locale === 'bn')` anywhere.
+
+**Bangla is written with Bangla numerals**, grouped the Bangla way — ২,০০,০০০,
+not 200,000 — and `currency.format()` does it for whichever currency the visitor
+is being shown, because the grouping is the part that genuinely varies while the
+symbol is our own column's. `.mono` is the deliberate exception: a DNS record, a
+connection string or a disk figure keeps Latin digits, because it is about to be
+copied into a terminal.
+
+`public/assets/css/bn.css` loads on Bangla pages and nowhere else. It carries a
+self-hosted Noto Sans Bengali — one fewer third party in front of a customer,
+and nobody new for the privacy page to name — with a `unicode-range` so that an
+English word inside a Bangla sentence still renders in the Latin stack. The rest
+of it is room: Bengali hangs its vowel signs above and below a headline stroke,
+so the line-heights the English design sets tight would clip them, and every
+`text-transform: uppercase` is dropped because Bengali has no case and the rule
+only mangles the English words sitting inside the same label.
+
+**The switch is a full page load, on purpose.** `nav.js` swaps `body.innerHTML`
+and leaves `<head>` and `<html lang>` alone, so a language changed through the
+router would keep the old `lang` attribute, never load the Bengali font, and go
+on showing the old language's strings in anything a script writes. The switcher
+links carry `data-no-router`. A language change is rare and a full load is
+instant on a warm cache; correctness wins.
+
+**Search engines.** Every public page carries reciprocal `hreflang` in its head
+and again in `sitemap.xml`, where each page is listed once per language with the
+same alternates block and an `x-default` pointing at the English. Google ignores
+a one-sided pair and judges the two as duplicate sites, so both halves matter.
+`robots.txt` disallows `/lang/` and `/currency/`: both are redirects that set a
+cookie and send the crawler back where it came from, so following them indexes
+nothing and multiplies every page by the number of languages and currencies.
+Titles and meta descriptions are translated too, including the ones that quote a
+live price — those interpolate `{price}` rather than concatenating, because
+Bengali does not put the figure where English does.
+
+**What is deliberately English.** The terms, privacy, acceptable-use and refund
+documents are published in English in every language, with a translated notice
+at the top saying so. A contract translated into a second language is a second
+contract, and the day a liability or refund clause reads differently in the two
+it is the customer and us arguing about which one they agreed to. Everything
+around the document — the page, the navigation, the notice — is translated, and
+so are the four document names; `legal.js` keeps a module-level `const t = (s) =>
+s` whose only job is to make those names visible to the extractor, because
+`req.t(doc.title)` builds its key from a variable and a scanner cannot see it.
+
+The transactional emails are English too, for now. Sending one in the customer's
+language needs the language stored against the customer; `withLocale()` in
+`src/i18n` is the half that is already written.
 
 ## Decisions worth knowing
 

@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 420" width="640" height="420" role="img" aria-labelledby="offerTitle">
+  <title id="offerTitle">A Vesopa offer</title>
+  <!--
+    The artwork for an offer that is not the Bangladesh one.
+
+    Same rules as bangladesh.svg: drawn rather than photographed (the content
+    security policy allows images from this origin only), and carrying NO
+    figure, because the discount is live HTML beside it and this drawing has to
+    keep being true when the offer changes.
+  -->
+  <defs>
+    <linearGradient id="ofGlow" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#eff6d8"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="ofTag" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#d6ef5a"/>
+      <stop offset="0.55" stop-color="#a5c715"/>
+      <stop offset="1" stop-color="#6e8a0e"/>
+    </linearGradient>
+    <filter id="ofSoft" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#111111" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+
+  <circle cx="430" cy="160" r="230" fill="url(#ofGlow)"/>
+
+  <!-- A stack of plans, the top one lifted: the thing being discounted. -->
+  <g filter="url(#ofSoft)">
+    <rect x="92" y="196" width="300" height="150" rx="20" fill="#f1f3ea" stroke="#e1e3da"/>
+    <rect x="76" y="160" width="300" height="150" rx="20" fill="#ffffff" stroke="#e1e3da"/>
+    <rect x="60" y="120" width="300" height="160" rx="20" fill="#111111"/>
+    <rect x="88" y="150" width="86" height="12" rx="6" fill="#a5c715"/>
+    <rect x="88" y="176" width="150" height="20" rx="10" fill="#e9ecdf"/>
+    <rect x="88" y="208" width="196" height="8" rx="4" fill="#3c4234"/>
+    <rect x="88" y="224" width="160" height="8" rx="4" fill="#3c4234"/>
+    <rect x="88" y="248" width="104" height="18" rx="9" fill="#a5c715"/>
+  </g>
+
+  <!-- The tag, with a blank field where the figure is set in HTML. -->
+  <g filter="url(#ofSoft)" transform="translate(372 178) rotate(-8)">
+    <path d="M0 0 h150 a18 18 0 0 1 18 18 v84 a18 18 0 0 1 -18 18 h-150 l-42 -60 z" fill="url(#ofTag)"/>
+    <circle cx="-14" cy="60" r="10" fill="#2f3b05" fill-opacity="0.35"/>
+    <rect x="26" y="42" width="104" height="14" rx="7" fill="#2f3b05" fill-opacity="0.55"/>
+    <rect x="26" y="68" width="66" height="10" rx="5" fill="#2f3b05" fill-opacity="0.35"/>
+  </g>
+
+  <!-- A hand of confetti, small enough not to shout. -->
+  <g opacity="0.8">
+    <rect x="452" y="92" width="10" height="10" rx="2" fill="#a5c715" transform="rotate(20 457 97)"/>
+    <rect x="512" y="126" width="8" height="8" rx="2" fill="#6e8a0e" transform="rotate(-15 516 130)"/>
+    <rect x="486" y="322" width="9" height="9" rx="2" fill="#a5c715" transform="rotate(35 490 326)"/>
+    <circle cx="556" cy="212" r="5" fill="#a5c715"/>
+    <circle cx="430" cy="352" r="4" fill="#6e8a0e"/>
+  </g>
+</svg>

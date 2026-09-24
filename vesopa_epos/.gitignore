@@ -104,3 +104,5 @@ test/failures/
 # They stay on disk; this only keeps them out of the history.
 VesopaScreenProgrammingDemo.MP4
 ScreenProgrammingDemoImages/
+# Widget Preview related
+.widget_preview/

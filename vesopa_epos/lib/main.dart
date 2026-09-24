@@ -18,17 +18,22 @@ import 'data/kitchen_printing.dart';
 import 'data/kitchen_screens.dart';
 import 'data/customer_display.dart';
 import 'data/card_repository.dart';
+import 'data/demo_session.dart';
+import 'data/licence.dart';
+import 'data/gym.dart';
 import 'data/wallet_passes.dart';
 import 'data/device_registry.dart';
 import 'data/display_pairing.dart';
 import 'data/local/database.dart';
 import 'data/loyalty_repository.dart';
+import 'data/notifications.dart';
 import 'data/session_controller.dart';
 import 'data/order_repository.dart';
 import 'data/session_repository.dart';
 import 'data/staff_repository.dart';
 import 'data/startup_repair.dart';
 import 'data/staff_session.dart';
+import 'data/training_mode.dart';
 import 'data/sync_service.dart';
 import 'data/terminal_identity.dart';
 import 'data/terminal_service.dart';
@@ -41,6 +46,7 @@ import 'payments/dojo_desktop.dart';
 import 'payments/dojo_native.dart';
 import 'payments/payment_provider.dart';
 import 'ui/idle_screen.dart';
+import 'ui/gym_greeting.dart';
 import 'ui/shell.dart';
 import 'ui/sign_in_page.dart';
 import 'ui/recovery_page.dart';
@@ -113,6 +119,36 @@ class CardRulesRevision extends Notifier<int> {
   void bump() => state = state + 1;
 }
 
+/// The gym door: this venue's rules, its members, and the queue.
+///
+/// One long-lived object, like [cardRepositoryProvider] and for the same
+/// reason: it holds a cache that is mutated in place, and rebuilding it on
+/// every read would throw the roster and the queue away.
+final gymRepositoryProvider = Provider<GymRepository>(
+  (ref) => GymRepository(
+    apiBase: ref.watch(apiBaseProvider),
+    terminalToken: ref.watch(sessionControllerProvider).value?.terminalToken,
+  ),
+);
+
+/// How many times the gym rules have been re-read on this till.
+///
+/// The same trick as [cardRulesRevisionProvider], for the same reason: the
+/// repository above hands back one object and mutates it, so watching it
+/// rebuilds nothing. An int changes value, which is the one thing Riverpod
+/// needs to push a rebuild through -- and without it a manager switching the
+/// gym off in the back office would leave the Gym page on screen showing a
+/// board for a gym that no longer exists.
+final gymSettingsRevisionProvider =
+    NotifierProvider<GymSettingsRevision, int>(GymSettingsRevision.new);
+
+class GymSettingsRevision extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  void bump() => state = state + 1;
+}
+
 /// The cards a customer carries on their phone.
 ///
 /// Terminal token rather than the public `?office=` routes: this says which
@@ -148,7 +184,20 @@ final deviceRegistryProvider = Provider<DeviceRegistry>(
 );
 
 final orderRepositoryProvider = Provider<OrderRepository>(
-  (ref) => OrderRepository(ref.watch(databaseProvider)),
+  (ref) => OrderRepository(
+    ref.watch(databaseProvider),
+    // Read at the moment a bill is totalled, not captured now: offers are
+    // refreshed when the back office changes them, and a happy hour that
+    // starts at five has to start at five on a till that has been on since
+    // eleven. See OrderRepository.promotionsAvailable.
+    promotions: () => ref.read(promotionsProvider),
+    // Whether a training account is signed on, read when a bill is opened --
+    // so a bill a trainee opens is a practice bill. See data/training_mode.dart.
+    trainingMode: () => ref.read(trainingModeProvider),
+    // Whether the practice venue's token has arrived, which decides whether a
+    // practice sale is reported to that venue or simply kept on this till.
+    inDemoVenue: () => ref.read(inDemoVenueProvider),
+  ),
 );
 
 final sessionRepositoryProvider = Provider<SessionRepository>(
@@ -172,12 +221,16 @@ final kitchenScreenSenderProvider = Provider<KitchenScreenSender>(
   ),
 );
 
-final tableRepositoryProvider = Provider<TableRepository>(
-  (ref) => TableRepository(
+final tableRepositoryProvider = Provider<TableRepository>((ref) {
+  // Watched, not just read: when a trainee signs on or off the repository is
+  // rebuilt, and the table plan re-reads with the other set of tables.
+  final training = ref.watch(trainingModeProvider);
+  return TableRepository(
     ref.watch(databaseProvider),
     ref.watch(orderRepositoryProvider),
-  ),
-);
+    trainingMode: () => training,
+  );
+});
 
 final loyaltyRepositoryProvider = Provider<LoyaltyRepository>(
   (ref) => LoyaltyRepository(ref.watch(databaseProvider)),
@@ -218,14 +271,29 @@ final floorPlanProvider = FutureProvider<List<FloorRoom>>((ref) async {
     }
   });
 
+  final repo = await ref.watch(floorRepositoryProvider.future);
+  return repo.load();
+});
+
+/// The floor plan repository, which can now write as well as read.
+///
+/// Split out of floorPlanProvider so the editor reaches the same instance — and
+/// the same terminal token — rather than building a second one that would have
+/// to be kept in step with this one.
+///
+/// A FutureProvider because the cache it wraps needs SharedPreferences, which
+/// only arrives asynchronously.
+final floorRepositoryProvider = FutureProvider<FloorRepository>((ref) async {
   final prefs = await SharedPreferences.getInstance();
   final office = ref.watch(officeProvider);
-  final repo = FloorRepository(
+  return FloorRepository(
     apiBase: ref.watch(apiBaseProvider),
     cache: PrefsFloorCache(prefs, office: office),
     office: office,
+    // Reading a plan needs no credential; changing one does. A till that has
+    // not been commissioned is simply not offered the editor.
+    terminalToken: ref.watch(sessionControllerProvider).value?.terminalToken,
   );
-  return repo.load();
 });
 
 /// The REST client for whichever acquirer this till is configured against.
@@ -362,11 +430,40 @@ PaymentProvider _keyedFallback(DojoProvider rest, DojoConfig config) {
   return rest;
 }
 
-/// Who is signed into this terminal.
-final sessionProvider = Provider<Session>(
-  (ref) => ref.watch(sessionControllerProvider).value ?? Session.empty,
-);
+/// Who is signed into this terminal, and which venue it is selling from.
+///
+/// Usually the venue it was commissioned for. While a training account is
+/// signed on and the practice venue's token has arrived, it is that venue
+/// instead — so the catalogue, the sync, the kitchen and the dine-in board all
+/// work against the practice copy without any of them knowing. See
+/// `data/demo_session.dart` for why this is a swapped token and not a flag.
+final sessionProvider = Provider<Session>((ref) {
+  final live = ref.watch(sessionControllerProvider).value ?? Session.empty;
+  final demo = ref.watch(demoSessionProvider).value;
+  if (demo == null || demo.office.isEmpty) return live;
+  return live.inVenue(
+    office: demo.office,
+    officeName: demo.officeName,
+    terminalToken: demo.token,
+  );
+});
 
+/// This venue's licence for the till, as the back office sees it.
+///
+/// Watched rather than fetched once: it follows the session, so a till that
+/// signs in somewhere else — or into its venue's practice copy — asks about
+/// the right venue without anything having to remember to refresh it.
+///
+/// Null while it loads and null when the server cannot be asked. Every reader
+/// treats null as "carry on": a licence lookup failing must never be why a
+/// venue cannot trade.
+final licenceProvider = FutureProvider<LicenceState?>((ref) async {
+  final session = ref.watch(sessionProvider);
+  return fetchLicence(
+    apiBase: ref.watch(apiBaseProvider),
+    token: session.terminalToken ?? '',
+  );
+});
 /// Which venue this terminal belongs to. Comes from the sign-in rather than a
 /// build flag, so one APK can be installed in any venue.
 final officeProvider = Provider<String>(
@@ -481,6 +578,21 @@ final tillSettingsProvider = Provider<TillSettings>(
   (ref) =>
       ref.watch(tillSettingsRepositoryProvider).cached ?? TillSettings.defaults,
 );
+
+/// Windows toasts, and the two-layer rule about who may raise one.
+///
+/// One instance, like the API clients, because the back office's policy is
+/// pushed onto it — a second instance would be a second, permissive copy that
+/// had never heard of the venue's settings. See `data/notifications.dart`.
+final notificationsProvider = Provider<AppNotifications>((ref) {
+  final notifier = AppNotifications();
+  // Re-read whenever the settings row is refetched, which the till already
+  // does on a socket push and on a two-minute backstop — so a manager
+  // switching notifications off in the back office reaches every terminal in
+  // the building without anybody restarting anything.
+  notifier.policy = ref.watch(tillSettingsProvider).notify;
+  return notifier;
+});
 
 /// How often the till re-reads its settings when nothing has told it to.
 ///
@@ -675,6 +787,9 @@ final commerceRepositoryProvider = Provider<CommerceRepository>(
   (ref) => CommerceRepository(
     apiBase: ref.watch(apiBaseProvider),
     office: ref.watch(officeProvider),
+    // So the back office can tell this venue's tills from anybody holding the
+    // venue's address and a card code. See commerce.js, tillIdentity.
+    terminalToken: ref.watch(sessionProvider).terminalToken,
   ),
 );
 
@@ -1202,6 +1317,17 @@ class _LockedTill extends ConsumerWidget {
             showing: showIdle,
             builder: (_) => IdleScreen(settings: settings),
           ),
+          // Above the shutter, deliberately.
+          //
+          // An unmanned gym till spends its whole life locked: nobody is signed
+          // on to it and the screensaver is down. That is the state the door has
+          // to work in, so a greeting painted underneath the lock would be the
+          // one screen this feature exists to draw and the one screen nobody
+          // ever sees.
+          //
+          // It draws nothing at all when the door has nothing to say, and it
+          // passes every touch straight through -- see ui/gym_greeting.dart.
+          GymGreetingLayer(apiBase: ref.watch(apiBaseProvider)),
         ],
       ),
     );

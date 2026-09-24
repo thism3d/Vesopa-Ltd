@@ -52,8 +52,11 @@ class TillReport {
     this.voids = const ReportTally(),
     this.noSales = const ReportTally(),
     this.refunds = const ReportTally(),
+    this.expenses = const ReportTally(),
+    this.wastage = const ReportTally(),
     this.discounts = const ReportTally(),
     this.gratuityMinor = 0,
+    this.declaredCashMinor,
     this.terminalName,
     this.staffName,
   });
@@ -83,6 +86,15 @@ class TillReport {
   final ReportTally noSales;
   final ReportTally refunds;
 
+  /// Money paid out of the drawer that was not a refund, and the drawer is
+  /// short by it. Counted with its total, like a refund.
+  final ReportTally expenses;
+
+  /// Wastage rung on this till: a count of entries, no money. The till holds
+  /// no cost price, and a wastage priced at retail would overstate what was
+  /// lost; the back office's Wastage Report has the real figure.
+  final ReportTally wastage;
+
   /// Bills that carried a reduction, and what it came to.
   final ReportTally discounts;
 
@@ -95,10 +107,32 @@ class TillReport {
   /// Who was signed on when the report was taken.
   final String? staffName;
 
+  /// What was counted in the drawer before this Z was run, when the venue asks.
+  ///
+  /// Null means nobody was asked — the venue has the declaration switched off,
+  /// or this is an X report. Deliberately nullable rather than zero: "not
+  /// counted" and "counted, and the drawer was empty" are different facts, and
+  /// a Z that printed "down £240.00" because nobody was asked would be worse
+  /// than one that says nothing.
+  final int? declaredCashMinor;
+
   /// What should physically be in the drawer: the float plus everything taken
-  /// in cash.
+  /// in cash, less what was paid out of it. A window cleaner paid £30 from
+  /// the drawer is £30 the drawer is honestly short by, and a Z that called
+  /// that "down" would have the manager counting twice.
   int get expectedCashMinor =>
-      openingFloatMinor + (byMethod['cash']?.amountMinor ?? 0);
+      openingFloatMinor +
+      (byMethod['cash']?.amountMinor ?? 0) -
+      expenses.amountMinor;
+
+  /// Counted minus expected. Positive is over, negative is short.
+  ///
+  /// Null when nothing was counted, so the caller prints nothing rather than
+  /// printing a difference against a figure nobody supplied.
+  int? get cashDifferenceMinor {
+    final counted = declaredCashMinor;
+    return counted == null ? null : counted - expectedCashMinor;
+  }
 
   /// Takings divided by bills. Zero rather than a division by zero on a till
   /// that has not traded.
@@ -143,6 +177,75 @@ class SessionRepository {
         .getSingle();
   }
 
+  /// Set the cash counted into the drawer for the period that is open.
+  ///
+  /// The float has been on the session and printed on the Z since sessions
+  /// existed — as "Opening float" — and there has never been a way to enter it.
+  /// It was always zero, so "cash expected" was always the takings and never
+  /// what should actually be in the drawer.
+  ///
+  /// Applies to the open period, not the next one. A float is counted in at the
+  /// start of a shift and that is when somebody presses this; carrying it
+  /// forward to a period nobody has opened yet would put it on the wrong Z.
+  ///
+  /// Negative is refused. A drawer cannot start owing money, and the arithmetic
+  /// below it would balance perfectly all the way to a Z that says the till is
+  /// up when it is down.
+  Future<TillSession> setOpeningFloat(int minor) async {
+    final session = await current();
+    if (minor < 0) return session;
+    await (_db.update(_db.tillSessions)..where((s) => s.id.equals(session.id)))
+        .write(TillSessionsCompanion(openingFloatMinor: Value(minor)));
+    return (_db.select(_db.tillSessions)..where((s) => s.id.equals(session.id)))
+        .getSingle();
+  }
+
+  /// The Z reports this till has already run, newest first.
+  ///
+  /// For the reprint key on the Functions page. A Z is the document a venue
+  /// hands their accountant, and it is printed once on thermal paper next to a
+  /// cash drawer — so "the printer had no paper", "it printed and somebody
+  /// binned it" and "we need last Tuesday's again" are all ordinary Monday
+  /// mornings, and none of them used to have an answer.
+  ///
+  /// [days] back rather than everything, because that is what was asked for and
+  /// because the list is a thing somebody scrolls at a counter. A closed
+  /// session with no z_number is not a Z — it cannot happen through zReport,
+  /// but a session closed by some future path would show up as a report with
+  /// no number on it, and a report nobody can name is worse than absent.
+  Future<List<TillSession>> recentZs({int days = 7}) {
+    final from = DateTime.now().subtract(Duration(days: days));
+    return (_db.select(_db.tillSessions)
+          ..where((s) =>
+              s.closedAt.isNotNull() &
+              s.zNumber.isNotNull() &
+              s.closedAt.isBiggerOrEqualValue(from))
+          ..orderBy([(s) => OrderingTerm.desc(s.closedAt)]))
+        .get();
+  }
+
+  /// Rebuild a Z that has already been run.
+  ///
+  /// Recomputed from the orders rather than stored, and that is deliberate:
+  /// the sales are still in the till's own database keyed by session, so the
+  /// figures come out identical to the paper — and there is no second copy of
+  /// the totals to drift from the first.
+  ///
+  /// The consequence worth knowing is that this is a *reprint*, not an
+  /// archive: a till whose local database is wiped and re-synced has no orders
+  /// to rebuild from, and the reprint list will be empty rather than wrong.
+  Future<TillReport> reprintZ(
+    TillSession session, {
+    String? terminalName,
+    String? staffName,
+  }) =>
+      _report(
+        session,
+        isZ: true,
+        terminalName: terminalName,
+        staffName: staffName,
+      );
+
   /// X report: read the open session without changing anything. Safe to run as
   /// often as the manager likes, mid-service included.
   Future<TillReport> xReport({String? terminalName, String? staffName}) async {
@@ -161,7 +264,11 @@ class SessionRepository {
   /// the report is generating cannot land in the closed session after it has
   /// been totalled — it falls into the new one instead. Without that, the
   /// printed Z and the stored Z would disagree.
-  Future<TillReport> zReport({String? terminalName, String? staffName}) async {
+  Future<TillReport> zReport({
+    String? terminalName,
+    String? staffName,
+    int? declaredCashMinor,
+  }) async {
     return _db.transaction(() async {
       final session = await current();
       final report = await _report(
@@ -203,8 +310,11 @@ class SessionRepository {
         voids: report.voids,
         noSales: report.noSales,
         refunds: report.refunds,
+        expenses: report.expenses,
+        wastage: report.wastage,
         discounts: report.discounts,
         gratuityMinor: report.gratuityMinor,
+        declaredCashMinor: declaredCashMinor,
         terminalName: report.terminalName,
         staffName: report.staffName,
       );
@@ -218,10 +328,14 @@ class SessionRepository {
     String? staffName,
   }) async {
     // Only settled sales count. Parked and voided orders are deliberately
-    // excluded — a bill still sitting on a table is not takings.
+    // excluded — a bill still sitting on a table is not takings. So are
+    // practice sales (training mode): no money changed hands, and a trainee's
+    // afternoon must not inflate the drawer the manager counts against.
     final orders = await (_db.select(_db.orders)
           ..where((o) =>
-              o.sessionId.equals(session.id) & o.status.equals('closed')))
+              o.sessionId.equals(session.id) &
+              o.status.equals('closed') &
+              o.training.equals(false)))
         .get();
 
     final ids = orders.map((o) => o.id).toList();
@@ -284,6 +398,8 @@ class SessionRepository {
     var voids = const ReportTally();
     var noSales = const ReportTally();
     var refunds = const ReportTally();
+    var expenses = const ReportTally();
+    var wastage = const ReportTally();
     for (final e in events) {
       switch (e.kind) {
         case 'void':
@@ -292,6 +408,10 @@ class SessionRepository {
           noSales = noSales.plus(e.amountMinor);
         case 'refund':
           refunds = refunds.plus(e.amountMinor);
+        case 'expense':
+          expenses = expenses.plus(e.amountMinor);
+        case 'wastage':
+          wastage = wastage.plus(0);
       }
     }
 
@@ -311,6 +431,8 @@ class SessionRepository {
       voids: voids,
       noSales: noSales,
       refunds: refunds,
+      expenses: expenses,
+      wastage: wastage,
       discounts: ReportTally(count: discountedBills, amountMinor: discount),
       gratuityMinor: gratuity,
       terminalName: terminalName,

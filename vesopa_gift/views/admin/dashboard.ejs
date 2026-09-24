@@ -1,0 +1,80 @@
+<%- include('_top', { nav: 'dashboard' }) %>
+
+<div class="page-head">
+  <div>
+    <h2>Dashboard</h2>
+    <% if (venue.enabled) { %>
+    <p class="muted">Your shop is live at <a href="<%= shopUrl %>" target="_blank" rel="noopener"><%= shopUrl.replace(/^https?:\/\//, '') %></a></p>
+    <% } else { %>
+    <p class="muted">This shop is switched off. Nobody can see it until the owner switches it on.</p>
+    <% } %>
+  </div>
+  <div class="actions">
+    <% if (venue.enabled) { %>
+    <button class="btn ghost" type="button" data-copy="<%= shopUrl %>">Copy link</button>
+    <a class="btn primary" href="<%= shopUrl %>" target="_blank" rel="noopener">Open shop<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17L17 7M9 7h8v8"/></svg></a>
+    <% } %>
+  </div>
+</div>
+
+<% if (!canPay) { %>
+<div class="flash bad">This venue cannot take card payments yet: its Dojo key has not been added. Buyers see “vouchers cannot be bought online just now”. Add the key under Vesopa Express in the back office.</div>
+<% } %>
+
+<div class="stats">
+  <div class="card stat"><span class="label">Sold this month</span><span class="value"><%= money(stats.soldMonth) %></span><span class="sub"><%= stats.vouchersMonth %> voucher<%= stats.vouchersMonth === 1 ? '' : 's' %></span><span class="accent"></span></div>
+  <div class="card stat blue"><span class="label">Spent at the till</span><span class="value"><%= stats.spentMonth == null ? '—' : money(stats.spentMonth) %></span><span class="sub">this month</span><span class="accent"></span></div>
+  <div class="card stat amber"><span class="label">Still to be spent</span><span class="value"><%= stats.outstanding == null ? '—' : money(stats.outstanding) %></span><span class="sub">food and drink you owe</span><span class="accent"></span></div>
+  <div class="card stat"><span class="label">Tickets sold</span><span class="value"><%= stats.ticketsMonth %></span><span class="sub"><%= money(stats.ticketTakingsMonth) %> this month</span><span class="accent"></span></div>
+</div>
+
+<div class="grid-2">
+  <div class="card pad">
+    <div class="page-head">
+      <div><h3>Sold and spent, last eight weeks</h3></div>
+      <div class="legend"><span><i class="sold"></i>Sold</span><span><i class="spent"></i>Spent</span></div>
+    </div>
+    <div class="chart" role="img" aria-label="Vouchers sold and spent by week">
+      <% weeks.forEach(function (w) { %>
+      <div class="wk" title="<%= w.label %>: sold <%= money(w.sold) %>, spent <%= money(w.spent) %>"><div class="bar sold <%= w.soldClass %>"></div><div class="bar spent <%= w.spentClass %>"></div></div>
+      <% }) %>
+    </div>
+    <div class="chart-x"><% weeks.forEach(function (w) { %><span><%= w.label %></span><% }) %></div>
+  </div>
+
+  <div class="card pad">
+    <h3>Waiting to be sent</h3>
+    <% if (!waiting.length) { %><p class="muted">Nothing scheduled.</p><% } %>
+    <div>
+    <% waiting.forEach(function (w) { %>
+      <a class="list-row" href="/admin/v/<%= venue.office_id %>/orders/<%= w.order_id %>">
+        <div><span class="t1"><%= w.kind === 'experience' ? w.label : money(w.unit_minor) + ' for ' + (w.recipient_name || 'somebody') %></span><br><span class="small muted">from <%= w.buyer_name %></span></div>
+        <span class="small"><%= when(w.deliver_at, { short: true }) %></span>
+      </a>
+    <% }) %>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="page-head card-head"><div><h3>Latest orders</h3></div><a class="small" href="/admin/v/<%= venue.office_id %>/orders">All orders</a></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Order</th><th>Placed</th><th>What</th><th class="right">Value</th><th class="right">Status</th></tr></thead>
+      <tbody>
+      <% if (!latest.length) { %><tr><td colspan="5" class="empty">No orders yet.</td></tr><% } %>
+      <% latest.forEach(function (o) { %>
+        <tr>
+          <td class="nowrap"><a class="rowlink num" href="/admin/v/<%= venue.office_id %>/orders/<%= o.id %>"><%= o.ref %></a></td>
+          <td class="nowrap"><%= placed(o.created_at) %></td>
+          <td><%= o.what %></td>
+          <td class="right num"><%= money(o.total_minor, { always: true }) %></td>
+          <td class="right"><span class="badge <%= o.badge.kind %>"><%= o.badge.text %></span></td>
+        </tr>
+      <% }) %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<%- include('_bottom') %>

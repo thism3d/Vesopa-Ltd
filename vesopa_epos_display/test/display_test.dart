@@ -20,6 +20,7 @@ import 'dart:ui';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vesopa_epos_display/data/adverts.dart';
 import 'package:vesopa_epos_display/data/basket_feed.dart';
+import 'package:vesopa_epos_display/data/pairing.dart' show TillPresence;
 import 'package:vesopa_epos_display/data/screens.dart';
 import 'package:vesopa_epos_display/data/settings.dart';
 import 'package:vesopa_epos_display/ui/display_page.dart' show shouldShowAdverts;
@@ -169,6 +170,46 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 150));
 
     expect(feed.isStale, isTrue);
+  });
+
+  // The fault that put "Waiting for the till" on a working counter.
+  //
+  // The badge used to read the basket's age. The till writes the basket only
+  // when the screen would change, so a till that is on, signed in and simply
+  // between customers writes nothing — and after ten minutes of that it was
+  // announced to the customer as missing. Most counters are quiet for most of
+  // the day.
+  //
+  // Presence is a separate file the till rewrites every few seconds, and it is
+  // what answers "is the till there". These two checks hold the distinction:
+  // an old basket alongside a live till is a quiet counter, not a missing one.
+  test('a quiet till is still a present till', () {
+    final quiet = TillPresence(
+      terminalName: 'Bar',
+      venueName: 'The Bridge',
+      appVersion: '1.6.4',
+      signedIn: true,
+      // Nothing rung up for an hour, which is an ordinary afternoon.
+      at: DateTime.now().subtract(const Duration(hours: 1)),
+    );
+    expect(
+      quiet.isRunning,
+      isFalse,
+      reason: 'presence older than its TTL is genuinely gone',
+    );
+
+    final live = TillPresence(
+      terminalName: 'Bar',
+      venueName: 'The Bridge',
+      appVersion: '1.6.4',
+      signedIn: true,
+      at: DateTime.now().subtract(const Duration(seconds: 3)),
+    );
+    expect(
+      live.isRunning,
+      isTrue,
+      reason: 'a till heartbeating three seconds ago is on the counter',
+    );
   });
 
   // -------------------------------------------------------------------------
@@ -380,6 +421,84 @@ void main() {
         shouldShowAdverts(
           hasSale: true, customerQr: '', idleSeconds: 0,
           sinceChange: const Duration(hours: 3),
+        ),
+        isFalse,
+      );
+    });
+
+    test('a finished sale holds for its own time, not the idle time', () {
+      // Twenty seconds after the money changed hands, not forty-five. The two
+      // used to share one number and they answer different questions: a bill
+      // nobody is adding to is a conversation still going on; a paid one is
+      // somebody checking their change and walking away.
+      expect(
+        shouldShowAdverts(
+          hasSale: true, customerQr: '', idleSeconds: 45,
+          sinceChange: const Duration(seconds: 19),
+          paid: true, thankYouSeconds: 20,
+        ),
+        isFalse,
+        reason: 'the thank-you went before its twenty seconds were up',
+      );
+      expect(
+        shouldShowAdverts(
+          hasSale: true, customerQr: '', idleSeconds: 45,
+          sinceChange: const Duration(seconds: 20),
+          paid: true, thankYouSeconds: 20,
+        ),
+        isTrue,
+        reason: 'the thank-you sat there for the full idle time instead',
+      );
+    });
+
+    test('a paid sale that arrived without its items still holds', () {
+      // The order of the rules is the fix, and this is what pins it. A paid
+      // snapshot with no lines reads as hasSale == false, and the empty-basket
+      // shortcut used to run first and throw it out as though nothing had been
+      // sold — a fraction of a second after a sale. The till sends the items
+      // now, and this must not go back to depending on that.
+      expect(
+        shouldShowAdverts(
+          hasSale: false, customerQr: '', idleSeconds: 45,
+          sinceChange: const Duration(seconds: 5),
+          paid: true, thankYouSeconds: 20,
+        ),
+        isFalse,
+        reason: 'the thank-you was thrown out as an empty basket',
+      );
+    });
+
+    test('a live bill is unaffected by the thank-you time', () {
+      // Twenty seconds into a bill somebody is still ringing up, the screen
+      // must not clear. This is the regression the two numbers exist to avoid.
+      expect(
+        shouldShowAdverts(
+          hasSale: true, customerQr: '', idleSeconds: 45,
+          sinceChange: const Duration(seconds: 25),
+          paid: false, thankYouSeconds: 20,
+        ),
+        isFalse,
+      );
+    });
+
+    test('zero holds the finished sale until the next one', () {
+      expect(
+        shouldShowAdverts(
+          hasSale: true, customerQr: '', idleSeconds: 45,
+          sinceChange: const Duration(hours: 2),
+          paid: true, thankYouSeconds: 0,
+        ),
+        isFalse,
+      );
+    });
+
+    test('a till that has never heard of this behaves as it always did', () {
+      // The defaults are what an older call site gets. A paid sale is only
+      // held differently when something says it is paid.
+      expect(
+        shouldShowAdverts(
+          hasSale: true, customerQr: '', idleSeconds: 45,
+          sinceChange: const Duration(seconds: 44),
         ),
         isFalse,
       );

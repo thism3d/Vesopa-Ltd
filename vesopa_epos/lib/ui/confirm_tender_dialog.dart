@@ -77,7 +77,7 @@ class _ConfirmTenderDialog extends StatelessWidget {
       Icons.credit_card,
       manual ? 'Manual card' : 'Card',
     ),
-    TenderKind.giftCard => (Icons.card_giftcard, 'Gift card'),
+    TenderKind.giftCard => (Icons.card_giftcard, 'Gift Card'),
     TenderKind.voucher => (Icons.confirmation_number_outlined, 'Voucher'),
     TenderKind.deposit => (Icons.account_balance_wallet_outlined, 'Deposit'),
     TenderKind.points => (Icons.stars_outlined, 'Points'),

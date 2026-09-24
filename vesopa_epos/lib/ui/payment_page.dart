@@ -5,12 +5,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../data/commerce.dart';
+import '../data/earning.dart';
+import '../data/training_mode.dart';
 import '../data/local/database.dart';
 import '../data/order_repository.dart';
 import '../data/pricing_engine.dart';
 import '../data/staff_session.dart';
+import '../data/membership.dart';
 import '../data/tender_engine.dart';
 import '../data/customer_display.dart';
+import '../data/customer_display_control.dart';
 import '../data/till_settings.dart';
 import '../main.dart';
 import '../payments/connect_pac.dart';
@@ -21,20 +25,30 @@ import '../printing/print_service.dart';
 import '../printing/print_targets.dart';
 import '../printing/receipt_builder.dart';
 import 'card_checkout_page.dart';
+import 'membership_gate.dart';
+import 'membership_prompt.dart';
 import 'printers_page.dart' show printerSettingsProvider;
 import 'card_payment_dialog.dart';
 import 'confirm_tender_dialog.dart';
 import 'discount_dialog.dart';
 import 'redemption_dialogs.dart';
+import 'split_bill_sheet.dart';
+import 'widgets/customer_card.dart';
 import '../data/cash_tally.dart';
 import 'till_actions.dart';
 import 'void_dialog.dart';
 import 'widgets/cash_notes_panel.dart';
+import '../data/screens.dart';
+import 'sale_page.dart' show productsProvider, dealsProvider;
 import 'widgets/pay_check_panel.dart';
+import 'widgets/programmed_bar.dart';
+import 'widgets/till_top_bar.dart' show VenueTopBarBody;
 import 'widgets/pos_message.dart';
 import 'widgets/tender_panel.dart';
 import 'receipts_page.dart' show receiptListProvider;
 import 'theme.dart';
+import '../data/till_permissions.dart';
+import 'permission_gate.dart';
 
 /// Private so it does not collide with the basket panel's exported `money`,
 /// which sale_page imports.
@@ -49,6 +63,7 @@ class PaymentPage extends ConsumerStatefulWidget {
     required this.orderId,
     required this.onSettled,
     this.initialSplitWays = 0,
+    this.openSplit = false,
   });
 
   final String orderId;
@@ -58,9 +73,19 @@ class PaymentPage extends ConsumerStatefulWidget {
   /// hands over a "split evenly" request. 0 means no split.
   final int initialSplitWays;
 
+  /// Open the split screen as soon as the bill has priced.
+  ///
+  /// For the Split key on the sale screen. A restaurant table asks to be
+  /// divided *before* anybody comes to pay, so the key that says so should land
+  /// on the split screen rather than on the payment board with Split to find.
+  final bool openSplit;
+
   @override
   ConsumerState<PaymentPage> createState() => _PaymentPageState();
 }
+
+/// What the clerk chose when a held gift card could not be charged.
+enum _CardTrouble { retry, takeOff, later }
 
 class _PaymentPageState extends ConsumerState<PaymentPage> {
   /// What the clerk has keyed in, in minor units. Null means "no override", in
@@ -77,6 +102,25 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
         _entry += k;
       }
     });
+  }
+
+  @override
+  void dispose() {
+    // Leaving a bill unpaid gives back what was held on gift cards. The
+    // payments on this screen go when it does, so a hold kept past here would
+    // be money reserved for a payment the till no longer remembers. Spent
+    // holds are left alone. Fire and forget: a hold the server never hears
+    // about lapses by itself within the hour.
+    final commerce = _heldWith;
+    if (commerce != null) {
+      for (final t in _tender.tenders) {
+        final hold = t.holdId;
+        if (hold != null && !_captured.contains(hold)) {
+          unawaited(commerce.releaseGiftCard(hold).then((_) {}, onError: (_) {}));
+        }
+      }
+    }
+    super.dispose();
   }
 
 
@@ -471,10 +515,21 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
   /// Payments taken so far, and any split in progress.
   TenderState _tender = const TenderState(totals: BasketTotals.empty);
 
+  /// The repository gift cards were held through. Kept here, not re-read from
+  /// `ref`, because [dispose] gives unspent holds back and may not use `ref`.
+  CommerceRepository? _heldWith;
+
+  /// Holds already spent. A spent hold is never given back, and never spent
+  /// twice (the server would refuse the second, but the till should not ask).
+  final Set<String> _captured = {};
+
   /// Guards [PaymentPage.initialSplitWays] so it is applied once, not on every
   /// rebuild — re-splitting each frame would keep resetting the shares and
   /// throw away payments already credited to them.
   bool _initialSplitApplied = false;
+
+  /// The same guard for [PaymentPage.openSplit].
+  bool _splitOpened = false;
 
   /// Lines picked out for Void, exactly as on the sale screen.
   final Set<String> _selected = {};
@@ -511,6 +566,10 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
             addedBy: l.addedBy,
             addedAt: l.addedAt,
             parentLineId: l.parentLineId,
+            // What the clerk took off this line by hand. It reached the stored
+            // total and never reached here, so a pound off a line reduced the
+            // Pay key and the customer was still charged the full amount.
+            lineDiscountMinor: l.lineDiscountMinor,
           ),
       ];
 
@@ -543,6 +602,11 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
 
     return PricingEngine(promotions: ref.read(promotionsProvider)).price(
       _priced(lines),
+      // The venue's mix & match deals. This screen never applied them, so a
+      // customer who had earned "2 Cocktails for £16" was charged for both at
+      // the shelf price while the sale screen's stored total said otherwise.
+      dealMinor:
+          ref.watch(dealsProvider(widget.orderId)).value?.totalSavingMinor ?? 0,
       manualDiscountMinor: manual,
       customerDiscountMinor: customer,
       voucherMinor: _voucherMinor,
@@ -569,6 +633,33 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     final amount = kind == TenderKind.cash
         ? requested
         : requested.clamp(0, due);
+
+    // A practice bill (training mode). Cash is counted as normal -- it is the
+    // tender a trainee most needs to practise -- but no card machine is ever
+    // asked for anything, and nothing that belongs to a real customer (a gift
+    // card, a deposit, a voucher, points, an account) can be spent on practice.
+    if (await _isPractice()) {
+      switch (kind) {
+        case TenderKind.cash:
+          break;
+        case TenderKind.card:
+        case TenderKind.manualCard:
+          if (!await _confirm(kind, amount, due,
+              manual: kind == TenderKind.manualCard)) {
+            return;
+          }
+          _toast(trainingCardMessage);
+          _record(TenderEntry(kind: kind, amountMinor: amount, entryMode: 'training'));
+          return;
+        case TenderKind.giftCard:
+        case TenderKind.deposit:
+        case TenderKind.voucher:
+        case TenderKind.points:
+        case TenderKind.account:
+          _toast(trainingRefusal);
+          return;
+      }
+    }
 
     switch (kind) {
       case TenderKind.cash:
@@ -696,6 +787,14 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     );
   }
 
+  /// Whether this is a practice bill -- rung up in training mode. Read off the
+  /// bill, not off who is signed on: the bill's flag is what every other part
+  /// of the till acts on, so this page must agree with it.
+  Future<bool> _isPractice() async {
+    final order = await ref.read(orderRepositoryProvider).orderOnce(widget.orderId);
+    return order?.training ?? false;
+  }
+
   void _record(TenderEntry entry) {
     setState(() {
       _entry = '';
@@ -713,6 +812,40 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     );
     if (result == null || !mounted) return;
 
+    try {
+      // HELD, not spent. The server reserves the money on the card under a
+      // lock, so no other till can promise it, and nothing leaves the card
+      // until the sale is recorded (_spendGiftCards). Undo, or leaving the
+      // bill unpaid, gives it back. Spending it here, as tills did before,
+      // meant Undo put the payment back on the bill and left the money off
+      // the customer's card.
+      final hold = await commerce.holdGiftCard(
+        code: result.reference,
+        amountMinor: result.amountMinor,
+        orderId: widget.orderId,
+        clerkName: ref.read(servedByProvider),
+      );
+      _heldWith = commerce;
+      _record(TenderEntry(
+        kind: TenderKind.giftCard,
+        amountMinor: hold.amountMinor,
+        reference: hold.code,
+        holdId: hold.holdId,
+      ));
+    } on HoldsUnsupported {
+      // A back office from before holds. Spend it now, as tills always did.
+      await _redeemGiftCardOutright(commerce, result);
+    } on CommerceException catch (e) {
+      _toast(e.message);
+    } catch (_) {
+      _toast('Could not reach the server to take that card.');
+    }
+  }
+
+  Future<void> _redeemGiftCardOutright(
+    CommerceRepository commerce,
+    RedemptionResult result,
+  ) async {
     try {
       // The server is the authority on the balance, and it decrements under a
       // lock — so this must succeed before the till counts the money.
@@ -732,6 +865,139 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     } catch (_) {
       _toast('Could not reach the server to redeem that card.');
     }
+  }
+
+  /// Undo the last payment, giving a gift card's hold back with it.
+  void _undoLastTender() {
+    final last = _tender.tenders.isEmpty ? null : _tender.tenders.last;
+    setState(() {
+      // Clears the note count alongside the payment when the payment being
+      // undone is the one the note keys built. Left behind, the badges would
+      // go on claiming money that had just been handed back.
+      if (last != null && last.cashBreakdown != null) {
+        _cash = CashTally.empty;
+      }
+      _tender = _tender.removeLastTender();
+    });
+    final hold = last?.holdId;
+    if (hold != null && !_captured.contains(hold)) _giveBack(hold);
+  }
+
+  /// Give a gift card's hold back, saying so -- and saying so when it could
+  /// not be done, because the card then stays reserved until the hold lapses.
+  Future<void> _giveBack(String holdId) async {
+    final commerce = _heldWith;
+    if (commerce == null) return;
+    try {
+      await commerce.releaseGiftCard(holdId);
+      if (mounted) PosMessenger.info(context, 'Given back to the gift card.');
+    } catch (_) {
+      if (mounted) {
+        PosMessenger.info(
+          context,
+          'The server could not be reached to free the gift card. '
+          'It frees itself within the hour.',
+        );
+      }
+    }
+  }
+
+  /// Spend every gift card held for this bill.
+  ///
+  /// Before the sale is written, so the till never records a sale as paid by
+  /// a card that was not charged. A capture is safe to repeat -- the server
+  /// answers a second one as it did the first -- so "Try again" can never
+  /// spend twice. Returns false when the sale must not be recorded yet.
+  Future<bool> _spendGiftCards() async {
+    final commerce = _heldWith;
+    for (final entry in [..._tender.tenders]) {
+      final hold = entry.holdId;
+      if (hold == null || commerce == null || _captured.contains(hold)) continue;
+      while (true) {
+        try {
+          await commerce.captureGiftCard(holdId: hold, orderId: widget.orderId);
+          _captured.add(hold);
+          break;
+        } catch (e) {
+          if (!mounted) return false;
+          final index = _tender.tenders.indexOf(entry);
+          final canTakeOff = index == _tender.tenders.length - 1 || !_tender.isSplit;
+          final choice = await _giftCardTrouble(entry, e, canTakeOff: canTakeOff);
+          if (!mounted) return false;
+          if (choice == _CardTrouble.retry) continue;
+          if (choice == _CardTrouble.later) {
+            _toast('The sale is not recorded yet. Undo the last payment and '
+                'take it again once the server can be reached.');
+            return false;
+          }
+
+          // Take it off. Ask for the hold back first: "not held" means the
+          // earlier capture DID go through and only its answer was lost, in
+          // which case the card has paid and the sale carries on.
+          bool? released;
+          try {
+            released = await commerce.releaseGiftCard(hold);
+          } catch (_) {
+            released = null;
+          }
+          if (released == false) {
+            _captured.add(hold);
+            break;
+          }
+          setState(() => _tender = _tender.removeTenderAt(index));
+          _toast(released == true
+              ? 'Nothing was taken from the gift card. Take the rest another way.'
+              : 'The server could not be reached. If the card was charged, '
+                  'it shows on its history against this sale and can be put back '
+                  'from the back office.');
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  /// A gift card that could not be charged at the end of the sale: try again,
+  /// take the payment off, or (when it cannot come off) leave it for now.
+  Future<_CardTrouble> _giftCardTrouble(
+    TenderEntry entry,
+    Object error, {
+    required bool canTakeOff,
+  }) async {
+    final reason = error is CommerceException
+        ? error.message
+        : 'The server could not be reached.';
+    final choice = await showDialog<_CardTrouble>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        icon: const Icon(Icons.card_giftcard_outlined, size: 30),
+        title: Text('The gift card could not be charged ${_money(entry.amountMinor)}'),
+        content: Text(
+          '$reason\n\n'
+          'Nothing has been taken from it yet, and the money is still reserved '
+          'for this bill.'
+          '${canTakeOff ? '' : '\n\nIt can only come off once the payments taken after it are undone.'}',
+        ),
+        actions: [
+          if (canTakeOff)
+            TextButton(
+              onPressed: () => Navigator.pop(context, _CardTrouble.takeOff),
+              child: const Text('Take it off'),
+            )
+          else
+            TextButton(
+              onPressed: () => Navigator.pop(context, _CardTrouble.later),
+              child: const Text('Not now'),
+            ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, _CardTrouble.retry),
+            child: const Text('Try again'),
+          ),
+        ],
+      ),
+    );
+    return choice ?? _CardTrouble.retry;
   }
 
   Future<void> _takeDeposit(int amount) async {
@@ -842,6 +1108,12 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
   /// common instruction, and making the clerk do that arithmetic at the counter
   /// is where discounts go wrong.
   Future<void> _applyManualDiscount() async {
+    // A goodwill gesture is money off the till, which is why it is a key a
+    // venue can withhold. Asked before the dialog opens rather than after an
+    // amount has been typed into it.
+    if (!await allowed(context, ref, TillPermission.discount)) return;
+    if (!mounted) return;
+
     final base = _tender.totals.grossMinor - _tender.totals.promoMinor;
     final choice = await showDiscountDialog(
       context,
@@ -1052,15 +1324,39 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
   }
 
   Future<void> _chooseSplit() async {
-    final choice = await showSplitDialog(context, state: _tender);
+    final choice = await showSplitDialog(
+      context,
+      state: _tender,
+      // Each share can be printed as its own bill, which is the whole point of
+      // splitting one in a restaurant: three people want three slips before
+      // anybody pays. The total is passed in because only the tender engine
+      // knows a share's portion of a bill-wide offer — so the figure on the
+      // paper is the figure on the card is the figure charged.
+      onPrintShare: (lineIds, title, totalMinor, quantities) =>
+          TillActions.printCurrentBill(
+        context,
+        ref,
+        widget.orderId,
+        onlyLines: lineIds,
+        title: title,
+        totalMinor: totalMinor,
+        // Only ever non-empty when a line was divided. See
+        // `data/split_portions.dart`.
+        lineQuantities: quantities,
+      ),
+    );
     if (choice == null || !mounted) return;
 
     setState(() {
-      _tender = switch (choice.mode) {
+      final split = switch (choice.mode) {
         SplitMode.equally => _tender.splitEqually(choice.ways),
         SplitMode.byItem => _tender.splitByItems(choice.groups ?? const []),
         _ => _tender.clearSplit(),
       };
+      // Pay Now on a card means "this one, now" — so the board comes back
+      // already asking for that share rather than for share one.
+      final wanted = choice.payShare;
+      _tender = wanted == null ? split : split.selectShare(wanted);
     });
   }
 
@@ -1087,6 +1383,10 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
   }
 
   Future<void> _settleNow() async {
+    // Gift cards first. Until each held card is actually charged, the sale is
+    // not recorded as paid by it.
+    if (!await _spendGiftCards()) return;
+
     final repo = ref.read(orderRepositoryProvider);
     final session = await ref.read(sessionRepositoryProvider).current();
 
@@ -1104,16 +1404,29 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
         cashBreakdown: entry.cashBreakdown,
         staffId: servedById,
         staffName: servedBy,
+        // What the card machine said about this tender. These were on the
+        // entry and never reached the row, so the acquirer's reference, the
+        // tip and the cashback all stopped here -- the back office had no
+        // reference to match a Dojo webhook to, and no cashback to report.
+        reference: entry.reference,
+        gratuityMinor: entry.gratuityMinor,
+        entryMode: entry.entryMode,
+        cashbackMinor: entry.cashbackMinor,
       );
     }
 
     final commerce = ref.read(commerceRepositoryProvider);
 
+    // A practice sale touches nothing on the server: no voucher is marked used,
+    // no points move and no membership is renewed. The tenders above were
+    // closed on this till only (see OrderRepository.settle).
+    final practice = await _isPractice();
+
     // Mark the voucher used only now. Doing it when it was applied burned a
     // single-use voucher on a payment the clerk then abandoned, with no way to
     // hand it back.
     final voucher = _voucherCode;
-    if (voucher != null && _voucherMinor > 0) {
+    if (!practice && voucher != null && _voucherMinor > 0) {
       try {
         await commerce.redeemVoucher(voucher);
       } catch (_) {
@@ -1125,19 +1438,29 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
 
     // Loyalty is moved only now for the same reason: points are spent when the
     // sale completes, and earned on what was actually paid for the goods.
-    final customer = _customer;
-    if (customer != null) {
+    //
+    // THE CUSTOMER IS READ OFF THE ORDER, not off `_customer`. The page
+    // variable is set only when a member is attached from THIS page; a member
+    // attached on the sale page, or by swiping their card, reaches settle with
+    // it null -- and then nothing was earned, no visit was counted and the
+    // Activity page stayed empty, which is what the venue reported (1.8.1.0).
+    // The renewal below has read the order for the same reason since 1.6.8.0.
+    final customerId = earningCustomer(
+      attachedHere: _customer?.id,
+      onOrder: (await repo.watchOrder(widget.orderId).first).customerId,
+    );
+    if (!practice && customerId != null) {
       try {
         if (_pointsRedeemed > 0) {
           await commerce.movePoints(
-            customerId: customer.id,
+            customerId: customerId,
             kind: 'redeem',
             points: _pointsRedeemed,
             orderId: widget.orderId,
           );
         }
         await commerce.movePoints(
-          customerId: customer.id,
+          customerId: customerId,
           kind: 'earn',
           spendMinor: _tender.totals.netGoodsMinor,
           orderId: widget.orderId,
@@ -1145,6 +1468,56 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
       } catch (_) {
         // Points are a loyalty nicety; failing to award them must never block
         // handing the customer their receipt.
+      }
+    }
+
+    // ---- The membership, if this bill renewed one ------------------------
+    //
+    // Here, beside the points, and for the same reason: the fee has just been
+    // taken. Doing it when the clerk pressed Renew would have meant a voided
+    // bill leaving a card working for another year — the member walks away,
+    // the sale is cancelled, and nothing was paid.
+    //
+    // Read off the ORDER rather than off `_customer`, because the two are not
+    // the same thing. A bill can be started on one terminal, parked on a
+    // table, picked up on another and paid an hour later; the line carrying the
+    // renewal travels with it and a variable on this page does not.
+    try {
+      final order = await repo.watchOrder(widget.orderId).first;
+      final renewFor = order.customerId;
+      if (!practice && renewFor != null && renewFor.isNotEmpty) {
+        final lines = await repo.watchLines(widget.orderId).first;
+        final settings = await commerce.membershipSettings();
+        // Which PLUs renew, from the till's own catalogue plus the venue's
+        // old single-PLU setting — so a back office that has not been updated
+        // yet still renews on the product it names. See data/membership.dart.
+        final renewing = renewingPlus(
+          ref.read(productsProvider).value ?? const <Product>[],
+          legacyPlu: settings.plu,
+        );
+        if (billRenewsMembership(lines, renewing: renewing)) {
+          final renewed = await commerce.renewMembership(renewFor);
+          if (mounted && renewed.membershipExpiry != null) {
+            PosMessenger.success(
+              context,
+              'Membership renewed to '
+              '${_shortDay(renewed.membershipExpiry!)}.',
+            );
+          }
+        }
+      }
+    } catch (e) {
+      // The money is taken and the customer is holding a receipt. A renewal
+      // that could not be posted is a date to correct in the back office, not
+      // a reason to stop the sale — but it is said out loud rather than
+      // swallowed, because a clerk who is told can write it down and a clerk
+      // who is not cannot.
+      if (mounted) {
+        PosMessenger.error(
+          context,
+          'The fee was taken but the membership date could not be updated. '
+          'Renew it in the back office. ($e)',
+        );
       }
     }
 
@@ -1182,7 +1555,30 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     final container = ProviderScope.containerOf(context, listen: false);
     final settings = container.read(tillSettingsProvider);
 
-    // Change first, before anything else can cover it. The customer is standing
+    // The finished sale, on the customer's screen, before anything else.
+    //
+    // Every sale and not only the ones with change to hand back. This used to
+    // live inside _showChange, which returns early when change is zero — so a
+    // card sale and an exact-cash sale published nothing at all, and the
+    // customer's screen went from the live bill straight to adverts. The
+    // thank-you the venue configured was never drawn on the two most common
+    // ways of paying.
+    //
+    // With the lines on it, too. `paid` with no lines is not a sale as far as
+    // the display is concerned — Basket.hasSale wants both — so the old
+    // snapshot was discarded by the very rule meant to hold it up.
+    //
+    // Resolved off the root container, like the settings above: this runs as
+    // the page is popping and `ref` goes with it.
+    unawaited(
+      _publishFinishedSale(
+        container.read(customerDisplayProvider),
+        container.read(orderRepositoryProvider),
+        _tender,
+      ),
+    );
+
+    // Change next, before anything else can cover it. The customer is standing
     // there waiting for money out of the drawer, and a receipt prompt in front of
     // that instruction is how change gets forgotten.
     final timedOut = await _showChange(settings);
@@ -1238,25 +1634,10 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     final change = _tender.changeMinor;
     if (change <= 0) return false;
 
-    // The one moment the customer display genuinely earns its keep: the
-    // customer can check their change against the screen without asking. It
-    // goes up beside the clerk's own change box and comes down with it.
-    //
-    // Published here rather than left to the shell's basket feed, because by
-    // now the bill is closed and the shell has nothing to publish — what the
-    // customer needs to see is what they handed over and what is coming back.
-    final display = ref.read(customerDisplayProvider);
-    unawaited(
-      display.publish(
-        DisplaySnapshot(
-          state: 'paid',
-          totalMinor: _tender.totals.totalMinor,
-          paidMinor: _tender.paidMinor,
-          changeMinor: change,
-        ),
-      ),
-    );
-
+    // What the customer sees is published by _publishFinishedSale before this
+    // runs — every sale, with its items, change included. It used to be done
+    // here, which meant it never happened on a card or exact-cash sale because
+    // of the early return above.
     final timedOut = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -1266,10 +1647,63 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
       ),
     );
 
-    // Back to adverts. A change figure left on a customer-facing screen is the
-    // next customer's first sight of the till, and it is somebody else's money.
-    unawaited(display.clear());
+    // Deliberately not cleared here.
+    //
+    // A change figure left on a customer-facing screen is the next customer's
+    // first sight of the till and is somebody else's money — which is why this
+    // used to clear immediately. But clearing on the clerk's timing rather than
+    // the customer's is what made the venue's thank-you setting do nothing: the
+    // window closes the moment the clerk hands the money over, often within two
+    // seconds, and the screen was blanked before the customer had looked up.
+    //
+    // The hold in CustomerDisplayFeed takes it down instead, after the time the
+    // venue set, and a new sale replaces it at once.
     return timedOut ?? false;
+  }
+
+  /// Put the finished sale on the customer's screen, and set how long it holds.
+  ///
+  /// Called for every settled sale. The items stay up with what was handed over
+  /// and what is coming back underneath, and the venue's thank-you under that;
+  /// the hold in CustomerDisplayFeed keeps it there for the configured time and
+  /// drops any idle that would wipe it — a new bill starting behind the clerk,
+  /// most often.
+  Future<void> _publishFinishedSale(
+    CustomerDisplayFeed display,
+    OrderRepository repo,
+    TenderState tender,
+  ) async {
+    // Read here rather than threaded down from the build method: settling is a
+    // long run of awaits and the lines the customer should see are the ones on
+    // the bill that was just closed, not a list captured before a voucher or a
+    // gratuity changed it. Settling does not delete the lines — only voiding
+    // does — so they are still there to read.
+    final lines = await repo.linesOnce(widget.orderId);
+    if (lines.isEmpty) return;
+
+    // The venue's own settings, read now rather than cached: a manager who
+    // changes the hold or the message on the till mid-service should see the
+    // next sale honour it.
+    //
+    // Read before publishing, so the hold is in place by the time the snapshot
+    // lands — setting it afterwards would leave the first idle of the next bill
+    // free to wipe the screen.
+    final control = await readDisplayControl();
+    display.thankYouHold = Duration(seconds: control.thankYouSeconds);
+
+    await display.publish(
+      snapshotFor(
+        lines: lines,
+        paid: true,
+        subtotalMinor: tender.totals.grossMinor,
+        discountMinor: tender.totals.savedMinor,
+        taxMinor: tender.totals.taxMinor,
+        totalMinor: tender.totals.totalMinor,
+        paidMinor: tender.paidMinor,
+        changeMinor: tender.changeMinor,
+        message: control.thankYou,
+      ),
+    );
   }
 
   /// The amount a tender key will take: what the clerk has keyed, or — when
@@ -1288,7 +1722,6 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
   Widget build(BuildContext context) {
     final repo = ref.watch(orderRepositoryProvider);
     final settings = ref.watch(tenderSettingsProvider);
-    final branding = ref.watch(brandingProvider);
     final pay = PayPalette.of(context);
     final width = MediaQuery.sizeOf(context).width;
 
@@ -1317,6 +1750,17 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
               _tender = _tender.splitEqually(widget.initialSplitWays);
             }
 
+            // The Split key on the sale screen. Same guard and the same
+            // reason: once the bill has priced, once only, and after the frame
+            // rather than during it — a dialog opened inside build is a dialog
+            // opened during a layout.
+            if (!_splitOpened && widget.openSplit && totals.totalMinor > 0) {
+              _splitOpened = true;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) unawaited(_chooseSplit());
+              });
+            }
+
             final denominations =
                 ref.watch(cashDenominationsProvider).value ??
                     const <CashDenomination>[];
@@ -1327,13 +1771,25 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
                 .where((id) => lines.any((l) => l.id == id))
                 .toSet();
 
+            // The loyalty flow on this screen is the one place the till holds
+            // a live points balance, so it is the one place the card can quote
+            // one. Everywhere else the balance is absent rather than stale.
+            final billCustomer = BillCustomer.of(
+              order,
+              pointsBalance: _customer?.pointsBalance ?? 0,
+            );
+
             final check = PayCheckPanel(
               totals: totals,
-              branding: branding,
               tableNumber: order?.tableNumber,
               covers: order?.covers,
-              clerkName: ref.read(servedByProvider),
-              customerName: _customer?.name ?? order?.customerName,
+              customer: billCustomer,
+              // Who the bill is for stops being a choice the moment money has
+              // been taken against it — see _canAmend.
+              onChangeCustomer: _canAmend ? _attachCustomer : null,
+              onRemoveCustomer: _canAmend && billCustomer != null
+                  ? () => _removeCustomer(order?.customerName)
+                  : null,
               selectedLineIds: selected,
               // Same gesture as the sale screen, so Void behaves identically on
               // both. Only offered while nothing has been tendered — see
@@ -1363,19 +1819,9 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
                   setState(() => _tender = _tender.selectShare(i)),
               onClearSplit: () =>
                   setState(() => _tender = _tender.clearSplit()),
-              // Clears the note count alongside the payment when the payment
-              // being undone is the one the note keys built. Left behind, the
-              // badges would go on claiming money that had just been handed
-              // back.
-              onUndo: () => setState(() {
-                final last = _tender.tenders.isEmpty
-                    ? null
-                    : _tender.tenders.last;
-                if (last != null && last.cashBreakdown != null) {
-                  _cash = CashTally.empty;
-                }
-                _tender = _tender.removeLastTender();
-              }),
+              // Gives a gift card's hold back, and clears the note count when
+              // the payment being undone is the one the note keys built.
+              onUndo: _undoLastTender,
               onCustomer: _attachCustomer,
               onDiscount: _applyManualDiscount,
               onPrintBill: () =>
@@ -1391,6 +1837,24 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
               onTender: _take,
             );
 
+            // The venue's own chrome for this screen, when it has arranged
+            // any. Both null for every venue that has not, and then the board
+            // is drawn exactly as it always was.
+            final (payTopBar, payBottomBar) =
+                VenueTopBarBody.paymentBars(ref);
+
+            Widget barOf(TillScreen bar) => _PayBar(
+                  bar: bar,
+                  orderId: widget.orderId,
+                  order: order,
+                  totalMinor: totals.totalMinor,
+                  onVoid: _canAmend
+                      ? () => _voidSelected(lines: lines, selected: selected)
+                      : null,
+                  onCancel:
+                      _canAmend ? () => _cancelCheck(lines: lines) : null,
+                );
+
             return Scaffold(
               backgroundColor: pay.canvas,
               body: SafeArea(
@@ -1400,20 +1864,35 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
                       tableNumber: order?.tableNumber,
                       covers: order?.covers,
                       clerkName: ref.read(servedByProvider),
-                      // Void and Cancel live here as well as on the sale
-                      // screen. A mis-rung item is most often spotted at the
-                      // moment the total is read out to the customer, and
-                      // having to back out to the sale screen to fix it is how
-                      // a whole check ends up cancelled instead of one line.
-                      onVoid: _canAmend
+                      // VOID AND CANCEL ARE NOT HERE ANY MORE WHEN THERE IS A
+                      // BAR. "We can remove the void and cancel because they
+                      // will now be on the top and bottom bars." Both keys are
+                      // on the bars — the same two keys, in the same places
+                      // they sit on the sale screen — and two of each, a tap
+                      // apart, is how a clerk presses the wrong one.
+                      //
+                      // They stay on the header for a venue running the
+                      // built-in board with no bars at all, because that venue
+                      // would otherwise have to back out to the sale screen to
+                      // take one mis-rung item off, which is how a whole check
+                      // ends up cancelled instead of one line.
+                      onVoid: _canAmend && payTopBar == null && payBottomBar == null
                           ? () => _voidSelected(
                                 lines: lines,
                                 selected: selected,
                               )
                           : null,
                       onCancel:
-                          _canAmend ? () => _cancelCheck(lines: lines) : null,
+                          _canAmend && payTopBar == null && payBottomBar == null
+                              ? () => _cancelCheck(lines: lines)
+                              : null,
+                      bar: payTopBar == null ? null : barOf(payTopBar),
                     ),
+                    // Expanded, so the board gives the bars their room rather
+                    // than the bars overflowing it. The venue asked for the
+                    // keys to "scale down slightly" and this is where that
+                    // happens: _board is proportional, so it simply gets a
+                    // shorter box and draws itself into it.
                     Expanded(
                       child: _board(
                         context,
@@ -1423,6 +1902,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
                         keypad: keypad,
                       ),
                     ),
+                    if (payBottomBar != null) barOf(payBottomBar),
                   ],
                 ),
               ),
@@ -1558,6 +2038,37 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
 
   /// Attach a customer without redeeming anything, so the sale still earns
   /// them points.
+  /// Take the customer off the bill, and their standing discount with them.
+  Future<void> _removeCustomer(String? customerName) async {
+    final name = (customerName ?? '').trim().isEmpty
+        ? 'The customer'
+        : customerName!.trim();
+
+    final yes = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Take the customer off this bill?'),
+        content: Text(
+          '$name comes off, and any discount they carry goes with them.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Keep'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Take off'),
+          ),
+        ],
+      ),
+    );
+    if (yes != true || !mounted) return;
+
+    await ref.read(orderRepositoryProvider).clearCustomer(widget.orderId);
+    if (mounted) setState(() => _customer = null);
+  }
+
   Future<void> _attachCustomer() async {
     final result = await showLoyaltyDialog(
       context,
@@ -1565,8 +2076,51 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
       outstandingMinor: _tender.dueNowMinor,
       redeem: false,
     );
-    if (result?.customer != null && mounted) {
-      setState(() => _customer = result!.customer);
+    final picked = result?.customer;
+    if (picked == null || !mounted) return;
+
+    // The fourth door onto a bill, and it gets the same gate as the other
+    // three. A membership that has run out is refused here too — the money is
+    // being taken on this screen, which makes it the last place an expired
+    // card could still be used.
+    final member = ExpiredMember.fromLoyalty(picked);
+    final gate = await checkMembership(
+      context,
+      ref,
+      orderId: widget.orderId,
+      member: member,
+    );
+    if (!mounted) return;
+    if (gate == MembershipGate.refused) {
+      sayMembership(context, gate, member: member);
+      return;
+    }
+
+    setState(() => _customer = picked);
+
+    // And onto the order, which is where the check reads it from.
+    //
+    // This used to set _customer alone. The customer was then real enough to
+    // earn points at the end of the sale and invisible everywhere else — the
+    // bill did not name them, the receipt did not, and a bill saved back to a
+    // table forgot them entirely. Attaching to the order is what makes the
+    // customer a fact about the bill rather than a fact about this screen.
+    await ref.read(orderRepositoryProvider).attachCustomer(
+          widget.orderId,
+          id: picked.id,
+          name: picked.name,
+          membershipExpiry: gate == MembershipGate.renewing
+              ? null
+              : picked.membershipExpiry,
+          discountType: picked.discountType,
+          discountValue: picked.discountValue,
+          phone: picked.phone,
+          cardNumber: picked.cardNumber,
+          pointsBalance: picked.pointsBalance,
+        );
+    if (!mounted) return;
+    if (gate == MembershipGate.renewing) {
+      sayMembership(context, gate, member: member);
     }
   }
 }
@@ -1744,6 +2298,88 @@ class _ChangeWindowState extends State<_ChangeWindow> {
 
 /// The bar across the top of the payment board.
 ///
+/// A venue's own bar, drawn on the payment screen.
+///
+/// [ProgrammedBar] with `onSaleScreen: true`, and that is the right answer even
+/// though this is not the sale screen: the flag means "is there a bill in front
+/// of the clerk", and here there very much is. Void, Cancel, Pay and the total
+/// all mean exactly what they mean on the sale screen.
+///
+/// What does *not* mean anything here is ringing something up. A product key, a
+/// page key or a modifier key on a bill that is being settled would either
+/// silently change a total the customer has already been quoted, or move the
+/// clerk off the screen the money is on. Those three say so and do nothing —
+/// stated rather than silent, because a key that appears to do nothing is a key
+/// a clerk presses four more times.
+class _PayBar extends ConsumerWidget {
+  const _PayBar({
+    required this.bar,
+    required this.orderId,
+    required this.order,
+    required this.totalMinor,
+    this.onVoid,
+    this.onCancel,
+  });
+
+  final TillScreen bar;
+  final String orderId;
+  final Order? order;
+  final int totalMinor;
+  final VoidCallback? onVoid;
+  final VoidCallback? onCancel;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final screens = ref.watch(screensProvider).value ?? ScreenSet.empty;
+    final settings = ref.watch(tillSettingsProvider);
+    final products = ref.watch(productsProvider).value ?? const <Product>[];
+
+    void notHere(String what) => PosMessenger.info(
+          context,
+          '$what cannot be done while the bill is being paid.',
+        );
+
+    return ProgrammedBar(
+      bar: bar,
+      screens: screens,
+      products: {for (final p in products) p.pluId: p},
+      showPrices: settings.buttonsShowPrices,
+      live: BarLive(
+        currentOrderId: orderId,
+        currentOrder: order,
+        totalMinor: totalMinor,
+        screenName: 'Payment',
+        // Switching bill from the payment screen would leave the clerk taking
+        // money against a bill they are no longer looking at.
+        onSwitchOrder: (_) => notHere('Changing bill'),
+      ),
+      onProduct: (_) => notHere('Ringing items up'),
+      onPage: (_) => notHere('Opening a page of products'),
+      onModifier: (_) => notHere('Changing an item'),
+      onFunction: (key) {
+        switch (key) {
+          case 'void':
+            (onVoid ?? () => notHere('Voiding'))();
+          case 'cancel':
+            (onCancel ?? () => notHere('Cancelling'))();
+          case 'go_sale':
+            Navigator.of(context).pop();
+          // Moving a bill onto another table while its money is being taken
+          // would leave the tender running against a check that is no longer
+          // where the clerk thinks it is — and a merge would fold a second
+          // party's items into a total the customer has already been quoted.
+          case 'transfer':
+            notHere('Transferring a table');
+          default:
+            // Everything else on a bar is either a widget that draws itself or
+            // a key whose home is the sale screen. Deliberately not silent.
+            notHere('That');
+        }
+      },
+    );
+  }
+}
+
 /// A plain [AppBar] would put this screen back inside the till's ordinary
 /// chrome, which is exactly what the board is not: it is a surface the terminal
 /// gives over entirely to taking money, and the bar is part of the surface
@@ -1760,11 +2396,26 @@ class _PayHeader extends StatelessWidget {
     this.clerkName,
     this.onVoid,
     this.onCancel,
+    this.bar,
   });
 
   final int? tableNumber;
   final int? covers;
   final String? clerkName;
+
+  /// The venue's own top bar, when it has laid one out for this screen.
+  ///
+  /// It takes the place of everything after the `Payment |` divider — the
+  /// table and covers chips, the clerk's name, Void and Cancel. That is the
+  /// same rule the sale screen follows: a bar the venue arranged says what goes
+  /// on it, so the till does not draw its own furniture beside it. Void and
+  /// Cancel are both keys a venue can place, so nothing is lost that was not
+  /// given away deliberately.
+  ///
+  /// The back button and the word Payment are left alone, at the venue's
+  /// request: they are how a clerk gets off this screen, and a bar cannot be
+  /// allowed to take that away.
+  final Widget? bar;
 
   /// Null once money has been taken: the bill may no longer be amended, and a
   /// live key that refuses is worse than a dead one that explains itself by
@@ -1808,6 +2459,12 @@ class _PayHeader extends StatelessWidget {
               color: pay.ink,
             ),
           ),
+          if (bar != null) ...[
+            const SizedBox(width: 22),
+            Container(width: 1, height: 30, color: pay.panelLine),
+            const SizedBox(width: 16),
+            Expanded(child: bar!),
+          ] else ...[
           if (facts.isNotEmpty && !compact) ...[
             const SizedBox(width: 22),
             Container(width: 1, height: 30, color: pay.panelLine),
@@ -1862,6 +2519,7 @@ class _PayHeader extends StatelessWidget {
             onTap: onCancel,
             child: Text(compact ? 'Cancel' : 'Cancel sale'),
           ),
+          ],
         ],
       ),
     );
@@ -1930,4 +2588,13 @@ class _HeaderKey extends StatelessWidget {
       ),
     );
   }
+}
+
+/// A date as a clerk would read it off a screen at a counter.
+String _shortDay(DateTime d) {
+  const months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+  return '${d.day} ${months[d.month - 1]} ${d.year}';
 }

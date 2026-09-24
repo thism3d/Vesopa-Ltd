@@ -7,6 +7,8 @@ import '../../data/local/database.dart';
 import '../../main.dart';
 import '../theme.dart';
 import '../void_dialog.dart';
+import 'on_screen_keyboard.dart';
+import 'pos_text_field.dart';
 import 'basket_panel.dart' show money;
 
 /// Tap a basket line to open this: change the quantity, discount it, note it,
@@ -208,9 +210,10 @@ class _LineEditorState extends ConsumerState<_LineEditor> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Line note'),
-        content: TextField(
+        content: PosTextField(
           controller: controller,
           autofocus: true,
+          submitLabel: 'Add note',
           decoration: const InputDecoration(
             hintText: 'e.g. no ice, well done',
           ),
@@ -239,9 +242,9 @@ class _LineEditorState extends ConsumerState<_LineEditor> {
       context: context,
       builder: (context) => AlertDialog(
         title: Text(title),
-        content: TextField(
+        content: PosTextField(
           controller: controller,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          mode: PosKeyboardMode.decimal,
           autofocus: true,
         ),
         actions: [

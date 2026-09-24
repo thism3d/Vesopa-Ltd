@@ -8,6 +8,7 @@ import 'kitchen_screens.dart';
 import 'local/database.dart';
 import 'modifier_layout.dart';
 import 'printer_settings.dart';
+import '../printing/print_categories.dart';
 
 /// Why a kitchen ticket is being fired.
 ///
@@ -253,6 +254,18 @@ class KitchenPrinting {
         product.pluId: KitchenRouting.parse(product.printerRoutes),
     };
 
+    // The venue's printing categories, off the catalogue rows already in hand.
+    // A product in none is simply absent from the map, and prints under no
+    // heading — see `printing/print_categories.dart`.
+    final categoriesByPlu = <int, PrintCategory>{
+      for (final product in catalogue)
+        if ((product.printCategory ?? '').trim().isNotEmpty)
+          product.pluId: PrintCategory(
+            name: product.printCategory!.trim(),
+            sortOrder: product.printCategoryOrder ?? 0,
+          ),
+    };
+
     // Resolved per line rather than per product, so a modifier goes wherever
     // the item it modifies goes. Nobody routes "Rare" to the grill; without
     // this the steak prints and its temperature does not. See routesByLine.
@@ -311,6 +324,7 @@ class KitchenPrinting {
             printers: printers,
             stationNames: stationNames,
             routesByLine: lineRoutes,
+            categoriesByPlu: categoriesByPlu,
             staffName: staffName,
             roomName: roomName,
             // The intersection, so a retry aimed at one failed station cannot
@@ -337,6 +351,7 @@ class KitchenPrinting {
     required PrinterSettings printers,
     required Map<String, String> stationNames,
     required Map<String, Set<String>> routesByLine,
+    Map<int, PrintCategory> categoriesByPlu = const {},
     required Set<String> onlyStations,
     String? staffName,
     String? roomName,

@@ -1,0 +1,37 @@
+{
+  "pages": [
+    { "id": "page-1", "name": "Shop" },
+    { "id": "page-2", "name": "What they receive" },
+    { "id": "page-3", "name": "Staff" },
+    { "id": "page-4", "name": "Icon" }
+  ],
+  "artboards": [
+    { "file": "Main.dc.html", "title": "Shop — phone", "x": 0, "y": 0, "w": 390, "h": 2240, "page": "page-1" },
+    { "file": "ShopDesktop.dc.html", "title": "Shop — desktop", "x": 470, "y": 0, "w": 1440, "h": 1960, "page": "page-1" },
+    { "file": "BuyMobile.dc.html", "title": "Buying a voucher", "x": 1990, "y": 0, "w": 390, "h": 2100, "page": "page-1" },
+    { "file": "ConfirmMobile.dc.html", "title": "Paid", "x": 2460, "y": 0, "w": 390, "h": 1180, "page": "page-1" },
+    { "file": "BalanceMobile.dc.html", "title": "Check a balance", "x": 2930, "y": 0, "w": 390, "h": 900, "page": "page-1" },
+    { "file": "EventMobile.dc.html", "title": "An event", "x": 3400, "y": 0, "w": 390, "h": 1720, "page": "page-1" },
+    { "file": "TicketMobile.dc.html", "title": "A ticket", "x": 3870, "y": 0, "w": 390, "h": 860, "page": "page-1" },
+
+    { "file": "VoucherEmail.dc.html", "title": "The voucher email", "x": 0, "y": 0, "w": 648, "h": 1330, "page": "page-2" },
+    { "file": "VoucherPrint.dc.html", "title": "The printable voucher (A4)", "x": 728, "y": 0, "w": 794, "h": 1123, "page": "page-2", "print": "fixed" },
+    { "file": "CardDesigns.dc.html", "title": "The four starting designs", "x": 1602, "y": 0, "w": 820, "h": 620, "page": "page-2" },
+
+    { "file": "AdminSignIn.dc.html", "title": "Staff sign-in", "x": 0, "y": 0, "w": 1440, "h": 900, "page": "page-3" },
+    { "file": "OwnerVenues.dc.html", "title": "Owner — venues", "x": 1520, "y": 0, "w": 1440, "h": 980, "page": "page-3" },
+    { "file": "VenueDashboard.dc.html", "title": "Venue — dashboard", "x": 0, "y": 1100, "w": 1440, "h": 1080, "page": "page-3" },
+    { "file": "VenueOrders.dc.html", "title": "Venue — orders", "x": 1520, "y": 1100, "w": 1440, "h": 1000, "page": "page-3" },
+    { "file": "VenueSettings.dc.html", "title": "Venue — settings", "x": 0, "y": 2300, "w": 1440, "h": 1240, "page": "page-3" },
+    { "file": "VenueDesigns.dc.html", "title": "Venue — designs", "x": 1520, "y": 2300, "w": 1440, "h": 900, "page": "page-3" },
+    { "file": "VenueEvents.dc.html", "title": "Venue — events", "x": 0, "y": 3660, "w": 1440, "h": 960, "page": "page-3" },
+    { "file": "DoorCheckIn.dc.html", "title": "Door check-in — phone", "x": 1520, "y": 3660, "w": 390, "h": 844, "page": "page-3" },
+
+    { "file": "Icon.dc.html", "title": "Vesopa Gift icon", "x": 0, "y": 0, "w": 1040, "h": 560, "page": "page-4" }
+  ],
+  "annotations": [
+    { "id": "sample-venue", "x": 0, "y": -170, "w": 520, "page": "page-1", "text": "The Vesopa Kitchen is a sample venue. The shop wears whatever colour, logo and font a venue already has in the back office — switch the colour chip above any shop screen to see it in another venue's clothes." },
+    { "id": "staff-note", "x": 0, "y": -150, "w": 560, "page": "page-3", "text": "Staff screens follow the back office exactly: the same rail, cards, buttons and lime. Only people invited to Vesopa Gift in Vesopa Auth can sign in; the owner sees every venue, a venue manager sees their own." }
+  ],
+  "launch": { "view": "canvas", "page": "page-1" }
+}

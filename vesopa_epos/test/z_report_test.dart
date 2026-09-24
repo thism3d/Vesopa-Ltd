@@ -33,6 +33,8 @@ void main() {
     taxPercentage: 20,
     stockQuantity: 0,
     printToReceipt: true,
+    renewsMembership: false,
+    isModifier: false,
     departmentName: 'Drink',
   );
   const pie = Product(
@@ -42,6 +44,8 @@ void main() {
     taxPercentage: 20,
     stockQuantity: 0,
     printToReceipt: true,
+    renewsMembership: false,
+    isModifier: false,
     departmentName: 'Food',
   );
 
@@ -178,6 +182,197 @@ void main() {
 
     final r = await sessions.xReport();
     expect(r.noSales.count, 1, reason: 'only this period is counted');
+  });
+
+  test('a float can be counted in, and the Z expects it back', () async {
+    // The float has been printed on the Z since sessions existed and there was
+    // never a way to enter it, so it was always zero — which meant "cash
+    // expected" was always the takings rather than what should be in the
+    // drawer.
+    await stock([beer]);
+    await sessions.setOpeningFloat(15000);
+    await sell(beer);
+
+    final z = await sessions.zReport();
+    expect(z.openingFloatMinor, 15000);
+    expect(z.expectedCashMinor, 15500);
+  });
+
+  test('a drawer cannot start owing money', () async {
+    await sessions.setOpeningFloat(-500);
+    expect((await sessions.current()).openingFloatMinor, 0);
+  });
+
+  group('refunds', () {
+    test('a refund is counted and valued on the Z', () async {
+      await orders.logRefund(
+        sessionId: (await sessions.current()).id,
+        amountMinor: 1250,
+        note: 'Receipt abc123 · Fish & Chips',
+        staffName: 'Nicky',
+      );
+
+      final z = await sessions.zReport();
+      expect(z.refunds.count, 1);
+      expect(z.refunds.amountMinor, 1250);
+    });
+
+    test('it is stored positive, whatever sign the caller used', () async {
+      // The sign belongs to the report, which knows a refund is money out.
+      // Storing it negative would mean every reader had to know that too, and
+      // one of them would not.
+      await orders.logRefund(
+        sessionId: (await sessions.current()).id,
+        amountMinor: -800,
+      );
+      final z = await sessions.zReport();
+      expect(z.refunds.amountMinor, 800);
+    });
+
+    test('it does not touch the takings for the period', () async {
+      // A bill settled last Tuesday was taken last Tuesday. Rewriting today's
+      // gross to account for money handed back would make two days wrong.
+      await stock([beer]);
+      await sell(beer);
+      await orders.logRefund(
+        sessionId: (await sessions.current()).id,
+        amountMinor: 500,
+      );
+
+      final z = await sessions.zReport();
+      expect(z.grossMinor, 500, reason: 'the refund changed the takings');
+      expect(z.refunds.amountMinor, 500);
+    });
+
+    test("one period's refunds never leak into the next", () async {
+      await orders.logRefund(
+        sessionId: (await sessions.current()).id,
+        amountMinor: 400,
+      );
+      await sessions.zReport();
+
+      final next = await sessions.zReport();
+      expect(next.refunds.count, 0);
+      expect(next.refunds.amountMinor, 0);
+    });
+  });
+
+  group('paid outs and wastage (1.8.0.0)', () {
+    test('a paid out is counted, valued, and comes off the cash expected', () async {
+      await stock([beer]);
+      await sell(beer, qty: 2, method: 'cash');
+      await orders.logExpense(
+        sessionId: (await sessions.current()).id,
+        amountMinor: 3000,
+        paidTo: 'Window cleaner',
+        reason: 'Cleaning',
+        staffName: 'Tom',
+      );
+
+      final z = await sessions.zReport();
+      expect(z.expenses.count, 1);
+      expect(z.expenses.amountMinor, 3000);
+      // £10 of beer in cash, £30 out to the window cleaner: the drawer is
+      // honestly £20 down on the float, not £30 short.
+      expect(z.expectedCashMinor, z.openingFloatMinor + 1000 - 3000);
+      expect(z.grossMinor, 1000, reason: 'a paid out is not a sale');
+    });
+
+    test('a wastage is counted with no money, and names the product', () async {
+      await orders.logWastage(
+        sessionId: (await sessions.current()).id,
+        pluId: 1,
+        productName: 'IPA',
+        quantity: 2,
+        reason: 'Spilled',
+        staffName: 'Sarah',
+      );
+      final z = await sessions.zReport();
+      expect(z.wastage.count, 1);
+      expect(z.wastage.amountMinor, 0);
+      final row = await db.select(db.tillEvents).getSingle();
+      expect(row.kind, 'wastage');
+      expect(row.pluId, 1);
+      expect(row.quantity, 2);
+      expect(row.reason, 'Spilled');
+    });
+
+    test('every event is queued for the back office, on the right route', () async {
+      final session = (await sessions.current()).id;
+      await orders.logRefund(sessionId: session, amountMinor: 410, note: 'Flat pint');
+      await orders.logNoSale(sessionId: session, note: 'Change');
+      await orders.logExpense(sessionId: session, amountMinor: 3000, paidTo: 'Taxi');
+      await orders.logWastage(sessionId: session, pluId: 1, productName: 'IPA', quantity: 1);
+
+      final queued = await db.select(db.outboxEntries).get();
+      expect(queued.map((e) => e.entity).toList(), ['event', 'event', 'event', 'wastage']);
+      // The outbox row points at the event by the event's own id, so a retry
+      // that crosses with the server's answer cannot land twice.
+      final events = await db.select(db.tillEvents).get();
+      expect(queued.map((e) => e.entityId).toSet(), events.map((e) => e.id).toSet());
+      final wastage = queued.last;
+      expect(wastage.payload, contains('"plu_id":1'));
+      expect(wastage.payload, contains('"quantity":1.0'));
+      expect(queued.first.payload, contains('"kind":"refund"'));
+      expect(queued.first.payload, contains('"amount_minor":410'));
+    });
+
+    test('the cashback on a card tender is kept on the payment row', () async {
+      await stock([beer]);
+      final session = await sessions.current();
+      final id = await orders.openOrder();
+      await orders.addLine(id, beer);
+      await orders.settle(id, 'card', 500, sessionId: session.id, cashbackMinor: 2000, reference: 'pi_123', gratuityMinor: 50);
+      final pay = await db.select(db.payments).getSingle();
+      expect(pay.cashbackMinor, 2000);
+      expect(pay.reference, 'pi_123');
+      expect(pay.gratuityMinor, 50);
+      final out = await (db.select(db.outboxEntries)..where((e) => e.entity.equals('order'))).getSingle();
+      expect(out.payload, contains('"cashback_minor":2000'));
+      expect(out.payload, contains('"reference":"pi_123"'));
+    });
+  });
+
+  group('the cash declaration', () {
+    // £100 float and one £5 beer in cash: the till expects £105 in the drawer.
+    Future<TillReport> zWith(int? declared) async {
+      await stock([beer]);
+      await sessions.setOpeningFloat(10000);
+      await sell(beer);
+      return sessions.zReport(declaredCashMinor: declared);
+    }
+
+    test('nothing counted says nothing, rather than saying down', () async {
+      // "Not counted" and "counted, and the drawer was empty" are different
+      // facts. A Z printing SHORT £105.00 because the venue has the
+      // declaration switched off would be worse than one that says nothing.
+      final z = await zWith(null);
+      expect(z.declaredCashMinor, isNull);
+      expect(z.cashDifferenceMinor, isNull);
+    });
+
+    test('a drawer that matches is balanced', () async {
+      final z = await zWith(10500);
+      expect(z.expectedCashMinor, 10500);
+      expect(z.cashDifferenceMinor, 0);
+    });
+
+    test('too much in the drawer is over', () async {
+      final z = await zWith(11000);
+      expect(z.cashDifferenceMinor, 500);
+    });
+
+    test('too little is short, and negative says which way', () async {
+      final z = await zWith(10000);
+      expect(z.cashDifferenceMinor, -500);
+    });
+
+    test('an empty drawer that was counted is counted', () async {
+      // Zero is a real answer, and it must not read as "nobody counted".
+      final z = await zWith(0);
+      expect(z.declaredCashMinor, 0);
+      expect(z.cashDifferenceMinor, -10500);
+    });
   });
 
   test('the float carries into the next period and cash expected follows', () async {

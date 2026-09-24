@@ -7,13 +7,15 @@ import '../../data/staff_session.dart';
 import '../../main.dart';
 import '../sale_page.dart' show productsProvider;
 
-import '../clock_sheet.dart';
 import '../shell.dart' show StaffChip, SyncStatusBadge;
 import '../sign_on_pad.dart';
 import '../theme.dart';
 import 'nav_rail.dart';
 import 'programmed_bar.dart';
 import 'print_status.dart';
+import 'clock_punch_button.dart';
+import '../dinein_sheet.dart';
+import '../display_lock.dart';
 
 /// The one bar the till wears, on every screen.
 ///
@@ -51,13 +53,22 @@ class TillTopBar extends ConsumerWidget {
     required this.onSignOff,
     this.body,
     this.trailing = true,
+    this.destinations = navDestinations,
   });
 
   /// The section showing, which is what the selector names.
   final NavDestination section;
 
-  /// Go to another section, by its index in [navDestinations].
+  /// Go to another section, by its index in [destinations].
   final ValueChanged<int> onSelectSection;
+
+  /// What this venue's sections actually are.
+  ///
+  /// Handed in rather than read from the global list, because a venue that runs
+  /// a gym has one more of them -- and a picker listing the shell's sections
+  /// while the shell routed by a different list would send every index after
+  /// the gym to the wrong screen. See navDestinationsFor in nav_rail.dart.
+  final List<NavDestination> destinations;
 
   /// Open the side menu, or null when the rail is already on screen — a key
   /// that opens a copy of what is visible beside it is noise.
@@ -83,9 +94,23 @@ class TillTopBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final pal = PayPalette.of(context);
 
+    // ONE BAR, ONE BACKGROUND.
+    //
+    // The venue's programmed bar paints its own canvas (#000000 in Night,
+    // #EDEEE8 in Day) across everything to the right of the page selector,
+    // while this Material was painting the chrome colour (#111111 / #F7F8F2)
+    // underneath the lot. The selector therefore sat in a visibly lighter
+    // rectangle that stopped dead where the venue's bar began — a background
+    // inside a background, which is what the venue reported as the left key
+    // having two layers.
+    //
+    // So when there is a body, the strip takes the body's colour and the bar
+    // reads as one surface. A bare bar has no body to match and keeps the
+    // chrome, which is the brand colour it was always meant to be.
     final chrome = Material(
-      color: theme.posChrome,
+      color: body == null ? theme.posChrome : pal.canvas,
       child: DecoratedBox(
         decoration: BoxDecoration(
           // The light bar sits on a white page and needs a hairline to read as
@@ -94,29 +119,64 @@ class TillTopBar extends ConsumerWidget {
               ? null
               : Border(bottom: BorderSide(color: theme.posLine)),
         ),
-        child: Row(
-          children: [
-            PageSelector(
-              section: section,
-              onSelectSection: onSelectSection,
-              onOpenMenu: onOpenMenu,
-              onSignOn: onSignOn,
-              onSignOff: onSignOff,
-            ),
-            Expanded(child: body ?? const SizedBox.shrink()),
-            if (trailing) ...[
-              StaffChip(onSignOn: onSignOn, onSignOff: onSignOff),
-              // Whether the kitchen actually got the last ticket. Beside the
-              // sync badge because it answers the same shape of question —
-              // "did what I just did land?" — and draws nothing at all when
-              // there is nothing to report.
-              const PrintStatusBadge(),
-              // The clerk needs to know at a glance whether the till is live
-              // with the back office or working offline with a backlog.
-              const SyncStatusBadge(),
-              const SizedBox(width: 14),
+        // IntrinsicHeight, then stretch.
+        //
+        // The selector sized itself to its own text, which on a venue's bar
+        // left a 42px pill beside 58px keys — the one control that is on every
+        // screen, and the one that looked least like it belonged. Stretch
+        // fixes that, but a Row cannot stretch inside an unbounded height and
+        // this bar sits in a Column. IntrinsicHeight gives the Row the tallest
+        // child's height to stretch to. It costs one extra layout pass on one
+        // bar, which is the right price for the alternative being an exception.
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              PageSelector(
+                onBarCanvas: body != null,
+                destinations: destinations,
+                section: section,
+                onSelectSection: onSelectSection,
+                onOpenMenu: onOpenMenu,
+                onSignOn: onSignOn,
+                onSignOff: onSignOff,
+              ),
+              Expanded(child: body ?? const SizedBox.shrink()),
+
+              // Orders waiting from customers' phones, on every bar.
+              //
+              // The other three badges step aside for a venue's own bar, because
+              // each of them is a key that venue can place and drawing it as well
+              // would put it on twice. This one does not, and it is the one
+              // exception on purpose:
+              //
+              // A venue that laid out its top bar before dine-in existed cannot
+              // have placed a `dinein_orders` key on it. Left to the same rule,
+              // every one of those venues would upgrade, turn ordering on, and
+              // get nothing at all when an order arrived — a feature that appears
+              // to be broken until somebody thinks to edit their bar. An order
+              // from a table is time-limited and wants acting on; it is not
+              // chrome, and it is not something to make a venue opt into twice.
+              //
+              // It still draws nothing when nothing is waiting, and it is
+              // suppressed when the venue *has* placed the key, so it can never
+              // appear twice. See [_barCarriesDineIn].
+              if (!_barCarriesDineIn(ref)) const DineInBadge(),
+
+              if (trailing) ...[
+                StaffChip(onSignOn: onSignOn, onSignOff: onSignOff),
+                // Whether the kitchen actually got the last ticket. Beside the
+                // sync badge because it answers the same shape of question —
+                // "did what I just did land?" — and draws nothing at all when
+                // there is nothing to report.
+                const PrintStatusBadge(),
+                // The clerk needs to know at a glance whether the till is live
+                // with the back office or working offline with a backlog.
+                const SyncStatusBadge(),
+                const SizedBox(width: 14),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
@@ -125,6 +185,21 @@ class TillTopBar extends ConsumerWidget {
     // when a venue turns their own bar off. A bar with a body is as tall as the
     // body wants to be — a venue's two-row bar is two rows.
     return body == null ? SizedBox(height: 46, child: chrome) : chrome;
+  }
+
+  /// Whether the venue's own top bar already carries the dine-in key.
+  ///
+  /// Read from the same screen [VenueTopBarBody.of] resolves, so the question
+  /// asked here is the same one the bar beside it answered. False for a venue
+  /// with no programmed bar at all, which is the case where the built-in badge
+  /// was always going to be drawn anyway.
+  static bool _barCarriesDineIn(WidgetRef ref) {
+    final bar = VenueTopBarBody.of(ref);
+    if (bar == null) return false;
+    for (final button in bar.buttons) {
+      if (button.functionKey == 'dinein_orders') return true;
+    }
+    return false;
   }
 }
 
@@ -140,12 +215,20 @@ class TillTopBar extends ConsumerWidget {
 class PageSelector extends ConsumerWidget {
   const PageSelector({
     super.key,
+    this.onBarCanvas = false,
     required this.section,
     required this.onSelectSection,
     required this.onOpenMenu,
     required this.onSignOn,
     required this.onSignOff,
+    this.destinations = navDestinations,
   });
+
+  /// Whether this is sitting on a venue's programmed bar rather than on the
+  /// till's own chrome. It changes only what the key is made of: on a
+  /// programmed bar it is styled as one of that bar's keys, so it belongs to
+  /// the row it is in rather than looking like a fragment of a different bar.
+  final bool onBarCanvas;
 
   final NavDestination section;
   final ValueChanged<int> onSelectSection;
@@ -153,25 +236,50 @@ class PageSelector extends ConsumerWidget {
   final VoidCallback? onSignOn;
   final VoidCallback? onSignOff;
 
+  /// The sections this venue has. Handed down from the shell rather than read
+  /// from the global list, because a venue that runs a gym has one more of
+  /// them -- and a picker offering `go:5` from a different list than the one
+  /// the shell routes with sends every section after the gym to the wrong
+  /// screen. See navDestinationsFor in nav_rail.dart.
+  final List<NavDestination> destinations;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final ink = theme.posOnChrome;
+    final pal = PayPalette.of(context);
+    final ink = onBarCanvas ? pal.ink : theme.posOnChrome;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(6, 6, 8, 6),
+      // Matches ProgrammedBar's own outer padding on a programmed bar, so this
+      // key lines up with the row of keys beside it instead of standing a few
+      // pixels proud of them.
+      padding: onBarCanvas
+          ? const EdgeInsets.fromLTRB(8, 8, 6, 8)
+          : const EdgeInsets.fromLTRB(6, 6, 8, 6),
+      // `shape` and `borderRadius` are mutually exclusive on a Material, so the
+      // outlined variant states its radius inside the shape.
       child: Material(
-        color: Colors.white.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(8),
+        color: onBarCanvas ? pal.keyFill : Colors.white.withValues(alpha: 0.08),
+        borderRadius: onBarCanvas ? null : BorderRadius.circular(8),
+        shape: onBarCanvas
+            ? RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+                side: BorderSide(color: pal.keyLine),
+              )
+            : null,
         child: InkWell(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(onBarCanvas ? 10 : 8),
           onTap: () => _open(context, ref),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 9),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(section.icon, color: theme.posBrandOnChrome, size: 18),
+                Icon(
+                  section.icon,
+                  color: onBarCanvas ? pal.accent : theme.posBrandOnChrome,
+                  size: 18,
+                ),
                 const SizedBox(width: 8),
                 // Bounded so the selector cannot grow with the section name and
                 // eat the bar the venue laid out beside it.
@@ -228,20 +336,20 @@ class PageSelector extends ConsumerWidget {
       context: context,
       position: position,
       items: [
-        for (var i = 0; i < navDestinations.length; i++)
+        for (var i = 0; i < destinations.length; i++)
           PopupMenuItem<String>(
             value: 'go:$i',
             child: Row(
               children: [
                 Icon(
-                  navDestinations[i].icon,
+                  destinations[i].icon,
                   size: 18,
-                  color: i == navDestinations.indexOf(section)
+                  color: i == destinations.indexOf(section)
                       ? Pos.brandDeep
                       : null,
                 ),
                 const SizedBox(width: 12),
-                Text(navDestinations[i].label),
+                Text(destinations[i].label),
               ],
             ),
           ),
@@ -342,6 +450,57 @@ class VenueTopBarBody extends ConsumerWidget {
     );
   }
 
+  /// The pair the *payment* screen wears, or nulls for its built-in ones.
+  ///
+  /// Its own settings rather than the sale screen's, and no per-page fallback:
+  /// the payment screen is not a page a venue lays products out on, so there is
+  /// no screen for it to inherit a bar from. Either the venue has arranged one
+  /// for taking money or it has not.
+  ///
+  /// A sale bar would be the wrong answer even as a default. It carries Void,
+  /// Save Table and Covers, and a bill that is being settled has no use for
+  /// any of them.
+  /// The bars the payment board wears.
+  ///
+  /// The venue's own pay bars when it has laid any out, and otherwise **it
+  /// falls back to the sale screen's**.
+  ///
+  /// THAT FALLBACK IS NEW, AND IT OVERRULES A DECISION THIS CODE ARGUED FOR.
+  ///
+  /// `schema_till_pay_bars.sql` gave the payment screen its own pair of
+  /// columns and its header makes the case for them: a sale bar carries Void,
+  /// Save Table and Covers, none of which mean anything once the bill is being
+  /// settled, so a payment screen showing the sale bar would be a bar of keys
+  /// that do nothing.
+  ///
+  /// The venue has asked for exactly that, in as many words — "please make the
+  /// top and bottom bars from the sales screen the same on the payment
+  /// screens" — and they are right about their own counter. A clerk learns one
+  /// set of keys in one set of places; two arrangements a tap apart is two
+  /// things to learn, and the keys that genuinely cannot act here say so when
+  /// they are pressed rather than being absent.
+  ///
+  /// The columns stay. A venue that wants a tender-only bar lays one out and it
+  /// wins; a venue that wants what The Bridge wants does nothing at all. Both
+  /// are one decision in the back office rather than a build.
+  static (TillScreen?, TillScreen?) paymentBars(WidgetRef ref) {
+    final screens = ref.watch(screensProvider).value;
+    if (screens == null) return (null, null);
+    final settings = ref.watch(tillSettingsProvider);
+    return (
+      screens.surfaceById(settings.payTopBarScreenId, ScreenSurface.topBar) ??
+          screens.surfaceById(settings.topBarScreenId, ScreenSurface.topBar),
+      screens.surfaceById(
+            settings.payBottomBarScreenId,
+            ScreenSurface.bottomBar,
+          ) ??
+          screens.surfaceById(
+            settings.bottomBarScreenId,
+            ScreenSurface.bottomBar,
+          ),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final screens = ref.watch(screensProvider).value ?? ScreenSet.empty;
@@ -383,9 +542,17 @@ class VenueTopBarBody extends ConsumerWidget {
           await showSignOnPad(context, ref);
           return;
         }
+        if (key == 'display_lock') {
+          if (!context.mounted) return;
+          return toggleCustomerScreenLock(context);
+        }
         if (key == 'clock_in_out') {
           if (!context.mounted) return;
-          return showClockSheet(context, ref);
+          // Straight to the signed-on person's own shift. The venue asked for
+          // the key to clock in "the person that is signed into the till", and
+          // the till knows who that is — the list of everybody moved to
+          // Functions, where a manager looks for it.
+          return punchSignedOnStaff(context, ref);
         }
         const sections = <String, String>{
           'go_sale': 'Sale',

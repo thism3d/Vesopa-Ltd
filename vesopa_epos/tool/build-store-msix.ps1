@@ -29,6 +29,34 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# ---------------------------------------------------------------------------
+# Running a native program without mistaking its chatter for a failure
+# ---------------------------------------------------------------------------
+#
+# Windows PowerShell 5.1 turns anything a native program writes to stderr into
+# an ErrorRecord, and with $ErrorActionPreference = 'Stop' that is a terminating
+# error — even when the program exited 0. `dart run` prints "Running build
+# hooks..." to stderr, so this script died after the package was already built,
+# leaving the icons unpadded and a staging folder behind.
+#
+# The exit code is what actually says whether a step worked, and it is checked
+# below exactly as before. This only stops the noise being fatal. Harmless on
+# PowerShell 7, where the behaviour never applied.
+function Invoke-Native {
+  param(
+    [Parameter(Mandatory)] [scriptblock] $Command,
+    [Parameter(Mandatory)] [string] $What
+  )
+  $previous = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    & $Command
+  } finally {
+    $ErrorActionPreference = $previous
+  }
+  if ($LASTEXITCODE -ne 0) { throw "$What failed with $LASTEXITCODE" }
+}
+
 $root = Split-Path -Parent $PSScriptRoot
 Push-Location $root
 try {
@@ -36,8 +64,7 @@ try {
 
   if (-not $RepackOnly) {
     Write-Host '==> Building the Store package' -ForegroundColor Cyan
-    & dart run msix:create --store
-    if ($LASTEXITCODE -ne 0) { throw "msix:create failed with $LASTEXITCODE" }
+    Invoke-Native { & dart run msix:create --store } 'msix:create'
   }
 
   if (-not (Test-Path $package)) { throw "No package at $package" }
@@ -58,12 +85,11 @@ try {
   if (Test-Path $staging) { Remove-Item $staging -Recurse -Force }
 
   Write-Host '==> Unpacking' -ForegroundColor Cyan
-  & $makeappx unpack /p $package /d $staging /o /nv
-  if ($LASTEXITCODE -ne 0) { throw "makeappx unpack failed with $LASTEXITCODE" }
+  Invoke-Native { & $makeappx unpack /p $package /d $staging /o /nv } 'makeappx unpack'
 
   Write-Host '==> Padding the taskbar icons' -ForegroundColor Cyan
-  & dart run tool/pad_taskbar_icons.dart (Join-Path $staging 'Images')
-  if ($LASTEXITCODE -ne 0) { throw "padding the icons failed with $LASTEXITCODE" }
+  $images = Join-Path $staging 'Images'
+  Invoke-Native { & dart run tool/pad_taskbar_icons.dart $images } 'padding the icons'
 
   # The block map and the signature describe the contents that are about to
   # change. makeappx rebuilds the block map; the signature is absent from a
@@ -76,8 +102,7 @@ try {
 
   Write-Host '==> Packing' -ForegroundColor Cyan
   Remove-Item $package -Force
-  & $makeappx pack /d $staging /p $package /o /nv
-  if ($LASTEXITCODE -ne 0) { throw "makeappx pack failed with $LASTEXITCODE" }
+  Invoke-Native { & $makeappx pack /d $staging /p $package /o /nv } 'makeappx pack'
 
   Remove-Item $staging -Recurse -Force
 

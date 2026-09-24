@@ -7,6 +7,7 @@ import 'kitchen_api.dart';
 import 'kitchen_branding.dart';
 import 'providers.dart';
 import 'screen_profile.dart';
+import 'vesopa_sso.dart';
 
 /// Who this screen is signed in as, and which board it is.
 ///
@@ -29,6 +30,7 @@ class KitchenSession {
     this.screens = const [],
     this.screenId,
     this.soundOverride,
+    this.notify = true,
     this.branding = KitchenBranding.standard,
   });
 
@@ -55,6 +57,18 @@ class KitchenSession {
   /// — somebody is working next to it — and that is not a fact the office can
   /// know.
   final bool? soundOverride;
+
+  /// Whether this machine may raise a Windows toast.
+  ///
+  /// The screen's half of the two-layer rule in `notifications.dart`: the back
+  /// office decides which CLASS of notification this venue's machines may
+  /// show, and this decides whether this particular machine shows any of them.
+  /// Neither can switch on what the other has switched off.
+  ///
+  /// On by default, and stored here with the rest of the session for the same
+  /// reason [soundOverride] is: it is a fact about a panel bolted to a wall,
+  /// and it must survive a restart without a round trip.
+  final bool notify;
 
   /// The venue's white-label branding, cached with the rest of the session.
   ///
@@ -106,6 +120,7 @@ class KitchenSession {
     bool clearScreenId = false,
     bool? soundOverride,
     bool clearSoundOverride = false,
+    bool? notify,
     KitchenBranding? branding,
   }) => KitchenSession(
     token: token ?? this.token,
@@ -118,6 +133,7 @@ class KitchenSession {
     soundOverride: clearSoundOverride
         ? null
         : (soundOverride ?? this.soundOverride),
+    notify: notify ?? this.notify,
     branding: branding ?? this.branding,
   );
 
@@ -130,6 +146,7 @@ class KitchenSession {
     'screens': [for (final s in screens) s.toJson()],
     'screenId': screenId,
     'soundOverride': soundOverride,
+    'notify': notify,
     'branding': branding.toJson(),
   };
 
@@ -148,6 +165,10 @@ class KitchenSession {
         .toList(),
     screenId: (j['screenId'] as num?)?.toInt(),
     soundOverride: j['soundOverride'] as bool?,
+    // Absent in a session written by an earlier release, and absent means on:
+    // a screen that has been upgraded should behave as the release notes say,
+    // not stay silent because it was signed in before the feature existed.
+    notify: j['notify'] as bool? ?? true,
     branding: KitchenBranding.fromJson(j['branding'] as Map<String, dynamic>?),
   );
 
@@ -220,6 +241,45 @@ class KitchenSessionController extends AsyncNotifier<KitchenSession> {
     await _persist(session);
   }
 
+  /// Set this screen up with a Vesopa account.
+  ///
+  /// The person proves who they are to auth.vesopa.com in the system browser,
+  /// and the back office turns that into this screen's own ninety-day token.
+  /// From there nothing downstream can tell which door was used, which is what
+  /// keeps this an addition rather than a second system.
+  Future<void> signInWithVesopa({
+    required String issuer,
+    required String clientId,
+    void Function(Uri url)? onUrl,
+  }) async {
+    final idToken = await VesopaSso(issuer: issuer, clientId: clientId)
+        .authorize(onUrl: onUrl);
+    final result = await _api.commissionWithVesopa(idToken);
+
+    // The screen's profile, read with the token it was just handed. The typed
+    // door gets this back from the sign-in itself; this door issues the token
+    // first and then asks, which is one extra round trip on a screen that is
+    // set up once.
+    final profile = await _api.profile();
+
+    await _persist(
+      KitchenSession(
+        token: result.token,
+        office: profile.office.isEmpty ? result.office : profile.office,
+        officeName: profile.officeName,
+        userName: profile.userName,
+        stationNames: profile.stationNames,
+        screens: profile.screens,
+        branding: profile.branding,
+        // Unset, exactly as the typed door leaves it: the screen picker is
+        // shown straight after a first sign-in, and guessing here would put a
+        // chef in front of a board that is nearly right -- which is harder to
+        // notice than one that is obviously unset.
+        screenId: null,
+      ),
+    );
+  }
+
   /// Re-read the venue's screens and station names.
   ///
   /// Called on every reconnect. Silent on failure: this is a refresh of
@@ -267,6 +327,17 @@ class KitchenSessionController extends AsyncNotifier<KitchenSession> {
           ? current.copyWith(clearSoundOverride: true)
           : current.copyWith(soundOverride: on),
     );
+  }
+
+  /// Whether this machine may raise a Windows toast at all.
+  ///
+  /// Stored with the session rather than pushed to the server: it is a fact
+  /// about where this panel is standing, not about the venue. See the
+  /// two-layer rule in `notifications.dart`.
+  Future<void> setNotify(bool on) async {
+    final current = state.value;
+    if (current == null) return;
+    await _persist(current.copyWith(notify: on));
   }
 
   /// Check the password of the login this screen is signed in as.

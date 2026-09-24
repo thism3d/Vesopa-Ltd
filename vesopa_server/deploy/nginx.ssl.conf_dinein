@@ -1,0 +1,68 @@
+# Dine-in on the apex domain.
+#
+# vesopaepos.com is the marketing site (127.0.0.1:5065). These four paths are
+# the back office application (127.0.0.1:5060), and they are served from the
+# apex anyway because the address is printed on a card that gets laminated and
+# stood on a table: vesopaepos.com/t/<code>.
+#
+# nginx picks the longest matching prefix, so these win over the marketing
+# site's `location /` whatever order the includes land in. `^~` says so
+# explicitly and also stops a regex location taking them first.
+#
+# NOTHING ELSE FROM THE BACK OFFICE IS EXPOSED HERE.
+#
+# /api/public/dinein/ is the entire API these three pages call, and it is the
+# one part of that application built to be reached with no credential at all —
+# possession of the table's printed id is the whole of it. Proxying /api/
+# wholesale would put the signed-in back office on the public domain, which is a
+# completely different thing.
+#
+# WHY THIS FILE AND NOT nodejs-app.conf
+#
+# Because the HestiaCP Node plugin regenerates nodejs-app.conf from a template
+# every time the Node app is reconfigured in the panel — see
+# quickinstall-app/NodeJs/NodeJsSetup.php. Rules kept there would vanish on a
+# click, and every printed QR code in the venue would stop working with nothing
+# to explain it. `nginx.conf_*` / `nginx.ssl.conf_*` is HestiaCP's own
+# per-domain custom slot and survives a rebuild; the NodeJS templates did not
+# include it, so that line was added to all four of them.
+
+location ^~ /t/ {
+	proxy_pass http://127.0.0.1:5060;
+	proxy_http_version 1.1;
+	proxy_set_header Host $host;
+	proxy_set_header X-Forwarded-Host $host;
+	proxy_set_header X-Forwarded-Proto $scheme;
+	proxy_set_header X-Real-IP $remote_addr;
+	proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+}
+
+location ^~ /m/ {
+	proxy_pass http://127.0.0.1:5060;
+	proxy_http_version 1.1;
+	proxy_set_header Host $host;
+	proxy_set_header X-Forwarded-Host $host;
+	proxy_set_header X-Forwarded-Proto $scheme;
+	proxy_set_header X-Real-IP $remote_addr;
+	proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+}
+
+location ^~ /o/ {
+	proxy_pass http://127.0.0.1:5060;
+	proxy_http_version 1.1;
+	proxy_set_header Host $host;
+	proxy_set_header X-Forwarded-Host $host;
+	proxy_set_header X-Forwarded-Proto $scheme;
+	proxy_set_header X-Real-IP $remote_addr;
+	proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+}
+
+location ^~ /api/public/dinein/ {
+	proxy_pass http://127.0.0.1:5060;
+	proxy_http_version 1.1;
+	proxy_set_header Host $host;
+	proxy_set_header X-Forwarded-Host $host;
+	proxy_set_header X-Forwarded-Proto $scheme;
+	proxy_set_header X-Real-IP $remote_addr;
+	proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+}

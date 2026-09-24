@@ -10,7 +10,7 @@ publish_to: 'none'
 # ship together: a kitchen screen and a till on different major versions is a
 # support question nobody can answer over the phone. The build number is this
 # app's own.
-version: 1.5.0+7
+version: 1.6.12+12
 
 environment:
   sdk: ^3.11.3
@@ -36,6 +36,19 @@ dependencies:
   # the last board it drew. All small, all local to this device.
   shared_preferences: ^2.5.5
 
+  # Signing a screen in with a Vesopa account.
+  #
+  # The system browser, not a window inside the app: an embedded webview would
+  # mean somebody typing their Vesopa password into a text field this
+  # application is drawing, which is the habit an attacker needs. The browser
+  # shows the real address bar and already has the passkey and the password
+  # manager. RFC 8252 asks native applications to do exactly this.
+  url_launcher: ^6.3.0
+  # SHA-256 for the PKCE challenge. Declared rather than leaned on: it arrives
+  # transitively today, and a package imported but not declared disappears the
+  # day that dependency drops it -- in the file the whole sign-in goes through.
+  crypto: ^3.0.3
+
   intl: ^0.20.3
   uuid: ^4.5.3
 
@@ -54,6 +67,12 @@ dependencies:
   # the same whichever machine printed it.
   pdf: ^3.12.0
   printing: ^5.14.3
+  # Windows toast notifications, so a kitchen that has the board on a second
+  # monitor still learns that an order has arrived. Pure Dart over the Windows
+  # notification API: no method-channel plugin to go wrong on the low-end panel
+  # this app runs on, and it works from an msix, which is the only way this is
+  # installed.
+  local_notifier: ^0.1.6
 
 dev_dependencies:
   flutter_test:
@@ -119,9 +138,16 @@ msix_config:
   identity_name: MeirionDavies.VesopaEPOSKitchen
   publisher: CN=3AD172E6-2CBA-4B09-AD50-B52C88D57FB3
 
+  # Where the build lands, matching the till, the display and the kiosk.
+  # Without these the package went to build/windows/x64/runner/Release, and
+  # anything looking in build/store -- a release script, or a person -- found
+  # nothing and assumed the build had failed.
+  output_path: build/store
+  output_name: vesopa-kitchen-store
+
   # Four parts, and the last must be 0 — the Store reserves the revision field
   # and rejects anything else. Tracks `version:` at the top of this file.
-  msix_version: 1.5.0.0
+  msix_version: 1.6.12.0
 
   logo_path: assets/brand/kitchen_mark.png
 

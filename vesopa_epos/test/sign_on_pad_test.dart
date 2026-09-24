@@ -1,12 +1,16 @@
+import 'dart:io';
+
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vesopa_epos/data/local/database.dart';
 import 'package:vesopa_epos/main.dart';
 import 'package:vesopa_epos/ui/sign_on_pad.dart';
 import 'package:vesopa_epos/ui/theme.dart';
+import 'package:vesopa_epos/ui/widgets/staff_pin_pad.dart';
 
 /// "Sign on button needs to just pop up with a pin pad, no names, just quick
 /// for the next member of staff to use the till as soon as possible."
@@ -70,13 +74,22 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// One key on the pad.
+  ///
+  /// The Sign On dialog now shows the same pad as the lock screen — see
+  /// `ui/widgets/staff_pin_pad.dart` — whose keys are InkWells on a dark
+  /// console rather than the OutlinedButtons the old dialog-only pad used. The
+  /// digit's text is what identifies a key in either.
+  Finder findKey(String label) =>
+      find.widgetWithText(InkWell, label).hitTestable();
+
   /// Deliberately never `pumpAndSettle`. The fourth digit starts the PIN
   /// lookup, and while that runs the pad shows a spinner — an animation that
   /// by definition never settles, so `pumpAndSettle` waits out its full
   /// timeout and the whole suite hangs. Bounded pumps instead.
   Future<void> type(WidgetTester tester, String digits) async {
     for (final d in digits.split('')) {
-      await tester.tap(find.widgetWithText(OutlinedButton, d));
+      await tester.tap(findKey(d));
       await tester.pump();
     }
     // Enough frames for the database lookup and the sign-on that follows it to
@@ -100,8 +113,8 @@ void main() {
     await open(tester, roster);
 
     // The pad is there...
-    expect(find.widgetWithText(OutlinedButton, '7'), findsOneWidget);
-    expect(find.text('Type your PIN to take the till.'), findsOneWidget);
+    expect(findKey('7'), findsOneWidget);
+    expect(find.text('Type your PIN to take the till'), findsOneWidget);
 
     // ...and not one member of staff is named on it. This is the requirement.
     expect(find.text('Aisha Khan'), findsNothing);
@@ -115,7 +128,7 @@ void main() {
 
     // Still open, and it says why. Dismissing on a miss is how four digits
     // becomes a re-press and four more.
-    expect(find.widgetWithText(OutlinedButton, '7'), findsOneWidget);
+    expect(findKey('7'), findsOneWidget);
     expect(
       find.text('That PIN was not recognised. Type it again, or correct it.'),
       findsOneWidget,
@@ -123,7 +136,7 @@ void main() {
 
     // The next digit starts a fresh attempt rather than being ignored.
     await type(tester, '1234');
-    expect(find.widgetWithText(OutlinedButton, '7'), findsNothing);
+    expect(findKey('7'), findsNothing);
   });
 
   testWidgets('the right PIN signs that person on and closes', (tester) async {
@@ -134,7 +147,57 @@ void main() {
     await open(tester, roster);
     await type(tester, '5678');
 
-    expect(find.widgetWithText(OutlinedButton, '7'), findsNothing);
+    expect(findKey('7'), findsNothing);
+  });
+
+  testWidgets('it is the lock screen pad, not one that resembles it', (
+    tester,
+  ) async {
+    // The venue's actual request: "the keypad needs to be identical to the sign
+    // on pin pad on the idle screen to make it simple for staff." Two pads made
+    // to match would satisfy that today and drift the next time either was
+    // touched, so what is checked is that there is one widget and both screens
+    // show it.
+    final roster = [await addStaff('Aisha Khan', '1234', 1)];
+    await open(tester, roster);
+
+    expect(find.byType(StaffPinPad), findsOneWidget);
+
+    // And it is the whole pad, including the two keys the old dialog-only pad
+    // did not have: a blank space where Clear belongs, and a bare backspace
+    // beside it, is what staff were reaching for and missing.
+    expect(find.text('Clear'), findsOneWidget);
+    expect(find.text('Back'), findsOneWidget);
+    for (final digit in ['0', '1', '5', '9']) {
+      expect(findKey(digit), findsOneWidget, reason: 'no $digit key');
+    }
+  });
+
+  test('and the lock screen shows the same widget', () {
+    // A source check, because standing the idle screen up needs a venue, a
+    // backdrop and a settings store, and none of that is what this is about.
+    // If either screen ever grows a keypad of its own again, this is what says
+    // so.
+    final idle = File('lib/ui/idle_screen.dart').readAsStringSync();
+    final signOn = File('lib/ui/sign_on_pad.dart').readAsStringSync();
+
+    for (final entry in {'idle_screen': idle, 'sign_on_pad': signOn}.entries) {
+      expect(
+        entry.value,
+        contains('StaffPinPad('),
+        reason: '${entry.key} does not show the shared pad',
+      );
+      expect(
+        entry.value,
+        isNot(contains('class _Keypad')),
+        reason: '${entry.key} has grown a keypad of its own again',
+      );
+      expect(
+        entry.value,
+        isNot(contains('class _PadKey')),
+        reason: '${entry.key} has grown its own keys again',
+      );
+    }
   });
 
   testWidgets('backspace corrects rather than restarting', (tester) async {
@@ -146,6 +209,6 @@ void main() {
     await tester.pump();
     await type(tester, '34');
 
-    expect(find.widgetWithText(OutlinedButton, '7'), findsNothing);
+    expect(findKey('7'), findsNothing);
   });
 }

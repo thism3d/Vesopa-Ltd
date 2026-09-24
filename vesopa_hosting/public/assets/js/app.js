@@ -9,9 +9,37 @@
 (function () {
   'use strict';
 
+  /*
+   * ONCE PER DOCUMENT, and once per PAGE.
+   *
+   * nav.js swaps the body without reloading, so this file is loaded once and
+   * then asked to decorate every page that arrives. Two things follow. The
+   * whole of the page-facing code lives in setup(), which runs now and again
+   * on every `vesopa:navigated`. And every listener it puts on `document` or
+   * `window` is bound with the current page's AbortSignal, so the old page's
+   * listeners die when the next one arrives instead of answering every click
+   * twice. Listeners on elements need nothing: they leave with the body.
+   */
+  if (window.__vesopaAppReady) return;
+  window.__vesopaAppReady = true;
+
   const $ = (sel, root) => (root || document).querySelector(sel);
   const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  let page = new AbortController();
+  window.addEventListener('vesopa:navigating', () => {
+    page.abort();
+    page = new AbortController();
+  });
+  window.addEventListener('vesopa:navigated', () => setup());
+
+  function setup() {
+  const { signal } = page;
+  // `opts` may be the old boolean capture flag — the confirm-before-delete
+  // listener relies on capturing, and spreading `true` would silently drop it.
+  const on = (target, type, fn, opts) =>
+    target.addEventListener(type, fn, typeof opts === 'boolean' ? { capture: opts, signal } : { ...(opts || {}), signal });
 
   /* ---- Money -------------------------------------------------------------
      The active currency is stamped on <body> by the server, so a total worked
@@ -33,12 +61,12 @@
      The <details> opens and closes on its own; this only closes it when the
      click lands elsewhere, which is the one behaviour the element does not
      give you and the one people expect from a dropdown. */
-  document.addEventListener('click', (e) => {
+  on(document, 'click', (e) => {
     $$('.cur-pick[open]').forEach((d) => {
       if (!d.contains(e.target)) d.removeAttribute('open');
     });
   });
-  document.addEventListener('keydown', (e) => {
+  on(document, 'keydown', (e) => {
     if (e.key !== 'Escape') return;
     $$('.cur-pick[open]').forEach((d) => d.removeAttribute('open'));
   });
@@ -72,8 +100,8 @@
       }
     };
     // passive: this runs on every scroll frame and must never block it.
-    window.addEventListener('scroll', onScroll, { passive: true });
-    window.addEventListener('resize', () => { mark = threshold(); onScroll(); }, { passive: true });
+    on(window, 'scroll', onScroll, { passive: true });
+    on(window, 'resize', () => { mark = threshold(); onScroll(); }, { passive: true });
     onScroll();
 
     /* ---- The full-screen sheet -------------------------------------------- */
@@ -125,7 +153,7 @@
       // page it just navigated to when the target is an anchor on this page.
       $$('a', sheet).forEach((a) => a.addEventListener('click', () => setOpen(false)));
 
-      document.addEventListener('keydown', (e) => {
+      on(document, 'keydown', (e) => {
         if (e.key === 'Escape' && document.body.classList.contains('nav-open')) setOpen(false);
       });
 
@@ -148,7 +176,7 @@
 
       // Growing past the breakpoint with the sheet open would leave the page
       // scroll-locked behind a bar that no longer has a burger to close it.
-      window.addEventListener('resize', () => {
+      on(window, 'resize', () => {
         if (window.innerWidth > 1140 && document.body.classList.contains('nav-open')) setOpen(false);
       }, { passive: true });
     }
@@ -310,9 +338,9 @@
       // The pill is positioned from measured widths, which are 0 until layout
       // has run and the webfont has settled.
       requestAnimationFrame(() => movePill(initial));
-      window.addEventListener('load', () => movePill($('.term-btn.is-active', toggle) || initial));
+      on(window, 'load', () => movePill($('.term-btn.is-active', toggle) || initial));
     }
-    window.addEventListener('resize', () => {
+    on(window, 'resize', () => {
       const active = $('.term-btn.is-active', toggle);
       if (active) movePill(active);
     });
@@ -368,7 +396,7 @@
   window.vhToast = toast;
 
   /* ---- Copy to clipboard ------------------------------------------------ */
-  document.addEventListener('click', async (e) => {
+  on(document, 'click', async (e) => {
     const btn = e.target.closest('[data-copy]');
     if (!btn) return;
     const text = btn.dataset.copy;
@@ -389,7 +417,7 @@
     btn.classList.add('is-copied');
     const original = btn.dataset.copyLabel || btn.textContent;
     btn.dataset.copyLabel = original;
-    btn.textContent = 'Copied';
+    btn.textContent = VT.t('Copied');
     setTimeout(() => {
       btn.classList.remove('is-copied');
       btn.textContent = original;
@@ -415,12 +443,33 @@
    * one spinner. panel.js bails out if the class is already present, so the two
    * listeners cannot double up.
    *
-   * The label is NOT replaced — `data-busy` is read by CSS via a content
-   * attribute below, so the DOM is left alone and there is nothing to restore.
+   * The label is NOT replaced. `data-busy` is not drawn at all — see the note
+   * beside `.is-working` in app.css for why a pseudo-element cannot show it
+   * without clipping it — so the DOM is left alone and there is nothing to
+   * restore. The attribute stays on the markup as the description of what the
+   * button is doing; nothing reads it today.
    */
+  /* The pinned width comes off too. It is set from the label the button had at
+     the moment it was pressed, so a button restored with it still on keeps a
+     width that belongs to a state the page has left. */
+  const unbusy = (btn) => {
+    btn.classList.remove('is-working');
+    btn.disabled = false;
+    btn.style.minWidth = '';
+  };
+
   $$('form[data-guard]').forEach((form) => {
-    form.addEventListener('submit', () => {
-      const btn = $('[type=submit]', form);
+    form.addEventListener('submit', (e) => {
+      /*
+       * THE BUTTON THAT WAS PRESSED, not the first submit button in the form.
+       * `event.submitter` is the one the user actually clicked; the old
+       * `$('[type=submit]', form)` returned whichever came first in the DOM, so
+       * on a form with two actions — Save and Delete, Attach and Detach — the
+       * wrong button spun while the pressed one sat there looking ignored.
+       * Falls back to the old selector for a form submitted from script, where
+       * there is no submitter.
+       */
+      const btn = e.submitter || $('[type=submit]', form);
       if (!btn || btn.disabled || btn.classList.contains('is-working')) return;
       // Fixed width first, or the button collapses once its label is hidden.
       btn.style.minWidth = btn.offsetWidth + 'px';
@@ -428,27 +477,36 @@
       btn.disabled = true;
       // A form that fails validation never navigates, so the button has to come
       // back or the page is stuck. Also covers a bfcache restore.
-      setTimeout(() => {
-        btn.classList.remove('is-working');
-        btn.disabled = false;
-      }, 25_000);
+      setTimeout(() => unbusy(btn), 25_000);
     });
   });
 
-  window.addEventListener('pageshow', (e) => {
+  on(window, 'pageshow', (e) => {
     if (!e.persisted) return;
-    $$('.is-working').forEach((btn) => {
-      btn.classList.remove('is-working');
-      btn.disabled = false;
-    });
+    $$('.is-working').forEach(unbusy);
   });
 
-  /* ---- Confirm before destructive actions ------------------------------- */
-  document.addEventListener('submit', (e) => {
+  /* ---- Confirm before destructive actions -------------------------------
+   * IN THE CAPTURE PHASE, and that is the whole fix for a stuck button.
+   *
+   * This used to listen on the bubble, which is AFTER the form's own listener
+   * — so on a form carrying both `data-guard` and `data-confirm` (the domain
+   * rebuild, the domain removal, every delete in the panel) the sequence was:
+   * button goes into `.is-working` and disabled, THEN the confirm box opens,
+   * and pressing Cancel prevented the submit and left the button spinning for
+   * twenty-five seconds on a page where nothing was happening.
+   *
+   * Capturing on the document runs this before any listener on the form, so a
+   * cancelled confirm stops the submit before anything has been made busy.
+   * ----------------------------------------------------------------------- */
+  on(document, 'submit', (e) => {
     const form = e.target;
-    const message = form.dataset.confirm;
-    if (message && !window.confirm(message)) e.preventDefault();
-  });
+    const message = form.dataset ? form.dataset.confirm : null;
+    if (message && !window.confirm(message)) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }, true);
 
   /* ---- Email family tabs (business / marketing) -------------------------- */
   $$('[data-email-tabs]').forEach((tabs) => {
@@ -601,7 +659,7 @@
         net.style.setProperty('--sy', `${y * 0.14}px`);
       }
     };
-    window.addEventListener('scroll', onHeroScroll, { passive: true });
+    on(window, 'scroll', onHeroScroll, { passive: true });
     onHeroScroll();
   }
 
@@ -639,7 +697,9 @@
 
       const field = $('.dsearch-input');
       if (field) field.addEventListener('focus', stop, { once: true });
-      document.addEventListener('visibilitychange', () => { if (document.hidden) stop(); });
+      on(document, 'visibilitychange', () => { if (document.hidden) stop(); });
+      // And when the page it was typing on has gone.
+      signal.addEventListener('abort', stop);
     }
   }
 
@@ -667,7 +727,7 @@
       launch.classList.add('is-running', 'is-done', 'is-secure', 'is-live');
       light(2);
       beats.forEach((b) => b.classList.remove('is-now'));
-      if (status) status.textContent = 'Live';
+      if (status) status.textContent = VT.t('Live');
     };
 
     const run = () => {
@@ -675,11 +735,11 @@
       launch.classList.add('is-running');
 
       const script = [
-        [0, () => { light(0); if (status) status.textContent = 'Registering the domain…'; }],
-        [1100, () => { light(1); if (status) status.textContent = 'Building your account…'; }],
-        [2200, () => { launch.classList.add('is-secure'); if (status) status.textContent = 'Issuing your SSL certificate…'; }],
+        [0, () => { light(0); if (status) status.textContent = VT.t('Registering the domain…'); }],
+        [1100, () => { light(1); if (status) status.textContent = VT.t('Building your account…'); }],
+        [2200, () => { launch.classList.add('is-secure'); if (status) status.textContent = VT.t('Issuing your SSL certificate…'); }],
         [3100, () => { light(2); launch.classList.add('is-done'); }],
-        [3500, () => { launch.classList.add('is-live'); if (status) status.textContent = 'Live'; }],
+        [3500, () => { launch.classList.add('is-live'); if (status) status.textContent = VT.t('Live'); }],
         [4200, () => beats.forEach((b) => b.classList.remove('is-now'))],
       ];
       script.forEach(([at, fn]) => setTimeout(fn, at));
@@ -699,10 +759,48 @@
     }
   }
 
+  /* ---- The language offer, asked once ------------------------------------
+     The server renders it only on a Bangla page, and only there, because a
+     visitor in Bangladesh is now SERVED Bangla rather than offered it — this
+     is the way back to English. Once they have answered either way, or
+     dismissed it, the cookie keeps it away for a year. Choosing English
+     follows the ordinary /lang/en link, so the choice is remembered exactly as
+     a click in the footer would be, and the country redirect then leaves them
+     alone for good.
+
+     Whether a choice navigates is read off the element, not hardcoded: the
+     link goes, the button just closes. The first version of this had the two
+     the other way round, and flipping the offer would have left the wrong one
+     silently doing nothing.
+     --------------------------------------------------------------------- */
+  const langOffer = $('#lang-offer');
+  if (langOffer) {
+    const key = langOffer.dataset.once || 'vh_lang_asked';
+    const asked = document.cookie.split('; ').some((c) => c.startsWith(key + '='));
+    const remember = () => {
+      document.cookie = key + '=1; path=/; max-age=' + (365 * 24 * 60 * 60) + '; samesite=lax'
+        + (location.protocol === 'https:' ? '; secure' : '');
+    };
+    if (!asked) {
+      langOffer.hidden = false;
+      langOffer.querySelectorAll('[data-lang-offer]').forEach((el) => {
+        el.addEventListener('click', () => {
+          remember();
+          // A link is going somewhere and must be left to do it; anything else
+          // has nothing to do but disappear.
+          if (el.tagName !== 'A') langOffer.hidden = true;
+        });
+      });
+    }
+  }
+
   /* ---- Flash messages from the server ----------------------------------- */
   const flash = $('[data-flash]');
   if (flash) {
     toast(flash.dataset.flash, flash.dataset.flashKind);
     flash.remove();
   }
+  }
+
+  setup();
 })();

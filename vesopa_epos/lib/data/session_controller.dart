@@ -4,6 +4,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'hardware_fingerprint.dart';
+import 'licence_key.dart';
+import 'terminal_identity.dart';
+import 'vesopa_sso.dart';
+import '../main.dart' show apiBaseProvider;
+
 /// Who is signed into this terminal.
 class Session {
   const Session({
@@ -53,6 +59,31 @@ class Session {
   String get venueName =>
       officeName?.trim().isNotEmpty ?? false ? officeName!.trim() : 'Vesopa';
 
+  /// The same terminal, pointed at another venue.
+  ///
+  /// Used for one thing: putting a till into its venue's practice copy while a
+  /// training account is signed on (`data/demo_session.dart`). Everything that
+  /// reads a venue off the session — the catalogue, sync, the kitchen, the
+  /// dine-in board — follows without being told, which is the point: a trainee
+  /// cannot reach live data because there is no longer a code path to it, not
+  /// because every one of those places remembered to check.
+  ///
+  /// The person's own [token] and identity are kept: it is the same clerk
+  /// standing at the same till, practising.
+  Session inVenue({
+    required String office,
+    required String officeName,
+    required String terminalToken,
+  }) =>
+      Session(
+        email: email,
+        name: name,
+        office: office,
+        officeName: officeName,
+        token: token,
+        terminalToken: terminalToken,
+      );
+
   static const empty = Session();
 
   Map<String, dynamic> toJson() => {
@@ -74,9 +105,39 @@ class Session {
       );
 }
 
+/// One of the sites a login manages, offered when a till is signed in by
+/// somebody who runs more than one. See src/sites.js on the server.
+class SiteChoice {
+  const SiteChoice({required this.id, required this.name, this.home = false});
+
+  final int id;
+  final String name;
+
+  /// The login's own site, listed first.
+  final bool home;
+
+  factory SiteChoice.fromJson(Map<String, dynamic> j) => SiteChoice(
+    id: (j['id'] as num).toInt(),
+    name: (j['name'] as String?)?.trim().isNotEmpty ?? false
+        ? (j['name'] as String).trim()
+        : 'Site ${j['id']}',
+    home: j['home'] == true,
+  );
+}
+
+/// Asks the person signing the till in which site it is for. Returns the
+/// chosen site's id, or null if they backed out.
+typedef ChooseSite = Future<int?> Function(List<SiteChoice> sites);
+
 class SignInFailed implements Exception {
-  SignInFailed(this.message);
+  SignInFailed(this.message, {this.licenceKey = false});
   final String message;
+
+  /// The server refused this machine over a licence key — it is unknown, it has
+  /// been withdrawn, or it belongs to another machine. Carried as a flag rather
+  /// than sniffed out of the message, so the sign-in screen can offer the box
+  /// to type a key into without matching on wording that may be reworded.
+  final bool licenceKey;
 
   @override
   String toString() => message;
@@ -112,6 +173,12 @@ class SessionController extends AsyncNotifier<Session> {
     required String apiBase,
     required String email,
     required String password,
+    ChooseSite? chooseSite,
+    int? officeId,
+    /// A licence key typed on the sign-in screen, where the venue has one.
+    /// Overrides whatever this machine had stored, and is kept when the server
+    /// accepts it — so it is typed once per machine and never again.
+    String? licenceKey,
   }) async {
     final http.Response res;
     try {
@@ -126,6 +193,12 @@ class SessionController extends AsyncNotifier<Session> {
               // session. It is what staff PIN sign-on reads the staff list
               // with, long after the session token below has expired.
               'terminal': true,
+              ...await _thisTill(canChoose: chooseSite != null),
+              // A key typed just now beats the stored one: this is how a till
+              // moved to new hardware, or given a replacement key, gets going.
+              if (licenceKey != null && licenceKey.trim().isNotEmpty)
+                'licence_key': licenceKey.trim().toUpperCase(),
+              'office_id': ?officeId,
             }),
           )
           .timeout(const Duration(seconds: 15));
@@ -142,13 +215,188 @@ class SessionController extends AsyncNotifier<Session> {
       throw SignInFailed('That email or password is not correct.');
     }
     if (res.statusCode != 200) {
-      throw SignInFailed((body['error'] as String?) ?? 'Sign-in failed.');
+      // 409 is the venue's till licences all in use; the server's message
+      // names the tills holding them, which is what the manager needs to read.
+      // 403 with `licence_key` is a key this machine may not use.
+      throw SignInFailed(
+        (body['error'] as String?) ?? 'Sign-in failed.',
+        licenceKey: body['licence_key'] == true,
+      );
     }
 
+    // A login that runs more than one site: which one is this till for? Asked,
+    // then the same sign-in again with the answer.
+    if (body['choose_site'] == true && chooseSite != null) {
+      final picked = await chooseSite(_sites(body));
+      if (picked == null) throw SignInFailed('Choose a site to sign this till in to.');
+      return signIn(
+        apiBase: apiBase,
+        email: email,
+        password: password,
+        chooseSite: chooseSite,
+        officeId: picked,
+        // Carried through the second attempt, or the till would be refused for
+        // the very key that was just typed in.
+        licenceKey: licenceKey,
+      );
+    }
+
+    // The catalogue is keyed by the office's contact email, and the terminal
+    // token is what staff PIN sign-on later reads the staff list with. Both are
+    // handled in _adopt, which the Vesopa door uses as well.
+    // Accepted: remember it, so this till never asks for it again.
+    if (licenceKey != null && licenceKey.trim().isNotEmpty) {
+      await writeLicenceKey(licenceKey);
+    }
+    await _adopt(body);
+  }
+
+  /// Ask the back office whether a till may be commissioned with a Vesopa
+  /// account here.
+  ///
+  /// Asked rather than compiled in. A till in a venue is updated through a
+  /// store release that may be weeks behind the server, so a button baked into
+  /// this build would keep offering an option the server had turned off — and
+  /// the flag is the whole rollback plan.
+  static Future<VesopaOption> option(String apiBase) async {
+    try {
+      final res = await http
+          .get(Uri.parse('$apiBase/api/terminal/vesopa/enabled'))
+          .timeout(const Duration(seconds: 8));
+      if (res.statusCode != 200) return const VesopaOption.off();
+      final body = jsonDecode(res.body) as Map<String, dynamic>;
+      if (body['enabled'] != true) return const VesopaOption.off();
+      return VesopaOption(
+        enabled: true,
+        // Absent means false, which is a back office that has not been updated
+        // — and that venue keeps the email and password fields it has always
+        // had rather than being left with a screen it cannot use.
+        only: body['only'] == true,
+        issuer: body['issuer'] as String,
+        clientId: body['clientId'] as String,
+      );
+    } catch (_) {
+      // A till with no signal cannot be commissioned by any route, so there is
+      // nothing to say here beyond hiding a button that would not work.
+      return const VesopaOption.off();
+    }
+  }
+
+  /// Commission this terminal with a Vesopa account.
+  ///
+  /// The till proves who the person is to `auth.vesopa.com` itself, then hands
+  /// the resulting identity token to the back office, which decides what that
+  /// is worth and issues the SAME pair of tokens the password form issues. From
+  /// [Session] downwards nothing can tell which door was used, which is what
+  /// keeps this an addition rather than a second system.
+  Future<void> signInWithVesopa({
+    required String apiBase,
+    required VesopaOption via,
+    void Function(Uri url)? onUrl,
+    ChooseSite? chooseSite,
+  }) async {
+    final idToken = await VesopaSso(issuer: via.issuer, clientId: via.clientId)
+        .authorize(onUrl: onUrl);
+
+    final till = await _thisTill(canChoose: chooseSite != null);
+    var body = await _commission(
+      apiBase,
+      '/api/terminal/vesopa/commission',
+      {'id_token': idToken, ...till},
+    );
+
+    // A login that runs more than one site. The Vesopa token is spent by now,
+    // so the second half goes with the five-minute pass the server handed back.
+    if (body['choose_site'] == true && chooseSite != null) {
+      final picked = await chooseSite(_sites(body));
+      if (picked == null) throw SignInFailed('Choose a site to sign this till in to.');
+      body = await _commission(
+        apiBase,
+        '/api/terminal/vesopa/commission/site',
+        {'pick_token': body['pick_token'], 'office_id': picked, ...till},
+      );
+    }
+
+    await _adopt(body);
+  }
+
+  Future<Map<String, dynamic>> _commission(
+    String apiBase,
+    String path,
+    Map<String, Object?> payload,
+  ) async {
+    final http.Response res;
+    try {
+      res = await http
+          .post(
+            Uri.parse('$apiBase$path'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(payload),
+          )
+          .timeout(const Duration(seconds: 20));
+    } catch (e) {
+      throw SignInFailed(
+        'Signed in with Vesopa, but the till could not reach $apiBase to finish.\n'
+        'Check the network and try again.',
+      );
+    }
+
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    if (res.statusCode != 200) {
+      throw SignInFailed((body['error'] as String?) ?? 'The back office refused that sign-in.');
+    }
+    return body;
+  }
+
+  /// What this till says about itself when it is signed in: which machine it
+  /// is (its licence seat is kept against that, so signing the same till in
+  /// again does not use a second licence), and whether it can ask which site.
+  Future<Map<String, Object?>> _thisTill({required bool canChoose}) async {
+    String? name;
+    try {
+      name = await ref.read(terminalIdentityProvider.future);
+    } catch (_) {
+      // A till with no name still gets a seat; the back office shows its id.
+    }
+
+    // What machine this actually is, as a hash. The device id above is a UUID
+    // this install generated, so a copy of the install carries it to a second
+    // machine; the fingerprint is read from the hardware every run and cannot
+    // be carried. Null off Windows and on anything that will not answer, and
+    // null never refuses a sign-in -- see data/hardware_fingerprint.dart.
+    String? fingerprint;
+    try {
+      fingerprint = await HardwareFingerprint.get();
+    } catch (_) {
+      // A till that cannot identify its hardware still signs in. A licence is
+      // not worth being the reason a venue cannot open.
+    }
+
+    return {
+      'device_id': await terminalDeviceId(),
+      'device_name': ?name,
+      // Which app is asking, so the server counts this against the venue's till
+      // licences and not against the kitchen's.
+      'device_kind': 'till',
+      'device_fingerprint': ?fingerprint,
+      'licence_key': ?await readLicenceKey(),
+      if (canChoose) 'site_choice': true,
+    };
+  }
+
+  static List<SiteChoice> _sites(Map<String, dynamic> body) => [
+    for (final s in (body['sites'] as List? ?? const []))
+      SiteChoice.fromJson(s as Map<String, dynamic>),
+  ];
+
+  /// Take a `/api/login`-shaped response and become that session.
+  ///
+  /// Shared by both doors on purpose: the office rule and the terminal token
+  /// are read in ONE place, so the Vesopa route cannot quietly end up with a
+  /// laxer version of either.
+  Future<void> _adopt(Map<String, dynamic> body) async {
     final user = body['user'] as Map<String, dynamic>;
 
-    // The catalogue is keyed by the office's contact email, so a user with no
-    // office has nothing to sell and must not be allowed to commission a till.
     final office = (user['officeEmail'] ?? user['email']) as String?;
     if (office == null) {
       throw SignInFailed('This account is not attached to an office.');
@@ -158,12 +406,8 @@ class SessionController extends AsyncNotifier<Session> {
       email: user['email'] as String?,
       name: user['name'] as String?,
       office: office,
-      // The server has always sent this; the till simply never kept it, which
-      // is why receipts printed the office email as the venue's name.
       officeName: user['officeName'] as String?,
       token: body['token'] as String?,
-      // Absent if this server predates v1.3.1.0. Everything except staff
-      // sign-on works without it, so a missing token is not a failed sign-in.
       terminalToken: body['terminalToken'] as String?,
     );
 
@@ -180,6 +424,56 @@ class SessionController extends AsyncNotifier<Session> {
     state = const AsyncData(Session.empty);
   }
 }
+
+/// Whether the back office will accept a Vesopa account for commissioning, and
+/// what to use if it will.
+class VesopaOption {
+  const VesopaOption({
+    required this.enabled,
+    required this.issuer,
+    required this.clientId,
+    this.only = false,
+  });
+
+  const VesopaOption.off()
+      : enabled = false,
+        only = false,
+        issuer = '',
+        clientId = '';
+
+  final bool enabled;
+
+  /// Whether this is the ONLY way to commission a terminal.
+  ///
+  /// The venue's own decision, answered by the back office rather than built
+  /// in, so turning it off is a flag and a restart rather than a Store
+  /// release — see /api/terminal/vesopa/enabled.
+  ///
+  /// There is no offline argument for keeping the password form here, and it
+  /// is worth saying why: BOTH doors post to the back office. This screen is
+  /// shown once, on first run, to commission a terminal against a venue, and a
+  /// terminal with no network cannot be commissioned by any route. What a till
+  /// does when the broadband drops mid-service is a different question, with a
+  /// different answer — it carries on selling from its local database.
+  final bool only;
+
+  final String issuer;
+  final String clientId;
+}
+
+/// What the back office says about signing in with a Vesopa account.
+///
+/// A provider rather than a call from the page's `initState`, so the two
+/// shapes this screen takes — with the password fields and without — can each
+/// be built in a test by overriding one thing. That was the practical
+/// difference between "the sign-in page is covered" and "somebody will find
+/// out at a venue".
+///
+/// Answers "off" when the back office cannot be reached, which leaves the page
+/// exactly as it was before any of this existed.
+final vesopaOptionProvider = FutureProvider<VesopaOption>(
+  (ref) => SessionController.option(ref.watch(apiBaseProvider)),
+);
 
 final sessionControllerProvider =
     AsyncNotifierProvider<SessionController, Session>(SessionController.new);

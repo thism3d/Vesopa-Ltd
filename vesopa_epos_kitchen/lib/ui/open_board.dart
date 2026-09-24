@@ -22,6 +22,9 @@ class OpenBoard extends ConsumerWidget {
     final board = ref.watch(ticketBoardProvider);
     final session = ref.watch(kitchenSessionProvider).value;
     final profile = session?.screen;
+    // Codes to words, from the venue's own server. An empty map — a screen
+    // that has not reached it yet — draws the codes, which is still readable.
+    final allergens = ref.watch(allergenLabelsProvider).value ?? const {};
 
     if (profile == null) return const SizedBox.shrink();
 
@@ -63,6 +66,7 @@ class OpenBoard extends ConsumerWidget {
           ticket: ticket,
           profile: profile,
           now: board.now,
+          allergenLabels: allergens,
           labelFor: session!.labelFor,
           onBump: () => ref.read(ticketBoardProvider.notifier).bump(ticket),
           // Tap an item to cross it off. Crossing off the last one finishes the

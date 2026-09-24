@@ -26,6 +26,7 @@ import '../data/adverts.dart';
 import '../data/basket_feed.dart';
 import '../data/control.dart';
 import '../data/deep_links.dart';
+import '../data/notifications.dart';
 import '../data/pairing.dart';
 import '../data/screens.dart';
 import '../data/settings.dart';
@@ -62,13 +63,43 @@ bool shouldShowAdverts({
   required String customerQr,
   required int idleSeconds,
   required Duration sinceChange,
+  bool paid = false,
+  int thankYouSeconds = 20,
 }) {
   if (customerQr.isNotEmpty) return false;
+
+  // A finished sale holds for its own time, and it is checked BEFORE the empty
+  // basket below. That order is the fix for the thank-you never appearing: a
+  // paid snapshot that arrived without its items — which is what the till used
+  // to send — reads as `hasSale == false` and was thrown out by the next line
+  // as though nothing had been sold, a fraction of a second after the sale.
+  //
+  // The till now sends the items too, so both halves agree. This stays in this
+  // order anyway: a screen told a sale has been paid for should say so, and
+  // "paid, and I was sent no lines" is still a customer standing at a counter
+  // waiting to be thanked.
+  if (paid) {
+    if (thankYouSeconds <= 0) return false;
+    return sinceChange >= Duration(seconds: thankYouSeconds);
+  }
 
   // Nothing rung up is not a quiet moment in a sale, it is no sale. Adverts
   // take the screen immediately rather than after the countdown.
   if (!hasSale) return true;
 
+  // The idle countdown, for a bill still being rung up.
+  //
+  // Two different questions that used to share one answer. `idleSeconds` asks
+  // "how long does a bill nobody is adding to stay up" — a minute or so,
+  // because the clerk is talking to the customer and the bill is still live.
+  // The paid case asks "how long do the total and the thank-you stay up after
+  // the money has changed hands", which is a customer checking their change
+  // and then walking away: twenty seconds, not forty-five.
+  //
+  // Ringing something up before it expires needs no rule of its own. A new
+  // basket resets the clock this measures and is no longer paid, so the next
+  // customer's items appear at once.
+  //
   // Zero means never: a screen beside a busy bar may want the bill up
   // permanently, and that is an answer rather than a mistake.
   if (idleSeconds <= 0) return false;
@@ -88,6 +119,33 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
 
   Basket _basket = Basket.unknown;
   List<Advert> _adverts = const [];
+
+  /// Windows toasts, off unless BOTH the back office and this machine allow
+  /// them. See `data/notifications.dart` for why a screen facing a queue is
+  /// the one surface that defaults to silence.
+  final _notifications = DisplayNotifications();
+  Timer? _quietWatch;
+
+  /// A second loop, for the folder a venue plays beside a bill. Null whenever
+  /// the same adverts serve both, which is the ordinary setup.
+  AdvertLibrary? _saleLibrary;
+  StreamSubscription<List<Advert>>? _saleAdvertChanges;
+  List<Advert> _saleAdverts = const [];
+  final _saleRotation = AdvertRotation();
+
+  /// Whether the status panel is up, and the timer that takes it away.
+  ///
+  /// A customer display has no menu bar and nothing to press, so the way in has
+  /// to be the screen itself — but a settings cog sitting permanently over the
+  /// adverts is a button a customer will eventually press. Tapping anywhere
+  /// brings the panel up; it goes on its own after the venue's chosen delay.
+  bool _statusShowing = false;
+  Timer? _statusHide;
+
+  /// True when the bars are up because somebody tapped a locked screen. They
+  /// then say the screen is locked and offer nothing, rather than the usual
+  /// way in — see [_revealStatus].
+  bool _lockRefused = false;
 
   /// When the basket last changed in a way the customer would notice. The idle
   /// countdown is measured from here.
@@ -141,6 +199,33 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
       const Duration(seconds: 10),
       (_) => unawaited(_readScreens()),
     );
+
+    // Has the till stopped talking to us?
+    //
+    // The one thing this application knows that nothing else does. The till is
+    // running happily and the adverts are still playing, so the screen LOOKS
+    // like it is working — while a customer at the counter is looking at
+    // something that is no longer their bill. Checked on a slow timer because
+    // the answer changes on the scale of minutes.
+    unawaited(_notifications.init());
+    _quietWatch = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => _checkTheTill(),
+    );
+  }
+
+  void _checkTheTill() {
+    final feed = _feed;
+    if (feed == null) return;
+    _notifications
+      ..allowedByVenue = _basket.notifyAllowed
+      ..allowedHere =
+          ref.read(displaySettingsProvider).value?.notifications ?? false;
+    if (feed.isStale) {
+      unawaited(_notifications.tillWentQuiet(terminal: _basket.terminal));
+    } else {
+      _notifications.tillCameBack();
+    }
   }
 
   Future<void> _readScreens() async {
@@ -173,25 +258,32 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
     _tick?.cancel();
     _findTill?.cancel();
     _screenSweep?.cancel();
+    _quietWatch?.cancel();
     unawaited(_controlChanges?.cancel());
     unawaited(_control?.dispose());
     unawaited(_baskets?.cancel());
     unawaited(_advertChanges?.cancel());
+    unawaited(_saleAdvertChanges?.cancel());
     unawaited(_feed?.dispose());
     unawaited(_library?.dispose());
+    unawaited(_saleLibrary?.dispose());
+    _statusHide?.cancel();
     super.dispose();
   }
 
   /// (Re)build the feed and the advert library for [settings].
   void _rewire(DisplaySettings settings) {
-    final signature = '$_basketPath|${settings.advertFolder}';
+    final signature = '$_basketPath|${settings.advertFolder}'
+        '|${settings.saleAdvertsSameFolder}|${settings.saleAdvertFolder}';
     if (_builtFor == signature) return;
     _builtFor = signature;
 
     unawaited(_baskets?.cancel());
     unawaited(_advertChanges?.cancel());
+    unawaited(_saleAdvertChanges?.cancel());
     unawaited(_feed?.dispose());
     unawaited(_library?.dispose());
+    unawaited(_saleLibrary?.dispose());
 
     final feed = BasketFeed(path: _basketPath);
     _feed = feed;
@@ -214,6 +306,22 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
     });
     library.start();
     _adverts = library.adverts;
+
+    // The second loop, only when the venue has actually asked for one. Playing
+    // the same folder twice would be two file watchers on one directory for no
+    // gain.
+    if (settings.saleAdvertsSameFolder) {
+      _saleLibrary = null;
+      _saleAdverts = const [];
+    } else {
+      final beside = AdvertLibrary(folder: settings.saleAdvertDirectory);
+      _saleLibrary = beside;
+      _saleAdvertChanges = beside.changes.listen((adverts) {
+        if (mounted) setState(() => _saleAdverts = adverts);
+      });
+      beside.start();
+      _saleAdverts = beside.adverts;
+    }
 
     // The till's end of the settings, in the same folder as the basket. Rebuilt
     // with the feed because it is derived from the same path — see
@@ -242,6 +350,7 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
       dwellSeconds: control.dwellSeconds,
       showPrices: control.showPrices,
       thankYou: control.thankYou,
+      thankYouSeconds: control.thankYouSeconds,
       advertVolume: control.advertVolume,
       billOnRight: control.billOnRight,
       billShare: control.billShare,
@@ -251,7 +360,15 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
       customerQrCaption: control.customerQrCaption,
       screenKey: control.screenKey,
       fullScreen: control.fullScreen,
+      childLock: control.childLock,
     );
+
+    // Locking while the bars happen to be up has to take them down, or the
+    // manager who just pressed Lock at the till watches the screen stay open.
+    if (control.childLock && _statusShowing) {
+      _statusHide?.cancel();
+      _statusShowing = false;
+    }
 
     unawaited(ref.read(displaySettingsProvider.notifier).save(next));
 
@@ -269,18 +386,45 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
     }
   }
 
+  /// Put the status panel up, and arrange for it to go again.
+  ///
+  /// Zero seconds means the venue wants it to stay, which is what somebody
+  /// setting a screen up while standing at it wants. Every other value is a
+  /// customer-facing screen, so it takes itself away.
+  void _revealStatus() {
+    final settings = ref.read(displaySettingsProvider).value;
+    _statusHide?.cancel();
+
+    // Locked: say so, briefly, and nothing else. Saying nothing at all would
+    // read as a screen that has frozen, and the person tapping it is usually
+    // staff who need to be told where the switch is.
+    setState(() {
+      _statusShowing = true;
+      _lockRefused = settings?.childLock ?? false;
+    });
+
+    final after = settings?.statusHideAfter;
+    if (after == null) return;
+    _statusHide = Timer(after, () {
+      if (mounted) setState(() => _statusShowing = false);
+    });
+  }
+
   /// Whether the adverts should have the whole screen.
   bool _isIdle(DisplaySettings settings) => shouldShowAdverts(
     hasSale: _basket.hasSale,
     customerQr: settings.customerQr,
     idleSeconds: settings.idleSeconds,
     sinceChange: DateTime.now().difference(_lastChange),
+    paid: _basket.state == 'paid',
+    thankYouSeconds: settings.thankYouSeconds,
   );
 
   @override
   Widget build(BuildContext context) {
     final settings = ref.watch(displaySettingsProvider).value;
     final pairing = ref.watch(pairingProvider).value;
+    final size = MediaQuery.sizeOf(context);
     if (settings == null || pairing == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
@@ -313,6 +457,13 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
       screenKey: settings.screenKey,
       fullScreen: settings.fullScreen,
       advertCount: _adverts.length,
+      childLock: settings.childLock,
+      // What this window is actually running at, which is not the same question
+      // as what its monitor could do. A display left windowed on a 4K panel
+      // reports 1280x720, and that is the number the manager at the till needs
+      // to see before they wonder why the bill looks small.
+      width: size.width.round(),
+      height: size.height.round(),
     );
 
     _rewire(settings);
@@ -323,8 +474,25 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
       dwell: settings.dwell,
       volume: settings.advertVolume,
       fillPanel: settings.fillScreen,
+      fillPanelVideo: settings.fillScreenVideo,
       standingMessage: settings.standingMessage,
     );
+
+    // What plays beside a bill. The same loop unless the venue has chosen a
+    // second folder — and its own rotation either way, so the poster the idle
+    // screen was on is still there when the sale finishes rather than having
+    // been advanced by whatever played next to the bill.
+    final besideTheBill = settings.saleAdvertsSameFolder
+        ? adverts
+        : AdvertPanel(
+            adverts: _saleAdverts,
+            rotation: _saleRotation,
+            dwell: settings.dwell,
+            volume: settings.advertVolume,
+            fillPanel: settings.fillScreen,
+            fillPanelVideo: settings.fillScreenVideo,
+            standingMessage: settings.standingMessage,
+          );
 
     return Scaffold(
       body: Stack(
@@ -353,7 +521,7 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
 
                       final panels = <Widget>[
                         Expanded(flex: billFlex, child: bill),
-                        Expanded(flex: advertFlex, child: adverts),
+                        Expanded(flex: advertFlex, child: besideTheBill),
                       ];
                       if (settings.billOnRight) {
                         panels.insert(0, panels.removeLast());
@@ -390,62 +558,415 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
                   ),
           ),
 
-          // The way back to Settings, on a screen with no menu bar and nothing
-          // else to press. Deliberately small and in a corner a customer does
-          // not look at, and deliberately present: a display that cannot be
-          // reconfigured without a keyboard is one that gets unplugged.
-          Positioned(
-            top: 0,
-            right: 0,
-            child: SafeArea(
-              child: Opacity(
-                opacity: 0.25,
-                child: IconButton(
-                  icon: const Icon(Icons.settings, color: Brand.ink),
-                  tooltip: 'Settings',
-                  onPressed: () => Navigator.of(context).push(
+          // Nothing at all over the adverts until somebody asks for it.
+          //
+          // A customer display has no menu bar, so the way in has to be the
+          // screen itself — but a settings cog sitting permanently in the
+          // corner is a button a customer eventually presses, and a status line
+          // permanently along the bottom is chrome on what is meant to be a
+          // poster. So a tap anywhere brings both up together, and they leave
+          // on their own after the delay the venue chose.
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: _revealStatus,
+              // Absorbs nothing when the panel is up, so the buttons on it are
+              // reachable; the panel itself sits above this in the stack.
+              child: const SizedBox.expand(),
+            ),
+          ),
+
+          // The chrome, in the two places the venue asked for it: the controls
+          // in the top right where a hand reaches without crossing the bill,
+          // and what this screen is connected to along the bottom, out of the
+          // way of both. They arrive and leave together — one tap, one thought
+          // — and neither exists at all until that tap.
+          _Chrome(
+            showing: _statusShowing,
+            top: _DisplayTopBar(
+              locked: _lockRefused,
+              volume: settings.advertVolume,
+              onVolume: (value) {
+                _keepStatusUp();
+                unawaited(
+                  ref
+                      .read(displaySettingsProvider.notifier)
+                      .save(settings.copyWith(advertVolume: value)),
+                );
+              },
+              onSettings: () {
+                _hideStatus();
+                unawaited(
+                  Navigator.of(context).push(
                     MaterialPageRoute<void>(
                       builder: (_) => const SettingsPage(),
                     ),
                   ),
-                ),
-              ),
+                );
+              },
+              onDismiss: _hideStatus,
+            ),
+            bottom: _DisplayStatusBar(
+              pairing: pairing,
+              adverts: _adverts.length,
+              locked: _lockRefused,
+              // Away from the bill, always. Full width, it sat squarely on the
+              // Total — which is the one number a customer is most likely to
+              // have tapped the screen to look at, so the bar was covering the
+              // thing it had just been asked to reveal something about.
+              awayFromBill: settings.billOnRight,
             ),
           ),
-
-          // Said quietly, and only when it is true for long enough to matter.
-          // A till that has been switched off at the end of the night should
-          // not put an error over the adverts.
-          if (_feed?.isStale ?? false)
-            const Positioned(
-              left: 12,
-              bottom: 12,
-              child: _StaleBadge(),
-            ),
         ],
       ),
     );
   }
+
+  /// Take the bars down now.
+  void _hideStatus() {
+    _statusHide?.cancel();
+    setState(() => _statusShowing = false);
+  }
+
+  /// Restart the countdown without redrawing anything.
+  ///
+  /// For a control that is being used: a volume slider that vanished under the
+  /// finger setting it would be the worst version of this feature.
+  void _keepStatusUp() {
+    final after = ref.read(displaySettingsProvider).value?.statusHideAfter;
+    _statusHide?.cancel();
+    if (after == null) return;
+    _statusHide = Timer(after, () {
+      if (mounted) setState(() => _statusShowing = false);
+    });
+  }
 }
 
-class _StaleBadge extends StatelessWidget {
-  const _StaleBadge();
+/// The top and bottom bars, sliding in and out together.
+///
+/// One widget so they cannot disagree about whether they are on screen, and so
+/// the animation is written once. Built even while hidden — an AnimatedSlide of
+/// a widget that does not exist does not animate out, it disappears.
+class _Chrome extends StatelessWidget {
+  const _Chrome({
+    required this.showing,
+    required this.top,
+    required this.bottom,
+  });
+
+  final bool showing;
+  final Widget top;
+  final Widget bottom;
+
+  static const _slide = Duration(milliseconds: 220);
 
   @override
-  Widget build(BuildContext context) => Opacity(
-    opacity: 0.5,
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: Brand.panelSoft,
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: const Text(
-        'Waiting for the till',
-        style: TextStyle(fontSize: 12, color: Brand.inkSoft),
+  Widget build(BuildContext context) => IgnorePointer(
+    // Nothing behind the bars when they are away, so a customer's tap on the
+    // top right corner of an advert reaches the reveal handler underneath
+    // rather than an invisible Settings button.
+    ignoring: !showing,
+    child: AnimatedOpacity(
+      opacity: showing ? 1 : 0,
+      duration: _slide,
+      child: Stack(
+        children: [
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: AnimatedSlide(
+              offset: showing ? Offset.zero : const Offset(0, -1),
+              duration: _slide,
+              curve: Curves.easeOutCubic,
+              child: top,
+            ),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: AnimatedSlide(
+              offset: showing ? Offset.zero : const Offset(0, 1),
+              duration: _slide,
+              curve: Curves.easeOutCubic,
+              child: bottom,
+            ),
+          ),
+        ],
       ),
     ),
   );
+}
+
+/// The controls, in the top right corner.
+///
+/// The corner is the venue's choice and it is the right one. A customer display
+/// is read from the middle outwards — the bill on one side, a photograph on the
+/// other — and the top right is the one part of it nothing important ever
+/// occupies. It is also where a hand already goes: whoever is setting the
+/// screen up is standing beside the till, reaching across the counter.
+///
+/// Volume sits here rather than only in Settings because it is the one thing on
+/// this screen anybody changes twice a day. A function room at lunchtime and
+/// the same room at nine in the evening want different answers, and neither is
+/// worth walking into a settings page for.
+class _DisplayTopBar extends StatefulWidget {
+  const _DisplayTopBar({
+    required this.locked,
+    required this.volume,
+    required this.onVolume,
+    required this.onSettings,
+    required this.onDismiss,
+  });
+
+  /// Somebody has tapped a locked screen. The bar says so and offers nothing.
+  final bool locked;
+
+  final int volume;
+  final ValueChanged<int> onVolume;
+  final VoidCallback onSettings;
+  final VoidCallback onDismiss;
+
+  @override
+  State<_DisplayTopBar> createState() => _DisplayTopBarState();
+}
+
+class _DisplayTopBarState extends State<_DisplayTopBar> {
+  /// Whether the slider is out. Shut to begin with — the icon alone says the
+  /// state, and a slider that is already open is a slider somebody nudges on
+  /// the way to Settings.
+  bool _slider = false;
+
+  IconData get _speaker {
+    if (widget.volume == 0) return Icons.volume_off_rounded;
+    if (widget.volume < 34) return Icons.volume_mute_rounded;
+    if (widget.volume < 67) return Icons.volume_down_rounded;
+    return Icons.volume_up_rounded;
+  }
+
+  @override
+  Widget build(BuildContext context) => SafeArea(
+    bottom: false,
+    child: Padding(
+      padding: const EdgeInsets.all(14),
+      child: Row(
+        // Hard right. The left of this strip is over the bill on a split
+        // screen, and chrome sitting on a customer's prices is chrome in the
+        // wrong place.
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          Material(
+            color: Brand.panelSoft.withValues(alpha: 0.94),
+            borderRadius: BorderRadius.circular(28),
+            elevation: 8,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              child: widget.locked
+                  ? const Padding(
+                      padding: EdgeInsets.fromLTRB(10, 8, 12, 8),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.lock, size: 18, color: Brand.inkSoft),
+                          SizedBox(width: 8),
+                          Text(
+                            'Screen locked',
+                            style: TextStyle(
+                              color: Brand.inkSoft,
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // The slider grows out of the speaker rather than
+                        // living beside it, so the bar stays two icons wide
+                        // until somebody wants it to be more.
+                        AnimatedSize(
+                          duration: const Duration(milliseconds: 180),
+                          curve: Curves.easeOut,
+                          child: _slider
+                              ? SizedBox(
+                                  width: 210,
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Slider(
+                                          value: widget.volume.toDouble(),
+                                          max: 100,
+                                          divisions: 20,
+                                          label: '${widget.volume}%',
+                                          onChanged: (v) =>
+                                              widget.onVolume(v.round()),
+                                        ),
+                                      ),
+                                      SizedBox(
+                                        width: 44,
+                                        child: Text(
+                                          '${widget.volume}%',
+                                          textAlign: TextAlign.center,
+                                          style: const TextStyle(
+                                            color: Brand.lime,
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              : const SizedBox.shrink(),
+                        ),
+                        IconButton(
+                          tooltip: widget.volume == 0
+                              ? 'Silent'
+                              : '${widget.volume}%',
+                          onPressed: () => setState(() => _slider = !_slider),
+                          icon: Icon(
+                            _speaker,
+                            color: widget.volume == 0
+                                ? Brand.inkSoft
+                                : Brand.lime,
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Settings',
+                          onPressed: widget.onSettings,
+                          icon: const Icon(Icons.tune, color: Brand.ink),
+                        ),
+                        IconButton(
+                          tooltip: 'Hide',
+                          onPressed: widget.onDismiss,
+                          icon: const Icon(Icons.close, color: Brand.inkSoft),
+                        ),
+                      ],
+                    ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+/// What this screen is connected to, along the bottom.
+///
+/// CONNECTED MEANS CONNECTED
+///
+/// This bar reports the pairing and nothing else. It used to report whether the
+/// till process had written a heartbeat in the last twenty seconds, and told
+/// two different lies with it: it said "The till is not running" at a screen
+/// that was at that moment drawing that till's bill, and it said it during
+/// every quiet spell in a working service.
+///
+/// The pairing is the honest answer to "what is this screen connected to",
+/// because it is the thing that would have to be undone for the answer to
+/// change. A till that is merely quiet has not disconnected from anything.
+class _DisplayStatusBar extends StatelessWidget {
+  const _DisplayStatusBar({
+    required this.pairing,
+    required this.adverts,
+    required this.locked,
+    required this.awayFromBill,
+  });
+
+  final PairingState pairing;
+  final int adverts;
+  final bool locked;
+
+  /// Which end of the bottom to sit at.
+  ///
+  /// The opposite end from the bill, so the total is never underneath it. True
+  /// puts it at the left, which is where it belongs when the venue has the bill
+  /// on the right.
+  final bool awayFromBill;
+
+  @override
+  Widget build(BuildContext context) {
+    final name =
+        pairing.pairing?.terminalName ?? pairing.till?.terminalName ?? '';
+    final venue = pairing.pairing?.venueName ?? '';
+
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        // Sized to its own content rather than to the screen, so it is a label
+        // in a corner and not a band across the bottom of somebody's bill.
+        child: Row(
+          mainAxisAlignment:
+              awayFromBill ? MainAxisAlignment.start : MainAxisAlignment.end,
+          children: [
+            Flexible(
+              child: Material(
+          color: Brand.panelSoft.withValues(alpha: 0.94),
+          borderRadius: BorderRadius.circular(14),
+          elevation: 8,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            child: Row(
+              // Min, and Flexible rather than Expanded — an Expanded child
+              // takes every pixel the constraint allows, which put the bar
+              // straight back across the whole width and defeated the point of
+              // moving it. It now grows to its text and stops.
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  locked ? Icons.lock : Icons.link,
+                  size: 20,
+                  color: locked ? Brand.inkSoft : Brand.lime,
+                ),
+                const SizedBox(width: 12),
+                Flexible(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        name.isEmpty ? 'Connected' : 'Connected to $name',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Brand.ink,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        [
+                          if (venue.isNotEmpty) venue,
+                          if (adverts == 0)
+                            'No adverts chosen'
+                          else
+                            '$adverts advert${adverts == 1 ? '' : 's'} playing',
+                          if (locked) 'Unlock it from the till',
+                        ].join('  ·  '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Brand.inkSoft,
+                          fontSize: 12.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 /// A screen that has been mounted and switched on and not yet connected.

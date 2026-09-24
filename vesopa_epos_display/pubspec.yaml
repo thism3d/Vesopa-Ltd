@@ -11,7 +11,7 @@ publish_to: 'none'
 # reason the kitchen screen does: the two ship together, and a display and a
 # till on different major versions is a support question nobody can answer over
 # the phone. The build number is this app's own.
-version: 1.6.2+3
+version: 1.6.12+11
 
 environment:
   sdk: ^3.12.2
@@ -31,6 +31,24 @@ dependencies:
   # adverts are in, and how long to wait before going full screen. All local to
   # this device - there is nothing here another machine needs to know.
   shared_preferences: ^2.5.5
+
+  # Hashing the machine's own identifiers into a licence fingerprint, so
+  # what leaves this screen is 64 characters of hex and never the serials
+  # themselves. See lib/data/hardware_fingerprint.dart.
+  crypto: ^3.0.6
+
+  # Talking to the back office: fetching what this display may sign in
+  # with, and commissioning it. The display had no HTTP of its own until
+  # it gained a first screen -- it was paired by a till and nothing else.
+  http: ^1.2.2
+
+  # Choosing the advert folder by pointing at it.
+  #
+  # A manager setting a screen up should not be typing a path, and asking them
+  # to means the one they type is the one that has a space in it. The till
+  # already uses this package for the same job, so the two applications ask
+  # Windows for a folder in the same way.
+  file_selector: ^1.0.3
 
   # Money and clocks, formatted the way the till formats them.
   intl: ^0.20.3
@@ -82,6 +100,7 @@ dependencies:
   media_kit: ^1.2.6
   media_kit_video: ^2.0.1
   media_kit_libs_windows_video: ^1.0.11
+  local_notifier: ^0.1.6
 
 dev_dependencies:
   flutter_test:
@@ -120,7 +139,7 @@ msix_config:
 
   # Four parts, and the last must be 0 — the Store reserves the revision field
   # and rejects anything else. Tracks `version:` at the top of this file.
-  msix_version: 1.6.2.0
+  msix_version: 1.6.12.0
 
   logo_path: assets/brand/512x512.png
 
@@ -152,6 +171,21 @@ msix_config:
   # by the packer and rejected by certification, and that is not a thing to
   # leave resting on a default. The till pins it for the same reason.
   windows_build_args: --release
+
+  # WHERE THE PACKAGE LANDS.
+  #
+  # Pinned for the same reason the till pins it. Without these two, msix writes
+  # to build\windows\x64\runner\Release\ — the folder it wipes of every *.msix
+  # at the start of the next run — under a name identical for every version ever
+  # built. Nothing on the file says whether it is 1.6.2.0 or 1.6.3.0, and that
+  # is exactly how a stale package reaches Partner Center and is answered with
+  # "Multiple uploaded files contain the same package".
+  #
+  # The version is deliberately not in the filename: a filename goes stale, the
+  # Identity/Version in the manifest cannot, and that is the one Partner Center
+  # reads. tool/build-store-msix.ps1 prints it at the end of every build.
+  output_path: build/store
+  output_name: vesopa-display-store
 
   # The Store signs the package, so no local certificate is used or needed.
   store: true

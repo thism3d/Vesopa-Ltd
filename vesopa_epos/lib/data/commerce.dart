@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'customer_repository.dart' show parseMembershipDay;
+
 /// Money the till can take, beyond cash and card.
 ///
 /// A gift card and a deposit are *held* money — the venue already has it, so
@@ -23,7 +25,7 @@ enum TenderKind {
         TenderKind.cash => 'Cash',
         TenderKind.card => 'Card',
         TenderKind.manualCard => 'Manual card',
-        TenderKind.giftCard => 'Gift card',
+        TenderKind.giftCard => 'Gift Card',
         TenderKind.voucher => 'Voucher',
         TenderKind.deposit => 'Deposit',
         TenderKind.points => 'Points',
@@ -254,6 +256,11 @@ class GiftCard {
     this.kind = 'smart',
     this.expired = false,
     this.recipientName,
+    this.availableMinor,
+    this.label,
+    this.notYet = false,
+    this.reason,
+    this.serverRedeemable,
   });
 
   final String id;
@@ -264,7 +271,31 @@ class GiftCard {
   final bool expired;
   final String? recipientName;
 
-  bool get redeemable => status == 'active' && !expired && balanceMinor > 0;
+  /// What another open bill has not already claimed. A till offers this, not
+  /// the balance, so two tills cannot both promise the same money. Null from a
+  /// back office too old to hold money, where the balance is all there is.
+  final int? availableMinor;
+
+  /// What the voucher is FOR, when it is for one thing: "Sunday lunch for
+  /// two". Shown beside the balance so the clerk rings up the right item.
+  final String? label;
+
+  /// Bought for a day that has not come yet, or held back after a large
+  /// online purchase -- the server says why in [reason].
+  final bool notYet;
+
+  /// The server's own words for why the card cannot be spent now.
+  final String? reason;
+
+  /// The server's verdict, when it gives one. It knows about holds and waiting
+  /// periods; the fallback below does not.
+  final bool? serverRedeemable;
+
+  /// What can be taken off this card right now.
+  int get spendableMinor => availableMinor ?? balanceMinor;
+
+  bool get redeemable =>
+      serverRedeemable ?? (status == 'active' && !expired && balanceMinor > 0);
 
   factory GiftCard.fromJson(Map<String, dynamic> j) => GiftCard(
         id: j['id'] as String? ?? '',
@@ -274,7 +305,54 @@ class GiftCard {
         kind: j['kind'] as String? ?? 'smart',
         expired: j['expired'] == true,
         recipientName: j['recipient_name'] as String?,
+        availableMinor: (j['available_minor'] as num?)?.toInt(),
+        label: switch (j['label']) {
+          final String s when s.trim().isNotEmpty => s.trim(),
+          _ => null,
+        },
+        notYet: j['not_yet'] == true,
+        reason: j['reason'] as String?,
+        serverRedeemable: j['redeemable'] is bool ? j['redeemable'] as bool : null,
       );
+}
+
+/// Money reserved on a gift card for a bill that is still open.
+///
+/// Tendering a card used to spend it there and then, so Undo took the payment
+/// off the till and left the money off the card. Now the card is HELD at
+/// tender, SPENT (captured) when the sale is recorded, and GIVEN BACK
+/// (released) on Undo or when the bill is left unpaid. A hold the till forgets
+/// about lapses on its own after an hour.
+class GiftCardHold {
+  const GiftCardHold({
+    required this.holdId,
+    required this.amountMinor,
+    required this.code,
+    this.label,
+    this.availableAfterMinor,
+  });
+
+  final String holdId;
+  final int amountMinor;
+  final String code;
+  final String? label;
+  final int? availableAfterMinor;
+
+  factory GiftCardHold.fromJson(Map<String, dynamic> j, String code) {
+    final card = (j['card'] as Map?)?.cast<String, dynamic>() ?? const {};
+    return GiftCardHold(
+      holdId: j['hold_id'] as String? ?? '',
+      amountMinor: (j['amount_minor'] as num?)?.toInt() ?? 0,
+      code: card['code'] as String? ?? code,
+      label: card['label'] as String?,
+      availableAfterMinor: (card['available_minor'] as num?)?.toInt(),
+    );
+  }
+}
+
+/// The back office predates holds: spend the card the old way instead.
+class HoldsUnsupported implements Exception {
+  const HoldsUnsupported();
 }
 
 /// A deposit held against a booking.
@@ -367,6 +445,12 @@ class LoyaltyCustomer {
     this.pointValueMinor = 1,
     this.pointsPerPound = 1,
     this.minSpendMinor = 0,
+    this.membershipExpiry,
+    this.photoUrl,
+    this.membershipTermMonths = 12,
+    this.membershipFeeMinor = 0,
+    this.membershipPlu,
+    this.membershipRenewalDate,
   });
 
   final String id;
@@ -403,6 +487,59 @@ class LoyaltyCustomer {
 
   /// Spend below this earns nothing.
   final int minSpendMinor;
+
+  /// The last day this member's card works, or null for a member with no
+  /// membership — an ordinary points customer, who never expires.
+  final DateTime? membershipExpiry;
+
+  /// A photograph of the member, as a path under the back office.
+  ///
+  /// "Ability to upload a photo of a customer that would display on the till
+  /// when scanned to confirm it's the right person." A membership card is a
+  /// bearer token: without a face, the only check a venue has at the counter is
+  /// whether the person holding it knows the name on it.
+  final String? photoUrl;
+
+  /// How long a renewal runs for, and what it costs — the venue's settings,
+  /// carried on the member so a swipe produces one lookup rather than two.
+  final int membershipTermMonths;
+  final int membershipFeeMinor;
+
+  /// The product a renewal is rung up as, or null to ring a plain line.
+  ///
+  /// Retired in favour of the `Renews membership` flag on the product itself,
+  /// and kept because a till may be talking to a back office that has not been
+  /// updated yet. See `data/membership.dart`.
+  final int? membershipPlu;
+
+  /// The night the venue's membership season ends, or null for a venue that
+  /// runs rolling months instead.
+  ///
+  /// SHOWN, NOT APPLIED. The till says "renews to 31 August 2027" so the clerk
+  /// can tell the member what they are buying; the server works out the
+  /// authoritative date when the renewal is posted. Two tills and a back
+  /// office would otherwise each answer from their own clock, and a till's
+  /// clock is a thing that drifts.
+  final DateTime? membershipRenewalDate;
+
+  /// Whether the card still works, as of the till's own clock.
+  ///
+  /// The expiry day itself counts: a card that says 31 March works all of the
+  /// 31st. Decided against the alternative deliberately — a member told at the
+  /// counter that their card ran out today, on the day it says, is an argument
+  /// no clerk should have to have.
+  ///
+  /// A member with no expiry is not expired. Points customers and members share
+  /// this table, and null means "not a membership scheme" rather than "expired
+  /// at the beginning of time".
+  bool get membershipExpired {
+    final expiry = membershipExpiry;
+    if (expiry == null) return false;
+    final now = DateTime.now();
+    return expiry.isBefore(DateTime(now.year, now.month, now.day));
+  }
+
+  bool get isMember => membershipExpiry != null;
 
   int get _step => redeemStepPoints > 0 ? redeemStepPoints : 1;
 
@@ -482,6 +619,26 @@ class LoyaltyCustomer {
       pointValueMinor: (settings['point_value_minor'] as num?)?.toInt() ?? 1,
       pointsPerPound: (settings['points_per_pound'] as num?)?.toInt() ?? 1,
       minSpendMinor: (settings['min_spend_minor'] as num?)?.toInt() ?? 0,
+      // The server sends a DATE, which arrives either as `2027-03-31` from a
+      // DATE_FORMAT or as a full ISO timestamp from a raw column, depending on
+      // which route answered. Both parse; anything else is treated as no
+      // membership rather than as an expired one, because guessing wrong in
+      // that direction turns a member away at the counter.
+      // Through the shared parser, so a swiped member and a picked one agree
+      // about which day a card runs out. It reads the day and rebuilds it as
+      // local midnight -- see parseMembershipDay for the summer-time trap.
+      membershipExpiry: parseMembershipDay(j['membership_expiry']),
+      photoUrl: switch (j['photo_url']) {
+        final String s when s.trim().isNotEmpty => s,
+        _ => null,
+      },
+      membershipRenewalDate:
+          parseMembershipDay((j['settings'] as Map<String, dynamic>?)?['membership_renewal_date']),
+      membershipTermMonths:
+          (settings['membership_term_months'] as num?)?.toInt() ?? 12,
+      membershipFeeMinor:
+          (settings['membership_fee_minor'] as num?)?.toInt() ?? 0,
+      membershipPlu: (settings['membership_plu'] as num?)?.toInt(),
     );
   }
 }
@@ -497,14 +654,28 @@ class CommerceRepository {
   CommerceRepository({
     required this.apiBase,
     required this.office,
+    this.terminalToken,
     http.Client? client,
   }) : _client = client ?? http.Client();
 
   final String apiBase;
   final String office;
+
+  /// The till's own signed token. Sent on every call here, so the back office
+  /// knows the request comes from one of this venue's tills and not from
+  /// anybody who knows the venue's email address and a card code. A till
+  /// without one (signed in before tokens existed) still works: the server
+  /// counts those calls until every till sends it.
+  final String? terminalToken;
   final http.Client _client;
 
   static const _timeout = Duration(seconds: 10);
+
+  Map<String, String> _headers({bool json = false}) => {
+        if (json) 'Content-Type': 'application/json',
+        if ((terminalToken ?? '').isNotEmpty)
+          'Authorization': 'Bearer $terminalToken',
+      };
 
   TenderSettings? _tender;
   List<Promotion>? _promotions;
@@ -517,7 +688,8 @@ class CommerceRepository {
   Future<TenderSettings> loadTenderSettings() async {
     try {
       final res = await _client
-          .get(Uri.parse('$apiBase/api/tender-settings/public?$_officeParam'))
+          .get(Uri.parse('$apiBase/api/tender-settings/public?$_officeParam'),
+              headers: _headers())
           .timeout(_timeout);
       if (res.statusCode != 200) return tenderSettings;
       return _tender = TenderSettings.fromJson(
@@ -530,7 +702,8 @@ class CommerceRepository {
   Future<List<Promotion>> loadPromotions() async {
     try {
       final res = await _client
-          .get(Uri.parse('$apiBase/api/promotions/public?$_officeParam'))
+          .get(Uri.parse('$apiBase/api/promotions/public?$_officeParam'),
+              headers: _headers())
           .timeout(_timeout);
       if (res.statusCode != 200) return promotions;
       return _promotions = (jsonDecode(res.body) as List)
@@ -547,7 +720,8 @@ class CommerceRepository {
   Future<GiftCard> giftCard(String code) async {
     final res = await _client
         .get(Uri.parse(
-            '$apiBase/api/gift-cards/lookup?$_officeParam&code=${Uri.encodeComponent(code)}'))
+            '$apiBase/api/gift-cards/lookup?$_officeParam&code=${Uri.encodeComponent(code)}'),
+            headers: _headers())
         .timeout(_timeout);
     final body = jsonDecode(res.body) as Map<String, dynamic>;
     if (res.statusCode != 200) {
@@ -565,7 +739,7 @@ class CommerceRepository {
     final res = await _client
         .post(
           Uri.parse('$apiBase/api/gift-cards/redeem'),
-          headers: const {'Content-Type': 'application/json'},
+          headers: _headers(json: true),
           body: jsonEncode({
             'office': office,
             'code': code,
@@ -582,10 +756,128 @@ class CommerceRepository {
     return GiftCard.fromJson(body);
   }
 
+  /// A JSON object from [res], or null when the body is not one -- which is
+  /// how a back office without a route answers (an HTML "Cannot POST").
+  static Map<String, dynamic>? _json(http.Response res) {
+    try {
+      final v = jsonDecode(res.body);
+      return v is Map<String, dynamic> ? v : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Reserve [amountMinor] on a card for the bill [orderId]. Moves no money.
+  ///
+  /// Throws [HoldsUnsupported] when the back office has no such route, so the
+  /// caller can spend the card the old way; [CommerceException] when the card
+  /// is refused, in the server's own words.
+  Future<GiftCardHold> holdGiftCard({
+    required String code,
+    required int amountMinor,
+    required String orderId,
+    String? clerkName,
+  }) async {
+    final res = await _client
+        .post(
+          Uri.parse('$apiBase/api/gift-cards/hold'),
+          headers: _headers(json: true),
+          body: jsonEncode({
+            'office': office,
+            'code': code,
+            'amount_minor': amountMinor,
+            'order_id': orderId,
+            'clerk_name': clerkName,
+          }),
+        )
+        .timeout(_timeout);
+    final body = _json(res);
+    if (res.statusCode == 404 && body == null) throw const HoldsUnsupported();
+    if (res.statusCode != 200 || body == null) {
+      throw CommerceException(body?['error'] as String? ?? 'Could not hold that card');
+    }
+    return GiftCardHold.fromJson(body, code);
+  }
+
+  /// Spend what a hold reserved. Safe to send twice: the second answers as the
+  /// first did, so a retry after a dropped connection never spends twice.
+  Future<void> captureGiftCard({required String holdId, required String orderId}) async {
+    final res = await _client
+        .post(
+          Uri.parse('$apiBase/api/gift-cards/capture'),
+          headers: _headers(json: true),
+          body: jsonEncode({'office': office, 'hold_id': holdId, 'order_id': orderId}),
+        )
+        .timeout(_timeout);
+    final body = _json(res);
+    if (res.statusCode != 200 || body?['captured'] != true) {
+      throw CommerceException(body?['error'] as String? ?? 'Could not spend the gift card');
+    }
+  }
+
+  /// Give a hold back. True when it was still held; false when there was
+  /// nothing to give back -- including when it had already been spent.
+  Future<bool> releaseGiftCard(String holdId) async {
+    final res = await _client
+        .post(
+          Uri.parse('$apiBase/api/gift-cards/release'),
+          headers: _headers(json: true),
+          body: jsonEncode({'office': office, 'hold_id': holdId}),
+        )
+        .timeout(_timeout);
+    final body = _json(res);
+    if (res.statusCode != 200 || body == null) {
+      throw CommerceException(body?['error'] as String? ?? 'Could not give the card back');
+    }
+    return body['released'] == true;
+  }
+
+  /// Put money back on the gift card(s) that paid for a finished sale.
+  ///
+  /// By the sale alone: a receipt records that a gift card paid, not which
+  /// one, and the server finds the cards from the sale. Never more than they
+  /// paid for it, however often it is asked. Returns how much went back, and
+  /// onto which cards.
+  Future<({int reversedMinor, List<String> codes})> reverseGiftCards({
+    required String orderId,
+    required int amountMinor,
+    String? clerkName,
+    String? note,
+  }) async {
+    final res = await _client
+        .post(
+          Uri.parse('$apiBase/api/gift-cards/reverse'),
+          headers: _headers(json: true),
+          body: jsonEncode({
+            'office': office,
+            'order_id': orderId,
+            'amount_minor': amountMinor,
+            'clerk_name': clerkName,
+            'note': ?note,
+          }),
+        )
+        .timeout(_timeout);
+    final body = _json(res);
+    if (res.statusCode != 200 || body == null) {
+      throw CommerceException(
+          body?['error'] as String? ?? 'Could not put the money back on the card');
+    }
+    final cards = ((body['cards'] as List?) ?? const [])
+        .cast<Map<String, dynamic>>()
+        .map((c) => c['code'] as String? ?? '')
+        .where((c) => c.isNotEmpty)
+        .toList();
+    return (
+      reversedMinor: (body['reversed_minor'] as num?)?.toInt() ?? 0,
+      codes: cards,
+    );
+  }
+
   Future<Deposit> deposit(String reference) async {
     final res = await _client
         .get(Uri.parse(
-            '$apiBase/api/deposits/lookup?$_officeParam&reference=${Uri.encodeComponent(reference)}'))
+            '$apiBase/api/deposits/lookup?$_officeParam&reference=${Uri.encodeComponent(reference)}'),
+            headers: _headers())
         .timeout(_timeout);
     final body = jsonDecode(res.body) as Map<String, dynamic>;
     if (res.statusCode != 200) {
@@ -602,7 +894,7 @@ class CommerceRepository {
     final res = await _client
         .post(
           Uri.parse('$apiBase/api/deposits/redeem'),
-          headers: const {'Content-Type': 'application/json'},
+          headers: _headers(json: true),
           body: jsonEncode({
             'office': office,
             'reference': reference,
@@ -625,7 +917,8 @@ class CommerceRepository {
     final res = await _client
         .get(Uri.parse(
             '$apiBase/api/vouchers/validate?$_officeParam'
-            '&code=${Uri.encodeComponent(code)}&subtotal_minor=$subtotalMinor'))
+            '&code=${Uri.encodeComponent(code)}&subtotal_minor=$subtotalMinor'),
+            headers: _headers())
         .timeout(_timeout);
     final body = jsonDecode(res.body) as Map<String, dynamic>;
     if (res.statusCode != 200) {
@@ -638,7 +931,7 @@ class CommerceRepository {
     await _client
         .post(
           Uri.parse('$apiBase/api/vouchers/redeem'),
-          headers: const {'Content-Type': 'application/json'},
+          headers: _headers(json: true),
           body: jsonEncode({'office': office, 'code': code}),
         )
         .timeout(_timeout);
@@ -654,7 +947,8 @@ class CommerceRepository {
     final res = await _client
         .get(Uri.parse(
             '$apiBase/api/loyalty/search?$_officeParam'
-            '&q=${Uri.encodeComponent(query)}'))
+            '&q=${Uri.encodeComponent(query)}'),
+            headers: _headers())
         .timeout(_timeout);
     if (res.statusCode != 200) return const [];
     return (jsonDecode(res.body) as List)
@@ -666,7 +960,8 @@ class CommerceRepository {
   Future<LoyaltyCustomer> loyaltyByPhone(String phone) async {
     final res = await _client
         .get(Uri.parse(
-            '$apiBase/api/loyalty/customer?$_officeParam&phone=${Uri.encodeComponent(phone)}'))
+            '$apiBase/api/loyalty/customer?$_officeParam&phone=${Uri.encodeComponent(phone)}'),
+            headers: _headers())
         .timeout(_timeout);
     final body = jsonDecode(res.body) as Map<String, dynamic>;
     if (res.statusCode != 200) {
@@ -697,6 +992,7 @@ class CommerceRepository {
             '$apiBase/api/loyalty/card?$_officeParam'
             '&number=${Uri.encodeComponent(cardNumber)}',
           ),
+          headers: _headers(),
         )
         .timeout(_timeout);
 
@@ -711,6 +1007,73 @@ class CommerceRepository {
     return LoyaltyCustomer.fromJson(body);
   }
 
+  /// The venue's membership settings, cached for the life of the till session.
+  ///
+  /// Needed at settle time, when there may be no member on screen to read them
+  /// off: the bill knows it carries a renewal line, and this is what says which
+  /// PLU that line would have been rung under. Cached because it is the same
+  /// three numbers all day and the settle path is the worst moment to add a
+  /// round trip to.
+  ///
+  /// Answers the defaults when the server cannot be reached. A till that
+  /// refused to settle a sale because it could not read a setting would be a
+  /// till that stops selling when the broadband does.
+  Future<({int termMonths, int feeMinor, int? plu, DateTime? renewalDate})>
+      membershipSettings() async {
+    if (_membership != null) return _membership!;
+    try {
+      final res = await _client
+          .get(Uri.parse('$apiBase/api/loyalty/public?$_officeParam'),
+              headers: _headers())
+          .timeout(_timeout);
+      if (res.statusCode == 200) {
+        final j = jsonDecode(res.body) as Map<String, dynamic>;
+        _membership = (
+          termMonths: (j['membership_term_months'] as num?)?.toInt() ?? 12,
+          feeMinor: (j['membership_fee_minor'] as num?)?.toInt() ?? 0,
+          plu: (j['membership_plu'] as num?)?.toInt(),
+          // The season, for what the till SAYS a renewal buys. The server
+          // decides the date that is actually written -- see /loyalty/renew.
+          renewalDate: parseMembershipDay(j['membership_renewal_date']),
+        );
+        return _membership!;
+      }
+    } catch (_) {
+      // Falls through to the defaults below.
+    }
+    return (termMonths: 12, feeMinor: 0, plu: null, renewalDate: null);
+  }
+
+  ({int termMonths, int feeMinor, int? plu, DateTime? renewalDate})? _membership;
+
+  /// Renew a membership, and say what it now runs to.
+  ///
+  /// The date is computed by the server, not here. Two tills and a back office
+  /// would otherwise each add a term to whatever they last synced, on whatever
+  /// their own clock said, and a member would end up with a different expiry
+  /// depending on which terminal took the money.
+  ///
+  /// Not cached and not queued, like every other write in this class: a
+  /// renewal is a change to what somebody has paid for, and a till that says
+  /// "renewed" on a request that never arrived has told a customer something
+  /// untrue.
+  Future<LoyaltyCustomer> renewMembership(String customerId) async {
+    final res = await _client
+        .post(
+          Uri.parse('$apiBase/api/loyalty/renew'),
+          headers: _headers(json: true),
+          body: jsonEncode({'office': office, 'customer_id': customerId}),
+        )
+        .timeout(_timeout);
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    if (res.statusCode != 200) {
+      throw CommerceException(
+        body['error'] as String? ?? 'Could not renew that membership',
+      );
+    }
+    return LoyaltyCustomer.fromJson(body);
+  }
+
   Future<LoyaltyCustomer> enrol({
     required String phone,
     required String name,
@@ -719,7 +1082,7 @@ class CommerceRepository {
     final res = await _client
         .post(
           Uri.parse('$apiBase/api/loyalty/customer'),
-          headers: const {'Content-Type': 'application/json'},
+          headers: _headers(json: true),
           body: jsonEncode({
             'office': office,
             'phone': phone,
@@ -748,7 +1111,7 @@ class CommerceRepository {
     final res = await _client
         .post(
           Uri.parse('$apiBase/api/loyalty/points'),
-          headers: const {'Content-Type': 'application/json'},
+          headers: _headers(json: true),
           body: jsonEncode({
             'office': office,
             'customer_id': customerId,

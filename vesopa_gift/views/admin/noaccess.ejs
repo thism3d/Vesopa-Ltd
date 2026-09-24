@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>No venue yet · Vesopa Gift</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="<%= asset('/img/icon.svg') %>" type="image/svg+xml">
+<link rel="stylesheet" href="<%= asset('/css/admin.css') %>">
+<script src="<%= asset('/js/theme.js') %>"></script>
+</head>
+<body>
+<%- include('../_theme') %>
+<div class="signin">
+  <div class="form-side">
+    <div class="form-box">
+      <div class="brand"><%- include('_icon', { size: 44 }) %><div><strong>Vesopa Gift</strong><span class="small muted">Vouchers and tickets</span></div></div>
+      <h2><%= heading %></h2>
+      <p class="muted"><%= body %></p>
+      <form method="post" action="/admin/signout"><input type="hidden" name="_csrf" value="<%= locals.session ? session.csrf : '' %>"><button class="btn ghost" type="submit">Sign out</button></form>
+    </div>
+  </div>
+  <div class="stage" aria-hidden="true"></div>
+</div>
+</body>
+</html>

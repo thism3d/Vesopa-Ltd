@@ -1,0 +1,25 @@
+#!/bin/bash
+# info: prepare a Hestia user to run Node.js apps under their own pm2
+# options: USER
+#
+# Hestia creates user homes owned by root:root (mode 751), so the user cannot
+# create ~/.pm2 themselves. Root creates it and hands it over, which is what
+# lets `pm2` work for the customer over SSH with no PM2_HOME juggling.
+set -o pipefail
+user="${1:-}"
+[[ -n "$user" ]] || { echo "usage: v-init-nodejs-user USER" >&2; exit 1; }
+id "$user" &>/dev/null || { echo "ERROR: no such user: $user" >&2; exit 1; }
+
+HOME_DIR=$(getent passwd "$user" | cut -d: -f6)
+[[ -d "$HOME_DIR" ]] || { echo "ERROR: no home directory for $user" >&2; exit 1; }
+
+install -d -o "$user" -g "$user" -m 700 "$HOME_DIR/.pm2"
+install -d -o "$user" -g "$user" -m 700 "$HOME_DIR/.pm2/logs" "$HOME_DIR/.pm2/pids"
+chown -R "$user:$user" "$HOME_DIR/.pm2"
+
+# npm/node caches, same reason.
+install -d -o "$user" -g "$user" -m 755 "$HOME_DIR/.npm" "$HOME_DIR/.cache" 2>/dev/null || true
+chown -R "$user:$user" "$HOME_DIR/.npm" 2>/dev/null || true
+
+systemctl enable "pm2-hestia@$user" >/dev/null 2>&1
+echo "  pm2 home  $HOME_DIR/.pm2 (owner $user)"

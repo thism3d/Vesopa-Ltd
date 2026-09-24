@@ -1,0 +1,40 @@
+<%- include('_head') %>
+
+<div class="bar"><div class="narrow">
+  <span class="vg-mark" aria-hidden="true"><svg width="20" height="14" viewBox="0 0 100 70"><path fill="#a5c715" d="M0,0 L22.7,0 L50.7,49 L77.3,0 L100,0 L62,70 L40,70 Z"/><path fill="#111111" d="M58.3,35 L81,35 L62,70 L40,70 L50.7,49 Z"/></svg></span>
+  <span class="name">Vesopa Gift</span>
+</div></div>
+
+<main class="narrow">
+  <div class="acct-hero">
+    <svg class="acct-art" width="120" height="120" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="8" width="18" height="13" rx="2"/><path d="M12 8v13M3 12h18M12 8c-1.5-3-5-4-5-1.5S10 8 12 8zM12 8c1.5-3 5-4 5-1.5S14 8 12 8z"/></svg>
+    <h1 class="serif">Your vouchers, in one place</h1>
+    <p class="muted pretty">Everything you have bought or been given from any venue: what is left on each, your tickets, a copy sent again, and Add to Wallet.</p>
+  </div>
+  <% if (locals.error) { %><div class="group"><div class="error-box" role="alert"><%= error %></div></div><% } %>
+  <div class="group">
+    <% if (ready && locals.last) { %>
+    <a class="btn primary block sso sso-as" href="/account/start?to=<%= encodeURIComponent(returnTo) %>">
+      <span class="sso-face" aria-hidden="true"><%= (last.name || last.email).trim().charAt(0).toUpperCase() %></span>
+      <span class="sso-lines"><span>Continue as <%= last.name || last.email %></span><small><%= last.email %></small></span>
+    </a>
+    <a class="sso-other" href="/account/start?switch=1&to=<%= encodeURIComponent(returnTo) %>">Use another account</a>
+    <% } else if (ready) { %>
+    <a class="btn primary block sso" href="/account/start?to=<%= encodeURIComponent(returnTo) %>">
+      <svg width="18" height="13" viewBox="0 0 100 70" aria-hidden="true"><path fill="currentColor" d="M0,0 L22.7,0 L50.7,49 L77.3,0 L100,0 L62,70 L40,70 Z"/></svg>
+      Continue with Vesopa
+    </a>
+    <p class="small muted center">Your Vesopa account, the same one as everywhere else. New here? It makes one for you with an emailed code.</p>
+    <% } else { %>
+    <div class="error-box">Signing in is not switched on for this shop yet.</div>
+    <% } %>
+  </div>
+  <div class="how">
+    <h3>How it finds them</h3>
+    <div class="step"><span class="num">1</span><p><strong>By your email.</strong> Vouchers bought with, or sent to, the address on your Vesopa account.</p></div>
+    <div class="step"><span class="num">2</span><p><strong>Live balances.</strong> What is left on each, straight from the venue’s tills.</p></div>
+    <div class="step"><span class="num">3</span><p><strong>Never lost.</strong> Send yourself a copy, or add it to your phone’s wallet.</p></div>
+  </div>
+</main>
+
+<%- include('_foot') %>

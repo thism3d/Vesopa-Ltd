@@ -59,9 +59,17 @@ function check(name, fn) {
  */
 function fakePool(script = []) {
   const written = [];
+  // MySQL hands back an auto-increment id for every INSERT, and the import
+  // relies on it: a second row for the same product has to update the row the
+  // first row just created, which it can only do by id. Answering INSERTs with
+  // an empty result — as this stood in for a while — made every such update
+  // target `id = 0`, which is a row that cannot exist, so the test suite could
+  // not see the writes going nowhere.
+  let nextInsertId = 1000;
   const answer = (sql, params) => {
     const flat = sql.replace(/\s+/g, ' ').trim();
     if (/^(INSERT|UPDATE|DELETE)/i.test(flat)) written.push({ sql: flat, params });
+    if (/^INSERT/i.test(flat)) return [{ insertId: nextInsertId++, affectedRows: 1 }, []];
     for (const [pattern, rows] of script) {
       if (flat.includes(pattern)) return [rows, []];
     }
@@ -433,6 +441,123 @@ check('a blank VAT and On receipt take the sensible default', async () => {
     }
   });
 
+  route('a row the file lists twice is not called an update', async () => {
+    // REPORTED FROM A BRAND-NEW VENUE.
+    //
+    // "Products — 510 new, 17 to update", in a catalogue with nothing in it.
+    // Checked against the live database at the time: that venue had zero
+    // products, so every one of the seventeen was a row the spreadsheet listed
+    // twice.
+    //
+    // The cause is a deliberate piece of behaviour saying the wrong thing. A
+    // product created earlier in the pass is put into the lookup maps so that a
+    // later row with the same PLU updates it rather than inserting a duplicate
+    // the till cannot reach — which is right, and is what somebody correcting a
+    // price halfway down a sheet means. It was then counted as an update, and
+    // "17 to update" tells a manager their empty venue already holds seventeen
+    // products.
+    const pool = fakePool([['FROM bo_products', []]]);
+    const server = await listen(appWith(pool));
+    try {
+      const file = await workbookOf({
+        [SHEET_PRODUCTS]: [
+          headersOf(SHEET_PRODUCTS),
+          [10, 'Cola', 'Drink', '', 2.2],
+          [11, 'Lemonade', 'Drink', '', 2.2],
+          // The same PLU again, at a corrected price.
+          [10, 'Cola', 'Drink', '', 2.5],
+        ],
+      });
+      const res = await send(server, '/api/import/catalogue', file);
+      const products = res.body.summary.products;
+
+      assert.strictEqual(products.created, 2);
+      assert.strictEqual(
+        products.updated,
+        0,
+        'an empty catalogue can have nothing to update'
+      );
+      assert.strictEqual(products.repeated, 1, 'the repeat was not counted');
+    } finally {
+      server.close();
+    }
+  });
+
+  route('a product that really is in the catalogue is still an update', async () => {
+    // The other half, so the fix above cannot have been made by calling every
+    // match a repeat.
+    const pool = fakePool([
+      [
+        'FROM bo_products',
+        [{ id: 3, pluid: 10, product_name: 'Cola', department_name: 'Drink' }],
+      ],
+    ]);
+    const server = await listen(appWith(pool));
+    try {
+      const file = await workbookOf({
+        [SHEET_PRODUCTS]: [
+          headersOf(SHEET_PRODUCTS),
+          [10, 'Cola', 'Drink', '', 2.5],
+        ],
+      });
+      const res = await send(server, '/api/import/catalogue', file);
+      assert.strictEqual(res.body.summary.products.updated, 1);
+      assert.strictEqual(res.body.summary.products.repeated, 0);
+      assert.strictEqual(res.body.summary.products.created, 0);
+    } finally {
+      server.close();
+    }
+  });
+
+  route('a department the file lists twice is not called an update', async () => {
+    const pool = fakePool([['FROM bo_product_departments', []]]);
+    const server = await listen(appWith(pool));
+    try {
+      const file = await workbookOf({
+        [SHEET_DEPARTMENTS]: [
+          headersOf(SHEET_DEPARTMENTS),
+          ['Drink', '4000'],
+          ['Drink', '4001'],
+        ],
+      });
+      const res = await send(server, '/api/import/catalogue', file);
+      assert.strictEqual(res.body.summary.departments.created, 1);
+      assert.strictEqual(res.body.summary.departments.updated, 0);
+      assert.strictEqual(res.body.summary.departments.repeated, 1);
+    } finally {
+      server.close();
+    }
+  });
+
+  route('the repeat still wins, whatever it is called', async () => {
+    // The counting changed; the behaviour must not. The second row is the one
+    // that ends up stored, because a sheet that lists a product twice is
+    // usually a sheet somebody corrected further down.
+    const pool = fakePool([['FROM bo_products', []]]);
+    const server = await listen(appWith(pool));
+    try {
+      const file = await workbookOf({
+        [SHEET_PRODUCTS]: [
+          headersOf(SHEET_PRODUCTS),
+          [10, 'Cola', 'Drink', '', 2.2],
+          [10, 'Cola', 'Drink', '', 2.5],
+        ],
+      });
+      // This path applies; /preview is the one that does not.
+      await send(server, '/api/import/catalogue', file);
+      const updates = pool.written.filter(
+        (w) => w.sql.includes('bo_products') && w.sql.trim().startsWith('UPDATE')
+      );
+      assert.strictEqual(updates.length, 1, 'the repeat did not update the first row');
+      assert.ok(
+        updates[0].params.includes(2.5),
+        'the corrected price is not what was stored'
+      );
+    } finally {
+      server.close();
+    }
+  });
+
   route('a blank cell leaves the stored value alone', async () => {
     const pool = fakePool([
       ['FROM bo_product_departments', [{ id: 7, department_name: 'Drink' }]],
@@ -509,7 +634,51 @@ check('a blank VAT and On receipt take the sensible default', async () => {
       });
       const res = await send(server, '/api/import/catalogue', file);
       assert.strictEqual(res.body.summary.products.created, 1);
-      assert.strictEqual(res.body.summary.products.updated, 1);
+      // Counted as a repeat rather than an update since the report from the new
+      // venue: it is one product either way, and the second row still wins, but
+      // "to update" told a manager with an empty catalogue that it already held
+      // seventeen products. The behaviour is unchanged — see the test below,
+      // which checks the second row is the one that lands.
+      assert.strictEqual(res.body.summary.products.updated, 0);
+      assert.strictEqual(res.body.summary.products.repeated, 1);
+    } finally {
+      server.close();
+    }
+  });
+
+  // The half of that promise the count cannot see.
+  //
+  // A venue's sheet listing a product twice, the second time at the corrected
+  // price, was counted as "1 new, 1 to update" — and then imported the *first*
+  // price. The update ran against the placeholder id the create left behind,
+  // which was 0, so it matched no row and threw the second row away in
+  // silence. Nothing in the summary or the log said so.
+  route('the second row for one product is the one that lands', async () => {
+    const pool = fakePool();
+    const server = await listen(appWith(pool));
+    try {
+      const file = await workbookOf({
+        [SHEET_PRODUCTS]: [
+          headersOf(SHEET_PRODUCTS),
+          ['', 'Cola', 'Drink', '', 2.2],
+          ['', 'Cola', 'Drink', '', 2.4],
+        ],
+      });
+      await send(server, '/api/import/catalogue', file);
+
+      const insert = pool.written.find((w) => w.sql.includes('INTO bo_products'));
+      const update = pool.written.find((w) => w.sql.includes('UPDATE bo_products'));
+      assert.ok(insert, 'the first row should have been inserted');
+      assert.ok(update, 'the second row should have been an update');
+
+      // The id the update aims at is the second-to-last parameter.
+      const target = update.params[update.params.length - 2];
+      assert.notStrictEqual(target, 0, 'the update targeted a row that cannot exist');
+      assert.strictEqual(
+        target,
+        1000,
+        'the update should aim at the row the insert just created'
+      );
     } finally {
       server.close();
     }

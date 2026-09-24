@@ -27,12 +27,15 @@ const LOYALTY_HOST = String(process.env.LOYALTY_HOST || '').trim().toLowerCase()
 const SLUG = /^[a-z0-9](?:[a-z0-9-]{1,62}[a-z0-9])?$/;
 
 // Paths on the loyalty host that are not a venue.
-const PASS = ['/loyalty/v1/', '/privacy/v1/', '/uploads/', '/assets/', '/app/vesopa/'];
+// /wallet/c/ and /wallet/s/ are a member's own card as an Apple or Google Wallet
+// pass: the app hands out a short-lived link on this name (loyalty_app.js,
+// /loyalty/v1/me/wallet) rather than sending anybody to the back office's.
+const PASS = ['/loyalty/v1/', '/privacy/v1/', '/uploads/', '/assets/', '/app/vesopa/', '/wallet/c/', '/wallet/s/'];
 
 /** Words no venue may take as its address, because the paths above use them. */
 const RESERVED = new Set([
   'app', 'api', 'loyalty', 'privacy', 'uploads', 'assets', 'health', 'admin',
-  'static', 'www', 'vesopa', 'auth', 'login', 'help', 'support',
+  'static', 'www', 'vesopa', 'auth', 'login', 'help', 'support', 'wallet',
 ]);
 
 function hostOf(req) {

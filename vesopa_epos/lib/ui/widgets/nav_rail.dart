@@ -8,6 +8,11 @@ class NavDestination {
   final String label;
 }
 
+/// The sections every till has.
+///
+/// Still a const, and still the list everything defaults to. What a venue
+/// *actually* sees comes from [navDestinationsFor], which is the same list with
+/// the sections that venue runs added to it.
 const navDestinations = <NavDestination>[
   NavDestination(Icons.sell, 'Sale'),
   NavDestination(Icons.grid_view, 'Table'),
@@ -19,6 +24,30 @@ const navDestinations = <NavDestination>[
   NavDestination(Icons.info, 'About'),
 ];
 
+/// The gym door, for a venue that has one.
+const gymDestination = NavDestination(Icons.fitness_center, 'Gym');
+
+/// The sections THIS venue sees.
+///
+/// The gym is switched on in the back office and is off by default, so for
+/// almost every venue on this platform this returns exactly the list above --
+/// "if disabled nothing of gym options appears in the till", which was asked
+/// for in those words.
+///
+/// Placed after Reports rather than at the end. The order of a rail is a claim
+/// about how often each thing is used, and at a gym the board is looked at far
+/// more than Products or Functions ever are; putting it last would file the
+/// venue's main screen below two they may never open.
+List<NavDestination> navDestinationsFor({required bool gym}) {
+  if (!gym) return navDestinations;
+  final after = navDestinations.indexWhere((d) => d.label == 'Reports');
+  return [
+    ...navDestinations.take(after + 1),
+    gymDestination,
+    ...navDestinations.skip(after + 1),
+  ];
+}
+
 /// Left-hand navigation, with Logout pinned to the bottom as in the mockups.
 ///
 /// Starting and ending a shift are not here — they live in the top bar, which
@@ -29,10 +58,16 @@ class PosNavRail extends StatelessWidget {
     required this.selected,
     required this.onSelect,
     required this.onLogout,
+    this.destinations = navDestinations,
   });
 
   final int selected;
   final ValueChanged<int> onSelect;
+
+  /// What this venue's rail carries. Defaults to the sections every till has,
+  /// so nothing that does not care has to be changed -- see
+  /// [navDestinationsFor].
+  final List<NavDestination> destinations;
 
   /// De-commission this terminal from the venue. Needs a password, and is a
   /// different act from ending a shift — which is why it is the only exit left
@@ -56,9 +91,9 @@ class PosNavRail extends StatelessWidget {
             const _DrawerBrand()
           else
             const SizedBox(height: 16),
-          for (var i = 0; i < navDestinations.length; i++)
+          for (var i = 0; i < destinations.length; i++)
             _NavItem(
-              destination: navDestinations[i],
+              destination: destinations[i],
               active: i == selected,
               onTap: () => onSelect(i),
             ),

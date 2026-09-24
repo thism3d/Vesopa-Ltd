@@ -1,0 +1,164 @@
+/* ==========================================================================
+   Vesopa AI — the guide that hovers on the right of every page.
+
+   Mounted on <html>, beside the loading bar, so the no-reload router's body
+   swap never touches it. Two shapes: the orb and the chat. The orb is calm
+   and still until tapped; beside it an introduction once a visit, and a
+   caption while voice is on. On a phone the chat is a bottom sheet; from a
+   tablet up it is a column down the right-hand side over the page. The
+   orb's ring says what it is doing — idle, listening (grows with the voice),
+   thinking, working on the page, speaking.
+   ========================================================================== */
+
+#vai { --vai-w: 380px; --vai-lime: #a5c715; --vai-ink: #111; --vai-bg: #fff; --vai-bg-2: #f8f9f4; --vai-rule: #e1e3da; --vai-muted: #6b6d62;
+  font-family: var(--font, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif); color: var(--vai-ink); font-size: 15px; line-height: 1.5; }
+#vai *, #vai *::before, #vai *::after { box-sizing: border-box; }
+#vai[hidden], #vai .vai-panel[hidden], #vai .vai-say[hidden], #vai .vai-say-row[hidden], #vai .vai-orb[hidden], #vai .vai-ic[hidden] { display: none !important; }
+#vai button { font: inherit; }
+
+/* ---- The orb ----------------------------------------------------------- */
+.vai-orb {
+  position: fixed; right: 18px; bottom: calc(18px + env(safe-area-inset-bottom)); z-index: 9500;
+  width: 58px; height: 58px; border-radius: 50%; border: 0; padding: 0; cursor: pointer;
+  background: radial-gradient(circle at 35% 30%, #d6ef5a 0, #a5c715 45%, #6e8a0e 100%);
+  box-shadow: 0 6px 20px rgba(17,17,17,.22), 0 0 0 0 rgba(165,199,21,.35);
+  display: grid; place-items: center; transition: transform .25s var(--ease, ease), box-shadow .3s, opacity .3s;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
+}
+.vai-orb:hover { transform: scale(1.05); }
+.vai-orb:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+.vai-orb svg { width: 26px; height: 26px; color: #10130a; position: relative; z-index: 2; }
+.vai-orb .vai-ring, .vai-orb .vai-ring2 {
+  position: absolute; inset: -6px; border-radius: 50%; border: 2px solid rgba(165,199,21,.55); opacity: 0; pointer-events: none;
+}
+.vai-orb .vai-badge { position: absolute; top: -2px; right: -2px; width: 14px; height: 14px; border-radius: 50%; background: #e8412c; border: 2px solid #fff; display: none; }
+.vai-orb.has-news .vai-badge { display: block; }
+/* Phone: sit above the panel's bottom bar. */
+@media (max-width: 860px) { body.has-panel ~ #vai .vai-orb, .has-panel #vai .vai-orb { bottom: calc(74px + env(safe-area-inset-bottom)); } }
+
+/* states. Idle is still: nothing moves until the customer taps. */
+.vai-orb[aria-pressed="true"] { box-shadow: 0 6px 20px rgba(17,17,17,.22), 0 0 0 4px rgba(165,199,21,.38); }
+/* Press and hold: the ring fills towards "open the chat". */
+.vai-orb.is-pressing { transform: scale(.94); }
+.vai-orb.is-pressing .vai-ring { opacity: 1; border-color: rgba(17,17,17,.55); animation: vai-hold .52s linear forwards; }
+@keyframes vai-hold { from { transform: scale(.9); opacity: .2; } to { transform: scale(1.18); opacity: 1; } }
+.vai-orb[data-state="listening"] .vai-ring { opacity: 1; transform: scale(calc(1 + var(--vai-level, 0) * .9)); transition: transform .08s linear; border-color: rgba(165,199,21,.7); }
+.vai-orb[data-state="listening"] .vai-ring2 { opacity: .6; animation: vai-pulse 1.6s ease-out infinite; }
+.vai-orb[data-state="thinking"] .vai-ring { opacity: 1; border-style: dashed; border-color: rgba(17,17,17,.55); animation: vai-spin 1.4s linear infinite; }
+.vai-orb[data-state="working"] .vai-ring { opacity: 1; border-color: transparent; border-top-color: #10130a; border-right-color: #10130a; animation: vai-spin .9s linear infinite; }
+.vai-orb[data-state="speaking"] { animation: vai-talk .5s ease-in-out infinite alternate; }
+.vai-orb[data-state="speaking"] .vai-ring2 { opacity: .7; animation: vai-pulse 1s ease-out infinite; }
+.vai-orb[data-state="listening"] svg, .vai-orb[data-state="speaking"] svg { animation: vai-wobble 1.2s ease-in-out infinite; }
+@keyframes vai-breathe { 0%,100% { box-shadow: 0 6px 20px rgba(17,17,17,.22), 0 0 0 0 rgba(165,199,21,.35); } 50% { box-shadow: 0 6px 24px rgba(17,17,17,.24), 0 0 0 10px rgba(165,199,21,0); } }
+@keyframes vai-pulse { 0% { transform: scale(1); opacity: .7; } 100% { transform: scale(1.7); opacity: 0; } }
+@keyframes vai-spin { to { transform: rotate(360deg); } }
+@keyframes vai-talk { from { transform: scale(1); } to { transform: scale(1.06); } }
+@keyframes vai-wobble { 0%,100% { transform: scale(1); } 50% { transform: scale(1.12); } }
+@media (prefers-reduced-motion: reduce) { .vai-orb, .vai-orb * { animation: none !important; transition: none !important; } }
+
+/* ---- Beside the orb: the introduction and the caption ------------------ */
+.vai-hello, .vai-say {
+  position: fixed; right: 86px; bottom: calc(22px + env(safe-area-inset-bottom)); z-index: 9500;
+  width: max-content; max-width: min(320px, calc(100vw - 110px));
+  background: rgba(17,17,17,.95); color: #fff; border-radius: 16px 16px 4px 16px; font-size: 14px; line-height: 1.45;
+  box-shadow: 0 10px 30px rgba(17,17,17,.28); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  animation: vai-in .3s var(--ease-out-back, ease) both;
+}
+.vai-hello { padding: 12px 36px 12px 14px; }
+.vai-hello.is-leaving { opacity: 0; transform: translateY(6px); transition: opacity .25s, transform .25s; }
+.vai-hello-title { display: block; color: var(--vai-lime); font-size: 14.5px; margin-bottom: 2px; }
+.vai-hello-text { margin: 0; color: #e7e8e1; }
+.vai-hello-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.vai-hello-x { position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; border: 0; border-radius: 8px; background: transparent; color: #b9b9b1; font-size: 18px; line-height: 1; cursor: pointer; }
+.vai-hello-x:hover { background: rgba(255,255,255,.1); color: #fff; }
+.vai-chip { border: 1px solid rgba(255,255,255,.22); background: rgba(255,255,255,.08); color: #fff; border-radius: 999px; padding: 5px 12px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.vai-chip:hover { background: rgba(255,255,255,.16); }
+.vai-say { padding: 10px 14px; cursor: pointer; }
+.vai-say-text { margin: 0; display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
+.vai-say-row { display: flex; gap: 8px; margin-top: 10px; }
+.vai-say-row .vai-btn { padding: 8px 12px; font-size: 13.5px; }
+@media (max-width: 860px) { body.has-panel ~ #vai .vai-hello, body.has-panel ~ #vai .vai-say { bottom: calc(78px + env(safe-area-inset-bottom)); } }
+
+/* ---- The chat --------------------------------------------------------- */
+.vai-panel {
+  position: fixed; z-index: 9600; display: flex; flex-direction: column; background: var(--vai-bg);
+  box-shadow: -8px 0 40px rgba(17,17,17,.18); animation: vai-in .28s var(--ease, ease) both;
+  top: 0; right: 0; bottom: 0; width: min(var(--vai-w), 100vw); border-left: 1px solid var(--vai-rule);
+}
+.vai-grab { display: none; }
+@media (max-width: 700px) {
+  .vai-panel { top: auto; left: 0; right: 0; bottom: 0; width: 100%; height: min(82vh, 680px); border-left: 0; border-top: 0; border-radius: 24px 24px 0 0; box-shadow: 0 -12px 48px rgba(17,17,17,.28); overflow: hidden; }
+  .vai-grab { display: block; width: 44px; height: 5px; border-radius: 3px; background: rgba(255,255,255,.35); margin: 8px auto 0; position: relative; z-index: 1; background: #3a3a37; }
+  .vai-head { padding-top: 6px; }
+}
+@keyframes vai-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+
+.vai-head { display: flex; align-items: center; gap: 10px; padding: 12px 12px 12px 16px; border-bottom: 1px solid var(--vai-rule); background: #111; color: #fff; }
+.vai-head .vai-mark { width: 34px; height: 34px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #d6ef5a 0, #a5c715 50%, #6e8a0e 100%); display: grid; place-items: center; flex: 0 0 auto; }
+.vai-head .vai-mark svg { width: 18px; height: 18px; color: #10130a; }
+.vai-head .vai-title { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.vai-head .vai-title b { font-size: 15px; line-height: 1.2; }
+.vai-head .vai-title span { font-size: 12px; color: #b9b9b1; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vai-head .vai-title span::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #8f9285; margin-right: 6px; vertical-align: 1px; }
+.vai-panel[data-state="listening"] .vai-title span::before { background: var(--vai-lime); box-shadow: 0 0 0 3px rgba(165,199,21,.3); }
+.vai-panel[data-state="thinking"] .vai-title span::before, .vai-panel[data-state="working"] .vai-title span::before { background: #f5b301; }
+.vai-panel[data-state="speaking"] .vai-title span::before { background: #4ba3f5; }
+.vai-ic {
+  width: 36px; height: 36px; border-radius: 10px; border: 0; background: transparent; color: #fff; cursor: pointer; display: grid; place-items: center; flex: 0 0 auto;
+}
+.vai-ic:hover { background: rgba(255,255,255,.1); }
+.vai-ic svg { width: 19px; height: 19px; }
+.vai-ic[aria-pressed="true"] { background: var(--vai-lime); color: #10130a; }
+.vai-ic.is-off { color: #8f9285; }
+/* The language switch: EN / বাং, on the bar and in the chat head. */
+.vai-ic.vai-lang { width: auto; min-width: 40px; padding: 0 8px; font-size: 13px; font-weight: 800; letter-spacing: .02em; border: 1px solid rgba(255,255,255,.22); }
+#vai[lang="bn"] { font-family: var(--font, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif), "Nirmala UI", "Noto Sans Bengali", "Kohinoor Bangla", sans-serif; }
+
+.vai-body { flex: 1; overflow-y: auto; padding: 14px 14px 8px; background: var(--vai-bg-2); scroll-behavior: smooth; }
+.vai-msg { max-width: 92%; margin: 0 0 10px; padding: 10px 13px; border-radius: 14px; font-size: 14.5px; white-space: pre-wrap; word-wrap: break-word; animation: vai-in .2s ease both; }
+.vai-msg.user { margin-left: auto; background: #111; color: #fff; border-bottom-right-radius: 4px; }
+.vai-msg.ai { background: #fff; border: 1px solid var(--vai-rule); border-bottom-left-radius: 4px; }
+.vai-msg.note { max-width: 100%; background: transparent; border: 0; color: var(--vai-muted); font-size: 12.5px; padding: 2px 6px; margin-bottom: 6px; display: flex; gap: 8px; align-items: flex-start; }
+.vai-msg.note::before { content: "›"; color: var(--vai-lime); font-weight: 800; }
+.vai-msg.err { background: #fdecea; border: 1px solid #f3b5ad; color: #7a1f14; }
+.vai-typing { display: inline-flex; gap: 4px; padding: 4px 2px; }
+.vai-typing i { width: 7px; height: 7px; border-radius: 50%; background: #9a9c90; animation: vai-dots 1s infinite ease-in-out; }
+.vai-typing i:nth-child(2) { animation-delay: .15s; } .vai-typing i:nth-child(3) { animation-delay: .3s; }
+@keyframes vai-dots { 0%,80%,100% { transform: translateY(0); opacity: .5; } 40% { transform: translateY(-4px); opacity: 1; } }
+
+/* The first-run card and the confirmation row. */
+.vai-card { background: #fff; border: 1px solid var(--vai-rule); border-radius: 16px; padding: 16px; margin: 0 0 12px; box-shadow: 0 2px 8px rgba(17,17,17,.04); }
+.vai-card h3 { margin: 0 0 6px; font-size: 16px; }
+.vai-card p { margin: 0 0 12px; font-size: 14px; color: #4a4c41; }
+.vai-card p.small { font-size: 12.5px; color: var(--vai-muted); margin-bottom: 0; }
+.vai-link { border: 0; background: none; padding: 0; color: #6e8a0e; font-weight: 700; cursor: pointer; text-decoration: underline; font-size: inherit; }
+.vai-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.vai-btn { border: 0; border-radius: 10px; padding: 10px 14px; font-weight: 700; font-size: 14px; cursor: pointer; background: #eef0e9; color: #111; }
+.vai-btn.lime { background: var(--vai-lime); color: #10130a; }
+.vai-btn.dark { background: #111; color: #fff; }
+.vai-btn.quiet { background: transparent; color: var(--vai-muted); }
+.vai-btn:hover { filter: brightness(.97); }
+.vai-confirm { border-color: rgba(165,199,21,.7); background: #f7fbe6; }
+.vai-confirm p { font-weight: 600; color: #111; }
+
+.vai-foot { display: flex; gap: 8px; align-items: flex-end; padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid var(--vai-rule); background: #fff; }
+.vai-input { flex: 1; min-width: 0; resize: none; border: 1px solid var(--vai-rule); border-radius: 12px; padding: 10px 12px; font: inherit; font-size: 15px; line-height: 1.4; max-height: 120px; background: #fff; color: #111; }
+.vai-input:focus { outline: none; border-color: var(--vai-lime); box-shadow: 0 0 0 3px rgba(165,199,21,.25); }
+.vai-send, .vai-mic { width: 42px; height: 42px; border-radius: 12px; border: 0; cursor: pointer; display: grid; place-items: center; flex: 0 0 auto; }
+.vai-send { background: #111; color: #fff; }
+.vai-send:disabled { opacity: .4; cursor: default; }
+.vai-mic { background: #eef0e9; color: #111; touch-action: none; user-select: none; }
+.vai-mic.is-live { background: var(--vai-lime); color: #10130a; box-shadow: 0 0 0 4px rgba(165,199,21,.3); }
+.vai-mic svg, .vai-send svg { width: 20px; height: 20px; }
+.vai-hint { font-size: 12px; color: var(--vai-muted); padding: 0 14px 8px; background: #fff; }
+
+/* ---- Acting on the page ------------------------------------------------ */
+.vai-focus { outline: 3px solid var(--vai-lime, #a5c715) !important; outline-offset: 3px; border-radius: 8px; box-shadow: 0 0 0 8px rgba(165,199,21,.25) !important; transition: box-shadow .2s; }
+.vai-cursor {
+  position: fixed; z-index: 9700; pointer-events: none; display: flex; align-items: center; gap: 6px; padding: 4px 9px 4px 6px;
+  background: #111; color: #fff; border-radius: 999px; font-size: 12px; font-weight: 700; box-shadow: 0 6px 18px rgba(17,17,17,.3);
+  transition: transform .45s var(--ease, ease), opacity .2s; opacity: 0; transform: translate(-20px, -20px);
+}
+.vai-cursor.is-on { opacity: 1; }
+.vai-cursor i { width: 12px; height: 12px; border-radius: 50%; background: var(--vai-lime); display: block; animation: vai-breathe 1.2s infinite; }

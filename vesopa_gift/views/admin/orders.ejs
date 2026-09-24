@@ -1,0 +1,134 @@
+<%- include('_top', { nav: 'orders' }) %>
+<% var base = '/admin/v/' + venue.office_id; %>
+
+<div class="page-head">
+  <div>
+    <h2>Orders</h2>
+    <p class="muted">Everything bought in your shop. Open one to send it now, change the day or refund it.</p>
+  </div>
+  <div class="actions"><a class="btn ghost" href="<%= base %>/export/orders.csv">Download CSV</a></div>
+</div>
+
+<div class="toolbar">
+  <nav class="tabs" aria-label="Show">
+    <a class="<%= filter === 'all' ? 'on' : '' %>" href="<%= base %>/orders">All</a>
+    <a class="<%= filter === 'waiting' ? 'on' : '' %>" href="<%= base %>/orders?show=waiting">Waiting to send</a>
+    <a class="<%= filter === 'sent' ? 'on' : '' %>" href="<%= base %>/orders?show=sent">Sent</a>
+    <a class="<%= filter === 'tickets' ? 'on' : '' %>" href="<%= base %>/orders?show=tickets">Tickets</a>
+    <a class="<%= filter === 'refunded' ? 'on' : '' %>" href="<%= base %>/orders?show=refunded">Refunded</a>
+  </nav>
+  <form method="get" action="<%= base %>/orders">
+    <% if (filter !== 'all') { %><input type="hidden" name="show" value="<%= filter %>"><% } %>
+    <input class="search" type="search" name="q" value="<%= q %>" placeholder="Name, email, order or code" aria-label="Search orders">
+  </form>
+</div>
+
+<div class="split">
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Order</th><th>Placed</th><th>Bought by</th><th>What</th><th class="right">Value</th><th class="right">Status</th></tr></thead>
+        <tbody>
+          <% if (!list.length) { %><tr><td colspan="6" class="empty"><%= q ? 'Nothing matches that.' : 'No orders here yet.' %></td></tr><% } %>
+          <% list.forEach(function (o) { %>
+          <tr class="<%= selected && selected.order.id === o.id ? 'selected' : '' %>">
+            <td class="nowrap"><a class="rowlink num" href="<%= base %>/orders/<%= o.id %><%= qs %>"><%= o.ref %></a></td>
+            <td class="nowrap"><%= placed(o.created_at) %></td>
+            <td><%= o.buyer_name %></td>
+            <td><%= o.what %></td>
+            <td class="right num <%= o.status === 'refunded' ? 'strike' : '' %>"><%= money(o.total_minor, { always: true }) %></td>
+            <td class="right"><span class="badge <%= o.badge.kind %>"><%= o.badge.text %></span></td>
+          </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <% if (selected) { var o = selected.order; %>
+  <div class="card detail">
+    <div class="page-head">
+      <div><span class="t1"><h3 class="num"><%= selected.ref %></h3></span><span class="small muted"><%= o.status === 'pending' ? 'Not paid yet' : 'Paid ' + when(o.paid_at, { short: true }) %><%= o.card_last4 ? ' · card ····' + o.card_last4 : '' %><%= o.sandbox ? ' · sandbox' : '' %></span></div>
+      <span class="badge <%= selected.badge.kind %>"><%= selected.badge.text %></span>
+    </div>
+
+    <% selected.lines.forEach(function (l) { %>
+    <div class="item">
+      <% if (l.designUrl) { %><img src="<%= l.designUrl %>" alt=""><% } %>
+      <div>
+        <strong><%= l.kind === 'ticket' ? l.quantity + ' × ' + l.label : (l.kind === 'experience' ? l.label : money(l.unit_minor) + ' gift voucher') %></strong><br>
+        <span class="small muted">
+          <% if (l.card_code) { %>Code ····<%= l.card_code.slice(-4) %><% } %>
+          <% if (l.balance != null) { %> · <%= money(l.balance, { always: true }) %> left<% } %>
+          <% if (l.expires_on) { %> · valid to <%= dateLong(l.expires_on) %><% } %>
+          <% if (l.voided_at) { %> · cancelled<% } %>
+        </span>
+      </div>
+    </div>
+    <div>
+      <% if (l.kind !== 'ticket') { %>
+      <div class="kv"><span>For</span><span><%= l.recipient_name || o.buyer_name %><%= l.send_to === 'recipient' ? ' · ' + l.recipient_email : ' · sent to the buyer' %></span></div>
+      <div class="kv"><span><%= l.delivered_at ? 'Sent' : 'Arrives' %></span><span><%= l.delivered_at ? when(l.delivered_at, { short: true }) : (l.deliver_at ? when(l.deliver_at) : 'as soon as it is paid') %></span></div>
+      <% if (l.delivery_error && !l.delivered_at) { %><div class="kv"><span>Problem</span><span class="bad-ink"><%= l.delivery_error %></span></div><% } %>
+      <% if (l.usable_from && new Date(l.usable_from) > new Date()) { %><div class="kv"><span>Can be spent from</span><span><%= when(l.usable_from, { short: true }) %></span></div><% } %>
+      <% if (l.message) { %><div class="kv"><span>Message</span><span>“<%= l.message %>”</span></div><% } %>
+      <% } else { %>
+      <div class="kv"><span>Tickets</span><span><%= l.used %> of <%= l.quantity %> let in<%= l.voidCount ? ' · ' + l.voidCount + ' refunded' : '' %></span></div>
+      <% } %>
+    </div>
+
+    <% if (o.status === 'paid' && !l.voided_at) { var lb = base + '/orders/' + o.id + '/lines/' + l.id; %>
+    <div class="grid-btn">
+      <% if (l.kind !== 'ticket' && !l.delivered_at) { %>
+        <form method="post" action="<%= lb %>/send-now"><input type="hidden" name="_csrf" value="<%= session.csrf %>"><button class="btn primary block" type="submit">Send it now</button></form>
+      <% } else { %>
+        <form method="post" action="<%= lb %>/send-now"><input type="hidden" name="_csrf" value="<%= session.csrf %>"><button class="btn ghost block" type="submit">Send it again</button></form>
+      <% } %>
+      <form method="post" action="<%= lb %>/refund" data-confirm="Refund this? <%= l.kind === 'ticket' ? 'Every ticket not yet used is cancelled and refunded.' : 'The voucher is cancelled and whatever is left on it is refunded to the card.' %>">
+        <input type="hidden" name="_csrf" value="<%= session.csrf %>">
+        <button class="btn danger block" type="submit">Refund</button>
+      </form>
+    </div>
+    <% if (l.kind !== 'ticket') { %>
+    <details class="more">
+      <summary>Change the day or the address</summary>
+      <% if (!l.delivered_at && l.send_to === 'recipient') { %>
+      <form method="post" action="<%= lb %>/reschedule">
+        <input type="hidden" name="_csrf" value="<%= session.csrf %>">
+        <div class="row2">
+          <label class="lbl">Day<input class="in" type="date" name="date" value="<%= l.deliverDate %>" required></label>
+          <label class="lbl">Time<input class="in" type="time" name="time" value="<%= l.deliverTime %>" required></label>
+        </div>
+        <button class="btn ghost" type="submit">Change the day</button>
+      </form>
+      <% } %>
+      <% if (l.send_to === 'recipient') { %>
+      <form method="post" action="<%= lb %>/address">
+        <input type="hidden" name="_csrf" value="<%= session.csrf %>">
+        <label class="lbl">Their name<input class="in" name="recipient_name" value="<%= l.recipient_name || '' %>" maxlength="120" required></label>
+        <label class="lbl">Their email address<input class="in" type="email" name="recipient_email" value="<%= l.recipient_email || '' %>" maxlength="190" required></label>
+        <button class="btn ghost" type="submit"><%= l.delivered_at ? 'Fix it and send again' : 'Fix the address' %></button>
+      </form>
+      <% } %>
+      <% if (l.usable_from && new Date(l.usable_from) > new Date()) { %>
+      <form method="post" action="<%= lb %>/release">
+        <input type="hidden" name="_csrf" value="<%= session.csrf %>">
+        <p class="help">Held for <%= venue.hold_hours %> hours because it is over <%= money(venue.hold_over_minor) %>. Release it if you know the buyer.</p>
+        <button class="btn ghost" type="submit">Let it be spent now</button>
+      </form>
+      <% } %>
+    </details>
+    <% } %>
+    <% } %>
+    <% }) %>
+
+    <div>
+      <div class="kv"><span>Bought by</span><span><%= o.buyer_name %> · <%= o.buyer_email %></span></div>
+      <% if (o.refunded_minor) { %><div class="kv"><span>Refunded</span><span><%= money(o.refunded_minor, { always: true }) %></span></div><% } %>
+    </div>
+    <p class="help">A refund cancels whatever is left on the voucher and pays it back through Dojo. Anything already spent at the till is not refunded.</p>
+  </div>
+  <% } %>
+</div>
+
+<%- include('_bottom') %>

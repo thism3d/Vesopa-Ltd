@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
 
+import 'licence_panel.dart';
 import '../data/providers.dart';
 import '../data/screen_profile.dart';
 import 'branding_page.dart';
@@ -102,6 +103,14 @@ class _SettingsSheet extends ConsumerWidget {
                   ),
 
                 const Divider(height: 30),
+                const _SectionTitle('Licence'),
+                // The same panel as the till, the display and the kiosk, so the
+                // wording is identical whichever machine somebody is at.
+                LicencePanel(
+                  state: ref.watch(kitchenLicenceProvider).value,
+                  onRefresh: () => ref.invalidate(kitchenLicenceProvider),
+                ),
+                const SizedBox(height: 18),
                 const _SectionTitle('On this machine'),
                 SwitchListTile(
                   value: session.sound,
@@ -123,6 +132,29 @@ class _SettingsSheet extends ConsumerWidget {
                       child: const Text('Follow the back office again'),
                     ),
                   ),
+
+                // Separate from the chime, because they answer different
+                // questions. The chime is heard across the room; a toast is
+                // for the times the board is not the window on top — somebody
+                // doing paperwork, or a second monitor.
+                SwitchListTile(
+                  value: session.notify,
+                  onChanged: (on) {
+                    notifier.setNotify(on);
+                    ref.read(notificationsProvider).local = ref
+                        .read(notificationsProvider)
+                        .local
+                        .copyWith(enabled: on);
+                  },
+                  title: const Text('Show Windows notifications'),
+                  subtitle: const Text(
+                    'A pop-up from Windows when an order arrives, so it is '
+                    'seen even when this board is behind another window. '
+                    'Which kinds are allowed is set in the back office, under '
+                    'Settings — this machine can only turn them off.',
+                  ),
+                  contentPadding: EdgeInsets.zero,
+                ),
 
                 const SizedBox(height: 14),
                 // On this machine and not in the back office, deliberately: two

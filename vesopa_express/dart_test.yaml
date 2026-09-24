@@ -1,0 +1,8 @@
+# The screen gallery draws every screen to test/gallery/*.png for looking at.
+# It is not part of the ordinary run: on a fresh clone there are no pictures
+# to compare against. Run it with:
+#
+#   flutter test --run-skipped -t gallery --update-goldens
+tags:
+  gallery:
+    skip: "Draws every screen; run with --run-skipped -t gallery --update-goldens"

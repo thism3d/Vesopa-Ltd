@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'local/database.dart';
+import 'price_levels.dart';
 
 /// A snapshot of the terminal's link to the back office, for the till's
 /// online/offline badge.
@@ -287,6 +288,10 @@ class SyncService {
         // routes.
         final path = switch (entry.entity) {
           'void' => '/till/voids',
+          // A refund, a no-sale, an expense: one row on the server, for the
+          // reports. A wastage is a stock document there, so it has its own.
+          'event' => '/till/events',
+          'wastage' => '/till/wastage',
           _ => '/till/orders',
         };
 
@@ -676,6 +681,52 @@ class SyncService {
             // The server stores price as a float; convert to pence once, here,
             // so no rounding drift can reach the money maths.
             priceMinor: ((raw['price'] as num? ?? 0) * 100).round(),
+            // Absent stays absent. A server that predates price levels sends
+            // no field at all, and that has to mean "not set" rather than
+            // "zero" — see `data/price_levels.dart`.
+            price2Minor: Value(ProductPrices.minorFrom(raw, 'price_2')),
+            price3Minor: Value(ProductPrices.minorFrom(raw, 'price_3')),
+            price4Minor: Value(ProductPrices.minorFrom(raw, 'price_4')),
+            price5Minor: Value(ProductPrices.minorFrom(raw, 'price_5')),
+            price6Minor: Value(ProductPrices.minorFrom(raw, 'price_6')),
+            // Absent on a server that has not run schema_print_categories.sql,
+            // and null for a product the venue has not filed. Both mean the
+            // same thing: no heading on the ticket.
+            printCategory: Value(
+              (raw['print_category'] as String?)?.trim().isNotEmpty ?? false
+                  ? (raw['print_category'] as String).trim()
+                  : null,
+            ),
+            printCategoryOrder: Value(
+              (raw['print_category_order'] as num?)?.toInt(),
+            ),
+            // What is in the food, as the back office declared it. Stored as
+            // the server's own JSON string rather than parsed here, so the
+            // till, the kitchen and the customer display are all reading the
+            // one document and nothing can re-order or re-spell it on the way.
+            // Absent — a server that predates the column — is null, which
+            // reads as "nobody has said" and never as "contains nothing".
+            allergens: Value(
+              (raw['allergens'] as String?)?.trim().isNotEmpty ?? false
+                  ? (raw['allergens'] as String).trim()
+                  : null,
+            ),
+            // Whether paying for this renews a membership.
+            //
+            // Absent is FALSE, and that direction is the whole point: a server
+            // that predates the column sends no field, and reading that as
+            // "yes" would move a member's expiry on a year every time somebody
+            // bought a pint. The failure of the safe default is a renewal that
+            // has to be done in the back office; of the other one, a season of
+            // subscriptions nobody paid for.
+            renewsMembership: Value(
+              switch (raw['renews_membership']) {
+                final bool value => value,
+                final num value => value != 0,
+                final String value => value == '1' || value == 'true',
+                _ => false,
+              },
+            ),
             taxPercentage: Value(
               (raw['tax_percentage'] as num? ?? 0).toDouble(),
             ),
@@ -702,6 +753,25 @@ class SyncService {
                 final bool b => b,
                 final String s => s != '0' && s.toLowerCase() != 'false',
                 _ => true,
+              },
+            ),
+            isModifier: Value(
+              // Absent means no. A server that has never heard of this field
+              // must not be read as "nothing can be sold on its own".
+              switch (raw['is_modifier']) {
+                null => false,
+                final num n => n != 0,
+                final bool b => b,
+                final String s => s == '1' || s.toLowerCase() == 'true',
+                _ => false,
+              },
+            ),
+            // Blank is null, so "has no barcode" stays a question the till can
+            // answer, and a scan never matches a product by matching nothing.
+            barcode: Value(
+              switch ((raw['barcode'] as String?)?.trim()) {
+                null || '' => null,
+                final code => code,
               },
             ),
             emoji: Value(raw['emoji'] as String?),

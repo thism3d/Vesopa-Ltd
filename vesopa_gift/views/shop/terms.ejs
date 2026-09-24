@@ -1,0 +1,20 @@
+<%- include('_head') %>
+
+<div class="bar"><div class="narrow">
+  <a class="back" href="/<%= venue.slug %>" aria-label="Back to <%= brand.name %>"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></a>
+  <a class="name" href="/<%= venue.slug %>"><%= brand.name %></a>
+</div></div>
+
+<main class="narrow">
+  <div class="group">
+    <h1 class="serif">Voucher and ticket terms</h1>
+    <% (venue.terms || '').split(/\n{2,}/).filter(Boolean).forEach(function (p) { %><p class="pretty"><%= p %></p><% }) %>
+    <% if (!venue.terms) { %>
+    <p class="pretty">Vouchers can be used for food and drink at <%= brand.name %>. They are valid for <%= venue.validity_months %> months from the day they are bought, are not exchangeable for cash, and cannot be replaced if the code is lost or shared — treat the code like cash.</p>
+    <% } %>
+    <p class="pretty">Vouchers and tickets are sold by <%= brand.name %>, and payments are taken by Dojo and paid straight to the venue. Questions about an order, a refund or a ticket are the venue’s to answer: reply to your receipt.</p>
+    <p class="pretty small muted">We keep the names and email addresses given with an order for as long as the voucher or ticket can be used, to deliver it and to answer questions about it.</p>
+  </div>
+</main>
+
+<%- include('_foot') %>

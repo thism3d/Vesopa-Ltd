@@ -127,6 +127,99 @@ Map<String, Set<String>> routesByLine(
   return out;
 }
 
+/// A selection of lines, closed over the modifier relation.
+///
+/// Every line picked brings its modifiers with it, and a modifier picked on its
+/// own brings back the item it belongs to.
+///
+/// This exists because of splitting a bill. A share is a set of line ids, and a
+/// set of line ids is exactly the shape that lets "Dash Coke" be paid for by
+/// one person and the gin it went into by another. That is not a rounding
+/// argument — a priced modifier ("Extra shot", "Double up") carries real money,
+/// and a bill where the shot is on one card and the drink on another is a bill
+/// nobody at the table agreed to.
+///
+/// So the rule that already governs the receipt, the kitchen ticket and the
+/// customer display governs the money too, and it lives here with the others: a
+/// modifier goes where its parent goes.
+///
+/// Pulling the *parent* back for an orphaned child is deliberate rather than
+/// symmetric-for-its-own-sake. The UI does not offer a modifier as a separate
+/// tap, so it should never happen — but if some future screen does, the failure
+/// this guards against is a share containing "No ice" and nothing else, and the
+/// customer being asked to pay for it.
+///
+/// A modifier whose parent is not in [lines] stands on its own, exactly as it
+/// does in [orderWithModifiers]: it is the re-fire case, and it is a line in
+/// its own right there.
+Set<String> withModifiersOf<T>(
+  Set<String> selected,
+  List<T> lines, {
+  required String Function(T) idOf,
+  required String? Function(T) parentOf,
+}) {
+  if (selected.isEmpty || lines.isEmpty) return selected;
+
+  final present = {for (final l in lines) idOf(l)};
+  final out = {...selected};
+
+  // Two passes, in this order, and it has to be this way round.
+  //
+  // Upwards first: a picked modifier names its parent. Then downwards, by which
+  // time every parent that is going to be in the set is in it, so it collects
+  // *all* of that parent's modifiers — including ones that sit earlier in the
+  // list than the modifier that pulled the parent in. A single pass gets that
+  // case wrong, and gets it wrong silently, on a share that is merely a few
+  // pence light.
+  for (final line in lines) {
+    final parent = parentOf(line);
+    if (parent == null || !present.contains(parent)) continue;
+    if (out.contains(idOf(line))) out.add(parent);
+  }
+
+  for (final line in lines) {
+    final parent = parentOf(line);
+    if (parent == null || !present.contains(parent)) continue;
+    if (out.contains(parent)) out.add(idOf(line));
+  }
+
+  return out;
+}
+
+/// Which line a modifier lands on.
+///
+/// Two keys arrive at this question from different directions — a MIXERS key
+/// asking one of the venue's questions, and a product flagged "can only be sold
+/// attached to another item" being tapped — and they must answer it the same
+/// way, or a venue finds "No ice" going onto one line and "Dash Coke" onto
+/// another.
+///
+/// The rule: **the selected line, or the last item when nothing is selected.**
+///
+/// The fallback is the important half. "Gin, then no ice" is the order somebody
+/// actually presses the two keys in, and requiring the gin to be selected first
+/// would add a step to the common case in order to disambiguate the rare one.
+/// Selecting a line stays the way to say "not that one, this one".
+///
+/// [items] must already exclude modifiers — a modifier cannot carry another
+/// modifier, and `addModifiersTo` refuses it anyway. Null when there is nothing
+/// on the bill, which the caller has to say out loud rather than swallow:
+/// ringing "No ice" onto nothing is always a mistake.
+T? modifierTarget<T>(
+  List<T> items,
+  Set<String> selectedIds, {
+  required String Function(T) idOf,
+}) {
+  if (items.isEmpty) return null;
+  // Last, not first, among the selected. Two lines picked out is not a thing
+  // this question has an answer for, and the most recent is the one the clerk
+  // was looking at.
+  for (var i = items.length - 1; i >= 0; i--) {
+    if (selectedIds.contains(idOf(items[i]))) return items[i];
+  }
+  return items.last;
+}
+
 /// Just the items, with their modifiers left out.
 ///
 /// For the places that count things rather than list them — "how many items on

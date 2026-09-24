@@ -1,0 +1,35 @@
+<%- include('_top', { nav: 'events' }) %>
+<% var base = '/admin/v/' + venue.office_id; %>
+
+<div class="page-head">
+  <div>
+    <h2>Events</h2>
+    <p class="muted">Tickets are sold from the same shop, and each one is let in once at the door.</p>
+  </div>
+  <div class="actions"><a class="btn primary" href="<%= base %>/events/new"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New event</a></div>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Event</th><th>When</th><th>Sold</th><th class="right">Takings</th><th class="right"></th></tr></thead>
+      <tbody>
+        <% if (!events.length) { %><tr><td colspan="5" class="empty">No events yet.</td></tr><% } %>
+        <% events.forEach(function (e) { %>
+        <tr>
+          <td><a class="rowlink" href="<%= base %>/events/<%= e.id %>"><%= e.title %></a>
+            <% if (e.cancelled_at) { %> <span class="badge bad">Cancelled</span><% } else if (e.past) { %> <span class="badge plain">Finished</span><% } else if (!e.on_sale) { %> <span class="badge warn">Not on sale</span><% } %></td>
+          <td><%= when(e.starts_at, { short: true }) %></td>
+          <td>
+            <div class="stack-sm"><span class="small"><%= e.sold %> of <%= e.capacity %><%= e.past ? ' · ' + e.used + ' came' : '' %></span><div class="progress"><i class="<%= e.fillClass %>"></i></div></div>
+          </td>
+          <td class="right num"><%= money(e.takings, { always: true }) %></td>
+          <td class="right"><% if (!e.past && !e.cancelled_at) { %><a class="btn small ghost" href="<%= base %>/door/<%= e.id %>">Door</a><% } %> <a class="btn small ghost" href="<%= base %>/events/<%= e.id %>/guests">Guests</a></td>
+        </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<%- include('_bottom') %>

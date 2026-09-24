@@ -18,10 +18,22 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-const source = fs.readFileSync(
-  path.join(__dirname, '..', 'public', 'app.js'),
-  'utf8'
-);
+/**
+ * app.js, with its line endings normalised.
+ *
+ * `lift` below finds the end of a function by looking for a line containing
+ * only `}`, spelled as a newline, a brace and a newline. On a Windows checkout
+ * with `core.autocrlf=true` — the default, and what a fresh clone gets — every
+ * line ends with a carriage return first, so that never matches and the whole
+ * suite stopped on "could not find the end of cropGeometry" before reaching
+ * anything else.
+ *
+ * Nothing was ever wrong with app.js: it is LF in the repository and converted
+ * on the way out. Reading it the same way on every platform is the fix.
+ */
+const source = fs
+  .readFileSync(path.join(__dirname, '..', 'public', 'app.js'), 'utf8')
+  .replace(/\r\n/g, '\n');
 
 /** Lift a named function, and whatever follows it, into a bare context. */
 function lift(names) {

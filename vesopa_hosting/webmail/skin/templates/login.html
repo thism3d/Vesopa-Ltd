@@ -1,0 +1,60 @@
+<roundcube:include file="includes/layout.html" />
+
+<h1 class="voice"><roundcube:object name="productname" /> <roundcube:label name="login" /></h1>
+
+<!--
+	Vesopa Mail sign-in. Elastic's own login.html with three changes:
+
+	  - the Vesopa lockup (wordmark, and "Mail" flush under its right edge);
+	  - a heading inside the card, and a drifting lime wash behind it
+	    (styles.css, "The login screen");
+	  - login.js, which turns "Username" into an email field, gives the
+	    password field a show/hide eye, and puts a floating label on both.
+
+	The form itself is still Roundcube's loginform object, untouched: the
+	field names, the token and the submit are exactly what Roundcube expects,
+	so a Roundcube update cannot be broken by this page, only un-styled.
+-->
+
+<div class="v-aurora" aria-hidden="true"><span></span><span></span><span></span></div>
+
+<div id="layout-content" class="selected no-navbar" role="main">
+	<div id="brand-lockup">
+		<div class="lockup">
+			<roundcube:object name="logo" src="/images/logo-wordmark.svg" id="logo" alt="Vesopa" />
+			<p class="lockup-word">Mail</p>
+		</div>
+	</div>
+
+	<roundcube:form id="login-form" name="login-form" method="post" class="propform">
+		<div class="v-login-head">
+			<p class="v-login-title" data-bn="আপনার মেইলবক্সে সাইন ইন করুন">Sign in to your mailbox</p>
+			<p class="v-login-sub" data-bn="আপনার পুরো ইমেইল ঠিকানা ও পাসওয়ার্ড দিন।">Use your full email address and password.</p>
+		</div>
+	<roundcube:object name="loginform" form="login-form" size="40" submit=true class="form-control" />
+		<div id="login-footer" role="contentinfo">
+			<roundcube:object name="productname" condition="config:display_product_info &gt; 0" />
+			<roundcube:object name="version" condition="config:display_product_info == 2" />
+			<roundcube:if condition="config:support_url" />
+				&nbsp;&bull;&nbsp; <a href="<roundcube:var name='config:support_url' />" target="_blank" rel="noopener" class="support-link"><roundcube:label name="support" /></a>
+			<roundcube:endif />
+			<roundcube:container name="loginfooter" id="login-footer" />
+		</div>
+	</form>
+
+	<p class="vesopa-legal">&copy; Vesopa Software Ltd. &nbsp;&bull;&nbsp; <a href="mailto:support@vesopa.com">support@vesopa.com</a></p>
+
+	<span id="v-login-words" hidden
+		data-email="<roundcube:label name='email' />"
+		data-password="<roundcube:label name='password' />"></span>
+</div>
+
+<noscript>
+	<p class="noscriptwarning"><roundcube:label name="noscriptwarning" /></p>
+</noscript>
+
+<!-- Before the footer on purpose: the footer loads Elastic's ui.js, which copies
+     each field's label into its placeholder. login.js renames the label first. -->
+<script src="/login.js"></script>
+
+<roundcube:include file="includes/footer.html" />

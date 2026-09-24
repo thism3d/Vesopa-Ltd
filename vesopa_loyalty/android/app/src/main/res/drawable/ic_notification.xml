@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The status-bar icon: Android keeps only the shape and paints it white, so
+     this is the V alone, every part white, with no tile behind it. The three
+     polygons are favicon.svg's own coordinates (viewBox 46.35 x 33.09) centred
+     on a square. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="46.35"
+    android:viewportHeight="46.35">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M9.95,6.63 L0,6.63 L18.01,39.72 L27.96,39.72 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M27.40,23.17 L37.35,23.17 L46.35,6.63 L36.40,6.63 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M27.40,23.17 L18.39,39.72 L28.34,39.72 L37.35,23.17 Z" />
+</vector>

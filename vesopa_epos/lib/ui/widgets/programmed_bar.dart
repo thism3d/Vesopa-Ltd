@@ -10,8 +10,11 @@ import '../../data/screens.dart';
 import '../../data/staff_session.dart';
 import '../../main.dart';
 import '../shell.dart' show SyncStatusBadge;
+import '../../data/price_level_controller.dart';
 import '../theme.dart';
 import 'basket_panel.dart' show money;
+import 'clock_punch_button.dart';
+import '../dinein_sheet.dart';
 import 'open_bills_strip.dart';
 import 'print_status.dart';
 
@@ -129,6 +132,9 @@ class ProgrammedBar extends ConsumerWidget {
     // whichever screen the till happens to be showing.
     'sign_on',
     'clock_in_out',
+    // Locking the customer screen acts on a different machine entirely, so it
+    // means the same thing from every section.
+    'display_lock',
   };
 
   /// One row of bar. Matches the built-in action bar's key height closely
@@ -195,6 +201,12 @@ class ProgrammedBar extends ConsumerWidget {
                         child: _BarKey(
                           button: button,
                           screens: screens,
+                          // What this venue calls the level the till is
+                          // charging, so the key reads "Happy Hour" rather
+                          // than "Price level".
+                          priceLevelLabel: ref
+                              .watch(priceLevelNamesProvider)
+                              .nameFor(ref.watch(currentPriceLevelProvider)),
                           product: button.pluId == null
                               ? null
                               : products[button.pluId],
@@ -243,6 +255,7 @@ class _BarKey extends ConsumerWidget {
   const _BarKey({
     required this.button,
     required this.screens,
+    required this.priceLevelLabel,
     required this.product,
     required this.live,
     required this.pal,
@@ -257,6 +270,13 @@ class _BarKey extends ConsumerWidget {
 
   final ScreenButton button;
   final ScreenSet screens;
+
+  /// What the venue calls the price level this till is currently charging.
+  ///
+  /// Resolved by the bar rather than looked up here, because every key on the
+  /// bar is rebuilt when the level changes and a watch per key would be one
+  /// subscription per button.
+  final String priceLevelLabel;
   final Product? product;
 
   /// The question this key asks, when it is that kind of key.
@@ -283,10 +303,20 @@ class _BarKey extends ConsumerWidget {
     'open_bills',
     'order_total',
     'clock',
+    // Not a plain function key any more. It reports the signed-on member of
+    // staff's own shift — green with the time they started, red with the time
+    // they finished — which is a thing to draw rather than a label to print.
+    'clock_in_out',
     'venue_name',
     'staff_name',
     'sync_status',
     'print_status',
+    // Orders waiting from customers' phones. A widget rather than a function
+    // key because it reports a count as well as being pressed — and because a
+    // venue that has laid out its own top bar never sees the built-in badges,
+    // so without this there would be venues with no way to know an order had
+    // arrived.
+    'dinein_orders',
     'screen_name',
     'spacer',
   };
@@ -318,6 +348,14 @@ class _BarKey extends ConsumerWidget {
     'sign_off': Icons.logout,
     'sign_on': Icons.login,
     'clock_in_out': Icons.schedule,
+    'display_lock': Icons.lock_outline,
+    'price_level': Icons.sell_outlined,
+    'table_plan': Icons.table_bar,
+    'price_check': Icons.search,
+    'product_search': Icons.manage_search,
+    'price_override': Icons.price_change,
+    'refund': Icons.undo,
+    'split': Icons.call_split,
   };
 
   /// Mirrors the labels the back office offers. A key not in here still draws —
@@ -346,6 +384,13 @@ class _BarKey extends ConsumerWidget {
     'sign_off': 'Sign off',
     'sign_on': 'Sign on',
     'clock_in_out': 'Clock in / out',
+    'price_level': 'Price level',
+    'table_plan': 'Table Plan',
+    'price_check': 'Price Check',
+    'product_search': 'Search',
+    'price_override': 'Override',
+    'refund': 'Refund',
+    'split': 'Split',
   };
 
   @override
@@ -394,7 +439,54 @@ class _BarKey extends ConsumerWidget {
       );
     }
 
-    final fill = button.fill ?? pal.softFill;
+    // The same rule, for the three keys that are whole controls rather than
+    // words on a tile.
+    //
+    // Each of these paints its own rounded surface: the clock key is green or
+    // red because that is the entire point of it, and the two badges are
+    // coloured pills. Wrapping any of them in the bar's slab drew a second
+    // rounded rectangle a few pixels outside the first — the doubled background
+    // the venue reported on the clock — and behind the badges it put a grey
+    // block under a pill that is meant to float on the bar.
+    //
+    // Handled here rather than by making the slab conditional further down, so
+    // that adding another self-contained key is one line in one list.
+    const bringsItsOwnSurface = <String>{
+      'dinein_orders',
+      // Its own colour, its own label and its own tap: see
+      // `widgets/clock_punch_button.dart`. The venue's fill is deliberately not
+      // applied — the whole point of the key is that the colour reports
+      // something, and a fill set in the back office would report the back
+      // office instead.
+      'clock_in_out',
+      'sync_status',
+      // Whether the last kitchen ticket landed. On the bar because the till's
+      // own top bar can be turned off in favour of a programmed one, and this
+      // was the only thing on it a venue could not otherwise place. Draws
+      // nothing at all when there is nothing to report.
+      'print_status',
+    };
+    if (bringsItsOwnSurface.contains(key)) {
+      // The clock key fills its cell exactly as an ordinary key does — it *is*
+      // a key, and one standing a few pixels short of Sign On beside it looks
+      // like a mistake. The two badges are pills that float, so they are
+      // centred in the cell with nothing painted behind them.
+      return switch (key) {
+        'clock_in_out' => const ClockPunchKey(compact: true),
+        'sync_status' => const Center(child: SyncStatusBadge()),
+        'dinein_orders' => const Center(child: DineInBadge()),
+        _ => const Center(child: PrintStatusBadge()),
+      };
+    }
+
+    // The same fill an ordinary key falls back to, not a quieter one.
+    //
+    // It was `pal.softFill`, which in Day is #F7F8F2 on a #EDEEE8 canvas — four
+    // values apart. A `screen_name` key the venue had not coloured therefore
+    // drew as a word floating in a gap, next to a venue_name and an
+    // order_total the venue *had* coloured. Three keys in a row, one of them
+    // apparently missing its button.
+    final fill = button.fill ?? pal.keyFill;
     final ink = button.ink ?? (button.fill == null ? pal.ink : Pos.inkOn(fill));
 
     final Widget body = switch (key) {
@@ -416,13 +508,6 @@ class _BarKey extends ConsumerWidget {
         ink,
         icon: Icons.person,
       ),
-      'sync_status' => const Center(child: SyncStatusBadge()),
-      // Whether the last kitchen ticket landed. On the bar because the till's
-      // own top bar can be turned off in favour of a programmed one, and this
-      // was the only thing on it a venue could not otherwise place. Draws
-      // nothing at all when there is nothing to report, exactly as it does in
-      // the built-in bar.
-      'print_status' => const Center(child: PrintStatusBadge()),
       'screen_name' => _oneLine(button.label ?? live.screenName, ink),
       _ => const SizedBox.shrink(),
     };
@@ -431,6 +516,12 @@ class _BarKey extends ConsumerWidget {
       decoration: BoxDecoration(
         color: fill,
         borderRadius: BorderRadius.circular(10),
+        // And the same hairline. Without it an uncoloured widget key is a
+        // filled rectangle with no edge, beside ordinary keys that all have
+        // one — which is what made the row look like it had a hole in it.
+        // Skipped when the venue chose the colour: they picked a fill that is
+        // meant to stand out, and an outline on top of it is noise.
+        border: button.fill == null ? Border.all(color: pal.keyLine) : null,
       ),
       padding: const EdgeInsets.symmetric(horizontal: 8),
       alignment: Alignment.center,
@@ -556,7 +647,14 @@ class _BarKey extends ConsumerWidget {
         // [ProgrammedBar.onSaleScreen].
         final here = onSaleScreen || ProgrammedBar._anywhere.contains(key);
         return (
-          label: button.label ?? _names[key] ?? key,
+          // The venue's own name for the level beats the generic word, unless
+          // the venue has lettered the key itself. A key that says "Price
+          // level" tells a clerk nothing; one that says "Happy Hour" tells
+          // them what they are about to switch to.
+          label: button.label ??
+              (key == 'price_level' ? priceLevelLabel : null) ??
+              _names[key] ??
+              key,
           note: key == 'pay' && live.totalMinor != 0
               ? money(live.totalMinor)
               : null,
@@ -651,6 +749,18 @@ class _BarKey extends ConsumerWidget {
     // sliver, and a word crammed under a photograph in it is neither.
     final words = picture == null || button.showLabel;
 
+    /// The amount on the Pay key, when there is one — and null on every other
+    /// key, which is what keeps the ordinary note treatment exactly as it was.
+    ///
+    /// Read off the key rather than off the resolved note, because two other
+    /// kinds of key also carry a note that happens to be money: a product key
+    /// with prices switched on, and nothing else. Those are prices on a grid of
+    /// forty, and stacking them is right there.
+    final money = button.kind == ScreenButtonKind.function &&
+            button.functionKey == 'pay'
+        ? r.note
+        : null;
+
     return Opacity(
       opacity: enabled ? 1 : 0.55,
       child: Material(
@@ -675,54 +785,119 @@ class _BarKey extends ConsumerWidget {
                   ),
                 ),
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    if (picture == null)
-                      if (emoji != null && emoji.isNotEmpty)
-                        Text(emoji, style: const TextStyle(fontSize: 17))
-                      else if (r.icon != null)
-                        Icon(r.icon, size: 18, color: ink),
-                    if (words)
-                      Flexible(
-                        child: Text(
-                          r.label,
-                          textAlign: TextAlign.center,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: picture != null ? Colors.white : ink,
-                            fontFamily: fontFamily,
-                            // Capped harder than a sale key, and against a fixed
-                            // ceiling rather than the key's height: a bar is one or
-                            // two rows tall whatever the terminal is, and a 40pt
-                            // label on it does not overflow so much as push Pay off
-                            // the end of the strip.
-                            fontSize: (button.fontSize?.toDouble() ?? 12).clamp(
-                              8.0,
-                              20.0,
+                child: money == null
+                    ? Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          if (picture == null)
+                            if (emoji != null && emoji.isNotEmpty)
+                              Text(emoji, style: const TextStyle(fontSize: 17))
+                            else if (r.icon != null)
+                              Icon(r.icon, size: 18, color: ink),
+                          if (words)
+                            Flexible(
+                              child: Text(
+                                r.label,
+                                textAlign: TextAlign.center,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: picture != null ? Colors.white : ink,
+                                  fontFamily: fontFamily,
+                                  // Capped harder than a sale key, and against a
+                                  // fixed ceiling rather than the key's height: a
+                                  // bar is one or two rows tall whatever the
+                                  // terminal is, and a 40pt label on it does not
+                                  // overflow so much as push Pay off the end of
+                                  // the strip.
+                                  fontSize: (button.fontSize?.toDouble() ?? 12)
+                                      .clamp(8.0, 20.0),
+                                  fontWeight: FontWeight.w700,
+                                  height: 1.1,
+                                ),
+                              ),
                             ),
-                            fontWeight: FontWeight.w700,
-                            height: 1.1,
+                          if (words && r.note != null)
+                            Text(
+                              r.note!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: picture != null
+                                    ? Colors.white
+                                    : ink.withValues(alpha: 0.85),
+                                fontFamily: fontFamily,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                        ],
+                      )
+                    // ---- The Pay key ---------------------------------------
+                    //
+                    // "Pay button can the amount be on the side of the button
+                    // not underneath so it's bigger and easier to read."
+                    //
+                    // The figure was a 12pt note stacked under the word, which
+                    // is the treatment every other note on this bar gets — and
+                    // for "Not in the catalogue" or "Screen removed" that is
+                    // right, because those are asides. The amount is not an
+                    // aside. It is the number the clerk reads off the key they
+                    // are about to charge with, in front of a customer, and on
+                    // a two-row bar there was room for twelve points of it.
+                    //
+                    // Beside the word it gets the whole height of the key. The
+                    // built-in bar (`widgets/action_bar.dart`) has always drawn
+                    // it this way; this is the programmable bar catching up
+                    // with it, which matters because the venue laid out its own
+                    // bar and so has never seen the good one.
+                    //
+                    // FittedBox rather than a fixed size: a bar key can be
+                    // 88px wide, and the amount growing to 20pt must shrink the
+                    // whole row rather than overflow it. Everything scales
+                    // together, so the amount stays visibly larger than the
+                    // word at every width.
+                    : Center(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (picture == null && r.icon != null) ...[
+                                Icon(r.icon, size: 18, color: ink),
+                                const SizedBox(width: 7),
+                              ],
+                              if (words) ...[
+                                Text(
+                                  r.label,
+                                  maxLines: 1,
+                                  style: TextStyle(
+                                    color: picture != null ? Colors.white : ink,
+                                    fontFamily: fontFamily,
+                                    fontSize: (button.fontSize?.toDouble() ?? 13)
+                                        .clamp(8.0, 20.0),
+                                    fontWeight: FontWeight.w700,
+                                    height: 1.1,
+                                  ),
+                                ),
+                                const SizedBox(width: 9),
+                              ],
+                              Text(
+                                money,
+                                maxLines: 1,
+                                style: TextStyle(
+                                  color: picture != null ? Colors.white : ink,
+                                  fontFamily: fontFamily,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: -0.4,
+                                  height: 1.1,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
-                    if (words && r.note != null)
-                      Text(
-                        r.note!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: picture != null
-                              ? Colors.white
-                              : ink.withValues(alpha: 0.85),
-                          fontFamily: fontFamily,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                  ],
-                ),
               ),
             ],
           ),

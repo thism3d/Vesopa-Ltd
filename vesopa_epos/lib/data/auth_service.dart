@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:drift/drift.dart';
 import 'package:http/http.dart' as http;
 
 import 'local/database.dart';
@@ -49,7 +50,9 @@ class AuthService {
   /// them where the next shift cannot see them.
   Future<int> parkedCount() async {
     final rows = await (db.select(db.orders)
-          ..where((o) => o.status.equals('parked')))
+          // Practice bills (training mode) do not count: they are nobody's
+          // money, and are cleared on their own.
+          ..where((o) => o.status.equals('parked') & o.training.equals(false)))
         .get();
     return rows.length;
   }

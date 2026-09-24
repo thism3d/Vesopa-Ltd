@@ -173,6 +173,24 @@ extension PosColors on ThemeData {
   /// Raw #A5C715 on the light bar is 1.9:1 — the section icon beside the title
   /// all but disappears. brandDeep is the same hue at 4.6:1.
   Color get posBrandOnChrome => isDark ? Pos.brand : Pos.brandDeep;
+
+  /// A soft brand wash for a panel that is reporting something good.
+  ///
+  /// [Pos.brandSoft] is a solid pale green and cannot be used on its own,
+  /// because it is the same colour in both themes. Every place that paints it
+  /// and then pins its own ink is fine; the one that painted it and let the
+  /// *theme* choose the ink was not — in Night that is near-white text on pale
+  /// green, which is how "Customer display connected" became a green bar with
+  /// nothing readable in it.
+  ///
+  /// In Night this is a translucent lime over whatever surface it is on, so the
+  /// panel reads as a tint rather than as a hole cut in the page, and the
+  /// theme's own ink stays legible on it.
+  Color get posBrandSoft =>
+      isDark ? const Color(0x24A5C715) : Pos.brandSoft;
+
+  /// Text and icons on [posBrandSoft], in both themes.
+  Color get posOnBrandSoft => isDark ? Pos.brand : Pos.brandDeep;
 }
 
 /// The payment screen's own surfaces — the "Ledger" board.

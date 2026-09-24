@@ -9,6 +9,7 @@ import '../data/modifier_layout.dart';
 import '../data/session_repository.dart';
 import '../data/cash_tally.dart';
 import '../data/receipt_repository.dart';
+import 'print_categories.dart';
 import 'printer_transport.dart';
 
 // The pound-sign setting lives beside the printer it is a property of, and
@@ -280,6 +281,12 @@ class ReceiptBuilder {
   /// Characters that fit on one double-width line.
   int get _wideColumns => columns ~/ 2;
 
+  /// The line a practice sale (training mode) prints top and bottom.
+  List<int> _trainingLine() => _text(
+        trainingReceiptLine,
+        styles: const PosStyles(align: PosAlign.center, bold: true),
+      );
+
   /// The customer's receipt.
   List<int> receipt({
     required Order order,
@@ -318,6 +325,10 @@ class ReceiptBuilder {
         ),
       );
     }
+
+    // A practice sale. Said at the top, and again at the bottom (below), so a
+    // torn-off half still says it.
+    if (order.training) bytes.addAll(_trainingLine());
 
     bytes.addAll(_generator.hr());
     bytes.addAll(
@@ -420,6 +431,8 @@ class ReceiptBuilder {
       );
     }
 
+    if (order.training) bytes.addAll(_trainingLine());
+
     bytes.addAll(_generator.feed(2));
     bytes.addAll(_generator.cut());
     return bytes;
@@ -463,6 +476,8 @@ class ReceiptBuilder {
         ),
       );
     }
+
+    if (summary.training) bytes.addAll(_trainingLine());
 
     bytes.addAll(_generator.hr());
     bytes.addAll(
@@ -591,6 +606,8 @@ class ReceiptBuilder {
       );
     }
 
+    if (summary.training) bytes.addAll(_trainingLine());
+
     bytes.addAll(_generator.feed(2));
     bytes.addAll(_generator.cut());
     return bytes;
@@ -599,6 +616,12 @@ class ReceiptBuilder {
   /// A kitchen ticket. Deliberately plain and large: it is read across a
   /// counter, at speed, and never shows prices — the kitchen does not need
   /// them and they only add noise.
+  /// [categoryOf] says which printing category a PLU belongs to, so the ticket
+  /// prints in courses rather than in the order the customer said them —
+  /// `--- BREAKFAST ---` and then the breakfasts. Null for every product, which
+  /// is what a venue that has set no categories up passes, gives exactly the
+  /// ticket that printed before categories existed. See
+  /// `printing/print_categories.dart`.
   List<int> kitchenTicket({
     required Order order,
     required List<OrderLine> lines,
@@ -606,6 +629,7 @@ class ReceiptBuilder {
     String? headline,
     String? staffName,
     String? roomName,
+    PrintCategory? Function(int pluId)? categoryOf,
   }) {
     final bytes = _begin();
 
@@ -674,26 +698,42 @@ class ReceiptBuilder {
     );
     bytes.addAll(_generator.hr());
 
-    for (final entry in nestModifiers(lines)) {
-      final line = entry.line;
-      if (entry.isModifier) {
-        // Under the dish, indented, and at normal height. Double-height for
-        // "Rare" beside a double-height "Steak" is two things competing to be
-        // read first on a ticket somebody is glancing at over a pass.
-        bytes.addAll(_text('   > ${line.name}', styles: const PosStyles(bold: true)));
-      } else {
+    // Grouped into the venue's own courses, which is the whole of the printer
+    // categories feature. `groupForKitchen` already nests the modifiers, so
+    // this loop reads one group at a time rather than the flat list.
+    for (final group in groupForKitchen(lines, categoryOf ?? (_) => null)) {
+      if (group.heading != null) {
         bytes.addAll(
           _text(
-            '${line.quantity.toStringAsFixed(0)}x  ${line.name}',
-            styles: const PosStyles(
-              height: PosTextSize.size2,
-              bold: true,
-            ),
+            kitchenHeading(group.heading!),
+            styles: const PosStyles(align: PosAlign.center, bold: true),
           ),
         );
       }
-      if (line.notes != null && line.notes!.isNotEmpty) {
-        bytes.addAll(_text('   * ${line.notes}'));
+
+      for (final entry in group.lines) {
+        final line = entry.line;
+        if (entry.isModifier) {
+          // Under the dish, indented, and at normal height. Double-height for
+          // "Rare" beside a double-height "Steak" is two things competing to be
+          // read first on a ticket somebody is glancing at over a pass.
+          bytes.addAll(
+            _text('   > ${line.name}', styles: const PosStyles(bold: true)),
+          );
+        } else {
+          bytes.addAll(
+            _text(
+              '${line.quantity.toStringAsFixed(0)}x  ${line.name}',
+              styles: const PosStyles(
+                height: PosTextSize.size2,
+                bold: true,
+              ),
+            ),
+          );
+        }
+        if (line.notes != null && line.notes!.isNotEmpty) {
+          bytes.addAll(_text('   * ${line.notes}'));
+        }
       }
     }
 
@@ -804,6 +844,19 @@ class ReceiptBuilder {
     section('REFUNDS');
     totalRow(report.refunds);
 
+    // Paid outs are the other way money leaves the drawer without a sale, and
+    // they are the line a manager cashing up needs before the cash total adds
+    // up. Printed only when there were some: most days there are none.
+    if (report.expenses.count > 0) {
+      section('PAID OUT');
+      totalRow(report.expenses);
+    }
+    if (report.wastage.count > 0) {
+      section('WASTAGE');
+      bytes.addAll(_row('Entries', '[${report.wastage.count}]'));
+      bytes.addAll(_text('Costed on the back office Wastage Report'));
+    }
+
     // The two lines a manager is actually looking for. Together, and with their
     // counts, because that is what makes them worth printing: a no-sale count
     // that has climbed is a question whatever the money says.
@@ -846,6 +899,40 @@ class ReceiptBuilder {
         ),
       ]),
     );
+
+    // What was actually counted, and by how much it missed.
+    //
+    // Only when somebody was asked. Null is "not counted", which is a different
+    // fact from "counted, and the drawer was empty" — a Z printing
+    // "SHORT £240.00" because the venue has the declaration switched off would
+    // be worse than one that says nothing.
+    //
+    // The word first, then the money, because it is read across a counter at
+    // the end of a long night: UP and SHORT are the two things anybody is
+    // looking for, and a signed figure makes them work it out.
+    final counted = report.declaredCashMinor;
+    final difference = report.cashDifferenceMinor;
+    if (counted != null && difference != null) {
+      bytes.addAll(_row('Counted', _money(counted)));
+      bytes.addAll(
+        _generator.row([
+          _col(
+            text: difference == 0
+                ? 'BALANCED'
+                : difference > 0
+                    ? 'OVER'
+                    : 'SHORT',
+            width: 7,
+            styles: const PosStyles(bold: true),
+          ),
+          _col(
+            text: _money(difference.abs()),
+            width: 5,
+            styles: const PosStyles(align: PosAlign.right, bold: true),
+          ),
+        ]),
+      );
+    }
 
     if (report.isZ) {
       bytes.addAll(_generator.feed(1));
@@ -960,6 +1047,106 @@ class ReceiptBuilder {
       bytes.addAll(_row('Issued by', issuedBy.trim()));
     }
     bytes.addAll(_row('Issued', _time.format(at ?? DateTime.now())));
+
+    bytes.addAll(_generator.feed(2));
+    bytes.addAll(_generator.cut());
+    return bytes;
+  }
+
+  /// The slip that prints when an expired gym card is swiped.
+  ///
+  /// "If the gym membership card has expired, can we get an automated slip
+  /// printed to say who has expired and when."
+  ///
+  /// WHY A PIECE OF PAPER AND NOT A MESSAGE ON A SCREEN
+  ///
+  /// Because nobody is looking at the screen. The gym till is unmanned: the
+  /// member sees the greeting, and then it clears itself, and there is no
+  /// member of staff standing there to have seen anything at all. A slip is the
+  /// one thing that is still there an hour later when somebody walks past the
+  /// printer -- and it is what gets picked up, put on a desk, and acted on.
+  ///
+  /// So it is written for the member of staff who finds it rather than for the
+  /// member who has already walked in: the name is the largest thing on it, the
+  /// date it expired is next, and how long ago that was is spelled out in days
+  /// so nobody has to do the arithmetic against the date at the top.
+  List<int> gymExpirySlip({
+    required String memberName,
+    String? memberNumber,
+    String? cardNumber,
+    String? expiredOn,
+    int? daysAgo,
+    bool refused = false,
+    String? shopName,
+    DateTime? at,
+  }) {
+    final bytes = _begin();
+
+    if (shopName != null && shopName.trim().isNotEmpty) {
+      bytes.addAll(_shopName(shopName));
+    }
+    bytes.addAll(
+      _text(
+        'GYM MEMBERSHIP EXPIRED',
+        styles: const PosStyles(align: PosAlign.center, bold: true),
+      ),
+    );
+    bytes.addAll(_generator.hr());
+
+    // The name, at arm's length. This slip is found on a printer rather than
+    // handed to anybody, so the first question it has to answer from across a
+    // room is who.
+    bytes.addAll(
+      _text(
+        memberName.trim().isEmpty ? 'Unknown member' : memberName.trim(),
+        styles: const PosStyles(
+          align: PosAlign.center,
+          height: PosTextSize.size2,
+          width: PosTextSize.size2,
+          bold: true,
+        ),
+      ),
+    );
+    if (memberNumber != null && memberNumber.trim().isNotEmpty) {
+      bytes.addAll(
+        _text(
+          'Member $memberNumber',
+          styles: const PosStyles(align: PosAlign.center),
+        ),
+      );
+    }
+    bytes.addAll(_generator.feed(1));
+
+    if (expiredOn != null && expiredOn.trim().isNotEmpty) {
+      bytes.addAll(_row('Expired on', expiredOn.trim()));
+    }
+    if (daysAgo != null && daysAgo > 0) {
+      bytes.addAll(_row('That was', '$daysAgo day${daysAgo == 1 ? '' : 's'} ago'));
+    }
+    if (cardNumber != null && cardNumber.trim().isNotEmpty) {
+      bytes.addAll(_row('Card', cardNumber.trim()));
+    }
+    bytes.addAll(_row('Swiped at', _time.format(at ?? DateTime.now())));
+
+    bytes.addAll(_generator.hr());
+    // What actually happened, said plainly. A slip that did not distinguish
+    // "they are inside" from "they were turned away" would leave whoever picks
+    // it up unable to tell whether anything needs doing right now.
+    bytes.addAll(
+      _text(
+        refused
+            ? 'THE CARD WAS REFUSED. The member was not signed in.'
+            : 'The member was signed in. The visit is recorded and flagged.',
+        styles: const PosStyles(align: PosAlign.center),
+      ),
+    );
+    bytes.addAll(_generator.feed(1));
+    bytes.addAll(
+      _text(
+        'Renew the membership in the back office, or at a manned till.',
+        styles: const PosStyles(align: PosAlign.center),
+      ),
+    );
 
     bytes.addAll(_generator.feed(2));
     bytes.addAll(_generator.cut());

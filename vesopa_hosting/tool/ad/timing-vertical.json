@@ -1,0 +1,41 @@
+{
+  "voice": "bn-BD-PradeepNeural",
+  "lines": [
+    {
+      "id": "hook",
+      "show": "hook",
+      "say": "ব্যবসা অনলাইনে আনবেন? এখন সবচেয়ে সহজ।",
+      "file": "hook.mp3",
+      "seconds": 4.58
+    },
+    {
+      "id": "ai",
+      "show": "ai",
+      "say": "ভেসোপা এ আই কে বাংলায় বলুন। ডোমেইন খুঁজে দেবে, হোস্টিং বুঝিয়ে দেবে।",
+      "file": "ai.mp3",
+      "seconds": 6.24
+    },
+    {
+      "id": "builder",
+      "show": "builder",
+      "say": "আর ওয়েবসাইট? মুখে বলুন, চোখের সামনেই তৈরি হয়ে যাবে।",
+      "file": "builder.mp3",
+      "seconds": 5.3
+    },
+    {
+      "id": "offer",
+      "show": "offer",
+      "say": "ডট সাইট ডোমেইন, সঙ্গে প্রথম মাসের হোস্টিং। দুটো মিলে মাত্র তিনশো একাশি টাকা।",
+      "file": "offer.mp3",
+      "seconds": 6.86
+    },
+    {
+      "id": "cta",
+      "show": "cta",
+      "say": "কোড গো ডিজিটাল। ক্লাউড ডট ভেসোপা ডট কম।",
+      "file": "cta.mp3",
+      "seconds": 4.63
+    }
+  ],
+  "spoken_seconds": 27.61
+}

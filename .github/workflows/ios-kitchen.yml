@@ -1,0 +1,101 @@
+# The Vesopa Kitchen for iPhone and Apple Watch, to TestFlight.
+#
+# Nobody at Vesopa builds on a Mac, so the App Store build is made here: a
+# macOS runner builds the Flutter app, archives it with the Watch app inside,
+# lets Apple sign it (cloud-managed certificates, no .p12 in this repository)
+# and uploads it to App Store Connect, where it appears under TestFlight.
+#
+# Run it from the Actions tab: "iOS - The Vesopa Kitchen", Run workflow, with
+# a build number higher than the last one uploaded.
+#
+# Needs three repository secrets (Settings > Secrets and variables > Actions),
+# from App Store Connect > Users and Access > Integrations > App Store Connect
+# API > Team Keys, a key with the Admin role (cloud signing requires it):
+#   ASC_KEY_ID      the key's ID
+#   ASC_ISSUER_ID   the Issuer ID shown above the list of keys
+#   ASC_KEY_P8      the whole downloaded AuthKey_XXXXXXXXXX.p8, pasted in
+#
+# That key is not the Sign in with Apple / push key the servers use.
+
+name: iOS - The Vesopa Kitchen
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: Build number (must be higher than the last upload of this version)
+        required: true
+      build_name:
+        description: Version shown in the App Store (blank for pubspec.yaml's)
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  testflight:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: vesopa_loyalty
+    env:
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.2
+          cache: true
+
+      - name: App Store Connect key
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          test -n "$ASC_KEY_ID" && test -n "$ASC_ISSUER_ID" && test -n "$ASC_KEY_P8" \
+            || { echo "::error::Set ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_P8 first (see the top of this file)."; exit 1; }
+          mkdir -p "$RUNNER_TEMP/keys"
+          printf '%s\n' "$ASC_KEY_P8" > "$RUNNER_TEMP/keys/AuthKey_$ASC_KEY_ID.p8"
+
+      - name: Flutter build
+        env:
+          BUILD_NUMBER: ${{ inputs.build_number }}
+          BUILD_NAME: ${{ inputs.build_name }}
+        run: |
+          flutter pub get
+          flutter build ios --release --no-codesign \
+            --build-number="$BUILD_NUMBER" \
+            ${BUILD_NAME:+--build-name="$BUILD_NAME"} \
+            --dart-define=VESOPA_LOYALTY_CLIENT_ID=12a1047bafa611f185af42010a80000e \
+            --dart-define=LOYALTY_SLUG=thevesopakitchen
+
+      - name: Archive (iPhone app with the Watch app)
+        run: |
+          xcodebuild archive \
+            -workspace ios/Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/Kitchen.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey_$ASC_KEY_ID.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+
+      - name: Sign and upload to App Store Connect
+        run: |
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/Kitchen.xcarchive" \
+            -exportOptionsPlist ios/ExportOptions.plist \
+            -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey_$ASC_KEY_ID.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+
+      - name: Remove the key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/keys"

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'widgets/on_screen_keyboard.dart';
+import 'widgets/pos_text_field.dart';
 
 String _money(int minor) =>
     NumberFormat.currency(locale: 'en_GB', symbol: '£').format(minor / 100);
@@ -153,12 +155,15 @@ class _DiscountDialogState extends State<_DiscountDialog> {
               ),
               const SizedBox(height: 16),
 
-              TextField(
+              PosTextField(
                 controller: _entry,
                 autofocus: true,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
+                // A discount is money or a percentage, so the board is digits
+                // and a point. A card swiped over this dialog is swallowed
+                // before it reaches the box — see ui/swipe_listener.dart — and
+                // that is what stops a loyalty number becoming a discount of
+                // nine hundred and ninety-nine thousand pounds.
+                mode: PosKeyboardMode.decimal,
                 decoration: InputDecoration(
                   labelText: percent ? 'Percentage off' : 'Amount off',
                   prefixText: percent ? null : '£ ',

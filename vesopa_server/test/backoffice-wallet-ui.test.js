@@ -150,13 +150,39 @@ check('the six lists that can hand out a card call for the buttons', () => {
 check('every icon button carries an accessible name', () => {
   // The control is an icon and nothing else, so aria-label and title are not
   // decoration here — they are the only place its meaning is written down.
-  const buttons = [...app.matchAll(/<button class="icon-btn"[\s\S]{0,400}?>/g)]
-    .map((m) => m[0]);
-  assert.ok(buttons.length >= 4, `only found ${buttons.length} icon buttons`);
-  for (const b of buttons) {
-    assert.ok(/aria-label=/.test(b), `an icon button has no aria-label:\n${b}`);
-    assert.ok(/title=/.test(b), `an icon button has no title:\n${b}`);
-  }
+  //
+  // This used to scan app.js for literal `<button class="icon-btn"` markup.
+  // Every one of them is built by `iconBtn()` now, so there is no markup left
+  // to scan — and scanning for it would pass a file with no buttons in it at
+  // all. What is checked instead is the two things that actually make the
+  // guarantee: that the one component always writes both attributes, and that
+  // no call site passes it an empty name.
+  const fn = app.slice(app.indexOf('function iconBtn('));
+  const body = fn.slice(0, fn.indexOf('\n}'));
+  assert.match(body, /aria-label="\$\{esc\(tip\)\}"/, 'iconBtn stopped writing aria-label');
+  assert.match(body, /title="\$\{esc\(tip\)\}"/, 'iconBtn stopped writing title');
+  assert.match(body, /data-tip="\$\{esc\(tip\)\}"/, 'iconBtn stopped writing the tooltip');
+
+  // One string for all three, so the tooltip and the accessible name cannot
+  // drift apart.
+  const uses = [...app.matchAll(/iconBtn\(\s*'([^']+)'\s*,\s*(`[^`]*`|'[^']*')/g)];
+  assert.ok(uses.length >= 15, `only ${uses.length} icon buttons found`);
+  const unnamed = uses
+    .map((m) => ({ icon: m[1], label: m[2] }))
+    .filter((u) => u.label.replace(/[`']/g, '').trim().length < 2);
+  assert.deepStrictEqual(unnamed, [], 'an icon button has no usable name');
+});
+
+check('every icon a button asks for exists', () => {
+  // A name that is not in ICONS renders an empty <svg> — a button that is
+  // there, is pressable, and shows nothing at all.
+  const set = app.slice(app.indexOf('const ICONS = {'));
+  const known = new Set(
+    [...set.slice(0, set.indexOf('\n};')).matchAll(/^\s{2}([a-z][\w]*):/gm)].map((m) => m[1])
+  );
+  const asked = [...app.matchAll(/iconBtn\(\s*'([^']+)'/g)].map((m) => m[1]);
+  const missing = [...new Set(asked)].filter((n) => !known.has(n));
+  assert.deepStrictEqual(missing, [], 'icons asked for but not defined');
 });
 
 // ---------------------------------------------------------------------------

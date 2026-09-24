@@ -4,6 +4,7 @@ import '../data/local/database.dart';
 import '../data/printer_settings.dart';
 import '../data/session_repository.dart';
 // Re-exports print_targets.dart, which is where PrintTarget lives.
+import 'print_categories.dart';
 import 'printer_transport.dart';
 import 'receipt_builder.dart';
 
@@ -154,10 +155,15 @@ class PrintService {
   /// Returns one result per station rather than throwing. A dead printer at the
   /// bar must not stop the food reaching the kitchen, and the caller needs to
   /// know exactly which stations to offer a retry for.
+  /// [categoriesByPlu] groups the ticket into the venue's own courses —
+  /// `--- BREAKFAST ---` and then the breakfasts. Empty for a venue that has
+  /// set no categories up, which prints exactly the ticket it printed before
+  /// they existed. See `printing/print_categories.dart`.
   Future<List<StationPrintResult>> printKitchenTickets({
     required Order order,
     required List<OrderLine> lines,
     required Map<String, Set<String>> routesByLine,
+    Map<int, PrintCategory> categoriesByPlu = const {},
     String? headline,
     String? staffName,
     String? roomName,
@@ -200,6 +206,7 @@ class PrintService {
             headline: headline,
             staffName: staffName,
             roomName: roomName,
+            categoryOf: (pluId) => categoriesByPlu[pluId],
           ),
         );
         results.add(StationPrintResult(station: station, label: label));
@@ -258,6 +265,45 @@ class PrintService {
         holder: holder,
         shopName: setup.shopName,
         issuedBy: issuedBy,
+      ),
+    );
+  }
+
+  /// The slip that prints when an expired gym card is swiped at the door.
+  ///
+  /// On the receipt printer, like the card slip above and for a different
+  /// reason: not because somebody is standing there to be handed it, but
+  /// because nobody is. The receipt printer is the one at the till the member
+  /// just swiped at, which is where a member of staff walking past will see the
+  /// paper. A venue that sends its reports to an office printer at the back
+  /// would otherwise be relying on somebody going to look for a slip they do
+  /// not know exists.
+  ///
+  /// Throws where there is no printer, and the caller swallows it. A gym door
+  /// with no printer set up still has to let members in.
+  Future<void> printGymExpirySlip({
+    required String memberName,
+    String? memberNumber,
+    String? cardNumber,
+    String? expiredOn,
+    int? daysAgo,
+    bool refused = false,
+  }) async {
+    final printer = setup.deviceFor(PrintTarget.customerReceipt);
+    if (printer == null) {
+      throw StateError('No receipt printer is set up on this till.');
+    }
+
+    final builder = await _for(printer);
+    await PrinterTransport.of(printer).send(
+      builder.gymExpirySlip(
+        memberName: memberName,
+        memberNumber: memberNumber,
+        cardNumber: cardNumber,
+        expiredOn: expiredOn,
+        daysAgo: daysAgo,
+        refused: refused,
+        shopName: setup.shopName,
       ),
     );
   }
