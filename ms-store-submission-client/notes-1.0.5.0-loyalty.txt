@@ -1,7 +1,13 @@
-Version 1.0.5.0 - Kept in step with the iPhone app
+Version 1.0.5.0 - the same card on your PC as on your phone
 
-This update brings the Windows app level with the new iPhone and Apple Watch release, so both are built from the same card, account and news.
+This update brings the Windows app level with the new iPhone and Apple Watch release, so your card, your account and your news are the same wherever you open them.
 
-Your privacy: when a venue sends "near us now" news, your position is only compared with the venue's at that moment. The app keeps no record of where you were, only whether you were nearby, and only for a few hours.
+After updating:
 
-Smaller fixes to how the app talks to the venue, so your card, your photo and your news load reliably.
+1. Sign in with the same Vesopa account you use on your phone. Your card, your photo and your membership come with you - there is nothing to set up again.
+2. Open your card at the till to collect points and use rewards. It is the same card the venue scans from your phone.
+3. Turn on news if you would like to hear when something is on. You choose this, and you can change it at any time.
+
+About "near us now" news: your position is compared with the venue's at that moment, and nothing more. The app keeps no record of where you have been - only whether you were nearby, and only for a few hours.
+
+Also in this update: your card, your photo and your news load more reliably.
