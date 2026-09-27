@@ -94,8 +94,6 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  integration_test:
-    sdk: flutter
 
   # Drives the real application on a real machine, with real networking.
   #
