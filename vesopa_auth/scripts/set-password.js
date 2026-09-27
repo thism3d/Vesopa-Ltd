@@ -62,10 +62,16 @@ const { normaliseEmail } = require('../src/normalise');
  * the Metric Membership sign-in (scripts/make-org-admin.js), with a password
  * the owner chose.
  */
+/*
+ * 2026-09-27: the owner asked for a staff test login for the Microsoft Store's
+ * certification testers of Metric Membership, with a password he chose
+ * (MetricMembership/server/scripts/setup-test-account.py).
+ */
 const ALLOWED = [
   'manager@vesopa.co.uk', 'nasim@vesopa.site', 'habib@vesopa.site',
   'dylan@vesopa.com', 'dylan@beaconsepos.com',
   'm.hammond@metricgroup.co.uk',
+  'metric-store-test@vesopasoftware.com',
 ];
 
 async function main() {
