@@ -33,6 +33,17 @@ const { headers } = require('./security');
 const { apiRouter } = require('./api');
 const { anprRouter } = require('./anpr');
 const { adminPages, adminApi, callback } = require('./admin');
+const { createActivityLog } = require('./activity_log');
+const session = require('./session');
+
+// The shared Vesopa request log (shared/activity-log, synced in by
+// tool/sync-activity-log.sh), the same as every other Vesopa service: every
+// changing request and every 5xx, to logs/activity/*.jsonl. The Metric-specific
+// log of members, cars and barrier reads is src/activity.js.
+const requestLog = createActivityLog({
+  service: 'vesopa_metric',
+  dir: process.env.ACTIVITY_LOG_DIR || path.join(config.LOG_DIR, 'activity'),
+});
 
 function createApp() {
   const app = express();
@@ -42,6 +53,23 @@ function createApp() {
   app.use(compression());
   app.use(headers);
   app.use(cookieParser());
+
+  app.use(requestLog.middleware({
+    // Camera reads (raw bodies, many a minute) and the app's own tap batches
+    // are recorded by src/activity.js already.
+    skip: (req) => req.path.startsWith('/anpr/') || req.path === '/api/v1/log',
+    identify: (req) => {
+      const h = String(req.get('authorization') || '');
+      const member = session.read(h.startsWith('Bearer ') ? h.slice(7) : '', 'member');
+      const admin = session.read(req.cookies && req.cookies.mg_admin, 'admin');
+      return {
+        app: String(req.get('X-Metric-App') || (admin ? 'metric-console' : 'metric')).slice(0, 40),
+        actor: admin ? admin.email : member ? `member ${member.mid}` : null,
+        actorType: admin ? 'staff' : member ? 'customer' : 'visitor',
+        customerId: member ? String(member.mid) : null,
+      };
+    },
+  }));
 
   app.get('/health', async (req, res) => {
     try {
@@ -109,6 +137,7 @@ function start() {
     setTimeout(() => sync.syncAll().catch(() => {}), 5000).unref();
     setInterval(() => sync.syncAll().catch((e) => console.error('[sync]', e.message)), config.SYNC_EVERY_MS).unref();
     setInterval(() => activity.prune().catch(() => {}), 6 * 3600 * 1000).unref();
+    requestLog.startMaintenance();
   }
 }
 

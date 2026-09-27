@@ -88,6 +88,11 @@ typed), every staff change, every plate read and every allow-list sync goes to:
 Keys that look like secrets are replaced with `[hidden]` before anything is
 written.
 
+On top of that, the shared Vesopa request log (`src/activity_log.js`, synced
+from `shared/activity-log` by `tool/sync-activity-log.sh`, as in every other
+service) records every changing request and every 5xx in
+`logs/activity/activity-YYYY-MM-DD.jsonl`.
+
 ## Run and test
 
 ```bash

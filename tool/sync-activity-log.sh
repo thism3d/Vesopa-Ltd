@@ -10,7 +10,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 NODE_SRC="$ROOT/shared/activity-log/activity_log.js"
 DART_SRC="$ROOT/shared/activity-log/activity_log.dart"
-NODE_TARGETS=(vesopa_server vesopa_web vesopa_auth vesopa_hosting vesopa_gift)
+NODE_TARGETS=(vesopa_server vesopa_web vesopa_auth vesopa_hosting vesopa_gift vesopa_metric_server)
 DART_TARGETS=(vesopa_epos vesopa_epos_kitchen vesopa_epos_display vesopa_express vesopa_loyalty)
 status=0
 sync_one() {
