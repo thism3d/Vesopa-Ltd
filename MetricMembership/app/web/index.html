@@ -42,6 +42,13 @@
   <link rel="icon" type="image/png" sizes="192x192" href="icons/Icon-192.png">
   <link rel="manifest" href="/manifest.json">
   <link rel="stylesheet" href="splash.css">
+  <!-- Fetched by the app before its first frame: ask for them now, in parallel. -->
+  <link rel="preload" href="assets/FontManifest.json" as="fetch" crossorigin>
+  <link rel="preload" href="assets/assets/fonts/PlusJakartaSans-Regular.ttf" as="fetch" crossorigin>
+  <link rel="preload" href="assets/assets/fonts/PlusJakartaSans-Medium.ttf" as="fetch" crossorigin>
+  <link rel="preload" href="assets/assets/fonts/PlusJakartaSans-SemiBold.ttf" as="fetch" crossorigin>
+  <link rel="preload" href="assets/assets/fonts/PlusJakartaSans-Bold.ttf" as="fetch" crossorigin>
+  <link rel="preload" href="assets/assets/fonts/PlusJakartaSans-ExtraBold.ttf" as="fetch" crossorigin>
   <!-- The phone's bar colours from Appearance, and auto-update (server/public/theme.js). -->
   <script src="/theme.js" data-paint="page"></script>
 </head>
@@ -49,8 +56,10 @@
   <div id="splash" role="status" aria-label="Loading Metric Membership">
     <img class="logo" src="icons/logo-white.png" alt="metric">
     <div class="pill">MEMBERSHIP</div>
-    <div class="road" aria-hidden="true"><span class="car"></span><span class="gate"></span></div>
+    <div class="road" aria-hidden="true"><span class="car"><span class="beam"></span></span><span class="gate"></span></div>
+    <div class="progress" aria-hidden="true"><span id="splash-bar"></span></div>
     <div class="wait">Getting your membership ready…</div>
+    <div class="slow" id="splash-slow">Still loading. A slow connection only makes the first visit slow.</div>
   </div>
   <script src="splash.js"></script>
   <script src="flutter_bootstrap.js" async></script>

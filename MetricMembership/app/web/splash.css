@@ -12,6 +12,13 @@ html, body { margin: 0; height: 100%; background: #002788; }
 #splash .car { position: absolute; bottom: 3px; left: -44px; width: 40px; height: 14px; border-radius: 8px 12px 3px 3px; background: #5bd601; animation: drive 2.4s cubic-bezier(.4, 0, .2, 1) infinite; }
 #splash .car::before, #splash .car::after { content: ''; position: absolute; bottom: -4px; width: 9px; height: 9px; border-radius: 50%; background: #0b0f1c; }
 #splash .car::before { left: 5px; } #splash .car::after { right: 5px; }
+/* Low at the back, rounded bonnet and a headlight at the front: it faces the way it drives. */
+#splash .car { border-radius: 4px 14px 3px 3px; }
+#splash .car .beam { position: absolute; right: -2px; top: 4px; width: 4px; height: 4px; border-radius: 2px; background: #fff4c2; box-shadow: 8px 0 10px 3px rgba(255, 244, 194, .35); }
+#splash .progress { width: 200px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, .16); overflow: hidden; }
+#splash .progress span { display: block; height: 100%; background: #5bd601; transform: scaleX(.04); transform-origin: left center; border-radius: 2px; }
+#splash .slow { font-size: 12px; color: rgba(255, 255, 255, .55); max-width: 260px; opacity: 0; transition: opacity .4s ease; }
+#splash .slow.on { opacity: 1; }
 #splash .gate { position: absolute; left: 120px; bottom: 0; width: 64px; height: 5px; background: #fff; border-radius: 3px; transform-origin: 2px 50%; animation: lift 2.4s ease-in-out infinite; }
 @keyframes drive { 0% { left: -44px; } 40%, 52% { left: 70px; } 100% { left: 220px; } }
 @keyframes lift { 0%, 40% { transform: rotate(0); } 50%, 80% { transform: rotate(-70deg); } 92%, 100% { transform: rotate(0); } }

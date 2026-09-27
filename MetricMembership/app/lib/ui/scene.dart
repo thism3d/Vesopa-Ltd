@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
@@ -25,7 +26,10 @@ class CarParkScene extends StatefulWidget {
 }
 
 class _CarParkSceneState extends State<CarParkScene> with SingleTickerProviderStateMixin {
-  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: _cycleMs));
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: _cycleMs),
+  );
 
   static const _cycleMs = 8000;
 
@@ -58,7 +62,11 @@ class _CarParkSceneState extends State<CarParkScene> with SingleTickerProviderSt
   );
 }
 
-double _ease(double x) => x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x);
+double _ease(double x) => x <= 0
+    ? 0
+    : x >= 1
+    ? 1
+    : x * x * (3 - 2 * x);
 
 double _seg(double t, double a, double b) => ((t - a) / (b - a)).clamp(0.0, 1.0);
 
@@ -84,14 +92,23 @@ class _ScenePainter extends CustomPainter {
     canvas.drawRect(Rect.fromLTWH(0, h * _roadTop, w, h * (_roadBottom - _roadTop)), Paint()..color = const Color(0xFF0A1740));
     final dash = Paint()..color = Colors.white.withValues(alpha: 0.22);
     final dashY = h * (_roadTop + 0.085);
-    for (double x = -((t * 30) % 40); x < w; x += 40) {
+    // Painted on the road, so they stay put: only the cars move.
+    for (double x = 0; x < w; x += 40) {
       canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(x, dashY, 20, 2.5), const Radius.circular(2)), dash);
     }
     final farScale = h * 0.0016;
     for (var i = 0; i < 2; i++) {
       final p = ((t / 8) + i * 0.5) % 1.0;
       final x = w * (1.15 - p * 1.4);
-      _car(canvas, Offset(x, farY), farScale, i == 0 ? const Color(0xFF8A96B8) : const Color(0xFF4F6BD8), facingRight: false, dim: true);
+      _car(
+        canvas,
+        Offset(x, farY),
+        farScale,
+        i == 0 ? const Color(0xFF8A96B8) : const Color(0xFF4F6BD8),
+        facingRight: false,
+        dim: true,
+        spin: w * 1.4 * p / (13 * farScale),
+      );
     }
 
     // The entry lane and its bay markings.
@@ -110,10 +127,15 @@ class _ScenePainter extends CustomPainter {
     } else {
       carX = stopX + (w + carLen - stopX) * Curves.easeInCubic.transform(_seg(t, 3.7, 6.0));
     }
-    final carDriving = t < 2.2 || (t > 3.7 && t < 6.0);
 
     // The arm: up after the read, down once the car is through.
-    final lift = t < 3.0 ? 0.0 : t < 3.6 ? _ease(_seg(t, 3.0, 3.6)) : t < 5.6 ? 1.0 : 1 - _ease(_seg(t, 5.6, 6.3));
+    final lift = t < 3.0
+        ? 0.0
+        : t < 3.6
+        ? _ease(_seg(t, 3.0, 3.6))
+        : t < 5.6
+        ? 1.0
+        : 1 - _ease(_seg(t, 5.6, 6.3));
 
     // The ANPR camera stands just past the barrier, looking back at the
     // front plate of the car waiting at it.
@@ -121,11 +143,17 @@ class _ScenePainter extends CustomPainter {
     final reading = t > 1.9 && t < 3.3;
     _camera(canvas, Offset(camX, laneY - 92 * scale), scale, reading, Offset(carX + carLen / 2 - 4 * scale, laneY - 6 * scale));
 
-    _car(canvas, Offset(carX, laneY), scale, MetricBrand.green, facingRight: true, plate: plate, driving: carDriving, t: t);
+    _car(canvas, Offset(carX, laneY), scale, MetricBrand.green, facingRight: true, plate: plate, spin: (carX + carLen) / (13 * scale));
     _barrier(canvas, Offset(gateX, laneY + 2 * scale), scale, lift);
 
     // The recognised badge.
-    final pop = t < 2.5 ? 0.0 : t < 2.8 ? Curves.easeOutBack.transform(_seg(t, 2.5, 2.8)) : t < 4.6 ? 1.0 : 1 - _seg(t, 4.6, 4.9);
+    final pop = t < 2.5
+        ? 0.0
+        : t < 2.8
+        ? Curves.easeOutBack.transform(_seg(t, 2.5, 2.8))
+        : t < 4.6
+        ? 1.0
+        : 1 - _seg(t, 4.6, 4.9);
     if (pop > 0) _badge(canvas, Offset(stopX, laneY - 70 * scale), scale, pop);
 
     // Pavement and people.
@@ -158,9 +186,8 @@ class _ScenePainter extends CustomPainter {
       Offset(size.width * 0.64, size.height * 0.55),
       size.width * 0.45,
       Paint()
-        ..shader = RadialGradient(
-          colors: [MetricBrand.green.withValues(alpha: 0.18), MetricBrand.green.withValues(alpha: 0)],
-        ).createShader(Rect.fromCircle(center: Offset(size.width * 0.64, size.height * 0.55), radius: size.width * 0.45)),
+        ..shader = RadialGradient(colors: [MetricBrand.green.withValues(alpha: 0.18), MetricBrand.green.withValues(alpha: 0)])
+            .createShader(Rect.fromCircle(center: Offset(size.width * 0.64, size.height * 0.55), radius: size.width * 0.45)),
     );
     // Stars that breathe.
     final rnd = math.Random(7);
@@ -205,7 +232,10 @@ class _ScenePainter extends CustomPainter {
       canvas.drawRect(Rect.fromLTWH(left, y - 2, w - left + 4, 4), deck);
     }
     final signC = Offset(left + 26, top + 24);
-    canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromCenter(center: signC, width: 30, height: 30), const Radius.circular(7)), Paint()..color = MetricBrand.green);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(Rect.fromCenter(center: signC, width: 30, height: 30), const Radius.circular(7)),
+      Paint()..color = MetricBrand.green,
+    );
     _text(canvas, 'P', signC, 20, MetricBrand.navy, FontWeight.w900);
   }
 
@@ -225,7 +255,10 @@ class _ScenePainter extends CustomPainter {
           ..shader = LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [MetricBrand.green.withValues(alpha: 0.7 * pulse), MetricBrand.green.withValues(alpha: 0.05)],
+            colors: [
+              MetricBrand.green.withValues(alpha: 0.7 * pulse),
+              MetricBrand.green.withValues(alpha: 0.05),
+            ],
           ).createShader(beam.getBounds()),
       );
       // Scan line sweeping the plate.
@@ -238,7 +271,10 @@ class _ScenePainter extends CustomPainter {
           ..strokeWidth = 1.6 * s,
       );
     }
-    final body = RRect.fromRectAndRadius(Rect.fromCenter(center: head.translate(-8 * s, 0), width: 30 * s, height: 14 * s), Radius.circular(4 * s));
+    final body = RRect.fromRectAndRadius(
+      Rect.fromCenter(center: head.translate(-8 * s, 0), width: 30 * s, height: 14 * s),
+      Radius.circular(4 * s),
+    );
     canvas.drawRRect(body, Paint()..color = Colors.white);
     canvas.drawCircle(head.translate(-20 * s, 0), 4 * s, Paint()..color = MetricBrand.navy);
     canvas.drawCircle(head.translate(4 * s, -4 * s), 2 * s, Paint()..color = reading ? MetricBrand.green : const Color(0xFFFF5A5A));
@@ -272,16 +308,18 @@ class _ScenePainter extends CustomPainter {
     Color colour, {
     required bool facingRight,
     String? plate,
-    bool driving = true,
     bool dim = false,
-    double t = 0,
+    double spin = 0,
   }) {
     canvas.save();
     canvas.translate(centre.dx, centre.dy);
     if (!facingRight) canvas.scale(-1, 1);
 
     // Shadow.
-    canvas.drawOval(Rect.fromCenter(center: Offset(0, 22 * s), width: 150 * s, height: 10 * s), Paint()..color = Colors.black.withValues(alpha: 0.28));
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(0, 22 * s), width: 150 * s, height: 10 * s),
+      Paint()..color = Colors.black.withValues(alpha: 0.28),
+    );
 
     final bodyPaint = Paint()
       ..shader = LinearGradient(
@@ -290,6 +328,9 @@ class _ScenePainter extends CustomPainter {
         colors: [Color.lerp(colour, Colors.white, 0.25)!, colour, Color.lerp(colour, Colors.black, 0.3)!],
       ).createShader(Rect.fromLTWH(-75 * s, -40 * s, 150 * s, 60 * s));
 
+    // Drawn facing left and turned round (the long bonnet ahead of a raked
+    // windscreen, the short boot behind), so the car faces the way it drives.
+    final turn = Float64List.fromList([-1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
     final body = Path()
       ..moveTo(-72 * s, 10 * s)
       ..quadraticBezierTo(-74 * s, -8 * s, -60 * s, -12 * s)
@@ -303,7 +344,7 @@ class _ScenePainter extends CustomPainter {
       ..lineTo(-66 * s, 18 * s)
       ..quadraticBezierTo(-72 * s, 18 * s, -72 * s, 10 * s)
       ..close();
-    canvas.drawPath(body, bodyPaint);
+    canvas.drawPath(body.transform(turn), bodyPaint);
 
     // Windows.
     final glass = Paint()..color = dim ? const Color(0xFF2A3D78) : const Color(0xFF0B1B4D);
@@ -318,15 +359,22 @@ class _ScenePainter extends CustomPainter {
       ..quadraticBezierTo(36 * s, -29 * s, 45 * s, -15 * s)
       ..lineTo(5 * s, -14 * s)
       ..close();
-    canvas.drawPath(win, glass);
-    canvas.drawPath(win2, glass);
-    // Glint.
-    canvas.drawLine(Offset(12 * s, -28 * s), Offset(20 * s, -18 * s), Paint()
-      ..color = Colors.white.withValues(alpha: 0.35)
-      ..strokeWidth = 2 * s);
+    canvas.drawPath(win.transform(turn), glass);
+    canvas.drawPath(win2.transform(turn), glass);
+    // Glint on the windscreen.
+    canvas.drawLine(
+      Offset(-12 * s, -28 * s),
+      Offset(-20 * s, -18 * s),
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.35)
+        ..strokeWidth = 2 * s,
+    );
 
     // Headlight and its beam.
-    canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(64 * s, -8 * s, 9 * s, 6 * s), Radius.circular(2 * s)), Paint()..color = const Color(0xFFFFF4C2));
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(Rect.fromLTWH(64 * s, -8 * s, 9 * s, 6 * s), Radius.circular(2 * s)),
+      Paint()..color = const Color(0xFFFFF4C2),
+    );
     if (!dim) {
       final beam = Path()
         ..moveTo(72 * s, -7 * s)
@@ -342,11 +390,17 @@ class _ScenePainter extends CustomPainter {
       );
     }
     // Tail light.
-    canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(-73 * s, -6 * s, 6 * s, 7 * s), Radius.circular(2 * s)), Paint()..color = const Color(0xFFFF4D4D));
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(Rect.fromLTWH(-72 * s, -3 * s, 6 * s, 7 * s), Radius.circular(2 * s)),
+      Paint()..color = const Color(0xFFFF4D4D),
+    );
 
     // Front plate (the camera reads this one).
     if (plate != null) {
-      final pr = RRect.fromRectAndRadius(Rect.fromCenter(center: Offset(58 * s, 8 * s), width: 30 * s, height: 9 * s), Radius.circular(1.5 * s));
+      final pr = RRect.fromRectAndRadius(
+        Rect.fromCenter(center: Offset(58 * s, 8 * s), width: 30 * s, height: 9 * s),
+        Radius.circular(1.5 * s),
+      );
       canvas.drawRRect(pr, Paint()..color = Colors.white);
       canvas.save();
       if (!facingRight) canvas.scale(-1, 1);
@@ -354,12 +408,11 @@ class _ScenePainter extends CustomPainter {
       canvas.restore();
     }
 
-    // Wheels, turning while the car moves.
+    // Wheels, turned by the distance travelled so they roll with the road.
     for (final wx in [-44.0, 46.0]) {
       final c = Offset(wx * s, 18 * s);
       canvas.drawCircle(c, 13 * s, Paint()..color = const Color(0xFF0B0F1C));
       canvas.drawCircle(c, 7.5 * s, Paint()..color = const Color(0xFFC9D2EA));
-      final spin = driving ? t * 14 : 0.0;
       final spoke = Paint()
         ..color = const Color(0xFF6C7899)
         ..strokeWidth = 1.6 * s;
@@ -412,12 +465,18 @@ class _ScenePainter extends CustomPainter {
     canvas.drawCircle(neck.translate(0, -6 * s), 5 * s, Paint()..color = colour);
     // Everyone carries a phone with the app.
     final hand = neck + Offset((right ? 1 : -1) * 7 * s, 9 * s);
-    canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromCenter(center: hand, width: 4 * s, height: 7 * s), Radius.circular(1 * s)), Paint()..color = MetricBrand.green);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(Rect.fromCenter(center: hand, width: 4 * s, height: 7 * s), Radius.circular(1 * s)),
+      Paint()..color = MetricBrand.green,
+    );
   }
 
   void _text(Canvas canvas, String text, Offset centre, double size, Color colour, FontWeight weight) {
     final tp = TextPainter(
-      text: TextSpan(text: text, style: TextStyle(fontSize: size, color: colour, fontWeight: weight, letterSpacing: size * 0.04)),
+      text: TextSpan(
+        text: text,
+        style: TextStyle(fontFamily: MetricBrand.font, fontSize: size, color: colour, fontWeight: weight, letterSpacing: size * 0.04),
+      ),
       textDirection: TextDirection.ltr,
     )..layout();
     tp.paint(canvas, centre - Offset(tp.width / 2, tp.height / 2));
