@@ -51,4 +51,4 @@ Metric, parking, car park, ANPR, number plate, barrier, membership, permit
 - Website: https://metric.vesopa.com/
 - Support contact: https://www.metricgroup.co.uk/ (phone 01793 647800)
 - Copyright: © 2026 METRIC Group Ltd
-- Privacy policy URL: required by the Store because the app signs people in. Use Metric's or Vesopa's published policy; it is not in this repo.
+- Privacy policy URL: https://metric.vesopa.com/privacy (server/public/privacy.html)

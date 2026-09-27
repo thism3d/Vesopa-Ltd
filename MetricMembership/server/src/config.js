@@ -51,6 +51,10 @@ const config = {
   LOG_DIR: process.env.LOG_DIR || path.join(__dirname, '..', 'logs'),
   LOG_KEEP_DAYS: Number(process.env.LOG_KEEP_DAYS) || 90,
 
+  // Barrier reads (a member's visits, and plates refused at the gates). The
+  // privacy policy (public/privacy.html) promises this period: change both.
+  EVENTS_KEEP_DAYS: Number(process.env.METRIC_EVENTS_KEEP_DAYS) || 365,
+
   // Where the Flutter web build is served from (MetricMembership/app, flutter build web).
   WEB_APP_DIR: process.env.WEB_APP_DIR || path.join(__dirname, '..', 'web_app'),
 };

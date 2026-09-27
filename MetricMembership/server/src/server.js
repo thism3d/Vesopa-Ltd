@@ -96,6 +96,12 @@ function createApp() {
   app.use(adminPages());
 
   // Written per request from Appearance, so never the build's static copy.
+  // For the Store listing and the app's Account page.
+  app.get(['/privacy', '/privacy/'], (req, res) => {
+    res.set('Cache-Control', 'no-cache');
+    res.sendFile(path.join(__dirname, '..', 'public', 'privacy.html'));
+  });
+
   app.get(['/manifest.json', '/manifest.webmanifest'], (req, res, next) => web.manifest(req, res).catch(next));
 
   const PUBLIC = path.join(__dirname, '..', 'public');
@@ -152,10 +158,19 @@ function start() {
     setTimeout(() => sync.syncAll().catch(() => {}), 5000).unref();
     setInterval(() => sync.syncAll().catch((e) => console.error('[sync]', e.message)), config.SYNC_EVERY_MS).unref();
     setInterval(() => activity.prune().catch(() => {}), 6 * 3600 * 1000).unref();
+    setInterval(() => pruneEvents().catch((e) => console.error('[prune]', e.message)), 6 * 3600 * 1000).unref();
     requestLog.startMaintenance();
+  }
+}
+
+/** Barrier reads older than EVENTS_KEEP_DAYS go, in batches so none holds a lock for long. */
+async function pruneEvents() {
+  for (let i = 0; i < 50; i += 1) {
+    const r = await db.run('DELETE FROM access_events WHERE at < DATE_SUB(NOW(), INTERVAL ? DAY) LIMIT 5000', [config.EVENTS_KEEP_DAYS]);
+    if (!r || (r.affectedRows || 0) < 5000) break;
   }
 }
 
 if (require.main === module) start();
 
-module.exports = { createApp };
+module.exports = { pruneEvents, createApp };
