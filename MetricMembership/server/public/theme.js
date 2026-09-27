@@ -27,7 +27,11 @@
 
   var KEY = 'metric.theme.v1';
   var PERIOD = 14000; // one trip through the gradient and back, in ms
-  var STEP = 120; // how often the animated colour is written
+  // How often the animated colour is written. Chrome on Android fades its
+  // toolbar to each new theme-color over a few hundred ms and starts again on
+  // every write, so writing faster than that leaves the bar stuck mid-fade
+  // on the browser's own colour instead of ours.
+  var STEP = 700;
   var POLL = 60000;
 
   var root = document.documentElement;
