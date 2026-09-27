@@ -121,6 +121,9 @@ class _ProductEditorState extends ConsumerState<ProductEditor> {
 
   bool _saving = false;
 
+  /// On the QR / kiosk menu, and whether it is sold out there. Null until known.
+  ({bool onMenu, bool soldOut, double? canMake})? _menu;
+
   @override
   void initState() {
     super.initState();
@@ -139,6 +142,7 @@ class _ProductEditorState extends ConsumerState<ProductEditor> {
     try {
       final api = ref.read(stockApiProvider);
       final r = await Future.wait([api.products(), api.packSizes(), api.suppliers()]);
+      final menu = await api.availability().catchError((_) => <int, ({bool onMenu, bool soldOut, double? canMake})>{});
       final all = r[0] as List<StockProduct>;
       final me = all.where((p) => p.pluId == widget.product.pluId).firstOrNull;
       List<_Ingredient> recipe = const [];
@@ -169,6 +173,7 @@ class _ProductEditorState extends ConsumerState<ProductEditor> {
           ..clear()
           ..addAll(recipe);
         _recipeLoaded = true;
+        _menu = menu[widget.product.pluId];
         _stockLoading = false;
       });
     } catch (e) {
@@ -439,6 +444,28 @@ class _ProductEditorState extends ConsumerState<ProductEditor> {
                 ),
               ]),
       ),
+      // Sold out is the QR menu's own switch (2026-09-27) -- the one the kitchen
+      // screen flips too -- applied at once, not on Save: running out is now.
+      if (_menu != null && _menu!.onMenu)
+        SwitchListTile(
+          key: const Key('editor-sold-out'),
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Sold out'),
+          subtitle: Text(_menu!.canMake == null
+              ? 'Off the QR menu and the kiosk until switched back.'
+              : 'Off the QR menu and the kiosk until switched back. ${fmtQty(_menu!.canMake!)} can still be made.'),
+          value: _menu!.soldOut,
+          onChanged: (v) async {
+            try {
+              await ref.read(stockApiProvider).setSoldOut(widget.product.pluId, v);
+              if (!mounted) return;
+              setState(() => _menu = (onMenu: true, soldOut: v, canMake: _menu!.canMake));
+              PosMessenger.success(context, v ? '${widget.product.name} is sold out on the QR menu and kiosk.' : '${widget.product.name} is back on.');
+            } catch (e) {
+              if (mounted) PosMessenger.error(context, '$e');
+            }
+          },
+        ),
       SwitchListTile(
         key: const Key('editor-non-stock'),
         contentPadding: EdgeInsets.zero,

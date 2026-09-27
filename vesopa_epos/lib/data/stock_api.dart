@@ -332,6 +332,16 @@ class StockApi {
         ],
       });
 
+  /// Whether each product is on the QR/kiosk menu and sold out there, by PLU
+  /// (GET /till/stock/availability).
+  Future<Map<int, ({bool onMenu, bool soldOut, double? canMake})>> availability() async => {
+        for (final r in (await _send('GET', '/stock/availability') as List).cast<Map<String, dynamic>>())
+          _i(r['pluid']) ?? 0: (onMenu: r['on_menu'] == true, soldOut: r['sold_out'] == true, canMake: _d(r['can_make'])),
+      };
+
+  /// Sold out, or back on: the QR menu's own switch, for every menu entry.
+  Future<void> setSoldOut(int pluId, bool soldOut) => _send('POST', '/stock/sold-out', {'pluid': pluId, 'sold_out': soldOut});
+
   /// Change a product's details or printing on the server (PATCH
   /// /till/products/:pluid); every till picks it up on the next refresh.
   Future<void> updateProduct(int pluId, Map<String, Object?> fields) => _send('PATCH', '/products/$pluId', fields);

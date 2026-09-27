@@ -78,6 +78,8 @@ class FakeServer {
         return http.Response(jsonEncode([{'id': 2, 'name': 'Pack of 24', 'units': 24}]), 200);
       case 'GET /till/stock/suppliers':
         return http.Response(jsonEncode([{'id': 9, 'name': 'Molson Coors', 'active': 1}]), 200);
+      case 'GET /till/stock/availability':
+        return http.Response(jsonEncode([{'pluid': 101, 'on_menu': true, 'sold_out': false, 'can_make': 44}]), 200);
       case 'POST /till/products/new':
         return http.Response(jsonEncode({'id': 60, 'pluid': 160}), 201);
     }
@@ -173,13 +175,17 @@ void main() {
     expect(find.textContaining('Carling Half'), findsOneWidget, reason: 'its existing child is listed');
 
     // A new child with no measure is refused, and nothing is saved.
+    await tester.ensureVisible(find.byKey(const Key('editor-child-new')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('editor-child-new')));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('child-name-1')));
     await tester.enterText(find.byKey(const Key('child-name-1')), 'Carling Third');
     await tester.tap(find.byKey(const Key('editor-save')));
     await tester.pumpAndSettle();
     expect(server.calls.where((c) => c.startsWith('PATCH /till/products')), isEmpty);
 
+    await tester.ensureVisible(find.byKey(const Key('child-ratio-1')));
     await tester.enterText(find.byKey(const Key('child-ratio-1')), '0.33');
     await tester.enterText(find.byKey(const Key('child-price-1')), '1.80');
     await tester.tap(find.byKey(const Key('editor-save')));
@@ -190,6 +196,17 @@ void main() {
     expect(details['product_name'], 'Carling Pint');
     expect(server.bodies['POST /till/products/new']!.single['product_name'], 'Carling Third');
     expect(server.bodies['PATCH /till/stock/products/60']!.single, {'stock_parent_pluid': 101, 'stock_ratio': 0.33});
+    await finish(tester);
+  });
+
+  testWidgets('Sold out is switched at once, on the menu’s own switch', (tester) async {
+    final server = await openEditor(tester, local(101, 'Carling Pint', group: 'Draught'));
+    await tester.tap(find.widgetWithText(Tab, 'Stock'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('44 can still be made'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('editor-sold-out')));
+    await tester.pumpAndSettle();
+    expect(server.bodies['POST /till/stock/sold-out']!.single, {'pluid': 101, 'sold_out': true});
     await finish(tester);
   });
 
