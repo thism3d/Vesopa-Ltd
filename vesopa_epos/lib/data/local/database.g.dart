@@ -290,6 +290,28 @@ class $ProductsTable extends Products with TableInfo<$ProductsTable, Product> {
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _packNameMeta = const VerificationMeta(
+    'packName',
+  );
+  @override
+  late final GeneratedColumn<String> packName = GeneratedColumn<String>(
+    'pack_name',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _packUnitsMeta = const VerificationMeta(
+    'packUnits',
+  );
+  @override
+  late final GeneratedColumn<double> packUnits = GeneratedColumn<double>(
+    'pack_units',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     pluId,
@@ -317,6 +339,8 @@ class $ProductsTable extends Products with TableInfo<$ProductsTable, Product> {
     imageUrl,
     isModifier,
     barcode,
+    packName,
+    packUnits,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -532,6 +556,18 @@ class $ProductsTable extends Products with TableInfo<$ProductsTable, Product> {
         barcode.isAcceptableOrUnknown(data['barcode']!, _barcodeMeta),
       );
     }
+    if (data.containsKey('pack_name')) {
+      context.handle(
+        _packNameMeta,
+        packName.isAcceptableOrUnknown(data['pack_name']!, _packNameMeta),
+      );
+    }
+    if (data.containsKey('pack_units')) {
+      context.handle(
+        _packUnitsMeta,
+        packUnits.isAcceptableOrUnknown(data['pack_units']!, _packUnitsMeta),
+      );
+    }
     return context;
   }
 
@@ -640,6 +676,14 @@ class $ProductsTable extends Products with TableInfo<$ProductsTable, Product> {
       barcode: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}barcode'],
+      ),
+      packName: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}pack_name'],
+      ),
+      packUnits: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}pack_units'],
       ),
     );
   }
@@ -772,6 +816,16 @@ class Product extends DataClass implements Insertable<Product> {
   /// card programmes is looked for here before the till says it does not
   /// recognise it.
   final String? barcode;
+
+  /// The case this product is bought in -- "Pack of 24", "11g Keg" -- and
+  /// how many units are in one, as the back office's Stock Control sets them.
+  ///
+  /// Only the Wastage key reads them, to take a count in cases or units
+  /// (2026-09-24). Null on a product with no case size, and on every row
+  /// until the next catalogue sync: a wastage then asks for units alone,
+  /// which is exactly what it asked before.
+  final String? packName;
+  final double? packUnits;
   const Product({
     required this.pluId,
     required this.name,
@@ -798,6 +852,8 @@ class Product extends DataClass implements Insertable<Product> {
     this.imageUrl,
     required this.isModifier,
     this.barcode,
+    this.packName,
+    this.packUnits,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -860,6 +916,12 @@ class Product extends DataClass implements Insertable<Product> {
     map['is_modifier'] = Variable<bool>(isModifier);
     if (!nullToAbsent || barcode != null) {
       map['barcode'] = Variable<String>(barcode);
+    }
+    if (!nullToAbsent || packName != null) {
+      map['pack_name'] = Variable<String>(packName);
+    }
+    if (!nullToAbsent || packUnits != null) {
+      map['pack_units'] = Variable<double>(packUnits);
     }
     return map;
   }
@@ -925,6 +987,12 @@ class Product extends DataClass implements Insertable<Product> {
       barcode: barcode == null && nullToAbsent
           ? const Value.absent()
           : Value(barcode),
+      packName: packName == null && nullToAbsent
+          ? const Value.absent()
+          : Value(packName),
+      packUnits: packUnits == null && nullToAbsent
+          ? const Value.absent()
+          : Value(packUnits),
     );
   }
 
@@ -959,6 +1027,8 @@ class Product extends DataClass implements Insertable<Product> {
       imageUrl: serializer.fromJson<String?>(json['imageUrl']),
       isModifier: serializer.fromJson<bool>(json['isModifier']),
       barcode: serializer.fromJson<String?>(json['barcode']),
+      packName: serializer.fromJson<String?>(json['packName']),
+      packUnits: serializer.fromJson<double?>(json['packUnits']),
     );
   }
   @override
@@ -990,6 +1060,8 @@ class Product extends DataClass implements Insertable<Product> {
       'imageUrl': serializer.toJson<String?>(imageUrl),
       'isModifier': serializer.toJson<bool>(isModifier),
       'barcode': serializer.toJson<String?>(barcode),
+      'packName': serializer.toJson<String?>(packName),
+      'packUnits': serializer.toJson<double?>(packUnits),
     };
   }
 
@@ -1019,6 +1091,8 @@ class Product extends DataClass implements Insertable<Product> {
     Value<String?> imageUrl = const Value.absent(),
     bool? isModifier,
     Value<String?> barcode = const Value.absent(),
+    Value<String?> packName = const Value.absent(),
+    Value<double?> packUnits = const Value.absent(),
   }) => Product(
     pluId: pluId ?? this.pluId,
     name: name ?? this.name,
@@ -1057,6 +1131,8 @@ class Product extends DataClass implements Insertable<Product> {
     imageUrl: imageUrl.present ? imageUrl.value : this.imageUrl,
     isModifier: isModifier ?? this.isModifier,
     barcode: barcode.present ? barcode.value : this.barcode,
+    packName: packName.present ? packName.value : this.packName,
+    packUnits: packUnits.present ? packUnits.value : this.packUnits,
   );
   Product copyWithCompanion(ProductsCompanion data) {
     return Product(
@@ -1121,6 +1197,8 @@ class Product extends DataClass implements Insertable<Product> {
           ? data.isModifier.value
           : this.isModifier,
       barcode: data.barcode.present ? data.barcode.value : this.barcode,
+      packName: data.packName.present ? data.packName.value : this.packName,
+      packUnits: data.packUnits.present ? data.packUnits.value : this.packUnits,
     );
   }
 
@@ -1151,7 +1229,9 @@ class Product extends DataClass implements Insertable<Product> {
           ..write('emoji: $emoji, ')
           ..write('imageUrl: $imageUrl, ')
           ..write('isModifier: $isModifier, ')
-          ..write('barcode: $barcode')
+          ..write('barcode: $barcode, ')
+          ..write('packName: $packName, ')
+          ..write('packUnits: $packUnits')
           ..write(')'))
         .toString();
   }
@@ -1183,6 +1263,8 @@ class Product extends DataClass implements Insertable<Product> {
     imageUrl,
     isModifier,
     barcode,
+    packName,
+    packUnits,
   ]);
   @override
   bool operator ==(Object other) =>
@@ -1212,7 +1294,9 @@ class Product extends DataClass implements Insertable<Product> {
           other.emoji == this.emoji &&
           other.imageUrl == this.imageUrl &&
           other.isModifier == this.isModifier &&
-          other.barcode == this.barcode);
+          other.barcode == this.barcode &&
+          other.packName == this.packName &&
+          other.packUnits == this.packUnits);
 }
 
 class ProductsCompanion extends UpdateCompanion<Product> {
@@ -1241,6 +1325,8 @@ class ProductsCompanion extends UpdateCompanion<Product> {
   final Value<String?> imageUrl;
   final Value<bool> isModifier;
   final Value<String?> barcode;
+  final Value<String?> packName;
+  final Value<double?> packUnits;
   const ProductsCompanion({
     this.pluId = const Value.absent(),
     this.name = const Value.absent(),
@@ -1267,6 +1353,8 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     this.imageUrl = const Value.absent(),
     this.isModifier = const Value.absent(),
     this.barcode = const Value.absent(),
+    this.packName = const Value.absent(),
+    this.packUnits = const Value.absent(),
   });
   ProductsCompanion.insert({
     this.pluId = const Value.absent(),
@@ -1294,6 +1382,8 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     this.imageUrl = const Value.absent(),
     this.isModifier = const Value.absent(),
     this.barcode = const Value.absent(),
+    this.packName = const Value.absent(),
+    this.packUnits = const Value.absent(),
   }) : name = Value(name),
        priceMinor = Value(priceMinor);
   static Insertable<Product> custom({
@@ -1322,6 +1412,8 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     Expression<String>? imageUrl,
     Expression<bool>? isModifier,
     Expression<String>? barcode,
+    Expression<String>? packName,
+    Expression<double>? packUnits,
   }) {
     return RawValuesInsertable({
       if (pluId != null) 'plu_id': pluId,
@@ -1350,6 +1442,8 @@ class ProductsCompanion extends UpdateCompanion<Product> {
       if (imageUrl != null) 'image_url': imageUrl,
       if (isModifier != null) 'is_modifier': isModifier,
       if (barcode != null) 'barcode': barcode,
+      if (packName != null) 'pack_name': packName,
+      if (packUnits != null) 'pack_units': packUnits,
     });
   }
 
@@ -1379,6 +1473,8 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     Value<String?>? imageUrl,
     Value<bool>? isModifier,
     Value<String?>? barcode,
+    Value<String?>? packName,
+    Value<double?>? packUnits,
   }) {
     return ProductsCompanion(
       pluId: pluId ?? this.pluId,
@@ -1406,6 +1502,8 @@ class ProductsCompanion extends UpdateCompanion<Product> {
       imageUrl: imageUrl ?? this.imageUrl,
       isModifier: isModifier ?? this.isModifier,
       barcode: barcode ?? this.barcode,
+      packName: packName ?? this.packName,
+      packUnits: packUnits ?? this.packUnits,
     );
   }
 
@@ -1487,6 +1585,12 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     if (barcode.present) {
       map['barcode'] = Variable<String>(barcode.value);
     }
+    if (packName.present) {
+      map['pack_name'] = Variable<String>(packName.value);
+    }
+    if (packUnits.present) {
+      map['pack_units'] = Variable<double>(packUnits.value);
+    }
     return map;
   }
 
@@ -1517,7 +1621,9 @@ class ProductsCompanion extends UpdateCompanion<Product> {
           ..write('emoji: $emoji, ')
           ..write('imageUrl: $imageUrl, ')
           ..write('isModifier: $isModifier, ')
-          ..write('barcode: $barcode')
+          ..write('barcode: $barcode, ')
+          ..write('packName: $packName, ')
+          ..write('packUnits: $packUnits')
           ..write(')'))
         .toString();
   }
@@ -9083,6 +9189,8 @@ typedef $$ProductsTableCreateCompanionBuilder =
       Value<String?> imageUrl,
       Value<bool> isModifier,
       Value<String?> barcode,
+      Value<String?> packName,
+      Value<double?> packUnits,
     });
 typedef $$ProductsTableUpdateCompanionBuilder =
     ProductsCompanion Function({
@@ -9111,6 +9219,8 @@ typedef $$ProductsTableUpdateCompanionBuilder =
       Value<String?> imageUrl,
       Value<bool> isModifier,
       Value<String?> barcode,
+      Value<String?> packName,
+      Value<double?> packUnits,
     });
 
 class $$ProductsTableFilterComposer
@@ -9244,6 +9354,16 @@ class $$ProductsTableFilterComposer
 
   ColumnFilters<String> get barcode => $composableBuilder(
     column: $table.barcode,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get packName => $composableBuilder(
+    column: $table.packName,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get packUnits => $composableBuilder(
+    column: $table.packUnits,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -9381,6 +9501,16 @@ class $$ProductsTableOrderingComposer
     column: $table.barcode,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get packName => $composableBuilder(
+    column: $table.packName,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get packUnits => $composableBuilder(
+    column: $table.packUnits,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$ProductsTableAnnotationComposer
@@ -9502,6 +9632,12 @@ class $$ProductsTableAnnotationComposer
 
   GeneratedColumn<String> get barcode =>
       $composableBuilder(column: $table.barcode, builder: (column) => column);
+
+  GeneratedColumn<String> get packName =>
+      $composableBuilder(column: $table.packName, builder: (column) => column);
+
+  GeneratedColumn<double> get packUnits =>
+      $composableBuilder(column: $table.packUnits, builder: (column) => column);
 }
 
 class $$ProductsTableTableManager
@@ -9557,6 +9693,8 @@ class $$ProductsTableTableManager
                 Value<String?> imageUrl = const Value.absent(),
                 Value<bool> isModifier = const Value.absent(),
                 Value<String?> barcode = const Value.absent(),
+                Value<String?> packName = const Value.absent(),
+                Value<double?> packUnits = const Value.absent(),
               }) => ProductsCompanion(
                 pluId: pluId,
                 name: name,
@@ -9583,6 +9721,8 @@ class $$ProductsTableTableManager
                 imageUrl: imageUrl,
                 isModifier: isModifier,
                 barcode: barcode,
+                packName: packName,
+                packUnits: packUnits,
               ),
           createCompanionCallback:
               ({
@@ -9611,6 +9751,8 @@ class $$ProductsTableTableManager
                 Value<String?> imageUrl = const Value.absent(),
                 Value<bool> isModifier = const Value.absent(),
                 Value<String?> barcode = const Value.absent(),
+                Value<String?> packName = const Value.absent(),
+                Value<double?> packUnits = const Value.absent(),
               }) => ProductsCompanion.insert(
                 pluId: pluId,
                 name: name,
@@ -9637,6 +9779,8 @@ class $$ProductsTableTableManager
                 imageUrl: imageUrl,
                 isModifier: isModifier,
                 barcode: barcode,
+                packName: packName,
+                packUnits: packUnits,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))

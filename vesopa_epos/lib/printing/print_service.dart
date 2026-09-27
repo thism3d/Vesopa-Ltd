@@ -308,6 +308,24 @@ class PrintService {
     );
   }
 
+  /// A stock count sheet or a completed stock document, on the receipt
+  /// printer -- the one beside the person holding the clipboard.
+  Future<void> printStockSheet({
+    required String title,
+    String? subtitle,
+    required List<({String heading, List<({String label, String value})> rows})> sections,
+    List<String> footer = const [],
+  }) async {
+    final printer = setup.deviceFor(PrintTarget.customerReceipt);
+    if (printer == null) {
+      throw StateError('No receipt printer is set up on this till.');
+    }
+    final builder = await _for(printer);
+    await PrinterTransport.of(printer).send(
+      builder.stockSheet(title: title, subtitle: subtitle, sections: sections, footer: footer, shopName: setup.shopName),
+    );
+  }
+
   Future<void> openCashDrawer() async {
     final printer = setup.deviceFor(PrintTarget.cashDrawer);
     if (printer == null) {

@@ -135,6 +135,16 @@ class Products extends Table {
   /// recognise it.
   TextColumn get barcode => text().nullable()();
 
+  /// The case this product is bought in -- "Pack of 24", "11g Keg" -- and
+  /// how many units are in one, as the back office's Stock Control sets them.
+  ///
+  /// Only the Wastage key reads them, to take a count in cases or units
+  /// (2026-09-24). Null on a product with no case size, and on every row
+  /// until the next catalogue sync: a wastage then asks for units alone,
+  /// which is exactly what it asked before.
+  TextColumn get packName => text().nullable()();
+  RealColumn get packUnits => real().nullable()();
+
   @override
   Set<Column> get primaryKey => {pluId};
 }
@@ -680,7 +690,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 27;
+  int get schemaVersion => 28;
 
 
   /// Add a column only if the table has not already got it.
@@ -923,6 +933,13 @@ class AppDatabase extends _$AppDatabase {
             await _addColumnIfMissing(m, tillEvents, tillEvents.pluId);
             await _addColumnIfMissing(m, tillEvents, tillEvents.quantity);
             await _addColumnIfMissing(m, payments, payments.cashbackMinor);
+          }
+          if (from < 28) {
+            // 1.8.2.0: a product's case size, for Wastage by cases or units.
+            // Null everywhere until the next catalogue sync, which reads as
+            // "no case" -- units only, as before.
+            await _addColumnIfMissing(m, products, products.packName);
+            await _addColumnIfMissing(m, products, products.packUnits);
           }
         },
       );

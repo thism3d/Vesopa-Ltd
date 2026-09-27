@@ -19,6 +19,9 @@ const navDestinations = <NavDestination>[
   NavDestination(Icons.receipt_long, 'Receipts'),
   NavDestination(Icons.bar_chart, 'Reports'),
   NavDestination(Icons.shopping_bag, 'Product'),
+  // Stock takes, spot checks, wastage and adjustments against the back
+  // office's ledger (2026-09-27, stock_page.dart).
+  NavDestination(Icons.inventory_2, 'Stock'),
   NavDestination(Icons.exit_to_app, 'Functions'),
   NavDestination(Icons.settings, 'Settings'),
   NavDestination(Icons.info, 'About'),

@@ -1153,6 +1153,43 @@ class ReceiptBuilder {
     return bytes;
   }
 
+  /// A stock sheet: a count sheet to fill in by hand, or a stock document
+  /// the till has just completed (2026-09-27). Laid out by shelf -- the same
+  /// department and sub-department headings the count is taken under -- with
+  /// the product on the left and its figure (or a blank to write on) right.
+  List<int> stockSheet({
+    required String title,
+    String? subtitle,
+    required List<({String heading, List<({String label, String value})> rows})> sections,
+    List<String> footer = const [],
+    String? shopName,
+    DateTime? at,
+  }) {
+    final bytes = _begin();
+    if (shopName != null && shopName.trim().isNotEmpty) {
+      bytes.addAll(_shopName(shopName));
+    }
+    bytes.addAll(_text(title.toUpperCase(), styles: const PosStyles(align: PosAlign.center, bold: true)));
+    if (subtitle != null && subtitle.trim().isNotEmpty) {
+      bytes.addAll(_text(subtitle.trim(), styles: const PosStyles(align: PosAlign.center)));
+    }
+    bytes.addAll(_text(_time.format(at ?? DateTime.now()), styles: const PosStyles(align: PosAlign.center)));
+    for (final section in sections) {
+      bytes.addAll(_generator.hr());
+      bytes.addAll(_text(section.heading, styles: const PosStyles(bold: true)));
+      for (final r in section.rows) {
+        bytes.addAll(_row(r.label, r.value));
+      }
+    }
+    bytes.addAll(_generator.hr());
+    for (final line in footer) {
+      bytes.addAll(_text(line));
+    }
+    bytes.addAll(_generator.feed(2));
+    bytes.addAll(_generator.cut());
+    return bytes;
+  }
+
   /// Opens the cash drawer (the "No Sale" key). The drawer is a solenoid wired
   /// into a printer's RJ11 socket, so this is a printer command with nothing to
   /// print.

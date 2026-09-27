@@ -15,6 +15,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/stock_api.dart';
 import '../data/till_permissions.dart';
 import '../main.dart';
 import 'permission_gate.dart';
@@ -34,30 +35,19 @@ Future<void> showWastage(BuildContext context, WidgetRef ref) async {
     ref,
     mode: LookupMode.ring,
     products: ref.read(productsProvider).value ?? const [],
+    listAll: true,
   );
   if (product == null || !context.mounted) return;
 
-  final controller = TextEditingController(text: '1');
+  // By the case or by the unit (2026-09-24, Dylan: "add QTYs by either
+  // case size QTY or unit QTY"). A product with a case size gets both boxes;
+  // what is recorded is always units.
   final quantity = await showDialog<double>(
     context: context,
-    builder: (context) => AlertDialog(
-      title: Text('How many ${product.name}?'),
-      content: PosTextField(
-        controller: controller,
-        mode: PosKeyboardMode.decimal,
-        autofocus: true,
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () =>
-              Navigator.pop(context, double.tryParse(controller.text.trim())),
-          child: const Text('Continue'),
-        ),
-      ],
+    builder: (context) => WastageQuantityDialog(
+      name: product.name,
+      packName: product.packName,
+      packUnits: product.packUnits,
     ),
   );
   if (quantity == null || quantity <= 0 || !context.mounted) return;
@@ -88,3 +78,80 @@ Future<void> showWastage(BuildContext context, WidgetRef ref) async {
 }
 
 String _qty(double n) => n == n.roundToDouble() ? '${n.round()}' : n.toStringAsFixed(2);
+
+/// How many were wasted: cases and units for a product bought by the case,
+/// units alone otherwise. Pops the total in units, or null.
+class WastageQuantityDialog extends StatefulWidget {
+  const WastageQuantityDialog({super.key, required this.name, this.packName, this.packUnits});
+  final String name;
+  final String? packName;
+  final double? packUnits;
+  @override
+  State<WastageQuantityDialog> createState() => _WastageQuantityDialogState();
+}
+
+class _WastageQuantityDialogState extends State<WastageQuantityDialog> {
+  final _cases = TextEditingController();
+  final _units = TextEditingController(text: '1');
+
+  bool get _hasCase => (widget.packUnits ?? 0) > 1;
+  double? get _total => joinQty(_hasCase ? _cases.text : '', _units.text, widget.packUnits);
+
+  @override
+  void dispose() {
+    _cases.dispose();
+    _units.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final total = _total;
+    return AlertDialog(
+      title: Text('How many ${widget.name}?'),
+      // Scrolls: the on-screen keyboard under a box can make it taller than a
+      // short till screen.
+      content: SingleChildScrollView(
+        child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (_hasCase) ...[
+            Text('${widget.packName ?? 'A case'} = ${fmtQty(widget.packUnits!)} units', style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: 8),
+            PosTextField(
+              key: const Key('wastage-cases'),
+              controller: _cases,
+              mode: PosKeyboardMode.decimal,
+              decoration: const InputDecoration(labelText: 'Cases'),
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 8),
+          ],
+          PosTextField(
+            key: const Key('wastage-units'),
+            controller: _units,
+            mode: PosKeyboardMode.decimal,
+            autofocus: !_hasCase,
+            decoration: const InputDecoration(labelText: 'Units'),
+            onChanged: (_) => setState(() {}),
+          ),
+          if (_hasCase && total != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text('= ${fmtQty(total)} units (${qtyWords(total, widget.packUnits)})', key: const Key('wastage-total')),
+            ),
+        ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        FilledButton(
+          key: const Key('wastage-continue'),
+          onPressed: total == null || total <= 0 ? null : () => Navigator.pop(context, total),
+          child: const Text('Continue'),
+        ),
+      ],
+    );
+  }
+}

@@ -30,6 +30,7 @@ import 'nav_panel_controller.dart';
 import 'pair_request_overlay.dart';
 import 'placeholder_page.dart';
 import 'products_page.dart';
+import 'stock_page.dart';
 import 'settings_page.dart';
 import 'receipts_page.dart';
 import 'recovery_page.dart';
@@ -966,6 +967,8 @@ class _PosShellState extends ConsumerState<PosShell> {
         return const ReportsPage();
       case 'Product':
         return const ProductsPage();
+      case 'Stock':
+        return const StockPage();
       case 'Functions':
         return FunctionsPage(
           orderId: orderId,

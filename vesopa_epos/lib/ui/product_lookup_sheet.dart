@@ -48,10 +48,11 @@ Future<Product?> showProductLookup(
   WidgetRef ref, {
   required LookupMode mode,
   required List<Product> products,
+  bool listAll = false,
 }) =>
     showDialog<Product>(
       context: context,
-      builder: (_) => ProductLookupSheet(mode: mode, products: products),
+      builder: (_) => ProductLookupSheet(mode: mode, products: products, listAll: listAll),
     );
 
 class ProductLookupSheet extends ConsumerStatefulWidget {
@@ -59,10 +60,18 @@ class ProductLookupSheet extends ConsumerStatefulWidget {
     super.key,
     required this.mode,
     required this.products,
+    this.listAll = false,
   });
 
   final LookupMode mode;
   final List<Product> products;
+
+  /// Show products before anything is typed. Off for ringing and price
+  /// checks, where the clerk has a word in mind; on for Wastage (2026-09-24,
+  /// "can this show the products as soon as you click into the box"), where
+  /// they are standing in front of the shelf -- products bought by the case
+  /// first, since those are the ones stock is kept of.
+  final bool listAll;
 
   @override
   ConsumerState<ProductLookupSheet> createState() => _ProductLookupSheetState();
@@ -102,7 +111,16 @@ class _ProductLookupSheetState extends ConsumerState<ProductLookupSheet> {
   /// down a list of things that are not.
   List<Product> get _results {
     final q = _search.text.trim().toLowerCase();
-    if (q.isEmpty) return const [];
+    if (q.isEmpty) {
+      if (!widget.listAll) return const [];
+      final all = List<Product>.of(widget.products)
+        ..sort((a, b) {
+          final ca = (a.packUnits ?? 0) > 1 ? 0 : 1;
+          final cb = (b.packUnits ?? 0) > 1 ? 0 : 1;
+          return ca != cb ? ca - cb : a.name.toLowerCase().compareTo(b.name.toLowerCase());
+        });
+      return all.take(60).toList();
+    }
 
     final starts = <Product>[];
     final contains = <Product>[];
@@ -208,7 +226,7 @@ class _ProductLookupSheetState extends ConsumerState<ProductLookupSheet> {
   }
 
   Widget _list(List<Product> results, int level, ColorScheme scheme) {
-    if (_search.text.trim().isEmpty) {
+    if (_search.text.trim().isEmpty && !widget.listAll) {
       return Padding(
         padding: const EdgeInsets.fromLTRB(20, 24, 20, 30),
         child: Text(

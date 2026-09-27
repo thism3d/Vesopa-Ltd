@@ -774,6 +774,19 @@ class SyncService {
                 final code => code,
               },
             ),
+            // The case size (Stock Control), for Wastage by cases or units.
+            // A case of one is no case: it would only add a box that means
+            // the same as the units box.
+            packName: Value(
+              (raw['pack_units'] as num? ?? 0) > 1
+                  ? (raw['pack_name'] as String?)?.trim()
+                  : null,
+            ),
+            packUnits: Value(
+              (raw['pack_units'] as num? ?? 0) > 1
+                  ? (raw['pack_units'] as num).toDouble()
+                  : null,
+            ),
             emoji: Value(raw['emoji'] as String?),
             // Uploaded images are served relative to the server; store the
             // absolute URL so the till can load it directly.

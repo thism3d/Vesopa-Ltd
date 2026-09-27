@@ -112,7 +112,10 @@ class _PosTextFieldState extends State<PosTextField> {
   @override
   void dispose() {
     _focus.removeListener(_focusChanged);
-    _hide();
+    // Not _hide(): its setState on a state being disposed is an assertion
+    // failure whenever a dialog closes with its keyboard still up.
+    _entry?.remove();
+    _entry = null;
     if (_ownsFocus) _focus.dispose();
     super.dispose();
   }
