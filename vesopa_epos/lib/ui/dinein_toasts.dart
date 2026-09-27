@@ -36,6 +36,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../main.dart' show notificationsProvider;
 import '../data/dinein_orders.dart';
+import '../data/express_orders.dart';
 import '../data/notifications.dart';
 import '../data/order_alerts.dart';
 import 'dinein_actions.dart';
@@ -73,6 +74,12 @@ class DineInToastLayer extends ConsumerWidget {
     ref.listen(dineInOrdersProvider, (_, _) {
       unawaited(autoAcceptWaiting(ref));
     });
+
+    // Kiosk tickets for this till's kitchen printers. Here for the same reason
+    // as auto-accept: a till set to show no notifications still has printers,
+    // and a kitchen that gets no kiosk tickets because somebody turned the
+    // cards off is the bug this exists to fix.
+    ref.watch(expressKitchenPrinterProvider);
 
     final where = ref.watch(orderAlertsProvider);
     if (!where.showsToasts) return child;
@@ -120,6 +127,47 @@ class _ToastStackState extends ConsumerState<_ToastStack> {
   /// thirty-second refresh that finds it still sitting there. Kept for the life
   /// of the shell, which is the life of the till.
   final _announced = <int>{};
+
+  /// The same three, for kiosk orders. Their ids are another table's, so they
+  /// are kept apart from the dine-in ones rather than mixed into one set.
+  final _expressSetAside = <int>{};
+  final _expressBusy = <int>{};
+  final _expressAnnounced = <int>{};
+  bool _expressRead = false;
+
+  /// Announce kiosk orders that have just been paid, once each.
+  void _chimeForNewExpress(List<ExpressOrder> orders) {
+    final fresh = [
+      for (final order in orders)
+        if (order.isPaid && !_expressAnnounced.contains(order.id)) order,
+    ];
+    final first = !_expressRead;
+    _expressRead = true;
+    _expressAnnounced.addAll(fresh.map((o) => o.id));
+    // Not on the first read after a restart, for the same reason as above.
+    if (fresh.isEmpty || first) return;
+
+    final notifications = ref.read(notificationsProvider)
+      ..local = NotifyLocal(
+        enabled: ref.read(orderAlertsProvider) != OrderAlerts.off,
+        sound: ref.read(orderChimeProvider),
+      );
+    final newest = fresh.last;
+    unawaited(
+      notifications.show(
+        NotifyKind.expressOrder,
+        title: 'Kiosk order ${newest.number}',
+        body: fresh.length > 1
+            ? '${fresh.length} kiosk orders paid'
+            : '${newest.orderTypeLabel} · ${newest.itemCount} '
+                  '${newest.itemCount == 1 ? 'item' : 'items'} · '
+                  '${money(newest.totalMinor)}',
+      ),
+    );
+
+    if (!ref.read(orderChimeProvider)) return;
+    unawaited(SystemSound.play(SystemSoundType.alert));
+  }
 
   /// Make the noise, once, for anything new.
   ///
@@ -175,17 +223,30 @@ class _ToastStackState extends ConsumerState<_ToastStack> {
 
   @override
   Widget build(BuildContext context) {
-    final orders = ref.watch(dineInOrdersProvider).value ?? const <DineInOrder>[];
+    final orders =
+        ref.watch(dineInOrdersProvider).value ?? const <DineInOrder>[];
     final waiting = [
       for (final order in orders)
         if (order.isWaiting && !_setAside.contains(order.id)) order,
     ]..sort((a, b) => b.placedAt.compareTo(a.placedAt));
 
     _chimeForNew(waiting);
-    if (waiting.isEmpty) return const SizedBox.shrink();
 
+    final feed = ref.watch(expressOrdersProvider).value ?? ExpressFeed.none;
+    _chimeForNewExpress(feed.announced);
+    final kiosk = [
+      for (final order in feed.announced)
+        if (!_expressSetAside.contains(order.id)) order,
+    ]..sort((a, b) => b.paidAt.compareTo(a.paidAt));
+
+    if (waiting.isEmpty && kiosk.isEmpty) return const SizedBox.shrink();
+
+    // Dine-in first: those are waiting on somebody to press Accept before any
+    // food is cooked, where a kiosk order is already paid and in the kitchen.
     final shown = waiting.take(_maxVisible).toList();
+    final shownKiosk = kiosk.take(_maxVisible - shown.length).toList();
     final hidden = waiting.length - shown.length;
+    final hiddenKiosk = kiosk.length - shownKiosk.length;
 
     return SafeArea(
       child: Padding(
@@ -209,7 +270,17 @@ class _ToastStackState extends ConsumerState<_ToastStack> {
                 onRefuse: () => unawaited(_refuse(order)),
                 onSetAside: () => setState(() => _setAside.add(order.id)),
               ),
+            for (final order in shownKiosk)
+              ExpressToast(
+                key: ValueKey('express-${order.id}'),
+                order: order,
+                busy: _expressBusy.contains(order.id),
+                onMove: (action) => unawaited(_moveExpress(order, action)),
+                onSetAside: () =>
+                    setState(() => _expressSetAside.add(order.id)),
+              ),
             if (hidden > 0) _MoreLine(count: hidden),
+            if (hiddenKiosk > 0) _MoreKioskLine(count: hiddenKiosk),
           ],
         ),
       ),
@@ -223,6 +294,28 @@ class _ToastStackState extends ConsumerState<_ToastStack> {
       await acceptAndSay(context, ref, order);
     } finally {
       if (mounted) setState(() => _busy.remove(order.id));
+    }
+  }
+
+  Future<void> _moveExpress(ExpressOrder order, String action) async {
+    if (_expressBusy.contains(order.id)) return;
+    setState(() => _expressBusy.add(order.id));
+    try {
+      final ok = await ref
+          .read(expressOrdersProvider.notifier)
+          .move(order.id, action);
+      if (!ok && mounted) {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          SnackBar(
+            content: Text(
+              'Order ${order.number} had already moved on, or the server '
+              'could not be reached.',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _expressBusy.remove(order.id));
     }
   }
 
@@ -410,7 +503,10 @@ class _ToastState extends State<_Toast> with SingleTickerProviderStateMixin {
                           Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Icon(Icons.sticky_note_2_outlined, size: 14),
+                              const Icon(
+                                Icons.sticky_note_2_outlined,
+                                size: 14,
+                              ),
                               const SizedBox(width: 6),
                               Expanded(
                                 child: Text(
@@ -520,4 +616,251 @@ class _MoreLine extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// How many kiosk cards are behind the ones on screen. Not a button: the
+/// collection board and the back office are the list of kiosk orders, and a
+/// card put aside comes back only if the till restarts.
+class _MoreKioskLine extends StatelessWidget {
+  const _MoreKioskLine({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    elevation: 6,
+    borderRadius: BorderRadius.circular(10),
+    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      child: Text(
+        count == 1 ? '1 more kiosk order' : '$count more kiosk orders',
+        style: const TextStyle(fontWeight: FontWeight.w600),
+      ),
+    ),
+  );
+}
+
+/// One kiosk order: its number, how it is eaten, and the one button that moves
+/// it along the collection board.
+///
+/// Paid means the kitchen has it, so the button is Ready. Ready means the
+/// number is up on the board, so the button is Collected, which takes it off.
+/// A kiosk order needs no Accept: the customer has already paid.
+class ExpressToast extends StatefulWidget {
+  const ExpressToast({
+    super.key,
+    required this.order,
+    required this.busy,
+    required this.onMove,
+    required this.onSetAside,
+  });
+
+  final ExpressOrder order;
+  final bool busy;
+  final ValueChanged<String> onMove;
+  final VoidCallback onSetAside;
+
+  @override
+  State<ExpressToast> createState() => _ExpressToastState();
+}
+
+class _ExpressToastState extends State<ExpressToast>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _in = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 260),
+  )..forward();
+
+  @override
+  void dispose() {
+    _in.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final order = widget.order;
+    final slide = CurvedAnimation(parent: _in, curve: Curves.easeOutCubic);
+
+    return SlideTransition(
+      position: Tween<Offset>(
+        begin: const Offset(1.05, 0),
+        end: Offset.zero,
+      ).animate(slide),
+      child: FadeTransition(
+        opacity: slide,
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Material(
+            elevation: 10,
+            borderRadius: BorderRadius.circular(12),
+            clipBehavior: Clip.antiAlias,
+            color: theme.colorScheme.surfaceContainerHighest,
+            child: Container(
+              decoration: BoxDecoration(
+                border: Border.all(color: theme.posLine),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
+                    color: order.isReady ? Pos.green : Pos.brandDeep,
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.touch_app_outlined,
+                          size: 16,
+                          color: Colors.white,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            order.isReady
+                                ? 'Kiosk order ready for collection'
+                                : 'Kiosk order paid',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.4,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Put aside',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: widget.onSetAside,
+                          icon: const Icon(
+                            Icons.close,
+                            size: 16,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          children: [
+                            Text(
+                              '${order.number}',
+                              style: const TextStyle(
+                                fontSize: 26,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                [
+                                  order.orderTypeLabel,
+                                  ?order.customerName,
+                                ].join(' · '),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            Text(
+                              money(order.totalMinor),
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        for (final line in order.dishes.take(3))
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 1),
+                            child: Text(
+                              '${line.qty} × ${line.name}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 13.5),
+                            ),
+                          ),
+                        if (order.dishes.length > 3)
+                          Text(
+                            'and ${order.dishes.length - 3} more',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        const SizedBox(height: 12),
+                        if (widget.busy)
+                          const Center(
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(vertical: 6),
+                              child: SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                            ),
+                          )
+                        else if (order.isPaid)
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton(
+                                  onPressed: () => widget.onMove('collected'),
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 12,
+                                    ),
+                                  ),
+                                  child: const Text('Collected'),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: FilledButton.icon(
+                                  onPressed: () => widget.onMove('ready'),
+                                  icon: const Icon(Icons.check, size: 18),
+                                  label: const Text('Ready'),
+                                  style: FilledButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 12,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          )
+                        else
+                          FilledButton.icon(
+                            onPressed: () => widget.onMove('collected'),
+                            icon: const Icon(Icons.done_all, size: 18),
+                            label: const Text('Collected'),
+                            style: FilledButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
