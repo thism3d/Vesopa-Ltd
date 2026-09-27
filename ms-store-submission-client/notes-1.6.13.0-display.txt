@@ -1,0 +1,3 @@
+Version 1.6.13.0 - Maintenance update
+
+Maintenance update: rebuilt with the latest tools, to work alongside Vesopa EPOS 1.9 and Vesopa Kitchen 1.7. Nothing changes on the screen your customers see, and there is nothing to set up again.

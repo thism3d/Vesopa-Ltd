@@ -1,0 +1,3 @@
+Version 1.0.6.0 - Maintenance update
+
+Maintenance update: rebuilt with the latest tools, to work alongside Vesopa EPOS 1.9. Your card, your points and your news carry on as before, and there is nothing to set up again.
