@@ -4217,6 +4217,7 @@ const ticked = (value) => Number(value) === 1;
 
 function fieldHtml(f) {
   if (f.type === 'gp') return '<div class="gp-calc" data-gp-panel></div>';
+  if (f.type === 'children') return '<div class="child-products" data-children-field></div><input type="hidden" name="_children" value="">';
   if (f.type === 'color') {
     // Paired with a text box: a colour picker alone hides the hex value, and
     // a venue matching a brand colour needs to read and paste it.
@@ -4842,16 +4843,268 @@ async function saveProductStock(id, d, before) {
   }
 }
 
+/**
+ * CHILD PRODUCTS, in the product form (2026-09-24).
+ *
+ * "Parent and child products -- I still don't see a way where you can link
+ * 1/2 pints to pints or wine glasses to the bottle?" The link existed (a
+ * product's Stock info: "sells from another product") but it was set from the
+ * child's side, in a popup behind an icon. Here it is set from the parent,
+ * where a manager thinks of it: the pint has a half; the bottle has glasses.
+ *
+ * Newbridge lets you create new children only. This does that AND links
+ * products that already exist, and shows what each child costs from the
+ * parent's unit cost as the form stands. Nothing is written until the product
+ * saves (saveChildProducts); the panel's value is one JSON hidden input.
+ */
+function mountChildProducts(root, parent = {}) {
+  const host = root.querySelector('[data-children-field]');
+  const out = root.querySelector('input[name="_children"]');
+  if (!host || !out) return;
+  const state = { rows: [], unlink: [], catalogue: [], loaded: false, sellsFrom: null };
+  const money = (n) => `£${(Number(n) || 0).toFixed(2)}`;
+  const val = (name) => root.querySelector(`[name="${name}"]`);
+
+  /** The parent's unit cost in £, from the form as it is now. */
+  const unitCost = () => {
+    const pack = (productRefs.packs || []).find((k) => String(k.id) === String(val('pack_size_id')?.value));
+    const pc = val('pack_cost');
+    const packCost = Number(pc?.value);
+    if (pc && pc.value !== '' && Number.isFinite(packCost) && pack && Number(pack.units) > 0) return packCost / Number(pack.units);
+    const cp = val('cost_price');
+    const c = Number(cp?.value);
+    return cp && cp.value !== '' && Number.isFinite(c) ? c : null;
+  };
+
+  const write = () => {
+    out.value = JSON.stringify({
+      add: state.rows
+        .filter((r) => r.kind === 'new' && String(r.name).trim())
+        .map((r) => ({ name: String(r.name).trim(), price: r.price, ratio: r.ratio })),
+      link: state.rows
+        .filter((r) => r.kind === 'link' || (r.kind === 'linked' && String(r.ratio) !== String(r.was)))
+        .map((r) => ({ id: r.id, label: r.label, ratio: r.ratio })),
+      unlink: state.unlink,
+    });
+  };
+
+  /** What may be linked: not this product, not linked elsewhere, not itself a parent. */
+  const candidates = () => {
+    const taken = new Set(state.rows.filter((r) => r.id).map((r) => String(r.id)));
+    const parents = new Set(state.catalogue.filter((x) => x.stock_parent_pluid).map((x) => String(x.stock_parent_pluid)));
+    return state.catalogue.filter((x) => String(x.id) !== String(parent.id) && !taken.has(String(x.id))
+      && (!x.stock_parent_pluid || String(x.stock_parent_pluid) === String(parent.pluid))
+      && !parents.has(String(x.pluid)));
+  };
+
+  const costText = (r, cost) => (cost !== null && Number(r.ratio) > 0 ? money(cost * Number(r.ratio)) : '—');
+
+  const draw = () => {
+    if (state.sellsFrom) {
+      host.innerHTML = `<p class="muted small">This product sells from <strong>${esc(state.sellsFrom)}</strong>, so it cannot have children of its own. Link them to ${esc(state.sellsFrom)} instead.</p>`;
+      write();
+      return;
+    }
+    const cost = unitCost();
+    host.innerHTML = `
+      ${state.rows.length ? `<div class="cp-rows">
+        <div class="cp-row cp-head"><span>Product</span><span>Price £</span><span>Uses of this</span><span>Cost</span><span></span></div>
+        ${state.rows.map((r, i) => `<div class="cp-row" data-cp-row="${i}">
+          ${r.kind === 'new'
+            ? `<input type="text" data-cp-name="${i}" value="${esc(r.name)}" placeholder="e.g. Carling Half" aria-label="New child product name">`
+            : `<span class="cp-name"><strong>${esc(r.label)}</strong><small>PLU ${esc(r.pluid)}${r.kind === 'link' ? ' · links on save' : ''}</small></span>`}
+          ${r.kind === 'new'
+            ? `<input type="number" step="0.01" min="0" data-cp-price="${i}" value="${esc(r.price)}" placeholder="0.00" aria-label="Price">`
+            : `<span class="muted">${r.price === null || r.price === undefined || r.price === '' ? '—' : money(r.price)}</span>`}
+          <input type="number" step="any" min="0" data-cp-ratio="${i}" value="${esc(r.ratio)}" placeholder="0.5" aria-label="How much of this product one uses">
+          <span class="muted" data-cp-cost="${i}">${costText(r, cost)}</span>
+          <button type="button" class="cp-del" data-cp-del="${i}" aria-label="Remove">✕</button>
+        </div>`).join('')}
+      </div>` : `<p class="muted small cp-empty">${state.loaded ? 'None yet. A pint might have a half; a bottle of wine, its glasses.' : 'Loading…'}</p>`}
+      <div class="cp-actions">
+        <button type="button" class="btn small" data-cp-new>+ New child product</button>
+        <select data-cp-link aria-label="Link an existing product"><option value="">+ Link an existing product…</option>${candidates()
+          .map((x) => `<option value="${x.id}">${esc(x.product_name)} — PLU ${x.pluid}</option>`).join('')}</select>
+      </div>
+      <p class="field-hint">“Uses of this” is in this product’s units: 0.5 for a half of a pint; 0.25 for a 175ml glass when the unit is a 70cl bottle. A new child copies this product’s department, VAT and printers.</p>`;
+    write();
+  };
+
+  host.addEventListener('input', (e) => {
+    const d = e.target.dataset;
+    const i = Number(d.cpName ?? d.cpPrice ?? d.cpRatio);
+    const r = state.rows[i];
+    if (!r) return;
+    if (d.cpName !== undefined) r.name = e.target.value;
+    if (d.cpPrice !== undefined) r.price = e.target.value;
+    if (d.cpRatio !== undefined) {
+      r.ratio = e.target.value;
+      const cell = host.querySelector(`[data-cp-cost="${i}"]`);
+      if (cell) cell.textContent = costText(r, unitCost());
+    }
+    write();
+  });
+  host.addEventListener('click', (e) => {
+    if (e.target.closest('[data-cp-new]')) {
+      state.rows.push({ kind: 'new', name: '', price: '', ratio: '' });
+      draw();
+      const box = host.querySelector(`[data-cp-name="${state.rows.length - 1}"]`);
+      if (box) box.focus();
+      return;
+    }
+    const del = e.target.closest('[data-cp-del]');
+    if (del) {
+      const [r] = state.rows.splice(Number(del.dataset.cpDel), 1);
+      if (r && r.kind === 'linked') state.unlink.push(r.id);
+      draw();
+    }
+  });
+  host.addEventListener('change', (e) => {
+    if (!e.target.matches('[data-cp-link]') || !e.target.value) return;
+    const x = state.catalogue.find((c) => String(c.id) === e.target.value);
+    if (!x) return;
+    state.unlink = state.unlink.filter((id) => String(id) !== String(x.id));
+    state.rows.push({ kind: 'link', id: x.id, pluid: x.pluid, label: x.product_name, price: x.price, ratio: x.stock_ratio ?? '', was: null });
+    draw();
+  });
+  // The cost column follows the parent's own cost fields as they are typed.
+  ['pack_cost', 'cost_price', 'pack_size_id'].forEach((n) => {
+    const el = val(n);
+    if (!el) return;
+    const redraw = () => {
+      const cost = unitCost();
+      state.rows.forEach((r, i) => {
+        const cell = host.querySelector(`[data-cp-cost="${i}"]`);
+        if (cell) cell.textContent = costText(r, cost);
+      });
+    };
+    el.addEventListener('input', redraw);
+    el.addEventListener('change', redraw);
+  });
+
+  draw();
+  api('/stock/products').then((rows) => {
+    state.catalogue = rows || [];
+    state.loaded = true;
+    if (parent.stock_parent_pluid) {
+      const up = state.catalogue.find((x) => String(x.pluid) === String(parent.stock_parent_pluid));
+      state.sellsFrom = up ? up.product_name : `PLU ${parent.stock_parent_pluid}`;
+    }
+    if (parent.pluid) {
+      for (const x of state.catalogue.filter((c) => String(c.stock_parent_pluid) === String(parent.pluid))) {
+        state.rows.push({ kind: 'linked', id: x.id, pluid: x.pluid, label: x.product_name, price: x.price, ratio: x.stock_ratio ?? '', was: x.stock_ratio ?? '' });
+      }
+    }
+    draw();
+  }).catch(() => {
+    state.loaded = true;
+    host.innerHTML = '<p class="muted small">Child products need the Stock Control permission.</p>';
+  });
+}
+
+/**
+ * Write what the child products panel asked for, once the parent is saved
+ * and has a PLU. Each child is its own call; one refusing (say a ratio left
+ * blank) is reported and does not stop the rest.
+ */
+async function saveChildProducts(parent, d, raw) {
+  let plan;
+  try {
+    plan = JSON.parse(raw || '{}');
+  } catch {
+    return;
+  }
+  const add = plan.add || [];
+  const link = plan.link || [];
+  const unlink = plan.unlink || [];
+  if (!add.length && !link.length && !unlink.length) return;
+  const failed = [];
+  const linkTo = async (id, ratio, label) => {
+    try {
+      await api(`/stock/products/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ stock_parent_pluid: parent.pluid, stock_ratio: ratio === '' || ratio === null ? null : Number(ratio) }),
+      });
+      return true;
+    } catch (err) {
+      failed.push(`${label}: ${err.message}`);
+      return false;
+    }
+  };
+  for (const id of unlink) {
+    try {
+      // eslint-disable-next-line no-await-in-loop -- a handful at most
+      await api(`/stock/products/${id}`, { method: 'PATCH', body: JSON.stringify({ stock_parent_pluid: null, stock_ratio: null }) });
+    } catch (err) {
+      failed.push(err.message);
+    }
+  }
+  for (const c of link) {
+    // eslint-disable-next-line no-await-in-loop
+    await linkTo(c.id, c.ratio, c.label || `Product ${c.id}`);
+  }
+  let made = 0;
+  for (const c of add) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const row = await api('/products', {
+        method: 'POST',
+        body: JSON.stringify({
+          product_name: c.name,
+          price: c.price === '' ? 0 : Number(c.price),
+          department_name: d.department_name || '',
+          group_name: d.group_name || '',
+          tax_percentage: d.tax_percentage,
+          print_category_id: d.print_category_id || '',
+          printer_routes: d.printer_routes,
+          print_to_receipt: d.print_to_receipt ?? 1,
+        }),
+      });
+      made += 1;
+      // eslint-disable-next-line no-await-in-loop
+      await linkTo(row.id, c.ratio, c.name);
+    } catch (err) {
+      failed.push(`${c.name}: ${err.message}`);
+    }
+  }
+  if (failed.length) {
+    toast(`Product saved, but not all of its child products: ${failed.join(' · ')}`, 'error');
+    return;
+  }
+  const said = [made && `${made} made`, link.length && `${link.length} linked`, unlink.length && `${unlink.length} unlinked`].filter(Boolean);
+  toast(`Child products: ${said.join(', ')}.`);
+}
+
 function modal(title, fields, onSubmit) {
   const root = $('modal-root');
+  /*
+   * SECTIONS (2026-09-24, "headers for product details - stock - modifiers -
+   * printing - images ... easier on the eye"). A field of type 'section' is a
+   * heading, not an input; a form with any gets a strip of section buttons
+   * that stays at the top while it scrolls and lights up the section in view.
+   * One form, one Save -- sections are never hidden, so a required field on
+   * another section can still be found and focused by the browser.
+   */
+  const sections = fields.filter((f) => f.type === 'section');
+  const sectionHtml = (f) => `<div class="form-section" id="form-sec-${esc(f.key)}" data-form-section="${esc(f.key)}">
+      <h4>${esc(f.label)}</h4>${f.hint ? `<p class="field-hint">${esc(f.hint)}</p>` : ''}
+    </div>`;
   root.innerHTML = `
     <div class="modal-back">
-      <form class="modal" id="modal-form">
+      <form class="modal${sections.length ? ' modal-sectioned' : ''}" id="modal-form">
         <h3>${esc(title)}</h3>
+        ${sections.length ? `<nav class="form-section-nav" aria-label="Sections">${sections
+          .map((f, i) => `<button type="button" class="${i === 0 ? 'on' : ''}" data-form-jump="${esc(f.key)}">${esc(f.label)}</button>`)
+          .join('')}</nav>` : ''}
         ${fields
           .map(
             (f) =>
-              `<label>${esc(f.label)}${fieldHtml(f)}` +
+              f.type === 'section' ? sectionHtml(f)
+              // A field that is a panel of its own controls (child products)
+              // is not wrapped in a <label>: a label hands every click inside
+              // it to its first input.
+              : f.type === 'children' ? `<div class="form-bare"><span class="form-bare-label">${esc(f.label)}</span>${fieldHtml(f)}${f.hint ? `<span class="field-hint">${esc(f.hint)}</span>` : ''}</div>`
+              : `<label>${esc(f.label)}${fieldHtml(f)}` +
               // A line under the control, for the fields whose label cannot
               // carry the whole answer on its own. Added for "can only be sold
               // attached to another item", which sits directly beneath a
@@ -4876,6 +5129,42 @@ function modal(title, fields, onSubmit) {
   // A field that needs behaviour once it is on screen -- the GP calculator,
   // which recomputes as the price and cost change -- supplies mount().
   fields.forEach((f) => { if (typeof f.mount === 'function') f.mount(root); });
+
+  if (sections.length) {
+    const form = root.querySelector('#modal-form');
+    const nav = form.querySelector('.form-section-nav');
+    const heads = [...form.querySelectorAll('[data-form-section]')];
+    const light = (key) => nav.querySelectorAll('[data-form-jump]').forEach((x) => x.classList.toggle('on', x.dataset.formJump === key));
+    // While a jump's smooth scroll runs, the button pressed stays lit: the
+    // last sections are short, and a form scrolled to its end would otherwise
+    // light the final one whichever was asked for.
+    let jumping = null;
+    let jumpTimer = null;
+    const release = () => { jumping = null; };
+    nav.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-form-jump]');
+      if (!b) return;
+      const head = form.querySelector(`[data-form-section="${CSS.escape(b.dataset.formJump)}"]`);
+      if (!head) return;
+      jumping = b.dataset.formJump;
+      light(jumping);
+      clearTimeout(jumpTimer);
+      jumpTimer = setTimeout(release, 900);
+      form.scrollTo({ top: head.offsetTop - nav.offsetHeight - 8, behavior: 'smooth' });
+    });
+    form.addEventListener('wheel', release, { passive: true });
+    form.addEventListener('touchstart', release, { passive: true });
+    const spy = () => {
+      if (jumping) return;
+      const line = form.scrollTop + nav.offsetHeight + 24;
+      let current = heads[0];
+      for (const h of heads) if (h.offsetTop <= line) current = h;
+      // At the very bottom the last section is the one in view, however short.
+      if (form.scrollTop + form.clientHeight >= form.scrollHeight - 2) current = heads[heads.length - 1];
+      light(current.dataset.formSection);
+    };
+    form.addEventListener('scroll', spy, { passive: true });
+  }
 
   // The ordered modifier picker: add, reorder, remove. Everything it does is a
   // move of one <li>, because the list *is* the value — each row carries the
@@ -5897,6 +6186,7 @@ document.addEventListener('click', async (e) => {
   };
 
   const productFields = (p = {}) => [
+    { type: 'section', key: 'details', label: 'Product details' },
     // No PLU field. The number still exists and still matters — the till
     // indexes by it and order lines reference it — but it is the server's job
     // to allocate, not a question to ask somebody adding a bottle of coke.
@@ -5935,19 +6225,6 @@ document.addEventListener('click', async (e) => {
     // to Price 2 started giving everything away, silently, at the counter.
     ...priceLevelFields(p),
     {
-      label: 'Printer category — blank prints last, under no heading',
-      name: 'print_category_id',
-      type: 'select',
-      value: p.print_category_id ?? '',
-      options: [
-        { value: '', label: 'No category' },
-        ...(productRefs.printCategories || []).map((c) => ({
-          value: c.id,
-          label: c.name,
-        })),
-      ],
-    },
-    {
       label: 'VAT rate',
       name: 'tax_percentage',
       type: 'select',
@@ -5970,6 +6247,68 @@ document.addEventListener('click', async (e) => {
       })(),
       value: String(Number(p.tax_percentage ?? 20)),
     },
+    {
+      label: 'Barcode',
+      name: 'barcode',
+      hint:
+        'Scan the packet into this box, or type the number. On the till, ' +
+        'scanning it rings the product up; scanning one nothing carries ' +
+        'offers to add it.',
+      value: p.barcode || '',
+    },
+    {
+      label: 'Allergens',
+      name: 'allergens',
+      type: 'allergens',
+      options: productRefs.allergens,
+      hint:
+        'The fourteen a UK venue has to declare. Shown on the QR menu, on ' +
+        'kitchen tickets and on the customer display. Leave every box clear ' +
+        'and save to record that this contains none of them — which is a ' +
+        'different answer from never having been asked.',
+      value: p.allergens || null,
+    },
+    /*
+     * "Set a check box on a product (Renews membership)."
+     *
+     * Which lines on a bill move a member's expiry forward when the bill is
+     * paid. Any number of products may carry it, which is the whole reason it
+     * lives here rather than as one PLU named in the loyalty settings: a club
+     * sells full, concession, junior and social memberships, and those are
+     * four products with four prices and one meaning.
+     *
+     * The date it renews TO is the club's, not the product's — set once under
+     * Loyalty › Membership, because a season ends on one night for everybody
+     * and four products disagreeing about which night is a support call.
+     *
+     * The fee is an ordinary line and goes through tendering with the rest of
+     * the bill, so it carries this product's VAT rate and department and lands
+     * in the Z report. Nothing is renewed until the bill is actually settled:
+     * a renewal recorded when the key is pressed is a renewal a voided bill
+     * leaves behind.
+     */
+    {
+      label: 'Renews membership — paying for this moves the member’s expiry on',
+      name: 'renews_membership',
+      type: 'checkbox',
+      value: p.renews_membership ?? 0,
+    },
+    {
+      // Deliberately worded as what it *does* rather than what it is called.
+      // "Is a modifier" is the venue's phrase and means nothing to the person
+      // who has to tick it eighteen months from now, and the field above it is
+      // the other, different modifier feature — the questions a product asks.
+      // Two things called "modifier" on one form need the sentence.
+      label: 'Can only be sold attached to another item',
+      name: 'is_modifier',
+      type: 'checkbox',
+      hint:
+        'For things like “No ice” or “Extra shot”. On the till, pick the item ' +
+        'on the bill first, then tap this — it goes underneath it. It cannot ' +
+        'be rung up on its own.',
+      value: p.is_modifier === undefined ? 0 : p.is_modifier,
+    },
+    { type: 'section', key: 'stock', label: 'Stock', hint: "How it is bought, what it costs and what it earns. Counts change in Stock Control, never here." },
     // STOCK. It used to be a bare "Stock" number that saved straight onto the
     // product -- skipping the ledger, and turning an untracked product into a
     // tracked 0 every time it was opened and saved. Counts change in Stock
@@ -6004,33 +6343,57 @@ document.addEventListener('click', async (e) => {
       name: 'non_stock',
       type: 'checkbox',
       value: p.non_stock ? 1 : 0,
-      hint: 'Linked products (a half pint from the pint) and recipes are set from this product’s Stock info on the product list.',
+      hint: 'Recipes are built under Stock Control → Recipes.',
     },
-    /*
-     * "Set a check box on a product (Renews membership)."
-     *
-     * Which lines on a bill move a member's expiry forward when the bill is
-     * paid. Any number of products may carry it, which is the whole reason it
-     * lives here rather than as one PLU named in the loyalty settings: a club
-     * sells full, concession, junior and social memberships, and those are
-     * four products with four prices and one meaning.
-     *
-     * The date it renews TO is the club's, not the product's — set once under
-     * Loyalty › Membership, because a season ends on one night for everybody
-     * and four products disagreeing about which night is a support call.
-     *
-     * The fee is an ordinary line and goes through tendering with the rest of
-     * the bill, so it carries this product's VAT rate and department and lands
-     * in the Z report. Nothing is renewed until the bill is actually settled:
-     * a renewal recorded when the key is pressed is a renewal a voided bill
-     * leaves behind.
-     */
+    // CHILD PRODUCTS (2026-09-24): "In Newbridge when you create a product and
+    // add a stock unit to it, you get another header called child products ...
+    // It would be cool if you could add existing products from a list." Both:
+    // make new ones here, or link ones that exist. Saved after the product.
+    { label: 'Child products — sold from this product’s stock', name: '_children', type: 'children', mount: (root) => mountChildProducts(root, p) },
+    { type: 'section', key: 'modifiers', label: 'Modifiers' },
     {
-      label: 'Renews membership — paying for this moves the member’s expiry on',
-      name: 'renews_membership',
-      type: 'checkbox',
-      value: p.renews_membership ?? 0,
+      label: 'Modifiers — the questions this product asks, in order',
+      name: 'modifier_group_ids',
+      type: 'modifiers',
+      options: productRefs.modifierGroups,
+      hint:
+        'These are the QR menu’s Add Ons too, asked before the item goes ' +
+        'in the basket. Prices come from the products on the modifier screen, ' +
+        'so one setup serves the till and the menu.',
+      value: p.modifier_group_ids || [],
     },
+    { type: 'section', key: 'printing', label: 'Printing' },
+    {
+      label: 'Printer category — blank prints last, under no heading',
+      name: 'print_category_id',
+      type: 'select',
+      value: p.print_category_id ?? '',
+      options: [
+        { value: '', label: 'No category' },
+        ...(productRefs.printCategories || []).map((c) => ({
+          value: c.id,
+          label: c.name,
+        })),
+      ],
+    },
+    {
+      label: 'Printers — prints when sold and when saved to a table',
+      name: 'printer_routes',
+      type: 'stations',
+      options: printerStations(),
+      // Falls back to the pre-numbering column so a product that has never
+      // been re-saved still shows its routing rather than looking unrouted.
+      value: p.printer_routes ?? legacyStation(p.printer_route),
+    },
+    {
+      label: 'Show on the customer receipt',
+      name: 'print_to_receipt',
+      type: 'checkbox',
+      // New products default to on. Only an explicit 0 turns it off, so a
+      // catalogue imported without the field is not hidden from every bill.
+      value: p.print_to_receipt === undefined ? 1 : p.print_to_receipt,
+    },
+    { type: 'section', key: 'images', label: 'Images' },
     // No button colour, no button position, no emoji. All three belong to the
     // screen editor now — that is where the layout, the colour, the size, the
     // lettering and the face of every key are set. Two places to style one
@@ -6046,70 +6409,6 @@ document.addEventListener('click', async (e) => {
     // (see _image() in vesopa_epos/lib/ui/sale_page.dart), unlike a department's
     // square category button — so this one crops to 16:9, not square.
     { label: 'Image', name: 'image_url', type: 'image', crop: 'landscape', value: p.image_url ?? '' },
-    {
-      label: 'Printers — prints when sold and when saved to a table',
-      name: 'printer_routes',
-      type: 'stations',
-      options: printerStations(),
-      // Falls back to the pre-numbering column so a product that has never
-      // been re-saved still shows its routing rather than looking unrouted.
-      value: p.printer_routes ?? legacyStation(p.printer_route),
-    },
-    {
-      label: 'Modifiers — the questions this product asks, in order',
-      name: 'modifier_group_ids',
-      type: 'modifiers',
-      options: productRefs.modifierGroups,
-      hint:
-        'These are the QR menu’s Add Ons too, asked before the item goes ' +
-        'in the basket. Prices come from the products on the modifier screen, ' +
-        'so one setup serves the till and the menu.',
-      value: p.modifier_group_ids || [],
-    },
-    {
-      label: 'Show on the customer receipt',
-      name: 'print_to_receipt',
-      type: 'checkbox',
-      // New products default to on. Only an explicit 0 turns it off, so a
-      // catalogue imported without the field is not hidden from every bill.
-      value: p.print_to_receipt === undefined ? 1 : p.print_to_receipt,
-    },
-    {
-      label: 'Allergens',
-      name: 'allergens',
-      type: 'allergens',
-      options: productRefs.allergens,
-      hint:
-        'The fourteen a UK venue has to declare. Shown on the QR menu, on ' +
-        'kitchen tickets and on the customer display. Leave every box clear ' +
-        'and save to record that this contains none of them — which is a ' +
-        'different answer from never having been asked.',
-      value: p.allergens || null,
-    },
-    {
-      label: 'Barcode',
-      name: 'barcode',
-      hint:
-        'Scan the packet into this box, or type the number. On the till, ' +
-        'scanning it rings the product up; scanning one nothing carries ' +
-        'offers to add it.',
-      value: p.barcode || '',
-    },
-    {
-      // Deliberately worded as what it *does* rather than what it is called.
-      // "Is a modifier" is the venue's phrase and means nothing to the person
-      // who has to tick it eighteen months from now, and the field above it is
-      // the other, different modifier feature — the questions a product asks.
-      // Two things called "modifier" on one form need the sentence.
-      label: 'Can only be sold attached to another item',
-      name: 'is_modifier',
-      type: 'checkbox',
-      hint:
-        'For things like “No ice” or “Extra shot”. On the till, pick the item ' +
-        'on the bill first, then tap this — it goes underneath it. It cannot ' +
-        'be rung up on its own.',
-      value: p.is_modifier === undefined ? 0 : p.is_modifier,
-    },
   ];
 
   /**
@@ -6138,9 +6437,12 @@ document.addEventListener('click', async (e) => {
 
   if (t.id === 'add-product') {
     return modal('Add product', productFields(), async (d) => {
+      const kids = d._children;
+      delete d._children;
       const made = await api('/products', { method: 'POST', body: JSON.stringify(d) });
       await saveModifiers(made.pluid, d);
       await saveProductStock(made.id, d, {});
+      await saveChildProducts(made, d, kids);
     });
   }
   if (t.dataset.stockInfo) return skOpenStockInfo(t.dataset.stockInfo);
@@ -6149,9 +6451,12 @@ document.addEventListener('click', async (e) => {
     const attached = await api(`/products/${p.pluid}/modifiers`).catch(() => []);
     p.modifier_group_ids = attached.map((g) => g.id);
     return modal('Edit product', productFields(p), async (d) => {
+      const kids = d._children;
+      delete d._children;
       await api(`/products/${p.id}`, { method: 'PUT', body: JSON.stringify(d) });
       await saveModifiers(p.pluid, d);
       await saveProductStock(p.id, d, p);
+      await saveChildProducts(p, d, kids);
     });
   }
   // Half a catalogue is a variant of the other half — the same burger with
@@ -6167,8 +6472,10 @@ document.addEventListener('click', async (e) => {
     // racing another manager doing the same thing.
     return modal(
       'Duplicate product',
-      productFields({ ...p, product_name: `${p.product_name} (copy)` }),
+      // A copy starts with no children of its own: they belong to the original.
+      productFields({ ...p, id: undefined, pluid: undefined, product_name: `${p.product_name} (copy)` }),
       async (d) => {
+        delete d._children;
         const made = await api('/products', { method: 'POST', body: JSON.stringify(d) });
         await saveModifiers(made.pluid, d);
         await saveProductStock(made.id, d, {});

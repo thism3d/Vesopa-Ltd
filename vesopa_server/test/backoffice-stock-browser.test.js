@@ -53,7 +53,10 @@ function startStub() {
       product(3, 'Budweiser Bottle', 'Bar', 'Bottles', 3, 10),
       product(4, 'House Red Bottle', 'Wine', 'Red', 1, 6),
       product(5, 'Chips', 'Food', 'Sides', null, null),
+      { ...product(6, 'Carling Half', 'Bar', 'Draught', null, null), stock_parent_pluid: 101, stock_ratio: 0.5, price: 2.4 },
     ],
+    created: [],
+    putProduct: null,
     patched: [],
     posted: [],
   };
@@ -96,16 +99,37 @@ function startStub() {
         if (m && req.method === 'PATCH') {
           state.patched.push({ id: Number(m[1]), ...json });
           const row = state.products.find((x) => x.id === Number(m[1]));
-          const pack = PACKS.find((k) => k.id === json.pack_size_id) || null;
-          Object.assign(row, {
-            pack_size_id: pack ? pack.id : null,
-            pack_name: pack ? pack.name : null,
-            pack_units: pack ? pack.units : null,
-            stock_item: Boolean(pack),
-          });
+          if (json.stock_parent_pluid !== undefined && row) {
+            Object.assign(row, { stock_parent_pluid: json.stock_parent_pluid, stock_ratio: json.stock_ratio });
+          }
+          if (json.pack_size_id !== undefined) {
+            const pack = PACKS.find((k) => k.id === json.pack_size_id) || null;
+            Object.assign(row, {
+              pack_size_id: pack ? pack.id : null,
+              pack_name: pack ? pack.name : null,
+              pack_units: pack ? pack.units : null,
+              stock_item: Boolean(pack),
+            });
+          }
           return send(200, { ok: true });
         }
-        return send(200, { ok: true });
+        // The catalogue, for the product form.
+        if (p === '/api/products' && req.method === 'GET') return send(200, state.products);
+        if (p === '/api/products' && req.method === 'POST') {
+          const made = { ...json, id: 50 + state.created.length, pluid: 150 + state.created.length };
+          state.created.push(made);
+          state.products.push(made);
+          return send(200, made);
+        }
+        const one = /^\/api\/products\/(\d+)$/.exec(p);
+        if (one && req.method === 'GET') return send(200, { ...state.products.find((x) => x.id === Number(one[1])), tax_percentage: 20 });
+        if (one && req.method === 'PUT') {
+          state.putProduct = json;
+          return send(200, { ok: true });
+        }
+        if (p === '/api/till-settings') return send(200, {});
+        if (p === '/api/allergens') return send(200, { allergens: [] });
+        return send(200, req.method === 'GET' ? [] : { ok: true });
       });
     }
     const file = url.pathname === '/' || !path.extname(url.pathname) ? path.join(PUBLIC, 'index.html') : path.join(PUBLIC, url.pathname);
@@ -158,8 +182,8 @@ async function main() {
         `const l = document.getElementById('sk-doc-suggest');
          return l && !l.hidden && [...l.querySelectorAll('[data-sk-suggest]')].map((r) => r.textContent.replace(/\\s+/g, ' ').trim());`
       );
-      assert.ok(Array.isArray(list) && list.length === 5, `expected five rows, got ${JSON.stringify(list)}`);
-      assert.ok(/Chips/.test(list[4]), 'the non-stock product was not last');
+      assert.ok(Array.isArray(list) && list.length === 6, `expected six rows, got ${JSON.stringify(list)}`);
+      assert.ok(list.slice(4).every((r) => /No case size/.test(r)) && list.slice(0, 4).every((r) => !/No case size/.test(r)), `stock items were not first: ${JSON.stringify(list)}`);
     });
 
     await check('typing narrows the list, and a click adds the product', async () => {
@@ -286,6 +310,85 @@ async function main() {
         '', 48, 24.5, 3,
         '1 case + 6 units', '2 cases', '3 units',
       ]);
+    });
+
+    // ---------------------------------------------------------------------
+    // The product form: sections, and child products
+    // ---------------------------------------------------------------------
+    await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/e2e-boot?to=/products` });
+    await cdp.until(`return location.pathname === '/products' && typeof productRefs !== 'undefined' && productRefs.packs && productRefs.packs.length > 0;`, { tries: 100, every: 200 });
+    const openEdit = async (id) => {
+      await cdp.eval(`const b = document.createElement('button'); b.dataset.editProduct = '${id}'; document.body.appendChild(b); b.click(); b.remove(); return true;`);
+      return cdp.until(`return !!document.querySelector('#modal-form .form-section-nav');`);
+    };
+
+    await check('the product form is in five sections, with a button for each', async () => {
+      assert.ok(await openEdit(1), 'the edit form never opened');
+      const nav = await cdp.eval(`return [...document.querySelectorAll('.form-section-nav [data-form-jump]')].map((b) => b.textContent);`);
+      assert.deepStrictEqual(nav, ['Product details', 'Stock', 'Modifiers', 'Printing', 'Images']);
+      const where = await cdp.eval(
+        `const order = [...document.querySelectorAll('#modal-form [data-form-section], #modal-form [name]')].map((el) => el.dataset.formSection ? '#' + el.dataset.formSection : el.name);
+         const at = (n) => order.indexOf(n);
+         return { name: at('product_name') < at('#stock'), pack: at('#stock') < at('pack_size_id') && at('pack_size_id') < at('#modifiers'),
+                  image: at('image_url') > at('#images'), printers: at('print_category_id') > at('#printing') && at('print_category_id') < at('#images') };`
+      );
+      assert.deepStrictEqual(where, { name: true, pack: true, image: true, printers: true });
+    });
+
+    await check('a section button scrolls the form to it and lights up', async () => {
+      await cdp.clickOn('.form-section-nav [data-form-jump="printing"]');
+      const on = await cdp.until(`const b = document.querySelector('.form-section-nav button.on'); return b && b.dataset.formJump === 'printing' && 'printing';`);
+      assert.strictEqual(on, 'printing');
+    });
+
+    if (process.env.SHOT) {
+      await cdp.clickOn('.form-section-nav [data-form-jump="stock"]');
+      await sleep(600);
+      const shot = await cdp.send('Page.captureScreenshot', { format: 'png' });
+      fs.writeFileSync(path.join(process.env.SHOT, 'product-form.png'), Buffer.from(shot.data, 'base64'));
+    }
+
+    await check('the parent lists its existing children, with their cost from its own', async () => {
+      const rows = await cdp.until(`const r = [...document.querySelectorAll('.cp-row:not(.cp-head)')]; return r.length === 1 && r.map((x) => x.textContent.replace(/\\s+/g, ' ').trim());`);
+      assert.ok(rows && /Carling Half/.test(rows[0]), `expected Carling Half, got ${JSON.stringify(rows)}`);
+      await cdp.eval(`const c = document.querySelector('[name="cost_price"]'); c.value = '1.20'; c.dispatchEvent(new Event('input', { bubbles: true })); return true;`);
+      const cost = await cdp.eval(`return document.querySelector('[data-cp-cost="0"]').textContent;`);
+      assert.strictEqual(cost, '£0.60');
+      const offered = await cdp.eval(`return [...document.querySelectorAll('[data-cp-link] option')].map((o) => o.value).filter(Boolean);`);
+      assert.ok(!offered.includes('1') && !offered.includes('6'), `offered itself or its own child: ${offered}`);
+    });
+
+    await check('saving makes a new child, links an existing one and unlinks a removed one', async () => {
+      await cdp.clickOn('[data-cp-new]');
+      await cdp.type('Carling Third');
+      await cdp.eval(`document.querySelector('[data-cp-price="1"]').focus(); return true;`);
+      await cdp.type('1.80');
+      await cdp.eval(`document.querySelector('[data-cp-ratio="1"]').focus(); return true;`);
+      await cdp.type('0.33');
+      await cdp.eval(`const s = document.querySelector('[data-cp-link]'); s.value = '5'; s.dispatchEvent(new Event('change', { bubbles: true })); return true;`);
+      await cdp.eval(`document.querySelector('[data-cp-ratio="2"]').focus(); return true;`);
+      await cdp.type('1');
+      await cdp.clickOn('[data-cp-del="0"]');
+      const before = state.patched.length;
+      await cdp.eval(`document.querySelector('#modal-form').requestSubmit(); return true;`);
+      await cdp.until(`return !document.querySelector('#modal-form');`);
+      await sleep(400);
+      assert.ok(state.putProduct, 'the product itself was not saved');
+      assert.strictEqual(state.putProduct._children, undefined, 'the panel value was sent as a product field');
+      const made = state.created.find((c) => c.product_name === 'Carling Third');
+      assert.ok(made, 'the new child was not created');
+      assert.strictEqual(made.department_name, 'Bar');
+      assert.strictEqual(made.price, 1.8);
+      const moves = state.patched.slice(before).filter((x) => x.stock_parent_pluid !== undefined).map((x) => [x.id, x.stock_parent_pluid, x.stock_ratio]);
+      assert.deepStrictEqual(moves, [[6, null, null], [5, 101, 1], [made.id, 101, 0.33]]);
+    });
+
+    await check('a product that sells from another cannot have children', async () => {
+      // Chips: linked to the pint by the check above.
+      assert.ok(await openEdit(5), 'the edit form never opened');
+      const note = await cdp.until(`const h = document.querySelector('[data-children-field]'); return h && /sells from/.test(h.textContent) && h.textContent.replace(/\\s+/g, ' ').trim();`);
+      assert.ok(note && /Carling Pint/.test(note), `got ${note}`);
+      await cdp.eval(`document.getElementById('modal-cancel').click(); return true;`);
     });
 
     await check('nothing on the page threw', async () => {
