@@ -57,9 +57,15 @@ const { normaliseEmail } = require('../src/normalise');
  * (The Vesopa Kitchen staff): dylan@vesopa.com and dylan@beaconsepos.com, with a
  * password he chose.
  */
+/*
+ * 2026-09-27: the owner made Matt Hammond, Metric Group's administrator of
+ * the Metric Membership sign-in (scripts/make-org-admin.js), with a password
+ * the owner chose.
+ */
 const ALLOWED = [
   'manager@vesopa.co.uk', 'nasim@vesopa.site', 'habib@vesopa.site',
   'dylan@vesopa.com', 'dylan@beaconsepos.com',
+  'm.hammond@metricgroup.co.uk',
 ];
 
 async function main() {
