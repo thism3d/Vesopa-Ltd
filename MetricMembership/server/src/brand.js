@@ -26,7 +26,7 @@ module.exports = {
   logoWhite: '/brand/metric-logo-white.png',
   icon: '/brand/metric-icon-512.png',
   website: 'https://www.metricgroup.co.uk/',
-  privacyPolicy: 'https://metricgroup.co.uk/privacy-policy/',
+  privacyPolicy: 'https://www.metricgroup.co.uk/privacy-policy/',
   phone: '01793 647800',
   servicePhone: '01793 647871',
   poweredBy: 'Vesopa',

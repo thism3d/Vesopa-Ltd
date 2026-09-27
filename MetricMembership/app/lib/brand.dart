@@ -45,7 +45,7 @@ class MetricBrand {
   static const shadowLg = [BoxShadow(color: Color(0x2E002788), blurRadius: 40, offset: Offset(0, 18))];
 
   static const website = 'https://www.metricgroup.co.uk/';
-  static const privacyPolicy = 'https://metricgroup.co.uk/privacy-policy/';
+  static const privacyPolicy = 'https://www.metricgroup.co.uk/privacy-policy/';
   static const phone = '01793 647800';
   static const servicePhone = '01793 647871';
 

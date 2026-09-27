@@ -376,6 +376,6 @@ test('staff choose the phone bar colours; the manifest and /theme follow at once
 test('/privacy sends people to Metric Group\'s own privacy policy', async () => {
   const r = await call('GET', '/privacy');
   assert.equal(r.status, 302);
-  assert.equal(r.headers.get('location'), 'https://metricgroup.co.uk/privacy-policy/');
-  assert.equal((await call('GET', '/api/v1/brand')).json.privacyPolicy, 'https://metricgroup.co.uk/privacy-policy/');
+  assert.equal(r.headers.get('location'), 'https://www.metricgroup.co.uk/privacy-policy/');
+  assert.equal((await call('GET', '/api/v1/brand')).json.privacyPolicy, 'https://www.metricgroup.co.uk/privacy-policy/');
 });
