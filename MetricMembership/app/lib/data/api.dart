@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import 'demo.dart';
+
 /// Something the server said no to, in words a member can read.
 class ApiError implements Exception {
   ApiError(this.message, {this.status = 0, this.code = ''});
@@ -66,6 +68,10 @@ class MetricApi {
   };
 
   Future<Map<String, dynamic>> _send(String method, String path, {Object? body}) async {
+    if (demoMode) {
+      final canned = demoAnswer(method, path, body);
+      if (canned != null) return canned;
+    }
     final http.Response res;
     try {
       final req = http.Request(method, Uri.parse('$base/api/v1$path'))..headers.addAll(_headers);

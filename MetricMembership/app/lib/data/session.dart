@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../platform/vesopa_sso.dart';
 import 'activity_log.dart';
 import 'api.dart';
+import 'demo.dart';
 
 const _tokenKey = 'metric_session_token';
 
@@ -20,6 +21,8 @@ class SessionNotifier extends AsyncNotifier<String?> {
   @override
   Future<String?> build() async {
     final api = ref.read(apiProvider);
+    // The sample-data preview (demo.dart) starts signed in.
+    if (demoMode) return api.token = demoToken;
     /*
      * BACK FROM VESOPA IN A BROWSER. The page left for auth.vesopa.com and has
      * just been loaded again with the code in its address; spend it before

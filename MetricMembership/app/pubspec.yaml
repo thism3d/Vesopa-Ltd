@@ -133,7 +133,9 @@ msix_config:
   # submission, including a resubmission after a failed certification.
   msix_version: 1.0.0.0
 
-  logo_path: assets/brand/metric-icon.png
+  # Metric's mark on an opaque white tile, as the launcher icons have it
+  # (tool/make_store_art.py), so Start and the Store show one icon.
+  logo_path: assets/brand/metric-store-512.png
 
   # The app talks to metric.vesopa.com and auth.vesopa.com over HTTPS, and
   # listens on 127.0.0.1 for one moment during Continue with Vesopa.
