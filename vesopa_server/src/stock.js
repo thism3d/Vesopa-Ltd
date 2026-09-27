@@ -47,6 +47,7 @@ const crypto = require('crypto');
 const express = require('express');
 
 const { requireAuth, requireTerminal } = require('./auth');
+const { requireKitchen } = require('./kitchen');
 const { accessGuard } = require('./permissions');
 const { sendMail } = require('./mailer');
 const { stockTargets } = require('./stock_effects');
@@ -175,7 +176,7 @@ function gpFigures(price, taxPercentage, costMinor, targetGp) {
 // Routes
 // ---------------------------------------------------------------------------
 
-function stockRoutes({ pool, broadcast, secret, toPdf, till = false }) {
+function stockRoutes({ pool, broadcast, secret, toPdf, till = false, kitchen = false }) {
   const router = express.Router();
   /*
    * THE TILL'S COPY (2026-09-27). "All the features must reflect to the till
@@ -186,7 +187,13 @@ function stockRoutes({ pool, broadcast, secret, toPdf, till = false }) {
    * the wastage key) before it offers any of it; the member of staff's name
    * rides along in X-Vesopa-Staff so the ledger says who counted.
    */
-  const prefix = till ? '/till' : '';
+  /*
+   * THE KITCHEN'S COPY, too (2026-09-27): /kitchen/stock/..., on a kitchen
+   * screen's token. Reading, wastage and Sold out only -- a kitchen screen
+   * records what it threw away and what it has run out of, and changes
+   * nothing else about a product.
+   */
+  const prefix = till ? '/till' : kitchen ? '/kitchen' : '';
   const asTill = (req, res, next) => {
     const staff = String(req.headers['x-vesopa-staff'] || '').trim().slice(0, 120);
     req.user = {
@@ -197,8 +204,24 @@ function stockRoutes({ pool, broadcast, secret, toPdf, till = false }) {
     };
     next();
   };
-  const auth = till ? [requireTerminal(secret), asTill] : requireAuth(secret);
-  const mayEdit = till ? [requireTerminal(secret), asTill] : accessGuard({ pool, secret })('stock.edit');
+  const asKitchen = (req, res, next) => {
+    req.user = { officeId: null, email: req.office, name: req.kitchen.name || req.kitchen.user || 'Kitchen', role: 'office' };
+    next();
+  };
+  const kitchenMayOnly = (req, res, next) => {
+    const ok = req.method === 'POST' && (req.path === '/kitchen/stock/docs' || req.path === '/kitchen/stock/sold-out');
+    if (!ok) return res.status(403).json({ error: 'A kitchen screen records wastage and sold out only.' });
+    if (req.path === '/kitchen/stock/docs' && String((req.body || {}).kind) !== 'wastage') {
+      return res.status(403).json({ error: 'A kitchen screen records wastage only.' });
+    }
+    next();
+  };
+  const auth = till ? [requireTerminal(secret), asTill] : kitchen ? [requireKitchen(secret), asKitchen] : requireAuth(secret);
+  const mayEdit = till
+    ? [requireTerminal(secret), asTill]
+    : kitchen
+      ? [requireKitchen(secret), asKitchen, kitchenMayOnly]
+      : accessGuard({ pool, secret })('stock.edit');
 
   async function tenantEmail(req) {
     if (req.user.officeId) {
@@ -724,6 +747,139 @@ function stockRoutes({ pool, broadcast, secret, toPdf, till = false }) {
       res.json({ ok: true, updated, refused });
     } catch (e) {
       answer(res, next)(e);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // What can still be made, and what is sold out (2026-09-27)
+  // -------------------------------------------------------------------------
+  //
+  // "Stocks and other options also need to be shared to the kitchen." For a
+  // screen over the pass, a count is less useful than the answer to "how many
+  // more can we do?": a burger whose recipe takes a bun is limited by the buns,
+  // a half pint by the keg it pours from. Worked out here once, from the same
+  // ledger, for the kitchen screen, the till and the back office alike.
+  //
+  // SOLD OUT is the QR menu's own switch, dinein_items.available -- the one a
+  // manager already taps "when the kitchen runs out" -- not a second flag. A
+  // product is sold out when it is on the menu and every entry for it is
+  // switched off; marking it sold out switches them all off, and back.
+
+  async function officeIdOf(office) {
+    const [[row]] = await pool.query('SELECT id FROM offices WHERE contact_email = ?', [office]);
+    return row ? row.id : null;
+  }
+
+  /** How many of one product the shelf will still make; null when uncounted. */
+  function canMake(p, byPlu, recipes) {
+    const own = num(p.stock_quantity);
+    if (p.stock_parent_pluid) {
+      const parent = byPlu.get(Number(p.stock_parent_pluid));
+      const ps = parent ? num(parent.stock_quantity) : null;
+      const ratio = num(p.stock_ratio);
+      return ps === null || !(ratio > 0) ? null : Math.max(0, Math.floor((ps / ratio) + 1e-9));
+    }
+    const lines = recipes.get(Number(p.pluid));
+    if (lines && lines.length) {
+      let best = null;
+      for (const l of lines) {
+        const ing = byPlu.get(Number(l.ingredient_pluid));
+        const s = ing ? num(ing.stock_quantity) : null;
+        if (s === null) continue; // an uncounted ingredient does not limit it
+        const n = Math.max(0, Math.floor((s / Number(l.quantity)) + 1e-9));
+        best = best === null ? n : Math.min(best, n);
+      }
+      return best;
+    }
+    return own === null ? null : Math.max(0, Math.floor(own + 1e-9));
+  }
+
+  router.get(`${prefix}/stock/availability`, auth, async (req, res, next) => {
+    try {
+      const office = await tenantEmail(req);
+      const [rows] = await pool.query(`${PRODUCT_SELECT} AND COALESCE(p.is_modifier, 0) = 0`, [office]);
+      const byPlu = new Map(rows.map((r) => [Number(r.pluid), r]));
+      const [recipeRows] = await pool.query(
+        'SELECT recipe_pluid, ingredient_pluid, quantity FROM bo_recipe_lines WHERE office = ? ORDER BY sort_order, created_at',
+        [office]
+      );
+      const recipes = new Map();
+      for (const r of recipeRows) {
+        const k = Number(r.recipe_pluid);
+        if (!recipes.has(k)) recipes.set(k, []);
+        recipes.get(k).push(r);
+      }
+      // The menu's switch, per PLU: on the menu at all, and any entry still on.
+      const officeId = await officeIdOf(office);
+      const menu = new Map();
+      if (officeId !== null) {
+        try {
+          const [items] = await pool.query(
+            'SELECT plu_id, MAX(available) AS any_on, COUNT(*) AS n FROM dinein_items WHERE office_id = ? GROUP BY plu_id',
+            [officeId]
+          );
+          for (const i of items) menu.set(Number(i.plu_id), { on: Number(i.any_on) === 1, n: Number(i.n) });
+        } catch (e) {
+          if (!(e && (e.code === 'ER_NO_SUCH_TABLE' || e.errno === 1146))) throw e;
+        }
+      }
+      res.json(rows.map((p) => {
+        const d = decorate(p);
+        const m = menu.get(Number(p.pluid));
+        return {
+          pluid: Number(p.pluid),
+          product_name: p.product_name,
+          department_name: p.department_name,
+          group_name: p.group_name,
+          level: d.level,
+          stock_quantity: num(p.stock_quantity),
+          stock_display: d.stock_display,
+          stock_unit: p.stock_unit || null,
+          can_make: canMake(p, byPlu, recipes),
+          low: d.level === 'low',
+          on_menu: Boolean(m),
+          sold_out: Boolean(m && !m.on),
+          parent_name: p.parent_name || null,
+          recipe: (recipes.get(Number(p.pluid)) || []).map((l) => {
+            const ing = byPlu.get(Number(l.ingredient_pluid));
+            return {
+              pluid: Number(l.ingredient_pluid),
+              product_name: ing ? ing.product_name : `PLU ${l.ingredient_pluid}`,
+              quantity: Number(l.quantity),
+              stock_unit: ing ? ing.stock_unit || null : null,
+            };
+          }),
+        };
+      }));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // Sold out, or back on: every menu entry for the product at once.
+  router.post(`${prefix}/stock/sold-out`, mayEdit, async (req, res, next) => {
+    try {
+      const office = await tenantEmail(req);
+      const pluid = Number(req.body?.pluid);
+      if (!Number.isInteger(pluid)) return res.status(400).json({ error: 'Which product?' });
+      const soldOut = Boolean(req.body?.sold_out);
+      const officeId = await officeIdOf(office);
+      if (officeId === null) return res.status(400).json({ error: 'No venue.' });
+      const [r] = await pool.execute(
+        'UPDATE dinein_items SET available = ? WHERE office_id = ? AND plu_id = ?',
+        [soldOut ? 0 : 1, officeId, pluid]
+      );
+      if (!r || !r.affectedRows) {
+        return res.status(409).json({ error: 'That product is not on the QR or kiosk menu, so there is nothing to switch off. Add it to the menu in the back office (Dine-in › Menu) to use Sold out.' });
+      }
+      // The QR menu, the kiosk, the tills and the kitchen screens all re-read.
+      if (broadcast) {
+        broadcast({ type: 'dinein.updated' });
+        broadcast({ type: 'stock.availability', office }, { office });
+      }
+      res.json({ ok: true, pluid, sold_out: soldOut, items: r.affectedRows });
+    } catch (e) {
+      next(e);
     }
   });
 

@@ -452,6 +452,8 @@ app.use('/api', stock);
 // The same stock routes for the till's Stock and Products pages, under
 // /till/stock/..., signed with the terminal's token (see stockRoutes).
 app.use(stockRoutes({ pool, broadcast, secret: JWT_SECRET, toPdf, till: true }));
+// And the kitchen screens': what can still be made, wastage and Sold out.
+app.use('/api', stockRoutes({ pool, broadcast, secret: JWT_SECRET, toPdf, kitchen: true }));
 
 /**
  * What the till does that is not a sale: a refund, a no-sale, an expense paid
