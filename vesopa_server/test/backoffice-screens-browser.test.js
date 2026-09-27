@@ -116,6 +116,8 @@ function startStub() {
     defaults: null,
     products: catalogue(),
     saved: null,
+    schedules: [],
+    scheduled: null,
     resized: null,
     venueFont: null,
     fonts: [
@@ -207,6 +209,30 @@ function startStub() {
         if (url.pathname === '/api/screens/defaults') {
           state.defaults = json;
           return send(200, { ok: true, ...json });
+        }
+        // Scheduled changes (2026-09-24).
+        if (url.pathname === '/api/screens/schedules' && req.method === 'GET') {
+          return send(200, state.schedules);
+        }
+        if (/^\/api\/screens\/\d+\/schedule$/.test(url.pathname) && req.method === 'POST') {
+          const row = {
+            id: `sch-${state.schedules.length + 1}`,
+            screen_id: Number(url.pathname.split('/')[3]),
+            screen_name: 'OnzepTest',
+            note: json.note || '',
+            effective_at: json.effective_at,
+            status: 'pending',
+            button_count: json.buttons.length,
+            created_by: 'Store Manager',
+          };
+          state.scheduled = json;
+          state.schedules.push(row);
+          return send(201, row);
+        }
+        if (/^\/api\/screens\/schedules\/[\w-]+$/.test(url.pathname) && req.method === 'DELETE') {
+          const row = state.schedules.find((x) => x.id === url.pathname.split('/').pop());
+          if (row) row.status = 'cancelled';
+          return send(200, { ok: true });
         }
         if (/^\/api\/screens\/\d+\/buttons$/.test(url.pathname)) {
           state.saved = json.buttons;
@@ -1872,6 +1898,44 @@ check('a top bar is laid out beside the till’s own fixed key', async (cdp) => 
      return true;`
   );
   await sleep(300);
+});
+
+check('Schedule… keeps the layout on screen for tomorrow at six, and it is listed', async (cdp, state) => {
+  await reset(cdp);
+  await cdp.eval(`document.querySelector('.sp-surface[data-surface="sale"]').click(); return true;`);
+  await sleep(300);
+  const keys = await cdp.eval('return spCurrent.buttons.length;');
+  await cdp.eval(`document.getElementById('sp-schedule').click(); return true;`);
+  await sleep(300);
+  const form = await cdp.eval(
+    `const f = document.getElementById('modal-form');
+     return f && { date: f.querySelector('[name="date"]').value, time: f.querySelector('[name="time"]').value };`
+  );
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const pad = (n) => String(n).padStart(2, '0');
+  assert.deepStrictEqual(form, { date: `${tomorrow.getFullYear()}-${pad(tomorrow.getMonth() + 1)}-${pad(tomorrow.getDate())}`, time: '06:00' });
+  await cdp.eval(`document.querySelector('#modal-form [name="note"]').value = 'Autumn menu';
+                  document.getElementById('modal-form').requestSubmit(); return true;`);
+  await sleep(500);
+  assert.ok(state.scheduled, 'nothing was scheduled');
+  assert.strictEqual(state.scheduled.buttons.length, keys);
+  assert.strictEqual(state.scheduled.note, 'Autumn menu');
+  const at = new Date(state.scheduled.effective_at);
+  assert.strictEqual(at.getHours(), 6, 'not six o’clock local');
+  assert.strictEqual(await cdp.eval(`return document.getElementById('sp-sched-count').textContent;`), '1');
+
+  await cdp.eval(`document.getElementById('sp-schedules').click(); return true;`);
+  await sleep(400);
+  const listed = await cdp.eval(`return [...document.querySelectorAll('#modal-root tbody tr')].map((tr) => tr.textContent.replace(/\\s+/g, ' ').trim());`);
+  assert.ok(listed.length === 1 && /OnzepTest/.test(listed[0]) && /Waiting/.test(listed[0]), JSON.stringify(listed));
+  await cdp.eval(`document.querySelector('[data-sp-sched-cancel]').click(); return true;`);
+  await sleep(300);
+  await cdp.eval(`document.querySelector('.confirm-back [data-yes]').click(); return true;`);
+  await sleep(500);
+  assert.strictEqual(state.schedules[0].status, 'cancelled');
+  assert.strictEqual(await cdp.eval(`return document.getElementById('sp-sched-count').hidden;`), true);
+  await cdp.eval(`const b = document.querySelector('[data-sp-sched-close]'); if (b) b.click(); return true;`);
 });
 
 check('nothing on the page threw while all that happened', async (cdp) => {

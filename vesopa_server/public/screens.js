@@ -1224,6 +1224,8 @@ async function loadScreens() {
   };
   spTillFont = settings.font_family ?? null;
   spProductOptionsSig = '';
+  // Not awaited: the badge on Scheduled fills in when it arrives.
+  spLoadSchedules();
 
   // Pictures this venue already has, offered as a strip to click rather than a
   // path to type. Products first because they are the ones with pictures, then
@@ -2042,6 +2044,7 @@ function spRenderChrome() {
     'sp-copy-to',
     'sp-delete',
     'sp-save',
+    'sp-schedule',
     'sp-revert',
     'sp-fill',
     'sp-preset',
@@ -3819,6 +3822,8 @@ function spBind() {
     loadScreens().catch((e) => console.error(e));
   });
   $('sp-save').addEventListener('click', spSaveLayout);
+  $('sp-schedule')?.addEventListener('click', spScheduleOpen);
+  $('sp-schedules')?.addEventListener('click', async () => { await spLoadSchedules(); spSchedulesOpen(); });
   $('sp-undo').addEventListener('click', spUndo);
   $('sp-redo').addEventListener('click', spRedo);
   $('sp-up').addEventListener('click', () => spReorder(-1));
@@ -4714,6 +4719,11 @@ async function spSaveLayout({ quiet = false } = {}) {
       body: JSON.stringify({ buttons: spCurrent.buttons }),
     });
     spSavedShape = spShape(spCurrent);
+    // A save now is what a waiting scheduled change will replace; say so.
+    const waiting = spPendingSchedules().filter((x) => x.screen_id === spCurrent.id);
+    if (waiting.length && !quiet) {
+      toast(`Saved. This screen still has a scheduled change for ${spWhen(waiting[0].effective_at)}, which will replace this layout then.`, 'warn');
+    }
     if (!quiet) {
       button.textContent = 'Saved ✓';
       setTimeout(() => {
@@ -4816,6 +4826,161 @@ async function spFillFromDepartment() {
       b.label = null;
     });
   });
+}
+
+// ---------------------------------------------------------------------------
+// Scheduled changes (2026-09-24)
+// ---------------------------------------------------------------------------
+//
+// "Can we add a scheduler to screen programming? ICR Touch do this, where you
+// can schedule the changes to take effect on the date you choose."
+//
+// Lay the screen out, press Schedule… instead of Save layout, pick a day and
+// a time: the layout as it is on screen is kept on the server and goes live
+// then (src/screen_schedules.js). Nothing on the tills changes until it does.
+// "Scheduled" lists every pending change for the venue -- which screen, when,
+// who -- with Apply now and Cancel beside each.
+
+/** Pending changes for this venue, newest list from the server. */
+let spSchedules = [];
+
+async function spLoadSchedules() {
+  try {
+    const rows = await api('/screens/schedules');
+    spSchedules = Array.isArray(rows) ? rows : [];
+  } catch {
+    // A server without the migration: no scheduling, and no noise about it.
+    spSchedules = [];
+  }
+  spRenderScheduleCount();
+  return spSchedules;
+}
+
+function spPendingSchedules() {
+  return spSchedules.filter((s) => s.status === 'pending');
+}
+
+function spRenderScheduleCount() {
+  const badge = $('sp-sched-count');
+  if (!badge) return;
+  const n = spPendingSchedules().length;
+  badge.textContent = n ? String(n) : '';
+  badge.hidden = !n;
+}
+
+/** "Mon 5 Oct, 06:00" in the manager's own time. */
+function spWhen(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return String(iso || '');
+  return d.toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+
+/** Local YYYY-MM-DD and HH:MM for a Date, for the date and time boxes. */
+function spLocalParts(d) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return { date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`, time: `${pad(d.getHours())}:${pad(d.getMinutes())}` };
+}
+
+function spScheduleOpen() {
+  if (!spCurrent) return;
+  // Tomorrow at six by default: before any venue opens, and the answer to
+  // "when should the new menu start" more often than not.
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  tomorrow.setHours(6, 0, 0, 0);
+  const at = spLocalParts(tomorrow);
+  const pending = spPendingSchedules().filter((s) => s.screen_id === spCurrent.id);
+  modal(
+    `Schedule “${spCurrent.name}”`,
+    [
+      { name: 'date', label: 'Goes live on', type: 'date', value: at.date, required: true },
+      { name: 'time', label: 'At', type: 'time', value: at.time, required: true,
+        hint: 'Your tills keep the current layout until then, and switch by themselves.' },
+      { name: 'note', label: 'Note (optional)', value: '', placeholder: 'Autumn menu, Christmas drinks…',
+        hint: pending.length
+          ? `This screen already has ${pending.length} change${pending.length === 1 ? '' : 's'} waiting (next ${spWhen(pending[0].effective_at)}). Each applies in turn.`
+          : 'What is on the screen now is what will go live — unsaved changes included.' },
+    ],
+    async (d) => {
+      const when = new Date(`${d.date}T${d.time || '00:00'}`);
+      if (Number.isNaN(when.getTime())) throw new Error('Choose a date and a time.');
+      await api(`/screens/${spCurrent.id}/schedule`, {
+        method: 'POST',
+        body: JSON.stringify({
+          effective_at: when.toISOString(),
+          note: d.note || null,
+          rows: spCurrent.rows,
+          cols: spCurrent.cols,
+          buttons: spCurrent.buttons,
+        }),
+      });
+      await spLoadSchedules();
+      toast(`Scheduled for ${spWhen(when.toISOString())}. The tills keep today’s layout until then.`);
+    }
+  );
+}
+
+function spSchedulesOpen() {
+  const root = $('modal-root');
+  const draw = () => {
+    const rows = spSchedules;
+    const label = { pending: ['Waiting', 'due'], applying: ['Applying', 'due'], applied: ['Live', 'active'], cancelled: ['Cancelled', 'archived'], failed: ['Failed', 'paused'] };
+    root.innerHTML = `
+      <div class="modal-back">
+        <div class="modal sk-wide">
+          <h3>Scheduled screen changes</h3>
+          <p class="muted small">Each one is a whole layout, kept as it was when it was scheduled, that goes live at its time. Open the screen and press Schedule… to add one.</p>
+          <div class="rr-scroll">
+            <table class="table" data-no-cards>
+              <thead><tr><th>Goes live</th><th>Screen</th><th>Note</th><th>By</th><th>Status</th><th></th></tr></thead>
+              <tbody>${rows.map((s) => {
+                const [word, tone] = label[s.status] || [s.status, 'archived'];
+                return `<tr>
+                  <td class="nowrap">${esc(spWhen(s.effective_at))}</td>
+                  <td>${esc(s.screen_name || `Screen ${s.screen_id}`)}<div class="muted small">${s.button_count} key${s.button_count === 1 ? '' : 's'}</div></td>
+                  <td>${esc(s.note || '')}${s.error ? `<div class="muted small">${esc(s.error)}</div>` : ''}</td>
+                  <td>${esc(s.created_by || '')}</td>
+                  <td><span class="badge ${tone}">${esc(word)}</span></td>
+                  <td class="right nowrap">${s.status === 'pending'
+                    ? `<button type="button" class="btn small ghost" data-sp-sched-apply="${esc(s.id)}">Apply now</button>
+                       <button type="button" class="btn small ghost danger" data-sp-sched-cancel="${esc(s.id)}">Cancel</button>`
+                    : ''}</td>
+                </tr>`;
+              }).join('') || '<tr><td colspan="6" class="muted small">Nothing scheduled.</td></tr>'}</tbody>
+            </table>
+          </div>
+          <div class="modal-actions"><button type="button" class="btn primary" data-sp-sched-close>Close</button></div>
+        </div>
+      </div>`;
+  };
+  draw();
+  root.onclick = async (e) => {
+    if (e.target.closest('[data-sp-sched-close]')) {
+      root.onclick = null;
+      root.innerHTML = '';
+      return;
+    }
+    const apply = e.target.closest('[data-sp-sched-apply]');
+    const cancel = e.target.closest('[data-sp-sched-cancel]');
+    if (!apply && !cancel) return;
+    const id = (apply || cancel).dataset[apply ? 'spSchedApply' : 'spSchedCancel'];
+    try {
+      if (apply) {
+        if (!await confirmDialog('Put this layout on the tills now?', { confirmLabel: 'Apply now' })) return;
+        await api(`/screens/schedules/${id}/apply`, { method: 'POST' });
+        toast('Applied. The tills have the new layout.');
+        await loadScreens();
+      } else {
+        if (!await confirmDialog('Cancel this scheduled change?', { danger: true, confirmLabel: 'Cancel it' })) return;
+        await api(`/screens/schedules/${id}`, { method: 'DELETE' });
+        toast('Cancelled.');
+      }
+      await spLoadSchedules();
+      spSchedulesOpen();
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  };
 }
 
 // Applied before anything draws, so the editor never flashes the full page

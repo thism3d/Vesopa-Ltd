@@ -586,6 +586,90 @@ async function loadScreens(pool, office, { surface = null } = {}) {
 // The back office
 // ---------------------------------------------------------------------------
 
+/**
+ * Replace every button on one screen, in one transaction, and return the rows
+ * as stored. The editor's Save and a scheduled change (screen_schedules.js)
+ * both come through here, so a change saved for next Monday is normalised and
+ * written exactly as the same change saved now would be.
+ *
+ * `screen` is the epos_screens row, already checked to be this office's.
+ */
+async function saveScreenButtons(pool, office, screen, rawButtons) {
+  const grid = {
+    rows: screen.grid_rows,
+    cols: screen.grid_cols,
+    surface: screen.surface,
+  };
+  const seen = new Set();
+  const rows = [];
+
+  for (const raw of Array.isArray(rawButtons) ? rawButtons : []) {
+    const button = normaliseButton(raw, grid);
+    if (!button) continue;
+    // A blank of one cell carries nothing and holds no ground: storing
+    // them would double the size of every screen for no gain, and an empty
+    // cell is already what "no row here" means.
+    //
+    // A blank that *spans* is different — it is a space the manager sized
+    // before deciding what goes in it, which is the order a screen actually
+    // gets laid out in. That one is stored, and the till draws a hole of
+    // exactly that shape. The same test lives in public/screens.js as
+    // spHoldsSpace(); the two must agree, or a manager sizes a space, saves,
+    // and watches it come back 1x1.
+    if (button.kind === 'blank' && button.row_span < 2 && button.col_span < 2) {
+      continue;
+    }
+
+    // Last one wins on a duplicated cell rather than the insert failing on
+    // the unique key. The editor cannot produce this; a hand-rolled request
+    // can, and refusing the whole save over it helps nobody.
+    const cell = `${button.grid_row}:${button.grid_col}`;
+    if (seen.has(cell)) {
+      rows[rows.findIndex((r) => `${r.grid_row}:${r.grid_col}` === cell)] = button;
+      continue;
+    }
+    seen.add(cell);
+    rows.push(button);
+  }
+
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    await connection.execute('DELETE FROM epos_screen_buttons WHERE screen_id = ?', [screen.id]);
+    for (const b of rows) {
+      await connection.execute(
+        `INSERT INTO epos_screen_buttons
+           (screen_id, office, grid_row, grid_col, row_span, col_span,
+            kind, plu_id, target_screen_id, function_key, modifier_group_id,
+            label, fill, ink,
+            emoji, image_url, image_fit, image_scale, image_x, image_y,
+            show_label, font_family, font_size)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          screen.id, office, b.grid_row, b.grid_col, b.row_span, b.col_span,
+          b.kind, b.plu_id, b.target_screen_id, b.function_key, b.modifier_group_id,
+          b.label, b.fill, b.ink,
+          b.emoji, b.image_url, b.image_fit, b.image_scale, b.image_x, b.image_y,
+          b.show_label, b.font_family, b.font_size,
+        ]
+      );
+    }
+    await connection.commit();
+  } catch (e) {
+    await connection.rollback();
+    throw e;
+  } finally {
+    connection.release();
+  }
+
+  const [saved] = await pool.query(
+    `SELECT * FROM epos_screen_buttons WHERE screen_id = ?
+      ORDER BY grid_row, grid_col`,
+    [screen.id]
+  );
+  return saved;
+}
+
 function screensRoutes({ pool, broadcast, secret }) {
   const router = express.Router();
   const auth = requireAuth(secret);
@@ -1301,102 +1385,8 @@ function screensRoutes({ pool, broadcast, secret }) {
       const office = await tenantEmail(req);
       const screen = await screenFor(office, req.params.id);
       if (!screen) return res.status(404).json({ error: 'No such screen' });
-
-      const grid = {
-        rows: screen.grid_rows,
-        cols: screen.grid_cols,
-        surface: screen.surface,
-      };
-      const seen = new Set();
-      const rows = [];
-
-      for (const raw of Array.isArray(req.body?.buttons) ? req.body.buttons : []) {
-        const button = normaliseButton(raw, grid);
-        if (!button) continue;
-        // A blank of one cell carries nothing and holds no ground: storing
-        // them would double the size of every screen for no gain, and an empty
-        // cell is already what "no row here" means.
-        //
-        // A blank that *spans* is different — it is a space the manager sized
-        // before deciding what goes in it, which is the order a screen actually
-        // gets laid out in. That one is stored, and the till draws a hole of
-        // exactly that shape. The same test lives in public/screens.js as
-        // spHoldsSpace(); the two must agree, or a manager sizes a space, saves,
-        // and watches it come back 1x1.
-        if (button.kind === 'blank' && button.row_span < 2 && button.col_span < 2) {
-          continue;
-        }
-
-        // Last one wins on a duplicated cell rather than the insert failing on
-        // the unique key. The editor cannot produce this; a hand-rolled request
-        // can, and refusing the whole save over it helps nobody.
-        const cell = `${button.grid_row}:${button.grid_col}`;
-        if (seen.has(cell)) {
-          rows[rows.findIndex((r) => `${r.grid_row}:${r.grid_col}` === cell)] =
-            button;
-          continue;
-        }
-        seen.add(cell);
-        rows.push(button);
-      }
-
-      const connection = await pool.getConnection();
-      try {
-        await connection.beginTransaction();
-        await connection.execute(
-          'DELETE FROM epos_screen_buttons WHERE screen_id = ?',
-          [screen.id]
-        );
-        for (const b of rows) {
-          await connection.execute(
-            `INSERT INTO epos_screen_buttons
-               (screen_id, office, grid_row, grid_col, row_span, col_span,
-                kind, plu_id, target_screen_id, function_key, modifier_group_id,
-                label, fill, ink,
-                emoji, image_url, image_fit, image_scale, image_x, image_y,
-                show_label, font_family, font_size)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-              screen.id,
-              office,
-              b.grid_row,
-              b.grid_col,
-              b.row_span,
-              b.col_span,
-              b.kind,
-              b.plu_id,
-              b.target_screen_id,
-              b.function_key,
-              b.modifier_group_id,
-              b.label,
-              b.fill,
-              b.ink,
-              b.emoji,
-              b.image_url,
-              b.image_fit,
-              b.image_scale,
-              b.image_x,
-              b.image_y,
-              b.show_label,
-              b.font_family,
-              b.font_size,
-            ]
-          );
-        }
-        await connection.commit();
-      } catch (e) {
-        await connection.rollback();
-        throw e;
-      } finally {
-        connection.release();
-      }
-
+      const saved = await saveScreenButtons(pool, office, screen, req.body?.buttons);
       pushed(office);
-      const [saved] = await pool.query(
-        `SELECT * FROM epos_screen_buttons WHERE screen_id = ?
-          ORDER BY grid_row, grid_col`,
-        [screen.id]
-      );
       res.json(screenToJson(screen, saved));
     } catch (e) {
       next(e);
@@ -1440,6 +1430,8 @@ function tillScreenRoutes({ pool }) {
 
 module.exports = {
   screensRoutes,
+  saveScreenButtons,
+  screenToJson,
   tillScreenRoutes,
   normaliseButton,
   cleanHex,

@@ -40,6 +40,7 @@ const {
   tillKitchenRoutes,
 } = require('./kitchen');
 const { screensRoutes, tillScreenRoutes } = require('./screens');
+const { screenScheduleRoutes } = require('./screen_schedules');
 const { fontsRoutes, tillFontRoutes } = require('./fonts');
 const { assetVersions, staticCache } = require('./assets');
 const { modifierRoutes, tillModifierRoutes } = require('./modifiers');
@@ -327,6 +328,10 @@ app.use('/api', kitchenAppRoutes({ pool, broadcast, secret: JWT_SECRET }));
 // unauthenticated and scoped by an office query, exactly as
 // /api/till-settings/public already is. The two do not share a path, which is
 // deliberate — see the note at the top of src/screens.js.
+// Scheduled screen changes (ICR-style: lay it out now, live on the date you
+// choose). Before screensRoutes: its literal /screens/schedules paths must win
+// over /screens/:id, and its catch-up runs ahead of the screens reads.
+app.use('/api', screenScheduleRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use('/api', screensRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use('/api', tillScreenRoutes({ pool }));
 // Beside the screens, and split the same way: the authed half for the back
