@@ -1,0 +1,5 @@
+Version 1.0.5.0 - Sold out and "Only N left" from the venue's stock
+
+A dish the venue has run out of shows as Sold out on the kiosk, straight from the same stock the till and back office use, as well as when a manager switches it off.
+
+When only a few are left, the dish shows "Only 3 left", and the item screen, the basket and meal choices never let a customer order more than there is.
