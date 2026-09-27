@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+
+import '../../data/kitchen_stock.dart';
 
 import '../../data/screen_profile.dart';
 import '../../data/ticket.dart';
@@ -621,6 +624,24 @@ class _LineRow extends StatelessWidget {
                 ),
               ),
             ),
+
+          // How it is made, when it has a recipe (2026-09-27): the measures it
+          // is costed at, so the bar pours what the GP was worked out on. Grey
+          // and small -- a reminder under the line, not an instruction over it.
+          Consumer(
+            builder: (context, ref, _) {
+              final item = ref.watch(kitchenStockProvider.select((st) => st.byName(line.name)));
+              if (item == null || item.recipe.isEmpty) return const SizedBox.shrink();
+              return Padding(
+                key: Key('recipe-${line.id}'),
+                padding: const EdgeInsets.only(left: 36, top: 2),
+                child: Text(
+                  item.recipe.map((m) => m.label).join(' · '),
+                  style: TextStyle(fontSize: 13, color: skin.inkMuted, height: 1.25),
+                ),
+              );
+            },
+          ),
 
           // What is in it.
           //

@@ -11,6 +11,7 @@ import '../data/ticket.dart';
 import '../printing/kitchen_print.dart';
 import 'completed_board.dart';
 import 'counts_board.dart';
+import 'stock_board.dart';
 import 'info_page.dart';
 import 'open_board.dart';
 import 'settings_page.dart';
@@ -43,7 +44,7 @@ class KitchenShell extends ConsumerStatefulWidget {
   ConsumerState<KitchenShell> createState() => _KitchenShellState();
 }
 
-enum _Tab { open, counts, completed }
+enum _Tab { open, counts, stock, completed }
 
 class _KitchenShellState extends ConsumerState<KitchenShell> {
   _Tab _tab = _Tab.open;
@@ -225,6 +226,7 @@ class _KitchenShellState extends ConsumerState<KitchenShell> {
                     children: [DineInStrip(), Expanded(child: OpenBoard())],
                   ),
                   _Tab.counts => const CountsBoard(),
+                  _Tab.stock => const StockBoard(),
                   _Tab.completed => const CompletedBoard(),
                 },
               ),
@@ -384,6 +386,12 @@ class _Segments extends StatelessWidget {
             label: 'Counts',
             selected: tab == _Tab.counts,
             onTap: () => onTab(_Tab.counts),
+          ),
+          // What can still be made, Sold out and wastage (2026-09-27).
+          _Segment(
+            label: 'Stock',
+            selected: tab == _Tab.stock,
+            onTap: () => onTab(_Tab.stock),
           ),
           _Segment(
             label: '$completedCount Completed',

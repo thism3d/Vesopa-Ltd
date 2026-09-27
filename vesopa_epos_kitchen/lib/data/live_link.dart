@@ -110,6 +110,9 @@ class LiveLink {
         // every card's station chips. A venue renaming KP 3 to "Fryer" should
         // see it change on the wall, not at the next restart.
         'till-settings' => LiveEvent.profile,
+        // Stock moved: a wastage, a count, a delivery, a dish sold out or back
+        // on, the catalogue changed (2026-09-27, kitchen_stock.dart).
+        'stock.availability' || 'stock.docs' || 'stock.products' || 'dinein.updated' || 'catalogue.updated' => LiveEvent.stock,
         _ => null,
       };
       if (event != null && !_events.isClosed) _events.add(event);
@@ -171,4 +174,7 @@ enum LiveEvent {
 
   /// The venue's screens or station names changed in the back office.
   profile,
+
+  /// Stock moved -- see kitchen_stock.dart.
+  stock,
 }

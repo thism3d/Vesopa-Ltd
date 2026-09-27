@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/kitchen_stock.dart';
 import '../data/providers.dart';
 import '../data/screen_profile.dart';
 import '../data/ticket_board.dart';
@@ -158,6 +159,34 @@ class _CountRowTile extends StatelessWidget {
                   ),
               ],
             ),
+          ),
+          // What the shelf will still make (2026-09-27): "7 ordered, 5 left"
+          // is the sentence that stops a kitchen promising what it cannot
+          // cook. Amber when there are fewer left than ordered, red at none.
+          Consumer(
+            builder: (context, ref, _) {
+              final item = ref.watch(kitchenStockProvider.select((st) => st.byName(row.name)));
+              if (item == null) return const SizedBox.shrink();
+              final left = item.canMake;
+              final String? text = item.soldOut
+                  ? 'Sold out'
+                  : left == null
+                      ? null
+                      : '${fmtQty(left)} left';
+              if (text == null) return const SizedBox.shrink();
+              final short = item.soldOut || (left != null && left < row.quantity);
+              final colour = item.soldOut || (left != null && left <= 0) ? Kds.late : short ? Kds.warn : skin.inkMuted;
+              return Container(
+                key: Key('left-${row.name}'),
+                margin: const EdgeInsets.only(right: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: short ? colour.withValues(alpha: 0.14) : skin.surface,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(text, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: colour)),
+              );
+            },
           ),
           Padding(
             padding: const EdgeInsets.only(right: 14),
