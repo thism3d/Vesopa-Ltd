@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#002788">
+<title>Metric Membership · Staff console</title>
+<meta name="description" content="Metric Group's staff console for Metric Membership: members, cars, sites, gates and every barrier read.">
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="apple-touch-icon" href="/brand/metric-icon-192.png">
+<link rel="stylesheet" href="/admin/admin.css">
+<script src="/admin/admin.js" defer></script>
+</head>
+<body>
+  <div id="signin" class="signin" hidden>
+    <section class="signin-art" aria-hidden="true">
+      <img src="/brand/metric-logo-white.png" alt="" class="signin-logo">
+      <div class="signin-copy">
+        <p class="overline">Staff console</p>
+        <h2>Every member, car and barrier, in one place.</h2>
+      </div>
+      <svg class="scene" viewBox="0 0 800 520" preserveAspectRatio="xMidYMax slice">
+        <defs>
+          <linearGradient id="beam" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#5BD601" stop-opacity=".75"/>
+            <stop offset="1" stop-color="#5BD601" stop-opacity="0"/>
+          </linearGradient>
+          <linearGradient id="carbody" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#8BEB3F"/><stop offset=".55" stop-color="#5BD601"/><stop offset="1" stop-color="#3B9400"/>
+          </linearGradient>
+          <radialGradient id="glow" cx=".62" cy=".6" r=".5">
+            <stop offset="0" stop-color="#5BD601" stop-opacity=".18"/><stop offset="1" stop-color="#5BD601" stop-opacity="0"/>
+          </radialGradient>
+        </defs>
+        <rect width="800" height="520" fill="url(#glow)"/>
+        <g fill="#123090">
+          <rect x="0" y="230" width="70" height="130"/><rect x="78" y="180" width="56" height="180"/><rect x="142" y="250" width="90" height="110"/>
+          <rect x="240" y="200" width="60" height="160"/><rect x="308" y="160" width="74" height="200"/><rect x="390" y="240" width="64" height="120"/>
+        </g>
+        <g fill="#FFE9A8" opacity=".5">
+          <rect x="90" y="200" width="6" height="8"/><rect x="110" y="230" width="6" height="8"/><rect x="320" y="180" width="6" height="8"/>
+          <rect x="350" y="220" width="6" height="8"/><rect x="255" y="240" width="6" height="8"/><rect x="160" y="280" width="6" height="8"/>
+          <rect x="20" y="260" width="6" height="8"/><rect x="410" y="270" width="6" height="8"/><rect x="336" y="300" width="6" height="8"/>
+        </g>
+        <rect x="560" y="170" width="240" height="190" fill="#0E2575"/>
+        <g fill="#fff" opacity=".1"><rect x="560" y="215" width="240" height="4"/><rect x="560" y="262" width="240" height="4"/><rect x="560" y="310" width="240" height="4"/></g>
+        <rect x="582" y="188" width="34" height="34" rx="8" fill="#5BD601"/>
+        <text x="599" y="214" text-anchor="middle" font-size="24" font-weight="800" fill="#002788" font-family="Plus Jakarta Sans, sans-serif">P</text>
+        <rect x="0" y="360" width="800" height="110" fill="#0A1740"/>
+        <g class="dashes" fill="#fff" opacity=".2"><rect x="0" y="400" width="30" height="3"/><rect x="60" y="400" width="30" height="3"/><rect x="120" y="400" width="30" height="3"/><rect x="180" y="400" width="30" height="3"/><rect x="240" y="400" width="30" height="3"/><rect x="300" y="400" width="30" height="3"/><rect x="360" y="400" width="30" height="3"/><rect x="420" y="400" width="30" height="3"/><rect x="480" y="400" width="30" height="3"/><rect x="540" y="400" width="30" height="3"/><rect x="600" y="400" width="30" height="3"/><rect x="660" y="400" width="30" height="3"/><rect x="720" y="400" width="30" height="3"/><rect x="780" y="400" width="30" height="3"/></g>
+        <rect x="0" y="470" width="800" height="50" fill="#14286B"/>
+        <!-- camera -->
+        <rect x="464" y="300" width="6" height="140" rx="3" fill="#CBD5F0"/>
+        <rect x="440" y="292" width="34" height="16" rx="5" fill="#fff"/>
+        <circle cx="444" cy="300" r="5" fill="#002788"/>
+        <polygon class="beam" points="438,306 330,448 400,448" fill="url(#beam)"/>
+        <!-- car -->
+        <g class="car">
+          <ellipse cx="0" cy="36" rx="84" ry="7" fill="#000" opacity=".3"/>
+          <path d="M-80 18 Q-82 -2 -66 -6 L-42 -8 Q-26 -34 2 -35 L28 -34 Q46 -32 58 -12 Q80 -8 82 8 L82 20 Q82 26 74 26 L-72 26 Q-80 26 -80 18 Z" fill="url(#carbody)"/>
+          <path d="M-36 -8 Q-22 -27 0 -28 L0 -8 Z" fill="#0B1B4D"/><path d="M6 -28 L26 -27 Q40 -25 50 -9 L6 -8 Z" fill="#0B1B4D"/>
+          <rect x="72" y="-4" width="10" height="7" rx="2" fill="#FFF4C2"/>
+          <rect x="48" y="10" width="32" height="10" rx="2" fill="#fff"/>
+          <text x="64" y="18" text-anchor="middle" font-size="7" font-weight="800" fill="#111" font-family="Arial, sans-serif">MG24 PAS</text>
+          <circle cx="-48" cy="26" r="14" fill="#0B0F1C"/><circle cx="-48" cy="26" r="7" fill="#C9D2EA"/>
+          <circle cx="50" cy="26" r="14" fill="#0B0F1C"/><circle cx="50" cy="26" r="7" fill="#C9D2EA"/>
+        </g>
+        <!-- barrier -->
+        <rect x="486" y="394" width="22" height="50" rx="4" fill="#fff"/>
+        <rect x="486" y="406" width="22" height="5" fill="#5BD601"/>
+        <circle class="signal" cx="497" cy="400" r="3.5" fill="#FF5A5A"/>
+        <g class="arm">
+          <rect x="357" y="406" width="140" height="8" rx="4" fill="#fff"/>
+          <g fill="#002788"><rect x="370" y="406" width="12" height="8"/><rect x="396" y="406" width="12" height="8"/><rect x="422" y="406" width="12" height="8"/><rect x="448" y="406" width="12" height="8"/><rect x="474" y="406" width="12" height="8"/></g>
+        </g>
+        <circle cx="497" cy="410" r="5" fill="#9AA8D6"/>
+        <g class="tick">
+          <rect x="300" y="318" width="150" height="30" rx="15" fill="#fff"/>
+          <circle cx="318" cy="333" r="10" fill="#5BD601"/>
+          <path d="M313 333 l4 4 l7 -8" stroke="#002788" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+          <text x="388" y="338" text-anchor="middle" font-size="12" font-weight="800" fill="#002788" font-family="Plus Jakarta Sans, sans-serif">Member recognised</text>
+        </g>
+      </svg>
+    </section>
+    <main class="signin-panel">
+      <div class="signin-card">
+        <img src="/brand/metric-logo.png" alt="metric" class="logo">
+        <h1>Sign in to the console</h1>
+        <p class="muted">For Metric Group staff. Use the Vesopa account for your work email.</p>
+        <div id="signin-msg"></div>
+        <a class="btn primary big" id="signin-btn" href="/admin/signin"><img src="/brand/vesopa-mark.png" alt="" width="22" height="22">Continue with Vesopa</a>
+        <p class="muted small fine">Members sign in on the <a href="/">membership app</a>.</p>
+      </div>
+      <p class="powered">Metric Membership · powered by Vesopa</p>
+    </main>
+  </div>
+
+  <div id="app" class="shell" hidden>
+    <aside class="side">
+      <div class="side-brand"><img src="/brand/metric-logo-white.png" alt="metric"><span>Membership</span></div>
+      <nav class="tabs" id="tabs">
+        <button type="button" data-tab="overview" class="on">Overview</button>
+        <button type="button" data-tab="members">Members</button>
+        <button type="button" data-tab="sites">Sites and gates</button>
+        <button type="button" data-tab="events">Barrier log</button>
+        <button type="button" data-tab="activity">Activity log</button>
+        <button type="button" data-tab="plans">Plans</button>
+      </nav>
+      <p class="side-foot">Powered by Vesopa</p>
+    </aside>
+    <div class="main">
+      <header class="top">
+        <button type="button" id="menu" class="menu" aria-label="Menu">☰</button>
+        <span class="title" id="page-title">Overview</span>
+        <span class="spacer"></span>
+        <span class="user"><span class="avatar" id="avatar">?</span><span class="small" id="who"></span></span>
+        <button type="button" id="signout">Sign out</button>
+      </header>
+      <main id="view"></main>
+    </div>
+  </div>
+</body>
+</html>

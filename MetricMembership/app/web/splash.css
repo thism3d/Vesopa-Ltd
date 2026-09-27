@@ -1,0 +1,20 @@
+html, body { margin: 0; height: 100%; background: #002788; }
+#splash {
+  position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+  background: linear-gradient(160deg, #00144d 0%, #002788 55%, #1d3fa8 100%);
+  font: 600 15px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; color: #fff; text-align: center; padding: 24px;
+  transition: opacity .35s ease;
+}
+#splash.gone { opacity: 0; pointer-events: none; }
+#splash .logo { height: 46px; width: auto; }
+#splash .pill { color: #5bd601; border: 1.5px solid rgba(91, 214, 1, .6); border-radius: 99px; padding: 4px 12px; font-size: 11px; font-weight: 800; letter-spacing: .18em; }
+#splash .road { position: relative; width: 200px; height: 34px; margin-top: 14px; border-bottom: 3px solid rgba(255, 255, 255, .25); overflow: hidden; }
+#splash .car { position: absolute; bottom: 3px; left: -44px; width: 40px; height: 14px; border-radius: 8px 12px 3px 3px; background: #5bd601; animation: drive 2.4s cubic-bezier(.4, 0, .2, 1) infinite; }
+#splash .car::before, #splash .car::after { content: ''; position: absolute; bottom: -4px; width: 9px; height: 9px; border-radius: 50%; background: #0b0f1c; }
+#splash .car::before { left: 5px; } #splash .car::after { right: 5px; }
+#splash .gate { position: absolute; left: 120px; bottom: 0; width: 64px; height: 5px; background: #fff; border-radius: 3px; transform-origin: 2px 50%; animation: lift 2.4s ease-in-out infinite; }
+@keyframes drive { 0% { left: -44px; } 40%, 52% { left: 70px; } 100% { left: 220px; } }
+@keyframes lift { 0%, 40% { transform: rotate(0); } 50%, 80% { transform: rotate(-70deg); } 92%, 100% { transform: rotate(0); } }
+#splash .wait { font-size: 13px; color: rgba(255, 255, 255, .7); opacity: 0; animation: show .3s ease 1s forwards; }
+@keyframes show { to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { #splash * { animation: none !important; } #splash .wait { opacity: 1; } }
