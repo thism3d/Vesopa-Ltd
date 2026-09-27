@@ -30,7 +30,9 @@ class MembershipPage extends ConsumerWidget {
           children: [
             _Greeting(name: a.member.name),
             const SizedBox(height: 18),
-            _Card(member: a.member),
+            // A card's own size, not the column's: at 720 wide it would be
+            // taller than a laptop screen.
+            Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 460), child: _Card(member: a.member))),
             if (a.member.standing != 'ok') ...[
               const SizedBox(height: 16),
               StandingBanner(standing: a.member.standing, validTo: friendlyDay(a.member.validTo)),

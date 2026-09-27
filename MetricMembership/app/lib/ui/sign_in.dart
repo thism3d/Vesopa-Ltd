@@ -13,7 +13,9 @@ import 'widgets.dart';
 ///
 /// The top is the moving car park (scene.dart): a car arrives, is recognised
 /// and the barrier lifts. Under it, four short slides say how membership works,
-/// turning by themselves or by a swipe, and Continue with Vesopa is always in
+/// turning by themselves or by a swipe. They fade one out and the next in
+/// rather than slide, so the panel never shows two half slides at once (a
+/// screenshot mid-turn did). Continue with Vesopa is always in
 /// reach, so the tour never stands between somebody and signing in. Continue
 /// with Vesopa also makes a Vesopa account for somebody who has none.
 class SignInPage extends ConsumerStatefulWidget {
@@ -44,7 +46,6 @@ const _slides = [
 ];
 
 class _SignInPageState extends ConsumerState<SignInPage> {
-  final _pages = PageController();
   int _page = 0;
   Timer? _auto;
   bool _busy = false;
@@ -55,17 +56,29 @@ class _SignInPageState extends ConsumerState<SignInPage> {
     super.initState();
     _error = ref.read(sessionProvider.notifier).lastSignInError;
     ref.read(sessionProvider.notifier).lastSignInError = null;
-    _auto = Timer.periodic(const Duration(seconds: 6), (_) {
-      if (!mounted || !_pages.hasClients) return;
-      _pages.animateToPage((_page + 1) % _slides.length, duration: const Duration(milliseconds: 600), curve: Curves.easeInOutCubic);
-    });
+    _startAuto();
     WidgetsBinding.instance.addPostFrameCallback((_) => ref.read(activityLogProvider).screen('welcome'));
+  }
+
+  void _startAuto() {
+    _auto?.cancel();
+    _auto = Timer.periodic(const Duration(seconds: 6), (_) {
+      if (mounted) setState(() => _page = (_page + 1) % _slides.length);
+    });
+  }
+
+  /// A swipe or a dot: show that slide, and give it a full turn before moving on.
+  void _show(int i) {
+    final next = (i + _slides.length) % _slides.length;
+    if (next == _page) return;
+    setState(() => _page = next);
+    _startAuto();
+    ref.read(activityLogProvider).screen('welcome_slide_${next + 1}');
   }
 
   @override
   void dispose() {
     _auto?.cancel();
-    _pages.dispose();
     super.dispose();
   }
 
@@ -103,12 +116,8 @@ class _SignInPageState extends ConsumerState<SignInPage> {
       ],
     );
     final panel = _Panel(
-      pages: _pages,
       page: _page,
-      onPage: (i) {
-        setState(() => _page = i);
-        ref.read(activityLogProvider).screen('welcome_slide_${i + 1}');
-      },
+      onPage: _show,
       busy: _busy,
       error: _error,
       onContinue: _go,
@@ -173,7 +182,6 @@ class _HeroBrand extends StatelessWidget {
 
 class _Panel extends StatelessWidget {
   const _Panel({
-    required this.pages,
     required this.page,
     required this.onPage,
     required this.busy,
@@ -181,7 +189,6 @@ class _Panel extends StatelessWidget {
     required this.onContinue,
   });
 
-  final PageController pages;
   final int page;
   final ValueChanged<int> onPage;
   final bool busy;
@@ -199,11 +206,27 @@ class _Panel extends StatelessWidget {
           mainAxisSize: MainAxisSize.max,
           children: [
             Expanded(
-              child: PageView.builder(
-                controller: pages,
-                onPageChanged: onPage,
-                itemCount: _slides.length,
-                itemBuilder: (context, i) => _SlideView(slide: _slides[i]),
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onHorizontalDragEnd: (d) {
+                  final v = d.primaryVelocity ?? 0;
+                  if (v < -150) onPage(page + 1);
+                  if (v > 150) onPage(page - 1);
+                },
+                // The old slide is gone before the new one appears.
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 560),
+                  switchInCurve: const Interval(0.5, 1, curve: Curves.easeOut),
+                  switchOutCurve: const Interval(0.5, 1, curve: Curves.easeIn),
+                  transitionBuilder: (child, a) => FadeTransition(
+                    opacity: a,
+                    child: SlideTransition(
+                      position: Tween(begin: const Offset(0, 0.03), end: Offset.zero).animate(a),
+                      child: child,
+                    ),
+                  ),
+                  child: KeyedSubtree(key: ValueKey(page), child: _SlideView(slide: _slides[page])),
+                ),
               ),
             ),
             Row(
@@ -211,7 +234,7 @@ class _Panel extends StatelessWidget {
               children: [
                 for (var i = 0; i < _slides.length; i++)
                   GestureDetector(
-                    onTap: () => pages.animateToPage(i, duration: const Duration(milliseconds: 500), curve: Curves.easeInOutCubic),
+                    onTap: () => onPage(i),
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 300),
                       margin: const EdgeInsets.symmetric(horizontal: 4),

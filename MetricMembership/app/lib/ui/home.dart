@@ -61,7 +61,17 @@ class _HomePageState extends ConsumerState<HomePage> with WidgetsBindingObserver
       const AccountPage(),
     ];
     return Scaffold(
-      body: SafeArea(child: IndexedStack(index: _tab, children: pages)),
+      // On a wide window (desktop, the web) the tabs keep a phone-to-tablet
+      // column in the middle rather than stretching rows edge to edge.
+      body: SafeArea(
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: IndexedStack(index: _tab, children: pages),
+          ),
+        ),
+      ),
       bottomNavigationBar: DecoratedBox(
         decoration: const BoxDecoration(border: Border(top: BorderSide(color: MetricBrand.line))),
         child: NavigationBar(
