@@ -1,11 +1,13 @@
-import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../data/local/database.dart';
+import '../data/stock_api.dart';
 import '../main.dart';
 import '../printing/printer_transport.dart';
+import 'product_editor.dart';
+import 'stock_widgets.dart';
 import 'widgets/pos_message.dart';
 
 String _money(int minor) =>
@@ -15,6 +17,20 @@ String _money(int minor) =>
 final _productsProvider = StreamProvider<List<Product>>((ref) {
   final db = ref.watch(databaseProvider);
   return db.select(db.products).watch();
+});
+
+/// Each product's stock as the back office's ledger has it, by PLU, with the
+/// venue's case sizes (2026-09-27). The till's own stockQuantity was only ever
+/// this till's copy; a child, a recipe or a non-stock product read as "Out of
+/// stock" from it (found by the end-to-end check). Empty when offline, and
+/// the page falls back to what the till holds.
+final _stockProvider = FutureProvider.autoDispose<({Map<int, StockProduct> byPlu, List<PackSize> packs})>((ref) async {
+  final api = ref.watch(stockApiProvider);
+  final r = await Future.wait([api.products(), api.packSizes()]);
+  return (
+    byPlu: {for (final p in r[0] as List<StockProduct>) p.pluId: p},
+    packs: r[1] as List<PackSize>,
+  );
 });
 
 /// The product catalogue as the till holds it.
@@ -42,6 +58,9 @@ class _ProductsPageState extends ConsumerState<ProductsPage> {
   @override
   Widget build(BuildContext context) {
     final products = ref.watch(_productsProvider);
+    final stockData = ref.watch(_stockProvider).value;
+    final stock = stockData?.byPlu ?? const <int, StockProduct>{};
+    final packs = stockData?.packs ?? const <PackSize>[];
 
     return products.when(
       loading: () => const Center(child: CircularProgressIndicator()),
@@ -57,7 +76,7 @@ class _ProductsPageState extends ConsumerState<ProductsPage> {
           if (_department != null && p.departmentName != _department) {
             return false;
           }
-          if (!_filter.matches(p)) return false;
+          if (!_filter.matches(p, stock[p.pluId])) return false;
           if (_search.isEmpty) return true;
           final q = _search.toLowerCase();
           return p.name.toLowerCase().contains(q) ||
@@ -68,7 +87,7 @@ class _ProductsPageState extends ConsumerState<ProductsPage> {
 
         return Column(
           children: [
-            _Summary(products: all, onFilter: (f) => setState(() => _filter = f),
+            _Summary(products: all, stock: stock, onFilter: (f) => setState(() => _filter = f),
                 active: _filter),
             _Toolbar(
               search: _search,
@@ -76,6 +95,7 @@ class _ProductsPageState extends ConsumerState<ProductsPage> {
               departments: departments,
               department: _department,
               onDepartment: (v) => setState(() => _department = v),
+              onApplyCase: stock.isEmpty ? null : () => _applyCase(stock, packs),
             ),
             Expanded(
               child: visible.isEmpty
@@ -86,8 +106,14 @@ class _ProductsPageState extends ConsumerState<ProductsPage> {
                       separatorBuilder: (_, _) => const SizedBox(height: 6),
                       itemBuilder: (_, i) => _ProductRow(
                         product: visible[i],
-                        onEdit: () => _edit(visible[i]),
-                        onStock: () => _adjustStock(visible[i]),
+                        stock: stock[visible[i].pluId],
+                        parentName: stock[visible[i].pluId]?.parentPlu == null
+                            ? null
+                            : stock[stock[visible[i].pluId]!.parentPlu!]?.name,
+                        packs: packs,
+                        onCase: (id) => _setCase(stock[visible[i].pluId]!, id),
+                        onEdit: () => _edit(visible[i], all),
+                        onStock: () => _adjustStock(visible[i], stock[visible[i].pluId]),
                       ),
                     ),
             ),
@@ -97,47 +123,76 @@ class _ProductsPageState extends ConsumerState<ProductsPage> {
     );
   }
 
-  Future<void> _edit(Product product) async {
-    final result = await showDialog<_ProductEdit>(
-      context: context,
-      builder: (_) => _ProductDialog(product: product),
-    );
-    if (result == null) return;
+  /// The product editor, under headings, saving to the back office for
+  /// every till (product_editor.dart). It replaced a dialog whose changes
+  /// stayed on this till until the next sync put the old values back.
+  Future<void> _edit(Product product, List<Product> catalogue) async {
+    final saved = await showProductEditor(context, product: product, catalogue: catalogue);
+    if (!saved) return;
+    await ref.read(syncServiceProvider).pullCatalogue();
+    ref.invalidate(_stockProvider);
+  }
 
-    final db = ref.read(databaseProvider);
-    await (db.update(db.products)..where((t) => t.pluId.equals(product.pluId)))
-        .write(
-      ProductsCompanion(
-        priceMinor: Value(result.priceMinor),
-        stockQuantity: Value(result.stockQuantity),
-        taxPercentage: Value(result.taxPercentage),
-        printerRoutes: Value(result.printerRoutes),
-        printToReceipt: Value(result.printToReceipt),
-      ),
-    );
-
-    if (mounted) {
-      PosMessenger.success(
-        context,
-        '${product.name} updated on this terminal',
-      );
+  /// A case size from the row's dropdown, saved on the product at once.
+  Future<void> _setCase(StockProduct p, int? packId) async {
+    try {
+      await ref.read(stockApiProvider).patchProduct(p.id, {'pack_size_id': packId});
+      ref.invalidate(_stockProvider);
+      if (mounted) PosMessenger.success(context, '${p.name}: case size saved.');
+    } catch (e) {
+      if (mounted) PosMessenger.error(context, '$e');
     }
   }
 
-  /// Adding stock is the single most common thing a manager does at the till,
-  /// so it gets its own one-tap path rather than living inside a form.
-  Future<void> _adjustStock(Product product) async {
-    final added = await showDialog<double>(
+  /// "Mass-apply case sizes": pick one, then the products it applies to.
+  Future<void> _applyCase(Map<int, StockProduct> stock, List<PackSize> packs) async {
+    final pack = await showDialog<PackSize?>(
       context: context,
-      builder: (_) => _StockDialog(product: product),
+      builder: (context) => SimpleDialog(
+        title: const Text('Apply which case size?'),
+        children: [
+          for (final k in packs)
+            SimpleDialogOption(onPressed: () => Navigator.pop(context, k), child: Text(k.label)),
+        ],
+      ),
     );
-    if (added == null) return;
+    if (pack == null || !mounted) return;
+    final chosen = await showProductChooser(context, products: stock.values.toList(), title: 'Give ${pack.label} to…');
+    if (chosen.isEmpty) return;
+    try {
+      final r = await ref.read(stockApiProvider).patchMany([for (final p in chosen) p.id], {'pack_size_id': pack.id});
+      ref.invalidate(_stockProvider);
+      if (mounted) {
+        PosMessenger.success(context, '${pack.label} given to ${r.updated} product${r.updated == 1 ? '' : 's'}${r.refused.isEmpty ? '' : ' · ${r.refused.length} refused'}.');
+      }
+    } catch (e) {
+      if (mounted) PosMessenger.error(context, '$e');
+    }
+  }
 
-    final db = ref.read(databaseProvider);
-    await (db.update(db.products)..where((t) => t.pluId.equals(product.pluId)))
-        .write(ProductsCompanion(
-      stockQuantity: Value(product.stockQuantity + added),
-    ));
+  /// Book stock in, or set the count -- through the back office's ledger, by
+  /// the case or by the unit. It used to add to this till's copy only.
+  Future<void> _adjustStock(Product product, StockProduct? stock) async {
+    if (stock == null) {
+      return PosMessenger.error(context, 'Stock needs the back office, and it cannot be reached. Nothing was changed.');
+    }
+    if (stock.isLinked || stock.isRecipe) {
+      return PosMessenger.info(context, '${stock.name} has no shelf of its own — its stock is ${stock.isLinked ? 'its parent product' : 'its ingredients'}.');
+    }
+    final r = await showDialog<({String kind, double quantity})>(
+      context: context,
+      builder: (_) => _StockDialog(product: stock),
+    );
+    if (r == null || !mounted) return;
+    try {
+      await ref.read(stockApiProvider).quickDoc(kind: r.kind, pluId: stock.pluId, quantity: r.quantity);
+      ref.invalidate(_stockProvider);
+      if (mounted) {
+        PosMessenger.success(context, r.kind == 'delivery' ? '${fmtQty(r.quantity)} ${stock.name} booked in.' : '${stock.name}: count set to ${fmtQty(r.quantity)}.');
+      }
+    } catch (e) {
+      if (mounted) PosMessenger.error(context, '$e');
+    }
   }
 }
 
@@ -151,13 +206,13 @@ enum _ProductFilter {
   const _ProductFilter(this.label);
   final String label;
 
-  bool matches(Product p) => switch (this) {
+  /// [s] is the ledger's view when the back office can be reached: its level
+  /// decides low and out, and a product with no shelf of its own (a child, a
+  /// recipe, a non-stock or untracked product) is never "out".
+  bool matches(Product p, [StockProduct? s]) => switch (this) {
         _ProductFilter.all => true,
-        // "Low" is a soft threshold; the till has no per-product level, so a
-        // small positive count is the useful signal.
-        _ProductFilter.lowStock =>
-          p.stockQuantity > 0 && p.stockQuantity <= 5,
-        _ProductFilter.outOfStock => p.stockQuantity <= 0,
+        _ProductFilter.lowStock => s != null ? s.level == 'low' : p.stockQuantity > 0 && p.stockQuantity <= 5,
+        _ProductFilter.outOfStock => s != null ? s.level == 'out' && !s.isLinked && !s.isRecipe && !s.nonStock : p.stockQuantity <= 0,
         _ProductFilter.noPrice => p.priceMinor <= 0,
         _ProductFilter.unassigned => p.buttonPosition == null,
       };
@@ -168,40 +223,45 @@ enum _ProductFilter {
 class _Summary extends StatelessWidget {
   const _Summary({
     required this.products,
+    required this.stock,
     required this.onFilter,
     required this.active,
   });
 
   final List<Product> products;
+  final Map<int, StockProduct> stock;
   final void Function(_ProductFilter) onFilter;
   final _ProductFilter active;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final value = products.fold<double>(
-        0, (s, p) => s + (p.priceMinor * p.stockQuantity));
+    // At cost from the ledger, as the back office values it; the till's own
+    // copy at retail only when the back office cannot be reached.
+    final value = stock.isNotEmpty
+        ? stock.values.fold<double>(0, (a, p) => a + (p.tracked ? (p.stock ?? 0) * p.unitCostMinor : 0))
+        : products.fold<double>(0, (s, p) => s + (p.priceMinor * p.stockQuantity));
 
     final cards = <(_ProductFilter, String, Color)>[
       (_ProductFilter.all, '${products.length}', scheme.primary),
       (
         _ProductFilter.lowStock,
-        '${products.where(_ProductFilter.lowStock.matches).length}',
+        '${products.where((p) => _ProductFilter.lowStock.matches(p, stock[p.pluId])).length}',
         Colors.orange,
       ),
       (
         _ProductFilter.outOfStock,
-        '${products.where(_ProductFilter.outOfStock.matches).length}',
+        '${products.where((p) => _ProductFilter.outOfStock.matches(p, stock[p.pluId])).length}',
         scheme.error,
       ),
       (
         _ProductFilter.noPrice,
-        '${products.where(_ProductFilter.noPrice.matches).length}',
+        '${products.where((p) => _ProductFilter.noPrice.matches(p)).length}',
         scheme.tertiary,
       ),
       (
         _ProductFilter.unassigned,
-        '${products.where(_ProductFilter.unassigned.matches).length}',
+        '${products.where((p) => _ProductFilter.unassigned.matches(p)).length}',
         scheme.outline,
       ),
     ];
@@ -295,8 +355,10 @@ class _Toolbar extends StatelessWidget {
     required this.departments,
     required this.department,
     required this.onDepartment,
+    this.onApplyCase,
   });
 
+  final VoidCallback? onApplyCase;
   final String search;
   final void Function(String) onSearch;
   final List<String> departments;
@@ -334,6 +396,15 @@ class _Toolbar extends StatelessWidget {
               onChanged: onDepartment,
             ),
           ],
+          if (onApplyCase != null) ...[
+            const SizedBox(width: 10),
+            OutlinedButton.icon(
+              key: const Key('apply-case'),
+              onPressed: onApplyCase,
+              icon: const Icon(Icons.inventory_2_outlined),
+              label: const Text('Apply a case size'),
+            ),
+          ],
         ],
       ),
     );
@@ -346,9 +417,17 @@ class _ProductRow extends ConsumerWidget {
     required this.product,
     required this.onEdit,
     required this.onStock,
+    this.stock,
+    this.parentName,
+    this.packs = const [],
+    this.onCase,
   });
 
   final Product product;
+  final StockProduct? stock;
+  final String? parentName;
+  final List<PackSize> packs;
+  final ValueChanged<int?>? onCase;
   final VoidCallback onEdit;
   final VoidCallback onStock;
 
@@ -356,8 +435,23 @@ class _ProductRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final out = product.stockQuantity <= 0;
-    final low = !out && product.stockQuantity <= 5;
+    final s = stock;
+    // What the stock column says. From the ledger when it is to hand; a
+    // product with no shelf of its own says what it is instead of "Out".
+    final String? kindLabel = s == null
+        ? null
+        : s.isLinked
+            ? 'From ${parentName ?? 'parent'}'
+            : s.isRecipe
+                ? 'Recipe'
+                : s.nonStock
+                    ? 'Non-stock'
+                    : !s.tracked
+                        ? 'Not tracked'
+                        : null;
+    final qty = s?.stock ?? product.stockQuantity;
+    final out = kindLabel == null && (s != null ? s.level == 'out' : product.stockQuantity <= 0);
+    final low = !out && kindLabel == null && (s != null ? s.level == 'low' : product.stockQuantity <= 5);
 
     return Material(
       color: scheme.surface,
@@ -418,6 +512,10 @@ class _ProductRow extends ConsumerWidget {
                           _Tag('Not on receipt', tone: scheme.outline),
                         if (product.buttonPosition == null)
                           _Tag('No button', tone: scheme.outline),
+                        if (s != null && s.unitCostMinor > 0)
+                          _Tag('Unit cost ${_money(s.unitCostMinor)}'),
+                        if (s?.supplierName?.isNotEmpty ?? false)
+                          _Tag(s!.supplierName!, icon: Icons.local_shipping_outlined),
                       ],
                     ),
                   ],
@@ -455,11 +553,12 @@ class _ProductRow extends ConsumerWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      out
-                          ? 'Out'
-                          : product.stockQuantity
-                              .toStringAsFixed(
-                                  product.stockQuantity % 1 == 0 ? 0 : 1),
+                      kindLabel ??
+                          (out
+                              ? 'Out'
+                              : qty.toStringAsFixed(qty % 1 == 0 ? 0 : 1)),
+                      key: Key('stock-label-${product.pluId}'),
+                      textAlign: TextAlign.right,
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w700,
                         color: out
@@ -475,7 +574,7 @@ class _ProductRow extends ConsumerWidget {
                       child: LinearProgressIndicator(
                         // Scaled against 20 units: beyond that the exact
                         // number matters less than "plenty".
-                        value: (product.stockQuantity / 20).clamp(0.0, 1.0),
+                        value: kindLabel != null ? 0 : (qty / 20).clamp(0.0, 1.0),
                         minHeight: 4,
                         backgroundColor: scheme.surfaceContainerHighest,
                         color: out
@@ -489,10 +588,13 @@ class _ProductRow extends ConsumerWidget {
                 ),
               ),
 
+              // The case size, changeable from the list (Dylan, 21 Sep).
+              if (s != null && onCase != null)
+                SizedBox(width: 150, child: CaseSizeDropdown(product: s, packs: packs, onChanged: onCase!)),
               IconButton(
                 onPressed: onStock,
                 icon: const Icon(Icons.add_box_outlined),
-                tooltip: 'Add stock',
+                tooltip: 'Book in stock, or set the count',
               ),
             ],
           ),
@@ -578,221 +680,50 @@ class _Tag extends StatelessWidget {
 }
 
 /// What the edit dialog agreed to change.
-class _ProductEdit {
-  const _ProductEdit({
-    required this.priceMinor,
-    required this.stockQuantity,
-    required this.taxPercentage,
-    this.printerRoutes,
-    this.printToReceipt = true,
-  });
-
-  final int priceMinor;
-  final double stockQuantity;
-  final double taxPercentage;
-
-  /// Comma-separated station keys — see [KitchenRouting].
-  final String? printerRoutes;
-  final bool printToReceipt;
-}
-
-class _ProductDialog extends ConsumerStatefulWidget {
-  const _ProductDialog({required this.product});
-
-  final Product product;
-
-  @override
-  ConsumerState<_ProductDialog> createState() => _ProductDialogState();
-}
-
-class _ProductDialogState extends ConsumerState<_ProductDialog> {
-  late final _price = TextEditingController(
-      text: (widget.product.priceMinor / 100).toStringAsFixed(2));
-  late final _stock = TextEditingController(
-      text: widget.product.stockQuantity.toStringAsFixed(
-          widget.product.stockQuantity % 1 == 0 ? 0 : 2));
-  late final _tax = TextEditingController(
-      text: widget.product.taxPercentage.toStringAsFixed(
-          widget.product.taxPercentage % 1 == 0 ? 0 : 1));
-  late final Set<String> _routes =
-      KitchenRouting.parse(widget.product.printerRoutes);
-  late bool _printToReceipt = widget.product.printToReceipt;
-
-  @override
-  void dispose() {
-    _price.dispose();
-    _stock.dispose();
-    _tax.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(widget.product.name),
-      content: SizedBox(
-        width: 380,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('PLU ${widget.product.pluId}',
-                style: Theme.of(context).textTheme.bodySmall),
-            const SizedBox(height: 14),
-            TextField(
-              controller: _price,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
-                  labelText: 'Price', prefixText: '£ '),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _stock,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(labelText: 'Stock on hand'),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _tax,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
-                  labelText: 'VAT rate', suffixText: '%'),
-            ),
-            const SizedBox(height: 16),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'Printers',
-                style: Theme.of(context).textTheme.labelLarge,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'Tick every printer this item should print on. It prints '
-                'when the item is sold and when it is saved to a table. The '
-                'receipt printer is here too, for an item the counter needs a '
-                'ticket for.',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ),
-            const SizedBox(height: 8),
-            // Wrapped chips rather than a row of checkboxes: seven stations
-            // stacked vertically pushed the dialog past the height of a till
-            // screen, and the state is binary either way.
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final target in PrintTarget.routable)
-                  FilterChip(
-                    label: Text(ref.watch(tillSettingsProvider).labelFor(target)),
-                    selected: _routes.contains(target.station),
-                    onSelected: (on) => setState(() {
-                      if (on) {
-                        _routes.add(target.station!);
-                      } else {
-                        _routes.remove(target.station);
-                      }
-                    }),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              value: _printToReceipt,
-              onChanged: (v) => setState(() => _printToReceipt = v),
-              title: const Text('Show on the customer receipt'),
-              subtitle: const Text(
-                'Turn off for kitchen-only items, such as an allergy note '
-                'rung up as a product.',
-                style: TextStyle(fontSize: 12),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Changes apply to this terminal and sync to the back office. '
-              'Names, departments and buttons are set in the back office.',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.pop(
-            context,
-            _ProductEdit(
-              priceMinor:
-                  ((double.tryParse(_price.text) ?? 0) * 100).round(),
-              stockQuantity: double.tryParse(_stock.text) ?? 0,
-              taxPercentage: double.tryParse(_tax.text) ?? 0,
-              printerRoutes: KitchenRouting.format(_routes),
-              printToReceipt: _printToReceipt,
-            ),
-          ),
-          child: const Text('Save'),
-        ),
-      ],
-    );
-  }
-}
-
+/// Book stock in, or set the count, by the case or by the unit. Pops the
+/// document kind ('delivery' or 'stocktake') and the quantity in units.
 class _StockDialog extends StatefulWidget {
   const _StockDialog({required this.product});
-
-  final Product product;
-
+  final StockProduct product;
   @override
   State<_StockDialog> createState() => _StockDialogState();
 }
 
 class _StockDialogState extends State<_StockDialog> {
-  double _add = 1;
+  String _kind = 'delivery';
+  late final StockLine _line = StockLine(widget.product);
 
   @override
   Widget build(BuildContext context) {
-    final after = widget.product.stockQuantity + _add;
+    final p = widget.product;
+    final q = _line.quantity;
     return AlertDialog(
-      title: Text('Add stock — ${widget.product.name}'),
+      title: Text(p.name),
       content: Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('On hand now: ${widget.product.stockQuantity.toStringAsFixed(0)}'),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 8,
-            children: [
-              for (final n in [1.0, 5.0, 10.0, 24.0, 50.0])
-                ChoiceChip(
-                  label: Text('+${n.toStringAsFixed(0)}'),
-                  selected: _add == n,
-                  onSelected: (_) => setState(() => _add = n),
-                ),
+          Text(p.tracked ? 'On the shelf now: ${p.stockDisplay}' : 'No count kept yet.'),
+          const SizedBox(height: 12),
+          SegmentedButton<String>(
+            key: const Key('stock-dialog-kind'),
+            segments: const [
+              ButtonSegment(value: 'delivery', label: Text('Book in a delivery')),
+              ButtonSegment(value: 'stocktake', label: Text('Set the count')),
             ],
+            selected: {_kind},
+            onSelectionChanged: (v) => setState(() => _kind = v.first),
           ),
-          const SizedBox(height: 14),
-          Text('After: ${after.toStringAsFixed(0)}',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium
-                  ?.copyWith(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 12),
+          Align(alignment: Alignment.centerRight, child: CasesUnitsField(line: _line, onChanged: () => setState(() {}), autofocus: true)),
         ],
       ),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
         FilledButton(
-          onPressed: () => Navigator.pop(context, _add),
-          child: const Text('Add'),
+          key: const Key('stock-dialog-ok'),
+          onPressed: q == null || (_kind == 'delivery' && q <= 0) || q < 0 ? null : () => Navigator.pop(context, (kind: _kind, quantity: q)),
+          child: Text(_kind == 'delivery' ? 'Book in' : 'Set the count'),
         ),
       ],
     );

@@ -1465,6 +1465,132 @@ app.post('/till/products', requireTerminal(JWT_SECRET), async (req, res, next) =
   }
 });
 
+/**
+ * The till's product editor saves here (2026-09-27).
+ *
+ * Its edits used to be written to the till's own database only, and the next
+ * catalogue sync put the old values back -- a price fixed at the counter
+ * silently came undone (found by the end-to-end check). Now the till changes
+ * the one catalogue, on the server, like the back office does, and every till
+ * picks the change up on the same refresh.
+ *
+ * Only what the till's Details and Printing sections show. Stock settings go
+ * through /till/stock/products (the ledger's own rules); modifiers, pictures
+ * and allergens stay the back office's.
+ */
+app.patch('/till/products/:pluid', requireTerminal(JWT_SECRET), async (req, res, next) => {
+  const b = req.body || {};
+  try {
+    const office = req.office;
+    const pluid = Number(req.params.pluid);
+    const [[me]] = await pool.query('SELECT id FROM bo_products WHERE email = ? AND pluid = ?', [office, pluid]);
+    if (!me) return res.status(404).json({ error: 'No such product.' });
+    const sets = [];
+    const params = [];
+    if (b.product_name !== undefined) {
+      const name = String(b.product_name ?? '').trim().slice(0, 190);
+      if (!name) return res.status(400).json({ error: 'A product needs a name.' });
+      sets.push('product_name = ?');
+      params.push(name);
+    }
+    if (b.price !== undefined) {
+      const price = Number(b.price);
+      if (!Number.isFinite(price) || price < 0) return res.status(400).json({ error: 'Give the product a price.' });
+      sets.push('price = ?');
+      params.push(price);
+    }
+    if (b.tax_percentage !== undefined) {
+      const tax = Number(b.tax_percentage);
+      if (!Number.isFinite(tax) || tax < 0 || tax > 100) return res.status(400).json({ error: 'A VAT rate is a percentage.' });
+      sets.push('tax_percentage = ?');
+      params.push(tax);
+    }
+    for (const f of ['department_name', 'group_name']) {
+      if (b[f] !== undefined) {
+        sets.push(`${f} = ?`);
+        params.push(String(b[f] ?? '').trim().slice(0, 190) || null);
+      }
+    }
+    if (b.barcode !== undefined) {
+      const code = String(b.barcode ?? '').replace(/[^0-9A-Za-z-]/g, '').slice(0, 64) || null;
+      if (code) {
+        const [[other]] = await pool.query(
+          'SELECT product_name FROM bo_products WHERE email = ? AND barcode = ? AND pluid <> ? LIMIT 1',
+          [office, code, pluid]
+        );
+        if (other) return res.status(409).json({ error: `${other.product_name} already has that barcode.` });
+      }
+      sets.push('barcode = ?');
+      params.push(code);
+    }
+    if (b.print_to_receipt !== undefined) {
+      sets.push('print_to_receipt = ?');
+      params.push(b.print_to_receipt ? 1 : 0);
+    }
+    if (b.printer_routes !== undefined) {
+      const routes = String(Array.isArray(b.printer_routes) ? b.printer_routes.join(',') : b.printer_routes ?? '')
+        .split(',')
+        .map((s) => s.trim().toLowerCase())
+        .filter((s) => /^kp[1-6]$/.test(s));
+      sets.push('printer_routes = ?');
+      params.push([...new Set(routes)].join(',') || null);
+    }
+    if (!sets.length) return res.json({ ok: true, changed: 0 });
+    params.push(office, pluid);
+    await pool.execute(`UPDATE bo_products SET ${sets.join(', ')} WHERE email = ? AND pluid = ?`, params);
+    broadcast({ type: 'catalogue.updated', office }, { office });
+    res.json({ ok: true, changed: sets.length });
+  } catch (e) {
+    next(e);
+  }
+});
+
+/**
+ * A product made at the till with no barcode behind it: a child product from
+ * the product editor ("a half pint from the pint", 2026-09-24). POST
+ * /till/products stays what it was -- a product for a barcode just scanned.
+ * Answers with both ids: the PLU the till rings, and the row id the stock
+ * routes key on, so the till can link it straight away.
+ */
+app.post('/till/products/new', requireTerminal(JWT_SECRET), async (req, res, next) => {
+  const b = req.body || {};
+  try {
+    const office = req.office;
+    const name = String(b.product_name ?? '').trim().slice(0, 190);
+    if (!name) return res.status(400).json({ error: 'Give the product a name.' });
+    const price = Number(b.price);
+    if (!Number.isFinite(price) || price < 0) return res.status(400).json({ error: 'Give the product a price.' });
+    const tax = Number(b.tax_percentage);
+    const routes = String(b.printer_routes ?? '')
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter((s) => /^kp[1-6]$/.test(s));
+    const [[row]] = await pool.query('SELECT COALESCE(MAX(pluid), 0) + 1 AS next FROM bo_products WHERE email = ?', [office]);
+    const pluid = row.next;
+    const [made] = await pool.execute(
+      `INSERT INTO bo_products
+         (email, pluid, product_name, department_name, group_name,
+          price, tax_percentage, stock_quantity, print_to_receipt, printer_routes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
+      [
+        office,
+        pluid,
+        name,
+        String(b.department_name ?? '').trim().slice(0, 190) || null,
+        String(b.group_name ?? '').trim().slice(0, 190) || null,
+        price,
+        Number.isFinite(tax) && tax >= 0 ? tax : 0,
+        b.print_to_receipt === false || b.print_to_receipt === 0 ? 0 : 1,
+        [...new Set(routes)].join(',') || null,
+      ]
+    );
+    broadcast({ type: 'catalogue.updated', office }, { office });
+    res.status(201).json({ id: made && made.insertId, pluid, product_name: name });
+  } catch (e) {
+    next(e);
+  }
+});
+
 app.put('/till/floor/tables', requireTerminal(JWT_SECRET), async (req, res, next) => {
   const tables = Array.isArray(req.body && req.body.tables) ? req.body.tables : [];
   if (!tables.length) return res.json({ ok: true, saved: 0 });

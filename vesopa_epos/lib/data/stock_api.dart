@@ -319,6 +319,40 @@ class StockApi {
       });
 
   Future<void> deleteRecipe(int pluId) => _send('DELETE', '/stock/recipes/$pluId');
+
+  /// A one-line document applied at once: a delivery booked in, or a count
+  /// set -- the till's Products page's stock button, which used to change
+  /// only this till's copy and never reached the back office.
+  Future<void> quickDoc({required String kind, required int pluId, required double quantity, String? note}) => _send('POST', '/stock/docs', {
+        'kind': kind,
+        'complete': true,
+        'notes': note,
+        'lines': [
+          {'pluid': pluId, 'quantity': quantity, 'reason': note},
+        ],
+      });
+
+  /// Change a product's details or printing on the server (PATCH
+  /// /till/products/:pluid); every till picks it up on the next refresh.
+  Future<void> updateProduct(int pluId, Map<String, Object?> fields) => _send('PATCH', '/products/$pluId', fields);
+
+  /// A new product with no barcode -- a child product made from the editor.
+  /// Returns its row id (for the stock routes) and PLU.
+  Future<({int id, int pluId})> createProduct(Map<String, Object?> fields) async {
+    final r = await _send('POST', '/products/new', fields) as Map;
+    return (id: _i(r['id']) ?? 0, pluId: _i(r['pluid']) ?? 0);
+  }
+}
+
+/// GP on the ex-VAT price, and the price that would make [targetGp]:
+/// the back office's calculator, to the penny, rounded up to 5p.
+({double? gp, double recommended}) gpFor({required double price, required double vatPercent, required double unitCost, double targetGp = 70}) {
+  final vat = 1 + vatPercent / 100;
+  final net = price / vat;
+  final gp = net > 0 ? (net - unitCost) / net * 100 : null;
+  final t = targetGp.clamp(0, 99) / 100;
+  final rec = ((unitCost / (1 - t)) * vat * 100 / 5).ceil() * 5 / 100;
+  return (gp: gp, recommended: rec);
 }
 
 /// The API as this terminal and the member of staff at it would use it.

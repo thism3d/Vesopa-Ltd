@@ -453,11 +453,14 @@ class CaseSizeDropdown extends StatelessWidget {
       key: Key('case-${product.pluId}'),
       value: known ? product.packSizeId : null,
       isDense: true,
-      hint: const Text('No case size'),
+      // Fills its box and shortens a long name rather than pushing the row
+      // off the side of a narrow till.
+      isExpanded: true,
+      hint: const Text('No case size', overflow: TextOverflow.ellipsis),
       onChanged: enabled ? onChanged : null,
       items: [
-        const DropdownMenuItem<int?>(value: null, child: Text('No case size')),
-        for (final k in packs) DropdownMenuItem<int?>(value: k.id, child: Text(k.label)),
+        const DropdownMenuItem<int?>(value: null, child: Text('No case size', overflow: TextOverflow.ellipsis)),
+        for (final k in packs) DropdownMenuItem<int?>(value: k.id, child: Text(k.label, overflow: TextOverflow.ellipsis)),
       ],
     );
   }
