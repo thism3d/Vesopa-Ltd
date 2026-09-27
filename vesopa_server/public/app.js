@@ -1816,6 +1816,8 @@ function brWatch() {
 }
 
 async function loadDashboard() {
+  // The cards in this person's own order, widths and choice (dashboard.js).
+  if (typeof dwApply === 'function') dwApply();
   // The analytics strip and charts come from the aggregate endpoint; the live
   // sales table below still comes from /live, which is what the WebSocket
   // prepends to as sales land.

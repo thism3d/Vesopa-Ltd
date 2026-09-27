@@ -472,35 +472,63 @@
               <button class="seg-btn" data-days="365">Year</button>
             </div>
             <span class="muted small" id="dash-window"></span>
+            <button type="button" class="btn ghost small dash-customise" id="dash-customise" title="Move, resize or hide the cards on this page">Customise</button>
           </div>
 
-          <div class="grid-cards" id="dash-stats"></div>
-
-          <div class="card panel">
-            <div class="panel-head"><h3>Takings</h3><span class="muted small" id="dash-trend"></span></div>
-            <div id="dash-line" class="chart-box"></div>
+          <!-- Widgets (2026-09-24): "be able to move widgets around on the
+               dashboard, so customers can choose what they see first".
+               Each is a data-widget; Customise reorders, resizes and hides
+               them, and the layout is kept per person (dashboard_layout.js). -->
+          <div class="dash-edit-bar" id="dash-edit-bar" hidden>
+            <span><strong>Customising.</strong> Drag a card by its handle, or use the arrows. Half or full width, or hide it.</span>
+            <span class="dash-edit-actions">
+              <button type="button" class="btn ghost small" id="dash-reset">Reset to standard</button>
+              <button type="button" class="btn primary small" id="dash-done">Done</button>
+            </span>
           </div>
+          <div class="dash-hidden-tray" id="dash-hidden-tray" hidden></div>
 
-          <div class="grid-2" style="margin-top:16px">
-            <div class="card panel"><h3>Trade by hour</h3><div id="dash-hourly" class="chart-box"></div></div>
-            <div class="card panel"><h3>Payment breakdown</h3><div id="dash-tenders" class="chart-box"></div></div>
+          <div class="dash-widgets" id="dash-widgets">
+            <div class="dash-widget" data-widget="stats" data-size="full" data-title="Headline figures">
+              <div class="grid-cards" id="dash-stats"></div>
+            </div>
+
+            <div class="dash-widget" data-widget="takings" data-size="full" data-title="Takings">
+              <div class="card panel">
+                <div class="panel-head"><h3>Takings</h3><span class="muted small" id="dash-trend"></span></div>
+                <div id="dash-line" class="chart-box"></div>
+              </div>
+            </div>
+
+            <div class="dash-widget" data-widget="hourly" data-size="half" data-title="Trade by hour">
+              <div class="card panel"><h3>Trade by hour</h3><div id="dash-hourly" class="chart-box"></div></div>
+            </div>
+            <div class="dash-widget" data-widget="tenders" data-size="half" data-title="Payment breakdown">
+              <div class="card panel"><h3>Payment breakdown</h3><div id="dash-tenders" class="chart-box"></div></div>
+            </div>
+
+            <div class="dash-widget" data-widget="products" data-size="half" data-title="Top products">
+              <div class="card panel"><h3>Top products</h3><div id="dash-products"></div></div>
+            </div>
+            <div class="dash-widget" data-widget="departments" data-size="half" data-title="Departments">
+              <div class="card panel"><h3>Departments</h3><div id="dash-departments"></div></div>
+            </div>
+
+            <div class="dash-widget" data-widget="weekday" data-size="half" data-title="Takings by weekday">
+              <div class="card panel"><h3>Takings by weekday</h3><div id="dash-weekday" class="chart-box"></div></div>
+            </div>
+            <div class="dash-widget" data-widget="liabilities" data-size="half" data-title="Held liabilities">
+              <div class="card panel"><h3>Held liabilities</h3><div id="dash-liabilities"></div></div>
+            </div>
+
+            <div class="dash-widget" data-widget="live" data-size="full" data-title="Live sales">
+              <h3 class="dash-live-title">Live Sales</h3>
+              <div class="card"><table>
+                <thead><tr><th>Time</th><th>Table</th><th>Order</th><th class="right">Total</th></tr></thead>
+                <tbody id="recent"></tbody>
+              </table></div>
+            </div>
           </div>
-
-          <div class="grid-2" style="margin-top:16px">
-            <div class="card panel"><h3>Top products</h3><div id="dash-products"></div></div>
-            <div class="card panel"><h3>Departments</h3><div id="dash-departments"></div></div>
-          </div>
-
-          <div class="grid-2" style="margin-top:16px">
-            <div class="card panel"><h3>Takings by weekday</h3><div id="dash-weekday" class="chart-box"></div></div>
-            <div class="card panel"><h3>Held liabilities</h3><div id="dash-liabilities"></div></div>
-          </div>
-
-          <h3 style="margin:28px 0 14px">Live Sales</h3>
-          <div class="card"><table>
-            <thead><tr><th>Time</th><th>Table</th><th>Order</th><th class="right">Total</th></tr></thead>
-            <tbody id="recent"></tbody>
-          </table></div>
         </section>
 
         <!-- Report -->
@@ -3820,6 +3848,7 @@
          map refers to, and uses app.js's helpers only from inside them. -->
     <script src="/permissions.js"></script>
     <script src="/stock.js"></script>
+    <script src="/dashboard.js"></script>
     <script src="/dinein_card.js"></script>
     <script src="/dinein.js"></script>
     <script src="/app.js"></script>

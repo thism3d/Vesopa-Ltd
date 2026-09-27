@@ -41,6 +41,7 @@ const {
 } = require('./kitchen');
 const { screensRoutes, tillScreenRoutes } = require('./screens');
 const { screenScheduleRoutes } = require('./screen_schedules');
+const { dashboardLayoutRoutes } = require('./dashboard_layout');
 const { fontsRoutes, tillFontRoutes } = require('./fonts');
 const { assetVersions, staticCache } = require('./assets');
 const { modifierRoutes, tillModifierRoutes } = require('./modifiers');
@@ -332,6 +333,8 @@ app.use('/api', kitchenAppRoutes({ pool, broadcast, secret: JWT_SECRET }));
 // choose). Before screensRoutes: its literal /screens/schedules paths must win
 // over /screens/:id, and its catch-up runs ahead of the screens reads.
 app.use('/api', screenScheduleRoutes({ pool, broadcast, secret: JWT_SECRET }));
+// Each person's dashboard: the cards in their own order (public/dashboard.js).
+app.use('/api', dashboardLayoutRoutes({ pool, secret: JWT_SECRET }));
 app.use('/api', screensRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use('/api', tillScreenRoutes({ pool }));
 // Beside the screens, and split the same way: the authed half for the back

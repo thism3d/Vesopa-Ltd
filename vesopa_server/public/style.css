@@ -7164,3 +7164,52 @@ textarea, select[multiple], select[size] { height: auto; min-height: 0; }
   .cp-row { grid-template-columns: minmax(0, 1fr) 76px 76px 32px; }
   .cp-row > [data-cp-cost], .cp-row.cp-head > span:nth-child(4) { display: none; }
 }
+
+/* ---------------------------------------------------------------------------
+   Dashboard cards you can arrange (2026-09-24): public/dashboard.js.
+   --------------------------------------------------------------------------- */
+.dash-widgets { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 20px; align-items: start; }
+.dash-widget { min-width: 0; position: relative; }
+.dash-widget[data-size="full"] { grid-column: 1 / -1; }
+.dash-widget[hidden] { display: none; }
+.dash-widget > .grid-cards { margin-bottom: 0; }
+.dash-live-title { margin: 12px 0 14px; }
+@media (max-width: 1100px) { .dash-widgets { grid-template-columns: 1fr; } }
+
+.dash-customise { margin-left: auto; }
+.dash-edit-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding: 10px 14px; margin-bottom: 12px; border-radius: 12px;
+  background: var(--brand-soft); color: var(--text); border: 1px solid var(--brand);
+}
+.dash-edit-bar[hidden] { display: none; }
+.dash-edit-actions { display: inline-flex; gap: 8px; }
+.dash-hidden-tray { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+.dash-hidden-tray[hidden] { display: none; }
+.dash-chip {
+  border: 1px dashed var(--muted); background: transparent; color: var(--text);
+  border-radius: 999px; padding: 5px 12px; font: inherit; font-size: .85rem; cursor: pointer;
+}
+.dash-chip:hover { border-color: var(--brand); background: var(--brand-soft); }
+
+.dash-widgets.editing .dash-widget {
+  outline: 2px dashed var(--line); outline-offset: 4px; border-radius: 14px;
+  transition: outline-color .15s, opacity .15s;
+}
+.dash-widgets.editing .dash-widget:hover { outline-color: var(--brand); }
+.dash-widget.dragging { opacity: .55; outline-color: var(--brand) !important; }
+body.dash-dragging, body.dash-dragging * { cursor: grabbing !important; user-select: none; }
+.dash-widget-bar {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
+  padding: 6px 8px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--line);
+}
+.dash-handle { cursor: grab; font-size: 1.1rem; line-height: 1; padding: 4px 6px; border-radius: 6px; touch-action: none; color: var(--muted); }
+.dash-handle:hover { background: var(--hover); color: var(--text); }
+.dash-widget-name { flex: 1; min-width: 0; font-size: .9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dash-widget-tools { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.dash-widget-tools button {
+  border: 1px solid var(--line); background: var(--card); color: var(--text);
+  border-radius: 8px; padding: 4px 9px; font: inherit; font-size: .8rem; cursor: pointer;
+}
+.dash-widget-tools button:hover:not(:disabled) { border-color: var(--brand); }
+.dash-widget-tools button:disabled { opacity: .4; cursor: default; }
