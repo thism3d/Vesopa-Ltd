@@ -83,7 +83,14 @@ class NotifyLocal {
 }
 
 /// What a toast is about.
-enum NotifyKind { dineInOrder }
+enum NotifyKind {
+  dineInOrder,
+
+  /// Paid at a Vesopa Express kiosk. Its own tick lives on the Express
+  /// settings (`notify_till`), and a feed with that off raises nothing to
+  /// announce, so only the master switch and this terminal are asked here.
+  expressOrder,
+}
 
 /// Shows toasts, or does not. Never throws.
 ///
@@ -114,6 +121,7 @@ class AppNotifications {
     if (!policy.master || !local.enabled) return false;
     return switch (kind) {
       NotifyKind.dineInOrder => policy.tillDineInNew,
+      NotifyKind.expressOrder => true,
     };
   }
 

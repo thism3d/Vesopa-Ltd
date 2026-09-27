@@ -103,6 +103,8 @@ CREATE TABLE bo_products (
   price double DEFAULT NULL,
   tax_percentage double DEFAULT NULL,
   stock_quantity double DEFAULT NULL,
+  cost_price double DEFAULT NULL,
+  low_stock_at double DEFAULT NULL,
   printer_route varchar(32) DEFAULT NULL,
   printer_routes varchar(64) DEFAULT NULL,
   allergens text DEFAULT NULL,
@@ -272,6 +274,7 @@ CREATE TABLE epos_payments (
   gratuity_minor int(11) NOT NULL DEFAULT 0,
   entry_mode varchar(16) DEFAULT NULL,
   cash_breakdown varchar(255) DEFAULT NULL,
+  cashback_minor int(11) NOT NULL DEFAULT 0,
   CONSTRAINT fk_payments_order FOREIGN KEY (order_id) REFERENCES epos_orders (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
 
@@ -345,6 +348,25 @@ CREATE TABLE dinein_order_lines (
   is_modifier tinyint(1) NOT NULL DEFAULT 0,
   unavailable_action varchar(16) NOT NULL DEFAULT 'remove'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
+
+-- Signing a till or a kiosk in takes a seat (src/till_seats.js). Left out of
+-- this list when seats arrived, which failed every test after commissioning.
+CREATE TABLE bo_till_seats (
+  id              CHAR(36) NOT NULL PRIMARY KEY,
+  office          VARCHAR(190) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  device_id       VARCHAR(64)  NULL,
+  device_name     VARCHAR(120) NULL,
+  token_hash      CHAR(64)     NULL,
+  signed_in_by    VARCHAR(190) NULL,
+  signed_in_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  last_seen_at    DATETIME     NULL,
+  released_at     DATETIME     NULL,
+  released_by     VARCHAR(190) NULL,
+  release_reason  VARCHAR(64)  NULL,
+  UNIQUE KEY uq_till_seats_token (token_hash),
+  KEY idx_till_seats_office (office, released_at),
+  KEY idx_till_seats_device (office, device_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 `;
 
 // ---------------------------------------------------------------------------
@@ -483,31 +505,33 @@ async function main() {
   await admin.query(`USE ${DB}`);
   await admin.query(SCHEMA);
 
-  // The migration itself, exactly as the deploy would run it -- twice, because
-  // it must survive being replayed.
-  const migration = fs.readFileSync(
-    path.join(__dirname, '..', 'schema', 'schema_till_express.sql'),
-    'utf8'
-  );
-  // The mysql client understands DELIMITER; the driver does not. Split the
-  // file the way the client would.
-  const statements = [];
-  let delimiter = ';';
-  let buffer = '';
-  for (const line of migration.split('\n')) {
-    const d = /^DELIMITER\s+(\S+)/.exec(line.trim());
-    if (d) { delimiter = d[1]; continue; }
-    if (line.trim().startsWith('--') && !buffer.trim()) continue;
-    buffer += line + '\n';
-    if (buffer.trimEnd().endsWith(delimiter)) {
-      const sql = buffer.trimEnd().slice(0, -delimiter.length).trim();
-      if (sql) statements.push(sql);
-      buffer = '';
+  // A schema file, exactly as the deploy would run it. The mysql client
+  // understands DELIMITER; the driver does not. Split the file the way the
+  // client would.
+  async function applySchema(file) {
+    const migration = fs.readFileSync(path.join(__dirname, '..', 'schema', file), 'utf8');
+    const statements = [];
+    let delimiter = ';';
+    let buffer = '';
+    for (const line of migration.split('\n')) {
+      const d = /^DELIMITER\s+(\S+)/.exec(line.trim());
+      if (d) { delimiter = d[1]; continue; }
+      if (line.trim().startsWith('--') && !buffer.trim()) continue;
+      buffer += line + '\n';
+      if (buffer.trimEnd().endsWith(delimiter)) {
+        const sql = buffer.trimEnd().slice(0, -delimiter.length).trim();
+        if (sql) statements.push(sql);
+        buffer = '';
+      }
     }
-  }
-  for (let run = 0; run < 2; run++) {
     for (const sql of statements) await admin.query(sql);
   }
+
+  // A kiosk sale is a sale, and since 1.8.0 a sale writes the stock ledger.
+  await applySchema('schema_stock.sql');
+  await applySchema('schema_stock_links_recipes.sql');
+  // The migration itself -- twice, because it must survive being replayed.
+  for (let run = 0; run < 2; run++) await applySchema('schema_till_express.sql');
 
   await admin.end();
 

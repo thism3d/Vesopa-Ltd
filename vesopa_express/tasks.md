@@ -42,8 +42,8 @@ Evidence (every screenshot looked at): `Documents\Vesopa-Claude-Images\2026-09-1
 **Not done — deliberately, or next:**
 
 * **Microsoft Store** — not submitted, as instructed. The identity values in `msix_config` are placeholders until Partner Center reserves the name.
-* **The till's notification (P6.2)** — the server already broadcasts `express.order` to the venue; the till does not show it yet. That is a till change and a till release. Kitchen screens already get the ticket.
-* **Kitchen printers** — a kiosk ticket reaches stations set to *Screen* or *Both*. A printer-only station is printed by a till, so it needs the till to do it.
+* **The till's notification (P6.2)** — *built in the till, 27 September 2026, not yet released:* a paid kiosk order slides in as a card with its number and Ready / Collected (`vesopa_epos/lib/data/express_orders.dart`, `lib/ui/dinein_toasts.dart`), plus a Windows toast, under the back office's "tell the tills" tick AND the terminal's own alert setting. Ships with the next till release.
+* **Kitchen printers** — *built in the till, 27 September 2026, not yet released:* a till with a printer at a Printer or Both station claims that station's kiosk tickets from `/till/express/print-queue`, prints them like its own kitchen tickets, and reports back; two tills never print the same one. Ships with the next till release.
 * **A receipt from the kiosk (P5.5)** — the number is on screen; printing needs the kiosk's printer chosen and the till's Windows printing path brought across.
 * **A step-by-step meal builder (P4.6)** — the dish sheet already asks the venue's own modifier questions ("choose up to 3"). "Make it a meal" at a meal price needs meal pricing the catalogue does not model yet.
 * **Welsh** — drafted by the developer; a Welsh speaker must check it before a venue shows it (P0.6).
