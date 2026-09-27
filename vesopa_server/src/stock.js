@@ -50,7 +50,7 @@ const { requireAuth, requireTerminal } = require('./auth');
 const { requireKitchen } = require('./kitchen');
 const { accessGuard } = require('./permissions');
 const { sendMail } = require('./mailer');
-const { stockTargets } = require('./stock_effects');
+const { stockTargets, canMake } = require('./stock_effects');
 
 const DOC_KINDS = ['wastage', 'adjustment', 'stocktake', 'spot_check', 'delivery'];
 const ORDER_STATUSES = ['new', 'sent', 'part_delivered', 'delivered', 'cancelled'];
@@ -770,30 +770,6 @@ function stockRoutes({ pool, broadcast, secret, toPdf, till = false, kitchen = f
     return row ? row.id : null;
   }
 
-  /** How many of one product the shelf will still make; null when uncounted. */
-  function canMake(p, byPlu, recipes) {
-    const own = num(p.stock_quantity);
-    if (p.stock_parent_pluid) {
-      const parent = byPlu.get(Number(p.stock_parent_pluid));
-      const ps = parent ? num(parent.stock_quantity) : null;
-      const ratio = num(p.stock_ratio);
-      return ps === null || !(ratio > 0) ? null : Math.max(0, Math.floor((ps / ratio) + 1e-9));
-    }
-    const lines = recipes.get(Number(p.pluid));
-    if (lines && lines.length) {
-      let best = null;
-      for (const l of lines) {
-        const ing = byPlu.get(Number(l.ingredient_pluid));
-        const s = ing ? num(ing.stock_quantity) : null;
-        if (s === null) continue; // an uncounted ingredient does not limit it
-        const n = Math.max(0, Math.floor((s / Number(l.quantity)) + 1e-9));
-        best = best === null ? n : Math.min(best, n);
-      }
-      return best;
-    }
-    return own === null ? null : Math.max(0, Math.floor(own + 1e-9));
-  }
-
   router.get(`${prefix}/stock/availability`, auth, async (req, res, next) => {
     try {
       const office = await tenantEmail(req);
@@ -838,7 +814,7 @@ function stockRoutes({ pool, broadcast, secret, toPdf, till = false, kitchen = f
           pack_name: p.pack_name || null,
           pack_units: p.pack_units === null || p.pack_units === undefined ? null : Number(p.pack_units),
           printer_routes: p.printer_routes || null,
-          can_make: canMake(p, byPlu, recipes),
+          can_make: canMake(p.pluid, byPlu, recipes),
           low: d.level === 'low',
           on_menu: Boolean(m),
           sold_out: Boolean(m && !m.on),

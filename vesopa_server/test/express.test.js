@@ -1066,6 +1066,52 @@ async function main() {
       assert.match(res.body.error, /sold out/);
     });
 
+    await check('the stock ledger decides what the kiosk can sell: halves, recipes, non-stock', async () => {
+      // One pint left in the keg (two halves), a cocktail whose mint has run
+      // out, and crisps marked non-stock at a count of nothing.
+      await pool.query(
+        'INSERT INTO bo_products (email, pluid, product_name, price, tax_percentage, stock_quantity, stock_parent_pluid, stock_ratio, non_stock) VALUES ' +
+          "(?, 110, 'Carling Pint', 5.00, 20, 1, NULL, NULL, 0)," +
+          "(?, 111, 'Carling Half', 2.60, 20, NULL, 110, 0.5, 0)," +
+          "(?, 112, 'Mojito', 9.00, 20, NULL, NULL, NULL, 0)," +
+          "(?, 113, 'Mint', 0, 20, 0, NULL, NULL, 0)," +
+          "(?, 114, 'Crisps', 1.20, 20, 0, NULL, NULL, 1)",
+        [ARMS.email, ARMS.email, ARMS.email, ARMS.email, ARMS.email]
+      );
+      await pool.query(
+        'INSERT INTO bo_recipe_lines (id, office, recipe_pluid, ingredient_pluid, quantity) VALUES (UUID(), ?, 112, 113, 2)',
+        [ARMS.email]
+      );
+      const [[sec]] = await pool.query('SELECT section_id FROM dinein_items WHERE id = ?', [item.fries]);
+      for (const [key, plu] of [['half', 111], ['mojito', 112], ['crisps', 114]]) {
+        const [r] = await pool.query(
+          'INSERT INTO dinein_items (section_id, office_id, plu_id, available) VALUES (?, ?, ?, 1)',
+          [sec.section_id, ARMS.id, plu]
+        );
+        item[key] = r.insertId;
+      }
+      const res = await call(base, 'GET', '/api/express/kiosk/menu', { token: kioskToken });
+      const all = res.body.sections.flatMap((x) => x.items);
+      const half = all.find((i) => i.id === item.half);
+      assert.strictEqual(half.available, true, 'a half with a pint in the keg is on');
+      assert.strictEqual(half.left, 2, 'one pint is two halves');
+      const mojito = all.find((i) => i.id === item.mojito);
+      assert.strictEqual(mojito.available, false, 'a cocktail whose mint is out is still offered');
+      assert.strictEqual(mojito.out_of_stock, true);
+      const crisps = all.find((i) => i.id === item.crisps);
+      assert.strictEqual(crisps.available, true, 'a non-stock product was treated as out');
+      assert.strictEqual(crisps.left, null);
+      const pie = all.find((i) => i.id === item.pie);
+      assert.strictEqual(pie.out_of_stock, false, 'switched off by hand is not out of stock');
+
+      let order = await cardOrder({ lines: [{ item_id: item.half, qty: 3 }] });
+      assert.strictEqual(order.status, 409);
+      assert.match(order.body.error, /only 2 Carling Half left/);
+      order = await cardOrder({ lines: [{ item_id: item.mojito, qty: 1 }] });
+      assert.strictEqual(order.status, 409);
+      assert.match(order.body.error, /sold out/);
+    });
+
     await check("another venue's dish cannot be bought at this kiosk", async () => {
       const res = await cardOrder({ lines: [{ item_id: item.other, qty: 1 }] });
       assert.strictEqual(res.status, 409);

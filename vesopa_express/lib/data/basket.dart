@@ -72,10 +72,25 @@ class Basket {
   int qtyOf(int itemId) =>
       lines.where((l) => l.item.id == itemId).fold(0, (s, l) => s + l.qty);
 
+  /// The most this line may hold: [maxQty], or fewer when the stock says only
+  /// a few of the dish are left -- counted across every line of the same dish
+  /// (a plain burger and one with cheese come off the same shelf). A meal is
+  /// its own product, so its lines are not limited by the dish's count.
+  int roomFor(BasketLine line) {
+    final left = line.item.left;
+    if (left == null || line.meal != null) return maxQty;
+    final others = lines
+        .where((l) => l.item.id == line.item.id && l.meal == null && l.key != line.key)
+        .fold(0, (s, l) => s + l.qty);
+    return (left - others).clamp(0, maxQty);
+  }
+
   Basket add(BasketLine line) {
+    final room = roomFor(line);
+    if (room <= 0) return this;
     final i = lines.indexWhere((l) => l.key == line.key);
-    if (i < 0) return Basket([...lines, line.withQty(line.qty.clamp(1, maxQty))]);
-    final merged = (lines[i].qty + line.qty).clamp(1, maxQty);
+    if (i < 0) return Basket([...lines, line.withQty(line.qty.clamp(1, room))]);
+    final merged = (lines[i].qty + line.qty).clamp(1, room);
     return Basket([...lines]..[i] = lines[i].withQty(merged));
   }
 
@@ -83,7 +98,7 @@ class Basket {
   Basket setQty(String key, int qty) {
     if (qty <= 0) return Basket(lines.where((l) => l.key != key).toList());
     return Basket([
-      for (final l in lines) l.key == key ? l.withQty(qty.clamp(1, maxQty)) : l,
+      for (final l in lines) l.key == key ? l.withQty(qty.clamp(1, roomFor(l).clamp(1, maxQty))) : l,
     ]);
   }
 

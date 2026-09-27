@@ -1364,6 +1364,10 @@ button{font:inherit;cursor:pointer}
   display:inline-block;margin-top:6px;font-size:12px;font-weight:700;
   color:#B3261E;text-transform:uppercase;letter-spacing:.04em
 }
+/* "Only 3 left": the stock ledger's count, when it is few enough to matter. */
+.left-tag{
+  display:inline-block;margin-top:6px;font-size:12px;font-weight:700;color:#B26A00
+}
 .diet{
   display:inline-flex;align-items:center;gap:5px;margin-top:6px;
   padding:3px 8px;border-radius:999px;font-size:12px;font-weight:600;
@@ -3936,7 +3940,7 @@ ${shareImage ? `<meta name="twitter:image" content="${esc(shareImage)}">` : ''}
         priceHtml(it.price_minor) +
         (it.description ? '<p>' + esc(it.description) + '</p>' : '') +
         (it.diet ? '<span class="diet">' + esc(it.diet) + '</span>' : '') +
-        (it.available ? '' : '<span class="gone-tag">Currently unavailable</span>') +
+        goneOrLeftHtml(it, 'Currently unavailable') +
       '</div>' +
       shot +
     '</div>';
@@ -3954,8 +3958,20 @@ ${shareImage ? `<meta name="twitter:image" content="${esc(shareImage)}">` : ''}
       '</div>' +
       '<h3>' + esc(it.name) + '</h3>' +
       priceHtml(it.price_minor) +
-      (it.available ? '' : '<span class="gone-tag">Sold out</span>') +
+      goneOrLeftHtml(it, 'Sold out') +
     '</div>';
+  }
+
+  /**
+   * Why a dish cannot be had, or how few are left. A dish the stock has run
+   * out of says Sold out wherever it is; one switched off by hand keeps the
+   * row's own wording.
+   */
+  function goneOrLeftHtml(it, offWords){
+    if (!it.available) {
+      return '<span class="gone-tag">' + esc(it.out_of_stock ? 'Sold out' : offWords) + '</span>';
+    }
+    return it.left ? '<span class="left-tag">Only ' + Number(it.left) + ' left</span>' : '';
   }
 
   /**
@@ -4346,6 +4362,15 @@ ${shareImage ? `<meta name="twitter:image" content="${esc(shareImage)}">` : ''}
         pop({
           title: dish.name,
           body: 'Sorry — the kitchen has run out of this one today.',
+          ok: 'I see'
+        });
+        return;
+      }
+      // No more than the stock says is left. The server checks again.
+      if (dish && dish.left && qtyOf(itemId) >= dish.left) {
+        pop({
+          title: dish.name,
+          body: 'Sorry — there ' + (dish.left === 1 ? 'is' : 'are') + ' only ' + dish.left + ' left.',
           ok: 'I see'
         });
         return;

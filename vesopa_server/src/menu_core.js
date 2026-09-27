@@ -22,6 +22,7 @@
  */
 
 const { readAllergens, effectiveAllergens } = require('./allergens');
+const { canMakeMany } = require('./stock_effects');
 
 /** The venue's tenancy email, which the catalogue is keyed by. */
 async function emailOfOffice(db, officeId) {
@@ -349,6 +350,14 @@ async function menuSections(db, officeId, email, { meals = false } = {}) {
   // remember to ask. See schema_menu_dinein_images.sql for why it is a choice.
   const pictureOfItem = await itemPictures(db, officeId, email, items);
 
+  // What the shelf can still make (2026-09-27): a dish the stock ledger says
+  // is out -- its own count, the keg a half pours from, or the scarcest
+  // ingredient of its recipe -- is sold out here exactly as if the manager had
+  // switched it off, because on a QR menu or a kiosk nobody is there to say
+  // "sorry, we're out". Uncounted and non-stock products are never limited.
+  // See canMake in stock_effects.js; the till and kitchen screen use the same.
+  const left = await canMakeMany(db, email, items.map((i) => i.plu_id));
+
   return sections.map((s) => ({
     ...s,
     items: items
@@ -359,7 +368,11 @@ async function menuSections(db, officeId, email, { meals = false } = {}) {
         name: i.name,
         description: i.description,
         image_url: pictureOfItem(i),
-        available: !!i.available,
+        available: !!i.available && left.get(Number(i.plu_id)) !== 0,
+        // Why it is off: the manager's Sold out switch, or the stock ran out.
+        out_of_stock: !!i.available && left.get(Number(i.plu_id)) === 0,
+        // How many are left, only when it is few enough to matter to a guest.
+        left: lowLeft(left.get(Number(i.plu_id))),
         popular: !!i.is_popular,
         featured: !!i.is_featured,
         diet: i.diet_tag || null,
@@ -382,6 +395,12 @@ async function menuSections(db, officeId, email, { meals = false } = {}) {
         ...(meals ? { meals: mealsByItem[i.id] || [] } : {}),
       })),
   }));
+}
+
+/** "Only 3 left" is worth saying; "Only 40 left" is not. */
+const FEW_LEFT = 5;
+function lowLeft(n) {
+  return n !== undefined && n !== null && n > 0 && n <= FEW_LEFT ? n : null;
 }
 
 /** A basket that cannot be priced, with the status and sentence to answer. */
@@ -523,6 +542,25 @@ async function priceBasket(db, { officeId, email, basket }) {
     }
     for (const plu of chosen) allowed.add(plu);
     resolved.push({ want, item, meal, chosen });
+  }
+
+  // Never take an order the shelf cannot fill: a dish the stock ledger says is
+  // out, or more of it than is left. Counted per product across the basket, so
+  // two lines of the same burger with different notes are one question.
+  const asked = new Map();
+  for (const { want, item, meal } of resolved) {
+    const plu = Number(meal ? meal.plu_id : item.plu_id);
+    const had = asked.get(plu);
+    asked.set(plu, { qty: (had ? had.qty : 0) + want.qty, name: meal ? meal.name : item.name });
+  }
+  const left = await canMakeMany(db, email, [...asked.keys()]);
+  for (const [plu, a] of asked) {
+    const n = left.get(plu);
+    if (n === undefined) continue;
+    if (n <= 0) throw new BasketError(409, 'Sorry, ' + a.name + ' has just sold out.');
+    if (a.qty > n) {
+      throw new BasketError(409, 'Sorry, there ' + (n === 1 ? 'is' : 'are') + ' only ' + n + ' ' + a.name + ' left.');
+    }
   }
 
   // Add-ons are priced against the CATALOGUE, by PLU -- not against

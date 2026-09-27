@@ -93,4 +93,109 @@ function mergeTargets(targets) {
   return [...out.values()];
 }
 
-module.exports = { stockTargets, mergeTargets, MAX_DEPTH };
+// ---------------------------------------------------------------------------
+// How many more can be made (2026-09-27)
+// ---------------------------------------------------------------------------
+//
+// The other side of stockTargets: not "what does selling one take off?" but
+// "how many can we still sell?". The kitchen screen, the till, the back office,
+// and -- since the QR menu and the kiosk sell with nobody behind the counter to
+// say "we're out" -- the menus all ask it, so it is answered here once.
+//
+//   * A product nobody counts (stock_quantity NULL) or marked non-stock: no
+//     limit (null).
+//   * A linked product (a half, a glass): its parent's shelf over the ratio.
+//   * A recipe: whichever ingredient runs out first. An uncounted ingredient
+//     does not limit it.
+//   * Anything else: its own count, never below zero.
+//
+// Same depth and cycle rule as stockTargets.
+
+/** Units of `pluid` the shelf still holds, unrounded; null when unlimited. */
+function onHand(pluid, byPlu, recipes, depth = 0, seen = new Set()) {
+  const key = Number(pluid);
+  const p = byPlu.get(key);
+  if (!p || depth > MAX_DEPTH || seen.has(key)) return null;
+  if (Number(p.non_stock)) return null;
+  const path = new Set(seen).add(key);
+  const lines = recipes.get(key);
+  if (lines && lines.length) {
+    let best = null;
+    for (const l of lines) {
+      const each = Number(l.quantity);
+      if (!Number.isFinite(each) || each <= 0) continue;
+      const s = onHand(l.ingredient_pluid, byPlu, recipes, depth + 1, path);
+      if (s === null) continue;
+      const n = Math.max(0, s) / each;
+      best = best === null ? n : Math.min(best, n);
+    }
+    return best;
+  }
+  const parent = Number(p.stock_parent_pluid);
+  const ratio = Number(p.stock_ratio);
+  if (parent && parent !== key) {
+    if (!(Number.isFinite(ratio) && ratio > 0)) return null;
+    const s = onHand(parent, byPlu, recipes, depth + 1, path);
+    return s === null ? null : Math.max(0, s) / ratio;
+  }
+  if (p.stock_quantity === null || p.stock_quantity === undefined || p.stock_quantity === '') return null;
+  const own = Number(p.stock_quantity);
+  return Number.isFinite(own) ? Math.max(0, own) : null;
+}
+
+/**
+ * How many whole ones of a product can still be made; null when nothing
+ * limits it. `byPlu` maps pluid to a bo_products row (stock_quantity,
+ * non_stock, stock_parent_pluid, stock_ratio); `recipes` maps a recipe's
+ * pluid to its bo_recipe_lines.
+ */
+function canMake(pluid, byPlu, recipes) {
+  const n = onHand(pluid, byPlu, recipes);
+  return n === null ? null : Math.max(0, Math.floor(n + 1e-9));
+}
+
+const schemaMissing = (e) =>
+  e && (e.code === 'ER_NO_SUCH_TABLE' || e.errno === 1146 || e.code === 'ER_BAD_FIELD_ERROR' || e.errno === 1054);
+
+/**
+ * canMake for several products of one venue, read in two queries. Returns a
+ * Map of pluid -> whole number left, holding only the products something
+ * limits. A server that has not run the stock schema yet limits nothing.
+ */
+async function canMakeMany(db, office, pluids) {
+  const out = new Map();
+  if (!pluids || !pluids.length) return out;
+  let rows;
+  let lines = [];
+  try {
+    [rows] = await db.query(
+      'SELECT pluid, stock_quantity, non_stock, stock_parent_pluid, stock_ratio FROM bo_products WHERE email = ?',
+      [office]
+    );
+  } catch (e) {
+    if (schemaMissing(e)) return out;
+    throw e;
+  }
+  try {
+    [lines] = await db.query(
+      'SELECT recipe_pluid, ingredient_pluid, quantity FROM bo_recipe_lines WHERE office = ? ORDER BY sort_order, created_at',
+      [office]
+    );
+  } catch (e) {
+    if (!schemaMissing(e)) throw e;
+  }
+  const byPlu = new Map((rows || []).map((r) => [Number(r.pluid), r]));
+  const recipes = new Map();
+  for (const l of lines || []) {
+    const k = Number(l.recipe_pluid);
+    if (!recipes.has(k)) recipes.set(k, []);
+    recipes.get(k).push(l);
+  }
+  for (const plu of new Set(pluids.map(Number))) {
+    const n = canMake(plu, byPlu, recipes);
+    if (n !== null) out.set(plu, n);
+  }
+  return out;
+}
+
+module.exports = { stockTargets, mergeTargets, canMake, canMakeMany, MAX_DEPTH };

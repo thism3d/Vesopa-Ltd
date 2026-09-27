@@ -296,6 +296,8 @@ class MenuItem {
     this.description,
     this.imageUrl,
     this.available = true,
+    this.outOfStock = false,
+    this.left,
     this.popular = false,
     this.featured = false,
     this.diet,
@@ -312,6 +314,15 @@ class MenuItem {
   final String? description;
   final String? imageUrl;
   final bool available;
+
+  /// Off because the stock ran out (the back office's stock ledger, counting a
+  /// half from its keg and a recipe from its scarcest ingredient), rather than
+  /// switched off by hand. Either way [available] is false.
+  final bool outOfStock;
+
+  /// How many are left, when the server thinks few enough to say so; null
+  /// when plenty, or when nobody counts it. The kiosk never offers more.
+  final int? left;
   final bool popular;
   final bool featured;
   final String? diet;
@@ -334,6 +345,8 @@ class MenuItem {
     description: _str(j['description']),
     imageUrl: _str(j['image_url']),
     available: j['available'] == null ? true : _bool(j['available']),
+    outOfStock: _bool(j['out_of_stock']),
+    left: j['left'] == null ? null : _int(j['left']),
     popular: _bool(j['popular']),
     featured: _bool(j['featured']),
     diet: _str(j['diet']),

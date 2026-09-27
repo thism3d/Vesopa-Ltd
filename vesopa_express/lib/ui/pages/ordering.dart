@@ -967,6 +967,13 @@ class ItemCard extends ConsumerWidget {
                             style: const TextStyle(color: Xp.lime, fontWeight: FontWeight.w800, fontSize: 18)),
                       ),
                     ),
+                  if (item.available && item.left != null)
+                    Positioned(
+                      left: 10,
+                      top: item.popular ? 52 : 10,
+                      child: Pill(s('only_left').replaceAll('{n}', '${item.left}'),
+                          color: Xp.amber, textColor: Xp.ink),
+                    ),
                   if (!item.available)
                     ColoredBox(
                       color: skin.card.withValues(alpha: .72),
@@ -1073,6 +1080,13 @@ class _ItemSheetState extends ConsumerState<ItemSheet> {
   final Map<int, Set<int>> _chosen = {};
   int _qty = 1;
 
+  /// No more than the stock has left, less what is in the basket already.
+  int get _room => ref
+      .read(orderFlowProvider)
+      .basket
+      .roomFor(BasketLine(item: widget.item, addOns: _options))
+      .clamp(1, Basket.maxQty);
+
   /// "Make it a meal" was pressed: the sheet becomes the meal builder.
   bool _meal = false;
 
@@ -1082,7 +1096,9 @@ class _ItemSheetState extends ConsumerState<ItemSheet> {
         if (_chosen[g.id]?.contains(o.pluId) ?? false) o,
   ];
 
-  bool get _valid => widget.item.addOns.every((g) => (_chosen[g.id]?.length ?? 0) >= g.min);
+  bool get _valid =>
+      widget.item.addOns.every((g) => (_chosen[g.id]?.length ?? 0) >= g.min) &&
+      ref.read(orderFlowProvider).basket.roomFor(BasketLine(item: widget.item, addOns: _options)) > 0;
 
   void _toggle(AddOnGroup g, AddOnOption o) {
     final set = _chosen.putIfAbsent(g.id, () => <int>{});
@@ -1205,7 +1221,7 @@ class _ItemSheetState extends ConsumerState<ItemSheet> {
             decoration: BoxDecoration(border: Border(top: BorderSide(color: skin.line))),
             child: Row(
               children: [
-                QtyStepper(qty: _qty, min: 1, max: 20, onChanged: (q) => setState(() => _qty = q)),
+                QtyStepper(qty: _qty, min: 1, max: _room, onChanged: (q) => setState(() => _qty = q)),
                 const SizedBox(width: 18),
                 Expanded(
                   child: FilledButton(
@@ -1448,7 +1464,11 @@ class _BasketPanel extends ConsumerWidget {
                               ],
                             ),
                           ),
-                          QtyStepper(qty: l.qty, size: 44, onChanged: (q) => n.setQty(l.key, q)),
+                          QtyStepper(
+                              qty: l.qty,
+                              size: 44,
+                              max: ref.watch(orderFlowProvider).basket.roomFor(l).clamp(1, Basket.maxQty),
+                              onChanged: (q) => n.setQty(l.key, q)),
                         ],
                       );
                     },
@@ -1574,6 +1594,7 @@ class _BasketLineTile extends ConsumerWidget {
     );
     final stepper = QtyStepper(
       qty: line.qty,
+      max: ref.watch(orderFlowProvider).basket.roomFor(line).clamp(1, Basket.maxQty),
       onChanged: (q) => ref.read(orderFlowProvider.notifier).setQty(line.key, q),
     );
     final total = Text(

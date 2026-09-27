@@ -94,3 +94,28 @@ case).
 
 Versions: EPOS 1.9.0.0 (+42), Kitchen 1.7.0.0 (+13). Display, Express and
 Loyalty have no changes.
+
+## 27 September, third round: the QR menu, the kiosk and the loyalty app
+
+The owner: the menu, loyalty app and kiosk must reflect the same stock work.
+
+| Where | What |
+|-------|------|
+| Server (`src/stock_effects.js`) | `canMake` / `canMakeMany`: how many more can be made, moved out of the availability route so every channel asks the same question. A non-stock product and an uncounted one are never limited; a half is limited by its keg; a recipe by its scarcest ingredient, a linked ingredient by its own parent. |
+| Server (`src/menu_core.js`) | The QR menu and the kiosk menu mark a dish **Sold out** when the ledger says none can be made (`available: false`, `out_of_stock: true`), and send `left` when five or fewer remain. The basket refuses a dish that is out, or more than is left, counted per product across lines. The manager's Sold out switch works as before. |
+| QR menu (`src/dinein_pages.js`) | "Sold out" on an out-of-stock dish, "Only 3 left" under a low one, and the plus stops at what is left. |
+| Kiosk (Vesopa Express 1.0.5) | The same "Only 3 left" pill, and the item sheet, basket and meal lines never take more than is left. |
+| Loyalty app | Nothing to change: it has no menu of its own and opens the venue's QR menu link, which now carries all of the above. |
+
+Stock deduction for these channels was already right: a kiosk sale goes
+through `recordSale` (children and recipes via `stockTargets`), and a QR order
+is rung up on the till and uploaded as a till sale.
+
+Tests: `test/express.test.js` (a half from its keg, a recipe whose ingredient is
+out, a non-stock product at zero, over-ordering refused), Express
+`test/basket_test.dart`.
+
+**Not yet live.** Server files to upload: `src/stock_effects.js`,
+`src/stock.js`, `src/menu_core.js`, `src/dinein_pages.js`. No schema change.
+A venue whose counts are stale will see counted dishes at zero go Sold out on
+the QR menu and kiosk once this is deployed.

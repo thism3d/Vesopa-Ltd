@@ -95,4 +95,20 @@ void main() {
     expect(money(2200), '£22.00');
     expect(money(123456), '£1234.56');
   });
+
+  test('never more than the stock has left, counted across lines of the same dish', () {
+    const lastThree = MenuItem(id: 3, pluId: 111, name: 'Carling Half', priceMinor: 260, left: 3);
+    var b = const Basket().add(const BasketLine(item: lastThree, qty: 2));
+    b = b.add(const BasketLine(item: lastThree, addOns: [cheese], qty: 5));
+    expect(b.count, 3, reason: 'two plus one is all the keg holds');
+    b = b.add(const BasketLine(item: lastThree));
+    expect(b.count, 3, reason: 'a fourth was let in');
+    final plain = b.lines.first.key;
+    b = b.setQty(plain, 10);
+    expect(b.qtyOf(3), 3);
+    expect(MenuItem.fromJson(const {'id': 3, 'plu_id': 111, 'name': 'Half', 'price_minor': 260, 'left': 2}).left, 2);
+    final out = MenuItem.fromJson(const {'id': 4, 'plu_id': 112, 'name': 'Mojito', 'price_minor': 900, 'available': false, 'out_of_stock': true});
+    expect(out.available, isFalse);
+    expect(out.outOfStock, isTrue);
+  });
 }
