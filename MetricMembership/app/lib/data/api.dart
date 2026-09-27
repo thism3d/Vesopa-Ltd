@@ -92,6 +92,9 @@ class MetricApi {
   /// The Vesopa Auth client this server was set up with.
   Future<String> authClientId() async => ((await _send('GET', '/brand'))['authClientId'] as String?) ?? '';
 
+  /// What Metric's staff chose under Appearance in the console.
+  Future<Map<String, dynamic>> brand() => _send('GET', '/brand');
+
   /// Continue with Vesopa. Web sends the code; native sends the id token.
   Future<({String token, Member member})> signIn({
     String? code,

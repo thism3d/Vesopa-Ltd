@@ -2,23 +2,34 @@ import 'package:flutter/material.dart';
 
 import '../brand.dart';
 
-/// A registration drawn the way it looks on the back of a UK car: black on
-/// yellow, in a condensed bold face, so members recognise their own car at a
-/// glance.
+/// A registration as a Metric plate: navy characters on a white plate with a
+/// navy edge, and a navy side band carrying a green signal stripe, the way
+/// the UK side band carries its country code. It reads as a number plate at a
+/// glance and stays in the brand, not in DVLA yellow.
+///
+/// Metric's staff can switch every plate to the UK yellow or white plate under
+/// Appearance in the console; [plateStyle] carries their choice.
+final plateStyle = ValueNotifier<String>('metric');
+
 class NumberPlate extends StatelessWidget {
   const NumberPlate(this.text, {super.key, this.size = 20, this.front = false});
 
   final String text;
   final double size;
 
-  /// White, as on the front of the car.
+  /// Kept for callers; the console's choice decides the face now.
   final bool front;
 
   @override
-  Widget build(BuildContext context) => Container(
+  Widget build(BuildContext context) => ValueListenableBuilder<String>(
+    valueListenable: plateStyle,
+    builder: (context, style, _) => style == 'metric' ? _metric() : _uk(yellow: style == 'uk_yellow'),
+  );
+
+  Widget _uk({required bool yellow}) => Container(
     padding: EdgeInsets.symmetric(horizontal: size * 0.5, vertical: size * 0.18),
     decoration: BoxDecoration(
-      color: front ? Colors.white : const Color(0xFFFFD300),
+      color: yellow ? const Color(0xFFFFD300) : Colors.white,
       borderRadius: BorderRadius.circular(size * 0.2),
       border: Border.all(color: const Color(0xFF222222), width: 1.2),
     ),
@@ -26,11 +37,51 @@ class NumberPlate extends StatelessWidget {
       text,
       style: TextStyle(
         fontSize: size,
+        height: 1.1,
         fontWeight: FontWeight.w800,
         letterSpacing: size * 0.08,
         color: const Color(0xFF111111),
         fontFamily: 'Arial Narrow',
         fontFamilyFallback: const ['Roboto Condensed', 'Arial', 'sans-serif'],
+      ),
+    ),
+  );
+
+  Widget _metric() => Container(
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(size * 0.28),
+      border: Border.all(color: MetricBrand.navy, width: size * 0.08 < 1.4 ? 1.4 : size * 0.08),
+      boxShadow: const [BoxShadow(color: Color(0x14002788), blurRadius: 6, offset: Offset(0, 2))],
+    ),
+    child: ClipRRect(
+      borderRadius: BorderRadius.circular(size * 0.2),
+      child: IntrinsicHeight(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: size * 0.62,
+              color: MetricBrand.navy,
+              alignment: Alignment.center,
+              child: Container(width: size * 0.16, height: size * 0.62, decoration: BoxDecoration(color: MetricBrand.green, borderRadius: BorderRadius.circular(size))),
+            ),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: size * 0.45, vertical: size * 0.16),
+              child: Text(
+                text,
+                style: TextStyle(
+                  fontFamily: MetricBrand.font,
+                  fontSize: size,
+                  height: 1.1,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: size * 0.06,
+                  color: MetricBrand.navy,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     ),
   );

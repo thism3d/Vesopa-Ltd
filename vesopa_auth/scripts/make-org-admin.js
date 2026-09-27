@@ -112,6 +112,14 @@ async function main() {
       console.log(`  moved ${application.name} into ${orgName}`);
     }
 
+    // Their own sign-in to this application must offer a password as well as
+    // the emailed code (a copied or hand-edited method list may not).
+    await tx.execute(
+      `INSERT INTO application_auth_methods (application_id, method, enabled, sort) VALUES (?, 'password', 1, 10)
+       ON DUPLICATE KEY UPDATE enabled = 1`,
+      [application.id],
+    );
+
     await tx.execute(
       `INSERT INTO application_developers (application_id, user_id, role, granted_by)
        VALUES (?, ?, 'admin', NULL)

@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'brand.dart';
+import 'data/api.dart';
 import 'data/session.dart';
 import 'ui/home.dart';
 import 'ui/sign_in.dart';
+import 'ui/widgets.dart';
 
 /// Metric Membership: Metric Group's own membership app.
 ///
@@ -16,6 +18,12 @@ import 'ui/sign_in.dart';
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const ProviderScope(child: MetricApp()));
+  // Staff's choices from the console (Appearance). The app draws with the
+  // defaults until they arrive, and keeps them if the server cannot be reached.
+  MetricApi().brand().then((b) {
+    final style = b['plateStyle'];
+    if (style is String) plateStyle.value = style;
+  }).catchError((_) {});
 }
 
 class MetricApp extends StatelessWidget {

@@ -185,11 +185,17 @@ tr.click { cursor: pointer; }
 tr.click:hover td { background: var(--navy-50); }
 
 .plate {
-  display: inline-block; font-family: 'Arial Narrow', Arial, sans-serif; font-weight: 800;
-  background: #ffd300; color: #111; border: 1px solid #222; border-radius: 5px; padding: 2px 8px; letter-spacing: .08em;
-  white-space: nowrap;
+  display: inline-flex; align-items: stretch; overflow: hidden; white-space: nowrap;
+  font-weight: 800; letter-spacing: .07em; color: var(--navy);
+  background: #fff; border: 1.5px solid var(--navy); border-radius: 7px; box-shadow: 0 2px 6px rgba(0, 39, 136, .08);
+  padding: 2px 9px 2px 0;
 }
-.plate.front { background: #fff; }
+/* The navy side band with a green signal stripe: Metric's plate, not DVLA yellow.
+   Staff can switch to the UK plates under Appearance (body[data-plate]). */
+.plate::before {
+  content: ''; width: 12px; margin-right: 8px; flex: none;
+  background: linear-gradient(var(--green), var(--green)) center / 3px 60% no-repeat, var(--navy);
+}
 
 .badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; background: var(--navy-50); color: var(--slate); text-transform: capitalize; }
 .badge.active, .badge.open { background: var(--green-50); color: var(--green-700); }
@@ -235,6 +241,24 @@ pre.detail { white-space: pre-wrap; font-size: 12px; margin: 0; color: var(--sla
 .gate .head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .gate .head .spacer { flex: 1; }
 .row .spacer { flex: 1; }
+
+body[data-plate='uk_yellow'] .plate:not(.plate-metric):not(.plate-uk_white), .plate.plate-uk_yellow,
+body[data-plate='uk_white'] .plate:not(.plate-metric):not(.plate-uk_yellow), .plate.plate-uk_white {
+  font-family: 'Arial Narrow', Arial, sans-serif; color: #111; background: #ffd300; border: 1px solid #222; border-radius: 5px; padding: 2px 8px; box-shadow: none;
+}
+body[data-plate='uk_white'] .plate:not(.plate-metric):not(.plate-uk_yellow), .plate.plate-uk_white { background: #fff; }
+body[data-plate='uk_yellow'] .plate:not(.plate-metric)::before, body[data-plate='uk_white'] .plate:not(.plate-metric)::before,
+.plate.plate-uk_yellow::before, .plate.plate-uk_white::before { display: none; }
+
+.choices { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); margin-top: 18px; }
+.choice {
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 10px; text-align: center;
+  padding: 26px 18px; border-radius: var(--r-lg); background: #fff; border: 1.5px solid var(--line); box-shadow: var(--shadow-sm);
+}
+.choice .plate { font-size: 22px; margin-bottom: 6px; }
+.choice.on { border-color: var(--navy); box-shadow: 0 0 0 4px var(--navy-50), var(--shadow-md); }
+.choice .pick { color: var(--navy); font-weight: 700; }
+.choice:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
 
 /* ---- small screens ------------------------------------------------------ */
 @media (max-width: 900px) {

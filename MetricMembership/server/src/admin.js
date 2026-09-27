@@ -16,6 +16,7 @@ const vesopa = require('./vesopa');
 const members = require('./members');
 const activity = require('./activity');
 const sync = require('./sync');
+const settings = require('./settings');
 const adapters = require('./adapters');
 const { hashKey } = require('./anpr');
 const { memberJson, vehicleJson } = require('./api');
@@ -221,6 +222,20 @@ function adminApi() {
     const v = await members.removeVehicle(Number(req.params.id), Number(req.params.vid));
     activity.record({ actor: actor(req), action: 'admin.vehicle_remove', req, detail: { memberId: Number(req.params.id), plate: v.plate } });
     res.json({ ok: true });
+  }));
+
+  // ---- appearance ---------------------------------------------------------
+  r.get('/settings', wrap(async (req, res) => res.json({ settings: await settings.all(), choices: settings.CHOICES })));
+
+  r.patch('/settings', wrap(async (req, res) => {
+    const b = req.body || {};
+    for (const [name, value] of Object.entries(b)) {
+      if ((await settings.set(name, String(value), req.admin && req.admin.email)) == null) {
+        return res.status(400).json({ error: `${name} cannot be ${value}.` });
+      }
+    }
+    activity.record({ actor: actor(req), action: 'admin.settings', req, detail: b });
+    res.json({ settings: await settings.all() });
   }));
 
   // ---- plans ------------------------------------------------------------

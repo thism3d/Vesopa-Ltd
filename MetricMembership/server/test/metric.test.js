@@ -341,3 +341,13 @@ test('the web callback hands the code back to the app; the console is served', a
   const health = await call('GET', '/health');
   assert.equal(health.json.ok, true);
 });
+
+test('staff choose how plates look, and the app reads it from /brand', async () => {
+  assert.equal((await call('GET', '/api/v1/brand')).json.plateStyle, 'metric');
+  const cookie = `mg_admin=${session.issueAdmin({ sub: 'staff-1', email: 'staff@metricgroup.co.uk' })}`;
+  assert.equal((await call('PATCH', '/api/admin/settings', { body: { plateStyle: 'lime' }, headers: { Cookie: cookie } })).status, 400);
+  const ok = await call('PATCH', '/api/admin/settings', { body: { plateStyle: 'uk_yellow' }, headers: { Cookie: cookie } });
+  assert.equal(ok.status, 200);
+  assert.equal((await call('GET', '/api/v1/brand')).json.plateStyle, 'uk_yellow');
+  await call('PATCH', '/api/admin/settings', { body: { plateStyle: 'metric' }, headers: { Cookie: cookie } });
+});

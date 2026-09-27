@@ -16,6 +16,7 @@ const activity = require('./activity');
 const brand = require('./brand');
 const access = require('./access');
 const sync = require('./sync');
+const settings = require('./settings');
 const { limiter } = require('./security');
 
 const iso = (d) => (d instanceof Date ? d.toISOString() : d);
@@ -69,7 +70,10 @@ function wrap(fn) {
 function apiRouter() {
   const r = express.Router();
 
-  r.get('/brand', (req, res) => res.json({ ...brand, baseUrl: config.BASE_URL, authClientId: config.AUTH_CLIENT_ID }));
+  r.get('/brand', wrap(async (req, res) => {
+    res.set('Cache-Control', 'no-cache');
+    res.json({ ...brand, baseUrl: config.BASE_URL, authClientId: config.AUTH_CLIENT_ID, ...(await settings.all()) });
+  }));
 
   /*
    * CONTINUE WITH VESOPA.

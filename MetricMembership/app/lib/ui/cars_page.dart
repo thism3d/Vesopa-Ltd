@@ -192,7 +192,7 @@ class _AddCarSheetState extends ConsumerState<AddCarSheet> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text('Add a car', style: Theme.of(context).textTheme.titleLarge?.copyWith(color: MetricBrand.navy, fontWeight: FontWeight.w700)),
+        Text('Add a car', textAlign: TextAlign.center, style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 16),
         TextField(
           key: const Key('plate-field'),
@@ -204,11 +204,20 @@ class _AddCarSheetState extends ConsumerState<AddCarSheet> {
             LengthLimitingTextInputFormatter(10),
             TextInputFormatter.withFunction((o, n) => n.copyWith(text: n.text.toUpperCase())),
           ],
-          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800, letterSpacing: 2),
-          decoration: const InputDecoration(
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: 3, color: MetricBrand.navy),
+          decoration: InputDecoration(
             labelText: 'Registration',
             hintText: 'AB12 CDE',
-            fillColor: Color(0xFFFFF6C2),
+            fillColor: Colors.white,
+            prefixIcon: Container(
+              width: 22,
+              margin: const EdgeInsets.only(left: 8, right: 8, top: 10, bottom: 10),
+              decoration: BoxDecoration(color: MetricBrand.navy, borderRadius: BorderRadius.circular(5)),
+              alignment: Alignment.center,
+              child: Container(width: 4, height: 18, decoration: BoxDecoration(color: MetricBrand.green, borderRadius: BorderRadius.circular(2))),
+            ),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: MetricBrand.navy, width: 1.5)),
           ),
           onSubmitted: (_) => _save(),
         ),

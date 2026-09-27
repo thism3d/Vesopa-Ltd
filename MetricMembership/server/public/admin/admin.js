@@ -42,6 +42,7 @@
     deny: 'M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm5 13.59L15.59 17 12 13.41 8.41 17 7 15.59 10.59 12 7 8.41 8.41 7 12 10.59 15.59 7 17 8.41 13.41 12 17 15.59z',
     pending: 'M6 2v6h.01L6 8.01 10 12l-4 4 .01.01H6V22h12v-5.99h-.01L18 16l-4-4 4-3.99-.01-.01H18V2H6z',
     gate: 'M3 21V8h3v13H3zm5-10.5h13v3.5H8v-3.5zM2 21h6v1H2z',
+    appearance: 'M12 3a9 9 0 0 0 0 18c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16a5 5 0 0 0 5-5c0-4.42-4.03-8-9-8zm-5.5 9a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm3-4a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm3 4a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z',
   };
   const STROKED = new Set(['events', 'activity']);
   function icon(name, size = 20) {
@@ -121,6 +122,7 @@
       const me = await api('/me');
       $('#who').textContent = me.email;
       $('#avatar').textContent = (me.email || '?').slice(0, 1).toUpperCase();
+      api('/settings').then((d) => { document.body.dataset.plate = d.settings.plateStyle; }).catch(() => {});
       $('#signin').hidden = true;
       $('#app').hidden = false;
       if (location.search) history.replaceState(null, '', '/admin/');
@@ -428,6 +430,38 @@
       el('h2', { text: 'Add a plan', style: 'margin-top:20px' }),
       el('form', { class: 'row', onsubmit: async (e) => { e.preventDefault(); try { await api('/plans', { method: 'POST', body: { name: nf.name.value, maxVehicles: nf.maxVehicles.value } }); show('plans'); } catch (err) { flash(box, err.message, 'bad'); } } },
         el('label', {}, 'Name', nf.name), el('label', {}, 'Cars', nf.maxVehicles), el('button', { class: 'primary', type: 'submit', text: 'Add plan' })));
+  };
+
+  // ---- appearance ------------------------------------------------------
+  const PLATES = [
+    ['metric', 'Metric', 'Navy on white with the Metric side band. Matches the brand.'],
+    ['uk_yellow', 'UK rear plate', 'Black on yellow, as on the back of the car.'],
+    ['uk_white', 'UK front plate', 'Black on white, as on the front of the car.'],
+  ];
+  VIEWS.appearance = async (view) => {
+    const d = await api('/settings');
+    const box = el('div');
+    const choose = async (value) => {
+      try {
+        const out = await api('/settings', { method: 'PATCH', body: { plateStyle: value } });
+        document.body.dataset.plate = out.settings.plateStyle;
+        show('appearance');
+      } catch (e) { flash(box, e.message, 'bad'); }
+    };
+    put(view,
+      el('p', { class: 'overline', text: 'Appearance' }),
+      el('h1', { text: 'Number plates' }),
+      el('p', { class: 'muted', text: 'How registrations look in the member app and in this console. Members see the change the next time the app opens.' }),
+      box,
+      el('div', { class: 'choices' }, PLATES.map(([value, name, about]) => el('button', {
+        type: 'button',
+        class: `choice${d.settings.plateStyle === value ? ' on' : ''}`,
+        onclick: () => choose(value),
+      },
+      el('span', { class: `plate plate-${value}`, text: 'AB12 CDE' }),
+      el('b', { text: name }),
+      el('span', { class: 'muted small', text: about }),
+      d.settings.plateStyle === value ? el('span', { class: 'badge active', text: 'In use' }) : el('span', { class: 'small pick', text: 'Use this' })))));
   };
 
   boot();

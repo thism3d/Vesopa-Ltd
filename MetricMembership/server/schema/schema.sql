@@ -169,3 +169,11 @@ CREATE TABLE IF NOT EXISTS activity_log (
   KEY ix_activity_actor (actor_type, actor_id, at),
   KEY ix_activity_action (action, at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Settings Metric's staff change in the console (Appearance), one row each.
+CREATE TABLE IF NOT EXISTS settings (
+  name          VARCHAR(40)  NOT NULL PRIMARY KEY,
+  value         VARCHAR(200) NOT NULL,
+  updated_by    VARCHAR(191) NOT NULL DEFAULT '',
+  updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
