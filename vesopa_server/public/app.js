@@ -4779,9 +4779,16 @@ function mountGpCalculator(root) {
     const n = Number(el.value);
     return Number.isFinite(n) ? n : null;
   };
+  let drawn = null;
   const draw = () => {
     const pack = (productRefs.packs || []).find((k) => String(k.id) === String(val('pack_size_id')?.value));
     const packCost = numOf('pack_cost');
+    // Nothing moved, nothing redrawn. Leaving the cost box fires 'change' on
+    // the mousedown of a click on "Use this price"; redrawing then replaced
+    // the button under the pointer and the first click did nothing.
+    const sig = JSON.stringify([val('pack_size_id')?.value, packCost, numOf('cost_price'), numOf('price'), numOf('tax_percentage'), numOf('target_gp')]);
+    if (sig === drawn) return;
+    drawn = sig;
     const unit = packCost !== null && pack && Number(pack.units) > 0 ? packCost / Number(pack.units) : numOf('cost_price');
     const price = numOf('price') || 0;
     const vat = 1 + (numOf('tax_percentage') || 0) / 100;
@@ -4881,7 +4888,7 @@ function mountChildProducts(root, parent = {}) {
   const write = () => {
     out.value = JSON.stringify({
       add: state.rows
-        .filter((r) => r.kind === 'new' && String(r.name).trim())
+        .filter((r) => r.kind === 'new' && (String(r.name).trim() || String(r.ratio).trim() || String(r.price).trim()))
         .map((r) => ({ name: String(r.name).trim(), price: r.price, ratio: r.ratio })),
       link: state.rows
         .filter((r) => r.kind === 'link' || (r.kind === 'linked' && String(r.ratio) !== String(r.was)))
@@ -5009,6 +5016,30 @@ function mountChildProducts(root, parent = {}) {
  * and has a PLU. Each child is its own call; one refusing (say a ratio left
  * blank) is reported and does not stop the rest.
  */
+/**
+ * Refuse a child products plan that would make something unlinked: a new
+ * child with no name or no measure, or a link with no measure. Checked BEFORE
+ * the product saves, so nothing half-happens (found 2026-09-27: a new child
+ * with a blank "uses of this" was created anyway, as a £0.00 product selling
+ * from nothing).
+ */
+function checkChildPlan(raw) {
+  let plan;
+  try {
+    plan = JSON.parse(raw || '{}');
+  } catch {
+    return;
+  }
+  const bad = (r) => !(Number(r.ratio) > 0);
+  for (const c of plan.add || []) {
+    if (!String(c.name || '').trim()) throw new Error('Give each new child product a name, or remove it.');
+    if (bad(c)) throw new Error(`${c.name}: say how much of this product one uses — for example 0.5 for a half.`);
+  }
+  for (const c of plan.link || []) {
+    if (bad(c)) throw new Error(`${c.label || 'A linked product'}: say how much of this product one uses.`);
+  }
+}
+
 async function saveChildProducts(parent, d, raw) {
   let plan;
   try {
@@ -6441,6 +6472,7 @@ document.addEventListener('click', async (e) => {
     return modal('Add product', productFields(), async (d) => {
       const kids = d._children;
       delete d._children;
+      checkChildPlan(kids);
       const made = await api('/products', { method: 'POST', body: JSON.stringify(d) });
       await saveModifiers(made.pluid, d);
       await saveProductStock(made.id, d, {});
@@ -6455,6 +6487,7 @@ document.addEventListener('click', async (e) => {
     return modal('Edit product', productFields(p), async (d) => {
       const kids = d._children;
       delete d._children;
+      checkChildPlan(kids);
       await api(`/products/${p.id}`, { method: 'PUT', body: JSON.stringify(d) });
       await saveModifiers(p.pluid, d);
       await saveProductStock(p.id, d, p);

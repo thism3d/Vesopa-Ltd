@@ -391,6 +391,37 @@ async function main() {
       await cdp.eval(`document.getElementById('modal-cancel').click(); return true;`);
     });
 
+    await check('a new child with no measure is refused before anything is saved', async () => {
+      assert.ok(await openEdit(2), 'the edit form never opened');
+      await cdp.until(`return !!document.querySelector('[data-cp-new]');`);
+      await cdp.clickOn('[data-cp-new]');
+      await cdp.type('Peroni Half');
+      const made = state.created.length;
+      const puts = state.putProduct;
+      state.putProduct = null;
+      await cdp.eval(`document.querySelector('#modal-form').requestSubmit(); return true;`);
+      await sleep(500);
+      assert.strictEqual(state.created.length, made, 'a child was created with no measure');
+      assert.strictEqual(state.putProduct, null, 'the product saved although its child was refused');
+      assert.ok(await cdp.eval(`return !!document.querySelector('#modal-form');`), 'the form closed');
+      state.putProduct = puts;
+      await cdp.eval(`document.getElementById('modal-cancel').click(); return true;`);
+    });
+
+    await check('Use this price works on the first click after typing a cost', async () => {
+      assert.ok(await openEdit(3), 'the edit form never opened');
+      await cdp.eval(`document.querySelector('.form-section-nav [data-form-jump="stock"]').click(); return true;`);
+      await sleep(500);
+      await cdp.clickOn('[name="cost_price"]');
+      await cdp.type('1.00');
+      // A real click: the mousedown blurs the cost box first.
+      await cdp.clickOn('[data-gp-use]');
+      await sleep(200);
+      const price = await cdp.eval(`return document.querySelector('[name="price"]').value;`);
+      assert.strictEqual(price, '4.00', `price after one click: ${price}`);
+      await cdp.eval(`document.getElementById('modal-cancel').click(); return true;`);
+    });
+
     await check('nothing on the page threw', async () => {
       assert.strictEqual(cdp.thrown.length, 0, cdp.thrown.join(' ; '));
     });
