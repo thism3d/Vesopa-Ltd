@@ -1,4 +1,7 @@
-require('dotenv').config();
+// .env wins over the environment: pm2 hands every app it starts its own
+// daemon's environment, and on the live box that carried another app's PORT
+// (20003), so Metric listened on the wrong port until restarted.
+require('dotenv').config({ override: true });
 
 /**
  * Metric Membership -- a white-label membership for Metric Group, on

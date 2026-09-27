@@ -81,20 +81,21 @@ if [ $CHECK = 0 ] || v-list-web-domains "$APPUSER" plain | cut -f1 | grep -qx "$
   fi
 fi
 
-# The NodeJS template reads the upstream from a per-domain include. Model it on
-# auth.vesopa.com's, with our port.
-CONF=/home/$APPUSER/hestiacp_nodejs_config/web
-if [ -d "$CONF/auth.vesopa.com" ] && [ ! -f "$CONF/$DOMAIN/nodejs-app.conf" ]; then
-  say "nginx upstream include -> 127.0.0.1:$PORT"
-  if [ $CHECK = 0 ]; then
-    mkdir -p "$CONF/$DOMAIN"
-    for f in "$CONF/auth.vesopa.com"/*.conf; do
-      sed -E "s/127\.0\.0\.1:[0-9]+/127.0.0.1:$PORT/g; s/localhost:[0-9]+/127.0.0.1:$PORT/g; s/auth\.vesopa\.com/$DOMAIN/g" "$f" > "$CONF/$DOMAIN/$(basename "$f")"
-    done
-    chown -R "$APPUSER:$APPUSER" "$CONF/$DOMAIN"
+# The NodeJS template reads the upstream from a per-domain include,
+# /home/<user>/conf/web/<domain>/nodeapp.conf (found on the live box
+# 2026-09-27). Model it on auth.vesopa.com's, with our port.
+CONF=/home/$APPUSER/conf/web
+if [ -f "$CONF/auth.vesopa.com/nodeapp.conf" ]; then
+  if ! grep -qs "127.0.0.1:$PORT" "$CONF/$DOMAIN/nodeapp.conf"; then
+    say "nginx include $CONF/$DOMAIN/nodeapp.conf -> 127.0.0.1:$PORT"
+    if [ $CHECK = 0 ]; then
+      mkdir -p "$CONF/$DOMAIN"
+      sed -E "s/127\.0\.0\.1:[0-9]+/127.0.0.1:$PORT/g; s/localhost:[0-9]+/127.0.0.1:$PORT/g; s/auth\.vesopa\.com/$DOMAIN/g" \
+        "$CONF/auth.vesopa.com/nodeapp.conf" > "$CONF/$DOMAIN/nodeapp.conf"
+    fi
   fi
-elif [ ! -d "$CONF/auth.vesopa.com" ]; then
-  warn "no $CONF/auth.vesopa.com to model the nginx include on: check how auth.vesopa.com reaches its port and do the same for $PORT"
+else
+  warn "no $CONF/auth.vesopa.com/nodeapp.conf to model the nginx include on: point $DOMAIN at 127.0.0.1:$PORT by hand"
 fi
 
 # ------------------------------------------------------------------ certificate
@@ -181,9 +182,9 @@ for i in 1 2; do mysql -h127.0.0.1 -u"$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" < sc
 ok "schema applied twice"
 
 if pm2u "describe $DOMAIN" >/dev/null 2>&1; then
-  pm2u "restart $DOMAIN --update-env" >/dev/null && ok "restarted $DOMAIN"
+  su - "$APPUSER" -c "cd $APP && PORT=$PORT PM2_HOME=/home/$APPUSER/.pm2 pm2 restart $DOMAIN --update-env" >/dev/null && ok "restarted $DOMAIN"
 else
-  pm2u "start $APP/src/server.js --name $DOMAIN --cwd $APP --max-memory-restart 300M" >/dev/null && ok "started $DOMAIN"
+  su - "$APPUSER" -c "cd $APP && PORT=$PORT PM2_HOME=/home/$APPUSER/.pm2 pm2 start $APP/src/server.js --name $DOMAIN --cwd $APP --max-memory-restart 300M" >/dev/null && ok "started $DOMAIN"
   pm2u save >/dev/null
 fi
 
