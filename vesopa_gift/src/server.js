@@ -21,6 +21,7 @@ const crypto = require('crypto');
 const express = require('express');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
+const { createActivityLog } = require('./activity_log');
 
 const config = require('./config');
 const { headers } = require('./security');
@@ -44,6 +45,24 @@ app.use(headers);
 app.use(express.urlencoded({ extended: false, limit: '200kb' }));
 app.use(express.json({ limit: '50kb' }));
 app.use(cookieParser());
+
+// The activity log: every change and every failure, written to
+// logs/activity/*.jsonl and kept 30 days. See src/activity_log.js.
+const activityLog = createActivityLog({
+  service: 'vesopa_gift',
+  dir: process.env.ACTIVITY_LOG_DIR || path.join(__dirname, '..', 'logs', 'activity'),
+});
+app.use(activityLog.middleware({
+  identify: (req) => ({
+    app: 'gift',
+    office: req.venue ? String(req.venue.slug || req.venue.office_id) : null,
+    actor: (req.session && req.session.email) || (req.account && req.account.email)
+      || (req.body && typeof req.body.email === 'string' ? req.body.email : null),
+    actorType: req.session ? 'staff' : req.account ? 'customer' : 'visitor',
+    customerId: req.account && req.account.id ? String(req.account.id) : null,
+  }),
+}));
+activityLog.startMaintenance();
 
 /**
  * Every local asset URL carries a hash of the file it names, computed at boot.

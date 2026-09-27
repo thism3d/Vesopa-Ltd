@@ -7213,3 +7213,19 @@ body.dash-dragging, body.dash-dragging * { cursor: grabbing !important; user-sel
 }
 .dash-widget-tools button:hover:not(:disabled) { border-color: var(--brand); }
 .dash-widget-tools button:disabled { opacity: .4; cursor: default; }
+
+/* ---- Activity Log -------------------------------------------------------- */
+.activity-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 10px 14px;
+  align-items: end;
+}
+.activity-filters label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.activity-filters label.check { flex-direction: row; align-items: center; gap: 6px; }
+.activity-table td { vertical-align: top; }
+.activity-table .activity-detail {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px; white-space: pre-wrap; word-break: break-word; max-width: 420px;
+}
+.activity-table tr.is-problem td:first-child { box-shadow: inset 3px 0 0 #b3261e; }

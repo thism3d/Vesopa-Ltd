@@ -30,7 +30,7 @@ const SLUG = /^[a-z0-9](?:[a-z0-9-]{1,62}[a-z0-9])?$/;
 // /wallet/c/ and /wallet/s/ are a member's own card as an Apple or Google Wallet
 // pass: the app hands out a short-lived link on this name (loyalty_app.js,
 // /loyalty/v1/me/wallet) rather than sending anybody to the back office's.
-const PASS = ['/loyalty/v1/', '/privacy/v1/', '/uploads/', '/assets/', '/app/vesopa/', '/wallet/c/', '/wallet/s/'];
+const PASS = ['/activity/v1/', '/loyalty/v1/', '/privacy/v1/', '/uploads/', '/assets/', '/app/vesopa/', '/wallet/c/', '/wallet/s/'];
 
 /** Words no venue may take as its address, because the paths above use them. */
 const RESERVED = new Set([

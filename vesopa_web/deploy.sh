@@ -142,6 +142,8 @@ EXCLUDES=(
   # whole site down.
   --exclude '.env' --exclude '.env.*'
   --exclude '*.log'
+  # The activity log (src/activity_log.js); --delete would wipe it.
+  --exclude 'logs'
   --exclude 'backup'
   # The Windows installer and the Android APK the /download page links to are
   # uploaded to the server directly — they are build artefacts, far too large to

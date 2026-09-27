@@ -161,6 +161,9 @@ EXCLUDES=(
   # local ones. Overwriting this file takes the whole back office down.
   --exclude '.env' --exclude '.env.*'
   --exclude '*.log'
+  # The activity log (src/activity_log.js). It exists only on the server, and
+  # --delete would otherwise wipe it on every deploy.
+  --exclude 'logs'
   # Logos and product images uploaded through the back office. They exist only
   # on the server, so syncing over them deletes every venue's branding.
   --exclude 'public/uploads'

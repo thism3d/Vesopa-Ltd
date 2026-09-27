@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'activity_log.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../main.dart';
@@ -96,6 +97,7 @@ class StaffSessionController extends Notifier<StaffSession> {
   void signOn(StaffData who) {
     _lastActivity = DateTime.now();
     state = StaffSession(staff: who, idle: false);
+    ActivityLog.instance.signedIn(who.name);
     _restartTicker();
   }
 
@@ -118,6 +120,7 @@ class StaffSessionController extends Notifier<StaffSession> {
   /// till would be stuck behind a pad nobody can satisfy — which is exactly what
   /// happened on a till commissioned before the terminal token existed.
   void signOff() {
+    if (state.staff != null) ActivityLog.instance.signedOut();
     state = StaffSession(staff: null, idle: _requirePin && _canVerify);
     _ticker?.cancel();
   }

@@ -18,6 +18,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/activity_log.dart';
 import '../data/order_flow.dart';
 import '../data/session.dart';
 import 'pages/ordering.dart';
@@ -34,16 +35,20 @@ class ExpressApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final accent = ref.watch(kioskSessionProvider.select((s) => s.config?.accent)) ?? Xp.lime;
     final contrast = ref.watch(orderFlowProvider.select((f) => f.contrast));
+    // The activity log sends with the kiosk's own token, read at send time.
+    final api = ref.watch(apiProvider);
+    ActivityLog.instance.token = () => api.token;
     return MaterialApp(
       title: 'Vesopa Express',
       debugShowCheckedModeBanner: false,
       theme: Xp.theme(contrast: contrast, accent: accent),
+      navigatorObservers: [ActivityLog.instance.observer],
       // Type is sized for a kiosk read at arm's length. A Windows display scale
       // set for somebody's desktop must not reflow it past what fits.
-      builder: (context, child) => MediaQuery.withClampedTextScaling(
+      builder: (context, child) => ActivityLog.instance.wrap(MediaQuery.withClampedTextScaling(
         maxScaleFactor: 1.25,
         child: child ?? const SizedBox.shrink(),
-      ),
+      )),
       home: const KioskShell(),
     );
   }

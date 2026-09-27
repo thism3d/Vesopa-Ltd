@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'config/constants.dart';
+import 'data/activity_log.dart';
 import 'data/kitchen_branding.dart';
 import 'data/providers.dart';
 import 'ui/kitchen_shell.dart';
@@ -48,8 +49,16 @@ Future<void> _lockWindowToKiosk() async {
   );
 }
 
+/// This build's version, for the activity log. Keep in step with pubspec.yaml.
+const kitchenAppVersion = '1.7.1.0';
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // The activity log: taps, screens and errors, to a local file and to the
+  // back office's Activity Log. See data/activity_log.dart.
+  ActivityLog.instance
+    ..configure(app: 'kitchen', appVersion: kitchenAppVersion, apiBase: Api.base)
+    ..installErrorHandlers();
   await _lockWindowToKiosk();
   runApp(const ProviderScope(child: VesopaKitchenApp()));
 }
@@ -85,6 +94,15 @@ class _VesopaKitchenAppState extends ConsumerState<VesopaKitchenApp> {
     // is no venue yet to be branded as.
     final branding = session.value?.branding ?? KitchenBranding.standard;
 
+    // The activity log sends with this screen's own token, read at send time.
+    final activityToken = session.value?.token;
+    ActivityLog.instance
+      ..token = (() => activityToken)
+      ..actor = session.value?.userName
+      ..deviceName = session.value?.screenId == null
+          ? 'Kitchen screen'
+          : 'Kitchen screen ${session.value!.screenId}';
+
     return MaterialApp(
       title: VesopaBrand.appName,
       debugShowCheckedModeBanner: false,
@@ -93,7 +111,8 @@ class _VesopaKitchenAppState extends ConsumerState<VesopaKitchenApp> {
       theme: Kds.theme(),
       darkTheme: Kds.theme(brightness: Brightness.dark),
       themeMode: ref.watch(kdsThemeProvider).value ?? ThemeMode.light,
-      builder: (context, child) => MediaQuery.withNoTextScaling(
+      navigatorObservers: [ActivityLog.instance.observer],
+      builder: (context, child) => ActivityLog.instance.wrap(MediaQuery.withNoTextScaling(
         // The board's type sizes are chosen for a specific reading distance —
         // see `ui/theme.dart` — and a Windows display scale set for somebody's
         // desktop would reflow a card mid-service into something that no longer
@@ -111,7 +130,7 @@ class _VesopaKitchenAppState extends ConsumerState<VesopaKitchenApp> {
               ),
           ],
         ),
-      ),
+      )),
       home: session.when(
         // Only ever seen for the instant it takes to read the stored session
         // off disk — and, on a normal launch, seen behind the start screen

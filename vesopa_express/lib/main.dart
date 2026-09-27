@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'config/constants.dart';
+import 'data/activity_log.dart';
 import 'platform/kiosk_window.dart';
 import 'ui/app.dart';
 
@@ -12,6 +14,11 @@ import 'ui/app.dart';
 /// passcode, and leave from there.
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // The activity log: taps, screens and errors, to a local file and to the
+  // back office's Activity Log. See data/activity_log.dart.
+  ActivityLog.instance
+    ..configure(app: 'express', appVersion: ExpressConfig.version, apiBase: ExpressConfig.resolvedBase)
+    ..installErrorHandlers();
   await KioskWindow.lock();
   runApp(const ProviderScope(child: ExpressApp()));
 }

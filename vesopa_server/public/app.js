@@ -351,6 +351,7 @@ const ROUTES = {
   wallet: '/wallet',
   loyalty_app: '/loyalty-app',
   devices: '/devices',
+  activity_log: '/activity-log',
   gym: '/gym',
   // Added when the reachability check above found it missing. Price Levels has
   // had a nav button, a section and a loader since 1.6.9.0 and no URL, so the
@@ -413,6 +414,9 @@ function show(view, { push = true, userInitiated = false } = {}) {
   // which on a slow connection is a button that appears not to work, and which
   // is exactly what was reported.
   currentView = view;
+  // For the Activity Log. In a try: this can run before the tracker's own
+  // declarations further down have been evaluated.
+  try { boTrack('screen', view); } catch { /* not ready yet */ }
 
   const path = ROUTES[view] || '/dashboard';
   if (push && location.pathname !== path) {
@@ -1355,6 +1359,7 @@ const VIEW_LOADERS = {
     wallet: loadWallet,
     loyalty_app: loadLoyaltyApp,
     devices: loadDevices,
+    activity_log: loadActivity,
     tender: loadTender,
     rules: loadRules,
     templates: loadTemplates,
@@ -11430,6 +11435,204 @@ document.addEventListener('click', async (e) => {
     await api('/devices/' + encodeURIComponent(forget), { method: 'DELETE' });
     loadDevices();
   }
+});
+
+// ---- Activity Log ---------------------------------------------------------
+//
+// Every tap, screen and change from every app, for fault finding. The rows come
+// from /api/activity (src/activity.js), already scoped to this venue; the
+// Vesopa admin also gets a venue picker. Nothing secret is in them: the server
+// redacts passwords, PINs, tokens and card numbers before they are stored.
+
+let activityRows = [];
+let activityFacetsFor = null;
+
+const ACTIVITY_APPS = {
+  epos: 'Till', kitchen: 'Kitchen', display: 'Display', express: 'Kiosk',
+  loyalty: 'Loyalty app', backoffice: 'Back office', server: 'Server',
+};
+
+function activityQuery(extra = {}) {
+  const v = (id) => ($(id) ? $(id).value.trim() : '');
+  const params = new URLSearchParams();
+  const put = (k, val) => { if (val) params.set(k, val); };
+  put('office', v('activity-office'));
+  put('app', v('activity-app'));
+  put('device_id', v('activity-device'));
+  put('action', v('activity-action'));
+  put('actor', v('activity-actor'));
+  put('customer_id', v('activity-customer'));
+  put('q', v('activity-q'));
+  put('from', v('activity-from'));
+  put('to', v('activity-to'));
+  if ($('activity-errors') && $('activity-errors').checked) params.set('errors', '1');
+  for (const [k, val] of Object.entries(extra)) put(k, String(val));
+  return params.toString();
+}
+
+async function loadActivityFacets() {
+  const office = $('activity-office') ? $('activity-office').value : '';
+  if (activityFacetsFor === office) return;
+  activityFacetsFor = office;
+  let facets;
+  try {
+    facets = await api('/activity/facets' + (office ? '?office=' + encodeURIComponent(office) : ''));
+  } catch (e) {
+    return;
+  }
+  const officeSel = $('activity-office');
+  if (facets.offices && facets.offices.length && officeSel.options.length <= 1) {
+    $('activity-office-wrap').hidden = false;
+    officeSel.innerHTML = '<option value="">Every venue</option>'
+      + facets.offices.map((o) => `<option value="${esc(o)}">${esc(o)}</option>`).join('');
+    officeSel.value = office;
+  }
+  const deviceSel = $('activity-device');
+  const keep = deviceSel.value;
+  deviceSel.innerHTML = '<option value="">Every device</option>'
+    + (facets.devices || []).map((d) => `<option value="${esc(d.device_id)}">`
+      + `${esc(d.device_name || d.device_id)} (${esc(ACTIVITY_APPS[d.app] || d.app || '')})</option>`).join('');
+  deviceSel.value = keep;
+}
+
+function activityDetail(text) {
+  if (!text) return '';
+  try {
+    const parsed = JSON.parse(text);
+    return JSON.stringify(parsed, null, 1);
+  } catch {
+    return text;
+  }
+}
+
+function renderActivity() {
+  const rows = activityRows;
+  const showVenue = !$('activity-office-wrap').hidden && !$('activity-office').value;
+  $('activity-list').innerHTML = rows.length
+    ? '<table class="table activity-table"><thead><tr><th>When</th>'
+      + (showVenue ? '<th>Venue</th>' : '')
+      + '<th>App / device</th><th>Who</th><th>What</th><th>Detail</th></tr></thead><tbody>'
+      + rows.map((r) => {
+        const problem = r.action === 'error' || (r.status && r.status >= 400);
+        const what = (r.method ? esc(r.method) + ' ' : '') + esc(r.target || '')
+          + (r.status ? ` <span class="small muted">${esc(r.status)}${r.ms != null ? ' · ' + esc(r.ms) + 'ms' : ''}</span>` : '');
+        const detail = activityDetail(r.detail);
+        return `<tr class="${problem ? 'is-problem' : ''}">`
+          + '<td class="small muted">' + new Date(r.at).toLocaleString('en-GB') + '</td>'
+          + (showVenue ? '<td class="small">' + esc(r.office || '—') + '</td>' : '')
+          + '<td><b>' + esc(ACTIVITY_APPS[r.app] || r.app || '—') + '</b>'
+          + (r.app_version ? ' <span class="small muted">' + esc(r.app_version) + '</span>' : '')
+          + (r.device_name || r.device_id ? '<br><span class="small muted">' + esc(r.device_name || r.device_id) + '</span>' : '')
+          + '</td>'
+          + '<td>' + esc(r.actor || '—')
+          + (r.customer_id ? '<br><span class="small muted">Customer ' + esc(r.customer_id) + '</span>' : '')
+          + '</td>'
+          + '<td><span class="pill">' + esc(r.action) + '</span> ' + what + '</td>'
+          + '<td>' + (detail
+            ? (detail.length > 120
+              ? '<details><summary class="small">' + esc(detail.slice(0, 80)) + '…</summary>'
+                + '<div class="activity-detail">' + esc(detail) + '</div></details>'
+              : '<div class="activity-detail">' + esc(detail) + '</div>')
+            : '') + '</td>'
+          + '</tr>';
+      }).join('')
+      + '</tbody></table>'
+    : '<p class="muted small">Nothing recorded for these filters yet.</p>';
+}
+
+async function loadActivity({ more = false } = {}) {
+  await loadActivityFacets();
+  const extra = more && activityRows.length ? { before_id: activityRows[activityRows.length - 1].id } : {};
+  let data;
+  try {
+    data = await api('/activity?' + activityQuery(extra));
+  } catch (e) {
+    $('activity-list').innerHTML = `<p class="muted small">${esc(e.message)}</p>`;
+    return;
+  }
+  activityRows = more ? activityRows.concat(data.rows) : data.rows;
+  $('activity-more').hidden = !data.more;
+  renderActivity();
+}
+
+{
+  let timer = null;
+  const refilter = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => loadActivity(), 250);
+  };
+  document.addEventListener('input', (e) => {
+    if (e.target.closest && e.target.closest('#activity-filters')) {
+      if (e.target.id === 'activity-office') activityFacetsFor = null;
+      refilter();
+    }
+  });
+  document.addEventListener('submit', (e) => {
+    if (e.target.id === 'activity-filters') { e.preventDefault(); loadActivity(); }
+  });
+  document.addEventListener('click', async (e) => {
+    if (e.target.id === 'activity-refresh') return loadActivity();
+    if (e.target.id === 'activity-more') return loadActivity({ more: true });
+    if (e.target.id === 'activity-csv') {
+      // Fetched rather than linked: the session token is a header, not a cookie.
+      try {
+        const res = await fetch('/api/activity.csv?' + activityQuery(), {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (!res.ok) throw new Error(res.statusText);
+        const url = URL.createObjectURL(await res.blob());
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `activity-${new Date().toISOString().slice(0, 10)}.csv`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    }
+  });
+}
+
+// ---- Back office's own activity --------------------------------------------
+//
+// The server already writes a line for every change made here. These add the
+// pages opened and the buttons pressed, so "what did they click before it went
+// wrong" has an answer. Batched and sent every few seconds; a failure is dropped.
+
+const boActivity = [];
+let boActivityTimer = null;
+
+function boTrack(action, target, detail) {
+  if (!token) return;
+  boActivity.push({ at: new Date().toISOString(), action, target: String(target || '').slice(0, 200), detail });
+  if (boActivity.length > 200) boActivity.splice(0, boActivity.length - 200);
+  if (!boActivityTimer) boActivityTimer = setTimeout(boFlush, 5000);
+}
+
+function boFlush(useBeacon = false) {
+  clearTimeout(boActivityTimer);
+  boActivityTimer = null;
+  if (!token || !boActivity.length) return;
+  const events = boActivity.splice(0, boActivity.length);
+  const body = JSON.stringify({ app: 'backoffice', events });
+  fetch('/activity/v1/events', {
+    method: 'POST',
+    keepalive: useBeacon,
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body,
+  }).catch(() => {});
+}
+
+document.addEventListener('click', (e) => {
+  const el = e.target.closest && e.target.closest('button, a, [role="button"], .nav, summary');
+  if (!el) return;
+  const label = (el.getAttribute('aria-label') || el.textContent || el.title || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+  if (!label) return;
+  boTrack('tap', label, { view: currentView, id: el.id || undefined });
+}, true);
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') boFlush(true);
 });
 
 // ---- Tender & gratuity ----------------------------------------------------

@@ -25,6 +25,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
 
+import 'data/activity_log.dart';
 import 'data/deep_links.dart';
 import 'data/screens.dart';
 import 'data/settings.dart';
@@ -38,6 +39,9 @@ import 'ui/theme.dart';
 /// from a browser starts this application with that URI as an argument.
 ///
 /// See `data/deep_links.dart` for the scheme and why it is reverse DNS.
+/// This build's version, for the activity log. Keep in step with pubspec.yaml.
+const displayAppVersion = '1.6.14.0';
+
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -45,6 +49,14 @@ Future<void> main(List<String> args) async {
   // one somebody is setting up right now, so it opens with its settings in
   // front of them rather than with whatever it happened to be showing.
   final fromLink = launchedByLink(args);
+
+  // The activity log: taps, screens and errors. Local file only
+  // (%LOCALAPPDATA%\Vesopa\display\logs): this screen has no network
+  // capability, deliberately, so nothing is sent anywhere. See
+  // data/activity_log.dart.
+  ActivityLog.instance
+    ..configure(app: 'display', appVersion: displayAppVersion)
+    ..installErrorHandlers();
 
   // The advert player's own decoder, before anything can ask it to play. It is
   // bundled rather than borrowed from Windows — see `ui/advert_panel.dart` for
@@ -112,6 +124,8 @@ class VesopaDisplayApp extends StatelessWidget {
     title: 'Vesopa Customer Display',
     debugShowCheckedModeBanner: false,
     theme: buildDisplayTheme(),
+    navigatorObservers: [ActivityLog.instance.observer],
+    builder: (context, child) => ActivityLog.instance.wrap(child ?? const SizedBox.shrink()),
     // One theme, not a light and a dark one. See ui/theme.dart: this screen
     // faces a customer across a counter and a white panel at that distance is
     // a lamp pointed at them.

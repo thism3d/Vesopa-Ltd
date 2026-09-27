@@ -66,6 +66,7 @@ const NAV_PERMISSION = {
   idle: 'programming.till_printers',
   kitchen: 'programming.kitchen',
   devices: 'programming.devices',
+  activity_log: 'programming.activity_log',
   tables: 'floor.tables',
   users: 'people.users',
   user_roles: 'people.roles',

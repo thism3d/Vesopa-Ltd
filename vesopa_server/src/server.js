@@ -78,6 +78,8 @@ const { notFoundPage } = require('./not_found');
 const { expressKioskRoutes } = require('./express_kiosk');
 const { walletPageRoutes } = require('./wallet_pages');
 const { giftIntegrationRoutes } = require('./gift_integration');
+const { createActivityLog } = require('./activity_log');
+const { activityRoutes, skipActivity } = require('./activity');
 
 const PORT = process.env.PORT || 4000;
 
@@ -154,6 +156,19 @@ app.use(express.json({
   limit: '1mb',
   verify: (req, _res, buf) => { req.rawBody = buf; },
 }));
+
+// The activity log: every change and every failure on this server, and what
+// the apps send to /activity/v1/events, written to logs/activity/*.jsonl and to
+// epos_activity_log for the back office's Activity Log page. See activity.js.
+const activityLog = createActivityLog({
+  service: 'vesopa_server',
+  dir: process.env.ACTIVITY_LOG_DIR || path.join(__dirname, '..', 'logs', 'activity'),
+  pool,
+});
+const activity = activityRoutes({ pool, secret: JWT_SECRET, log: activityLog });
+app.use(activityLog.middleware({ identify: activity.identify, skip: skipActivity }));
+app.use(activity.router);
+activityLog.startMaintenance();
 
 const clients = new Set();
 
@@ -2087,6 +2102,7 @@ app.get(
 
 app.use((err, _req, res, _next) => {
   console.error(err);
+  res.locals.activityError = err && err.message;
   res.status(500).json({ error: 'internal error' });
 });
 

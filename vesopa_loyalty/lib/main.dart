@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'data/activity_log.dart';
 import 'data/api.dart';
 import 'data/session.dart';
 import 'ui/home.dart';
@@ -14,8 +15,17 @@ import 'ui/venue_picker.dart';
 /// -- is read from the back office when the app opens (Loyalty App in the back
 /// office), so a venue's app is theirs without a build of its own. See
 /// data/session.dart for how the app knows which venue it is.
+/// This build's version, for the activity log. Keep in step with pubspec.yaml.
+const loyaltyAppVersion = '1.0.7.0';
+
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  // The activity log: taps, screens and errors, to the back office's Activity
+  // Log once the customer is signed in (and to a local file off the web). The
+  // server fills in the venue and the customer from the sign-in token.
+  ActivityLog.instance
+    ..configure(app: 'loyalty', appVersion: loyaltyAppVersion)
+    ..installErrorHandlers();
   runApp(const ProviderScope(child: LoyaltyApp()));
 }
 
@@ -58,12 +68,22 @@ class LoyaltyApp extends ConsumerWidget {
           onRetry: () => ref.invalidate(brandProvider),
         ),
       ),
-      data: (b) => MaterialApp(
-        title: b.name,
-        debugShowCheckedModeBanner: false,
-        theme: b.theme(),
-        home: const _Gate(),
-      ),
+      data: (b) {
+        // Sent with the customer's own token, read at send time, to the same
+        // server the app already talks to.
+        final api = ref.watch(apiProvider);
+        ActivityLog.instance
+          ..apiBase = api.base
+          ..token = (() => api.token);
+        return MaterialApp(
+          title: b.name,
+          debugShowCheckedModeBanner: false,
+          theme: b.theme(),
+          navigatorObservers: [ActivityLog.instance.observer],
+          builder: (context, child) => ActivityLog.instance.wrap(child ?? const SizedBox.shrink()),
+          home: const _Gate(),
+        );
+      },
     );
   }
 }

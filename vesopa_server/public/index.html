@@ -340,6 +340,7 @@
           <button class="nav" data-view="idle">Till &amp; Printers</button>
           <button class="nav" data-view="kitchen">Kitchen Screens</button>
           <button class="nav" data-view="devices">Devices</button>
+          <button class="nav" data-view="activity_log">Activity Log</button>
 
           <button class="nav-group" data-group="floor">Floor<span class="caret">▼</span></button>
           <button class="nav" data-view="tables">Table Designer</button>
@@ -3660,6 +3661,75 @@
               point of keeping it.
             </p>
             <div id="devices-log"></div>
+          </div>
+        </section>
+
+        <!-- Activity Log: every tap, screen and change from every app, for
+             fault finding. Written by src/activity.js. -->
+        <section id="view-activity_log" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Activity Log</h2>
+              <p class="muted small">
+                What was pressed and changed on every till, kitchen screen,
+                kiosk, loyalty app and in this back office, newest first.
+                Passwords, PINs and card details are never recorded. Kept for
+                90 days.
+              </p>
+            </div>
+            <div class="row">
+              <button class="btn" id="activity-csv">Download CSV</button>
+              <button class="btn" id="activity-refresh">Refresh</button>
+            </div>
+          </div>
+          <div class="card rd-card">
+            <form id="activity-filters" class="activity-filters">
+              <label id="activity-office-wrap" hidden>Venue
+                <select id="activity-office"><option value="">Every venue</option></select>
+              </label>
+              <label>App
+                <select id="activity-app">
+                  <option value="">Every app</option>
+                  <option value="epos">Till (EPOS)</option>
+                  <option value="kitchen">Kitchen screen</option>
+                  <option value="display">Customer display</option>
+                  <option value="express">Express kiosk</option>
+                  <option value="loyalty">Loyalty app</option>
+                  <option value="backoffice">Back office</option>
+                  <option value="server">Server</option>
+                </select>
+              </label>
+              <label>Device
+                <select id="activity-device"><option value="">Every device</option></select>
+              </label>
+              <label>What
+                <select id="activity-action">
+                  <option value="">Everything</option>
+                  <option value="tap">Taps</option>
+                  <option value="screen">Screens opened</option>
+                  <option value="change">Changes</option>
+                  <option value="signin">Sign-ins</option>
+                  <option value="error">Errors</option>
+                  <option value="start">App starts</option>
+                </select>
+              </label>
+              <label>Person
+                <input id="activity-actor" type="search" placeholder="Name or email" />
+              </label>
+              <label>Customer no.
+                <input id="activity-customer" type="search" placeholder="Customer id" />
+              </label>
+              <label>Search
+                <input id="activity-q" type="search" placeholder="Button, page or detail" />
+              </label>
+              <label>From <input id="activity-from" type="date" /></label>
+              <label>To <input id="activity-to" type="date" /></label>
+              <label class="check"><input id="activity-errors" type="checkbox" /> Only problems</label>
+            </form>
+          </div>
+          <div class="card rd-card">
+            <div id="activity-list"></div>
+            <p class="center"><button class="btn" id="activity-more" hidden>Show older</button></p>
           </div>
         </section>
 

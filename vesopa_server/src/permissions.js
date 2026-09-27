@@ -158,6 +158,7 @@ const BACKOFFICE_PERMISSIONS = [
       { key: 'programming.till_printers', label: 'Till & Printers' },
       { key: 'programming.kitchen', label: 'Kitchen Screens' },
       { key: 'programming.devices', label: 'Devices' },
+      { key: 'programming.activity_log', label: 'Activity Log' },
       { key: 'programming.edit', label: 'Change programming' },
     ],
   },

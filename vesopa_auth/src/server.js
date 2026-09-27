@@ -15,6 +15,7 @@ const path = require('path');
 const express = require('express');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
+const { createActivityLog } = require('./activity_log');
 
 const config = require('./config');
 const db = require('./db');
@@ -61,6 +62,24 @@ app.use(securityHeaders);
 app.use(cookieParser());
 app.use(express.urlencoded({ extended: false, limit: '32kb' }));
 app.use(express.json({ limit: '32kb' }));
+
+// The activity log: every form posted and every failure, written to
+// logs/activity/*.jsonl and kept 30 days. Sign-ins and account changes also
+// keep their own tables (events.js); this is the request-level trail beside
+// them. Passwords, codes and tokens are redacted by src/activity_log.js.
+const activityLog = createActivityLog({
+  service: 'vesopa_auth',
+  dir: process.env.ACTIVITY_LOG_DIR || path.join(__dirname, '..', 'logs', 'activity'),
+});
+app.use(activityLog.middleware({
+  identify: (req) => ({
+    app: 'auth',
+    actor: req.body && typeof req.body.email === 'string' ? req.body.email
+      : req.body && typeof req.body.identifier === 'string' ? req.body.identifier : null,
+    actorType: 'user',
+  }),
+}));
+activityLog.startMaintenance();
 app.use(requestContext);
 /*
  * The CSRF token is issued on every request, not only on the ones that render a

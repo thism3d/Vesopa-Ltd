@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'config/constants.dart';
+import 'data/activity_log.dart';
 import 'data/bill_sync.dart';
 import 'data/fonts.dart';
 import 'data/auth_service.dart';
@@ -999,6 +1000,13 @@ Future<void> main() async {
   // rule is not negotiable.
   final repair = await repairStorageIfNeeded();
 
+  // The activity log: taps, screens, sign-ins and errors, to a local file and
+  // to the back office's Activity Log. See data/activity_log.dart.
+  ActivityLog.instance
+    ..configure(app: 'epos', appVersion: VesopaBrand.appVersion, apiBase: Api.base)
+    ..installErrorHandlers();
+  unawaited(terminalDeviceId().then((id) => ActivityLog.instance.deviceId = id).catchError((_) => ''));
+
   await _lockWindowToKiosk();
   runApp(
     ProviderScope(
@@ -1130,10 +1138,16 @@ class _VesopaEposAppState extends ConsumerState<VesopaEposApp> {
 
     final venueFont = ref.watch(venueFontFamilyProvider);
 
+    // The activity log sends with the terminal's own token, read at send time.
+    final activityToken = current?.terminalToken;
+    ActivityLog.instance.token = () => activityToken;
+
     return MaterialApp(
       title: 'VesopaEPOS',
       navigatorKey: _rootNavigator,
       debugShowCheckedModeBanner: false,
+      navigatorObservers: [ActivityLog.instance.observer],
+      builder: (context, child) => ActivityLog.instance.wrap(child ?? const SizedBox.shrink()),
       // The venue's font, if it has chosen one and this terminal has it on
       // disk. Null until the list has loaded, which is the honest answer: the
       // alternative is lettering the whole till in the app's own typeface and

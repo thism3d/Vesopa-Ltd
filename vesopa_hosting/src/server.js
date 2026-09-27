@@ -6,6 +6,7 @@ const crypto = require('node:crypto');
 const express = require('express');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
+const { createActivityLog } = require('./activity_log');
 
 const config = require('./config');
 // Vesopa AI and Vesopa Studio: a key must be configured AND AI_FEATURES not
@@ -73,6 +74,23 @@ app.use(express.json({
   verify: (req, _res, buf) => { req.rawBody = buf; },
 }));
 app.use(cookieParser());
+
+// The activity log: every change and every failure, written to
+// logs/activity/*.jsonl and kept 30 days. See src/activity_log.js.
+const activityLog = createActivityLog({
+  service: 'vesopa_hosting',
+  dir: process.env.ACTIVITY_LOG_DIR || path.join(__dirname, '..', 'logs', 'activity'),
+});
+app.use(activityLog.middleware({
+  identify: (req) => ({
+    app: 'hosting',
+    actor: (req.admin && req.admin.email) || (req.customer && req.customer.email)
+      || (req.body && typeof req.body.email === 'string' ? req.body.email : null),
+    actorType: req.admin ? 'admin' : req.customer ? 'customer' : 'visitor',
+    customerId: req.customer ? String(req.customer.id) : null,
+  }),
+}));
+activityLog.startMaintenance();
 
 // ---------------------------------------------------------------------------
 // Security headers
