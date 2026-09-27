@@ -26,7 +26,11 @@ APPUSER=vesopasoftware
 W=/home/$APPUSER/web
 APP=$W/$DOMAIN/private/nodeapp
 AUTH=$W/auth.vesopa.com/private/nodeapp
-PORT=${METRIC_PORT:-5085}
+# The port Metric listens on. Its own name, never PORT: this script sources
+# .env files (Metric's, and Auth's on the same box, whose PORT is 20003), and a
+# plain PORT was overwritten by them, so pm2 restarts moved Metric onto Auth's
+# port and nginx answered 502 (2026-09-27). METRIC_PORT is the only override.
+readonly MPORT=${METRIC_PORT:-5085}
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CHECK=0; [ "${1:-}" = "--check" ] && CHECK=1
 export PATH=$PATH:/usr/local/hestia/bin
@@ -43,9 +47,9 @@ act()  { if [ $CHECK = 1 ]; then warn "would: $*"; else "$@"; fi; }
 [ -d "$AUTH" ] || die "auth.vesopa.com is not at $AUTH"
 
 # ------------------------------------------------------------------ port
-if ss -ltn | grep -q ":$PORT "; then
+if ss -ltn | grep -q ":$MPORT "; then
   if ! pm2u "describe $DOMAIN" >/dev/null 2>&1; then
-    die "port $PORT is taken by something else -- set METRIC_PORT"
+    die "port $MPORT is taken by something else -- set METRIC_PORT"
   fi
 fi
 
@@ -86,16 +90,16 @@ fi
 # 2026-09-27). Model it on auth.vesopa.com's, with our port.
 CONF=/home/$APPUSER/conf/web
 if [ -f "$CONF/auth.vesopa.com/nodeapp.conf" ]; then
-  if ! grep -qs "127.0.0.1:$PORT" "$CONF/$DOMAIN/nodeapp.conf"; then
-    say "nginx include $CONF/$DOMAIN/nodeapp.conf -> 127.0.0.1:$PORT"
+  if ! grep -qs "127.0.0.1:$MPORT" "$CONF/$DOMAIN/nodeapp.conf"; then
+    say "nginx include $CONF/$DOMAIN/nodeapp.conf -> 127.0.0.1:$MPORT"
     if [ $CHECK = 0 ]; then
       mkdir -p "$CONF/$DOMAIN"
-      sed -E "s/127\.0\.0\.1:[0-9]+/127.0.0.1:$PORT/g; s/localhost:[0-9]+/127.0.0.1:$PORT/g; s/auth\.vesopa\.com/$DOMAIN/g" \
+      sed -E "s/127\.0\.0\.1:[0-9]+/127.0.0.1:$MPORT/g; s/localhost:[0-9]+/127.0.0.1:$MPORT/g; s/auth\.vesopa\.com/$DOMAIN/g" \
         "$CONF/auth.vesopa.com/nodeapp.conf" > "$CONF/$DOMAIN/nodeapp.conf"
     fi
   fi
 else
-  warn "no $CONF/auth.vesopa.com/nodeapp.conf to model the nginx include on: point $DOMAIN at 127.0.0.1:$PORT by hand"
+  warn "no $CONF/auth.vesopa.com/nodeapp.conf to model the nginx include on: point $DOMAIN at 127.0.0.1:$MPORT by hand"
 fi
 
 # ------------------------------------------------------------------ certificate
@@ -151,7 +155,7 @@ if [ ! -f "$APP/.env" ]; then
   [ -n "${DBPASS:-}" ] || die "no .env and no new database password: set the .env by hand"
   cat > "$APP/.env" <<ENV
 NODE_ENV=production
-PORT=$PORT
+PORT=$MPORT
 BASE_URL=https://$DOMAIN
 DB_HOST=127.0.0.1
 DB_PORT=3306
@@ -165,6 +169,12 @@ METRIC_ADMIN_EMAILS=${METRIC_ADMIN_EMAILS:-info@vesopasoftware.com}
 METRIC_AUTO_APPROVE=false
 LOG_DIR=$APP/logs
 ENV
+fi
+# An .env from an earlier deploy may carry another app's PORT: make it Metric's.
+if grep -q '^PORT=' "$APP/.env"; then
+  grep -qx "PORT=$MPORT" "$APP/.env" || { sed -i "s/^PORT=.*/PORT=$MPORT/" "$APP/.env"; warn "corrected PORT in .env to $MPORT"; }
+else
+  echo "PORT=$MPORT" >> "$APP/.env"
 fi
 grep -q '^VESOPA_METRIC_CLIENT_ID=.\+' "$APP/.env" || sed -i "s/^VESOPA_METRIC_CLIENT_ID=.*/VESOPA_METRIC_CLIENT_ID=$CLIENT_ID/" "$APP/.env"
 chown -R "$APPUSER:$APPUSER" "$W/$DOMAIN/private"
@@ -182,14 +192,14 @@ for i in 1 2; do mysql -h127.0.0.1 -u"$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" < sc
 ok "schema applied twice"
 
 if pm2u "describe $DOMAIN" >/dev/null 2>&1; then
-  su - "$APPUSER" -c "cd $APP && PORT=$PORT PM2_HOME=/home/$APPUSER/.pm2 pm2 restart $DOMAIN --update-env" >/dev/null && ok "restarted $DOMAIN"
+  su - "$APPUSER" -c "cd $APP && PORT=$MPORT PM2_HOME=/home/$APPUSER/.pm2 pm2 restart $DOMAIN --update-env" >/dev/null && ok "restarted $DOMAIN"
 else
-  su - "$APPUSER" -c "cd $APP && PORT=$PORT PM2_HOME=/home/$APPUSER/.pm2 pm2 start $APP/src/server.js --name $DOMAIN --cwd $APP --max-memory-restart 300M" >/dev/null && ok "started $DOMAIN"
+  su - "$APPUSER" -c "cd $APP && PORT=$MPORT PM2_HOME=/home/$APPUSER/.pm2 pm2 start $APP/src/server.js --name $DOMAIN --cwd $APP --max-memory-restart 300M" >/dev/null && ok "started $DOMAIN"
   pm2u save >/dev/null
 fi
 
 v-restart-proxy >/dev/null 2>&1 || systemctl reload nginx || true
 sleep 4
-curl -fsS "http://127.0.0.1:$PORT/health" && echo
+curl -fsS "http://127.0.0.1:$MPORT/health" && echo
 curl -fsS "https://$DOMAIN/health" && echo || warn "https://$DOMAIN/health not answering yet (DNS or certificate)"
 ok "done"
