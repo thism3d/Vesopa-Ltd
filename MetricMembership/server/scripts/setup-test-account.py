@@ -1,18 +1,21 @@
 """The Microsoft Store testers' login for Metric Membership.
 
-    python MetricMembership/server/scripts/setup-test-account.py
+    python MetricMembership/server/scripts/setup-test-account.py [email] ["name"]
+
+The account defaults to staff@metricgroup.co.uk, "Alex Carter" (the owner,
+2026-09-27: "Create an account staff@metricgroup.co.uk ... Name 'Alex'").
 
 Run from the repository root on the machine that deploys (see deploy.py), with
 METRIC_TEST_PASSWORD in this machine's environment (or typed at the prompt).
 On the Cloud box it:
 
   1. copies create-person.js, set-password.js and subject-for.js into the live
-     Vesopa Auth, and makes metric-store-test@vesopasoftware.com a Vesopa
+     Vesopa Auth, and makes the account a Vesopa
      account with its address verified on the owner's word;
   2. sets its password. It goes to the box as a mode-600 file that
      set-password.js reads and this script deletes, never on a command line,
      and is never printed;
-  3. makes it an approved Metric member with two cars and a week of visits
+  3. makes it an approved Metric member with three cars and a week of visits
      (seed-test-member.js), ready before its first sign-in;
   4. adds it to METRIC_ADMIN_EMAILS in metric.vesopa.com's .env, so it opens
      the staff console at /admin too, and restarts the app.
@@ -30,8 +33,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from deploy import REPO, connect, vesopa_ssh  # noqa: E402
 
-EMAIL = "metric-store-test@vesopasoftware.com"
-NAME = "Metric Store Test"
+EMAIL = "staff@metricgroup.co.uk"
+NAME = "Alex Carter"
 W = "/home/vesopasoftware/web"
 AUTH = f"{W}/auth.vesopa.com/private/nodeapp"
 METRIC = f"{W}/metric.vesopa.com/private/nodeapp"
@@ -54,6 +57,13 @@ def output(client, cmd):
 
 
 def main():
+    global EMAIL, NAME
+    if len(sys.argv) > 1:
+        EMAIL = sys.argv[1].strip().lower()
+    if len(sys.argv) > 2:
+        NAME = sys.argv[2].strip()
+    if "'" in EMAIL + NAME or '"' in EMAIL + NAME or "@" not in EMAIL:
+        raise SystemExit("an email address and a name without quotes, please")
     password = os.environ.get("METRIC_TEST_PASSWORD")
     if password is None and sys.stdin.isatty():
         password = getpass.getpass(f"Password for {EMAIL}: ")

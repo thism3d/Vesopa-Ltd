@@ -65,13 +65,13 @@ const { normaliseEmail } = require('../src/normalise');
 /*
  * 2026-09-27: the owner asked for a staff test login for the Microsoft Store's
  * certification testers of Metric Membership, with a password he chose
- * (MetricMembership/server/scripts/setup-test-account.py).
+ * (MetricMembership/server/scripts/setup-test-account.py): staff@metricgroup.co.uk.
  */
 const ALLOWED = [
   'manager@vesopa.co.uk', 'nasim@vesopa.site', 'habib@vesopa.site',
   'dylan@vesopa.com', 'dylan@beaconsepos.com',
   'm.hammond@metricgroup.co.uk',
-  'metric-store-test@vesopasoftware.com',
+  'staff@metricgroup.co.uk',
 ];
 
 async function main() {
