@@ -614,7 +614,10 @@ async function loadStockDocs(kind) {
   const def = SK_DOC[kind];
   const host = $(`sk-docs-${kind}`);
   skActiveKind = kind;
-  await skLoadProducts();
+  // The case sizes too: every line of a document can change its product's
+  // case size (2026-09-24), so the dropdown needs the list.
+  const [, packs] = await Promise.all([skLoadProducts(), api('/stock/pack-sizes').catch(() => skPacks)]);
+  skPacks = packs || [];
   if (skOpen[kind]) return skRenderDocEditor(kind, skOpen[kind]);
   const docs = await api(`/stock/docs?kind=${kind}`);
   skHead(kind, def.title, def.blurb, `
@@ -658,14 +661,186 @@ function skNewDoc(kind) {
   return { id: null, kind, status: 'draft', notes: '', lines: [] };
 }
 
+// ---------------------------------------------------------------------------
+// Cases and units (2026-09-24)
+// ---------------------------------------------------------------------------
+//
+// "When doing a stock take or a wastage or an adjustment we need to be able to
+// add QTYs by either case size QTY or unit QTY." Every line has two boxes --
+// cases and units -- and what is saved is always units: cases x the case size
+// + units. A product with no case size (or a case of one) has the units box
+// only. The ledger never learns about cases; they are a way of typing.
+
+/** Units in one case of this product, or 1 when it has no real case. */
+const skPackUnits = (p) => (p && Number(p.pack_units) > 1 ? Number(p.pack_units) : 1);
+
+/**
+ * A unit count as whole cases and the units left over: 30 of a 24 is 1 and 6.
+ * Negative counts (an adjustment down) split the same way, both parts negative.
+ */
+function skSplitQty(quantity, packUnits) {
+  if (quantity === '' || quantity === null || quantity === undefined) return { cases: '', units: '' };
+  const q = Number(quantity);
+  if (!Number.isFinite(q)) return { cases: '', units: '' };
+  const pu = Number(packUnits) > 1 ? Number(packUnits) : 1;
+  if (pu === 1) return { cases: '', units: q };
+  const cases = Math.trunc(q / pu);
+  const units = Number((q - cases * pu).toFixed(4));
+  return { cases: cases || '', units: units || (cases ? '' : 0) };
+}
+
+/** Cases and units back to units; '' when both boxes are empty. */
+function skJoinQty(cases, units, packUnits) {
+  const c = String(cases ?? '').trim();
+  const u = String(units ?? '').trim();
+  if (c === '' && u === '') return '';
+  const pu = Number(packUnits) > 1 ? Number(packUnits) : 1;
+  const total = (c === '' ? 0 : Number(c)) * pu + (u === '' ? 0 : Number(u));
+  return Number.isFinite(total) ? Number(total.toFixed(4)) : NaN;
+}
+
+/** "1 case + 6" / "3 cases" / "6 units" -- how a count reads back. */
+function skQtyWords(quantity, p) {
+  const pu = skPackUnits(p);
+  const q = Number(quantity);
+  if (!Number.isFinite(q)) return '';
+  if (pu === 1) return `${skQty(q)} unit${Math.abs(q) === 1 ? '' : 's'}`;
+  const { cases, units } = skSplitQty(q, pu);
+  const bits = [];
+  if (cases) bits.push(`${skQty(cases)} case${Math.abs(cases) === 1 ? '' : 's'}`);
+  if (units || !cases) bits.push(`${skQty(units || 0)} unit${Math.abs(units) === 1 ? '' : 's'}`);
+  return bits.join(' + ');
+}
+
+/** A sub-department heading's words: "Bar › Draught". */
+const skGroupOf = (p) => `${(p && p.department_name) || 'Unassigned'}${p && p.group_name ? ` › ${p.group_name}` : ''}`;
+
+/**
+ * Keep a count in shelf order: department, sub-department, then name --
+ * "can we order them in sub departments" (2026-09-24). Wastage and
+ * adjustments stay in the order they were typed, which is what they are.
+ */
+function skSortLines(kind, doc) {
+  if (!SK_DOC[kind].counting) return;
+  const key = (l) => {
+    const p = skProduct(l.pluid) || {};
+    return [p.department_name || '￿', p.group_name || '￿', l.product_name || p.product_name || ''];
+  };
+  doc.lines.sort((a, b) => {
+    const ka = key(a);
+    const kb = key(b);
+    for (let i = 0; i < ka.length; i++) {
+      const c = String(ka[i]).localeCompare(String(kb[i]));
+      if (c) return c;
+    }
+    return 0;
+  });
+}
+
+function skDocCss() {
+  if (document.getElementById('sk-doc-css')) return;
+  const style = document.createElement('style');
+  style.id = 'sk-doc-css';
+  style.textContent = `
+    .sk-group-row th{background:var(--surface-2,#f6f7f2);text-align:left;font-size:.78rem;letter-spacing:.02em;text-transform:uppercase;color:var(--muted,#666);padding:8px 12px}
+    .sk-group-row th span{font-weight:500;text-transform:none;letter-spacing:0;margin-left:6px}
+    .sk-qty-pair{display:inline-flex;gap:6px;align-items:flex-end;justify-content:flex-end}
+    .sk-qty-pair label{display:flex;flex-direction:column;gap:2px;margin:0;font-size:.7rem;color:var(--muted,#777);font-weight:500;text-align:right}
+    .sk-qty-pair input{width:5.2em;text-align:right}
+    .sk-qty-pair input:disabled{opacity:.45}
+    .sk-qty-total{display:block;font-size:.72rem;color:var(--muted,#777);margin-top:3px;text-align:right;min-height:1em}
+    .sk-case-select{min-width:9em;max-width:14em}
+    .sk-neg{color:var(--red,#c0392b)}.sk-pos{color:var(--green,#2e7d32)}
+    .sk-find{position:relative}
+    .sk-suggest{position:absolute;left:0;right:0;top:100%;margin-top:4px;z-index:60;background:var(--card,#fff);color:var(--text,#17141c);border:1px solid var(--line,#ddd);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.14);max-height:340px;overflow:auto}
+    .sk-suggest[hidden]{display:none}
+    .sk-suggest-row{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--line,#f0f0f0)}
+    .sk-suggest-row:last-child{border-bottom:0}
+    .sk-suggest-row small{display:block;color:var(--muted,#777)}
+    .sk-suggest-row.on,.sk-suggest-row:hover{background:rgba(165,199,21,.14)}
+    .sk-suggest-empty{padding:14px;color:var(--muted,#777);text-align:center}
+    .sk-suggest-head{padding:6px 12px;font-size:.72rem;color:var(--muted,#777);background:var(--surface-2,#fafafa);position:sticky;top:0}
+  `;
+  document.head.appendChild(style);
+}
+
+// ---------------------------------------------------------------------------
+// The product box: suggestions as soon as it has focus (2026-09-24)
+// ---------------------------------------------------------------------------
+//
+// "I currently have to press ENTER on the add a product box for the products
+// to show. Can this show the products as soon as you click into the box." It
+// now opens a list on focus -- stock items first on a count -- that narrows as
+// you type. Click a row, or arrow to it and press Enter, and it is added and
+// the box is ready for the next one. Enter with nothing highlighted still does
+// what it always did (one match adds, several open the chooser).
+
+const SK_SUGGEST_MAX = 60;
+
+/** The rows a product box offers for what is typed. */
+function skSuggestions(typed, { exclude = [], stockFirst = false } = {}) {
+  const skip = new Set(exclude.map(Number));
+  const rows = skProducts.filter((p) => !skip.has(p.pluid) && skMatches(p, typed));
+  if (stockFirst) rows.sort((a, b) => Number(Boolean(b.stock_item)) - Number(Boolean(a.stock_item)));
+  return rows;
+}
+
+/** State of the one open suggestion list (there is only ever one box focused). */
+const skSuggestState = { box: null, list: null, rows: [], on: -1, onPick: null, opts: null };
+
+function skSuggestOpen(box, list, opts, onPick) {
+  skSuggestState.box = box;
+  skSuggestState.list = list;
+  skSuggestState.opts = opts;
+  skSuggestState.onPick = onPick;
+  skSuggestDraw();
+}
+
+function skSuggestDraw() {
+  const s = skSuggestState;
+  if (!s.box || !s.list) return;
+  const opts = typeof s.opts === 'function' ? s.opts() : s.opts;
+  const all = skSuggestions(s.box.value, opts);
+  s.rows = all.slice(0, SK_SUGGEST_MAX);
+  if (s.on >= s.rows.length) s.on = s.rows.length - 1;
+  const head = all.length > SK_SUGGEST_MAX
+    ? `<div class="sk-suggest-head">${all.length} match — showing ${SK_SUGGEST_MAX}. Keep typing, or use Choose products…</div>`
+    : `<div class="sk-suggest-head">${all.length} product${all.length === 1 ? '' : 's'}${s.box.value.trim() ? '' : ' — type to narrow'}</div>`;
+  s.list.innerHTML = s.rows.length
+    ? head + s.rows.map((p, i) => `
+      <div class="sk-suggest-row${i === s.on ? ' on' : ''}" data-sk-suggest="${p.pluid}" role="option" aria-selected="${i === s.on}">
+        <span><strong>${esc(p.product_name)}</strong><small>${esc(skGroupOf(p))} · PLU ${p.pluid}</small></span>
+        <span class="sk-pick-tag">${esc(skCaseLabel(p))}</span>
+      </div>`).join('')
+    : `<div class="sk-suggest-empty">Nothing matches “${esc(s.box.value.trim())}”.</div>`;
+  s.list.hidden = false;
+  const on = s.list.querySelector('.sk-suggest-row.on');
+  if (on) on.scrollIntoView({ block: 'nearest' });
+}
+
+function skSuggestClose() {
+  const s = skSuggestState;
+  if (s.list) s.list.hidden = true;
+  s.on = -1;
+}
+
+/** Pick a row: add it, empty the box, keep the list open for the next one. */
+function skSuggestPick(pluid) {
+  const s = skSuggestState;
+  const pick = s.onPick;
+  if (!pick) return;
+  pick(Number(pluid));
+}
+
 function skRenderDocEditor(kind, doc) {
   const def = SK_DOC[kind];
   const host = $(`sk-docs-${kind}`);
   const done = doc.status === 'completed';
+  skDocCss();
   const total = doc.lines.reduce((a, l) => {
     const cost = Number(l.unit_cost_minor) || 0;
     const q = def.counting ? Number(l.quantity) - Number(l.expected ?? l.current_stock ?? 0) : Number(l.quantity);
-    return a + (kind === 'wastage' ? -1 : 1) * q * cost;
+    return a + (kind === 'wastage' ? -1 : 1) * (Number.isFinite(q) ? q : 0) * cost;
   }, 0);
   skHead(
     kind,
@@ -682,7 +857,10 @@ function skRenderDocEditor(kind, doc) {
           <input type="text" id="sk-doc-notes" value="${esc(doc.notes || '')}" ${done ? 'readonly' : ''} placeholder="${def.counting ? 'Sunday count, cellar only…' : 'What happened'}">
         </label>
         ${done ? '' : `<label>Add a product
-          <input type="text" id="sk-doc-product" placeholder="Type part of a name, a PLU or a barcode" autocomplete="off">
+          <span class="sk-find">
+            <input type="text" id="sk-doc-product" placeholder="Click to see products, or type part of a name, a PLU or a barcode" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="sk-doc-suggest">
+            <span class="sk-suggest" id="sk-doc-suggest" role="listbox" hidden></span>
+          </span>
         </label>`}
       </div>
       ${done ? '' : `<div class="rr-actions">
@@ -699,6 +877,7 @@ function skRenderDocEditor(kind, doc) {
         <table class="table" data-no-cards>
           <thead><tr>
             <th>Product</th>
+            <th>Case size</th>
             ${def.counting ? `<th class="right">${done ? 'Expected' : 'System count'}</th>` : ''}
             <th class="right">${esc(def.qty)}</th>
             ${def.counting ? '<th class="right">Difference</th>' : ''}
@@ -706,40 +885,110 @@ function skRenderDocEditor(kind, doc) {
             <th class="right">Unit cost</th>
             ${done ? '' : '<th></th>'}
           </tr></thead>
-          <tbody id="sk-doc-lines">${
-            doc.lines
-              .map((l, i) => {
-                const p = skProduct(l.pluid) || {};
-                const expected = done ? Number(l.expected ?? 0) : Number(p.stock_quantity ?? 0);
-                const untracked = !done && p.level === 'untracked';
-                const diff = def.counting ? Number(l.quantity) - expected : null;
-                return `<tr data-sk-line="${i}">
-                  <td><strong>${esc(l.product_name || p.product_name || `PLU ${l.pluid}`)}</strong><div class="muted small">PLU ${l.pluid}${p.pack_name && p.pack_units > 1 ? ` · ${esc(p.pack_name)} = ${skQty(p.pack_units)}` : ''}</div></td>
-                  ${def.counting ? `<td class="right nowrap">${untracked ? '<span class="muted small">Not tracked</span>' : skQty(expected)}</td>` : ''}
-                  <td class="right">${done ? skQty(l.quantity) : `<input type="number" step="any" class="sk-qty" value="${esc(l.quantity ?? '')}" data-sk-qty="${i}" style="width:7em;text-align:right">`}</td>
-                  ${def.counting ? `<td class="right nowrap ${diff < 0 ? 'sk-neg' : diff > 0 ? 'sk-pos' : ''}">${l.quantity === '' || l.quantity === null ? '' : (diff > 0 ? '+' : '') + skQty(diff)}</td>` : ''}
-                  ${def.reason ? `<td>${done ? esc(l.reason || '') : `<input type="text" value="${esc(l.reason || '')}" data-sk-reason="${i}" placeholder="Why">`}</td>` : ''}
-                  <td class="right nowrap">${skMoney(l.unit_cost_minor ?? p.unit_cost_minor)}</td>
-                  ${done ? '' : `<td class="right row-actions-cell">${iconBtn('del', 'Remove', `data-sk-line-del="${i}"`, 'danger')}</td>`}
-                </tr>`;
-              })
-              .join('') || `<tr><td colspan="7" class="muted small">No products on it yet.</td></tr>`
-          }</tbody>
+          <tbody id="sk-doc-lines">${skDocRows(kind, doc)}</tbody>
         </table>
       </div>
     </div>`;
+}
+
+/** A line's cases and units boxes, filled from its quantity the first time. */
+function skLineBoxes(l, p) {
+  if (l.cases === undefined && l.units === undefined) {
+    const s = skSplitQty(l.quantity, skPackUnits(p));
+    l.cases = s.cases;
+    l.units = s.units;
+  }
+  return { cases: l.cases ?? '', units: l.units ?? '' };
+}
+
+/** The difference cell of a count: what was typed against what was expected. */
+function skDiffCell(quantity, expected) {
+  if (quantity === '' || quantity === null || quantity === undefined || !Number.isFinite(Number(quantity))) {
+    return { text: '', cls: 'right nowrap' };
+  }
+  const diff = Number(quantity) - expected;
+  return {
+    text: `${diff > 0 ? '+' : ''}${skQty(diff)}`,
+    cls: `right nowrap ${diff < 0 ? 'sk-neg' : diff > 0 ? 'sk-pos' : ''}`,
+  };
+}
+
+/** The table body of a document: one row a line, a heading per sub-department on a count. */
+function skDocRows(kind, doc) {
+  const def = SK_DOC[kind];
+  const done = doc.status === 'completed';
+  const cols = 5 + (def.counting ? 2 : 0) + (def.reason ? 1 : 0) - (done ? 1 : 0);
+  let lastGroup = null;
+  const out = [];
+  doc.lines.forEach((l, i) => {
+    const p = skProduct(l.pluid) || {};
+    if (def.counting) {
+      const group = skGroupOf(p);
+      if (group !== lastGroup) {
+        const n = doc.lines.filter((x) => skGroupOf(skProduct(x.pluid) || {}) === group).length;
+        out.push(`<tr class="sk-group-row"><th colspan="${cols}">${esc(group)}<span>${n} line${n === 1 ? '' : 's'}</span></th></tr>`);
+        lastGroup = group;
+      }
+    }
+    const expected = done ? Number(l.expected ?? 0) : Number(p.stock_quantity ?? 0);
+    const untracked = !done && p.level === 'untracked';
+    const pu = skPackUnits(p);
+    const diff = def.counting ? skDiffCell(l.quantity, expected) : null;
+    const caseCell = done
+      ? esc(skCaseLabel(p))
+      : `<select class="sk-case-select" data-sk-case="${i}" aria-label="Case size of ${esc(p.product_name || '')}">
+          <option value="">No case size</option>
+          ${skPacks.map((k) => `<option value="${k.id}"${String(k.id) === String(p.pack_size_id ?? '') ? ' selected' : ''}>${esc(k.name)} (${skQty(k.units)})</option>`).join('')}
+        </select>`;
+    let qtyCell;
+    if (done) {
+      qtyCell = `${skQty(l.quantity)}${pu > 1 ? `<span class="sk-qty-total">${esc(skQtyWords(l.quantity, p))}</span>` : ''}`;
+    } else {
+      const b = skLineBoxes(l, p);
+      qtyCell = `<span class="sk-qty-pair">
+          <label>Cases<input type="number" step="any" inputmode="decimal" data-sk-cases="${i}" value="${esc(b.cases)}" ${pu > 1 ? '' : 'disabled title="No case size — give it one to count in cases"'}></label>
+          <label>Units<input type="number" step="any" inputmode="decimal" data-sk-units="${i}" value="${esc(b.units)}"></label>
+        </span>
+        <span class="sk-qty-total" data-sk-total="${i}">${pu > 1 && l.quantity !== '' && Number.isFinite(Number(l.quantity)) ? `= ${skQty(l.quantity)} units` : ''}</span>`;
+    }
+    out.push(`<tr data-sk-line="${i}">
+      <td><strong>${esc(l.product_name || p.product_name || `PLU ${l.pluid}`)}</strong><div class="muted small">PLU ${l.pluid}${!def.counting && p.group_name ? ` · ${esc(p.group_name)}` : ''}</div></td>
+      <td>${caseCell}</td>
+      ${def.counting ? `<td class="right nowrap">${untracked ? '<span class="muted small">Not tracked</span>' : `${skQty(expected)}${pu > 1 ? `<span class="sk-qty-total">${esc(skQtyWords(expected, p))}</span>` : ''}`}</td>` : ''}
+      <td class="right">${qtyCell}</td>
+      ${def.counting ? `<td class="${diff.cls}" data-sk-diff="${i}">${diff.text}</td>` : ''}
+      ${def.reason ? `<td>${done ? esc(l.reason || '') : `<input type="text" value="${esc(l.reason || '')}" data-sk-reason="${i}" placeholder="Why">`}</td>` : ''}
+      <td class="right nowrap">${skMoney(l.unit_cost_minor ?? p.unit_cost_minor)}</td>
+      ${done ? '' : `<td class="right row-actions-cell">${iconBtn('del', 'Remove', `data-sk-line-del="${i}"`, 'danger')}</td>`}
+    </tr>`);
+  });
+  return out.join('') || `<tr><td colspan="${cols}" class="muted small">No products on it yet.</td></tr>`;
+}
+
+/** Recompute one line's units from its two boxes. */
+function skLineFromBoxes(l) {
+  const p = skProduct(l.pluid) || {};
+  l.quantity = skJoinQty(l.cases, l.units, skPackUnits(p));
+  return l;
 }
 
 /** Read the editor's inputs back into the open document. */
 function skReadDoc(kind) {
   const doc = skOpen[kind];
   if (!doc || doc.status === 'completed') return doc;
-  doc.notes = $('sk-doc-notes').value;
-  document.querySelectorAll('[data-sk-qty]').forEach((el) => {
-    doc.lines[Number(el.dataset.skQty)].quantity = el.value;
+  const notes = $('sk-doc-notes');
+  if (notes) doc.notes = notes.value;
+  document.querySelectorAll('[data-sk-cases]').forEach((el) => {
+    const l = doc.lines[Number(el.dataset.skCases)];
+    if (l) l.cases = el.value;
+  });
+  document.querySelectorAll('[data-sk-units]').forEach((el) => {
+    const l = doc.lines[Number(el.dataset.skUnits)];
+    if (l) { l.units = el.value; skLineFromBoxes(l); }
   });
   document.querySelectorAll('[data-sk-reason]').forEach((el) => {
-    doc.lines[Number(el.dataset.skReason)].reason = el.value;
+    const l = doc.lines[Number(el.dataset.skReason)];
+    if (l) l.reason = el.value;
   });
   return doc;
 }
@@ -756,6 +1005,7 @@ function skAddLine(kind, pluid, quantity = '') {
     reason: '',
     unit_cost_minor: p.unit_cost_minor,
   });
+  skSortLines(kind, doc);
   skRenderDocEditor(kind, doc);
 }
 
@@ -790,6 +1040,7 @@ function skAddLines(kind, pluids) {
     doc.lines.push({ pluid: p.pluid, product_name: p.product_name, quantity: '', reason: '', unit_cost_minor: p.unit_cost_minor });
     added += 1;
   }
+  skSortLines(kind, doc);
   skRenderDocEditor(kind, doc);
   if (added || already) {
     toast(`Added ${added} product${added === 1 ? '' : 's'}${already ? ` · ${already} already on it` : ''}.`);
@@ -952,6 +1203,7 @@ async function loadStockOrders() {
 }
 
 function skRenderOrderEditor(order) {
+  skDocCss();
   const editable = !order.id || ['new', 'sent'].includes(order.status);
   const total = order.lines.reduce((a, l) => a + (Number(l.pack_cost_minor) || 0) * (Number(l.packs) || 0), 0);
   const supplier = skSuppliers.find((s) => String(s.id) === String(order.supplier_id));
@@ -987,7 +1239,10 @@ function skRenderOrderEditor(order) {
           <input type="text" id="sk-order-notes" value="${esc(order.notes || '')}" ${editable ? '' : 'readonly'}>
         </label>
         ${editable ? `<label>Add a product
-          <input type="text" id="sk-order-product" placeholder="Type part of a name, a PLU or a barcode" autocomplete="off">
+          <span class="sk-find">
+            <input type="text" id="sk-order-product" placeholder="Click to see products, or type part of a name, a PLU or a barcode" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="sk-order-suggest">
+            <span class="sk-suggest" id="sk-order-suggest" role="listbox" hidden></span>
+          </span>
         </label>` : ''}
       </div>
       ${editable ? `<div class="rr-actions">
@@ -1200,6 +1455,7 @@ document.addEventListener('click', async (e) => {
   if (d.skDocOpen) {
     const doc = await api(`/stock/docs/${d.skDocOpen}`);
     doc.lines = doc.lines.map((l) => ({ ...l, quantity: l.quantity }));
+    skSortLines(d.skKind, doc);
     skOpen[d.skKind] = doc;
     return skRenderDocEditor(d.skKind, doc);
   }
@@ -1328,22 +1584,106 @@ function skOrderAddSilently(o, p, packs) {
 // count typed into a document (its difference column updates as you type).
 document.addEventListener('input', (e) => {
   if (['sk-dept', 'sk-level', 'sk-search'].includes(e.target.id)) return skRenderLevels();
-  if (e.target.dataset && e.target.dataset.skQty !== undefined) {
+  if (e.target.id === 'sk-doc-product' || e.target.id === 'sk-order-product') {
+    skSuggestState.on = -1;
+    return skSuggestDraw();
+  }
+  const ds = e.target.dataset || {};
+  if (ds.skCases !== undefined || ds.skUnits !== undefined) {
     const kind = skActiveKind;
-    if (!kind || !SK_DOC[kind].counting) return;
-    const i = Number(e.target.dataset.skQty);
-    const row = e.target.closest('tr');
-    const doc = skOpen[kind];
-    const p = skProduct(doc.lines[i].pluid) || {};
-    const expected = doc.status === 'completed' ? Number(doc.lines[i].expected ?? 0) : Number(p.stock_quantity ?? 0);
-    const cell = row.children[3];
-    if (!cell) return;
-    const diff = Number(e.target.value) - expected;
-    cell.textContent = e.target.value === '' ? '' : `${diff > 0 ? '+' : ''}${skQty(diff)}`;
-    cell.className = `right nowrap ${diff < 0 ? 'sk-neg' : diff > 0 ? 'sk-pos' : ''}`;
+    const doc = kind && skOpen[kind];
+    if (!doc) return;
+    const i = Number(ds.skCases ?? ds.skUnits);
+    const l = doc.lines[i];
+    if (!l) return;
+    if (ds.skCases !== undefined) l.cases = e.target.value;
+    else l.units = e.target.value;
+    skLineFromBoxes(l);
+    const p = skProduct(l.pluid) || {};
+    const total = document.querySelector(`[data-sk-total="${i}"]`);
+    if (total) {
+      total.textContent = skPackUnits(p) > 1 && l.quantity !== '' && Number.isFinite(Number(l.quantity)) ? `= ${skQty(l.quantity)} units` : '';
+    }
+    const cell = document.querySelector(`[data-sk-diff="${i}"]`);
+    if (cell) {
+      const d = skDiffCell(l.quantity, Number(p.stock_quantity ?? 0));
+      cell.textContent = d.text;
+      cell.className = d.cls;
+    }
   }
 });
-document.addEventListener('change', (e) => {
+
+// The product box's list opens the moment it has focus.
+document.addEventListener('focusin', (e) => {
+  if (e.target.id === 'sk-doc-product') {
+    const kind = skActiveKind;
+    if (!kind) return;
+    skSuggestOpen(e.target, $('sk-doc-suggest'), () => ({
+      exclude: (skOpen[kind] ? skOpen[kind].lines : []).map((l) => l.pluid),
+      stockFirst: Boolean(SK_DOC[kind].counting),
+    }), (pluid) => {
+      skAddLine(kind, pluid);
+      const again = $('sk-doc-product');
+      if (again) { again.value = ''; again.focus(); }
+    });
+  }
+  if (e.target.id === 'sk-order-product') {
+    skSuggestOpen(e.target, $('sk-order-suggest'), () => ({
+      exclude: (skOrderOpen ? skReadOrder().lines : []).map((l) => l.pluid),
+    }), (pluid) => {
+      skOrderAdd(pluid);
+      const again = $('sk-order-product');
+      if (again) { again.value = ''; again.focus(); }
+    });
+  }
+});
+document.addEventListener('focusout', (e) => {
+  if (e.target.id === 'sk-doc-product' || e.target.id === 'sk-order-product') {
+    // After a click on a row has had its chance (mousedown picks, see below).
+    setTimeout(() => {
+      if (document.activeElement !== skSuggestState.box) skSuggestClose();
+    }, 150);
+  }
+});
+// mousedown, not click: a click would blur the box first and close the list.
+document.addEventListener('mousedown', (e) => {
+  const row = e.target.closest && e.target.closest('[data-sk-suggest]');
+  if (!row) return;
+  e.preventDefault();
+  skSuggestPick(row.dataset.skSuggest);
+});
+document.addEventListener('change', async (e) => {
+  // A line's case size, changed where the count is being done (2026-09-24):
+  // "the case size should be visible so customers can easily make a change if
+  // they notice it's the wrong case size". It is the PRODUCT's case size --
+  // saved at once, like the product list's dropdown -- and the line keeps the
+  // cases and units typed, now worth the new size.
+  if (e.target.dataset && e.target.dataset.skCase !== undefined) {
+    const kind = skActiveKind;
+    const doc = kind && skReadDoc(kind);
+    if (!doc) return;
+    const l = doc.lines[Number(e.target.dataset.skCase)];
+    const p = l && skProduct(l.pluid);
+    if (!p) return;
+    const packId = e.target.value === '' ? null : Number(e.target.value);
+    e.target.disabled = true;
+    try {
+      await api(`/stock/products/${p.id}`, { method: 'PATCH', body: JSON.stringify({ pack_size_id: packId }) });
+      await skLoadProducts();
+      const now = skProduct(l.pluid) || {};
+      if (skPackUnits(now) === 1 && l.cases !== '' && l.cases !== undefined) {
+        // No case any more: what was typed as cases is kept as units.
+        l.units = skJoinQty(l.cases, l.units, skPackUnits(p));
+        l.cases = '';
+      }
+      skLineFromBoxes(l);
+      l.unit_cost_minor = now.unit_cost_minor;
+      toast(`${p.product_name}: case size ${packId ? `now ${now.pack_name}` : 'removed'}.`);
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+    return skRenderDocEditor(kind, doc);
+  }
   // A whole department, or a whole sub-department, of STOCK ITEMS -- the way
   // Newbridge builds a count, rather than one product at a time.
   if (e.target.id === 'sk-doc-add-dept' && e.target.value) {
@@ -1365,8 +1705,30 @@ document.addEventListener('change', (e) => {
 
 // Enter in a product box adds it, rather than submitting nothing.
 document.addEventListener('keydown', (e) => {
+  const inBox = e.target.id === 'sk-doc-product' || e.target.id === 'sk-order-product';
+  const s = skSuggestState;
+  if (inBox && s.list && !s.list.hidden) {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const n = s.rows.length;
+      if (!n) return;
+      s.on = e.key === 'ArrowDown' ? (s.on + 1) % n : (s.on - 1 + n) % n;
+      return skSuggestDraw();
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      return skSuggestClose();
+    }
+    if (e.key === 'Enter' && s.on >= 0 && s.rows[s.on]) {
+      e.preventDefault();
+      const plu = s.rows[s.on].pluid;
+      s.on = -1;
+      return skSuggestPick(plu);
+    }
+  }
   if (e.key !== 'Enter') return;
   if (e.target.id === 'sk-doc-product') {
+    skSuggestClose();
     e.preventDefault();
     if (skActiveKind) skTypedAdd(skActiveKind);
   }
