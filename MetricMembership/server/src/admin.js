@@ -17,6 +17,7 @@ const members = require('./members');
 const activity = require('./activity');
 const sync = require('./sync');
 const settings = require('./settings');
+const { THEMES } = require('./themes');
 const adapters = require('./adapters');
 const { hashKey } = require('./anpr');
 const { memberJson, vehicleJson } = require('./api');
@@ -225,7 +226,7 @@ function adminApi() {
   }));
 
   // ---- appearance ---------------------------------------------------------
-  r.get('/settings', wrap(async (req, res) => res.json({ settings: await settings.all(), choices: settings.CHOICES })));
+  r.get('/settings', wrap(async (req, res) => res.json({ settings: await settings.all(), choices: settings.CHOICES, themes: THEMES })));
 
   r.patch('/settings', wrap(async (req, res) => {
     const b = req.body || {};

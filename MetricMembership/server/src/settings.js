@@ -4,11 +4,16 @@
  */
 
 const db = require('./db');
+const { THEMES } = require('./themes');
 
 const CHOICES = {
   // How number plates are drawn in the app and the console: Metric's navy
   // plate (the default), the yellow UK rear plate, or the white front plate.
   plateStyle: { values: ['metric', 'uk_yellow', 'uk_white'], fallback: 'metric' },
+  // The colours of the phone's top and bottom bars around the app (themes.js),
+  // and whether the top one slowly moves through its gradient.
+  appTheme: { values: Object.keys(THEMES), fallback: 'metric' },
+  barMotion: { values: ['animated', 'still'], fallback: 'animated' },
 };
 
 async function all() {

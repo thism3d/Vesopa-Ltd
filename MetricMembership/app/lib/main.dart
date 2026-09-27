@@ -6,6 +6,7 @@ import 'data/api.dart';
 import 'data/session.dart';
 import 'ui/home.dart';
 import 'ui/sign_in.dart';
+import 'ui/system_bars.dart';
 import 'ui/widgets.dart';
 
 /// Metric Membership: Metric Group's own membership app.
@@ -15,14 +16,24 @@ import 'ui/widgets.dart';
 /// the way in and out. Built the way the Vesopa loyalty app is (Riverpod,
 /// one API client, Continue with Vesopa on every platform), branded for
 /// Metric, and served from metric.vesopa.com.
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await loadSavedBarTheme();
   runApp(const ProviderScope(child: MetricApp()));
-  // Staff's choices from the console (Appearance). The app draws with the
-  // defaults until they arrive, and keeps them if the server cannot be reached.
+  _appearance();
+  // Staff can change Appearance at any time: look again whenever the app
+  // comes back to the front.
+  AppLifecycleListener(onResume: _appearance);
+}
+
+/// Staff's choices from the console (Appearance). The app draws with the last
+/// ones it saw until they arrive, and keeps them if the server can't be reached.
+void _appearance() {
   MetricApi().brand().then((b) {
     final style = b['plateStyle'];
     if (style is String) plateStyle.value = style;
+    final theme = b['theme'];
+    if (theme is Map<String, dynamic>) setBarTheme(theme);
   }).catchError((_) {});
 }
 
@@ -34,6 +45,7 @@ class MetricApp extends StatelessWidget {
     title: MetricBrand.appName,
     debugShowCheckedModeBanner: false,
     theme: MetricBrand.theme(),
+    builder: (context, child) => SystemBars(child: child ?? const SizedBox.shrink()),
     home: const _Gate(),
   );
 }

@@ -17,6 +17,8 @@ const brand = require('./brand');
 const access = require('./access');
 const sync = require('./sync');
 const settings = require('./settings');
+const themes = require('./themes');
+const { webBuild } = require('./web');
 const { limiter } = require('./security');
 
 const iso = (d) => (d instanceof Date ? d.toISOString() : d);
@@ -72,7 +74,16 @@ function apiRouter() {
 
   r.get('/brand', wrap(async (req, res) => {
     res.set('Cache-Control', 'no-cache');
-    res.json({ ...brand, baseUrl: config.BASE_URL, authClientId: config.AUTH_CLIENT_ID, ...(await settings.all()) });
+    const chosen = await settings.all();
+    res.json({ ...brand, baseUrl: config.BASE_URL, authClientId: config.AUTH_CLIENT_ID, ...chosen, theme: themes.resolve(chosen) });
+  }));
+
+  // What public/theme.js asks every minute and whenever the app comes back to
+  // the front: the bar colours staff chose, and which web build is live, so a
+  // deploy reaches an open app without anybody refreshing.
+  r.get('/theme', wrap(async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json({ theme: themes.resolve(await settings.all()), build: webBuild() });
   }));
 
   /*

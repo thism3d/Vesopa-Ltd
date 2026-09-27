@@ -275,3 +275,12 @@ body[data-plate='uk_yellow'] .plate:not(.plate-metric)::before, body[data-plate=
   .welcome { padding: 22px; }
   .welcome-art { display: none; }
 }
+
+/* Appearance: a small phone showing the top and bottom bar colours. */
+.bars { --g: var(--navy); --b: var(--navy); display: flex; flex-direction: column; width: 84px; height: 132px; border-radius: 16px; overflow: hidden; border: 3px solid var(--ink); margin-bottom: 8px; background: #fff; }
+.bars.light { border-color: var(--line); }
+.bars-top { height: 18px; background: var(--g); background-size: 300% 100%; animation: bars-drift 8s ease-in-out infinite alternate; }
+.bars-screen { flex: 1; background: linear-gradient(180deg, var(--canvas), #fff); }
+.bars-bottom { height: 14px; background: var(--b); }
+@keyframes bars-drift { from { background-position: 0% 0; } to { background-position: 100% 0; } }
+@media (prefers-reduced-motion: reduce) { .bars-top { animation: none; } }

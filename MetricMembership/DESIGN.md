@@ -68,3 +68,37 @@ scene loops over 8 s. Everything holds still under reduced motion.
   (pending), red50/red (refused).
 - **Number plate**: UK yellow (rear) or white (front), black condensed bold.
 - **Page header**: centred title (H1) with an overline and one line of help.
+
+## System bars (the phone's top and bottom bars)
+
+Staff choose them under **Appearance → Phone bars** in the console; nothing is
+rebuilt or redeployed to change them.
+
+- **Themes** live in `server/src/themes.js`: `stops` (the top bar's gradient;
+  the first stop is the still colour and the manifest's `theme_color`),
+  `bottom` (the navigation bar), `dark` (white icons). To add one, add an
+  entry there; the console, the manifest, the web and the native app all pick
+  it up. `barMotion` is `animated` or `still`.
+- **Web and installed web app.** Android Chrome takes the top bar from
+  `<meta name="theme-color">` and the bottom bar from the page background.
+  `server/public/theme.js` (never cached) sets both, from localStorage first so
+  there is no white flash, then from `/api/v1/theme` (no-store) on load, every
+  minute and whenever the app comes back to the front. When animated it moves
+  theme-color through the stops every 120 ms over a 14 s round trip, paused
+  while hidden and off under reduced motion. A MutationObserver puts the colour
+  back when Flutter's engine writes its own theme-color. Load it with
+  `data-paint="page"` on a Flutter page (the page background follows the
+  bottom bar) and without it elsewhere (the console).
+- **Manifest.** `/manifest.json` is written per request by `server/src/web.js`
+  from the build's own `app/web/manifest.json` with the chosen colours, and is
+  never cached. An installed app reads it again the next time it opens.
+- **Auto-update.** `/api/v1/theme` also carries `build` (the web build's
+  index.html time). When it changes, theme.js reloads the page the next time
+  it comes back to the front, so a deploy reaches open apps without anybody
+  refreshing or losing what they were typing.
+- **Native (Android, iPhone, Windows).** Android 15 and later draw apps edge
+  to edge and ignore a status bar colour, so `lib/ui/system_bars.dart`
+  (`MaterialApp.builder`) paints the strips behind the status and navigation
+  bars itself, with the same gradient drift, and sets the icon brightness. The
+  choice comes from `/api/v1/brand` → `theme`, is kept in shared_preferences,
+  and is fetched again every time the app resumes.

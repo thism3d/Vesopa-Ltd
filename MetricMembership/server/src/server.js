@@ -36,6 +36,7 @@ const { headers } = require('./security');
 const { apiRouter } = require('./api');
 const { anprRouter } = require('./anpr');
 const { adminPages, adminApi, callback } = require('./admin');
+const web = require('./web');
 const { createActivityLog } = require('./activity_log');
 const session = require('./session');
 
@@ -94,8 +95,19 @@ function createApp() {
   app.get('/auth/callback', (req, res, next) => callback(req, res).catch(next));
   app.use(adminPages());
 
+  // Written per request from Appearance, so never the build's static copy.
+  app.get(['/manifest.json', '/manifest.webmanifest'], (req, res, next) => web.manifest(req, res).catch(next));
+
   const PUBLIC = path.join(__dirname, '..', 'public');
-  app.use(express.static(PUBLIC, { index: false, maxAge: '1d' }));
+  // theme.js is the one public file that must never be cached: it is what
+  // carries a new deploy and new colours to an app that is already open.
+  app.use(express.static(PUBLIC, {
+    index: false,
+    maxAge: '1d',
+    setHeaders(res, file) {
+      if (path.basename(file) === 'theme.js') res.setHeader('Cache-Control', 'no-cache');
+    },
+  }));
 
   // The member app. Flutter's own files are hashed by name except these,
   // which must never be cached or a deploy is invisible until a hard refresh.

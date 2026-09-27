@@ -441,13 +441,16 @@
   VIEWS.appearance = async (view) => {
     const d = await api('/settings');
     const box = el('div');
-    const choose = async (value) => {
+    const choose = async (body) => {
       try {
-        const out = await api('/settings', { method: 'PATCH', body: { plateStyle: value } });
+        const out = await api('/settings', { method: 'PATCH', body });
         document.body.dataset.plate = out.settings.plateStyle;
+        if (window.MetricTheme) window.MetricTheme.check();
         show('appearance');
       } catch (e) { flash(box, e.message, 'bad'); }
     };
+    const inUse = (on) => (on ? el('span', { class: 'badge active', text: 'In use' }) : el('span', { class: 'small pick', text: 'Use this' }));
+    const s = d.settings;
     put(view,
       el('p', { class: 'overline', text: 'Appearance' }),
       el('h1', { text: 'Number plates' }),
@@ -455,13 +458,38 @@
       box,
       el('div', { class: 'choices' }, PLATES.map(([value, name, about]) => el('button', {
         type: 'button',
-        class: `choice${d.settings.plateStyle === value ? ' on' : ''}`,
-        onclick: () => choose(value),
+        class: `choice${s.plateStyle === value ? ' on' : ''}`,
+        onclick: () => choose({ plateStyle: value }),
       },
       el('span', { class: `plate plate-${value}`, text: 'AB12 CDE' }),
       el('b', { text: name }),
       el('span', { class: 'muted small', text: about }),
-      d.settings.plateStyle === value ? el('span', { class: 'badge active', text: 'In use' }) : el('span', { class: 'small pick', text: 'Use this' })))));
+      inUse(s.plateStyle === value)))),
+
+      el('h1', { text: 'Phone bars', style: 'margin-top:36px' }),
+      el('p', { class: 'muted', text: "The colour of the phone's top and bottom bars around the app on Android, and of the browser bar on the web. An open app changes within a minute; an installed one the next time it opens." }),
+      el('div', { class: 'choices' }, Object.entries(d.themes).map(([value, t]) => el('button', {
+        type: 'button',
+        class: `choice${s.appTheme === value ? ' on' : ''}`,
+        onclick: () => choose({ appTheme: value }),
+      },
+      el('span', { class: `bars${t.dark ? '' : ' light'}`, style: `--g:linear-gradient(90deg, ${t.stops.join(', ')});--b:${t.bottom}` },
+        el('span', { class: 'bars-top' }), el('span', { class: 'bars-screen' }), el('span', { class: 'bars-bottom' })),
+      el('b', { text: t.name }),
+      inUse(s.appTheme === value)))),
+
+      el('h2', { text: 'Movement', style: 'margin-top:28px' }),
+      el('div', { class: 'choices' }, [
+        ['animated', 'Gently moving', 'The top bar drifts slowly through the colours. Off for anybody who asks their phone for less motion.'],
+        ['still', 'Still', 'The top bar keeps the first colour.'],
+      ].map(([value, name, about]) => el('button', {
+        type: 'button',
+        class: `choice${s.barMotion === value ? ' on' : ''}`,
+        onclick: () => choose({ barMotion: value }),
+      },
+      el('b', { text: name }),
+      el('span', { class: 'muted small', text: about }),
+      inUse(s.barMotion === value)))));
   };
 
   boot();

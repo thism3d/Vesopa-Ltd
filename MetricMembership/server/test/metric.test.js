@@ -351,3 +351,24 @@ test('staff choose how plates look, and the app reads it from /brand', async () 
   assert.equal((await call('GET', '/api/v1/brand')).json.plateStyle, 'uk_yellow');
   await call('PATCH', '/api/admin/settings', { body: { plateStyle: 'metric' }, headers: { Cookie: cookie } });
 });
+
+test('staff choose the phone bar colours; the manifest and /theme follow at once, uncached', async () => {
+  const cookie = `mg_admin=${session.issueAdmin({ sub: 'staff-1', email: 'staff@metricgroup.co.uk' })}`;
+  const before = await call('GET', '/api/v1/theme');
+  assert.equal(before.headers.get('cache-control'), 'no-store');
+  assert.equal(before.json.theme.id, 'metric');
+  assert.equal(before.json.theme.motion, 'animated');
+  assert.equal((await call('PATCH', '/api/admin/settings', { body: { appTheme: 'pink' }, headers: { Cookie: cookie } })).status, 400);
+  assert.equal((await call('PATCH', '/api/admin/settings', { body: { appTheme: 'midnight', barMotion: 'still' }, headers: { Cookie: cookie } })).status, 200);
+  const after = await call('GET', '/api/v1/theme');
+  assert.equal(after.json.theme.top, '#00144D');
+  assert.equal(after.json.theme.motion, 'still');
+  assert.equal((await call('GET', '/api/v1/brand')).json.theme.id, 'midnight');
+  const manifest = await call('GET', '/manifest.json');
+  assert.equal(manifest.headers.get('cache-control'), 'no-store');
+  assert.equal(JSON.parse(manifest.text).theme_color, '#00144D');
+  const script = await call('GET', '/theme.js');
+  assert.equal(script.status, 200);
+  assert.equal(script.headers.get('cache-control'), 'no-cache');
+  await call('PATCH', '/api/admin/settings', { body: { appTheme: 'metric', barMotion: 'animated' }, headers: { Cookie: cookie } });
+});
