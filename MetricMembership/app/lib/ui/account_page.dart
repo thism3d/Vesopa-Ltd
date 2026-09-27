@@ -21,7 +21,7 @@ class AccountPage extends ConsumerWidget {
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => ErrorNotice(e.toString(), onRetry: () => ref.invalidate(accountProvider)),
       data: (a) => ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+        padding: pagePadding(context),
         children: [
           PageHero(
             icon: Icons.person_rounded,
@@ -30,106 +30,157 @@ class AccountPage extends ConsumerWidget {
             subtitle: '${a.member.email}\nMember ${a.member.memberNo}',
           ),
           const SizedBox(height: 22),
-          const SectionTitle('Your details'),
-          Card(
-            child: Column(
+          // Details on the left; where it works, help and sign-out on the
+          // right on a wide window. One column on a phone.
+          TwoColumns(
+            leftFlex: 1,
+            rightFlex: 1,
+            left: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                ListTile(leading: const IconTile(Icons.badge_outlined), title: const Text('Name'), subtitle: Text(a.member.name.isEmpty ? 'Not set' : a.member.name)),
-                ListTile(leading: const IconTile(Icons.alternate_email_rounded), title: const Text('Email'), subtitle: Text(a.member.email)),
-                ListTile(leading: const IconTile(Icons.phone_iphone_rounded), title: const Text('Phone'), subtitle: Text(a.member.phone.isEmpty ? 'Not set' : a.member.phone)),
-                ListTile(leading: const IconTile(Icons.business_rounded), title: const Text('Company'), subtitle: Text(a.member.company.isEmpty ? 'Not set' : a.member.company)),
-                ListTile(leading: const IconTile(Icons.qr_code_2_rounded), title: const Text('Member number'), subtitle: Text(a.member.memberNo)),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: OutlinedButton.icon(
-                      icon: const Icon(Icons.edit),
-                      label: const Text('Edit my details'),
-                      onPressed: () {
-                        log.tap('edit_details');
-                        showDialog<void>(context: context, builder: (_) => _EditDetails(member: a.member));
-                      },
-                    ),
+                const SectionTitle('Your details'),
+                Card(
+                  child: Column(
+                    children: [
+                      ListTile(
+                        leading: const IconTile(Icons.badge_outlined),
+                        title: const Text('Name'),
+                        subtitle: Text(a.member.name.isEmpty ? 'Not set' : a.member.name),
+                      ),
+                      ListTile(
+                        leading: const IconTile(Icons.alternate_email_rounded),
+                        title: const Text('Email'),
+                        subtitle: Text(a.member.email),
+                      ),
+                      ListTile(
+                        leading: const IconTile(Icons.phone_iphone_rounded),
+                        title: const Text('Phone'),
+                        subtitle: Text(a.member.phone.isEmpty ? 'Not set' : a.member.phone),
+                      ),
+                      ListTile(
+                        leading: const IconTile(Icons.business_rounded),
+                        title: const Text('Company'),
+                        subtitle: Text(a.member.company.isEmpty ? 'Not set' : a.member.company),
+                      ),
+                      ListTile(
+                        leading: const IconTile(Icons.qr_code_2_rounded),
+                        title: const Text('Member number'),
+                        subtitle: Text(a.member.memberNo),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: OutlinedButton.icon(
+                            icon: const Icon(Icons.edit),
+                            label: const Text('Edit my details'),
+                            onPressed: () {
+                              log.tap('edit_details');
+                              showDialog<void>(
+                                context: context,
+                                builder: (_) => _EditDetails(member: a.member),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
-          ),
-          const SizedBox(height: 20),
-          const SectionTitle('Where it works'),
-          sites.when(
-            loading: () => const LinearProgressIndicator(),
-            error: (_, _) => const Text('Could not load the sites.'),
-            data: (list) => Card(
-              child: Column(
-                children: list.isEmpty
-                    ? [const ListTile(title: Text('Metric will list your car parks here.'))]
-                    : [for (final s in list) ListTile(leading: const IconTile(Icons.local_parking), title: Text(s.name), subtitle: s.address.isEmpty ? null : Text(s.address))],
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
-          const SectionTitle('Help'),
-          Card(
-            child: Column(
+            right: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                ListTile(
-                  leading: const IconTile(Icons.phone),
-                  title: const Text('Call Metric'),
-                  subtitle: const Text(MetricBrand.phone),
-                  onTap: () {
-                    log.tap('call_metric');
-                    launchUrl(Uri.parse('tel:${MetricBrand.phone.replaceAll(' ', '')}'));
+                const SectionTitle('Where it works'),
+                sites.when(
+                  loading: () => const LinearProgressIndicator(),
+                  error: (_, _) => const Text('Could not load the sites.'),
+                  data: (list) => Card(
+                    child: Column(
+                      children: list.isEmpty
+                          ? [const ListTile(title: Text('Metric will list your car parks here.'))]
+                          : [
+                              for (final s in list)
+                                ListTile(
+                                  leading: const IconTile(Icons.local_parking),
+                                  title: Text(s.name),
+                                  subtitle: s.address.isEmpty ? null : Text(s.address),
+                                ),
+                            ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                const SectionTitle('Help'),
+                Card(
+                  child: Column(
+                    children: [
+                      ListTile(
+                        leading: const IconTile(Icons.phone),
+                        title: const Text('Call Metric'),
+                        subtitle: const Text(MetricBrand.phone),
+                        onTap: () {
+                          log.tap('call_metric');
+                          launchUrl(Uri.parse('tel:${MetricBrand.phone.replaceAll(' ', '')}'));
+                        },
+                      ),
+                      ListTile(
+                        leading: const IconTile(Icons.build),
+                        title: const Text('Barrier not opening?'),
+                        subtitle: const Text(
+                          'Service line ${MetricBrand.servicePhone}. Check the plate on your car matches the one here, and that it is clean.',
+                        ),
+                        onTap: () {
+                          log.tap('call_service');
+                          launchUrl(Uri.parse('tel:${MetricBrand.servicePhone.replaceAll(' ', '')}'));
+                        },
+                      ),
+                      ListTile(
+                        leading: const IconTile(Icons.privacy_tip_outlined),
+                        title: const Text('Privacy policy'),
+                        subtitle: const Text("Metric Group's privacy policy"),
+                        onTap: () {
+                          log.tap('open_privacy');
+                          launchUrl(Uri.parse(MetricBrand.privacyPolicy), mode: LaunchMode.externalApplication);
+                        },
+                      ),
+                      ListTile(
+                        leading: const IconTile(Icons.public),
+                        title: const Text('metricgroup.co.uk'),
+                        onTap: () {
+                          log.tap('open_website');
+                          launchUrl(Uri.parse(MetricBrand.website), mode: LaunchMode.externalApplication);
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                OutlinedButton.icon(
+                  key: const Key('sign-out'),
+                  icon: const Icon(Icons.logout),
+                  label: const Text('Sign out'),
+                  onPressed: () {
+                    log.tap('sign_out');
+                    ref.read(sessionProvider.notifier).signOut();
                   },
                 ),
-                ListTile(
-                  leading: const IconTile(Icons.build),
-                  title: const Text('Barrier not opening?'),
-                  subtitle: const Text('Service line ${MetricBrand.servicePhone}. Check the plate on your car matches the one here, and that it is clean.'),
-                  onTap: () {
-                    log.tap('call_service');
-                    launchUrl(Uri.parse('tel:${MetricBrand.servicePhone.replaceAll(' ', '')}'));
-                  },
+                const SizedBox(height: 8),
+                TextButton(
+                  style: TextButton.styleFrom(foregroundColor: MetricBrand.red),
+                  onPressed: () => _delete(context, ref),
+                  child: const Text('Delete my account'),
                 ),
-                ListTile(
-                  leading: const IconTile(Icons.privacy_tip_outlined),
-                  title: const Text('Privacy policy'),
-                  subtitle: const Text("Metric Group's privacy policy"),
-                  onTap: () {
-                    log.tap('open_privacy');
-                    launchUrl(Uri.parse(MetricBrand.privacyPolicy), mode: LaunchMode.externalApplication);
-                  },
-                ),
-                ListTile(
-                  leading: const IconTile(Icons.public),
-                  title: const Text('metricgroup.co.uk'),
-                  onTap: () {
-                    log.tap('open_website');
-                    launchUrl(Uri.parse(MetricBrand.website), mode: LaunchMode.externalApplication);
-                  },
+                const SizedBox(height: 16),
+                Text(
+                  'Metric Membership ${AppConfig.version} · powered by Vesopa',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 20),
-          OutlinedButton.icon(
-            key: const Key('sign-out'),
-            icon: const Icon(Icons.logout),
-            label: const Text('Sign out'),
-            onPressed: () {
-              log.tap('sign_out');
-              ref.read(sessionProvider.notifier).signOut();
-            },
-          ),
-          const SizedBox(height: 8),
-          TextButton(
-            style: TextButton.styleFrom(foregroundColor: MetricBrand.red),
-            onPressed: () => _delete(context, ref),
-            child: const Text('Delete my account'),
-          ),
-          const SizedBox(height: 16),
-          Text('Metric Membership ${AppConfig.version} · powered by Vesopa', textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodySmall),
         ],
       ),
     );
@@ -142,7 +193,9 @@ class AccountPage extends ConsumerWidget {
       context: context,
       builder: (c) => AlertDialog(
         title: const Text('Delete your account?'),
-        content: const Text('Your membership closes and the barriers stop opening for all your cars straight away. Your Vesopa account itself is not deleted.'),
+        content: const Text(
+          'Your membership closes and the barriers stop opening for all your cars straight away. Your Vesopa account itself is not deleted.',
+        ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Keep it')),
           FilledButton(
@@ -194,11 +247,21 @@ class _EditDetailsState extends ConsumerState<_EditDetails> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          TextField(controller: _name, decoration: const InputDecoration(labelText: 'Name')),
+          TextField(
+            controller: _name,
+            decoration: const InputDecoration(labelText: 'Name'),
+          ),
           const SizedBox(height: 12),
-          TextField(controller: _phone, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'Phone')),
+          TextField(
+            controller: _phone,
+            keyboardType: TextInputType.phone,
+            decoration: const InputDecoration(labelText: 'Phone'),
+          ),
           const SizedBox(height: 12),
-          TextField(controller: _company, decoration: const InputDecoration(labelText: 'Company (optional)')),
+          TextField(
+            controller: _company,
+            decoration: const InputDecoration(labelText: 'Company (optional)'),
+          ),
         ],
       ),
     ),

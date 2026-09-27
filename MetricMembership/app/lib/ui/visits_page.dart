@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../brand.dart';
+import '../data/api.dart';
 import '../data/session.dart';
 import 'widgets.dart';
 
@@ -9,7 +10,7 @@ import 'widgets.dart';
 class VisitsPage extends ConsumerWidget {
   const VisitsPage({super.key});
 
-  static const _why = {
+  static const why = {
     'member': 'Barrier opened',
     'member_fuzzy': 'Barrier opened',
     'pending': 'Not opened: waiting for approval',
@@ -48,55 +49,69 @@ class VisitsPage extends ConsumerWidget {
                 title: 'No visits yet',
                 message: 'Drive up to a Metric barrier and your first visit appears here.',
               ),
-            for (final v in list)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Row(
-                      children: [
-                        IconTile(
-                          v.direction == 'exit' ? Icons.logout_rounded : Icons.login_rounded,
-                          colour: v.opened ? MetricBrand.green700 : MetricBrand.red,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(v.site, style: Theme.of(context).textTheme.titleMedium, maxLines: 1, overflow: TextOverflow.ellipsis),
-                              const SizedBox(height: 2),
-                              Text(
-                                '${v.direction == 'exit' ? 'Left' : v.direction == 'entry' ? 'Arrived' : 'Read'} ${friendlyDate(v.at).toLowerCase()} · ${v.gate}',
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: MetricBrand.slate),
-                              ),
-                              if (!v.opened) ...[
-                                const SizedBox(height: 4),
-                                Text(_why[v.reason] ?? 'Not opened', style: const TextStyle(color: MetricBrand.red, fontSize: 12.5, fontWeight: FontWeight.w700)),
-                              ],
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            NumberPlate(v.display.isEmpty ? v.plate : v.display, size: 12),
-                            const SizedBox(height: 6),
-                            _Pill(opened: v.opened),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
+            ResponsiveGrid(minItemWidth: 400, gap: 10, children: [for (final v in list) VisitRow(v)]),
           ],
         ),
       ),
     );
   }
+}
+
+/// One barrier read: where, when, which gate, the plate, and whether it opened.
+/// Used on Visits and, on a wide window, beside the card on Membership.
+class VisitRow extends StatelessWidget {
+  const VisitRow(this.v, {super.key});
+
+  final Visit v;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(14),
+      child: Row(
+        children: [
+          IconTile(
+            v.direction == 'exit' ? Icons.logout_rounded : Icons.login_rounded,
+            colour: v.opened ? MetricBrand.green700 : MetricBrand.red,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(v.site, style: Theme.of(context).textTheme.titleMedium, maxLines: 1, overflow: TextOverflow.ellipsis),
+                const SizedBox(height: 2),
+                Text(
+                  '${v.direction == 'exit'
+                      ? 'Left'
+                      : v.direction == 'entry'
+                      ? 'Arrived'
+                      : 'Read'} ${friendlyDate(v.at).toLowerCase()} · ${v.gate}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: MetricBrand.slate),
+                ),
+                if (!v.opened) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    VisitsPage.why[v.reason] ?? 'Not opened',
+                    style: const TextStyle(color: MetricBrand.red, fontSize: 12.5, fontWeight: FontWeight.w700),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              NumberPlate(v.display.isEmpty ? v.plate : v.display, size: 12),
+              const SizedBox(height: 6),
+              _Pill(opened: v.opened),
+            ],
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class _Pill extends StatelessWidget {

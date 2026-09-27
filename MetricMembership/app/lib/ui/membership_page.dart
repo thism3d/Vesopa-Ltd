@@ -5,13 +5,15 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../brand.dart';
 import '../data/api.dart';
 import '../data/session.dart';
+import 'visits_page.dart';
 import 'widgets.dart';
 
 /// The membership card: who, whether the barriers open today, and the cars.
 class MembershipPage extends ConsumerWidget {
-  const MembershipPage({super.key, required this.onAddCar});
+  const MembershipPage({super.key, required this.onAddCar, required this.onSeeVisits});
 
   final VoidCallback onAddCar;
+  final VoidCallback onSeeVisits;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -26,28 +28,48 @@ class MembershipPage extends ConsumerWidget {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => ListView(children: [ErrorNotice(e.toString(), onRetry: () => ref.invalidate(accountProvider))]),
         data: (a) => ListView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+          padding: pagePadding(context),
           children: [
-            _Greeting(name: a.member.name),
-            const SizedBox(height: 18),
-            // A card's own size, not the column's: at 720 wide it would be
-            // taller than a laptop screen.
-            Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 460), child: _Card(member: a.member))),
-            if (a.member.standing != 'ok') ...[
-              const SizedBox(height: 16),
-              StandingBanner(standing: a.member.standing, validTo: friendlyDay(a.member.validTo)),
-            ],
-            const SizedBox(height: 28),
-            SectionTitle(
-              'Your cars',
-              trailing: Text('${a.vehicles.length} of ${a.member.maxVehicles}', style: const TextStyle(color: MetricBrand.slate, fontWeight: FontWeight.w600)),
-            ),
-            if (a.vehicles.isEmpty)
-              EmptyState(
-                icon: Icons.directions_car_rounded,
-                title: 'Add your first car',
-                message: 'Register your number plate so the barrier knows you.',
-                action: FilledButton.icon(
+            // Phone: greeting, card, cars. Desktop and tablet: the card on the
+            // left, the cars and the latest visits beside it.
+            TwoColumns(
+              left: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _Greeting(name: a.member.name, showLogo: !isWide(context)),
+                  const SizedBox(height: 18),
+                  // A card's own size, not the column's: stretched it would be
+                  // taller than a laptop screen.
+                  Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 460),
+                      child: _Card(member: a.member),
+                    ),
+                  ),
+                  if (isWide(context)) ...[const SizedBox(height: 22), _Facts(account: a)],
+                  if (a.member.standing != 'ok') ...[
+                    const SizedBox(height: 16),
+                    StandingBanner(standing: a.member.standing, validTo: friendlyDay(a.member.validTo)),
+                  ],
+                ],
+              ),
+              right: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: 8),
+                  SectionTitle(
+                    'Your cars',
+                    trailing: Text(
+                      '${a.vehicles.length} of ${a.member.maxVehicles}',
+                      style: const TextStyle(color: MetricBrand.slate, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  if (a.vehicles.isEmpty)
+                    EmptyState(
+                      icon: Icons.directions_car_rounded,
+                      title: 'Add your first car',
+                      message: 'Register your number plate so the barrier knows you.',
+                      action: FilledButton.icon(
                         key: const Key('add-first-car'),
                         onPressed: () {
                           ref.read(activityLogProvider).tap('add_first_car');
@@ -56,31 +78,111 @@ class MembershipPage extends ConsumerWidget {
                         icon: const Icon(Icons.add),
                         label: const Text('Add a car'),
                       ),
-              )
-            else
-              for (final v in a.vehicles)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Card(
-                    child: ListTile(
-                      leading: const IconTile(Icons.directions_car_filled_rounded),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      title: Align(alignment: Alignment.centerLeft, child: NumberPlate(v.display)),
-                      subtitle: Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Text(
-                          [
-                            if (v.nickname.isNotEmpty) v.nickname,
-                            if (v.description.isNotEmpty) v.description,
-                            if (v.lastSeen != null)
-                              '${v.lastSeen!.direction == 'exit' ? 'Left' : 'Arrived at'} ${v.lastSeen!.site} ${friendlyDate(v.lastSeen!.at).toLowerCase()}',
-                          ].join(' · '),
+                    )
+                  else
+                    for (final v in a.vehicles)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Card(
+                          child: ListTile(
+                            leading: const IconTile(Icons.directions_car_filled_rounded),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            title: Align(alignment: Alignment.centerLeft, child: NumberPlate(v.display)),
+                            subtitle: Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: Text(
+                                [
+                                  if (v.nickname.isNotEmpty) v.nickname,
+                                  if (v.description.isNotEmpty) v.description,
+                                  if (v.lastSeen != null)
+                                    '${v.lastSeen!.direction == 'exit' ? 'Left' : 'Arrived at'} ${v.lastSeen!.site} ${friendlyDate(v.lastSeen!.at).toLowerCase()}',
+                                ].join(' · '),
+                              ),
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                  ),
-                ),
+                  if (isWide(context)) _RecentVisits(onSeeAll: onSeeVisits),
+                ],
+              ),
+            ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The last few barrier reads, beside the card on a wide window.
+class _RecentVisits extends ConsumerWidget {
+  const _RecentVisits({required this.onSeeAll});
+
+  final VoidCallback onSeeAll;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final visits = ref.watch(visitsProvider).value ?? const [];
+    return Padding(
+      padding: const EdgeInsets.only(top: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SectionTitle(
+            'Recent visits',
+            trailing: visits.isEmpty ? null : TextButton(onPressed: onSeeAll, child: const Text('See all')),
+          ),
+          if (visits.isEmpty)
+            const Text('Your visits appear here after a barrier reads your car.', style: TextStyle(color: MetricBrand.slate))
+          else
+            for (final v in visits.take(3)) Padding(padding: const EdgeInsets.only(bottom: 8), child: VisitRow(v)),
+        ],
+      ),
+    );
+  }
+}
+
+/// Under the card on a wide window: the plan, its dates and the car allowance.
+class _Facts extends StatelessWidget {
+  const _Facts({required this.account});
+
+  final Account account;
+
+  @override
+  Widget build(BuildContext context) {
+    final m = account.member;
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 460),
+        child: Card(
+          child: Column(
+            children: [
+              ListTile(
+                leading: const IconTile(Icons.workspace_premium_rounded),
+                title: const Text('Plan'),
+                subtitle: Text(m.planName.isEmpty ? 'Standard' : m.planName),
+              ),
+              ListTile(
+                leading: const IconTile(Icons.event_available_rounded),
+                title: const Text('Valid'),
+                subtitle: Text(
+                  [
+                        if (m.validFrom != null) 'From ${friendlyDay(m.validFrom)}',
+                        if (m.validTo != null) 'until ${friendlyDay(m.validTo)}',
+                      ].join(' ').trim().isEmpty
+                      ? 'No end date'
+                      : [
+                          if (m.validFrom != null) 'From ${friendlyDay(m.validFrom)}',
+                          if (m.validTo != null) 'until ${friendlyDay(m.validTo)}',
+                        ].join(' '),
+                ),
+              ),
+              ListTile(
+                leading: const IconTile(Icons.directions_car_filled_rounded),
+                title: const Text('Cars'),
+                subtitle: Text('${account.vehicles.length} of ${m.maxVehicles} registered'),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -91,27 +193,37 @@ const _empty = Member(id: 0, memberNo: '', name: '', email: '', phone: '', compa
 
 /// "Good evening, Sam" over the Metric logo, centred.
 class _Greeting extends StatelessWidget {
-  const _Greeting({required this.name});
+  const _Greeting({required this.name, this.showLogo = true});
 
   final String name;
+
+  /// Off beside the side rail, which already carries the logo.
+  final bool showLogo;
 
   @override
   Widget build(BuildContext context) {
     final h = DateTime.now().hour;
-    final part = h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+    final part = h < 12
+        ? 'Good morning'
+        : h < 18
+        ? 'Good afternoon'
+        : 'Good evening';
     final first = name.trim().split(' ').first;
     return Column(
       children: [
         const SizedBox(height: 4),
-        const MetricLogo(height: 30),
-        const SizedBox(height: 14),
+        if (showLogo) ...[const MetricLogo(height: 30), const SizedBox(height: 14)],
         Text(
           first.isEmpty ? part : '$part, $first',
           textAlign: TextAlign.center,
           style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: MetricBrand.ink, letterSpacing: -0.3),
         ),
         const SizedBox(height: 4),
-        const Text('Your membership card', textAlign: TextAlign.center, style: TextStyle(color: MetricBrand.slate)),
+        const Text(
+          'Your membership card',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: MetricBrand.slate),
+        ),
       ],
     );
   }
@@ -182,7 +294,11 @@ class _CardState extends State<_Card> with SingleTickerProviderStateMixin {
                       gradient: LinearGradient(
                         begin: Alignment(x - 0.4, -1),
                         end: Alignment(x + 0.4, 1),
-                        colors: [Colors.white.withValues(alpha: 0), Colors.white.withValues(alpha: 0.14), Colors.white.withValues(alpha: 0)],
+                        colors: [
+                          Colors.white.withValues(alpha: 0),
+                          Colors.white.withValues(alpha: 0.14),
+                          Colors.white.withValues(alpha: 0),
+                        ],
                       ),
                     ),
                   );
@@ -206,10 +322,18 @@ class _CardState extends State<_Card> with SingleTickerProviderStateMixin {
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(ok ? Icons.check_circle_rounded : Icons.hourglass_top_rounded, size: 14, color: ok ? MetricBrand.navy : Colors.white),
+                              Icon(
+                                ok ? Icons.check_circle_rounded : Icons.hourglass_top_rounded,
+                                size: 14,
+                                color: ok ? MetricBrand.navy : Colors.white,
+                              ),
                               const SizedBox(width: 5),
                               Text(
-                                ok ? 'Barriers open' : member.status == 'pending' ? 'Awaiting approval' : 'Not active',
+                                ok
+                                    ? 'Barriers open'
+                                    : member.status == 'pending'
+                                    ? 'Awaiting approval'
+                                    : 'Not active',
                                 style: TextStyle(color: ok ? MetricBrand.navy : Colors.white, fontWeight: FontWeight.w800, fontSize: 12),
                               ),
                             ],
@@ -226,7 +350,10 @@ class _CardState extends State<_Card> with SingleTickerProviderStateMixin {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Text('MEMBER', style: TextStyle(color: MetricBrand.green, fontWeight: FontWeight.w800, letterSpacing: 2.2, fontSize: 11)),
+                              const Text(
+                                'MEMBER',
+                                style: TextStyle(color: MetricBrand.green, fontWeight: FontWeight.w800, letterSpacing: 2.2, fontSize: 11),
+                              ),
                               const SizedBox(height: 6),
                               Text(
                                 member.name.isEmpty ? member.email : member.name,
@@ -235,7 +362,10 @@ class _CardState extends State<_Card> with SingleTickerProviderStateMixin {
                                 overflow: TextOverflow.ellipsis,
                               ),
                               const SizedBox(height: 4),
-                              Text(member.memberNo, style: const TextStyle(color: Colors.white70, fontSize: 15, letterSpacing: 2, fontWeight: FontWeight.w600)),
+                              Text(
+                                member.memberNo,
+                                style: const TextStyle(color: Colors.white70, fontSize: 15, letterSpacing: 2, fontWeight: FontWeight.w600),
+                              ),
                               if (member.planName.isNotEmpty || member.validTo != null) ...[
                                 const SizedBox(height: 4),
                                 Text(

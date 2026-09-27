@@ -306,3 +306,58 @@ class SectionTitle extends StatelessWidget {
     ),
   );
 }
+
+/// Wide enough for the desktop and tablet layout: a side rail instead of the
+/// bottom bar, and two columns. 840 is Material's "expanded" width: an iPad
+/// either way round, a laptop, a desktop window; not a phone.
+bool isWide(BuildContext context) => MediaQuery.sizeOf(context).width >= 840;
+
+/// Page padding: roomier on a wide window.
+EdgeInsets pagePadding(BuildContext context) =>
+    isWide(context) ? const EdgeInsets.fromLTRB(32, 28, 32, 32) : const EdgeInsets.fromLTRB(16, 16, 16, 24);
+
+/// Cards in as many columns as fit at [minItemWidth] each: one on a phone,
+/// two or three on a tablet or desktop.
+class ResponsiveGrid extends StatelessWidget {
+  const ResponsiveGrid({super.key, required this.children, this.minItemWidth = 360, this.gap = 12});
+
+  final List<Widget> children;
+  final double minItemWidth;
+  final double gap;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, box) {
+      final cols = ((box.maxWidth + gap) / (minItemWidth + gap)).floor().clamp(1, 4);
+      final w = (box.maxWidth - gap * (cols - 1)) / cols;
+      return Wrap(
+        spacing: gap,
+        runSpacing: gap,
+        children: [for (final c in children) SizedBox(width: w, child: c)],
+      );
+    },
+  );
+}
+
+/// Two columns on a wide window, one above the other on a phone.
+class TwoColumns extends StatelessWidget {
+  const TwoColumns({super.key, required this.left, required this.right, this.leftFlex = 5, this.rightFlex = 6});
+
+  final Widget left;
+  final Widget right;
+  final int leftFlex;
+  final int rightFlex;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!isWide(context)) return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [left, const SizedBox(height: 20), right]);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(flex: leftFlex, child: left),
+        const SizedBox(width: 28),
+        Expanded(flex: rightFlex, child: right),
+      ],
+    );
+  }
+}
