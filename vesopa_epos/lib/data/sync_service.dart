@@ -234,6 +234,12 @@ class SyncService {
     await pullDeals();
     await pullDenominations();
 
+    // The screens too. A screen change scheduled in the back office goes live
+    // with a push to the venue's tills; a till that was offline at that moment
+    // never heard it, and would have sold from the old layout until restarted.
+    // Asking again on every reconnect costs one small fetch.
+    emit('screens');
+
     // Last, and never allowed to break the rest: a till whose staff list will
     // not come down must still get its prices.
     try {
