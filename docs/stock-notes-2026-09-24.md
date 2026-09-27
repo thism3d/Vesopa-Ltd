@@ -62,3 +62,35 @@ new `src/screen_schedules.js` and `src/dashboard_layout.js`, and changes to
 `screens.js`, `dashboard.js`, `index.html`, `style.css`). Until the schema
 runs, Schedule… reports an error, the Scheduled list is empty, and the
 dashboard keeps its layout in the browser only. Nothing else is affected.
+
+## 27 September, second round: the till, the kitchen screen, and live
+
+The owner: every item must reach the till too, and stock should reach the
+kitchen. Built by extending what was there, not beside it:
+
+| Where | What | Commit |
+|-------|------|--------|
+| Server | `/till/stock/...` and `/api/kitchen/stock/...`: the back office's own stock routes on a terminal or kitchen token (the kitchen may only read, record wastage and mark sold out) | 603b06c, 132e09e |
+| Server | `.../stock/availability` (how many more can be made: own count, a half from its keg, a recipe from its scarcest ingredient) and `.../stock/sold-out`, which is the QR menu's existing `dinein_items.available` switch | 132e09e |
+| Server | `PATCH /till/products/:pluid`, `POST /till/products/new`; `/till/products` carries case size | 7a2c9a3, 603b06c |
+| Till | Stock page (stock take, spot check, wastage, adjustment; list on tap; many at once; sub-department groups; case size per line; cases or units; print) | c5fe1bd |
+| Till | Wastage key by cases or units, products listed on open | c5fe1bd |
+| Till | Products page on the ledger (no false "Out of stock" for child, recipe, non-stock); case size dropdown, unit cost, supplier, mass-apply case size; stock button books in or counts through the ledger (it used to change this till only) | 7a2c9a3 |
+| Till | Product editor in sections, saving for every till: details, stock (GP calculator, child products, recipe, non-stock, Sold out), printing, images | 7a2c9a3, a9d8e3d |
+| Till | Scheduled screen changes reach a running till, and a till that was offline asks again on reconnect | 6d5713c |
+| Kitchen | Counts show "5 left"; a Stock tab with Sold out and Waste; recipe measures under ticket lines | 1c0cedc |
+| Back office | A child product needs its measure before anything saves; Use this price works first click | 801af6f |
+
+Screen programming stays in the back office only; the till has no editor and
+listens for changes. The customer display needed nothing found so far.
+
+**Live, 27 September 01:48 (server time).** Backup
+`backup/pre_dylan_notes_20260927_014806.sql` (1.78 MB); the replaced files are
+in `backup/pre_dylan_files/`. Thirteen files uploaded, the two new schema files
+run (both tables present), `pm2 restart backoffice.vesopaepos.com`, `/health`
+ok, new assets served, every new route refuses without a token, and
+`/till/products` carries case sizes on a real venue (83 products, 5 with a
+case).
+
+Versions: EPOS 1.9.0.0 (+42), Kitchen 1.7.0.0 (+13). Display, Express and
+Loyalty have no changes.
