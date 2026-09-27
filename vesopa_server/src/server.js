@@ -449,6 +449,9 @@ app.use('/api', reportScheduleRoutes({ pool, secret: JWT_SECRET }));
  */
 const stock = stockRoutes({ pool, broadcast, secret: JWT_SECRET, toPdf });
 app.use('/api', stock);
+// The same stock routes for the till's Stock and Products pages, under
+// /till/stock/..., signed with the terminal's token (see stockRoutes).
+app.use(stockRoutes({ pool, broadcast, secret: JWT_SECRET, toPdf, till: true }));
 
 /**
  * What the till does that is not a sale: a refund, a no-sale, an expense paid
@@ -1767,17 +1770,24 @@ app.get(['/till/products', '/products.json'], async (req, res, next) => {
               -- junior and social are four products and one meaning, which is
               -- what the single named PLU it replaces could not express.
               p.renews_membership,
-              pc.name AS print_category, pc.sort_order AS print_category_order
+              pc.name AS print_category, pc.sort_order AS print_category_order,
+              -- The case size, so the till's Wastage key can take a count in
+              -- cases or units (2026-09-24). Joined on the id alone: a
+              -- product's pack_size_id is checked to be its own venue's when
+              -- it is set, and comparing office columns here would risk the
+              -- collation mix documented in tasks.md.
+              ps.name AS pack_name, ps.units AS pack_units
        FROM bo_products p
        LEFT JOIN bo_print_categories pc
               ON pc.id = p.print_category_id AND pc.email = p.email
+       LEFT JOIN bo_pack_sizes ps ON ps.id = p.pack_size_id
        WHERE p.email = ?
        ORDER BY p.button_position IS NULL, p.button_position`,
       [office]
     );
     res.json(rows);
   } catch (err) {
-    if (err.code === 'ER_BAD_FIELD_ERROR') {
+    if (err.code === 'ER_BAD_FIELD_ERROR' || err.code === 'ER_NO_SUCH_TABLE') {
       // The price-level columns arrive with schema_price_levels.sql, and
       // deploy.sh applies migrations only when it is asked to. A till that
       // cannot read its catalogue cannot sell, so a missing column costs the

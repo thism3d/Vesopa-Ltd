@@ -46,7 +46,7 @@ const crypto = require('crypto');
 
 const express = require('express');
 
-const { requireAuth } = require('./auth');
+const { requireAuth, requireTerminal } = require('./auth');
 const { accessGuard } = require('./permissions');
 const { sendMail } = require('./mailer');
 const { stockTargets } = require('./stock_effects');
@@ -175,10 +175,30 @@ function gpFigures(price, taxPercentage, costMinor, targetGp) {
 // Routes
 // ---------------------------------------------------------------------------
 
-function stockRoutes({ pool, broadcast, secret, toPdf }) {
+function stockRoutes({ pool, broadcast, secret, toPdf, till = false }) {
   const router = express.Router();
-  const auth = requireAuth(secret);
-  const mayEdit = accessGuard({ pool, secret })('stock.edit');
+  /*
+   * THE TILL'S COPY (2026-09-27). "All the features must reflect to the till
+   * as well": the till's Stock page and Products page use these same routes,
+   * under /till/stock/..., signed with the terminal's token instead of a back
+   * office session. Same handlers, same ledger, same rules -- only who is
+   * asking differs. The till checks its own staff permissions (a manager, or
+   * the wastage key) before it offers any of it; the member of staff's name
+   * rides along in X-Vesopa-Staff so the ledger says who counted.
+   */
+  const prefix = till ? '/till' : '';
+  const asTill = (req, res, next) => {
+    const staff = String(req.headers['x-vesopa-staff'] || '').trim().slice(0, 120);
+    req.user = {
+      officeId: req.terminal.officeId || null,
+      email: req.terminal.office,
+      name: staff || 'Till',
+      role: 'office',
+    };
+    next();
+  };
+  const auth = till ? [requireTerminal(secret), asTill] : requireAuth(secret);
+  const mayEdit = till ? [requireTerminal(secret), asTill] : accessGuard({ pool, secret })('stock.edit');
 
   async function tenantEmail(req) {
     if (req.user.officeId) {
@@ -278,7 +298,7 @@ function stockRoutes({ pool, broadcast, secret, toPdf }) {
   // Suppliers
   // -------------------------------------------------------------------------
 
-  router.get('/stock/suppliers', auth, async (req, res, next) => {
+  router.get(`${prefix}/stock/suppliers`, auth, async (req, res, next) => {
     try {
       const office = await tenantEmail(req);
       const [rows] = await pool.query(
@@ -312,7 +332,7 @@ function stockRoutes({ pool, broadcast, secret, toPdf }) {
     ];
   }
 
-  router.post('/stock/suppliers', mayEdit, async (req, res, next) => {
+  router.post(`${prefix}/stock/suppliers`, mayEdit, async (req, res, next) => {
     try {
       const office = await tenantEmail(req);
       const fields = supplierFields(req.body || {});
@@ -330,7 +350,7 @@ function stockRoutes({ pool, broadcast, secret, toPdf }) {
     }
   });
 
-  router.put('/stock/suppliers/:id', mayEdit, async (req, res, next) => {
+  router.put(`${prefix}/stock/suppliers/:id`, mayEdit, async (req, res, next) => {
     try {
       const office = await tenantEmail(req);
       const fields = supplierFields(req.body || {});
@@ -354,7 +374,7 @@ function stockRoutes({ pool, broadcast, secret, toPdf }) {
    * A supplier with orders is kept, because the orders name it. Deactivate
    * instead; the list sorts inactive ones to the bottom.
    */
-  router.delete('/stock/suppliers/:id', mayEdit, async (req, res, next) => {
+  router.delete(`${prefix}/stock/suppliers/:id`, mayEdit, async (req, res, next) => {
     try {
       const office = await tenantEmail(req);
       const [[used]] = await pool.query(
@@ -405,7 +425,7 @@ function stockRoutes({ pool, broadcast, secret, toPdf }) {
     return seeded;
   }
 
-  router.get('/stock/pack-sizes', auth, async (req, res, next) => {
+  router.get(`${prefix}/stock/pack-sizes`, auth, async (req, res, next) => {
     try {
       res.json(await packSizes(await tenantEmail(req)));
     } catch (e) {
@@ -421,7 +441,7 @@ function stockRoutes({ pool, broadcast, secret, toPdf }) {
     return [name, units];
   }
 
-  router.post('/stock/pack-sizes', mayEdit, async (req, res, next) => {
+  router.post(`${prefix}/stock/pack-sizes`, mayEdit, async (req, res, next) => {
     try {
       const office = await tenantEmail(req);
       const [result] = await pool.execute(
@@ -436,7 +456,7 @@ function stockRoutes({ pool, broadcast, secret, toPdf }) {
     }
   });
 
-  router.put('/stock/pack-sizes/:id', mayEdit, async (req, res, next) => {
+  router.put(`${prefix}/stock/pack-sizes/:id`, mayEdit, async (req, res, next) => {
     try {
       const office = await tenantEmail(req);
       const [result] = await pool.execute(
@@ -452,7 +472,7 @@ function stockRoutes({ pool, broadcast, secret, toPdf }) {
     }
   });
 
-  router.delete('/stock/pack-sizes/:id', mayEdit, async (req, res, next) => {
+  router.delete(`${prefix}/stock/pack-sizes/:id`, mayEdit, async (req, res, next) => {
     try {
       const office = await tenantEmail(req);
       const [[used]] = await pool.query(
@@ -480,7 +500,7 @@ function stockRoutes({ pool, broadcast, secret, toPdf }) {
   // Products: the stock view of the catalogue
   // -------------------------------------------------------------------------
 
-  router.get('/stock/products', auth, async (req, res, next) => {
+  router.get(`${prefix}/stock/products`, auth, async (req, res, next) => {
     try {
       const office = await tenantEmail(req);
       const params = [office];
@@ -633,7 +653,7 @@ function stockRoutes({ pool, broadcast, secret, toPdf }) {
     return next(e);
   };
 
-  router.put('/stock/products/:id/settings', mayEdit, async (req, res, next) => {
+  router.put(`${prefix}/stock/products/:id/settings`, mayEdit, async (req, res, next) => {
     try {
       const office = await tenantEmail(req);
       await saveStockSettings(office, req.params.id, req.body || {});
@@ -649,7 +669,7 @@ function stockRoutes({ pool, broadcast, secret, toPdf }) {
    * The product list's case-size dropdown sends one field; the product editor
    * sends the stock section. Only the named fields move.
    */
-  router.patch('/stock/products/:id', mayEdit, async (req, res, next) => {
+  router.patch(`${prefix}/stock/products/:id`, mayEdit, async (req, res, next) => {
     try {
       const office = await tenantEmail(req);
       const now = await currentStockFields(office, req.params.id);
@@ -675,7 +695,7 @@ function stockRoutes({ pool, broadcast, secret, toPdf }) {
    * All or nothing is not needed here: each product is its own save, and the
    * answer says how many moved and which (if any) refused and why.
    */
-  router.patch('/stock/products', mayEdit, async (req, res, next) => {
+  router.patch(`${prefix}/stock/products`, mayEdit, async (req, res, next) => {
     try {
       const office = await tenantEmail(req);
       const ids = (Array.isArray(req.body?.ids) ? req.body.ids : []).map(Number).filter(Number.isInteger).slice(0, 2000);
@@ -755,7 +775,7 @@ function stockRoutes({ pool, broadcast, secret, toPdf }) {
     };
   }
 
-  router.get('/stock/recipes', auth, async (req, res, next) => {
+  router.get(`${prefix}/stock/recipes`, auth, async (req, res, next) => {
     try {
       const office = await tenantEmail(req);
       const [rows] = await pool.query(
@@ -775,7 +795,7 @@ function stockRoutes({ pool, broadcast, secret, toPdf }) {
     }
   });
 
-  router.get('/stock/recipes/:pluid', auth, async (req, res, next) => {
+  router.get(`${prefix}/stock/recipes/:pluid`, auth, async (req, res, next) => {
     try {
       const one = await recipeWithLines(await tenantEmail(req), Number(req.params.pluid));
       if (!one) return res.status(404).json({ error: 'No such product.' });
@@ -785,7 +805,7 @@ function stockRoutes({ pool, broadcast, secret, toPdf }) {
     }
   });
 
-  router.put('/stock/recipes/:pluid', mayEdit, async (req, res, next) => {
+  router.put(`${prefix}/stock/recipes/:pluid`, mayEdit, async (req, res, next) => {
     const conn = await pool.getConnection();
     try {
       const office = await tenantEmail(req);
@@ -853,7 +873,7 @@ function stockRoutes({ pool, broadcast, secret, toPdf }) {
     }
   });
 
-  router.delete('/stock/recipes/:pluid', mayEdit, async (req, res, next) => {
+  router.delete(`${prefix}/stock/recipes/:pluid`, mayEdit, async (req, res, next) => {
     try {
       const office = await tenantEmail(req);
       await pool.execute('DELETE FROM bo_recipe_lines WHERE office = ? AND recipe_pluid = ?', [
@@ -871,7 +891,7 @@ function stockRoutes({ pool, broadcast, secret, toPdf }) {
   // The ledger, read
   // -------------------------------------------------------------------------
 
-  router.get('/stock/movements', auth, async (req, res, next) => {
+  router.get(`${prefix}/stock/movements`, auth, async (req, res, next) => {
     try {
       const office = await tenantEmail(req);
       const params = [office];
@@ -955,7 +975,7 @@ function stockRoutes({ pool, broadcast, secret, toPdf }) {
     return { ...doc, lines };
   }
 
-  router.get('/stock/docs', auth, async (req, res, next) => {
+  router.get(`${prefix}/stock/docs`, auth, async (req, res, next) => {
     try {
       const office = await tenantEmail(req);
       const params = [office];
@@ -985,7 +1005,7 @@ function stockRoutes({ pool, broadcast, secret, toPdf }) {
     }
   });
 
-  router.get('/stock/docs/:id', auth, async (req, res, next) => {
+  router.get(`${prefix}/stock/docs/:id`, auth, async (req, res, next) => {
     try {
       const doc = await docWithLines(await tenantEmail(req), req.params.id);
       if (!doc) return res.status(404).json({ error: 'No such document.' });
@@ -1010,7 +1030,7 @@ function stockRoutes({ pool, broadcast, secret, toPdf }) {
     }
   }
 
-  router.post('/stock/docs', mayEdit, async (req, res, next) => {
+  router.post(`${prefix}/stock/docs`, mayEdit, async (req, res, next) => {
     const conn = await pool.getConnection();
     try {
       const office = await tenantEmail(req);
@@ -1041,7 +1061,7 @@ function stockRoutes({ pool, broadcast, secret, toPdf }) {
     }
   });
 
-  router.put('/stock/docs/:id', mayEdit, async (req, res, next) => {
+  router.put(`${prefix}/stock/docs/:id`, mayEdit, async (req, res, next) => {
     const conn = await pool.getConnection();
     try {
       const office = await tenantEmail(req);
@@ -1073,7 +1093,7 @@ function stockRoutes({ pool, broadcast, secret, toPdf }) {
     }
   });
 
-  router.delete('/stock/docs/:id', mayEdit, async (req, res, next) => {
+  router.delete(`${prefix}/stock/docs/:id`, mayEdit, async (req, res, next) => {
     try {
       const office = await tenantEmail(req);
       const [[doc]] = await pool.query(
@@ -1246,7 +1266,7 @@ function stockRoutes({ pool, broadcast, secret, toPdf }) {
     }
   }
 
-  router.post('/stock/docs/:id/complete', mayEdit, async (req, res, next) => {
+  router.post(`${prefix}/stock/docs/:id/complete`, mayEdit, async (req, res, next) => {
     try {
       const office = await tenantEmail(req);
       const result = await complete(office, req.params.id, who(req));
@@ -1265,7 +1285,7 @@ function stockRoutes({ pool, broadcast, secret, toPdf }) {
    * Rendered through the report PDF so it carries the venue's name and the
    * date like everything else that leaves the back office on paper.
    */
-  router.get('/stock/count-sheet.pdf', auth, async (req, res, next) => {
+  router.get(`${prefix}/stock/count-sheet.pdf`, auth, async (req, res, next) => {
     try {
       const office = await tenantEmail(req);
       const params = [office];
@@ -1345,7 +1365,7 @@ function stockRoutes({ pool, broadcast, secret, toPdf }) {
     return { ...order, lines };
   }
 
-  router.get('/stock/orders', auth, async (req, res, next) => {
+  router.get(`${prefix}/stock/orders`, auth, async (req, res, next) => {
     try {
       const office = await tenantEmail(req);
       const params = [office];
@@ -1378,7 +1398,7 @@ function stockRoutes({ pool, broadcast, secret, toPdf }) {
    * the minimum, when no maximum is set). Rounded up: a supplier does not
    * sell a third of a case.
    */
-  router.get('/stock/orders/suggest', auth, async (req, res, next) => {
+  router.get(`${prefix}/stock/orders/suggest`, auth, async (req, res, next) => {
     try {
       const office = await tenantEmail(req);
       const params = [office];
@@ -1410,7 +1430,7 @@ function stockRoutes({ pool, broadcast, secret, toPdf }) {
     }
   });
 
-  router.get('/stock/orders/:id', auth, async (req, res, next) => {
+  router.get(`${prefix}/stock/orders/:id`, auth, async (req, res, next) => {
     try {
       const order = await orderWithLines(await tenantEmail(req), req.params.id);
       if (!order) return res.status(404).json({ error: 'No such order.' });
@@ -1487,7 +1507,7 @@ function stockRoutes({ pool, broadcast, secret, toPdf }) {
     };
   }
 
-  router.post('/stock/orders', mayEdit, async (req, res, next) => {
+  router.post(`${prefix}/stock/orders`, mayEdit, async (req, res, next) => {
     const conn = await pool.getConnection();
     try {
       const office = await tenantEmail(req);
@@ -1515,7 +1535,7 @@ function stockRoutes({ pool, broadcast, secret, toPdf }) {
     }
   });
 
-  router.put('/stock/orders/:id', mayEdit, async (req, res, next) => {
+  router.put(`${prefix}/stock/orders/:id`, mayEdit, async (req, res, next) => {
     const conn = await pool.getConnection();
     try {
       const office = await tenantEmail(req);
@@ -1549,7 +1569,7 @@ function stockRoutes({ pool, broadcast, secret, toPdf }) {
     }
   });
 
-  router.delete('/stock/orders/:id', mayEdit, async (req, res, next) => {
+  router.delete(`${prefix}/stock/orders/:id`, mayEdit, async (req, res, next) => {
     try {
       const office = await tenantEmail(req);
       const [[order]] = await pool.query(
@@ -1610,7 +1630,7 @@ function stockRoutes({ pool, broadcast, secret, toPdf }) {
     });
   }
 
-  router.get('/stock/orders/:id/pdf', auth, async (req, res, next) => {
+  router.get(`${prefix}/stock/orders/:id/pdf`, auth, async (req, res, next) => {
     try {
       const office = await tenantEmail(req);
       const order = await orderWithLines(office, req.params.id);
@@ -1628,7 +1648,7 @@ function stockRoutes({ pool, broadcast, secret, toPdf }) {
    * -- the PDF attached, a plain note in the body -- and marked sent either
    * way, because a phoned order is still an order that has gone.
    */
-  router.post('/stock/orders/:id/send', mayEdit, async (req, res, next) => {
+  router.post(`${prefix}/stock/orders/:id/send`, mayEdit, async (req, res, next) => {
     try {
       const office = await tenantEmail(req);
       const order = await orderWithLines(office, req.params.id);
@@ -1683,7 +1703,7 @@ function stockRoutes({ pool, broadcast, secret, toPdf }) {
    * in UNITS through the pack size on the line, and updates the product's pack
    * cost from the order: the last invoice is the best guess at the next.
    */
-  router.post('/stock/orders/:id/deliver', mayEdit, async (req, res, next) => {
+  router.post(`${prefix}/stock/orders/:id/deliver`, mayEdit, async (req, res, next) => {
     const conn = await pool.getConnection();
     try {
       const office = await tenantEmail(req);
