@@ -187,6 +187,10 @@ async function main() {
     });
 
     await check('a saved layout that names a card no longer there, or misses a new one, still opens', async () => {
+      // Let the saves from Reset and Done land first, or one arrives after
+      // this and puts the standard layout back.
+      let seen = -1;
+      while (seen !== state.puts) { seen = state.puts; await sleep(400); }
       state.layout = [{ key: 'gone', size: 'full', hidden: false }, { key: 'live', size: 'full', hidden: false }];
       await reload();
       const now = await cdp.eval(order);
