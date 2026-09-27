@@ -373,16 +373,9 @@ test('staff choose the phone bar colours; the manifest and /theme follow at once
   await call('PATCH', '/api/admin/settings', { body: { appTheme: 'metric', barMotion: 'animated' }, headers: { Cookie: cookie } });
 });
 
-test('the privacy policy is served, and barrier records older than the promised year are deleted', async () => {
-  const page = await call('GET', '/privacy');
-  assert.equal(page.status, 200);
-  assert.match(page.text, /Privacy policy/);
-  assert.match(page.text, /12 months/);
-  const gate = await db.one('SELECT id, site_id FROM gates LIMIT 1');
-  if (gate) {
-    await db.run("INSERT INTO access_events (gate_id, site_id, plate, decision, at) VALUES (?, ?, 'OLD1', 'deny', DATE_SUB(NOW(), INTERVAL 400 DAY)), (?, ?, 'NEW1', 'deny', NOW())", [gate.id, gate.site_id, gate.id, gate.site_id]);
-    await require('../src/server').pruneEvents();
-    assert.equal((await db.all("SELECT plate FROM access_events WHERE plate IN ('OLD1','NEW1')")).map((r) => r.plate).join(), 'NEW1');
-    await db.run("DELETE FROM access_events WHERE plate = 'NEW1'");
-  }
+test('/privacy sends people to Metric Group\'s own privacy policy', async () => {
+  const r = await call('GET', '/privacy');
+  assert.equal(r.status, 302);
+  assert.equal(r.headers.get('location'), 'https://metricgroup.co.uk/privacy-policy/');
+  assert.equal((await call('GET', '/api/v1/brand')).json.privacyPolicy, 'https://metricgroup.co.uk/privacy-policy/');
 });

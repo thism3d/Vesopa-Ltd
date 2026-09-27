@@ -95,10 +95,10 @@ class AccountPage extends ConsumerWidget {
                 ListTile(
                   leading: const IconTile(Icons.privacy_tip_outlined),
                   title: const Text('Privacy policy'),
-                  subtitle: const Text('What we keep about you, and for how long'),
+                  subtitle: const Text("Metric Group's privacy policy"),
                   onTap: () {
                     log.tap('open_privacy');
-                    launchUrl(Uri.parse('https://metric.vesopa.com/privacy'), mode: LaunchMode.externalApplication);
+                    launchUrl(Uri.parse(MetricBrand.privacyPolicy), mode: LaunchMode.externalApplication);
                   },
                 ),
                 ListTile(
