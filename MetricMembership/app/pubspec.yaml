@@ -119,3 +119,31 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+# Microsoft Store package. Reserved in Partner Center as "Metric Membership"
+# (Store ID 9NTLR9S47K4W); identity_name and publisher are copied from its
+# Product identity page and must match it exactly, or the upload is refused.
+msix_config:
+  display_name: Metric Membership
+  publisher_display_name: Vesopa EPOS Ltd
+  identity_name: MeirionDavies.MetricMembership
+  publisher: CN=3AD172E6-2CBA-4B09-AD50-B52C88D57FB3
+
+  # Four parts, the last always 0. Bump it with `version:` above for every
+  # submission, including a resubmission after a failed certification.
+  msix_version: 1.0.0.0
+
+  logo_path: assets/brand/metric-icon.png
+
+  # The app talks to metric.vesopa.com and auth.vesopa.com over HTTPS, and
+  # listens on 127.0.0.1 for one moment during Continue with Vesopa.
+  capabilities: internetClient, privateNetworkClientServer
+
+  store: true
+  install_certificate: false
+  architecture: x64
+  languages: en-gb
+
+  output_path: build/store
+  output_name: metric-membership-store
+  windows_build_args: --release --dart-define=VESOPA_METRIC_CLIENT_ID=07302cefba3611f185af42010a80000e
