@@ -240,3 +240,6 @@ vesopa_server/loyalty_web/
 
 # Voucher pictures the gift shop sends with each card, written on issue; the live ones live on the box.
 vesopa_server/public/uploads/giftart_*
+
+# Firebase Admin SDK service account keys: never commit
+firebase-adminsdk*.json
