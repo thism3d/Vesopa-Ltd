@@ -1,8 +1,9 @@
-# Tests tagged `live` call Dojo's real sandbox over the network, so they are not
-# deterministic and are kept out of CI (see .github/workflows/windows.yml, which
-# runs `flutter test --exclude-tags live`). Run them deliberately with:
+# Tests tagged `live` call Dojo's real sandbox over the network and need the
+# sandbox key and the physical readers, so they live in test_live/ rather than
+# test/: a plain `flutter test` runs test/ only and never trips over them. Run
+# them deliberately with:
 #
-#     flutter test --tags live
+#     flutter test test_live --dart-define=DOJO_API_KEY=sk_sandbox_…
 #
 # Tests tagged `golden` compare a rendered screenshot against a checked-in PNG.
 # The goldens are generated on macOS, and Windows rasterises text differently

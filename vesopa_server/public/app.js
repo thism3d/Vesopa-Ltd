@@ -4595,6 +4595,55 @@ function confirmDialog(message, { title, confirmLabel, danger } = {}) {
   });
 }
 
+/**
+ * Ask for one line of text, in the page rather than with the browser's own
+ * prompt(), for the same reason as confirmDialog. Resolves the trimmed text,
+ * or null if the person cancelled.
+ *
+ * @returns {Promise<string|null>}
+ */
+function textDialog(message, { title, value = '', placeholder = '', confirmLabel, maxLength = 200, type = 'text' } = {}) {
+  return new Promise((resolve) => {
+    const back = document.createElement('div');
+    back.className = 'modal-back confirm-back';
+    back.innerHTML = `
+      <div class="modal confirm-modal" role="dialog" aria-modal="true" aria-labelledby="text-dialog-title">
+        <form class="text-dialog-form">
+          <h3 id="text-dialog-title">${esc(title || 'Enter a value')}</h3>
+          <label class="confirm-body">${esc(message)}
+            <input type="${esc(type)}" maxlength="${Number(maxLength) || 200}" data-text
+                   value="${esc(value)}" placeholder="${esc(placeholder)}" autocomplete="off" />
+          </label>
+          <div class="modal-actions">
+            <button type="button" class="btn ghost" data-no>Cancel</button>
+            <button type="submit" class="btn primary" data-yes>${esc(confirmLabel || 'OK')}</button>
+          </div>
+        </form>
+      </div>`;
+    document.body.appendChild(back);
+    requestAnimationFrame(() => back.classList.add('in'));
+    const input = back.querySelector('[data-text]');
+
+    const done = (answer) => {
+      back.classList.remove('in');
+      setTimeout(() => back.remove(), 220);
+      document.removeEventListener('keydown', onKey);
+      resolve(answer);
+    };
+    const onKey = (e) => { if (e.key === 'Escape') done(null); };
+    document.addEventListener('keydown', onKey);
+    back.querySelector('form').onsubmit = (e) => {
+      e.preventDefault();
+      const text = input.value.trim();
+      done(text || null);
+    };
+    back.querySelector('[data-no]').onclick = () => done(null);
+    back.onclick = (e) => { if (e.target === back) done(null); };
+    input.focus();
+    input.select();
+  });
+}
+
 // Crop-frame shapes, matched to how each picture actually renders on the
 // till: a department's category button is a square (_CategoryThumb in
 // vesopa_epos/lib/ui/sale_page.dart), a product's sale-grid tile gives the
@@ -5410,19 +5459,31 @@ function wireRichFields(root) {
       if (!b) return;
       edit.focus();
       if (b.dataset.rt === 'createLink') {
-        const url = prompt('Link address (https://…)', 'https://');
-        if (url && /^(https?:|mailto:)/i.test(url.trim())) document.execCommand('createLink', false, url.trim());
-      } else {
-        document.execCommand(b.dataset.rt, false, null);
+        // The dialog takes the focus, so the selection the link goes on is
+        // kept and put back once an address is given.
+        const sel = window.getSelection();
+        const range = sel && sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+        textDialog('Link address (https://…)', { title: 'Add a link', value: 'https://', type: 'url', confirmLabel: 'Add link' })
+          .then((url) => {
+            if (!url || !/^(https?:|mailto:)/i.test(url)) return;
+            edit.focus();
+            if (range) { sel.removeAllRanges(); sel.addRange(range); }
+            document.execCommand('createLink', false, url);
+            sync();
+          });
+        return;
       }
+      document.execCommand(b.dataset.rt, false, null);
       sync();
     });
   });
 
   root.querySelectorAll('[data-make-ean]').forEach((btn) => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       const input = btn.parentElement.querySelector('input');
-      if (input.value.trim() && !confirm('Replace the barcode that is there?')) return;
+      if (input.value.trim() && !(await confirmDialog('Replace the barcode that is there?', {
+        title: 'New barcode', confirmLabel: 'Replace',
+      }))) return;
       input.value = makeStoreEan13();
       input.dispatchEvent(new Event('input', { bubbles: true }));
     });
@@ -12485,7 +12546,9 @@ function activityApplyView(view) {
     if (e.target.id === 'activity-clear') { activityClearAll(); return loadActivity(); }
     if (e.target.id === 'activity-view-save') {
       const current = $('activity-views').value;
-      const name = (window.prompt('Name these filters', current || '') || '').trim().slice(0, 60);
+      const name = ((await textDialog('A name for these filters', {
+        title: 'Save filters', value: current || '', placeholder: 'e.g. Late problems', confirmLabel: 'Save', maxLength: 60,
+      })) || '').slice(0, 60);
       if (!name) return;
       const views = activityViews();
       views[name] = activitySnapshot();

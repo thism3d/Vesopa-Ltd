@@ -44,6 +44,9 @@ function fakePool(script) {
       commit: async () => {},
       rollback: async () => {},
       release: () => {},
+      // Signing a screen in takes a licence seat (src/till_seats.js), which
+      // reads the venue's seats on the same connection.
+      query: async (sql, params) => answer(sql, params),
       execute: async (sql, params) => {
         asked.push({ sql: sql.replace(/\s+/g, ' ').trim(), params });
         if (sql.includes('INSERT IGNORE INTO epos_kitchen_tickets')) {

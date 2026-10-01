@@ -802,12 +802,17 @@ check('Activity Log filters reach the server and show as removable chips', async
 check('Activity Log saved filter sets come back as they were saved', async (cdp) => {
   await cdp.open('activity_log');
   await cdp.eval(`
-    window.prompt = () => 'Late problems';
     const set = (id, v) => { const el = document.getElementById(id); el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); };
     document.querySelector('#activity-ranges [data-range="today"]').click();
     set('activity-result', 'problems');
     document.getElementById('activity-view-save').click();
-    document.getElementById('activity-clear').click();
+    return new Promise((go) => setTimeout(() => go(true), 100));`);
+  // The name is asked for in the page, not with the browser's prompt().
+  await cdp.eval(`const input = document.querySelector('.confirm-back [data-text]');
+    input.value = 'Late problems';
+    input.form.requestSubmit();
+    return new Promise((go) => setTimeout(() => go(true), 300));`);
+  await cdp.eval(`document.getElementById('activity-clear').click();
     return new Promise((go) => setTimeout(() => go(true), 400));`);
   await cdp.eval(`const sel = document.getElementById('activity-views'); sel.value = 'Late problems';
     sel.dispatchEvent(new Event('change', { bubbles: true }));

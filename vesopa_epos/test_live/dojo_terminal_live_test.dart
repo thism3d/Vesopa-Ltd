@@ -7,24 +7,24 @@ import 'package:vesopa_epos/payments/payment_provider.dart';
 
 /// Exercises the pay-at-counter flow against Dojo's real sandbox.
 ///
-/// Tagged `live` and excluded from the default run (see dart_test.yaml) because
+/// In test_live/, outside the default `flutter test` run (see dart_test.yaml), because
 /// it needs the network and a sandbox terminal. Run it deliberately with:
 ///
-///     flutter test --tags live
+///     flutter test test_live --dart-define=DOJO_API_KEY=sk_sandbox_…
 ///
 /// It is here because the terminal flow is the one part that cannot be proved
 /// with mocks alone: the endpoint shape, the mandatory `reseller-id` header and
 /// the signature step were all discovered by calling the real thing.
 void main() {
   // The key is never committed (this repo is public). Supply it when running:
-  //   flutter test --tags live --dart-define=DOJO_API_KEY=sk_sandbox_…
+  //   flutter test test_live --dart-define=DOJO_API_KEY=sk_sandbox_…
   const key = String.fromEnvironment('DOJO_API_KEY');
 
   setUpAll(() {
     if (key.isEmpty) {
       fail(
         'These tests need a sandbox key: '
-        'flutter test --tags live --dart-define=DOJO_API_KEY=sk_sandbox_…',
+        'flutter test test_live --dart-define=DOJO_API_KEY=sk_sandbox_…',
       );
     }
   });

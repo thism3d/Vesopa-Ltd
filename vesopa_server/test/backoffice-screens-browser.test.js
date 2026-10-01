@@ -1019,11 +1019,16 @@ check('choosing a default sends it straight away', async (cdp) => {
 // landing on the page selected a key rows away from the one under the finger.
 check('a press lands on the key under it even when the page must scroll', async (cdp) => {
   await reset(cdp);
-  // Bottom of the page, so the top of the grid is above the viewport and the
-  // browser has somewhere to scroll to if anything asks it to.
+  // Scrolled so the top of the grid is above the viewport (the browser has
+  // somewhere to scroll to if anything asks it to) while the key pressed is
+  // still on screen. Scrolling to the very bottom used to do both, until the
+  // page grew taller than the window and took row 3 off the top with it.
   const before = await cdp.eval(
-    `window.scrollTo(0, document.documentElement.scrollHeight);
-     document.getElementById('sp-grid').blur();
+    `const grid = document.getElementById('sp-grid');
+     const key = grid.querySelector('.sp-cell[data-row="3"][data-col="0"]');
+     window.scrollTo(0, window.scrollY + key.getBoundingClientRect().top - 60);
+     grid.blur();
+     if (grid.getBoundingClientRect().top >= 0) throw new Error('the grid top is still on screen');
      return Math.round(window.scrollY);`
   );
 

@@ -386,7 +386,8 @@ check('no back office code asks the browser for a dialog', () => {
       const trimmed = line.trim();
       if (trimmed.startsWith('*') || trimmed.startsWith('/*')) return;
       const code = line.replace(/\/\/.*$/, '');
-      if (/(^|[^.\w])(alert|confirm|prompt)\s*\(/.test(code)
+      // window.prompt() is the same dialog by its full name.
+      if (/(^|[^.\w]|\bwindow\.|\bglobalThis\.)(alert|confirm|prompt)\s*\(/.test(code)
           && !/confirmDialog/.test(code)) {
         bad.push(`${name}:${i + 1} ${line.trim().slice(0, 70)}`);
       }

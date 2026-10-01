@@ -17,7 +17,7 @@ import 'package:vesopa_epos/payments/payment_provider.dart';
 /// Tagged `live` and excluded from CI (see dart_test.yaml). Run it deliberately
 /// against Vesopa's own sandbox account:
 ///
-///     flutter test --tags live --dart-define=DOJO_API_KEY=sk_sandbox_…
+///     flutter test test_live --dart-define=DOJO_API_KEY=sk_sandbox_…
 ///
 /// The account carries one virtual terminal per outcome, chosen by the last
 /// four characters of its TID, so each scenario below is produced by the
@@ -35,7 +35,7 @@ void main() {
     if (key.isEmpty) {
       fail(
         'These tests need the sandbox key: '
-        'flutter test --tags live --dart-define=DOJO_API_KEY=sk_sandbox_…',
+        'flutter test test_live --dart-define=DOJO_API_KEY=sk_sandbox_…',
       );
     }
   });
