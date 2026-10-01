@@ -312,6 +312,15 @@ class $ProductsTable extends Products with TableInfo<$ProductsTable, Product> {
     type: DriftSqlType.double,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _extrasMeta = const VerificationMeta('extras');
+  @override
+  late final GeneratedColumn<String> extras = GeneratedColumn<String>(
+    'extras',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     pluId,
@@ -341,6 +350,7 @@ class $ProductsTable extends Products with TableInfo<$ProductsTable, Product> {
     barcode,
     packName,
     packUnits,
+    extras,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -568,6 +578,12 @@ class $ProductsTable extends Products with TableInfo<$ProductsTable, Product> {
         packUnits.isAcceptableOrUnknown(data['pack_units']!, _packUnitsMeta),
       );
     }
+    if (data.containsKey('extras')) {
+      context.handle(
+        _extrasMeta,
+        extras.isAcceptableOrUnknown(data['extras']!, _extrasMeta),
+      );
+    }
     return context;
   }
 
@@ -684,6 +700,10 @@ class $ProductsTable extends Products with TableInfo<$ProductsTable, Product> {
       packUnits: attachedDatabase.typeMapping.read(
         DriftSqlType.double,
         data['${effectivePrefix}pack_units'],
+      ),
+      extras: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}extras'],
       ),
     );
   }
@@ -826,6 +846,14 @@ class Product extends DataClass implements Insertable<Product> {
   /// which is exactly what it asked before.
   final String? packName;
   final double? packUnits;
+
+  /// What the product form's newer steps say (1.9.1, 2026-10-01): short
+  /// description, description, calories, may-contain traces, diet labels,
+  /// sold by weight, supplier code and min/max stock. Kept as the server's
+  /// own JSON in one column rather than ten, because the till only reads
+  /// them to show the product wizard and to ask for a weight -- see
+  /// `data/product_extras.dart`. Null until the next catalogue sync.
+  final String? extras;
   const Product({
     required this.pluId,
     required this.name,
@@ -854,6 +882,7 @@ class Product extends DataClass implements Insertable<Product> {
     this.barcode,
     this.packName,
     this.packUnits,
+    this.extras,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -922,6 +951,9 @@ class Product extends DataClass implements Insertable<Product> {
     }
     if (!nullToAbsent || packUnits != null) {
       map['pack_units'] = Variable<double>(packUnits);
+    }
+    if (!nullToAbsent || extras != null) {
+      map['extras'] = Variable<String>(extras);
     }
     return map;
   }
@@ -993,6 +1025,9 @@ class Product extends DataClass implements Insertable<Product> {
       packUnits: packUnits == null && nullToAbsent
           ? const Value.absent()
           : Value(packUnits),
+      extras: extras == null && nullToAbsent
+          ? const Value.absent()
+          : Value(extras),
     );
   }
 
@@ -1029,6 +1064,7 @@ class Product extends DataClass implements Insertable<Product> {
       barcode: serializer.fromJson<String?>(json['barcode']),
       packName: serializer.fromJson<String?>(json['packName']),
       packUnits: serializer.fromJson<double?>(json['packUnits']),
+      extras: serializer.fromJson<String?>(json['extras']),
     );
   }
   @override
@@ -1062,6 +1098,7 @@ class Product extends DataClass implements Insertable<Product> {
       'barcode': serializer.toJson<String?>(barcode),
       'packName': serializer.toJson<String?>(packName),
       'packUnits': serializer.toJson<double?>(packUnits),
+      'extras': serializer.toJson<String?>(extras),
     };
   }
 
@@ -1093,6 +1130,7 @@ class Product extends DataClass implements Insertable<Product> {
     Value<String?> barcode = const Value.absent(),
     Value<String?> packName = const Value.absent(),
     Value<double?> packUnits = const Value.absent(),
+    Value<String?> extras = const Value.absent(),
   }) => Product(
     pluId: pluId ?? this.pluId,
     name: name ?? this.name,
@@ -1133,6 +1171,7 @@ class Product extends DataClass implements Insertable<Product> {
     barcode: barcode.present ? barcode.value : this.barcode,
     packName: packName.present ? packName.value : this.packName,
     packUnits: packUnits.present ? packUnits.value : this.packUnits,
+    extras: extras.present ? extras.value : this.extras,
   );
   Product copyWithCompanion(ProductsCompanion data) {
     return Product(
@@ -1199,6 +1238,7 @@ class Product extends DataClass implements Insertable<Product> {
       barcode: data.barcode.present ? data.barcode.value : this.barcode,
       packName: data.packName.present ? data.packName.value : this.packName,
       packUnits: data.packUnits.present ? data.packUnits.value : this.packUnits,
+      extras: data.extras.present ? data.extras.value : this.extras,
     );
   }
 
@@ -1231,7 +1271,8 @@ class Product extends DataClass implements Insertable<Product> {
           ..write('isModifier: $isModifier, ')
           ..write('barcode: $barcode, ')
           ..write('packName: $packName, ')
-          ..write('packUnits: $packUnits')
+          ..write('packUnits: $packUnits, ')
+          ..write('extras: $extras')
           ..write(')'))
         .toString();
   }
@@ -1265,6 +1306,7 @@ class Product extends DataClass implements Insertable<Product> {
     barcode,
     packName,
     packUnits,
+    extras,
   ]);
   @override
   bool operator ==(Object other) =>
@@ -1296,7 +1338,8 @@ class Product extends DataClass implements Insertable<Product> {
           other.isModifier == this.isModifier &&
           other.barcode == this.barcode &&
           other.packName == this.packName &&
-          other.packUnits == this.packUnits);
+          other.packUnits == this.packUnits &&
+          other.extras == this.extras);
 }
 
 class ProductsCompanion extends UpdateCompanion<Product> {
@@ -1327,6 +1370,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
   final Value<String?> barcode;
   final Value<String?> packName;
   final Value<double?> packUnits;
+  final Value<String?> extras;
   const ProductsCompanion({
     this.pluId = const Value.absent(),
     this.name = const Value.absent(),
@@ -1355,6 +1399,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     this.barcode = const Value.absent(),
     this.packName = const Value.absent(),
     this.packUnits = const Value.absent(),
+    this.extras = const Value.absent(),
   });
   ProductsCompanion.insert({
     this.pluId = const Value.absent(),
@@ -1384,6 +1429,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     this.barcode = const Value.absent(),
     this.packName = const Value.absent(),
     this.packUnits = const Value.absent(),
+    this.extras = const Value.absent(),
   }) : name = Value(name),
        priceMinor = Value(priceMinor);
   static Insertable<Product> custom({
@@ -1414,6 +1460,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     Expression<String>? barcode,
     Expression<String>? packName,
     Expression<double>? packUnits,
+    Expression<String>? extras,
   }) {
     return RawValuesInsertable({
       if (pluId != null) 'plu_id': pluId,
@@ -1444,6 +1491,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
       if (barcode != null) 'barcode': barcode,
       if (packName != null) 'pack_name': packName,
       if (packUnits != null) 'pack_units': packUnits,
+      if (extras != null) 'extras': extras,
     });
   }
 
@@ -1475,6 +1523,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     Value<String?>? barcode,
     Value<String?>? packName,
     Value<double?>? packUnits,
+    Value<String?>? extras,
   }) {
     return ProductsCompanion(
       pluId: pluId ?? this.pluId,
@@ -1504,6 +1553,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
       barcode: barcode ?? this.barcode,
       packName: packName ?? this.packName,
       packUnits: packUnits ?? this.packUnits,
+      extras: extras ?? this.extras,
     );
   }
 
@@ -1591,6 +1641,9 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     if (packUnits.present) {
       map['pack_units'] = Variable<double>(packUnits.value);
     }
+    if (extras.present) {
+      map['extras'] = Variable<String>(extras.value);
+    }
     return map;
   }
 
@@ -1623,7 +1676,8 @@ class ProductsCompanion extends UpdateCompanion<Product> {
           ..write('isModifier: $isModifier, ')
           ..write('barcode: $barcode, ')
           ..write('packName: $packName, ')
-          ..write('packUnits: $packUnits')
+          ..write('packUnits: $packUnits, ')
+          ..write('extras: $extras')
           ..write(')'))
         .toString();
   }
@@ -9191,6 +9245,7 @@ typedef $$ProductsTableCreateCompanionBuilder =
       Value<String?> barcode,
       Value<String?> packName,
       Value<double?> packUnits,
+      Value<String?> extras,
     });
 typedef $$ProductsTableUpdateCompanionBuilder =
     ProductsCompanion Function({
@@ -9221,6 +9276,7 @@ typedef $$ProductsTableUpdateCompanionBuilder =
       Value<String?> barcode,
       Value<String?> packName,
       Value<double?> packUnits,
+      Value<String?> extras,
     });
 
 class $$ProductsTableFilterComposer
@@ -9364,6 +9420,11 @@ class $$ProductsTableFilterComposer
 
   ColumnFilters<double> get packUnits => $composableBuilder(
     column: $table.packUnits,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get extras => $composableBuilder(
+    column: $table.extras,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -9511,6 +9572,11 @@ class $$ProductsTableOrderingComposer
     column: $table.packUnits,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get extras => $composableBuilder(
+    column: $table.extras,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$ProductsTableAnnotationComposer
@@ -9638,6 +9704,9 @@ class $$ProductsTableAnnotationComposer
 
   GeneratedColumn<double> get packUnits =>
       $composableBuilder(column: $table.packUnits, builder: (column) => column);
+
+  GeneratedColumn<String> get extras =>
+      $composableBuilder(column: $table.extras, builder: (column) => column);
 }
 
 class $$ProductsTableTableManager
@@ -9695,6 +9764,7 @@ class $$ProductsTableTableManager
                 Value<String?> barcode = const Value.absent(),
                 Value<String?> packName = const Value.absent(),
                 Value<double?> packUnits = const Value.absent(),
+                Value<String?> extras = const Value.absent(),
               }) => ProductsCompanion(
                 pluId: pluId,
                 name: name,
@@ -9723,6 +9793,7 @@ class $$ProductsTableTableManager
                 barcode: barcode,
                 packName: packName,
                 packUnits: packUnits,
+                extras: extras,
               ),
           createCompanionCallback:
               ({
@@ -9753,6 +9824,7 @@ class $$ProductsTableTableManager
                 Value<String?> barcode = const Value.absent(),
                 Value<String?> packName = const Value.absent(),
                 Value<double?> packUnits = const Value.absent(),
+                Value<String?> extras = const Value.absent(),
               }) => ProductsCompanion.insert(
                 pluId: pluId,
                 name: name,
@@ -9781,6 +9853,7 @@ class $$ProductsTableTableManager
                 barcode: barcode,
                 packName: packName,
                 packUnits: packUnits,
+                extras: extras,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))

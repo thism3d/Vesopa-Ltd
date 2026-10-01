@@ -476,6 +476,10 @@ const _allergenCacheKey = 'till.allergen_labels';
 
 final allergenLabelsProvider = FutureProvider<Map<String, String>>((ref) async {
   Map<String, String> parse(Object? decoded) {
+    // The server answers {allergens: [...], dietary: [...]}; an older one, and
+    // the cache it left, a bare list. Reading only the bare list meant the
+    // labels never arrived from a current server (found 2026-10-01).
+    if (decoded is Map) decoded = decoded['allergens'];
     if (decoded is! List) return const {};
     return {
       for (final row in decoded)

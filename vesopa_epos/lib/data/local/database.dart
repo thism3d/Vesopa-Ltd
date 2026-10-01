@@ -145,6 +145,14 @@ class Products extends Table {
   TextColumn get packName => text().nullable()();
   RealColumn get packUnits => real().nullable()();
 
+  /// What the product form's newer steps say (1.9.1, 2026-10-01): short
+  /// description, description, calories, may-contain traces, diet labels,
+  /// sold by weight, supplier code and min/max stock. Kept as the server's
+  /// own JSON in one column rather than ten, because the till only reads
+  /// them to show the product wizard and to ask for a weight -- see
+  /// `data/product_extras.dart`. Null until the next catalogue sync.
+  TextColumn get extras => text().nullable()();
+
   @override
   Set<Column> get primaryKey => {pluId};
 }
@@ -690,7 +698,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 28;
+  int get schemaVersion => 29;
 
 
   /// Add a column only if the table has not already got it.
@@ -940,6 +948,11 @@ class AppDatabase extends _$AppDatabase {
             // "no case" -- units only, as before.
             await _addColumnIfMissing(m, products, products.packName);
             await _addColumnIfMissing(m, products, products.packUnits);
+          }
+          if (from < 29) {
+            // 1.9.1: the product wizard's extra fields, as one JSON column.
+            // Null until the next catalogue sync, which reads as "not said".
+            await _addColumnIfMissing(m, products, products.extras);
           }
         },
       );

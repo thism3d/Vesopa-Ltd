@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/product_extras.dart';
 import '../data/kitchen_printing.dart';
 import '../data/local/database.dart';
 import '../data/mix_match_engine.dart';
@@ -335,6 +336,34 @@ class SalePage extends ConsumerWidget {
       // discovers is missing at the counter.
       if (p.isModifier) {
         await attachModifier(p, addedBy);
+        return;
+      }
+
+      // Sold by weight (set in the product's details): the price is per kg,
+      // so ask the weight and ring it as the quantity. Never merged, since
+      // two weighings are two different things.
+      if (ProductExtras.decode(p.extras).isWeighted) {
+        final typed = await _fieldDialog(
+          context,
+          '${p.name}: weight in kg',
+          hint: 'For example 0.350',
+          mode: PosKeyboardMode.decimal,
+        );
+        final kg = double.tryParse((typed ?? '').trim());
+        if (kg == null || kg <= 0) {
+          if (typed != null && context.mounted) {
+            PosMessenger.error(context, 'Type the weight in kg, for example 0.350.');
+          }
+          return;
+        }
+        await repo.addLine(
+          orderId,
+          p,
+          qty: (kg * 1000).round() / 1000,
+          addedBy: addedBy,
+          priceLevel: ref.read(currentPriceLevelProvider),
+          consolidate: false,
+        );
         return;
       }
 

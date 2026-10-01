@@ -1,7 +1,7 @@
 // The till's Products page and product editor against the back office's
 // ledger (2026-09-27): no false "Out of stock" on a child, a recipe or a
 // non-stock product; the case size and unit cost on the row; the editor's
-// sections, GP calculator, child products and a save that reaches the server
+// steps, GP calculator, child products and a save that reaches the server
 // rather than this till's copy.
 
 import 'dart:convert';
@@ -155,22 +155,76 @@ void main() {
     return server;
   }
 
-  testWidgets('the editor is in sections: details, stock, printing, images', (tester) async {
+  testWidgets('the editor goes in steps, Allergens before Information, then Review', (tester) async {
     await openEditor(tester, local(101, 'Carling Pint', group: 'Draught'));
-    for (final t in ['Product details', 'Stock', 'Printing', 'Images']) {
-      expect(find.widgetWithText(Tab, t), findsOneWidget);
+    for (final s in ['details', 'stock', 'modifiers', 'printing', 'children', 'allergens', 'information', 'review']) {
+      expect(find.byKey(Key('step-$s')), findsOneWidget);
     }
+    expect(find.byKey(const Key('editor-name')), findsOneWidget, reason: 'opens on the details');
+    await tester.tap(find.byKey(const Key('editor-continue')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('editor-unit-cost')), findsOneWidget, reason: 'Continue moves on to Stock control');
+    await tester.tap(find.byKey(const Key('editor-back')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('editor-name')), findsOneWidget);
+    await finish(tester);
+  });
+
+  testWidgets('a new product is added from the till, allergens and all', (tester) async {
+    setView(tester);
+    final server = FakeServer();
+    await tester.pumpWidget(ProviderScope(
+      overrides: [stockApiProvider.overrideWithValue(server.api())],
+      child: MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showProductEditor(context, catalogue: [local(105, 'Peroni', group: 'Bottles')]),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ),
+    ));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    expect(find.text('Add product'), findsOneWidget);
+
+    // Continue is refused until it has a name and a price.
+    await tester.tap(find.byKey(const Key('editor-continue')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('editor-name')), findsOneWidget);
+
+    await tester.enterText(find.byKey(const Key('editor-name')), 'Hummus Plate');
+    await tester.enterText(find.byKey(const Key('editor-price')), '6.50');
+    await tester.ensureVisible(find.byKey(const Key('step-allergens')));
+    await tester.tap(find.byKey(const Key('step-allergens')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('allergen-sesame')));
+    await tester.tap(find.byKey(const Key('diet-vegan')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('editor-save')));
+    await tester.pumpAndSettle();
+
+    expect(server.bodies['POST /till/products/new']!.single['product_name'], 'Hummus Plate');
+    final details = server.bodies['PATCH /till/products/160']!.single;
+    expect(details['price'], 6.5);
+    expect(details['allergens'], ['sesame']);
+    expect(details['dietary'], ['vegan']);
     await finish(tester);
   });
 
   testWidgets('the Stock section: GP calculator, Use this price, its child products', (tester) async {
     final server = await openEditor(tester, local(101, 'Carling Pint', group: 'Draught'));
-    await tester.tap(find.widgetWithText(Tab, 'Stock'));
+    await tester.tap(find.byKey(const Key('step-stock')));
     await tester.pumpAndSettle();
     // £1.20 a unit, £4.50 inc 20% VAT: net £3.75, GP 68%; 70% wants £4.80.
     expect(find.textContaining('GP now 68.0%'), findsOneWidget);
     expect(find.text('At 70% charge £4.80 incl. VAT'), findsOneWidget);
     await tester.tap(find.byKey(const Key('editor-use-price')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('step-children')));
+    await tester.tap(find.byKey(const Key('step-children')));
     await tester.pumpAndSettle();
     expect(find.textContaining('Carling Half'), findsOneWidget, reason: 'its existing child is listed');
 
@@ -201,7 +255,7 @@ void main() {
 
   testWidgets('Sold out is switched at once, on the menu’s own switch', (tester) async {
     final server = await openEditor(tester, local(101, 'Carling Pint', group: 'Draught'));
-    await tester.tap(find.widgetWithText(Tab, 'Stock'));
+    await tester.tap(find.byKey(const Key('step-stock')));
     await tester.pumpAndSettle();
     expect(find.textContaining('44 can still be made'), findsOneWidget);
     await tester.tap(find.byKey(const Key('editor-sold-out')));
@@ -212,7 +266,8 @@ void main() {
 
   testWidgets('a product that sells from another says so instead of offering children', (tester) async {
     await openEditor(tester, local(102, 'Carling Half', group: 'Draught'));
-    await tester.tap(find.widgetWithText(Tab, 'Stock'));
+    await tester.ensureVisible(find.byKey(const Key('step-children')));
+    await tester.tap(find.byKey(const Key('step-children')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('editor-sells-from')), findsOneWidget);
     expect(find.byKey(const Key('editor-child-new')), findsNothing);

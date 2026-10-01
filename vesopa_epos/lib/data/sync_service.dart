@@ -9,6 +9,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'local/database.dart';
 import 'price_levels.dart';
+import 'product_extras.dart';
 
 /// A snapshot of the terminal's link to the back office, for the till's
 /// online/offline badge.
@@ -797,6 +798,9 @@ class SyncService {
             // Uploaded images are served relative to the server; store the
             // absolute URL so the till can load it directly.
             imageUrl: Value(_absoluteUrl(raw['image_url'] as String?)),
+            // The product wizard's fields, kept as JSON (see
+            // data/product_extras.dart). Null when the server sent none.
+            extras: Value(ProductExtras.encodeFrom(raw)),
           ),
       ]);
     });

@@ -352,6 +352,13 @@ class StockApi {
     final r = await _send('POST', '/products/new', fields) as Map;
     return (id: _i(r['id']) ?? 0, pluId: _i(r['pluid']) ?? 0);
   }
+
+  /// Put a product on a sale page's first free key. [already] when it was
+  /// there before; throws when the page is full.
+  Future<({bool already, String name})> placeOnPage(int screenId, int pluId) async {
+    final r = await _send('POST', '/screens/$screenId/place-product', {'plu_id': pluId}) as Map;
+    return (already: r['already'] == true, name: '${r['name'] ?? 'the page'}');
+  }
 }
 
 /// GP on the ex-VAT price, and the price that would make [targetGp]:

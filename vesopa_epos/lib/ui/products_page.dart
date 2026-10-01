@@ -96,6 +96,7 @@ class _ProductsPageState extends ConsumerState<ProductsPage> {
               department: _department,
               onDepartment: (v) => setState(() => _department = v),
               onApplyCase: stock.isEmpty ? null : () => _applyCase(stock, packs),
+              onAdd: () => _add(all),
             ),
             Expanded(
               child: visible.isEmpty
@@ -128,6 +129,14 @@ class _ProductsPageState extends ConsumerState<ProductsPage> {
   /// stayed on this till until the next sync put the old values back.
   Future<void> _edit(Product product, List<Product> catalogue) async {
     final saved = await showProductEditor(context, product: product, catalogue: catalogue);
+    if (!saved) return;
+    await ref.read(syncServiceProvider).pullCatalogue();
+    ref.invalidate(_stockProvider);
+  }
+
+  /// A new product, step by step, like the back office's Add product.
+  Future<void> _add(List<Product> catalogue) async {
+    final saved = await showProductEditor(context, catalogue: catalogue);
     if (!saved) return;
     await ref.read(syncServiceProvider).pullCatalogue();
     ref.invalidate(_stockProvider);
@@ -356,9 +365,11 @@ class _Toolbar extends StatelessWidget {
     required this.department,
     required this.onDepartment,
     this.onApplyCase,
+    this.onAdd,
   });
 
   final VoidCallback? onApplyCase;
+  final VoidCallback? onAdd;
   final String search;
   final void Function(String) onSearch;
   final List<String> departments;
@@ -403,6 +414,15 @@ class _Toolbar extends StatelessWidget {
               onPressed: onApplyCase,
               icon: const Icon(Icons.inventory_2_outlined),
               label: const Text('Apply a case size'),
+            ),
+          ],
+          if (onAdd != null) ...[
+            const SizedBox(width: 10),
+            FilledButton.icon(
+              key: const Key('add-product'),
+              onPressed: onAdd,
+              icon: const Icon(Icons.add),
+              label: const Text('Add product'),
             ),
           ],
         ],
