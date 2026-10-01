@@ -67,11 +67,16 @@ const { normaliseEmail } = require('../src/normalise');
  * certification testers of Metric Membership, with a password he chose
  * (MetricMembership/server/scripts/setup-test-account.py): staff@metricgroup.co.uk.
  */
+/*
+ * 2026-10-01: Vesopa company login on auth.vesopa.com; owner asked for a
+ * password: info@vesopa.com.
+ */
 const ALLOWED = [
   'manager@vesopa.co.uk', 'nasim@vesopa.site', 'habib@vesopa.site',
   'dylan@vesopa.com', 'dylan@beaconsepos.com',
   'm.hammond@metricgroup.co.uk',
   'staff@metricgroup.co.uk',
+  'info@vesopa.com',
 ];
 
 async function main() {
