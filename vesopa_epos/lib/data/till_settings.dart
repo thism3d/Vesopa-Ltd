@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 
 import '../printing/print_targets.dart';
 import 'notifications.dart';
+import 'page_highlight.dart';
 import 'price_levels.dart';
 
 /// How the terminal behaves *between* sales: the idle screen it drops to, and
@@ -39,7 +40,12 @@ class TillSettings {
     this.notifyDisplayEnabled = false,
     this.customerDisplayGreeting,
     this.customerDisplayShowMember = true,
+    this.pageHighlight = PageHighlight.vesopa,
   });
+
+  /// How the key for the open page lights up (2026-10-01). See
+  /// `data/page_highlight.dart`.
+  final PageHighlight pageHighlight;
 
   /// The programmed screen this venue's tills open on, or null.
   ///
@@ -224,6 +230,7 @@ class TillSettings {
           other.payTopBarScreenId == payTopBarScreenId &&
           other.payBottomBarScreenId == payBottomBarScreenId &&
           other.fontFamily == fontFamily &&
+          other.pageHighlight == pageHighlight &&
           other.idleEnabled == idleEnabled &&
           other.idleImageUrl == idleImageUrl &&
           other.idleAfterSale == idleAfterSale &&
@@ -273,6 +280,7 @@ class TillSettings {
         idleAfterSale,
         idleRequirePin,
         fontFamily,
+        pageHighlight,
         idleMessage,
         signoffSeconds,
         changeWindowSeconds,
@@ -322,6 +330,8 @@ class TillSettings {
           j['notify_display_enabled'] == true ||
           j['notify_display_enabled'] == '1',
       homeScreenId: (j['home_screen_id'] as num?)?.toInt(),
+      // Absent on a server without schema_till_highlight.sql: the default.
+      pageHighlight: PageHighlight.fromSettings(j),
       // Absent — a server that has not run schema_till_fonts.sql — reads as
       // null, which is "the app's own lettering". Which is what every till
       // wore before this existed.

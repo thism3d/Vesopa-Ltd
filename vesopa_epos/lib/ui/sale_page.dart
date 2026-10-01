@@ -612,6 +612,7 @@ class SalePage extends ConsumerWidget {
                           screens: screenSet,
                           products: byPlu,
                           showPrices: settings.buttonsShowPrices,
+                          pageHighlight: settings.pageHighlight,
                           // Only for keys given a font of their own. The
                           // venue's font is on the theme, so a key that asks
                           // for nothing inherits it like everything else.

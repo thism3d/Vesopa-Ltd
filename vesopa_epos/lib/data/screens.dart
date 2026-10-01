@@ -112,6 +112,8 @@ class ScreenButton {
     this.showLabel = false,
     this.fontFamily,
     this.fontSize,
+    this.hereFill,
+    this.hereBar,
   });
 
   final int row;
@@ -217,6 +219,12 @@ class ScreenButton {
   /// before using it — see `programmed_grid.dart`, where that is settled.
   final int? fontSize;
 
+  /// This page key's own highlight colours (2026-10-01), over the venue's —
+  /// see [PageHighlight.lookFor]. Kept as the server sends them (`#rrggbb`,
+  /// or 'brand' / 'key' for the underbar) and null on nearly every key.
+  final String? hereFill;
+  final String? hereBar;
+
   factory ScreenButton.fromJson(Map<String, dynamic> j) => ScreenButton(
     row: (j['row'] as num?)?.toInt() ?? 0,
     col: (j['col'] as num?)?.toInt() ?? 0,
@@ -245,6 +253,8 @@ class ScreenButton {
     showLabel: j['showLabel'] == true,
     fontFamily: _slug(j['fontFamily']),
     fontSize: (j['fontSize'] as num?)?.toInt().clamp(8, 72),
+    hereFill: (j['hereFill'] as String?)?.trim(),
+    hereBar: (j['hereBar'] as String?)?.trim(),
   );
 
   Map<String, dynamic> toJson() => {
@@ -275,6 +285,8 @@ class ScreenButton {
     },
     if (fontFamily != null) 'fontFamily': fontFamily,
     if (fontSize != null) 'fontSize': fontSize,
+    if (hereFill != null) 'hereFill': hereFill,
+    if (hereBar != null) 'hereBar': hereBar,
   };
 
   /// A key's picture, as something the till can actually load.

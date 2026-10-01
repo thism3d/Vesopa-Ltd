@@ -4,11 +4,13 @@ import '../../data/commerce.dart';
 import '../../data/fonts.dart';
 import '../../data/local/database.dart';
 import '../../data/modifiers.dart';
+import '../../data/page_highlight.dart';
 import '../../data/pricing_engine.dart';
 import '../../data/screens.dart';
 import '../layout.dart';
 import '../theme.dart';
 import 'basket_panel.dart' show money;
+import 'here_bar.dart';
 import 'offer_chip.dart';
 
 /// A venue's own sale screen, drawn.
@@ -39,7 +41,13 @@ class ProgrammedGrid extends StatelessWidget {
     this.showPrices = true,
     this.promotions,
     this.fonts = FontLibrary.empty,
+    this.pageHighlight = PageHighlight.vesopa,
   });
+
+  /// How the key for this page lights up (2026-10-01). The venue's choice,
+  /// off the till-settings row; passed in like [fonts] so a test can build the
+  /// grid with a literal.
+  final PageHighlight pageHighlight;
 
   final TillScreen screen;
 
@@ -138,6 +146,13 @@ class ProgrammedGrid extends StatelessWidget {
                     onModifier: onModifier,
                     here: button.kind == ScreenButtonKind.page &&
                         button.targetScreenId == screen.id,
+                    look: button.kind == ScreenButtonKind.page &&
+                            button.targetScreenId == screen.id
+                        ? pageHighlight.lookFor(
+                            button,
+                            button.fill ?? pal.keyFill,
+                          )
+                        : null,
                   ),
                 ),
               );
@@ -179,7 +194,12 @@ class _Key extends StatelessWidget {
     required this.onFunction,
     required this.onModifier,
     this.here = false,
+    this.look,
   });
+
+  /// How [here] is drawn: the venue's highlight, resolved for this key. Null
+  /// when the venue has it off, and then the key looks like any other.
+  final HereLook? look;
 
   final ScreenButton button;
   final ScreenSet screens;
@@ -317,8 +337,11 @@ class _Key extends StatelessWidget {
     // The venue's colour when it has chosen one, the till's own key colour when
     // it has not — which is what keeps an unstyled screen looking like Vesopa
     // rather than looking unfinished.
-    final fill = button.fill ?? pal.keyFill;
-    final ink = button.ink ?? (button.fill == null ? pal.ink : Pos.inkOn(fill));
+    final hl = here ? look : null;
+    final fill = hl?.fill ?? button.fill ?? pal.keyFill;
+    final ink = hl?.ink ??
+        button.ink ??
+        (button.fill == null ? pal.ink : Pos.inkOn(fill));
 
     // The picture, if this key has one. It *fills* the key rather than sitting
     // above the words — which is the change a venue that photographed its menu
@@ -347,12 +370,13 @@ class _Key extends StatelessWidget {
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
-                    color: here
-                        ? Pos.brand
-                        : enabled
-                        ? pal.keyLine
-                        : Pos.red.withValues(alpha: 0.6),
-                    width: here ? 3 : 1,
+                    color: hl?.outline ??
+                        (hl != null
+                            ? Colors.transparent
+                            : enabled
+                            ? pal.keyLine
+                            : Pos.red.withValues(alpha: 0.6)),
+                    width: hl?.outline != null ? 3 : 1,
                   ),
                 ),
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
@@ -478,6 +502,8 @@ class _Key extends StatelessWidget {
                   },
                 ),
               ),
+              // The underbar: the "you are here" strip along the key's foot.
+              if (hl?.bar case final bar?) HereBar(colour: bar),
             ],
           ),
         ),
