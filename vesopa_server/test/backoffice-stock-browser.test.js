@@ -313,42 +313,47 @@ async function main() {
     });
 
     // ---------------------------------------------------------------------
-    // The product form: sections, and child products
+    // The product form: steps, and child products
     // ---------------------------------------------------------------------
     await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/e2e-boot?to=/products` });
     await cdp.until(`return location.pathname === '/products' && typeof productRefs !== 'undefined' && productRefs.packs && productRefs.packs.length > 0;`, { tries: 100, every: 200 });
     const openEdit = async (id) => {
       await cdp.eval(`const b = document.createElement('button'); b.dataset.editProduct = '${id}'; document.body.appendChild(b); b.click(); b.remove(); return true;`);
-      return cdp.until(`return !!document.querySelector('#modal-form .form-section-nav');`);
+      return cdp.until(`return !!document.querySelector('#modal-form .wiz-steps');`);
+    };
+    // The form is in steps since 2026-10-01; only the step on screen can be
+    // clicked, so a check goes to the step it needs first.
+    const goStep = async (key) => {
+      await cdp.eval(`const st = [...document.querySelectorAll('.wiz-step')]; const i = st.findIndex((x) => x.dataset.step === '${key}'); document.querySelectorAll('.wiz-steps [data-wiz-go]')[i].click(); return true;`);
+      await sleep(150);
     };
 
-    await check('the product form is in five sections, with a button for each', async () => {
+    await check('the product form is in steps, Newbridge order, Allergens before Information', async () => {
       assert.ok(await openEdit(1), 'the edit form never opened');
-      const nav = await cdp.eval(`return [...document.querySelectorAll('.form-section-nav [data-form-jump]')].map((b) => b.textContent);`);
-      assert.deepStrictEqual(nav, ['Product details', 'Stock', 'Modifiers', 'Printing', 'Images']);
+      const steps = await cdp.eval(`return [...document.querySelectorAll('.wiz-step')].map((x) => x.dataset.step);`);
+      assert.deepStrictEqual(steps, ['details', 'stock', 'modifiers', 'printing', 'children', 'allergens', 'information', 'review']);
       const where = await cdp.eval(
-        `const order = [...document.querySelectorAll('#modal-form [data-form-section], #modal-form [name]')].map((el) => el.dataset.formSection ? '#' + el.dataset.formSection : el.name);
-         const at = (n) => order.indexOf(n);
-         return { name: at('product_name') < at('#stock'), pack: at('#stock') < at('pack_size_id') && at('pack_size_id') < at('#modifiers'),
-                  image: at('image_url') > at('#images'), printers: at('print_category_id') > at('#printing') && at('print_category_id') < at('#images') };`
+        `const inStep = (n) => document.querySelector('[name="' + n + '"]')?.closest('.wiz-step')?.dataset.step;
+         return { name: inStep('product_name'), pack: inStep('pack_size_id'), image: inStep('image_url'), printers: inStep('print_category_id'), children: inStep('_children') };`
       );
-      assert.deepStrictEqual(where, { name: true, pack: true, image: true, printers: true });
+      assert.deepStrictEqual(where, { name: 'details', pack: 'stock', image: 'information', printers: 'printing', children: 'children' });
     });
 
-    await check('a section button scrolls the form to it and lights up', async () => {
-      await cdp.clickOn('.form-section-nav [data-form-jump="printing"]');
-      const on = await cdp.until(`const b = document.querySelector('.form-section-nav button.on'); return b && b.dataset.formJump === 'printing' && 'printing';`);
+    await check('a step button shows that step and lights up', async () => {
+      await goStep('printing');
+      const on = await cdp.eval(`const v = [...document.querySelectorAll('.wiz-step')].find((x) => !x.hidden); return v && v.dataset.step;`);
       assert.strictEqual(on, 'printing');
     });
 
     if (process.env.SHOT) {
-      await cdp.clickOn('.form-section-nav [data-form-jump="stock"]');
+      await goStep('stock');
       await sleep(600);
       const shot = await cdp.send('Page.captureScreenshot', { format: 'png' });
       fs.writeFileSync(path.join(process.env.SHOT, 'product-form.png'), Buffer.from(shot.data, 'base64'));
     }
 
     await check('the parent lists its existing children, with their cost from its own', async () => {
+      await goStep('children');
       const rows = await cdp.until(`const r = [...document.querySelectorAll('.cp-row:not(.cp-head)')]; return r.length === 1 && r.map((x) => x.textContent.replace(/\\s+/g, ' ').trim());`);
       assert.ok(rows && /Carling Half/.test(rows[0]), `expected Carling Half, got ${JSON.stringify(rows)}`);
       await cdp.eval(`const c = document.querySelector('[name="cost_price"]'); c.value = '1.20'; c.dispatchEvent(new Event('input', { bubbles: true })); return true;`);
@@ -394,6 +399,7 @@ async function main() {
     await check('a new child with no measure is refused before anything is saved', async () => {
       assert.ok(await openEdit(2), 'the edit form never opened');
       await cdp.until(`return !!document.querySelector('[data-cp-new]');`);
+      await goStep('children');
       await cdp.clickOn('[data-cp-new]');
       await cdp.type('Peroni Half');
       const made = state.created.length;
@@ -410,8 +416,7 @@ async function main() {
 
     await check('Use this price works on the first click after typing a cost', async () => {
       assert.ok(await openEdit(3), 'the edit form never opened');
-      await cdp.eval(`document.querySelector('.form-section-nav [data-form-jump="stock"]').click(); return true;`);
-      await sleep(500);
+      await goStep('stock');
       await cdp.clickOn('[name="cost_price"]');
       await cdp.type('1.00');
       // A real click: the mousedown blurs the cost box first.

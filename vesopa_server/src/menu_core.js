@@ -312,6 +312,58 @@ async function itemPictures(db, officeId, email, items) {
   };
 }
 
+/**
+ * What the product form's Allergens and Information steps say about each dish
+ * (2026-10-01): its short description and description, calories, "may
+ * contain" traces and diet labels.
+ *
+ * A menu item's own description and diet tag still win; these fill in where
+ * the item says nothing, so a venue that described a dish once, in Products,
+ * sees it on the QR menu and the kiosk without typing it again. Guarded like
+ * itemPictures: a server without schema_product_wizard.sql serves the menu
+ * as it always did.
+ */
+const DIET_LABELS = {
+  vegetarian: 'Vegetarian', vegan: 'Vegan', gluten_free: 'Gluten free',
+  dairy_free: 'Dairy free', halal: 'Halal',
+};
+async function productDetails(db, email, items) {
+  const plus = [...new Set(items.map((i) => i.plu_id).filter(Boolean))];
+  const out = new Map();
+  if (!plus.length) return out;
+  try {
+    const [rows] = await db.query(
+      'SELECT pluid, short_description, description, calories, may_contain, dietary FROM bo_products' +
+        ' WHERE email = ? AND pluid IN (' + plus.map(() => '?').join(',') + ')',
+      [email, ...plus]
+    );
+    const list = (v) => {
+      try {
+        const a = JSON.parse(v || '[]');
+        return Array.isArray(a) ? a : [];
+      } catch {
+        return [];
+      }
+    };
+    for (const r of rows) {
+      const text = String(r.description || '')
+        .replace(/<(br|\/p|\/li|\/h3|\/h4)\s*\/?>/gi, '\n')
+        .replace(/<[^>]*>/g, '')
+        .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+        .replace(/\n{2,}/g, '\n').trim();
+      out.set(Number(r.pluid), {
+        description: r.short_description || text || null,
+        calories: r.calories ?? null,
+        may_contain: list(r.may_contain),
+        diet: list(r.dietary).map((c) => DIET_LABELS[c]).filter(Boolean).join(' · ') || null,
+      });
+    }
+  } catch (e) {
+    if (!e || e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+  }
+  return out;
+}
+
 async function menuSections(db, officeId, email, { meals = false } = {}) {
   const [sections] = await db.query(
     'SELECT id, name, blurb, image_url FROM dinein_sections' +
@@ -349,6 +401,7 @@ async function menuSections(db, officeId, email, { meals = false } = {}) {
   // disagree about the same dish: both call this function and neither has to
   // remember to ask. See schema_menu_dinein_images.sql for why it is a choice.
   const pictureOfItem = await itemPictures(db, officeId, email, items);
+  const details = await productDetails(db, email, items);
 
   // What the shelf can still make (2026-09-27): a dish the stock ledger says
   // is out -- its own count, the keg a half pours from, or the scarcest
@@ -366,7 +419,7 @@ async function menuSections(db, officeId, email, { meals = false } = {}) {
         id: i.id,
         plu_id: i.plu_id,
         name: i.name,
-        description: i.description,
+        description: i.description || (details.get(Number(i.plu_id)) || {}).description || null,
         image_url: pictureOfItem(i),
         available: !!i.available && left.get(Number(i.plu_id)) !== 0,
         // Why it is off: the manager's Sold out switch, or the stock ran out.
@@ -375,7 +428,10 @@ async function menuSections(db, officeId, email, { meals = false } = {}) {
         left: lowLeft(left.get(Number(i.plu_id))),
         popular: !!i.is_popular,
         featured: !!i.is_featured,
-        diet: i.diet_tag || null,
+        diet: i.diet_tag || (details.get(Number(i.plu_id)) || {}).diet || null,
+        // From the product form (2026-10-01): traces and calories.
+        may_contain: (details.get(Number(i.plu_id)) || {}).may_contain || [],
+        calories: (details.get(Number(i.plu_id)) || {}).calories ?? null,
         // What the item declares, or what its product does. NULL on the item
         // means inherit; [] means somebody looked and it contains none of the
         // fourteen. See src/allergens.js.

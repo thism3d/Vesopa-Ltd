@@ -4657,7 +4657,8 @@ ${shareImage ? `<meta name="twitter:image" content="${esc(shareImage)}">` : ''}
 
   /** The chip, and the way into what is in it. */
   function dietRowHtml(it){
-    var has = (it.allergens && it.allergens.length) || it.allergens_declared;
+    var has = (it.allergens && it.allergens.length) || it.allergens_declared ||
+      (it.may_contain && it.may_contain.length) || it.calories != null;
     if (!it.diet && !has) return '';
     return '<div class="drow-diet">' +
       (it.diet ? '<span class="diet">' + esc(it.diet) + '</span>' : '') +
@@ -4721,6 +4722,15 @@ ${shareImage ? `<meta name="twitter:image" content="${esc(shareImage)}">` : ''}
               'contains none of them.</p>'
             : '<p class="dnone">The venue has not listed allergens for this ' +
               'dish. Please ask before you order if you need to know.</p>')) +
+      (it.may_contain && it.may_contain.length
+        ? '<h5 class="dsub">May contain traces of</h5><ul class="dallerg">' +
+          it.may_contain.map(function(c){
+            return '<li>' + esc(ALLERGEN_LABELS[c] || c) + '</li>';
+          }).join('') + '</ul>'
+        : '') +
+      (it.calories != null
+        ? '<p class="dnone">' + esc(String(it.calories)) + ' kcal per portion.</p>'
+        : '') +
       '<p class="dask">Dishes are prepared in a working kitchen where other ' +
         'ingredients are handled. Please contact the venue for details.</p>' +
       '<button type="button" class="send" id="dgot">Got it</button>';

@@ -1967,6 +1967,8 @@ let productRefs = {
   // the dine-in menu item form. Served from src/allergens.js so that no screen
   // spells them for itself — see the header of that file.
   allergens: [],
+  dietary: [],
+  salePages: [],
 };
 
 /** What this venue calls each level, or "Price 2" where it has not said. */
@@ -2014,7 +2016,7 @@ async function loadProducts() {
   // each falls back to empty rather than rejecting the lot.
   const [
     rows, departments, groups, tax, modifierGroups, printCategories,
-    allergens, till, packs, suppliers,
+    allergenList, till, packs, suppliers, screens,
   ] = await Promise.all([
       api('/products'),
       api('/departments').catch(() => []),
@@ -2025,7 +2027,7 @@ async function loadProducts() {
       // Falls back to empty like the rest: a server that has not been
       // redeployed yet shows the form without the allergen block rather than
       // making the catalogue unreachable.
-      api('/allergens').then((r) => r.allergens || []).catch(() => []),
+      api('/allergens').catch(() => ({})),
       // For the price-level labels. A venue that has named none, or a server
       // that has not run the migration, falls back to "Price 2" — which is
       // what the field says anyway.
@@ -2034,11 +2036,16 @@ async function loadProducts() {
       // stock section (2026-09-22). Empty on failure, like the rest.
       api('/stock/pack-sizes').catch(() => []),
       api('/stock/suppliers').catch(() => []),
+      // Sale pages, for the product form's "Add to page" (2026-10-01).
+      api('/screens').catch(() => []),
     ]);
   productRows = rows;
   productRefs = {
-    departments, groups, tax, modifierGroups, printCategories, allergens,
+    departments, groups, tax, modifierGroups, printCategories,
+    allergens: allergenList.allergens || [],
+    dietary: allergenList.dietary || [],
     packs, suppliers,
+    salePages: (Array.isArray(screens) ? screens : []).filter((x) => (x.surface || 'sale') === 'sale'),
   };
   priceLevelNames = safeLevelNames(till?.price_level_names);
   bindProducts();
@@ -4408,7 +4415,7 @@ function fieldHtml(f) {
     if (!list.length) {
       return '<p class="muted small">Allergen list unavailable — reload the page.</p>';
     }
-    return `<div class="allergen-field">
+    return `<div class="allergen-field${f.tiles ? ' tick-tiles' : ''}">
       <input type="hidden" name="${f.name}" value="__answered__" />
       ${list
         .map(
@@ -4420,6 +4427,33 @@ function fieldHtml(f) {
         )
         .join('')}
     </div>`;
+  }
+  if (f.type === 'richtext') {
+    // The Information step (2026-10-01): formatted text for the QR menu and
+    // the kiosk. Stored as a little HTML, cleaned on the server to a short
+    // list of tags (src/product_info.js), so what is drawn here is already
+    // safe to draw.
+    const tools = [
+      ['bold', '<b>B</b>', 'Bold'], ['italic', '<i>I</i>', 'Italic'],
+      ['underline', '<u>U</u>', 'Underline'], ['strikeThrough', '<s>S</s>', 'Strike through'],
+      ['insertUnorderedList', '•&nbsp;List', 'Bulleted list'],
+      ['insertOrderedList', '1.&nbsp;List', 'Numbered list'],
+      ['createLink', 'Link', 'Add a link'], ['removeFormat', 'Clear', 'Clear formatting'],
+    ];
+    return `<div class="rt-field">
+      <div class="rt-tools" role="toolbar" aria-label="Formatting">${tools
+        .map(([cmd, face, title]) => `<button type="button" data-rt="${cmd}" title="${title}" aria-label="${title}">${face}</button>`)
+        .join('')}</div>
+      <div class="rt-edit" contenteditable="true" role="textbox" aria-multiline="true"
+           data-placeholder="${esc(f.placeholder || '')}">${f.value || ''}</div>
+      <input type="hidden" name="${f.name}" value="${esc(f.value || '')}" />
+    </div>`;
+  }
+  if (f.type === 'barcode') {
+    return `<span class="barcode-field">
+      <input name="${f.name}" value="${esc(f.value ?? '')}" inputmode="numeric" autocomplete="off" />
+      <button type="button" class="btn small ghost" data-make-ean title="Make an in-store EAN-13 barcode">Generate</button>
+    </span>`;
   }
   if (f.type === 'stations') {
     // Every station gets a box, including the ones this venue has not set up:
@@ -4840,13 +4874,18 @@ function mountGpCalculator(root) {
  * touch.
  */
 async function saveProductStock(id, d, before) {
-  const fields = ['pack_size_id', 'supplier_id', 'pack_cost', 'cost_price', 'target_gp', 'non_stock'];
+  const fields = [
+    'pack_size_id', 'supplier_id', 'pack_cost', 'cost_price', 'target_gp', 'non_stock',
+    // From the step-by-step form's Stock control step (2026-10-01).
+    'supplier_code', 'min_stock', 'max_stock',
+  ];
   const norm = (v) => (v === null || v === undefined || v === '' ? '' : String(Number(v)));
   const change = {};
   for (const f of fields) {
     if (d[f] === undefined) continue;
-    const now = f === 'non_stock' ? String(Number(d[f]) ? 1 : 0) : norm(d[f]);
-    const was = f === 'non_stock' ? String(Number(before[f]) ? 1 : 0) : norm(before[f]);
+    const text = f === 'supplier_code';
+    const now = f === 'non_stock' ? String(Number(d[f]) ? 1 : 0) : text ? String(d[f] ?? '').trim() : norm(d[f]);
+    const was = f === 'non_stock' ? String(Number(before[f]) ? 1 : 0) : text ? String(before[f] ?? '').trim() : norm(before[f]);
     if (now !== was) change[f] = d[f] === '' ? null : d[f];
   }
   if (!Object.keys(change).length) return;
@@ -5113,7 +5152,7 @@ async function saveChildProducts(parent, d, raw) {
   toast(`Child products: ${said.join(', ')}.`);
 }
 
-function modal(title, fields, onSubmit) {
+function modal(title, fields, onSubmit, opts = {}) {
   const root = $('modal-root');
   /*
    * SECTIONS (2026-09-24, "headers for product details - stock - modifiers -
@@ -5129,7 +5168,7 @@ function modal(title, fields, onSubmit) {
     </div>`;
   root.innerHTML = `
     <div class="modal-back">
-      <form class="modal${sections.length ? ' modal-sectioned' : ''}" id="modal-form">
+      <form class="modal${sections.length ? ' modal-sectioned' : ''}${opts.wizard && sections.length ? ' modal-wizard' : ''}" id="modal-form">
         <h3>${esc(title)}</h3>
         ${sections.length ? `<nav class="form-section-nav" aria-label="Sections">${sections
           .map((f, i) => `<button type="button" class="${i === 0 ? 'on' : ''}" data-form-jump="${esc(f.key)}">${esc(f.label)}</button>`)
@@ -5163,12 +5202,16 @@ function modal(title, fields, onSubmit) {
   // uses. It used to be written out here, which is why nothing outside a modal
   // form could offer a picture and half the pages asked for a URL instead.
   wireImagePickers(root);
+  wireRichFields(root);
 
   // A field that needs behaviour once it is on screen -- the GP calculator,
   // which recomputes as the price and cost change -- supplies mount().
   fields.forEach((f) => { if (typeof f.mount === 'function') f.mount(root); });
 
-  if (sections.length) {
+  // STEPS (2026-10-01): the same sections, one at a time, with Back, Save
+  // and Continue. See setupWizard.
+  if (opts.wizard && sections.length) setupWizard(root, opts);
+  else if (sections.length) {
     const form = root.querySelector('#modal-form');
     const nav = form.querySelector('.form-section-nav');
     const heads = [...form.querySelectorAll('[data-form-section]')];
@@ -5333,6 +5376,288 @@ function modal(title, fields, onSubmit) {
       toast(err.message, 'error');
     }
   };
+}
+
+/**
+ * The formatted-text box and the barcode generator, made to work.
+ *
+ * The text box keeps a hidden input in step with what is typed, because that
+ * input is what the form submits. Pasting is taken as plain text: a menu
+ * description pasted from a supplier's web page would otherwise bring its
+ * fonts, colours and tables with it.
+ */
+function wireRichFields(root) {
+  root.querySelectorAll('.rt-field').forEach((field) => {
+    const edit = field.querySelector('.rt-edit');
+    const out = field.querySelector('input[type=hidden]');
+    const sync = () => {
+      out.value = edit.textContent.trim() ? edit.innerHTML : '';
+      edit.classList.toggle('empty', !edit.textContent.trim());
+    };
+    sync();
+    edit.addEventListener('input', sync);
+    edit.addEventListener('paste', (e) => {
+      e.preventDefault();
+      const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+      document.execCommand('insertText', false, text);
+    });
+    field.querySelector('.rt-tools').addEventListener('mousedown', (e) => {
+      // Keep the selection in the text while a button is pressed.
+      if (e.target.closest('[data-rt]')) e.preventDefault();
+    });
+    field.querySelector('.rt-tools').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-rt]');
+      if (!b) return;
+      edit.focus();
+      if (b.dataset.rt === 'createLink') {
+        const url = prompt('Link address (https://…)', 'https://');
+        if (url && /^(https?:|mailto:)/i.test(url.trim())) document.execCommand('createLink', false, url.trim());
+      } else {
+        document.execCommand(b.dataset.rt, false, null);
+      }
+      sync();
+    });
+  });
+
+  root.querySelectorAll('[data-make-ean]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const input = btn.parentElement.querySelector('input');
+      if (input.value.trim() && !confirm('Replace the barcode that is there?')) return;
+      input.value = makeStoreEan13();
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  });
+}
+
+/**
+ * An EAN-13 for a venue's own labels: starts with 2, which GS1 keeps for
+ * in-store numbers so it can never clash with a manufacturer's barcode, and
+ * ends in the proper check digit so any scanner reads it.
+ */
+function makeStoreEan13() {
+  const digits = [2];
+  const random = new Uint8Array(11);
+  crypto.getRandomValues(random);
+  for (const r of random) digits.push(r % 10);
+  const sum = digits.reduce((acc, d, i) => acc + d * (i % 2 ? 3 : 1), 0);
+  digits.push((10 - (sum % 10)) % 10);
+  return digits.join('');
+}
+
+/*
+ * STEP BY STEP (2026-10-01).
+ *
+ * "When creating a product can we copy Newbridge where it is in stages and
+ * all fits on the screen instead of scrolling down." A sectioned form, shown
+ * one section at a time: a row of numbered steps across the top, a bar that
+ * fills as you go, and Back / Save / Continue at the bottom. Every step can
+ * be clicked straight to, and Save works from any step, the same as
+ * Newbridge. Unlike Newbridge it checks each step before moving on, and ends
+ * on a Review page that lists what is about to be saved, each line with a
+ * way back to the step it came from.
+ *
+ * It rearranges the form the modal already drew rather than drawing its own,
+ * so every field type, picker and mount() behaves exactly as it does in the
+ * long form, and the data submitted is the same.
+ */
+function setupWizard(root, opts = {}) {
+  const form = root.querySelector('#modal-form');
+  form.noValidate = true;
+  form.querySelector('.form-section-nav')?.remove();
+  const actions = form.querySelector('.modal-actions');
+
+  // Group everything between one section heading and the next into a step.
+  const body = document.createElement('div');
+  body.className = 'wiz-body';
+  const steps = [];
+  let grid = null;
+  for (const el of [...form.children]) {
+    if (el.tagName === 'H3' || el === actions) continue;
+    if (el.classList.contains('form-section')) {
+      const step = document.createElement('section');
+      step.className = 'wiz-step';
+      step.dataset.step = el.dataset.formSection;
+      const head = el.querySelector('h4');
+      step.dataset.label = head ? head.textContent : el.dataset.formSection;
+      el.classList.add('wiz-head');
+      step.appendChild(el);
+      grid = document.createElement('div');
+      grid.className = 'wiz-grid';
+      step.appendChild(grid);
+      body.appendChild(step);
+      steps.push(step);
+      continue;
+    }
+    if (!grid) continue;
+    // Panels, lists and tick grids take the whole row; plain fields share it.
+    if (el.matches('.form-bare') || el.querySelector(
+      '.allergen-field, .station-grid, .mod-field, .img-field, .image-picker, .rt-field, '
+      + '.gp-calc, .child-products, .tick-tiles, [data-product-field]'
+    )) el.classList.add('wiz-wide');
+    if (el.querySelector('.check-field')) el.classList.add('wiz-check');
+    grid.appendChild(el);
+  }
+
+  if (opts.review !== false) {
+    const review = document.createElement('section');
+    review.className = 'wiz-step wiz-review';
+    review.dataset.step = 'review';
+    review.dataset.label = 'Review';
+    review.innerHTML = '<div class="form-section wiz-head"><h4>Review</h4>'
+      + '<p class="field-hint">Check everything before you save. Press any step to change it.</p></div>'
+      + '<div class="wiz-summary"></div>';
+    body.appendChild(review);
+    steps.push(review);
+  }
+
+  const stepper = document.createElement('div');
+  stepper.className = 'wiz-stepper';
+  stepper.innerHTML = `<ol class="wiz-steps">${steps
+    .map((st, i) => `<li><button type="button" data-wiz-go="${i}">
+        <span class="wiz-num">${i + 1}</span><span class="wiz-name">${esc(st.dataset.label)}</span>
+      </button></li>`)
+    .join('')}</ol><div class="wiz-bar"><span></span></div>`;
+  form.insertBefore(stepper, form.querySelector('h3').nextSibling);
+  form.insertBefore(body, actions);
+
+  actions.innerHTML = `
+    <button type="button" class="btn ghost" id="modal-cancel">Cancel</button>
+    <span class="wiz-spacer"></span>
+    <button type="button" class="btn ghost" data-wiz-back>← Back</button>
+    <button type="submit" class="btn wiz-save">Save</button>
+    <button type="button" class="btn primary" data-wiz-next>Continue →</button>`;
+
+  let at = 0;
+  const seen = new Set([0]);
+
+  const invalidIn = (step) => [...step.querySelectorAll('input, select, textarea')]
+    .find((el) => !el.disabled && !el.checkValidity());
+
+  const show = (i) => {
+    at = Math.max(0, Math.min(steps.length - 1, i));
+    seen.add(at);
+    steps.forEach((st, n) => { st.hidden = n !== at; });
+    stepper.querySelectorAll('[data-wiz-go]').forEach((b, n) => {
+      b.classList.toggle('on', n === at);
+      b.classList.toggle('done', seen.has(n) && n !== at);
+      b.setAttribute('aria-current', n === at ? 'step' : 'false');
+    });
+    stepper.querySelector('.wiz-bar span').style.width = `${((at + 1) / steps.length) * 100}%`;
+    actions.querySelector('[data-wiz-back]').disabled = at === 0;
+    const last = at === steps.length - 1;
+    actions.querySelector('[data-wiz-next]').hidden = last;
+    actions.querySelector('.wiz-save').classList.toggle('primary', last);
+    if (steps[at].dataset.step === 'review') drawReview();
+    stepper.querySelector('.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    body.scrollTop = 0;
+    // The first box on the step, ready to type into — not on a phone, where
+    // it would throw the keyboard up over the step it is meant to show.
+    if (window.matchMedia('(min-width: 760px)').matches) {
+      steps[at].querySelector('.wiz-grid input:not([type=hidden]):not([type=checkbox]), .wiz-grid select')?.focus({ preventScroll: true });
+    }
+  };
+
+  /** Leave the step only once what is on it is valid. */
+  const next = () => {
+    const bad = invalidIn(steps[at]);
+    if (bad) { bad.reportValidity(); return; }
+    show(at + 1);
+  };
+
+  stepper.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-wiz-go]');
+    if (b) show(Number(b.dataset.wizGo));
+  });
+  actions.querySelector('[data-wiz-back]').addEventListener('click', () => show(at - 1));
+  actions.querySelector('[data-wiz-next]').addEventListener('click', next);
+
+  // Enter in a box moves on, the way it does on a till, rather than saving a
+  // product half filled in.
+  form.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' || e.shiftKey) return;
+    const t = e.target;
+    if (t.matches('textarea, [contenteditable], button, [type=submit]')) return;
+    if (!t.matches('input, select')) return;
+    e.preventDefault();
+    if (at < steps.length - 1) next();
+  });
+
+  // Save from any step. A required field somewhere else is found and shown
+  // rather than refused with nothing to see.
+  root.addEventListener('submit', (e) => {
+    for (const [n, st] of steps.entries()) {
+      const bad = invalidIn(st);
+      if (bad) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        show(n);
+        bad.reportValidity();
+        return;
+      }
+    }
+  }, true);
+
+  /** What each field on a step currently says, in words. */
+  const describe = (el) => {
+    const title = (el.querySelector('.form-bare-label')?.textContent
+      || [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join(' ')
+    ).replace(/\s+/g, ' ').trim().replace(/\s+—.*$/, '').replace(/\s*\(£\).*$/, '');
+    if (!title) return null;
+    let value = '';
+    const rt = el.querySelector('.rt-edit');
+    const img = el.querySelector('input[type=hidden][name="image_url"], .image-picker input[type=hidden]');
+    const ticks = [...el.querySelectorAll('input[type=checkbox]')];
+    if (rt) {
+      value = rt.textContent.trim().slice(0, 140) + (rt.textContent.trim().length > 140 ? '…' : '');
+    } else if (el.querySelector('.mod-list')) {
+      value = [...el.querySelectorAll('.mod-row .mod-name')].map((n) => n.textContent).join(', ');
+    } else if (el.querySelector('.child-products')) {
+      value = [...el.querySelectorAll('.cp-row:not(.cp-head) .cp-name, .cp-row:not(.cp-head) input[data-cp-name]')]
+        .map((n) => (n.value ?? n.textContent).trim()).filter(Boolean).join(', ');
+    } else if (el.querySelector('.check-field')) {
+      value = el.querySelector('.check-field input[type=checkbox]').checked ? 'Yes' : '';
+    } else if (ticks.length) {
+      value = ticks.filter((t) => t.checked)
+        .map((t) => (t.closest('label')?.textContent || t.value).trim()).join(', ');
+      if (!value && el.querySelector('input[value="__answered__"]')) value = 'None';
+    } else if (img) {
+      value = img.value ? 'Picture added' : '';
+    } else if (el.querySelector('select')) {
+      const sel = el.querySelector('select');
+      value = sel.value === '' ? '' : sel.options[sel.selectedIndex]?.text || '';
+    } else {
+      const input = el.querySelector('input:not([type=hidden]), textarea');
+      value = input ? input.value.trim() : '';
+    }
+    return { title, value };
+  };
+
+  const drawReview = () => {
+    const out = steps.find((st) => st.dataset.step === 'review').querySelector('.wiz-summary');
+    out.innerHTML = steps
+      .filter((st) => st.dataset.step !== 'review')
+      .map((st) => {
+        const rows = [...st.querySelectorAll('.wiz-grid > *')]
+          .map(describe)
+          .filter((r) => r && r.value);
+        const n = steps.indexOf(st);
+        return `<div class="wiz-card">
+          <div class="wiz-card-head"><strong>${esc(st.dataset.label)}</strong>
+            <button type="button" class="btn small ghost" data-wiz-go="${n}">Change</button></div>
+          ${rows.length
+            ? `<dl>${rows.map((r) => `<dt>${esc(r.title)}</dt><dd>${esc(r.value)}</dd>`).join('')}</dl>`
+            : '<p class="muted small">Nothing set.</p>'}
+        </div>`;
+      })
+      .join('');
+  };
+  steps.find((st) => st.dataset.step === 'review')
+    ?.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-wiz-go]');
+      if (b) show(Number(b.dataset.wizGo));
+    });
+
+  show(Number(opts.startAt) || 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -6223,13 +6548,29 @@ document.addEventListener('click', async (e) => {
     return options;
   };
 
+  /*
+   * THE PRODUCT FORM, IN STEPS (2026-10-01).
+   *
+   * "When creating a product can we copy Newbridge where it is in stages and
+   * all fits on the screen instead of scrolling down." Newbridge's six tabs
+   * (Product Details, Stock Control, Modifiers, Printing, Child Products,
+   * Information) with an Allergens step before Information, as the owner
+   * asked, and a Review step at the end. Each section below is one step; see
+   * setupWizard for how they are shown.
+   */
   const productFields = (p = {}) => [
-    { type: 'section', key: 'details', label: 'Product details' },
+    { type: 'section', key: 'details', label: 'Product details', hint: 'What it is called, where it is filed and what it costs.' },
     // No PLU field. The number still exists and still matters — the till
     // indexes by it and order lines reference it — but it is the server's job
     // to allocate, not a question to ask somebody adding a bottle of coke.
     // See POST /products, which fills in the next free one.
     { label: 'Name', name: 'product_name', required: true, value: p.product_name ?? '' },
+    {
+      label: 'Short description',
+      name: 'short_description',
+      placeholder: 'e.g. Crisp Italian lager, 5%',
+      value: p.short_description ?? '',
+    },
     {
       label: 'Department',
       name: 'department_name',
@@ -6254,14 +6595,6 @@ document.addEventListener('click', async (e) => {
     // browser rejected £2.05 and offered the two "nearest valid values", 2 and
     // 3. Every price with pence in it was unenterable.
     { label: 'Price 1 (£)', name: 'price', type: 'money', value: p.price ?? 0 },
-    // Five more, and every one of them optional.
-    //
-    // Blank is not zero. A level left empty means "this product has no special
-    // price here, charge Price 1", and the till falls back — so a venue can put
-    // a happy-hour price on the six drinks it applies to and leave the other
-    // four hundred products alone. A default of 0 would mean switching the till
-    // to Price 2 started giving everything away, silently, at the counter.
-    ...priceLevelFields(p),
     {
       label: 'VAT rate',
       name: 'tax_percentage',
@@ -6288,23 +6621,27 @@ document.addEventListener('click', async (e) => {
     {
       label: 'Barcode',
       name: 'barcode',
-      hint:
-        'Scan the packet into this box, or type the number. On the till, ' +
-        'scanning it rings the product up; scanning one nothing carries ' +
-        'offers to add it.',
+      type: 'barcode',
+      hint: 'Scan it in, type it, or Generate a store barcode for your own labels.',
       value: p.barcode || '',
     },
+    // Blank is not zero. A level left empty means "this product has no special
+    // price here, charge Price 1", and the till falls back — so a venue can put
+    // a happy-hour price on the six drinks it applies to and leave the other
+    // four hundred products alone.
+    ...priceLevelFields(p),
     {
-      label: 'Allergens',
-      name: 'allergens',
-      type: 'allergens',
-      options: productRefs.allergens,
-      hint:
-        'The fourteen a UK venue has to declare. Shown on the QR menu, on ' +
-        'kitchen tickets and on the customer display. Leave every box clear ' +
-        'and save to record that this contains none of them — which is a ' +
-        'different answer from never having been asked.',
-      value: p.allergens || null,
+      label: 'Sold by weight — the price is per kg',
+      name: 'is_weighted',
+      type: 'checkbox',
+      value: p.is_weighted ?? 0,
+    },
+    {
+      label: 'Type the weight in at the till',
+      name: 'manual_weight',
+      type: 'checkbox',
+      hint: 'For a weighed product: the till asks for the weight when it is rung up.',
+      value: p.manual_weight ?? 0,
     },
     /*
      * "Set a check box on a product (Renews membership)."
@@ -6346,7 +6683,7 @@ document.addEventListener('click', async (e) => {
         'be rung up on its own.',
       value: p.is_modifier === undefined ? 0 : p.is_modifier,
     },
-    { type: 'section', key: 'stock', label: 'Stock', hint: "How it is bought, what it costs and what it earns. Counts change in Stock Control, never here." },
+    { type: 'section', key: 'stock', label: 'Stock control', hint: 'How it is bought, what it costs and what it earns. Counts change in Stock Control, never here.' },
     // STOCK. It used to be a bare "Stock" number that saved straight onto the
     // product -- skipping the ledger, and turning an untracked product into a
     // tracked 0 every time it was opened and saved. Counts change in Stock
@@ -6376,6 +6713,9 @@ document.addEventListener('click', async (e) => {
     { label: 'Unit cost (£)', name: 'cost_price', type: 'money', value: p.cost_price ?? '' },
     { label: 'Target GP %', name: 'target_gp', type: 'number', value: p.target_gp ?? '', placeholder: '70' },
     { label: 'GP calculator', name: '_gp', type: 'gp', mount: mountGpCalculator },
+    { label: 'Supplier code', name: 'supplier_code', value: p.supplier_code ?? '', placeholder: 'Their product code' },
+    { label: 'Min stock — reorder below this', name: 'min_stock', type: 'number', value: p.min_stock ?? '' },
+    { label: 'Max stock — order up to this', name: 'max_stock', type: 'number', value: p.max_stock ?? '' },
     {
       label: 'Non-stock item — never counted on a stock take',
       name: 'non_stock',
@@ -6383,12 +6723,7 @@ document.addEventListener('click', async (e) => {
       value: p.non_stock ? 1 : 0,
       hint: 'Recipes are built under Stock Control → Recipes.',
     },
-    // CHILD PRODUCTS (2026-09-24): "In Newbridge when you create a product and
-    // add a stock unit to it, you get another header called child products ...
-    // It would be cool if you could add existing products from a list." Both:
-    // make new ones here, or link ones that exist. Saved after the product.
-    { label: 'Child products — sold from this product’s stock', name: '_children', type: 'children', mount: (root) => mountChildProducts(root, p) },
-    { type: 'section', key: 'modifiers', label: 'Modifiers' },
+    { type: 'section', key: 'modifiers', label: 'Modifiers', hint: 'The questions the till asks when this is rung up, in order.' },
     {
       label: 'Modifiers — the questions this product asks, in order',
       name: 'modifier_group_ids',
@@ -6400,7 +6735,7 @@ document.addEventListener('click', async (e) => {
         'so one setup serves the till and the menu.',
       value: p.modifier_group_ids || [],
     },
-    { type: 'section', key: 'printing', label: 'Printing' },
+    { type: 'section', key: 'printing', label: 'Printing', hint: 'Which kitchen printers it goes to, and how it shows on the receipt.' },
     {
       label: 'Printer category — blank prints last, under no heading',
       name: 'print_category_id',
@@ -6431,7 +6766,49 @@ document.addEventListener('click', async (e) => {
       // catalogue imported without the field is not hidden from every bill.
       value: p.print_to_receipt === undefined ? 1 : p.print_to_receipt,
     },
-    { type: 'section', key: 'images', label: 'Images' },
+    { type: 'section', key: 'children', label: 'Child products', hint: 'Halves, glasses and singles sold from this product\u2019s stock.' },
+    // CHILD PRODUCTS (2026-09-24): "In Newbridge when you create a product and
+    // add a stock unit to it, you get another header called child products ...
+    // It would be cool if you could add existing products from a list." Both:
+    // make new ones here, or link ones that exist. Saved after the product.
+    { label: 'Child products — sold from this product’s stock', name: '_children', type: 'children', mount: (root) => mountChildProducts(root, p) },
+    { type: 'section', key: 'allergens', label: 'Allergens', hint: 'Shown on the QR menu, the kiosk, kitchen tickets and the customer display.' },
+    {
+      label: 'Contains',
+      name: 'allergens',
+      type: 'allergens',
+      tiles: true,
+      options: productRefs.allergens,
+      hint:
+        'The fourteen a UK venue has to declare. Leave every box clear and ' +
+        'save to record that it contains none of them — a different answer ' +
+        'from never having been asked.',
+      value: p.allergens || null,
+    },
+    {
+      label: 'May contain traces of',
+      name: 'may_contain',
+      type: 'allergens',
+      tiles: true,
+      options: productRefs.allergens,
+      value: p.may_contain || null,
+    },
+    {
+      label: 'Suitable for',
+      name: 'dietary',
+      type: 'allergens',
+      tiles: true,
+      options: productRefs.dietary,
+      value: p.dietary || null,
+    },
+    { type: 'section', key: 'information', label: 'Information', hint: 'The description, picture and calories customers see on the QR menu and the kiosk.' },
+    {
+      label: 'Description',
+      name: 'description',
+      type: 'richtext',
+      placeholder: 'Ingredients, serving suggestions, what makes it special…',
+      value: p.description || '',
+    },
     // No button colour, no button position, no emoji. All three belong to the
     // screen editor now — that is where the layout, the colour, the size, the
     // lettering and the face of every key are set. Two places to style one
@@ -6447,6 +6824,16 @@ document.addEventListener('click', async (e) => {
     // (see _image() in vesopa_epos/lib/ui/sale_page.dart), unlike a department's
     // square category button — so this one crops to 16:9, not square.
     { label: 'Image', name: 'image_url', type: 'image', crop: 'landscape', value: p.image_url ?? '' },
+    { label: 'Calories (kcal)', name: 'calories', type: 'number', value: p.calories ?? '', placeholder: 'e.g. 450' },
+    {
+      label: 'Add to a till page',
+      name: '_place_screen',
+      type: 'select',
+      value: '',
+      options: [{ value: '', label: productRefs.salePages.length ? 'Not now' : 'No sale pages yet' }]
+        .concat(productRefs.salePages.map((x) => ({ value: x.id, label: x.name }))),
+      hint: 'Puts a key for it in the first free space on that page, so it is ready to sell.',
+    },
   ];
 
   /**
@@ -6473,16 +6860,40 @@ document.addEventListener('click', async (e) => {
     });
   };
 
+  /**
+   * "Add to a till page", the form's last question. After everything else, so
+   * a product that failed to save is never put on a till. A full page is said
+   * rather than thrown: the product itself saved, and that must not read as a
+   * failure.
+   */
+  const placeOnPage = async (plu, d) => {
+    const screen = d._place_screen;
+    delete d._place_screen;
+    if (!screen || plu == null) return;
+    try {
+      const r = await api(`/screens/${screen}/place-product`, {
+        method: 'POST',
+        body: JSON.stringify({ plu_id: Number(plu) }),
+      });
+      toast(r.already ? `Already on ${r.name}.` : `Added to ${r.name}.`);
+    } catch (err) {
+      toast(`Product saved, but not added to the page: ${err.message}`, 'error');
+    }
+  };
+
   if (t.id === 'add-product') {
     return modal('Add product', productFields(), async (d) => {
       const kids = d._children;
       delete d._children;
+      const place = d._place_screen;
+      delete d._place_screen;
       checkChildPlan(kids);
       const made = await api('/products', { method: 'POST', body: JSON.stringify(d) });
       await saveModifiers(made.pluid, d);
       await saveProductStock(made.id, d, {});
       await saveChildProducts(made, d, kids);
-    });
+      await placeOnPage(made.pluid, { _place_screen: place });
+    }, { wizard: true });
   }
   if (t.dataset.stockInfo) return skOpenStockInfo(t.dataset.stockInfo);
   if (t.dataset.editProduct) {
@@ -6492,12 +6903,15 @@ document.addEventListener('click', async (e) => {
     return modal('Edit product', productFields(p), async (d) => {
       const kids = d._children;
       delete d._children;
+      const place = d._place_screen;
+      delete d._place_screen;
       checkChildPlan(kids);
       await api(`/products/${p.id}`, { method: 'PUT', body: JSON.stringify(d) });
       await saveModifiers(p.pluid, d);
       await saveProductStock(p.id, d, p);
       await saveChildProducts(p, d, kids);
-    });
+      await placeOnPage(p.pluid, { _place_screen: place });
+    }, { wizard: true });
   }
   // Half a catalogue is a variant of the other half — the same burger with
   // cheese, the same wine by the glass. This opens the add form with everything

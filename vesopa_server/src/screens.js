@@ -670,6 +670,61 @@ async function saveScreenButtons(pool, office, screen, rawButtons) {
   return saved;
 }
 
+/**
+ * Put one product key on a sale page, in the first free cell (2026-10-01).
+ *
+ * Shared by the back office's product form and the till's: both offer "Add
+ * to page" as the last step of making a product. Returns where it went, or
+ * `placed: null` when the page is full. A product already on the page is left
+ * where it is and reported as `already`.
+ */
+async function placeProductOnScreen(pool, office, screen, plu) {
+  const connection = await pool.getConnection();
+  let placed = null;
+  let already = false;
+  try {
+    await connection.beginTransaction();
+    const [existing] = await connection.query(
+      'SELECT * FROM epos_screen_buttons WHERE screen_id = ? FOR UPDATE',
+      [screen.id]
+    );
+    const mine = existing.find((b) => b.kind === 'product' && Number(b.plu_id) === plu);
+    if (mine) {
+      already = true;
+      placed = { row: mine.grid_row, col: mine.grid_col };
+    } else {
+      const taken = new Set();
+      for (const b of existing) {
+        for (let r = b.grid_row; r < b.grid_row + Math.max(1, b.row_span); r += 1) {
+          for (let c = b.grid_col; c < b.grid_col + Math.max(1, b.col_span); c += 1) {
+            taken.add(r + ':' + c);
+          }
+        }
+      }
+      for (let r = 0; r < screen.grid_rows && !placed; r += 1) {
+        for (let c = 0; c < screen.grid_cols && !placed; c += 1) {
+          if (!taken.has(r + ':' + c)) placed = { row: r, col: c };
+        }
+      }
+      if (placed) {
+        await connection.execute(
+          'INSERT INTO epos_screen_buttons'
+          + ' (screen_id, office, grid_row, grid_col, row_span, col_span, kind, plu_id)'
+          + " VALUES (?, ?, ?, ?, 1, 1, 'product', ?)",
+          [screen.id, office, placed.row, placed.col, plu]
+        );
+      }
+    }
+    await connection.commit();
+  } catch (e) {
+    await connection.rollback();
+    throw e;
+  } finally {
+    connection.release();
+  }
+  return { placed, already };
+}
+
 function screensRoutes({ pool, broadcast, secret }) {
   const router = express.Router();
   const auth = requireAuth(secret);
@@ -1378,6 +1433,41 @@ function screensRoutes({ pool, broadcast, secret }) {
     }
   });
 
+  /**
+   * Put one product on a page, in the first free cell (2026-10-01).
+   *
+   * The product form's last step offers "Add to page": a new product goes
+   * straight onto the till without a trip to Screen Programming. One key,
+   * one cell, read the way the grid reads. A product already on that page is
+   * left where it is rather than doubled.
+   */
+  router.post('/screens/:id/place-product', auth, async (req, res, next) => {
+    try {
+      const office = await tenantEmail(req);
+      const screen = await screenFor(office, req.params.id);
+      if (!screen) return res.status(404).json({ error: 'No such screen' });
+      if ((screen.surface || 'sale') !== 'sale') {
+        return res.status(400).json({ error: 'Products go on sale pages only.' });
+      }
+      const plu = Number(req.body && req.body.plu_id);
+      if (!Number.isInteger(plu) || plu < 0) {
+        return res.status(400).json({ error: 'Which product?' });
+      }
+
+      const { placed, already } = await placeProductOnScreen(pool, office, screen, plu);
+
+      if (!placed) {
+        return res.status(409).json({
+          error: `There is no free key left on ${screen.name}. Make room in Screen Programming.`,
+        });
+      }
+      if (!already) pushed(office);
+      res.json({ screen_id: screen.id, name: screen.name, already, ...placed });
+    } catch (e) {
+      next(e);
+    }
+  });
+
   router.put('/screens/:id/buttons', auth, async (req, res, next) => {
     try {
       const office = await tenantEmail(req);
@@ -1427,6 +1517,7 @@ function tillScreenRoutes({ pool }) {
 }
 
 module.exports = {
+  placeProductOnScreen,
   screensRoutes,
   saveScreenButtons,
   screenToJson,

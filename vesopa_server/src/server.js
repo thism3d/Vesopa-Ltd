@@ -39,7 +39,9 @@ const {
   kitchenAppRoutes,
   tillKitchenRoutes,
 } = require('./kitchen');
-const { screensRoutes, tillScreenRoutes } = require('./screens');
+const { screensRoutes, tillScreenRoutes, placeProductOnScreen } = require('./screens');
+const { saveProductExtras, PRODUCT_EXTRA_FIELDS } = require('./product_info');
+const { cleanAllergens } = require('./allergens');
 const { screenScheduleRoutes } = require('./screen_schedules');
 const { dashboardLayoutRoutes } = require('./dashboard_layout');
 const { fontsRoutes, tillFontRoutes } = require('./fonts');
@@ -1491,9 +1493,11 @@ app.post('/till/products', requireTerminal(JWT_SECRET), async (req, res, next) =
  * the one catalogue, on the server, like the back office does, and every till
  * picks the change up on the same refresh.
  *
- * Only what the till's Details and Printing sections show. Stock settings go
- * through /till/stock/products (the ledger's own rules); modifiers, pictures
- * and allergens stay the back office's.
+ * Stock settings go through /till/stock/products (the ledger's own rules).
+ * Since the till's product wizard (2026-10-01) this also takes allergens,
+ * price levels, modifiers, a picture the venue already has, and the extra
+ * fields in src/product_info.js; only uploading a new picture stays the back
+ * office's.
  */
 app.patch('/till/products/:pluid', requireTerminal(JWT_SECRET), async (req, res, next) => {
   const b = req.body || {};
@@ -1552,11 +1556,76 @@ app.patch('/till/products/:pluid', requireTerminal(JWT_SECRET), async (req, res,
       sets.push('printer_routes = ?');
       params.push([...new Set(routes)].join(',') || null);
     }
-    if (!sets.length) return res.json({ ok: true, changed: 0 });
-    params.push(office, pluid);
-    await pool.execute(`UPDATE bo_products SET ${sets.join(', ')} WHERE email = ? AND pluid = ?`, params);
+    // The till's product wizard (2026-10-01) edits everything the back
+    // office's does, apart from uploading a new picture.
+    if (b.allergens !== undefined) {
+      sets.push('allergens = ?');
+      params.push(cleanAllergens(b.allergens));
+    }
+    for (const level of ['price_2', 'price_3', 'price_4', 'price_5', 'price_6']) {
+      if (b[level] === undefined) continue;
+      const v = b[level] === null || b[level] === '' ? null : Number(b[level]);
+      sets.push(`${level} = ?`);
+      params.push(Number.isFinite(v) && v >= 0 ? v : null);
+    }
+    if (b.is_modifier !== undefined) {
+      sets.push('is_modifier = ?');
+      params.push(b.is_modifier ? 1 : 0);
+    }
+    if (b.print_category_id !== undefined) {
+      const id = Number(b.print_category_id);
+      sets.push('print_category_id = ?');
+      params.push(Number.isInteger(id) && id > 0 ? id : null);
+    }
+    if (b.image_url !== undefined) {
+      // Chosen from pictures the venue already has; a new one is uploaded in
+      // the back office. Only a path this server hands out is accepted.
+      const url = String(b.image_url || '').trim();
+      sets.push('image_url = ?');
+      params.push(/^(\/uploads\/|https:\/\/)[^\s"'<>]{1,480}$/.test(url) ? url : null);
+    }
+    let changed = sets.length;
+    if (sets.length) {
+      params.push(office, pluid);
+      await pool.execute(`UPDATE bo_products SET ${sets.join(', ')} WHERE email = ? AND pluid = ?`, params);
+    }
+    if (await saveProductExtras(pool, me.id, office, b)) changed += 1;
+    if (Array.isArray(b.modifier_group_ids)) {
+      const ids = [...new Set(b.modifier_group_ids.map((n) => Number.parseInt(n, 10)))]
+        .filter((n) => Number.isFinite(n));
+      let mine = [];
+      if (ids.length) {
+        const [rows] = await pool.query(
+          `SELECT id FROM epos_modifier_groups WHERE office = ? AND id IN (${ids.map(() => '?').join(',')})`,
+          [office, ...ids]
+        );
+        mine = rows.map((r) => r.id);
+      }
+      const ordered = ids.filter((id) => mine.includes(id));
+      const conn = await pool.getConnection();
+      try {
+        await conn.beginTransaction();
+        await conn.execute('DELETE FROM epos_product_modifiers WHERE office = ? AND plu_id = ?', [office, pluid]);
+        for (const [i, id] of ordered.entries()) {
+          await conn.execute(
+            'INSERT INTO epos_product_modifiers (office, plu_id, group_id, sort_order) VALUES (?, ?, ?, ?)',
+            [office, pluid, id, i]
+          );
+        }
+        await conn.commit();
+      } catch (e) {
+        await conn.rollback();
+        throw e;
+      } finally {
+        conn.release();
+      }
+      broadcast({ type: 'modifiers', office }, { office });
+      broadcast({ type: 'screens', office }, { office });
+      changed += 1;
+    }
+    if (!changed) return res.json({ ok: true, changed: 0 });
     broadcast({ type: 'catalogue.updated', office }, { office });
-    res.json({ ok: true, changed: sets.length });
+    res.json({ ok: true, changed });
   } catch (e) {
     next(e);
   }
@@ -1603,6 +1672,34 @@ app.post('/till/products/new', requireTerminal(JWT_SECRET), async (req, res, nex
     );
     broadcast({ type: 'catalogue.updated', office }, { office });
     res.status(201).json({ id: made && made.insertId, pluid, product_name: name });
+  } catch (e) {
+    next(e);
+  }
+});
+
+/**
+ * The till's product wizard puts a new product on a page (2026-10-01): the
+ * same "Add to page" the back office's form offers. See placeProductOnScreen.
+ */
+app.post('/till/screens/:id/place-product', requireTerminal(JWT_SECRET), async (req, res, next) => {
+  try {
+    const office = req.office;
+    const [[screen]] = await pool.query(
+      'SELECT * FROM epos_screens WHERE id = ? AND office = ?',
+      [req.params.id, office]
+    );
+    if (!screen) return res.status(404).json({ error: 'No such page.' });
+    if ((screen.surface || 'sale') !== 'sale') {
+      return res.status(400).json({ error: 'Products go on sale pages only.' });
+    }
+    const plu = Number(req.body && req.body.plu_id);
+    if (!Number.isInteger(plu) || plu < 0) return res.status(400).json({ error: 'Which product?' });
+    const { placed, already } = await placeProductOnScreen(pool, office, screen, plu);
+    if (!placed) {
+      return res.status(409).json({ error: `There is no free key left on ${screen.name}.` });
+    }
+    if (!already) broadcast({ type: 'screens', office }, { office });
+    res.json({ screen_id: screen.id, name: screen.name, already, ...placed });
   } catch (e) {
     next(e);
   }
@@ -1928,6 +2025,22 @@ app.get(['/till/products', '/products.json'], async (req, res, next) => {
        ORDER BY p.button_position IS NULL, p.button_position`,
       [office]
     );
+    // The step-by-step form's fields (2026-10-01), read on their own so a
+    // database without schema_product_wizard.sql still hands the till its
+    // catalogue. supplier_code, min and max stock ride along for the till's
+    // own product wizard.
+    try {
+      const [extra] = await pool.query(
+        `SELECT pluid, ${PRODUCT_EXTRA_FIELDS.join(', ')},
+                supplier_code, min_stock, max_stock, print_category_id
+           FROM bo_products WHERE email = ?`,
+        [office]
+      );
+      const byPlu = new Map(extra.map((r) => [Number(r.pluid), r]));
+      for (const r of rows) Object.assign(r, byPlu.get(Number(r.pluid)) || {});
+    } catch (e) {
+      if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+    }
     res.json(rows);
   } catch (err) {
     if (err.code === 'ER_BAD_FIELD_ERROR' || err.code === 'ER_NO_SUCH_TABLE') {

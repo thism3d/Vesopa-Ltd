@@ -10,6 +10,7 @@ const {
 } = require('./member_numbers');
 const { accessGuard } = require('./permissions');
 const { ALLERGENS, cleanAllergens } = require('./allergens');
+const { DIETARY, saveProductExtras } = require('./product_info');
 const { inviteToVesopa, LIVE: VESOPA_SIGN_IN, ONLY: VESOPA_ONLY } = require('./backoffice_auth');
 
 // Product images. Stored on disk under public/uploads and served statically.
@@ -311,6 +312,10 @@ function backofficeRoutes({ pool, broadcast, secret }) {
         ]
       );
 
+      // The step-by-step form's extra fields: description, calories, may
+      // contain, diet, weighing. See src/product_info.js.
+      await saveProductExtras(pool, result.insertId, email, p);
+
       // Tills hold a local copy of the catalogue; tell them to refresh it.
       broadcast({ type: 'catalogue.updated' });
       // The PLU goes back with the id because the client no longer knows it —
@@ -414,6 +419,7 @@ function backofficeRoutes({ pool, broadcast, secret }) {
           await tenantEmail(req),
         ]
       );
+      await saveProductExtras(pool, req.params.id, await tenantEmail(req), p);
       broadcast({ type: 'catalogue.updated' });
       res.json({ ok: true });
     } catch (e) {
@@ -576,7 +582,9 @@ function backofficeRoutes({ pool, broadcast, secret }) {
    * Served from src/allergens.js so no surface spells the labels for itself.
    */
   router.get('/allergens', (_req, res) => {
-    res.json({ allergens: ALLERGENS });
+    // The diet labels ride along: the product form's Allergens step shows
+    // both, and one fetch is one fewer thing to fail.
+    res.json({ allergens: ALLERGENS, dietary: DIETARY });
   });
 
   router.get('/branding/public', async (req, res, next) => {
