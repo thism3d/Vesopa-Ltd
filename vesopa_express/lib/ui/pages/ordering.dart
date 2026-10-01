@@ -769,6 +769,7 @@ class _MenuPageState extends ConsumerState<MenuPage> {
               Icons.restaurant_menu_rounded),
       ],
       selected: sectionIndex,
+      here: ref.watch(kioskSessionProvider.select((s) => s.config?.hereColour)) ?? Xp.lime,
       onSelect: (i) => setState(() => _selected = i),
     );
 
@@ -800,11 +801,15 @@ class _CategoryRail extends StatelessWidget {
     required this.entries,
     required this.selected,
     required this.onSelect,
+    this.here = Xp.lime,
   });
 
   final double width;
   final List<(int, String, String?, IconData)> entries;
   final int selected;
+
+  /// The open category's colour: the venue's page highlight, or lime.
+  final Color here;
   final ValueChanged<int> onSelect;
 
   @override
@@ -821,7 +826,7 @@ class _CategoryRail extends StatelessWidget {
           final (index, name, image, icon) = entries[i];
           final on = index == selected;
           return Material(
-            color: on ? Xp.lime : Colors.transparent,
+            color: on ? here : Colors.transparent,
             borderRadius: BorderRadius.circular(18),
             child: InkWell(
               borderRadius: BorderRadius.circular(18),
@@ -849,7 +854,7 @@ class _CategoryRail extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: on ? FontWeight.w800 : FontWeight.w600,
-                        color: on ? Xp.ink : skin.ink,
+                        color: on ? Xp.onColor(here) : skin.ink,
                         height: 1.15,
                       ),
                     ),

@@ -1,0 +1,3 @@
+Version 1.0.7.0 - The open category matches the tills
+
+The category a customer is looking at is marked on the kiosk in the same colour the venue's tills use for the page they are on. A venue that picks its own highlight colour in the back office, under Screen Programming > Page highlight, sees it on the kiosk as well, with the text kept readable on it. Venues on the standard look keep the Vesopa lime.

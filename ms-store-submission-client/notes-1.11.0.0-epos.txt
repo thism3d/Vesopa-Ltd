@@ -1,0 +1,5 @@
+Version 1.11.0.0 - The page you are on lights up
+
+On a programmed screen, the navigation key for the page you are on now lights up by itself, so staff always know where they are. On the Bottles page the BOTTLES key turns white with a Vesopa lime bar along its foot; move to Spirits and the highlight moves with you. Nothing to set up on each page.
+
+Each venue can choose the look in the back office, under Screen Programming > Page highlight: fill and underbar, underbar only, outline or off, any key colour, and an underbar in Vesopa lime, in each key's own colour, or in a colour of your own. A single key can have its own highlight too. Changes reach every till straight away.

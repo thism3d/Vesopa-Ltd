@@ -532,6 +532,8 @@ async function main() {
   await applySchema('schema_stock_links_recipes.sql');
   // The migration itself -- twice, because it must survive being replayed.
   for (let run = 0; run < 2; run++) await applySchema('schema_till_express.sql');
+  // The page highlight the kiosk's category rail follows (2026-10-01).
+  await applySchema('schema_till_highlight.sql');
 
   await admin.end();
 
@@ -826,6 +828,17 @@ async function main() {
       res = await call(base, 'GET', '/api/express/kiosk/config', { token: kioskToken });
       assert.strictEqual(res.body.payments.card, true);
       assert.strictEqual(res.body.payments.sandbox, true);
+    });
+
+    await check("the kiosk's open category follows the venue's page highlight colour", async () => {
+      // A venue on the Vesopa default sends nothing to follow, and the kiosk keeps its lime.
+      await pool.query('UPDATE epos_till_settings SET nav_here_style = NULL, nav_here_bar = NULL WHERE office = ?', [ARMS.email]);
+      let res = await call(base, 'GET', '/api/express/kiosk/config', { token: kioskToken });
+      assert.deepStrictEqual(res.body.highlight, { style: null, bar: null });
+      await pool.query("UPDATE epos_till_settings SET nav_here_style = 'bar', nav_here_bar = '#e5484d' WHERE office = ?", [ARMS.email]);
+      res = await call(base, 'GET', '/api/express/kiosk/config', { token: kioskToken });
+      assert.deepStrictEqual(res.body.highlight, { style: 'bar', bar: '#e5484d' });
+      await pool.query('UPDATE epos_till_settings SET nav_here_style = NULL, nav_here_bar = NULL WHERE office = ?', [ARMS.email]);
     });
 
     await check('the kiosk is told to offer English only while the Welsh waits to be checked', async () => {

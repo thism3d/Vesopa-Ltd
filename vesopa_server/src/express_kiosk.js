@@ -856,6 +856,28 @@ function expressKioskRoutes({ pool, broadcast, secret }) {
   }
 
   /**
+   * The venue's page highlight (Screen Programming > Page highlight), so the
+   * kiosk marks its open category with the same colour the tills mark their
+   * open page with. Only the bar colour travels: the kiosk has no page keys to
+   * fill, and its rail already carries the colour as a solid band. Null for a
+   * venue on the Vesopa default, or a server whose schema predates it, and the
+   * kiosk keeps its lime.
+   */
+  async function highlightFace(office) {
+    try {
+      const [[row]] = await pool.query(
+        'SELECT nav_here_style, nav_here_bar FROM epos_till_settings WHERE office = ?',
+        [office]
+      );
+      if (!row) return null;
+      return { style: row.nav_here_style || null, bar: row.nav_here_bar || null };
+    } catch (e) {
+      if (e && (e.code === 'ER_BAD_FIELD_ERROR' || e.code === 'ER_NO_SUCH_TABLE')) return null;
+      throw e;
+    }
+  }
+
+  /**
    * What the kiosk prints at the top and bottom of a ticket: the venue's own
    * receipt branding, the same fields the till prints, so a customer's paper
    * from the kiosk and from the counter say the same thing about who took
@@ -911,6 +933,7 @@ function expressKioskRoutes({ pool, broadcast, secret }) {
           has_card_machine: !!req.kiosk.dojo_terminal_id,
         },
         venue: await venueFace(officeId),
+        highlight: await highlightFace(req.office),
         exit,
         server_time: new Date().toISOString(),
       };

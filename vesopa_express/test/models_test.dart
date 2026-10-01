@@ -160,4 +160,25 @@ void main() {
     expect(o.stage, PayStage.presentCard);
     expect(o.lines[1].isModifier, isTrue);
   });
+
+  group("the open category follows the venue's page highlight", () {
+    KioskConfig config(Object? highlight) => KioskConfig.fromJson({
+      'enabled': true,
+      'kiosk': {'id': 'k1', 'name': 'Front'},
+      'venue': {'name': 'Arms'},
+      'highlight': highlight,
+    });
+
+    test('a colour the manager picked is the rail colour', () {
+      expect(config({'style': 'bar', 'bar': '#e5484d'}).hereColour, const Color(0xFFE5484D));
+    });
+
+    test('the Vesopa default, the key colour, off and an old server keep lime', () {
+      expect(config(null).hereColour, isNull);
+      expect(config({'style': null, 'bar': null}).hereColour, isNull);
+      expect(config({'style': 'fill', 'bar': 'brand'}).hereColour, isNull);
+      expect(config({'style': 'bar', 'bar': 'key'}).hereColour, isNull);
+      expect(config({'style': 'bar', 'bar': '#nothex'}).hereColour, isNull);
+    });
+  });
 }

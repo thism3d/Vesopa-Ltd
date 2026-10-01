@@ -90,6 +90,7 @@ class KioskConfig {
     required this.hasCardMachine,
     required this.venueName,
     required this.accent,
+    this.hereColour,
     this.logoUrl,
     this.bannerUrl,
     this.exit,
@@ -116,6 +117,13 @@ class KioskConfig {
   final String? logoUrl;
   final String? bannerUrl;
   final Color accent;
+
+  /// The colour the open category wears on the rail: the venue's page
+  /// highlight bar colour from the back office, so the kiosk and the tills
+  /// mark "you are here" alike. Null keeps the kiosk's own lime, which is also
+  /// what the Vesopa default ("brand") and "the key's own colour" mean here --
+  /// a category on the kiosk has no key colour of its own.
+  final Color? hereColour;
   final ExitCheck? exit;
   final bool eatIn;
   final bool takeAway;
@@ -156,6 +164,7 @@ class KioskConfig {
       logoUrl: _str(venue['logo_url']),
       bannerUrl: _str(venue['banner_url']),
       accent: parseHex(_str(venue['accent']), const Color(0xFFA5C715)),
+      hereColour: _hereColour(j['highlight']),
       exit: ExitCheck.fromJson(j['exit']),
       eatIn: types.isEmpty ? true : _bool(types['eat_in']),
       takeAway: types.isEmpty ? true : _bool(types['take_away']),
@@ -172,6 +181,18 @@ class KioskConfig {
       receipt: ReceiptFace.fromJson(j['receipt']),
     );
   }
+}
+
+/// The rail colour from the venue's page highlight, or null for the kiosk's
+/// own lime. Only a colour the manager picked counts; "brand", "key", a
+/// highlight switched off and a server from before this all keep the lime,
+/// because a kiosk with no visible "you are here" is harder to use.
+Color? _hereColour(Object? raw) {
+  final bar = _str(_map(raw)['bar']);
+  if (bar == null || !bar.startsWith('#')) return null;
+  const none = Color(0x00000000);
+  final colour = parseHex(bar, none);
+  return colour == none ? null : colour;
 }
 
 /// The languages this kiosk knows, in the server's order. A server from before
