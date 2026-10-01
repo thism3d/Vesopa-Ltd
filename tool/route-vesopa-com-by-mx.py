@@ -1,0 +1,93 @@
+"""Send mail made on the Cloud box for @vesopa.com to Microsoft 365, by MX.
+
+    python tool/route-vesopa-com-by-mx.py
+
+Run from the repository root on the owner's PC, with .env.claude loaded (the
+same way as the Metric and Vesopa Auth scripts).
+
+WHY. vesopa.com's mailboxes are on Microsoft 365 (MX 1). The Cloud box is only
+its backup MX (10), but HestiaCP also lists vesopa.com as a local mail domain,
+so Exim delivered mail made on the box (sign-in codes from auth.vesopa.com,
+panel mail) to the local mailboxes instead of Microsoft, and bounced it as
+"Unrouteable address" for anyone without one there, such as info@vesopa.com.
+
+WHAT IT DOES, on the box:
+  1. backs up /etc/exim4/exim4.conf.template;
+  2. adds one router at the top: mail for vesopa.com that was made on this box
+     (local submission, 127.0.0.1, or an authenticated sender) goes out through
+     the existing outgoing relay, which delivers by MX, so it reaches Microsoft;
+     mail arriving from outside as backup MX is untouched, and no mailbox is
+     touched;
+  3. checks the config and the route, restarts Exim, and puts the backup back
+     if any check fails.
+
+Idempotent: if the router is already there it only reports the route.
+"""
+
+import os
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.dirname(HERE)
+sys.path.insert(0, os.path.join(REPO, "MetricMembership", "server", "scripts"))
+from deploy import connect, vesopa_ssh  # noqa: E402
+
+REMOTE = r'''
+set -e
+C=/etc/exim4/exim4.conf.template
+if grep -q "^vesopa_com_by_mx:" "$C"; then
+  echo "router already present"
+else
+  B="$C.bak_pre_vesopa_mx_$(date +%Y%m%d_%H%M%S)"
+  cp -p "$C" "$B"
+  echo "backed up to $B"
+  python3 - "$C" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+rule = """# vesopa.com mail lives on Microsoft 365 (MX 1); this box is only its backup
+# MX (10). Mail made HERE for @vesopa.com (sign-in codes, panel mail) follows
+# the MX through the outgoing relay instead of being delivered to the local
+# mailboxes. Mail arriving from outside as backup MX is untouched.
+# tool/route-vesopa-com-by-mx.py, owner's instruction 2026-10-01.
+vesopa_com_by_mx:
+  driver = manualroute
+  address_data = SMTP_RELAY_HOST:SMTP_RELAY_PORT
+  domains = vesopa.com
+  condition = ${if or{{eq{$sender_host_address}{}}{eq{$sender_host_address}{127.0.0.1}}{def:authenticated_id}}}
+  require_files = SMTP_RELAY_FILE
+  transport = smtp_relay_smtp
+  route_list = * ${extract{1}{:}{$address_data}}::${extract{2}{:}{$address_data}}
+  no_more
+  no_verify
+
+"""
+i = s.index("begin routers\n") + len("begin routers\n")
+open(p, "w").write(s[:i] + "\n" + rule + s[i:])
+PY
+  if ! exim -bV >/dev/null 2>&1 || ! exim -bt -f no-reply@vesopa.com info@vesopa.com 2>&1 | grep -q "router = vesopa_com_by_mx"; then
+    cp -p "$B" "$C"
+    echo "CHECK FAILED: the backup is back in place and nothing changed"
+    exit 1
+  fi
+  systemctl restart exim4
+  echo "exim restarted"
+fi
+echo "route for info@vesopa.com from this box:"
+exim -bt -f no-reply@vesopa.com info@vesopa.com 2>&1 | grep -E "router|transport|host" | head -4
+'''
+
+
+def main():
+    client = connect()
+    try:
+        status = vesopa_ssh.run(client, REMOTE)
+        if status != 0:
+            raise SystemExit("failed on the box: read the output above")
+        print("\ndone. Mail made on the Cloud box for @vesopa.com now goes to Microsoft 365.")
+    finally:
+        client.close()
+
+
+if __name__ == "__main__":
+    main()
