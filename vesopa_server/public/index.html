@@ -3765,50 +3765,179 @@
             </button>
           </div>
 
+          <!-- What is filtering the list right now, each removable on its own. Above
+               the panel, so they show when it is folded away. -->
+          <div class="act-active" id="activity-active" aria-live="polite"></div>
+
+          <!-- Every column the log keeps can be filtered on, grouped the way a
+               fault report reads: where, who, what, how it went, when. -->
           <div class="card rd-card act-filters-card" id="activity-filters-card">
             <form id="activity-filters" class="activity-filters">
-              <label id="activity-office-wrap" hidden>Venue
-                <select id="activity-office"><option value="">Every venue</option></select>
-              </label>
-              <label>App
-                <select id="activity-app">
-                  <option value="">Every app</option>
-                  <option value="epos">Till (EPOS)</option>
-                  <option value="kitchen">Kitchen screen</option>
-                  <option value="display">Customer display</option>
-                  <option value="express">Express kiosk</option>
-                  <option value="loyalty">Loyalty app</option>
-                  <option value="backoffice">Back office</option>
-                  <option value="server">Server</option>
-                </select>
-              </label>
-              <label>Device
-                <select id="activity-device"><option value="">Every device</option></select>
-              </label>
-              <label>What
-                <select id="activity-action">
-                  <option value="">Everything</option>
-                  <option value="tap">Taps</option>
-                  <option value="screen">Screens opened</option>
-                  <option value="change">Changes</option>
-                  <option value="signin">Sign-ins</option>
-                  <option value="error">Errors</option>
-                  <option value="start">App starts</option>
-                </select>
-              </label>
-              <label>Person
-                <input id="activity-actor" type="search" placeholder="Name or email" />
-              </label>
-              <label>Customer no.
-                <input id="activity-customer" type="search" placeholder="Customer id" />
-              </label>
-              <label>Search
-                <input id="activity-q" type="search" placeholder="Button, page or detail" />
-              </label>
-              <label>From <input id="activity-from" type="datetime-local" /></label>
-              <label>To <input id="activity-to" type="datetime-local" /></label>
-              <label class="check"><input id="activity-errors" type="checkbox" /> Only problems</label>
-              <button type="button" class="btn ghost small act-clear" id="activity-clear">Clear filters</button>
+              <fieldset class="act-group">
+                <legend>Where</legend>
+                <label id="activity-office-wrap" hidden>Venue
+                  <select id="activity-office"><option value="">Every venue</option></select>
+                </label>
+                <label>App
+                  <select id="activity-app">
+                    <option value="">Every app</option>
+                    <option value="epos">Till (EPOS)</option>
+                    <option value="kitchen">Kitchen screen</option>
+                    <option value="display">Customer display</option>
+                    <option value="express">Express kiosk</option>
+                    <option value="loyalty">Loyalty app</option>
+                    <option value="backoffice">Back office</option>
+                    <option value="server">Server</option>
+                  </select>
+                </label>
+                <label>Version
+                  <select id="activity-version"><option value="">Every version</option></select>
+                </label>
+                <label>Device
+                  <select id="activity-device"><option value="">Every device</option></select>
+                </label>
+              </fieldset>
+
+              <fieldset class="act-group">
+                <legend>Who</legend>
+                <label>Person
+                  <input id="activity-actor" type="search" list="activity-actors" placeholder="Name or email" autocomplete="off" />
+                  <datalist id="activity-actors"></datalist>
+                </label>
+                <label>Kind of person
+                  <select id="activity-actor-type">
+                    <option value="">Anyone</option>
+                    <option value="staff">Till staff</option>
+                    <option value="user">Back-office user</option>
+                    <option value="admin">Vesopa admin</option>
+                    <option value="customer">Customer</option>
+                    <option value="device">Device</option>
+                    <option value="system">System</option>
+                  </select>
+                </label>
+                <label>Customer no.
+                  <input id="activity-customer" type="search" placeholder="Customer id" autocomplete="off" />
+                </label>
+                <label>IP address
+                  <input id="activity-ip" type="search" placeholder="Starts with" autocomplete="off" inputmode="decimal" />
+                </label>
+              </fieldset>
+
+              <fieldset class="act-group">
+                <legend>What</legend>
+                <label>Kind
+                  <select id="activity-action">
+                    <option value="">Everything</option>
+                    <option value="tap">Taps</option>
+                    <option value="screen">Screens opened</option>
+                    <option value="change">Changes</option>
+                    <option value="request">Requests</option>
+                    <option value="signin">Sign-ins</option>
+                    <option value="signout">Sign-outs</option>
+                    <option value="error">Errors</option>
+                    <option value="start">App starts</option>
+                  </select>
+                </label>
+                <label>Button or page
+                  <input id="activity-target" type="search" list="activity-targets" placeholder="Cash, Payment, /api/products" autocomplete="off" />
+                  <datalist id="activity-targets"></datalist>
+                </label>
+                <label>Search everything
+                  <input id="activity-q" type="search" placeholder="Button, page, device, person or detail" />
+                </label>
+                <div class="act-field act-wide">
+                  <span class="act-field-label" id="activity-hide-label">Hide</span>
+                  <div class="act-toggles" id="activity-hide" role="group" aria-labelledby="activity-hide-label">
+                    <button type="button" class="act-toggle" data-hide="screen" aria-pressed="false">Screens</button>
+                    <button type="button" class="act-toggle" data-hide="tap" aria-pressed="false">Taps</button>
+                    <button type="button" class="act-toggle" data-hide="request" aria-pressed="false">Requests</button>
+                    <button type="button" class="act-toggle" data-hide="start" aria-pressed="false">App starts</button>
+                  </div>
+                </div>
+              </fieldset>
+
+              <fieldset class="act-group">
+                <legend>How it went</legend>
+                <label>Result
+                  <select id="activity-result">
+                    <option value="">Any result</option>
+                    <option value="ok">Went through</option>
+                    <option value="problems">Problems only</option>
+                    <option value="4xx">Refused (4xx)</option>
+                    <option value="5xx">Server failed (5xx)</option>
+                  </select>
+                </label>
+                <label>Status code
+                  <input id="activity-status" type="number" min="100" max="599" placeholder="e.g. 404" inputmode="numeric" />
+                </label>
+                <label>Slower than
+                  <select id="activity-slow">
+                    <option value="">Any speed</option>
+                    <option value="500">Half a second</option>
+                    <option value="1000">1 second</option>
+                    <option value="3000">3 seconds</option>
+                    <option value="10000">10 seconds</option>
+                  </select>
+                </label>
+                <label>Method
+                  <select id="activity-method">
+                    <option value="">Any</option>
+                    <option value="POST">Add (POST)</option>
+                    <option value="PUT">Save (PUT)</option>
+                    <option value="PATCH">Edit (PATCH)</option>
+                    <option value="DELETE">Delete (DELETE)</option>
+                    <option value="GET">Read (GET)</option>
+                  </select>
+                </label>
+              </fieldset>
+
+              <fieldset class="act-group">
+                <legend>When</legend>
+                <label>From <input id="activity-from" type="datetime-local" /></label>
+                <label>To <input id="activity-to" type="datetime-local" /></label>
+                <label>Time of day from
+                  <select id="activity-hour-from" class="act-hour-select"><option value="">Any time</option></select>
+                </label>
+                <label>until
+                  <select id="activity-hour-to" class="act-hour-select"><option value="">Any time</option></select>
+                </label>
+                <div class="act-field act-wide">
+                  <span class="act-field-label" id="activity-days-label">Days</span>
+                  <div class="act-toggles" id="activity-days" role="group" aria-labelledby="activity-days-label">
+                    <button type="button" class="act-toggle" data-day="2" aria-pressed="false">Mon</button>
+                    <button type="button" class="act-toggle" data-day="3" aria-pressed="false">Tue</button>
+                    <button type="button" class="act-toggle" data-day="4" aria-pressed="false">Wed</button>
+                    <button type="button" class="act-toggle" data-day="5" aria-pressed="false">Thu</button>
+                    <button type="button" class="act-toggle" data-day="6" aria-pressed="false">Fri</button>
+                    <button type="button" class="act-toggle" data-day="7" aria-pressed="false">Sat</button>
+                    <button type="button" class="act-toggle" data-day="1" aria-pressed="false">Sun</button>
+                  </div>
+                </div>
+              </fieldset>
+
+              <fieldset class="act-group">
+                <legend>Trace and order</legend>
+                <label>Session
+                  <input id="activity-session" type="search" placeholder="Press a session on a line" autocomplete="off" />
+                </label>
+                <label>Order
+                  <select id="activity-order">
+                    <option value="">Newest first</option>
+                    <option value="asc">Oldest first</option>
+                  </select>
+                </label>
+                <label class="act-wide">Saved filters
+                  <select id="activity-views"><option value="">Choose a saved set</option></select>
+                </label>
+                <div class="act-view-actions">
+                  <button type="button" class="btn small" id="activity-view-save">Save these filters</button>
+                  <button type="button" class="btn ghost small" id="activity-view-delete" hidden>Delete saved set</button>
+                </div>
+              </fieldset>
+
+              <div class="act-filter-foot">
+                <button type="button" class="btn ghost small act-clear" id="activity-clear">Clear filters</button>
+              </div>
             </form>
           </div>
 

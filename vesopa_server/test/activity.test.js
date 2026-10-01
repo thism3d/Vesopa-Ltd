@@ -155,6 +155,60 @@ const admin = jwt.sign({ sub: 1, email: 'admin@vesopa.test', role: 'admin' }, SE
     }
   });
 
+  const lastList = () => queries.filter((q) => /ORDER BY id/.test(q.sql)).pop();
+
+  await check('every filter lands in the query, bound rather than spliced', async () => {
+    queries.length = 0;
+    const qs = new URLSearchParams({
+      app: 'epos', app_version: '1.11.0.0', session_id: 'S9', actor_type: 'staff',
+      action: 'tap,screen', not_action: 'start', target: 'Cash', method: 'post',
+      result: '4xx', status: '404', min_ms: '1500', ip: '10.0.', hour_from: '9', hour_to: '17',
+      days: '2,3,4,5,6', tz: String(new Date().getTimezoneOffset()), order: 'asc',
+    });
+    const res = await get(manager, `?${qs}`);
+    assert.strictEqual(res.status, 200);
+    const q = lastList();
+    for (const piece of ['app_version = ?', 'session_id = ?', 'actor_type = ?', 'action IN (?, ?)',
+      'action NOT IN (?)', 'target LIKE ?', 'method = ?', 'status BETWEEN 400 AND 499', 'status = ?',
+      'ms >= ?', 'ip LIKE ?', 'HOUR(at) >= ?', 'HOUR(at) <= ?', 'DAYOFWEEK(at) IN (?, ?, ?, ?, ?)', 'ORDER BY id ASC']) {
+      assert.ok(q.sql.includes(piece), `missing ${piece}`);
+    }
+    for (const v of ['1.11.0.0', 'S9', 'staff', 'tap', 'screen', 'start', '%Cash%', 'POST', 404, 1500, '10.0.%', 9, 17]) {
+      assert.ok(q.args.includes(v), `missing arg ${v}`);
+    }
+    assert.ok(!q.sql.includes('Cash'));
+  });
+
+  await check('junk filter values are ignored, not matched', async () => {
+    queries.length = 0;
+    await get(manager, '?actor_type=root&method=TRACE&status=99&min_ms=-1&hour_from=25&days=0,9&result=maybe&action=%27;drop');
+    const q = lastList();
+    const filters = q.sql.slice(q.sql.indexOf('WHERE'));
+    for (const piece of ['actor_type', 'method', 'status', 'ms >=', 'HOUR', 'DAYOFWEEK', 'action IN']) {
+      assert.ok(!filters.includes(piece), `should not filter on ${piece}`);
+    }
+    assert.match(q.sql, /ORDER BY id DESC/);
+  });
+
+  await check('a late-night range wraps midnight, on the manager\'s clock', async () => {
+    queries.length = 0;
+    const tz = new Date().getTimezoneOffset() + 60; // an hour behind the server
+    await get(manager, `?hour_from=22&hour_to=2&tz=${tz}`);
+    const q = lastList();
+    assert.match(q.sql, /\(HOUR\(DATE_ADD\(at, INTERVAL \? MINUTE\)\) >= \? OR HOUR\(DATE_ADD\(at, INTERVAL \? MINUTE\)\) <= \?\)/);
+    assert.deepStrictEqual(q.args.slice(-5, -1), [-60, 22, -60, 2]);
+  });
+
+  await check('facets list people, versions, kinds and buttons for the venue', async () => {
+    queries.length = 0;
+    const res = await fetch(`${base}/api/activity/facets`, { headers: { Authorization: `Bearer ${manager}` } });
+    const body = await res.json();
+    for (const k of ['devices', 'actors', 'versions', 'actions', 'targets']) assert.ok(Array.isArray(body[k]), k);
+    const own = queries.filter((q) => /FROM epos_activity_log/.test(q.sql));
+    assert.ok(own.length >= 5);
+    for (const q of own) assert.ok(q.args.includes('venue@one.test'));
+  });
+
   await check('a device token cannot read the summary', async () => {
     const res = await fetch(`${base}/api/activity/summary`, { headers: { Authorization: `Bearer ${till}` } });
     assert.strictEqual(res.status, 401);

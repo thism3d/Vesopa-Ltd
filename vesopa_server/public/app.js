@@ -11860,6 +11860,7 @@ document.addEventListener('click', async (e) => {
 
 let activityRows = [];
 let activityFacetsFor = null;
+let activityFacets = null;
 let activityRange = 'all';
 let activityLiveTimer = null;
 let activitySummarySeq = 0;
@@ -11874,10 +11875,44 @@ const ACTIVITY_ACTIONS = {
   tap: { label: 'Tap', tone: 'blue' },
   screen: { label: 'Screen', tone: 'grey' },
   change: { label: 'Change', tone: 'lime' },
+  request: { label: 'Request', tone: 'grey' },
   signin: { label: 'Sign-in', tone: 'violet' },
+  signout: { label: 'Sign-out', tone: 'violet' },
   error: { label: 'Error', tone: 'red' },
   start: { label: 'App start', tone: 'amber' },
 };
+
+const ACTIVITY_DAYS = { 1: 'Sun', 2: 'Mon', 3: 'Tue', 4: 'Wed', 5: 'Thu', 6: 'Fri', 7: 'Sat' };
+const ACTIVITY_VIEWS_KEY = 'vesopa.activity.views';
+
+/**
+ * Every filter on the page: the field, the query parameter it becomes, and
+ * the name it goes by on the chip that shows it is on. One list drives the
+ * query, the count on the Filters button, the chips and the saved sets, so a
+ * new filter is one line here and one field in index.html.
+ */
+const ACTIVITY_FIELDS = [
+  { id: 'activity-office', param: 'office', label: 'Venue' },
+  { id: 'activity-app', param: 'app', label: 'App' },
+  { id: 'activity-version', param: 'app_version', label: 'Version' },
+  { id: 'activity-device', param: 'device_id', label: 'Device' },
+  { id: 'activity-actor', param: 'actor', label: 'Person' },
+  { id: 'activity-actor-type', param: 'actor_type', label: 'Kind of person' },
+  { id: 'activity-customer', param: 'customer_id', label: 'Customer' },
+  { id: 'activity-ip', param: 'ip', label: 'IP' },
+  { id: 'activity-action', param: 'action', label: 'Kind' },
+  { id: 'activity-target', param: 'target', label: 'Button or page' },
+  { id: 'activity-q', param: 'q', label: 'Search' },
+  { id: 'activity-result', param: 'result', label: 'Result' },
+  { id: 'activity-status', param: 'status', label: 'Status' },
+  { id: 'activity-slow', param: 'min_ms', label: 'Slower than' },
+  { id: 'activity-method', param: 'method', label: 'Method' },
+  { id: 'activity-from', param: 'from', label: 'From', time: true },
+  { id: 'activity-to', param: 'to', label: 'To', time: true },
+  { id: 'activity-hour-from', param: 'hour_from', label: 'From', hour: true },
+  { id: 'activity-hour-to', param: 'hour_to', label: 'Until', hour: true },
+  { id: 'activity-session', param: 'session_id', label: 'Session' },
+];
 
 /** A datetime-local value as an ISO instant, so the server reads the
  *  manager's clock rather than its own time zone. A bare date is passed as it
@@ -11889,33 +11924,115 @@ function activityInstant(v) {
   return Number.isNaN(d.getTime()) ? '' : d.toISOString();
 }
 
+const activityValue = (id) => ($(id) ? String($(id).value).trim() : '');
+
+/** The toggles pressed in a group: the kinds hidden, the weekdays picked. */
+function activityToggled(groupId, key) {
+  return [...document.querySelectorAll(`#${groupId} .act-toggle[aria-pressed="true"]`)].map((b) => b.dataset[key]);
+}
+
+function activitySetToggles(groupId, key, values) {
+  document.querySelectorAll(`#${groupId} .act-toggle`).forEach((b) => {
+    b.setAttribute('aria-pressed', String(values.includes(b.dataset[key])));
+  });
+}
+
 function activityQuery(extra = {}) {
-  const v = (id) => ($(id) ? $(id).value.trim() : '');
   const params = new URLSearchParams();
-  const put = (k, val) => { if (val) params.set(k, val); };
-  put('office', v('activity-office'));
-  put('app', v('activity-app'));
-  put('device_id', v('activity-device'));
-  put('action', v('activity-action'));
-  put('actor', v('activity-actor'));
-  put('customer_id', v('activity-customer'));
-  put('q', v('activity-q'));
-  put('from', activityInstant(v('activity-from')));
-  put('to', activityInstant(v('activity-to')));
-  if ($('activity-errors') && $('activity-errors').checked) params.set('errors', '1');
+  const put = (k, val) => { if (val !== '' && val !== null && val !== undefined) params.set(k, val); };
+  for (const f of ACTIVITY_FIELDS) {
+    const v = activityValue(f.id);
+    put(f.param, f.time ? activityInstant(v) : v);
+  }
+  put('not_action', activityToggled('activity-hide', 'hide').join(','));
+  const days = activityToggled('activity-days', 'day');
+  if (days.length && days.length < 7) params.set('days', days.join(','));
+  put('order', activityValue('activity-order'));
+  // The manager's clock, for the time-of-day filter and the by-hour chart.
+  params.set('tz', String(new Date().getTimezoneOffset()));
   for (const [k, val] of Object.entries(extra)) put(k, String(val));
   return params.toString();
 }
 
-/** The filters in use, as a count for the button that folds them away. */
+/** What a filter's value reads as on its chip: the option's words, not its code. */
+function activityShown(f) {
+  const el = $(f.id);
+  const v = activityValue(f.id);
+  if (el && el.tagName === 'SELECT') {
+    const opt = el.options[el.selectedIndex];
+    return opt ? opt.textContent.trim() : v;
+  }
+  if (f.time) {
+    const d = new Date(v);
+    return Number.isNaN(d.getTime()) ? v : d.toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
+  }
+  return v;
+}
+
+/** The filters in use: each as a chip that removes it, and a count for the
+ *  button that folds the panel away on a phone. */
 function activityFilterCount() {
-  const ids = ['activity-office', 'activity-app', 'activity-device', 'activity-action',
-    'activity-actor', 'activity-customer', 'activity-q', 'activity-from', 'activity-to'];
-  let n = ids.filter((id) => $(id) && $(id).value.trim()).length;
-  if ($('activity-errors') && $('activity-errors').checked) n += 1;
+  const chips = [];
+  for (const f of ACTIVITY_FIELDS) {
+    if (!activityValue(f.id)) continue;
+    // A range chip already says "Today"; the dates it filled in are not news.
+    if (f.time && activityRange !== 'custom') continue;
+    chips.push({ clear: f.id, text: `${f.label}: ${activityShown(f)}` });
+  }
+  if (activityRange !== 'all' && activityRange !== 'custom') {
+    const chip = document.querySelector(`#activity-ranges .act-chip[data-range="${activityRange}"]`);
+    chips.unshift({ clear: 'range', text: chip ? chip.textContent.trim() : activityRange });
+  }
+  const hidden = activityToggled('activity-hide', 'hide');
+  if (hidden.length) {
+    chips.push({ clear: 'hide', text: 'Hiding: ' + hidden.map((a) => (ACTIVITY_ACTIONS[a] || { label: a }).label).join(', ') });
+  }
+  const days = activityToggled('activity-days', 'day');
+  if (days.length && days.length < 7) {
+    chips.push({ clear: 'days', text: 'Days: ' + days.map((d) => ACTIVITY_DAYS[d]).join(', ') });
+  }
+  if (activityValue('activity-order')) chips.push({ clear: 'activity-order', text: 'Oldest first' });
   const badge = $('activity-filter-count');
-  if (badge) { badge.textContent = String(n); badge.hidden = !n; }
-  return n;
+  if (badge) { badge.textContent = String(chips.length); badge.hidden = !chips.length; }
+  const box = $('activity-active');
+  if (box) {
+    box.innerHTML = chips.length
+      ? chips.map((c) => `<button type="button" class="act-active-chip" data-clear="${esc(c.clear)}" title="Remove this filter">`
+        + `${esc(c.text)}<span aria-hidden="true">×</span><span class="sr-only"> (remove)</span></button>`).join('')
+        + (chips.length > 1 ? '<button type="button" class="act-active-clear" data-clear="all">Clear all</button>' : '')
+      : '';
+  }
+  return chips.length;
+}
+
+/** Take one filter off, from its chip. */
+function activityClearOne(which) {
+  if (which === 'all') return activityClearAll();
+  if (which === 'range') {
+    activitySetRange('all');
+    return;
+  }
+  if (which === 'hide') return activitySetToggles('activity-hide', 'hide', []);
+  if (which === 'days') return activitySetToggles('activity-days', 'day', []);
+  if ($(which)) {
+    $(which).value = '';
+    if (which === 'activity-from' || which === 'activity-to') {
+      activityRange = activityValue('activity-from') || activityValue('activity-to') ? 'custom' : 'all';
+      activityMarkRange();
+    }
+    if (which === 'activity-office' || which === 'activity-app') activityFacetsFor = null;
+  }
+}
+
+function activityClearAll() {
+  $('activity-filters').reset();
+  activitySetToggles('activity-hide', 'hide', []);
+  activitySetToggles('activity-days', 'day', []);
+  activityFacetsFor = null;
+  activityRange = 'all';
+  activityMarkRange();
+  $('activity-views').value = '';
+  $('activity-view-delete').hidden = true;
 }
 
 /** A datetime-local value for a Date, in the manager's own clock. */
@@ -11949,9 +12066,43 @@ function activityMarkRange() {
   });
 }
 
+/** Fill a select's options, keeping what was chosen even if it is not in the list. */
+function activityFill(id, first, options) {
+  const sel = $(id);
+  if (!sel) return;
+  const keep = sel.value;
+  sel.innerHTML = `<option value="">${esc(first)}</option>`
+    + options.map((o) => `<option value="${esc(o.value)}">${esc(o.text)}</option>`).join('');
+  if (keep && !options.some((o) => o.value === keep)) sel.add(new Option(keep, keep));
+  sel.value = keep;
+}
+
+/** The hour pickers: 00:00 to 23:00, filled once. */
+function activityFillHours() {
+  for (const id of ['activity-hour-from', 'activity-hour-to']) {
+    const sel = $(id);
+    if (!sel || sel.options.length > 1) continue;
+    for (let h = 0; h < 24; h += 1) {
+      const label = id === 'activity-hour-to' ? `${String(h).padStart(2, '0')}:59` : `${String(h).padStart(2, '0')}:00`;
+      sel.add(new Option(label, String(h)));
+    }
+  }
+}
+
+/** The versions picker follows the app picked: Till versions for the till. */
+function activityFillVersions() {
+  if (!activityFacets) return;
+  const app = activityValue('activity-app');
+  const versions = (activityFacets.versions || []).filter((v) => !app || v.app === app);
+  activityFill('activity-version', 'Every version', versions.map((v) => ({
+    value: v.version, text: app ? v.version : `${v.version} (${ACTIVITY_APPS[v.app] || v.app})`,
+  })).filter((o, i, all) => all.findIndex((x) => x.value === o.value) === i));
+}
+
 async function loadActivityFacets() {
+  activityFillHours();
   const office = $('activity-office') ? $('activity-office').value : '';
-  if (activityFacetsFor === office) return;
+  if (activityFacetsFor === office) return activityFillVersions();
   activityFacetsFor = office;
   let facets;
   try {
@@ -11959,6 +12110,7 @@ async function loadActivityFacets() {
   } catch (e) {
     return;
   }
+  activityFacets = facets;
   const officeSel = $('activity-office');
   if (facets.offices && facets.offices.length && officeSel.options.length <= 1) {
     $('activity-office-wrap').hidden = false;
@@ -11966,12 +12118,18 @@ async function loadActivityFacets() {
       + facets.offices.map((o) => `<option value="${esc(o)}">${esc(o)}</option>`).join('');
     officeSel.value = office;
   }
-  const deviceSel = $('activity-device');
-  const keep = deviceSel.value;
-  deviceSel.innerHTML = '<option value="">Every device</option>'
-    + (facets.devices || []).map((d) => `<option value="${esc(d.device_id)}">`
-      + `${esc(d.device_name || d.device_id)} (${esc(ACTIVITY_APPS[d.app] || d.app || '')})</option>`).join('');
-  deviceSel.value = keep;
+  activityFill('activity-device', 'Every device', (facets.devices || []).map((d) => ({
+    value: d.device_id, text: `${d.device_name || d.device_id} (${ACTIVITY_APPS[d.app] || d.app || ''})`,
+  })));
+  activityFillVersions();
+  // Kinds the apps send that this page has no name for yet still get an option.
+  const actionSel = $('activity-action');
+  for (const a of facets.actions || []) {
+    if (a.action && ![...actionSel.options].some((o) => o.value === a.action)) actionSel.add(new Option(a.action, a.action));
+  }
+  $('activity-actors').innerHTML = (facets.actors || [])
+    .map((a) => `<option value="${esc(a.actor)}">${esc(a.actorType || '')}</option>`).join('');
+  $('activity-targets').innerHTML = (facets.targets || []).map((t) => `<option value="${esc(t)}"></option>`).join('');
 }
 
 function activityDetail(text) {
@@ -12019,22 +12177,25 @@ function activityLine(r, showVenue, fresh) {
   const when = new Date(r.at);
   const detail = activityDetail(r.detail);
   const status = r.status
-    ? `<span class="act-status${r.status >= 400 ? ' bad' : ''}">${esc(r.status)}${r.ms != null ? ' · ' + esc(r.ms) + ' ms' : ''}</span>`
+    ? `<span class="act-status${r.status >= 400 ? ' bad' : ''}">${activityPick('activity-status', String(r.status), String(r.status))}${r.ms != null ? ' · ' + esc(r.ms) + ' ms' : ''}</span>`
     : '';
   const meta = [
     activityPick('activity-app', r.app, ACTIVITY_APPS[r.app] || r.app)
-      + (r.app_version ? ` <span class="muted">${esc(r.app_version)}</span>` : ''),
+      + (r.app_version ? ' ' + activityPick('activity-version', r.app_version, r.app_version) : ''),
     r.device_name || r.device_id ? activityPick('activity-device', r.device_id, r.device_name || r.device_id) : '',
     r.actor ? activityPick('activity-actor', r.actor, r.actor) : '',
     r.customer_id ? 'Customer ' + activityPick('activity-customer', r.customer_id, r.customer_id) : '',
     showVenue && r.office ? activityPick('activity-office', r.office, r.office) : '',
+    r.session_id ? activityPick('activity-session', r.session_id, 'Same session') : '',
+    r.ip ? `IP ${activityPick('activity-ip', r.ip, r.ip)}` : '',
   ].filter(Boolean).map((m) => `<span class="act-meta-item">${m}</span>`).join('');
   return `<li class="act-line${problem ? ' is-problem' : ''}${fresh ? ' is-new' : ''}">`
     + `<time class="act-time" datetime="${esc(when.toISOString())}" title="${esc(when.toLocaleString('en-GB'))} · ${esc(activityAgo(r.at))}">`
     + esc(when.toLocaleTimeString('en-GB')) + '</time>'
     + `<span class="act-kind tone-${kind.tone}">${esc(kind.label)}</span>`
     + '<div class="act-body">'
-    + `<div class="act-what">${r.method ? `<span class="act-method">${esc(r.method)}</span> ` : ''}${esc(r.target || '—')} ${status}</div>`
+    + `<div class="act-what">${r.method ? `<span class="act-method">${esc(r.method)}</span> ` : ''}`
+    + `${r.target ? activityPick('activity-target', r.target, r.target) : '—'} ${status}</div>`
     + `<div class="act-meta">${meta}</div>`
     + (detail
       ? (detail.length > 120
@@ -12050,7 +12211,7 @@ function renderActivity(freshIds = new Set()) {
   if (!rows.length) {
     $('activity-list').innerHTML = activityFilterCount()
       ? '<div class="act-empty"><b>Nothing matches these filters.</b>'
-        + '<span class="muted small">Widen the time range or clear a filter.</span></div>'
+        + '<span class="muted small">Widen the time range or remove a filter above.</span></div>'
       : '<div class="act-empty"><b>Nothing recorded yet.</b>'
         + '<span class="muted small">Taps, screens and changes appear here as the tills and this back office are used.</span></div>';
     return;
@@ -12085,31 +12246,47 @@ async function loadActivitySummary() {
   const n = (v) => Number(v || 0).toLocaleString('en-GB');
   const peak = Math.max(1, ...s.byHour);
   const busiest = s.total ? s.byHour.indexOf(Math.max(...s.byHour)) : -1;
-  const bars = s.byHour.map((v, h) => `<span class="act-hour${h === busiest ? ' peak' : ''}" style="--h:${Math.round((v / peak) * 100)}%"`
-    + ` title="${String(h).padStart(2, '0')}:00 · ${n(v)}"></span>`).join('');
+  const hh = (h) => String(h).padStart(2, '0');
+  const pickedFrom = activityValue('activity-hour-from');
+  const pickedTo = activityValue('activity-hour-to');
+  const bars = s.byHour.map((v, h) => {
+    const on = pickedFrom === String(h) && pickedTo === String(h);
+    return `<button type="button" class="act-hour${h === busiest ? ' peak' : ''}${on ? ' on' : ''}" data-hour="${h}" style="--h:${Math.round((v / peak) * 100)}%"`
+      + ` title="${hh(h)}:00 · ${n(v)}. Press to show only this hour" aria-label="${hh(h)}:00, ${n(v)}"></button>`;
+  }).join('');
   const chosen = $('activity-action').value;
   const actions = (s.byAction || []).map((a) => {
     const kind = ACTIVITY_ACTIONS[a.action] || { label: a.action, tone: 'grey' };
     return `<button type="button" class="act-count tone-${kind.tone}${chosen === a.action ? ' on' : ''}" data-action="${esc(a.action)}"`
       + ` aria-pressed="${chosen === a.action}">${esc(kind.label)} <b>${n(a.n)}</b></button>`;
   }).join('');
+  const chosenApp = $('activity-app').value;
+  const apps = (s.byApp || []).length > 1 || chosenApp
+    ? (s.byApp || []).map((a) => `<button type="button" class="act-count tone-grey${chosenApp === a.app ? ' on' : ''}" data-app="${esc(a.app || '')}"`
+      + ` aria-pressed="${chosenApp === a.app}">${esc(ACTIVITY_APPS[a.app] || a.app || '—')} <b>${n(a.n)}</b></button>`).join('')
+    : '';
+  const problemsOn = $('activity-result').value === 'problems';
   box.innerHTML = '<div class="act-tiles">'
     + `<div class="act-tile"><span>Events</span><b>${n(s.total)}</b></div>`
-    + `<button type="button" class="act-tile act-tile-problems${s.problems ? ' bad' : ''}${$('activity-errors').checked ? ' on' : ''}" id="activity-problems-tile" title="Show only problems"><span>Problems</span><b>${n(s.problems)}</b></button>`
+    + `<button type="button" class="act-tile act-tile-problems${s.problems ? ' bad' : ''}${problemsOn ? ' on' : ''}" id="activity-problems-tile" aria-pressed="${problemsOn}" title="Show only problems"><span>Problems</span><b>${n(s.problems)}</b></button>`
     + `<div class="act-tile"><span>People</span><b>${n(s.people)}</b></div>`
     + `<div class="act-tile"><span>Devices</span><b>${n(s.devices)}</b></div>`
     + '<div class="act-tile act-tile-hours"><span>By hour'
-    + (busiest >= 0 ? ` · busiest ${String(busiest).padStart(2, '0')}:00` : '')
-    + `</span><div class="act-hours" aria-hidden="true">${bars}</div>`
+    + (busiest >= 0 ? ` · busiest ${hh(busiest)}:00` : '')
+    + `</span><div class="act-hours" role="group" aria-label="Show one hour">${bars}</div>`
     + '<div class="act-hours-axis" aria-hidden="true"><span>00</span><span>06</span><span>12</span><span>18</span><span>23</span></div></div>'
     + '</div>'
-    + (actions ? `<div class="act-counts" role="group" aria-label="Filter by kind">${actions}</div>` : '');
+    + (actions ? `<div class="act-counts" role="group" aria-label="Filter by kind">${actions}</div>` : '')
+    + (apps ? `<div class="act-counts" role="group" aria-label="Filter by app">${apps}</div>` : '');
 }
 
+const activityAscending = () => activityValue('activity-order') === 'asc';
+
 async function loadActivity({ more = false } = {}) {
-  activityFilterCount();
   await loadActivityFacets();
-  const extra = more && activityRows.length ? { before_id: activityRows[activityRows.length - 1].id } : {};
+  activityFilterCount();
+  const last = activityRows[activityRows.length - 1];
+  const extra = more && last ? (activityAscending() ? { after_id: last.id } : { before_id: last.id }) : {};
   if (!more) loadActivitySummary();
   let data;
   try {
@@ -12120,22 +12297,29 @@ async function loadActivity({ more = false } = {}) {
   }
   activityRows = more ? activityRows.concat(data.rows) : data.rows;
   $('activity-more').hidden = !data.more;
+  $('activity-more').textContent = activityAscending() ? 'Show newer' : 'Show older';
   renderActivity();
 }
 
-/** Live: fetch only what arrived since the newest line, and put it on top. */
+/** Live: fetch only what arrived since the newest line, and put it where the
+ *  newest lines go (the top, or the bottom when reading oldest first). */
 async function activityTick() {
   const view = $('view-activity_log');
   if (!view || view.hidden || document.hidden) return;
-  const top = activityRows.length ? activityRows[0].id : 0;
+  const asc = activityAscending();
+  // Oldest first with older pages still to load: the new lines belong after
+  // those, so they arrive when "Show newer" reaches them.
+  if (asc && !$('activity-more').hidden) return;
+  const newest = activityRows.length ? Math.max(...activityRows.map((r) => r.id)) : 0;
   let data;
   try {
-    data = await api('/activity?' + activityQuery(top ? { after_id: top } : {}));
+    data = await api('/activity?' + activityQuery(newest ? { after_id: newest } : {}));
   } catch {
     return;
   }
   if (!data.rows.length) return;
-  activityRows = data.rows.concat(activityRows);
+  // The server sends them in the order the list is in.
+  activityRows = asc ? activityRows.concat(data.rows) : data.rows.concat(activityRows);
   renderActivity(new Set(data.rows.map((r) => r.id)));
   loadActivitySummary();
 }
@@ -12151,6 +12335,66 @@ function activitySetLive(on) {
   if (on) activityTick();
 }
 
+function activitySetFiltersOpen(open) {
+  const card = $('activity-filters-card');
+  const button = $('activity-filters-toggle');
+  if (card) card.classList.toggle('open', open);
+  if (button) button.setAttribute('aria-expanded', String(open));
+}
+
+// ---- Saved filter sets -------------------------------------------------------
+//
+// Kept in this browser. A relative range ("Today") is saved as the range, so a
+// set opened tomorrow still means today.
+
+function activityViews() {
+  try {
+    const v = JSON.parse(localStorage.getItem(ACTIVITY_VIEWS_KEY) || '{}');
+    return v && typeof v === 'object' ? v : {};
+  } catch {
+    return {};
+  }
+}
+
+function activityRenderViews(selected = '') {
+  const views = activityViews();
+  const names = Object.keys(views).sort((a, b) => a.localeCompare(b));
+  activityFill('activity-views', names.length ? 'Choose a saved set' : 'None saved yet', names.map((n) => ({ value: n, text: n })));
+  $('activity-views').value = names.includes(selected) ? selected : '';
+  $('activity-view-delete').hidden = !$('activity-views').value;
+}
+
+function activitySnapshot() {
+  const fields = {};
+  for (const f of ACTIVITY_FIELDS) {
+    if (f.time && activityRange !== 'custom') continue;
+    const v = activityValue(f.id);
+    if (v) fields[f.id] = v;
+  }
+  if (activityValue('activity-order')) fields['activity-order'] = activityValue('activity-order');
+  return {
+    range: activityRange,
+    fields,
+    hide: activityToggled('activity-hide', 'hide'),
+    days: activityToggled('activity-days', 'day'),
+  };
+}
+
+function activityApplyView(view) {
+  activityClearAll();
+  for (const [id, v] of Object.entries(view.fields || {})) {
+    const el = $(id);
+    if (!el) continue;
+    if (el.tagName === 'SELECT' && ![...el.options].some((o) => o.value === v)) el.add(new Option(v, v));
+    el.value = v;
+  }
+  activitySetToggles('activity-hide', 'hide', view.hide || []);
+  activitySetToggles('activity-days', 'day', view.days || []);
+  if (view.range && view.range !== 'custom') activitySetRange(view.range);
+  else { activityRange = view.range || 'all'; activityMarkRange(); }
+  activityFacetsFor = null;
+}
+
 {
   let timer = null;
   const refilter = () => {
@@ -12158,15 +12402,28 @@ function activitySetLive(on) {
     timer = setTimeout(() => loadActivity(), 250);
   };
   document.addEventListener('input', (e) => {
-    if (e.target.closest && e.target.closest('#activity-filters')) {
-      if (e.target.id === 'activity-office') activityFacetsFor = null;
-      // Typing a date by hand is a range of its own, not one of the chips.
-      if (e.target.id === 'activity-from' || e.target.id === 'activity-to') {
-        activityRange = $('activity-from').value || $('activity-to').value ? 'custom' : 'all';
-        activityMarkRange();
-      }
-      refilter();
+    if (!e.target.closest || !e.target.closest('#activity-filters')) return;
+    if (e.target.id === 'activity-views') return;
+    if (e.target.id === 'activity-office') activityFacetsFor = null;
+    if (e.target.id === 'activity-app') { $('activity-version').value = ''; activityFillVersions(); }
+    // Typing a date by hand is a range of its own, not one of the chips.
+    if (e.target.id === 'activity-from' || e.target.id === 'activity-to') {
+      activityRange = $('activity-from').value || $('activity-to').value ? 'custom' : 'all';
+      activityMarkRange();
     }
+    refilter();
+  });
+  document.addEventListener('change', (e) => {
+    if (e.target.id !== 'activity-views') return;
+    const name = e.target.value;
+    $('activity-view-delete').hidden = !name;
+    if (!name) return;
+    const view = activityViews()[name];
+    if (!view) return;
+    activityApplyView(view);
+    $('activity-views').value = name;
+    $('activity-view-delete').hidden = false;
+    loadActivity();
   });
   document.addEventListener('submit', (e) => {
     if (e.target.id === 'activity-filters') { e.preventDefault(); loadActivity(); }
@@ -12175,6 +12432,13 @@ function activitySetLive(on) {
     if (!e.target.closest) return;
     const chip = e.target.closest('#activity-ranges .act-chip');
     if (chip) { activitySetRange(chip.dataset.range); return loadActivity(); }
+    const toggle = e.target.closest('#activity-filters .act-toggle');
+    if (toggle) {
+      toggle.setAttribute('aria-pressed', String(toggle.getAttribute('aria-pressed') !== 'true'));
+      return refilter();
+    }
+    const off = e.target.closest('#activity-active [data-clear]');
+    if (off) { activityClearOne(off.dataset.clear); return loadActivity(); }
     const pick = e.target.closest('.act-pick');
     if (pick && $(pick.dataset.field)) {
       const field = $(pick.dataset.field);
@@ -12187,29 +12451,60 @@ function activitySetLive(on) {
       if (pick.dataset.field === 'activity-office') activityFacetsFor = null;
       return loadActivity();
     }
+    const hour = e.target.closest('.act-hour[data-hour]');
+    if (hour) {
+      const h = hour.dataset.hour;
+      const same = activityValue('activity-hour-from') === h && activityValue('activity-hour-to') === h;
+      $('activity-hour-from').value = same ? '' : h;
+      $('activity-hour-to').value = same ? '' : h;
+      return loadActivity();
+    }
     const count = e.target.closest('.act-count');
-    if (count) {
+    if (count && count.dataset.action !== undefined) {
       const sel = $('activity-action');
       sel.value = sel.value === count.dataset.action ? '' : count.dataset.action;
       return loadActivity();
     }
+    if (count && count.dataset.app !== undefined) {
+      const sel = $('activity-app');
+      sel.value = sel.value === count.dataset.app ? '' : count.dataset.app;
+      $('activity-version').value = '';
+      return loadActivity();
+    }
     if (e.target.closest('#activity-problems-tile')) {
-      $('activity-errors').checked = !$('activity-errors').checked;
+      const sel = $('activity-result');
+      sel.value = sel.value === 'problems' ? '' : 'problems';
       return loadActivity();
     }
     if (e.target.closest('#activity-filters-toggle')) {
-      const card = $('activity-filters-card');
-      const open = !card.classList.contains('open');
-      card.classList.toggle('open', open);
-      e.target.closest('#activity-filters-toggle').setAttribute('aria-expanded', String(open));
+      const open = !$('activity-filters-card').classList.contains('open');
+      activitySetFiltersOpen(open);
+      try { localStorage.setItem('vesopa.activity.filtersOpen', open ? '1' : '0'); } catch { /* not kept */ }
       return;
     }
-    if (e.target.id === 'activity-clear') {
-      $('activity-filters').reset();
-      activityFacetsFor = null;
-      activityRange = 'all';
-      activityMarkRange();
-      return loadActivity();
+    if (e.target.id === 'activity-clear') { activityClearAll(); return loadActivity(); }
+    if (e.target.id === 'activity-view-save') {
+      const current = $('activity-views').value;
+      const name = (window.prompt('Name these filters', current || '') || '').trim().slice(0, 60);
+      if (!name) return;
+      const views = activityViews();
+      views[name] = activitySnapshot();
+      try {
+        localStorage.setItem(ACTIVITY_VIEWS_KEY, JSON.stringify(views));
+      } catch {
+        return toast('This browser would not save them', 'error');
+      }
+      activityRenderViews(name);
+      return toast(`Saved "${name}"`);
+    }
+    if (e.target.id === 'activity-view-delete') {
+      const name = $('activity-views').value;
+      if (!name) return;
+      const views = activityViews();
+      delete views[name];
+      try { localStorage.setItem(ACTIVITY_VIEWS_KEY, JSON.stringify(views)); } catch { /* nothing to undo */ }
+      activityRenderViews();
+      return;
     }
     if (e.target.closest('#activity-live')) return activitySetLive(!activityLiveTimer);
     if (e.target.id === 'activity-refresh') return loadActivity();
@@ -12232,6 +12527,11 @@ function activitySetLive(on) {
       }
     }
   });
+  activityRenderViews();
+  // The panel is open on a wide screen the first time, and as it was left after that.
+  let open = null;
+  try { open = localStorage.getItem('vesopa.activity.filtersOpen'); } catch { /* not kept */ }
+  activitySetFiltersOpen(open === null ? window.innerWidth > 760 : open === '1');
 }
 
 // ---- Back office's own activity --------------------------------------------

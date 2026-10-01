@@ -7223,15 +7223,56 @@ body.dash-dragging, body.dash-dragging * { cursor: grabbing !important; user-sel
    and device underneath, and the detail full width under that. */
 .activity-filters {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 170px), 1fr));
-  gap: 10px 14px;
-  align-items: end;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  gap: 14px;
+  align-items: start;
 }
-.activity-filters label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; min-width: 0; }
-.activity-filters label.check { flex-direction: row; align-items: center; gap: 6px; }
-.activity-filters input:not([type="checkbox"]), .activity-filters select { width: 100%; min-width: 0; }
-.activity-filters label.check { align-self: center; padding-bottom: 8px; }
+/* Six groups, each a small card of its own: where, who, what, how it went,
+   when, and trace and order. Two fields a row inside, one on a phone. */
+.act-group {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px;
+  margin: 0; padding: 12px 14px 14px; min-width: 0;
+  border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg);
+}
+.act-group legend {
+  padding: 0 6px; margin-left: -6px; font-size: 12px; font-weight: 700;
+  letter-spacing: .04em; text-transform: uppercase; color: var(--muted);
+}
+.activity-filters label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; min-width: 0; margin: 0; }
+.activity-filters input, .activity-filters select { width: 100%; min-width: 0; margin: 0; }
+.act-group { align-content: start; }
+.act-wide { grid-column: 1 / -1; }
+.act-field { display: grid; gap: 6px; min-width: 0; }
+.act-field-label { font-size: 13px; }
+.act-toggles { display: flex; flex-wrap: wrap; gap: 6px; }
+.act-toggle {
+  font: inherit; font-size: 12.5px; padding: 5px 11px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--card); color: var(--text); min-height: 32px;
+}
+.act-toggle:hover { border-color: var(--brand); }
+.act-toggle[aria-pressed="true"] { background: var(--brand); border-color: var(--brand); color: #111; font-weight: 600; }
+.act-view-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
+.act-filter-foot { grid-column: 1 / -1; display: flex; justify-content: flex-end; }
 .act-clear { justify-self: start; }
+
+/* What is filtering the list right now. */
+.act-active:empty { display: none; }
+.act-active { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.act-active-chip {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
+  font: inherit; font-size: 12.5px; font-weight: 600; padding: 5px 8px 5px 12px; border-radius: 999px;
+  border: 1px solid var(--brand); background: rgba(165, 199, 21, .14); color: var(--text); cursor: pointer;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.act-active-chip > span[aria-hidden] {
+  display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%;
+  font-size: 14px; line-height: 1; background: rgba(0, 0, 0, .08);
+}
+.act-active-chip:hover > span[aria-hidden] { background: var(--brand); color: #111; }
+.act-active-clear {
+  font: inherit; font-size: 12.5px; padding: 5px 8px; border: 0; background: none;
+  color: var(--muted); text-decoration: underline; cursor: pointer;
+}
 
 .act-head-actions { flex-wrap: wrap; gap: 8px; align-items: center; }
 .act-live {
@@ -7251,7 +7292,9 @@ body.dash-dragging, body.dash-dragging * { cursor: grabbing !important; user-sel
 }
 .act-chip:hover { border-color: var(--brand); }
 .act-chip.on { background: var(--brand); border-color: var(--brand); color: #111; font-weight: 600; }
-.act-filters-toggle { margin-left: auto; display: none; }
+.act-filters-toggle { margin-left: auto; display: inline-flex; gap: 6px; align-items: center; }
+.act-filters-card { display: none; }
+.act-filters-card.open { display: block; }
 
 .act-summary:empty { display: none; }
 .act-summary { display: grid; gap: 10px; }
@@ -7273,9 +7316,10 @@ button.act-tile:hover { border-color: var(--brand); }
 .act-hours { display: flex; align-items: flex-end; gap: 2px; height: 34px; }
 .act-hour {
   flex: 1; min-width: 0; height: max(2px, var(--h)); border-radius: 2px 2px 0 0;
-  background: var(--brand); opacity: .45;
+  background: var(--brand); opacity: .45; border: 0; padding: 0; cursor: pointer;
 }
 .act-hour.peak { opacity: 1; }
+.act-hour:hover, .act-hour.on { opacity: 1; outline: 2px solid var(--brand-deep); outline-offset: 1px; }
 .act-hours-axis { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .act-counts { display: flex; flex-wrap: wrap; gap: 6px; }
 .act-count {
@@ -7355,9 +7399,7 @@ button.act-tile:hover { border-color: var(--brand); }
   .act-tile-hours { grid-column: 1 / -1; }
 }
 @media (max-width: 760px) {
-  .act-filters-toggle { display: inline-flex; gap: 6px; align-items: center; }
-  .act-filters-card { display: none; }
-  .act-filters-card.open { display: block; }
+  .act-group { grid-template-columns: minmax(0, 1fr); }
   .act-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .act-line { grid-template-columns: auto minmax(0, 1fr); padding-inline: 8px 4px; }
   .act-body { grid-column: 1 / -1; }

@@ -20,6 +20,8 @@ const { accessGuard } = require('./permissions');
  *   GET  /api/activity     the back office's Activity Log page, filtered.
  *                          Scoped to the signed-in venue; the Vesopa admin can
  *                          see every venue or pick one.
+ *   GET  /api/activity/facets   devices, people, versions, kinds and buttons
+ *                          seen in the last 30 days, for the filter pickers.
  *   GET  /api/activity/summary  counts for the same filters: totals,
  *                          problems, people, devices, by action, by app, by hour.
  *   GET  /api/activity.csv the same rows as a spreadsheet, for a support ticket.
@@ -198,11 +200,56 @@ function activityRoutes({ pool, secret, log }) {
     return s ? s.slice(0, max) : null;
   };
 
+  // Values a filter may name exactly. Anything else is ignored rather than
+  // matched, so a typo in a URL widens the list instead of emptying it.
+  const ACTOR_TYPES = new Set(['staff', 'user', 'admin', 'customer', 'device', 'system']);
+  const METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);
+
+  /** "tap,screen" as a short list of clean action names. */
+  const actionList = (v) => String(v ?? '').split(',')
+    .map((a) => a.trim().toLowerCase()).filter((a) => /^[a-z0-9_.-]{1,32}$/.test(a)).slice(0, 12);
+
+  /** A whole number in [min, max], or null. */
+  const intIn = (v, min, max) => {
+    if (v === undefined || v === null || v === '') return null;
+    const n = Number(v);
+    return Number.isInteger(n) && n >= min && n <= max ? n : null;
+  };
+
+  /**
+   * The row's time on the manager's clock, for "between 18:00 and 23:00" and
+   * "Saturdays". `at` is written in the server's own time zone; the page sends
+   * its offset as ?tz= (minutes, as getTimezoneOffset gives it). Without one
+   * the server's clock is used, as the by-hour chart always did.
+   */
+  function localAt(q) {
+    const tz = intIn(q.tz, -900, 900);
+    if (tz === null) return { expr: 'at', args: [] };
+    const shift = new Date().getTimezoneOffset() - tz;
+    return shift ? { expr: 'DATE_ADD(at, INTERVAL ? MINUTE)', args: [shift] } : { expr: 'at', args: [] };
+  }
+
   /**
    * Build the WHERE clause from the query string.
    *
    * A venue sees only its own rows. The Vesopa admin sees every venue, or the
    * one named in ?office=.
+   *
+   * Filters, all optional and combined with AND:
+   *   app, app_version, device_id, customer_id, session_id   exact
+   *   actor_type                 staff | user | admin | customer | device | system
+   *   action                     one kind, or several as "tap,screen"
+   *   not_action                 kinds to leave out, as "screen,tap"
+   *   actor, target, q           contains (q looks in target, detail, device, person)
+   *   method                     GET | POST | PUT | PATCH | DELETE
+   *   result                     ok | problems | 4xx | 5xx
+   *   status                     one HTTP status, e.g. 404
+   *   min_ms                     slower than this many milliseconds
+   *   ip                         starts with
+   *   from, to                   instants (a bare "to" date means that whole day)
+   *   hour_from, hour_to         time of day on the manager's clock; 22 to 2 wraps midnight
+   *   days                       weekdays as "1,7" (1 = Sunday, as MySQL counts)
+   *   errors=1                   the same as result=problems
    */
   async function where(req) {
     const clauses = [];
@@ -217,19 +264,46 @@ function activityRoutes({ pool, secret, log }) {
       args.push(String(office).toLowerCase());
     }
     for (const [param, column] of [
-      ['app', 'app'], ['action', 'action'], ['device_id', 'device_id'],
-      ['customer_id', 'customer_id'],
+      ['app', 'app'], ['app_version', 'app_version'], ['device_id', 'device_id'],
+      ['customer_id', 'customer_id'], ['session_id', 'session_id'],
     ]) {
       const v = clean(q[param], 64);
       if (v) { clauses.push(`${column} = ?`); args.push(v); }
     }
+    const actorType = clean(q.actor_type, 16);
+    if (actorType && ACTOR_TYPES.has(actorType)) { clauses.push('actor_type = ?'); args.push(actorType); }
+    const actions = actionList(q.action);
+    if (actions.length) {
+      clauses.push(`action IN (${actions.map(() => '?').join(', ')})`);
+      args.push(...actions);
+    }
+    const hidden = actionList(q.not_action);
+    if (hidden.length) {
+      clauses.push(`action NOT IN (${hidden.map(() => '?').join(', ')})`);
+      args.push(...hidden);
+    }
     const actor = clean(q.actor);
     if (actor) { clauses.push('actor LIKE ?'); args.push(`%${actor}%`); }
+    const target = clean(q.target, 120);
+    if (target) { clauses.push('target LIKE ?'); args.push(`%${target}%`); }
     const text = clean(q.q, 100);
     if (text) {
       clauses.push('(target LIKE ? OR detail LIKE ? OR device_name LIKE ? OR actor LIKE ?)');
       args.push(`%${text}%`, `%${text}%`, `%${text}%`, `%${text}%`);
     }
+    const method = String(q.method || '').toUpperCase();
+    if (METHODS.has(method)) { clauses.push('method = ?'); args.push(method); }
+    const result = q.errors === '1' ? 'problems' : String(q.result || '');
+    if (result === 'problems') clauses.push("(action = 'error' OR status >= 400)");
+    else if (result === 'ok') clauses.push("(action <> 'error' AND (status IS NULL OR status < 400))");
+    else if (result === '4xx') clauses.push('status BETWEEN 400 AND 499');
+    else if (result === '5xx') clauses.push('status >= 500');
+    const status = intIn(q.status, 100, 599);
+    if (status !== null) { clauses.push('status = ?'); args.push(status); }
+    const minMs = intIn(q.min_ms, 1, 3600000);
+    if (minMs !== null) { clauses.push('ms >= ?'); args.push(minMs); }
+    const ip = clean(q.ip, 64);
+    if (ip) { clauses.push('ip LIKE ?'); args.push(`${ip.replace(/[%_\\]/g, '')}%`); }
     const from = clean(q.from, 30);
     if (from && !Number.isNaN(Date.parse(from))) { clauses.push('at >= ?'); args.push(new Date(from)); }
     const to = clean(q.to, 30);
@@ -239,10 +313,29 @@ function activityRoutes({ pool, secret, log }) {
       clauses.push('at < ?');
       args.push(end);
     }
-    if (q.errors === '1') clauses.push("(action = 'error' OR status >= 400)");
+    const hourFrom = intIn(q.hour_from, 0, 23);
+    const hourTo = intIn(q.hour_to, 0, 23);
+    const days = [...new Set(String(q.days ?? '').split(',').map((d) => intIn(d.trim(), 1, 7)).filter((d) => d !== null))];
+    if (hourFrom !== null || hourTo !== null || (days.length && days.length < 7)) {
+      const local = localAt(q);
+      const hour = `HOUR(${local.expr})`;
+      if (hourFrom !== null && hourTo !== null && hourFrom > hourTo) {
+        // Late night: 22:00 to 02:59 is two pieces of the day.
+        clauses.push(`(${hour} >= ? OR ${hour} <= ?)`);
+        args.push(...local.args, hourFrom, ...local.args, hourTo);
+      } else {
+        if (hourFrom !== null) { clauses.push(`${hour} >= ?`); args.push(...local.args, hourFrom); }
+        if (hourTo !== null) { clauses.push(`${hour} <= ?`); args.push(...local.args, hourTo); }
+      }
+      if (days.length && days.length < 7) {
+        clauses.push(`DAYOFWEEK(${local.expr}) IN (${days.map(() => '?').join(', ')})`);
+        args.push(...local.args, ...days);
+      }
+    }
     const before = Number(q.before_id);
     if (Number.isInteger(before) && before > 0) { clauses.push('id < ?'); args.push(before); }
-    // Live mode asks only for what arrived since the newest row it shows.
+    // Live mode asks only for what arrived since the newest row it shows, and
+    // oldest-first pages onwards the same way.
     const after = Number(q.after_id);
     if (Number.isInteger(after) && after > 0) { clauses.push('id > ?'); args.push(after); }
     return { sql: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', args };
@@ -250,14 +343,15 @@ function activityRoutes({ pool, secret, log }) {
 
   const COLUMNS = `id, at, office, app, app_version, device_id, device_name, actor,
                    actor_type, customer_id, action, target, method, status, ms,
-                   detail, ip`;
+                   detail, ip, session_id`;
 
   router.get('/api/activity', guard, async (req, res, next) => {
     try {
       const limit = Math.min(Math.max(Number(req.query.limit) || 200, 1), 500);
       const { sql, args } = await where(req);
+      const order = req.query.order === 'asc' ? 'ASC' : 'DESC';
       const [rows] = await pool.query(
-        `SELECT ${COLUMNS} FROM epos_activity_log ${sql} ORDER BY id DESC LIMIT ?`,
+        `SELECT ${COLUMNS} FROM epos_activity_log ${sql} ORDER BY id ${order} LIMIT ?`,
         [...args, limit]
       );
       res.json({ rows, more: rows.length === limit, admin: req.user.role === 'admin' });
@@ -299,10 +393,11 @@ function activityRoutes({ pool, secret, log }) {
           GROUP BY app ORDER BY n DESC LIMIT 20`,
         args
       );
+      const local = localAt(query);
       const [hours] = await pool.query(
-        `SELECT HOUR(at) AS h, COUNT(*) AS n FROM epos_activity_log ${sql}
-          GROUP BY HOUR(at)`,
-        args
+        `SELECT HOUR(${local.expr}) AS h, COUNT(*) AS n FROM epos_activity_log ${sql}
+          GROUP BY h`,
+        [...local.args, ...args]
       );
       const byHour = Array(24).fill(0);
       for (const r of hours || []) {
@@ -340,6 +435,30 @@ function activityRoutes({ pool, secret, log }) {
           GROUP BY device_id ORDER BY MAX(at) DESC LIMIT 100`,
         args
       );
+      // The people, versions, kinds and buttons seen lately, so a filter can be
+      // picked rather than spelled.
+      const [actors] = await pool.query(
+        `SELECT actor, MAX(actor_type) AS actor_type, COUNT(*) AS n
+           FROM epos_activity_log ${since} AND actor IS NOT NULL
+          GROUP BY actor ORDER BY n DESC LIMIT 200`,
+        args
+      );
+      const [versions] = await pool.query(
+        `SELECT app, app_version, MAX(at) AS last_at
+           FROM epos_activity_log ${since} AND app_version IS NOT NULL
+          GROUP BY app, app_version ORDER BY last_at DESC LIMIT 60`,
+        args
+      );
+      const [actions] = await pool.query(
+        `SELECT action, COUNT(*) AS n FROM epos_activity_log ${since}
+          GROUP BY action ORDER BY n DESC LIMIT 40`,
+        args
+      );
+      const [targets] = await pool.query(
+        `SELECT target, COUNT(*) AS n FROM epos_activity_log ${since} AND target IS NOT NULL
+          GROUP BY target ORDER BY n DESC LIMIT 200`,
+        args
+      );
       let offices = [];
       if (req.user.role === 'admin') {
         [offices] = await pool.query(
@@ -348,9 +467,18 @@ function activityRoutes({ pool, secret, log }) {
             GROUP BY office ORDER BY n DESC LIMIT 500`
         );
       }
-      res.json({ devices, offices: offices.map((o) => o.office) });
+      res.json({
+        devices,
+        offices: offices.map((o) => o.office),
+        actors: (actors || []).map((a) => ({ actor: a.actor, actorType: a.actor_type, n: Number(a.n) || 0 })),
+        versions: (versions || []).map((v) => ({ app: v.app, version: v.app_version })),
+        actions: (actions || []).map((a) => ({ action: a.action, n: Number(a.n) || 0 })),
+        targets: (targets || []).map((t) => t.target),
+      });
     } catch (e) {
-      if (e && e.code === 'ER_NO_SUCH_TABLE') return res.json({ devices: [], offices: [] });
+      if (e && e.code === 'ER_NO_SUCH_TABLE') {
+        return res.json({ devices: [], offices: [], actors: [], versions: [], actions: [], targets: [] });
+      }
       next(e);
     }
   });
@@ -359,11 +487,12 @@ function activityRoutes({ pool, secret, log }) {
     try {
       const { sql, args } = await where(req);
       const [rows] = await pool.query(
-        `SELECT ${COLUMNS} FROM epos_activity_log ${sql} ORDER BY id DESC LIMIT 20000`,
+        `SELECT ${COLUMNS} FROM epos_activity_log ${sql} ORDER BY id ${req.query.order === 'asc' ? 'ASC' : 'DESC'} LIMIT 20000`,
         args
       );
       const cols = ['at', 'office', 'app', 'app_version', 'device_name', 'device_id', 'actor',
-        'actor_type', 'customer_id', 'action', 'target', 'method', 'status', 'ms', 'detail', 'ip'];
+        'actor_type', 'customer_id', 'action', 'target', 'method', 'status', 'ms', 'detail', 'ip',
+        'session_id'];
       const cell = (v) => {
         if (v === null || v === undefined) return '';
         let s = v instanceof Date ? v.toISOString() : String(v);

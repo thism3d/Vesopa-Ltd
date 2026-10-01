@@ -92,6 +92,9 @@ function catalogue() {
   }));
 }
 
+// Every API call the page makes, for the checks that care what it asked for.
+const apiSeen = [];
+
 function startStub() {
   const state = { products: catalogue() };
 
@@ -134,6 +137,14 @@ function startStub() {
         status: i % 4 === 3 ? 500 : null,
         detail: i % 2 ? JSON.stringify({ view: 'kitchen', note: 'x'.repeat(300) }) : null,
       })),
+    }),
+    '/api/activity/facets': () => ({
+      devices: [{ device_id: 'T-1', device_name: 'Main bar till', app: 'epos' }],
+      offices: [],
+      actors: [{ actor: 'Sam', actorType: 'staff', n: 40 }],
+      versions: [{ app: 'epos', version: '1.11.0.0' }, { app: 'epos', version: '1.10.0.0' }, { app: 'kitchen', version: '2.0.0' }],
+      actions: [{ action: 'tap', n: 900 }, { action: 'void', n: 3 }],
+      targets: ['Cash', 'Payment'],
     }),
     '/api/activity/summary': () => ({
       total: 1234, problems: 12, people: 4, devices: 7,
@@ -238,6 +249,7 @@ function startStub() {
     }
 
     if (url.pathname.startsWith('/api/')) {
+      apiSeen.push(url.pathname + url.search);
       let body = '';
       req.on('data', (c) => (body += c));
       return req.on('end', () => {
@@ -720,6 +732,97 @@ check('nothing on the page threw while all that happened', async (cdp) => {
 // ---------------------------------------------------------------------------
 // The run
 // ---------------------------------------------------------------------------
+
+/**
+ * The Activity Log's filters (2026-10-01): every one reaches the server, shows
+ * as a chip while it is on, and comes off with its chip.
+ */
+check('Activity Log filters reach the server and show as removable chips', async (cdp) => {
+  await cdp.asTablet(1024, 1366);
+  await cdp.open('activity_log');
+  const groups = await cdp.eval(`return [...document.querySelectorAll('#activity-filters .act-group legend')].map((l) => l.textContent.trim());`);
+  assert.deepStrictEqual(groups, ['Where', 'Who', 'What', 'How it went', 'When', 'Trace and order']);
+  const filled = await cdp.eval(`return {
+    versions: document.querySelectorAll('#activity-version option').length,
+    hours: document.querySelectorAll('#activity-hour-from option').length,
+    void: [...document.querySelectorAll('#activity-action option')].some((o) => o.value === 'void'),
+    people: document.querySelectorAll('#activity-actors option').length,
+  };`);
+  assert.strictEqual(filled.versions, 4, 'every version, plus "every version"');
+  assert.strictEqual(filled.hours, 25);
+  assert.ok(filled.void, 'a kind the page has no name for still gets an option');
+  assert.strictEqual(filled.people, 1);
+
+  apiSeen.length = 0;
+  await cdp.eval(`
+    const set = (id, v) => { const el = document.getElementById(id); el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); };
+    set('activity-app', 'epos');
+    set('activity-result', '5xx');
+    set('activity-slow', '3000');
+    set('activity-hour-from', '22');
+    set('activity-hour-to', '2');
+    document.querySelector('#activity-hide [data-hide="screen"]').click();
+    document.querySelector('#activity-days [data-day="7"]').click();
+    return new Promise((go) => setTimeout(() => go(true), 700));`);
+  const asked = apiSeen.filter((u) => u.startsWith('/api/activity?')).pop() || '';
+  const q = new URLSearchParams(asked.split('?')[1]);
+  assert.strictEqual(q.get('app'), 'epos');
+  assert.strictEqual(q.get('result'), '5xx');
+  assert.strictEqual(q.get('min_ms'), '3000');
+  assert.strictEqual(q.get('hour_from'), '22');
+  assert.strictEqual(q.get('hour_to'), '2');
+  assert.strictEqual(q.get('not_action'), 'screen');
+  assert.strictEqual(q.get('days'), '7');
+  assert.ok(q.has('tz'), 'the manager\'s clock goes with it');
+
+  const chips = await cdp.eval(`return [...document.querySelectorAll('#activity-active .act-active-chip')].map((c) => c.dataset.clear);`);
+  for (const c of ['activity-app', 'activity-result', 'activity-slow', 'activity-hour-from', 'activity-hour-to', 'hide', 'days']) {
+    assert.ok(chips.includes(c), `no chip for ${c}`);
+  }
+  assert.strictEqual(await cdp.eval(`return document.getElementById('activity-filter-count').textContent;`), String(chips.length));
+
+  // A chip takes its own filter off and nothing else.
+  await cdp.eval(`document.querySelector('#activity-active [data-clear="hide"]').click();
+    return new Promise((go) => setTimeout(() => go(true), 400));`);
+  const after = new URLSearchParams((apiSeen.filter((u) => u.startsWith('/api/activity?')).pop() || '').split('?')[1]);
+  assert.ok(!after.has('not_action'));
+  assert.strictEqual(after.get('app'), 'epos');
+
+  // Pressing a value on a line filters by it.
+  await cdp.eval(`document.querySelector('.act-pick[data-field="activity-target"]').click();
+    return new Promise((go) => setTimeout(() => go(true), 400));`);
+  assert.ok(await cdp.eval(`return !!document.getElementById('activity-target').value;`));
+
+  // Clear all leaves nothing on.
+  await cdp.eval(`document.querySelector('#activity-active [data-clear="all"]').click();
+    return new Promise((go) => setTimeout(() => go(true), 400));`);
+  assert.strictEqual(await cdp.eval(`return document.querySelectorAll('#activity-active .act-active-chip').length;`), 0);
+});
+
+check('Activity Log saved filter sets come back as they were saved', async (cdp) => {
+  await cdp.open('activity_log');
+  await cdp.eval(`
+    window.prompt = () => 'Late problems';
+    const set = (id, v) => { const el = document.getElementById(id); el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); };
+    document.querySelector('#activity-ranges [data-range="today"]').click();
+    set('activity-result', 'problems');
+    document.getElementById('activity-view-save').click();
+    document.getElementById('activity-clear').click();
+    return new Promise((go) => setTimeout(() => go(true), 400));`);
+  await cdp.eval(`const sel = document.getElementById('activity-views'); sel.value = 'Late problems';
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    return new Promise((go) => setTimeout(() => go(true), 400));`);
+  const state = await cdp.eval(`return {
+    result: document.getElementById('activity-result').value,
+    today: document.querySelector('#activity-ranges [data-range="today"]').classList.contains('on'),
+    from: document.getElementById('activity-from').value,
+  };`);
+  assert.strictEqual(state.result, 'problems');
+  assert.ok(state.today, 'a relative range comes back as the range');
+  assert.ok(state.from, 'and fills in the start of today again');
+  await cdp.eval(`document.getElementById('activity-view-delete').click();
+    document.getElementById('activity-clear').click(); return true;`);
+});
 
 async function main() {
   console.log('Back office: on a tablet\n');
