@@ -1323,7 +1323,7 @@
           <!-- The practice venue. Here rather than on a page of its own because
                this is where training accounts are made, and the two are one
                thought: who may practise, and what they practise on. -->
-          <div class="card panel" id="demo-venue-card" style="margin-top:16px">
+          <div class="card panel" id="demo-venue-card">
             <h3>Practice venue</h3>
             <p class="muted small">
               A copy of this venue for training: the same products, screens, prices and tables, with
@@ -1945,6 +1945,55 @@
             </div>
           </div>
 
+          <!-- Page highlight (2026-10-01). The navigation key for the page a
+               till is on lights up by itself, so staff always know where they
+               are — on Newbridge a venue colours each page's own key by hand.
+               Here rather than on a settings page of its own, because it is
+               part of "what my tills look like", next to the card that says
+               the rest of it. Applied as it is chosen, like the card above. -->
+          <div class="card sp-here closed" id="sp-here">
+            <div class="sp-here-head">
+              <div>
+                <h3>Page highlight</h3>
+                <span class="muted small">The key for the page a till is on lights up by itself. Every till in this venue, no setup per page.</span>
+              </div>
+              <span class="sp-flag" id="sp-here-state" hidden></span>
+              <button type="button" class="btn ghost small" id="sp-here-reset" title="White key, Vesopa lime underbar">Reset to Vesopa brand</button>
+              <button type="button" class="btn small" id="sp-here-open" aria-expanded="false" aria-controls="sp-here-body">Change</button>
+            </div>
+            <div class="sp-here-body" id="sp-here-body">
+              <div class="sp-here-controls">
+                <div class="sp-here-row">
+                  <span class="sp-here-label" id="sp-here-style-label">Style</span>
+                  <div class="sp-here-styles" role="radiogroup" aria-labelledby="sp-here-style-label" id="sp-here-styles">
+                    <button type="button" role="radio" data-style="fill"><i class="sp-here-ico fill"></i>Fill and underbar</button>
+                    <button type="button" role="radio" data-style="bar"><i class="sp-here-ico bar"></i>Underbar only</button>
+                    <button type="button" role="radio" data-style="outline"><i class="sp-here-ico outline"></i>Outline</button>
+                    <button type="button" role="radio" data-style="off"><i class="sp-here-ico off"></i>Off</button>
+                  </div>
+                </div>
+                <div class="sp-here-row" id="sp-here-fill-row">
+                  <span class="sp-here-label">Key colour while its page is open</span>
+                  <div class="sp-picker" id="sp-here-fill"></div>
+                </div>
+                <div class="sp-here-row" id="sp-here-bar-row">
+                  <span class="sp-here-label" id="sp-here-bar-label">Underbar colour</span>
+                  <div class="sp-here-modes" role="radiogroup" aria-labelledby="sp-here-bar-label" id="sp-here-bar-modes">
+                    <button type="button" role="radio" data-bar="brand"><i class="sp-here-dot brand"></i>Vesopa lime</button>
+                    <button type="button" role="radio" data-bar="key"><i class="sp-here-dot multi"></i>Match each key</button>
+                    <button type="button" role="radio" data-bar="custom"><i class="sp-here-dot own" id="sp-here-own-dot"></i>My own</button>
+                  </div>
+                  <div class="sp-picker" id="sp-here-bar" hidden></div>
+                </div>
+                <p class="sp-here-check small" id="sp-here-check" aria-live="polite"></p>
+              </div>
+              <div class="sp-here-stage">
+                <div class="sp-here-till" id="sp-here-preview" aria-label="Preview: tap a key to move the highlight"></div>
+                <p class="muted small sp-here-caption">Your own page keys. Tap one to see the highlight move.</p>
+              </div>
+            </div>
+          </div>
+
           <div class="sp-bar">
             <!-- Which kind of layout is being edited. Tabs rather than a fourth
                  dropdown: a bar and a sale screen are not two rows in one list,
@@ -2120,6 +2169,21 @@
                       <button type="button" class="btn ghost small" id="sp-open-target">
                         Edit that screen →
                       </button>
+                    </div>
+                    <!-- This key's own highlight, over the venue's (2026-10-01). -->
+                    <div class="sp-key-here" id="sp-key-here">
+                      <label>When this page is open
+                        <select id="sp-key-here-mode">
+                          <option value="venue">Follow the venue's highlight</option>
+                          <option value="own">Its own colours</option>
+                        </select>
+                      </label>
+                      <div id="sp-key-here-own" hidden>
+                        <span class="sp-here-label">Key colour</span>
+                        <div class="sp-picker" id="sp-key-here-fill"></div>
+                        <span class="sp-here-label">Underbar</span>
+                        <div class="sp-picker" id="sp-key-here-bar"></div>
+                      </div>
                     </div>
                   </div>
 

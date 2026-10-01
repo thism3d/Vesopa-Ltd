@@ -287,6 +287,26 @@ function cleanHex(raw) {
 }
 
 /**
+ * The page highlight's values (2026-10-01).
+ *
+ * A style is one of four words; anything else is null, which the till reads as
+ * the default. A bar colour is a hex, or 'brand' (Vesopa lime) or 'key' (the
+ * key's own colour, so every page's key gets a bar of its own colour).
+ */
+const HERE_STYLES = ['fill', 'bar', 'outline', 'off'];
+
+function cleanHereStyle(raw) {
+  const v = String(raw ?? '').trim().toLowerCase();
+  return HERE_STYLES.includes(v) ? v : null;
+}
+
+function cleanHereBar(raw) {
+  const v = String(raw ?? '').trim().toLowerCase();
+  if (v === 'brand' || v === 'key') return v;
+  return cleanHex(v);
+}
+
+/**
  * A picture path, or null.
  *
  * On-site only: `/uploads/...` or `/assets/...`, never an off-site URL. Same
@@ -496,6 +516,10 @@ function normaliseButton(raw, { rows, cols, surface = 'sale' }) {
     // which is the right answer for a key whose label already fits.
     font_family: blank ? null : cleanFontFamily(raw.fontFamily),
     font_size: blank ? null : cleanFontSize(raw.fontSize),
+    // Only a page key has a page to be "on", so only a page key keeps its own
+    // highlight. Null follows the venue's.
+    here_fill: kind === 'page' ? cleanHex(raw.hereFill) : null,
+    here_bar: kind === 'page' ? cleanHereBar(raw.hereBar) : null,
   };
 }
 
@@ -524,6 +548,8 @@ function buttonToJson(row) {
     showLabel: !!row.show_label,
     fontFamily: row.font_family ?? null,
     fontSize: row.font_size ?? null,
+    hereFill: row.here_fill ?? null,
+    hereBar: row.here_bar ?? null,
   };
 }
 
@@ -643,14 +669,14 @@ async function saveScreenButtons(pool, office, screen, rawButtons) {
             kind, plu_id, target_screen_id, function_key, modifier_group_id,
             label, fill, ink,
             emoji, image_url, image_fit, image_scale, image_x, image_y,
-            show_label, font_family, font_size)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            show_label, font_family, font_size, here_fill, here_bar)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           screen.id, office, b.grid_row, b.grid_col, b.row_span, b.col_span,
           b.kind, b.plu_id, b.target_screen_id, b.function_key, b.modifier_group_id,
           b.label, b.fill, b.ink,
           b.emoji, b.image_url, b.image_fit, b.image_scale, b.image_x, b.image_y,
-          b.show_label, b.font_family, b.font_size,
+          b.show_label, b.font_family, b.font_size, b.here_fill, b.here_bar,
         ]
       );
     }
@@ -868,6 +894,48 @@ function screensRoutes({ pool, broadcast, secret }) {
     }
   });
 
+  /**
+   * The page highlight (2026-10-01): how the navigation key for the page a
+   * till is on lights up. One setting for the venue, on the till-settings row
+   * the tills already read, so a change reaches them on the broadcast they are
+   * already listening for.
+   *
+   * Every key is optional and only what is sent is written; null means "back
+   * to the Vesopa default" (white key, lime bar). Declared BEFORE
+   * `/screens/:id`, for the reason /screens/home gives.
+   */
+  router.put('/screens/highlight', auth, async (req, res, next) => {
+    try {
+      const office = await tenantEmail(req);
+      const body = req.body || {};
+      const has = (k) => Object.prototype.hasOwnProperty.call(body, k);
+      const values = {};
+      if (has('style')) values.nav_here_style = cleanHereStyle(body.style);
+      if (has('fill')) values.nav_here_fill = cleanHex(body.fill);
+      if (has('bar')) values.nav_here_bar = cleanHereBar(body.bar);
+      const cols = Object.keys(values);
+      if (!cols.length) return res.status(400).json({ error: 'Nothing to set.' });
+
+      await pool.execute(
+        `INSERT INTO epos_till_settings (office, ${cols.join(', ')})
+         VALUES (?${', ?'.repeat(cols.length)})
+         ON DUPLICATE KEY UPDATE
+           ${cols.map((c) => `${c} = VALUES(${c})`).join(', ')}`,
+        [office, ...cols.map((c) => values[c])]
+      );
+
+      broadcast({ type: 'till-settings', office }, { office });
+      res.json({
+        ok: true,
+        ...(has('style') ? { style: values.nav_here_style } : {}),
+        ...(has('fill') ? { fill: values.nav_here_fill } : {}),
+        ...(has('bar') ? { bar: values.nav_here_bar } : {}),
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+
   router.get('/screens', auth, async (req, res, next) => {
     try {
       res.json(await loadScreens(pool, await tenantEmail(req)));
@@ -972,12 +1040,12 @@ function screensRoutes({ pool, broadcast, secret }) {
               kind, plu_id, target_screen_id, function_key, modifier_group_id,
               label, fill, ink,
               emoji, image_url, image_fit, image_scale, image_x, image_y,
-              show_label, font_family, font_size)
+              show_label, font_family, font_size, here_fill, here_bar)
            SELECT ?, office, grid_row, grid_col, row_span, col_span,
                   kind, plu_id, target_screen_id, function_key, modifier_group_id,
                   label, fill, ink,
                   emoji, image_url, image_fit, image_scale, image_x, image_y,
-                  show_label, font_family, font_size
+                  show_label, font_family, font_size, here_fill, here_bar
              FROM epos_screen_buttons WHERE screen_id = ?`,
           [created.insertId, source.id]
         );
@@ -1386,14 +1454,16 @@ function screensRoutes({ pool, broadcast, secret }) {
               + ' (screen_id, office, grid_row, grid_col, row_span, col_span,'
               + '  kind, plu_id, target_screen_id, function_key, modifier_group_id,'
               + '  label, fill, ink, emoji, image_url, image_fit, image_scale,'
-              + '  image_x, image_y, show_label, font_family, font_size)'
-              + ' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+              + '  image_x, image_y, show_label, font_family, font_size,'
+              + '  here_fill, here_bar)'
+              + ' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
               [
                 target.id, office, row, col, rowSpan, colSpan,
                 b.kind, b.plu_id, b.target_screen_id, b.function_key,
                 b.modifier_group_id, b.label, b.fill, b.ink,
                 b.emoji, b.image_url, b.image_fit, b.image_scale,
                 b.image_x, b.image_y, b.show_label, b.font_family, b.font_size,
+                b.here_fill ?? null, b.here_bar ?? null,
               ]
             );
 
@@ -1526,6 +1596,8 @@ module.exports = {
   cleanHex,
   cleanImage,
   cleanEmoji,
+  cleanHereStyle,
+  cleanHereBar,
   functionKeysFor,
   limitsFor,
   BUTTON_KINDS,

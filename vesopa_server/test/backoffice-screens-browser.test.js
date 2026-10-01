@@ -480,6 +480,9 @@ async function main() {
     chromium,
     [
       '--headless=new',
+      // Root in a container cannot use Chromium's sandbox; test/lib/chrome.js
+      // passes the same flag.
+      '--no-sandbox',
       '--remote-debugging-port=0',
       `--user-data-dir=${profile}`,
       '--no-first-run',

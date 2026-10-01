@@ -166,6 +166,72 @@ async function check(name, fn) {
     );
   });
 
+  // ---- Page highlight (2026-10-01) -----------------------------------------
+
+  await check('PUT /screens/highlight is not swallowed by /screens/:id, and tells the tills', async () => {
+    const pool = fakePool([OFFICE]);
+    const told = [];
+    const server = await listen(appWith(pool, (m) => told.push(m)));
+    const res = await call(server, 'PUT', '/api/screens/highlight', {
+      token: sessionToken,
+      body: { style: 'BAR', fill: 'FFFFFF', bar: 'key' },
+    });
+    server.close();
+    assert.strictEqual(res.status, 200, JSON.stringify(res.body));
+    assert.deepStrictEqual(
+      { style: res.body.style, fill: res.body.fill, bar: res.body.bar },
+      { style: 'bar', fill: '#ffffff', bar: 'key' }
+    );
+    const write = pool.asked.find((q) => q.sql.includes('INSERT INTO epos_till_settings'));
+    assert.ok(write, 'the highlight was never written');
+    assert.match(write.sql, /nav_here_style.*nav_here_fill.*nav_here_bar/);
+    assert.ok(told.some((m) => m.type === 'till-settings'), 'the tills were not told');
+  });
+
+  await check('a highlight nobody has heard of is stored as the default, and only what is sent is written', async () => {
+    const pool = fakePool([OFFICE]);
+    const server = await listen(appWith(pool));
+    const res = await call(server, 'PUT', '/api/screens/highlight', {
+      token: sessionToken,
+      body: { style: 'sparkle', bar: 'not-a-colour' },
+    });
+    server.close();
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.style, null);
+    assert.strictEqual(res.body.bar, null);
+    const write = pool.asked.find((q) => q.sql.includes('INSERT INTO epos_till_settings'));
+    assert.doesNotMatch(write.sql, /nav_here_fill/);
+  });
+
+  await check('an empty highlight request is refused', async () => {
+    const server = await listen(appWith(fakePool([OFFICE])));
+    const res = await call(server, 'PUT', '/api/screens/highlight', { token: sessionToken, body: {} });
+    server.close();
+    assert.strictEqual(res.status, 400);
+  });
+
+  await check('only a page key keeps a highlight of its own', async () => {
+    const grid = { rows: 5, cols: 6 };
+    const page = normaliseButton(
+      { row: 0, col: 0, kind: 'page', targetScreenId: 3, hereFill: '#FFEEDD', hereBar: 'brand' },
+      grid
+    );
+    assert.strictEqual(page.here_fill, '#ffeedd');
+    assert.strictEqual(page.here_bar, 'brand');
+    const product = normaliseButton(
+      { row: 0, col: 0, kind: 'product', pluId: 4, hereFill: '#ffffff', hereBar: '#ff0000' },
+      grid
+    );
+    assert.strictEqual(product.here_fill, null);
+    assert.strictEqual(product.here_bar, null);
+    const junk = normaliseButton(
+      { row: 0, col: 0, kind: 'page', targetScreenId: 3, hereFill: 'white', hereBar: 'rainbow' },
+      grid
+    );
+    assert.strictEqual(junk.here_fill, null);
+    assert.strictEqual(junk.here_bar, null);
+  });
+
   await check('setting home to null falls back to the built-in Default', async () => {
     const pool = fakePool([OFFICE]);
     const server = await listen(appWith(pool));

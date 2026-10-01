@@ -7491,3 +7491,115 @@ button.act-tile:hover { border-color: var(--brand); }
   .modal-wizard .modal-actions { gap: 6px; }
   .modal-wizard .modal-actions .btn { padding-left: 12px; padding-right: 12px; white-space: nowrap; }
 }
+
+/* ---------------------------------------------------------------------------
+   Page highlight (2026-10-01): the key for the page a till is on lights up.
+   The look itself is two custom properties, --here-bar and --here-outline,
+   set per key by spPaintHere in screens.js, so the editor grid, the preview
+   and the inspector all draw it the same way the till does: an inset bar
+   along the foot and an inset ring, both drawn inside the key so its size
+   never changes.
+   --------------------------------------------------------------------------- */
+.sp-here-on {
+  box-shadow:
+    inset 0 -6px 0 var(--here-bar, transparent),
+    inset 0 0 0 3px var(--here-outline, transparent) !important;
+  transition: background-color .18s ease, color .18s ease, box-shadow .18s ease;
+}
+
+.sp-here { margin-bottom: 12px; padding: 14px 16px; }
+.sp-here-head { display: flex; align-items: center; gap: 10px 12px; flex-wrap: wrap; }
+.sp-here-head > div { flex: 1 1 280px; min-width: 0; display: grid; gap: 2px; }
+.sp-here-head h3 { margin: 0; display: flex; align-items: center; gap: 8px; }
+.sp-here-head h3::before {
+  content: ''; width: 18px; height: 14px; border-radius: 3px; flex: none;
+  background: var(--here-icon-fill, #fff);
+  box-shadow: inset 0 -4px 0 var(--here-icon-bar, var(--brand)), inset 0 0 0 2px var(--here-icon-ring, transparent), 0 0 0 1px var(--line);
+}
+.sp-here.closed .sp-here-body,
+.sp-here.closed #sp-here-reset { display: none; }
+.sp-here-body {
+  display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 18px; margin-top: 12px;
+  align-items: start;
+}
+@media (max-width: 900px) { .sp-here-body { grid-template-columns: 1fr; } }
+.sp-here-controls { display: grid; gap: 14px; min-width: 0; }
+.sp-here-row { display: grid; gap: 7px; min-width: 0; }
+.sp-here-label {
+  font-size: 11.5px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; color: var(--muted);
+}
+
+/* The four styles, each drawn as the key it makes. */
+.sp-here-styles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+@media (max-width: 640px) { .sp-here-styles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.sp-here-styles button, .sp-here-modes button {
+  display: flex; align-items: center; gap: 9px; min-width: 0; text-align: left;
+  font: inherit; font-size: 13px; font-weight: 550; color: var(--text);
+  padding: 9px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--card);
+  cursor: pointer;
+}
+.sp-here-styles button { flex-direction: column; align-items: flex-start; gap: 8px; }
+.sp-here-styles button:hover, .sp-here-modes button:hover { border-color: var(--brand); }
+.sp-here-styles [aria-checked="true"], .sp-here-modes [aria-checked="true"] {
+  border-color: var(--brand); box-shadow: inset 0 0 0 1px var(--brand);
+  background: var(--brand-soft);
+}
+:root[data-theme="dark"] .sp-here-styles [aria-checked="true"],
+:root[data-theme="dark"] .sp-here-modes [aria-checked="true"] { background: rgba(165, 199, 21, .12); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .sp-here-styles [aria-checked="true"],
+  :root:not([data-theme="light"]) .sp-here-modes [aria-checked="true"] { background: rgba(165, 199, 21, .12); }
+}
+.sp-here-styles button:focus-visible, .sp-here-modes button:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.sp-here-ico {
+  display: block; width: 100%; max-width: 92px; height: 26px; border-radius: 6px; background: #5b2a86;
+}
+.sp-here-ico.fill { background: #fff; box-shadow: inset 0 -5px 0 var(--brand), 0 0 0 1px var(--line); }
+.sp-here-ico.bar { box-shadow: inset 0 -5px 0 var(--brand); }
+.sp-here-ico.outline { box-shadow: inset 0 0 0 3px var(--brand); }
+.sp-here-ico.off { opacity: .55; }
+
+.sp-here-modes { display: flex; flex-wrap: wrap; gap: 8px; }
+.sp-here-dot { width: 16px; height: 16px; border-radius: 50%; flex: none; box-shadow: 0 0 0 1px var(--line); }
+.sp-here-dot.brand { background: var(--brand); }
+.sp-here-dot.multi { background: conic-gradient(#5b2a86 0 25%, #21a73e 0 50%, #ce7a0a 0 75%, #4b57e8 0); }
+.sp-here-dot.own { background: linear-gradient(135deg, #fff 0 45%, #d03227 0 55%, #fff 0); }
+
+/* The picker: house swatches, the venue's own key colours, then exact. */
+.sp-picker { display: grid; gap: 8px; min-width: 0; }
+.sp-picker-group { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.sp-picker-name { font-size: 11.5px; color: var(--muted); min-width: 64px; }
+.sp-picker .sp-swatch { width: 30px; height: 30px; border-radius: 8px; }
+.sp-picker .sp-swatch.on { outline: 2px solid var(--text); outline-offset: 2px; }
+.sp-picker-exact { gap: 8px; }
+.sp-picker-wheel { width: 40px; height: 32px; padding: 0; border: 1px solid var(--line); border-radius: 8px; background: none; cursor: pointer; }
+.sp-picker input.sp-picker-hex {
+  width: 108px; flex: none; font: 600 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; text-transform: uppercase;
+}
+
+.sp-here-check { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--hover); }
+.sp-here-check.ok { color: var(--green); }
+.sp-here-check.warn { color: #b56a08; background: rgba(206, 122, 10, .12); }
+
+/* The live drawing: a till's navigation column, the venue's own keys. */
+.sp-here-stage { display: grid; gap: 6px; }
+.sp-here-till {
+  display: grid; gap: 5px; padding: 8px; border-radius: 12px; background: #1b1f27;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06);
+}
+.sp-here-key {
+  border: 0; border-radius: 7px; padding: 11px 8px 13px; cursor: pointer;
+  font: 650 13px/1.15 inherit; letter-spacing: .03em; text-transform: uppercase; text-align: center;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sp-here-key:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.sp-here-caption { margin: 0; text-align: center; }
+
+/* One key's own highlight, in the inspector. */
+.sp-key-here { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); display: grid; gap: 8px; }
+#sp-key-here-own { display: grid; gap: 6px; }
+#sp-key-here-own[hidden] { display: none; }
+.sp-key-here .sp-picker-name { display: none; }
+.sp-key-here .sp-picker .sp-swatch { width: 26px; height: 26px; }
+
+@media (prefers-reduced-motion: reduce) { .sp-here-on { transition: none; } }

@@ -1238,6 +1238,13 @@ async function loadScreens() {
     payBottom: settings.pay_bottom_bar_screen_id ?? null,
   };
   spTillFont = settings.font_family ?? null;
+  // Undefined on a server without schema_till_highlight.sql, which reads as
+  // the Vesopa default.
+  spHighlight = {
+    style: settings.nav_here_style ?? null,
+    fill: settings.nav_here_fill ?? null,
+    bar: settings.nav_here_bar ?? null,
+  };
   spProductOptionsSig = '';
   // Not awaited: the badge on Scheduled fills in when it arrives.
   spLoadSchedules();
@@ -1543,6 +1550,8 @@ function spShape(screen) {
         // button? Add it here in the same breath.
         b.fontFamily ?? '',
         b.fontSize ?? '',
+        b.hereFill ?? '',
+        b.hereBar ?? '',
       ].join('|')
     )
     .sort();
@@ -2116,6 +2125,7 @@ function spRenderChrome() {
   spRenderSubDepartments();
 
   spRenderDefaults();
+  spRenderHighlight();
   spRenderPerScreenBars();
   spRenderFontsCard();
   spRenderGrid();
@@ -2583,9 +2593,14 @@ function spRenderGrid() {
         mock.innerHTML = spWidgetSketch(b.functionKey);
         cell.append(mock);
       } else if (b && b.kind === 'page') {
+        // The key for the page being edited is drawn as the till will draw
+        // it while this page is open (2026-10-01), so the highlight is seen
+        // before it is saved rather than at a till.
+        const here = !bar && b.targetScreenId === spCurrent.id ? spHereLook(b, b.fill) : null;
+        if (here) spPaintHere(cell, here);
         const arrow = document.createElement('em');
         arrow.className = 'sp-arrow';
-        arrow.textContent = '›››';
+        arrow.textContent = here ? '●' : '›››';
         cell.append(arrow);
       } else if (b && b.kind === 'function') {
         const mark = document.createElement('em');
@@ -2878,6 +2893,7 @@ function spRenderInspector() {
           }>${esc(s.name)}${s.id === spCurrent.id ? ' (this page)' : ''}</option>`
       )
       .join('');
+  spRenderKeyHere(first, chosen);
 
   // The questions this venue asks. A key whose group has since been deleted
   // keeps its id in the list as a disabled option, so the inspector says which
@@ -3741,6 +3757,7 @@ function spGridKeys(e) {
 function spBind() {
   if (spBound) return;
   spBound = true;
+  spBindHighlight();
 
   // Changing page.
   //
@@ -5008,4 +5025,415 @@ if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', spApplyPopupMode);
 } else {
   spApplyPopupMode();
+}
+
+// ---------------------------------------------------------------------------
+// Page highlight (2026-10-01)
+// ---------------------------------------------------------------------------
+//
+// The navigation key for the page a till is on lights up by itself, so staff
+// always know where they are. Nicki's words: "If I'm on the DRAUGHT page the
+// DRAUGHT navigation highlights a different colour". On Newbridge she colours
+// each page's own key white by hand.
+//
+// One venue setting (style, key colour, underbar colour) on the till-settings
+// row, and an optional pair of colours on any one page key. The till resolves
+// them the same way spHereLook does here — see
+// vesopa_epos/lib/ui/widgets/page_highlight.dart — and the two must agree, or
+// this preview lies.
+
+/** The Vesopa lime. */
+const SP_BRAND = '#a5c715';
+
+/** What NULL means for each setting: a white key with a lime underbar. */
+const SP_HERE_DEFAULT = { style: 'fill', fill: '#ffffff', bar: 'brand' };
+
+/** The house swatches the picker opens with. */
+const SP_HERE_SWATCHES = ['#ffffff', '#f4f6fa', '#eff6d8', '#fff3c4', SP_BRAND, '#6e8a0e', '#111111'];
+
+let spHighlight = { style: null, fill: null, bar: null };
+let spHerePreviewAt = null;
+let spHereSaveTimer = null;
+
+function spHereVenue() {
+  return {
+    style: spHighlight.style || SP_HERE_DEFAULT.style,
+    fill: spHighlight.fill || SP_HERE_DEFAULT.fill,
+    bar: spHighlight.bar || SP_HERE_DEFAULT.bar,
+  };
+}
+
+function spLuminance(hex) {
+  const rgb = String(hex || '').replace('#', '');
+  if (rgb.length !== 6) return 0;
+  const channel = (i) => {
+    const c = parseInt(rgb.slice(i * 2, i * 2 + 2), 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * channel(0) + 0.7152 * channel(1) + 0.0722 * channel(2);
+}
+
+function spContrast(a, b) {
+  const x = spLuminance(a);
+  const y = spLuminance(b);
+  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+}
+
+/**
+ * How one page key looks while its page is open: { fill, ink, bar, outline },
+ * any of them null for "leave as it is". Null altogether when the venue has
+ * the highlight off.
+ *
+ * `own` is the key's colour when its page is not open — what "Match each key"
+ * borrows for the underbar. An underbar that would vanish into the key it sits
+ * on (a white bar on a white key) falls back to the lime, because a highlight
+ * nobody can see is the bug this whole feature exists to fix.
+ */
+function spHereLook(b, own) {
+  const venue = spHereVenue();
+  if (venue.style === 'off') return null;
+  const keyFill = own || SP_DEFAULT_FILL;
+  const mode = (b && b.hereBar) || venue.bar;
+  let bar = mode === 'brand' ? SP_BRAND : mode === 'key' ? keyFill : mode;
+  if (venue.style === 'outline') return { fill: null, ink: null, bar: null, outline: bar };
+  const fill = venue.style === 'fill' ? (b && b.hereFill) || venue.fill : null;
+  const under = fill || keyFill;
+  if (spContrast(bar, under) < 1.35) bar = spContrast(SP_BRAND, under) >= 1.35 ? SP_BRAND : '#111111';
+  return { fill, ink: fill ? kdsInkOn(fill) : null, bar, outline: null };
+}
+
+/** Paint a look onto a key element the editor or the preview drew. */
+function spPaintHere(el, look) {
+  el.classList.add('sp-here-on');
+  if (look.fill) {
+    el.style.background = look.fill;
+    el.style.color = look.ink;
+  }
+  el.style.setProperty('--here-bar', look.bar || 'transparent');
+  el.style.setProperty('--here-outline', look.outline || 'transparent');
+}
+
+/** The colours this venue already wears on its keys, most used first. */
+function spVenueColours() {
+  const counts = new Map();
+  for (const s of spScreens) {
+    for (const b of s.buttons || []) {
+      if (b.fill) counts.set(b.fill, (counts.get(b.fill) || 0) + 1);
+    }
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([c]) => c)
+    .filter((c) => !SP_HERE_SWATCHES.includes(c))
+    .slice(0, 9);
+}
+
+/**
+ * A colour picker: the house swatches, the venue's own key colours, a wheel
+ * and a hex box. `extra` puts named choices in front (the underbar's "lime"
+ * and "each key"), `onPick` gets a hex or one of those names.
+ */
+function spDrawPicker(box, value, onPick, { allowNone = false } = {}) {
+  const swatch = (c, title) =>
+    `<button type="button" class="sp-swatch${value === c ? ' on' : ''}" data-pick="${c}"` +
+    ` style="background:${c}" title="${spEsc(title || c)}" aria-label="${spEsc(title || c)}"></button>`;
+  const venue = spVenueColours();
+  const hex = /^#[0-9a-f]{6}$/i.test(value || '') ? value : '';
+  box.innerHTML =
+    '<div class="sp-picker-group"><span class="sp-picker-name">Vesopa</span>' +
+    SP_HERE_SWATCHES.map((c) => swatch(c, c === SP_BRAND ? 'Vesopa lime' : c)).join('') +
+    '</div>' +
+    (venue.length
+      ? '<div class="sp-picker-group"><span class="sp-picker-name">Your keys</span>' +
+        venue.map((c) => swatch(c)).join('') +
+        '</div>'
+      : '') +
+    '<div class="sp-picker-group sp-picker-exact">' +
+    `<input type="color" class="sp-picker-wheel" value="${hex || '#ffffff'}" aria-label="Colour wheel">` +
+    `<input type="text" class="sp-picker-hex" value="${hex.toUpperCase()}" maxlength="7" placeholder="#RRGGBB" aria-label="Hex colour" spellcheck="false">` +
+    (allowNone ? '<button type="button" class="btn ghost small sp-picker-none">Venue’s</button>' : '') +
+    '</div>';
+
+  box.onclick = (e) => {
+    const s = e.target.closest('[data-pick]');
+    if (s) onPick(s.dataset.pick);
+    if (e.target.closest('.sp-picker-none')) onPick(null);
+  };
+  const wheel = box.querySelector('.sp-picker-wheel');
+  // `input` for the instant preview, `change` to keep it: dragging the wheel
+  // repaints the till drawing as it goes.
+  wheel.oninput = () => onPick(wheel.value.toLowerCase(), { live: true });
+  wheel.onchange = () => onPick(wheel.value.toLowerCase());
+  const text = box.querySelector('.sp-picker-hex');
+  text.onchange = () => {
+    let v = text.value.trim();
+    if (v && !v.startsWith('#')) v = `#${v}`;
+    if (/^#[0-9a-f]{6}$/i.test(v)) onPick(v.toLowerCase());
+    else text.value = hex.toUpperCase();
+  };
+}
+
+/** The page keys a till would show: the home screen's, or the busiest page's. */
+function spHerePreviewKeys() {
+  const sale = spOnSurface('sale');
+  const pageKeys = (s) => (s.buttons || []).filter((b) => b.kind === 'page' && b.targetScreenId);
+  const home = sale.find((s) => s.id === spDefaults.home);
+  let keys = home ? pageKeys(home) : [];
+  if (keys.length < 3) {
+    const busiest = sale.map(pageKeys).sort((a, b) => b.length - a.length)[0] || [];
+    if (busiest.length > keys.length) keys = busiest;
+  }
+  if (keys.length) {
+    return keys
+      .slice()
+      .sort((a, b) => a.row - b.row || a.col - b.col)
+      .slice(0, 9)
+      .map((b) => ({
+        button: b,
+        label: b.label || (sale.find((s) => s.id === b.targetScreenId) || {}).name || 'Page',
+        fill: b.fill,
+        ink: b.ink,
+        target: b.targetScreenId,
+      }));
+  }
+  // A venue with no page keys yet sees Nicki's: the point is the look.
+  const purple = '#5b2a86';
+  return ['DRAUGHTS', 'BOTTLES', 'SPIRITS', 'WINE', 'SOFT DRINKS', 'SNACKS', 'FOOD'].map((label, i) => ({
+    button: {},
+    label,
+    fill: label === 'FOOD' ? '#21a73e' : label === 'SNACKS' ? '#ce7a0a' : purple,
+    ink: null,
+    target: -1 - i,
+  }));
+}
+
+function spRenderHerePreview() {
+  const box = $('sp-here-preview');
+  if (!box) return;
+  const keys = spHerePreviewKeys();
+  if (spHerePreviewAt == null || !keys.some((k) => k.target === spHerePreviewAt)) {
+    spHerePreviewAt = keys[Math.min(1, keys.length - 1)].target;
+  }
+  box.innerHTML = '';
+  for (const k of keys) {
+    const key = document.createElement('button');
+    key.type = 'button';
+    key.className = 'sp-here-key';
+    key.textContent = k.label;
+    const own = k.fill || SP_DEFAULT_FILL;
+    key.style.background = own;
+    key.style.color = k.ink || kdsInkOn(own);
+    if (k.target === spHerePreviewAt) {
+      key.setAttribute('aria-current', 'page');
+      const look = spHereLook(k.button, k.fill);
+      if (look) spPaintHere(key, look);
+    }
+    key.addEventListener('click', () => {
+      spHerePreviewAt = k.target;
+      spRenderHerePreview();
+    });
+    box.append(key);
+  }
+}
+
+/** The readability line under the controls. */
+function spRenderHereCheck() {
+  const out = $('sp-here-check');
+  const venue = spHereVenue();
+  if (venue.style === 'off') {
+    out.className = 'sp-here-check small muted';
+    out.textContent = 'Off. Page keys look the same on every page.';
+    return;
+  }
+  if (venue.style === 'fill') {
+    const ratio = spContrast(venue.fill, kdsInkOn(venue.fill));
+    const ok = ratio >= 4.5;
+    out.className = 'sp-here-check small ' + (ok ? 'ok' : 'warn');
+    out.textContent = ok
+      ? `Lettering reads well on it (${ratio.toFixed(1)} : 1).`
+      : `Lettering will be hard to read on this colour (${ratio.toFixed(1)} : 1). Pick a lighter or darker one.`;
+    return;
+  }
+  const keys = spHerePreviewKeys();
+  const faint = keys.filter((k) => {
+    const look = spHereLook(k.button, k.fill);
+    return look && spContrast(look.bar || look.outline, k.fill || SP_DEFAULT_FILL) < 1.6;
+  });
+  out.className = 'sp-here-check small ' + (faint.length ? 'warn' : 'ok');
+  out.textContent = faint.length
+    ? `Hard to see on ${faint.map((k) => k.label).slice(0, 3).join(', ')}. Vesopa lime stands out on most keys.`
+    : 'Stands out on every page key.';
+}
+
+function spRenderHighlight() {
+  const card = $('sp-here');
+  if (!card) return;
+  const venue = spHereVenue();
+  for (const b of card.querySelectorAll('[data-style]')) {
+    b.setAttribute('aria-checked', String(b.dataset.style === venue.style));
+  }
+  const barMode = venue.bar === 'brand' || venue.bar === 'key' ? venue.bar : 'custom';
+  for (const b of card.querySelectorAll('[data-bar]')) {
+    b.setAttribute('aria-checked', String(b.dataset.bar === barMode));
+  }
+  $('sp-here-own-dot').style.background = barMode === 'custom' ? venue.bar : '';
+  $('sp-here-fill-row').hidden = venue.style !== 'fill';
+  $('sp-here-bar-row').hidden = venue.style === 'off';
+  $('sp-here-bar-label').textContent = venue.style === 'outline' ? 'Outline colour' : 'Underbar colour';
+  $('sp-here-bar').hidden = barMode !== 'custom';
+
+  spDrawPicker($('sp-here-fill'), venue.fill, (c, o) => spSetHighlight({ fill: c }, o));
+  if (barMode === 'custom') {
+    spDrawPicker($('sp-here-bar'), venue.bar, (c, o) => spSetHighlight({ bar: c }, o));
+  }
+
+  // The heading's little key is the venue's highlight, so the folded card
+  // still says what the tills are doing.
+  const sample = spHereLook({}, '#5b2a86');
+  const head = card.querySelector('.sp-here-head h3');
+  head.style.setProperty('--here-icon-fill', sample && sample.fill ? sample.fill : '#5b2a86');
+  head.style.setProperty('--here-icon-bar', sample ? sample.bar || 'transparent' : 'transparent');
+  head.style.setProperty('--here-icon-ring', sample ? sample.outline || 'transparent' : 'transparent');
+
+  const isDefault = !spHighlight.style && !spHighlight.fill && !spHighlight.bar;
+  const flag = $('sp-here-state');
+  flag.hidden = false;
+  flag.className = 'sp-flag ok';
+  flag.textContent = isDefault ? 'Vesopa default' : 'Your own';
+  $('sp-here-reset').disabled = isDefault;
+
+  spRenderHerePreview();
+  spRenderHereCheck();
+}
+
+/**
+ * Change the venue's highlight. Drawn at once and written shortly after, so
+ * dragging the wheel does not send a request per pixel. A `live` change only
+ * repaints.
+ */
+function spSetHighlight(change, { live = false } = {}) {
+  spHighlight = { ...spHighlight, ...change };
+  // Writing the default's own value stores NULL, so "Reset" and "picked white
+  // and lime by hand" are the same row, and a later change to the Vesopa
+  // default reaches both.
+  for (const k of Object.keys(SP_HERE_DEFAULT)) {
+    if (spHighlight[k] === SP_HERE_DEFAULT[k]) spHighlight[k] = null;
+  }
+  if (live) {
+    spRenderHerePreview();
+    spRenderHereCheck();
+    spRenderGrid();
+    return;
+  }
+  spRenderHighlight();
+  spRenderGrid();
+  clearTimeout(spHereSaveTimer);
+  spHereSaveTimer = setTimeout(spSaveHighlight, 350);
+}
+
+async function spSaveHighlight() {
+  const flag = $('sp-here-state');
+  try {
+    await api('/screens/highlight', {
+      method: 'PUT',
+      body: JSON.stringify({ ...spHighlight }),
+    });
+    flag.hidden = false;
+    flag.className = 'sp-flag ok';
+    flag.textContent = 'Saved · on your tills';
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+/** The inspector's row for one page key's own highlight. */
+function spRenderKeyHere(first, chosen) {
+  const box = $('sp-key-here');
+  if (!box) return;
+  const pages = chosen.filter((b) => b.kind === 'page');
+  box.hidden = !pages.length || spIsBar(spCurrentSurface()) || spHereVenue().style === 'off';
+  if (box.hidden) return;
+  const own = !!(first.hereFill || first.hereBar);
+  spSet($('sp-key-here-mode'), own ? 'own' : 'venue');
+  $('sp-key-here-own').hidden = !own;
+  if (!own) return;
+  const venue = spHereVenue();
+  const apply = (field) => (c, o) => {
+    if (o && o.live) {
+      for (const b of spSelectedButtons()) if (b.kind === 'page') b[field] = c;
+      spRenderGrid();
+      return;
+    }
+    spApplyToSelection(
+      (b) => {
+        if (b.kind === 'page') b[field] = c;
+      },
+      { create: false }
+    );
+  };
+  $('sp-key-here-fill').parentElement.querySelector('.sp-here-label').hidden = venue.style !== 'fill';
+  $('sp-key-here-fill').hidden = venue.style !== 'fill';
+  spDrawPicker($('sp-key-here-fill'), first.hereFill || venue.fill, apply('hereFill'), { allowNone: true });
+  spDrawPicker($('sp-key-here-bar'), first.hereBar || (venue.bar === 'brand' ? SP_BRAND : venue.bar), apply('hereBar'), { allowNone: true });
+}
+
+function spBindHighlight() {
+  const card = $('sp-here');
+  if (!card || card.dataset.bound) return;
+  card.dataset.bound = '1';
+  let open = false;
+  try { open = localStorage.getItem('vesopa.screens.highlightOpen') === '1'; } catch { /* private window */ }
+  card.classList.toggle('closed', !open);
+  $('sp-here-open').setAttribute('aria-expanded', String(open));
+  $('sp-here-open').textContent = open ? 'Done' : 'Change';
+  card.addEventListener('click', (e) => {
+    const style = e.target.closest('[data-style]');
+    if (style) return spSetHighlight({ style: style.dataset.style });
+    const bar = e.target.closest('[data-bar]');
+    if (bar) {
+      if (bar.dataset.bar === 'custom') {
+        const venue = spHereVenue();
+        const start = /^#/.test(venue.bar) ? venue.bar : '#4b57e8';
+        return spSetHighlight({ bar: start });
+      }
+      return spSetHighlight({ bar: bar.dataset.bar });
+    }
+    if (e.target.closest('#sp-here-open')) {
+      // Folded by default: the grid is what this page is for, and this is set
+      // once. Remembered per browser, like the editor's own window.
+      const open = card.classList.toggle('closed') === false;
+      e.target.closest('#sp-here-open').setAttribute('aria-expanded', String(open));
+      e.target.closest('#sp-here-open').textContent = open ? 'Done' : 'Change';
+      try { localStorage.setItem('vesopa.screens.highlightOpen', open ? '1' : '0'); } catch { /* private window */ }
+      return;
+    }
+    if (e.target.closest('#sp-here-reset')) {
+      return spSetHighlight({ style: null, fill: null, bar: null });
+    }
+  });
+  // Arrow keys move between the choices of a radio group, as they would in
+  // any other radio group.
+  card.addEventListener('keydown', (e) => {
+    const group = e.target.closest('[role="radiogroup"]');
+    if (!group || !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return;
+    const items = [...group.querySelectorAll('[role="radio"]')];
+    const at = items.indexOf(e.target.closest('[role="radio"]'));
+    const next = items[(at + (e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 1) + items.length) % items.length];
+    next.focus();
+    next.click();
+    e.preventDefault();
+  });
+  $('sp-key-here-mode').addEventListener('change', (e) => {
+    const own = e.target.value === 'own';
+    const venue = spHereVenue();
+    spApplyToSelection(
+      (b) => {
+        if (b.kind !== 'page') return;
+        b.hereFill = own ? venue.fill : null;
+        b.hereBar = own ? (venue.bar === 'brand' ? SP_BRAND : venue.bar) : null;
+      },
+      { create: false }
+    );
+    spRenderInspector();
+  });
 }
