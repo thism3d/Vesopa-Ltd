@@ -11860,11 +11860,34 @@ document.addEventListener('click', async (e) => {
 
 let activityRows = [];
 let activityFacetsFor = null;
+let activityRange = 'all';
+let activityLiveTimer = null;
+let activitySummarySeq = 0;
 
 const ACTIVITY_APPS = {
   epos: 'Till', kitchen: 'Kitchen', display: 'Display', express: 'Kiosk',
   loyalty: 'Loyalty app', backoffice: 'Back office', server: 'Server',
 };
+
+/** What each kind of line is called on screen, and the colour it wears. */
+const ACTIVITY_ACTIONS = {
+  tap: { label: 'Tap', tone: 'blue' },
+  screen: { label: 'Screen', tone: 'grey' },
+  change: { label: 'Change', tone: 'lime' },
+  signin: { label: 'Sign-in', tone: 'violet' },
+  error: { label: 'Error', tone: 'red' },
+  start: { label: 'App start', tone: 'amber' },
+};
+
+/** A datetime-local value as an ISO instant, so the server reads the
+ *  manager's clock rather than its own time zone. A bare date is passed as it
+ *  is: the server reads "To 2026-10-01" as the whole of that day. */
+function activityInstant(v) {
+  if (!v) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? '' : d.toISOString();
+}
 
 function activityQuery(extra = {}) {
   const v = (id) => ($(id) ? $(id).value.trim() : '');
@@ -11877,11 +11900,53 @@ function activityQuery(extra = {}) {
   put('actor', v('activity-actor'));
   put('customer_id', v('activity-customer'));
   put('q', v('activity-q'));
-  put('from', v('activity-from'));
-  put('to', v('activity-to'));
+  put('from', activityInstant(v('activity-from')));
+  put('to', activityInstant(v('activity-to')));
   if ($('activity-errors') && $('activity-errors').checked) params.set('errors', '1');
   for (const [k, val] of Object.entries(extra)) put(k, String(val));
   return params.toString();
+}
+
+/** The filters in use, as a count for the button that folds them away. */
+function activityFilterCount() {
+  const ids = ['activity-office', 'activity-app', 'activity-device', 'activity-action',
+    'activity-actor', 'activity-customer', 'activity-q', 'activity-from', 'activity-to'];
+  let n = ids.filter((id) => $(id) && $(id).value.trim()).length;
+  if ($('activity-errors') && $('activity-errors').checked) n += 1;
+  const badge = $('activity-filter-count');
+  if (badge) { badge.textContent = String(n); badge.hidden = !n; }
+  return n;
+}
+
+/** A datetime-local value for a Date, in the manager's own clock. */
+function activityLocal(d) {
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/** One tap for the windows a fault report is nearly always about. */
+function activitySetRange(range) {
+  activityRange = range;
+  const now = new Date();
+  const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  let from = '';
+  let to = '';
+  if (range === 'hour') from = activityLocal(new Date(now.getTime() - 3600000));
+  else if (range === 'today') from = activityLocal(midnight);
+  else if (range === 'yesterday') {
+    from = activityLocal(new Date(midnight.getTime() - 86400000));
+    to = activityLocal(midnight);
+  } else if (range === '7d') from = activityLocal(new Date(midnight.getTime() - 6 * 86400000));
+  else if (range === '30d') from = activityLocal(new Date(midnight.getTime() - 29 * 86400000));
+  $('activity-from').value = from;
+  $('activity-to').value = to;
+  activityMarkRange();
+}
+
+function activityMarkRange() {
+  document.querySelectorAll('#activity-ranges .act-chip').forEach((b) => {
+    b.classList.toggle('on', b.dataset.range === activityRange);
+  });
 }
 
 async function loadActivityFacets() {
@@ -11913,50 +11978,139 @@ function activityDetail(text) {
   if (!text) return '';
   try {
     const parsed = JSON.parse(text);
-    return JSON.stringify(parsed, null, 1);
+    // A short one reads best on one line: {"view": "kitchen"}.
+    const flat = JSON.stringify(parsed);
+    return flat.length <= 80 ? flat.replace(/":/g, '": ').replace(/,"/g, ', "') : JSON.stringify(parsed, null, 1);
   } catch {
     return text;
   }
 }
 
-function renderActivity() {
+/** "3 min ago", for the title of a time that is shown as a clock. */
+function activityAgo(at) {
+  const s = Math.round((Date.now() - new Date(at).getTime()) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+  return `${Math.floor(s / 86400)} days ago`;
+}
+
+/** The heading a day's lines sit under. */
+function activityDay(at) {
+  const d = new Date(at);
+  const today = new Date();
+  const start = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((start(today) - start(d)) / 86400000);
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Yesterday';
+  return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: diff > 300 ? 'numeric' : undefined });
+}
+
+/** A value that filters the list when pressed: a person, a device, an app. */
+function activityPick(field, value, text) {
+  if (!value) return esc(text || '—');
+  return `<button type="button" class="act-pick" data-field="${esc(field)}" data-value="${esc(value)}"`
+    + ` title="Show only this">${esc(text || value)}</button>`;
+}
+
+function activityLine(r, showVenue, fresh) {
+  const problem = r.action === 'error' || (r.status && r.status >= 400);
+  const kind = ACTIVITY_ACTIONS[r.action] || { label: r.action || '—', tone: 'grey' };
+  const when = new Date(r.at);
+  const detail = activityDetail(r.detail);
+  const status = r.status
+    ? `<span class="act-status${r.status >= 400 ? ' bad' : ''}">${esc(r.status)}${r.ms != null ? ' · ' + esc(r.ms) + ' ms' : ''}</span>`
+    : '';
+  const meta = [
+    activityPick('activity-app', r.app, ACTIVITY_APPS[r.app] || r.app)
+      + (r.app_version ? ` <span class="muted">${esc(r.app_version)}</span>` : ''),
+    r.device_name || r.device_id ? activityPick('activity-device', r.device_id, r.device_name || r.device_id) : '',
+    r.actor ? activityPick('activity-actor', r.actor, r.actor) : '',
+    r.customer_id ? 'Customer ' + activityPick('activity-customer', r.customer_id, r.customer_id) : '',
+    showVenue && r.office ? activityPick('activity-office', r.office, r.office) : '',
+  ].filter(Boolean).map((m) => `<span class="act-meta-item">${m}</span>`).join('');
+  return `<li class="act-line${problem ? ' is-problem' : ''}${fresh ? ' is-new' : ''}">`
+    + `<time class="act-time" datetime="${esc(when.toISOString())}" title="${esc(when.toLocaleString('en-GB'))} · ${esc(activityAgo(r.at))}">`
+    + esc(when.toLocaleTimeString('en-GB')) + '</time>'
+    + `<span class="act-kind tone-${kind.tone}">${esc(kind.label)}</span>`
+    + '<div class="act-body">'
+    + `<div class="act-what">${r.method ? `<span class="act-method">${esc(r.method)}</span> ` : ''}${esc(r.target || '—')} ${status}</div>`
+    + `<div class="act-meta">${meta}</div>`
+    + (detail
+      ? (detail.length > 120
+        ? `<details class="act-detail"><summary>${esc(detail.slice(0, 90))}…</summary><pre>${esc(detail)}</pre></details>`
+        : `<pre class="act-detail-short">${esc(detail)}</pre>`)
+      : '')
+    + '</div></li>';
+}
+
+function renderActivity(freshIds = new Set()) {
   const rows = activityRows;
   const showVenue = !$('activity-office-wrap').hidden && !$('activity-office').value;
-  $('activity-list').innerHTML = rows.length
-    ? '<table class="table activity-table"><thead><tr><th>When</th>'
-      + (showVenue ? '<th>Venue</th>' : '')
-      + '<th>App / device</th><th>Who</th><th>What</th><th>Detail</th></tr></thead><tbody>'
-      + rows.map((r) => {
-        const problem = r.action === 'error' || (r.status && r.status >= 400);
-        const what = (r.method ? esc(r.method) + ' ' : '') + esc(r.target || '')
-          + (r.status ? ` <span class="small muted">${esc(r.status)}${r.ms != null ? ' · ' + esc(r.ms) + 'ms' : ''}</span>` : '');
-        const detail = activityDetail(r.detail);
-        return `<tr class="${problem ? 'is-problem' : ''}">`
-          + '<td class="small muted">' + new Date(r.at).toLocaleString('en-GB') + '</td>'
-          + (showVenue ? '<td class="small">' + esc(r.office || '—') + '</td>' : '')
-          + '<td><b>' + esc(ACTIVITY_APPS[r.app] || r.app || '—') + '</b>'
-          + (r.app_version ? ' <span class="small muted">' + esc(r.app_version) + '</span>' : '')
-          + (r.device_name || r.device_id ? '<br><span class="small muted">' + esc(r.device_name || r.device_id) + '</span>' : '')
-          + '</td>'
-          + '<td>' + esc(r.actor || '—')
-          + (r.customer_id ? '<br><span class="small muted">Customer ' + esc(r.customer_id) + '</span>' : '')
-          + '</td>'
-          + '<td><span class="pill">' + esc(r.action) + '</span> ' + what + '</td>'
-          + '<td>' + (detail
-            ? (detail.length > 120
-              ? '<details><summary class="small">' + esc(detail.slice(0, 80)) + '…</summary>'
-                + '<div class="activity-detail">' + esc(detail) + '</div></details>'
-              : '<div class="activity-detail">' + esc(detail) + '</div>')
-            : '') + '</td>'
-          + '</tr>';
-      }).join('')
-      + '</tbody></table>'
-    : '<p class="muted small">Nothing recorded for these filters yet.</p>';
+  if (!rows.length) {
+    $('activity-list').innerHTML = activityFilterCount()
+      ? '<div class="act-empty"><b>Nothing matches these filters.</b>'
+        + '<span class="muted small">Widen the time range or clear a filter.</span></div>'
+      : '<div class="act-empty"><b>Nothing recorded yet.</b>'
+        + '<span class="muted small">Taps, screens and changes appear here as the tills and this back office are used.</span></div>';
+    return;
+  }
+  let html = '';
+  let day = null;
+  for (const r of rows) {
+    const d = activityDay(r.at);
+    if (d !== day) {
+      if (day !== null) html += '</ol>';
+      html += `<h4 class="act-day">${esc(d)}</h4><ol class="act-lines">`;
+      day = d;
+    }
+    html += activityLine(r, showVenue, freshIds.has(r.id));
+  }
+  $('activity-list').innerHTML = html + '</ol>';
+}
+
+/** The counts strip: how much, how much went wrong, who, and when in the day. */
+async function loadActivitySummary() {
+  const box = $('activity-summary');
+  if (!box) return;
+  const seq = ++activitySummarySeq;
+  let s;
+  try {
+    s = await api('/activity/summary?' + activityQuery());
+  } catch {
+    if (seq === activitySummarySeq) box.innerHTML = '';
+    return;
+  }
+  if (seq !== activitySummarySeq) return;
+  const n = (v) => Number(v || 0).toLocaleString('en-GB');
+  const peak = Math.max(1, ...s.byHour);
+  const busiest = s.total ? s.byHour.indexOf(Math.max(...s.byHour)) : -1;
+  const bars = s.byHour.map((v, h) => `<span class="act-hour${h === busiest ? ' peak' : ''}" style="--h:${Math.round((v / peak) * 100)}%"`
+    + ` title="${String(h).padStart(2, '0')}:00 · ${n(v)}"></span>`).join('');
+  const chosen = $('activity-action').value;
+  const actions = (s.byAction || []).map((a) => {
+    const kind = ACTIVITY_ACTIONS[a.action] || { label: a.action, tone: 'grey' };
+    return `<button type="button" class="act-count tone-${kind.tone}${chosen === a.action ? ' on' : ''}" data-action="${esc(a.action)}"`
+      + ` aria-pressed="${chosen === a.action}">${esc(kind.label)} <b>${n(a.n)}</b></button>`;
+  }).join('');
+  box.innerHTML = '<div class="act-tiles">'
+    + `<div class="act-tile"><span>Events</span><b>${n(s.total)}</b></div>`
+    + `<button type="button" class="act-tile act-tile-problems${s.problems ? ' bad' : ''}${$('activity-errors').checked ? ' on' : ''}" id="activity-problems-tile" title="Show only problems"><span>Problems</span><b>${n(s.problems)}</b></button>`
+    + `<div class="act-tile"><span>People</span><b>${n(s.people)}</b></div>`
+    + `<div class="act-tile"><span>Devices</span><b>${n(s.devices)}</b></div>`
+    + '<div class="act-tile act-tile-hours"><span>By hour'
+    + (busiest >= 0 ? ` · busiest ${String(busiest).padStart(2, '0')}:00` : '')
+    + `</span><div class="act-hours" aria-hidden="true">${bars}</div>`
+    + '<div class="act-hours-axis" aria-hidden="true"><span>00</span><span>06</span><span>12</span><span>18</span><span>23</span></div></div>'
+    + '</div>'
+    + (actions ? `<div class="act-counts" role="group" aria-label="Filter by kind">${actions}</div>` : '');
 }
 
 async function loadActivity({ more = false } = {}) {
+  activityFilterCount();
   await loadActivityFacets();
   const extra = more && activityRows.length ? { before_id: activityRows[activityRows.length - 1].id } : {};
+  if (!more) loadActivitySummary();
   let data;
   try {
     data = await api('/activity?' + activityQuery(extra));
@@ -11969,6 +12123,34 @@ async function loadActivity({ more = false } = {}) {
   renderActivity();
 }
 
+/** Live: fetch only what arrived since the newest line, and put it on top. */
+async function activityTick() {
+  const view = $('view-activity_log');
+  if (!view || view.hidden || document.hidden) return;
+  const top = activityRows.length ? activityRows[0].id : 0;
+  let data;
+  try {
+    data = await api('/activity?' + activityQuery(top ? { after_id: top } : {}));
+  } catch {
+    return;
+  }
+  if (!data.rows.length) return;
+  activityRows = data.rows.concat(activityRows);
+  renderActivity(new Set(data.rows.map((r) => r.id)));
+  loadActivitySummary();
+}
+
+function activitySetLive(on) {
+  clearInterval(activityLiveTimer);
+  activityLiveTimer = on ? setInterval(activityTick, 10000) : null;
+  const button = $('activity-live');
+  if (button) {
+    button.classList.toggle('on', on);
+    button.setAttribute('aria-pressed', String(on));
+  }
+  if (on) activityTick();
+}
+
 {
   let timer = null;
   const refilter = () => {
@@ -11978,6 +12160,11 @@ async function loadActivity({ more = false } = {}) {
   document.addEventListener('input', (e) => {
     if (e.target.closest && e.target.closest('#activity-filters')) {
       if (e.target.id === 'activity-office') activityFacetsFor = null;
+      // Typing a date by hand is a range of its own, not one of the chips.
+      if (e.target.id === 'activity-from' || e.target.id === 'activity-to') {
+        activityRange = $('activity-from').value || $('activity-to').value ? 'custom' : 'all';
+        activityMarkRange();
+      }
       refilter();
     }
   });
@@ -11985,6 +12172,46 @@ async function loadActivity({ more = false } = {}) {
     if (e.target.id === 'activity-filters') { e.preventDefault(); loadActivity(); }
   });
   document.addEventListener('click', async (e) => {
+    if (!e.target.closest) return;
+    const chip = e.target.closest('#activity-ranges .act-chip');
+    if (chip) { activitySetRange(chip.dataset.range); return loadActivity(); }
+    const pick = e.target.closest('.act-pick');
+    if (pick && $(pick.dataset.field)) {
+      const field = $(pick.dataset.field);
+      // A device or venue that is not in the dropdown yet gets an option, so
+      // the filter shows what it is filtering by.
+      if (field.tagName === 'SELECT' && ![...field.options].some((o) => o.value === pick.dataset.value)) {
+        field.add(new Option(pick.textContent, pick.dataset.value));
+      }
+      field.value = pick.dataset.value;
+      if (pick.dataset.field === 'activity-office') activityFacetsFor = null;
+      return loadActivity();
+    }
+    const count = e.target.closest('.act-count');
+    if (count) {
+      const sel = $('activity-action');
+      sel.value = sel.value === count.dataset.action ? '' : count.dataset.action;
+      return loadActivity();
+    }
+    if (e.target.closest('#activity-problems-tile')) {
+      $('activity-errors').checked = !$('activity-errors').checked;
+      return loadActivity();
+    }
+    if (e.target.closest('#activity-filters-toggle')) {
+      const card = $('activity-filters-card');
+      const open = !card.classList.contains('open');
+      card.classList.toggle('open', open);
+      e.target.closest('#activity-filters-toggle').setAttribute('aria-expanded', String(open));
+      return;
+    }
+    if (e.target.id === 'activity-clear') {
+      $('activity-filters').reset();
+      activityFacetsFor = null;
+      activityRange = 'all';
+      activityMarkRange();
+      return loadActivity();
+    }
+    if (e.target.closest('#activity-live')) return activitySetLive(!activityLiveTimer);
     if (e.target.id === 'activity-refresh') return loadActivity();
     if (e.target.id === 'activity-more') return loadActivity({ more: true });
     if (e.target.id === 'activity-csv') {

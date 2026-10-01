@@ -62,6 +62,7 @@ const VIEWS = [
   'dashboard', 'report', 'products', 'stock', 'screens', 'modifiers',
   'tax', 'kitchen', 'tables', 'users', 'staff', 'customers', 'vouchers',
   'promotions', 'deposits', 'loyalty', 'tender', 'rules', 'idle',
+  'activity_log',
 ];
 
 // ---------------------------------------------------------------------------
@@ -115,6 +116,31 @@ function startStub() {
         office_name: 'The Vesopa Kitchen',
         role: 'office',
       })),
+    // The Activity Log as reported from an iPad (2026-10-01): long emails, a
+    // JSON detail on every other line, and a long URL in an error.
+    '/api/activity': () => ({
+      more: true,
+      rows: rows(30, (i) => ({
+        id: 500 - i,
+        at: new Date(Date.now() - i * 3600 * 1000).toISOString(),
+        app: i % 3 ? 'backoffice' : 'epos',
+        app_version: '1.10.0.0',
+        device_id: 'T-' + i,
+        device_name: 'Main bar till with a long name',
+        actor: 'manager.with.a.long.address@vesopa.co.uk',
+        action: ['tap', 'screen', 'change', 'error'][i % 4],
+        target: i % 4 === 3 ? '/api/screens/123/buttons/copy?office=somebody@example.co.uk&really=long' : 'Kitchen Screens',
+        method: i % 4 === 2 ? 'PUT' : null,
+        status: i % 4 === 3 ? 500 : null,
+        detail: i % 2 ? JSON.stringify({ view: 'kitchen', note: 'x'.repeat(300) }) : null,
+      })),
+    }),
+    '/api/activity/summary': () => ({
+      total: 1234, problems: 12, people: 4, devices: 7,
+      byAction: [{ action: 'tap', n: 900 }, { action: 'screen', n: 300 }, { action: 'error', n: 12 }],
+      byApp: [{ app: 'epos', n: 1000 }],
+      byHour: Array.from({ length: 24 }, (_, h) => (h * 7) % 40),
+    }),
     '/api/staff': () =>
       rows(4, (i) => ({ id: i + 1, name: `Clerk ${i + 1}`, pin: '1234', role: 'staff' })),
     '/api/customers': () =>
@@ -719,6 +745,9 @@ async function main() {
       '--no-default-browser-check',
       '--disable-gpu',
       '--disable-extensions',
+      // Root in a container cannot use Chromium's sandbox; test/lib/chrome.js
+      // passes the same flag.
+      '--no-sandbox',
       '--window-size=1400,1100',
       `http://127.0.0.1:${port}/e2e-boot`,
     ],

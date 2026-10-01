@@ -20,6 +20,8 @@ const { accessGuard } = require('./permissions');
  *   GET  /api/activity     the back office's Activity Log page, filtered.
  *                          Scoped to the signed-in venue; the Vesopa admin can
  *                          see every venue or pick one.
+ *   GET  /api/activity/summary  counts for the same filters: totals,
+ *                          problems, people, devices, by action, by app, by hour.
  *   GET  /api/activity.csv the same rows as a spreadsheet, for a support ticket.
  *
  * NOTHING HERE IS ON THE PATH THAT TAKES MONEY. Logging is fire-and-forget and
@@ -240,6 +242,9 @@ function activityRoutes({ pool, secret, log }) {
     if (q.errors === '1') clauses.push("(action = 'error' OR status >= 400)");
     const before = Number(q.before_id);
     if (Number.isInteger(before) && before > 0) { clauses.push('id < ?'); args.push(before); }
+    // Live mode asks only for what arrived since the newest row it shows.
+    const after = Number(q.after_id);
+    if (Number.isInteger(after) && after > 0) { clauses.push('id > ?'); args.push(after); }
     return { sql: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', args };
   }
 
@@ -258,6 +263,68 @@ function activityRoutes({ pool, secret, log }) {
       res.json({ rows, more: rows.length === limit, admin: req.user.role === 'admin' });
     } catch (e) {
       if (e && e.code === 'ER_NO_SUCH_TABLE') return res.json({ rows: [], more: false, admin: req.user.role === 'admin' });
+      next(e);
+    }
+  });
+
+  /**
+   * The shape of what the filters match, for the strip above the list: how
+   * much happened, how much of it went wrong, who and what was involved, and
+   * when in the day it happened. Counted over every matching row rather than
+   * the page on screen, so "12 problems" means twelve, not twelve of the 200
+   * that happened to be loaded.
+   */
+  router.get('/api/activity/summary', guard, async (req, res, next) => {
+    try {
+      const query = { ...(req.query || {}) };
+      delete query.before_id;
+      delete query.after_id;
+      const { sql, args } = await where({ user: req.user, query });
+      const [[totals]] = await pool.query(
+        `SELECT COUNT(*) AS total,
+                SUM(action = 'error' OR status >= 400) AS problems,
+                COUNT(DISTINCT actor) AS people,
+                COUNT(DISTINCT device_id) AS devices,
+                MIN(at) AS first_at, MAX(at) AS last_at
+           FROM epos_activity_log ${sql}`,
+        args
+      );
+      const [actions] = await pool.query(
+        `SELECT action, COUNT(*) AS n FROM epos_activity_log ${sql}
+          GROUP BY action ORDER BY n DESC LIMIT 20`,
+        args
+      );
+      const [apps] = await pool.query(
+        `SELECT app, COUNT(*) AS n FROM epos_activity_log ${sql}
+          GROUP BY app ORDER BY n DESC LIMIT 20`,
+        args
+      );
+      const [hours] = await pool.query(
+        `SELECT HOUR(at) AS h, COUNT(*) AS n FROM epos_activity_log ${sql}
+          GROUP BY HOUR(at)`,
+        args
+      );
+      const byHour = Array(24).fill(0);
+      for (const r of hours || []) {
+        const h = Number(r.h);
+        if (h >= 0 && h < 24) byHour[h] = Number(r.n) || 0;
+      }
+      const t = totals || {};
+      res.json({
+        total: Number(t.total) || 0,
+        problems: Number(t.problems) || 0,
+        people: Number(t.people) || 0,
+        devices: Number(t.devices) || 0,
+        firstAt: t.first_at || null,
+        lastAt: t.last_at || null,
+        byAction: (actions || []).map((r) => ({ action: r.action, n: Number(r.n) || 0 })),
+        byApp: (apps || []).map((r) => ({ app: r.app, n: Number(r.n) || 0 })),
+        byHour,
+      });
+    } catch (e) {
+      if (e && e.code === 'ER_NO_SUCH_TABLE') {
+        return res.json({ total: 0, problems: 0, people: 0, devices: 0, byAction: [], byApp: [], byHour: Array(24).fill(0) });
+      }
       next(e);
     }
   });

@@ -7216,20 +7216,156 @@ body.dash-dragging, body.dash-dragging * { cursor: grabbing !important; user-sel
 .dash-widget-tools button:disabled { opacity: .4; cursor: default; }
 
 /* ---- Activity Log -------------------------------------------------------- */
+/* A list rather than a table (2026-10-01). As a six-column table it ran off
+   the side of an iPad, and the detail column was squeezed until JSON wrapped
+   one character to a line. Each line is now a small grid that folds to a
+   stack on a narrow screen: time, kind, then what happened with its people
+   and device underneath, and the detail full width under that. */
 .activity-filters {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 170px), 1fr));
   gap: 10px 14px;
   align-items: end;
 }
-.activity-filters label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.activity-filters label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; min-width: 0; }
 .activity-filters label.check { flex-direction: row; align-items: center; gap: 6px; }
-.activity-table td { vertical-align: top; }
-.activity-table .activity-detail {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 12px; white-space: pre-wrap; word-break: break-word; max-width: 420px;
+.activity-filters input:not([type="checkbox"]), .activity-filters select { width: 100%; min-width: 0; }
+.activity-filters label.check { align-self: center; padding-bottom: 8px; }
+.act-clear { justify-self: start; }
+
+.act-head-actions { flex-wrap: wrap; gap: 8px; align-items: center; }
+.act-live {
+  display: inline-flex; align-items: center; gap: 7px; font: inherit; font-size: 13px; font-weight: 600;
+  padding: 8px 14px; border: 1px solid var(--line); border-radius: 999px; cursor: pointer;
+  background: var(--card); color: var(--text); width: auto; flex: 0 0 auto;
 }
-.activity-table tr.is-problem td:first-child { box-shadow: inset 3px 0 0 #b3261e; }
+.act-live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.act-live.on { border-color: var(--brand); }
+.act-live.on .act-live-dot { background: var(--brand); animation: act-pulse 1.6s ease-in-out infinite; }
+@keyframes act-pulse { 50% { box-shadow: 0 0 0 5px rgba(165, 199, 21, .25); } }
+
+.act-ranges { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.act-chip {
+  font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--card); color: var(--text);
+}
+.act-chip:hover { border-color: var(--brand); }
+.act-chip.on { background: var(--brand); border-color: var(--brand); color: #111; font-weight: 600; }
+.act-filters-toggle { margin-left: auto; display: none; }
+
+.act-summary:empty { display: none; }
+.act-summary { display: grid; gap: 10px; }
+.act-tiles {
+  display: grid; gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(0, 2fr);
+}
+.act-tile {
+  display: flex; flex-direction: column; gap: 4px; min-width: 0; text-align: left;
+  padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--card); color: var(--text); font: inherit;
+}
+.act-tile > span { font-size: 12px; color: var(--muted); font-weight: 600; }
+.act-tile > b { font-size: 22px; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+button.act-tile { cursor: pointer; }
+button.act-tile:hover { border-color: var(--brand); }
+.act-tile.bad > b { color: var(--red); }
+.act-tile.on { border-color: var(--red); box-shadow: inset 0 0 0 1px var(--red); }
+.act-hours { display: flex; align-items: flex-end; gap: 2px; height: 34px; }
+.act-hour {
+  flex: 1; min-width: 0; height: max(2px, var(--h)); border-radius: 2px 2px 0 0;
+  background: var(--brand); opacity: .45;
+}
+.act-hour.peak { opacity: 1; }
+.act-hours-axis { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.act-counts { display: flex; flex-wrap: wrap; gap: 6px; }
+.act-count {
+  font: inherit; font-size: 12.5px; padding: 4px 10px; border-radius: 999px; cursor: pointer;
+  border: 1px solid transparent;
+}
+.act-count b { font-variant-numeric: tabular-nums; margin-left: 2px; }
+.act-count.on { border-color: currentColor; }
+
+/* The kinds' colours: tinted washes that read on both themes. */
+.tone-blue { background: rgba(75, 142, 245, .16); color: #2f6fd6; }
+.tone-grey { background: rgba(120, 113, 127, .16); color: var(--muted); }
+.tone-lime { background: rgba(165, 199, 21, .2); color: var(--brand-deep); }
+.tone-violet { background: rgba(142, 78, 198, .16); color: #8e4ec6; }
+.tone-red { background: rgba(229, 72, 77, .16); color: #d13438; }
+.tone-amber { background: rgba(245, 165, 36, .18); color: #a35200; }
+:root[data-theme="dark"] .tone-blue { color: #7fb0ff; }
+:root[data-theme="dark"] .tone-lime { color: #c3e03a; }
+:root[data-theme="dark"] .tone-violet { color: #c39cf0; }
+:root[data-theme="dark"] .tone-red { color: #ff7b7f; }
+:root[data-theme="dark"] .tone-amber { color: #ffc266; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .tone-blue { color: #7fb0ff; }
+  :root:not([data-theme="light"]) .tone-lime { color: #c3e03a; }
+  :root:not([data-theme="light"]) .tone-violet { color: #c39cf0; }
+  :root:not([data-theme="light"]) .tone-red { color: #ff7b7f; }
+  :root:not([data-theme="light"]) .tone-amber { color: #ffc266; }
+}
+
+.act-list { min-width: 0; }
+.act-day {
+  margin: 18px 0 6px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--muted); position: sticky; top: 0; background: var(--card); padding: 6px 0; z-index: 1;
+}
+.act-day:first-child { margin-top: 0; }
+.act-lines { list-style: none; margin: 0; padding: 0; }
+.act-line {
+  display: grid; grid-template-columns: 76px 92px minmax(0, 1fr); gap: 4px 14px;
+  align-items: start; padding: 10px 10px 10px 12px; border-bottom: 1px solid var(--line);
+  border-left: 3px solid transparent;
+}
+.act-line:last-child { border-bottom: 0; }
+.act-line:hover { background: var(--hover); }
+.act-line.is-problem { border-left-color: var(--red); }
+.act-line.is-new { animation: act-new 2.4s ease-out; }
+@keyframes act-new { from { background: rgba(165, 199, 21, .22); } }
+.act-time { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; padding-top: 2px; }
+.act-kind {
+  justify-self: start; font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px; white-space: nowrap;
+}
+.act-body { min-width: 0; display: grid; gap: 4px; }
+.act-what { font-weight: 600; overflow-wrap: anywhere; }
+.act-method { font: 600 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--muted); }
+.act-status { font-size: 12px; font-weight: 500; color: var(--muted); margin-left: 4px; }
+.act-status.bad { color: var(--red); font-weight: 600; }
+.act-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12.5px; color: var(--muted); }
+.act-meta-item { min-width: 0; overflow-wrap: anywhere; }
+.act-pick {
+  font: inherit; color: var(--text); background: none; border: 0; padding: 0; cursor: pointer;
+  text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px;
+}
+.act-pick:hover { text-decoration-color: var(--brand); }
+.act-detail summary {
+  cursor: pointer; font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.act-detail pre, .act-detail-short {
+  margin: 4px 0 0; padding: 8px 10px; border-radius: 8px; background: var(--hover); border: 1px solid var(--line);
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow: auto;
+}
+.act-detail-short { margin: 0; padding: 4px 8px; color: var(--muted); }
+.act-empty { display: grid; gap: 4px; justify-items: center; text-align: center; padding: 36px 16px; }
+
+@media (max-width: 1100px) {
+  .act-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .act-tile-hours { grid-column: 1 / -1; }
+}
+@media (max-width: 760px) {
+  .act-filters-toggle { display: inline-flex; gap: 6px; align-items: center; }
+  .act-filters-card { display: none; }
+  .act-filters-card.open { display: block; }
+  .act-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .act-line { grid-template-columns: auto minmax(0, 1fr); padding-inline: 8px 4px; }
+  .act-body { grid-column: 1 / -1; }
+  .act-kind { justify-self: end; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .act-live.on .act-live-dot, .act-line.is-new { animation: none; }
+}
 
 /* ---------------------------------------------------------------------------
    Step-by-step forms (2026-10-01): the product form as Newbridge-style steps,

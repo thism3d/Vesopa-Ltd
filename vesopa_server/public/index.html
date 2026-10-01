@@ -1323,7 +1323,7 @@
           <!-- The practice venue. Here rather than on a page of its own because
                this is where training accounts are made, and the two are one
                thought: who may practise, and what they practise on. -->
-          <div class="card" id="demo-venue-card" style="margin-top:16px">
+          <div class="card panel" id="demo-venue-card" style="margin-top:16px">
             <h3>Practice venue</h3>
             <p class="muted small">
               A copy of this venue for training: the same products, screens, prices and tables, with
@@ -3677,12 +3677,31 @@
                 90 days.
               </p>
             </div>
-            <div class="row">
+            <div class="row act-head-actions">
+              <button type="button" class="act-live" id="activity-live" aria-pressed="false"
+                      title="Check for new activity every 10 seconds">
+                <span class="act-live-dot" aria-hidden="true"></span> Live
+              </button>
               <button class="btn" id="activity-csv">Download CSV</button>
               <button class="btn" id="activity-refresh">Refresh</button>
             </div>
           </div>
-          <div class="card rd-card">
+
+          <!-- When, as one tap. A date pair is the slow way to say "today", and
+               "today" is what nearly every fault report is about. -->
+          <div class="act-ranges" role="group" aria-label="Time range" id="activity-ranges">
+            <button type="button" class="act-chip" data-range="hour">Last hour</button>
+            <button type="button" class="act-chip" data-range="today">Today</button>
+            <button type="button" class="act-chip" data-range="yesterday">Yesterday</button>
+            <button type="button" class="act-chip" data-range="7d">7 days</button>
+            <button type="button" class="act-chip" data-range="30d">30 days</button>
+            <button type="button" class="act-chip on" data-range="all">Everything</button>
+            <button type="button" class="act-filters-toggle btn small" id="activity-filters-toggle" aria-expanded="false" aria-controls="activity-filters">
+              Filters <span class="badge" id="activity-filter-count" hidden></span>
+            </button>
+          </div>
+
+          <div class="card rd-card act-filters-card" id="activity-filters-card">
             <form id="activity-filters" class="activity-filters">
               <label id="activity-office-wrap" hidden>Venue
                 <select id="activity-office"><option value="">Every venue</option></select>
@@ -3722,13 +3741,19 @@
               <label>Search
                 <input id="activity-q" type="search" placeholder="Button, page or detail" />
               </label>
-              <label>From <input id="activity-from" type="date" /></label>
-              <label>To <input id="activity-to" type="date" /></label>
+              <label>From <input id="activity-from" type="datetime-local" /></label>
+              <label>To <input id="activity-to" type="datetime-local" /></label>
               <label class="check"><input id="activity-errors" type="checkbox" /> Only problems</label>
+              <button type="button" class="btn ghost small act-clear" id="activity-clear">Clear filters</button>
             </form>
           </div>
+
+          <!-- The shape of what the filters match, counted on the server over
+               every matching row, not just the page on screen. -->
+          <div class="act-summary" id="activity-summary" aria-live="polite"></div>
+
           <div class="card rd-card">
-            <div id="activity-list"></div>
+            <div id="activity-list" class="act-list"></div>
             <p class="center"><button class="btn" id="activity-more" hidden>Show older</button></p>
           </div>
         </section>

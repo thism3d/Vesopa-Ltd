@@ -129,6 +129,37 @@ const admin = jwt.sign({ sub: 1, email: 'admin@vesopa.test', role: 'admin' }, SE
     assert.strictEqual(q.args[0], 'venue@two.test');
   });
 
+  await check('live mode asks only for rows newer than the one it has', async () => {
+    queries.length = 0;
+    await get(manager, '?after_id=40');
+    const q = queries.find((x) => /FROM epos_activity_log/.test(x.sql));
+    assert.match(q.sql, /id > \?/);
+    assert.ok(q.args.includes(40));
+  });
+
+  await check('the summary counts the venue\'s own rows, ignoring paging', async () => {
+    queries.length = 0;
+    const res = await fetch(`${base}/api/activity/summary?office=someone@else.test&before_id=9&after_id=3&errors=1`, {
+      headers: { Authorization: `Bearer ${manager}` },
+    });
+    assert.strictEqual(res.status, 200);
+    const body = await res.json();
+    assert.strictEqual(body.byHour.length, 24);
+    const qs = queries.filter((x) => /FROM epos_activity_log/.test(x.sql));
+    assert.strictEqual(qs.length, 4);
+    for (const q of qs) {
+      assert.strictEqual(q.args[0], 'venue@one.test');
+      assert.ok(!q.args.includes('someone@else.test'));
+      assert.doesNotMatch(q.sql, /id [<>] \?/);
+      assert.match(q.sql, /status >= 400/);
+    }
+  });
+
+  await check('a device token cannot read the summary', async () => {
+    const res = await fetch(`${base}/api/activity/summary`, { headers: { Authorization: `Bearer ${till}` } });
+    assert.strictEqual(res.status, 401);
+  });
+
   await check('a device token cannot read the log', async () => {
     const res = await get(till);
     assert.strictEqual(res.status, 401);
