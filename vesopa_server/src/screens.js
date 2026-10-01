@@ -1269,12 +1269,10 @@ function screensRoutes({ pool, broadcast, secret }) {
           for (const b of chosen) {
             const label = b.label || b.function_key || b.kind;
 
-            // A page key pointing at the page it now sits on is a button that
-            // goes nowhere, drawn on every page it was copied to.
-            if (b.kind === 'page' && Number(b.target_screen_id) === Number(target.id)) {
-              skipped.push({ label, reason: 'that page button points at this page' });
-              continue;
-            }
+            // A page key pointing at the page it now sits on is kept
+            // (2026-10-01): copying one navigation row to every page is how a
+            // venue makes its pages uniform, and the till draws that key as
+            // "you are here" rather than as a dead button.
 
             // The surface decides what a key may be: a bar takes Pay and
             // Transfer, a sale grid does not, and a page of modifier answers

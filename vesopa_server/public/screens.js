@@ -322,13 +322,18 @@ function spPaletteEntries() {
 
   // Only pages on the same surface. A sale screen cannot jump to a bar, and
   // offering it would place a key that silently does nothing.
+  //
+  // The page being edited is offered too (2026-10-01). A venue that puts the
+  // same row of Draught / Spirits / Wine keys on every page wants Draught on
+  // the Draught page as well, so the row never shifts as staff move about;
+  // the till draws that key as "you are here".
   for (const screen of spOnSurface(surface)) {
-    if (spCurrent && screen.id === spCurrent.id) continue;
+    const here = spCurrent && screen.id === spCurrent.id;
     entries.push({
       group: 'Navigation',
       label: screen.name,
       hay: `${screen.name} page screen navigation`,
-      note: 'Go to this screen',
+      note: here ? 'This page (shows as you are here)' : 'Go to this screen',
       apply: (b) => {
         spSetKind(b, 'page');
         b.targetScreenId = screen.id;
@@ -571,6 +576,7 @@ function spOpenPalette() {
     <div class="sp-palette" role="dialog" aria-label="Search for what this key should do">
       <input class="sp-palette-q" type="search" autocomplete="off"
              placeholder="Search products, screens and functions…" />
+      <p class="sp-palette-count muted small"></p>
       <ul class="sp-palette-list"></ul>
       <p class="sp-palette-hint muted small">
         ↑ ↓ to move, Enter to place it, Esc to close
@@ -590,13 +596,22 @@ function spOpenPalette() {
     $('sp-grid')?.focus();
   };
 
+  // Every entry, searched in full (2026-10-01). The list used to stop at
+  // sixty, so on a venue with hundreds of products the one wanted was often
+  // never offered. Each word typed must appear somewhere in the entry, in any
+  // order, so "pint lager" finds "Lager Pint" as well.
+  for (const e of entries) e.hayLower = e.hay.toLowerCase();
+  const count = root.querySelector('.sp-palette-count');
   const draw = () => {
-    const q = query.value.trim().toLowerCase();
-    shown = (q
-      ? entries.filter((e) => e.hay.toLowerCase().includes(q))
-      : entries
-    ).slice(0, 60);
+    const words = query.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    shown = words.length
+      ? entries.filter((e) => words.every((w) => e.hayLower.includes(w)))
+      : entries;
     if (cursor >= shown.length) cursor = Math.max(0, shown.length - 1);
+    const by = (g) => shown.filter((e) => e.group === g).length;
+    count.textContent = shown.length
+      ? `${by('Product')} products · ${by('Navigation')} navigations · ${by('Function')} functions`
+      : '';
 
     list.innerHTML = shown.length
       ? shown
@@ -2641,6 +2656,9 @@ function spCellTitle(b) {
   }
   if (b.kind === 'page') {
     const target = spScreens.find((s) => s.id === b.targetScreenId);
+    if (target && spCurrent && target.id === spCurrent.id) {
+      return `Goes to ${target.name} — this page, shown as "you are here" on the till`;
+    }
     return target ? `Goes to ${target.name}` : 'Goes to a screen that has been deleted';
   }
   if (b.kind === 'function') {
@@ -2850,14 +2868,14 @@ function spRenderInspector() {
       // of eleven keys where a page of products belongs, and there is no reading
       // of it that is useful — the same argument as the line below.
       //
-      // A screen may not point at itself: the button would do nothing and look
-      // broken.
-      .filter((s) => s.id !== spCurrent.id)
+      // A screen may point at itself (2026-10-01): a venue that repeats one
+      // row of navigation keys on every page wants that row identical
+      // everywhere, and the till draws the key as "you are here".
       .map(
         (s) =>
           `<option value="${s.id}"${
             s.id === first.targetScreenId ? ' selected' : ''
-          }>${esc(s.name)}</option>`
+          }>${esc(s.name)}${s.id === spCurrent.id ? ' (this page)' : ''}</option>`
       )
       .join('');
 

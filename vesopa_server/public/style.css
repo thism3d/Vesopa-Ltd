@@ -3137,6 +3137,7 @@ select.cell-edit {
 .sp-palette-note { margin-left: auto; }
 .sp-palette-empty { padding: 14px; }
 .sp-palette-hint { margin: 0; padding: 8px 14px; border-top: 1px solid var(--line); }
+.sp-palette-count { margin: 0; padding: 6px 14px 0; }
 
 /* ---------------------------------------------------------------------------
    The editor in a window of its own (?popup=1).

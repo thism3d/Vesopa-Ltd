@@ -31,6 +31,7 @@ class BarLive {
     required this.totalMinor,
     required this.screenName,
     required this.onSwitchOrder,
+    this.screenId,
   });
 
   final String currentOrderId;
@@ -39,6 +40,10 @@ class BarLive {
 
   /// The name of the sale screen currently open, for the `screen_name` key.
   final String screenName;
+
+  /// The sale screen currently open, when it is a programmed one. A page key
+  /// on the bar that points at it is drawn as "you are here" (2026-10-01).
+  final int? screenId;
 
   final void Function(String orderId) onSwitchOrder;
 }
@@ -761,6 +766,13 @@ class _BarKey extends ConsumerWidget {
         ? r.note
         : null;
 
+    // A page key for the page already open: the venue's navigation row is
+    // the same on every page, and this is the one that says where you are.
+    final here = button.kind == ScreenButtonKind.page &&
+        onSaleScreen &&
+        live.screenId != null &&
+        button.targetScreenId == live.screenId;
+
     return Opacity(
       opacity: enabled ? 1 : 0.55,
       child: Material(
@@ -779,9 +791,12 @@ class _BarKey extends ConsumerWidget {
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
-                    color: enabled
+                    color: here
+                        ? Pos.brand
+                        : enabled
                         ? pal.keyLine
                         : Pos.red.withValues(alpha: 0.6),
+                    width: here ? 3 : 1,
                   ),
                 ),
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),

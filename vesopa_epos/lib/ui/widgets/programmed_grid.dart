@@ -136,6 +136,8 @@ class ProgrammedGrid extends StatelessWidget {
                     onPage: onPage,
                     onFunction: onFunction,
                     onModifier: onModifier,
+                    here: button.kind == ScreenButtonKind.page &&
+                        button.targetScreenId == screen.id,
                   ),
                 ),
               );
@@ -176,10 +178,16 @@ class _Key extends StatelessWidget {
     required this.onPage,
     required this.onFunction,
     required this.onModifier,
+    this.here = false,
   });
 
   final ScreenButton button;
   final ScreenSet screens;
+
+  /// A page key that points at the page it sits on (2026-10-01). Venues
+  /// repeat one row of navigation keys on every page so the row never moves;
+  /// the one for the page in view is drawn as "you are here".
+  final bool here;
   final Product? product;
 
   /// The question this key asks, when it is that kind of key.
@@ -236,7 +244,7 @@ class _Key extends StatelessWidget {
         }
         return (
           label: button.label ?? target.name,
-          note: '›››',
+          note: here ? '●' : '›››',
           onTap: () => onPage(target),
         );
 
@@ -339,9 +347,12 @@ class _Key extends StatelessWidget {
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
-                    color: enabled
+                    color: here
+                        ? Pos.brand
+                        : enabled
                         ? pal.keyLine
                         : Pos.red.withValues(alpha: 0.6),
+                    width: here ? 3 : 1,
                   ),
                 ),
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
