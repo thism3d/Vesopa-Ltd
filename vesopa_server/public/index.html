@@ -366,7 +366,8 @@
           <button class="nav" data-view="promotions">Promotions</button>
           <button class="nav" data-view="gift_cards">Gift Cards</button>
           <button class="nav" data-view="deposits">Deposits</button>
-          <button class="nav" data-view="loyalty">Loyalty</button>
+          <button class="nav" data-view="loyalty_schemes">Loyalty Schemes</button>
+          <button class="nav" data-view="loyalty">Loyalty Settings</button>
           <button class="nav" data-view="cards">Cards</button>
           <button class="nav" data-view="wallet">Wallet Passes</button>
           <button class="nav" data-view="loyalty_app">Loyalty App</button>
@@ -2449,7 +2450,7 @@
                so a round trip per keystroke would only be slower. -->
           <div class="tbl-bar">
             <label class="sp-pick">Search
-              <input id="cust-q" type="search" placeholder="Name, card, phone or email" autocomplete="off">
+              <input id="cust-q" type="search" placeholder="Name, member no., phone or email" autocomplete="off">
             </label>
             <label class="sp-pick">Membership
               <select id="cust-filter">
@@ -2458,6 +2459,11 @@
                 <option value="lapsed">Expired</option>
                 <option value="soon">Expiring within 30 days</option>
                 <option value="none">No membership</option>
+              </select>
+            </label>
+            <label class="sp-pick">Scheme
+              <select id="cust-scheme">
+                <option value="">All schemes</option>
               </select>
             </label>
             <button type="button" class="btn ghost" id="cust-clear">Clear</button>
@@ -2473,7 +2479,7 @@
           <div class="card"><table>
             <thead><tr>
               <th class="pick-col"><input type="checkbox" id="cust-pick-all" title="Select every customer shown"></th>
-              <th></th><th>Name</th><th>Card</th><th>Phone</th><th>Email</th><th>Discount</th><th class="right">Points</th><th>Membership</th><th></th>
+              <th></th><th>Name</th><th>Member no.</th><th>Scheme</th><th>Phone</th><th>Email</th><th>Discount</th><th class="right">Points</th><th>Membership</th><th></th>
             </tr></thead>
             <tbody id="customers"></tbody>
           </table></div>
@@ -2618,10 +2624,52 @@
           </table></div>
         </section>
 
+        <!-- Loyalty schemes (2026-10-02): public/loyalty_schemes.js -->
+        <section id="view-loyalty_schemes" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Loyalty Schemes</h2>
+              <p class="muted small">Each scheme is a group of customers with its own discount, points and card prefix. The till asks which scheme when it adds a customer.</p>
+            </div>
+            <button class="btn primary" id="ls-new" type="button">New scheme</button>
+          </div>
+          <div id="ls-list-wrap">
+            <div class="ls-stats" id="ls-stats"></div>
+            <div class="card"><div class="ls-scroll"><table>
+              <thead><tr><th>Scheme</th><th>Rewards</th><th>When</th><th>Card prefix</th><th class="right">Customers</th><th></th></tr></thead>
+              <tbody id="ls-rows"></tbody>
+            </table></div></div>
+            <p class="ls-tip">A card starting with a scheme's prefix joins that scheme by itself when it is swiped, and its membership number is the rest of the card: 9997<b>00012</b> is member 00012.</p>
+          </div>
+          <div id="ls-editor" hidden>
+            <div class="ls-head">
+              <h3 id="ls-title">New loyalty scheme</h3>
+              <div class="ls-head-actions">
+                <button class="btn" id="ls-cancel" type="button">Cancel</button>
+                <button class="btn primary" id="ls-save" type="button">Save scheme</button>
+              </div>
+            </div>
+            <div class="ls-steps" id="ls-steps"></div>
+            <div class="ls-body">
+              <div class="ls-form card">
+                <div id="ls-body" class="ls-form-body"></div>
+                <div class="ls-foot">
+                  <button class="btn" id="ls-back" type="button">Back</button>
+                  <button class="btn primary" id="ls-next" type="button">Next</button>
+                </div>
+              </div>
+              <aside class="ls-side">
+                <div class="ls-pv" id="ls-preview"></div>
+                <div class="ls-sentence card" id="ls-sentence"></div>
+              </aside>
+            </div>
+          </div>
+        </section>
+
         <!-- Loyalty -->
         <section id="view-loyalty" class="view" hidden>
           <div class="page-head">
-            <div><h2>Loyalty</h2><p class="muted small">Points are earned when a customer gives their phone number at the till.</p></div>
+            <div><h2>Loyalty Settings</h2><p class="muted small">The venue's points rules. A customer in a <a href="/loyalty-schemes">loyalty scheme</a> uses the scheme's own rules wherever it sets them.</p></div>
             <button class="btn primary" id="loyalty-save">Save loyalty</button>
           </div>
           <div class="grid-cards" id="loyalty-stats"></div>
@@ -4136,6 +4184,7 @@
          map refers to, and uses app.js's helpers only from inside them. -->
     <script src="/permissions.js"></script>
     <script src="/stock.js"></script>
+    <script src="/loyalty_schemes.js"></script>
     <script src="/dashboard.js"></script>
     <script src="/dinein_card.js"></script>
     <script src="/dinein.js"></script>

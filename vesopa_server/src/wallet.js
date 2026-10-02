@@ -12,6 +12,7 @@ const G = require('./wallet_google');
 const A = require('./wallet_apple');
 const { wantsApple } = require('./wallet_apple_service');
 const { ensureMemberNumber } = require('./member_numbers');
+const loyaltySchemes = require('./loyalty_schemes');
 
 /**
  * Google Wallet passes: the back-office routes that configure and mint them,
@@ -592,9 +593,9 @@ function walletCore({ pool, secret }) {
 
   async function loadSubject(office, kind, subjectId) {
     if (kind === 'loyalty' || kind === 'customer') {
-      const memberNo = (await hasColumn('epos_customers', 'member_no'))
+      const memberNo = ((await hasColumn('epos_customers', 'member_no'))
         ? ', member_no'
-        : '';
+        : '') + ((await hasColumn('epos_customers', 'scheme_id')) ? ', scheme_id' : '');
       const [[c]] = await pool.query(
         `SELECT id, name, phone, card_number, points_balance, tier_name,
                 discount_type, discount_value, created_at${memberNo}
@@ -602,6 +603,9 @@ function walletCore({ pool, secret }) {
         [subjectId, office]
       );
       if (!c) return null;
+      // The membership number people read: the card without its prefix, so
+      // card 999800001 is member 00001. See src/loyalty_schemes.js.
+      await loyaltySchemes.decorateCustomers(pool, office, [c]);
       const discount =
         c.discount_type === 'percent'
           ? `${c.discount_value}% off`
@@ -618,7 +622,9 @@ function walletCore({ pool, secret }) {
         // The number a member quotes on the phone. Null for anyone who
         // predates card issuing, and left off the card rather than shown as a
         // blank field or invented on the spot.
-        member_no: c.member_no == null ? '' : String(c.member_no),
+        member_no: c.member_number || (c.member_no == null ? '' : String(c.member_no)),
+        // The loyalty scheme they are in, by name, or '' for none.
+        scheme: c.scheme_name || '',
         points: c.points_balance || 0,
         tier: c.tier_name || '',
         discount,

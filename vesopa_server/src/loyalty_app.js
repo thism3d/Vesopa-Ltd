@@ -47,6 +47,7 @@ const jwt = require('jsonwebtoken');
 const { accessGuard } = require('./permissions');
 const { sendMail } = require('./mailer');
 const { ensureMemberNumber } = require('./member_numbers');
+const loyaltySchemes = require('./loyalty_schemes');
 const { seal, unseal } = require('./express_kiosk');
 const push = require('./loyalty_push');
 const multer = require('multer');
@@ -260,6 +261,18 @@ async function issueLoyaltyNumber(conn, office, customerId) {
   const prefix = String(settings ? (settings.loyalty_prefix || '') : '9998');
   if (!prefix) return null;
   const width = Math.min(Math.max(Number(settings && settings.number_digits) || 5, 4), 12);
+  // A member who already has a number gets a card that carries it, so card
+  // and membership number agree (999800042 is member 00042). Only where that
+  // card is free; otherwise the counter, as before.
+  const own = await maybeOne(conn, 'SELECT member_no FROM epos_customers WHERE id = ? AND email_key = ?', [customerId, office]).catch(() => null);
+  if (own && own.member_no != null) {
+    const candidate = `${prefix}${String(own.member_no).padStart(width, '0')}`;
+    const taken = await maybeOne(conn, 'SELECT id FROM epos_customers WHERE email_key = ? AND card_number = ? AND id <> ?', [office, candidate, customerId]);
+    if (!taken) {
+      await conn.execute('UPDATE epos_customers SET card_number = ? WHERE id = ? AND email_key = ?', [candidate, customerId, office]);
+      return candidate;
+    }
+  }
   await conn.execute(
     `INSERT INTO epos_card_sequences (office, kind, next_number) VALUES (?, 'loyalty', 2)
      ON DUPLICATE KEY UPDATE next_number = next_number + 1`,
@@ -302,6 +315,13 @@ async function joinScheme(pool, office, { name, email }) {
   } finally {
     conn.release();
   }
+  // The venue's default loyalty scheme, with its welcome points, and a member
+  // number that is the card without its prefix. See src/loyalty_schemes.js.
+  const live = await loyaltySchemes.listSchemes(pool, office, { activeOnly: true }).catch(() => []);
+  const scheme = loyaltySchemes.pickSchemeForNewCustomer(live, {});
+  if (scheme) await loyaltySchemes.joinScheme(pool, office, id, scheme.id);
+  const [[row]] = await pool.query('SELECT card_number FROM epos_customers WHERE id = ?', [id]).catch(() => [[null]]);
+  if (row && row.card_number) await loyaltySchemes.syncMemberNoToCard(pool, office, id, row.card_number);
   await ensureMemberNumber(pool, office, id).catch(() => null);
   return id;
 }
@@ -313,8 +333,9 @@ async function ensureCard(pool, office, customerId) {
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
-    await issueLoyaltyNumber(conn, office, customerId);
+    const card = await issueLoyaltyNumber(conn, office, customerId);
     await conn.commit();
+    if (card) await loyaltySchemes.syncMemberNoToCard(pool, office, customerId, card);
   } catch (e) {
     await conn.rollback();
     console.warn('[loyalty_app] could not issue a card number:', e.message);
@@ -744,7 +765,15 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
       const [[c]] = await pool.query('SELECT * FROM epos_customers WHERE id = ? AND email_key = ?', [req.customerId, req.office]);
       if (!c) return res.status(404).json({ error: 'Your membership could not be found. Please ask the venue.' });
       const loyalty = await maybeOne(pool, 'SELECT point_value_minor FROM epos_loyalty_settings WHERE office = ?', [req.office]);
-      const pointValue = loyalty ? Number(loyalty.point_value_minor) || 1 : 1;
+      // The member's scheme, and the number they read: the card without its
+      // prefix (999800001 is member 00001). A scheme may value points itself.
+      await loyaltySchemes.decorateCustomers(pool, req.office, [c]);
+      const memberScheme = c.scheme_id != null
+        ? (await loyaltySchemes.listSchemes(pool, req.office)).find((s) => s.id === Number(c.scheme_id)) || null
+        : null;
+      const pointValue = memberScheme && memberScheme.point_value_minor != null
+        ? memberScheme.point_value_minor || 1
+        : (loyalty ? Number(loyalty.point_value_minor) || 1 : 1);
       const points = Number(c.points_balance) || 0;
       // The membership as the venue runs it: how long one lasts, what it
       // costs, and the day everyone's runs to where the venue renews on one
@@ -770,6 +799,10 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
         },
         card_number: c.card_number || null,
         member_no: c.member_no ?? null,
+        member_number: c.member_number || null,
+        scheme: memberScheme
+          ? { name: memberScheme.name, colour: memberScheme.colour, summary: loyaltySchemes.describeScheme(memberScheme) }
+          : null,
         // What the till scans. The card number where there is one -- exactly as
         // the Wallet pass does -- and the member number otherwise.
         qr: c.card_number || (c.member_no != null ? String(c.member_no) : c.id),

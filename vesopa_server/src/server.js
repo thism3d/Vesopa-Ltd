@@ -62,6 +62,7 @@ const {
 const { walletCore, walletRoutes, walletPublicRoutes } = require('./wallet');
 const { appleWalletRoutes } = require('./wallet_apple_service');
 const { ensureMemberNumber } = require('./member_numbers');
+const loyaltySchemes = require('./loyalty_schemes');
 const { priceLevelRoutes } = require('./price_levels');
 const { recordSale } = require('./sales');
 const training = require('./training');
@@ -692,15 +693,27 @@ app.get('/till/customers', async (req, res, next) => {
     const base = `id, name, phone, email, card_number, discount_type,
                   discount_value, points_balance,
                   DATE_FORMAT(membership_expiry, '%Y-%m-%d') AS membership_expiry`;
+    // A membership number is quoted without its card prefix ("member 00001"),
+    // so a typed run of digits is also matched against the end of the card.
+    const digits = String(req.query.q || '').replace(/\s+/g, '');
+    const tail = /^\d+$/.test(digits) ? `%${digits}` : null;
     const where = `
        FROM epos_customers
        WHERE email_key = ?
-       ${q ? 'AND (name LIKE ? OR phone LIKE ? OR email LIKE ?)' : ''}
+       ${q ? `AND (name LIKE ? OR phone LIKE ? OR email LIKE ? OR card_number LIKE ?${tail ? ' OR card_number LIKE ?' : ''})` : ''}
        ORDER BY name LIMIT 50`;
-    const params = q ? [office, q, q, q] : [office];
+    const params = q ? [office, q, q, q, q, ...(tail ? [tail] : [])] : [office];
 
     let rows;
-    for (const select of [`${base}, photo_url`, base]) {
+    // The scheme and the member number arrive with schema_loyalty_schemes.sql
+    // and schema_swipe_cards.sql; narrowed one step at a time when missing.
+    const selects = [
+      `${base}, photo_url, member_no, scheme_id`,
+      `${base}, photo_url, member_no`,
+      `${base}, photo_url`,
+      base,
+    ];
+    for (const select of selects) {
       try {
         [rows] = await pool.query(`SELECT ${select} ${where}`, params);
         break;
@@ -708,7 +721,9 @@ app.get('/till/customers', async (req, res, next) => {
         if (e.code !== 'ER_BAD_FIELD_ERROR' || select === base) throw e;
       }
     }
-    res.json(rows);
+    // The membership number people read (999800001 is member 00001) and the
+    // scheme's name and colour, for the picker. See src/loyalty_schemes.js.
+    res.json(await loyaltySchemes.decorateCustomers(pool, office, rows));
   } catch (e) {
     next(e);
   }
@@ -739,11 +754,33 @@ app.post('/till/customers', async (req, res, next) => {
         c.discount_value ?? 0,
       ]
     );
+    if (c.marketing_opt_in !== undefined) {
+      await pool.execute(
+        'UPDATE epos_customers SET marketing_opt_in = ? WHERE id = ? AND email_key = ?',
+        [c.marketing_opt_in ? 1 : 0, id, c.office]
+      ).catch(() => {});
+    }
+    // The scheme the till's form asked for, else the card's, else the
+    // venue's default. Welcome points come with joining. See
+    // src/loyalty_schemes.js.
+    const live = await loyaltySchemes.listSchemes(pool, c.office, { activeOnly: true });
+    const scheme = loyaltySchemes.pickSchemeForNewCustomer(live, {
+      schemeId: c.scheme_id,
+      cardNumber: c.card_number,
+    });
+    if (scheme) await loyaltySchemes.joinScheme(pool, c.office, id, scheme.id);
     // Every member gets a number, whichever door they came in through. See
     // src/member_numbers.js for why this is not part of issuing a card.
-    await ensureMemberNumber(pool, c.office, id);
+    const memberNo = await ensureMemberNumber(pool, c.office, id);
     broadcast({ type: 'customers.updated' });
-    res.status(201).json({ id });
+    res.status(201).json({
+      id,
+      member_no: memberNo,
+      scheme_id: scheme ? scheme.id : null,
+      scheme_name: scheme ? scheme.name : null,
+      scheme_colour: scheme ? scheme.colour : null,
+      points_balance: scheme ? scheme.welcome_points : 0,
+    });
   } catch (e) {
     next(e);
   }

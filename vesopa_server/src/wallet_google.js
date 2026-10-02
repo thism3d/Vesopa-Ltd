@@ -402,6 +402,7 @@ function buildPass({ kind, config, office, brand = {}, subject = {} }) {
           // member reads out on the phone — and only one of them is worth
           // printing in words.
           ['Member no', subject.member_no],
+          ['Scheme', subject.scheme],
           ['Member since', subject.member_since],
           ['Phone', subject.phone],
         ]),
@@ -539,6 +540,7 @@ function buildPass({ kind, config, office, brand = {}, subject = {} }) {
         : textModules([
             ['Member', subject.name],
             ['Member no', subject.member_no],
+          ['Scheme', subject.scheme],
             ['Card', subject.card_number],
             ['Discount', subject.discount],
             ['Phone', subject.phone],

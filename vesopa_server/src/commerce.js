@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const { requireAuth } = require('./auth');
 const applePush = require('./wallet_apple_push');
 const { ensureMemberNumber } = require('./member_numbers');
+const schemes = require('./loyalty_schemes');
 const training = require('./training');
 const tillSeats = require('./till_seats');
 
@@ -29,6 +30,7 @@ const TILL_CALLS = [
   ['get', '/promotions/public'],
   ['get', '/rules/public'],
   ['get', '/loyalty/public'],
+  ['get', '/loyalty/schemes/public'],
   ['get', '/gift-cards/lookup'],
   ['post', '/gift-cards/redeem'],
   ['post', '/gift-cards/hold'],
@@ -1317,6 +1319,179 @@ function commerceRoutes({ pool, broadcast, secret }) {
     } catch (e) { next(e); }
   });
 
+  // ---- Loyalty schemes ------------------------------------------------------
+  //
+  // Groups of customers with their own rewards. The rules live in
+  // src/loyalty_schemes.js; these are the doors to them.
+
+  /**
+   * A customer's row, with the columns the scheme work added where the
+   * database has them. Tried and fallen back from, like every other read of a
+   * column a migration adds: a lookup at the counter must not fail because
+   * schema_loyalty_schemes.sql has not been run yet.
+   */
+  const CUSTOMER_BASE = `id, name, phone, email, card_number, points_balance, tier_name,
+                lifetime_spend_minor, visits, discount_type, discount_value,
+                DATE_FORMAT(membership_expiry, '%Y-%m-%d') AS membership_expiry, photo_url`;
+  async function selectCustomers(where, params, tail = '') {
+    const attempts = [
+      `${CUSTOMER_BASE}, member_no, scheme_id`,
+      `${CUSTOMER_BASE}, member_no`,
+      CUSTOMER_BASE,
+    ];
+    for (const cols of attempts) {
+      try {
+        const [rows] = await pool.query(
+          `SELECT ${cols} FROM epos_customers WHERE ${where} ${tail}`, params);
+        return rows;
+      } catch (e) {
+        if (e.code !== 'ER_BAD_FIELD_ERROR' || cols === CUSTOMER_BASE) throw e;
+      }
+    }
+    return [];
+  }
+
+  /**
+   * Customers in the shape every till lookup answers: the row, its membership
+   * number and scheme, what the points are worth and the rules that price them
+   * -- the venue's settings with the customer's scheme laid over them.
+   */
+  async function memberAnswer(office, rows) {
+    const settings = await readLoyalty(office);
+    const all = await schemes.listSchemes(pool, office);
+    await schemes.decorateCustomers(pool, office, rows);
+    return rows.map((c) => {
+      const scheme = all.find((s) => s.id === Number(c.scheme_id)) || null;
+      const merged = schemes.applyScheme(settings, scheme);
+      return {
+        ...c,
+        points_value_minor: c.points_balance * merged.point_value_minor,
+        redeemable: c.points_balance >= merged.min_redeem_points,
+        settings: merged,
+      };
+    });
+  }
+
+  async function schemeConflicts(office, values, id) {
+    if (!values.card_prefix) return null;
+    const cards = await pool
+      .query('SELECT * FROM epos_card_settings WHERE office = ?', [office])
+      .then(([[row]]) => row || {})
+      .catch(() => ({}));
+    const taken = {
+      [String(cards.clerk_prefix ?? '9999')]: 'staff cards',
+      [String(cards.gift_prefix ?? '9878')]: 'gift cards',
+      [String(cards.gym_prefix ?? '')]: 'gym cards',
+    };
+    delete taken[''];
+    if (taken[values.card_prefix]) {
+      return `${values.card_prefix} is already the prefix for ${taken[values.card_prefix]}.`;
+    }
+    const others = (await schemes.listSchemes(pool, office))
+      .filter((s) => s.id !== Number(id) && s.active && s.card_prefix === values.card_prefix);
+    if (others.length) {
+      return `${values.card_prefix} is already the card prefix for ${others[0].name}.`;
+    }
+    return null;
+  }
+
+  router.get('/loyalty/schemes', auth, async (req, res, next) => {
+    try {
+      const office = await tenantEmail(req);
+      const list = await schemes.listSchemes(pool, office, { withCounts: true });
+      res.json(list.map((s) => ({ ...s, summary: schemes.describeScheme(s) })));
+    } catch (e) { next(e); }
+  });
+
+  /** The till's copy: active schemes only, with a sentence for each. */
+  router.get('/loyalty/schemes/public', async (req, res, next) => {
+    try {
+      const office = tillOffice(req);
+      if (!office) return res.status(400).json({ error: 'office is required' });
+      const list = await schemes.listSchemes(pool, office, { activeOnly: true });
+      res.json(list.map((s) => ({ ...s, summary: schemes.describeScheme(s) })));
+    } catch (e) { next(e); }
+  });
+
+  async function saveScheme(req, res, next, id) {
+    try {
+      const office = await tenantEmail(req);
+      const { errors, values } = schemes.cleanSchemeInput(req.body || {});
+      if (errors.length) return res.status(400).json({ error: errors[0], errors });
+      const conflict = await schemeConflicts(office, values, id);
+      if (conflict) return res.status(409).json({ error: conflict });
+
+      const cols = Object.keys(values);
+      let schemeId = id;
+      if (id) {
+        const [result] = await pool.execute(
+          `UPDATE epos_loyalty_schemes SET ${cols.map((c) => `\`${c}\` = ?`).join(', ')}
+            WHERE id = ? AND office = ?`,
+          [...cols.map((c) => values[c]), id, office]
+        );
+        if (!result.affectedRows) return res.status(404).json({ error: 'No such scheme' });
+      } else {
+        const [result] = await pool.execute(
+          `INSERT INTO epos_loyalty_schemes (office, ${cols.map((c) => `\`${c}\``).join(', ')})
+           VALUES (?, ${cols.map(() => '?').join(', ')})`,
+          [office, ...cols.map((c) => values[c])]
+        );
+        schemeId = result.insertId;
+      }
+      // One default. The till pre-selects it, and two pre-selected answers is
+      // a question with no answer.
+      if (values.is_default) {
+        await pool.execute(
+          'UPDATE epos_loyalty_schemes SET is_default = 0 WHERE office = ? AND id <> ?',
+          [office, schemeId]
+        );
+      }
+      broadcast({ type: 'loyalty' });
+      const list = await schemes.listSchemes(pool, office, { withCounts: true });
+      const saved = list.find((s) => s.id === Number(schemeId));
+      res.status(id ? 200 : 201).json({ ...saved, summary: schemes.describeScheme(saved) });
+    } catch (e) { next(e); }
+  }
+
+  router.post('/loyalty/schemes', auth, (req, res, next) => saveScheme(req, res, next, null));
+  router.put('/loyalty/schemes/:id', auth, (req, res, next) =>
+    saveScheme(req, res, next, Number(req.params.id) || -1));
+
+  /**
+   * Delete a scheme. Its customers stay, in no scheme, with their points:
+   * a group being retired is not a reason to lose anybody's balance.
+   */
+  router.delete('/loyalty/schemes/:id', auth, async (req, res, next) => {
+    try {
+      const office = await tenantEmail(req);
+      const id = Number(req.params.id);
+      await pool.execute(
+        'UPDATE epos_customers SET scheme_id = NULL WHERE email_key = ? AND scheme_id = ?',
+        [office, id]
+      ).catch(() => {});
+      await pool.execute('DELETE FROM epos_loyalty_schemes WHERE id = ? AND office = ?', [id, office]);
+      broadcast({ type: 'loyalty' });
+      broadcast({ type: 'customers.updated' });
+      res.json({ ok: true });
+    } catch (e) { next(e); }
+  });
+
+  /** Drag-to-order on the schemes list: the ids, in their new order. */
+  router.post('/loyalty/schemes/order', auth, async (req, res, next) => {
+    try {
+      const office = await tenantEmail(req);
+      const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(Number) : [];
+      for (const [i, id] of ids.entries()) {
+        await pool.execute(
+          'UPDATE epos_loyalty_schemes SET sort_order = ? WHERE id = ? AND office = ?',
+          [i, id, office]
+        );
+      }
+      broadcast({ type: 'loyalty' });
+      res.json({ ok: true });
+    } catch (e) { next(e); }
+  });
+
   /**
    * Search members by name, phone, card number or email.
    *
@@ -1341,26 +1516,18 @@ function commerceRoutes({ pool, broadcast, secret }) {
       // Spaces are how phone numbers are written and never how they are typed
       // into a till, so the number is matched with them stripped out.
       const digits = term.replace(/\s+/g, '');
-      const [rows] = await pool.query(
-        `SELECT id, name, phone, email, card_number, points_balance, tier_name,
-                lifetime_spend_minor, visits, discount_type, discount_value,
-                membership_expiry, photo_url
-         FROM epos_customers
-         WHERE email_key = ?
+      // A membership number is read off a card without its prefix -- "member
+      // 00001" -- so a typed number is also matched against the end of the
+      // card. LIKE '%00001' finds 999800001 and not 999800011.
+      const tailDigits = /^\d+$/.test(digits) ? `%${digits}` : null;
+      const rows = await selectCustomers(
+        `email_key = ?
            AND (name LIKE ? OR email LIKE ? OR card_number LIKE ?
-                OR REPLACE(phone, ' ', '') LIKE ?)
-         ORDER BY points_balance DESC, name
-         LIMIT 25`,
-        [office, like, like, like, `%${digits}%`]
+                OR REPLACE(phone, ' ', '') LIKE ?${tailDigits ? ' OR card_number LIKE ?' : ''})`,
+        [office, like, like, like, `%${digits}%`, ...(tailDigits ? [tailDigits] : [])],
+        'ORDER BY points_balance DESC, name LIMIT 25'
       );
-
-      const settings = await readLoyalty(office);
-      res.json(rows.map((c) => ({
-        ...c,
-        points_value_minor: c.points_balance * settings.point_value_minor,
-        redeemable: c.points_balance >= settings.min_redeem_points,
-        settings,
-      })));
+      res.json(await memberAnswer(office, rows));
     } catch (e) { next(e); }
   });
 
@@ -1377,26 +1544,13 @@ function commerceRoutes({ pool, broadcast, secret }) {
         return res.status(400).json({ error: 'office and phone are required' });
       }
 
-      const [[customer]] = await pool.query(
-        `SELECT id, name, phone, email, points_balance, tier_name,
-                lifetime_spend_minor, visits, discount_type, discount_value,
-                membership_expiry, photo_url
-         FROM epos_customers
-         WHERE email_key = ? AND REPLACE(phone, ' ', '') = ?`,
-        [office, phone]
-      );
+      const [customer] = await selectCustomers(
+        "email_key = ? AND REPLACE(phone, ' ', '') = ?", [office, phone], 'LIMIT 1');
       if (!customer) return res.status(404).json({ error: 'No customer with that number' });
 
-      const settings = await readLoyalty(office);
-      const value = customer.points_balance * settings.point_value_minor;
-      res.json({
-        ...customer,
-        // What those points are actually worth, so the till does not have to
-        // duplicate the arithmetic.
-        points_value_minor: value,
-        redeemable: customer.points_balance >= settings.min_redeem_points,
-        settings,
-      });
+      // What those points are actually worth comes with them, so the till does
+      // not have to duplicate the arithmetic.
+      res.json((await memberAnswer(office, [customer]))[0]);
     } catch (e) { next(e); }
   });
 
@@ -1430,32 +1584,30 @@ function commerceRoutes({ pool, broadcast, secret }) {
         return res.status(400).json({ error: 'office and number are required' });
       }
 
-      const [[customer]] = await pool.query(
-        `SELECT id, name, phone, email, card_number, points_balance, tier_name,
-                lifetime_spend_minor, visits, discount_type, discount_value,
-                membership_expiry, photo_url
-         FROM epos_customers
-         WHERE email_key = ? AND card_number = ?
-         LIMIT 1`,
-        [office, number]
-      );
+      const [customer] = await selectCustomers(
+        'email_key = ? AND card_number = ?', [office, number], 'LIMIT 1');
 
       // Not an error, and said as its own thing rather than as a 404 with a
       // generic message: "no member holds that card" is what the till turns
       // into "would you like to create a new member for this card?", which is
       // the venue's own request and the single most useful thing this route
-      // does.
+      // does. The scheme the card's prefix names comes back with it, so the
+      // enrol form can say which scheme the new member is joining.
       if (!customer) {
-        return res.status(404).json({ error: 'No member holds that card', number });
+        const all = await schemes.listSchemes(pool, office, { activeOnly: true });
+        const cards = await schemes.readCardSettings(pool, office);
+        const scheme = schemes.schemeForCard(all, number);
+        return res.status(404).json({
+          error: 'No member holds that card',
+          number,
+          member_number: schemes.memberNumber(
+            { card_number: number }, schemes.memberPrefixes(cards, all), cards.number_digits),
+          scheme_id: scheme ? scheme.id : null,
+          scheme_name: scheme ? scheme.name : null,
+        });
       }
 
-      const settings = await readLoyalty(office);
-      res.json({
-        ...customer,
-        points_value_minor: customer.points_balance * settings.point_value_minor,
-        redeemable: customer.points_balance >= settings.min_redeem_points,
-        settings,
-      });
+      res.json((await memberAnswer(office, [customer]))[0]);
     } catch (e) { next(e); }
   });
 
@@ -1498,7 +1650,10 @@ function commerceRoutes({ pool, broadcast, secret }) {
       );
       if (!customer) return res.status(404).json({ error: 'No such customer' });
 
-      const settings = await readLoyalty(office);
+      // The customer's scheme may run its own term. Read through the same
+      // merge every other lookup uses, so the till's "renews to" and this agree.
+      const [withScheme] = await selectCustomers('id = ? AND email_key = ?', [customerId, office]);
+      const settings = (await memberAnswer(office, [withScheme]))[0].settings;
       const months = Math.min(
         Math.max(Number(settings.membership_term_months) || 12, 1), 60);
 
@@ -1563,30 +1718,29 @@ function commerceRoutes({ pool, broadcast, secret }) {
       // The whole customer back, in the shape the till already reads from
       // /loyalty/card, so a renewal refreshes the local copy from one response
       // rather than needing a second lookup.
-      const [[row]] = await pool.query(
-        `SELECT id, name, phone, email, card_number, points_balance, tier_name,
-                lifetime_spend_minor, visits, discount_type, discount_value,
-                photo_url,
-                DATE_FORMAT(membership_expiry, '%Y-%m-%d') AS membership_expiry
-           FROM epos_customers WHERE id = ?`,
-        [customerId]
-      );
+      const [row] = await selectCustomers('id = ?', [customerId]);
+      const answer = (await memberAnswer(office, [row]))[0];
       res.json({
-        ...row,
+        ...answer,
         renewed_from: from,
         term_months: months,
         // Which rule actually applied, so the till can say "renewed to 31
         // August 2027" rather than guessing, and so a support call about a
         // date somebody did not expect has an answer in one response.
         renewed_by: useSeason ? 'season' : 'term',
-        points_value_minor: row.points_balance * settings.point_value_minor,
-        redeemable: row.points_balance >= settings.min_redeem_points,
-        settings,
       });
     } catch (e) { next(e); }
   });
 
-  /** Enrol at the till: a name and a phone number is all it takes. */
+  /**
+   * Enrol at the till: a name and a phone number is all it takes.
+   *
+   * And, since schemes, which scheme they are joining. The till asks; when it
+   * does not say, the card's prefix decides, then the venue's default. A
+   * customer who already exists is returned as they are -- enrolling twice is
+   * not a way to move somebody between schemes or collect welcome points
+   * again.
+   */
   router.post('/loyalty/customer', async (req, res, next) => {
     try {
       const office = tillOffice(req);
@@ -1601,9 +1755,8 @@ function commerceRoutes({ pool, broadcast, secret }) {
         [office, phone.replace(/\s+/g, '')]
       );
       if (existing) {
-        const [[row]] = await pool.query(
-          'SELECT * FROM epos_customers WHERE id = ?', [existing.id]);
-        return res.json(row);
+        const [row] = await selectCustomers('id = ?', [existing.id]);
+        return res.json((await schemes.decorateCustomers(pool, office, [row]))[0]);
       }
 
       const id = crypto.randomUUID();
@@ -1612,14 +1765,27 @@ function commerceRoutes({ pool, broadcast, secret }) {
          VALUES (?,?,?,?,?)`,
         [id, office, req.body.name || 'Guest', phone, req.body.email || null]
       );
+      // Optional extras from the till's form, where the database has them.
+      if (req.body.marketing_opt_in !== undefined) {
+        await pool.execute(
+          'UPDATE epos_customers SET marketing_opt_in = ? WHERE id = ?',
+          [req.body.marketing_opt_in ? 1 : 0, id]
+        ).catch(() => {});
+      }
+      const live = await schemes.listSchemes(pool, office, { activeOnly: true });
+      const scheme = schemes.pickSchemeForNewCustomer(live, {
+        schemeId: req.body.scheme_id,
+        cardNumber: req.body.card_number,
+      });
+      if (scheme) await schemes.joinScheme(pool, office, id, scheme.id);
       // Awaited, unlike the wallet push below: this is an enrolment rather than
       // a sale, the row is about to be returned to the till, and a member who
       // appears on screen without a number would have to be re-fetched to get
       // one. It cannot throw — see src/member_numbers.js.
       await ensureMemberNumber(pool, office, id);
-      const [[row]] = await pool.query('SELECT * FROM epos_customers WHERE id = ?', [id]);
+      const [row] = await selectCustomers('id = ?', [id]);
       broadcast({ type: 'customers' });
-      res.status(201).json(row);
+      res.status(201).json((await schemes.decorateCustomers(pool, office, [row]))[0]);
     } catch (e) { next(e); }
   });
 
@@ -1648,8 +1814,18 @@ function commerceRoutes({ pool, broadcast, secret }) {
         return res.status(404).json({ error: 'No such customer' });
       }
 
-      const settings = await readLoyalty(office);
+      // The venue's rules with the customer's scheme laid over them: a scheme
+      // can earn at its own rate, or not earn at all.
+      const scheme = customer.scheme_id != null
+        ? (await schemes.listSchemes(pool, office)).find((s) => s.id === Number(customer.scheme_id)) || null
+        : null;
+      const settings = schemes.applyScheme(await readLoyalty(office), scheme);
       const spend = money(req.body.spend_minor);
+      // What earns. A scheme that earns on some departments only has the till
+      // work out the spend on those; everything else counts the whole spend.
+      const earningSpend = req.body.eligible_spend_minor !== undefined
+        ? Math.min(money(req.body.eligible_spend_minor), spend)
+        : spend;
 
       // The scheme being switched off has to stop points moving here, not just
       // hide the buttons: a till that has not refreshed its settings would
@@ -1671,8 +1847,11 @@ function commerceRoutes({ pool, broadcast, secret }) {
       if (kind === 'earn') {
         if (!points) {
           // Earned from the spend when the till does not compute it itself.
-          points = Math.floor(spend / 100) * settings.points_per_pound;
+          points = Math.floor(earningSpend / 100) * settings.points_per_pound;
         }
+        // In a scheme that does not earn points, nothing is earned -- but the
+        // visit and the spend still count, below.
+        if (scheme && !scheme.earn_points) points = 0;
         // A tier's multiplier is the whole point of having tiers, and it was
         // being stored and then ignored — a Gold member on 2x earned the same
         // as a walk-in.

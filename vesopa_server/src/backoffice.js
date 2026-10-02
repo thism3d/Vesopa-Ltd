@@ -9,6 +9,7 @@ const {
   backfill: backfillMemberNumbers,
 } = require('./member_numbers');
 const { accessGuard } = require('./permissions');
+const loyaltySchemes = require('./loyalty_schemes');
 const { ALLERGENS, cleanAllergens } = require('./allergens');
 const { DIETARY, saveProductExtras } = require('./product_info');
 const { inviteToVesopa, LIVE: VESOPA_SIGN_IN, ONLY: VESOPA_ONLY } = require('./backoffice_auth');
@@ -1750,31 +1751,37 @@ function backofficeRoutes({ pool, broadcast, secret }) {
     try {
       const email = scope(req, await tenantEmail(req));
       const q = req.query.q ? `%${req.query.q}%` : null;
+      // A membership number is quoted without its card prefix, so a typed run
+      // of digits is matched against the end of the card too.
+      const digits = String(req.query.q || '').replace(/\s+/g, '');
+      const tail = /^\d+$/.test(digits) ? `%${digits}` : null;
+      // The page filters and selects in the browser, so it is sent the whole
+      // book rather than the first 200 by name -- which is what made customer
+      // 201 impossible to find. Bounded all the same.
+      const limit = Math.min(Math.max(Number(req.query.limit) || 10000, 1), 20000);
       const where = `
          FROM epos_customers
          WHERE email_key = ?
-         ${q ? 'AND (name LIKE ? OR phone LIKE ? OR email LIKE ?)' : ''}
+         ${q ? `AND (name LIKE ? OR phone LIKE ? OR email LIKE ? OR card_number LIKE ?${tail ? ' OR card_number LIKE ?' : ''})` : ''}
          ORDER BY name
-         LIMIT 200`;
+         LIMIT ${limit}`;
 
       const columns = `id, name, phone, email, card_number, discount_type,
-                discount_value, points_balance,
+                discount_value, points_balance, notes,
                 DATE_FORMAT(membership_expiry, '%Y-%m-%d') AS membership_expiry`;
 
-      const params = q ? [email, q, q, q] : [email];
+      const params = q ? [email, q, q, q, q, ...(tail ? [tail] : [])] : [email];
 
-      // `member_no` is added by schema_swipe_cards.sql and `photo_url` by
-      // schema_membership.sql, and deploy.ps1 applies the migrations only when
-      // it is asked to. So they are tried and fallen back from rather than
-      // assumed: naming a column that is not there yet is an error, not a
-      // degraded response, and it would take this whole page down for the sake
-      // of two extra fields.
-      //
-      // Narrowed one column at a time rather than dropping straight to the
-      // base set, because the two migrations are independent — a venue can
-      // easily have one and not the other, and an all-or-nothing fallback
-      // would throw away a field it actually has.
+      // `member_no` is added by schema_swipe_cards.sql, `photo_url` by
+      // schema_membership.sql and the scheme columns by
+      // schema_loyalty_schemes.sql, and deploy.ps1 applies the migrations only
+      // when it is asked to. So they are tried and fallen back from rather
+      // than assumed: naming a column that is not there yet is an error, not a
+      // degraded response, and it would take this whole page down.
+      const SCHEME_COLS = `scheme_id, marketing_opt_in, address_line1, address_line2, town, postcode,
+                lifetime_spend_minor, visits, tier_name`;
       const ATTEMPTS = [
+        `${columns}, member_no, photo_url, ${SCHEME_COLS}`,
         `${columns}, member_no, photo_url`,
         `${columns}, member_no`,
         `${columns}, photo_url`,
@@ -1789,7 +1796,8 @@ function backofficeRoutes({ pool, broadcast, secret }) {
           if (e.code !== 'ER_BAD_FIELD_ERROR' || select === columns) throw e;
         }
       }
-      res.json(rows);
+      // The membership number people read, and the scheme's name and colour.
+      res.json(await loyaltySchemes.decorateCustomers(pool, email, rows));
     } catch (e) {
       next(e);
     }
@@ -1843,9 +1851,17 @@ function backofficeRoutes({ pool, broadcast, secret }) {
           values
         );
       }
+      const office = await tenantEmail(req);
+      // The scheme, marketing choice and address, where the database has them.
+      // Welcome points are given here, on joining, and not on later edits.
+      const schemeId = c.scheme_id;
+      await loyaltySchemes.saveCustomerExtras(pool, office, id, { ...c, scheme_id: undefined });
+      if (schemeId) await loyaltySchemes.joinScheme(pool, office, id, schemeId);
+      // A card with a member prefix sets the number: 999800001 is member 1.
+      if (c.card_number) await loyaltySchemes.syncMemberNoToCard(pool, office, id, c.card_number);
       // Every member gets a number, whichever door they came in through. See
       // src/member_numbers.js for why this is not part of issuing a card.
-      await ensureMemberNumber(pool, await tenantEmail(req), id);
+      await ensureMemberNumber(pool, office, id);
       broadcast({ type: 'customers.updated' });
       res.status(201).json({ id });
     } catch (e) {
@@ -1993,6 +2009,9 @@ function backofficeRoutes({ pool, broadcast, secret }) {
       if (r.affectedRows === 0) {
         return res.status(404).json({ error: 'No such customer' });
       }
+      const office = where[1];
+      await loyaltySchemes.saveCustomerExtras(pool, office, req.params.id, c);
+      if (c.card_number) await loyaltySchemes.syncMemberNoToCard(pool, office, req.params.id, c.card_number);
       broadcast({ type: 'customers.updated' });
       res.json({ ok: true });
     } catch (e) {

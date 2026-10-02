@@ -346,6 +346,7 @@ const ROUTES = {
   promotions: '/promotions',
   gift_cards: '/gift-cards',
   deposits: '/deposits',
+  loyalty_schemes: '/loyalty-schemes',
   loyalty: '/loyalty',
   cards: '/cards',
   wallet: '/wallet',
@@ -1353,6 +1354,7 @@ const VIEW_LOADERS = {
     promotions: loadPromotions,
     gift_cards: loadGiftCards,
     deposits: loadDeposits,
+    loyalty_schemes: loadSchemes,
     loyalty: loadLoyalty,
     cards: loadCards,
     gym: loadGym,
@@ -2813,6 +2815,10 @@ function discountLabel(c) {
 let customerRows = [];
 let customerQuery = '';
 let customerFilter = '';
+// The venue's loyalty schemes, for the Scheme column, filter and form, and
+// which one the list is narrowed to ('' = all, 'none' = in no scheme).
+let customerSchemes = [];
+let customerSchemeFilter = '';
 let customerPicks = new Set();
 let customerAnchor = null;
 let customersBound = false;
@@ -2842,8 +2848,12 @@ function visibleCustomers() {
     if (customerFilter === 'soon'
         && !(expiry && expiry >= today && expiry <= soon)) return false;
 
+    if (customerSchemeFilter === 'none' && c.scheme_id != null) return false;
+    if (customerSchemeFilter && customerSchemeFilter !== 'none'
+        && String(c.scheme_id ?? '') !== customerSchemeFilter) return false;
+
     if (!customerQuery) return true;
-    return [c.name, c.phone, c.email, c.card_number, c.member_no]
+    return [c.name, c.phone, c.email, c.card_number, c.member_no, c.member_number, c.scheme_name]
       .some((v) => String(v ?? '').toLowerCase().includes(customerQuery));
   });
 }
@@ -2879,9 +2889,93 @@ function customerAvatar(c) {
 }
 
 async function loadCustomers() {
-  customerRows = await api('/customers');
+  [customerRows, customerSchemes] = await Promise.all([
+    api('/customers'),
+    // A server without schemes yet answers nothing, and the page carries on.
+    api('/loyalty/schemes').catch(() => []),
+  ]);
   bindCustomers();
+  const pick = $('cust-scheme');
+  if (pick) {
+    pick.innerHTML = `<option value="">All schemes</option>${customerSchemes
+      .map((s) => `<option value="${esc(String(s.id))}">${esc(s.name)}</option>`).join('')}
+      ${customerSchemes.length ? '<option value="none">In no scheme</option>' : ''}`;
+    pick.value = customerSchemeFilter;
+    pick.closest('label').hidden = !customerSchemes.length;
+  }
   renderCustomers();
+}
+
+/** A scheme as a coloured pill, or a dash. */
+function schemePill(c) {
+  if (!c.scheme_name) return '<span class="muted">—</span>';
+  return `<span class="cust-scheme" style="--sc:${esc(c.scheme_colour || '#a5c715')}">${esc(c.scheme_name)}</span>`;
+}
+
+/**
+ * One customer, at a glance: their scheme, points and what they are worth,
+ * and the history that explains the balance. Opened by clicking the name.
+ */
+async function openCustomerProfile(id) {
+  const c = customerRows.find((r) => String(r.id) === String(id));
+  if (!c) return;
+  const root = $('modal-root');
+  const money = (m) => `£${((Number(m) || 0) / 100).toFixed(2)}`;
+  const scheme = customerSchemes.find((s) => String(s.id) === String(c.scheme_id));
+  const value = (Number(c.points_balance) || 0)
+    * (scheme && scheme.point_value_minor != null ? scheme.point_value_minor : 1);
+  root.innerHTML = `
+    <div class="modal-back" data-profile-close>
+      <div class="modal cust-profile" role="dialog" aria-label="${esc(c.name)}">
+        <div class="cust-profile-head">
+          ${customerAvatar(c)}
+          <div>
+            <h3>${esc(c.name)}</h3>
+            <div>${schemePill(c)} ${c.member_number ? `<span class="muted small">Member ${esc(c.member_number)}</span>` : ''}</div>
+          </div>
+          <button type="button" class="btn ghost" data-profile-close aria-label="Close">Close</button>
+        </div>
+        <div class="cust-profile-kv">
+          <div><span>Points</span><b>${Number(c.points_balance) || 0}</b></div>
+          <div><span>Worth</span><b>${money(value)}</b></div>
+          <div><span>Lifetime spend</span><b>${c.lifetime_spend_minor != null ? money(c.lifetime_spend_minor) : '—'}</b></div>
+          <div><span>Visits</span><b>${c.visits != null ? Number(c.visits) : '—'}</b></div>
+        </div>
+        <dl class="cust-profile-facts">
+          <dt>Card</dt><dd>${c.card_number ? `<code>${esc(c.card_number)}</code>` : 'No card yet'}</dd>
+          <dt>Phone</dt><dd>${esc(c.phone || '—')}</dd>
+          <dt>Email</dt><dd>${esc(c.email || '—')}${c.marketing_opt_in ? ' <span class="muted small">(happy to get offers)</span>' : ''}</dd>
+          <dt>Address</dt><dd>${esc([c.address_line1, c.address_line2, c.town, c.postcode].filter(Boolean).join(', ') || '—')}</dd>
+          <dt>Membership</dt><dd>${c.membership_expiry ? `Runs to ${date(String(c.membership_expiry).slice(0, 10))}` : 'None'}</dd>
+          ${scheme ? `<dt>Scheme gives</dt><dd>${esc(scheme.summary || '')}</dd>` : ''}
+        </dl>
+        <h4>Points history</h4>
+        <div class="cust-history" id="cust-history"><p class="muted small">Loading…</p></div>
+        <div class="cust-profile-foot">
+          <button type="button" class="btn primary" data-edit-customer="${esc(String(c.id))}">Edit customer</button>
+        </div>
+      </div>
+    </div>`;
+  root.querySelectorAll('[data-profile-close]').forEach((el) => el.addEventListener('click', (e) => {
+    if (e.target === el) root.innerHTML = '';
+  }));
+  root.querySelector('button[data-profile-close]').addEventListener('click', () => { root.innerHTML = ''; });
+  const KIND = { earn: 'Earned on a sale', redeem: 'Spent', adjust: 'Adjusted', expire: 'Expired' };
+  try {
+    const rows = await api(`/loyalty/customer/${encodeURIComponent(c.id)}/transactions`);
+    const box = $('cust-history');
+    if (!box) return;
+    box.innerHTML = rows.length
+      ? rows.slice(0, 50).map((r) => `
+          <div class="cust-hist-row">
+            <span>${esc(r.note || KIND[r.kind] || r.kind)}<em>${esc(new Date(r.created_at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }))}</em></span>
+            <b class="${Number(r.points) < 0 ? 'minus' : 'plus'}">${Number(r.points) > 0 ? '+' : ''}${Number(r.points)}</b>
+          </div>`).join('')
+      : '<p class="muted small">No points earned or spent yet.</p>';
+  } catch (e) {
+    const box = $('cust-history');
+    if (box) box.innerHTML = `<p class="muted small">${esc(e.message)}</p>`;
+  }
 }
 
 function renderCustomers() {
@@ -2912,15 +3006,16 @@ function renderCustomers() {
           customerPicks.has(String(c.id)) ? ' checked' : ''
         }></td>
         <td class="cust-face-cell">${customerAvatar(c)}</td>
-        <td>${esc(c.name)}</td>
-        <td class="muted small">${c.card_number
-          // The number on the stripe, and the membership number under it.
-          // Two different things a member is asked for: one is swiped, the
-          // other is quoted down the phone, and a venue that only ever saw the
-          // first could not answer "I am member 42".
-          ? `<code>${esc(c.card_number)}</code>${c.member_no
-              ? ` <span class="muted">no. ${esc(String(c.member_no))}</span>` : ''}`
-          : '—'}</td>
+        <td><button type="button" class="cust-name" data-cust-profile="${esc(String(c.id))}">${esc(c.name)}</button></td>
+        <td>${c.member_number || c.card_number
+          // The membership number, big, and the card it came from under it.
+          // "If the card number is 999800001, the customer's membership number
+          // should be shown as 00001" -- the prefix says what kind of card it
+          // is, and the rest is who holds it. See src/loyalty_schemes.js.
+          ? `<span class="cust-no">${esc(c.member_number || '—')}</span>${c.card_number
+              ? `<code class="cust-card">${esc(c.card_number)}</code>` : '<span class="cust-card muted">no card yet</span>'}`
+          : '<span class="muted">—</span>'}</td>
+        <td>${schemePill(c)}</td>
         <td class="muted small">${esc(c.phone || '—')}</td>
         <td class="muted small">${esc(c.email || '—')}</td>
         <td>${discountLabel(c)}</td>
@@ -2935,7 +3030,7 @@ function renderCustomers() {
         </td>
       </tr>`;
     })
-    .join('') || `<tr><td colspan="10" class="empty">${
+    .join('') || `<tr><td colspan="11" class="empty">${
       customerRows.length ? 'No customers match that.' : 'No customers yet.'
     }</td></tr>`;
 }
@@ -3003,11 +3098,21 @@ function bindCustomers() {
     customerFilter = e.target.value;
     renderCustomers();
   });
+  $('cust-scheme')?.addEventListener('change', (e) => {
+    customerSchemeFilter = e.target.value;
+    renderCustomers();
+  });
+  table.addEventListener('click', (e) => {
+    const name = e.target.closest('[data-cust-profile]');
+    if (name) openCustomerProfile(name.dataset.custProfile);
+  });
   $('cust-clear')?.addEventListener('click', () => {
     customerQuery = '';
     customerFilter = '';
+    customerSchemeFilter = '';
     $('cust-q').value = '';
     $('cust-filter').value = '';
+    if ($('cust-scheme')) $('cust-scheme').value = '';
     renderCustomers();
   });
 
@@ -6539,7 +6644,25 @@ document.addEventListener('click', async (e) => {
     { label: 'Name', name: 'name', required: true, value: c.name ?? '' },
     { label: 'Phone', name: 'phone', value: c.phone ?? '' },
     { label: 'Email', name: 'email', type: 'email', value: c.email ?? '' },
-    { label: 'Loyalty card number', name: 'card_number', value: c.card_number ?? '' },
+    // The scheme is the customer's group and their rewards. Offered only when
+    // the venue has schemes; "None" prices them by the Loyalty settings.
+    ...(customerSchemes.length ? [{
+      label: 'Loyalty scheme',
+      name: 'scheme_id',
+      type: 'select',
+      options: [{ value: '', label: 'None' }, ...customerSchemes
+        .filter((s) => s.active || String(s.id) === String(c.scheme_id))
+        .map((s) => ({ value: String(s.id), label: `${s.name}${s.summary ? ` (${s.summary})` : ''}` }))],
+      value: c.id
+        ? (c.scheme_id == null ? '' : String(c.scheme_id))
+        : String((customerSchemes.find((s) => s.is_default && s.active) || {}).id ?? ''),
+    }] : []),
+    {
+      label: 'Loyalty card number',
+      name: 'card_number',
+      value: c.card_number ?? '',
+      hint: 'The whole number on the card, prefix and all. The membership number is the rest: 999800001 is member 00001.',
+    },
     { label: 'Discount type', name: 'discount_type', type: 'select', options: ['none', 'percent', 'amount'], value: c.discount_type ?? 'none' },
     { label: 'Discount value (% or pence)', name: 'discount_value', type: 'number', value: c.discount_value ?? 0 },
     { label: 'Loyalty points', name: 'points_balance', type: 'number', value: c.points_balance ?? 0 },
@@ -6562,6 +6685,11 @@ document.addEventListener('click', async (e) => {
       hint: 'Shown on the till when this member is scanned, so staff can see '
         + 'they are serving the right person.',
     },
+    { label: 'Happy to get offers by email', name: 'marketing_opt_in', type: 'checkbox', value: c.marketing_opt_in ? 1 : 0 },
+    { label: 'Address line 1', name: 'address_line1', value: c.address_line1 ?? '' },
+    { label: 'Address line 2', name: 'address_line2', value: c.address_line2 ?? '' },
+    { label: 'Town', name: 'town', value: c.town ?? '' },
+    { label: 'Postcode', name: 'postcode', value: c.postcode ?? '' },
     { label: 'Notes', name: 'notes', value: c.notes ?? '' },
   ];
   const customerPayload = (d) => ({

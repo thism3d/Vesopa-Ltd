@@ -1,6 +1,7 @@
 const express = require('express');
 const { requireAuth, requireTerminal } = require('./auth');
 const { ensureMemberNumber } = require('./member_numbers');
+const loyaltySchemes = require('./loyalty_schemes');
 
 /**
  * Magnetic swipe cards: what each prefix means, who holds which card, and the
@@ -129,13 +130,16 @@ function cardRoutes({ pool, broadcast, secret }) {
    * `startsWith('')` would make every card in the building a member of whatever
    * programme the venue had switched off.
    */
-  function classify(settings, number) {
+  function classify(settings, number, schemePrefixes = []) {
     const candidates = [
       { kind: 'clerk', prefix: String(settings.clerk_prefix || '') },
       { kind: 'loyalty', prefix: String(settings.loyalty_prefix || '') },
       { kind: 'gift', prefix: String(settings.gift_prefix || '') },
       { kind: 'membership', prefix: String(settings.membership_prefix || '') },
       { kind: 'gym', prefix: String(settings.gym_prefix || '') },
+      // Each loyalty scheme's own prefix is a loyalty card too: a member's
+      // card, which puts them on the bill. See src/loyalty_schemes.js.
+      ...schemePrefixes.map((prefix) => ({ kind: 'loyalty', prefix: String(prefix || '') })),
     ]
       .filter((c) => c.prefix.length > 0 && number.startsWith(c.prefix))
       .sort((a, b) => b.prefix.length - a.prefix.length);
@@ -215,9 +219,20 @@ function cardRoutes({ pool, broadcast, secret }) {
    * above, which are this venue's real numbers -- so even the very first swipe
    * on a brand new terminal with no network behaves correctly.
    */
+  /** The active schemes' card prefixes, for classifying a swipe. */
+  async function schemePrefixes(office) {
+    const list = await loyaltySchemes.listSchemes(pool, office, { activeOnly: true });
+    return list.map((s) => s.card_prefix).filter(Boolean);
+  }
+
   router.get('/till/cards/settings', terminal, async (req, res, next) => {
     try {
-      res.json(await readSettings(req.office));
+      // The schemes' prefixes travel with the venue's own, so a till classifies
+      // a VIP card on 9997 as a loyalty card exactly as it does a 9998 one.
+      res.json({
+        ...(await readSettings(req.office)),
+        scheme_prefixes: await schemePrefixes(req.office),
+      });
     } catch (e) {
       next(e);
     }
@@ -289,7 +304,7 @@ function cardRoutes({ pool, broadcast, secret }) {
       }
 
       const settings = await readSettings(office);
-      const prefix = String(
+      let prefix = String(
         {
           clerk: settings.clerk_prefix,
           loyalty: settings.loyalty_prefix,
@@ -307,10 +322,47 @@ function cardRoutes({ pool, broadcast, secret }) {
       const subjectName = String(req.body?.subject_name || '').trim() || null;
       const width = Math.min(Math.max(Number(settings.number_digits) || 5, 4), 12);
 
+      /*
+       * A MEMBER'S CARD CARRIES THEIR OWN NUMBER, ON THEIR SCHEME'S PREFIX.
+       *
+       * "If the card number is 999800001, the customer's membership number
+       * should be shown as 00001." So the card is made from the number the
+       * member already has, rather than from a second counter that would put
+       * member 42 on card 999800007. A member of a scheme with its own prefix
+       * gets that prefix. Only where the number is free: a card already held
+       * by somebody else (issued before this rule) falls back to the counter.
+       */
+      let fromMember = null;
+      if ((kind === 'loyalty' || kind === 'membership') && subjectId) {
+        try {
+          const [[who]] = await pool.query(
+            'SELECT member_no, scheme_id FROM epos_customers WHERE id = ? AND email_key = ?',
+            [subjectId, office]
+          );
+          if (who && kind === 'loyalty' && who.scheme_id != null) {
+            const all = await loyaltySchemes.listSchemes(pool, office, { activeOnly: true });
+            const scheme = all.find((x) => x.id === Number(who.scheme_id));
+            if (scheme && scheme.card_prefix) prefix = scheme.card_prefix;
+          }
+          if (who && who.member_no != null) {
+            const candidate = `${prefix}${String(who.member_no).padStart(width, '0')}`;
+            const [[taken]] = await pool.query(
+              'SELECT id FROM epos_customers WHERE email_key = ? AND card_number = ? AND id <> ?',
+              [office, candidate, subjectId]
+            );
+            if (!taken) fromMember = { number: Number(who.member_no), cardNumber: candidate };
+          }
+        } catch {
+          // A database without scheme_id: the counter, as before.
+        }
+      }
+
       await conn.beginTransaction();
 
-      const number = await nextNumber(conn, office, kind);
-      const cardNumber = `${prefix}${String(number).padStart(width, '0')}`;
+      const number = fromMember ? fromMember.number : await nextNumber(conn, office, kind);
+      const cardNumber = fromMember
+        ? fromMember.cardNumber
+        : `${prefix}${String(number).padStart(width, '0')}`;
 
       // Attach it. Each kind has its own column, and the write is inside the
       // same transaction as the sequence bump so a failure here cannot burn a
@@ -378,6 +430,11 @@ function cardRoutes({ pool, broadcast, secret }) {
       let memberNo = null;
       if ((kind === 'loyalty' || kind === 'membership') && subjectId) {
         memberNo = await ensureMemberNumber(pool, office, subjectId);
+        // A card from the counter rather than the member's own number: the
+        // card wins, so the two never disagree. See syncMemberNoToCard.
+        if (!fromMember) {
+          memberNo = (await loyaltySchemes.syncMemberNoToCard(pool, office, subjectId, cardNumber)) ?? memberNo;
+        }
       }
 
       broadcast({ type: 'cards' });
@@ -425,7 +482,7 @@ function cardRoutes({ pool, broadcast, secret }) {
       }
 
       const settings = await readSettings(office);
-      const match = classify(settings, number);
+      const match = classify(settings, number, await schemePrefixes(office));
       if (!match) {
         return res.status(400).json({
           error:
@@ -453,6 +510,20 @@ function cardRoutes({ pool, broadcast, secret }) {
           'UPDATE epos_customers SET card_number = ? WHERE id = ? AND email_key = ?',
           [number, subjectId, office]
         );
+        // "The 9998 should not form part of the customer's membership number."
+        // The rest of the card becomes their number, and a card on a scheme's
+        // prefix puts somebody in no scheme yet into that one.
+        await loyaltySchemes.syncMemberNoToCard(pool, office, subjectId, number);
+        const all = await loyaltySchemes.listSchemes(pool, office, { activeOnly: true });
+        const scheme = loyaltySchemes.schemeForCard(all, number);
+        if (scheme) {
+          const [[cur]] = await pool
+            .query('SELECT scheme_id FROM epos_customers WHERE id = ? AND email_key = ?', [subjectId, office])
+            .catch(() => [[null]]);
+          if (cur && cur.scheme_id == null) {
+            await loyaltySchemes.joinScheme(pool, office, subjectId, scheme.id);
+          }
+        }
       } else if (match.kind === 'clerk') {
         const [[taken]] = await pool.query(
           `SELECT id, clark_name FROM bo_clarks

@@ -83,6 +83,7 @@ const NAV_PERMISSION = {
   gift_cards: 'commerce.gift_cards',
   deposits: 'commerce.deposits',
   loyalty: 'commerce.loyalty',
+  loyalty_schemes: 'commerce.loyalty',
   cards: 'commerce.cards',
   wallet: 'commerce.wallet',
   loyalty_app: 'commerce.loyalty',

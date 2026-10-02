@@ -187,6 +187,7 @@ function walletPageRoutes({ pool, secret, core }) {
           : '',
         `<dl class="facts">
            ${fact('Member', subject.name)}
+           ${fact('Scheme', subject.scheme)}
            ${fact('Tier', subject.tier)}
            ${fact('Your discount', subject.discount)}
            ${fact('Member since', subject.member_since)}
