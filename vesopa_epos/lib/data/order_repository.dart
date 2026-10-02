@@ -179,6 +179,11 @@ class OrderRepository {
     await _db.transaction(() async {
       final now = DateTime.now();
 
+      // A member whose loyalty scheme is a price level is charged at that
+      // level while its hours are on, whatever the room is on. Decided here
+      // rather than by each caller, so no way of ringing an item can miss it.
+      priceLevel = await _schemeLevel(orderId, now) ?? priceLevel;
+
       // A product with answers on it is never merged into an existing line.
       // Two gins are one line at quantity 2; a gin with coke and a gin with
       // tonic are two different things that happen to share a PLU, and adding
@@ -719,6 +724,12 @@ class OrderRepository {
   /// not the user interface: `ui/membership_gate.dart` is what a clerk actually
   /// meets, and it offers to renew. Reaching this exception means a caller
   /// skipped it.
+  ///
+  /// [scheme] is the member's loyalty scheme, copied onto the bill: its
+  /// discount follows its departments, days and hours, and a price-level
+  /// scheme moves what is already on the bill to that level. [revertLevel] is
+  /// the till's own level, which lines go back to when a price-level member is
+  /// replaced by somebody who is not one.
   Future<void> attachCustomer(
     String orderId, {
     required String? id,
@@ -730,6 +741,9 @@ class OrderRepository {
     String? email,
     String? cardNumber,
     int? pointsBalance,
+    LoyaltyScheme? scheme,
+    String? memberNumber,
+    int revertLevel = minPriceLevel,
   }) async {
     if (membershipExpiry != null) {
       final now = DateTime.now();
@@ -755,14 +769,64 @@ class OrderRepository {
           // For the screen facing the customer, which has no network of its
           // own and reads only what this till writes to a file.
           customerPoints: Value(pointsBalance),
+          customerScheme: Value(scheme?.encode()),
+          customerMemberNo: Value(memberNumber),
         ),
       );
+      await _repriceForScheme(orderId, revertLevel);
       await recalculate(orderId);
     });
   }
 
-  /// Remove the attached customer and their discount.
-  Future<void> clearCustomer(String orderId) async {
+  /// The price level the bill's scheme charges at [now], or null for the
+  /// till's own.
+  Future<int?> _schemeLevel(String orderId, DateTime now) async {
+    final order = await (_db.select(_db.orders)
+          ..where((o) => o.id.equals(orderId)))
+        .getSingleOrNull();
+    final scheme = LoyaltyScheme.decode(order?.customerScheme);
+    if (scheme == null || !scheme.setsPriceLevel || !scheme.activeAt(now)) {
+      return null;
+    }
+    return clampPriceLevel(scheme.priceLevel);
+  }
+
+  /// Move the lines already on a bill to the level its scheme charges, or back
+  /// to [revertLevel] when it has none.
+  ///
+  /// Only a line still at one of its product's list prices moves. A price the
+  /// clerk typed in, an open-priced item, a line whose product has gone from
+  /// the catalogue: all stay exactly as they were rung.
+  Future<void> _repriceForScheme(String orderId, int revertLevel) async {
+    final target =
+        await _schemeLevel(orderId, DateTime.now()) ?? clampPriceLevel(revertLevel);
+    final lines = await (_db.select(_db.orderLines)
+          ..where((l) => l.orderId.equals(orderId)))
+        .get();
+    if (lines.isEmpty) return;
+    final plus = {for (final l in lines) l.pluId};
+    final products = {
+      for (final p in await (_db.select(_db.products)
+            ..where((p) => p.pluId.isIn(plus)))
+          .get())
+        p.pluId: p,
+    };
+    for (final l in lines) {
+      final product = products[l.pluId];
+      if (product == null) continue;
+      final listed = {for (final level in priceLevels) product.priceAt(level)};
+      if (!listed.contains(l.unitPriceMinor)) continue;
+      final wanted = product.priceAt(target);
+      if (wanted == l.unitPriceMinor) continue;
+      await (_db.update(_db.orderLines)..where((x) => x.id.equals(l.id)))
+          .write(OrderLinesCompanion(unitPriceMinor: Value(wanted)));
+    }
+  }
+
+  /// Remove the attached customer and their discount. [revertLevel] is the
+  /// till's own price level, for a bill a price-level member was on.
+  Future<void> clearCustomer(String orderId,
+      {int revertLevel = minPriceLevel}) async {
     await _db.transaction(() async {
       await (_db.update(_db.orders)..where((o) => o.id.equals(orderId))).write(
         const OrdersCompanion(
@@ -778,8 +842,11 @@ class OrderRepository {
           // Every column attachCustomer writes. A balance left behind would
           // greet the next customer by the last one's points.
           customerPoints: Value(null),
+          customerScheme: Value(null),
+          customerMemberNo: Value(null),
         ),
       );
+      await _repriceForScheme(orderId, revertLevel);
       await recalculate(orderId);
     });
   }
@@ -880,12 +947,49 @@ class OrderRepository {
   /// totals, the sale screen's receipt, and the payment screen's tender maths.
   /// When they each worked it out for themselves, two of them worked it out as
   /// zero and the customer was charged the undiscounted bill.
-  static int customerDiscountOn(Order order, int grossMinor) =>
-      switch (order.customerDiscountType) {
-        'percent' => (grossMinor * order.customerDiscountValue / 100).round(),
-        'amount' => order.customerDiscountValue,
-        _ => 0,
-      };
+  ///
+  /// A customer's own discount, set on them in the back office, wins. Without
+  /// one, their loyalty scheme's applies: on the departments it names, on the
+  /// days and hours it names, once they hold the points it asks for.
+  /// [departments] says which department each PLU on [lines] is in.
+  static int customerDiscountOn(
+    Order order,
+    List<OrderLine> lines, {
+    Map<int, String?> departments = const {},
+    DateTime? now,
+  }) {
+    final grossMinor = lines.fold<int>(
+      0,
+      (sum, l) => sum + (l.unitPriceMinor * l.quantity).round(),
+    );
+    switch (order.customerDiscountType) {
+      case 'percent':
+        return (grossMinor * order.customerDiscountValue / 100).round();
+      case 'amount':
+        return order.customerDiscountValue;
+    }
+    final scheme = LoyaltyScheme.decode(order.customerScheme);
+    if (scheme == null) return 0;
+    return scheme.discountOn(
+      [
+        for (final l in lines)
+          (pluId: l.pluId, grossMinor: (l.unitPriceMinor * l.quantity).round()),
+      ],
+      departments: departments,
+      now: now ?? DateTime.now(),
+      points: order.customerPoints,
+    );
+  }
+
+  /// Which department each of these PLUs is in, for a scheme's discount.
+  Future<Map<int, String?>> departmentsOf(Iterable<int> plus) async {
+    final wanted = plus.toSet();
+    if (wanted.isEmpty) return const {};
+    final rows = await (_db.select(_db.products)
+          ..where((p) => p.pluId.isIn(wanted)))
+        .get();
+    return {for (final p in rows) p.pluId: p.departmentName};
+  }
 
   /// Recompute the stored totals from the lines. Totals are derived once and
   /// stored, so a reprint or an end-of-day report never disagrees with what the
@@ -919,11 +1023,6 @@ class OrderRepository {
         await (_db.select(_db.orders)..where((o) => o.id.equals(orderId)))
             .getSingle();
 
-    final gross = lines.fold<int>(
-      0,
-      (sum, l) => sum + (l.unitPriceMinor * l.quantity).round(),
-    );
-
     // Mix & match deals from the back office, worked out on the whole basket
     // before anything is priced: a deal reprices the items themselves.
     final dealSaving = (await mixMatch()).apply(lines).totalSavingMinor;
@@ -945,7 +1044,13 @@ class OrderRepository {
       ],
       dealMinor: dealSaving,
       manualDiscountMinor: order.manualDiscountMinor,
-      customerDiscountMinor: customerDiscountOn(order, gross),
+      customerDiscountMinor: customerDiscountOn(
+        order,
+        lines,
+        departments: order.customerScheme == null
+            ? const {}
+            : await departmentsOf(lines.map((l) => l.pluId)),
+      ),
     );
 
     await (_db.update(_db.orders)..where((o) => o.id.equals(orderId))).write(

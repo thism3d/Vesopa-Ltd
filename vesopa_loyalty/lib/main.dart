@@ -16,7 +16,7 @@ import 'ui/venue_picker.dart';
 /// office), so a venue's app is theirs without a build of its own. See
 /// data/session.dart for how the app knows which venue it is.
 /// This build's version, for the activity log. Keep in step with pubspec.yaml.
-const loyaltyAppVersion = '1.0.7.0';
+const loyaltyAppVersion = '1.0.8.0';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();

@@ -70,6 +70,8 @@ import 'manager_approval.dart';
 import 'widgets/pos_message.dart';
 import 'widgets/on_screen_keyboard.dart';
 import 'widgets/pos_text_field.dart';
+import 'widgets/scheme_picker.dart';
+import '../data/price_level_controller.dart';
 
 /// Deal with [card].
 ///
@@ -394,6 +396,12 @@ Future<void> _loyaltyCard(
         discountType: member.discountType,
         discountValue: member.discountValue,
         pointsBalance: member.pointsBalance,
+        // Their scheme's discount, hours and price level, and the number on
+        // the card without its prefix.
+        scheme: member.scheme,
+        memberNumber: member.memberNumber,
+        cardNumber: card.number,
+        revertLevel: ref.read(currentPriceLevelProvider),
       );
 
   if (!context.mounted) return;
@@ -432,7 +440,10 @@ Future<void> _loyaltyCard(
 
   PosMessenger.success(
     context,
-    '${member.name} is on this bill — '
+    '${member.name}'
+    '${member.memberNumber != null ? ' (member ${member.memberNumber})' : ''}'
+    '${member.scheme != null ? ', ${member.scheme!.name},' : ''}'
+    ' is on this bill — '
     '${member.pointsBalance} point'
     '${member.pointsBalance == 1 ? '' : 's'}'
     '${member.discountType != 'none' && member.discountValue > 0
@@ -489,7 +500,14 @@ Future<void> _offerToEnrol(
   );
   if (!(enrol ?? false) || !context.mounted) return;
 
-  final details = await _askForMember(context);
+  final offered = tillSchemes(ref.read(loyaltySchemesProvider));
+  final details = await _askForMember(
+    context,
+    schemes: offered,
+    // The scheme the card's own prefix names is already picked: a 9997 card
+    // is a VIP card, and the clerk should not have to say so.
+    initialScheme: initialSchemeId(offered, cardNumber: card.number),
+  );
   if (details == null || !context.mounted) return;
 
   final commerce = ref.read(commerceRepositoryProvider);
@@ -503,6 +521,8 @@ Future<void> _offerToEnrol(
     final member = await commerce.enrol(
       phone: details.phone,
       name: details.name,
+      schemeId: details.schemeId,
+      cardNumber: card.number,
     );
     await cards.assign(
       cardNumber: card.number,
@@ -521,13 +541,21 @@ Future<void> _offerToEnrol(
             name: member.name,
             // Just enrolled, so there is no membership to have run out.
             membershipExpiry: null,
+            phone: member.phone,
+            cardNumber: card.number,
+            pointsBalance: member.pointsBalance,
+            scheme: member.scheme,
+            memberNumber: member.memberNumber,
+            revertLevel: ref.read(currentPriceLevelProvider),
           );
     }
 
     if (!context.mounted) return;
     PosMessenger.success(
       context,
-      '${member.name} is a member, and card ${card.number} is theirs.',
+      '${member.name} is a member'
+      '${member.scheme != null ? ' of ${member.scheme!.name}' : ''}'
+      ', and card ${card.number} is theirs.',
     );
   } on Object catch (e) {
     if (!context.mounted) return;
@@ -539,60 +567,80 @@ Future<void> _offerToEnrol(
   }
 }
 
-/// The two things a member needs: a name and a number to be found by.
+/// The two things a member needs: a name and a number to be found by -- and,
+/// where the venue runs loyalty schemes, which one they are joining.
 ///
 /// Deliberately short. This runs at a counter with somebody waiting, and a form
 /// with six fields on it is a form a clerk skips by typing "x" into all of
-/// them.
-Future<({String name, String phone})?> _askForMember(BuildContext context) {
+/// them. The scheme is already picked (the card's own, else the default), so
+/// it costs no tap unless the customer wants a different one.
+Future<({String name, String phone, int? schemeId})?> _askForMember(
+  BuildContext context, {
+  List<LoyaltyScheme> schemes = const [],
+  int? initialScheme,
+}) {
   final name = TextEditingController();
   final phone = TextEditingController();
+  var schemeId = initialScheme;
 
-  return showDialog<({String name, String phone})>(
+  return showDialog<({String name, String phone, int? schemeId})>(
     context: context,
-    builder: (context) => AlertDialog(
-      title: const Text('New member'),
-      content: SizedBox(
-        width: 340,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            PosTextField(
-              controller: name,
-              autofocus: true,
-              textCapitalization: TextCapitalization.words,
-              decoration: const InputDecoration(labelText: 'Name'),
-              submitLabel: 'Next',
+    builder: (context) => StatefulBuilder(
+      builder: (context, setState) => AlertDialog(
+        title: const Text('New member'),
+        content: SizedBox(
+          width: schemes.isEmpty ? 340 : 520,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (schemes.isNotEmpty) ...[
+                  SchemePicker(
+                    schemes: schemes,
+                    selected: schemeId,
+                    onChanged: (id) => setState(() => schemeId = id),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+                PosTextField(
+                  controller: name,
+                  autofocus: true,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(labelText: 'Name'),
+                  submitLabel: 'Next',
+                ),
+                const SizedBox(height: 12),
+                PosTextField(
+                  controller: phone,
+                  // Digits, because a phone number is digits and a QWERTY under
+                  // one is four rows of keys nobody is going to press.
+                  mode: PosKeyboardMode.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Phone',
+                    helperText: 'How they are found if they forget the card.',
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 12),
-            PosTextField(
-              controller: phone,
-              // Digits, because a phone number is digits and a QWERTY under one
-              // is four rows of keys nobody is going to press.
-              mode: PosKeyboardMode.number,
-              decoration: const InputDecoration(
-                labelText: 'Phone',
-                helperText: 'How they are found if they forget the card.',
-              ),
-            ),
-          ],
+          ),
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final n = name.text.trim();
+              final p = phone.text.trim();
+              if (n.isEmpty || p.isEmpty) return;
+              Navigator.of(context).pop((name: n, phone: p, schemeId: schemeId));
+            },
+            child: const Text('Create'),
+          ),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () {
-            final n = name.text.trim();
-            final p = phone.text.trim();
-            if (n.isEmpty || p.isEmpty) return;
-            Navigator.of(context).pop((name: n, phone: p));
-          },
-          child: const Text('Create'),
-        ),
-      ],
     ),
   );
 }

@@ -16,7 +16,10 @@ Map<String, Object?> watchCard({
   final short = minRedeem > points ? minRedeem - points : 0;
   final membership = (me['membership'] as Map?) ?? const {};
   final expiry = membership['expiry'] ?? me['membership_expiry'];
-  final number = (me['card_number'] as String?) ??
+  // The membership number (the card without its prefix) where the server
+  // sends one: what the member reads out at the counter.
+  final number = (me['member_number'] as String?) ??
+      (me['card_number'] as String?) ??
       (me['member_no'] != null ? '${me['member_no']}' : '');
 
   final rows = <List<String>>[

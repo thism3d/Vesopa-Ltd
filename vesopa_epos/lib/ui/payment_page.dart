@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../data/commerce.dart';
+import '../data/price_level_controller.dart';
 import '../data/earning.dart';
 import '../data/training_mode.dart';
 import '../data/local/database.dart';
@@ -589,16 +590,16 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     // customer's standing discount — was silently dropped and the customer was
     // charged full price. The clerk's own override still wins once they touch
     // the discount here, which is what `_discountTouched` is for.
-    final gross = lines.fold<int>(
-      0,
-      (sum, l) => sum + (l.unitPriceMinor * l.quantity).round(),
-    );
     final manual = _discountTouched
         ? _manualDiscountMinor
         : (order?.manualDiscountMinor ?? 0);
     final customer = order == null
         ? 0
-        : OrderRepository.customerDiscountOn(order, gross);
+        : OrderRepository.customerDiscountOn(
+            order,
+            lines,
+            departments: ref.watch(productDepartmentsProvider).value ?? const {},
+          );
 
     return PricingEngine(promotions: ref.read(promotionsProvider)).price(
       _priced(lines),
@@ -1445,9 +1446,10 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     // it null -- and then nothing was earned, no visit was counted and the
     // Activity page stayed empty, which is what the venue reported (1.8.1.0).
     // The renewal below has read the order for the same reason since 1.6.8.0.
+    final settledOrder = await repo.watchOrder(widget.orderId).first;
     final customerId = earningCustomer(
       attachedHere: _customer?.id,
-      onOrder: (await repo.watchOrder(widget.orderId).first).customerId,
+      onOrder: settledOrder.customerId,
     );
     if (!practice && customerId != null) {
       try {
@@ -1459,10 +1461,32 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
             orderId: widget.orderId,
           );
         }
+        // A scheme that earns on some departments only: the part of the
+        // spend that was on them. Null, and the whole spend earns, otherwise.
+        final earnScheme = LoyaltyScheme.decode(settledOrder.customerScheme);
+        int? eligible;
+        if (earnScheme != null && earnScheme.earnDepartments.isNotEmpty) {
+          final settledLines = await repo.watchLines(widget.orderId).first;
+          eligible = eligibleSpendMinor(
+            earnScheme,
+            [
+              for (final l in settledLines)
+                (
+                  pluId: l.pluId,
+                  grossMinor: (l.unitPriceMinor * l.quantity).round(),
+                ),
+            ],
+            departments: await repo.departmentsOf(
+              settledLines.map((l) => l.pluId),
+            ),
+            netGoodsMinor: _tender.totals.netGoodsMinor,
+          );
+        }
         await commerce.movePoints(
           customerId: customerId,
           kind: 'earn',
           spendMinor: _tender.totals.netGoodsMinor,
+          eligibleSpendMinor: eligible,
           orderId: widget.orderId,
         );
       } catch (_) {
@@ -2065,7 +2089,10 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     );
     if (yes != true || !mounted) return;
 
-    await ref.read(orderRepositoryProvider).clearCustomer(widget.orderId);
+    await ref.read(orderRepositoryProvider).clearCustomer(
+          widget.orderId,
+          revertLevel: ref.read(currentPriceLevelProvider),
+        );
     if (mounted) setState(() => _customer = null);
   }
 
@@ -2117,6 +2144,9 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
           phone: picked.phone,
           cardNumber: picked.cardNumber,
           pointsBalance: picked.pointsBalance,
+          scheme: picked.scheme,
+          memberNumber: picked.memberNumber,
+          revertLevel: ref.read(currentPriceLevelProvider),
         );
     if (!mounted) return;
     if (gate == MembershipGate.renewing) {

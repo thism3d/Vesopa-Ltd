@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../data/commerce.dart';
 import 'widgets/on_screen_keyboard.dart';
 import 'widgets/pos_text_field.dart';
+import 'widgets/scheme_picker.dart';
 
 String _money(int minor) =>
     NumberFormat.currency(locale: 'en_GB', symbol: '£').format(minor / 100);
@@ -529,6 +530,10 @@ class _LoyaltyDialogState extends State<_LoyaltyDialog> {
   bool _busy = false;
   bool _enrolling = false;
 
+  /// The schemes somebody new may join, with the venue's default picked.
+  late final List<LoyaltyScheme> _schemes = tillSchemes(widget.commerce.schemes);
+  late int? _schemeId = initialSchemeId(_schemes);
+
   @override
   void dispose() {
     _search.dispose();
@@ -610,6 +615,7 @@ class _LoyaltyDialogState extends State<_LoyaltyDialog> {
       final customer = await widget.commerce.enrol(
         phone: _phone.text.trim(),
         name: _name.text.trim().isEmpty ? 'Guest' : _name.text.trim(),
+        schemeId: _schemeId,
       );
       if (mounted) {
         setState(() {
@@ -637,7 +643,7 @@ class _LoyaltyDialogState extends State<_LoyaltyDialog> {
     return AlertDialog(
       title: Text(widget.redeem ? 'Loyalty points' : 'Attach customer'),
       content: SizedBox(
-        width: 430,
+        width: _enrolling && _schemes.isNotEmpty ? 520 : 430,
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -681,6 +687,9 @@ class _LoyaltyDialogState extends State<_LoyaltyDialog> {
                           title: Text(match.name),
                           subtitle: Text(
                             [
+                              if (match.memberNumber != null)
+                                'Member ${match.memberNumber}',
+                              if (match.scheme != null) match.scheme!.name,
                               if (match.phone?.isNotEmpty ?? false) match.phone!,
                               '${match.pointsBalance} pts',
                               if (match.tierName?.isNotEmpty ?? false)
@@ -702,6 +711,14 @@ class _LoyaltyDialogState extends State<_LoyaltyDialog> {
                   isError: false,
                 ),
                 const SizedBox(height: 10),
+                if (_schemes.isNotEmpty) ...[
+                  SchemePicker(
+                    schemes: _schemes,
+                    selected: _schemeId,
+                    onChanged: (id) => setState(() => _schemeId = id),
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 PosTextField(
                   controller: _name,
                   textCapitalization: TextCapitalization.words,
@@ -849,6 +866,21 @@ class _MemberCard extends StatelessWidget {
                       ?.copyWith(fontWeight: FontWeight.bold),
                 ),
               ),
+              if (customer.scheme != null)
+                Padding(
+                  padding: const EdgeInsets.only(left: 6),
+                  child: Chip(
+                    visualDensity: VisualDensity.compact,
+                    backgroundColor: customer.scheme!.color,
+                    label: Text(
+                      customer.scheme!.name,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
               if (customer.tierName?.isNotEmpty ?? false)
                 Chip(
                   visualDensity: VisualDensity.compact,
@@ -862,6 +894,19 @@ class _MemberCard extends StatelessWidget {
                 ),
             ],
           ),
+          if (customer.memberNumber != null)
+            Text(
+              'Member ${customer.memberNumber}',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: scheme.onPrimaryContainer,
+              ),
+            ),
+          if (customer.scheme != null && customer.scheme!.rewardType != 'none')
+            Text(
+              customer.scheme!.rewardLabel,
+              style: theme.textTheme.bodySmall,
+            ),
           const SizedBox(height: 8),
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,

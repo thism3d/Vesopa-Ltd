@@ -773,9 +773,14 @@ app.post('/till/customers', async (req, res, next) => {
     // src/member_numbers.js for why this is not part of issuing a card.
     const memberNo = await ensureMemberNumber(pool, c.office, id);
     broadcast({ type: 'customers.updated' });
+    // The number as the till shows it: padded like a card, prefix dropped.
+    const [shown] = await loyaltySchemes.decorateCustomers(pool, c.office, [
+      { id, member_no: memberNo, card_number: null, scheme_id: scheme ? scheme.id : null },
+    ]);
     res.status(201).json({
       id,
       member_no: memberNo,
+      member_number: shown ? shown.member_number : null,
       scheme_id: scheme ? scheme.id : null,
       scheme_name: scheme ? scheme.name : null,
       scheme_colour: scheme ? scheme.colour : null,

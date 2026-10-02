@@ -26,6 +26,7 @@ library;
 import 'package:flutter/material.dart';
 
 import '../../data/local/database.dart';
+import '../../data/loyalty_schemes.dart';
 
 /// Everything the check knows about the person the bill is for.
 ///
@@ -51,6 +52,8 @@ class BillCustomer {
     this.membershipExpiry,
     this.discountType = 'none',
     this.discountValue = 0,
+    this.memberNumber,
+    this.scheme,
   });
 
   /// The customer on an order, or null when there is not one.
@@ -74,7 +77,24 @@ class BillCustomer {
       pointsBalance: pointsBalance,
       discountType: order.customerDiscountType,
       discountValue: order.customerDiscountValue,
+      memberNumber: order.customerMemberNo,
+      scheme: LoyaltyScheme.decode(order.customerScheme),
     );
+  }
+
+  /// The membership number, the card without its prefix ("00001").
+  final String? memberNumber;
+
+  /// Their loyalty scheme, as copied onto the bill.
+  final LoyaltyScheme? scheme;
+
+  /// The scheme's reward, when it is what is pricing the bill: the
+  /// customer's own discount wins where they have one.
+  String? get schemeReward {
+    final s = scheme;
+    if (s == null || hasDiscount || s.rewardType == 'none') return null;
+    if (!s.activeAt(DateTime.now())) return null;
+    return s.rewardLabel;
   }
 
   final String? id;
@@ -121,6 +141,7 @@ class BillCustomer {
 
   /// The contact line, as much of it as there is.
   String get contact => [
+        if (memberNumber?.trim().isNotEmpty ?? false) 'Member ${memberNumber!.trim()}',
         if (phone?.trim().isNotEmpty ?? false) phone!.trim(),
         if (email?.trim().isNotEmpty ?? false) email!.trim(),
         if (cardNumber?.trim().isNotEmpty ?? false) 'Card ${cardNumber!.trim()}',
@@ -188,6 +209,7 @@ class CustomerCard extends StatelessWidget {
                       ),
                     ),
                     if (customer.hasDiscount ||
+                        customer.scheme != null ||
                         customer.pointsBalance > 0 ||
                         customer.isMember) ...[
                       SizedBox(height: 5 * s),
@@ -195,6 +217,18 @@ class CustomerCard extends StatelessWidget {
                         spacing: 6 * s,
                         runSpacing: 4 * s,
                         children: [
+                          if (customer.scheme != null)
+                            _Chip(
+                              label: customer.scheme!.name,
+                              scale: s,
+                              colour: customer.scheme!.color,
+                            ),
+                          if (customer.schemeReward != null)
+                            _Chip(
+                              label: customer.schemeReward!,
+                              scale: s,
+                              emphasis: true,
+                            ),
                           if (customer.hasDiscount)
                             _Chip(
                               label: customer.discountLabel,
@@ -298,10 +332,18 @@ class _Disc extends StatelessWidget {
 }
 
 class _Chip extends StatelessWidget {
-  const _Chip({required this.label, required this.scale, this.emphasis = false});
+  const _Chip({
+    required this.label,
+    required this.scale,
+    this.emphasis = false,
+    this.colour,
+  });
 
   final String label;
   final double scale;
+
+  /// A loyalty scheme's own colour, so a VIP reads as a VIP at a glance.
+  final Color? colour;
 
   /// The discount gets the solid treatment, because it is the one thing on the
   /// card that changed the number at the bottom of the bill.
@@ -314,9 +356,10 @@ class _Chip extends StatelessWidget {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 7 * scale, vertical: 2 * scale),
       decoration: BoxDecoration(
-        color: emphasis
-            ? scheme.primary
-            : scheme.onPrimaryContainer.withValues(alpha: 0.12),
+        color: colour ??
+            (emphasis
+                ? scheme.primary
+                : scheme.onPrimaryContainer.withValues(alpha: 0.12)),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Text(
@@ -324,7 +367,11 @@ class _Chip extends StatelessWidget {
         style: TextStyle(
           fontSize: 11 * scale,
           fontWeight: FontWeight.w700,
-          color: emphasis ? scheme.onPrimary : scheme.onPrimaryContainer,
+          color: colour != null
+              ? Colors.white
+              : emphasis
+                  ? scheme.onPrimary
+                  : scheme.onPrimaryContainer,
         ),
       ),
     );

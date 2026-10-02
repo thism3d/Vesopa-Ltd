@@ -1957,6 +1957,28 @@ class $OrdersTable extends Orders with TableInfo<$OrdersTable, Order> {
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _customerSchemeMeta = const VerificationMeta(
+    'customerScheme',
+  );
+  @override
+  late final GeneratedColumn<String> customerScheme = GeneratedColumn<String>(
+    'customer_scheme',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _customerMemberNoMeta = const VerificationMeta(
+    'customerMemberNo',
+  );
+  @override
+  late final GeneratedColumn<String> customerMemberNo = GeneratedColumn<String>(
+    'customer_member_no',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _trainingMeta = const VerificationMeta(
     'training',
   );
@@ -2033,6 +2055,8 @@ class $OrdersTable extends Orders with TableInfo<$OrdersTable, Order> {
     customerEmail,
     customerCardNumber,
     customerPoints,
+    customerScheme,
+    customerMemberNo,
     training,
     createdAt,
     closedAt,
@@ -2235,6 +2259,24 @@ class $OrdersTable extends Orders with TableInfo<$OrdersTable, Order> {
         ),
       );
     }
+    if (data.containsKey('customer_scheme')) {
+      context.handle(
+        _customerSchemeMeta,
+        customerScheme.isAcceptableOrUnknown(
+          data['customer_scheme']!,
+          _customerSchemeMeta,
+        ),
+      );
+    }
+    if (data.containsKey('customer_member_no')) {
+      context.handle(
+        _customerMemberNoMeta,
+        customerMemberNo.isAcceptableOrUnknown(
+          data['customer_member_no']!,
+          _customerMemberNoMeta,
+        ),
+      );
+    }
     if (data.containsKey('training')) {
       context.handle(
         _trainingMeta,
@@ -2367,6 +2409,14 @@ class $OrdersTable extends Orders with TableInfo<$OrdersTable, Order> {
       customerPoints: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}customer_points'],
+      ),
+      customerScheme: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}customer_scheme'],
+      ),
+      customerMemberNo: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}customer_member_no'],
       ),
       training: attachedDatabase.typeMapping.read(
         DriftSqlType.bool,
@@ -2515,6 +2565,18 @@ class Order extends DataClass implements Insertable<Order> {
   /// the points for this sale are not earned until it settles.
   final int? customerPoints;
 
+  /// The attached member's loyalty scheme, as JSON, or null for none.
+  ///
+  /// Copied down for the reason everything else about the customer is: a bill
+  /// parked at seven has to price itself at nine, on a line that may by then be
+  /// down, and the scheme decides its discount (which departments, which
+  /// hours) and its price level. See data/loyalty_schemes.dart.
+  final String? customerScheme;
+
+  /// Their membership number, the card without its prefix ("00001"), for the
+  /// check and the receipt.
+  final String? customerMemberNo;
+
   /// A practice bill, rung up by a training account.
   ///
   /// "Sales made in Training Mode should not be sent to the back office and
@@ -2557,6 +2619,8 @@ class Order extends DataClass implements Insertable<Order> {
     this.customerEmail,
     this.customerCardNumber,
     this.customerPoints,
+    this.customerScheme,
+    this.customerMemberNo,
     required this.training,
     required this.createdAt,
     this.closedAt,
@@ -2621,6 +2685,12 @@ class Order extends DataClass implements Insertable<Order> {
     }
     if (!nullToAbsent || customerPoints != null) {
       map['customer_points'] = Variable<int>(customerPoints);
+    }
+    if (!nullToAbsent || customerScheme != null) {
+      map['customer_scheme'] = Variable<String>(customerScheme);
+    }
+    if (!nullToAbsent || customerMemberNo != null) {
+      map['customer_member_no'] = Variable<String>(customerMemberNo);
     }
     map['training'] = Variable<bool>(training);
     map['created_at'] = Variable<DateTime>(createdAt);
@@ -2692,6 +2762,12 @@ class Order extends DataClass implements Insertable<Order> {
       customerPoints: customerPoints == null && nullToAbsent
           ? const Value.absent()
           : Value(customerPoints),
+      customerScheme: customerScheme == null && nullToAbsent
+          ? const Value.absent()
+          : Value(customerScheme),
+      customerMemberNo: customerMemberNo == null && nullToAbsent
+          ? const Value.absent()
+          : Value(customerMemberNo),
       training: Value(training),
       createdAt: Value(createdAt),
       closedAt: closedAt == null && nullToAbsent
@@ -2742,6 +2818,8 @@ class Order extends DataClass implements Insertable<Order> {
         json['customerCardNumber'],
       ),
       customerPoints: serializer.fromJson<int?>(json['customerPoints']),
+      customerScheme: serializer.fromJson<String?>(json['customerScheme']),
+      customerMemberNo: serializer.fromJson<String?>(json['customerMemberNo']),
       training: serializer.fromJson<bool>(json['training']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       closedAt: serializer.fromJson<DateTime?>(json['closedAt']),
@@ -2777,6 +2855,8 @@ class Order extends DataClass implements Insertable<Order> {
       'customerEmail': serializer.toJson<String?>(customerEmail),
       'customerCardNumber': serializer.toJson<String?>(customerCardNumber),
       'customerPoints': serializer.toJson<int?>(customerPoints),
+      'customerScheme': serializer.toJson<String?>(customerScheme),
+      'customerMemberNo': serializer.toJson<String?>(customerMemberNo),
       'training': serializer.toJson<bool>(training),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'closedAt': serializer.toJson<DateTime?>(closedAt),
@@ -2810,6 +2890,8 @@ class Order extends DataClass implements Insertable<Order> {
     Value<String?> customerEmail = const Value.absent(),
     Value<String?> customerCardNumber = const Value.absent(),
     Value<int?> customerPoints = const Value.absent(),
+    Value<String?> customerScheme = const Value.absent(),
+    Value<String?> customerMemberNo = const Value.absent(),
     bool? training,
     DateTime? createdAt,
     Value<DateTime?> closedAt = const Value.absent(),
@@ -2850,6 +2932,12 @@ class Order extends DataClass implements Insertable<Order> {
     customerPoints: customerPoints.present
         ? customerPoints.value
         : this.customerPoints,
+    customerScheme: customerScheme.present
+        ? customerScheme.value
+        : this.customerScheme,
+    customerMemberNo: customerMemberNo.present
+        ? customerMemberNo.value
+        : this.customerMemberNo,
     training: training ?? this.training,
     createdAt: createdAt ?? this.createdAt,
     closedAt: closedAt.present ? closedAt.value : this.closedAt,
@@ -2910,6 +2998,12 @@ class Order extends DataClass implements Insertable<Order> {
       customerPoints: data.customerPoints.present
           ? data.customerPoints.value
           : this.customerPoints,
+      customerScheme: data.customerScheme.present
+          ? data.customerScheme.value
+          : this.customerScheme,
+      customerMemberNo: data.customerMemberNo.present
+          ? data.customerMemberNo.value
+          : this.customerMemberNo,
       training: data.training.present ? data.training.value : this.training,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       closedAt: data.closedAt.present ? data.closedAt.value : this.closedAt,
@@ -2945,6 +3039,8 @@ class Order extends DataClass implements Insertable<Order> {
           ..write('customerEmail: $customerEmail, ')
           ..write('customerCardNumber: $customerCardNumber, ')
           ..write('customerPoints: $customerPoints, ')
+          ..write('customerScheme: $customerScheme, ')
+          ..write('customerMemberNo: $customerMemberNo, ')
           ..write('training: $training, ')
           ..write('createdAt: $createdAt, ')
           ..write('closedAt: $closedAt, ')
@@ -2980,6 +3076,8 @@ class Order extends DataClass implements Insertable<Order> {
     customerEmail,
     customerCardNumber,
     customerPoints,
+    customerScheme,
+    customerMemberNo,
     training,
     createdAt,
     closedAt,
@@ -3014,6 +3112,8 @@ class Order extends DataClass implements Insertable<Order> {
           other.customerEmail == this.customerEmail &&
           other.customerCardNumber == this.customerCardNumber &&
           other.customerPoints == this.customerPoints &&
+          other.customerScheme == this.customerScheme &&
+          other.customerMemberNo == this.customerMemberNo &&
           other.training == this.training &&
           other.createdAt == this.createdAt &&
           other.closedAt == this.closedAt &&
@@ -3046,6 +3146,8 @@ class OrdersCompanion extends UpdateCompanion<Order> {
   final Value<String?> customerEmail;
   final Value<String?> customerCardNumber;
   final Value<int?> customerPoints;
+  final Value<String?> customerScheme;
+  final Value<String?> customerMemberNo;
   final Value<bool> training;
   final Value<DateTime> createdAt;
   final Value<DateTime?> closedAt;
@@ -3077,6 +3179,8 @@ class OrdersCompanion extends UpdateCompanion<Order> {
     this.customerEmail = const Value.absent(),
     this.customerCardNumber = const Value.absent(),
     this.customerPoints = const Value.absent(),
+    this.customerScheme = const Value.absent(),
+    this.customerMemberNo = const Value.absent(),
     this.training = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.closedAt = const Value.absent(),
@@ -3109,6 +3213,8 @@ class OrdersCompanion extends UpdateCompanion<Order> {
     this.customerEmail = const Value.absent(),
     this.customerCardNumber = const Value.absent(),
     this.customerPoints = const Value.absent(),
+    this.customerScheme = const Value.absent(),
+    this.customerMemberNo = const Value.absent(),
     this.training = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.closedAt = const Value.absent(),
@@ -3141,6 +3247,8 @@ class OrdersCompanion extends UpdateCompanion<Order> {
     Expression<String>? customerEmail,
     Expression<String>? customerCardNumber,
     Expression<int>? customerPoints,
+    Expression<String>? customerScheme,
+    Expression<String>? customerMemberNo,
     Expression<bool>? training,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? closedAt,
@@ -3177,6 +3285,8 @@ class OrdersCompanion extends UpdateCompanion<Order> {
       if (customerCardNumber != null)
         'customer_card_number': customerCardNumber,
       if (customerPoints != null) 'customer_points': customerPoints,
+      if (customerScheme != null) 'customer_scheme': customerScheme,
+      if (customerMemberNo != null) 'customer_member_no': customerMemberNo,
       if (training != null) 'training': training,
       if (createdAt != null) 'created_at': createdAt,
       if (closedAt != null) 'closed_at': closedAt,
@@ -3211,6 +3321,8 @@ class OrdersCompanion extends UpdateCompanion<Order> {
     Value<String?>? customerEmail,
     Value<String?>? customerCardNumber,
     Value<int?>? customerPoints,
+    Value<String?>? customerScheme,
+    Value<String?>? customerMemberNo,
     Value<bool>? training,
     Value<DateTime>? createdAt,
     Value<DateTime?>? closedAt,
@@ -3244,6 +3356,8 @@ class OrdersCompanion extends UpdateCompanion<Order> {
       customerEmail: customerEmail ?? this.customerEmail,
       customerCardNumber: customerCardNumber ?? this.customerCardNumber,
       customerPoints: customerPoints ?? this.customerPoints,
+      customerScheme: customerScheme ?? this.customerScheme,
+      customerMemberNo: customerMemberNo ?? this.customerMemberNo,
       training: training ?? this.training,
       createdAt: createdAt ?? this.createdAt,
       closedAt: closedAt ?? this.closedAt,
@@ -3334,6 +3448,12 @@ class OrdersCompanion extends UpdateCompanion<Order> {
     if (customerPoints.present) {
       map['customer_points'] = Variable<int>(customerPoints.value);
     }
+    if (customerScheme.present) {
+      map['customer_scheme'] = Variable<String>(customerScheme.value);
+    }
+    if (customerMemberNo.present) {
+      map['customer_member_no'] = Variable<String>(customerMemberNo.value);
+    }
     if (training.present) {
       map['training'] = Variable<bool>(training.value);
     }
@@ -3380,6 +3500,8 @@ class OrdersCompanion extends UpdateCompanion<Order> {
           ..write('customerEmail: $customerEmail, ')
           ..write('customerCardNumber: $customerCardNumber, ')
           ..write('customerPoints: $customerPoints, ')
+          ..write('customerScheme: $customerScheme, ')
+          ..write('customerMemberNo: $customerMemberNo, ')
           ..write('training: $training, ')
           ..write('createdAt: $createdAt, ')
           ..write('closedAt: $closedAt, ')
@@ -9904,6 +10026,8 @@ typedef $$OrdersTableCreateCompanionBuilder =
       Value<String?> customerEmail,
       Value<String?> customerCardNumber,
       Value<int?> customerPoints,
+      Value<String?> customerScheme,
+      Value<String?> customerMemberNo,
       Value<bool> training,
       Value<DateTime> createdAt,
       Value<DateTime?> closedAt,
@@ -9937,6 +10061,8 @@ typedef $$OrdersTableUpdateCompanionBuilder =
       Value<String?> customerEmail,
       Value<String?> customerCardNumber,
       Value<int?> customerPoints,
+      Value<String?> customerScheme,
+      Value<String?> customerMemberNo,
       Value<bool> training,
       Value<DateTime> createdAt,
       Value<DateTime?> closedAt,
@@ -10117,6 +10243,16 @@ class $$OrdersTableFilterComposer
 
   ColumnFilters<int> get customerPoints => $composableBuilder(
     column: $table.customerPoints,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get customerScheme => $composableBuilder(
+    column: $table.customerScheme,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get customerMemberNo => $composableBuilder(
+    column: $table.customerMemberNo,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -10325,6 +10461,16 @@ class $$OrdersTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get customerScheme => $composableBuilder(
+    column: $table.customerScheme,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get customerMemberNo => $composableBuilder(
+    column: $table.customerMemberNo,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<bool> get training => $composableBuilder(
     column: $table.training,
     builder: (column) => ColumnOrderings(column),
@@ -10458,6 +10604,16 @@ class $$OrdersTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<String> get customerScheme => $composableBuilder(
+    column: $table.customerScheme,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get customerMemberNo => $composableBuilder(
+    column: $table.customerMemberNo,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<bool> get training =>
       $composableBuilder(column: $table.training, builder: (column) => column);
 
@@ -10574,6 +10730,8 @@ class $$OrdersTableTableManager
                 Value<String?> customerEmail = const Value.absent(),
                 Value<String?> customerCardNumber = const Value.absent(),
                 Value<int?> customerPoints = const Value.absent(),
+                Value<String?> customerScheme = const Value.absent(),
+                Value<String?> customerMemberNo = const Value.absent(),
                 Value<bool> training = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime?> closedAt = const Value.absent(),
@@ -10605,6 +10763,8 @@ class $$OrdersTableTableManager
                 customerEmail: customerEmail,
                 customerCardNumber: customerCardNumber,
                 customerPoints: customerPoints,
+                customerScheme: customerScheme,
+                customerMemberNo: customerMemberNo,
                 training: training,
                 createdAt: createdAt,
                 closedAt: closedAt,
@@ -10638,6 +10798,8 @@ class $$OrdersTableTableManager
                 Value<String?> customerEmail = const Value.absent(),
                 Value<String?> customerCardNumber = const Value.absent(),
                 Value<int?> customerPoints = const Value.absent(),
+                Value<String?> customerScheme = const Value.absent(),
+                Value<String?> customerMemberNo = const Value.absent(),
                 Value<bool> training = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime?> closedAt = const Value.absent(),
@@ -10669,6 +10831,8 @@ class $$OrdersTableTableManager
                 customerEmail: customerEmail,
                 customerCardNumber: customerCardNumber,
                 customerPoints: customerPoints,
+                customerScheme: customerScheme,
+                customerMemberNo: customerMemberNo,
                 training: training,
                 createdAt: createdAt,
                 closedAt: closedAt,

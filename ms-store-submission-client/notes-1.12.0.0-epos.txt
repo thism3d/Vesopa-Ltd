@@ -1,0 +1,7 @@
+Version 1.12.0.0 - Loyalty schemes and membership numbers
+
+Venues can now run several loyalty schemes, such as VIP, Member or Committee, each with its own discount, points and card prefix. When you add a customer on the till, it asks which scheme they are joining, with the venue's default already picked. A card swiped on a scheme's prefix joins that scheme by itself.
+
+A scheme's discount follows its own rules: a percentage or fixed amount off, on chosen departments, on chosen days and hours. A price-level scheme charges the whole bill at that price level. Points are earned only on the departments the scheme allows, and welcome points are added when somebody joins.
+
+Membership numbers now leave off the card prefix, so card 999800001 shows as member 00001 on the till. The customer card on the bill shows the member number and the scheme in its own colour.

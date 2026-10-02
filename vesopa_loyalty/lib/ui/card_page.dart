@@ -198,8 +198,16 @@ class _Front extends StatelessWidget {
   Widget build(BuildContext context) {
     final on = Brand.onColour(brand.primary);
     final theme = Theme.of(context);
-    final number = (me['card_number'] as String?) ?? (me['member_no'] != null ? 'Member ${me['member_no']}' : '');
+    // The membership number, the card without its prefix: card 999800001 is
+    // member 00001. The full card number is on the back.
+    final memberNumber = me['member_number'] as String?;
+    final number = memberNumber != null && memberNumber.isNotEmpty
+        ? 'Member $memberNumber'
+        : (me['card_number'] as String?) ?? (me['member_no'] != null ? 'Member ${me['member_no']}' : '');
     final points = (me['points'] as num?)?.toInt() ?? 0;
+    final scheme = (me['scheme'] as Map?)?.cast<String, dynamic>();
+    final schemeName = scheme?['name'] as String?;
+    final schemeColour = _hex(scheme?['colour'] as String?) ?? brand.accent;
     return _Face(
       brand: brand,
       child: Column(
@@ -214,6 +222,20 @@ class _Front extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
+              if (schemeName != null && schemeName.isNotEmpty)
+                Container(
+                  margin: const EdgeInsets.only(left: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: schemeColour,
+                    borderRadius: BorderRadius.circular(99),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.6)),
+                  ),
+                  child: Text(
+                    schemeName,
+                    style: TextStyle(color: Brand.onColour(schemeColour), fontWeight: FontWeight.w800, fontSize: 12),
+                  ),
+                ),
               if (me['tier'] != null)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -309,6 +331,8 @@ class _Back extends StatelessWidget {
     final worth = (me['points_value_minor'] as num?)?.toInt() ?? 0;
     final minRedeem = brand.minRedeem;
     final number = (me['card_number'] as String?) ?? '';
+    final memberNumber = me['member_number'] as String?;
+    final scheme = (me['scheme'] as Map?)?.cast<String, dynamic>();
     final short = minRedeem > points ? minRedeem - points : 0;
 
     return _Face(
@@ -330,6 +354,12 @@ class _Back extends StatelessWidget {
             ),
             const SizedBox(height: 14),
           ],
+          if (memberNumber != null && memberNumber.isNotEmpty)
+            _BackRow(on: on, label: 'Member number', value: memberNumber),
+          if (scheme?['name'] != null)
+            _BackRow(on: on, label: 'Scheme', value: '${scheme!['name']}'),
+          if ((scheme?['summary'] as String?)?.isNotEmpty ?? false)
+            _BackRow(on: on, label: 'Your rewards', value: '${scheme!['summary']}'),
           _BackRow(on: on, label: 'Points', value: '$points'),
           _BackRow(on: on, label: 'Worth', value: money(worth)),
           if (minRedeem > 0)
@@ -463,7 +493,15 @@ class _BackRow extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(label, style: theme.textTheme.bodyMedium?.copyWith(color: on.withValues(alpha: 0.8))),
-          Text(value, style: theme.textTheme.titleMedium?.copyWith(color: on, fontWeight: FontWeight.w700)),
+          const SizedBox(width: 12),
+          // Flexible, because a scheme's rewards are a sentence, not a number.
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.end,
+              style: theme.textTheme.titleMedium?.copyWith(color: on, fontWeight: FontWeight.w700),
+            ),
+          ),
         ],
       ),
     );
@@ -532,4 +570,12 @@ class _Facts extends StatelessWidget {
       ),
     );
   }
+}
+
+/// A '#rrggbb' colour from the back office, or null when it will not read.
+Color? _hex(String? value) {
+  final hex = (value ?? '').replaceFirst('#', '');
+  if (hex.length != 6) return null;
+  final v = int.tryParse(hex, radix: 16);
+  return v == null ? null : Color(0xff000000 | v);
 }

@@ -818,14 +818,13 @@ class SalePage extends ConsumerWidget {
                                               ? 0
                                               : OrderRepository.customerDiscountOn(
                                                   order,
-                                                  lines.fold<int>(
-                                                    0,
-                                                    (s, l) =>
-                                                        s +
-                                                        (l.unitPriceMinor *
-                                                                l.quantity)
-                                                            .round(),
-                                                  ),
+                                                  lines,
+                                                  departments: ref
+                                                          .watch(
+                                                            productDepartmentsProvider,
+                                                          )
+                                                          .value ??
+                                                      const {},
                                                 ),
                                         ),
                                     branding: ref.watch(brandingProvider),
@@ -1551,6 +1550,11 @@ class SalePage extends ConsumerWidget {
       return;
     }
 
+    // Their loyalty scheme, from the venue's list: its discount, hours and
+    // price level travel on the bill. See data/loyalty_schemes.dart.
+    final scheme =
+        ref.read(commerceRepositoryProvider).schemeById(customer.schemeId);
+
     await ref
         .read(orderRepositoryProvider)
         .attachCustomer(
@@ -1568,6 +1572,9 @@ class SalePage extends ConsumerWidget {
           email: customer.email,
           cardNumber: customer.cardNumber,
           pointsBalance: customer.pointsBalance,
+          scheme: scheme,
+          memberNumber: customer.memberNumber,
+          revertLevel: ref.read(currentPriceLevelProvider),
         );
     if (!context.mounted) return;
 
@@ -1595,6 +1602,12 @@ class SalePage extends ConsumerWidget {
       PosMessenger.success(
         context,
         '${customer.name} attached — ${customer.discountLabel} applied.',
+      );
+    } else if (scheme != null && scheme.rewardType != 'none') {
+      PosMessenger.success(
+        context,
+        '${customer.name} attached — ${scheme.name}, ${scheme.rewardLabel}'
+        '${scheme.activeAt(DateTime.now()) || scheme.earnPoints ? '' : ' (not on right now)'}.',
       );
     }
   }
@@ -1634,7 +1647,10 @@ class SalePage extends ConsumerWidget {
     );
     if (yes != true) return;
 
-    await ref.read(orderRepositoryProvider).clearCustomer(orderId);
+    await ref.read(orderRepositoryProvider).clearCustomer(
+          orderId,
+          revertLevel: ref.read(currentPriceLevelProvider),
+        );
     if (context.mounted) {
       PosMessenger.success(context, 'Customer taken off the bill.');
     }

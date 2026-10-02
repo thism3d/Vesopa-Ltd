@@ -34,9 +34,20 @@ class TillCustomer {
     this.pointsBalance = 0,
     this.membershipExpiry,
     this.photoUrl,
+    this.memberNumber,
+    this.schemeId,
+    this.schemeName,
   });
 
   final String id;
+
+  /// The membership number, the card without its prefix: card 999800001 is
+  /// member 00001. Null on a server that has not been updated.
+  final String? memberNumber;
+
+  /// The loyalty scheme they are in, or null for none.
+  final int? schemeId;
+  final String? schemeName;
   final String name;
   final String? phone;
   final String? email;
@@ -109,8 +120,23 @@ class TillCustomer {
         // refusing every customer it cannot check.
         membershipExpiry: parseMembershipDay(j['membership_expiry']),
         photoUrl: j['photo_url'] as String?,
+        memberNumber: switch (j['member_number']) {
+          final String s when s.isNotEmpty => s,
+          _ => null,
+        },
+        schemeId: (j['scheme_id'] as num?)?.toInt(),
+        schemeName: j['scheme_name'] as String?,
       );
 }
+
+/// What adding a customer gave back.
+typedef NewCustomer = ({
+  String id,
+  String? memberNumber,
+  int? schemeId,
+  String? schemeName,
+  int pointsBalance,
+});
 
 /// Customer lookup and creation from the till. Server-backed and scoped to the
 /// venue — customers belong to the business, not to one terminal.
@@ -138,13 +164,15 @@ class CustomerRepository {
         .toList();
   }
 
-  /// Add a customer. Returns the new id.
-  Future<String> create({
+  /// Add a customer, into [schemeId] where the clerk picked one.
+  Future<NewCustomer> create({
     required String name,
     String? phone,
     String? email,
     String discountType = 'none',
     int discountValue = 0,
+    int? schemeId,
+    bool marketingOptIn = false,
   }) async {
     final res = await http
         .post(
@@ -157,12 +185,21 @@ class CustomerRepository {
             'email': email,
             'discount_type': discountType,
             'discount_value': discountValue,
+            'scheme_id': ?schemeId,
+            'marketing_opt_in': marketingOptIn,
           }),
         )
         .timeout(const Duration(seconds: 10));
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw Exception('Could not add the customer (${res.statusCode}).');
     }
-    return (jsonDecode(res.body) as Map<String, dynamic>)['id'] as String;
+    final j = jsonDecode(res.body) as Map<String, dynamic>;
+    return (
+      id: j['id'] as String,
+      memberNumber: j['member_number'] as String?,
+      schemeId: (j['scheme_id'] as num?)?.toInt(),
+      schemeName: j['scheme_name'] as String?,
+      pointsBalance: (j['points_balance'] as num?)?.toInt() ?? 0,
+    );
   }
 }

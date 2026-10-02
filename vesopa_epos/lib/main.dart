@@ -819,10 +819,29 @@ final commerceRefreshProvider = FutureProvider<void>((ref) async {
   final repo = ref.watch(commerceRepositoryProvider);
   await repo.loadTenderSettings();
   await repo.loadPromotions();
+  await repo.loadSchemes();
 
   // Publish the freshly cached copies to anything about to price a basket.
   ref.invalidate(tenderSettingsProvider);
   ref.invalidate(promotionsProvider);
+  ref.invalidate(loyaltySchemesProvider);
+});
+
+/// The venue's loyalty schemes, for the question a new customer is asked.
+/// Cached with the offers and refreshed when the back office changes them.
+final loyaltySchemesProvider = Provider<List<LoyaltyScheme>>(
+  (ref) => ref.watch(commerceRepositoryProvider).schemes,
+);
+
+/// Which department every product is in, for a loyalty scheme's discount on
+/// some departments only. Read from the till's own catalogue, so it works with
+/// the network down.
+final productDepartmentsProvider = StreamProvider<Map<int, String?>>((ref) {
+  final db = ref.watch(databaseProvider);
+  return db
+      .select(db.products)
+      .watch()
+      .map((rows) => {for (final p in rows) p.pluId: p.departmentName});
 });
 
 // ---------------------------------------------------------------------------

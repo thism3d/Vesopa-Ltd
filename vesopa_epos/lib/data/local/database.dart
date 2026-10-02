@@ -445,6 +445,18 @@ class Orders extends Table {
   /// the points for this sale are not earned until it settles.
   IntColumn get customerPoints => integer().nullable()();
 
+  /// The attached member's loyalty scheme, as JSON, or null for none.
+  ///
+  /// Copied down for the reason everything else about the customer is: a bill
+  /// parked at seven has to price itself at nine, on a line that may by then be
+  /// down, and the scheme decides its discount (which departments, which
+  /// hours) and its price level. See data/loyalty_schemes.dart.
+  TextColumn get customerScheme => text().nullable()();
+
+  /// Their membership number, the card without its prefix ("00001"), for the
+  /// check and the receipt.
+  TextColumn get customerMemberNo => text().nullable()();
+
   /// A practice bill, rung up by a training account.
   ///
   /// "Sales made in Training Mode should not be sent to the back office and
@@ -698,7 +710,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 29;
+  int get schemaVersion => 30;
 
 
   /// Add a column only if the table has not already got it.
@@ -953,6 +965,12 @@ class AppDatabase extends _$AppDatabase {
             // 1.9.1: the product wizard's extra fields, as one JSON column.
             // Null until the next catalogue sync, which reads as "not said".
             await _addColumnIfMissing(m, products, products.extras);
+          }
+          if (from < 30) {
+            // 1.12: loyalty schemes. Null on every existing bill, which prices
+            // it exactly as before: no scheme, the customer's own discount.
+            await _addColumnIfMissing(m, orders, orders.customerScheme);
+            await _addColumnIfMissing(m, orders, orders.customerMemberNo);
           }
         },
       );

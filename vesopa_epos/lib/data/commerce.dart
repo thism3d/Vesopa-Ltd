@@ -3,6 +3,9 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import 'customer_repository.dart' show parseMembershipDay;
+import 'loyalty_schemes.dart';
+
+export 'loyalty_schemes.dart';
 
 /// Money the till can take, beyond cash and card.
 ///
@@ -451,11 +454,27 @@ class LoyaltyCustomer {
     this.membershipFeeMinor = 0,
     this.membershipPlu,
     this.membershipRenewalDate,
+    this.memberNumber,
+    this.scheme,
+    this.earns = true,
   });
 
   final String id;
   final String name;
   final int pointsBalance;
+
+  /// The membership number: the card without its prefix, so card 999800001 is
+  /// member 00001. "The 9998 should not form part of the customer's membership
+  /// number." Worked out by the server, which knows every scheme's prefix.
+  final String? memberNumber;
+
+  /// The loyalty scheme they are in, or null for none. See
+  /// data/loyalty_schemes.dart.
+  final LoyaltyScheme? scheme;
+
+  /// False when their scheme does not earn points. A customer in no scheme
+  /// earns as every customer did before schemes existed.
+  final bool earns;
   final int pointsValueMinor;
   final bool redeemable;
   final String? phone;
@@ -579,7 +598,7 @@ class LoyaltyCustomer {
   /// multiplier — the same arithmetic the server does, so the receipt promises
   /// what the ledger will actually award.
   int pointsFor(int spendMinor) {
-    if (!enabled || spendMinor < minSpendMinor) return 0;
+    if (!enabled || !earns || spendMinor < minSpendMinor) return 0;
     return ((spendMinor ~/ 100) * pointsPerPound * tierMultiplier).round();
   }
 
@@ -639,6 +658,13 @@ class LoyaltyCustomer {
       membershipFeeMinor:
           (settings['membership_fee_minor'] as num?)?.toInt() ?? 0,
       membershipPlu: (settings['membership_plu'] as num?)?.toInt(),
+      memberNumber: switch (j['member_number']) {
+        final String s when s.isNotEmpty => s,
+        _ => null,
+      },
+      scheme: LoyaltyScheme.fromJson(settings['scheme']),
+      earns: settings['scheme'] == null ||
+          (settings['earn_points'] != 0 && settings['earn_points'] != false),
     );
   }
 }
@@ -679,6 +705,34 @@ class CommerceRepository {
 
   TenderSettings? _tender;
   List<Promotion>? _promotions;
+  List<LoyaltyScheme>? _schemes;
+
+  /// The venue's live loyalty schemes, from the last time they were read.
+  List<LoyaltyScheme> get schemes => _schemes ?? const [];
+
+  LoyaltyScheme? schemeById(int? id) =>
+      id == null ? null : schemes.where((s) => s.id == id).firstOrNull;
+
+  /// Read the venue's schemes. Cached, and answers the last list when the back
+  /// office cannot be reached -- or none, on a server that has no schemes yet,
+  /// which is a till that adds customers exactly as it did before.
+  Future<List<LoyaltyScheme>> loadSchemes() async {
+    try {
+      final res = await _client
+          .get(Uri.parse('$apiBase/api/loyalty/schemes/public?$_officeParam'),
+              headers: _headers())
+          .timeout(_timeout);
+      if (res.statusCode != 200) return schemes;
+      final list = jsonDecode(res.body);
+      if (list is! List) return schemes;
+      return _schemes = list
+          .map(LoyaltyScheme.fromJson)
+          .whereType<LoyaltyScheme>()
+          .toList();
+    } catch (_) {
+      return schemes;
+    }
+  }
 
   TenderSettings get tenderSettings => _tender ?? const TenderSettings();
   List<Promotion> get promotions => _promotions ?? const [];
@@ -1078,6 +1132,9 @@ class CommerceRepository {
     required String phone,
     required String name,
     String? email,
+    int? schemeId,
+    String? cardNumber,
+    bool marketingOptIn = false,
   }) async {
     final res = await _client
         .post(
@@ -1088,6 +1145,11 @@ class CommerceRepository {
             'phone': phone,
             'name': name,
             'email': email,
+            // Which scheme they asked to join. Absent, the server picks the
+            // one the card's prefix names, then the venue's default.
+            'scheme_id': ?schemeId,
+            'card_number': ?cardNumber,
+            'marketing_opt_in': marketingOptIn,
           }),
         )
         .timeout(_timeout);
@@ -1106,6 +1168,7 @@ class CommerceRepository {
     required String kind,
     int? points,
     int spendMinor = 0,
+    int? eligibleSpendMinor,
     String? orderId,
   }) async {
     final res = await _client
@@ -1118,6 +1181,9 @@ class CommerceRepository {
             'kind': kind,
             'points': ?points,
             'spend_minor': spendMinor,
+            // The part of the spend that earns, for a scheme that earns on
+            // some departments only. Absent is the whole spend.
+            'eligible_spend_minor': ?eligibleSpendMinor,
             'order_id': orderId,
           }),
         )

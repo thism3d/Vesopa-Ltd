@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/customer_repository.dart';
+import '../data/loyalty_schemes.dart';
 import '../main.dart';
 import 'theme.dart';
 import 'widgets/pos_message.dart';
+import 'widgets/scheme_picker.dart';
 import 'widgets/on_screen_keyboard.dart';
 import 'widgets/pos_text_field.dart';
 
@@ -110,7 +112,7 @@ class _CustomerPickerState extends ConsumerState<_CustomerPicker> {
                 onChanged: _query,
                 submitLabel: 'Search',
                 decoration: const InputDecoration(
-                  hintText: 'Search name, phone or email',
+                  hintText: 'Search name, member no., phone or email',
                   prefixIcon: Icon(Icons.search),
                   border: OutlineInputBorder(),
                 ),
@@ -138,6 +140,9 @@ class _CustomerPickerState extends ConsumerState<_CustomerPicker> {
                               itemCount: _results.length,
                               itemBuilder: (context, i) {
                                 final c = _results[i];
+                                final scheme = ref
+                                    .read(commerceRepositoryProvider)
+                                    .schemeById(c.schemeId);
                                 return ListTile(
                                   leading: CircleAvatar(
                                     backgroundColor: Pos.brandSoft,
@@ -151,20 +156,40 @@ class _CustomerPickerState extends ConsumerState<_CustomerPicker> {
                                   ),
                                   title: Text(c.name),
                                   subtitle: Text(
-                                    [c.phone, c.email]
+                                    [
+                                      if (c.memberNumber != null)
+                                        'Member ${c.memberNumber}',
+                                      c.phone,
+                                      c.email,
+                                    ]
                                         .where((s) => s?.isNotEmpty ?? false)
                                         .join(' · '),
                                   ),
-                                  trailing: c.hasDiscount
-                                      ? Chip(
+                                  trailing: Wrap(
+                                    spacing: 6,
+                                    children: [
+                                      if (c.schemeName != null)
+                                        Chip(
+                                          label: Text(c.schemeName!),
+                                          backgroundColor:
+                                              scheme?.color ?? Pos.brandDeep,
+                                          labelStyle: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      if (c.hasDiscount)
+                                        Chip(
                                           label: Text(c.discountLabel),
                                           backgroundColor: Pos.brandSoft,
                                           labelStyle: const TextStyle(
                                             color: Pos.brandDeep,
                                             fontSize: 12,
                                           ),
-                                        )
-                                      : null,
+                                        ),
+                                    ],
+                                  ),
                                   onTap: () => Navigator.pop(context, c),
                                 );
                               },
@@ -199,6 +224,10 @@ class _NewCustomerDialogState extends ConsumerState<_NewCustomerDialog> {
   final _discount = TextEditingController();
   String _discountType = 'none';
   bool _busy = false;
+  late final List<LoyaltyScheme> _schemes =
+      tillSchemes(ref.read(loyaltySchemesProvider));
+  late int? _schemeId = initialSchemeId(_schemes);
+  bool _marketing = false;
 
   @override
   void dispose() {
@@ -214,11 +243,20 @@ class _NewCustomerDialogState extends ConsumerState<_NewCustomerDialog> {
     return AlertDialog(
       title: const Text('New customer'),
       content: SizedBox(
-        width: 380,
+        width: _schemes.isEmpty ? 380 : 520,
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (_schemes.isNotEmpty) ...[
+                SchemePicker(
+                  schemes: _schemes,
+                  selected: _schemeId,
+                  onChanged: (id) => setState(() => _schemeId = id),
+                ),
+                const SizedBox(height: 12),
+              ],
               PosTextField(
                 controller: _name,
                 autofocus: true,
@@ -269,6 +307,13 @@ class _NewCustomerDialogState extends ConsumerState<_NewCustomerDialog> {
                   ],
                 ],
               ),
+              CheckboxListTile(
+                value: _marketing,
+                onChanged: (v) => setState(() => _marketing = v ?? false),
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                title: const Text('Happy to receive offers by email'),
+              ),
             ],
           ),
         ),
@@ -302,23 +347,30 @@ class _NewCustomerDialogState extends ConsumerState<_NewCustomerDialog> {
 
     try {
       final repo = ref.read(customerRepoProvider);
-      final id = await repo.create(
+      final created = await repo.create(
         name: _name.text.trim(),
         phone: _phone.text.trim().isEmpty ? null : _phone.text.trim(),
         email: _email.text.trim().isEmpty ? null : _email.text.trim(),
         discountType: _discountType,
         discountValue: value,
+        schemeId: _schemeId,
+        marketingOptIn: _marketing,
       );
       if (mounted) {
         Navigator.pop(
           context,
           TillCustomer(
-            id: id,
+            id: created.id,
             name: _name.text.trim(),
             phone: _phone.text.trim(),
             email: _email.text.trim(),
             discountType: _discountType,
             discountValue: value,
+            memberNumber: created.memberNumber,
+            schemeId: created.schemeId,
+            schemeName: created.schemeName,
+            // Their welcome points, where the scheme gives any.
+            pointsBalance: created.pointsBalance,
           ),
         );
       }

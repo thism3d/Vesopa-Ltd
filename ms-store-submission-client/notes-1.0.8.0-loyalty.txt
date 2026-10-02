@@ -1,0 +1,3 @@
+Version 1.0.8.0 - Your scheme and member number
+
+Your card now shows your membership number, without the card prefix, and the loyalty scheme you belong to, such as VIP or Member, in its own colour. Turn the card over to see what your scheme gives you.
