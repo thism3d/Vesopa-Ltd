@@ -53,34 +53,36 @@
     });
   }
 
+  function badge() {
+    return document.querySelector('.grecaptcha-badge');
+  }
+
   /**
-   * Bring reCAPTCHA back after the router has replaced the body.
+   * Google's script, loaded ONCE per document.
    *
-   * THIS IS THE BUG THAT MADE CONTINUE SPIN FOR EVER, and it is worth writing
-   * down exactly, because nothing about it is guessable from the symptom.
+   * WHY IT USED TO LOAD TWICE. This decided "the router has destroyed
+   * reCAPTCHA" from `grecaptcha` existing with no badge on the page. That is
+   * also exactly the state of a FRESH load: api.js fires `onload` and defines
+   * `grecaptcha.execute` a moment before it gets round to drawing the badge.
+   * So a submit in that window (autofill and Enter, a password manager) threw
+   * a perfectly healthy reCAPTCHA away and fetched the whole thing again. And
+   * after every no-reload navigation the router really did destroy it, so it
+   * was reloaded on the password step and on every re-rendered form as well.
    *
-   * grecaptcha appends its badge and a hidden iframe to `document.body`. The
-   * router swaps a page in with `document.body.innerHTML = …`, which destroys
-   * both — and `window.grecaptcha` survives, because it lives on `window`. So
-   * every check said it was fine: the object was there, `execute` was a
-   * function, no error was thrown. It simply NEVER CALLED BACK. Measured:
-   * loaded directly, a 2,254-character token; after one router navigation,
-   * `execute` hung with no resolve and no reject, for ever.
+   * Now the router leaves Google's nodes alone (nav.js, replaceBody), so the
+   * first load is the only one. The load is one shared promise, so a warm-up
+   * and a submit racing each other wait for the same script instead of each
+   * starting one.
    *
-   * The form's submit handler was waiting on that promise, so the button kept
-   * its spinner and the password was never sent. On the owner's phone: "why
-   * I'm stuck in the continue loading and not letting me log in".
-   *
-   * The badge being gone is the tell, and re-loading api.js from scratch
-   * restores it — measured, same page, a fresh 2,254-character token.
+   * The recovery is kept for the case it was written for, a badge we HAVE
+   * seen that has since gone, and only that case: it can no longer fire on a
+   * load that simply has not finished.
    */
   function ready() {
-    var alive = window.grecaptcha && window.grecaptcha.execute;
-    var swapped = alive && !document.querySelector('.grecaptcha-badge');
+    if (badge()) window.__vesopaCaptchaSeen = true;
 
-    if (alive && !swapped) return Promise.resolve();
-
-    if (swapped) {
+    var lost = window.__vesopaCaptchaSeen && !badge();
+    if (lost) {
       try {
         delete window.grecaptcha;
         delete window.___grecaptcha_cfg;
@@ -88,14 +90,14 @@
         window.grecaptcha = undefined;
         window.___grecaptcha_cfg = undefined;
       }
-      var stale = document.querySelectorAll('script[src*="recaptcha/api.js"]');
+      var stale = document.querySelectorAll('script[src*="recaptcha/"]');
       for (var i = 0; i < stale.length; i += 1) stale[i].parentNode.removeChild(stale[i]);
-      window.__vesopaCaptchaScript = false;
+      window.__vesopaCaptchaSeen = false;
+      window.__vesopaCaptchaLoad = null;
     }
 
-    if (window.__vesopaCaptchaScript) return Promise.resolve();
-    window.__vesopaCaptchaScript = true;
-    return loadScript();
+    if (!window.__vesopaCaptchaLoad) window.__vesopaCaptchaLoad = loadScript();
+    return window.__vesopaCaptchaLoad;
   }
 
   /**
@@ -118,7 +120,10 @@
         if (!window.grecaptcha || !window.grecaptcha.execute) return finish('');
         try {
           window.grecaptcha.ready(function () {
-            window.grecaptcha.execute(key, { action: action }).then(finish, function () {
+            window.grecaptcha.execute(key, { action: action }).then(function (token) {
+              if (badge()) window.__vesopaCaptchaSeen = true;
+              finish(token);
+            }, function () {
               finish('');
             });
           });

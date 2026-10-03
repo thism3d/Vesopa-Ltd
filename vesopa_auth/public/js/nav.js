@@ -180,6 +180,59 @@
     }
   }
 
+  /**
+   * Is this one of the nodes Google's reCAPTCHA script put on the body?
+   *
+   * api.js appends the badge (with the hidden anchor frame that mints every
+   * token) and, after the first token, a second hidden frame. They hang off
+   * <body> directly, outside anything of ours.
+   */
+  function isCaptchaNode(node) {
+    if (!node || node.nodeType !== 1) return false;
+    if (node.matches('iframe[src*="recaptcha"], .grecaptcha-badge')) return true;
+    return Boolean(node.querySelector('.grecaptcha-badge, iframe[src*="recaptcha"]'));
+  }
+
+  /**
+   * Replace the page, and leave reCAPTCHA where it is.
+   *
+   * THIS IS WHY GOOGLE WAS LOADED TWICE. This used to be
+   * `document.body.innerHTML = …`, which destroyed Google's badge and frame on
+   * every navigation. captcha.js then saw the badge gone and loaded api.js,
+   * recaptcha__en.js and the anchor frame all over again — on the password
+   * step, on every wrong-password re-render, on Back. The owner saw it in the
+   * network panel as the sign-in page loading reCAPTCHA twice.
+   *
+   * Everything else is removed and the new page goes in front of Google's
+   * nodes, which are never detached: moving an iframe reloads it, and that
+   * would be the same double load by another route. A page with no captcha
+   * form hides the badge in CSS (auth.css), so it is not on show where it is
+   * not used.
+   *
+   * innerHTML on a holder rather than on the body itself keeps one property
+   * the old line had: scripts inserted that way never run, and runScripts()
+   * re-creates them, so nothing executes twice.
+   */
+  function replaceBody(html) {
+    var body = document.body;
+    var keep = null;
+    var node = body.firstChild;
+    while (node) {
+      var next = node.nextSibling;
+      if (isCaptchaNode(node)) {
+        if (!keep) keep = node;
+      } else {
+        body.removeChild(node);
+      }
+      node = next;
+    }
+    var holder = document.createElement('div');
+    holder.innerHTML = html;
+    var fragment = document.createDocumentFragment();
+    while (holder.firstChild) fragment.appendChild(holder.firstChild);
+    body.insertBefore(fragment, keep);
+  }
+
   function swap(html, url, push) {
     var incoming;
     try {
@@ -255,7 +308,7 @@
           document.body.setAttribute(incomingAttributes[i].name, incomingAttributes[i].value);
         }
 
-        document.body.innerHTML = incoming.body.innerHTML;
+        replaceBody(incoming.body.innerHTML);
         runScripts(document.body);
 
         sheets.stale.forEach(function (link) {

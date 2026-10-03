@@ -66,7 +66,15 @@ router.get('/', (req, res) => {
     description: 'One Vesopa account for the till, the menu, the back office and everything next.',
     nonce: res.locals.nonce,
     config,
-    styles: ['landing'],
+    /*
+     * `home` restyles this one page in the vesopasoftware.com look — ink
+     * ground, Archivo, Martian Mono labels — so the front door of the account
+     * matches the site people arrive from. It is a body class, which the
+     * router swaps, so the sign-in form a click away keeps its own light and
+     * dark schemes untouched. landing.css is shared with /docs; home.css is not.
+     */
+    styles: ['landing', 'home'],
+    bodyClass: 'home',
   });
 });
 

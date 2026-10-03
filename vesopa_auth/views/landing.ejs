@@ -40,16 +40,16 @@
       <div class="hero-copy">
         <p class="eyebrow">
           <span class="dot" aria-hidden="true"></span>
-          Vesopa OAuth · OpenID Connect
+          Vesopa account · auth.vesopa.com
         </p>
 
-        <h1>One Vesopa account.<br>Every Vesopa product.</h1>
+        <h1>One account.<br>Every Vesopa <span class="hl">product.</span></h1>
 
         <p class="lede">
-          The single sign-in behind the till, the dine-in menu, the back office
-          and the hosting panel. Sign in with an email address, a phone number,
-          a passkey, or an account you already have — and the same account works
-          everywhere.
+          The single sign-in behind the till, the kiosk, the menu, loyalty, gift
+          cards, the back office and the hosting panel. Sign in with an email
+          address, a phone number, a passkey, or an account you already have,
+          and the same account works everywhere.
         </p>
 
         <div class="hero-actions">
@@ -134,34 +134,40 @@
   <section class="band">
     <div class="band-inner">
       <div class="section-art"><%- include('partials/art', { name: 'products' }) %></div>
+      <p class="kicker">Products</p>
       <h2>Sign in once, and you are in everywhere</h2>
       <p class="section-lede">
         Vesopa products share one identity. A manager who works the till and the
-        back office has one account, not three — and the roles decide what each
-        one lets her do.
+        back office has one account, not three, and the roles decide what each
+        one lets them do.
       </p>
 
+<%
+        /*
+         * Only products that actually sign in here. Each one is a client in
+         * the oauth_clients table (schema/), so the list cannot claim an app
+         * that would refuse the account.
+         */
+        const products = [
+          ['till', 'Till', 'Vesopa EPOS', 'The till, with roles for operators, managers and owners.'],
+          ['desktop', 'Kitchen + display', 'Kitchen and customer screens', 'The kitchen screen and the customer display, signed in to the same venue as the till.'],
+          ['tablet', 'Kiosk', 'Vesopa Express', 'The self-service kiosk your customers order from.'],
+          ['menu', 'Table ordering', 'Vesopa Menu', 'The QR menu. A code to a phone or an email address, and they are in.'],
+          ['sparkle', 'Loyalty', 'Vesopa Loyalty', 'The loyalty card in the app, with points and rewards that follow the customer.'],
+          ['gift', 'Gift cards', 'Vesopa Gift', 'Gift cards bought online and spent at the till.'],
+          ['chart', 'Back office', 'Back office', 'Products, prices, staff and reports, with the permissions that decide who may change what.'],
+          ['cloud', 'Hosting', 'Vesopa Cloud', 'The hosting control panel, for customers running their sites and mail with Vesopa.'],
+        ];
+      %>
       <div class="product-grid">
+        <% products.forEach(function (item) { %>
         <div class="product">
-          <span class="product-icon" aria-hidden="true"><%- include('partials/icon', { name: 'till' }) %></span>
-          <h3>Vesopa EPOS</h3>
-          <p>The till, the kitchen screen and the customer display, with roles for operators, managers and kitchen staff.</p>
+          <span class="product-icon" aria-hidden="true"><%- include('partials/icon', { name: item[0] }) %></span>
+          <span class="product-tag"><%= item[1] %></span>
+          <h3><%= item[2] %></h3>
+          <p><%= item[3] %></p>
         </div>
-        <div class="product">
-          <span class="product-icon" aria-hidden="true"><%- include('partials/icon', { name: 'menu' }) %></span>
-          <h3>Vesopa Menu</h3>
-          <p>The QR menu customers order from at the table. A code to a phone or an email address, and they are in.</p>
-        </div>
-        <div class="product">
-          <span class="product-icon" aria-hidden="true"><%- include('partials/icon', { name: 'chart' }) %></span>
-          <h3>Back office</h3>
-          <p>Products, prices, staff and reports — with the permissions that decide who may change what.</p>
-        </div>
-        <div class="product">
-          <span class="product-icon" aria-hidden="true"><%- include('partials/icon', { name: 'cloud' }) %></span>
-          <h3>Vesopa Cloud</h3>
-          <p>The hosting control panel, for customers running their sites and mail with Vesopa.</p>
-        </div>
+        <% }) %>
       </div>
     </div>
   </section>
@@ -170,6 +176,7 @@
   <section class="band alt">
     <div class="band-inner">
       <div class="section-art"><%- include('partials/art', { name: 'security' }) %></div>
+      <p class="kicker">Signing in</p>
       <h2>Eight ways in, one account behind them</h2>
       <p class="section-lede">
         However somebody chooses to sign in, they arrive at the same account.
@@ -195,6 +202,7 @@
     <div class="band-inner developer">
       <div>
         <div class="section-art"><%- include('partials/art', { name: 'developers' }) %></div>
+        <p class="kicker">Developers</p>
         <h2>Standards, not a bespoke API</h2>
         <p class="section-lede">
           OpenID Connect and OAuth 2.1. Point any certified library at the
@@ -235,6 +243,7 @@
   <!-- ============================================================ control -->
   <section class="band alt">
     <div class="band-inner">
+      <p class="kicker">Your data</p>
       <h2>Your account is yours</h2>
       <p class="section-lede">
         Everything below is in your account settings, and none of it needs an
@@ -247,6 +256,21 @@
         <div><h3>Delete your account</h3><p>Yourself, at any time. Your email address and phone number are freed straight away.</p></div>
       </div>
       <a class="btn btn-primary btn-auto" href="/login">Sign in to your account</a>
+    </div>
+  </section>
+
+  <!-- ============================================================= maker -->
+  <section class="band maker">
+    <div class="band-inner maker-inner">
+      <div>
+        <p class="kicker">Made by Vesopa Software</p>
+        <h2>The software behind the account</h2>
+        <p class="section-lede">
+          Tills, kiosks, kitchen screens, loyalty and the websites that go with
+          them, built and supported in Wales.
+        </p>
+      </div>
+      <a class="btn btn-quiet btn-auto" href="https://vesopasoftware.com/">Visit vesopasoftware.com</a>
     </div>
   </section>
 </main>

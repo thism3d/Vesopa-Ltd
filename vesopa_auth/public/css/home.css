@@ -1,0 +1,292 @@
+/*
+ * The homepage, in the vesopasoftware.com look.
+ *
+ * Loaded after landing.css and only on `/` (body.home). landing.css still
+ * lays the page out and is shared with /docs; this file only re-dresses it:
+ * the ink ground, warm paper text and lime of vesopasoftware.com, Archivo for
+ * headings, Martian Mono for labels, Source Serif for reading. Somebody who
+ * clicks "Continue with Vesopa" on the marketing site lands on a page that is
+ * plainly the same company.
+ *
+ * ALWAYS DARK, like the site it matches. Everything is scoped to body.home,
+ * a class the router replaces on navigation, so the sign-in form keeps the
+ * light and dark schemes people chose.
+ *
+ * The fonts are served from this origin. `font-src 'self'` is the policy on
+ * the domain that holds every session, and it is not opened for a typeface.
+ */
+
+@font-face {
+  font-family: "Archivo";
+  src: url("/fonts/archivo-latin.woff2") format("woff2");
+  font-weight: 100 900;
+  font-stretch: 62% 125%;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Martian Mono";
+  src: url("/fonts/martian-mono-latin.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Source Serif 4";
+  src: url("/fonts/source-serif-4-latin.woff2") format("woff2");
+  font-weight: 200 900;
+  font-display: swap;
+}
+
+body.home {
+  --ink: #0b0e0a;
+  --paper: #f2efe6;
+  --green: #a5c715;
+  --green-dark: #bfe021;
+  --bg: #0b0e0a;
+  --surface: rgba(242, 239, 230, .04);
+  --surface-2: rgba(242, 239, 230, .025);
+  --text: #f2efe6;
+  --text-muted: rgba(242, 239, 230, .68);
+  --border: rgba(242, 239, 230, .14);
+  --border-strong: rgba(242, 239, 230, .26);
+  --focus: #a5c715;
+  --art-tile: rgba(242, 239, 230, .05);
+  --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --mono: "Martian Mono", ui-monospace, Menlo, Consolas, monospace;
+  --serif: "Source Serif 4", Georgia, serif;
+
+  background: var(--bg);
+  color: var(--text);
+  color-scheme: dark;
+}
+
+/* The white-lettered wordmark, whatever the device's scheme. */
+body.home [data-logo-light] { display: none !important; }
+body.home [data-logo-dark] { display: block !important; }
+
+body.home ::selection { background: var(--green); color: var(--ink); }
+body.home a { color: var(--text); }
+body.home a:hover { color: var(--green); }
+body.home :focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
+
+/* ---------------------------------------------------------------- type --- */
+
+body.home h1,
+body.home h2,
+body.home h3 { font-family: var(--display); color: var(--text); }
+
+body.home .hero h1 {
+  font-variation-settings: "wdth" 112;
+  font-weight: 660;
+  font-size: clamp(38px, 6vw, 68px);
+  line-height: 1;
+  letter-spacing: -.025em;
+  margin-bottom: 22px;
+}
+body.home .hero h1 .hl { color: var(--green); }
+
+body.home .band h2 {
+  font-variation-settings: "wdth" 108;
+  font-weight: 620;
+  font-size: clamp(26px, 3.6vw, 40px);
+  line-height: 1.08;
+  letter-spacing: -.018em;
+}
+body.home h3 { font-variation-settings: "wdth" 106; font-weight: 600; }
+
+body.home .lede,
+body.home .section-lede,
+body.home .product p,
+body.home .assurance p,
+body.home .control-grid p,
+body.home .hero-note {
+  font-family: var(--serif);
+}
+body.home .lede { font-size: 19px; line-height: 1.55; max-width: 31em; }
+body.home .section-lede { font-size: 18px; }
+
+/* The mono labels: the eyebrow over the headline and over each section. */
+body.home .eyebrow {
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--green);
+  margin-bottom: 24px;
+}
+body.home .eyebrow .dot { box-shadow: 0 0 0 4px rgba(165, 199, 21, .18); }
+
+body.home .kicker {
+  margin: 0 0 14px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--green);
+}
+
+/* -------------------------------------------------------------- header --- */
+
+body.home .site-head {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  max-width: none;
+  padding: 16px max(24px, calc((100% - 1120px) / 2));
+  background: rgba(11, 14, 10, .82);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border);
+}
+body.home .site-nav a {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border-radius: 3px;
+}
+body.home .site-nav a:hover { color: var(--green); background: none; }
+
+/* ------------------------------------------------------------- buttons --- */
+
+body.home .btn { border-radius: 3px; font-family: var(--display); font-variation-settings: "wdth" 108; }
+body.home .btn-primary,
+body.home .btn-sm {
+  background: var(--green);
+  border-color: var(--green);
+  color: var(--ink) !important;
+}
+body.home .btn-primary:hover,
+body.home .btn-sm:hover { background: var(--green-dark) !important; border-color: var(--green-dark); color: var(--ink) !important; }
+body.home .site-nav a.btn-sm { color: var(--ink); font-weight: 500; }
+body.home .btn-quiet { margin-top: 0; background: transparent; border-color: var(--border-strong); color: var(--text); }
+body.home .btn-quiet:hover { border-color: var(--green); color: var(--green); }
+
+/* ---------------------------------------------------------------- hero --- */
+
+body.home .hero { padding: 72px 24px 96px; }
+body.home .hero::before {
+  background:
+    radial-gradient(46% 58% at 20% 34%, rgba(165, 199, 21, .16), transparent 70%),
+    radial-gradient(38% 46% at 86% 12%, rgba(165, 199, 21, .08), transparent 70%);
+}
+body.home .hero::after { opacity: .5; }
+body.home .hero-note { font-size: 15px; }
+
+body.home .preview-card {
+  background: #121611;
+  border-color: var(--border);
+  border-radius: 6px;
+  box-shadow: 0 0 0 1px rgba(165, 199, 21, .05), 0 30px 80px rgba(0, 0, 0, .6);
+}
+body.home .preview-title { font-family: var(--display); font-variation-settings: "wdth" 108; }
+body.home .preview-toggle,
+body.home .preview-input,
+body.home .preview-provider { background: rgba(242, 239, 230, .03); border-radius: 3px; }
+body.home .preview-toggle span { border-radius: 2px; }
+body.home .preview-toggle .on { background: rgba(242, 239, 230, .1); box-shadow: none; }
+body.home .preview-button { border-radius: 3px; color: var(--ink); }
+body.home .preview-check .tick { border-radius: 2px; color: var(--ink); }
+
+/* ---------------------------------------------------------- assurances --- */
+
+body.home .assurances { background: rgba(242, 239, 230, .02); }
+body.home .assurance h3 { font-size: 15px; }
+body.home .assurance p { font-size: 15px; }
+body.home .assurance-icon,
+body.home .product-icon { color: var(--green); }
+
+/* --------------------------------------------------------------- bands --- */
+
+body.home .band { padding: 96px 24px; }
+body.home .band.alt { background: rgba(242, 239, 230, .025); }
+body.home .section-art { margin: 0 0 30px; max-width: 260px; }
+
+body.home .product-grid { gap: 1px; background: var(--border); border: 1px solid var(--border); }
+body.home .product {
+  position: relative;
+  padding: 26px 24px 28px;
+  background: var(--bg);
+  border: 0;
+  border-radius: 0;
+  transition: background .2s ease;
+}
+body.home .product:hover { background: #12160f; }
+body.home .product-tag {
+  display: block;
+  margin-bottom: 8px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+body.home .product h3 { font-size: 17px; }
+body.home .product p { font-size: 15.5px; }
+
+body.home .method-grid li {
+  background: transparent;
+  border-color: var(--border);
+  border-radius: 3px;
+  border-left: 2px solid var(--green);
+}
+body.home .method-grid strong { font-family: var(--display); font-variation-settings: "wdth" 106; font-weight: 600; }
+
+body.home .ticks li { font-family: var(--serif); font-size: 17px; }
+body.home .ticks li::before { border-color: var(--green); }
+
+body.home .code-card { background: #070906; border-color: var(--border); border-radius: 4px; }
+body.home .code-head { background: rgba(242, 239, 230, .04); border-color: var(--border); font-family: var(--mono); font-size: 11px; font-weight: 400; letter-spacing: .04em; color: var(--text-muted); }
+body.home .code-card pre { font-family: var(--mono); font-size: 12px; color: #e7e4da; }
+
+body.home .control-grid { gap: 28px 40px; }
+body.home .control-grid > div { padding-top: 18px; border-top: 1px solid var(--border); }
+body.home .control-grid h3 { font-size: 17px; }
+
+/* The closing band: who makes this, and where to see the rest of it. */
+body.home .maker { border-top: 1px solid var(--border); }
+body.home .maker-inner {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 32px;
+  flex-wrap: wrap;
+}
+body.home .maker .section-lede { margin-bottom: 0; }
+
+/* -------------------------------------------------------------- footer --- */
+
+body.home .site-foot {
+  border-top: 1px solid var(--border);
+  padding: 28px 16px 36px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: .05em;
+}
+body.home .site-foot nav a { text-transform: uppercase; }
+
+/* --------------------------------------------------------------- phone --- */
+
+@media (max-width: 940px) {
+  body.home .hero { padding: 48px 24px 72px; }
+  body.home .band { padding: 72px 24px; }
+}
+@media (max-width: 620px) {
+  body.home .site-head { padding: 12px 16px; }
+}
+@media (max-width: 560px) {
+  body.home .hero { padding: 36px 16px 56px; }
+  body.home .band { padding: 56px 16px; }
+  body.home .lede { font-size: 17.5px; }
+  body.home .section-lede { font-size: 16.5px; }
+  body.home .maker-inner { align-items: stretch; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.home .product { transition: none; }
+}

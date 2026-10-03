@@ -1689,3 +1689,14 @@ select.del-days { width: auto; min-height: 36px; padding: 5px 10px; font-size: 1
   .auth-card.is-busy::after { animation-duration: 2.5s; }
 }
 
+
+/*
+ * reCAPTCHA's badge, only on a page that uses it.
+ *
+ * The router keeps Google's badge and frame across a no-reload navigation so
+ * that reCAPTCHA is loaded once, not again on every page (see nav.js,
+ * replaceBody). The cost is that the badge would follow somebody from the
+ * sign-in form into their account. A page with no captcha field hides it; the
+ * sign-in pages, which carry the field, still show it as Google requires.
+ */
+body:not(:has(#captcha-token)) .grecaptcha-badge { visibility: hidden; }

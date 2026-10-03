@@ -57,6 +57,11 @@
    * should not carry a byte of it.
    */
 %>
+<% if (typeof styles !== 'undefined' && styles.indexOf('home') !== -1) { %>
+<%# The homepage's two typefaces, served from here: font-src is 'self' only. %>
+<link rel="preload" href="/fonts/archivo-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/martian-mono-latin.woff2" as="font" type="font/woff2" crossorigin>
+<% } %>
 <% (typeof styles !== 'undefined' ? styles : []).forEach(function (sheet) { %>
 <link rel="stylesheet" href="/css/<%= sheet %>.css?v=<%= config.version %>">
 <% }) %>
@@ -125,4 +130,4 @@
    * on an inner element would survive the swap and then be wrong.
    */
 %>
-<body<%= typeof bodyClass !== 'undefined' && bodyClass ? ' class="' + bodyClass + '"' : '' %><%= config.features.passkeys ? ' data-passkeys-enabled' : '' %>>
+<body<% if (typeof bodyClass !== 'undefined' && bodyClass) { %> class="<%= bodyClass %>"<% } %><%= config.features.passkeys ? ' data-passkeys-enabled' : '' %>>
