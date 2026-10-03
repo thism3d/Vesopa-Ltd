@@ -3,6 +3,7 @@
     python tool/deploy_websites_cookie_notice.py            # back up, deploy, restart, verify
     python tool/deploy_websites_cookie_notice.py --check    # only show what it would do
     python tool/deploy_websites_cookie_notice.py --skip-metric   # do not touch the portal data
+    python tool/deploy_websites_cookie_notice.py --only vesopasoftware.com   # one site
 
 Also ships the October round two of vesopasoftware.com (menu and loyalty
 sections, new photos and clips, the client area and quotes update). After
@@ -216,7 +217,10 @@ def main():
     client = vesopa_ssh.connect()
     results = {}
     try:
+        only = sys.argv[sys.argv.index("--only") + 1] if "--only" in sys.argv else None
         for folder, domain in SITES:
+            if only and domain != only:
+                continue
             results[domain] = deploy(client, folder, domain, check_only)
     finally:
         client.close()
