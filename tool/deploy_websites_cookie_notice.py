@@ -23,7 +23,8 @@ For each site, in order, stopping that site at the first failure:
   4. a check that the page answers and serves /vesopa-cookies.js.
 
 Credentials: VESOPA_SSH_PASSWORD from .env.claude-tools, exactly like
-tool/auth_ssh.py. Only the host is overridden.
+tool/auth_ssh.py, or else from .env.claude (this checkout, or the main checkout
+when run from a worktree). Only the host is overridden.
 
 To roll a site back:  tar -xzf /home/vesopasoftware/backups/<file>.tgz -C <app dir>
 then `pm2 restart <domain>` as vesopasoftware.
@@ -58,8 +59,37 @@ SITES = [
 _settings = vesopa_ssh.settings
 
 
+def _env_claude():
+    """VESOPA_SSH_PASSWORD from a gitignored .env.claude, when .env.claude-tools
+    is not there. Looks in this checkout and, from a git worktree, in the main
+    checkout it belongs to."""
+    roots = [ROOT]
+    try:
+        common = subprocess.run(["git", "rev-parse", "--git-common-dir"], cwd=ROOT,
+                                capture_output=True, text=True, check=True).stdout.strip()
+        roots.append((ROOT / common).resolve().parent)
+    except Exception:  # noqa: BLE001
+        pass
+    for root in roots:
+        f = pathlib.Path(root) / ".env.claude"
+        if not f.is_file():
+            continue
+        for line in f.read_text(encoding="utf-8", errors="replace").splitlines():
+            key, sep, value = line.strip().partition("=")
+            if sep and key.strip() == "VESOPA_SSH_PASSWORD":
+                return value.strip().strip("'\"")
+    return None
+
+
 def settings():
-    values = _settings()
+    try:
+        values = _settings()
+    except SystemExit:
+        values = {}
+    if not values.get("VESOPA_SSH_PASSWORD"):
+        pw = _env_claude()
+        if pw:
+            values["VESOPA_SSH_PASSWORD"] = pw
     values["VESOPA_SSH_HOST"] = HOST
     return values
 
