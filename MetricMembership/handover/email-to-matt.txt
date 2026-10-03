@@ -1,0 +1,46 @@
+From: muzahid@vesopa.com
+To: m.hammond@metricgroup.co.uk
+Cc: info@vesopasoftware.com
+Subject: Metric Membership is live: your handover pack and next steps
+Attachment: Metric-Membership-Handover-Pack.pdf
+
+Hi Matt,
+
+I hope you are well. Metric Membership is now live on the Microsoft Store, and I have attached a handover pack with everything you need in one place.
+
+Microsoft Store: https://apps.microsoft.com/detail/9NTLR9S47K4W
+Members' web app (any phone, tablet or computer): https://metric.vesopa.com
+Staff console: https://metric.vesopa.com/admin
+Vesopa client area: https://vesopasoftware.com/portal
+
+Signing in
+Everything uses one secure sign-in, Continue with Vesopa. Your administrator account is m.hammond@metricgroup.co.uk. Click Continue with Vesopa, enter your email, and type the 6-digit code we email you. No password is needed, and the same sign-in opens the staff console, the app and the Vesopa client area, where the Metric Membership project is already set up for Metric Group.
+
+The staff and test account is staff@metricgroup.co.uk (Alex Carter). Microsoft uses it to test the app, so please keep it. I will send its password to you separately by text, as we never send a username and password in the same email.
+
+What we need from you
+1. Your review of the app and the console: what works and what you would change.
+2. The make and model of your ANPR cameras and barrier controllers, network access to them, and the Mi-Xchange API document, so we can connect the barriers.
+3. The work email addresses of any staff who need console access.
+
+How would you like to continue?
+A. Continue with Vesopa (our recommendation): we keep hosting, updating and supporting the app, connect your barriers and grow it with you.
+B. Hand everything over: we transfer the Store listing to Metric's own Microsoft account, move the app to your own website (for example members.metricgroup.co.uk), and hand over the data, source code and documentation with a handover session.
+C. Pause or remove the listing: we remove it, give you an export of any data and securely delete the rest.
+
+Beyond the app, Vesopa Software Ltd can look after Metric's wider digital work through one partner: your website, SEO, App Store Optimisation, iPhone, iPad and Android apps, hosting, and your privacy, cookie and terms policies, all with a clear structure and plan agreed with you. The last pages of the pack set out a suggested plan.
+
+Could you reply to this email with your choice of A, B or C and your thoughts on the app? If it is easier to talk it through, our director Meirion Davies would be happy to arrange a call. You can also reach us at info@vesopasoftware.com or +44 1792 316282.
+
+Thank you for working with us, Matt. We look forward to hearing from you.
+
+Kind regards,
+
+Muzahid
+Vesopa Software Ltd
+muzahid@vesopa.com
+
+On behalf of Meirion Davies, Director
+Vesopa Software Ltd · info@vesopasoftware.com · +44 1792 316282
+Baglan, Port Talbot SA12 7AX · Registered in Wales, company number 17362206
+https://vesopasoftware.com
