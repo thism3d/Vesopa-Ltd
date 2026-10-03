@@ -217,7 +217,7 @@ function mark(regions, off, n, r) {
   if (regions) regions.fill(r, off, off + n);
 }
 
-/* ---------- the sixteen scroll targets ---------- */
+/* ---------- the scroll targets ---------- */
 
 export function fieldShape(count) {                      // S0 dispersed / hero
   const o = new Float32Array(count*3);
@@ -655,6 +655,147 @@ export function shieldShape(count) {
   }, .22);
 }
 
+/* ---------- one shape per section's subject ----------
+   October 2026: every section now forms the thing it is talking about. The
+   earlier list borrowed card-scheme logos (Apple, Visa, Mastercard) and an
+   envelope for sections that are about none of those. */
+
+/* Tip a block of points back about the x axis, so a flat slab shows its top
+   face to a camera that looks straight down z. */
+function tiltX(o, off, n, a) {
+  const c = Math.cos(a), s = Math.sin(a);
+  for (let i = off; i < off + n; i++) {
+    const y = o[i * 3 + 1], z = o[i * 3 + 2];
+    o[i * 3 + 1] = y * c - z * s;
+    o[i * 3 + 2] = y * s + z * c;
+  }
+}
+
+/* Vesopa Customer Display: a screen turned to the customer, the bill on it as
+   it is rung through: item lines with their prices, a rule, and the total. */
+export function customerDisplayShape(count) {
+  const o = new Float32Array(count * 3);
+  const panel = Math.floor(count * .52);
+  const bill  = Math.floor(count * .30);
+  const neck  = Math.floor(count * .08);
+  const base  = count - panel - bill - neck;
+  boxSurface(o, 0, panel, 0, .30, 0, 1.75, 1.10, .08);
+  glyphInto(o, panel, bill, (g, s) => {
+    for (let r = 0; r < 5; r++) {
+      const y = s * (.14 + r * .115);
+      g.fillRect(s * .06, y, s * (.42 + (r * 37 % 5) * .05), s * .045);
+      g.fillRect(s * .78, y, s * .16, s * .045);
+    }
+    g.fillRect(s * .06, s * .73, s * .88, s * .012);
+    g.fillRect(s * .06, s * .79, s * .30, s * .09);
+    g.fillRect(s * .64, s * .79, s * .30, s * .09);
+  }, 0, .30, .05, 1.55);
+  boxSurface(o, panel + bill, neck, 0, -.42, 0, .14, .36, .14);
+  boxSurface(o, panel + bill + neck, base, 0, -.64, 0, .80, .06, .44);
+  return o;
+}
+
+/* "Counter, floor, kitchen pass and the customer's own screen — one set of
+   data": four devices round one shared core, each wired to it. */
+export function networkShape(count, regions) {
+  const o = new Float32Array(count * 3);
+  const core = Math.floor(count * .22);
+  cylinderSurface(o, 0, core, 0, 0, 0, .26, .16, "z");
+  mark(regions, 0, core, 1);
+  const spots = [[-.86, .56], [.86, .56], [-.86, -.56], [.86, -.56]];
+  const dev = Math.floor(count * .14);
+  let off = core;
+  spots.forEach(([x, y]) => { boxSurface(o, off, dev, x, y, 0, .54, .38, .07); off += dev; });
+  const wires = count - off, per = Math.floor(wires / 4);
+  spots.forEach(([x, y], w) => {
+    const n = w === 3 ? count - off : per;
+    for (let i = 0; i < n; i++) {
+      const t = .2 + Math.random() * .62, k = (off + i) * 3;
+      o[k] = x * t + (Math.random() - .5) * .025;
+      o[k + 1] = y * t + (Math.random() - .5) * .025;
+      o[k + 2] = (Math.random() - .5) * .025;
+    }
+    off += n;
+  });
+  return o;
+}
+export const NETWORK_PALETTE = ["#A5C715"];
+
+/* The whole stack: six layers, one on another, tipped so their tops show —
+   till, back office, cloud, ID, mail and pay, run by one company. */
+export function layersShape(count, regions) {
+  const o = new Float32Array(count * 3);
+  const L = 6, per = Math.floor(count / L);
+  let off = 0;
+  for (let l = 0; l < L; l++) {
+    const n = l === L - 1 ? count - off : per;
+    boxSurface(o, off, n, 0, -.85 + l * .34, 0, 1.8, .07, .8);
+    if (l === L - 1) mark(regions, off, n, 1);   // the top layer in lime
+    off += n;
+  }
+  tiltX(o, 0, count, .36);
+  return o;
+}
+export const LAYERS_PALETTE = ["#A5C715"];
+
+/* Built to order: the Metric Group app reads number plates, so the field
+   draws one — a UK rear plate, yellow with black characters. */
+export const PLATE_PALETTE = ["#F2C200", "#151515"];
+export function plateShape(count, regions) {
+  const o = new Float32Array(count * 3);
+  const body = Math.floor(count * .58);
+  boxSurface(o, 0, body, 0, 0, 0, 2.2, .54, .05);
+  mark(regions, 0, body, 1);
+  const text = count - body;
+  glyphInto(o, body, text, (g, s) => {
+    g.font = `800 ${s * .17}px "Arial Black", Arial, Helvetica, sans-serif`;
+    g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText("AI4 PRK", s * .5, s * .51);
+  }, 0, 0, .04, 2.2);
+  mark(regions, body, text, 2);
+  return o;
+}
+
+/* How it works — "you will always know where it is": a project checklist on
+   a board, the first two items ticked in lime, the third still to come. */
+export const CHECK_PALETTE = ["#5E7A0E"];
+export function checklistShape(count, regions) {
+  const o = new Float32Array(count * 3);
+  const board = Math.floor(count * .50);
+  boxSurface(o, 0, board, 0, -.05, 0, 1.36, 1.78, .05);
+  const clip = Math.floor(count * .06);
+  boxSurface(o, board, clip, 0, .86, .04, .52, .16, .08);
+  const rows = Math.floor(count * .24);
+  glyphInto(o, board + clip, rows, (g, s) => {
+    g.lineWidth = s * .022; g.strokeStyle = "#fff";
+    for (let r = 0; r < 3; r++) {
+      const y = s * (.18 + r * .27);
+      g.strokeRect(s * .08, y, s * .14, s * .14);
+      g.fillRect(s * .32, y + s * .025, s * .58, s * .045);
+      g.fillRect(s * .32, y + s * .095, s * .38, s * .03);
+    }
+  }, 0, -.05, .04, 1.3);
+  const ticks = count - board - clip - rows;
+  glyphInto(o, board + clip + rows, ticks, (g, s) => {
+    g.lineWidth = s * .05; g.strokeStyle = "#fff"; g.lineCap = "round"; g.lineJoin = "round";
+    for (let r = 0; r < 2; r++) {
+      const y = s * (.18 + r * .27);
+      g.beginPath(); g.moveTo(s * .10, y + s * .07); g.lineTo(s * .15, y + s * .12); g.lineTo(s * .26, y - s * .01); g.stroke();
+    }
+  }, 0, -.05, .06, 1.3);
+  mark(regions, board + clip + rows, ticks, 1);
+  return o;
+}
+
+/* What it costs: a pound sign, solid enough to turn. */
+export function poundShape(count) {
+  return silhouette(count, (g, s) => {
+    g.font = `700 ${s * .82}px Georgia, "Times New Roman", serif`;
+    g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText("£", s * .5, s * .53);
+  }, .26);
+}
+
 /* The wordmark — the real Vesopa V, traced from favicon.svg
    (viewBox 0 0 46.35 33.09). Three polygons, and they are NOT one colour: the
    two outer strokes are lime and the lower-right inner stroke is near-black
@@ -776,21 +917,23 @@ export function buildShapes(count) {
 
   const built = [
     mk(fieldShape),                                 // 0 hero
-    mk(tillShape),                                  // 1 EPOS
-    mk(screenShape),                                // 2 Kitchen
-    mk(appleShape, APPLE_PALETTE),                  // 3 Customer Display — Apple
-    mk(windowsShape, WINDOWS_PALETTE),              // 4 the strip — Microsoft
-    mk(codeShape),                                  // 5 the story
-    mk(cloudShape),                                 // 6 Cloud
-    mk(envelopeShape),                              // 7 Mail
-    mk(coinShape, COIN_PALETTE),                    // 8 Pay — Bitcoin
-    mk(visaShape, VISA_PALETTE),                    // 9 the build work — Visa
-    mk(mastercardShape, MASTERCARD_PALETTE),        // 10 the quote — Mastercard
-    mk(kioskShape),                                 // 11 Express — the kiosk
-    mk(loyaltyShape, LOYAL_PALETTE),                // 12 Loyalty — the member's card
-    mk(qrShape),                                    // 13 menu and loyalty online — a QR code
-    mk(shieldShape),                                // 14 Vesopa ID — a shield
-    mk(markShape, MARK_PALETTE),                    // 15 the V — always last
+    mk(tillShape),                                  // 1 Vesopa EPOS — the till
+    mk(screenShape),                                // 2 Vesopa Kitchen — tickets on the pass
+    mk(customerDisplayShape),                       // 3 Customer Display — the bill, facing out
+    mk(networkShape, NETWORK_PALETTE),              // 4 one set of data — four devices, one core
+    mk(windowsShape, WINDOWS_PALETTE),              // 5 the five apps — Microsoft Store
+    mk(kioskShape),                                 // 6 Vesopa Express — the kiosk
+    mk(loyaltyShape, LOYAL_PALETTE),                // 7 Vesopa Loyalty — the member's card
+    mk(qrShape),                                    // 8 menu and loyalty online — a QR code
+    mk(codeShape),                                  // 9 the story — how it got built
+    mk(cloudShape),                                 // 10 Vesopa Cloud
+    mk(shieldShape),                                // 11 Vesopa ID — a shield
+    mk(layersShape, LAYERS_PALETTE),                // 12 the whole stack — six layers
+    mk(coinShape, COIN_PALETTE),                    // 13 Vesopa Pay — Bitcoin
+    mk(plateShape, PLATE_PALETTE),                  // 14 built to order — a number plate
+    mk(checklistShape, CHECK_PALETTE),              // 15 how it works — the project checklist
+    mk(poundShape),                                 // 16 what it costs — £
+    mk(markShape, MARK_PALETTE),                    // 17 the V — always last
   ];
 
   return {
@@ -806,8 +949,9 @@ export function buildShapes(count) {
    a missing or rejected matte simply leaves the procedural shape in place. */
 export async function upgradeShapes(shapes, count, base = "assets/particles/") {
   const jobs = [
-    [1, "till",  .45],
-    [8, "token", .30],
+    // The photographed token used to replace the coin here; it has no ₿ and
+    // no palette regions, so Pay now keeps the procedural Bitcoin coin.
+    [1,  "till",  .45],
   ];
   const changed = [];
   await Promise.all(jobs.map(async ([i, slug, d]) => {

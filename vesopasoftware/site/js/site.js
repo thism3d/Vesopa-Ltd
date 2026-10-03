@@ -291,6 +291,17 @@ function resolvedness() {
   return t * t * (3 - 2 * t);
 }
 
+/** How formed WHICHEVER shape is nearest, 0..1. At t = 0 the field is
+ *  sitting exactly on shape A, so A's own colours belong at full strength
+ *  there. Measuring only progress toward B (resolvedness) left every
+ *  shape's palette off at the moment its section was centred, and on only
+ *  as the field left for the next one. */
+function formedness() {
+  if (idxA === idxB) return 1;
+  const d = Math.abs(2 * clamp01(uni.uMorph.value) - 1);
+  return d * d * (3 - 2 * d);
+}
+
 /** How much of the final target (the V) is formed, 0..1. */
 function markness() {
   if (idxB !== NS - 1) return 0;
@@ -438,7 +449,7 @@ function paintField() {
   // all. Every other palette (Bitcoin's orange, the Windows flag, Visa's blue)
   // is a light colour and shows on either ground.
   const onMark = idxB === NS - 1 || idxA === NS - 1;
-  uni.uMark.value = onMark ? (lightMode ? m : 0) : resolvedness();
+  uni.uMark.value = onMark ? (lightMode ? m : 0) : formedness();
 }
 
 /** Paint everything that depends on the time of day. */
