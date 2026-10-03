@@ -363,9 +363,21 @@ body.home .demo-glow {
   filter: blur(30px);
   pointer-events: none;
 }
+/*
+ * The card is as tall as its TALLEST screen, whatever the device's fonts.
+ *
+ * The screens used to be absolutely positioned inside a card with a fixed
+ * height. On Android, where the system fonts run larger, the first screen
+ * outgrew it and the row of sign-in icons was cut off at the bottom. Now all
+ * three sit in one grid cell, so the hidden ones still count towards the
+ * height and nothing can spill out.
+ */
 body.home .demo-card {
   position: relative;
-  min-height: 392px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "top" "screen";
+  align-content: start;
   padding: 20px 22px 24px;
   background: #121611;
   border: 1px solid var(--border);
@@ -395,9 +407,10 @@ body.home .demo-lock {
 body.home .demo-lock svg { width: 12px; height: 12px; color: var(--green); }
 
 /* One panel at a time, crossfading and sliding a little. */
+body.home .demo-top { grid-area: top; }
 body.home .demo-panel {
-  position: absolute;
-  left: 22px; right: 22px; top: 76px;
+  grid-area: screen;
+  min-width: 0;
   opacity: 0;
   visibility: hidden;
   transform: translateX(18px);
@@ -424,8 +437,9 @@ body.home .demo-toggle .on { background: rgba(242, 239, 230, .1); color: var(--t
 body.home .demo-label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px; }
 body.home .demo-field {
   display: flex; align-items: center;
-  height: 42px; padding: 0 12px; margin-bottom: 14px;
+  min-height: 42px; padding: 0 12px; margin-bottom: 14px;
   font-size: 14px; color: var(--text);
+  overflow: hidden; white-space: nowrap;
   background: rgba(242, 239, 230, .04);
   border: 1px solid var(--border-strong); border-radius: 4px;
 }
@@ -601,8 +615,7 @@ body.home .product:hover::after { width: 100%; }
 @media (max-width: 560px) {
   body.home .guide-steps { grid-template-columns: 1fr; margin-bottom: 56px; }
   body.home .mail:nth-child(2) { margin-left: 0; }
-  body.home .demo-card { min-height: 372px; padding: 18px 16px 20px; }
-  body.home .demo-panel { left: 16px; right: 16px; }
+  body.home .demo-card { padding: 18px 16px 20px; }
   body.home .demo-code { gap: 6px; }
   body.home .hero-steps button { font-size: 15.5px; }
 }
