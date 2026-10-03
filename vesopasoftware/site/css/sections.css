@@ -306,6 +306,108 @@
 /* ---------- six doors ---------- */
 .doors.six{grid-template-columns:repeat(3,minmax(0,1fr))}
 
+/* ---------- photographs (Gemini stills, October 2026) ----------
+   .site-photo is a framed photograph that slowly pushes in while on screen
+   (.play from js/scenes.js) with status chips floating over it. The reel is
+   three of them drifting at different speeds as the page scrolls. */
+.site-photo{position:relative;margin:0;border-radius:20px;overflow:hidden;aspect-ratio:16/10;
+  background:#11160f;box-shadow:0 40px 90px -42px rgba(0,0,0,.75),0 0 0 1px rgba(242,239,230,.08)}
+.site-photo img{display:block;width:100%;height:100%;object-fit:cover;transform:scale(1.04);transform-origin:60% 55%}
+.site-photo.play img{animation:ph-push 18s ease-in-out infinite alternate}
+.site-photo::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(180deg,transparent 55%,rgba(11,14,10,.55))}
+@keyframes ph-push{from{transform:scale(1.04) translate3d(0,0,0)}to{transform:scale(1.13) translate3d(-1.5%,-1%,0)}}
+.float-chip{position:absolute;z-index:2;display:inline-flex;align-items:center;gap:.5rem;
+  padding:.5rem .85rem;border-radius:999px;font:600 .8rem/1 "Archivo",system-ui,sans-serif;letter-spacing:.01em;
+  color:#F2EFE6;background:rgba(11,14,10,.72);border:1px solid rgba(242,239,230,.14);
+  -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);box-shadow:0 14px 30px -14px rgba(0,0,0,.7)}
+.float-chip .dot{width:.5rem;height:.5rem;border-radius:50%;background:#A5C715;box-shadow:0 0 0 0 rgba(165,199,21,.6)}
+.float-chip .tick{width:1rem;height:1rem;border-radius:50%;background:#A5C715;position:relative;flex:none}
+.float-chip .tick::after{content:"";position:absolute;left:.33rem;top:.2rem;width:.24rem;height:.45rem;
+  border:solid #0B0E0A;border-width:0 2px 2px 0;transform:rotate(45deg)}
+.fc-1{left:1rem;top:1rem}
+.fc-2{right:1rem;bottom:1rem}
+.play .float-chip{animation:chip-in 7s cubic-bezier(.2,.8,.2,1) infinite}
+.play .fc-2{animation-delay:1.2s}
+.play .float-chip .dot{animation:chip-ping 1.6s ease-out infinite}
+@keyframes chip-in{0%{opacity:0;transform:translateY(10px) scale(.94)}8%,86%{opacity:1;transform:none}96%,100%{opacity:0;transform:translateY(-6px)}}
+@keyframes chip-ping{0%{box-shadow:0 0 0 0 rgba(165,199,21,.6)}100%{box-shadow:0 0 0 10px rgba(165,199,21,0)}}
+
+.reel{padding:6vh 0;overflow:hidden}
+.reel-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:clamp(.8rem,2vw,1.6rem);
+  width:min(100% - 10vw,84rem);margin:0 auto}
+.reel-shot{margin:0;position:relative;border-radius:18px;overflow:hidden;aspect-ratio:4/5;will-change:transform;
+  box-shadow:0 40px 80px -40px rgba(0,0,0,.8),0 0 0 1px rgba(242,239,230,.08)}
+.reel-shot:nth-child(2){margin-top:3.5rem}
+.reel-shot img{width:100%;height:100%;object-fit:cover;display:block}
+.reel-shot figcaption{position:absolute;left:0;right:0;bottom:0;padding:2.4rem 1.1rem 1rem;
+  font:500 .95rem/1.3 "Archivo",system-ui,sans-serif;color:#F2EFE6;
+  background:linear-gradient(180deg,transparent,rgba(11,14,10,.86))}
+.reel-shot figcaption b{display:block;font-family:"Martian Mono",monospace;font-weight:400;font-size:.68rem;
+  letter-spacing:.12em;text-transform:uppercase;color:#A5C715;margin-bottom:.3rem}
+
+/* ---------- the venue online ---------- */
+.online .wide,.builds .wide{max-width:76rem}
+.site-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:clamp(1rem,2.4vw,2rem);
+  width:100%;margin-top:3rem;text-align:left}
+.site-card{display:flex;flex-direction:column;border-radius:24px;overflow:hidden;
+  background:linear-gradient(180deg,rgba(18,24,15,.92),rgba(10,13,9,.92));
+  border:1px solid rgba(242,239,230,.1);box-shadow:0 50px 100px -50px rgba(0,0,0,.85);
+  transition:transform .5s cubic-bezier(.2,.8,.2,1),border-color .5s}
+.site-card:hover{transform:translateY(-4px);border-color:rgba(165,199,21,.4)}
+.site-card .site-photo{border-radius:0;box-shadow:none}
+.site-body{padding:clamp(1.3rem,2.6vw,2rem);display:flex;flex-direction:column;flex:1}
+.site-k{font-family:"Martian Mono",monospace;font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;
+  color:#A5C715;margin:0 0 .7rem;max-width:none}
+.light .site-k{color:#5E7A0E}
+.site-body h3,.build-copy h3,.portal-copy h3{font-size:clamp(1.35rem,2.2vw,1.7rem);line-height:1.15;margin-bottom:1rem}
+.ticks{list-style:none;margin:0 0 1.3rem;padding:0;display:grid;gap:.55rem}
+.ticks li{position:relative;padding-left:1.7rem;font-size:.97rem;line-height:1.4;opacity:.88}
+.ticks li::before{content:"";position:absolute;left:0;top:.18rem;width:1.05rem;height:1.05rem;border-radius:50%;
+  background:rgba(165,199,21,.16);box-shadow:inset 0 0 0 1px rgba(165,199,21,.5)}
+.ticks li::after{content:"";position:absolute;left:.38rem;top:.38rem;width:.26rem;height:.48rem;
+  border:solid #A5C715;border-width:0 2px 2px 0;transform:rotate(45deg)}
+.site-price{margin:auto 0 1.1rem;max-width:none;font-size:.95rem;opacity:.8;padding-top:.4rem}
+.site-price b{font-family:"Archivo",sans-serif;font-variation-settings:"wdth" 112,"wght" 680;font-size:1.5rem;
+  color:#A5C715;opacity:1;margin-right:.3rem}
+.site-cta{display:flex;flex-wrap:wrap;gap:.6rem}
+.online .apps-note{opacity:.7;font-size:.9rem;margin-top:1.8rem}
+
+.auth-photo{aspect-ratio:16/9;margin-bottom:1.4rem}
+
+/* ---------- built to order ---------- */
+.build-split,.portal-band{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);
+  gap:clamp(1.6rem,4vw,3.6rem);align-items:center;width:100%;margin-top:3rem;text-align:left}
+.portal-band{grid-template-columns:minmax(0,.95fr) minmax(0,1.05fr);margin-top:clamp(3rem,8vh,5rem)}
+.build-copy p,.portal-copy p{margin-inline:0}
+.portal-copy>p:not(.site-k){margin-top:0;opacity:.85}
+.portal-steps{list-style:none;counter-reset:ps;margin:1.4rem 0 1.6rem;padding:0;display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));gap:.7rem}
+.portal-steps li{counter-increment:ps;padding:.95rem 1rem;border-radius:14px;background:rgba(11,14,10,.04);
+  border:1px solid var(--rule);display:flex;flex-direction:column;gap:.25rem}
+.portal-steps li::before{content:"0" counter(ps);font-family:"Martian Mono",monospace;font-size:.68rem;color:#5E7A0E;letter-spacing:.1em}
+.portal-steps b{font-family:"Archivo",sans-serif;font-variation-settings:"wdth" 110,"wght" 640}
+.portal-steps span{font-size:.88rem;opacity:.75;line-height:1.4}
+
+@media (max-width:1000px){
+  .site-cards{grid-template-columns:1fr;max-width:40rem;margin-inline:auto}
+  .build-split,.portal-band{grid-template-columns:1fr;max-width:40rem;margin-inline:auto}
+  .portal-band .site-photo{order:-1}
+}
+@media (max-width:760px){
+  .reel-row{grid-template-columns:repeat(3,78vw);width:auto;padding:0 6vw;overflow-x:auto;
+    scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .reel-row::-webkit-scrollbar{display:none}
+  .reel-shot{scroll-snap-align:center;aspect-ratio:4/4.4}
+  .reel-shot:nth-child(2){margin-top:0}
+  .float-chip{font-size:.72rem;padding:.42rem .7rem}
+  .fc-1{left:.7rem;top:.7rem}.fc-2{right:.7rem;bottom:.7rem}
+}
+@media (max-width:420px){
+  .portal-steps{grid-template-columns:1fr}
+  .site-cta .cta{width:100%;text-align:center}
+}
+
 /* ---------- responsive ---------- */
 @media (max-width:1200px){
   .app-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
@@ -338,5 +440,7 @@
 }
 
 @media (prefers-reduced-motion:reduce){
-  .scene *,.app-grid *{animation:none!important;transition:none!important}
+  .scene *,.app-grid *,.site-photo *{animation:none!important;transition:none!important}
+  .site-photo.play img{animation:none}
+  .reel-shot{transform:none!important}
 }

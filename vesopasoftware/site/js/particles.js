@@ -217,7 +217,7 @@ function mark(regions, off, n, r) {
   if (regions) regions.fill(r, off, off + n);
 }
 
-/* ---------- the twelve scroll targets ---------- */
+/* ---------- the sixteen scroll targets ---------- */
 
 export function fieldShape(count) {                      // S0 dispersed / hero
   const o = new Float32Array(count*3);
@@ -557,6 +557,104 @@ export function boltShape(count) {                       // S5 lightning bolt
   }, .16);
 }
 
+/* ---------- the four venue-facing targets ----------
+   Added with the Express, Loyalty, online and Vesopa ID sections, so each of
+   them forms its own subject instead of borrowing a neighbour's. They sit
+   before the V, which must stay last. */
+
+/* Vesopa Express: a freestanding kiosk — a tall portrait screen on a column,
+   with the menu tiles standing slightly proud of the glass. */
+export function kioskShape(count) {
+  const o = new Float32Array(count * 3);
+  const head  = Math.floor(count * .50);
+  const tiles = Math.floor(count * .20);
+  const col   = Math.floor(count * .17);
+  const base  = count - head - tiles - col;
+  boxSurface(o, 0, head, 0, .42, 0, .96, 1.36, .10);
+  let off = head;
+  const per = Math.floor(tiles / 8);
+  for (let r = 0; r < 4; r++) for (let c = 0; c < 2; c++) {
+    const n = (r === 3 && c === 1) ? tiles - (off - head) : per;
+    boxSurface(o, off, n, -.21 + c * .42, .86 - r * .27, .065, .34, .20, .012);
+    off += n;
+  }
+  boxSurface(o, head + tiles, col, 0, -.62, 0, .30, .72, .22);
+  boxSurface(o, head + tiles + col, base, 0, -1.0, 0, .78, .06, .52);
+  return o;
+}
+
+/* Vesopa Loyalty: the member's card, a star struck into it in lime, and a row
+   of visit stamps along the bottom — four earned, two to go. */
+export const LOYAL_PALETTE = ["#A5C715"];
+export function loyaltyShape(count, regions) {
+  const o = new Float32Array(count * 3);
+  const body = Math.floor(count * .56);
+  boxSurface(o, 0, body, 0, 0, 0, 2.0, 1.26, .06);
+  const star = Math.floor(count * .26);
+  glyphInto(o, body, star, (g, s) => {
+    const cx = s * .5, cy = s * .5, R = s * .42, r = R * .45;
+    g.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const a = -Math.PI / 2 + i * Math.PI / 5, q = i % 2 ? r : R;
+      const x = cx + Math.cos(a) * q, y = cy + Math.sin(a) * q;
+      i ? g.lineTo(x, y) : g.moveTo(x, y);
+    }
+    g.closePath(); g.fill();
+  }, 0, .14, .05, .8);
+  mark(regions, body, star, 1);
+  const stamps = count - body - star;
+  glyphInto(o, body + star, stamps, (g, s) => {
+    g.lineWidth = s * .02; g.strokeStyle = "#fff";
+    for (let i = 0; i < 6; i++) {
+      g.beginPath(); g.arc(s * (.17 + i * .133), s * .5, s * .045, 0, Math.PI * 2);
+      if (i < 4) g.fill(); else g.stroke();
+    }
+  }, 0, -.40, .05, 1.8);
+  return o;
+}
+
+/* The online sites. menu.vesopa.com and loyalty.vesopa.com both start with a
+   QR code on a table, so the field draws one: three finder squares and a fixed
+   scatter of modules, seeded so it is the same code on every visit. */
+export function qrShape(count) {
+  const N = 25;
+  let seed = 7;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const inFinder = (x, y) => (x < 7 && y < 7) || (x >= N - 7 && y < 7) || (x < 7 && y >= N - 7);
+  const nearFinder = (x, y) => (x < 8 && y < 8) || (x >= N - 8 && y < 8) || (x < 8 && y >= N - 8);
+  const on = [];
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    if (inFinder(x, y)) {
+      const fx = x >= N - 7 ? x - (N - 7) : x, fy = y >= N - 7 ? y - (N - 7) : y;
+      if (Math.max(Math.abs(fx - 3), Math.abs(fy - 3)) !== 2) on.push([x, y]);
+    } else if (!nearFinder(x, y) && rnd() < .46) on.push([x, y]);
+  }
+  return silhouette(count, (g, s) => {
+    const m = (s * .80) / N, o = (s - m * N) / 2;
+    on.forEach(([x, y]) => g.fillRect(o + x * m + m * .07, o + y * m + m * .07, m * .86, m * .86));
+  }, .16);
+}
+
+/* Vesopa ID: a shield with a keyhole through it. */
+export function shieldShape(count) {
+  return silhouette(count, (g, s) => {
+    g.beginPath();
+    g.moveTo(s * .5, s * .10);
+    g.bezierCurveTo(s * .63, s * .18, s * .76, s * .20, s * .82, s * .20);
+    g.bezierCurveTo(s * .82, s * .52, s * .73, s * .76, s * .5, s * .91);
+    g.bezierCurveTo(s * .27, s * .76, s * .18, s * .52, s * .18, s * .20);
+    g.bezierCurveTo(s * .24, s * .20, s * .37, s * .18, s * .5, s * .10);
+    g.closePath(); g.fill();
+    g.globalCompositeOperation = "destination-out";
+    g.beginPath(); g.arc(s * .5, s * .42, s * .08, 0, Math.PI * 2); g.fill();
+    g.beginPath();
+    g.moveTo(s * .47, s * .45); g.lineTo(s * .53, s * .45);
+    g.lineTo(s * .56, s * .66); g.lineTo(s * .44, s * .66);
+    g.closePath(); g.fill();
+    g.globalCompositeOperation = "source-over";
+  }, .22);
+}
+
 /* The wordmark — the real Vesopa V, traced from favicon.svg
    (viewBox 0 0 46.35 33.09). Three polygons, and they are NOT one colour: the
    two outer strokes are lime and the lower-right inner stroke is near-black
@@ -688,7 +786,11 @@ export function buildShapes(count) {
     mk(coinShape, COIN_PALETTE),                    // 8 Pay — Bitcoin
     mk(visaShape, VISA_PALETTE),                    // 9 the build work — Visa
     mk(mastercardShape, MASTERCARD_PALETTE),        // 10 the quote — Mastercard
-    mk(markShape, MARK_PALETTE),                    // 11 the V — always last
+    mk(kioskShape),                                 // 11 Express — the kiosk
+    mk(loyaltyShape, LOYAL_PALETTE),                // 12 Loyalty — the member's card
+    mk(qrShape),                                    // 13 menu and loyalty online — a QR code
+    mk(shieldShape),                                // 14 Vesopa ID — a shield
+    mk(markShape, MARK_PALETTE),                    // 15 the V — always last
   ];
 
   return {

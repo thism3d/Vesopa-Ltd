@@ -49,8 +49,11 @@ z-index wrong and footage lands on the headline:
 - **Vesopa AI** is Grok 4.3 via `/api/ai` — see "Vesopa AI" below.
 
 Morph targets, in page order:
-`0 field · 1 till · 2 screen · 3 window · 4 code · 5 cloud · 6 envelope ·
-7 coin · 8 card · 9 mark`
+`0 field · 1 till · 2 screen · 3 apple · 4 windows · 5 code · 6 cloud ·
+7 envelope · 8 coin · 9 visa · 10 mastercard · 11 kiosk · 12 loyalty card ·
+13 QR code · 14 shield · 15 mark` (the list in `buildShapes()` is the truth;
+the V stays last, so a new target goes in before it and the two
+`data-shape` attributes on #contact and #mark move up by one)
 
 All paths below are relative to `vesopasoftware/`.
 

@@ -73,6 +73,19 @@ SHIPPED PRODUCTS — five Windows apps, all live on the Microsoft Store:
    membership details and the venue's news.
 
 SERVICES
+- Vesopa Menu (menu.vesopa.com) — the QR dine-in menu: a code on every table,
+  the menu live from the till's catalogue, order and pay from the seat, tickets
+  straight to the till and the kitchen screen, allergens on every dish. From
+  £19 a month, order at the table £39, own domain £59; no commission on orders.
+- Vesopa Loyalty online (loyalty.vesopa.com) — a venue's own white-label
+  loyalty app: a web app at loyalty.vesopa.com/yourvenue from £29 a month, or
+  published on Google Play and the Microsoft Store under the venue's name from
+  £59 a month. Both need Vesopa EPOS at the venue. Prices exclude VAT.
+- Custom builds — white-label apps for businesses outside hospitality too, for
+  example a membership app for a UK car park operator where members register
+  their number plates and ANPR barriers open for them (web, Windows, Android).
+  Customers follow their project, quotes and invoices in the client area at
+  /portal.
 - Vesopa Cloud (cloud.vesopa.com) — hosting: domain search, registration and
   transfer across hundreds of extensions, fast UK NVMe hosting, free SSL
   renewed automatically, mailboxes on your own domain, daily backups on the

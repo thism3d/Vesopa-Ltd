@@ -19,3 +19,7 @@ shots-live/
 
 # Python bytecode from tools/
 __pycache__/
+
+# Generated stills and Veo sources: the shipped copies are in site/assets.
+masters/gen/
+masters/video/*.mp4

@@ -82,7 +82,9 @@ async function generate({ model = 'nbpro', prompt, refs = [], ar = '16:9', size 
     const tmp = out + '.raw.jpg';
     writeFileSync(tmp, Buffer.from(img.inlineData.data, 'base64'));
     if (out.endsWith('.png') && img.inlineData.mimeType !== 'image/png') {
-      execFileSync('sips', ['-s', 'format', 'png', tmp, '--out', out], { stdio: 'ignore' });
+      // sips on the Mac; ImageMagick anywhere else (a cloud container has no sips).
+      if (process.platform === 'darwin') execFileSync('sips', ['-s', 'format', 'png', tmp, '--out', out], { stdio: 'ignore' });
+      else execFileSync('convert', [tmp, out], { stdio: 'ignore' });
       unlinkSync(tmp);
     } else { execFileSync('mv', [tmp, out]); }
     return out;
