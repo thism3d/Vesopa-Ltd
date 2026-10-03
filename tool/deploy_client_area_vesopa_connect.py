@@ -52,6 +52,7 @@ To roll the code back: tar -xzf /home/vesopasoftware/backups/<file>.tgz -C <app 
 then the same restart.
 """
 import pathlib
+import re
 import posixpath
 import subprocess
 import sys
@@ -398,8 +399,10 @@ def main():
         sh(client, f"chown -R {USER}:{USER} {APP}", quiet=True)
         print("   uploaded and chowned")
 
-        st, out = sh(client, f"su - {USER} -c 'cd {APP} && {NODE} node --test server/test/vesopa-sso.test.js 2>&1 | tail -12'", quiet=True)
-        if "# fail 0" not in out:
+        st, out = sh(client, f"su - {USER} -c 'cd {APP} && {NODE} node --test --test-reporter=tap server/test/vesopa-sso.test.js 2>&1 | tail -12'", quiet=True)
+        # TAP prints "# fail 0"; Node's default reporter prints "ℹ fail 0".
+        # Accept either, so the server's Node version cannot fail a green run.
+        if not re.search(r"^\s*(#|ℹ) fail 0\s*$", out, re.M):
             print("    " + out.strip().replace("\n", "\n    "))
             raise SystemExit(
                 "! REFUSING TO RESTART: the sign-in tests failed on the server. The previous version is still "
