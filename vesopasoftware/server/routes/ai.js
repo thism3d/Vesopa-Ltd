@@ -82,8 +82,8 @@ SERVICES
   published on Google Play and the Microsoft Store under the venue's name from
   £59 a month. Both need Vesopa EPOS at the venue. Prices exclude VAT.
 - Custom builds — white-label apps for businesses outside hospitality too, for
-  example a membership app for a UK car park operator where members register
-  their number plates and ANPR barriers open for them (web, Windows, Android).
+  example the Metric Group membership app (metric.vesopa.com), where members register
+  their number plates for the ANPR barriers at Metric car parks (web, Windows, Android).
   Customers follow their project, quotes and invoices in the client area at
   /portal.
 - Vesopa Cloud (cloud.vesopa.com) — hosting: domain search, registration and

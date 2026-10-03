@@ -50,7 +50,7 @@ const PROJECT = {
   status: "in_progress",
   description:
     "Metric Group's white-label membership app. Members register their number plates, " +
-    "and the ANPR cameras at Metric's car parks open the barriers for them. " +
+    "for the ANPR barriers at Metric's car parks (barrier link waiting on Metric's hardware details). " +
     "Web app live at metric.vesopa.com; Windows app submitted to the Microsoft Store; " +
     "Android app in progress.",
 };
@@ -61,8 +61,9 @@ const PROJECT = {
 const MILESTONES = [
   { title: "Web app live at metric.vesopa.com", status: "done",
     detail: "Members sign in with Vesopa ID, register their cars and see their visits. Staff console at /admin." },
-  { title: "Number plates linked to the ANPR barriers", status: "done",
-    detail: "A registered plate opens the member barriers at Metric car parks, on the way in and out." },
+  { title: "Number plates linked to the ANPR barriers", status: "doing",
+    detail: "Members register their plates in the app. Linking them to the barriers waits on Metric " +
+            "confirming the camera make, network access and the Mi-Xchange API document." },
   { title: "Windows app submitted to the Microsoft Store", status: "done", done_at: "2026-09-27 12:00:00",
     detail: "Version 1.0.1.0, Store ID 9NTLR9S47K4W, submitted 27 September 2026." },
   { title: "Windows app published on the Microsoft Store", status: "doing",
@@ -181,7 +182,18 @@ async function main() {
   for (const m of MILESTONES) {
     order += 1;
     const have = await one("SELECT id FROM project_tasks WHERE project_id = ? AND title = ?", [project.id, m.title]);
-    if (have) { log("found", `milestone “${m.title}”`); continue; }
+    if (have) {
+      // The first release of this script marked the ANPR link done before
+      // Metric had confirmed their cameras. Correct that one row, and only
+      // while it is still exactly as that release wrote it.
+      if (m.title === "Number plates linked to the ANPR barriers") {
+        const r = await exec(
+          "UPDATE project_tasks SET status = ?, detail = ?, done_at = NULL WHERE id = ? AND status = 'done' AND done_at IS NULL",
+          [m.status, m.detail, have.id]);
+        if (r.affectedRows) { log("fixed", `milestone “${m.title}” back to ${m.status}`); continue; }
+      }
+      log("found", `milestone “${m.title}”`); continue;
+    }
     await exec(
       `INSERT INTO project_tasks (project_id, title, detail, status, created_by, is_visible, is_milestone, sort_order, done_at)
        VALUES (?,?,?,?,?,1,1,?,?)`,
