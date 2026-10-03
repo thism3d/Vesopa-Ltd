@@ -891,6 +891,31 @@ async function passwordPage(req, res, error = '') {
 
 router.get('/login/password', async (req, res, next) => {
   try {
+    /*
+     * "Use your password instead" on the code page links here, but the cookie
+     * it carries is the CODE flow (`p` says the account has a password), and
+     * passwordPage only accepts a password flow — so the link bounced people
+     * back to /login and nobody on a code-first application could use their
+     * password. Switch it to the same password flow the first step makes when
+     * it leads with the password; the POST keeps its own limit and captcha.
+     */
+    const flow = readFlow(req);
+    if (flow && flow.s !== 'password' && flow.p === true && flow.u) {
+      setFlow(
+        res,
+        JSON.stringify({
+          s: 'password',
+          d: flow.d,
+          n: flow.n,
+          ch: flow.ch,
+          p: true,
+          r: flow.r || '',
+          m: flow.m,
+          u: flow.u,
+        }),
+      );
+      return res.redirect(303, '/login/password');
+    }
     return await passwordPage(req, res);
   } catch (error) {
     return next(error);
