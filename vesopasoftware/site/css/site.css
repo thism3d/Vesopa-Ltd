@@ -917,6 +917,15 @@ body.is-fullscreen .ico-fs{
 .ai-sugg::-webkit-scrollbar{display:none}
 .ai-sugg[hidden]{display:none}
 .ai-chip{white-space:nowrap;flex:none}
+/* After an answer the chips are the model's own follow-ups: longer, so they
+   wrap onto a second line rather than hiding off the right edge. */
+.ai-sugg.next{flex-wrap:wrap;overflow-x:visible}
+.ai-sugg.next .ai-chip{white-space:normal;text-align:left;flex:0 1 auto}
+.ai-msg a{color:var(--lime);text-decoration:underline;text-underline-offset:2px;word-break:break-word}
+.ai-you a{color:inherit}
+.ai-pic{margin:.6rem 0 .3rem;display:block}
+.ai-pic img{display:block;width:100%;height:auto;border-radius:8px;border:1px solid rgba(242,239,230,.12)}
+.ai-pic figcaption{font-size:.78rem;opacity:.7;margin-top:.3rem;white-space:normal}
 .ai-chip{
   font-family:"Martian Mono",monospace;font-size:.62rem;letter-spacing:.02em;
   background:transparent;color:inherit;cursor:pointer;

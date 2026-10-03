@@ -19,6 +19,73 @@ const SUGGESTIONS = [
   "How does the client portal work?",
 ];
 
+/* Answers are plain text with three bits of Markdown the grounding allows:
+   [label](url), ![caption](/assets/...) and **bold**. They are built as DOM
+   nodes, never innerHTML, and only these destinations are let through, so a
+   model that wanders cannot put a script, a tracking pixel or a lookalike
+   domain on the page. */
+const SAFE_LINK = /^(?:https:\/\/(?:[a-z0-9-]+\.)*(?:vesopa\.com|vesopasoftware\.com|vesopaepos\.com|apps\.microsoft\.com)(?:[/?#][^\s<>"']*)?|\/[A-Za-z0-9#/_.?=&-]*|#[a-z0-9-]+|mailto:[^\s<>"']+)$/i;
+const SAFE_IMAGE = /^\/assets\/(?:screenshots|photo|still|story)\/[A-Za-z0-9_.-]+\.(?:webp|png|jpg)$/;
+const TOKEN = /!\[([^\]\n]*)\]\(([^)\s]+)\)|\[([^\]\n]+)\]\(([^)\s]+)\)|\*\*([^*\n]+)\*\*|(https:\/\/[^\s<>()"']+[^\s<>()"'.,;:!?])|([A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)/g;
+
+/** Splits the closing ">> a | b | c" line of follow-up questions off an answer. */
+export function splitAnswer(text, streaming) {
+  const lines = String(text || "").replace(/\s+$/, "").split("\n");
+  let next = [];
+  const last = lines[lines.length - 1] || "";
+  if (/^\s*>>/.test(last)) {
+    lines.pop();
+    next = last.replace(/^\s*>>\s*/, "").split("|").map((q) => q.trim()).filter((q) => q.length > 1 && q.length < 90).slice(0, 3);
+  } else if (streaming && /^\s*>\s*$/.test(last)) {
+    lines.pop(); // the start of that line, still arriving
+  }
+  return { body: lines.join("\n").replace(/\s+$/, ""), next };
+}
+
+/** Fills el with the answer: text, safe links, pictures and bold. */
+function render(el, text) {
+  el.textContent = "";
+  // A picture is its own block; the blank lines around it would add a gap.
+  text = text.replace(/\n*(!\[[^\]\n]*\]\([^)\s]+\))\n*/g, "$1");
+  let at = 0;
+  for (const m of text.matchAll(TOKEN)) {
+    if (m.index > at) el.append(text.slice(at, m.index));
+    at = m.index + m[0].length;
+    const [, imgAlt, imgSrc, label, href, bold, bare, mail] = m;
+    if (imgSrc !== undefined) {
+      if (SAFE_IMAGE.test(imgSrc)) {
+        const fig = document.createElement("figure");
+        fig.className = "ai-pic";
+        const img = document.createElement("img");
+        img.src = imgSrc; img.alt = imgAlt || ""; img.loading = "lazy"; img.decoding = "async";
+        const a = document.createElement("a");
+        a.href = imgSrc; a.target = "_blank"; a.rel = "noopener";
+        a.append(img);
+        fig.append(a);
+        if (imgAlt) { const cap = document.createElement("figcaption"); cap.textContent = imgAlt; fig.append(cap); }
+        el.append(fig);
+      }
+    } else if (href !== undefined) {
+      el.append(SAFE_LINK.test(href) ? link(label, href) : label);
+    } else if (bold !== undefined) {
+      const b = document.createElement("strong"); b.textContent = bold; el.append(b);
+    } else if (bare !== undefined) {
+      el.append(SAFE_LINK.test(bare) ? link(bare.replace(/^https:\/\//, ""), bare) : bare);
+    } else if (mail !== undefined) {
+      el.append(link(mail, "mailto:" + mail));
+    }
+  }
+  if (at < text.length) el.append(text.slice(at));
+}
+
+function link(label, href) {
+  const a = document.createElement("a");
+  a.href = href;
+  a.textContent = label;
+  if (/^https:/.test(href)) { a.target = "_blank"; a.rel = "noopener"; }
+  return a;
+}
+
 const GREETING =
   "I'm Vesopa AI. Ask me about the till, the kitchen display, hosting, or what a build would cost.";
 
@@ -87,15 +154,20 @@ export async function mountAI() {
   function bubble(role, text = "") {
     const el = document.createElement("div");
     el.className = `ai-msg ai-${role}`;
-    el.textContent = text;
+    if (role === "bot") render(el, splitAnswer(text).body); else el.textContent = text;
     log.appendChild(el);
     log.scrollTop = log.scrollHeight;
     return el;
   }
 
-  function showSuggestions() {
+  /** Chips under the conversation: the model's own follow-ups, else the starters not yet asked. */
+  function showSuggestions(list) {
     sugg.innerHTML = "";
-    for (const s of SUGGESTIONS) {
+    const asked = new Set(history.filter((m) => m.role === "user").map((m) => m.content));
+    const chips = (list && list.length ? list : SUGGESTIONS.filter((q) => !asked.has(q))).slice(0, 4);
+    if (!chips.length) { sugg.hidden = true; return; }
+    sugg.classList.toggle("next", Boolean(list && list.length));
+    for (const s of chips) {
       const b = document.createElement("button");
       b.type = "button";
       b.className = "ai-chip";
@@ -131,6 +203,7 @@ export async function mountAI() {
         sugg.hidden = true;
         history = data.current.transcript.slice();
         for (const m of history) bubble(m.role === "user" ? "you" : "bot", m.content);
+        showSuggestions(lastFollowUps());
         return;
       }
       const last = (data.sessions || [])[0];
@@ -145,6 +218,11 @@ export async function mountAI() {
     } catch { /* offline: start fresh */ }
   })();
 
+  function lastFollowUps() {
+    const lastBot = [...history].reverse().find((m) => m.role === "assistant");
+    return lastBot ? splitAnswer(lastBot.content).next : [];
+  }
+
   async function resume(id) {
     try {
       const r = await fetch("/api/ai/sessions?" + new URLSearchParams({ visitor, session: id }));
@@ -155,6 +233,7 @@ export async function mountAI() {
       sugg.hidden = true;
       history = data.current.transcript.slice();
       for (const m of history) bubble(m.role === "user" ? "you" : "bot", m.content);
+      showSuggestions(lastFollowUps());
     } catch { /* leave as it is */ }
   }
 
@@ -322,7 +401,7 @@ export async function mountAI() {
               if (!t) continue;
               if (!answer) out.classList.remove("thinking");
               answer += t;
-              out.textContent = answer;
+              render(out, splitAnswer(answer, true).body);
               log.scrollTop = log.scrollHeight;
             } catch { /* keepalive */ }
           }
@@ -330,12 +409,16 @@ export async function mountAI() {
       }
 
       if (!answer) throw new Error("empty");
+      const { body, next } = splitAnswer(answer);
+      render(out, body || answer);
       if (failed) {
         out.classList.add("bad");
         history.pop();
+        showSuggestions();
       } else {
         history.push({ role: "assistant", content: answer });
         if (!again) offerAgain(out, text);
+        showSuggestions(next);
       }
     } catch {
       out.classList.remove("thinking");

@@ -3,6 +3,7 @@
     python tool/deploy_deepseek_ai.py            # back up, deploy, set keys, restart, verify
     python tool/deploy_deepseek_ai.py --check    # only show what it would do
     python tool/deploy_deepseek_ai.py --keep-ai-off   # leave AI_FEATURES=off on Cloud if it is set
+    python tool/deploy_deepseek_ai.py --only vesopasoftware.com   # one site only
 
 Ships the commit "Vesopa AI on DeepSeek: website bar, Cloud assistant and
 Studio" (the owner's model policy of 2026-10-03) and anything after it in the
@@ -269,7 +270,10 @@ def main():
     client = base.vesopa_ssh.connect()
     results = {}
     try:
+        only = sys.argv[sys.argv.index("--only") + 1] if "--only" in sys.argv[:-1] else ""
         for folder, domain, which in SITES:
+            if only and domain != only:
+                continue
             results[domain] = deploy(client, folder, domain, which, k, check_only)
     finally:
         client.close()
