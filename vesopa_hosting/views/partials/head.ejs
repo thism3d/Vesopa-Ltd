@@ -18,8 +18,12 @@
   <meta name="theme-color" content="#111111">
   <meta name="robots" content="<%= typeof robots !== 'undefined' ? robots : 'index, follow' %>">
 
-  <link rel="icon" href="<%= asset('/favicon.png') %>" type="image/png">
-  <link rel="icon" href="/favicon.ico" sizes="any">
+  <%# The same tile as auth.vesopa.com: a white and lime V on a black rounded
+      square. The old icon was a lime tile, which read as a round border
+      around the V in a browser tab. Versioned so a tab drops its cached copy. %>
+  <link rel="icon" href="<%= asset('/favicon.ico') %>" sizes="16x16 32x32 48x48">
+  <link rel="icon" href="<%= asset('/favicon.svg') %>" type="image/svg+xml">
+  <link rel="icon" href="<%= asset('/favicon.png') %>" type="image/png" sizes="512x512">
   <%# 180 square, which is the size Apple actually asks for. This used to point
       at the 512 app icon: iOS accepted it and downscaled it on every launch,
       and Safari's "Add to Home Screen" preview showed it soft. %>
