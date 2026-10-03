@@ -68,4 +68,20 @@ export const config = {
   },
 };
 
+/* Continue with Vesopa — sign-in through Vesopa Connect (auth.vesopa.com).
+   DORMANT unless both the client id and the secret are set: no button is
+   drawn and /portal/auth/vesopa/* answers 404, so turning it off is deleting
+   two lines from .env and a restart. The redirect URI must be the one
+   registered for the client (vesopa_auth/schema/schema_026_*.sql); it is
+   built from BASE_URL unless VESOPA_AUTH_REDIRECT_URI says otherwise. */
+const vesopaClientId = (process.env.VESOPA_AUTH_CLIENT_ID || "").trim();
+const vesopaClientSecret = (process.env.VESOPA_AUTH_CLIENT_SECRET || "").trim();
+config.vesopaAuth = {
+  enabled: Boolean(vesopaClientId && vesopaClientSecret),
+  issuer: (process.env.VESOPA_AUTH_ISSUER || "https://auth.vesopa.com").trim().replace(/\/+$/, ""),
+  clientId: vesopaClientId,
+  clientSecret: vesopaClientSecret,
+  redirectUri: (process.env.VESOPA_AUTH_REDIRECT_URI || `${config.baseUrl}/portal/auth/vesopa/callback`).trim(),
+};
+
 export const isProd = config.env === "production";

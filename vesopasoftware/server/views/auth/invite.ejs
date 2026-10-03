@@ -1,11 +1,18 @@
 <%- include("../partials/head") %>
+<% const sso = typeof vesopaSso !== "undefined" && vesopaSso; %>
 <div class="auth">
   <div class="auth-card">
     <a class="brand" href="/"><img src="/assets/logo.svg" alt="">Vesopa <small>portal</small></a>
+    <%- include("../partials/auth-flash") %>
     <% if (error) { %><div class="notice bad"><%= error %></div><% } %>
     <% if (invite) { %>
       <h1>Join <%= invite.org_name %></h1>
-      <p>You have been added as <strong><%= invite.org_role %></strong>. Set a password and you are in.</p>
+      <p>You have been added as <strong><%= invite.org_role %></strong>. <%= sso ? "Join with your Vesopa account, or set a password" : "Set a password" %> and you are in.</p>
+      <% if (sso) { %>
+        <%- include("../partials/vesopa-button", { href: "/portal/auth/vesopa/start?invite=" + encodeURIComponent(token), label: "Join with your Vesopa account", rel: "noreferrer" }) %>
+        <p class="hint vesopa-hint">Use a Vesopa account for <b><%= invite.email %></b> — the address this invitation was sent to. No account yet? You can make one there with an emailed code.</p>
+        <div class="auth-or"><span>or set a password</span></div>
+      <% } %>
       <form method="post" action="/portal/invite/<%= token %>">
         <input type="hidden" name="_csrf" value="<%= csrf %>">
         <div class="field">
@@ -14,7 +21,7 @@
         </div>
         <div class="field">
           <label for="name">Your name</label>
-          <input id="name" name="name" required value="<%= invite.name || '' %>" autocomplete="name" autofocus>
+          <input id="name" name="name" required value="<%= invite.name || '' %>" autocomplete="name"<%= sso ? "" : " autofocus" %>>
         </div>
         <div class="fields">
           <div class="field">
@@ -36,7 +43,7 @@
             <input id="password2" name="password2" type="password" required minlength="8" autocomplete="new-password">
           </div>
         </div>
-        <button class="btn" type="submit">Join the team</button>
+        <button class="btn<%= sso ? " ghost" : "" %>" type="submit">Join the team</button>
       </form>
     <% } else { %>
       <h1>That link is no longer live</h1>

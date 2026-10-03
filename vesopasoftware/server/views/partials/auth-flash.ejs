@@ -1,0 +1,5 @@
+<%# The one-shot flash on the signed-out pages (nav.ejs shows it everywhere else).
+    Continue with Vesopa reports every failure this way, by redirect. %>
+<% if (typeof flash !== "undefined" && flash) { %>
+  <div class="notice <%= flash.kind === 'warn' ? 'warn' : flash.kind === 'bad' ? 'bad' : '' %>"><%= flash.message %></div>
+<% } %>

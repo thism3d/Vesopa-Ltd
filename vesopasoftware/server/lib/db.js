@@ -104,6 +104,21 @@ const PATCHES = [
     ddl: "ADD COLUMN response_note VARCHAR(1000) NULL AFTER responded_at",
     why: "the customer's reason, when they decline",
   },
+  /* Continue with Vesopa (routes/vesopa-sso.js). The Vesopa subject is stored
+     rather than matching on the address every time: an address can change and
+     a subject cannot. UNIQUE, because two users linked to one Vesopa account
+     would mean signing in to whichever row a query returned first. NULLs are
+     distinct in a MySQL unique index, so nobody who has not linked is touched. */
+  {
+    table: "users", column: "vesopa_sub",
+    ddl: "ADD COLUMN vesopa_sub VARCHAR(64) NULL AFTER password_hash, ADD UNIQUE KEY uq_users_vesopa_sub (vesopa_sub)",
+    why: "the Vesopa account this user signs in with, once linked",
+  },
+  {
+    table: "users", column: "vesopa_linked_at",
+    ddl: "ADD COLUMN vesopa_linked_at DATETIME NULL AFTER vesopa_sub",
+    why: "when the Vesopa account was linked",
+  },
 ];
 
 async function applyPatches(conn) {

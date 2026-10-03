@@ -7,7 +7,8 @@ import {
   passwordProblem, emailProblem, normaliseEmail,
 } from "../lib/auth.js";
 import { sendMail, layout, esc } from "../lib/mail.js";
-import { notifyAdmins, notify } from "../lib/notify.js";
+import { notify } from "../lib/notify.js";
+import { openCustomerAccount } from "../lib/onboarding.js";
 import { config } from "../lib/config.js";
 
 const router = Router();
@@ -30,6 +31,13 @@ const authLimiter = rateLimit({
 });
 
 const sha = (s) => crypto.createHash("sha256").update(s).digest("hex");
+
+/** Only ever a path on this site — never a URL somebody handed us. */
+export function safeReturn(value) {
+  const raw = String(value || "");
+  if (!raw.startsWith("/") || raw.startsWith("//") || raw.startsWith("/\\")) return "";
+  return raw.slice(0, 300);
+}
 
 /* ---------- login ---------- */
 
@@ -61,13 +69,16 @@ router.post("/login", authLimiter, async (req, res, next) => {
 
     await exec("UPDATE users SET last_login_at = NOW() WHERE id = ?", [user.id]);
 
+    // Read before regenerating: regenerate() replaces the session, and the
+    // address they were headed for would go with it.
+    const returnTo = safeReturn(req.session.returnTo);
+
     // Rotate the session id on privilege change — stops a fixated session id
     // from surviving into an authenticated one.
     req.session.regenerate((err) => {
       if (err) return next(err);
       req.session.userId = user.id;
-      const to = req.session.returnTo || (user.role === "admin" ? "/portal/admin" : "/portal");
-      delete req.session.returnTo;
+      const to = returnTo || (user.role === "admin" ? "/portal/admin" : "/portal");
       req.session.save(() => res.redirect(to));
     });
   } catch (err) { next(err); }
@@ -128,49 +139,9 @@ router.post("/register", authLimiter, async (req, res, next) => {
 
     const id = await createUser({ ...form, password: req.body.password, role: "customer" });
 
-    // Every customer gets an organisation, sole trader or not, so "add a
-    // colleague" later needs no migration and no second code path.
-    const org = await exec("INSERT INTO organisations (name, owner_id) VALUES (?,?)", [
-      form.company || form.name,
-      id,
-    ]);
-    await exec("UPDATE users SET org_id = ?, org_role = 'owner' WHERE id = ?", [org.insertId, id]);
-
-    // Anything they quoted before signing up becomes theirs.
-    const claimed = await exec(
-      "UPDATE quotes SET user_id = ? WHERE user_id IS NULL AND email = ?", [id, form.email],
-    );
-
-    await sendMail({
-      to: form.email,
-      subject: "Your Vesopa Software account is live",
-      template: "welcome",
-      text: `Welcome ${form.name}. Your account is ready: ${config.baseUrl}/portal`,
-      html: layout({
-        heading: `Welcome, ${esc(form.name.split(" ")[0])}`,
-        lines: [
-          `Your Vesopa Software account is live. It is where your projects, their progress, your quotes and every invoice live in one place.`,
-          claimed.affectedRows
-            ? `We have attached ${claimed.affectedRows} quote${claimed.affectedRows > 1 ? "s" : ""} you already requested to this account.`
-            : `Start by telling us about a project — you will get an estimate straight away.`,
-          `Signed in as <b>${esc(form.email)}</b>.`,
-        ],
-        cta: { label: "Open your portal", href: `${config.baseUrl}/portal` },
-      }),
-    });
-
-    await notifyAdmins({
-      kind: "customer",
-      title: `New customer: ${form.name}`,
-      body: form.company ? `${form.company} · ${form.email}` : form.email,
-      href: `/portal/admin/customers/${id}`,
-    });
-    await notify(id, {
-      kind: "welcome",
-      title: "Welcome to Vesopa Software",
-      body: "Submit a project brief and we will come back with a plan.",
-      href: "/portal/projects/new",
-    });
+    // The organisation, the quotes on this address, the welcome email and the
+    // notices — shared with the first Continue with Vesopa (lib/onboarding.js).
+    await openCustomerAccount({ id, name: form.name, email: form.email, company: form.company, via: "password" });
 
     req.session.regenerate((err) => {
       if (err) return next(err);
@@ -310,7 +281,7 @@ router.post("/reset/:token", authLimiter, async (req, res, next) => {
 
 /* ---------- accepting a team invitation ---------- */
 
-async function liveInvite(token) {
+export async function liveInvite(token) {
   if (!token) return null;
   return one(
     `SELECT i.*, o.name AS org_name FROM invitations i

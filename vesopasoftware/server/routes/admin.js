@@ -238,7 +238,8 @@ router.post("/quotes/:id/convert", async (req, res, next) => {
           `You can watch progress, talk to the people working on it and settle invoices in your portal.`,
           invited
             ? `We have made you an account — a separate email has a link to choose your password.`
-            : `Sign in with <b>${esc(customer.email)}</b>.`,
+            : `Sign in with <b>${esc(customer.email)}</b>` +
+              (config.vesopaAuth.enabled ? `, or choose <b>Continue with Vesopa</b> with that same address.` : `.`),
         ],
         cta: { label: "Open the project", href: `${config.baseUrl}/portal/projects/${project.insertId}` },
       }),

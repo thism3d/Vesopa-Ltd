@@ -16,6 +16,7 @@ import { STATUS_LABEL, PROJECT_STATUS, balanceOf, isOverdue } from "./lib/invoic
 import publicRoutes from "./routes/public.js";
 import aiRoutes from "./routes/ai.js";
 import authRoutes from "./routes/auth.js";
+import vesopaSsoRoutes, { LIVE as VESOPA_SSO_LIVE } from "./routes/vesopa-sso.js";
 import customerRoutes from "./routes/customer.js";
 import adminRoutes from "./routes/admin.js";
 
@@ -65,6 +66,9 @@ app.locals.balanceOf = balanceOf;
 app.locals.isOverdue = isOverdue;
 app.locals.currency = config.currency;
 app.locals.paymentMode = config.payment.mode;
+// Continue with Vesopa: whether the sign-in pages draw the button. False (and
+// /portal/auth/vesopa/* is a 404) unless the client id and secret are set.
+app.locals.vesopaSso = VESOPA_SSO_LIVE;
 app.locals.date = (d) =>
   d ? new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—";
 app.locals.datetime = (d) =>
@@ -105,6 +109,7 @@ app.use("/portal/static", express.static(path.join(SERVER_DIR, "public"), {
 }));
 
 /* ---------- routes ---------- */
+app.use("/portal", vesopaSsoRoutes);
 app.use("/portal", authRoutes);
 app.use("/portal", customerRoutes);
 app.use("/portal/admin", adminRoutes);
@@ -166,7 +171,7 @@ const boot = async () => {
     console.log(`  portal  http://localhost:${config.port}/portal`);
     console.log(`  admin   http://localhost:${config.port}/portal/admin`);
     console.log(`  live    ws://localhost:${config.port}/portal/ws`);
-    console.log(`  mail=${config.mail.mode}  payments=${config.payment.mode}  db=${config.db.database}\n`);
+    console.log(`  mail=${config.mail.mode}  payments=${config.payment.mode}  db=${config.db.database}  vesopa-sign-in=${VESOPA_SSO_LIVE ? "on" : "off"}\n`);
   });
 };
 

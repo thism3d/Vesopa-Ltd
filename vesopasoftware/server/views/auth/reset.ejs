@@ -24,6 +24,11 @@
         </div>
         <button class="btn" type="submit">Save it</button>
       </form>
+      <% if (firstTime && typeof vesopaSso !== "undefined" && vesopaSso) { %>
+        <div class="auth-or"><span>or skip the password</span></div>
+        <%- include("../partials/vesopa-button", { href: "/portal/auth/vesopa/start" + (typeof email !== "undefined" && email ? "?hint=" + encodeURIComponent(email) : "") }) %>
+        <p class="hint vesopa-hint">Sign in with a Vesopa account for <%= typeof email !== "undefined" && email ? email : "this same address" %> instead. No account yet? You can make one there with an emailed code.</p>
+      <% } %>
     <% } else { %>
       <p><a class="btn" href="/portal/forgot">Ask for a new link</a></p>
     <% } %>

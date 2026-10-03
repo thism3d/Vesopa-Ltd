@@ -1,4 +1,5 @@
 <%- include("../partials/head") %>
+<% const sso = typeof vesopaSso !== "undefined" && vesopaSso; %>
 <div class="auth">
   <div class="auth-card">
     <a class="brand" href="/"><img src="/assets/logo.svg" alt="">Vesopa <small>portal</small></a>
@@ -15,7 +16,13 @@
         </small>
       </div>
     <% } %>
+    <%- include("../partials/auth-flash") %>
     <% if (error) { %><div class="notice bad"><%= error %></div><% } %>
+    <% if (sso) { %>
+      <%- include("../partials/vesopa-button", { href: "/portal/auth/vesopa/start" + (form.email ? "?hint=" + encodeURIComponent(form.email) : "") }) %>
+      <p class="hint vesopa-hint">The quickest way: your account is made with your Vesopa account's email address, and any quote you sent from that address comes with it.</p>
+      <div class="auth-or"><span>or create one with a password</span></div>
+    <% } %>
     <form method="post" action="/portal/register">
       <input type="hidden" name="_csrf" value="<%= csrf %>">
       <div class="field">
@@ -47,7 +54,7 @@
         </div>
       </div>
       <p class="hint">At least 8 characters. A phrase you will remember beats a word with symbols in it.</p>
-      <button class="btn" type="submit">Create account</button>
+      <button class="btn<%= sso ? " ghost" : "" %>" type="submit">Create account</button>
     </form>
     <div class="auth-alt">
       <span>Already have one?</span>

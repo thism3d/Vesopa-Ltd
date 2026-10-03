@@ -42,6 +42,10 @@ CREATE TABLE IF NOT EXISTS users (
   job_title      VARCHAR(100) NULL,
   email          VARCHAR(190) NOT NULL,
   password_hash  VARCHAR(100) NOT NULL,
+  -- Continue with Vesopa: the auth.vesopa.com subject this user is linked to.
+  -- Also added to existing databases by the PATCHES list in lib/db.js.
+  vesopa_sub       VARCHAR(64) NULL,
+  vesopa_linked_at DATETIME NULL,
   name           VARCHAR(120) NOT NULL,
   company        VARCHAR(150) NULL,
   phone          VARCHAR(40)  NULL,
@@ -50,6 +54,7 @@ CREATE TABLE IF NOT EXISTS users (
   created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY uq_users_email (email),
+  UNIQUE KEY uq_users_vesopa_sub (vesopa_sub),
   KEY idx_users_role (role),
   KEY idx_users_org (org_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

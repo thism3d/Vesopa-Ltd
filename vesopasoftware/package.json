@@ -10,7 +10,8 @@
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
     "db:setup": "node server/setup-db.js",
-    "db:seed": "node server/seed.js"
+    "db:seed": "node server/seed.js",
+    "test": "node --test server/test/*.test.js"
   },
   "devDependencies": {
     "playwright": "^1.62.1"

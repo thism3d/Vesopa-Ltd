@@ -658,3 +658,15 @@ details.decline[open] > summary{margin-bottom:.6rem}
 .links a.link-main small{display:block;color:var(--muted);font-size:.7rem;overflow:hidden;
   text-overflow:ellipsis;white-space:nowrap}
 .links a.link-main:hover b{color:var(--lime)}
+
+/* ---------- Continue with Vesopa (routes/vesopa-sso.js) ----------
+   The primary way in when it is switched on, so it keeps the lime of every
+   other primary button; the white tile mark is the one cloud.vesopa.com
+   draws. The divider below it hands over to the password form. */
+.btn-vesopa{gap:.6rem}
+.btn-vesopa-mark{flex:none;display:block}
+.auth-card .btn-vesopa{margin-top:0;padding:.72rem 1rem}
+.vesopa-hint{margin:.55rem 0 0;text-align:center}
+.auth-or{display:flex;align-items:center;gap:.7rem;margin:1.15rem 0 1rem;
+  font-family:"Martian Mono",monospace;font-size:.62rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.auth-or::before,.auth-or::after{content:"";flex:1;height:1px;background:var(--rule)}

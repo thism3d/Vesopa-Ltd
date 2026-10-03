@@ -983,13 +983,18 @@ router.post("/team/invite", requireCap("team.manage"), async (req, res, next) =>
       to: email,
       subject: `${req.user.name} has added you to ${org?.name || "their team"} on Vesopa`,
       template: "invite",
-      text: `Join ${org?.name}: ${config.baseUrl}/portal/invite/${token}`,
+      text: `Join ${org?.name}: ${config.baseUrl}/portal/invite/${token}` +
+        (config.vesopaAuth.enabled ? `\nOn that page you can also join with your Vesopa account for ${email}.` : ""),
       html: layout({
         heading: `Join ${esc(org?.name || "the team")}`,
         lines: [
           `${esc(req.user.name)} has added you to <b>${esc(org?.name || "their team")}</b> on the Vesopa Software portal, as <b>${esc(roleLabel(org_role))}</b>.`,
           `You will be able to see project progress, the conversation with our team${["owner", "billing"].includes(org_role) ? " and the invoices" : ""}.`,
           `The link works once and expires in seven days.`,
+          ...(config.vesopaAuth.enabled
+            ? [`No password needed if you would rather not: open the link and choose <b>Join with your Vesopa account</b>, ` +
+               `using a Vesopa account for this same address, <b>${esc(email)}</b>.`]
+            : []),
         ],
         cta: { label: "Set your password and join", href: `${config.baseUrl}/portal/invite/${token}` },
       }),

@@ -1,22 +1,29 @@
 <%- include("../partials/head") %>
+<% const sso = typeof vesopaSso !== "undefined" && vesopaSso; %>
 <div class="auth">
   <div class="auth-card">
     <a class="brand" href="/"><img src="/assets/logo.svg" alt="">Vesopa <small>portal</small></a>
     <h1>Sign in</h1>
     <p>Your projects, their progress and every invoice, in one place.</p>
+    <%- include("../partials/auth-flash") %>
     <% if (error) { %><div class="notice bad"><%= error %></div><% } %>
+    <% if (sso) { %>
+      <%- include("../partials/vesopa-button", { href: "/portal/auth/vesopa/start" + (email ? "?hint=" + encodeURIComponent(email) : "") }) %>
+      <p class="hint vesopa-hint">Use the Vesopa account for the same email address. No account yet? You can make one there with an emailed code.</p>
+      <div class="auth-or"><span>or use your password</span></div>
+    <% } %>
     <form method="post" action="/portal/login">
       <input type="hidden" name="_csrf" value="<%= csrf %>">
       <div class="field">
         <label for="email">Email</label>
         <input id="email" name="email" type="email" autocomplete="username" required
-               value="<%= email %>" autofocus>
+               value="<%= email %>"<%= sso ? "" : " autofocus" %>>
       </div>
       <div class="field">
         <label for="password">Password</label>
         <input id="password" name="password" type="password" autocomplete="current-password" required>
       </div>
-      <button class="btn" type="submit">Sign in</button>
+      <button class="btn<%= sso ? " ghost" : "" %>" type="submit">Sign in</button>
     </form>
     <div class="auth-alt">
       <a href="/portal/forgot">Forgotten your password?</a>
