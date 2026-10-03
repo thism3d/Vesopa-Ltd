@@ -290,3 +290,330 @@ body.home .site-foot nav a { text-transform: uppercase; }
 @media (prefers-reduced-motion: reduce) {
   body.home .product { transition: none; }
 }
+
+/* ======================================================================
+ * The hero, played through
+ * ====================================================================== */
+
+body.home .hero::before { animation: home-drift 18s ease-in-out infinite alternate; }
+@keyframes home-drift {
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(4%, 3%, 0); }
+}
+
+body.home .hero-grid { align-items: start; }
+body.home .hero-copy { padding-top: 8px; }
+
+/* The three steps under the buttons. They are also the demo's controls. */
+body.home .hero-steps {
+  list-style: none;
+  margin: 30px 0 22px;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+  max-width: 470px;
+  border-left: 1px solid var(--border);
+}
+body.home .hero-steps button {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  width: 100%;
+  padding: 9px 14px;
+  margin-left: -1px;
+  border-left: 2px solid transparent;
+  cursor: pointer;
+  font-family: var(--serif);
+  font-size: 16.5px;
+  color: var(--text-muted);
+  transition: color .2s ease, border-color .2s ease, background .2s ease;
+}
+body.home .hero-steps button:hover { color: var(--text); }
+body.home .hero-steps button:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+body.home .hero-steps button[aria-pressed="true"] {
+  color: var(--text);
+  border-left-color: var(--green);
+  background: linear-gradient(90deg, rgba(165, 199, 21, .09), transparent 80%);
+}
+body.home .hero-steps b { font-weight: 600; color: var(--text); }
+body.home .hero-steps .n {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: .08em;
+  color: var(--green);
+}
+
+/* ---------------------------------------------------------- the stage --- */
+
+body.home .hero-visual { align-items: stretch; }
+
+body.home .demo {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+  margin: 0 auto;
+  padding: 26px 0 64px;
+}
+body.home .demo-glow {
+  position: absolute;
+  inset: 8% -12% 12%;
+  background: radial-gradient(closest-side, rgba(165, 199, 21, .22), transparent);
+  filter: blur(30px);
+  pointer-events: none;
+}
+body.home .demo-card {
+  position: relative;
+  min-height: 392px;
+  padding: 20px 22px 24px;
+  background: #121611;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 0 0 1px rgba(165, 199, 21, .05), 0 40px 90px rgba(0, 0, 0, .65);
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+}
+body.home .demo-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 16px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+body.home .demo-top .brand-mark { height: 13px; }
+body.home .demo-lock {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: .04em;
+  color: var(--text-muted);
+}
+body.home .demo-lock svg { width: 12px; height: 12px; color: var(--green); }
+
+/* One panel at a time, crossfading and sliding a little. */
+body.home .demo-panel {
+  position: absolute;
+  left: 22px; right: 22px; top: 76px;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(18px);
+  transition: opacity .45s ease, transform .45s ease, visibility 0s linear .45s;
+}
+body.home .demo[data-step="1"] [data-panel="1"],
+body.home .demo[data-step="2"] [data-panel="2"],
+body.home .demo[data-step="3"] [data-panel="3"] {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  transition: opacity .45s ease .12s, transform .45s ease .12s, visibility 0s;
+}
+
+body.home .demo-title { margin: 0 0 6px; font-family: var(--display); font-variation-settings: "wdth" 108; font-size: 19px; font-weight: 620; }
+body.home .demo-sub { margin: 0 0 18px; font-size: 13.5px; color: var(--text-muted); }
+body.home .demo-addr { color: var(--text); }
+body.home .demo-toggle {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; margin: 14px 0 16px;
+  border: 1px solid var(--border); border-radius: 4px; font-size: 12.5px; color: var(--text-muted);
+}
+body.home .demo-toggle span { text-align: center; padding: 6px; border-radius: 2px; }
+body.home .demo-toggle .on { background: rgba(242, 239, 230, .1); color: var(--text); font-weight: 600; }
+body.home .demo-label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px; }
+body.home .demo-field {
+  display: flex; align-items: center;
+  height: 42px; padding: 0 12px; margin-bottom: 14px;
+  font-size: 14px; color: var(--text);
+  background: rgba(242, 239, 230, .04);
+  border: 1px solid var(--border-strong); border-radius: 4px;
+}
+body.home .demo.typing .demo-field { border-color: var(--green); box-shadow: 0 0 0 3px rgba(165, 199, 21, .18); }
+body.home .demo-caret { display: none; width: 1.5px; height: 17px; margin-left: 1px; background: var(--green); }
+body.home .demo.typing .demo-caret { display: inline-block; animation: home-blink 1s steps(1) infinite; }
+@keyframes home-blink { 50% { opacity: 0; } }
+
+body.home .demo-button {
+  padding: 12px; text-align: center;
+  font-family: var(--display); font-variation-settings: "wdth" 108; font-size: 14px; font-weight: 600;
+  color: var(--ink); background: var(--green); border-radius: 4px;
+  transition: transform .12s ease, background .12s ease;
+}
+body.home .demo-button.pressed { transform: scale(.97); background: var(--green-dark); }
+
+body.home .demo-divider { display: flex; align-items: center; gap: 10px; margin: 18px 0 12px; font-size: 11px; color: var(--text-muted); }
+body.home .demo-divider::before, body.home .demo-divider::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+body.home .demo-providers { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+body.home .demo-providers span {
+  display: flex; align-items: center; justify-content: center; height: 38px;
+  border: 1px solid var(--border-strong); border-radius: 4px; color: var(--text);
+}
+body.home .demo-providers .provider-mark { width: 16px; height: 16px; }
+
+body.home .demo-code { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin-bottom: 16px; }
+body.home .demo-digit {
+  display: flex; align-items: center; justify-content: center; height: 50px;
+  font-family: var(--mono); font-size: 20px; color: transparent;
+  border: 1px solid var(--border-strong); border-radius: 4px;
+  transition: color .2s ease, border-color .2s ease, transform .2s ease;
+}
+body.home .demo-digit.on { color: var(--text); border-color: var(--green); transform: translateY(-2px); }
+body.home .demo-small { margin: 14px 0 0; text-align: center; font-size: 11.5px; color: var(--text-muted); }
+
+body.home .demo-done { display: flex; gap: 14px; align-items: center; margin-bottom: 22px; }
+body.home .demo-done .demo-sub { margin: 0; }
+body.home .demo-tick {
+  flex: 0 0 44px; height: 44px; display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; background: var(--green); color: var(--ink);
+}
+body.home .demo[data-step="3"] .demo-tick { animation: home-pop .5s cubic-bezier(.2, 1.6, .4, 1) .25s both; }
+@keyframes home-pop { from { transform: scale(.4); opacity: 0; } to { transform: none; opacity: 1; } }
+
+body.home .demo-apps { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+body.home .demo-app {
+  display: flex; align-items: center; gap: 9px;
+  padding: 9px 11px; font-size: 13px; color: var(--text-muted);
+  border: 1px solid var(--border); border-radius: 4px;
+  transition: color .25s ease, border-color .25s ease, background .25s ease;
+}
+body.home .demo-app svg { width: 17px; height: 17px; flex: 0 0 17px; }
+body.home .demo-app.on { color: var(--text); border-color: rgba(165, 199, 21, .55); background: rgba(165, 199, 21, .08); }
+body.home .demo-app.on svg { color: var(--green); }
+
+/* The email, arriving the way a phone shows it. */
+body.home .demo-mail {
+  position: absolute;
+  left: 50%; top: 0;
+  width: min(340px, 92%);
+  display: flex; gap: 11px; align-items: flex-start;
+  padding: 12px 14px;
+  background: rgba(36, 40, 34, .92);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  border: 1px solid rgba(242, 239, 230, .16);
+  border-radius: 14px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, .5);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  opacity: 0;
+  transform: translate(-50%, -24px) scale(.96);
+  transition: opacity .4s ease, transform .5s cubic-bezier(.2, 1.2, .4, 1);
+  pointer-events: none;
+  z-index: 2;
+}
+body.home .demo.mail-in .demo-mail { opacity: 1; transform: translate(-50%, 6px); }
+body.home .demo-mail-icon { flex: 0 0 34px; height: 34px; display: flex; align-items: center; justify-content: center; border-radius: 8px; background: var(--ink); }
+body.home .demo-mail p { margin: 0; line-height: 1.35; }
+body.home .demo-mail-from { display: flex; justify-content: space-between; font-size: 12.5px; font-weight: 650; }
+body.home .demo-mail-from span { font-weight: 400; color: var(--text-muted); }
+body.home .demo-mail-subject { font-size: 12.5px; }
+body.home .demo-mail-body { font-size: 12px; color: var(--text-muted); }
+
+body.home .demo-progress {
+  position: absolute; left: 0; right: 0; bottom: 36px;
+  height: 2px; background: var(--border); border-radius: 2px; overflow: hidden;
+}
+body.home .demo-progress span {
+  display: block; height: 100%; background: var(--green);
+  transform-origin: left; transform: scaleX(var(--progress, 0));
+  transition: transform var(--progress-ms, 0ms) linear;
+}
+body.home .demo:not(.live) .demo-progress { display: none; }
+
+/* ======================================================================
+ * The guide and the email examples
+ * ====================================================================== */
+
+body.home .guide { border-top: 1px solid var(--border); }
+body.home .guide-steps {
+  list-style: none; margin: 0 0 80px; padding: 0;
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 28px;
+  counter-reset: none;
+}
+body.home .guide-steps li { padding-top: 22px; border-top: 1px solid var(--border-strong); position: relative; }
+body.home .guide-steps li::before {
+  content: ""; position: absolute; top: -1px; left: 0; width: 42px; height: 1px; background: var(--green);
+}
+body.home .guide-n { display: block; margin-bottom: 14px; font-family: var(--mono); font-size: 11px; letter-spacing: .08em; color: var(--green); }
+body.home .guide-steps h3 { margin: 0 0 8px; font-size: 18px; line-height: 1.25; }
+body.home .guide-steps p { margin: 0; font-family: var(--serif); font-size: 16px; line-height: 1.55; color: var(--text-muted); }
+body.home .guide-steps b { color: var(--text); font-weight: 600; }
+
+body.home .mail-examples { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 56px; align-items: start; }
+body.home .mail-intro h3 { margin: 0 0 12px; font-size: clamp(22px, 2.6vw, 28px); line-height: 1.15; font-variation-settings: "wdth" 108; }
+body.home .mail-intro > p:not(.kicker) { margin: 0 0 22px; font-family: var(--serif); font-size: 17px; line-height: 1.6; color: var(--text-muted); }
+body.home .addr { color: var(--text); font-family: var(--mono); font-size: .82em; white-space: nowrap; }
+
+body.home .mail-stack { display: grid; gap: 22px; }
+body.home .mail {
+  margin: 0;
+  background: #f4f4f4;
+  border-radius: 6px;
+  overflow: hidden;
+  color: #000;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .45);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+}
+body.home .mail:nth-child(2) { margin-left: 8%; }
+body.home .mail-head { padding: 12px 18px; background: #e9e9e6; border-bottom: 1px solid #dadad6; font-size: 12.5px; color: #333; }
+body.home .mail-head p { margin: 0; display: flex; gap: 10px; }
+body.home .mail-head p + p { margin-top: 3px; }
+body.home .mail-head p > span:first-child { flex: 0 0 52px; color: #777; }
+body.home .mail .addr { color: #333; font-size: .9em; }
+body.home .mail-body { margin: 14px; padding: 20px 22px; background: #fff; border: 1px solid #e3e3e3; border-radius: 8px; font-size: 14.5px; line-height: 1.5; }
+body.home .mail-body img { display: block; height: 16px; width: auto; margin-bottom: 14px; }
+body.home .mail-body p { margin: 0 0 10px; }
+body.home .mail-code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 30px; font-weight: 700; letter-spacing: 6px; }
+body.home .mail-heading { font-size: 17px; font-weight: 650; }
+body.home .mail-muted { font-size: 12.5px; color: #55595c; }
+body.home .mail-rows { display: grid; grid-template-columns: auto 1fr; gap: 2px 16px; margin: 0 0 12px; font-size: 12.5px; color: #55595c; }
+body.home .mail-rows dd { margin: 0; color: #000; }
+body.home .mail figcaption {
+  padding: 0 18px 14px; font-family: var(--mono); font-size: 10px; letter-spacing: .08em;
+  text-transform: uppercase; color: #6b6f63;
+}
+
+/* iOS draws its own link styling over anything it detects as an address. */
+body.home a[x-apple-data-detectors] { color: inherit !important; text-decoration: none !important; pointer-events: none; }
+
+/* ======================================================================
+ * Sections rising into place (only once home.js has said it will do it)
+ * ====================================================================== */
+
+body.home.motion .rise {
+  opacity: 0;
+  transform: translateY(22px);
+  transition: opacity .7s ease var(--d, 0ms), transform .7s cubic-bezier(.2, .7, .2, 1) var(--d, 0ms);
+}
+body.home.motion .rise.in { opacity: 1; transform: none; }
+
+/* The products and sign-in methods carry a lime edge that draws in. */
+body.home .product::after {
+  content: ""; position: absolute; left: 0; top: 0; height: 2px; width: 0;
+  background: var(--green); transition: width .5s ease;
+}
+body.home .product:hover::after { width: 100%; }
+
+@media (max-width: 940px) {
+  body.home .guide-steps { grid-template-columns: repeat(2, 1fr); }
+  body.home .mail-examples { grid-template-columns: 1fr; gap: 36px; }
+  body.home .demo { max-width: 440px; }
+}
+@media (max-width: 560px) {
+  body.home .guide-steps { grid-template-columns: 1fr; margin-bottom: 56px; }
+  body.home .mail:nth-child(2) { margin-left: 0; }
+  body.home .demo-card { min-height: 372px; padding: 18px 16px 20px; }
+  body.home .demo-panel { left: 16px; right: 16px; }
+  body.home .demo-code { gap: 6px; }
+  body.home .hero-steps button { font-size: 15.5px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.home .hero::before,
+  body.home .demo-caret,
+  body.home .demo[data-step="3"] .demo-tick { animation: none !important; }
+  body.home .demo-panel,
+  body.home .demo-mail,
+  body.home .demo-digit,
+  body.home .demo-app,
+  body.home .product::after { transition: none !important; }
+}

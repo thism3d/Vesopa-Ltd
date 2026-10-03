@@ -3,7 +3,8 @@
     python tool/deploy_auth_home_recaptcha.py            # check only: show what it would do
     python tool/deploy_auth_home_recaptcha.py --apply    # do it
 
-Ships commit 021b7e3 and anything after it under vesopa_auth/ (diffed from
+Ships commit 021b7e3 (reCAPTCHA once, new look) and the guide, demo and
+email examples after it, and anything else under vesopa_auth/ (diffed from
 BASE_COMMIT, the main that was live: its captcha.js, nav.js, auth.css and
 code.js are byte-identical to what auth.vesopa.com serves). With --apply, in
 order, stopping at the first failure:
@@ -82,6 +83,10 @@ def smoke():
     checks.append(("homepage answers 200", st == 200))
     checks.append(("homepage is the new one (home.css)", "/css/home.css" in home))
     checks.append(('body class="home" (not escaped)', '<body class="home"' in home))
+    checks.append(("the sign-in demo and the guide are there", "data-demo" in home and 'id="how-it-works"' in home))
+    checks.append(("example addresses are not turned into links", 'format-detection' in home))
+    jst, _ = fetch(f"{SITE}/js/home.js")
+    checks.append(("/js/home.js answers 200", jst == 200))
     for font in ("archivo-latin", "martian-mono-latin", "source-serif-4-latin"):
         fst, _ = fetch(f"{SITE}/fonts/{font}.woff2")
         checks.append((f"/fonts/{font}.woff2 answers 200", fst == 200))

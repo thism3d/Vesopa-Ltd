@@ -54,8 +54,21 @@
 
         <div class="hero-actions">
           <a class="btn btn-primary btn-auto" href="/login">Sign in or create an account</a>
-          <a class="btn btn-quiet btn-auto" href="/docs">Developer documentation</a>
+          <a class="btn btn-quiet btn-auto" href="#how-it-works">How signing in works</a>
         </div>
+
+        <%
+          /*
+           * The three steps, in words, beside the moving picture of them. They
+           * are also the controls for the picture: pressing one shows that step.
+           * A screen reader gets the steps as a list and never the animation.
+           */
+        %>
+        <ol class="hero-steps" data-demo-steps>
+          <li><button type="button" data-go="1" aria-pressed="true"><span class="n">01</span><span><b>Enter your email</b> or phone number</span></button></li>
+          <li><button type="button" data-go="2" aria-pressed="false"><span class="n">02</span><span><b>Type the code</b> we send you</span></button></li>
+          <li><button type="button" data-go="3" aria-pressed="false"><span class="n">03</span><span><b>You are in</b> on every Vesopa app</span></button></li>
+        </ol>
 
         <p class="hero-note">
           Built and run by Vesopa Software Ltd in the United Kingdom.
@@ -63,37 +76,84 @@
         </p>
       </div>
 
-      <!--
-        THE ART SITS ABOVE THE PREVIEW, not instead of it.
-        The picture is what somebody sees first; the preview of the real form is
-        what tells them what they are about to use. Both are decorative and both
-        are hidden from screen readers — the working form is a click away.
+      <%
+        /*
+         * THE DEMO: signing in, played through.
+         *
+         * Three screens of the real form, run by /js/home.js: an address being
+         * typed, the code arriving in an inbox and filling the boxes, then the
+         * products lighting up. Without the script it is the first screen,
+         * already filled in, which is still an honest picture of the form.
+         *
+         * Decorative, so hidden from screen readers; the list of steps beside
+         * it says the same thing in words. The example address is text in a
+         * <span>, never a link, and the format-detection meta in the head stops
+         * iOS turning it into one.
+         */
+        const demoProducts = [
+          ['till', 'Till'], ['desktop', 'Kitchen'], ['tablet', 'Kiosk'], ['menu', 'Menu'],
+          ['sparkle', 'Loyalty'], ['gift', 'Gift cards'], ['chart', 'Back office'], ['cloud', 'Cloud'],
+        ];
+      %>
+      <div class="hero-visual">
+        <div class="demo" data-demo data-step="1" aria-hidden="true">
+          <div class="demo-glow"></div>
+          <div class="demo-card">
+            <div class="demo-top">
+              <img class="brand-mark" src="/brand/logo-dark.svg" alt="" width="99" height="13">
+              <span class="demo-lock"><%- include('partials/icon', { name: 'lock' }) %>auth.vesopa.com</span>
+            </div>
 
-        A real preview of the real form, not a stock illustration. It is
-        decorative — the working one is a click away — so it is hidden from
-        screen readers rather than read out as a form nobody can submit.
-      -->
-      <div class="hero-visual" aria-hidden="true">
-        <div class="hero-art"><%- include('partials/art', { name: 'hero' }) %></div>
-        <div class="preview-card">
-          <div class="preview-brand">
-            <img class="brand-mark" src="/brand/logo-light.svg" alt="" width="107" height="14" data-logo-light>
-            <img class="brand-mark" src="/brand/logo-dark.svg" alt="" width="107" height="14" data-logo-dark>
+            <div class="demo-panel" data-panel="1">
+              <p class="demo-title">Sign in to Vesopa</p>
+              <div class="demo-toggle"><span class="on">Email</span><span>Phone</span></div>
+              <span class="demo-label">Email address</span>
+              <div class="demo-field"><span class="demo-typed" data-text="alex@yourvenue.co.uk">alex@yourvenue.co.uk</span><span class="demo-caret"></span></div>
+              <div class="demo-button" data-press>Continue</div>
+              <div class="demo-divider"><span>or continue with</span></div>
+              <div class="demo-providers">
+                <% ['google', 'apple', 'microsoft', 'github'].forEach(function (key) { %>
+                <span><%- include('partials/provider-icon', { key: key }) %></span>
+                <% }) %>
+              </div>
+            </div>
+
+            <div class="demo-panel" data-panel="2">
+              <p class="demo-title">Check your email</p>
+              <p class="demo-sub">We sent a 6-digit code to <span class="demo-addr">alex@yourvenue.co.uk</span></p>
+              <div class="demo-code">
+                <% '482913'.split('').forEach(function (d) { %><span class="demo-digit" data-digit="<%= d %>"><%= d %></span><% }) %>
+              </div>
+              <div class="demo-button" data-press>Continue</div>
+              <p class="demo-small">Send another code · Use a different address</p>
+            </div>
+
+            <div class="demo-panel" data-panel="3">
+              <div class="demo-done">
+                <span class="demo-tick"><%- include('partials/icon', { name: 'check' }) %></span>
+                <div>
+                  <p class="demo-title">You are signed in</p>
+                  <p class="demo-sub">One account, open on every Vesopa app.</p>
+                </div>
+              </div>
+              <div class="demo-apps">
+                <% demoProducts.forEach(function (item) { %>
+                <span class="demo-app"><%- include('partials/icon', { name: item[0] }) %><%= item[1] %></span>
+                <% }) %>
+              </div>
+            </div>
           </div>
-          <p class="preview-title">Sign in to Vesopa</p>
-          <div class="preview-toggle">
-            <span class="on">Email</span><span>Phone</span>
+
+          <div class="demo-mail">
+            <span class="demo-mail-icon"><img src="/brand/favicon.svg" alt="" width="22" height="22"></span>
+            <div>
+              <p class="demo-mail-from">Vesopa <span>now</span></p>
+              <p class="demo-mail-subject">Your Vesopa code: 482913</p>
+              <p class="demo-mail-body">Use this code to sign in to your Vesopa account.</p>
+            </div>
           </div>
-          <span class="preview-label">Email address</span>
-          <div class="preview-input">you@example.com</div>
-          <div class="preview-check"><span class="tick">✓</span> Remember me on this device</div>
-          <div class="preview-button">Log in</div>
-          <div class="preview-divider"><span>or continue with</span></div>
-          <div class="preview-providers">
-            <% ['google', 'apple', 'microsoft', 'github'].forEach(function (key) { %>
-            <span class="preview-provider"><%- include('partials/provider-icon', { key: key }) %></span>
-            <% }) %>
-          </div>
+
+          <div class="demo-progress"><span></span></div>
         </div>
       </div>
     </div>
@@ -127,6 +187,105 @@
         <p><%= item[2] %></p>
       </div>
       <% }) %>
+    </div>
+  </section>
+
+  <!-- ============================================================= guide -->
+  <section class="band guide" id="how-it-works">
+    <div class="band-inner">
+      <p class="kicker">Getting started</p>
+      <h2>Signing in, step by step</h2>
+      <p class="section-lede">
+        There is nothing to install and no password to invent. The first time you
+        sign in, your account is made for you.
+      </p>
+
+      <ol class="guide-steps">
+        <li class="rise">
+          <span class="guide-n">01</span>
+          <h3>Enter your email address or mobile number</h3>
+          <p>Press <b>Sign in</b> on any Vesopa app, or go to auth.vesopa.com. Use the
+          address your venue knows you by. UK mobile numbers can have the code by text.</p>
+        </li>
+        <li class="rise">
+          <span class="guide-n">02</span>
+          <h3>Type the six-digit code</h3>
+          <p>It arrives within a few seconds, from Vesopa. It works once and lasts ten
+          minutes. Not there? Look in junk mail, or press <b>Send another code</b>.</p>
+        </li>
+        <li class="rise">
+          <span class="guide-n">03</span>
+          <h3>You are in, everywhere</h3>
+          <p>The till, the back office, the menu and the rest all know you now. Tick
+          <b>Remember me</b> on your own device so you are not asked again.</p>
+        </li>
+        <li class="rise">
+          <span class="guide-n">04</span>
+          <h3>Make the next time faster</h3>
+          <p>In your account, add a passkey to sign in with your face or fingerprint,
+          or set a password. Both are optional, and codes keep working.</p>
+        </li>
+      </ol>
+
+      <div class="mail-examples">
+        <div class="mail-intro rise">
+          <p class="kicker">What our emails look like</p>
+          <h3>Know a real Vesopa email when you see one</h3>
+          <p>
+            Every email we send comes from <span class="addr">no-reply@vesopa.com</span>
+            and looks like these. A sign-in code is only ever typed in on
+            auth.vesopa.com or inside a Vesopa app.
+          </p>
+          <ul class="ticks">
+            <li>We never ask for your code or password by email, phone or text.</li>
+            <li>We never send a link that signs you in on its own.</li>
+            <li>If you get a code you did not ask for, ignore it. Nobody gets in without it.</li>
+          </ul>
+        </div>
+
+        <%
+          /*
+           * The two emails as src/mailer.js really sends them, slightly trimmed: the
+           * same wording and the same light background (they are
+           * light-only on purpose). Addresses are plain text, never links: an
+           * example somebody can tap is an example that sends mail to a stranger.
+           */
+        %>
+        <div class="mail-stack" aria-label="Example emails">
+          <figure class="mail rise">
+            <div class="mail-head">
+              <p><span>From</span><span>Vesopa &lt;<span class="addr">no-reply@vesopa.com</span>&gt;</span></p>
+              <p><span>Subject</span><b>Your Vesopa code: 482913</b></p>
+            </div>
+            <div class="mail-body">
+              <img src="/brand/logo-light.svg" alt="Vesopa" width="120" height="16">
+              <p>Use this code to sign in to your Vesopa account.</p>
+              <p class="mail-code">482913</p>
+              <p class="mail-muted">This code expires in 10 minutes and can be used once.</p>
+              <p class="mail-muted">If you did not ask for this, you can ignore this email. Nobody can get in without the code.</p>
+            </div>
+            <figcaption>The sign-in code</figcaption>
+          </figure>
+
+          <figure class="mail rise">
+            <div class="mail-head">
+              <p><span>From</span><span>Vesopa &lt;<span class="addr">no-reply@vesopa.com</span>&gt;</span></p>
+              <p><span>Subject</span><b>Vesopa security: Your password was changed</b></p>
+            </div>
+            <div class="mail-body">
+              <img src="/brand/logo-light.svg" alt="Vesopa" width="120" height="16">
+              <p class="mail-heading">Your password was changed</p>
+              <p>Every other device has been signed out.</p>
+              <dl class="mail-rows">
+                <dt>When</dt><dd>3 Oct 2026, 09:41</dd>
+                <dt>Device</dt><dd>Safari on iPhone</dd>
+              </dl>
+              <p class="mail-muted">If this was you, there is nothing to do. If it was not, change your password and remove the device in your account.</p>
+            </div>
+            <figcaption>A security notice, sent whenever something changes</figcaption>
+          </figure>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -274,5 +433,7 @@
     </div>
   </section>
 </main>
+
+<script src="/js/home.js?v=<%= config.version %>"></script>
 
 <%- include('partials/foot') %>
