@@ -112,7 +112,15 @@ body {
   overflow-x: hidden;
 }
 
-img, svg, video { max-width: 100%; height: auto; display: block; }
+img, video { max-width: 100%; height: auto; display: block; }
+
+/* No `max-width: 100%` on svg. Every icon is a fixed size, and Safari resolves
+   that percentage against an auto-sized grid track as 0 — so an icon centred
+   in a `display: grid` button (the file manager's view, hidden-files and
+   refresh buttons, each row's menu) collapsed to the dot of its round stroke
+   cap. Reported from an iPad. Chrome treats the percentage as `none` there,
+   which is why it looked fine everywhere else. */
+svg { height: auto; display: block; }
 
 /* An email address, a URL or a long domain has no space to break at, so on a
    narrow screen it sits on one line and pushes the document wider than the
