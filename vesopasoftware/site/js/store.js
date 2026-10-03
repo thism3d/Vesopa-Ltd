@@ -1,6 +1,6 @@
 /* Microsoft Store links.
  *
- * Three apps, three product IDs, two ways to reach each of them:
+ * Five apps, five product IDs, two ways to reach each of them:
  *
  *   ms-windows-store://pdp/?productid=XXX   opens the Store app on Windows
  *   https://apps.microsoft.com/detail/XXX   opens the web listing anywhere
@@ -33,6 +33,16 @@ export const APPS = {
     id: "9P8JCLQ5M3SQ",
     name: "Vesopa Customer Display",
     tag: "The second screen",
+  },
+  express: {
+    id: "9N5W5VLP2948",
+    name: "Vesopa Express",
+    tag: "The kiosk",
+  },
+  loyalty: {
+    id: "9N6VWPJ25VPH",
+    name: "Vesopa Loyalty",
+    tag: "The loyalty card",
   },
 };
 

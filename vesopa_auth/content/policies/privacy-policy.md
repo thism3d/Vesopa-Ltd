@@ -150,7 +150,7 @@ If you give us a phone number we use it to send a one-time code, as a second fac
 
 ## 7. Cookies
 
-Vesopa OAuth sets three cookies: a session cookie that keeps you signed in, a CSRF token that stops other websites submitting forms as you, and an optional "remember this device" cookie that is set **only if you tick the box**. There are no advertising cookies and no third-party analytics cookies, because we run no advertising and no third-party analytics. The detail is in the [cookie policy](/cookies).
+Vesopa OAuth sets four cookies: a session cookie that keeps you signed in, a CSRF token that stops other websites submitting forms as you, an optional "remember this device" cookie that is set **only if you tick the box**, and a cookie that remembers your cookie choice so the notice is shown once. There are no advertising cookies and no third-party analytics cookies, because we run no advertising and no third-party analytics. The detail is in the [cookie policy](/cookies).
 
 ## 8. What we never do
 

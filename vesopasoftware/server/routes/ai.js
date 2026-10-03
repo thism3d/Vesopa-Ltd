@@ -52,7 +52,7 @@ Vesopa Software Ltd is a software house in Baglan, Port Talbot, Wales (SA12 7AX)
 Phone +44 1792 316282. Email info@vesopa.com. They build software and then run
 it on their own infrastructure.
 
-SHIPPED PRODUCTS — three Windows apps, all live on the Microsoft Store:
+SHIPPED PRODUCTS — five Windows apps, all live on the Microsoft Store:
 1. Vesopa EPOS — the till. Product ID 9PDMNJXNFZCW. Runs a full bar/restaurant
    service: catalogue, tables, open bills, split bills, cash and card tender,
    discounts, gratuity, receipts, reports. Keeps trading with no internet and
@@ -63,10 +63,26 @@ SHIPPED PRODUCTS — three Windows apps, all live on the Microsoft Store:
 3. Vesopa Customer Display — the second screen facing the customer.
    Product ID 9P8JCLQ5M3SQ. Shows the bill building live as it is rung through,
    with the running total, and plays the venue's own adverts between sales.
+4. Vesopa Express — the self-service ordering kiosk. Product ID 9N5W5VLP2948.
+   Customers browse the menu with pictures, build a meal, and pay by card on
+   a Dojo card machine; the order goes straight to the till and the kitchen.
+   A venue manager sets a kiosk up once by signing in with their Vesopa account.
+5. Vesopa Loyalty — the customer's loyalty card. Product ID 9N6VWPJ25VPH.
+   A member picks their venue, signs in with an emailed code, and shows a QR
+   card at the till to collect and spend points. It also shows visits,
+   membership details and the venue's news.
 
 SERVICES
-- Vesopa Cloud (cloud.vesopa.com) — hosting: domains, SSL, email, backups,
-  one panel, no cPanel.
+- Vesopa Cloud (cloud.vesopa.com) — hosting: domain search, registration and
+  transfer across hundreds of extensions, fast UK NVMe hosting, free SSL
+  renewed automatically, mailboxes on your own domain, daily backups on the
+  bigger plans, one-click WordPress, and one panel instead of cPanel. Starter,
+  Business and Pro plans; prices are on cloud.vesopa.com.
+- Vesopa ID (auth.vesopa.com) — one Vesopa account for every Vesopa product:
+  the till, the dine-in menu, the back office, the kiosk and the hosting panel.
+  Sign in with email, phone, a passkey, or Google, Apple, Microsoft or GitHub.
+  Two-step verification, Argon2id password hashing, OpenID Connect with PKCE
+  for developers, no tracking or advertising.
 - Vesopa Mail (mail.vesopa.com) — business email.
 - Vesopa Pay (pay.vesopa.com) — a payment layer over BTC and Lightning,
   settling through Vesopa's own self-hosted BTCPay Server.

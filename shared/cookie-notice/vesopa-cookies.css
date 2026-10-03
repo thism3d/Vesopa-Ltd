@@ -1,0 +1,227 @@
+/* Vesopa cookie notice. Source: shared/cookie-notice/ (see vesopa-cookies.js).
+   Everything is scoped to .vck and resets what host pages tend to set on
+   buttons, labels and headings, so it looks the same on every Vesopa site. */
+
+.vck {
+  --vck-ink: rgba(14, 17, 12, .94);
+  --vck-line: rgba(255, 255, 255, .1);
+  --vck-text: #F2EFE6;
+  --vck-dim: rgba(242, 239, 230, .66);
+  --vck-lime: #A5C715;
+  --vck-lime-hi: #BFE021;
+  position: fixed;
+  z-index: 2147483000;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  left: 16px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  pointer-events: none;
+  font: 400 13.5px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color: var(--vck-text);
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: normal;
+  text-transform: none;
+  text-align: left;
+}
+.vck-center { align-items: center; }
+.vck-right { align-items: flex-end; }
+.vck *, .vck *::before, .vck *::after { box-sizing: border-box; }
+.vck [hidden] { display: none !important; }
+
+.vck button {
+  font: inherit; color: inherit; margin: 0; border: 0; background: none;
+  cursor: pointer; text-transform: none; letter-spacing: normal; box-shadow: none;
+  min-height: 0; min-width: 0; width: auto; height: auto; line-height: inherit;
+}
+.vck button:focus-visible, .vck a:focus-visible, .vck input:focus-visible + i {
+  outline: 2px solid var(--vck-lime); outline-offset: 2px;
+}
+
+/* ---- the toast ---- */
+
+.vck-toast {
+  pointer-events: auto;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 440px;
+  width: 100%;
+  padding: 10px 8px 10px 10px;
+  border-radius: 16px;
+  background: var(--vck-ink);
+  border: 1px solid var(--vck-line);
+  box-shadow: 0 18px 40px -12px rgba(0, 0, 0, .55), 0 2px 6px rgba(0, 0, 0, .25);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  backdrop-filter: blur(14px) saturate(1.4);
+  transform: translateY(calc(100% + 28px));
+  opacity: 0;
+  transition: transform .55s cubic-bezier(.2, .9, .25, 1.15), opacity .35s ease;
+}
+.vck-in .vck-toast { transform: none; opacity: 1; }
+.vck-out .vck-toast {
+  transform: translateY(calc(100% + 28px));
+  opacity: 0;
+  transition: transform .4s cubic-bezier(.5, 0, .75, 0), opacity .4s ease;
+}
+
+.vck-badge {
+  position: relative;
+  flex: none;
+  width: 36px; height: 36px;
+  border-radius: 11px;
+  display: grid; place-items: center;
+  background: rgba(165, 199, 21, .14);
+  color: var(--vck-lime);
+}
+.vck-badge svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.vck-badge circle { fill: currentColor; stroke: none; }
+.vck-in .vck-i-cookie { animation: vck-wobble .9s .35s cubic-bezier(.3, 1.6, .5, 1) both; }
+.vck-tick {
+  position: absolute; right: -4px; bottom: -4px;
+  width: 17px; height: 17px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--vck-lime); color: #101307;
+  box-shadow: 0 0 0 2px #11140E;
+  transform: scale(0);
+}
+.vck-in .vck-tick { animation: vck-pop .45s .75s cubic-bezier(.3, 1.8, .5, 1) forwards; }
+.vck-tick svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 3.2; stroke-linecap: round; stroke-linejoin: round; }
+.vck-in .vck-tick path { stroke-dasharray: 24; stroke-dashoffset: 24; animation: vck-draw .35s 1s ease-out forwards; }
+
+.vck-copy { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.vck-copy b { font-weight: 650; font-size: 13.5px; color: var(--vck-text); }
+.vck-sub { color: var(--vck-dim); font-size: 12.5px; }
+
+.vck-link {
+  flex: none;
+  padding: 7px 11px !important;
+  border-radius: 9px;
+  font-size: 12.5px !important;
+  font-weight: 600 !important;
+  color: var(--vck-lime) !important;
+  transition: background .2s;
+}
+.vck-link:hover { background: rgba(165, 199, 21, .12) !important; }
+
+.vck-x {
+  flex: none;
+  width: 30px; height: 30px;
+  border-radius: 9px;
+  display: grid !important; place-items: center;
+  color: var(--vck-dim) !important;
+  transition: background .2s, color .2s;
+}
+.vck-x:hover { background: rgba(255, 255, 255, .08) !important; color: var(--vck-text) !important; }
+.vck-x svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+
+/* The countdown: a lime hairline that drains along the bottom edge. */
+.vck-bar {
+  position: absolute; left: 0; bottom: 0;
+  height: 2px; width: 100%;
+  background: linear-gradient(90deg, var(--vck-lime), var(--vck-lime-hi));
+  transform-origin: left center;
+  opacity: .9;
+}
+.vck-in .vck-bar { animation: vck-drain 8s linear forwards; }
+.vck-paused .vck-bar { animation-play-state: paused; }
+
+/* ---- the settings panel ---- */
+
+.vck-panel {
+  pointer-events: auto;
+  width: 100%;
+  max-width: 380px;
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  padding: 18px;
+  border-radius: 18px;
+  background: var(--vck-ink);
+  border: 1px solid var(--vck-line);
+  box-shadow: 0 24px 60px -16px rgba(0, 0, 0, .6);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  backdrop-filter: blur(16px) saturate(1.4);
+  opacity: 0;
+  transform: translateY(14px) scale(.98);
+  transition: opacity .22s ease, transform .3s cubic-bezier(.2, .9, .25, 1.1);
+}
+.vck-panel.vck-open { opacity: 1; transform: none; }
+.vck-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 4px; }
+.vck-title {
+  margin: 0 !important; padding: 0 !important;
+  font: 650 16px/1.3 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif !important;
+  color: var(--vck-text) !important; letter-spacing: normal !important; text-transform: none !important;
+}
+.vck-lead, .vck-note { margin: 0 0 12px !important; color: var(--vck-dim) !important; font-size: 12.5px !important; line-height: 1.5 !important; }
+.vck-note { margin: 10px 0 14px !important; }
+
+.vck-row {
+  display: flex !important; align-items: center; gap: 14px;
+  margin: 0 !important; padding: 11px 0 !important;
+  border-top: 1px solid var(--vck-line);
+  cursor: pointer; font: inherit !important; color: inherit !important;
+}
+.vck-row-t { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.vck-row-t b { font-weight: 600; font-size: 13.5px; }
+.vck-row-t span { color: var(--vck-dim); font-size: 12px; }
+.vck-on { flex: none; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--vck-lime); }
+
+.vck-sw { position: relative; flex: none; width: 40px; height: 23px; }
+.vck-sw input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.vck-sw i {
+  position: absolute; inset: 0; border-radius: 99px;
+  background: rgba(255, 255, 255, .12); border: 1px solid var(--vck-line);
+  transition: background .2s, border-color .2s; pointer-events: none;
+}
+.vck-sw i::after {
+  content: ""; position: absolute; top: 2px; left: 2px;
+  width: 17px; height: 17px; border-radius: 50%;
+  background: #D9D6CC; transition: transform .25s cubic-bezier(.3, 1.4, .5, 1), background .2s;
+}
+.vck-sw input:checked + i { background: rgba(165, 199, 21, .25); border-color: var(--vck-lime); }
+.vck-sw input:checked + i::after { transform: translateX(17px); background: var(--vck-lime); }
+
+.vck-acts { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.vck-policy { color: var(--vck-dim) !important; font-size: 12.5px; text-decoration: underline; text-underline-offset: 3px; }
+.vck-policy:hover { color: var(--vck-text) !important; }
+.vck-btn {
+  padding: 9px 22px !important; border-radius: 10px !important;
+  background: var(--vck-lime) !important; color: #101307 !important;
+  font-weight: 700 !important; font-size: 13px !important;
+  transition: background .2s, transform .1s;
+}
+.vck-btn:hover { background: var(--vck-lime-hi) !important; }
+.vck-btn:active { transform: translateY(1px); }
+
+/* ---- motion ---- */
+
+@keyframes vck-drain { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+@keyframes vck-pop { to { transform: scale(1); } }
+@keyframes vck-draw { to { stroke-dashoffset: 0; } }
+@keyframes vck-wobble {
+  0% { transform: rotate(-30deg) scale(.6); opacity: 0; }
+  60% { transform: rotate(8deg) scale(1.05); opacity: 1; }
+  100% { transform: none; }
+}
+
+/* ---- small screens: full width, a little tighter ---- */
+
+@media (max-width: 520px) {
+  .vck { left: 12px; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); align-items: stretch; }
+  .vck-toast, .vck-panel { max-width: none; }
+}
+@media (max-width: 360px) { .vck-sub { display: none; } }
+@media (min-width: 900px) {
+  .vck { left: 24px; right: 24px; bottom: 24px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vck-toast, .vck-out .vck-toast, .vck-panel { transition: opacity .25s ease; transform: none !important; }
+  .vck-in .vck-i-cookie, .vck-in .vck-tick, .vck-in .vck-tick path { animation: none; transform: none; stroke-dashoffset: 0; }
+}
+
+@media print { .vck { display: none !important; } }

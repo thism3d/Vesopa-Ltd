@@ -49,5 +49,8 @@
    */
 %>
 <script src="/js/reveal.js?v=<%= config.version %>"></script>
+<%# The cookie notice shared by every Vesopa site (shared/cookie-notice/). It shows once, then never again on any *.vesopa.com site. %>
+<link rel="stylesheet" href="/vesopa-cookies.css?v=<%= config.version %>">
+<script src="/vesopa-cookies.js?v=<%= config.version %>" data-policy="/cookies" defer></script>
 </body>
 </html>
