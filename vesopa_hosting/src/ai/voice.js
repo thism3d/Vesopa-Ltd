@@ -7,7 +7,10 @@
  * there is no Bangla voice at all, so a Bangla reply could not be spoken.
  * Bedrock has no speech model (checked again 2026-09-17: 38 models, none
  * speak), so the voice comes from Google's Gemini TTS, which does both
- * languages with natural voices.
+ * languages with natural voices. Since 2026-10-03 it is Gemini 3.8 Flash TTS:
+ * about a third of ElevenLabs' price per minute, Bangla supported, and the
+ * most natural Bangladeshi accent of the Gemini voices in a side-by-side
+ * (owner: "warm friendly bangladeshi bangla and use gemini").
  *
  * OFF UNLESS CONFIGURED, AND IT STEPS ASIDE WHEN IT FAILS. With no
  * AI_TTS_API_KEY nothing here runs and the widget uses the browser's voices
@@ -69,9 +72,15 @@ function lines(text, lang) {
 
 // ---- Speaking -----------------------------------------------------------------
 
+/*
+ * How to say it, as a short bracketed tag in front of the line. Gemini 3.8's
+ * TTS models read a "Say this in ...:" sentence out loud before the line, and
+ * refuse a system instruction ("Developer instruction is not enabled"); a tag
+ * is taken as direction and not spoken (checked 2026-10-03, both languages).
+ */
 const DIRECTION = {
-  en: 'Say this in a warm, friendly, natural British voice, relaxed and unhurried, like a helpful person talking to a customer on the phone',
-  bn: 'Say this in natural, everyday Bangladeshi Bangla, in a warm, friendly voice, relaxed and unhurried, like a helpful person talking to a customer on the phone',
+  en: '[warm, friendly, natural British voice, relaxed and unhurried]',
+  bn: '[warm, friendly, natural Bangladeshi Bangla, relaxed and unhurried]',
 };
 
 /** 16-bit mono PCM -> a WAV file the browser can decode. */
@@ -116,7 +125,7 @@ async function synthesise(text, lang) {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-goog-api-key': config.AI.TTS_API_KEY },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: `${DIRECTION[lang] || DIRECTION.en}: ${text}` }] }],
+        contents: [{ parts: [{ text: `${DIRECTION[lang] || DIRECTION.en} ${text}` }] }],
         generationConfig: {
           responseModalities: ['AUDIO'],
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } },

@@ -209,7 +209,7 @@ const AI = {
   // The assistant's own voice (Gemini's text-to-speech). Voices are Gemini's
   // prebuilt names; each speaks both English and Bangla.
   TTS_API_KEY: process.env.AI_TTS_API_KEY || '',
-  TTS_MODEL: process.env.AI_TTS_MODEL || 'gemini-2.5-flash-preview-tts',
+  TTS_MODEL: process.env.AI_TTS_MODEL || 'gemini-3.8-flash-tts',
   TTS_VOICE_EN: process.env.AI_TTS_VOICE_EN || 'Sulafat',
   TTS_VOICE_BN: process.env.AI_TTS_VOICE_BN || 'Sulafat',
   SPEAKS_PER_10_MIN: Number(process.env.AI_SPEAKS_PER_10_MIN) || 80,
