@@ -7,8 +7,8 @@
       <span class="eyebrow">Signed in as <%= user.email %></span>
       <h1>Hello, <%= user.name.split(" ")[0] %>.</h1>
       <p>
-        <%= projects.length %> project<%= projects.length === 1 ? "" : "s" %> ·
-        last signed in <time datetime="<%= new Date().toISOString() %>"></time>
+        <% if (org && org.name) { %><%= org.name %> · <% } %>
+        <%= projects.length %> project<%= projects.length === 1 ? "" : "s" %>
       </p>
     </div>
     <% if (can("project.create")) { %>
@@ -36,6 +36,47 @@
       <span>Paid to date</span>
     </div>
   </div>
+
+  <%
+    /* What is waiting on this person, in one place: a quote that needs an
+       answer, a task assigned to them, an invoice past its date. Everything
+       else on the page is information; this is the to-do list. */
+    const awaitingQuotes = quotes.filter(qq => qq.status === "quoted");
+    const overdueInvoices = can("billing.view") ? invoices.filter(i => isOverdue(i)) : [];
+    const waitingCount = (can("quote.respond") ? awaitingQuotes.length : 0) + myTasks.length + overdueInvoices.length;
+  %>
+  <% if (waitingCount) { %>
+    <div class="panel" style="border-left:3px solid var(--lime)">
+      <div class="panel-head">
+        <h2>Waiting on you</h2>
+        <span class="spacer"></span>
+        <span class="pill lime"><%= waitingCount %></span>
+      </div>
+      <ul class="tasks">
+        <% if (can("quote.respond")) { for (const qq of awaitingQuotes) { %>
+          <li class="task">
+            <div class="grow"><b>Quote <%= qq.ref %> is ready — <%= serviceLabel(qq.service_type) %></b>
+              <small><%= qq.quoted_amount != null ? money(qq.quoted_amount, qq.currency) + " · " : "" %>accept or decline it</small></div>
+            <a class="btn small" href="/portal/quotes#quote-<%= qq.id %>">Answer</a>
+          </li>
+        <% } } %>
+        <% for (const t of myTasks) { %>
+          <li class="task">
+            <div class="grow"><b><%= t.title %></b>
+              <small><%= t.project_title %><% if (t.due_date) { %> · due <%= date(t.due_date) %><% } %></small></div>
+            <a class="btn ghost small" href="/portal/projects/<%= t.project_id %>">Open</a>
+          </li>
+        <% } %>
+        <% for (const i of overdueInvoices) { %>
+          <li class="task">
+            <div class="grow"><b>Invoice <%= i.number %> is overdue</b>
+              <small><%= money(balanceOf(i), i.currency) %> · was due <%= date(i.due_date) %></small></div>
+            <a class="btn ghost small" href="/portal/invoices/<%= i.id %>">Pay</a>
+          </li>
+        <% } %>
+      </ul>
+    </div>
+  <% } %>
 
   <% if (charges.length && can("billing.view")) { %>
     <div class="panel" style="border-left:3px solid var(--warn)">
@@ -89,8 +130,10 @@
                 <b data-progress-label="<%= p.id %>"><%= p.progress_pct %>%</b>
               </div>
               <div class="muted" style="font-size:.75rem;margin-top:.35rem">
-                <%= moneyRound(p.budget_amount, p.currency) %> budget
-                <% if (p.target_date) { %> · due <time datetime="<%= new Date(p.target_date).toISOString() %>" data-rel="off"></time><% } %>
+                <%= serviceLabel(p.service_type) %>
+                <%# A budget of nothing means none has been agreed in the portal, not a free project. %>
+                <% if (Number(p.budget_amount) > 0) { %> · <%= moneyRound(p.budget_amount, p.currency) %> budget<% } %>
+                <% if (p.target_date) { %> · due <%= date(p.target_date) %><% } %>
               </div>
             </div>
           <% } %>
@@ -117,6 +160,22 @@
     </div>
 
     <div>
+      <% if (links.length) { %>
+        <div class="panel">
+          <h3>Your products</h3>
+          <ul class="links">
+            <% for (const l of links) { %>
+              <li>
+                <a class="link-main" href="<%= l.url %>" target="_blank" rel="noopener">
+                  <b><%= l.label %></b>
+                  <small><%= l.note || l.url.replace(/^https?:\/\//, "") %> · <%= l.project_title %></small>
+                </a>
+              </li>
+            <% } %>
+          </ul>
+        </div>
+      <% } %>
+
       <% if (can("billing.view")) { %>
         <div class="panel">
           <div class="panel-head">
@@ -171,17 +230,22 @@
         <% if (!quotes.length) { %>
           <p class="t-empty">None yet.</p>
         <% } else { %>
-          <% for (const qq of quotes) { %>
+          <% for (const qq of quotes) { const st = QUOTE_STATUS[qq.status] || { label: qq.status, pill: "" }; %>
             <div style="padding:.5rem 0;border-bottom:1px solid var(--rule);font-size:.85rem">
-              <div style="display:flex;gap:.5rem">
-                <span class="mono muted" style="font-size:.68rem"><%= qq.ref %></span>
+              <div style="display:flex;gap:.5rem;align-items:baseline">
+                <a href="/portal/quotes#quote-<%= qq.id %>" style="text-decoration:none;font-weight:600"><%= serviceLabel(qq.service_type) %></a>
                 <span class="spacer" style="flex:1"></span>
-                <span class="pill <%= qq.status === 'accepted' ? 'ok' : '' %>"><%= qq.status %></span>
+                <span class="pill <%= st.pill %>"><%= st.label %></span>
               </div>
               <div style="margin-top:.2rem">
-                <%= moneyRound(qq.estimate_min, qq.currency) %> – <%= moneyRound(qq.estimate_max, qq.currency) %>
+                <% if (qq.quoted_amount != null) { %>
+                  Quoted <%= money(qq.quoted_amount, qq.currency) %>
+                <% } else { %>
+                  <%= moneyRound(qq.estimate_min, qq.currency) %> – <%= moneyRound(qq.estimate_max, qq.currency) %> estimate
+                <% } %>
               </div>
-              <time class="muted" style="font-size:.68rem" datetime="<%= new Date(qq.created_at).toISOString() %>"></time>
+              <span class="mono muted" style="font-size:.68rem"><%= qq.ref %> ·
+                <time datetime="<%= new Date(qq.created_at).toISOString() %>"><%= date(qq.created_at) %></time></span>
             </div>
           <% } %>
           <p style="margin-top:.8rem"><a class="btn ghost small" href="/portal/quotes">All quotes</a></p>

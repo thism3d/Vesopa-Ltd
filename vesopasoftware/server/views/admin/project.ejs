@@ -260,7 +260,7 @@ const calBase = `/portal/admin/projects/${project.id}`;
                 <input type="checkbox" data-task="<%= t.id %>" <%= t.status === "done" ? "checked" : "" %>
                        <%= key === "archived" ? "disabled" : "" %> aria-label="Mark done">
                 <div class="grow">
-                  <b><%= t.title %><% if (!t.is_visible) { %> <span class="pill warn">Hidden</span><% } %></b>
+                  <b><%= t.title %><% if (t.is_milestone) { %> <span class="pill lime">Milestone</span><% } %><% if (!t.is_visible) { %> <span class="pill warn">Hidden</span><% } %></b>
                   <small>
                     <% if (t.due_date) { %>
                       <span class="<%= t.status !== 'done' && new Date(t.due_date) < new Date() ? 'overdue' : '' %>">
@@ -269,6 +269,13 @@ const calBase = `/portal/admin/projects/${project.id}`;
                     <%= t.assignee ? t.assignee : (t.creator ? "raised by " + t.creator : "unassigned") %>
                   </small>
                 </div>
+                <% if (key !== "archived") { %>
+                  <form method="post" action="/portal/admin/projects/<%= project.id %>/tasks/<%= t.id %>/milestone">
+                    <input type="hidden" name="_csrf" value="<%= csrf %>">
+                    <button class="task-arch" type="submit"
+                            title="<%= t.is_milestone ? 'Stop showing this as a milestone' : 'Show this to the customer as a milestone' %>"><%= t.is_milestone ? "★" : "☆" %></button>
+                  </form>
+                <% } %>
                 <button class="task-arch" type="button" data-archive="<%= t.id %>"
                         data-restore="<%= key === 'archived' ? '1' : '0' %>"
                         title="<%= key === 'archived' ? 'Restore' : 'Archive' %>">
@@ -283,9 +290,47 @@ const calBase = `/portal/admin/projects/${project.id}`;
           <input type="hidden" name="_csrf" value="<%= csrf %>">
           <input name="title" placeholder="Add a task…" maxlength="200" required>
           <input name="due_date" type="date" aria-label="Due date">
+          <label class="check" title="Shown to the customer as a step in the plan" style="margin:0">
+            <input type="checkbox" name="is_milestone" value="1"><span>Milestone</span></label>
           <button class="btn small" type="submit">Add</button>
         </form>
       </section>
+
+      <!-- ---------- where the finished work lives ---------- -->
+      <details class="panel act">
+        <summary><h3>Links</h3><small><%= links.length ? links.length + " shown to the customer" : "Live app, store listing, console" %></small></summary>
+        <ul class="links">
+          <% for (const l of links) { %>
+            <li>
+              <a class="link-main" href="<%= l.url %>" target="_blank" rel="noopener">
+                <b><%= l.label %> <span class="pill"><%= LINK_KINDS[l.kind] || l.kind %></span></b>
+                <small><%= l.note ? l.note + " · " : "" %><%= l.url %></small>
+              </a>
+              <form method="post" action="/portal/admin/projects/<%= project.id %>/links/<%= l.id %>/remove">
+                <input type="hidden" name="_csrf" value="<%= csrf %>">
+                <button class="btn danger small" type="submit" aria-label="Remove <%= l.label %>">×</button>
+              </form>
+            </li>
+          <% } %>
+          <% if (!links.length) { %><li class="t-empty">No links yet.</li><% } %>
+        </ul>
+        <form method="post" action="/portal/admin/projects/<%= project.id %>/links" style="margin-top:.7rem">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <div class="fields">
+            <div class="field"><label for="link_label">Name</label>
+              <input id="link_label" name="label" required maxlength="120" placeholder="Web app"></div>
+            <div class="field"><label for="link_kind">Kind</label>
+              <select id="link_kind" name="kind">
+                <% for (const [k, v] of Object.entries(LINK_KINDS)) { %><option value="<%= k %>"><%= v %></option><% } %>
+              </select></div>
+          </div>
+          <div class="field"><label for="link_url">Address</label>
+            <input id="link_url" name="url" type="url" required maxlength="500" placeholder="https://"></div>
+          <div class="field"><label for="link_note">Note <span class="muted">(optional)</span></label>
+            <input id="link_note" name="note" maxlength="255" placeholder="Live since September"></div>
+          <button class="btn ghost" type="submit" style="width:100%;justify-content:center">Add the link</button>
+        </form>
+      </details>
 
       <!-- ---------- calendar ---------- -->
       <section class="panel" aria-label="Calendar">

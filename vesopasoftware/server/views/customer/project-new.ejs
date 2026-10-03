@@ -18,16 +18,20 @@
           <h2>What are we building?</h2>
           <div class="field">
             <label for="title">Give it a name</label>
-            <input id="title" name="title" required placeholder="e.g. Booking site for the Baglan venue"
+            <input id="title" name="title" required placeholder="e.g. Members' app for our car parks"
                    value="<%= form.title || '' %>">
           </div>
           <div class="field">
             <label for="service_type">Kind of work</label>
             <select id="service_type" name="service_type">
-              <% for (const s of services) { %>
-                <option value="<%= s.id %>" <%= form.service_type === s.id ? "selected" : "" %>>
-                  <%= s.label %> — <%= s.blurb %>
-                </option>
+              <% for (const g of [...new Set(services.map(s => s.group || ""))]) { %>
+                <% if (g) { %><optgroup label="<%= g %>"><% } %>
+                <% for (const s of services.filter(x => (x.group || "") === g)) { %>
+                  <option value="<%= s.id %>" <%= form.service_type === s.id ? "selected" : "" %>>
+                    <%= s.label %> — <%= s.blurb %>
+                  </option>
+                <% } %>
+                <% if (g) { %></optgroup><% } %>
               <% } %>
             </select>
           </div>

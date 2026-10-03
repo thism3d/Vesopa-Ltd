@@ -126,7 +126,7 @@
               <span class="spacer" style="flex:1"></span>
               <span class="strong-num" style="font-size:.8rem"><%= moneyRound(qq.estimate_min, qq.currency) %>+</span>
             </div>
-            <div class="muted" style="font-size:.75rem"><%= qq.service_type %> · <%= qq.scope_tier %></div>
+            <div class="muted" style="font-size:.75rem"><%= serviceLabel(qq.service_type) %> · <%= tierLabel(qq.scope_tier) %></div>
             <time class="muted" style="font-size:.66rem" datetime="<%= new Date(qq.created_at).toISOString() %>"></time>
           </a>
         <% } %>

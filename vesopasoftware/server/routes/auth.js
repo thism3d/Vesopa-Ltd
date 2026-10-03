@@ -239,7 +239,7 @@ router.post("/forgot", authLimiter, async (req, res, next) => {
 async function liveReset(token) {
   if (!token) return null;
   return one(
-    `SELECT pr.*, u.email, u.name FROM password_resets pr
+    `SELECT pr.*, u.email, u.name, u.last_login_at FROM password_resets pr
        JOIN users u ON u.id = pr.user_id
       WHERE pr.token_hash = ? AND pr.used_at IS NULL AND pr.expires_at > NOW() LIMIT 1`,
     [sha(token)],
@@ -255,7 +255,14 @@ router.get("/reset/:token", async (req, res, next) => {
         error: "That link has expired or has already been used. Ask for a new one.",
       });
     }
-    res.render("auth/reset", { title: "Reset your password", token: req.params.token, error: null });
+    // An account Vesopa opened for someone (lib/onboarding.js) arrives here
+    // through the same link as a reset, but they have never had a password —
+    // "set a new password" would read as though something had gone wrong.
+    const first = !reset.last_login_at;
+    res.render("auth/reset", {
+      title: first ? "Set your password" : "Reset your password",
+      token: req.params.token, error: null, first, email: reset.email,
+    });
   } catch (err) { next(err); }
 });
 

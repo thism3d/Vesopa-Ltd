@@ -2,10 +2,16 @@
 <div class="auth">
   <div class="auth-card">
     <a class="brand" href="/"><img src="/assets/logo.svg" alt="">Vesopa <small>portal</small></a>
-    <h1>Set a new password</h1>
+    <% const firstTime = typeof first !== "undefined" && first; %>
+    <h1><%= firstTime ? "Set your password" : "Set a new password" %></h1>
     <% if (error) { %><div class="notice bad"><%= error %></div><% } %>
     <% if (token) { %>
-      <p>Choose something you will remember. Every other session will be signed out.</p>
+      <% if (firstTime) { %>
+        <p>Your portal account<%= typeof email !== "undefined" && email ? " for " + email : "" %> is ready.
+           Choose a password of at least eight characters, then sign in with it.</p>
+      <% } else { %>
+        <p>Choose something you will remember. Every other session will be signed out.</p>
+      <% } %>
       <form method="post" action="/portal/reset/<%= token %>">
         <input type="hidden" name="_csrf" value="<%= csrf %>">
         <div class="field">

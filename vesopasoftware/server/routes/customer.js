@@ -7,7 +7,7 @@ import { upload, UPLOAD_DIR, isImage, prettySize } from "../lib/uploads.js";
 import { listZip } from "../lib/zip.js";
 import { requireAuth, hashPassword, checkPassword, passwordProblem, emailProblem, normaliseEmail } from "../lib/auth.js";
 import { can, requireCap, ORG_ROLES, roleLabel } from "../lib/permissions.js";
-import { priceQuote, SERVICES, TIERS, FEATURES, TIMELINES, moneyRound } from "../lib/pricing.js";
+import { priceQuote, SERVICES, TIERS, FEATURES, TIMELINES, moneyRound, serviceLabel } from "../lib/pricing.js";
 import { recalc, balanceOf } from "../lib/invoices.js";
 import { sendMail, layout, esc } from "../lib/mail.js";
 import { notifyAdmins, notify, unreadCount } from "../lib/notify.js";
@@ -72,6 +72,60 @@ async function orgProjects(user) {
   );
 }
 
+/** Every quote raised by anyone in the signed-in person's organisation, with
+ *  the project it became, if it became one. */
+async function orgQuotes(user, limit = null) {
+  const scope = user.org_id
+    ? "(q.user_id = ? OR q.user_id IN (SELECT id FROM users WHERE org_id = ?))"
+    : "q.user_id = ?";
+  const params = user.org_id ? [user.id, user.org_id] : [user.id];
+  return q(
+    `SELECT q.*, (SELECT id FROM projects WHERE quote_id = q.id ORDER BY id LIMIT 1) AS project_id
+       FROM quotes q WHERE ${scope}
+      ORDER BY FIELD(q.status,'quoted','new','reviewing','accepted','declined'), q.created_at DESC
+      ${limit ? "LIMIT " + Number(limit) : ""}`,
+    params,
+  );
+}
+
+/** One quote, if it belongs to this person's organisation. */
+async function ownedQuote(user, id) {
+  const quote = await one(
+    `SELECT q.*, u.org_id AS owner_org FROM quotes q LEFT JOIN users u ON u.id = q.user_id WHERE q.id = ?`, [id]);
+  if (!quote) return null;
+  if (user.role === "admin") return quote;
+  if (quote.user_id && quote.user_id === user.id) return quote;
+  if (quote.owner_org && user.org_id && quote.owner_org === user.org_id) return quote;
+  return null;
+}
+
+/** The links to finished work — live apps, store listings, consoles — across
+ *  every project the organisation has. */
+async function orgLinks(user) {
+  const scope = user.org_id ? "(p.org_id = ? OR p.user_id = ?)" : "p.user_id = ?";
+  const params = user.org_id ? [user.org_id, user.id] : [user.id];
+  return q(
+    `SELECT l.*, p.title AS project_title, p.id AS pid FROM project_links l
+       JOIN projects p ON p.id = l.project_id
+      WHERE ${scope} AND p.status <> 'cancelled'
+      ORDER BY p.id, l.sort_order, l.id`,
+    params,
+  );
+}
+
+/** Whether a customer may tick, untick or archive a task.
+ *
+ *  The board is shared, but not every row on it is the customer's to close:
+ *  a milestone is Vesopa's statement about where the work stands, and a task
+ *  Vesopa raised for itself is Vesopa's to finish. A customer can change the
+ *  ones assigned to them and the ones somebody on their side raised. */
+export function customerMayChangeTask(user, task) {
+  if (user.role === "admin") return true;
+  if (task.is_milestone) return false;
+  if (task.assignee_id && task.assignee_id === user.id) return true;
+  return task.creator_role === "customer" && (!task.assignee_role || task.assignee_role === "customer");
+}
+
 async function pendingCharges(user) {
   const scope = user.org_id ? "(c.org_id = ? OR c.user_id = ?)" : "c.user_id = ?";
   const params = user.org_id ? [user.org_id, user.id] : [user.id];
@@ -100,9 +154,11 @@ router.get("/", async (req, res, next) => {
   try {
     if (req.user.role === "admin") return res.redirect("/portal/admin");
 
-    const [projects, quotes, invoices, updates, charges, subs] = await Promise.all([
+    const [projects, quotes, invoices, updates, charges, subs, links, myTasks, org] = await Promise.all([
       orgProjects(req.user),
-      q("SELECT * FROM quotes WHERE user_id = ? ORDER BY created_at DESC LIMIT 5", [req.user.id]),
+      // The organisation's quotes, not only this person's: a colleague's brief
+      // is still the team's business, and /portal/quotes already shows it.
+      orgQuotes(req.user, 6),
       orgInvoices(req.user),
       q(`SELECT pu.*, p.title AS project_title, p.ref AS project_ref, p.id AS pid
            FROM project_updates pu JOIN projects p ON p.id = pu.project_id
@@ -112,6 +168,13 @@ router.get("/", async (req, res, next) => {
         req.user.org_id ? [req.user.org_id, req.user.id] : [req.user.id]),
       pendingCharges(req.user),
       orgSubscriptions(req.user),
+      orgLinks(req.user),
+      // What is waiting on this person: open tasks assigned to them.
+      q(`SELECT t.*, p.title AS project_title FROM project_tasks t
+           JOIN projects p ON p.id = t.project_id
+          WHERE t.assignee_id = ? AND t.is_visible = 1 AND t.status <> 'done' AND t.archived_at IS NULL
+          ORDER BY t.due_date IS NULL, t.due_date, t.id LIMIT 10`, [req.user.id]),
+      req.user.org_id ? one("SELECT id, name FROM organisations WHERE id = ?", [req.user.org_id]) : null,
     ]);
 
     const outstanding = invoices
@@ -125,7 +188,7 @@ router.get("/", async (req, res, next) => {
 
     res.render("customer/dashboard", {
       title: "Your dashboard",
-      projects, quotes, invoices, updates, charges, subs,
+      projects, quotes, invoices, updates, charges, subs, links, myTasks, org,
       outstanding, paidTotal, pendingTotal, monthlyRecurring,
     });
   } catch (err) { next(err); }
@@ -240,7 +303,7 @@ router.get("/projects/:id", async (req, res, next) => {
       });
     }
 
-    const [updates, messages, invoices, members, charges, files, tasks] = await Promise.all([
+    const [updates, messages, invoices, members, charges, files, tasks, links, quote] = await Promise.all([
       q(`SELECT pu.*, u.name AS author FROM project_updates pu
            LEFT JOIN users u ON u.id = pu.author_id
           WHERE pu.project_id = ? AND pu.is_internal = 0 ORDER BY pu.created_at DESC`, [project.id]),
@@ -262,13 +325,21 @@ router.get("/projects/:id", async (req, res, next) => {
       q(`SELECT * FROM charges WHERE project_id = ? AND status = 'pending' ORDER BY incurred_on DESC`, [project.id]),
       q(`SELECT f.*, u.name AS uploader FROM project_files f LEFT JOIN users u ON u.id = f.user_id
           WHERE f.project_id = ? ORDER BY f.created_at DESC`, [project.id]),
-      q(`SELECT t.*, a.name AS assignee, c.name AS creator
+      q(`SELECT t.*, a.name AS assignee, a.role AS assignee_role, c.name AS creator, c.role AS creator_role
            FROM project_tasks t
            LEFT JOIN users a ON a.id = t.assignee_id
            LEFT JOIN users c ON c.id = t.created_by
           WHERE t.project_id = ? AND t.is_visible = 1
           ORDER BY FIELD(t.status,'doing','todo','blocked','done'), t.sort_order, t.id`, [project.id]),
+      q("SELECT * FROM project_links WHERE project_id = ? ORDER BY sort_order, id", [project.id]),
+      project.quote_id ? one("SELECT id, ref, status FROM quotes WHERE id = ?", [project.quote_id]) : null,
     ]);
+
+    // The plan: milestones in the order Vesopa set them, archived ones gone.
+    const milestones = tasks
+      .filter((t) => t.is_milestone && !t.archived_at)
+      .sort((a, b) => a.sort_order - b.sort_order || a.id - b.id);
+    for (const t of tasks) t.mayChange = customerMayChangeTask(req.user, t);
 
     await exec(
       "UPDATE messages SET read_at = NOW() WHERE project_id = ? AND read_at IS NULL AND user_id <> ?",
@@ -285,7 +356,7 @@ router.get("/projects/:id", async (req, res, next) => {
 
     res.render("customer/project", {
       title: project.title, project, updates, messages, invoices, members, charges,
-      files, tasks, roleLabel, prettySize,
+      files, tasks, links, quote, milestones, roleLabel, prettySize,
       timeline: groupByDay(buildTimeline({ messages, updates, files, tasks })),
       buckets: bucketTasks(tasks),
       calendar: { month, cells: monthGrid(cy, cm, tasks) },
@@ -454,12 +525,92 @@ router.post("/files/:id/delete", async (req, res, next) => {
 
 router.get("/quotes", async (req, res, next) => {
   try {
-    const scope = req.user.org_id
-      ? "(q.user_id = ? OR q.user_id IN (SELECT id FROM users WHERE org_id = ?))"
-      : "q.user_id = ?";
-    const params = req.user.org_id ? [req.user.id, req.user.org_id] : [req.user.id];
-    const rows = await q(`SELECT q.* FROM quotes q WHERE ${scope} ORDER BY q.created_at DESC`, params);
-    res.render("customer/quotes", { title: "Your quotes", quotes: rows, FEATURES });
+    res.render("customer/quotes", { title: "Your quotes", quotes: await orgQuotes(req.user) });
+  } catch (err) { next(err); }
+});
+
+/** Accept a firm quote. Only a quote Vesopa has actually priced can be
+ *  accepted — accepting a calculator band would be agreeing to a guess. */
+router.post("/quotes/:id/accept", requireCap("quote.respond"), async (req, res, next) => {
+  try {
+    const quote = await ownedQuote(req.user, req.params.id);
+    if (!quote) return res.status(404).render("error", { title: "No such quote", message: "That quote is not yours.", back: "/portal/quotes" });
+    if (quote.status !== "quoted") {
+      req.flash("warn", "That quote is not waiting for an answer.");
+      return res.redirect("/portal/quotes");
+    }
+
+    // Guarded on the status in the WHERE, so a double click or two colleagues
+    // answering at once cannot both win.
+    const r = await exec(
+      "UPDATE quotes SET status = 'accepted', responded_at = NOW(), response_note = NULL WHERE id = ? AND status = 'quoted'",
+      [quote.id]);
+    if (!r.affectedRows) { req.flash("warn", "Somebody has already answered that quote."); return res.redirect("/portal/quotes"); }
+
+    const figure = quote.quoted_amount != null ? moneyRound(quote.quoted_amount, quote.currency) : "the quoted figure";
+    const project = await one("SELECT id, title FROM projects WHERE quote_id = ? ORDER BY id LIMIT 1", [quote.id]);
+    if (project) {
+      await exec(
+        "INSERT INTO project_updates (project_id, author_id, title, body) VALUES (?,?,?,?)",
+        [project.id, req.user.id, `Quote ${quote.ref} accepted`, `${req.user.name} accepted ${figure}.`]);
+      toProject(project.id, "project:update", { projectId: project.id, title: `Quote ${quote.ref} accepted` });
+    }
+
+    await sendMail({
+      to: config.mail.admin,
+      subject: `Quote ${quote.ref} accepted — ${req.user.name}`,
+      template: "quote_accepted_admin",
+      text: `${req.user.name} accepted quote ${quote.ref} (${figure}).`,
+      html: layout({
+        heading: `Quote ${quote.ref} accepted`,
+        lines: [`<b>${esc(req.user.name)}</b>${req.user.company ? ` · ${esc(req.user.company)}` : ""} accepted ${esc(figure)} for ${esc(serviceLabel(quote.service_type))}.`,
+                project ? `It is already linked to project <b>${esc(project.title)}</b>.` : "Next: open the project from the quote page."],
+        cta: { label: "Open the quote", href: `${config.baseUrl}/portal/admin/quotes/${quote.id}` },
+      }),
+    });
+    await notifyAdmins({
+      kind: "quote", title: `Quote ${quote.ref} accepted`,
+      body: `${req.user.name} · ${figure}`, href: `/portal/admin/quotes/${quote.id}`,
+    });
+
+    req.flash("ok", `Thank you — quote ${quote.ref} accepted. We will be in touch to get started.`);
+    res.redirect(project ? `/portal/projects/${project.id}` : "/portal/quotes");
+  } catch (err) { next(err); }
+});
+
+/** Decline, or withdraw a brief that has not been priced yet. */
+router.post("/quotes/:id/decline", requireCap("quote.respond"), async (req, res, next) => {
+  try {
+    const quote = await ownedQuote(req.user, req.params.id);
+    if (!quote) return res.status(404).render("error", { title: "No such quote", message: "That quote is not yours.", back: "/portal/quotes" });
+    if (!["new", "reviewing", "quoted"].includes(quote.status)) {
+      req.flash("warn", "That quote is already closed.");
+      return res.redirect("/portal/quotes");
+    }
+    const reason = String(req.body.reason || "").trim().slice(0, 1000) || null;
+    await exec(
+      "UPDATE quotes SET status = 'declined', responded_at = NOW(), response_note = ? WHERE id = ? AND status IN ('new','reviewing','quoted')",
+      [reason, quote.id]);
+
+    await sendMail({
+      to: config.mail.admin,
+      subject: `Quote ${quote.ref} declined — ${req.user.name}`,
+      template: "quote_declined_admin",
+      text: `${req.user.name} declined quote ${quote.ref}.${reason ? `\n\n${reason}` : ""}`,
+      html: layout({
+        heading: `Quote ${quote.ref} declined`,
+        lines: [`<b>${esc(req.user.name)}</b> declined ${esc(serviceLabel(quote.service_type))}.`,
+                reason ? `“${esc(reason)}”` : "No reason given."],
+        cta: { label: "Open the quote", href: `${config.baseUrl}/portal/admin/quotes/${quote.id}` },
+      }),
+    });
+    await notifyAdmins({
+      kind: "quote", title: `Quote ${quote.ref} declined`,
+      body: reason ? reason.slice(0, 200) : req.user.name, href: `/portal/admin/quotes/${quote.id}`,
+    });
+
+    req.flash("ok", `Quote ${quote.ref} declined. Thank you for letting us know.`);
+    res.redirect("/portal/quotes");
   } catch (err) { next(err); }
 });
 
@@ -650,6 +801,12 @@ router.post("/invoices/pay-batch", requireCap("billing.pay"), async (req, res, n
 
 /* ---------- tasks ---------- */
 
+const taskWithRoles = (taskId, projectId) => one(
+  `SELECT t.*, a.role AS assignee_role, c.role AS creator_role FROM project_tasks t
+     LEFT JOIN users a ON a.id = t.assignee_id
+     LEFT JOIN users c ON c.id = t.created_by
+    WHERE t.id = ? AND t.project_id = ?`, [taskId, projectId]);
+
 /** A customer can tick off their own actions and raise a request; only Vesopa
  *  can create work assigned to Vesopa. */
 router.post("/projects/:id/tasks/:taskId/status", requireCap("message.send"), async (req, res, next) => {
@@ -657,18 +814,23 @@ router.post("/projects/:id/tasks/:taskId/status", requireCap("message.send"), as
     const project = await ownedProject(req, req.params.id);
     if (!project) return res.status(404).json({ ok: false, error: "Not yours." });
 
-    const task = await one("SELECT * FROM project_tasks WHERE id = ? AND project_id = ?",
-      [req.params.taskId, project.id]);
+    const task = await taskWithRoles(req.params.taskId, project.id);
     if (!task || (!task.is_visible && req.user.role !== "admin")) {
       return res.status(404).json({ ok: false, error: "No such task." });
+    }
+    if (!customerMayChangeTask(req.user, task)) {
+      return res.status(403).json({ ok: false, error: "That one is Vesopa's to close." });
     }
 
     const status = ["todo", "doing", "blocked", "done"].includes(req.body.status) ? req.body.status : "todo";
     await exec("UPDATE project_tasks SET status = ?, done_at = ? WHERE id = ?",
       [status, status === "done" ? new Date() : null, task.id]);
 
+    // Counted over what the customer can see and has not archived, so the
+    // figure means the same on both sides of the board.
     const [{ done, total }] = await q(
-      `SELECT SUM(status='done') AS done, COUNT(*) AS total FROM project_tasks WHERE project_id = ?`,
+      `SELECT COALESCE(SUM(status='done'),0) AS done, COUNT(*) AS total FROM project_tasks
+        WHERE project_id = ? AND is_visible = 1 AND archived_at IS NULL`,
       [project.id]);
     const pct = total ? Math.round((done / total) * 100) : project.progress_pct;
 
@@ -691,10 +853,17 @@ router.post("/projects/:id/tasks", requireCap("message.send"), async (req, res, 
     // An empty date field posts as "", which MySQL would coerce to 0000-00-00.
     const due = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body.due_date || "")) ? req.body.due_date : null;
 
+    // Milestones are Vesopa's plan for the project, so only staff can set one.
+    const milestone = req.user.role === "admin" && String(req.body.is_milestone || "") === "1" ? 1 : 0;
+    const nextOrder = milestone
+      ? ((await one("SELECT COALESCE(MAX(sort_order),0) + 1 AS n FROM project_tasks WHERE project_id = ?", [project.id]))?.n || 0)
+      : 0;
+
     const r = await exec(
-      `INSERT INTO project_tasks (project_id, title, detail, status, created_by, due_date, is_visible)
-       VALUES (?,?,?,'todo',?,?,1)`,
-      [project.id, title, String(req.body.detail || "").trim().slice(0, 2000) || null, req.user.id, due],
+      `INSERT INTO project_tasks (project_id, title, detail, status, created_by, due_date, is_visible, is_milestone, sort_order)
+       VALUES (?,?,?,'todo',?,?,1,?,?)`,
+      [project.id, title, String(req.body.detail || "").trim().slice(0, 2000) || null, req.user.id, due,
+       milestone, nextOrder],
     );
 
     const task = await one(
@@ -716,9 +885,13 @@ router.post("/projects/:id/tasks/:taskId/archive", requireCap("message.send"), a
     const project = await ownedProject(req, req.params.id);
     if (!project) return res.status(404).json({ ok: false, error: "Not yours." });
 
-    const task = await one("SELECT * FROM project_tasks WHERE id = ? AND project_id = ?",
-      [req.params.taskId, project.id]);
-    if (!task) return res.status(404).json({ ok: false, error: "No such task." });
+    const task = await taskWithRoles(req.params.taskId, project.id);
+    if (!task || (!task.is_visible && req.user.role !== "admin")) {
+      return res.status(404).json({ ok: false, error: "No such task." });
+    }
+    if (!customerMayChangeTask(req.user, task)) {
+      return res.status(403).json({ ok: false, error: "That one is Vesopa's to archive." });
+    }
 
     const restore = String(req.body.restore || "") === "1";
     await exec("UPDATE project_tasks SET archived_at = ? WHERE id = ?",

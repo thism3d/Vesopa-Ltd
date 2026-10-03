@@ -71,6 +71,39 @@ const PATCHES = [
     ddl: "ADD COLUMN archived_at DATETIME NULL, ADD KEY idx_tasks_archived (archived_at)",
     why: "tasks are archived rather than deleted, so the project keeps its history",
   },
+  {
+    table: "project_tasks", column: "is_milestone",
+    ddl: "ADD COLUMN is_milestone TINYINT(1) NOT NULL DEFAULT 0 AFTER is_visible",
+    why: "marks the handful of tasks that are the project's milestones, shown to the customer as its plan",
+  },
+  /* The firm quote and the customer's answer to it. Before these, "quoted" was
+     a status with nothing behind it: the figure lived in an email, and the
+     customer had no way to say yes or no from the portal. */
+  {
+    table: "quotes", column: "quoted_amount",
+    ddl: "ADD COLUMN quoted_amount DECIMAL(12,2) NULL AFTER estimate_max",
+    why: "the firm figure Vesopa quotes, as opposed to the calculator's band",
+  },
+  {
+    table: "quotes", column: "quote_note",
+    ddl: "ADD COLUMN quote_note TEXT NULL AFTER quoted_amount",
+    why: "what the firm quote covers, in Vesopa's words",
+  },
+  {
+    table: "quotes", column: "quoted_at",
+    ddl: "ADD COLUMN quoted_at DATETIME NULL AFTER quote_note",
+    why: "when the firm quote went to the customer",
+  },
+  {
+    table: "quotes", column: "responded_at",
+    ddl: "ADD COLUMN responded_at DATETIME NULL AFTER quoted_at",
+    why: "when the customer accepted or declined in the portal",
+  },
+  {
+    table: "quotes", column: "response_note",
+    ddl: "ADD COLUMN response_note VARCHAR(1000) NULL AFTER responded_at",
+    why: "the customer's reason, when they decline",
+  },
 ];
 
 async function applyPatches(conn) {

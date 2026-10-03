@@ -1,29 +1,103 @@
 <%- include("../partials/head") %>
 <%- include("../partials/nav") %>
+<%
+/* Quotes, one card each rather than a table row: a quote is a conversation
+ * with a state — what was asked, what we said back, and what happens next —
+ * and the customer's answer belongs on the same card as the figure. */
+const waiting = quotes.filter(qq => qq.status === "quoted").length;
+%>
 <div class="wrap">
   <div class="page-head">
-    <div class="grow"><span class="eyebrow">What you have asked us to price</span><h1>Quotes</h1></div>
-    <a class="btn" href="/portal/projects/new">New brief</a>
-  </div>
-  <div class="panel">
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Ref</th><th>Work</th><th>Sent</th><th>Status</th><th class="num">Estimate</th></tr></thead>
-        <tbody>
-          <% if (!quotes.length) { %><tr><td colspan="5" class="t-empty">No quotes yet.</td></tr><% } %>
-          <% for (const qq of quotes) { %>
-            <tr>
-              <td class="mono" style="font-size:.72rem"><%= qq.ref %></td>
-              <td><strong><%= qq.service_type %></strong>
-                <div class="muted" style="font-size:.74rem"><%= qq.scope_tier %> · <%= qq.timeline %></div></td>
-              <td><time datetime="<%= new Date(qq.created_at).toISOString() %>"></time></td>
-              <td><span class="pill <%= qq.status === 'accepted' ? 'ok' : qq.status === 'declined' ? 'bad' : '' %>"><%= qq.status %></span></td>
-              <td class="num"><%= moneyRound(qq.estimate_min, qq.currency) %> – <%= moneyRound(qq.estimate_max, qq.currency) %></td>
-            </tr>
-          <% } %>
-        </tbody>
-      </table>
+    <div class="grow">
+      <span class="eyebrow">What you have asked us to price</span>
+      <h1>Quotes</h1>
+      <p>
+        <% if (waiting) { %>
+          <b><%= waiting %> quote<%= waiting === 1 ? " is" : "s are" %> waiting for your answer.</b>
+        <% } else { %>
+          The calculator gives a band straight away; a person then comes back with a firm quote you can accept here.
+        <% } %>
+      </p>
     </div>
+    <% if (can("project.create")) { %><a class="btn" href="/portal/projects/new">New brief</a><% } %>
   </div>
+
+  <% if (!quotes.length) { %>
+    <div class="panel"><p class="t-empty">No quotes yet.
+      <% if (can("project.create")) { %><a href="/portal/projects/new">Send us a brief</a> and you get an estimate straight away.<% } %></p></div>
+  <% } %>
+
+  <% for (const qq of quotes) {
+       const st = QUOTE_STATUS[qq.status] || { label: qq.status, pill: "", next: "" };
+       const feats = featureIds(qq.features); %>
+    <div class="panel quote-card <%= qq.status === 'quoted' ? 'is-waiting' : '' %>" id="quote-<%= qq.id %>">
+      <div class="panel-head">
+        <h2 style="margin:0"><%= serviceLabel(qq.service_type) %></h2>
+        <span class="spacer"></span>
+        <span class="pill <%= st.pill %>"><%= st.label %></span>
+      </div>
+      <p class="mono muted" style="font-size:.68rem;margin:.1rem 0 .8rem">
+        <%= qq.ref %> · <%= tierLabel(qq.scope_tier) %> · <%= timelineLabel(qq.timeline) %> ·
+        sent <time datetime="<%= new Date(qq.created_at).toISOString() %>" data-rel="off"></time>
+        <% if (qq.name) { %> · by <%= qq.name %><% } %>
+      </p>
+
+      <div class="grid g2">
+        <div class="stat plain">
+          <b><%= moneyRound(qq.estimate_min, qq.currency) %> – <%= moneyRound(qq.estimate_max, qq.currency) %></b>
+          <span>Calculator estimate</span>
+        </div>
+        <% if (qq.quote_note || qq.quoted_amount != null) { %>
+          <div class="stat <%= qq.status === 'quoted' ? 'warn' : '' %>">
+            <b><%= qq.quoted_amount != null ? money(qq.quoted_amount, qq.currency) : "See below" %></b>
+            <span>Our firm quote<% if (qq.quoted_at) { %>, <time datetime="<%= new Date(qq.quoted_at).toISOString() %>" data-rel="off"></time><% } %></span>
+          </div>
+        <% } %>
+      </div>
+
+      <% if (feats.length) { %>
+        <div class="chips" style="margin-top:.8rem">
+          <% for (const f of feats) { %><span class="pill"><%= featureLabel(f) %></span><% } %>
+        </div>
+      <% } %>
+
+      <% if (qq.quote_note) { %>
+        <div class="quote-note">
+          <div class="mono muted" style="font-size:.62rem;margin-bottom:.35rem">WHAT THE QUOTE COVERS</div>
+          <p style="white-space:pre-wrap;margin:0"><%= qq.quote_note %></p>
+        </div>
+      <% } %>
+
+      <p class="next-step"><b>What happens next.</b> <%= qq.status === "accepted" && qq.project_id
+        ? "Accepted. The work is tracked on its project — the plan, files and conversation are there." : st.next %></p>
+      <% if (qq.status === "declined" && qq.response_note) { %>
+        <p class="hint">Your reason: “<%= qq.response_note %>”</p>
+      <% } %>
+
+      <div class="btn-row" style="margin-top:.6rem">
+        <% if (qq.project_id) { %>
+          <a class="btn ghost small" href="/portal/projects/<%= qq.project_id %>">Open the project</a>
+        <% } %>
+        <% if (can("quote.respond") && qq.status === "quoted") { %>
+          <form method="post" action="/portal/quotes/<%= qq.id %>/accept">
+            <input type="hidden" name="_csrf" value="<%= csrf %>">
+            <button class="btn small" type="submit">Accept this quote</button>
+          </form>
+        <% } %>
+      </div>
+
+      <% if (can("quote.respond") && ["new","reviewing","quoted"].includes(qq.status)) { %>
+        <details class="decline">
+          <summary><%= qq.status === "quoted" ? "Decline this quote" : "Withdraw this brief" %></summary>
+          <form method="post" action="/portal/quotes/<%= qq.id %>/decline">
+            <input type="hidden" name="_csrf" value="<%= csrf %>">
+            <div class="field"><label for="reason-<%= qq.id %>">Tell us why <span class="muted">(optional, but it helps)</span></label>
+              <textarea id="reason-<%= qq.id %>" name="reason" rows="2" maxlength="1000"></textarea></div>
+            <button class="btn danger small" type="submit"><%= qq.status === "quoted" ? "Decline" : "Withdraw" %></button>
+          </form>
+        </details>
+      <% } %>
+    </div>
+  <% } %>
 </div>
 <%- include("../partials/foot") %>

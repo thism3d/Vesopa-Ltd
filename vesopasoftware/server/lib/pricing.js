@@ -3,53 +3,88 @@
  * One source of truth, imported by both the public quote form (which renders
  * the options and prices the answers live in the browser) and the server route
  * that stores the quote. If these two ever disagree, a customer sees one number
- * on the site and a different one in their email — so the browser copy is
- * served FROM here, at /portal/pricing.js, rather than duplicated by hand.
+ * on the site and a different one in their email — so the browser never holds
+ * its own copy: site/js/forms.js and the portal's brief form fetch the option
+ * list from /api/pricing and the figure from /api/estimate, both served FROM
+ * here.
  *
  * Every figure is a GBP band, not a price. A quote is an estimate until a human
  * has read the brief; the portal calls it "estimate" everywhere for that reason.
+ *
+ * Ids are stored on every quote and project row. Never rename or remove one —
+ * change its label, blurb or band instead, and add new ids for new work. An id
+ * that disappears still prices (it falls back to the first entry), but the
+ * quotes already filed under it lose their label.
  */
 
 export const CURRENCY_SYMBOL = { GBP: "£", USD: "$", EUR: "€", CAD: "CA$" };
 
-/** Base build cost by what is being made. min/max bracket the same scope done
- *  simply vs done thoroughly. */
+/** What is being made. min/max bracket the same scope done simply vs done
+ *  thoroughly. `group` splits the picker into the products we already run and
+ *  the things we build to order; forms that ignore it still get a flat list.
+ *  The first entry is the default and the fallback for an unknown id. */
 export const SERVICES = [
+  /* ---- Vesopa products, set up for you ---- */
   {
-    id: "website",
+    id: "epos", group: "Vesopa products",
+    label: "Vesopa EPOS for your venue",
+    blurb: "Till, kitchen screen and customer display, set up, loaded and trained.",
+    min: 1200, max: 6000,
+  },
+  {
+    id: "kiosk", group: "Vesopa products",
+    label: "Self-order kiosk (Vesopa Express)",
+    blurb: "Customers order and pay by card; it goes straight to the till and kitchen.",
+    min: 1500, max: 6500,
+  },
+  {
+    id: "qr_menu", group: "Vesopa products",
+    label: "QR menu & online ordering",
+    blurb: "Scan at the table, order from the menu, pay — on menu.vesopa.com.",
+    min: 800, max: 3500,
+  },
+  {
+    id: "loyalty", group: "Vesopa products",
+    label: "Loyalty programme",
+    blurb: "Vesopa Loyalty app and your own loyalty site: points, visits, news.",
+    min: 900, max: 4000,
+  },
+  {
+    id: "hosting", group: "Vesopa products",
+    label: "Vesopa Cloud hosting, domains & email",
+    blurb: "Moving you on to Vesopa Cloud. Monthly plans are priced on cloud.vesopa.com.",
+    min: 300, max: 3000,
+  },
+  /* ---- built for you ---- */
+  {
+    id: "membership_app", group: "Built for you",
+    label: "White-label membership or customer app",
+    blurb: "Your brand on web, Windows and Android, with an admin console behind it.",
+    min: 9000, max: 28000,
+  },
+  {
+    id: "webapp", group: "Built for you",
+    label: "Custom web application",
+    blurb: "Accounts, dashboards, business logic — software, not pages.",
+    min: 6000, max: 20000,
+  },
+  {
+    id: "mobile", group: "Built for you",
+    label: "Mobile app",
+    blurb: "Android and iPhone, built once, shipped to both stores.",
+    min: 8000, max: 25000,
+  },
+  {
+    id: "website", group: "Built for you",
     label: "Brand website",
     blurb: "Marketing site, CMS, the thing your customers judge you by.",
     min: 1800, max: 4500,
   },
   {
-    id: "ecommerce",
+    id: "ecommerce", group: "Built for you",
     label: "Online shop",
     blurb: "Catalogue, checkout, payments, stock, order flow.",
     min: 3500, max: 9000,
-  },
-  {
-    id: "webapp",
-    label: "Web application",
-    blurb: "Accounts, dashboards, business logic — software, not pages.",
-    min: 6000, max: 20000,
-  },
-  {
-    id: "mobile",
-    label: "Mobile app",
-    blurb: "iOS and Android, built once, shipped to both stores.",
-    min: 8000, max: 25000,
-  },
-  {
-    id: "epos",
-    label: "EPOS / till system",
-    blurb: "Counter, floor, kitchen pass and back office. Our home ground.",
-    min: 7000, max: 22000,
-  },
-  {
-    id: "hosting",
-    label: "Hosting & infrastructure",
-    blurb: "Servers, deployment, SSL, backups, monitoring, someone on call.",
-    min: 600, max: 4000,
   },
 ];
 
@@ -63,14 +98,20 @@ export const TIERS = [
 
 /** Flat add-ons, priced as a band each. */
 export const FEATURES = [
-  { id: "brand",       label: "Brand & identity",        min: 700,  max: 2200, blurb: "Logo, palette, type, the lot." },
-  { id: "payments",    label: "Payments",                min: 600,  max: 1800, blurb: "Card, or our own crypto layer." },
-  { id: "accounts",    label: "Customer accounts",       min: 800,  max: 2400, blurb: "Login, profiles, permissions." },
-  { id: "cms",         label: "Content editing",         min: 500,  max: 1600, blurb: "You change the words, not us." },
-  { id: "integration", label: "Third-party integration", min: 700,  max: 3000, blurb: "Their API, your data, our glue." },
-  { id: "analytics",   label: "Reporting & analytics",   min: 500,  max: 2000, blurb: "Dashboards that answer a question." },
-  { id: "seo",         label: "SEO & performance",       min: 400,  max: 1400, blurb: "Fast, findable, measured." },
-  { id: "support",     label: "Ongoing support",         min: 900,  max: 3600, blurb: "12 months of us keeping it up." },
+  { id: "brand",       label: "Brand & identity",          min: 700,  max: 2200, blurb: "Logo, palette, type, the lot." },
+  { id: "payments",    label: "Card & online payments",    min: 600,  max: 1800, blurb: "Dojo card machines, online checkout, or Vesopa Pay." },
+  { id: "accounts",    label: "Customer accounts",         min: 800,  max: 2400, blurb: "Login, profiles, permissions." },
+  { id: "vesopa_id",   label: "Vesopa ID sign-in",         min: 400,  max: 1200, blurb: "One secure sign-in shared with every Vesopa app." },
+  { id: "cms",         label: "Content editing",           min: 500,  max: 1600, blurb: "You change the words, not us." },
+  { id: "store",       label: "App store publishing",      min: 600,  max: 2000, blurb: "Microsoft Store, Google Play and the App Store: listing, review, updates." },
+  { id: "hardware",    label: "ANPR & hardware",           min: 1500, max: 6000, blurb: "Number-plate cameras, barriers, printers, card machines." },
+  { id: "integration", label: "Third-party integration",   min: 700,  max: 3000, blurb: "Their API, your data, our glue." },
+  { id: "multisite",   label: "More than one site",        min: 600,  max: 2500, blurb: "Several venues or car parks under one account." },
+  { id: "migration",   label: "Bring your data across",    min: 500,  max: 2500, blurb: "Members, menus, customers and history from what you use now." },
+  { id: "analytics",   label: "Reporting & analytics",     min: 500,  max: 2000, blurb: "Dashboards that answer a question." },
+  { id: "seo",         label: "SEO & performance",         min: 400,  max: 1400, blurb: "Fast, findable, measured." },
+  { id: "training",    label: "On-site setup & training",  min: 400,  max: 1500, blurb: "We come to you, install it and show your staff." },
+  { id: "support",     label: "Ongoing support",           min: 900,  max: 3600, blurb: "12 months of us keeping it up." },
 ];
 
 /** Timeline multiplier — compressing a build costs money, patience saves it. */
@@ -81,6 +122,37 @@ export const TIMELINES = [
 ];
 
 const byId = (list, id) => list.find((x) => x.id === id) || null;
+
+/* Labels for ids read back off stored rows. An id this file no longer knows is
+ * shown as itself rather than as a blank — the row is still somebody's quote. */
+const labelIn = (list) => (id) => byId(list, id)?.label || String(id ?? "");
+export const serviceLabel = labelIn(SERVICES);
+export const tierLabel = labelIn(TIERS);
+export const timelineLabel = labelIn(TIMELINES);
+export const featureLabel = labelIn(FEATURES);
+
+/** A quote's `features` column as an array, whichever way the driver hands
+ *  it back: MySQL returns JSON parsed, MariaDB returns it as a string. */
+export function featureIds(raw) {
+  if (Array.isArray(raw)) return raw;
+  try { const v = JSON.parse(raw || "[]"); return Array.isArray(v) ? v : []; } catch { return []; }
+}
+
+/** Where a quote stands, in the customer's words, and what happens next.
+ *  Read by the dashboard, the quotes page and the admin list, so a status
+ *  means the same thing wherever it is shown. */
+export const QUOTE_STATUS = {
+  new:       { label: "Received",      pill: "lime",
+               next: "A person at Vesopa reads every brief. Expect a reply within one working day." },
+  reviewing: { label: "Being scoped",  pill: "info",
+               next: "We are working through the detail and may message you with questions." },
+  quoted:    { label: "Quote ready",   pill: "warn",
+               next: "Our firm quote is ready. Accept it and we open the project, or decline it and tell us why." },
+  accepted:  { label: "Accepted",      pill: "ok",
+               next: "Accepted. The project appears on your dashboard as soon as we have set it up." },
+  declined:  { label: "Declined",      pill: "bad",
+               next: "Closed. If anything changes, send a new brief and we will look again." },
+};
 
 /**
  * Price a set of answers.

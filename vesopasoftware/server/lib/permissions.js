@@ -7,16 +7,16 @@
 
 export const ORG_ROLES = [
   { id: "owner",   label: "Owner",   blurb: "Everything, including billing and adding people." },
-  { id: "manager", label: "Manager", blurb: "Projects, briefs and messages. No access to invoices." },
+  { id: "manager", label: "Manager", blurb: "Projects, briefs, quotes and messages. No access to invoices." },
   { id: "billing", label: "Billing", blurb: "Invoices, payments and messages. Cannot change projects." },
   { id: "member",  label: "Member",  blurb: "Projects and conversations. No billing, no team changes." },
   { id: "viewer",  label: "Viewer",  blurb: "Read-only. Can see progress, can change nothing." },
 ];
 
 const CAPABILITIES = {
-  owner:   ["project.view", "project.create", "project.edit", "message.send",
+  owner:   ["project.view", "project.create", "project.edit", "message.send", "quote.respond",
             "billing.view", "billing.pay", "team.view", "team.manage", "org.edit"],
-  manager: ["project.view", "project.create", "project.edit", "message.send", "team.view"],
+  manager: ["project.view", "project.create", "project.edit", "message.send", "quote.respond", "team.view"],
   billing: ["project.view", "message.send", "billing.view", "billing.pay", "team.view"],
   member:  ["project.view", "message.send", "team.view"],
   viewer:  ["project.view", "team.view"],

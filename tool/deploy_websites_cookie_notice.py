@@ -2,6 +2,16 @@
 
     python tool/deploy_websites_cookie_notice.py            # back up, deploy, restart, verify
     python tool/deploy_websites_cookie_notice.py --check    # only show what it would do
+    python tool/deploy_websites_cookie_notice.py --skip-metric   # do not touch the portal data
+
+Also ships the October round two of vesopasoftware.com (menu and loyalty
+sections, new photos and clips, the client area and quotes update). After
+vesopasoftware.com restarts (boot adds the new portal columns), it runs
+server/scripts/add-client-metric.js --no-invite as the vesopasoftware user,
+which creates the Metric Group organisation, Matt Hammond's account and the
+"Metric Membership app" project, and sends NO email. Running it again changes
+nothing. To email Matt his set-password link later, run the script on the
+server without --no-invite.
 
 Ships commit 7866d7d ("One cookie notice for every Vesopa site, and
 vesopasoftware.com with all five apps") and anything after it that touches the
@@ -181,6 +191,9 @@ def deploy(client, folder, domain, check_only):
         print(f"   ! pm2 restart failed — roll back with: tar -xzf {backup} -C {app}")
         return False
     time.sleep(4)
+    if domain == "vesopasoftware.com" and "--skip-metric" not in sys.argv:
+        sh(client, f"su - {USER} -c 'cd {app} && PATH=/opt/nodejs/24/bin:$PATH "
+                   "node server/scripts/add-client-metric.js --no-invite'")
 
     ok = True
     for path, needle in [("/", "vesopa-cookies.js"), ("/vesopa-cookies.js", "VesopaCookies"), ("/vesopa-cookies.css", ".vck")]:

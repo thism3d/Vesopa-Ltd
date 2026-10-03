@@ -409,7 +409,13 @@
         const btn = $("button", form);
         btn.disabled = true;
         try {
-          const r = await fetch(form.action, { method: "POST", body: fd, headers: { Accept: "application/json" } });
+          // URL-encoded, not the FormData itself: FormData posts as multipart,
+          // which express.urlencoded() does not parse — the server saw an empty
+          // body, failed the CSRF check and no task was ever added.
+          const r = await fetch(form.action, {
+            method: "POST", body: new URLSearchParams(fd),
+            headers: { Accept: "application/json", "x-csrf-token": window.CSRF || "" },
+          });
           const j = await r.json();
           // Reload rather than splicing the row in by hand: the task also
           // belongs on the calendar, in the "next up" line and in the feed,
@@ -471,7 +477,12 @@
   $$(".task input[type=checkbox]").forEach((box) => {
     box.addEventListener("change", async () => {
       const li = box.closest(".task");
-      const url = box.dataset.url;
+      // The row carries only the task id; the project comes from the thread.
+      // (This used to read a data-url no template ever set, so every tick
+      // posted to ".../undefined" and quietly un-ticked itself.)
+      const project = $("#thread")?.dataset.project;
+      if (!project) return;
+      const url = `/portal/projects/${project}/tasks/${box.dataset.task}/status`;
       li.classList.toggle("done", box.checked);
       try {
         const r = await fetch(url, {
@@ -481,12 +492,11 @@
         });
         const data = await r.json();
         if (!data.ok) throw new Error(data.error);
-        const bar = $("[data-task-progress]");
-        if (bar && data.total) {
-          $("i", bar).style.width = `${data.pct}%`;
-          const label = $("[data-task-progress-label]");
-          if (label) label.textContent = `${data.done}/${data.total}`;
-        }
+        // The header bar is Vesopa's published progress, not a task count, so
+        // a tick leaves it alone — otherwise it jumped to done/total here and
+        // back to the published figure on the next page load. A ticked
+        // milestone changes the plan, which is drawn server-side.
+        if (li.querySelector(".pill.lime")) location.reload();
       } catch {
         box.checked = !box.checked;
         li.classList.toggle("done", box.checked);

@@ -21,7 +21,7 @@
               <tr>
                 <td>
                   <a href="/portal/projects/<%= p.id %>"><strong><%= p.title %></strong></a>
-                  <div class="mono muted" style="font-size:.66rem"><%= p.ref %> · <%= p.service_type %></div>
+                  <div class="mono muted" style="font-size:.66rem"><%= p.ref %> · <%= serviceLabel(p.service_type) %></div>
                 </td>
                 <td><span class="pill <%= p.status === 'complete' ? 'ok' : p.status === 'on_hold' ? 'warn' : 'info' %>">
                   <%= PROJECT_STATUS[p.status] ? PROJECT_STATUS[p.status].label : p.status %></span></td>
@@ -32,7 +32,7 @@
                   </div>
                 </td>
                 <td><% if (p.target_date) { %><time datetime="<%= new Date(p.target_date).toISOString() %>"></time><% } else { %><span class="muted">—</span><% } %></td>
-                <td class="num"><%= moneyRound(p.budget_amount, p.currency) %></td>
+                <td class="num"><%= Number(p.budget_amount) > 0 ? moneyRound(p.budget_amount, p.currency) : "—" %></td>
               </tr>
             <% } %>
           </tbody>

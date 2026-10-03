@@ -146,7 +146,7 @@
         <% if (!quotes.length) { %><p class="t-empty">None.</p><% } %>
         <% for (const qq of quotes) { %>
           <div style="display:flex;gap:.5rem;padding:.4rem 0;border-bottom:1px solid var(--rule);font-size:.84rem">
-            <a href="/portal/admin/quotes/<%= qq.id %>" style="flex:1"><%= qq.ref %> — <%= qq.service_type %></a>
+            <a href="/portal/admin/quotes/<%= qq.id %>" style="flex:1"><%= qq.ref %> — <%= serviceLabel(qq.service_type) %></a>
             <span class="pill"><%= qq.status %></span>
           </div>
         <% } %>

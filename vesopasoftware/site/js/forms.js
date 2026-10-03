@@ -35,8 +35,16 @@
     const featureBox = $("#q-features");
 
     const fill = (sel, items, defaultId) => {
-      sel.innerHTML = items
-        .map((i) => `<option value="${i.id}"${i.id === defaultId ? " selected" : ""}>${i.label} — ${i.blurb}</option>`)
+      const option = (i) =>
+        `<option value="${i.id}"${i.id === defaultId ? " selected" : ""}>${i.label} — ${i.blurb}</option>`;
+      // Services carry a `group` (our products / built for you); anything
+      // without one renders as a flat list, exactly as before.
+      const groups = [...new Set(items.map((i) => i.group || ""))];
+      sel.innerHTML = groups
+        .map((g) => {
+          const opts = items.filter((i) => (i.group || "") === g).map(option).join("");
+          return g ? `<optgroup label="${g}">${opts}</optgroup>` : opts;
+        })
         .join("");
     };
 

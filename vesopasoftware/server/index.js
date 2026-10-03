@@ -8,7 +8,9 @@ import { assertConnection, migrate, pool, one } from "./lib/db.js";
 import { attach } from "./lib/realtime.js";
 import { startBillingScheduler } from "./lib/billing.js";
 import { loadUser, csrf } from "./lib/auth.js";
-import { money, moneyRound } from "./lib/pricing.js";
+import {
+  money, moneyRound, serviceLabel, tierLabel, timelineLabel, featureLabel, featureIds, QUOTE_STATUS,
+} from "./lib/pricing.js";
 import { STATUS_LABEL, PROJECT_STATUS, balanceOf, isOverdue } from "./lib/invoices.js";
 
 import publicRoutes from "./routes/public.js";
@@ -54,6 +56,9 @@ app.use(loadUser);
 // Helpers every template can reach without being passed them one by one.
 app.locals.money = money;
 app.locals.moneyRound = moneyRound;
+// Quotes and projects store ids ("membership_app", "standard"); these turn
+// them back into the words the customer picked.
+Object.assign(app.locals, { serviceLabel, tierLabel, timelineLabel, featureLabel, featureIds, QUOTE_STATUS });
 app.locals.STATUS_LABEL = STATUS_LABEL;
 app.locals.PROJECT_STATUS = PROJECT_STATUS;
 app.locals.balanceOf = balanceOf;

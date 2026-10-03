@@ -500,3 +500,23 @@ CREATE TABLE IF NOT EXISTS settings (
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Where the finished work lives: the live web app, the store listing, the
+-- staff console. A customer's first question about a live product is "where
+-- is it", and the answer belongs on the project rather than in an old email.
+-- Only http(s) URLs are accepted (routes/admin.js), so a stored link can never
+-- be a javascript: URL rendered into someone's page.
+CREATE TABLE IF NOT EXISTS project_links (
+  id         INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  project_id INT UNSIGNED NOT NULL,
+  label      VARCHAR(120) NOT NULL,
+  url        VARCHAR(500) NOT NULL,
+  kind       ENUM('live','store','admin','docs','other') NOT NULL DEFAULT 'live',
+  note       VARCHAR(255) NULL,
+  sort_order SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_link_url (project_id, url(190)),
+  KEY idx_links_project (project_id, sort_order),
+  CONSTRAINT fk_links_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

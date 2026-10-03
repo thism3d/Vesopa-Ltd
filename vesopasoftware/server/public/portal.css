@@ -623,3 +623,38 @@ details.panel.act > form:last-child{padding-bottom:1rem}
   .task-new{flex-direction:column;align-items:stretch}
   .task-new input[type=date]{width:100%}
 }
+
+/* ---------- quotes: one card each, the answer beside the figure ---------- */
+.quote-card.is-waiting{border-left:3px solid var(--warn)}
+.quote-note{margin-top:.9rem;padding:.8rem .9rem;background:var(--panel-2);border:1px solid var(--rule);
+  border-radius:var(--r);font-size:.9rem;line-height:1.55}
+.next-step{margin-top:.9rem;font-size:.86rem;color:var(--fg)}
+.next-step b{color:var(--lime);font-weight:600}
+details.decline{margin-top:.7rem;font-size:.84rem}
+details.decline > summary{cursor:pointer;color:var(--muted);width:max-content}
+details.decline[open] > summary{margin-bottom:.6rem}
+
+/* ---------- the plan: a project's milestones, in order ---------- */
+.milestones{list-style:none;margin:0;padding:0;counter-reset:ms}
+.milestones li{position:relative;display:flex;gap:.7rem;align-items:flex-start;padding:.55rem 0 .55rem 0}
+.milestones li + li{border-top:1px solid var(--rule)}
+.milestones .ms-dot{flex:none;width:1.35rem;height:1.35rem;border-radius:50%;margin-top:.05rem;
+  border:1.5px solid var(--rule-strong);display:grid;place-items:center;font-size:.62rem;
+  font-family:"Martian Mono",monospace;color:var(--muted)}
+.milestones li.done .ms-dot{background:var(--lime);border-color:var(--lime);color:var(--ink)}
+.milestones li.doing .ms-dot{border-color:var(--lime);color:var(--lime)}
+.milestones li.blocked .ms-dot{border-color:var(--bad);color:var(--bad)}
+.milestones b{display:block;font-weight:600;font-size:.88rem}
+.milestones li.done b{color:var(--muted)}
+.milestones small{display:block;color:var(--muted);font-size:.72rem;margin-top:.15rem}
+.milestones p{margin:.25rem 0 0;font-size:.8rem;color:var(--muted);line-height:1.5}
+
+/* ---------- where the finished work lives ---------- */
+.links{list-style:none;margin:0;padding:0}
+.links li{display:flex;gap:.6rem;align-items:center;padding:.5rem 0}
+.links li + li{border-top:1px solid var(--rule)}
+.links a.link-main{flex:1;min-width:0;text-decoration:none}
+.links a.link-main b{display:block;font-weight:600;font-size:.88rem}
+.links a.link-main small{display:block;color:var(--muted);font-size:.7rem;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.links a.link-main:hover b{color:var(--lime)}

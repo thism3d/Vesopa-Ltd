@@ -29,10 +29,13 @@ const calBase = `/portal/projects/${project.id}`;
   <div class="hub-head panel">
     <div class="hub-head-top">
       <div class="grow">
-        <span class="eyebrow"><a href="/portal/projects" class="muted">Projects</a> · <%= project.ref %></span>
+        <span class="eyebrow"><a href="/portal/projects" class="muted">Projects</a> · <%= project.ref %> ·
+          <%= serviceLabel(project.service_type) %><% if (quote) { %> ·
+          <a href="/portal/quotes#quote-<%= quote.id %>" class="muted">quote <%= quote.ref %></a><% } %></span>
         <h1><%= project.title %></h1>
       </div>
-      <span class="pill <%= STATUS[project.status] || '' %>"><%= String(project.status).replace(/_/g," ") %></span>
+      <span class="pill <%= STATUS[project.status] || '' %>"><%=
+        PROJECT_STATUS[project.status] ? PROJECT_STATUS[project.status].label : project.status %></span>
     </div>
 
     <% if (project.description) { %>
@@ -48,6 +51,13 @@ const calBase = `/portal/projects/${project.id}`;
         <b><%= nextDue ? nextDue.title : (buckets.open.length ? buckets.open[0].title : "Nothing outstanding") %></b>
         <% if (nextDue && nextDue.due_date) { %><time datetime="<%= new Date(nextDue.due_date).toISOString() %>"></time><% } %>
       </span>
+      <% if (milestones.length) { %>
+        <span class="hub-fact"><small>Milestones</small>
+          <b><%= milestones.filter(m => m.status === "done").length %> of <%= milestones.length %> done</b></span>
+      <% } %>
+      <% if (project.target_date) { %>
+        <span class="hub-fact"><small>Target</small><b><%= date(project.target_date) %></b></span>
+      <% } %>
       <span class="hub-fact"><small>Open tasks</small><b><%= buckets.open.length %><%
         if (buckets.overdue) { %> <span class="pill bad"><%= buckets.overdue %> overdue</span><% } %></b></span>
       <span class="hub-fact"><small>Team</small>
@@ -112,7 +122,7 @@ const calBase = `/portal/projects/${project.id}`;
                       <b><%= e.invoice.number %></b>
                       <span class="pill <%= e.invoice.status === 'paid' ? 'ok' : 'warn' %>"><%= e.invoice.status %></span>
                       <span class="spacer"></span>
-                      <a class="btn ghost small" href="/portal/invoices">Open</a>
+                      <a class="btn ghost small" href="/portal/invoices/<%= e.invoice.id %>">Open</a>
                     </div>
                   <% } %>
                 </div>
@@ -214,6 +224,48 @@ const calBase = `/portal/projects/${project.id}`;
     <!-- ================= the board ================= -->
     <aside class="hub-side">
 
+      <% if (links.length) { %>
+        <!-- ================= where the finished work lives ================= -->
+        <section class="panel" aria-label="Links">
+          <div class="panel-head"><h3>Where it lives</h3></div>
+          <ul class="links">
+            <% for (const l of links) { %>
+              <li>
+                <a class="link-main" href="<%= l.url %>" target="_blank" rel="noopener">
+                  <b><%= l.label %></b>
+                  <small><%= l.note || l.url.replace(/^https?:\/\//, "") %></small>
+                </a>
+              </li>
+            <% } %>
+          </ul>
+        </section>
+      <% } %>
+
+      <% if (milestones.length) { %>
+        <!-- ================= the plan ================= -->
+        <section class="panel" aria-label="Milestones">
+          <div class="panel-head"><h3>The plan</h3><span class="spacer"></span>
+            <span class="mono muted" style="font-size:.63rem"><%= milestones.filter(m => m.status === "done").length %>/<%= milestones.length %></span></div>
+          <ol class="milestones">
+            <% milestones.forEach((m, n) => { %>
+              <li class="<%= m.status %>">
+                <span class="ms-dot" aria-hidden="true"><%= m.status === "done" ? "✓" : n + 1 %></span>
+                <div class="grow">
+                  <b><%= m.title %></b>
+                  <small>
+                    <%= m.status === "done" ? "Done" + (m.done_at ? " " + date(m.done_at) : "")
+                      : m.status === "doing" ? "Under way"
+                      : m.status === "blocked" ? "Waiting on something" : "To come" %><%
+                    if (m.due_date && m.status !== "done") { %> · target <%= date(m.due_date) %><% } %>
+                  </small>
+                  <% if (m.detail) { %><p><%= m.detail %></p><% } %>
+                </div>
+              </li>
+            <% }) %>
+          </ol>
+        </section>
+      <% } %>
+
       <section class="panel" aria-label="Tasks">
         <div class="panel-head">
           <h3>Board</h3>
@@ -233,9 +285,10 @@ const calBase = `/portal/projects/${project.id}`;
             <% for (const t of buckets[key]) { %>
               <li class="task <%= t.status === 'done' ? 'done' : '' %>" data-task-row="<%= t.id %>">
                 <input type="checkbox" data-task="<%= t.id %>" <%= t.status === "done" ? "checked" : "" %>
-                       <%= key === "archived" ? "disabled" : "" %> aria-label="Mark done">
+                       <%= key === "archived" || !t.mayChange ? "disabled" : "" %>
+                       aria-label="Mark done" <%= t.mayChange ? "" : 'title="Vesopa closes this one"' %>>
                 <div class="grow">
-                  <b><%= t.title %></b>
+                  <b><%= t.title %><% if (t.is_milestone) { %> <span class="pill lime">Milestone</span><% } %></b>
                   <small>
                     <% if (t.due_date) { %>
                       <span class="<%= t.status !== 'done' && new Date(t.due_date) < new Date() ? 'overdue' : '' %>">
@@ -244,7 +297,7 @@ const calBase = `/portal/projects/${project.id}`;
                     <%= t.assignee ? t.assignee : (t.creator ? "raised by " + t.creator : "unassigned") %>
                   </small>
                 </div>
-                <% if (can("message.send")) { %>
+                <% if (can("message.send") && t.mayChange) { %>
                   <button class="task-arch" type="button" data-archive="<%= t.id %>"
                           data-restore="<%= key === 'archived' ? '1' : '0' %>"
                           title="<%= key === 'archived' ? 'Restore' : 'Archive' %>">

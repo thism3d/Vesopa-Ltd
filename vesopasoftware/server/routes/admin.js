@@ -3,7 +3,8 @@ import { q, one, exec, nextRef } from "../lib/db.js";
 import { requireAdmin, createUser, findUserByEmail, normaliseEmail, emailProblem } from "../lib/auth.js";
 import { recalc, balanceOf, isOverdue, PROJECT_STATUS } from "../lib/invoices.js";
 import { createInvoice, sendInvoice, invoicePendingCharges, runSubscriptionSweep, addInterval } from "../lib/billing.js";
-import { SERVICES, moneyRound } from "../lib/pricing.js";
+import { SERVICES, moneyRound, serviceLabel, QUOTE_STATUS } from "../lib/pricing.js";
+import { createInvitedUser, sendSetPasswordLink } from "../lib/onboarding.js";
 import { sendMail, layout, esc } from "../lib/mail.js";
 import { notify, unreadCount } from "../lib/notify.js";
 import { toProject, toUser, joinProjectRoom } from "../lib/realtime.js";
@@ -91,18 +92,81 @@ router.get("/quotes/:id", async (req, res, next) => {
   try {
     const quote = await one("SELECT * FROM quotes WHERE id = ?", [req.params.id]);
     if (!quote) return res.status(404).render("error", { title: "No such quote", message: "Gone.", back: "/portal/admin/quotes" });
-    const customer = quote.user_id ? await one("SELECT * FROM users WHERE id = ?", [quote.user_id]) : null;
-    res.render("admin/quote", { title: `Quote ${quote.ref}`, quote, customer, SERVICES });
+    const [customer, project] = await Promise.all([
+      quote.user_id ? one("SELECT * FROM users WHERE id = ?", [quote.user_id]) : null,
+      one("SELECT id, ref, title FROM projects WHERE quote_id = ? ORDER BY id LIMIT 1", [quote.id]),
+    ]);
+    res.render("admin/quote", { title: `Quote ${quote.ref}`, quote, customer, project, SERVICES });
   } catch (err) { next(err); }
 });
 
 router.post("/quotes/:id/status", async (req, res, next) => {
   try {
-    const allowed = ["new", "reviewing", "quoted", "accepted", "declined"];
+    const allowed = Object.keys(QUOTE_STATUS);
     const status = allowed.includes(req.body.status) ? req.body.status : "new";
     await exec("UPDATE quotes SET status = ? WHERE id = ?", [status, req.params.id]);
     req.flash("ok", `Quote marked ${status}.`);
     res.redirect(`/portal/admin/quotes/${req.params.id}`);
+  } catch (err) { next(err); }
+});
+
+/** Send the firm quote: the figure and what it covers. This is what the
+ *  customer accepts or declines in the portal, so it moves the quote to
+ *  "quoted" and tells them it is waiting. The amount may be left blank when
+ *  the note itself carries the pricing (staged work, a day rate). */
+router.post("/quotes/:id/offer", async (req, res, next) => {
+  try {
+    const quote = await one("SELECT * FROM quotes WHERE id = ?", [req.params.id]);
+    if (!quote) return res.status(404).render("error", { title: "No such quote", message: "Gone.", back: "/portal/admin/quotes" });
+
+    const raw = String(req.body.quoted_amount ?? "").trim();
+    const amount = raw === "" ? null : Math.round(num(raw, NaN) * 100) / 100;
+    if (amount !== null && !(amount >= 0)) {
+      req.flash("warn", "That amount is not a number.");
+      return res.redirect(`/portal/admin/quotes/${quote.id}`);
+    }
+    const note = String(req.body.quote_note || "").trim().slice(0, 6000);
+    if (!note) {
+      req.flash("warn", "Say what the quote covers — that is what the customer is agreeing to.");
+      return res.redirect(`/portal/admin/quotes/${quote.id}`);
+    }
+
+    await exec(
+      `UPDATE quotes SET quoted_amount = ?, quote_note = ?, quoted_at = NOW(), status = 'quoted',
+                         responded_at = NULL, response_note = NULL WHERE id = ?`,
+      [amount, note, quote.id]);
+
+    const figure = amount !== null ? moneyRound(amount, quote.currency) : null;
+    const where = quote.user_id
+      ? `${config.baseUrl}/portal/quotes`
+      : `${config.baseUrl}/portal/register?quote=${encodeURIComponent(quote.ref)}&email=${encodeURIComponent(quote.email)}`;
+    await sendMail({
+      to: quote.email,
+      subject: `Your quote is ready — ${quote.ref}`,
+      template: "quote_offer",
+      text: `${figure ? `Our quote for ${quote.ref} is ${figure}.` : `Our quote for ${quote.ref} is ready.`}\n\n${note}\n\nAccept or decline it at ${where}`,
+      html: layout({
+        heading: figure ? `Your quote: ${figure}` : "Your quote is ready",
+        lines: [
+          `This is our firm quote for <b>${esc(serviceLabel(quote.service_type))}</b>, reference <b>${esc(quote.ref)}</b>.`,
+          note.split("\n").map(esc).join("<br>"),
+          quote.user_id
+            ? "Accept or decline it from the Quotes page of your portal. Questions first? Reply to this email."
+            : "Create your portal account with this address to accept or decline it, or simply reply to this email.",
+        ],
+        cta: { label: quote.user_id ? "Answer in the portal" : "Open your portal", href: where },
+      }),
+    });
+    if (quote.user_id) {
+      await notify(quote.user_id, {
+        kind: "quote", title: `Quote ${quote.ref} is ready`,
+        body: figure ? `${figure} — accept or decline in the portal.` : "Accept or decline in the portal.",
+        href: "/portal/quotes",
+      });
+    }
+
+    req.flash("ok", `Quote ${quote.ref} sent to ${quote.email}.`);
+    res.redirect(`/portal/admin/quotes/${quote.id}`);
   } catch (err) { next(err); }
 });
 
@@ -113,16 +177,25 @@ router.post("/quotes/:id/convert", async (req, res, next) => {
     const quote = await one("SELECT * FROM quotes WHERE id = ?", [req.params.id]);
     if (!quote) return res.status(404).render("error", { title: "No such quote", message: "Gone.", back: "/portal/admin/quotes" });
 
+    // One quote, one project: a second click on the button used to open a
+    // duplicate with its own reference.
+    const existing = await one("SELECT id, ref FROM projects WHERE quote_id = ? ORDER BY id LIMIT 1", [quote.id]);
+    if (existing) {
+      req.flash("warn", `That quote is already project ${existing.ref}.`);
+      return res.redirect(`/portal/admin/projects/${existing.id}`);
+    }
+
     let customer = quote.user_id
       ? await one("SELECT * FROM users WHERE id = ?", [quote.user_id])
       : await findUserByEmail(quote.email);
-    let tempPassword = null;
+    let invited = false;
 
     if (!customer) {
-      tempPassword = Math.random().toString(36).slice(2, 10) + "A1";
-      const id = await createUser({
-        email: quote.email, password: tempPassword, name: quote.name,
-        company: quote.company, phone: quote.phone, role: "customer",
+      // No password is chosen for them: they get a link to set their own
+      // (lib/onboarding.js), rather than a generated one in an email.
+      invited = true;
+      const id = await createInvitedUser({
+        email: quote.email, name: quote.name, company: quote.company, phone: quote.phone,
       });
       const org = await exec("INSERT INTO organisations (name, owner_id) VALUES (?,?)",
         [quote.company || quote.name, id]);
@@ -137,7 +210,7 @@ router.post("/quotes/:id/convert", async (req, res, next) => {
                              status, budget_amount, currency, start_date)
        VALUES (?,?,?,?,?,?,?, 'scoping', ?, ?, CURDATE())`,
       [ref, customer.id, customer.org_id, quote.id,
-       String(req.body.title || `${quote.service_type} for ${quote.company || quote.name}`).slice(0, 160),
+       String(req.body.title || `${serviceLabel(quote.service_type)} for ${quote.company || quote.name}`).slice(0, 160),
        quote.service_type, quote.message, num(req.body.budget, quote.estimate_min), quote.currency],
     );
 
@@ -163,19 +236,24 @@ router.post("/quotes/:id/convert", async (req, res, next) => {
         lines: [
           `We have turned quote ${quote.ref} into a live project, <b>${ref}</b>.`,
           `You can watch progress, talk to the people working on it and settle invoices in your portal.`,
-          tempPassword
-            ? `We made you an account. Sign in with <b>${esc(customer.email)}</b> and the temporary password <b>${esc(tempPassword)}</b>, then change it on your account page.`
+          invited
+            ? `We have made you an account — a separate email has a link to choose your password.`
             : `Sign in with <b>${esc(customer.email)}</b>.`,
         ],
         cta: { label: "Open the project", href: `${config.baseUrl}/portal/projects/${project.insertId}` },
       }),
     });
+    if (invited) {
+      await sendSetPasswordLink(customer, {
+        lines: [`It is where you will follow project <b>${esc(ref)}</b>, talk to the team and see invoices.`],
+      });
+    }
     await notify(customer.id, {
       kind: "project", title: `Project ${ref} is open`,
       body: "We are scoping the work now.", href: `/portal/projects/${project.insertId}`,
     });
 
-    req.flash("ok", `Project ${ref} created${tempPassword ? ` and an account was made for ${customer.email}.` : "."}`);
+    req.flash("ok", `Project ${ref} created${invited ? ` and ${customer.email} was sent a link to set their password.` : "."}`);
     res.redirect(`/portal/admin/projects/${project.insertId}`);
   } catch (err) { next(err); }
 });
@@ -204,7 +282,7 @@ router.get("/projects/:id", async (req, res, next) => {
     const project = await one("SELECT * FROM projects WHERE id = ?", [req.params.id]);
     if (!project) return res.status(404).render("error", { title: "No such project", message: "Gone.", back: "/portal/admin/projects" });
 
-    const [customer, updates, messages, invoices, members, charges, staff, orgPeople, subs, files, tasks] =
+    const [customer, updates, messages, invoices, members, charges, staff, orgPeople, subs, files, tasks, links] =
       await Promise.all([
       one("SELECT * FROM users WHERE id = ?", [project.user_id]),
       q(`SELECT pu.*, u.name AS author FROM project_updates pu LEFT JOIN users u ON u.id = pu.author_id
@@ -235,7 +313,11 @@ router.get("/projects/:id", async (req, res, next) => {
            LEFT JOIN users c ON c.id = t.created_by
           WHERE t.project_id = ?
           ORDER BY FIELD(t.status,'doing','todo','blocked','done'), t.sort_order, t.id`, [project.id]),
+      q("SELECT * FROM project_links WHERE project_id = ? ORDER BY sort_order, id", [project.id]),
     ]);
+    const milestones = tasks
+      .filter((t) => t.is_milestone && !t.archived_at)
+      .sort((a, b) => a.sort_order - b.sort_order || a.id - b.id);
 
     /* The same one-feed treatment the customer hub has, for the same reason:
        whoever picks this project up needs the order events happened in, not
@@ -248,7 +330,8 @@ router.get("/projects/:id", async (req, res, next) => {
 
     res.render("admin/project", {
       title: project.title, project, customer, updates, messages, invoices, members,
-      charges, staff, orgPeople, subs, files, tasks, PROJECT_STATUS, roleLabel, prettySize,
+      charges, staff, orgPeople, subs, files, tasks, links, milestones, LINK_KINDS,
+      PROJECT_STATUS, roleLabel, prettySize,
       timeline: groupByDay(buildTimeline({ messages, updates, files, tasks })),
       buckets: bucketTasks(tasks),
       calendar: { month, cells: monthGrid(cy, cm, tasks) },
@@ -328,6 +411,66 @@ router.post("/projects/:id/updates", async (req, res, next) => {
     }
     req.flash("ok", "Update posted.");
     res.redirect(`/portal/admin/projects/${project.id}`);
+  } catch (err) { next(err); }
+});
+
+/* ---------- links to the finished work ---------- */
+
+export const LINK_KINDS = {
+  live: "Live", store: "App store", admin: "Admin console", docs: "Guide", other: "Link",
+};
+
+router.post("/projects/:id/links", async (req, res, next) => {
+  try {
+    const project = await one("SELECT id FROM projects WHERE id = ?", [req.params.id]);
+    if (!project) return res.redirect("/portal/admin/projects");
+    const back = `/portal/admin/projects/${project.id}`;
+
+    const label = String(req.body.label || "").trim().slice(0, 120);
+    const url = String(req.body.url || "").trim().slice(0, 500);
+    // http(s) only. Anything else — javascript:, data: — would become a
+    // clickable script on the customer's page.
+    let ok = false;
+    try { ok = ["http:", "https:"].includes(new URL(url).protocol); } catch { /* not a URL */ }
+    if (!label || !ok) {
+      req.flash("warn", "A link needs a name and a full http:// or https:// address.");
+      return res.redirect(back);
+    }
+    const kind = Object.hasOwn(LINK_KINDS, req.body.kind) ? req.body.kind : "live";
+    const order = (await one("SELECT COALESCE(MAX(sort_order),0) + 1 AS n FROM project_links WHERE project_id = ?",
+      [project.id])).n;
+
+    await exec(
+      `INSERT INTO project_links (project_id, label, url, kind, note, sort_order) VALUES (?,?,?,?,?,?)
+       ON DUPLICATE KEY UPDATE label = VALUES(label), kind = VALUES(kind), note = VALUES(note)`,
+      [project.id, label, url, kind, String(req.body.note || "").trim().slice(0, 255) || null, order]);
+    req.flash("ok", `Link “${label}” saved. The customer sees it on the project and their dashboard.`);
+    res.redirect(back);
+  } catch (err) { next(err); }
+});
+
+router.post("/projects/:id/links/:linkId/remove", async (req, res, next) => {
+  try {
+    await exec("DELETE FROM project_links WHERE id = ? AND project_id = ?", [req.params.linkId, req.params.id]);
+    req.flash("ok", "Link removed.");
+    res.redirect(`/portal/admin/projects/${req.params.id}`);
+  } catch (err) { next(err); }
+});
+
+/** Flag a task as a milestone, or unflag it. A newly flagged one goes to the
+ *  end of the plan. */
+router.post("/projects/:id/tasks/:taskId/milestone", async (req, res, next) => {
+  try {
+    const task = await one("SELECT * FROM project_tasks WHERE id = ? AND project_id = ?",
+      [req.params.taskId, req.params.id]);
+    if (!task) return res.redirect(`/portal/admin/projects/${req.params.id}`);
+    const on = task.is_milestone ? 0 : 1;
+    const order = on
+      ? (await one("SELECT COALESCE(MAX(sort_order),0) + 1 AS n FROM project_tasks WHERE project_id = ?", [task.project_id])).n
+      : task.sort_order;
+    await exec("UPDATE project_tasks SET is_milestone = ?, sort_order = ? WHERE id = ?", [on, order, task.id]);
+    req.flash("ok", on ? `“${task.title}” is now a milestone.` : `“${task.title}” is no longer a milestone.`);
+    res.redirect(`/portal/admin/projects/${task.project_id}`);
   } catch (err) { next(err); }
 });
 
