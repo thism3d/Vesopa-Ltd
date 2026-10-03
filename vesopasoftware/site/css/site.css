@@ -869,6 +869,23 @@ body.is-fullscreen .ico-fs{
 }
 .ai-x span[aria-hidden]{font-size:1.05rem;line-height:.8}
 .ai-x:hover{opacity:1;border-color:var(--lime);color:var(--lime)}
+/* "New chat" sits beside Close and looks like it; the title keeps the left. */
+.ai-head .ai-title{margin-right:auto}
+.ai-new{
+  background:transparent;color:inherit;cursor:pointer;margin-right:.45rem;
+  border:1px solid rgba(242,239,230,.2);border-radius:999px;
+  font-family:"Martian Mono",monospace;font-size:.62rem;letter-spacing:.06em;
+  line-height:1;padding:.5rem .7rem;opacity:.75;transition:opacity .2s,border-color .2s,color .2s;
+}
+.ai-new:hover{opacity:1;border-color:var(--lime);color:var(--lime)}
+.ai-again{
+  align-self:flex-start;margin-top:-.35rem;background:transparent;color:inherit;cursor:pointer;
+  border:0;padding:.1rem .2rem;font-family:"Martian Mono",monospace;font-size:.6rem;
+  opacity:.55;text-decoration:underline;text-underline-offset:3px;
+}
+.ai-again:hover{opacity:1;color:var(--lime)}
+.ai-forget{background:none;border:0;color:inherit;font:inherit;cursor:pointer;padding:0;text-decoration:underline;text-underline-offset:2px}
+.ai-forget:hover{color:var(--lime)}
 
 /* Same trap one level down: without min-height:0 the log will not shrink below
    its transcript, so a long answer pushes the composer off the bottom of the
@@ -898,6 +915,7 @@ body.is-fullscreen .ico-fs{
   overflow-x:auto;scrollbar-width:none;
 }
 .ai-sugg::-webkit-scrollbar{display:none}
+.ai-sugg[hidden]{display:none}
 .ai-chip{white-space:nowrap;flex:none}
 .ai-chip{
   font-family:"Martian Mono",monospace;font-size:.62rem;letter-spacing:.02em;

@@ -525,3 +525,22 @@ CREATE TABLE IF NOT EXISTS project_links (
   KEY idx_links_project (project_id, sort_order),
   CONSTRAINT fk_links_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Saved conversations with the Vesopa AI bar (routes/ai.js). Anonymous: the
+-- visitor key is a random value kept in that visitor's own browser, the id is
+-- random per conversation, and nothing here names a person (email addresses,
+-- phone and card numbers are removed from what is stored). Kept 30 days after
+-- the last message; "Forget" deletes at once.
+CREATE TABLE IF NOT EXISTS ai_sessions (
+  id          VARCHAR(32) NOT NULL,
+  visitor     VARCHAR(32) NOT NULL,
+  device      VARCHAR(12) NOT NULL DEFAULT '',
+  platform    VARCHAR(20) NOT NULL DEFAULT '',
+  title       VARCHAR(120) NOT NULL DEFAULT '',
+  transcript  MEDIUMTEXT NULL,
+  created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_ai_sessions_visitor (visitor, updated_at),
+  KEY idx_ai_sessions_updated (updated_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

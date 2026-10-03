@@ -38,6 +38,8 @@ const currency = require('../currency');
 const pricing = require('../pricing');
 const registrar = require('../integrations/domainnameapi');
 const bedrock = require('./bedrock');
+const llm = require('./llm');
+const continuity = require('./continuity');
 const voice = require('./voice');
 const { systemPrompt, NEEDS_YES, BENGALI, normaliseLang, MANNER, VOICE_ON, VOICE_OFF, LANGUAGE, OFFER } = require('./rules');
 
@@ -68,6 +70,7 @@ const TOOLS = [
   { type: 'function', function: { name: 'check_domain', description: 'Whether a domain is available to register here, and its price. The answer includes add_to_basket_path: navigate there to put the domain in the basket.', parameters: { type: 'object', properties: { name: { type: 'string', description: 'e.g. example.co.uk' } }, required: ['name'] } } },
   { type: 'function', function: { name: 'pricing', description: 'The hosting and business email plans, with prices in the customer’s currency.', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'account', description: 'What the signed-in customer has: domains and their state, hosting plans, unpaid orders, open tickets. Empty for a visitor.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'projects', description: 'What is under way on the signed-in customer\'s account right now: an unpublished Vesopa Studio site, domains still being set up, orders being built, hosting in setup or a trial ending, open tickets. Each has the page that shows it. Empty for a visitor.', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'remember', description: 'Keep short durable facts about this customer for future visits.', parameters: { type: 'object', properties: { facts: { type: 'array', items: { type: 'string' } } }, required: ['facts'] } } },
   { type: 'function', function: { name: 'forget', description: 'Drop a remembered fact that contains this text.', parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] } } },
 ];
@@ -195,23 +198,28 @@ async function writeMemory(customer, facts) {
   );
 }
 
-async function readHistory(customer) {
+async function readHistory(customer, sess) {
   if (!customer) return [];
   try {
-    const rows = await db.query(
-      'SELECT role, content FROM ai_messages WHERE customer_id = ? ORDER BY id DESC LIMIT ?',
-      [customer.id, MAX_HISTORY],
-    );
+    const rows = sess
+      ? await db.query('SELECT role, content FROM ai_messages WHERE customer_id = ? AND session_id = ? ORDER BY id DESC LIMIT ?', [customer.id, sess.id, MAX_HISTORY])
+      : await db.query('SELECT role, content FROM ai_messages WHERE customer_id = ? ORDER BY id DESC LIMIT ?', [customer.id, MAX_HISTORY]);
     return rows.reverse().map((r) => ({ role: r.role, content: r.content }));
   } catch {
     return [];
   }
 }
 
-async function appendHistory(customer, entries) {
+async function appendHistory(customer, entries, sess) {
   if (!customer || !entries.length) return;
   for (const e of entries) {
-    await db.query('INSERT INTO ai_messages (customer_id, role, content) VALUES (?, ?, ?)', [customer.id, e.role, String(e.content).slice(0, 4000)]);
+    try {
+      await db.query('INSERT INTO ai_messages (customer_id, session_id, role, content) VALUES (?, ?, ?, ?)', [customer.id, sess ? sess.id : null, e.role, String(e.content).slice(0, 4000)]);
+    } catch (err) {
+      // A database the 2026-10-03 schema has not reached yet: keep the line without its session.
+      if (err.code !== 'ER_BAD_FIELD_ERROR') throw err;
+      await db.query('INSERT INTO ai_messages (customer_id, role, content) VALUES (?, ?, ?)', [customer.id, e.role, String(e.content).slice(0, 4000)]);
+    }
   }
   // Keep the last 200; the model only ever reads the last MAX_HISTORY.
   await db.query(
@@ -312,28 +320,84 @@ async function runTurn(o) {
   // the widget's switch follows.
   if (isHuman && BENGALI.test(userText)) lang = 'bn';
 
-  let memory = signedIn ? await readMemory(customer) : (o.local && Array.isArray(o.local.memory) ? o.local.memory.map(String).slice(0, MAX_MEMORY) : []);
-  const history = signedIn ? await readHistory(customer) : (o.local && Array.isArray(o.local.history) ? o.local.history.slice(-MAX_HISTORY) : []);
+  /*
+   * Which model (src/ai/llm.js). A turn carries personal data when the
+   * customer is signed in, has typed personal details into the page, or put
+   * an email address or phone number in what they said. Those stay on
+   * Bedrock; everything else goes to DeepSeek. With no Bedrock configured, a
+   * personal turn goes to DeepSeek `safe`: no account tools, no name, no
+   * saved history, and identifiers removed.
+   */
+  const personal = signedIn || llm.pageHasPersonal(o.page) || llm.looksPersonal(userText);
+  if (!llm.enabled() && !bedrock.ENABLED) throw new Error('AI is not configured');
+  let useDeepSeek = llm.enabled() && (!personal || !bedrock.ENABLED);
+  const safe = useDeepSeek && personal;
+  const page = useDeepSeek ? llm.safePage(o.page) : o.page;
 
-  const customerLine = signedIn
-    ? `Signed in as ${customer.name || 'the customer'} (${customer.email}). Use account() when you need what they have.`
-    : '';
+  let memory = signedIn ? (safe ? [] : await readMemory(customer)) : (o.local && Array.isArray(o.local.memory) ? o.local.memory.map(String).slice(0, MAX_MEMORY) : []);
+  const sess = o.session || null;
+  const savedHistory = signedIn ? await readHistory(customer, sess) : (o.local && Array.isArray(o.local.history) ? o.local.history.slice(-MAX_HISTORY) : []);
+  let history = safe && signedIn ? [] : savedHistory;
+  if (useDeepSeek) {
+    memory = memory.map((m) => llm.redact(m));
+    history = history.map((h) => (h && h.content ? { ...h, content: llm.redact(h.content) } : h));
+  }
 
-  const talker = Boolean(config.AI.TALK_MODEL) && config.AI.TALK_MODEL !== config.AI.TASK_MODEL;
+  const customerLine = !signedIn ? ''
+    : safe ? 'The customer is signed in, but their account details are not available to you in this conversation. For their own domains, orders, bills or tickets, take them to the right page of the panel and let the page show them.'
+      : [`Signed in as ${customer.name || 'the customer'} (${customer.email}). Use account() when you need what they have.`,
+        continuity.projectsLine(await continuity.projects(customer).catch(() => null))].filter(Boolean).join('\n');
+  const tools = safe ? TOOLS.filter((tl) => !['account', 'projects', 'open_site', 'remember', 'forget'].includes(tl.function.name)) : TOOLS;
+
+  // DeepSeek talks like a person and calls tools well, so it needs no
+  // separate talk model; the split was for the Qwen pair on Bedrock.
+  const talker = !useDeepSeek && Boolean(config.AI.TALK_MODEL) && config.AI.TALK_MODEL !== config.AI.TASK_MODEL;
+
+  /** One model call, on whichever model this turn belongs to. */
+  const think = async (args) => {
+    if (useDeepSeek) {
+      try {
+        const r = await llm.client.chat({
+          purpose: 'cloud-guide',
+          messages: args.messages,
+          tools: args.tools,
+          temperature: args.temperature,
+          maxTokens: args.maxTokens,
+          // A tool call whose arguments are not JSON is worth one more try, with a little thought.
+          validate: (out) => (out.toolCalls.every((tc) => { try { JSON.parse(tc.function.arguments || '{}'); return true; } catch { return false; } }) ? true : 'bad tool arguments'),
+        });
+        return { message: r.message };
+      } catch (err) {
+        // Over the day's DeepSeek budget: Bedrock, when there is one, carries on.
+        if (!(err instanceof llm.BudgetError) || !bedrock.ENABLED) throw err;
+        useDeepSeek = false;
+      }
+    }
+    return bedrock.chat(args);
+  };
   const messages = [{ role: 'system', content: systemPrompt({ signedIn, voice: Boolean(o.voice), memory, customerLine, lang, talker }) }];
   for (const h of history) {
     if ((h.role === 'user' || h.role === 'assistant') && h.content) messages.push({ role: h.role, content: String(h.content).slice(0, 2000) });
   }
 
   // This turn's user message: the page first, then their words.
-  const parts = [describePage(o.page)];
+  const parts = [describePage(page)];
+  // The device they are on, and the one this conversation began on.
+  const dev = o.device || null;
+  if (dev && dev.kind) {
+    let line = `DEVICE: ${continuity.describeDevice(dev)}${dev.kind === 'phone' ? ' -- keep replies short' : ''}`;
+    if (!safe && sess && sess.device && dev.id && sess.device.id !== dev.id && history.length) {
+      line += `. This conversation began on their ${continuity.describeDevice(sess.device)}; they have picked it up here.`;
+    }
+    parts.push(line);
+  }
   if (o.pending && o.pending.question) {
     parts.push(`YOU ASKED: "${String(o.pending.question).slice(0, 300)}" (about pressing ${String(o.pending.ref || '')} "${String(o.pending.label || '').slice(0, 80)}"). Their answer is below; press it with confirmed: true only if it is a clear yes.`);
   }
   if (o.auto) {
     parts.push('(The page changed after your last action. Nobody has spoken; carry on with what you were doing, or say what you see and ask what they would like.)');
   } else if (userText) {
-    parts.push(`CUSTOMER${spoken ? ' (spoken)' : ''}: ${userText}`);
+    parts.push(`CUSTOMER${spoken ? ' (spoken)' : ''}: ${useDeepSeek ? llm.redact(userText) : userText}`);
   } else {
     parts.push('(The customer opened the assistant and has not said anything yet. Greet them in one sentence and offer help with what this page is for.)');
   }
@@ -352,7 +416,7 @@ async function runTurn(o) {
 
   while (calls < MAX_MODEL_CALLS) {
     calls += 1;
-    const { message } = await bedrock.chat({ messages, tools: TOOLS, temperature: TEMPERATURE });
+    const { message } = await think({ messages, tools, temperature: TEMPERATURE });
     const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
     if (message.content) say = String(message.content).trim();
     if (!toolCalls.length) break;
@@ -396,6 +460,9 @@ async function runTurn(o) {
         } else if (name === 'account') {
           result = await accountSummary(customer);
           found.push({ tool: 'account', result });
+        } else if (name === 'projects') {
+          result = await continuity.projects(customer);
+          found.push({ tool: 'projects', result });
         } else if (name === 'remember') {
           const facts = Array.isArray(args.facts) ? args.facts : [];
           newFacts.push(...facts);
@@ -420,7 +487,7 @@ async function runTurn(o) {
         // One more short call for the words to say while it happens.
         messages.push({ role: 'user', content: `(In one short, natural sentence${lang === 'bn' ? ' in Bangla' : ''}, tell the customer what you are doing now. No tools.)` });
         try {
-          const { message: m2 } = await bedrock.chat({ messages, tools: [], maxTokens: 160, temperature: TEMPERATURE });
+          const { message: m2 } = await think({ messages, tools: [], maxTokens: 160, temperature: TEMPERATURE });
           say = String(m2.content || '').trim();
         } catch {
           say = '';
@@ -459,13 +526,14 @@ async function runTurn(o) {
   if (!say && !actions.length) say = SORRY[lang];
   say = tidy(say, Boolean(o.voice));
   const done = !actions.some((a) => a.type === 'navigate' || (a.type === 'click' && !a.confirm));
-  console.log(`[ai] turn ${lang} ${Date.now() - clock.start}ms: hear ${clock.hear}, act ${clock.act} (${calls} call${calls === 1 ? '' : 's'}${found.length ? `, ${found.map((f) => f.tool).join('+')}` : ''}), talk ${clock.talk}`);
+  console.log(`[ai] turn ${lang} ${useDeepSeek ? (safe ? 'deepseek-safe' : 'deepseek') : 'bedrock'} ${Date.now() - clock.start}ms: hear ${clock.hear}, act ${clock.act} (${calls} call${calls === 1 ? '' : 's'}${found.length ? `, ${found.map((f) => f.tool).join('+')}` : ''}), talk ${clock.talk}`);
 
   if (signedIn) {
     const entries = [];
     if (userText && !o.auto) entries.push({ role: 'user', content: userText });
     if (say) entries.push({ role: 'assistant', content: say });
-    await appendHistory(customer, entries);
+    await appendHistory(customer, entries, sess);
+    await continuity.touch(sess, { userText: o.auto ? '' : userText, pageUrl: o.page && o.page.url }).catch(() => {});
     if (newFacts.length || memory.length) await writeMemory(customer, memory);
   }
 
@@ -477,6 +545,7 @@ async function runTurn(o) {
     done,
     pending: asking ? { ref: asking.ref, label: asking.label, question: asking.confirm } : null,
     memory: signedIn ? undefined : memory,
+    session: sess ? sess.public_id : undefined,
     // The words to speak, signed so /ai/speak says these and nothing else.
     // Absent when the voice is off or resting: the browser speaks instead.
     speak: o.voice && voice.available() ? {

@@ -1,7 +1,11 @@
 /* Vesopa AI — the chat dock.
  *
- * Talks to /api/ai, which holds the Grok credential and streams the answer
- * back as Server-Sent Events. Nothing here knows the key exists.
+ * Talks to /api/ai, which holds the model keys and streams the answer back as
+ * Server-Sent Events. Nothing here knows a key exists.
+ *
+ * Conversations are kept on the server so a reload, or coming back tomorrow,
+ * carries on. This browser holds only two random values: a visitor key and the
+ * id of the open conversation. Nothing identifies the visitor.
  *
  * The dock only mounts if the server says the assistant is configured. A chat
  * button that opens onto an error is worse than no chat button, and the site
@@ -38,6 +42,7 @@ export async function mountAI() {
       <div class="ai-grip" role="separator" aria-label="Resize" title="Drag to resize"></div>
       <header class="ai-head">
         <span class="ai-title"><i aria-hidden="true"></i>Vesopa AI</span>
+        <button class="ai-new" type="button" title="Start a new conversation">New chat</button>
         <button class="ai-x" type="button" aria-label="Close Vesopa AI">
           <span aria-hidden="true">&times;</span><span class="ai-x-lbl">Close</span>
         </button>
@@ -49,7 +54,7 @@ export async function mountAI() {
                aria-label="Ask Vesopa AI" maxlength="1500">
         <button class="ai-send" type="submit" aria-label="Send">→</button>
       </form>
-      <p class="ai-foot">Grok 4.3. It can be wrong — check anything that matters.</p>
+      <p class="ai-foot">It can be wrong — check anything that matters. Kept 30 days. <button class="ai-forget" type="button">Forget this chat</button></p>
     </section>`;
   document.body.appendChild(root);
 
@@ -61,9 +66,23 @@ export async function mountAI() {
   const input = root.querySelector(".ai-in");
   const closeBtn = root.querySelector(".ai-x");
 
-  /** The transcript we replay to the server. System role never appears here. */
-  const history = [];
+  /** The transcript as shown. The server keeps its own copy; this is for older servers and storage-less browsers. */
+  let history = [];
   let busy = false;
+
+  /* Two random values in this browser's own storage, and nothing else. */
+  const KEY_VISITOR = "vesopa.ai.visitor";
+  const KEY_SESSION = "vesopa.ai.session";
+  const randomId = () => {
+    const b = new Uint8Array(16);
+    crypto.getRandomValues(b);
+    return btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  };
+  const stored = (k) => { try { return localStorage.getItem(k) || ""; } catch { return ""; } };
+  const keep = (k, v) => { try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch { /* storage off */ } };
+  let visitor = stored(KEY_VISITOR);
+  if (!visitor) { visitor = randomId(); keep(KEY_VISITOR, visitor); }
+  let session = stored(KEY_SESSION);
 
   function bubble(role, text = "") {
     const el = document.createElement("div");
@@ -87,8 +106,68 @@ export async function mountAI() {
     sugg.hidden = false;
   }
 
+  function fresh() {
+    log.innerHTML = "";
+    history = [];
+    session = "";
+    keep(KEY_SESSION, "");
+    bubble("bot", GREETING);
+    showSuggestions();
+  }
   bubble("bot", GREETING);
   showSuggestions();
+
+  /** Pick up the open conversation, or offer to carry on the last one. */
+  (async () => {
+    try {
+      const qs = new URLSearchParams({ visitor, session: stored(KEY_SESSION) });
+      const r = await fetch("/api/ai/sessions?" + qs, { headers: { Accept: "application/json" } });
+      const data = r.ok ? await r.json() : null;
+      if (!data) return;
+      if (data.current && data.current.transcript && data.current.transcript.length) {
+        session = data.current.id;
+        keep(KEY_SESSION, session);
+        log.innerHTML = "";
+        sugg.hidden = true;
+        history = data.current.transcript.slice();
+        for (const m of history) bubble(m.role === "user" ? "you" : "bot", m.content);
+        return;
+      }
+      const last = (data.sessions || [])[0];
+      if (last) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "ai-chip ai-resume";
+        b.textContent = "Carry on: " + last.title;
+        b.addEventListener("click", () => { keep(KEY_SESSION, last.id); resume(last.id); });
+        sugg.prepend(b);
+      }
+    } catch { /* offline: start fresh */ }
+  })();
+
+  async function resume(id) {
+    try {
+      const r = await fetch("/api/ai/sessions?" + new URLSearchParams({ visitor, session: id }));
+      const data = r.ok ? await r.json() : null;
+      if (!data || !data.current) return;
+      session = data.current.id;
+      log.innerHTML = "";
+      sugg.hidden = true;
+      history = data.current.transcript.slice();
+      for (const m of history) bubble(m.role === "user" ? "you" : "bot", m.content);
+    } catch { /* leave as it is */ }
+  }
+
+  root.querySelector(".ai-new").addEventListener("click", () => { if (!busy) fresh(); });
+  root.querySelector(".ai-forget").addEventListener("click", async () => {
+    if (busy) return;
+    const id = session;
+    fresh();
+    if (!id) return;
+    try {
+      await fetch("/api/ai/forget", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ visitor, session: id }) });
+    } catch { /* it expires on its own */ }
+  });
 
   function open() {
     panel.hidden = false;
@@ -168,31 +247,52 @@ export async function mountAI() {
   // A window that shrinks under a remembered size has to be honoured too.
   addEventListener("resize", () => { if (store.w) applySize(); }, { passive: true });
 
-  form.addEventListener("submit", async (e) => {
+  form.addEventListener("submit", (e) => {
     e.preventDefault();
     const text = input.value.trim();
     if (!text || busy) return;
-
     input.value = "";
+    ask(text, false);
+  });
+
+  /** "Try again" under the last answer: the same question, asked with a little more thought. */
+  function offerAgain(out, text) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "ai-again";
+    b.textContent = "Try again";
+    b.addEventListener("click", () => {
+      if (busy) return;
+      b.remove();
+      out.remove();
+      history.pop();
+      ask(text, true, true);
+    });
+    out.after(b);
+  }
+
+  async function ask(text, again, reuseBubble) {
     sugg.hidden = true;
     busy = true;
     form.classList.add("busy");
+    for (const old of log.querySelectorAll(".ai-again")) old.remove();
 
-    bubble("you", text);
-    history.push({ role: "user", content: text });
+    if (!reuseBubble) {
+      bubble("you", text);
+      history.push({ role: "user", content: text });
+    }
 
     const out = bubble("bot");
     out.classList.add("thinking");
-    // Grok 4.3 reasons before it emits anything, so there is a real pause
-    // between asking and the first character. Say something during it.
     out.innerHTML = '<i class="ai-dots"><b></b><b></b><b></b></i>';
 
     let answer = "";
+    let failed = false;
     try {
       const res = await fetch("/api/ai", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: history }),
+        body: JSON.stringify({ visitor, session: session || undefined, text, again, messages: history }),
       });
 
       if (!res.ok || !res.body) throw new Error("upstream " + res.status);
@@ -215,7 +315,10 @@ export async function mountAI() {
             const p = line.slice(5).trim();
             if (!p || p === "[DONE]") continue;
             try {
-              const t = JSON.parse(p).t;
+              const msg = JSON.parse(p);
+              if (msg.session) { session = msg.session; keep(KEY_SESSION, session); }
+              if (msg.error) failed = true;
+              const t = msg.t;
               if (!t) continue;
               if (!answer) out.classList.remove("thinking");
               answer += t;
@@ -227,7 +330,13 @@ export async function mountAI() {
       }
 
       if (!answer) throw new Error("empty");
-      history.push({ role: "assistant", content: answer });
+      if (failed) {
+        out.classList.add("bad");
+        history.pop();
+      } else {
+        history.push({ role: "assistant", content: answer });
+        if (!again) offerAgain(out, text);
+      }
     } catch {
       out.classList.remove("thinking");
       out.classList.add("bad");
@@ -240,7 +349,7 @@ export async function mountAI() {
       form.classList.remove("busy");
       log.scrollTop = log.scrollHeight;
     }
-  });
+  }
 
   return { open, close, el: root };
 }

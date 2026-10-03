@@ -1664,5 +1664,61 @@ CREATE TABLE IF NOT EXISTS ai_messages (
   CONSTRAINT fk_ai_messages_customer FOREIGN KEY (customer_id) REFERENCES customers (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+-- ---------------------------------------------------------------------------
+-- Vesopa AI, 2026-10-03: conversations, devices and Studio drafts.
+--
+-- ai_devices   a browser the customer uses, recognised by a random key the
+--              widget keeps in that browser (only its SHA-256 is stored).
+--              It never signs anybody in or skips a check; it lets the
+--              assistant say "you started this on your laptop" and keep
+--              replies short on a phone.
+-- ai_sessions  one conversation. The assistant carries on the newest one on
+--              any device until the customer starts a new chat.
+-- ai_studio_drafts  the Vesopa Studio site a signed-in customer is working
+--              on, so it follows them to another device instead of living
+--              only in one browser's storage.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS ai_devices (
+  id           INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  customer_id  INT UNSIGNED NOT NULL,
+  key_hash     CHAR(64) CHARACTER SET ascii NOT NULL,
+  kind         VARCHAR(12) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  platform     VARCHAR(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  browser      VARCHAR(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  first_seen   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  last_seen    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_ai_devices (customer_id, key_hash),
+  CONSTRAINT fk_ai_devices_customer FOREIGN KEY (customer_id) REFERENCES customers (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE IF NOT EXISTS ai_sessions (
+  id           INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  public_id    CHAR(22) CHARACTER SET ascii NOT NULL,
+  customer_id  INT UNSIGNED NOT NULL,
+  device_id    INT UNSIGNED NULL,
+  title        VARCHAR(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  last_page    VARCHAR(300) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_ai_sessions_public (public_id),
+  KEY idx_ai_sessions_customer (customer_id, updated_at),
+  CONSTRAINT fk_ai_sessions_customer FOREIGN KEY (customer_id) REFERENCES customers (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CALL vesopa_add_column('ai_messages', 'session_id', 'INT UNSIGNED NULL AFTER customer_id');
+
+CREATE TABLE IF NOT EXISTS ai_studio_drafts (
+  customer_id  INT UNSIGNED NOT NULL,
+  name         VARCHAR(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  site         MEDIUMTEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  history      MEDIUMTEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL,
+  device_id    INT UNSIGNED NULL,
+  updated_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (customer_id),
+  CONSTRAINT fk_ai_studio_drafts_customer FOREIGN KEY (customer_id) REFERENCES customers (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
 CALL vesopa_fix_collations();
 DROP PROCEDURE IF EXISTS vesopa_fix_collations;

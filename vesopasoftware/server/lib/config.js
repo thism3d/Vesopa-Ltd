@@ -50,21 +50,18 @@ export const config = {
   currency: process.env.CURRENCY || "GBP",
   taxRate: num(process.env.TAX_RATE, 0),
 
-  /* Vesopa AI — Grok 4.3 on Azure AI Foundry.
-     The key is read here and never leaves the server: the marketing site talks
-     to /api/ai, which holds the credential and forwards the conversation. A
-     browser-side key on a static page is a key anyone can lift from view-source
-     and spend. `enabled` is false when no key is configured, and the dock
-     simply does not mount rather than erroring at whoever clicks it. */
+  /* Vesopa AI — DeepSeek, with Gemini as the backup (lib/vesopa_ai.cjs).
+     The keys are read here and never leave the server: the marketing site
+     talks to /api/ai, which holds them. `enabled` is false when neither key is
+     configured, and the dock simply does not mount. DEEPSEEK_API_KEY is this
+     site's own key (named "VesopaSoftware" in the DeepSeek console, so its
+     usage shows separately from Vesopa Cloud's). */
   ai: {
-    enabled: Boolean(process.env.AZURE_AI_KEY),
-    endpoint: (process.env.AZURE_AI_ENDPOINT || "").replace(/\/$/, ""),
-    key: process.env.AZURE_AI_KEY || "",
-    // The Azure *deployment* name, which is not always the model name. This
-    // resource lists it as `grok-4.3`; asking for `grok-4-fast-reasoning`
-    // returns 404 DeploymentNotFound with a perfectly valid key.
-    model: process.env.AZURE_AI_MODEL || "grok-4.3",
-    apiVersion: process.env.AZURE_AI_API_VERSION || "2024-10-21",
+    enabled: Boolean(process.env.DEEPSEEK_API_KEY || process.env.GEMINI_API_KEY),
+    deepseekKey: process.env.DEEPSEEK_API_KEY || "",
+    geminiKey: process.env.GEMINI_API_KEY || "",
+    dailyCapUsd: num(process.env.AI_DAILY_CAP_USD, 1),
+    logDir: process.env.AI_USAGE_DIR || path.join(ROOT, "logs"),
   },
 };
 

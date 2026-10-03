@@ -82,6 +82,7 @@
 
   // ---- State ------------------------------------------------------------
   var store = load();
+  save(); // keeps the device key from the first visit on
   var session = { enabled: false, signedIn: false, name: '', token: '' };
   var state = 'idle';
   var shape = 'orb';        // orb | chat
@@ -113,10 +114,21 @@
         seen: Boolean(s.seen),
         cont: Number(s.cont) || 0,         // a job in progress across a full page load
         hops: Number(s.hops) || 0,         // how many automatic turns that job has taken
+        // A random key for this browser, so a signed-in customer's devices can be
+        // told apart ("you started this on your laptop"). It never signs anyone in.
+        device: typeof s.device === 'string' && /^[A-Za-z0-9_-]{16,64}$/.test(s.device) ? s.device : randomKey(),
+        session: typeof s.session === 'string' ? s.session : '', // the conversation this browser has open
       };
     } catch (e) {
-      return { voice: true, shape: 'orb', lang: browserLang(), memory: [], history: [], seen: false, cont: 0, hops: 0 };
+      return { voice: true, shape: 'orb', lang: browserLang(), memory: [], history: [], seen: false, cont: 0, hops: 0, device: randomKey(), session: '' };
     }
+  }
+  function randomKey() {
+    var b = new Uint8Array(18);
+    (window.crypto || window.msCrypto).getRandomValues(b);
+    var s = '';
+    for (var i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);
+    return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   }
   function browserLang() { return /^bn/i.test(navigator.language || '') ? 'bn' : 'en'; }
   function save() {
@@ -136,6 +148,7 @@
   // ---- Words, in English and Bangla -------------------------------------------
   var WORDS = {
     en: {
+      newChat: 'New chat', newChatDone: 'New conversation. What can I do for you?',
       idle: 'Ready', listening: 'Listening…', hearing: 'Hearing you…', thinking: 'Thinking…', working: 'Working on the page…', speaking: 'Speaking',
       askingMic: 'Asking for the microphone…', letGo: 'Listening… let go to send',
       placeholder: 'Ask, or say what you want done…',
@@ -163,6 +176,7 @@
       chatHello: 'Hi, I’m Vesopa AI. Ask me about domains, hosting, email or your website — or tell me what you’d like done and I’ll do the clicking for you.',
     },
     bn: {
+      newChat: 'নতুন চ্যাট', newChatDone: 'নতুন কথোপকথন। কী করতে পারি বলুন?',
       idle: 'প্রস্তুত', listening: 'শুনছি…', hearing: 'শুনতে পাচ্ছি…', thinking: 'ভাবছি…', working: 'পেজে কাজ করছি…', speaking: 'বলছি',
       askingMic: 'মাইক্রোফোনের অনুমতি চাইছি…', letGo: 'শুনছি… ছেড়ে দিলে পাঠাব',
       placeholder: 'জিজ্ঞেস করুন, বা বলুন কী করতে চান…',
@@ -276,6 +290,7 @@
         '<button class="vai-ic vai-lang" type="button"></button>' +
         '<button class="vai-ic vai-t-live" type="button" aria-pressed="false">' + ICON.ear + '</button>' +
         '<button class="vai-ic vai-t-voice" type="button" title="Speak replies" aria-label="Speak replies" aria-pressed="false">' + ICON.speaker + '</button>' +
+        '<button class="vai-ic vai-new" type="button" hidden>+</button>' +
         '<button class="vai-ic vai-t-min" type="button" title="Minimise" aria-label="Minimise">' + ICON.min + '</button>' +
       '</div>' +
       '<div class="vai-body"></div>' +
@@ -297,6 +312,22 @@
     ui.tVoice = p.querySelector('.vai-t-voice');
     ui.headLang = p.querySelector('.vai-lang');
     ui.headLang.addEventListener('click', toggleLang);
+    // New chat: signed-in customers keep conversations on the server, so the
+    // next turn starts a fresh one there. The old one stays, to carry on later.
+    ui.newChat = p.querySelector('.vai-new');
+    ui.newChat.hidden = !session.signedIn;
+    ui.newChat.title = T('newChat');
+    ui.newChat.setAttribute('aria-label', T('newChat'));
+    ui.newChat.addEventListener('click', function () {
+      if (busy) return;
+      session.fresh = true;
+      session.current = '';
+      session.history = [];
+      store.session = '';
+      save();
+      ui.body.innerHTML = '';
+      bubble('ai', T('newChatDone'));
+    });
 
     p.querySelector('.vai-t-min').addEventListener('click', minimise);
     ui.send.addEventListener('click', sendTyped);
@@ -1330,6 +1361,9 @@
       page: snapshot(),
       pending: (o.text || o.audio) && wasPending ? { ref: wasPending.ref, label: wasPending.label, question: wasPending.question } : null,
       local: session.signedIn ? null : { memory: store.memory, history: store.history.slice(-24) },
+      device: store.device,
+      session: session.current || store.session || '',
+      fresh: Boolean(session.fresh),
     };
     var out;
     try {
@@ -1347,6 +1381,11 @@
       return;
     }
     ears.serverFails = 0;
+    if (data.session) {
+      session.current = data.session;
+      session.fresh = false;
+      if (store.session !== data.session) { store.session = data.session; save(); }
+    }
     if (data.silence) { busy = false; setState(restState()); resumeEars(); return; }
     // The server heard or read Bengali: the switch follows it.
     if (data.lang) setLang(data.lang, false);
@@ -1373,7 +1412,7 @@
 
   // ---- Session --------------------------------------------------------------------
   async function refreshSession() {
-    var res = await fetch('/ai/session', { credentials: 'same-origin' });
+    var res = await fetch('/ai/session?device=' + encodeURIComponent(store.device) + '&session=' + encodeURIComponent(store.session || ''), { credentials: 'same-origin' });
     var data = await res.json();
     session.enabled = Boolean(data.enabled);
     session.signedIn = Boolean(data.signed_in);
@@ -1384,6 +1423,9 @@
     session.phrases = data.phrases || null;
     session.history = data.history || session.history || [];
     session.memory = data.memory || session.memory || [];
+    session.sessions = data.sessions || [];
+    if (data.session) { session.current = data.session; if (store.session !== data.session) { store.session = data.session; save(); } }
+    if (ui.newChat) ui.newChat.hidden = !session.signedIn;
   }
   async function importLocal() {
     if (!session.signedIn) return;

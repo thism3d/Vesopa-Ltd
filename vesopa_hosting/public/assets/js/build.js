@@ -134,8 +134,57 @@
   var turn = null;        // the turn in flight: {partial: {id: previousHtml|null}, removed: {id: index}, steps}
 
   function save() {
-    try { localStorage.setItem(STORE, JSON.stringify({ site: state.site, history: state.history.slice(-30), lang: state.lang })); } catch (e) { /* private mode */ }
+    try { localStorage.setItem(STORE, JSON.stringify({ site: state.site, history: state.history.slice(-30), lang: state.lang, at: Date.now() })); } catch (e) { /* private mode */ }
     $('[data-saved]').textContent = state.site.sections.length ? T('savedHere') : '';
+    syncDraft();
+  }
+
+  /*
+   * THE DRAFT FOLLOWS A SIGNED-IN CUSTOMER. This browser keeps its copy as
+   * before; a signed-in customer's is also kept on the server (/ai/build/draft)
+   * so Studio opens with it on their phone, their laptop, anywhere. Whichever
+   * copy is newer wins when Studio opens. The device key is the one the
+   * Vesopa AI widget keeps in this browser, so both name the same device.
+   */
+  var draftSync = { timer: null, last: '', signedIn: false };
+  function deviceKey() {
+    try {
+      var s = JSON.parse(localStorage.getItem('vesopa_ai_v1') || '{}') || {};
+      if (!/^[A-Za-z0-9_-]{16,64}$/.test(s.device || '')) {
+        var b = new Uint8Array(18); crypto.getRandomValues(b);
+        var r = ''; for (var i = 0; i < b.length; i++) r += String.fromCharCode(b[i]);
+        s.device = btoa(r).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        localStorage.setItem('vesopa_ai_v1', JSON.stringify(s));
+      }
+      return s.device;
+    } catch (e) { return ''; }
+  }
+  function syncDraft() {
+    if (!draftSync.signedIn) return;
+    clearTimeout(draftSync.timer);
+    draftSync.timer = setTimeout(async function () {
+      var body = JSON.stringify({ site: state.site, history: state.history.slice(-30) });
+      if (body === draftSync.last) return;
+      try {
+        var res = await postJSON('/ai/build/draft', { site: state.site, history: state.history.slice(-30), device: deviceKey() });
+        if (res.ok) draftSync.last = body;
+      } catch (e) { /* next save tries again */ }
+    }, 1500);
+  }
+  async function pullDraft() {
+    var d = null;
+    try { d = await (await fetch('/ai/build/draft', { credentials: 'same-origin' })).json(); } catch (e) { return false; }
+    draftSync.signedIn = Boolean(d && d.signedIn);
+    var draft = d && d.draft;
+    if (!draft || !draft.site || !Array.isArray(draft.site.sections)) return false;
+    var serverAt = new Date(draft.updated_at).getTime() || 0;
+    var localAt = Number(saved.at) || 0;
+    if (state.site.sections.length && localAt >= serverAt) return false;
+    state.site = draft.site;
+    state.history = Array.isArray(draft.history) ? draft.history.slice(-30) : [];
+    draftSync.last = JSON.stringify({ site: state.site, history: state.history.slice(-30) });
+    try { localStorage.setItem(STORE, JSON.stringify({ site: state.site, history: state.history, lang: state.lang, at: serverAt })); } catch (e) { /* private mode */ }
+    return true;
   }
   function csrf() { var m = document.cookie.match(/(?:^|; )vh_csrf=([^;]*)/); return m ? decodeURIComponent(m[1]) : ''; }
   function headers() { return { 'content-type': 'application/json', 'x-csrf-token': csrf(), 'x-ai-token': state.token }; }
@@ -1045,6 +1094,8 @@
     var token = refreshToken();
     await frameReady();
     bindFrame();
+    // A newer draft from another device replaces this browser's copy.
+    if (await pullDraft()) select(null);
     renderAll();
     // After the token, not before: sent without one, every section's request
     // came back 401 and went again, two round trips each on every reload.

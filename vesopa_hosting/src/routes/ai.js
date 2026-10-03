@@ -46,6 +46,7 @@ const { rateLimited } = require('../http-utils');
 const agent = require('../ai/agent');
 const bedrock = require('../ai/bedrock');
 const studio = require('../builder/agent');
+const continuity = require('../ai/continuity');
 const studioKit = require('../builder/kit');
 const studioPublish = require('../builder/publish');
 const studioPhotos = require('../builder/photos');
@@ -129,7 +130,20 @@ router.get('/session', async (req, res) => {
   };
   if (customer) {
     out.memory = await agent.readMemory(customer);
-    out.history = (await agent.readHistory(customer)).slice(-16);
+    // The conversation to carry on (the one this browser had open, else the
+    // newest), without starting one: a session is made by the first turn.
+    let sess = null;
+    try {
+      const dev = await continuity.device(customer, req.query.device, req.get('user-agent'));
+      if (req.query.session || await db.one('SELECT id FROM ai_sessions WHERE customer_id = ? LIMIT 1', [customer.id])) {
+        sess = await continuity.session(customer, { wanted: req.query.session, dev });
+      }
+      out.sessions = await continuity.list(customer);
+    } catch (err) {
+      console.error('[ai] sessions unavailable:', err.message);
+    }
+    out.session = sess ? sess.public_id : null;
+    out.history = (await agent.readHistory(customer, sess)).slice(-16);
   }
   res.json(out);
 });
@@ -156,8 +170,21 @@ router.post('/turn', async (req, res) => {
   if (!audio && !text.trim() && !body.auto && !body.greet) return res.status(400).json({ error: 'Nothing to answer.' });
 
   try {
+    // This browser and this conversation (signed in), or just the kind of device (a visitor).
+    let device = continuity.deviceOf(req.get('user-agent'));
+    let session = null;
+    if (req.customer) {
+      try {
+        device = (await continuity.device(req.customer, body.device, req.get('user-agent'))) || device;
+        session = await continuity.session(req.customer, { wanted: body.session, fresh: Boolean(body.fresh), dev: device.id ? device : null });
+      } catch (err) {
+        console.error('[ai] continuity unavailable:', err.message);
+      }
+    }
     const result = await agent.runTurn({
       customer: req.customer || null,
+      device,
+      session,
       currency: req.currency,
       text,
       spoken: Boolean(body.spoken) && Boolean(text),
@@ -204,6 +231,18 @@ router.post('/speak', async (req, res) => {
   }
 });
 
+/** "Forget this conversation": its messages go with it. */
+router.post('/forget', async (req, res) => {
+  if (!req.customer) return res.status(401).json({ error: 'Not signed in.' });
+  try {
+    await continuity.forget(req.customer, String((req.body && req.body.session) || ''));
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[ai] forget failed:', err.message);
+    res.status(500).json({ error: 'Could not forget that.' });
+  }
+});
+
 router.post('/import', async (req, res) => {
   if (!req.customer) return res.status(401).json({ error: 'Not signed in.' });
   const body = req.body || {};
@@ -215,9 +254,11 @@ router.post('/import', async (req, res) => {
       await agent.writeMemory(req.customer, agent.mergeFacts(existing, memory));
     }
     if (history.length) {
-      const have = await agent.readHistory(req.customer);
+      let sess = null;
+      try { sess = await continuity.session(req.customer, {}); } catch { /* no sessions table yet */ }
+      const have = await agent.readHistory(req.customer, sess);
       if (!have.length) {
-        await agent.appendHistory(req.customer, history.filter((h) => h && (h.role === 'user' || h.role === 'assistant') && h.content));
+        await agent.appendHistory(req.customer, history.filter((h) => h && (h.role === 'user' || h.role === 'assistant') && h.content), sess);
       }
     }
     res.json({ ok: true });
@@ -384,6 +425,38 @@ router.get('/build/source', async (req, res) => {
     res.json({ site });
   } catch (err) {
     studioError(req, res, err, 'source');
+  }
+});
+
+/*
+ * The Studio draft of a signed-in customer, kept here so it follows them to
+ * another device. The browser still keeps its own copy; whichever is newer
+ * wins when Studio opens.
+ */
+router.get('/build/draft', async (req, res) => {
+  if (!req.customer) return res.json({ signedIn: false });
+  try {
+    const draft = await continuity.readDraft(req.customer);
+    res.json({ signedIn: true, draft });
+  } catch (err) {
+    console.error('[studio] draft read failed:', err.message);
+    res.json({ signedIn: true, draft: null });
+  }
+});
+
+router.post('/build/draft', async (req, res) => {
+  if (!req.customer) return res.status(401).json({ error: 'Not signed in.' });
+  const site = studioSite(req);
+  if (!site) return res.status(413).json({ error: 'Too large.' });
+  try {
+    const dev = await continuity.device(req.customer, req.body.device, req.get('user-agent')).catch(() => null);
+    const kept = site.sections && site.sections.length
+      ? await continuity.writeDraft(req.customer, { site, history: req.body.history, dev })
+      : (await continuity.clearDraft(req.customer), true);
+    res.json({ ok: kept });
+  } catch (err) {
+    console.error('[studio] draft save failed:', err.message);
+    res.status(500).json({ error: 'Not saved.' });
   }
 });
 

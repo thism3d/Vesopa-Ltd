@@ -205,7 +205,21 @@ const AI = {
   // let the task model speak for itself, as it did at first.
   TALK_MODEL: process.env.AI_TALK_MODEL !== undefined ? process.env.AI_TALK_MODEL : 'qwen.qwen3-235b-a22b-2507',
   // Vesopa Studio's designer (src/builder/agent.js): writes the HTML, streamed.
+  // Used only when DeepSeek is not configured.
   STUDIO_MODEL: process.env.AI_STUDIO_MODEL || 'qwen.qwen3-coder-next',
+  /*
+   * DeepSeek, by the Vesopa model policy (src/ai/llm.js, shared/ai-client):
+   * Studio and every assistant turn without personal data. DEEPSEEK_API_KEY
+   * is the "VesopaCloud" key in the DeepSeek console. GEMINI_API_KEY is the
+   * backup when DeepSeek is down; the TTS key is a Gemini key too, so it
+   * stands in when no separate one is set. Every call is logged (counts and
+   * cost, never words) to logs/ai-usage/ai-usage-YYYY-MM-DD.jsonl, and
+   * DeepSeek spending stops for the day at AI_DAILY_CAP_USD.
+   */
+  DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY || '',
+  GEMINI_API_KEY: process.env.GEMINI_API_KEY || process.env.AI_TTS_API_KEY || '',
+  DAILY_CAP_USD: process.env.AI_DAILY_CAP_USD !== undefined ? Number(process.env.AI_DAILY_CAP_USD) || 0 : 3,
+  USAGE_DIR: process.env.AI_USAGE_DIR || '',
   // The assistant's own voice (Gemini's text-to-speech). Voices are Gemini's
   // prebuilt names; each speaks both English and Bangla.
   TTS_API_KEY: process.env.AI_TTS_API_KEY || '',

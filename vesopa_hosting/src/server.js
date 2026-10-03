@@ -9,9 +9,11 @@ const cookieParser = require('cookie-parser');
 const { createActivityLog } = require('./activity_log');
 
 const config = require('./config');
-// Vesopa AI and Vesopa Studio: a key must be configured AND AI_FEATURES not
-// switched off. Decided once, so the routes and every link agree.
-const STUDIO_MOUNTED = require('./ai/bedrock').ENABLED && config.AI.FEATURES_ON;
+// Vesopa AI and Vesopa Studio: a model must be configured (DeepSeek, its
+// Gemini backup, or Bedrock) AND AI_FEATURES not switched off. Decided once,
+// so the routes and every link agree.
+const AI_CONFIGURED = Boolean(require('./ai/bedrock').ENABLED || require('./ai/llm').enabled());
+const STUDIO_MOUNTED = AI_CONFIGURED && config.AI.FEATURES_ON;
 const db = require('./db');
 const { verifyMail } = require('./mailer');
 const auth = require('./auth');
@@ -303,7 +305,7 @@ app.use(async (req, res, next) => {
   // because what they mean depends on who is asking.
   res.locals.nameservers = config.NAMESERVERS;
   // Whether the Vesopa AI widget is drawn (partials/head.ejs, footer.ejs).
-  res.locals.aiEnabled = Boolean(config.AI.API_KEY) && config.AI.FEATURES_ON;
+  res.locals.aiEnabled = AI_CONFIGURED && config.AI.FEATURES_ON;
   // Whether Vesopa Studio is linked (header, panel rail, phone sheet): only
   // when its routes are actually mounted below.
   res.locals.studioEnabled = STUDIO_MOUNTED;

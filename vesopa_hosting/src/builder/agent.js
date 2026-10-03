@@ -22,6 +22,7 @@
 
 const config = require('../config');
 const kit = require('./kit');
+const llm = require('../ai/llm');
 
 const MAX_OUTPUT_TOKENS = 9000;
 
@@ -261,16 +262,106 @@ function createParser(site, emit, known = '') {
 /**
  * One turn, streamed. `emit` receives each event; resolves with what was said.
  */
+/*
+ * CONTACT DETAILS NEVER LEAVE FOR DEEPSEEK. The customer's phone number and
+ * email belong on their site, but DeepSeek runs in China and Vesopa's rule is
+ * that personal data never goes there. So before the request is built, each
+ * real email address becomes contact1@example.com and each real phone number
+ * a 070000 000 0NN stand-in, everywhere the model will read them (the site so
+ * far, the conversation, this message). The model writes the stand-ins into
+ * its HTML like any other number; guardFacts accepts them because they are
+ * in what it was told; and every event is turned back to the real details on
+ * its way to the browser. The same masking is harmless on Bedrock, so it is
+ * always on.
+ */
+const MASK_EMAIL = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
+const MASK_PHONE = /\+?\d[\d ()-]{8,}\d/g;
+
+function contactMask(texts) {
+  const emails = new Map();
+  const phones = new Map();
+  const all = texts.join('\n');
+  for (const m of all.match(MASK_EMAIL) || []) {
+    const k = m.toLowerCase();
+    if (k.endsWith('@example.com') || emails.has(k)) continue;
+    emails.set(k, { real: m, token: `contact${emails.size + 1}@example.com` });
+  }
+  for (const m of all.match(MASK_PHONE) || []) {
+    const d = m.replace(/\D/g, '');
+    if (d.length < 10 || d.length > 13 || phones.has(d) || /^0700000000/.test(d)) continue;
+    const n = String(phones.size + 1).padStart(2, '0');
+    phones.set(d, { real: m.trim(), digits: d, token: `07000 0000${n}`, tokenDigits: `070000000${n}` });
+  }
+  const mask = (s) => String(s == null ? '' : s)
+    .replace(MASK_EMAIL, (m) => (emails.get(m.toLowerCase()) || { token: m }).token)
+    .replace(MASK_PHONE, (m) => { const p = phones.get(m.replace(/\D/g, '')); return p ? p.token : m; });
+  const unmask = (s) => {
+    let out = String(s == null ? '' : s);
+    for (const e of emails.values()) out = out.split(e.token).join(e.real);
+    for (const p of phones.values()) out = out.split(p.token).join(p.real).split(p.tokenDigits).join(p.digits);
+    return out;
+  };
+  const maskSite = (site) => {
+    const s = kit.normalise(site);
+    return { ...s, name: mask(s.name), sections: s.sections.map((sec) => ({ ...sec, html: mask(sec.html) })) };
+  };
+  return { mask, unmask, maskSite, any: emails.size + phones.size > 0 };
+}
+
+/** The same event with the real contact details back in. */
+function unmaskEvent(event, unmask) {
+  const out = { ...event };
+  for (const k of ['html', 'text', 'name']) if (typeof out[k] === 'string') out[k] = unmask(out[k]);
+  return out;
+}
+
 async function runTurn({ site, history, text, spoken, selected, chatLang, emit, signal }) {
+  const recent = Array.isArray(history) ? history : [];
+  const masker = contactMask([
+    String(text || ''),
+    ...recent.map((h) => String((h && h.text) || '')),
+    ...kit.normalise(site).sections.map((sec) => sec.html),
+    String(kit.normalise(site).name || ''),
+  ]);
+  const mSite = masker.maskSite(site);
+  const mHistory = recent.map((h) => (h && h.text ? { ...h, text: masker.mask(h.text) } : h));
+  const mText = masker.mask(text);
+  const messages = [
+    { role: 'system', content: systemPrompt({ chatLang }) },
+    { role: 'user', content: userMessage({ site: mSite, history: mHistory, text: mText, spoken, selected }) },
+  ];
+
+  // What the customer has actually said, and what is already on their site:
+  // the only places a real address or number may come from (masked, like
+  // everything the model sees).
+  const known = [
+    ...mHistory.filter((h) => h && h.role === 'user').map((h) => h.text),
+    mText,
+    ...mSite.sections.map((sec) => sec.html),
+  ].join('\n');
+  const parser = createParser(mSite, (event) => emit(unmaskEvent(event, masker.unmask)), known);
+  let chars = 0;
+
+  if (llm.enabled()) {
+    // DeepSeek, thinking off: first words in about a second, a whole site in
+    // about ten (measured 2026-10-03; thinking "low" took 18s to start).
+    await llm.client.chat({
+      purpose: 'studio',
+      stream: true,
+      signal,
+      messages,
+      onDelta: (delta) => { chars += delta.length; parser.push(delta); },
+    });
+    const said = parser.end();
+    return { ...said, say: masker.unmask(said.say), ask: masker.unmask(said.ask), chars };
+  }
+
   const body = {
     model: config.AI.STUDIO_MODEL,
     stream: true,
     max_tokens: MAX_OUTPUT_TOKENS,
     temperature: 0.6,
-    messages: [
-      { role: 'system', content: systemPrompt({ chatLang }) },
-      { role: 'user', content: userMessage({ site, history, text, spoken, selected }) },
-    ],
+    messages,
   };
   const res = await fetch(`${config.AI.BASE_URL}/chat/completions`, {
     method: 'POST',
@@ -287,17 +378,8 @@ async function runTurn({ site, history, text, spoken, selected, chatLang, emit, 
     throw Object.assign(new Error(`studio model ${res.status}: ${detail}`), { status: res.status });
   }
 
-  // What the customer has actually said, and what is already on their site:
-  // the only places a real address or number may come from.
-  const known = [
-    ...(Array.isArray(history) ? history : []).filter((h) => h && h.role === 'user').map((h) => h.text),
-    text,
-    ...kit.normalise(site).sections.map((sec) => sec.html),
-  ].join('\n');
-  const parser = createParser(site, emit, known);
   const decoder = new TextDecoder();
   let sse = '';
-  let chars = 0;
   for await (const part of res.body) {
     sse += decoder.decode(part, { stream: true });
     let i;
@@ -318,7 +400,7 @@ async function runTurn({ site, history, text, spoken, selected, chatLang, emit, 
     }
   }
   const said = parser.end();
-  return { ...said, chars };
+  return { ...said, say: masker.unmask(said.say), ask: masker.unmask(said.ask), chars };
 }
 
-module.exports = { runTurn, createParser, systemPrompt, userMessage, guardFacts };
+module.exports = { runTurn, createParser, systemPrompt, userMessage, guardFacts, contactMask };
