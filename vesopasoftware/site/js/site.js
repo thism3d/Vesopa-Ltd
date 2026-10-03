@@ -438,8 +438,13 @@ function paintField() {
   // screen, and the field at full strength was crossing both — which is what
   // made the text hard to read. beaconK is already an eased measure of how
   // centred the pinned shot is, so the field recedes and returns with it.
+  // The sections no longer form shapes (each has a line icon instead), so
+  // away from the hero and the closing V the field is atmosphere only: a
+  // faint drift that never competes with the copy or the screenshots.
+  const nearMark = idxA === NS - 1 || idxB === NS - 1;
+  const ambient = nearMark ? 1 : 1 - .62 * clamp01((scrollY - innerHeight * .4) / (innerHeight * .8));
   uni.uOpacity.value = Math.min(.95,
-    BASE_ALPHA * densityBoost * (lightMode ? .85 : 1.0) * (1 - beaconK * 0.5));
+    BASE_ALPHA * densityBoost * (lightMode ? .85 : 1.0) * (1 - beaconK * 0.5) * ambient);
   // How strongly a shape's own colours show. They arrive with the silhouette
   // and are gone by the next section.
   //
