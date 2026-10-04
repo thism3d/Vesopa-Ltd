@@ -1729,7 +1729,7 @@ function expressKioskRoutes({ pool, broadcast, secret }) {
       payment, status, customerName, subtotal, 0, subtotal, tax, JSON.stringify(lines),
     ];
     // Only a membership names the column, so a food order still goes in on a
-    // database that has not had schema_express_memberships.sql yet.
+    // database that has not had schema_till_express_memberships.sql yet.
     if (membership) {
       columns.push('membership_json');
       values.push(JSON.stringify(membership));

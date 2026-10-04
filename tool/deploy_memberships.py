@@ -6,8 +6,9 @@ Run from the repository root on the owner's Windows folder (cloud sessions
 cannot reach port 22). It:
 
   1. back office (backoffice.vesopaepos.com): uploads vesopa_server/src,
-     public and the two new schema files, applies
-     schema_venue_modules.sql and schema_memberships.sql (both re-runnable),
+     public and the three new schema files, applies
+     schema_venue_modules.sql, schema_memberships.sql and
+     schema_till_express_memberships.sql (all re-runnable),
      restarts by name
   2. Metric Membership (metric.vesopa.com): MetricMembership/server/scripts/
      deploy.py --apply, which bundles, runs npm ci, applies its schema and
@@ -29,7 +30,7 @@ import tempfile
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 USER = "vesopasoftware"
 BACKOFFICE = f"/home/{USER}/web/backoffice.vesopaepos.com/private/nodeapp"
-SCHEMAS = ["schema_venue_modules.sql", "schema_memberships.sql"]
+SCHEMAS = ["schema_venue_modules.sql", "schema_memberships.sql", "schema_till_express_memberships.sql"]
 PM2 = f"su - {USER} -c 'PM2_HOME=/home/{USER}/.pm2 pm2 {{}}'"
 
 def load_env_claude():

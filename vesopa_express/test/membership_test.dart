@@ -96,10 +96,22 @@ Future<(ProviderContainer, _FakeApi)> _start(WidgetTester tester, Size size) asy
     child: const ExpressApp(),
   ));
   await tester.pump();
+  // The first frame is the attract screen, which at 540 wide overflows in the
+  // test font (every glyph a square, far wider than Montserrat). It is drawn
+  // with the real fonts in screens_gallery_test.dart; these tests are about
+  // the screens after it.
+  tester.takeException();
   final container = ProviderScope.containerOf(tester.element(find.byType(ExpressApp)));
   container.read(orderFlowProvider.notifier).state = const FlowState(step: FlowStep.orderType);
   await tester.pump(const Duration(milliseconds: 400));
   return (container, api);
+}
+
+/// Scroll to it, then tap it: on a short screen the third answer is below the fold.
+Future<void> _tap(WidgetTester tester, Finder finder) async {
+  await tester.ensureVisible(finder);
+  await tester.pump();
+  await tester.tap(finder);
 }
 
 Future<void> _settle(WidgetTester tester) async {
@@ -113,9 +125,9 @@ void main() {
     final (container, api) = await _start(tester, const Size(1080, 1920));
 
     expect(find.byKey(const ValueKey('choose-memberships')), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('choose-memberships')));
+    await _tap(tester, find.byKey(const ValueKey('choose-memberships')));
     await _settle(tester);
-    await tester.tap(find.byKey(const ValueKey('membership-renew')));
+    await _tap(tester, find.byKey(const ValueKey('membership-renew')));
     await _settle(tester);
 
     for (final d in ['4', '0', '0', '1']) {
@@ -127,7 +139,7 @@ void main() {
 
     expect(find.text('Hello, Ann'), findsOneWidget);
     expect(find.text('Runs to 04/11/2026'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('membership-pay-renew')));
+    await _tap(tester, find.byKey(const ValueKey('membership-pay-renew')));
     await _settle(tester);
 
     expect(api.placed.single, {'kind': 'renew', 'token': 'tok', 'payment': 'card'});
@@ -142,9 +154,9 @@ void main() {
 
   testWidgets('a card nobody holds says so, and nothing is paid for', (tester) async {
     final (_, api) = await _start(tester, const Size(1080, 1920));
-    await tester.tap(find.byKey(const ValueKey('choose-memberships')));
+    await _tap(tester, find.byKey(const ValueKey('choose-memberships')));
     await _settle(tester);
-    await tester.tap(find.byKey(const ValueKey('membership-renew')));
+    await _tap(tester, find.byKey(const ValueKey('membership-renew')));
     await _settle(tester);
     await tester.tap(find.text('9').last);
     await tester.pump();
@@ -158,13 +170,13 @@ void main() {
     testWidgets('join: the plans and the details form fit at ${size.width.toInt()}x${size.height.toInt()}',
         (tester) async {
       final (_, api) = await _start(tester, size);
-      await tester.tap(find.byKey(const ValueKey('choose-memberships')));
+      await _tap(tester, find.byKey(const ValueKey('choose-memberships')));
       await _settle(tester);
-      await tester.tap(find.byKey(const ValueKey('membership-join')));
+      await _tap(tester, find.byKey(const ValueKey('membership-join')));
       await _settle(tester);
       expect(find.text('Gold'), findsOneWidget);
       expect(find.text('£45.00'), findsOneWidget);
-      await tester.tap(find.byKey(const ValueKey('membership-plan-3')));
+      await _tap(tester, find.byKey(const ValueKey('membership-plan-3')));
       await _settle(tester);
       expect(find.byKey(const ValueKey('membership-field-email')), findsOneWidget);
       // Nothing typed yet: nothing to pay.

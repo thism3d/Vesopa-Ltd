@@ -175,12 +175,10 @@ async function main() {
     printer_route varchar(32) DEFAULT NULL, printer_routes varchar(64) DEFAULT NULL,
     UNIQUE KEY uq_bo_products_venue_plu (email, pluid)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3`);
 
-  // Every schema file, in the deploy's order, twice. The first pass also
-  // proves schema_express_memberships.sql (which sorts before the file that
-  // makes epos_express_orders) steps over a table that is not there yet
-  // rather than failing; the second, that it then adds its columns and is
-  // safe to run again.
-  const mustApply = /^schema_(customers|loyalty_schemes|venue_modules|memberships|till_express|express_memberships)\.sql$/;
+  // Every schema file, in the deploy's order, twice: the second pass proves
+  // each is safe to run again. schema_till_express_memberships.sql sorts after
+  // schema_till_express.sql, which makes epos_express_orders.
+  const mustApply = /^schema_(customers|loyalty_schemes|venue_modules|memberships|till_express|till_express_memberships)\.sql$/;
   const files = ['schema.sql', ...fs.readdirSync(path.join(__dirname, '..', 'schema'))
     .filter((f) => /^schema_.*\.sql$/.test(f)).sort()];
   for (let pass = 0; pass < 2; pass++) {

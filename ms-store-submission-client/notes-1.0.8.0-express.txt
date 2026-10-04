@@ -1,0 +1,5 @@
+Version 1.0.8.0 - Memberships at the kiosk
+
+At venues that run memberships, customers can now join or renew at the kiosk. Choose Memberships on the first screen, then scan your card or enter your email or phone with your surname to renew, or pick a plan and enter your details to join. Pay by card as usual, and the thank-you screen shows the date your membership now runs to.
+
+Only your first name, plan and dates are shown on screen, never your contact details.
