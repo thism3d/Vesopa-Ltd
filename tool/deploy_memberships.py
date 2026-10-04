@@ -32,6 +32,28 @@ BACKOFFICE = f"/home/{USER}/web/backoffice.vesopaepos.com/private/nodeapp"
 SCHEMAS = ["schema_venue_modules.sql", "schema_memberships.sql"]
 PM2 = f"su - {USER} -c 'PM2_HOME=/home/{USER}/.pm2 pm2 {{}}'"
 
+def load_env_claude():
+    """Read the server login from .env.claude when .env.claude-tools is absent.
+
+    The SSH helper reads .env.claude-tools; on the owner's PC the login lives in
+    .env.claude. Fills only keys not already set, and never prints a value.
+    """
+    path = ROOT / ".env.claude"
+    if not path.exists():
+        return
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip().removeprefix("export ").strip()
+        os.environ.setdefault(key, value.strip().strip('"').strip("'"))
+    if "VESOPA_SSH_HOST" not in os.environ and os.environ.get("VESOPA_SERVER_SSH"):
+        os.environ["VESOPA_SSH_HOST"] = os.environ["VESOPA_SERVER_SSH"]
+
+
+load_env_claude()
+
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 except AttributeError:
