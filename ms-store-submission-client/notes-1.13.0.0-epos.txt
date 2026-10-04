@@ -1,0 +1,9 @@
+Version 1.13.0.0 - Memberships and classes
+
+Venues with the Memberships module switched on now have a Members section on the till. Search for a member to see their plan, status, expiry date and family. From there you can renew, freeze for a set of dates, unfreeze, cancel, reinstate, approve a new member who is waiting, or add someone to a family plan.
+
+Join signs up a new or existing customer to a plan. Joining and renewal fees, including any joining fee, go on the current bill and are paid in the usual way. The membership starts or renews only after the bill is paid.
+
+A Classes today tab lists today's classes with how many places are booked. Open a class to see who is booked and check people in by searching for them or swiping their card. Walk-ins who are not covered by a membership can be booked as a drop-in, and the drop-in fee goes on the bill.
+
+At the gym door, a member who is turned away now sees the reason: their membership is frozen, waiting for approval or cancelled, or their plan does not include the gym. Before, all of these showed as "expired".
