@@ -1,0 +1,7 @@
+Version 1.0.9.0 - Memberships and classes
+
+If your venue runs memberships, your card now shows your plan, whether it is active, frozen or waiting for approval, the date it runs to, and everybody on your family plan.
+
+Join a plan or renew your membership from the app and pay by card. Your new date shows as soon as the payment goes through.
+
+Book classes from the app: see the next two weeks, how many places are left, and book, cancel or join the waiting list.
