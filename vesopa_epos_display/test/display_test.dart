@@ -63,6 +63,17 @@ void main() {
     expect(basket.hasSale, isTrue);
   });
 
+  test("a member's plan line is read, and blank or missing is no line", () {
+    final withPlan = Basket.fromJson({
+      ...sale(),
+      'customer_name': 'Ann Lee',
+      'customer_detail': ' Gold · No. 00012 · until 1 Dec 2026 ',
+    })!;
+    expect(withPlan.customerDetail, 'Gold · No. 00012 · until 1 Dec 2026');
+    expect(Basket.fromJson({...sale(), 'customer_detail': '  '})!.customerDetail, isNull);
+    expect(Basket.fromJson(sale())!.customerDetail, isNull);
+  });
+
   test('a modifier line is marked as one', () {
     final basket = Basket.fromJson(
       sale(

@@ -1,0 +1,3 @@
+Version 1.6.15.0 - Member details on the customer display
+
+When a member is on the bill, the customer display now shows their membership plan, member number and the date their membership runs to, under their name. It appears only where the venue already shows the member's name on the display.

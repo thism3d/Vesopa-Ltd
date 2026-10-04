@@ -115,6 +115,7 @@ class DisplaySnapshot {
     this.terminalName,
     this.customerName,
     this.customerPoints,
+    this.customerDetail,
     this.greeting,
   });
 
@@ -164,6 +165,11 @@ class DisplaySnapshot {
   final String? customerName;
   final int? customerPoints;
 
+  /// One line under the name for a member: their plan, member number and the
+  /// day their membership runs to ("Gold · No. 00012 · until 1 Dec 2026").
+  /// Null for a customer with none of those, and then nothing is drawn.
+  final String? customerDetail;
+
   /// What the venue says above the name -- "Welcome", "Croeso", whatever they
   /// set in the back office.
   ///
@@ -211,6 +217,7 @@ class DisplaySnapshot {
      */
     'customer_name': customerName,
     'customer_points': customerPoints,
+    'customer_detail': customerDetail,
     'greeting': greeting,
   };
 
@@ -235,6 +242,7 @@ class DisplaySnapshot {
       // when nothing "visible" moved, and this is visible.
       customerName == other.customerName &&
       customerPoints == other.customerPoints &&
+      customerDetail == other.customerDetail &&
       greeting == other.greeting &&
       lines.length == other.lines.length &&
       () {
@@ -609,6 +617,7 @@ DisplaySnapshot snapshotFor({
   String? message,
   String? customerName,
   int? customerPoints,
+  String? customerDetail,
   String? greeting,
 }) {
   if (lines.isEmpty) {
@@ -627,6 +636,7 @@ DisplaySnapshot snapshotFor({
     message: message,
     customerName: customerName,
     customerPoints: customerPoints,
+    customerDetail: customerDetail,
     greeting: greeting,
     lines: [
       for (final line in lines)

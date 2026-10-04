@@ -97,6 +97,7 @@ class Basket {
     this.notifyAllowed = false,
     this.customerName,
     this.customerPoints,
+    this.customerDetail,
     this.greeting,
   });
 
@@ -129,6 +130,10 @@ class Basket {
   /// build shows exactly the screen it showed yesterday.
   final String? customerName;
   final int? customerPoints;
+
+  /// A member's plan, number and the day their membership runs to, as one
+  /// line ("Gold · No. 00012 · until 1 Dec 2026"). Null from older tills.
+  final String? customerDetail;
 
   /// What the venue says above the name. Null for the built-in "Welcome".
   final String? greeting;
@@ -178,6 +183,10 @@ class Basket {
         _ => null,
       },
       customerPoints: (raw['customer_points'] as num?)?.toInt(),
+      customerDetail: switch (raw['customer_detail']) {
+        final String s when s.trim().isNotEmpty => s.trim(),
+        _ => null,
+      },
       greeting: switch (raw['greeting']) {
         final String s when s.trim().isNotEmpty => s.trim(),
         _ => null,

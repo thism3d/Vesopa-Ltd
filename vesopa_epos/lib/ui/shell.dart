@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../config/constants.dart';
 import '../data/customer_display.dart';
 import '../data/dinein_orders.dart' show allergenLabelsProvider;
+import '../data/loyalty_schemes.dart' show LoyaltyScheme;
 import '../data/local/database.dart';
 import '../data/customer_display_control.dart' show clearCustomerCode;
 import '../data/device_registry.dart';
@@ -436,6 +437,30 @@ class _PosShellState extends ConsumerState<PosShell> {
     super.dispose();
   }
 
+  /// The line under a member's name on the customer display: their plan,
+  /// member number and the day the membership runs to. Null when the bill
+  /// has nobody on it, or nothing worth saying about them.
+  static const _months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  Future<String?> _memberDetail(AppDatabase db, Order order) async {
+    if (order.customerId == null) return null;
+    final parts = <String>[];
+    final scheme = LoyaltyScheme.decode(order.customerScheme);
+    if (scheme != null && scheme.name.trim().isNotEmpty) parts.add(scheme.name.trim());
+    final no = order.customerMemberNo;
+    if (no != null && no.toString().trim().isNotEmpty) parts.add('No. ${no.toString().trim()}');
+    try {
+      final c = await (db.select(db.customers)
+            ..where((t) => t.id.equals(order.customerId!)))
+          .getSingleOrNull();
+      final e = c?.membershipExpiry;
+      if (e != null) parts.add('until ${e.day} ${_months[e.month - 1]} ${e.year}');
+    } catch (_) {
+      // The line is a nicety; a lookup that fails leaves it off.
+    }
+    return parts.isEmpty ? null : parts.join(' · ');
+  }
+
   /// Follow [orderId] on the customer display.
   ///
   /// Re-subscribed rather than filtered, so switching to another table stops
@@ -485,6 +510,10 @@ class _PosShellState extends ConsumerState<PosShell> {
             customerPoints:
                 ref.read(tillSettingsProvider).customerDisplayShowMember
                     ? order.customerPoints
+                    : null,
+            customerDetail:
+                ref.read(tillSettingsProvider).customerDisplayShowMember
+                    ? await _memberDetail(db, order)
                     : null,
             greeting: ref.read(tillSettingsProvider).customerDisplayGreeting,
           );

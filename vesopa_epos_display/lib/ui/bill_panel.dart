@@ -123,6 +123,7 @@ class _BillPanelState extends State<BillPanel> {
               greeting: basket.greeting ?? 'Welcome',
               name: basket.customerName!,
               points: basket.customerPoints,
+              detail: basket.customerDetail,
             ),
           Expanded(
             child: ListView.builder(
@@ -395,7 +396,11 @@ class _MemberGreeting extends StatelessWidget {
     required this.greeting,
     required this.name,
     required this.points,
+    this.detail,
   });
+
+  /// Plan, member number and expiry, under the name. Null draws nothing.
+  final String? detail;
 
   final String greeting;
   final String name;
@@ -440,6 +445,15 @@ class _MemberGreeting extends StatelessWidget {
               color: Brand.ink,
             ),
           ),
+          if (detail != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              detail!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 18, height: 1.2, color: Brand.inkSoft),
+            ),
+          ],
           if (points != null) ...[
             const SizedBox(height: 2),
             Text(
