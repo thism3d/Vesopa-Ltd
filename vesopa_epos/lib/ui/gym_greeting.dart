@@ -290,6 +290,38 @@ _Look _lookFor(GymAnswer a) {
             : 'Signed out at ${_clock()} — ${_spell(minutes)} in the gym.',
       );
 
+    case GymOutcome.expired when a.refusedForState:
+      // Turned away by the Memberships module for a state, not a date. Saying
+      // "has run out" to somebody whose membership is frozen, or waiting for
+      // approval, is telling them something untrue at a door with nobody there
+      // to correct it.
+      return _Look(
+        background: a.reason == 'pending' ? Pos.amber : Pos.red,
+        ink: a.reason == 'pending' ? Pos.onBrand : Colors.white,
+        icon: switch (a.reason) {
+          'frozen' => Icons.ac_unit,
+          'pending' => Icons.hourglass_top,
+          'no_gym' => Icons.block,
+          _ => Icons.event_busy,
+        },
+        headline: [
+          if (first.isNotEmpty) first,
+          switch (a.reason) {
+            'frozen' => 'membership is frozen',
+            'pending' => 'membership is waiting for approval',
+            'cancelled' => 'membership is cancelled',
+            'no_gym' => 'your plan does not include the gym',
+            _ => 'not able to sign in',
+          },
+        ].join(' — ').replaceFirstMapped(
+          RegExp(r'^[a-z]'),
+          (m) => m[0]!.toUpperCase(),
+        ),
+        detail:
+            '${_sentence(a.message ?? _fallbackMessage(a.reason))} '
+            'Please see a member of staff.',
+      );
+
     case GymOutcome.expired:
       final when = a.membershipExpiry;
       final days = a.expiredDays;
@@ -388,3 +420,22 @@ String _pretty(String iso) {
   ];
   return '${parsed.day} ${months[parsed.month - 1]} ${parsed.year}';
 }
+
+/// The server's refusal as a sentence: its dates written out, and a full stop.
+String _sentence(String text) {
+  final dated = text.trim().replaceAllMapped(
+    RegExp(r'\b\d{4}-\d{2}-\d{2}\b'),
+    (m) => _pretty(m[0]!),
+  );
+  if (dated.isEmpty) return dated;
+  return dated.endsWith('.') ? dated : '$dated.';
+}
+
+/// What to say when a server sent a reason and no words for it.
+String _fallbackMessage(String? reason) => switch (reason) {
+  'frozen' => 'Your membership is frozen',
+  'pending' => 'Your membership is waiting for approval',
+  'cancelled' => 'Your membership has been cancelled',
+  'no_gym' => 'Your plan does not include the gym',
+  _ => 'This card cannot be used at the door',
+};

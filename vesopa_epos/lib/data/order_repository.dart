@@ -4,6 +4,7 @@ import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 
 import 'local/database.dart';
+import 'membership.dart' show membershipLineIntent;
 import 'mix_match_engine.dart';
 import 'modifier_layout.dart';
 import 'price_levels.dart';
@@ -175,6 +176,7 @@ class OrderRepository {
     List<Product> modifiers = const [],
     int priceLevel = minPriceLevel,
     bool consolidate = true,
+    String? notes,
   }) async {
     await _db.transaction(() async {
       final now = DateTime.now();
@@ -191,7 +193,10 @@ class OrderRepository {
       // ordered.
       //
       // Nor is anything merged when the venue has turned consolidation off.
-      final line = modifiers.isEmpty && consolidate
+      // Nor is a line with a note: the note says what THIS line is for (a
+      // membership plan, see data/membership.dart), and a second one merged
+      // into it would be one note standing for two things.
+      final line = modifiers.isEmpty && consolidate && notes == null
           ? await _mergeableLine(orderId, product.pluId)
           : null;
 
@@ -219,6 +224,7 @@ class OrderRepository {
               // sign-on, and the check view simply shows no header for it.
               addedBy: Value(addedBy),
               addedAt: Value(now),
+              notes: Value(notes),
             ),
           );
 
@@ -316,6 +322,8 @@ class OrderRepository {
 
     final parents = await _linesWithChildren(orderId);
     for (final line in candidates) {
+      // A membership plan's fee line is that plan's and nobody else's.
+      if (membershipLineIntent(line.notes) != null) continue;
       if (!parents.contains(line.id)) return line;
     }
     return null;

@@ -23,6 +23,8 @@
 /// money taken and the membership silently not renewed.
 library;
 
+import 'package:flutter/foundation.dart';
+
 import 'local/database.dart';
 
 /// The PLU a membership renewal is rung up under when the venue has not named
@@ -99,3 +101,85 @@ bool billRenewsMembership(
   Iterable<OrderLine> lines, {
   required Set<int> renewing,
 }) => lines.any((l) => renewing.contains(l.pluId));
+
+// -----------------------------------------------------------------------------
+// The Memberships module: which plan, and whether it is a join
+// -----------------------------------------------------------------------------
+//
+// A venue running the Memberships module (1.13) sells plans, and a plan fee is
+// still a line on the bill for every reason given at the top of this file. What
+// the module adds is two facts the settle path needs and the PLU cannot carry:
+// WHICH plan, and whether the person is joining it or renewing it. A joining
+// member is not a member yet, so "renew whoever is on the bill" — which is all
+// the old line ever meant — would renew nobody.
+//
+// So the line says so, in its note. A note because it is the one free-text
+// field a line already has, it travels with the bill through bill sync to
+// another terminal, and it prints on the receipt — where "Joins Gold [plan 3]"
+// is a perfectly good thing for a member to read.
+
+/// The PLU a class drop-in is rung up under: like [membershipRenewalPlu], a
+/// negative number no catalogue product can ever have. Never a renewing PLU.
+const classDropInPlu = -2;
+
+/// What a membership fee line on the bill is for.
+@immutable
+class MembershipLineIntent {
+  const MembershipLineIntent({required this.join, required this.planId});
+
+  /// True for joining a plan, false for renewing one.
+  final bool join;
+  final int planId;
+}
+
+final _intentNote = RegExp(r'^(Joins|Renews) .*\[plan (\d+)\]$');
+
+/// The note a plan fee line carries: `Joins Gold [plan 3]`.
+String membershipLineNote({
+  required bool join,
+  required int planId,
+  required String planName,
+}) => '${join ? 'Joins' : 'Renews'} $planName [plan $planId]';
+
+/// Read a line's note back. Null for every line that is not a plan fee —
+/// including the old renewal line, which carries no note at all.
+MembershipLineIntent? membershipLineIntent(String? note) {
+  final m = _intentNote.firstMatch((note ?? '').trim());
+  if (m == null) return null;
+  final id = int.tryParse(m.group(2)!);
+  if (id == null) return null;
+  return MembershipLineIntent(join: m.group(1) == 'Joins', planId: id);
+}
+
+/// What a paid bill should post to the Memberships module.
+///
+/// [amountMinor] is everything on the bill that was membership money — the
+/// renewing lines and the noted ones together, after any line discount — and
+/// is sent to the server as `amount_minor` so the member's history says what
+/// was actually paid. [joinPlanId] is set when any line is a join: joining
+/// and renewing on one bill is joining, because the join already runs the
+/// first term.
+@immutable
+class MembershipSettlement {
+  const MembershipSettlement({required this.amountMinor, this.joinPlanId});
+
+  final int amountMinor;
+  final int? joinPlanId;
+
+  bool get joins => joinPlanId != null;
+}
+
+MembershipSettlement membershipSettlement(
+  Iterable<OrderLine> lines, {
+  required Set<int> renewing,
+}) {
+  var amount = 0;
+  int? join;
+  for (final l in lines) {
+    final intent = membershipLineIntent(l.notes);
+    if (intent == null && !renewing.contains(l.pluId)) continue;
+    amount += (l.unitPriceMinor * l.quantity).round() - l.lineDiscountMinor;
+    if (intent != null && intent.join) join ??= intent.planId;
+  }
+  return MembershipSettlement(amountMinor: amount, joinPlanId: join);
+}

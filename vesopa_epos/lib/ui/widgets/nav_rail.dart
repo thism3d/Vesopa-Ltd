@@ -41,15 +41,24 @@ const gymDestination = NavDestination(Icons.fitness_center, 'Gym');
 /// about how often each thing is used, and at a gym the board is looked at far
 /// more than Products or Functions ever are; putting it last would file the
 /// venue's main screen below two they may never open.
-List<NavDestination> navDestinationsFor({required bool gym}) {
-  if (!gym) return navDestinations;
+List<NavDestination> navDestinationsFor({
+  required bool gym,
+  bool members = false,
+}) {
+  if (!gym && !members) return navDestinations;
   final after = navDestinations.indexWhere((d) => d.label == 'Reports');
   return [
     ...navDestinations.take(after + 1),
-    gymDestination,
+    if (gym) gymDestination,
+    if (members) membersDestination,
     ...navDestinations.skip(after + 1),
   ];
 }
+
+/// Memberships: members, plans and today's classes, for a venue with the
+/// Memberships module switched on in the back office (1.13). Beside the gym,
+/// because the two are the same front desk.
+const membersDestination = NavDestination(Icons.card_membership, 'Members');
 
 /// Left-hand navigation, with Logout pinned to the bottom as in the mockups.
 ///

@@ -25,6 +25,7 @@ import 'about_page.dart';
 import 'card_actions.dart';
 import 'functions_page.dart';
 import 'gym_page.dart';
+import 'memberships_page.dart';
 import 'logout_dialog.dart';
 import 'nav_panel_controller.dart';
 import 'pair_request_overlay.dart';
@@ -117,6 +118,7 @@ class _PosShellState extends ConsumerState<PosShell> {
     unawaited(_announceThisMachine());
     unawaited(_readCardRules());
     unawaited(_readGymRules());
+    unawaited(_readModules());
     unawaited(_startPresence());
     // Practice bills left from a till switched off mid-training. Cleared before
     // the first bill opens; a failure here costs nothing but a stale practice
@@ -233,9 +235,15 @@ class _PosShellState extends ConsumerState<PosShell> {
   ///
   /// Every use of the list goes through here, including the ones that look up
   /// an index -- see [_sectionLabel] for why that matters.
-  List<NavDestination> get _destinations => navDestinationsFor(
-    gym: ref.watch(gymRepositoryProvider).settings.enabled,
-  );
+  List<NavDestination> get _destinations {
+    // The Memberships module, from /till/modules. Watched through the
+    // revision for the same reason the gym is: the object mutates in place.
+    ref.watch(tillModulesRevisionProvider);
+    return navDestinationsFor(
+      gym: ref.watch(gymRepositoryProvider).settings.enabled,
+      members: ref.watch(tillModulesProvider).memberships,
+    );
+  }
 
   /// The label of whichever section is showing.
   ///
@@ -280,6 +288,35 @@ class _PosShellState extends ConsumerState<PosShell> {
     setState(() {
       final now = _destinations.indexWhere((d) => d.label == was);
       if (now >= 0) _index = now;
+    });
+  }
+
+  /// Load which modules this venue runs, then refresh them.
+  ///
+  /// Stored first and pulled second, like the gym rules, and holding the
+  /// section on screen by its label for the same reason: Members appearing or
+  /// going shifts every index after it.
+  Future<void> _readModules() async {
+    final before = _sectionLabel;
+    final modules = ref.read(tillModulesProvider);
+    await modules.load();
+    if (!mounted) return;
+    ref.read(tillModulesRevisionProvider.notifier).bump();
+    await modules.sync();
+    if (!mounted) return;
+    ref.read(tillModulesRevisionProvider.notifier).bump();
+    setState(() {
+      final now = _destinations.indexWhere((d) => d.label == before);
+      if (now >= 0) _index = now;
+    });
+  }
+
+  /// `modules` is what the back office broadcasts when a manager switches one
+  /// on or off; `gym` goes with it when the gym door is the one switched.
+  void _watchModules() {
+    ref.listen(syncEventsProvider, (_, next) {
+      final type = next.value?.type;
+      if (type == 'modules' || type == 'gym') unawaited(_readModules());
     });
   }
 
@@ -610,6 +647,7 @@ class _PosShellState extends ConsumerState<PosShell> {
     // a second one.
     _watchCardRules();
     _watchGymRules();
+    _watchModules();
 
     /*
      * A LAPSED LICENCE REPLACES THE SHELL, for the same reason a failure to
@@ -959,6 +997,13 @@ class _PosShellState extends ConsumerState<PosShell> {
         return TablesPage(currentOrderId: orderId, onRecall: _switchToOrder);
       case 'Gym':
         return const GymPage();
+      case 'Members':
+        // The bill in front of the clerk, because a join or a renewal puts
+        // its fee on it -- and the way back to it, to take the money.
+        return MembershipsPage(
+          orderId: orderId,
+          onGoToSale: () => _goTo('Sale'),
+        );
       case 'Receipts':
         return const ReceiptsPage();
       case 'Settings':

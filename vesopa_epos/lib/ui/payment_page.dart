@@ -13,6 +13,7 @@ import '../data/order_repository.dart';
 import '../data/pricing_engine.dart';
 import '../data/staff_session.dart';
 import '../data/membership.dart';
+import '../data/memberships_api.dart' show MembershipsException;
 import '../data/tender_engine.dart';
 import '../data/customer_display.dart';
 import '../data/customer_display_control.dart';
@@ -788,6 +789,45 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     );
   }
 
+  /// Post a paid membership fee to the Memberships module, and say where the
+  /// membership now runs to.
+  ///
+  /// A join when a line says so (the plan is on its note); a renewal
+  /// otherwise. A renewal for somebody the module has never heard of -- a
+  /// customer from before the module, renewed by the old swipe-and-renew
+  /// line -- goes the old way, so switching the module on cannot stop a
+  /// venue renewing the members it already had.
+  Future<DateTime?> _postToMemberships(
+    String customerId,
+    MembershipSettlement settlement,
+    String? staff,
+  ) async {
+    final api = ref.read(membershipsRepositoryProvider);
+    if (settlement.joins) {
+      final m = await api.join(
+        schemeId: settlement.joinPlanId,
+        customerId: customerId,
+        amountMinor: settlement.amountMinor,
+        staff: staff,
+      );
+      return m.expiry;
+    }
+    try {
+      final m = await api.renew(
+        customerId,
+        amountMinor: settlement.amountMinor,
+        staff: staff,
+      );
+      return m.expiry;
+    } on MembershipsException catch (e) {
+      if (e.status != 404) rethrow;
+      final renewed = await ref
+          .read(commerceRepositoryProvider)
+          .renewMembership(customerId);
+      return renewed.membershipExpiry;
+    }
+  }
+
   /// Whether this is a practice bill -- rung up in training mode. Read off the
   /// bill, not off who is signed on: the bill's flag is what every other part
   /// of the till acts on, so this page must agree with it.
@@ -1520,12 +1560,19 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
           legacyPlu: settings.plu,
         );
         if (billRenewsMembership(lines, renewing: renewing)) {
-          final renewed = await commerce.renewMembership(renewFor);
-          if (mounted && renewed.membershipExpiry != null) {
+          // A venue with the Memberships module posts to it: the join or the
+          // renewal lands in the member's history with what was paid, and a
+          // family plan moves together. The plan and whether it is a join
+          // are on the lines themselves -- see data/membership.dart.
+          final settlement = membershipSettlement(lines, renewing: renewing);
+          final expiry = ref.read(tillModulesProvider).memberships
+              ? await _postToMemberships(renewFor, settlement, servedBy)
+              : (await commerce.renewMembership(renewFor)).membershipExpiry;
+          if (mounted && expiry != null) {
             PosMessenger.success(
               context,
-              'Membership renewed to '
-              '${_shortDay(renewed.membershipExpiry!)}.',
+              '${settlement.joins ? 'Membership started, running to' : 'Membership renewed to'} '
+              '${_shortDay(expiry)}.',
             );
           }
         }

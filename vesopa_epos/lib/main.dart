@@ -22,6 +22,7 @@ import 'data/card_repository.dart';
 import 'data/demo_session.dart';
 import 'data/licence.dart';
 import 'data/gym.dart';
+import 'data/memberships_api.dart';
 import 'data/wallet_passes.dart';
 import 'data/device_registry.dart';
 import 'data/display_pairing.dart';
@@ -149,6 +150,37 @@ class GymSettingsRevision extends Notifier<int> {
 
   void bump() => state = state + 1;
 }
+
+/// Which modules this venue runs (`GET /till/modules`), stored and refreshed
+/// the way the gym rules are. One long-lived object for the same reason.
+final tillModulesProvider = Provider<TillModules>(
+  (ref) => TillModules(
+    apiBase: ref.watch(apiBaseProvider),
+    terminalToken: ref.watch(sessionControllerProvider).value?.terminalToken,
+  ),
+);
+
+/// Bumped every time the modules are re-read -- the same trick as
+/// [gymSettingsRevisionProvider], so the rail and the Members page notice a
+/// module switched on or off without anybody restarting the till.
+final tillModulesRevisionProvider =
+    NotifierProvider<TillModulesRevision, int>(TillModulesRevision.new);
+
+class TillModulesRevision extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  void bump() => state = state + 1;
+}
+
+/// Plans, members and classes, for a venue with the Memberships module. See
+/// data/memberships_api.dart.
+final membershipsRepositoryProvider = Provider<MembershipsRepository>(
+  (ref) => MembershipsRepository(
+    apiBase: ref.watch(apiBaseProvider),
+    terminalToken: ref.watch(sessionControllerProvider).value?.terminalToken,
+  ),
+);
 
 /// The cards a customer carries on their phone.
 ///

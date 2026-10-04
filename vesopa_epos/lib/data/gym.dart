@@ -373,6 +373,8 @@ class GymAnswer {
     this.refused = false,
     this.printSlip = false,
     this.cardNumber,
+    this.reason,
+    this.message,
   });
 
   const GymAnswer.notGym() : this._plain(GymOutcome.notGym);
@@ -386,7 +388,9 @@ class GymAnswer {
       minutes = null,
       refused = false,
       printSlip = false,
-      cardNumber = null;
+      cardNumber = null,
+      reason = null,
+      message = null;
 
   final GymOutcome outcome;
   final String? memberName;
@@ -415,6 +419,20 @@ class GymAnswer {
   final bool printSlip;
 
   final String? cardNumber;
+
+  /// Why a venue with the Memberships module turned the card away for
+  /// something other than a date: `frozen`, `pending`, `cancelled` or
+  /// `no_gym`. Null for an ordinary expiry, and for every offline answer --
+  /// the roster carries dates, not states.
+  final String? reason;
+
+  /// The server's own sentence for [reason], e.g. "Membership frozen until
+  /// 2026-11-01". Shown as it is: the back office knows the plan's name and
+  /// the dates, and the till would only be guessing at them.
+  final String? message;
+
+  /// Whether this is a refusal for a reason other than the date running out.
+  bool get refusedForState => refused && reason != null;
 
   /// Whether this answer is worth drawing at all.
   bool get speaks => outcome != GymOutcome.notGym;
@@ -778,6 +796,14 @@ class GymRepository {
       refused: raw['refused'] == true || raw['refused'] == 1,
       printSlip: raw['print_slip'] == true || raw['print_slip'] == 1,
       cardNumber: cardNumber,
+      reason: switch (raw['reason']) {
+        final String v when v.isNotEmpty => v,
+        _ => null,
+      },
+      message: switch (raw['message']) {
+        final String v when v.isNotEmpty => v,
+        _ => null,
+      },
     );
   }
 
