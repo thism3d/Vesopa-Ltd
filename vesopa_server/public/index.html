@@ -340,6 +340,7 @@
           <button class="nav" data-view="idle">Till &amp; Printers</button>
           <button class="nav" data-view="kitchen">Kitchen Screens</button>
           <button class="nav" data-view="devices">Devices</button>
+          <button class="nav" data-view="modules">Modules</button>
           <button class="nav" data-view="activity_log">Activity Log</button>
 
           <button class="nav-group" data-group="floor">Floor<span class="caret">▼</span></button>
@@ -3715,6 +3716,24 @@
         </section>
 
         <!-- Machines: which tills and screens a venue has, and what happened. -->
+        <!-- Modules: the parts of Vesopa only some venues have (src/modules.js).
+             Vesopa adds a module to a venue; the manager switches it on or off
+             here. A module Vesopa has not added is listed so a manager knows it
+             exists, with nothing to press. -->
+        <section id="view-modules" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Modules</h2>
+              <p class="muted small">
+                Extra parts of the system for this venue. Switch on what you use;
+                anything switched off disappears from the tills, the kiosk and the
+                customer display, and keeps its data until you switch it back on.
+              </p>
+            </div>
+          </div>
+          <div id="modules-list" class="modules-list"></div>
+        </section>
+
         <section id="view-devices" class="view" hidden>
           <div class="page-head">
             <div>
@@ -4118,7 +4137,7 @@
 
         <!-- Admin -->
         <section id="view-offices" class="view" hidden>
-          <div class="page-head"><div><h2>Offices</h2><p class="muted small">Every office on this installation, what it is charged, and when it is next due.</p></div><button class="btn primary" id="add-office">New office</button></div>
+          <div class="page-head"><div><h2>Offices</h2><p class="muted small">Every office on this installation, what it is charged, and when it is next due.</p></div><div class="page-head-actions"><button class="btn ghost" id="module-prices" title="What each module costs a venue a month, unless set per venue">Module prices</button> <button class="btn primary" id="add-office">New office</button></div></div>
           <div class="card"><table>
             <thead><tr><th>Office</th><th>Contact</th><th>Status</th><th>Users</th><th title="Tills signed in, and the licences paid for">Tills</th><th class="right">Charge</th><th>Next due</th><th></th></tr></thead>
             <tbody id="offices"></tbody>

@@ -52,6 +52,7 @@ const { terminalRoutes, timesheetRoutes } = require('./terminals');
 const { deviceRoutes } = require('./devices');
 const { cardRoutes } = require('./cards');
 const { gymRoutes } = require('./gym');
+const { moduleRoutes } = require('./modules');
 const { importRoutes } = require('./imports');
 const { reportRoutes, toPdf } = require('./reports');
 const { stockRoutes } = require('./stock');
@@ -393,6 +394,11 @@ app.use(cardRoutes({ pool, broadcast, secret: JWT_SECRET }));
 // refuses with 404 until a venue switches the gym on, so mounting it here costs
 // a pub nothing.
 app.use(gymRoutes({ pool, broadcast, secret: JWT_SECRET }));
+
+// Modules: what admin has allowed a venue and what its manager has switched
+// on (src/modules.js). Mounted at the root because it serves admin, the back
+// office and devices, each under its own path and token.
+app.use(moduleRoutes({ pool, broadcast, secret: JWT_SECRET }));
 
 // Vesopa Express, the self-service kiosk. Off for every venue until a manager
 // turns it on; see src/express_kiosk.js and schema_till_express.sql.

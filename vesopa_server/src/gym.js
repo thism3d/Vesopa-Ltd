@@ -1,5 +1,6 @@
 const express = require('express');
 const { requireAuth, requireTerminal } = require('./auth');
+const { moduleAllowed } = require('./modules');
 
 /**
  * The gym door.
@@ -89,12 +90,27 @@ function gymRoutes({ pool, broadcast, secret }) {
     return req.user.email;
   }
 
+  /**
+   * The venue's gym settings, with Vesopa's ceiling applied.
+   *
+   * The gym door is a module (src/modules.js): Vesopa admin allows it for a
+   * venue, and only then does the manager's own `enabled` mean anything. A
+   * venue that is not allowed it reads as switched off everywhere -- the back
+   * office, the till and every door route below -- and `module_allowed` says
+   * why, so the back office can say "ask Vesopa" rather than "turn it on".
+   */
   async function readSettings(office) {
     const [[row]] = await pool.query(
       'SELECT * FROM epos_gym_settings WHERE office = ?',
       [office]
     );
-    return row || { office, ...GYM_DEFAULTS };
+    const settings = row || { office, ...GYM_DEFAULTS };
+    const allowed = await moduleAllowed(pool, office, 'gym_door');
+    return {
+      ...settings,
+      enabled: allowed && Number(settings.enabled) ? 1 : 0,
+      module_allowed: allowed ? 1 : 0,
+    };
   }
 
   /**
@@ -243,6 +259,15 @@ function gymRoutes({ pool, broadcast, secret }) {
   router.put('/api/gym/settings', auth, async (req, res, next) => {
     try {
       const office = await tenantEmail(req);
+
+      // The manager's switch only works under Vesopa's. Settings other than
+      // `enabled` can still be saved, so a form filled in ahead of time is kept.
+      if (req.body && Number(req.body.enabled)
+          && !(await moduleAllowed(pool, office, 'gym_door'))) {
+        return res.status(403).json({
+          error: "The gym door is not part of this venue's system. Ask Vesopa to add it.",
+        });
+      }
 
       const fields = Object.keys(GYM_DEFAULTS).filter((f) =>
         Object.prototype.hasOwnProperty.call(req.body, f)

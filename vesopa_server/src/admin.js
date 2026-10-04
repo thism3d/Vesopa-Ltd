@@ -1,4 +1,5 @@
 const express = require('express');
+const { setAllowed, moduleCharges } = require('./modules');
 const bcrypt = require('bcryptjs');
 const { requireAuth } = require('./auth');
 
@@ -14,6 +15,33 @@ function requireAdmin(req, res, next) {
  * Platform administration: the offices (tenants), their status, and their
  * recurring charges.
  */
+/**
+ * Raise one subscription invoice: the subscription's own amount plus what its
+ * allowed modules add. The module part is also stored on its own, with a line
+ * saying what it is made of, so a bill that grew can be explained. Falls back
+ * to the plain insert on a database without the module columns yet.
+ */
+async function raiseInvoice(conn, subscriptionId, officeId, base, dueSql, dueValue, extra) {
+  const total = Number(base || 0) + Number(extra.total || 0);
+  const dueParams = dueSql === '?' ? [dueValue] : [];
+  try {
+    await conn.execute(
+      `INSERT INTO subscription_invoices
+         (subscription_id, office_id, amount_minor, modules_minor, modules_detail, due_on, status)
+       VALUES (?, ?, ?, ?, ?, ${dueSql}, 'due')`,
+      [subscriptionId, officeId, total, extra.total || 0, extra.detail, ...dueParams]
+    );
+  } catch (e) {
+    if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+    await conn.execute(
+      `INSERT INTO subscription_invoices
+         (subscription_id, office_id, amount_minor, due_on, status)
+       VALUES (?, ?, ?, ${dueSql}, 'due')`,
+      [subscriptionId, officeId, Number(base || 0), ...dueParams]
+    );
+  }
+}
+
 function adminRoutes({ pool, broadcast, secret }) {
   const router = express.Router();
   const auth = requireAuth(secret);
@@ -108,7 +136,7 @@ function adminRoutes({ pool, broadcast, secret }) {
 
   /** Create an office, its first user, and optionally its recurring charge. */
   router.post('/offices', async (req, res, next) => {
-    const { name, contact_email, plan, password, amount_minor, interval_unit } =
+    const { name, contact_email, plan, password, amount_minor, interval_unit, modules } =
       req.body || {};
 
     if (!name || !contact_email || !password) {
@@ -138,6 +166,23 @@ function adminRoutes({ pool, broadcast, secret }) {
         [contact_email, hash, name, name, officeId]
       );
 
+      // Modules ticked on the New office form (src/modules.js). Allowed and
+      // switched on together, so the venue starts with what it was sold.
+      if (Array.isArray(modules) && modules.length) {
+        try {
+          await setAllowed(
+            conn,
+            officeId,
+            Object.fromEntries(modules.map((key) => [String(key), { allowed: true }])),
+            req.user.email
+          );
+        } catch (e) {
+          // A database without schema_venue_modules.sql yet: the office is
+          // still created, and the modules can be allowed once it has run.
+          if (e.code !== 'ER_NO_SUCH_TABLE') throw e;
+        }
+      }
+
       if (amount_minor > 0) {
         const [sub] = await conn.execute(
           `INSERT INTO subscriptions
@@ -146,13 +191,10 @@ function adminRoutes({ pool, broadcast, secret }) {
           [officeId, amount_minor, interval_unit || 'month']
         );
         // Raise the first invoice immediately, so the charge exists rather than
-        // only appearing when some future job runs.
-        await conn.execute(
-          `INSERT INTO subscription_invoices
-             (subscription_id, office_id, amount_minor, due_on, status)
-           VALUES (?, ?, ?, CURDATE(), 'due')`,
-          [sub.insertId, officeId, amount_minor]
-        );
+        // only appearing when some future job runs. Modules ticked above are
+        // on it from the start.
+        const extra = await moduleCharges(conn, officeId, interval_unit || 'month');
+        await raiseInvoice(conn, sub.insertId, officeId, amount_minor, 'CURDATE()', null, extra);
       }
 
       await conn.commit();
@@ -374,12 +416,10 @@ function adminRoutes({ pool, broadcast, secret }) {
           'SELECT next_due_on FROM subscriptions WHERE id = ?',
           [sub.id]
         );
-        await conn.execute(
-          `INSERT INTO subscription_invoices
-             (subscription_id, office_id, amount_minor, due_on, status)
-           VALUES (?, ?, ?, ?, 'due')`,
-          [sub.id, sub.office_id, sub.amount_minor, next.next_due_on]
-        );
+        // Every module the venue is allowed is charged on top, at today's
+        // prices, so a module allowed mid-period is on the next bill.
+        const extra = await moduleCharges(conn, sub.office_id, sub.interval_unit);
+        await raiseInvoice(conn, sub.id, sub.office_id, sub.amount_minor, '?', next.next_due_on, extra);
       }
 
       await conn.commit();

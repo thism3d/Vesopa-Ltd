@@ -191,6 +191,7 @@ function connectSocket() {
   socket.onmessage = (e) => {
     const msg = JSON.parse(e.data);
     if (msg.type === 'order.created') onNewSale(msg);
+    if (msg.type === 'modules') applyModules().then(() => { if (currentView === 'modules') render(); });
     // The screen editor names its keys from the catalogue, so a product renamed
     // on another machine should relabel them here. Safe to reload now that
     // loadScreens keeps an unsaved layout rather than replacing it.
@@ -1358,6 +1359,7 @@ const VIEW_LOADERS = {
     loyalty: loadLoyalty,
     cards: loadCards,
     gym: loadGym,
+    modules: loadModules,
     wallet: loadWallet,
     loyalty_app: loadLoyaltyApp,
     devices: loadDevices,
@@ -3348,6 +3350,8 @@ async function loadOffices() {
         <td class="right">${o.amount_minor ? money(o.amount_minor) + ' / ' + o.interval_unit : '—'}</td>
         <td>${o.next_due_on ? date(o.next_due_on) : '—'}</td>
         <td class="right nowrap">
+          <button class="btn small ghost" data-office-modules="${o.id}" data-office-modules-name="${esc(o.name)}"
+                  title="Which modules this venue has, and what each costs it">Modules</button>
           <button class="btn small ghost" data-managers="${o.id}" data-managers-name="${esc(o.name)}"
                   title="Logins from another office that can also manage this site">Managed by</button>
           ${o.status === 'active'
@@ -6620,6 +6624,9 @@ document.addEventListener('click', async (e) => {
   }
 
   if (t.id === 'add-office') {
+    // Modules are ticked here so a venue starts with what it was sold. A
+    // server without modules yet just offers none.
+    const catalogue = await api('/admin/modules').catch(() => []);
     return modal('New office', [
       { label: 'Office name', name: 'name', required: true },
       { label: 'Contact email (their sign-in)', name: 'contact_email', type: 'email', required: true },
@@ -6627,15 +6634,66 @@ document.addEventListener('click', async (e) => {
       { label: 'Plan', name: 'plan' },
       { label: 'Recurring charge (£)', name: 'amount', type: 'number', value: '0' },
       { label: 'Billed', name: 'interval_unit', type: 'select', options: ['month', 'year'] },
+      ...catalogue.map((m) => ({
+        label: `${m.label}${m.price_minor ? ` (+${money(m.price_minor)} a month)` : ''}`,
+        name: `module_${m.key}`,
+        type: 'checkbox',
+        value: 0,
+        hint: m.summary,
+      })),
     ], (d) =>
       api('/admin/offices', {
         method: 'POST',
         body: JSON.stringify({
           ...d,
           amount_minor: Math.round(parseFloat(d.amount || '0') * 100),
+          modules: catalogue.filter((m) => Number(d[`module_${m.key}`])).map((m) => m.key),
         }),
       })
     );
+  }
+
+  if (t.dataset.officeModules) {
+    const office = t.dataset.officeModules;
+    const list = await api(`/admin/offices/${office}/modules`);
+    const fields = [];
+    for (const m of list) {
+      fields.push({ type: 'section', key: m.key, label: m.label, hint: m.summary });
+      fields.push({ label: 'Part of this venue\'s system', name: `allowed_${m.key}`, type: 'checkbox', value: m.allowed ? 1 : 0,
+        hint: m.allowed && !m.enabled ? 'Added, but the venue has switched it off.' : '' });
+      fields.push({ label: 'Monthly price (£)', name: `price_${m.key}`, type: 'number',
+        value: (m.price_minor / 100).toFixed(2),
+        hint: `Default ${money(m.default_price_minor)}. Added to the venue's invoice while the module is part of its system.` });
+    }
+    return modal(`Modules — ${t.dataset.officeModulesName || 'venue'}`, fields, async (d) => {
+      const modules = {};
+      for (const m of list) {
+        const pounds = String(d[`price_${m.key}`] ?? '').trim();
+        modules[m.key] = {
+          allowed: !!Number(d[`allowed_${m.key}`]),
+          price_minor: pounds === '' ? null : Math.round(parseFloat(pounds) * 100),
+        };
+      }
+      await api(`/admin/offices/${office}/modules`, { method: 'PUT', body: JSON.stringify({ modules }) });
+      toast('Modules saved.');
+      await loadOffices();
+    });
+  }
+
+  if (t.id === 'module-prices') {
+    const list = await api('/admin/modules');
+    return modal('Module prices', list.map((m) => ({
+      label: `${m.label} (£ a month)`,
+      name: m.key,
+      type: 'number',
+      value: (m.price_minor / 100).toFixed(2),
+      hint: `${m.summary} Used for a venue unless its own price is set.`,
+    })), async (d) => {
+      const body = {};
+      for (const m of list) body[m.key] = Math.round(parseFloat(d[m.key] || '0') * 100);
+      await api('/admin/modules/prices', { method: 'PUT', body: JSON.stringify(body) });
+      toast('Module prices saved.');
+    });
   }
 
   // Shared customer form, used by both add and edit. Discount value is a whole
@@ -7610,6 +7668,10 @@ async function start() {
   // section flash up and vanish — and the server refuses anyway, so a failure
   // here costs a tidy menu and nothing else.
   await applyAccess();
+
+  // Modules this venue has (src/modules.js): a section for one Vesopa has not
+  // added is taken off the menu. After applyAccess so it only ever hides more.
+  await applyModules();
 
   // Land on whatever the URL asks for, so a refresh or a bookmarked page
   // reopens where the user left off.
@@ -11827,6 +11889,77 @@ document.addEventListener('click', async (e) => {
 const deviceKindLabel = (kind) => ({
   till: 'Till', display: 'Customer display', kitchen: 'Kitchen screen',
 }[kind] || kind);
+
+/**
+ * The venue's modules (src/modules.js), as last fetched.
+ *
+ * A menu section that belongs to a module Vesopa has not added to this venue
+ * is hidden. Switched off by the manager is NOT hidden: the page is where they
+ * switch it back on, and it says so. Admin sees everything.
+ */
+let venueModules = [];
+const MODULE_VIEWS = { gym: 'gym_door' };
+
+async function applyModules() {
+  try {
+    venueModules = await api('/modules');
+  } catch {
+    venueModules = [];
+    return;
+  }
+  if (me?.role === 'admin') return;
+  const allowed = new Set(venueModules.filter((m) => m.allowed).map((m) => m.key));
+  for (const [view, key] of Object.entries(MODULE_VIEWS)) {
+    const nav = document.querySelector(`.nav[data-view="${view}"]`);
+    if (nav && !allowed.has(key)) nav.hidden = true;
+    else if (nav && nav.dataset.moduleHidden) nav.hidden = false;
+    if (nav) nav.dataset.moduleHidden = allowed.has(key) ? '' : '1';
+  }
+}
+
+async function loadModules() {
+  await applyModules();
+  const box = $('modules-list');
+  if (!venueModules.length) {
+    box.innerHTML = '<p class="muted small">No modules are available on this server yet.</p>';
+    return;
+  }
+  box.innerHTML = venueModules.map((m) => `
+    <article class="module-card ${m.allowed ? '' : 'not-added'}">
+      <h3>${esc(m.label)}
+        ${m.allowed
+          ? `<label class="check-field" title="Switch ${esc(m.label)} on or off for this venue">
+               <input type="checkbox" data-module-toggle="${esc(m.key)}" ${m.enabled ? 'checked' : ''}>
+             </label>`
+          : ''}
+      </h3>
+      <p>${esc(m.summary)}</p>
+      <span class="module-state ${m.on ? 'on' : 'off'}">${
+        m.on ? 'On' : m.allowed ? 'Switched off' : 'Not part of your system. Ask Vesopa to add it.'
+      }</span>
+    </article>`).join('');
+}
+
+document.addEventListener('change', async (e) => {
+  const key = e.target?.dataset?.moduleToggle;
+  if (!key) return;
+  const box = e.target;
+  box.disabled = true;
+  try {
+    venueModules = await api(`/modules/${key}`, {
+      method: 'PUT',
+      body: JSON.stringify({ enabled: box.checked }),
+    });
+    const m = venueModules.find((x) => x.key === key);
+    toast(`${m ? m.label : 'Module'} switched ${box.checked ? 'on' : 'off'}.`);
+    await loadModules();
+  } catch (err) {
+    box.checked = !box.checked;
+    toast(err.message, 'error');
+  } finally {
+    box.disabled = false;
+  }
+});
 
 async function loadDevices() {
   let rows = [];
