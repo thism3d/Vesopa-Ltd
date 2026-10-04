@@ -167,7 +167,11 @@ class TopBar extends ConsumerWidget {
                 ),
                 if (flow.orderType != null)
                   Text(
-                    flow.orderType == 'eat_in' ? s('eat_in') : s('take_away'),
+                    switch (flow.orderType) {
+                      'eat_in' => s('eat_in'),
+                      membershipOrderType => s('memberships'),
+                      _ => s('take_away'),
+                    },
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: skin.muted),
                   ),
               ],
@@ -609,7 +613,36 @@ class OrderTypePage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final s = ref.watch(orderFlowProvider.select((f) => f.s));
+    final config = ref.watch(kioskSessionProvider.select((st) => st.config));
     final n = ref.read(orderFlowProvider.notifier);
+    // Eat in and take away as the venue offers them, and Memberships beside
+    // them where the server says so -- the one screen every visit passes.
+    final eatIn = config?.eatIn ?? true;
+    final takeAway = config?.takeAway ?? true;
+    final members = config?.memberships ?? false;
+    final food = eatIn || takeAway;
+    final count = (eatIn ? 1 : 0) + (takeAway ? 1 : 0) + (members ? 1 : 0);
+    final wide = count > 2 && MediaQuery.sizeOf(context).width < 1100;
+    final choices = <Widget>[
+      if (eatIn)
+        BigChoice(
+            icon: Icons.restaurant_rounded, label: s('eat_in'), wide: wide, onTap: () => n.chooseType('eat_in')),
+      if (takeAway)
+        BigChoice(
+            icon: Icons.shopping_bag_rounded,
+            label: s('take_away'),
+            wide: wide,
+            onTap: () => n.chooseType('take_away')),
+      if (members)
+        BigChoice(
+          key: const ValueKey('choose-memberships'),
+          icon: Icons.card_membership_rounded,
+          label: s('memberships'),
+          sub: s('memberships_sub'),
+          wide: wide,
+          onTap: n.startMembership,
+        ),
+    ];
     return FlowScaffold(
       body: Center(
         child: SingleChildScrollView(
@@ -617,17 +650,17 @@ class OrderTypePage extends ConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(s('where_eating'),
+              Text(food ? s('where_eating') : s('memberships'),
                   textAlign: TextAlign.center, style: Theme.of(context).textTheme.displayMedium),
               const SizedBox(height: 44),
               Flex(
-                direction: MediaQuery.sizeOf(context).width < 720 ? Axis.vertical : Axis.horizontal,
+                direction: wide || MediaQuery.sizeOf(context).width < 720 ? Axis.vertical : Axis.horizontal,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  _BigChoice(icon: Icons.restaurant_rounded, label: s('eat_in'), onTap: () => n.chooseType('eat_in')),
-                  const SizedBox(width: 28, height: 18),
-                  _BigChoice(
-                      icon: Icons.shopping_bag_rounded, label: s('take_away'), onTap: () => n.chooseType('take_away')),
+                  for (final (i, choice) in choices.indexed) ...[
+                    if (i > 0) const SizedBox(width: 28, height: 18),
+                    choice,
+                  ],
                 ],
               ),
             ],
@@ -638,16 +671,27 @@ class OrderTypePage extends ConsumerWidget {
   }
 }
 
-/// One of two big answers: eat in or take away, card or counter.
+/// One of the big answers: eat in, take away or memberships; card or counter;
+/// renew or join. Public so the membership screens answer in the same shape.
 ///
 /// Square tiles side by side where there is room; on a narrow screen (a phone,
 /// a small tablet, a kiosk window) wide cards stacked one above the other, with
 /// the picture beside the words. Never a fixed height: the first live run at
 /// 540 x 960 had "Pay at the counter" wrap onto three lines inside a tile sized
 /// for one, and the words fell out of the bottom of the card.
-class _BigChoice extends StatelessWidget {
-  const _BigChoice({required this.icon, required this.label, required this.onTap, this.sub});
+class BigChoice extends StatelessWidget {
+  const BigChoice({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.sub,
+    this.wide = false,
+  });
 
+  /// The wide card even where there is room for a square: three answers
+  /// side by side need more room than two.
+  final bool wide;
   final IconData icon;
   final String label;
   final String? sub;
@@ -657,7 +701,7 @@ class _BigChoice extends StatelessWidget {
   Widget build(BuildContext context) {
     final skin = XpSkin.of(context);
     final width = MediaQuery.sizeOf(context).width;
-    final stacked = width < 720;
+    final stacked = width < 720 || wide;
     final text = Theme.of(context).textTheme;
 
     Widget badge(double size) => Container(
@@ -1855,14 +1899,14 @@ class PayMethodPage extends ConsumerWidget {
                   direction: MediaQuery.sizeOf(context).width < 720 ? Axis.vertical : Axis.horizontal,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _BigChoice(
+                    BigChoice(
                       icon: Icons.contactless_rounded,
                       label: s('pay_card'),
                       sub: s('pay_card_sub'),
                       onTap: () => n.place('card'),
                     ),
                     const SizedBox(width: 28, height: 18),
-                    _BigChoice(
+                    BigChoice(
                       icon: Icons.point_of_sale_rounded,
                       label: s('pay_counter'),
                       sub: s('pay_counter_sub'),

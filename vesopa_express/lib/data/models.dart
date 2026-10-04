@@ -107,6 +107,7 @@ class KioskConfig {
     this.welcomeImage,
     this.languages = const ['en'],
     this.receipt = const ReceiptFace(),
+    this.memberships = false,
   });
 
   final bool enabled;
@@ -142,6 +143,10 @@ class KioskConfig {
   /// and bringing it back is a server change, not a kiosk release.
   final List<String> languages;
   final ReceiptFace receipt;
+
+  /// Join and renew a membership here. The server says so only for a venue
+  /// with the Memberships module on and a kiosk that can take the money.
+  final bool memberships;
 
   /// Whether there is a language to switch to. The button is only drawn then.
   bool get multilingual => languages.length > 1;
@@ -179,6 +184,7 @@ class KioskConfig {
       welcomeImage: _str(welcome['image_url']),
       languages: _languages(j['languages']),
       receipt: ReceiptFace.fromJson(j['receipt']),
+      memberships: _bool(j['memberships']),
     );
   }
 }
@@ -505,6 +511,7 @@ class OrderView {
     this.taxMinor = 0,
     this.message,
     this.lines = const [],
+    this.membership,
   });
 
   final String publicId;
@@ -519,6 +526,11 @@ class OrderView {
   final String? message;
   final List<OrderLineView> lines;
 
+  /// What a membership order is for and how it went; null on a food order.
+  final MembershipOutcome? membership;
+
+  bool get isMembership => orderType == 'membership';
+
   factory OrderView.fromJson(Map<String, dynamic> j) => OrderView(
     publicId: _str(j['public_id']) ?? '',
     number: _int(j['number']),
@@ -531,5 +543,128 @@ class OrderView {
     taxMinor: _int(j['tax_minor']),
     message: _str(j['message']),
     lines: [for (final l in _list(j['lines'])) OrderLineView.fromJson(_map(l))],
+    membership: j['membership'] is Map ? MembershipOutcome.fromJson(_map(j['membership'])) : null,
   );
+}
+
+// ---------------------------------------------------------------------------
+// Memberships
+// ---------------------------------------------------------------------------
+
+/// A plan somebody can join here, with what joining costs -- the server's
+/// sum, never the kiosk's.
+@immutable
+class MembershipPlan {
+  const MembershipPlan({
+    required this.id,
+    required this.name,
+    required this.feeMinor,
+    required this.joinMinor,
+    this.joiningFeeMinor = 0,
+    this.termMonths = 12,
+    this.description,
+  });
+
+  final int id;
+  final String name;
+  final String? description;
+  final int feeMinor;
+  final int joiningFeeMinor;
+  final int joinMinor;
+  final int termMonths;
+
+  factory MembershipPlan.fromJson(Map<String, dynamic> j) {
+    final fee = _int(j['fee_minor']);
+    final joining = _int(j['joining_fee_minor']);
+    return MembershipPlan(
+      id: _int(j['id']),
+      name: _str(j['name']) ?? '',
+      description: _str(j['description']),
+      feeMinor: fee,
+      joiningFeeMinor: joining,
+      joinMinor: _int(j['join_minor'], fee + joining),
+      termMonths: _int(j['term_months'], 12),
+    );
+  }
+}
+
+/// A member the kiosk found: as much as a screen in a public room may say,
+/// and the token that renews them.
+@immutable
+class MemberFound {
+  const MemberFound({
+    required this.token,
+    required this.canRenew,
+    this.firstName,
+    this.planName,
+    this.state = 'active',
+    this.expiry,
+    this.renewMinor,
+    this.reason,
+  });
+
+  final String token;
+  final String? firstName;
+  final String? planName;
+  final String state;
+
+  /// `yyyy-mm-dd`, the server's day.
+  final String? expiry;
+  final int? renewMinor;
+  final bool canRenew;
+  final String? reason;
+
+  factory MemberFound.fromJson(Map<String, dynamic> j) => MemberFound(
+    token: _str(j['member_token']) ?? '',
+    firstName: _str(j['first_name']),
+    planName: _str(j['plan_name']),
+    state: _str(j['state']) ?? 'active',
+    expiry: _str(j['expiry']),
+    renewMinor: j['renew_minor'] == null ? null : _int(j['renew_minor']),
+    canRenew: _bool(j['can_renew']),
+    reason: _str(j['reason']),
+  );
+}
+
+/// How a paid membership order went.
+@immutable
+class MembershipOutcome {
+  const MembershipOutcome({
+    required this.kind,
+    this.planName,
+    this.firstName,
+    this.applied = false,
+    this.expiry,
+    this.memberNumber,
+    this.failed = false,
+  });
+
+  /// `join` or `renew`.
+  final String kind;
+  final String? planName;
+  final String? firstName;
+  final bool applied;
+  final String? expiry;
+  final String? memberNumber;
+  final bool failed;
+
+  bool get joining => kind == 'join';
+
+  factory MembershipOutcome.fromJson(Map<String, dynamic> j) => MembershipOutcome(
+    kind: _str(j['kind']) == 'join' ? 'join' : 'renew',
+    planName: _str(j['plan_name']),
+    firstName: _str(j['first_name']),
+    applied: _bool(j['applied']),
+    expiry: _str(j['expiry']),
+    memberNumber: _str(j['member_number']),
+    failed: _bool(j['failed']),
+  );
+}
+
+/// `2026-11-04` as `04/11/2026`: the way a UK customer reads a date, and the
+/// same in English and Welsh.
+String readableDate(String? ymd) {
+  final m = RegExp(r'^(\d{4})-(\d{2})-(\d{2})').firstMatch(ymd ?? '');
+  if (m == null) return ymd ?? '';
+  return '${m.group(3)}/${m.group(2)}/${m.group(1)}';
 }

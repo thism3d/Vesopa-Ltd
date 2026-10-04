@@ -1,6 +1,6 @@
 /// The back office, as the kiosk sees it.
 ///
-/// Nine calls. Everything about money is decided on the other side of these:
+/// Twelve calls. Everything about money is decided on the other side of these:
 /// the kiosk sends item ids and quantities, and is told what they cost, what
 /// number the order has, and how the card machine is getting on.
 library;
@@ -149,6 +149,50 @@ class ExpressApi {
       'payment': payment,
       'name': ?name,
       'lines': lines,
+    }),
+  );
+
+  /// The plans somebody can join at this kiosk.
+  Future<List<MembershipPlan>> membershipPlans() async {
+    final j = await _send('GET', '/api/express/kiosk/memberships/plans');
+    final plans = j['plans'];
+    return [
+      if (plans is List)
+        for (final p in plans)
+          if (p is Map) MembershipPlan.fromJson(p.cast<String, dynamic>()),
+    ];
+  }
+
+  /// Find a member by their card, or by email or phone with their surname.
+  Future<MemberFound> findMember({String? cardNumber, String? email, String? phone, String? surname}) async =>
+      MemberFound.fromJson(await _send('POST', '/api/express/kiosk/memberships/lookup', {
+        'card_number': ?cardNumber,
+        'email': ?email,
+        'phone': ?phone,
+        'surname': ?surname,
+      }));
+
+  /// An order for a membership: renew with the token [findMember] gave, or
+  /// join with a plan and the new member's details. The server prices it.
+  Future<OrderView> placeMembership({
+    required String clientRef,
+    required String kind,
+    required String payment,
+    String? memberToken,
+    int? schemeId,
+    String? name,
+    String? email,
+    String? phone,
+  }) async => OrderView.fromJson(
+    await _send('POST', '/api/express/kiosk/memberships/orders', {
+      'client_ref': clientRef,
+      'kind': kind,
+      'payment': payment,
+      'member_token': ?memberToken,
+      'scheme_id': ?schemeId,
+      'name': ?name,
+      'email': ?email,
+      'phone': ?phone,
     }),
   );
 

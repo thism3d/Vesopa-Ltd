@@ -9,6 +9,12 @@
 ///   attract -> orderType -> menu <-> basket -> (details) -> (payMethod)
 ///           -> paying -> done -> attract
 ///
+///   attract -> orderType -> membership -> paying -> done -> attract
+///
+/// The second is joining or renewing a membership, offered only when the
+/// server says the venue has Memberships (see KioskConfig.memberships). It is
+/// paid and finished by exactly the same screens as food.
+///
 /// THE ORDER BEING PAID FOR SURVIVES A RESTART. Its id is written to disk the
 /// moment the server hands it back, and a kiosk that starts with one on disk
 /// goes straight back to it: to the payment screen if the card machine is
@@ -28,7 +34,7 @@ import 'basket.dart';
 import 'models.dart';
 import 'session.dart';
 
-enum FlowStep { attract, orderType, menu, basket, details, payMethod, paying, done }
+enum FlowStep { attract, orderType, menu, basket, details, payMethod, membership, paying, done }
 
 @immutable
 class FlowState {
@@ -140,7 +146,9 @@ class OrderFlow extends Notifier<FlowState> {
   void start() {
     final c = _config;
     if (c == null) return;
-    if (c.eatIn && c.takeAway) {
+    // Memberships are a third answer on the first question, so it is asked
+    // even where there is only one way to eat.
+    if ((c.eatIn && c.takeAway) || c.memberships) {
       state = state.copyWith(step: FlowStep.orderType, clearError: true);
     } else {
       state = state.copyWith(
@@ -153,6 +161,21 @@ class OrderFlow extends Notifier<FlowState> {
 
   void chooseType(String type) =>
       state = state.copyWith(orderType: type, step: FlowStep.menu, clearError: true);
+
+  /// Join or renew instead of ordering food. The basket stays empty: a
+  /// membership is its own order, priced by the server.
+  void startMembership() => state = state.copyWith(
+    orderType: membershipOrderType,
+    step: FlowStep.membership,
+    basket: const Basket(),
+    clearError: true,
+    clearClientRef: true,
+  );
+
+  /// Back from the membership screens to the first question.
+  void leaveMembership() => state = state.copyWith(step: FlowStep.orderType, clearError: true);
+
+  void clearError() => state = state.copyWith(clearError: true);
 
   void setLang(Lang lang) => state = state.copyWith(lang: lang);
   void toggleReach() => state = state.copyWith(reach: !state.reach);
@@ -215,6 +238,50 @@ class OrderFlow extends Notifier<FlowState> {
     }
   }
 
+  /// Pay for a membership: renew with [memberToken], or join [schemeId] with
+  /// the new member's details. The kiosk says which; the server says what it
+  /// costs, and the card machine takes it exactly as it takes food.
+  Future<void> placeMembership({
+    required String kind,
+    String? memberToken,
+    int? schemeId,
+    String? name,
+    String? email,
+    String? phone,
+  }) async {
+    if (state.busy) return;
+    final c = _config;
+    if (c == null) return;
+    final ref0 = state.clientRef ?? _uuid.v4();
+    state = state.copyWith(busy: true, clearError: true, clientRef: ref0);
+    try {
+      final order = await _api.placeMembership(
+        clientRef: ref0,
+        kind: kind,
+        payment: 'card',
+        memberToken: memberToken,
+        schemeId: schemeId,
+        name: name,
+        email: email,
+        phone: phone,
+      );
+      await _remember(order.publicId);
+      _land(order);
+    } on ExpressApiError catch (e) {
+      // A refusal is about what was typed; the next try is a new order.
+      state = state.copyWith(
+        busy: false,
+        error: e.offline ? state.s('error_generic') : e.message,
+        clearClientRef: !e.offline,
+      );
+      if (e.expressOff || e.signedOut || e.status == 404) {
+        await ref.read(kioskSessionProvider.notifier).refresh(withMenu: false);
+      }
+    } catch (_) {
+      state = state.copyWith(busy: false, error: state.s('error_generic'));
+    }
+  }
+
   /// Put an order the server has answered about on the right screen.
   void _land(OrderView order) {
     if (order.stage.finished) {
@@ -226,7 +293,13 @@ class OrderFlow extends Notifier<FlowState> {
     if (order.stage == PayStage.cancelled) {
       _stopPolling();
       // The order is dead; the basket is not. Paying again makes a new order.
-      state = state.copyWith(step: FlowStep.basket, busy: false, clearOrder: true, clearClientRef: true);
+      // A membership goes back to its own screen, to try again from there.
+      state = state.copyWith(
+        step: state.orderType == membershipOrderType ? FlowStep.membership : FlowStep.basket,
+        busy: false,
+        clearOrder: true,
+        clearClientRef: true,
+      );
       unawaited(_forgetActive());
       return;
     }
@@ -310,5 +383,8 @@ class OrderFlow extends Notifier<FlowState> {
     }
   }
 }
+
+/// The order type the server gives a membership order.
+const membershipOrderType = 'membership';
 
 final orderFlowProvider = NotifierProvider<OrderFlow, FlowState>(OrderFlow.new);

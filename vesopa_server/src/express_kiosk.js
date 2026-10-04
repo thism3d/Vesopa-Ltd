@@ -53,6 +53,15 @@ const licences = require('./licences');
 const { linkAndFind } = require('./backoffice_auth');
 const dojo = require('./dojo_client');
 const { boardPage } = require('./express_board');
+const { moduleOn } = require('./modules');
+
+/**
+ * Memberships, read when first needed rather than at load: memberships.js
+ * takes venueKey from this file, so requiring it from the top here would hand
+ * one of the two a half-built module.
+ */
+const membershipsLib = () => require('./memberships');
+const memberNumbers = () => require('./member_numbers');
 
 /** What a venue that has never opened the page has. */
 const DEFAULTS = Object.freeze({
@@ -144,6 +153,23 @@ const READY_ON_BOARD_MINUTES = 15;
 const ABANDON_MINUTES = 30;
 
 const ORDER_TYPES = { eat_in: 'Eat in', take_away: 'Take away' };
+
+/**
+ * A membership bought at the kiosk is an order of its own type: nothing to
+ * cook, nothing for the board, one line priced by the server. See the
+ * Memberships section below.
+ */
+const MEMBERSHIP_ORDER = 'membership';
+
+/** How long a member found by the lookup may be renewed without looking again. */
+const MEMBER_TOKEN_TTL = '15m';
+
+/**
+ * The PLU a membership fee is rung up under when the venue has named no
+ * product for it: the till's own sentinel (membershipRenewalPlu in
+ * vesopa_epos/lib/data/membership.dart), so the two read alike in reports.
+ */
+const MEMBERSHIP_PLU = -1;
 
 // ---------------------------------------------------------------------------
 // Small pure helpers, exported for the tests
@@ -277,7 +303,66 @@ function describe(order) {
     lines,
     stage: paymentStage(order),
     message: order.status_note || null,
+    ...(order.membership_json ? { membership: describeMembership(order) } : {}),
   };
+}
+
+/**
+ * What the kiosk may say about a membership order: the plan, the first name,
+ * and -- once the money is in -- whether it went on and to when. Never the
+ * email or phone a new member typed: the screen is in a public room.
+ */
+function describeMembership(order) {
+  let m = {};
+  try { m = JSON.parse(order.membership_json || '{}') || {}; } catch { m = {}; }
+  const result = m.result || {};
+  return {
+    kind: m.kind === 'join' ? 'join' : 'renew',
+    plan_name: m.plan_name || null,
+    first_name: m.first_name || null,
+    applied: !!order.membership_applied_at,
+    expiry: result.expiry || null,
+    member_number: result.member_number || null,
+    failed: !!m.error,
+  };
+}
+
+/** The first word of a name: all the kiosk ever shows of who somebody is. */
+function firstName(name) {
+  return String(name || '').trim().split(/\s+/)[0] || null;
+}
+
+/** Lower case, no accents, letters only: for comparing a typed surname. */
+function nameKey(text) {
+  return String(text || '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z]/g, '');
+}
+
+/**
+ * Whether `surname` is plausibly the last name of `fullName`: the last word,
+ * or the tail of the name with the spaces and hyphens taken out (so "Jones"
+ * and "Lloyd Jones" both match "Rhys Lloyd-Jones"). Never on fewer than two
+ * letters.
+ */
+function surnameMatches(fullName, surname) {
+  const given = nameKey(surname);
+  if (given.length < 2) return false;
+  const words = String(fullName || '').trim().split(/\s+/).filter(Boolean);
+  if (words.length < 2) return nameKey(fullName) === given;
+  if (nameKey(words[words.length - 1]) === given) return true;
+  return nameKey(words.slice(1).join('')).endsWith(given);
+}
+
+/** A phone number reduced to its national digits, for comparing two of them. */
+function phoneKey(raw) {
+  let d = String(raw || '').replace(/\D/g, '');
+  if (d.startsWith('00')) d = d.slice(2);
+  if (d.startsWith('44')) d = d.slice(2);
+  if (d.startsWith('0')) d = d.slice(1);
+  return d;
 }
 
 // ---------------------------------------------------------------------------
@@ -840,6 +925,20 @@ function expressKioskRoutes({ pool, broadcast, secret }) {
     return req.officeId || (await core.officeIdOf(pool, req.office));
   }
 
+  /**
+   * Whether the venue has the Memberships module on. A database that has not
+   * had the modules schema yet has nothing on, rather than a kiosk that cannot
+   * read its config.
+   */
+  async function membershipsOn(office) {
+    try {
+      return await moduleOn(pool, office, 'memberships');
+    } catch (e) {
+      if (e && (e.code === 'ER_NO_SUCH_TABLE' || e.code === 'ER_BAD_FIELD_ERROR')) return false;
+      throw e;
+    }
+  }
+
   /** The venue's public face, from its dine-in page, for the kiosk's header. */
   async function venueFace(officeId) {
     const [[office]] = await pool.query('SELECT name FROM offices WHERE id = ?', [officeId]);
@@ -942,6 +1041,7 @@ function expressKioskRoutes({ pool, broadcast, secret }) {
       // would look like a server that is down.
       if (!base.enabled) return res.json(base);
 
+      const canCard = !!Number(settings.pay_card) && !!req.kiosk.dojo_terminal_id && !!key;
       res.json({
         ...base,
         languages: LANGUAGES,
@@ -951,11 +1051,15 @@ function expressKioskRoutes({ pool, broadcast, secret }) {
           take_away: !!Number(settings.take_away),
         },
         payments: {
-          card: !!Number(settings.pay_card) && !!req.kiosk.dojo_terminal_id && !!key,
+          card: canCard,
           counter: !!Number(settings.pay_counter),
           demo: !!Number(settings.demo_mode),
           sandbox: dojo.isSandboxKey(key),
         },
+        // Join and renew at the kiosk: only where the venue has Memberships,
+        // and only where this kiosk can take the money -- a membership is
+        // never "pay at the counter", because nothing would apply it there.
+        memberships: (canCard || !!Number(settings.demo_mode)) && (await membershipsOn(req.office)),
         ask_name: !!Number(settings.ask_name),
         idle_seconds: Number(settings.idle_seconds) || DEFAULTS.idle_seconds,
         welcome: {
@@ -1197,7 +1301,8 @@ function expressKioskRoutes({ pool, broadcast, secret }) {
       const settings = await readSettings(order.office);
       const lines = JSON.parse(order.lines_json || '[]');
       const terminal = await kioskName(order.kiosk_id);
-      const typeLabel = ORDER_TYPES[order.order_type] || 'Take away';
+      const isMembership = order.order_type === MEMBERSHIP_ORDER;
+      const typeLabel = isMembership ? 'Membership' : ORDER_TYPES[order.order_type] || 'Take away';
       const saleId = crypto.randomUUID();
 
       const sale = {
@@ -1235,7 +1340,9 @@ function expressKioskRoutes({ pool, broadcast, secret }) {
       };
       await recordSale(conn, sale);
 
-      const ticket = Number(settings.notify_kitchen)
+      // A membership has nothing to cook: no ticket, no printing.
+      const kitchen = Number(settings.notify_kitchen) && !isMembership;
+      const ticket = kitchen
         ? await kitchenTicket(conn, order, lines, saleId, typeLabel, terminal)
         : null;
       if (ticket) await recordTicket(conn, ticket);
@@ -1243,7 +1350,7 @@ function expressKioskRoutes({ pool, broadcast, secret }) {
       // The stations that print, as jobs for a till to claim. In the same
       // transaction as the sale: a paid order must never exist without the
       // record that its kitchen still needs paper.
-      const printing = Number(settings.notify_kitchen)
+      const printing = kitchen
         ? await printingStations(conn, order.office, lines)
         : [];
       for (const station of printing) {
@@ -1257,8 +1364,15 @@ function expressKioskRoutes({ pool, broadcast, secret }) {
         'UPDATE epos_express_orders SET sale_id = ?, ticket_id = ? WHERE id = ?',
         [saleId, ticket ? ticket.id : null, orderId]
       );
+
+      // A membership goes on with the sale, in the same transaction, so the
+      // money and the membership can never be one without the other.
+      const membership = order.membership_json
+        ? await applyMembership(conn, order, terminal)
+        : null;
+
       await conn.commit();
-      done = { order, sale, ticket, settings, printing };
+      done = { order, sale, ticket, settings, printing, membership };
     } catch (e) {
       await conn.rollback().catch(() => {});
       throw e;
@@ -1268,7 +1382,28 @@ function expressKioskRoutes({ pool, broadcast, secret }) {
 
     // Only once it is durable. A screen told about an order that then failed
     // to commit is a screen showing food nobody paid for.
-    const { order, sale, ticket, settings, printing } = done;
+    const { order, sale, ticket, settings, printing, membership } = done;
+    if (membership && membership.customerId) {
+      // The member number is taken under its own lock on its own connection,
+      // which is why it waits for the commit (see member_numbers.js).
+      const number = await memberNumbers()
+        .ensureMemberNumber(pool, order.office, membership.customerId)
+        .catch(() => null);
+      if (number && !membership.memberNumber) {
+        // For the thank-you screen: a new member's number, as their card and
+        // pass will show it.
+        try {
+          const m = await membershipsLib().memberById(pool, order.office, membership.customerId);
+          const [[row]] = await pool.query('SELECT membership_json FROM epos_express_orders WHERE id = ?', [order.id]);
+          const kept = JSON.parse(row.membership_json);
+          kept.result = { ...(kept.result || {}), member_number: (m && m.member_number) || String(number) };
+          await pool.execute('UPDATE epos_express_orders SET membership_json = ? WHERE id = ?',
+            [JSON.stringify(kept), order.id]);
+        } catch { /* the number is on the member either way */ }
+      }
+      broadcast({ type: 'memberships', office: order.office });
+      broadcast({ type: 'customers.updated' });
+    }
     if (ticket) {
       broadcast({ type: 'kitchen.ticket', id: ticket.id, office: order.office }, { office: order.office });
     }
@@ -1281,20 +1416,100 @@ function expressKioskRoutes({ pool, broadcast, secret }) {
       { type: 'order.created', id: sale.id, tableNumber: null, totalMinor: sale.total_minor, lines: sale.lines },
       { office: order.office }
     );
-    broadcast(
-      {
-        type: 'express.order',
-        public_id: order.public_id,
-        number: order.number,
-        order_type: order.order_type,
-        total_minor: order.total_minor,
-        kiosk: sale.terminal,
-        notify_till: !!Number(settings.notify_till),
-        via,
-      },
-      { office: order.office }
-    );
+    // A till is told about food to make. A membership is not that.
+    if (order.order_type !== MEMBERSHIP_ORDER) {
+      broadcast(
+        {
+          type: 'express.order',
+          public_id: order.public_id,
+          number: order.number,
+          order_type: order.order_type,
+          total_minor: order.total_minor,
+          kiosk: sale.terminal,
+          notify_till: !!Number(settings.notify_till),
+          via,
+        },
+        { office: order.office }
+      );
+    }
     return done;
+  }
+
+  /**
+   * Put a paid membership order's join or renewal on, inside finalise()'s
+   * transaction, through memberships.js -- the same join() and renew() the
+   * till, the back office and the app use, so the kiosk cannot invent its own
+   * idea of what renewing means.
+   *
+   * ONCE, twice over: finalise() only gets here for the one caller that moved
+   * the order to paid, and the claim on membership_applied_at (IS NULL) is the
+   * order's own record that it has been applied.
+   *
+   * The money is already in when this runs. So a membership that cannot go
+   * on -- the plan was withdrawn a minute ago, the member was cancelled at the
+   * desk -- must not undo the sale: it is rolled back to a savepoint, written
+   * on the order as a failure for staff, and the customer is told to ask.
+   * The order is marked collected either way, so it never sits on the board
+   * or in a till's queue of food to make.
+   */
+  async function applyMembership(conn, order, terminal) {
+    let plan = {};
+    try { plan = JSON.parse(order.membership_json || '{}') || {}; } catch { plan = {}; }
+    const lib = membershipsLib();
+    // join() takes a member number on a connection of its own; within this
+    // transaction that is a quiet no-op, and finalise() takes it after commit.
+    const db = {
+      query: (...a) => conn.query(...a),
+      execute: (...a) => conn.execute(...a),
+      getConnection: () => pool.getConnection(),
+    };
+    const opts = { via: 'kiosk', by: String(terminal || 'Vesopa Express').slice(0, 80), amount: Number(plan.amount) || null };
+
+    await conn.query('SAVEPOINT membership');
+    let customerId = null;
+    try {
+      const [claim] = await conn.execute(
+        'UPDATE epos_express_orders SET membership_applied_at = NOW()' +
+          ' WHERE id = ? AND membership_applied_at IS NULL',
+        [order.id]
+      );
+      if (!claim.affectedRows) {
+        await conn.query('ROLLBACK TO SAVEPOINT membership');
+        return null;
+      }
+      const member = plan.kind === 'join'
+        ? await lib.join(db, order.office, { scheme_id: plan.scheme_id, customer: plan.customer || {} }, opts)
+        : await lib.renew(db, order.office, String(plan.customer_id || ''), opts);
+      customerId = member.id;
+      // What happened, without the new member's contact details: those are
+      // on the customer now and have no business staying on the order.
+      const { customer, ...kept } = plan;
+      await conn.execute(
+        "UPDATE epos_express_orders SET membership_json = ?, status = 'collected', collected_at = NOW() WHERE id = ?",
+        [
+          JSON.stringify({
+            ...kept,
+            customer_id: member.id,
+            result: { expiry: member.membership_expiry || null, member_number: member.member_number || null },
+          }),
+          order.id,
+        ]
+      );
+      return { customerId, memberNumber: member.member_number || null };
+    } catch (e) {
+      await conn.query('ROLLBACK TO SAVEPOINT membership');
+      console.warn('[express] a paid membership could not be applied:', e.message);
+      await conn.execute(
+        "UPDATE epos_express_orders SET membership_json = ?, status = 'collected', collected_at = NOW()," +
+          ' status_note = ? WHERE id = ?',
+        [
+          JSON.stringify({ ...plan, error: String(e.message || e).slice(0, 255) }),
+          'Your payment was taken, but your membership could not be updated here. Please ask a member of staff.',
+          order.id,
+        ]
+      );
+      return { customerId: null, failed: true };
+    }
   }
 
   /**
@@ -1464,15 +1679,111 @@ function expressKioskRoutes({ pool, broadcast, secret }) {
     }
   }
 
+  /** The kiosk's id for a basket, if it sent a well-formed one. */
+  function clientRefOf(body) {
+    return /^[0-9a-fA-F-]{36}$/.test(String(body.client_ref || ''))
+      ? String(body.client_ref).toLowerCase()
+      : null;
+  }
+
+  /**
+   * How an order will be paid, or the refusal to send. Demo mode wins; then
+   * what the kiosk asked for, if the venue takes it. `counter: false` for an
+   * order nothing at the counter would know how to finish (a membership).
+   */
+  function choosePayment(req, settings, asked, { counter = true } = {}) {
+    const { key } = venueKey(settings);
+    if (Number(settings.demo_mode)) return { payment: 'demo' };
+    if (counter && asked === 'counter' && Number(settings.pay_counter)) return { payment: 'counter' };
+    if (asked === 'card' && Number(settings.pay_card)) {
+      if (!req.kiosk.dojo_terminal_id || !key) {
+        return {
+          status: 409,
+          body: { error: 'This kiosk has no card machine set up yet.', code: 'no_card_machine' },
+        };
+      }
+      return { payment: 'card' };
+    }
+    return { status: 400, body: { error: 'That way of paying is not available here.' } };
+  }
+
+  /**
+   * Write a priced order, with today's next number, and start taking the
+   * money. The one way an order is made, for food and memberships alike.
+   * Answers the order already made when the same client_ref arrives twice.
+   */
+  async function createOrder(req, settings, {
+    clientRef, orderType, payment, customerName, lines, subtotal, tax, membership = null, officeId = null,
+  }) {
+    const { number, day } = await allocateNumber(pool, req.office, settings);
+    const publicId = crypto.randomBytes(16).toString('hex');
+    const status = payment === 'demo' ? 'demo' : payment === 'counter' ? 'counter' : 'awaiting_payment';
+
+    const columns = [
+      'public_id', 'office', 'kiosk_id', 'client_ref', 'number', 'business_date', 'order_type',
+      'payment', 'status', 'customer_name', 'subtotal_minor', 'discount_minor', 'total_minor',
+      'tax_minor', 'lines_json',
+    ];
+    const values = [
+      publicId, req.office, req.kiosk.id, clientRef, number, day, orderType,
+      payment, status, customerName, subtotal, 0, subtotal, tax, JSON.stringify(lines),
+    ];
+    // Only a membership names the column, so a food order still goes in on a
+    // database that has not had schema_express_memberships.sql yet.
+    if (membership) {
+      columns.push('membership_json');
+      values.push(JSON.stringify(membership));
+    }
+
+    let inserted;
+    try {
+      [inserted] = await pool.execute(
+        'INSERT INTO epos_express_orders (' + columns.join(', ') + ')' +
+          ' VALUES (' + columns.map(() => '?').join(', ') + ')',
+        values
+      );
+    } catch (e) {
+      // The same basket arriving twice at the same moment: the unique key
+      // on (kiosk, client_ref) lets one through, and this one answers it.
+      if (e && e.code === 'ER_DUP_ENTRY' && clientRef) {
+        const again = await loadOrder('kiosk_id = ? AND client_ref = ?', [req.kiosk.id, clientRef]);
+        if (again) return { order: again, again: true };
+      }
+      throw e;
+    }
+
+    let order = await loadOrder('id = ?', [inserted.insertId]);
+    if (payment === 'counter') {
+      await sendToCounter(order, lines, officeId || (await officeIdFor(req)));
+      if (Number(settings.notify_till)) {
+        broadcast(
+          {
+            type: 'express.order',
+            public_id: order.public_id,
+            number: order.number,
+            order_type: order.order_type,
+            total_minor: order.total_minor,
+            kiosk: req.kiosk.name,
+            payment: 'counter',
+            notify_till: true,
+          },
+          { office: req.office }
+        );
+      }
+    } else if (payment === 'card') {
+      await startPayment(order, settings, req.kiosk);
+    }
+    order = await loadOrder('id = ?', [inserted.insertId]);
+    return { order, again: false };
+  }
+
   router.post('/api/express/kiosk/orders', kioskAuth, async (req, res, next) => {
     try {
       const settings = await readSettings(req.office);
       if (!Number(settings.enabled)) return expressOff(res);
       const body = req.body || {};
 
-      const clientRef = /^[0-9a-fA-F-]{36}$/.test(String(body.client_ref || ''))
-        ? String(body.client_ref).toLowerCase()
-        : null;
+      const clientRef = clientRefOf(body);
       if (clientRef) {
         const again = await loadOrder('kiosk_id = ? AND client_ref = ?', [req.kiosk.id, clientRef]);
         if (again) return res.json(describe(again));
@@ -1483,23 +1794,8 @@ function expressKioskRoutes({ pool, broadcast, secret }) {
         return res.status(400).json({ error: 'Please choose eat in or take away.' });
       }
 
-      const { key } = venueKey(settings);
-      let payment;
-      if (Number(settings.demo_mode)) {
-        payment = 'demo';
-      } else if (body.payment === 'counter' && Number(settings.pay_counter)) {
-        payment = 'counter';
-      } else if (body.payment === 'card' && Number(settings.pay_card)) {
-        if (!req.kiosk.dojo_terminal_id || !key) {
-          return res.status(409).json({
-            error: 'This kiosk has no card machine set up yet.',
-            code: 'no_card_machine',
-          });
-        }
-        payment = 'card';
-      } else {
-        return res.status(400).json({ error: 'That way of paying is not available here.' });
-      }
+      const how = choosePayment(req, settings, body.payment);
+      if (!how.payment) return res.status(how.status).json(how.body);
 
       const customerName = String(body.name || '').replace(/\s+/g, ' ').trim().slice(0, 40) || null;
       if (Number(settings.ask_name) && !customerName) {
@@ -1519,58 +1815,326 @@ function expressKioskRoutes({ pool, broadcast, secret }) {
         throw e;
       }
 
-      const tax = core.inclusiveTax(priced.lines);
-      const { number, day } = await allocateNumber(pool, req.office, settings);
-      const publicId = crypto.randomBytes(16).toString('hex');
-      const status = payment === 'demo' ? 'demo' : payment === 'counter' ? 'counter' : 'awaiting_payment';
+      const { order, again } = await createOrder(req, settings, {
+        clientRef,
+        orderType,
+        payment: how.payment,
+        customerName,
+        lines: priced.lines,
+        subtotal: priced.subtotal,
+        tax: core.inclusiveTax(priced.lines),
+        officeId,
+      });
+      res.status(again ? 200 : 201).json(describe(order));
+    } catch (e) {
+      next(e);
+    }
+  });
 
-      let inserted;
-      try {
-        [inserted] = await pool.execute(
-          'INSERT INTO epos_express_orders' +
-            ' (public_id, office, kiosk_id, client_ref, number, business_date, order_type,' +
-            '  payment, status, customer_name, subtotal_minor, discount_minor, total_minor,' +
-            '  tax_minor, lines_json)' +
-            ' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)',
-          [
-            publicId, req.office, req.kiosk.id, clientRef, number, day, orderType,
-            payment, status, customerName, priced.subtotal, priced.subtotal, tax,
-            JSON.stringify(priced.lines),
-          ]
+  // -------------------------------------------------------------------------
+  // Memberships: join and renew at the kiosk
+  // -------------------------------------------------------------------------
+  //
+  // Only where the venue has the Memberships module on (src/modules.js); a
+  // 404 everywhere else, as memberships.js answers. The kiosk is a screen in a
+  // public room, so finding a member answers with a first name, a plan, a
+  // state, a date and a price -- never an email address or a phone number --
+  // and the member found travels back as a short-lived token, not an id.
+  //
+  // The price is the server's: the plan's fee to renew, fee plus joining fee
+  // to join, read from the plan when the order is made. The kiosk sends what
+  // it wants, never what it costs. The order is an ordinary kiosk order with
+  // one line, paid on the card machine like any other, and finalise() puts
+  // the membership on once the money is in (see applyMembership).
+
+  /** The kiosk's door to memberships: Express on, Memberships on. */
+  async function kioskMemberships(req, res, next) {
+    try {
+      const settings = await readSettings(req.office);
+      if (!Number(settings.enabled)) return expressOff(res);
+      if (!(await membershipsOn(req.office))) {
+        return res.status(404).json({
+          error: 'Memberships are not offered here.',
+          code: 'memberships_off',
+        });
+      }
+      req.expressSettings = settings;
+      next();
+    } catch (e) {
+      next(e);
+    }
+  }
+
+  /** A plan as the kiosk shows it, with what joining costs. */
+  function kioskPlan(p) {
+    return {
+      id: p.id,
+      name: p.name,
+      description: p.description || null,
+      colour: p.colour || null,
+      term_months: p.term_months,
+      fee_minor: p.fee_minor,
+      joining_fee_minor: p.joining_fee_minor,
+      join_minor: p.fee_minor + p.joining_fee_minor,
+      family_size: p.family_size,
+    };
+  }
+
+  /** The plans somebody may join here: active, and with something to pay. */
+  async function joinablePlans(office) {
+    const plans = await membershipsLib().plansFor(pool, office, { activeOnly: true });
+    return plans.filter((p) => p.active && p.fee_minor + p.joining_fee_minor > 0);
+  }
+
+  /** Whether a member may renew here, and the reason when not. */
+  function renewalOf(m) {
+    const plan = m.plan;
+    if (m.state === 'cancelled') {
+      return { ok: false, reason: 'This membership is cancelled. Please ask a member of staff.' };
+    }
+    if (!plan) return { ok: false, reason: 'This membership cannot be renewed here. Please ask a member of staff.' };
+    if (!(plan.fee_minor > 0)) {
+      return { ok: false, reason: 'There is nothing to pay for this membership here. Please ask a member of staff.' };
+    }
+    return { ok: true, plan, amount: plan.fee_minor };
+  }
+
+  const memberNotFound = (res) =>
+    res.status(404).json({
+      error: 'We could not find that membership. Please check and try again, or ask a member of staff.',
+      code: 'member_not_found',
+    });
+
+  /** What a membership's line is rung up as: the venue's product, or the till's sentinel. */
+  async function membershipProduct(office) {
+    try {
+      const [[row]] = await pool.query(
+        'SELECT s.membership_plu AS plu, p.tax_percentage' +
+          '  FROM epos_loyalty_settings s' +
+          '  JOIN bo_products p ON p.email = s.office AND p.pluid = s.membership_plu' +
+          ' WHERE s.office = ? AND s.membership_plu > 0 LIMIT 1',
+        [office]
+      );
+      if (row) return { plu: Number(row.plu), tax: Number(row.tax_percentage) || 0 };
+    } catch (e) {
+      if (!e || (e.code !== 'ER_NO_SUCH_TABLE' && e.code !== 'ER_BAD_FIELD_ERROR')) throw e;
+    }
+    return { plu: MEMBERSHIP_PLU, tax: 0 };
+  }
+
+  router.get('/api/express/kiosk/memberships/plans', kioskAuth, kioskMemberships, async (req, res, next) => {
+    try {
+      res.set('Cache-Control', 'no-store');
+      res.json({ plans: (await joinablePlans(req.office)).map(kioskPlan) });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /**
+   * Find a member: by the card in their hand, or by the email or phone number
+   * on their membership together with their surname. The same "not found"
+   * whichever part was wrong, so the kiosk cannot be used to learn whether
+   * somebody's email address belongs to a member here.
+   */
+  router.post('/api/express/kiosk/memberships/lookup', kioskAuth, kioskMemberships, async (req, res, next) => {
+    try {
+      const body = req.body || {};
+      const card = String(body.card_number || '')
+        .replace(/^[;%B]+/, '')
+        .replace(/[?].*$/, '')
+        .replace(/\D/g, '')
+        .slice(0, 64);
+      const email = String(body.email || '').trim().toLowerCase().slice(0, 255);
+      const phone = phoneKey(body.phone);
+      const surname = String(body.surname || '').trim();
+
+      let rows = [];
+      if (card) {
+        [rows] = await pool.query(
+          "SELECT id, name FROM epos_customers WHERE email_key = ? AND card_number = ? AND membership_status <> ''" +
+            ' LIMIT 1',
+          [req.office, card]
         );
+      } else if (email || phone.length >= 7) {
+        if (nameKey(surname).length < 2) {
+          return res.status(400).json({ error: 'Please enter your surname as well.', code: 'surname_needed' });
+        }
+        const [found] = email
+          ? await pool.query(
+              "SELECT id, name, phone FROM epos_customers WHERE email_key = ? AND membership_status <> ''" +
+                ' AND LOWER(email) = ? ORDER BY membership_expiry DESC LIMIT 20',
+              [req.office, email]
+            )
+          : await pool.query(
+              "SELECT id, name, phone FROM epos_customers WHERE email_key = ? AND membership_status <> ''" +
+                " AND REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', '') LIKE ?" +
+                ' ORDER BY membership_expiry DESC LIMIT 20',
+              [req.office, '%' + phone.slice(-7)]
+            );
+        rows = found.filter((r) =>
+          surnameMatches(r.name, surname) && (email || phoneKey(r.phone) === phone));
+      } else {
+        return res.status(400).json({
+          error: 'Scan your card, or enter the email or phone number on your membership.',
+          code: 'lookup_needed',
+        });
+      }
+      if (!rows.length) return memberNotFound(res);
+
+      const m = await membershipsLib().memberById(pool, req.office, rows[0].id);
+      if (!m || !m.membership_status) return memberNotFound(res);
+      const renewal = renewalOf(m);
+      res.json({
+        member_token: jwt.sign(
+          { scope: 'express_member', office: req.office, kiosk: req.kiosk.id, cid: m.id },
+          secret,
+          { expiresIn: MEMBER_TOKEN_TTL }
+        ),
+        first_name: firstName(m.name),
+        plan_name: m.plan ? m.plan.name : null,
+        state: m.state,
+        expiry: m.membership_expiry || null,
+        renew_minor: renewal.ok ? renewal.amount : null,
+        can_renew: renewal.ok,
+        reason: renewal.ok ? null : renewal.reason,
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /**
+   * An order for a membership: `kind: 'renew'` with the token the lookup gave,
+   * or `kind: 'join'` with a plan and the new member's name, email and phone.
+   * Priced here, from the plan, and paid like any kiosk order.
+   */
+  router.post('/api/express/kiosk/memberships/orders', kioskAuth, kioskMemberships, async (req, res, next) => {
+    try {
+      const settings = req.expressSettings;
+      const body = req.body || {};
+
+      const clientRef = clientRefOf(body);
+      if (clientRef) {
+        const again = await loadOrder('kiosk_id = ? AND client_ref = ?', [req.kiosk.id, clientRef]);
+        if (again) return res.json(describe(again));
+      }
+
+      const how = choosePayment(req, settings, body.payment || 'card', { counter: false });
+      if (!how.payment) return res.status(how.status).json(how.body);
+
+      let membership;
+      let lineName;
+      let amount;
+      let customerName;
+      if (body.kind === 'renew') {
+        let claims;
+        try {
+          claims = jwt.verify(String(body.member_token || ''), secret);
+        } catch {
+          claims = null;
+        }
+        if (!claims || claims.scope !== 'express_member' || claims.office !== req.office
+            || claims.kiosk !== req.kiosk.id || !claims.cid) {
+          return res.status(401).json({
+            error: 'Please find your membership again.',
+            code: 'member_token',
+          });
+        }
+        const m = await membershipsLib().memberById(pool, req.office, String(claims.cid));
+        if (!m || !m.membership_status) return memberNotFound(res);
+        const renewal = renewalOf(m);
+        if (!renewal.ok) return res.status(409).json({ error: renewal.reason, code: 'cannot_renew' });
+        amount = renewal.amount;
+        lineName = 'Membership: ' + renewal.plan.name + ' renewal';
+        customerName = firstName(m.name);
+        membership = {
+          kind: 'renew',
+          customer_id: m.id,
+          scheme_id: renewal.plan.id,
+          plan_name: renewal.plan.name,
+          first_name: customerName,
+          amount,
+        };
+      } else if (body.kind === 'join') {
+        const plan = (await joinablePlans(req.office)).find((p) => p.id === Number(body.scheme_id));
+        if (!plan) {
+          return res.status(400).json({ error: 'Please choose a membership.', code: 'plan_needed' });
+        }
+        const name = String(body.name || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+        const email = String(body.email || '').trim().toLowerCase().slice(0, 255);
+        const phone = String(body.phone || '').replace(/[^\d+ ]/g, '').trim().slice(0, 32);
+        if (name.split(' ').filter((w) => nameKey(w).length).length < 2) {
+          return res.status(400).json({ error: 'Please enter your first name and surname.', code: 'name_needed' });
+        }
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          return res.status(400).json({ error: 'Please enter a valid email address.', code: 'email_needed' });
+        }
+        if (phoneKey(phone).length < 7) {
+          return res.status(400).json({ error: 'Please enter your phone number.', code: 'phone_needed' });
+        }
+        // Somebody who is a member already renews; joining again would be a
+        // second customer and a second membership for one person.
+        const [[existing]] = await pool.query(
+          "SELECT id FROM epos_customers WHERE email_key = ? AND LOWER(email) = ?" +
+            " AND membership_status IN ('active', 'frozen', 'pending')" +
+            ' AND (membership_expiry IS NULL OR membership_expiry >= CURDATE()) LIMIT 1',
+          [req.office, email]
+        );
+        if (existing) {
+          return res.status(409).json({
+            error: 'There is already a membership with that email address. Choose Renew to pay for it.',
+            code: 'already_member',
+          });
+        }
+        amount = plan.fee_minor + plan.joining_fee_minor;
+        lineName = 'Membership: ' + plan.name + ' joining';
+        customerName = firstName(name);
+        membership = {
+          kind: 'join',
+          scheme_id: plan.id,
+          plan_name: plan.name,
+          first_name: customerName,
+          customer: { name, email, phone },
+          amount,
+        };
+      } else {
+        return res.status(400).json({ error: 'Join or renew?', code: 'kind_needed' });
+      }
+
+      const product = await membershipProduct(req.office);
+      const lines = [{
+        plu_id: product.plu,
+        name: lineName.slice(0, 160),
+        qty: 1,
+        unit: amount,
+        tax_percentage: product.tax,
+        note: null,
+        isModifier: false,
+      }];
+
+      let created;
+      try {
+        created = await createOrder(req, settings, {
+          clientRef,
+          orderType: MEMBERSHIP_ORDER,
+          payment: how.payment,
+          customerName: customerName ? customerName.slice(0, 40) : null,
+          lines,
+          subtotal: amount,
+          tax: core.inclusiveTax(lines),
+          membership,
+        });
       } catch (e) {
-        // The same basket arriving twice at the same moment: the unique key
-        // on (kiosk, client_ref) lets one through, and this one answers it.
-        if (e && e.code === 'ER_DUP_ENTRY' && clientRef) {
-          const again = await loadOrder('kiosk_id = ? AND client_ref = ?', [req.kiosk.id, clientRef]);
-          if (again) return res.json(describe(again));
+        if (e && e.code === 'ER_BAD_FIELD_ERROR') {
+          return res.status(503).json({
+            error: 'Memberships are not ready on this kiosk yet. Please ask a member of staff.',
+            code: 'memberships_not_ready',
+          });
         }
         throw e;
       }
-
-      let order = await loadOrder('id = ?', [inserted.insertId]);
-      if (payment === 'counter') {
-        await sendToCounter(order, priced.lines, officeId);
-        if (Number(settings.notify_till)) {
-          broadcast(
-            {
-              type: 'express.order',
-              public_id: order.public_id,
-              number: order.number,
-              order_type: order.order_type,
-              total_minor: order.total_minor,
-              kiosk: req.kiosk.name,
-              payment: 'counter',
-              notify_till: true,
-            },
-            { office: req.office }
-          );
-        }
-      } else if (payment === 'card') {
-        await startPayment(order, settings, req.kiosk);
-      }
-      order = await loadOrder('id = ?', [inserted.insertId]);
-      res.status(201).json(describe(order));
+      res.status(created.again ? 200 : 201).json(describe(created.order));
     } catch (e) {
       next(e);
     }

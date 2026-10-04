@@ -187,10 +187,14 @@ class DigitPad extends StatelessWidget {
 /// operating system's touch keyboard on a kiosk opens over the thing being
 /// typed into and has a key that leaves the app.
 class LetterBoard extends StatelessWidget {
-  const LetterBoard({super.key, required this.onKey, required this.onBack});
+  const LetterBoard({super.key, required this.onKey, required this.onBack, this.extraRows = const []});
 
   final ValueChanged<String> onKey;
   final VoidCallback onBack;
+
+  /// Rows of other keys drawn above the letters -- digits and `@ . _` for an
+  /// email address or a phone number.
+  final List<String> extraRows;
 
   static const _rows = ['QWERTYUIOP', 'ASDFGHJKL', 'ZXCVBNM'];
 
@@ -216,6 +220,10 @@ class LetterBoard extends StatelessWidget {
       return Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          for (final row in extraRows)
+            Row(mainAxisSize: MainAxisSize.min, children: [
+              for (final l in row.split('')) key(letter(l), () => onKey(l)),
+            ]),
           for (final row in _rows)
             Row(mainAxisSize: MainAxisSize.min, children: [
               for (final l in row.split('')) key(letter(l), () => onKey(l)),

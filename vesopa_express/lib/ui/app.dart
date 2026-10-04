@@ -21,6 +21,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/activity_log.dart';
 import '../data/order_flow.dart';
 import '../data/session.dart';
+import 'pages/membership.dart';
 import 'pages/ordering.dart';
 import 'pages/paying.dart';
 import 'pages/settings.dart';
@@ -202,6 +203,7 @@ class _FlowView extends ConsumerWidget {
       FlowStep.basket => const BasketPage(),
       FlowStep.details => const NamePage(),
       FlowStep.payMethod => const PayMethodPage(),
+      FlowStep.membership => const MembershipPage(),
       FlowStep.paying => const PayingPage(),
       FlowStep.done => const DonePage(),
     };
