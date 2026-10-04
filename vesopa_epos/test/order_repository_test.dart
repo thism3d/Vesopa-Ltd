@@ -1,6 +1,7 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vesopa_epos/data/local/database.dart';
+import 'package:vesopa_epos/data/membership.dart';
 import 'package:vesopa_epos/data/order_repository.dart';
 
 void main() {
@@ -60,6 +61,23 @@ void main() {
 
     final order = await repo.watchOrder(id).first;
     expect(order.totalMinor, 500);
+  });
+
+  test('a membership plan line keeps its note and takes nothing merged in',
+      () async {
+    // The note is how the settle path knows which plan was joined. A plain
+    // renewal rung up afterwards must be a line of its own, not a quantity of
+    // two on the plan's line. See data/membership.dart.
+    final fee = membershipProduct(feeMinor: 3000);
+    final note = membershipLineNote(join: true, planId: 3, planName: 'Gold');
+    final id = await repo.openOrder();
+    await repo.addLine(id, fee, notes: note);
+    await repo.addLine(id, fee);
+
+    final lines = await repo.watchLines(id).first;
+    expect(lines, hasLength(2));
+    expect(lines.where((l) => l.notes == note), hasLength(1));
+    expect(lines.every((l) => l.quantity == 1), isTrue);
   });
 
   test('a venue can turn consolidation off and get a line each', () async {
