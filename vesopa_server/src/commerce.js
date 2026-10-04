@@ -1713,6 +1713,33 @@ function commerceRoutes({ pool, broadcast, secret }) {
         'UPDATE epos_customers SET membership_expiry = ? WHERE id = ? AND email_key = ?',
         [expiry, customerId, office]
       );
+
+      // A venue with the Memberships module keeps a history and families: the
+      // renewal goes in the member's history, makes a lapsed or cancelled
+      // member active again, and carries the new date to everyone on their
+      // family plan. Never stops the renewal itself, which is already paid.
+      try {
+        const memberships = require('./memberships');
+        const { moduleOn } = require('./modules');
+        if (await moduleOn(pool, office, 'memberships')) {
+          await pool.execute(
+            `UPDATE epos_customers
+                SET membership_status = 'active', cancelled_on = NULL,
+                    joined_on = COALESCE(joined_on, CURDATE())
+              WHERE id = ? AND email_key = ? AND membership_status IN ('', 'cancelled', 'pending')`,
+            [customerId, office]
+          );
+          await memberships.logEvent(pool, {
+            office, customer_id: customerId, kind: 'renew',
+            scheme_id: withScheme?.scheme_id ?? null,
+            before: customer.membership_expiry, after: expiry,
+            amount: Number(settings.membership_fee_minor) || null, via: 'till',
+          });
+          await memberships.syncFamily(pool, office, customerId);
+        }
+      } catch (e) {
+        console.error('membership renewal history', e.message);
+      }
       broadcast({ type: 'customers.updated' });
 
       // The whole customer back, in the shape the till already reads from

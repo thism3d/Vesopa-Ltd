@@ -53,6 +53,7 @@ const { deviceRoutes } = require('./devices');
 const { cardRoutes } = require('./cards');
 const { gymRoutes } = require('./gym');
 const { moduleRoutes } = require('./modules');
+const { membershipRoutes, sendReminders } = require('./memberships');
 const { importRoutes } = require('./imports');
 const { reportRoutes, toPdf } = require('./reports');
 const { stockRoutes } = require('./stock');
@@ -399,6 +400,11 @@ app.use(gymRoutes({ pool, broadcast, secret: JWT_SECRET }));
 // on (src/modules.js). Mounted at the root because it serves admin, the back
 // office and devices, each under its own path and token.
 app.use(moduleRoutes({ pool, broadcast, secret: JWT_SECRET }));
+
+// Memberships and classes (src/memberships.js): the back office, the till, the
+// loyalty app, the Dojo return page and the partner API Metric reads. Every
+// route answers 404 for a venue without the Memberships module switched on.
+app.use(membershipRoutes({ pool, broadcast, secret: JWT_SECRET }));
 
 // Vesopa Express, the self-service kiosk. Off for every venue until a manager
 // turns it on; see src/express_kiosk.js and schema_till_express.sql.
@@ -2287,6 +2293,12 @@ startScheduler({ pool });
 // Loyalty-app notifications that are due, and the sweep that forgets old
 // locations and spent sign-in codes. Unref'd, like the report clock.
 startLoyaltyScheduler({ pool });
+
+// Membership renewal reminders: once an hour, each member is emailed once per
+// expiry date, a week before it. Unref'd like the others.
+setInterval(() => {
+  sendReminders(pool).catch((e) => console.error('membership reminders', e.message));
+}, 60 * 60 * 1000).unref();
 
 /*
  * Say at boot which Dojo webhook environments can actually verify a delivery.

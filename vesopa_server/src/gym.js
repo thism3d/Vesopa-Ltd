@@ -486,6 +486,27 @@ function gymRoutes({ pool, broadcast, secret }) {
       // not happen would simply be false.
       const printSlip = expired && Boolean(Number(settings.expiry_slip));
 
+      // A venue with Memberships has more reasons than a date to turn a card
+      // away: a frozen or cancelled membership, one still waiting for
+      // approval, or a plan without the gym. Always refused, whatever
+      // refuse_expired says -- the venue chose those states on purpose.
+      const { doorCheck } = require('./memberships');
+      const refusal = await doorCheck(pool, office, member.id);
+      if (refusal) {
+        return res.json({
+          outcome: 'expired',
+          refused: true,
+          reason: refusal.reason,
+          message: refusal.message,
+          member_name: member.name,
+          member_no: member.member_no,
+          photo_url: settings.show_photo ? member.photo_url : null,
+          membership_expiry: member.membership_expiry,
+          expired_days: null,
+          print_slip: false,
+        });
+      }
+
       if (expired && Number(settings.refuse_expired)) {
         return res.json({
           outcome: 'expired',

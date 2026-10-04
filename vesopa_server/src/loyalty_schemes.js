@@ -86,7 +86,48 @@ function normaliseScheme(row) {
     sort_order: Number(row.sort_order) || 0,
     notes: row.notes || null,
     members: row.members === undefined ? undefined : Number(row.members) || 0,
+    // Membership plan (schema_memberships.sql). Read with defaults so a
+    // database without the columns describes plain loyalty schemes.
+    is_membership: Number(row.is_membership) ? 1 : 0,
+    joining_fee_minor: intOrNull(row.joining_fee_minor),
+    family_size: intOrNull(row.family_size),
+    freeze_days_per_year: intOrNull(row.freeze_days_per_year),
+    includes_gym: row.includes_gym === undefined || Number(row.includes_gym) ? 1 : 0,
+    includes_classes: row.includes_classes === undefined || Number(row.includes_classes) ? 1 : 0,
+    class_credits_per_month: intOrNull(row.class_credits_per_month),
+    max_vehicles: intOrNull(row.max_vehicles),
+    sell_online: Number(row.sell_online) ? 1 : 0,
+    description: row.description || null,
   };
+}
+
+/**
+ * The membership-plan fields, cleaned -- ONLY those the body actually sent.
+ *
+ * The loyalty scheme editor predates plans and does not send them; saving a
+ * scheme there must not quietly turn a gym plan back into a loyalty group. So
+ * a field that is absent stays as it is in the database.
+ */
+function cleanPlanInput(body, errors) {
+  const has = (f) => Object.prototype.hasOwnProperty.call(body, f);
+  const out = {};
+  const ranged = (f, lo, hi, label) => {
+    if (!has(f)) return;
+    const n = intOrNull(body[f]);
+    if (n != null && (n < lo || n > hi)) errors.push(`${label} must be from ${lo} to ${hi}.`);
+    out[f] = n;
+  };
+  if (has('is_membership')) out.is_membership = body.is_membership ? 1 : 0;
+  ranged('joining_fee_minor', 0, 1_000_000, 'The joining fee (in pence)');
+  ranged('family_size', 1, 12, 'People on one membership');
+  ranged('freeze_days_per_year', 0, 366, 'Freeze days a year');
+  ranged('class_credits_per_month', 0, 999, 'Classes a month');
+  ranged('max_vehicles', 0, 20, 'Cars per member');
+  if (has('includes_gym')) out.includes_gym = body.includes_gym ? 1 : 0;
+  if (has('includes_classes')) out.includes_classes = body.includes_classes ? 1 : 0;
+  if (has('sell_online')) out.sell_online = body.sell_online ? 1 : 0;
+  if (has('description')) out.description = String(body.description || '').trim().slice(0, 500) || null;
+  return out;
 }
 
 /**
@@ -159,6 +200,7 @@ function cleanSchemeInput(body = {}) {
       active: body.active === undefined || body.active ? 1 : 0,
       sort_order: Math.round(Number(body.sort_order) || 0),
       notes: String(body.notes || '').trim().slice(0, 255) || null,
+      ...cleanPlanInput(body, errors),
     },
   };
 }
