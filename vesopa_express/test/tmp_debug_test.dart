@@ -23,7 +23,7 @@ const _config = KioskConfig(
   eatIn: true,
   takeAway: true,
   payCard: true,
-  memberships: true,
+  memberships: false,
 );
 
 // The kiosk is a food kiosk first: with no menu it shows "not ready".
@@ -96,6 +96,8 @@ Future<(ProviderContainer, _FakeApi)> _start(WidgetTester tester, Size size) asy
     child: const ExpressApp(),
   ));
   await tester.pump();
+  // ignore: avoid_print
+  print('Z ${tester.takeException()}');
   final container = ProviderScope.containerOf(tester.element(find.byType(ExpressApp)));
   container.read(orderFlowProvider.notifier).state = const FlowState(step: FlowStep.orderType);
   await tester.pump(const Duration(milliseconds: 400));
@@ -109,68 +111,21 @@ Future<void> _settle(WidgetTester tester) async {
 }
 
 void main() {
-  testWidgets('renew: scan or type the card, see who it is, pay, and be told the new date', (tester) async {
-    final (container, api) = await _start(tester, const Size(1080, 1920));
-
-    expect(find.byKey(const ValueKey('choose-memberships')), findsOneWidget);
+  testWidgets('dbg', (tester) async {
+    await _start(tester, const Size(540, 960));
+    // ignore: avoid_print
+    print('A ${tester.takeException()}');
     await tester.tap(find.byKey(const ValueKey('choose-memberships')));
     await _settle(tester);
-    await tester.tap(find.byKey(const ValueKey('membership-renew')));
+    // ignore: avoid_print
+    print('B ${tester.takeException()}');
+    await tester.tap(find.byKey(const ValueKey('membership-join')));
     await _settle(tester);
-
-    for (final d in ['4', '0', '0', '1']) {
-      await tester.tap(find.text(d).last);
-      await tester.pump();
-    }
-    await tester.tap(find.text('Find'));
+    // ignore: avoid_print
+    print('C ${tester.takeException()}');
+    await tester.tap(find.byKey(const ValueKey('membership-plan-3')));
     await _settle(tester);
-
-    expect(find.text('Hello, Ann'), findsOneWidget);
-    expect(find.text('Runs to 04/11/2026'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('membership-pay-renew')));
-    await _settle(tester);
-
-    expect(api.placed.single, {'kind': 'renew', 'token': 'tok', 'payment': 'card'});
-    expect(container.read(orderFlowProvider).step, FlowStep.done);
-    expect(find.byKey(const ValueKey('membership-done')), findsOneWidget);
-    expect(find.text('Your membership is renewed'), findsOneWidget);
-    expect(find.text('Your Gold membership now runs to 04/12/2026.'), findsOneWidget);
-
-    container.read(orderFlowProvider.notifier).reset();
-    await tester.pump(const Duration(seconds: 16));
+    // ignore: avoid_print
+    print('D ${tester.takeException()}');
   });
-
-  testWidgets('a card nobody holds says so, and nothing is paid for', (tester) async {
-    final (_, api) = await _start(tester, const Size(1080, 1920));
-    await tester.tap(find.byKey(const ValueKey('choose-memberships')));
-    await _settle(tester);
-    await tester.tap(find.byKey(const ValueKey('membership-renew')));
-    await _settle(tester);
-    await tester.tap(find.text('9').last);
-    await tester.pump();
-    await tester.tap(find.text('Find'));
-    await _settle(tester);
-    expect(find.byKey(const ValueKey('membership-error')), findsOneWidget);
-    expect(api.placed, isEmpty);
-  });
-
-  for (final size in const [Size(1080, 1920), Size(1920, 1080), Size(540, 960), Size(960, 540)]) {
-    testWidgets('join: the plans and the details form fit at ${size.width.toInt()}x${size.height.toInt()}',
-        (tester) async {
-      final (_, api) = await _start(tester, size);
-      await tester.tap(find.byKey(const ValueKey('choose-memberships')));
-      await _settle(tester);
-      await tester.tap(find.byKey(const ValueKey('membership-join')));
-      await _settle(tester);
-      expect(find.text('Gold'), findsOneWidget);
-      expect(find.text('£45.00'), findsOneWidget);
-      await tester.tap(find.byKey(const ValueKey('membership-plan-3')));
-      await _settle(tester);
-      expect(find.byKey(const ValueKey('membership-field-email')), findsOneWidget);
-      // Nothing typed yet: nothing to pay.
-      final pay = tester.widget<FilledButton>(find.byKey(const ValueKey('membership-pay-join')));
-      expect(pay.onPressed, isNull);
-      expect(api.placed, isEmpty);
-    });
-  }
 }
