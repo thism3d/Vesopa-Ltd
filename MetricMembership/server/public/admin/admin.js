@@ -93,7 +93,7 @@
   const REASONS = {
     member: 'Member', member_fuzzy: 'Member (close read)', unknown_plate: 'Not a member', pending: 'Awaiting approval',
     suspended: 'Suspended', closed: 'Closed', expired: 'Expired', not_started: 'Not started yet', not_this_site: 'Not valid at this site',
-    ambiguous_read: 'Unclear read', no_plate: 'No plate read',
+    ambiguous_read: 'Unclear read', no_plate: 'No plate read', frozen: 'Frozen (EPOS)', cancelled: 'Cancelled (EPOS)',
   };
 
   function notice(text, kind = '') { return el('div', { class: `notice ${kind}`, text }); }
@@ -162,6 +162,7 @@
         el('div', {}, el('p', { class: 'overline', text: 'Metric Membership' }), el('h1', { text: 'Good to see you' }),
           el('p', { class: 'muted', text: 'Members, cars and every barrier read, live.' })),
         el('div', { class: 'welcome-art', 'aria-hidden': 'true' }, icon('gate', 34))),
+      o.epos && o.epos.enabled ? eposBar(o.epos) : null,
       el('div', { class: 'grid' },
         stat('Active members', m.active || 0, null, 'members', 'navy'),
         stat('Waiting for approval', m.pending || 0, () => show('members', { status: 'pending' }), 'pending', 'amber'),
@@ -179,6 +180,19 @@
         : el('p', { class: 'muted' }, 'No gates yet. ', el('a', { href: '#sites', onclick: () => show('sites') }, 'Add a site and its gates'), '.'),
     );
   };
+
+  // Members and plans come from Vesopa EPOS once it is configured.
+  function eposBar(e) {
+    const last = e.last || {};
+    const text = last.at
+      ? `Members and plans come from Vesopa EPOS. Last sync ${when(last.at)}${last.ok === false ? ` failed: ${last.error || 'unknown error'}` : ` (${last.members || 0} members, ${last.plans || 0} plans)`}.`
+      : 'Members and plans come from Vesopa EPOS. Not synced yet.';
+    const box = el('div', { class: `notice ${last.ok === false ? 'bad' : ''}` }, text, ' ',
+      el('button', { type: 'button', text: 'Sync now', onclick: async () => {
+        try { await api('/epos/sync', { method: 'POST' }); show('overview'); } catch (err) { flash(box, err.message, 'bad'); }
+      } }));
+    return box;
+  }
 
   function stat(label, n, onclick, ic = 'overview', tone = 'navy') {
     return el('div', { class: `stat${onclick ? ' link' : ''}`, onclick },
@@ -251,6 +265,7 @@
       box,
       el('h1', {}, `${m.name || m.email} `, badge(m.status)),
       el('p', { class: 'muted' }, `${m.memberNo} · ${m.email} · joined ${when(m.since)}`),
+      m.epos ? el('p', { class: 'muted' }, `Vesopa EPOS: ${m.epos.state}${m.epos.plan ? ` · ${m.epos.plan}` : ''}${m.validTo ? ` · until ${m.validTo}` : ''}. Status and plan changes are made in EPOS.`) : null,
       m.status === 'pending' ? el('div', { class: 'row' }, el('button', { class: 'go', type: 'button', text: 'Approve membership', onclick: () => save({ status: 'active' }) })) : null,
       el('div', { class: 'split' },
         el('div', {},

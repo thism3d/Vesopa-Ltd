@@ -12,6 +12,7 @@
 --   gate_plates      what this server has put on each camera's own allow-list
 --   access_events    every plate read, and whether the barrier opened
 --   activity_log     every press and change, by whom (fault finding)
+--   (end)            EPOS columns on plans and members, see the bottom
 -- ---------------------------------------------------------------------------
 
 SET NAMES utf8mb4 COLLATE utf8mb4_general_ci;
@@ -177,3 +178,31 @@ CREATE TABLE IF NOT EXISTS settings (
   updated_by    VARCHAR(191) NOT NULL DEFAULT '',
   updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ---------------------------------------------------------------------------
+-- Vesopa EPOS (2026-10). Members and plans live in the venue's EPOS; this
+-- server copies them in through the partner API (src/epos.js, src/epos_sync.js)
+-- when EPOS_BASE_URL and EPOS_PARTNER_KEY are set. Cars, gates and cameras
+-- stay here. Every column is NULL / empty until EPOS is configured, so a
+-- standalone server is unchanged. Re-runnable (MariaDB IF NOT EXISTS).
+-- ---------------------------------------------------------------------------
+
+-- The EPOS plan (scheme) this row mirrors. NULL: a local plan.
+ALTER TABLE plans
+  ADD COLUMN IF NOT EXISTS epos_plan_id VARCHAR(64) NULL,
+  ADD COLUMN IF NOT EXISTS epos_synced_at DATETIME NULL;
+ALTER TABLE plans ADD UNIQUE KEY IF NOT EXISTS uq_plans_epos (epos_plan_id);
+
+-- The EPOS member this row is, and what EPOS last said about them.
+--   epos_state: pending | active | frozen | expired | cancelled | none
+--   (EPOS stateOf). Only 'active' opens a barrier while EPOS is configured.
+-- A member EPOS has but who has never signed in here gets vesopa_sub
+-- 'epos:<id>' until they do (matched then by email).
+ALTER TABLE members
+  ADD COLUMN IF NOT EXISTS epos_member_id VARCHAR(64) NULL,
+  ADD COLUMN IF NOT EXISTS epos_state     VARCHAR(20) NULL,
+  ADD COLUMN IF NOT EXISTS epos_access    TINYINT(1)  NULL,
+  ADD COLUMN IF NOT EXISTS epos_plan_name VARCHAR(80) NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS epos_member_no VARCHAR(40) NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS epos_synced_at DATETIME NULL;
+ALTER TABLE members ADD UNIQUE KEY IF NOT EXISTS uq_members_epos (epos_member_id);

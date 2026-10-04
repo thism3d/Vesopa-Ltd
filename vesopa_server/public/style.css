@@ -7768,3 +7768,31 @@ tr.ls-off td { opacity: .55; }
 #view-admin_modules td.module-cell .muted { display: block; font-size: 12px; }
 .module-card .module-price { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .module-card .module-price input { width: 110px; }
+
+/* ---- Memberships ---------------------------------------------------------- */
+.ms-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.ms-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--surface-2, #eee); color: var(--text); vertical-align: middle; }
+.ms-badge.green { background: #e3f4d0; color: #3c6a06; }
+.ms-badge.amber { background: #fff1d1; color: #8a5a00; }
+.ms-badge.blue { background: #dcecff; color: #1d4f91; }
+.ms-badge.red { background: #fde0de; color: #a12b22; }
+.ms-badge.grey { background: #ececec; color: #555; }
+.ms-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+.ms-member { max-width: 640px; }
+.ms-facts { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 12px 0; }
+.ms-facts dt { color: var(--muted); }
+.ms-facts dd { margin: 0; }
+.ms-list { list-style: none; padding: 0; margin: 4px 0 12px; display: grid; gap: 4px; }
+.ms-history li { font-size: 13px; }
+.ms-member-actions { flex-wrap: wrap; }
+.ms-sessions { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; margin-bottom: 12px; }
+.ms-session { text-align: left; display: grid; gap: 2px; padding: 10px 12px; border: 1px solid var(--line, #ddd); border-left: 4px solid #a5c715; border-radius: 8px; background: var(--card, #fff); color: var(--text); cursor: pointer; }
+.ms-session.cancelled { opacity: .55; text-decoration: line-through; }
+.ms-slot { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 6px; background: var(--surface-2, #f1f1f1); font-size: 12px; margin: 2px 0; }
+.ms-slot.off { opacity: .5; }
+.ms-slot .link { border: 0; background: none; cursor: pointer; color: var(--muted); padding: 0 2px; }
+[data-theme="dark"] .ms-badge.green { background: #2a3d14; color: #c6ec8f; }
+[data-theme="dark"] .ms-badge.amber { background: #3d2f10; color: #f3cf7a; }
+[data-theme="dark"] .ms-badge.blue { background: #142a45; color: #9cc6ff; }
+[data-theme="dark"] .ms-badge.red { background: #45201d; color: #f7a69f; }
+[data-theme="dark"] .ms-badge.grey { background: #2c2c2c; color: #bbb; }

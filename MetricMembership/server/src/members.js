@@ -8,6 +8,7 @@ const db = require('./db');
 const config = require('./config');
 const plates = require('./plates');
 const sync = require('./sync');
+const eposSync = require('./epos_sync');
 
 class Refusal extends Error {
   constructor(message, status = 400, code = 'refused') {
@@ -28,6 +29,16 @@ async function fromVesopa(claims) {
   const email = String(claims.email || '').slice(0, 191);
   const name = String(claims.name || [claims.given_name, claims.family_name].filter(Boolean).join(' ') || '').slice(0, 120);
   let member = await db.one('SELECT * FROM members WHERE vesopa_sub = ?', [sub]);
+  if (!member && email) {
+    // Somebody EPOS already had (copied in by the sync as 'epos:<id>'),
+    // signing in here for the first time: this is their row.
+    const held = await db.all("SELECT * FROM members WHERE vesopa_sub LIKE 'epos:%' AND LOWER(email) = ? LIMIT 2", [email.toLowerCase()]);
+    if (held.length === 1) {
+      await db.run('UPDATE members SET vesopa_sub = ?, name = IF(name = \'\', ?, name) WHERE id = ?', [sub, name, held[0].id]);
+      member = await db.one('SELECT * FROM members WHERE id = ?', [held[0].id]);
+      member.claimed = true;
+    }
+  }
   if (!member) {
     const plan = await defaultPlan();
     const res = await db.run(
@@ -46,6 +57,14 @@ async function fromVesopa(claims) {
   } else if (email && email !== member.email) {
     await db.run('UPDATE members SET email = ? WHERE id = ?', [email, member.id]);
     member.email = email;
+  }
+  // Vesopa EPOS holds the membership: a new sign-up is made there (pending
+  // until Metric approves it, in EPOS), and a returning one is linked. EPOS
+  // being down never stops a sign-in; the next sync links them.
+  if (config.EPOS_ON && (member.isNew || member.claimed || !member.epos_member_id)) {
+    const flags = { isNew: member.isNew, claimed: member.claimed };
+    member = await eposSync.tryLink(member, { by: 'Metric sign-up', status: member.isNew && config.AUTO_APPROVE ? 'active' : undefined });
+    Object.assign(member, flags);
   }
   return member;
 }

@@ -207,7 +207,7 @@ class _Front extends StatelessWidget {
     final points = (me['points'] as num?)?.toInt() ?? 0;
     final scheme = (me['scheme'] as Map?)?.cast<String, dynamic>();
     final schemeName = scheme?['name'] as String?;
-    final schemeColour = _hex(scheme?['colour'] as String?) ?? brand.accent;
+    final schemeColour = hexColour(scheme?['colour'] as String?) ?? brand.accent;
     return _Face(
       brand: brand,
       child: Column(
@@ -570,12 +570,4 @@ class _Facts extends StatelessWidget {
       ),
     );
   }
-}
-
-/// A '#rrggbb' colour from the back office, or null when it will not read.
-Color? _hex(String? value) {
-  final hex = (value ?? '').replaceFirst('#', '');
-  if (hex.length != 6) return null;
-  final v = int.tryParse(hex, radix: 16);
-  return v == null ? null : Color(0xff000000 | v);
 }

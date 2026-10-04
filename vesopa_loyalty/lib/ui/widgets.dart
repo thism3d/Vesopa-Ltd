@@ -78,6 +78,7 @@ Future<bool> runWithFeedback(
   WidgetRef ref,
   Future<void> Function() job, {
   required String done,
+  String Function()? doneText,
 }) async {
   final messenger = ScaffoldMessenger.maybeOf(context);
   void say(String text, {bool bad = false}) {
@@ -93,7 +94,8 @@ Future<bool> runWithFeedback(
 
   try {
     await job();
-    say(done);
+    // [doneText] when what to say depends on the answer, read after the job.
+    say(doneText?.call() ?? done);
     return true;
   } on PasskeyCancelled {
     // Somebody changed their mind. Not a failure, and nothing to report.
@@ -145,4 +147,12 @@ class LoadFailed extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// A '#rrggbb' colour from the back office, or null when it will not read.
+Color? hexColour(String? value) {
+  final hex = (value ?? '').replaceFirst('#', '');
+  if (hex.length != 6) return null;
+  final v = int.tryParse(hex, radix: 16);
+  return v == null ? null : Color(0xff000000 | v);
 }

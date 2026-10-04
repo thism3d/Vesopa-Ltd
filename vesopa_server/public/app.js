@@ -191,6 +191,7 @@ function connectSocket() {
   socket.onmessage = (e) => {
     const msg = JSON.parse(e.data);
     if (msg.type === 'order.created') onNewSale(msg);
+    if (msg.type === 'memberships' && currentView === 'memberships') loadMemberships().catch(() => {});
     if (msg.type === 'modules') applyModules().then(() => { if (currentView === 'modules') render(); });
     // The screen editor names its keys from the catalogue, so a product renamed
     // on another machine should relabel them here. Safe to reload now that
@@ -355,6 +356,7 @@ const ROUTES = {
   devices: '/devices',
   activity_log: '/activity-log',
   gym: '/gym',
+  memberships: '/memberships',
   modules: '/modules',
   // Added when the reachability check above found it missing. Price Levels has
   // had a nav button, a section and a loader since 1.6.9.0 and no URL, so the
@@ -1361,6 +1363,7 @@ const VIEW_LOADERS = {
     loyalty: loadLoyalty,
     cards: loadCards,
     gym: loadGym,
+    memberships: loadMemberships,
     modules: loadModules,
     admin_modules: loadAdminModules,
     wallet: loadWallet,
@@ -3355,6 +3358,8 @@ async function loadOffices() {
         <td class="right nowrap">
           <button class="btn small ghost" data-office-modules="${o.id}" data-office-modules-name="${esc(o.name)}"
                   title="Which modules this venue has, and what each costs it">Modules</button>
+          <button class="btn small ghost" data-partner-keys="${o.id}" data-partner-keys-name="${esc(o.name)}"
+                  title="Keys that let another system, such as Metric Membership, read and update this venue's members">Partner keys</button>
           <button class="btn small ghost" data-managers="${o.id}" data-managers-name="${esc(o.name)}"
                   title="Logins from another office that can also manage this site">Managed by</button>
           ${o.status === 'active'
@@ -11916,7 +11921,7 @@ const deviceKindLabel = (kind) => ({
  * switch it back on, and it says so. Admin sees everything.
  */
 let venueModules = [];
-const MODULE_VIEWS = { gym: 'gym_door' };
+const MODULE_VIEWS = { gym: 'gym_door', memberships: 'memberships' };
 
 async function applyModules() {
   try {
@@ -11977,6 +11982,559 @@ document.addEventListener('change', async (e) => {
   } finally {
     box.disabled = false;
   }
+});
+
+// ---- Memberships ----------------------------------------------------------
+//
+// The Memberships module (src/memberships.js): members, the plans they are on,
+// classes and what was paid online. Hidden from the menu for a venue that has
+// not been given the module; see MODULE_VIEWS.
+
+let msTab = 'members';
+let msPlans = [];
+let msMembers = [];
+let msSchemes = [];
+
+const MS_STATE = {
+  active: ['Active', 'green'],
+  pending: ['Waiting for approval', 'amber'],
+  frozen: ['Frozen', 'blue'],
+  expired: ['Expired', 'red'],
+  cancelled: ['Cancelled', 'grey'],
+  none: ['Not a member', 'grey'],
+};
+
+const msBadge = (state) => {
+  const [label, tone] = MS_STATE[state] || [state, 'grey'];
+  return `<span class="ms-badge ${tone}">${esc(label)}</span>`;
+};
+const msDate = (d) => (d ? new Date(`${d}T12:00:00`).toLocaleDateString('en-GB') : '—');
+
+async function loadMemberships() {
+  let summary;
+  try {
+    [summary, msPlans] = await Promise.all([api('/memberships/summary'), api('/memberships/plans')]);
+  } catch (e) {
+    $('ms-stats').innerHTML = '';
+    $('ms-members').innerHTML = `<p class="muted small">${esc(e.message || 'Memberships are not switched on for this venue.')} `
+      + 'Switch Memberships on under <b>Programming &gt; Modules</b>.</p>';
+    return;
+  }
+  statCards($('ms-stats'), [
+    { label: 'Active members', value: String(summary.active), tone: 'green' },
+    { label: 'Run out in 2 weeks', value: String(summary.expiring_soon), tone: summary.expiring_soon ? 'amber' : '' },
+    { label: 'Waiting for approval', value: String(summary.pending), tone: summary.pending ? 'amber' : '' },
+    { label: 'Frozen', value: String(summary.frozen) },
+    { label: 'Expired', value: String(summary.expired), tone: summary.expired ? 'red' : '' },
+    { label: 'Joined this month', value: String(summary.joined_this_month) },
+    { label: 'Paid online this month', value: money(summary.paid_online_this_month_minor) },
+  ]);
+  const planSel = $('ms-plan');
+  const keep = planSel.value;
+  planSel.innerHTML = '<option value="">Every plan</option>'
+    + msPlans.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+  planSel.value = keep;
+  if (!$('ms-class-from').value) $('ms-class-from').value = gymDay();
+  await msShowTab();
+}
+
+async function msShowTab() {
+  document.querySelectorAll('[data-mstab]').forEach((t) => t.classList.toggle('on', t.dataset.mstab === msTab));
+  document.querySelectorAll('[data-mspanel]').forEach((p) => { p.hidden = p.dataset.mspanel !== msTab; });
+  if (msTab === 'members') return msLoadMembers();
+  if (msTab === 'plans') return msRenderPlans();
+  if (msTab === 'classes') return msLoadClasses();
+  if (msTab === 'payments') return msLoadPayments();
+}
+
+async function msLoadMembers() {
+  const q = new URLSearchParams();
+  if ($('ms-search').value.trim()) q.set('q', $('ms-search').value.trim());
+  if ($('ms-state').value) q.set('state', $('ms-state').value);
+  if ($('ms-plan').value) q.set('plan', $('ms-plan').value);
+  msMembers = await api(`/memberships/members?${q}`);
+  $('ms-members').innerHTML = msMembers.length ? `
+    <table class="table">
+      <thead><tr><th>Member</th><th>No.</th><th>Plan</th><th>State</th><th>Runs to</th><th></th></tr></thead>
+      <tbody>${msMembers.map((m) => `
+        <tr>
+          <td><b>${esc(m.name)}</b>${m.family_head_id ? ' <span class="muted small">family</span>' : ''}
+            <div class="muted small">${esc(m.email || m.phone || '')}</div></td>
+          <td>${esc(m.member_number || m.member_no || '')}</td>
+          <td>${esc(m.plan ? m.plan.name : '—')}</td>
+          <td>${msBadge(m.state)}</td>
+          <td>${msDate(m.membership_expiry)}${m.state === 'active' && m.days_left != null && m.days_left <= 14
+            ? ` <span class="muted small">(${m.days_left} days)</span>` : ''}</td>
+          <td><button class="btn small" data-ms-open="${esc(m.id)}">Open</button></td>
+        </tr>`).join('')}</tbody>
+    </table>` : '<p class="muted small">No members match. <b>Add member</b> puts somebody on a plan.</p>';
+}
+
+async function msOpenMember(id) {
+  const m = await api(`/memberships/members/${encodeURIComponent(id)}`);
+  const plan = m.plan;
+  const payer = !m.family_head_id;
+  const act = (key, label, cls = '') => `<button type="button" class="btn ${cls}" data-ms-act="${key}">${label}</button>`;
+  const actions = [];
+  if (payer && m.state !== 'cancelled') actions.push(act('renew', 'Renew', 'primary'));
+  if (m.state === 'pending') actions.push(act('reinstate', 'Approve', 'primary'));
+  if (m.state === 'cancelled') actions.push(act('reinstate', 'Reinstate', 'primary'));
+  if (payer && m.membership_status === 'frozen') actions.push(act('unfreeze', 'Unfreeze'));
+  else if (payer && ['active', 'expired'].includes(m.state) && plan && plan.freeze_days_per_year) actions.push(act('freeze', 'Freeze'));
+  if (payer && msPlans.length > 1) actions.push(act('plan', 'Change plan'));
+  if (payer && plan && plan.family_size > 1 && m.family.length < plan.family_size) actions.push(act('family', 'Add family member'));
+  if (!payer) actions.push(act('leave', 'Take off family plan'));
+  if (payer && m.state !== 'cancelled') actions.push(act('cancel', 'Cancel', 'danger'));
+
+  const root = $('modal-root');
+  root.innerHTML = `
+    <div class="modal-back">
+      <div class="modal ms-member">
+        <h3>${esc(m.name)} ${msBadge(m.state)}</h3>
+        <dl class="ms-facts">
+          <dt>Plan</dt><dd>${esc(plan ? plan.name : '—')}${plan ? ` · ${money(plan.fee_minor)} for ${plan.term_months} month${plan.term_months === 1 ? '' : 's'}` : ''}</dd>
+          <dt>Member number</dt><dd>${esc(m.member_number || m.member_no || '—')}</dd>
+          <dt>Joined</dt><dd>${msDate(m.joined_on)}</dd>
+          <dt>Runs to</dt><dd>${msDate(m.membership_expiry)}</dd>
+          ${m.membership_status === 'frozen' ? `<dt>Frozen</dt><dd>${msDate(m.frozen_from)} to ${msDate(m.frozen_until)}</dd>` : ''}
+          ${plan && plan.freeze_days_per_year ? `<dt>Freeze days used</dt><dd>${m.freeze_days_used} of ${plan.freeze_days_per_year} this year</dd>` : ''}
+          <dt>Contact</dt><dd>${esc([m.email, m.phone].filter(Boolean).join(' · ') || '—')}</dd>
+          <dt>Reminders</dt><dd><label class="check"><input type="checkbox" data-ms-reminders ${Number(m.renewal_reminders) ? 'checked' : ''}> Email a week before it runs out</label></dd>
+        </dl>
+        ${m.family.length > 1 ? `<h4>Family</h4><ul class="ms-list">${m.family.map((f) => `
+          <li><a href="#" data-ms-open="${esc(f.id)}">${esc(f.name)}</a> ${f.payer ? '<span class="muted small">pays</span>' : ''} ${msBadge(f.state)}</li>`).join('')}</ul>` : ''}
+        ${m.bookings.length ? `<h4>Classes</h4><ul class="ms-list">${m.bookings.slice(0, 8).map((b) => `
+          <li>${esc(b.class_name)} · ${new Date(b.starts_at).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })} · ${esc(b.status)}</li>`).join('')}</ul>` : ''}
+        ${m.history.length ? `<h4>History</h4><ul class="ms-list ms-history">${m.history.slice(0, 12).map((h) => `
+          <li><b>${esc(h.kind)}</b> ${new Date(h.created_at).toLocaleDateString('en-GB')}
+            ${h.expiry_after ? ` · to ${msDate(h.expiry_after)}` : ''}${h.amount_minor != null ? ` · ${money(h.amount_minor)}` : ''}
+            · ${esc(h.via)}${h.note ? ` · ${esc(h.note)}` : ''}</li>`).join('')}</ul>` : ''}
+        <div class="modal-actions ms-member-actions">
+          ${actions.join('')}
+          <button type="button" class="btn ghost" id="ms-close">Close</button>
+        </div>
+      </div>
+    </div>`;
+  $('ms-close').onclick = () => { root.innerHTML = ''; };
+  root.querySelector('[data-ms-reminders]').onchange = async (e) => {
+    await api(`/memberships/members/${encodeURIComponent(m.id)}/reminders`, { method: 'PUT', body: JSON.stringify({ on: e.target.checked }) });
+    toast(e.target.checked ? 'Reminders on.' : 'Reminders off.');
+  };
+  root.querySelectorAll('[data-ms-act]').forEach((b) => {
+    b.onclick = () => msAction(m, b.dataset.msAct).catch((err) => toast(err.message, 'error'));
+  });
+}
+
+async function msAction(m, kind) {
+  const url = (a) => `/memberships/members/${encodeURIComponent(m.id)}/${a}`;
+  const done = async (said, id = m.id) => {
+    toast(said);
+    await msOpenMember(id);
+    msLoadMembers().catch(() => {});
+  };
+  if (kind === 'renew') {
+    const p = m.plan;
+    if (!confirm(`Renew ${m.name}${p ? ` on ${p.name} for ${money(p.fee_minor)}` : ''}? Take the payment at the till.`)) return;
+    await api(url('renew'), { method: 'POST', body: JSON.stringify({ amount_minor: p ? p.fee_minor : null }) });
+    return done('Renewed.');
+  }
+  if (kind === 'reinstate') {
+    await api(url('reinstate'), { method: 'POST', body: '{}' });
+    return done(m.state === 'pending' ? 'Approved.' : 'Reinstated.');
+  }
+  if (kind === 'unfreeze') {
+    await api(url('unfreeze'), { method: 'POST', body: '{}' });
+    return done('Unfrozen.');
+  }
+  if (kind === 'freeze') {
+    return modal(`Freeze ${m.name}`, [
+      { label: 'From', name: 'from', type: 'date', value: gymDay(), required: true },
+      { label: 'Until', name: 'until', type: 'date', required: true,
+        hint: 'The days are added to the end of the membership. Unfreezing early takes back the days not used.' },
+      { label: 'Why (optional)', name: 'note' },
+    ], async (d) => {
+      await api(url('freeze'), { method: 'POST', body: JSON.stringify(d) });
+      await done('Frozen.');
+    });
+  }
+  if (kind === 'cancel') {
+    return modal(`Cancel ${m.name}`, [
+      { label: 'End it today', name: 'now', type: 'checkbox', value: 0,
+        hint: `Unticked, ${m.name} keeps what they paid for until ${msDate(m.membership_expiry)}.` },
+      { label: 'Why (optional)', name: 'note' },
+    ], async (d) => {
+      await api(url('cancel'), { method: 'POST', body: JSON.stringify({ now: Number(d.now) === 1, note: d.note }) });
+      await done('Cancelled.');
+    });
+  }
+  if (kind === 'plan') {
+    return modal(`Change ${m.name}'s plan`, [
+      { label: 'Plan', name: 'scheme_id', type: 'select', value: String(m.scheme_id ?? ''),
+        options: msPlans.map((p) => ({ value: String(p.id), label: `${p.name} (${money(p.fee_minor)})` })),
+        hint: 'Takes effect now; the date it runs to stays the same.' },
+    ], async (d) => {
+      await api(url('plan'), { method: 'POST', body: JSON.stringify(d) });
+      await done('Plan changed.');
+    });
+  }
+  if (kind === 'leave') {
+    if (!confirm(`Take ${m.name} off the family plan? They stay a customer, with no membership.`)) return;
+    await api(url('leave-family'), { method: 'POST', body: '{}' });
+    return done('Taken off the family plan.', m.family_head_id);
+  }
+  if (kind === 'family') return msJoin({ head: m });
+}
+
+async function msJoin({ head = null } = {}) {
+  if (!msPlans.length && !head) {
+    toast('Make a plan first: Memberships > New plan.', 'error');
+    return;
+  }
+  const customers = await api('/customers').catch(() => []);
+  const free = customers.filter((c) => !c.membership_status || c.membership_status === 'cancelled');
+  modal(head ? `Add to ${head.name}'s family plan` : 'Add member', [
+    ...(head ? [] : [{ label: 'Plan', name: 'scheme_id', type: 'select', required: true,
+      options: msPlans.filter((p) => p.active).map((p) => ({ value: String(p.id),
+        label: `${p.name}: ${money(p.fee_minor)} for ${p.term_months} month${p.term_months === 1 ? '' : 's'}${p.joining_fee_minor ? ` + ${money(p.joining_fee_minor)} to join` : ''}` })) }]),
+    { label: 'Existing customer', name: 'customer_id', type: 'select', value: '',
+      options: [{ value: '', label: 'Somebody new (fill in below)' },
+        ...free.slice(0, 2000).map((c) => ({ value: String(c.id), label: `${c.name}${c.card_number ? ` · ${c.card_number}` : ''}${c.email ? ` · ${c.email}` : ''}` }))] },
+    { label: 'Name', name: 'name' },
+    { label: 'Email', name: 'email', type: 'email' },
+    { label: 'Phone', name: 'phone' },
+    { label: 'Card number', name: 'card_number', hint: 'Optional. The card they will swipe at the till or the gym door.' },
+    ...(head ? [] : [{ label: 'Wait for approval', name: 'pending', type: 'checkbox', value: 0,
+      hint: 'Ticked, they are added but cannot use the membership until somebody approves them.' }]),
+  ], async (d) => {
+    const body = head ? { family_head_id: head.id } : { scheme_id: d.scheme_id, status: Number(d.pending) ? 'pending' : 'active' };
+    if (d.customer_id) body.customer_id = d.customer_id;
+    else {
+      if (!String(d.name || '').trim()) throw new Error('Pick a customer or give a name.');
+      body.customer = { name: d.name, email: d.email, phone: d.phone, card_number: d.card_number };
+    }
+    if (!head) {
+      const p = msPlans.find((x) => String(x.id) === String(d.scheme_id));
+      if (p) body.amount_minor = p.fee_minor + (p.joining_fee_minor || 0);
+    }
+    const m = await api('/memberships/members', { method: 'POST', body: JSON.stringify(body) });
+    toast(`${m.name} added.`);
+    await loadMemberships();
+    setTimeout(() => msOpenMember(m.id).catch(() => {}), 0);
+  });
+}
+
+function msRenderPlans() {
+  $('ms-plans').innerHTML = msPlans.length ? `
+    <table class="table">
+      <thead><tr><th>Plan</th><th>Price</th><th>To join</th><th>People</th><th>Includes</th><th>Freeze days</th><th>Members</th><th></th></tr></thead>
+      <tbody>${msPlans.map((p) => `
+        <tr class="${p.active ? '' : 'muted'}">
+          <td><span class="ms-dot" style="background:${esc(p.colour || '#a5c715')}"></span><b>${esc(p.name)}</b>
+            ${p.sell_online ? ' <span class="muted small">sold in the app</span>' : ''}${p.active ? '' : ' <span class="muted small">not taking members</span>'}</td>
+          <td>${money(p.fee_minor)} / ${p.term_months} mo</td>
+          <td>${p.joining_fee_minor ? money(p.joining_fee_minor) : '—'}</td>
+          <td>${p.family_size}</td>
+          <td>${[p.includes_gym && 'Gym', p.includes_classes && (p.class_credits_per_month != null ? `${p.class_credits_per_month} classes a month` : 'Classes')].filter(Boolean).join(', ') || '—'}</td>
+          <td>${p.freeze_days_per_year || '—'}</td>
+          <td>${p.members ?? '—'}</td>
+          <td><button class="btn small" data-ms-plan-edit="${p.id}">Edit</button></td>
+        </tr>`).join('')}</tbody>
+    </table>` : '<p class="muted small">No plans yet. <b>New plan</b> makes the first one.</p>';
+}
+
+async function msEditPlan(id) {
+  msSchemes = await api('/loyalty/schemes').catch(() => []);
+  const s = id ? msSchemes.find((x) => x.id === Number(id)) : null;
+  const p = id ? msPlans.find((x) => x.id === Number(id)) : null;
+  const pounds = (minor) => (minor == null ? '' : (minor / 100).toFixed(2));
+  const v = (k, d = '') => (s && s[k] != null ? s[k] : d);
+  modal(s ? `Edit ${s.name}` : 'New membership plan', [
+    { type: 'section', key: 'basics', label: 'The plan' },
+    { label: 'Name', name: 'name', required: true, value: v('name') },
+    { label: 'What it includes (shown in the member app)', name: 'description', value: v('description') },
+    { label: 'Price (£)', name: 'fee', type: 'number', value: pounds(p ? p.fee_minor : null), required: true },
+    { label: 'Lasts (months)', name: 'membership_term_months', type: 'number', value: v('membership_term_months', 1) },
+    { label: 'Joining fee (£)', name: 'joining_fee', type: 'number', value: pounds(v('joining_fee_minor', null)), hint: 'Charged once, when somebody joins. Blank for none.' },
+    { label: 'People on one membership', name: 'family_size', type: 'number', value: v('family_size', 1), hint: 'More than 1 makes it a family or couples plan: one person pays, everybody on it gets in.' },
+    { type: 'section', key: 'includes', label: 'What it includes' },
+    { label: 'The gym', name: 'includes_gym', type: 'checkbox', value: v('includes_gym', 1) },
+    { label: 'Classes', name: 'includes_classes', type: 'checkbox', value: v('includes_classes', 1) },
+    { label: 'Classes a month', name: 'class_credits_per_month', type: 'number', value: v('class_credits_per_month'), hint: 'Blank for as many as they like.' },
+    { label: 'Freeze days a year', name: 'freeze_days_per_year', type: 'number', value: v('freeze_days_per_year', 0), hint: '0 means the plan cannot be frozen.' },
+    { label: 'Cars per member (vehicle access)', name: 'max_vehicles', type: 'number', value: v('max_vehicles') },
+    { type: 'section', key: 'selling', label: 'Selling' },
+    { label: 'Sell in the member app (paid by card)', name: 'sell_online', type: 'checkbox', value: v('sell_online', 0) },
+    { label: 'Taking new members', name: 'active', type: 'checkbox', value: v('active', 1) },
+  ], async (d) => {
+    const minor = (x) => (String(x ?? '').trim() === '' ? null : Math.round(parseFloat(x) * 100));
+    const body = {
+      ...(s || { reward_type: 'none', offer_at_till: 1 }),
+      name: d.name,
+      description: d.description,
+      is_membership: 1,
+      membership_fee_minor: minor(d.fee),
+      membership_term_months: d.membership_term_months,
+      joining_fee_minor: minor(d.joining_fee),
+      family_size: d.family_size,
+      includes_gym: Number(d.includes_gym),
+      includes_classes: Number(d.includes_classes),
+      class_credits_per_month: d.class_credits_per_month,
+      freeze_days_per_year: d.freeze_days_per_year,
+      max_vehicles: d.max_vehicles,
+      sell_online: Number(d.sell_online),
+      active: Number(d.active),
+    };
+    await api(s ? `/loyalty/schemes/${s.id}` : '/loyalty/schemes', { method: s ? 'PUT' : 'POST', body: JSON.stringify(body) });
+    toast(s ? 'Plan saved.' : 'Plan made.');
+    msTab = 'plans';
+    await loadMemberships();
+  });
+}
+
+const MS_DAYS = ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+let msClasses = { classes: [], timetable: [] };
+
+async function msLoadClasses() {
+  const from = $('ms-class-from').value || gymDay();
+  const end = new Date(`${from}T12:00:00`);
+  end.setDate(end.getDate() + 6);
+  const [sessions, classes] = await Promise.all([
+    api(`/classes/sessions?from=${from}&to=${gymDay(end)}`),
+    api('/classes'),
+  ]);
+  msClasses = classes;
+  const byDay = new Map();
+  for (const s of sessions) {
+    const day = String(s.starts_at).slice(0, 10);
+    if (!byDay.has(day)) byDay.set(day, []);
+    byDay.get(day).push(s);
+  }
+  $('ms-sessions').innerHTML = sessions.length ? [...byDay.entries()].map(([day, list]) => `
+    <h4>${new Date(`${day}T12:00:00`).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</h4>
+    <div class="ms-sessions">${list.map((s) => `
+      <button class="ms-session ${Number(s.cancelled) ? 'cancelled' : ''}" data-ms-session="${s.id}" style="border-left-color:${esc(s.colour || '#a5c715')}">
+        <b>${esc(String(s.starts_at).slice(11, 16))} ${esc(s.name)}</b>
+        <span class="muted small">${Number(s.cancelled) ? 'Cancelled' : `${s.booked}/${s.capacity} booked${Number(s.waiting) ? ` · ${s.waiting} waiting` : ''}`}${s.instructor ? ` · ${esc(s.instructor)}` : ''}</span>
+      </button>`).join('')}</div>`).join('')
+    : '<p class="muted small">No classes this week. Make a class, then add it to the timetable.</p>';
+
+  $('ms-timetable').innerHTML = classes.classes.length ? `
+    <table class="table">
+      <thead><tr><th>Class</th><th>Places</th><th>Minutes</th><th>Drop-in</th><th>When</th><th></th></tr></thead>
+      <tbody>${classes.classes.map((k) => `
+        <tr class="${k.active ? '' : 'muted'}">
+          <td><span class="ms-dot" style="background:${esc(k.colour)}"></span><b>${esc(k.name)}</b>${k.instructor ? `<div class="muted small">${esc(k.instructor)}</div>` : ''}</td>
+          <td>${k.capacity}</td><td>${k.duration_min}</td>
+          <td>${k.drop_in_minor != null ? money(k.drop_in_minor) : 'Members only'}</td>
+          <td>${classes.timetable.filter((t) => t.class_id === k.id).map((t) => `
+            <span class="ms-slot ${t.active ? '' : 'off'}">${MS_DAYS[t.weekday].slice(0, 3)} ${esc(t.start_time)}
+              <button class="link" data-ms-slot-off="${t.id}" title="${t.active ? 'Take off the timetable' : 'Put back'}">${t.active ? '×' : '+'}</button></span>`).join(' ') || '—'}</td>
+          <td><button class="btn small" data-ms-class-edit="${k.id}">Edit</button></td>
+        </tr>`).join('')}</tbody>
+    </table>` : '<p class="muted small">No classes yet.</p>';
+}
+
+function msEditClass(id) {
+  const k = id ? msClasses.classes.find((x) => x.id === Number(id)) : null;
+  const v = (key, d = '') => (k && k[key] != null ? k[key] : d);
+  modal(k ? `Edit ${k.name}` : 'New class', [
+    { label: 'Name', name: 'name', required: true, value: v('name') },
+    { label: 'Description', name: 'description', value: v('description') },
+    { label: 'Colour', name: 'colour', type: 'color', value: v('colour', '#a5c715') },
+    { label: 'Minutes', name: 'duration_min', type: 'number', value: v('duration_min', 60) },
+    { label: 'Places', name: 'capacity', type: 'number', value: v('capacity', 20) },
+    { label: 'Instructor', name: 'instructor', value: v('instructor') },
+    { label: 'Room', name: 'room', value: v('room') },
+    { label: 'Drop-in price (£)', name: 'drop_in', type: 'number', value: k && k.drop_in_minor != null ? (k.drop_in_minor / 100).toFixed(2) : '', hint: 'Blank keeps it for members only.' },
+    { label: 'Running', name: 'active', type: 'checkbox', value: v('active', 1) },
+  ], async (d) => {
+    const body = { ...d, active: Number(d.active), drop_in_minor: String(d.drop_in || '').trim() === '' ? null : Math.round(parseFloat(d.drop_in) * 100) };
+    await api(k ? `/classes/${k.id}` : '/classes', { method: k ? 'PUT' : 'POST', body: JSON.stringify(body) });
+    toast('Class saved.');
+    await msLoadClasses();
+  });
+}
+
+function msAddSlot() {
+  if (!msClasses.classes.length) {
+    toast('Make a class first.', 'error');
+    return;
+  }
+  modal('Add to the weekly timetable', [
+    { label: 'Class', name: 'class_id', type: 'select', options: msClasses.classes.filter((k) => k.active).map((k) => ({ value: String(k.id), label: k.name })) },
+    { label: 'Day', name: 'weekday', type: 'select', options: MS_DAYS.slice(1).map((d, i) => ({ value: String(i + 1), label: d })) },
+    { label: 'Starts at', name: 'start_time', type: 'time', value: '18:00', required: true },
+    { label: 'Instructor (if not the usual)', name: 'instructor' },
+    { label: 'From', name: 'starts_on', type: 'date', hint: 'Blank starts this week.' },
+    { label: 'Until', name: 'ends_on', type: 'date', hint: 'Blank keeps it going.' },
+  ], async (d) => {
+    await api('/classes/timetable', { method: 'POST', body: JSON.stringify(d) });
+    toast('Added to the timetable.');
+    await msLoadClasses();
+  });
+}
+
+async function msOpenSession(id) {
+  const s = await api(`/classes/sessions/${id}`);
+  const root = $('modal-root');
+  const when = new Date(String(s.starts_at).replace(' ', 'T'));
+  root.innerHTML = `
+    <div class="modal-back">
+      <div class="modal ms-member">
+        <h3>${esc(s.name)}</h3>
+        <p class="muted">${when.toLocaleString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}
+          · ${s.bookings.filter((b) => ['booked', 'attended'].includes(b.status)).length}/${s.capacity} booked${s.instructor ? ` · ${esc(s.instructor)}` : ''}</p>
+        ${s.bookings.length ? `<table class="table"><tbody>${s.bookings.map((b) => `
+          <tr><td>${esc(b.name)}</td><td>${esc(b.status)}</td><td class="muted small">${esc(b.via || '')}</td>
+          <td>${['booked', 'waitlist'].includes(b.status) ? `
+            <button class="btn small" data-ms-checkin="${esc(b.customer_id)}">Here</button>
+            <button class="btn small ghost" data-ms-unbook="${esc(b.customer_id)}">Cancel</button>` : ''}</td></tr>`).join('')}</tbody></table>`
+          : '<p class="muted small">Nobody booked yet.</p>'}
+        <div class="modal-actions">
+          <select id="ms-book-who"><option value="">Book a member…</option>${msMembers.filter((m) => m.state === 'active')
+            .map((m) => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join('')}</select>
+          <button type="button" class="btn" id="ms-book">Book</button>
+          ${Number(s.cancelled) ? '' : '<button type="button" class="btn danger" id="ms-session-cancel">Cancel class</button>'}
+          <button type="button" class="btn ghost" id="ms-close">Close</button>
+        </div>
+      </div>
+    </div>`;
+  const again = async (said) => { toast(said); await msOpenSession(id); msLoadClasses().catch(() => {}); };
+  const post = (path, body) => api(`/classes/sessions/${id}/${path}`, { method: 'POST', body: JSON.stringify(body || {}) });
+  $('ms-close').onclick = () => { root.innerHTML = ''; };
+  $('ms-book').onclick = async () => {
+    const who = $('ms-book-who').value;
+    if (!who) return;
+    try { const r = await post('book', { customer_id: who }); await again(r.status === 'waitlist' ? 'Full: on the waiting list.' : 'Booked.'); } catch (e) { toast(e.message, 'error'); }
+  };
+  const cancelBtn = $('ms-session-cancel');
+  if (cancelBtn) cancelBtn.onclick = async () => {
+    if (!confirm('Cancel this class? Everybody booked sees it cancelled in the app.')) return;
+    try { await post('cancel'); await again('Class cancelled.'); } catch (e) { toast(e.message, 'error'); }
+  };
+  root.querySelectorAll('[data-ms-checkin]').forEach((b) => { b.onclick = async () => {
+    try { await post('checkin', { customer_id: b.dataset.msCheckin }); await again('Checked in.'); } catch (e) { toast(e.message, 'error'); }
+  }; });
+  root.querySelectorAll('[data-ms-unbook]').forEach((b) => { b.onclick = async () => {
+    try { await post('unbook', { customer_id: b.dataset.msUnbook }); await again('Booking cancelled.'); } catch (e) { toast(e.message, 'error'); }
+  }; });
+}
+
+async function msLoadPayments() {
+  const rows = await api('/memberships/payments');
+  $('ms-payments').innerHTML = rows.length ? `
+    <table class="table">
+      <thead><tr><th>When</th><th>Member</th><th>Plan</th><th>For</th><th>Amount</th><th>State</th></tr></thead>
+      <tbody>${rows.map((r) => `
+        <tr><td>${new Date(r.paid_at || r.created_at).toLocaleString('en-GB')}</td><td>${esc(r.name || '—')}</td>
+          <td>${esc(r.plan_name || '—')}</td><td>${r.kind === 'join' ? 'Joining' : 'Renewal'}</td>
+          <td>${money(r.amount_minor)}</td><td>${esc(r.status)}</td></tr>`).join('')}</tbody>
+    </table>` : '<p class="muted small">Nothing paid online yet. Tick <b>Sell in the member app</b> on a plan to offer it there.</p>';
+}
+
+function msCsv() {
+  const head = ['Name', 'Email', 'Phone', 'Member number', 'Plan', 'State', 'Joined', 'Runs to'];
+  const rows = msMembers.map((m) => [m.name, m.email, m.phone, m.member_number || m.member_no, m.plan ? m.plan.name : '',
+    (MS_STATE[m.state] || [m.state])[0], m.joined_on, m.membership_expiry]);
+  const csv = [head, ...rows].map((r) => r.map((c) => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  a.download = `members-${gymDay()}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+document.addEventListener('click', (e) => {
+  const t = e.target.closest ? e.target : null;
+  if (!t) return;
+  const run = (p) => Promise.resolve(p).catch((err) => toast(err.message, 'error'));
+  const tab = t.closest('[data-mstab]');
+  if (tab) { msTab = tab.dataset.mstab; return run(msShowTab()); }
+  const open = t.closest('[data-ms-open]');
+  if (open) { e.preventDefault(); return run(msOpenMember(open.dataset.msOpen)); }
+  const planEdit = t.closest('[data-ms-plan-edit]');
+  if (planEdit) return run(msEditPlan(planEdit.dataset.msPlanEdit));
+  const classEdit = t.closest('[data-ms-class-edit]');
+  if (classEdit) return run(msEditClass(classEdit.dataset.msClassEdit));
+  const session = t.closest('[data-ms-session]');
+  if (session) return run(msOpenSession(session.dataset.msSession));
+  const slotOff = t.closest('[data-ms-slot-off]');
+  if (slotOff) {
+    const slot = msClasses.timetable.find((x) => x.id === Number(slotOff.dataset.msSlotOff));
+    if (!slot) return;
+    return run(api(`/classes/timetable/${slot.id}`, { method: 'PUT', body: JSON.stringify({ ...slot, active: slot.active ? 0 : 1 }) })
+      .then(() => { toast(slot.active ? 'Taken off the timetable.' : 'Back on the timetable.'); return msLoadClasses(); }));
+  }
+  if (t.id === 'ms-join') return run(msJoin());
+  if (t.id === 'ms-plan-add') return run(msEditPlan(null));
+  if (t.id === 'ms-class-add') return run(msEditClass(null));
+  if (t.id === 'ms-slot-add') return run(msAddSlot());
+  if (t.id === 'ms-csv') return msCsv();
+});
+
+let msSearchTimer = null;
+document.addEventListener('input', (e) => {
+  if (e.target?.id !== 'ms-search') return;
+  clearTimeout(msSearchTimer);
+  msSearchTimer = setTimeout(() => msLoadMembers().catch(() => {}), 250);
+});
+document.addEventListener('change', (e) => {
+  const id = e.target?.id;
+  if (id === 'ms-state' || id === 'ms-plan') msLoadMembers().catch((err) => toast(err.message, 'error'));
+  if (id === 'ms-class-from') msLoadClasses().catch((err) => toast(err.message, 'error'));
+});
+
+// ---- Admin: partner keys --------------------------------------------------
+//
+// A key lets another system -- Metric Membership's server -- read this venue's
+// membership plans and members and approve or suspend them (the partner API in
+// src/memberships.js). Shown once when issued; only its hash is kept.
+async function openPartnerKeys(officeId, name) {
+  const keys = await api(`/admin/offices/${officeId}/partner-keys`);
+  const root = $('modal-root');
+  root.innerHTML = `
+    <div class="modal-back">
+      <div class="modal ms-member">
+        <h3>Partner keys — ${esc(name)}</h3>
+        <p class="muted small">For Metric Membership's server (EPOS_PARTNER_KEY). It can read and update this
+          venue's membership plans and members only, and only while the venue has Memberships.</p>
+        ${keys.length ? `<table class="table"><tbody>${keys.map((k) => `
+          <tr class="${k.revoked_at ? 'muted' : ''}"><td><b>${esc(k.label)}</b><div class="muted small">by ${esc(k.created_by || '—')} · ${date(k.created_at)}</div></td>
+            <td class="muted small">${k.revoked_at ? `Revoked ${date(k.revoked_at)}` : k.last_used_at ? `Last used ${new Date(k.last_used_at).toLocaleString('en-GB')}` : 'Not used yet'}</td>
+            <td>${k.revoked_at ? '' : `<button class="btn small danger" data-partner-revoke="${k.id}">Revoke</button>`}</td></tr>`).join('')}</tbody></table>`
+          : '<p class="muted small">No keys yet.</p>'}
+        <div id="partner-new-key"></div>
+        <div class="modal-actions">
+          <button type="button" class="btn primary" id="partner-issue">Issue a key</button>
+          <button type="button" class="btn ghost" id="partner-close">Close</button>
+        </div>
+      </div>
+    </div>`;
+  $('partner-close').onclick = () => { root.innerHTML = ''; };
+  $('partner-issue').onclick = async () => {
+    try {
+      const label = prompt('What is the key for?', 'Metric Membership');
+      if (label === null) return;
+      const { key } = await api(`/admin/offices/${officeId}/partner-keys`, { method: 'POST', body: JSON.stringify({ label }) });
+      await openPartnerKeys(officeId, name);
+      $('partner-new-key').innerHTML = `<div class="card rd-card"><b>Copy this key now. It is not shown again.</b>
+        <input type="text" readonly value="${esc(key)}" style="width:100%;font-family:monospace" onclick="this.select()"></div>`;
+    } catch (e) { toast(e.message, 'error'); }
+  };
+  root.querySelectorAll('[data-partner-revoke]').forEach((b) => { b.onclick = async () => {
+    if (!confirm('Revoke this key? Whatever uses it stops working at once.')) return;
+    try {
+      await api(`/admin/partner-keys/${b.dataset.partnerRevoke}/revoke`, { method: 'POST', body: '{}' });
+      toast('Key revoked.');
+      await openPartnerKeys(officeId, name);
+    } catch (e) { toast(e.message, 'error'); }
+  }; });
+}
+
+document.addEventListener('click', (e) => {
+  const b = e.target.closest && e.target.closest('[data-partner-keys]');
+  if (!b) return;
+  openPartnerKeys(b.dataset.partnerKeys, b.dataset.partnerKeysName || 'venue').catch((err) => toast(err.message, 'error'));
 });
 
 /** Admin > Modules: prices, platform switches, every venue, promo codes. */

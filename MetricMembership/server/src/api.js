@@ -16,6 +16,7 @@ const activity = require('./activity');
 const brand = require('./brand');
 const access = require('./access');
 const sync = require('./sync');
+const eposSync = require('./epos_sync');
 const settings = require('./settings');
 const themes = require('./themes');
 const { webBuild } = require('./web');
@@ -38,6 +39,10 @@ function memberJson(m, plan) {
     validTo: day(m.valid_to),
     plan: plan ? { name: plan.name, description: plan.description, maxVehicles: plan.max_vehicles } : null,
     since: iso(m.created_at),
+    // Where the membership is held, once Vesopa EPOS is configured.
+    epos: m.epos_member_id
+      ? { id: m.epos_member_id, state: m.epos_state, plan: m.epos_plan_name || null, memberNo: m.epos_member_no || null, syncedAt: iso(m.epos_synced_at) }
+      : null,
   };
 }
 
@@ -145,7 +150,9 @@ function apiRouter() {
     await db.run('UPDATE members SET name = ?, phone = ?, company = ? WHERE id = ?', [next.name, next.phone, next.company, req.member.id]);
     const changed = Object.keys(next).filter((k) => next[k] !== req.member[k]);
     activity.record({ actor: actor(req.member), action: 'member.update', req, detail: { changed, ...Object.fromEntries(changed.map((k) => [k, next[k]])) } });
-    const m = await db.one('SELECT * FROM members WHERE id = ?', [req.member.id]);
+    let m = await db.one('SELECT * FROM members WHERE id = ?', [req.member.id]);
+    // EPOS holds the member's details too: pass a new name or phone on (best effort).
+    if (config.EPOS_ON && (changed.includes('name') || changed.includes('phone'))) m = await eposSync.tryLink(m, { by: 'Metric app' });
     res.json({ member: memberJson(m, await members.planFor(m)) });
   }));
 

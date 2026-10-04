@@ -5,9 +5,11 @@ import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../data/api.dart';
+import '../data/membership.dart';
 import '../data/session.dart';
 import '../platform/passkey.dart';
 import '../platform/push.dart';
+import 'membership_section.dart';
 import 'widgets.dart';
 
 /// What this member can change about themselves, and what they can prove.
@@ -35,7 +37,10 @@ class AccountPage extends ConsumerWidget {
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => LoadFailed(error: e, onRetry: () => ref.invalidate(accountProvider)),
       data: (a) => RefreshIndicator(
-        onRefresh: () => ref.refresh(accountProvider.future),
+        onRefresh: () {
+          ref.invalidate(membershipProvider);
+          return ref.refresh(accountProvider.future);
+        },
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 640),
@@ -280,12 +285,31 @@ class _PhotoRow extends ConsumerWidget {
 /// A venue with no expiry set on the member shows nothing about dates --
 /// "no expiry" is not something to announce -- but still shows the fee and
 /// term where the venue runs paid memberships.
+///
+/// A venue that runs memberships (the Memberships module) answers
+/// /me/membership, and then the card is [MembershipSection]: plan, state,
+/// family, and joining or renewing online with Dojo. Renewing at the till
+/// below is still what it offers where the venue takes no money online.
 class _Membership extends ConsumerWidget {
   const _Membership();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final me = ref.watch(meProvider).value ?? const <String, dynamic>{};
+    final full = ref.watch(membershipProvider).value;
+    if (full != null) {
+      final plan = full['plan'] is Map ? full['plan'] as Map : const {};
+      return MembershipSection(
+        membership: full,
+        tillRenew: (context) => _renew(
+          context,
+          fee: (full['renew_minor'] as num?)?.toInt() ?? 0,
+          term: (plan['term_months'] as num?)?.toInt(),
+          renewal: plan['season_ends'],
+          expired: full['state'] == 'expired',
+        ),
+      );
+    }
     final m = (me['membership'] as Map?) ?? const {};
     final expiry = m['expiry'] ?? me['membership_expiry'];
     final expired = m['expired'] == true;

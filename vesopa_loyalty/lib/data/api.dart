@@ -60,6 +60,22 @@ class LoyaltyApi {
     Object? body,
     Map<String, String>? query,
   }) async {
+    final json = await _sendAny(method, path, body: body, query: query);
+    return json is Map<String, dynamic> ? json : const {};
+  }
+
+  /// [_send] for the few answers that are a list rather than an object.
+  Future<List<Map<String, dynamic>>> _sendList(String method, String path, {Map<String, String>? query}) async {
+    final json = await _sendAny(method, path, query: query);
+    return json is List ? json.whereType<Map<String, dynamic>>().toList() : const [];
+  }
+
+  Future<Object?> _sendAny(
+    String method,
+    String path, {
+    Object? body,
+    Map<String, String>? query,
+  }) async {
     final http.Response res;
     try {
       final req = http.Request(method, _u(path, query))..headers.addAll(_headers);
@@ -68,14 +84,14 @@ class LoyaltyApi {
     } catch (_) {
       throw ApiError('No connection. Check you are online and try again.');
     }
-    Map<String, dynamic> json = const {};
+    Object? decoded;
     try {
-      final decoded = jsonDecode(res.body);
-      if (decoded is Map<String, dynamic>) json = decoded;
+      decoded = jsonDecode(res.body);
     } catch (_) {
       // Not JSON: said below by status.
     }
-    if (res.statusCode >= 200 && res.statusCode < 300) return json;
+    if (res.statusCode >= 200 && res.statusCode < 300) return decoded;
+    final json = decoded is Map<String, dynamic> ? decoded : const <String, dynamic>{};
     if (res.statusCode == 409 && json['needs_name'] == true) {
       throw ApiError('Tell us your name to join.', status: 409, needsName: true);
     }
@@ -282,6 +298,46 @@ class LoyaltyApi {
   }
 
   Future<void> removePhoto() => _send('DELETE', '/loyalty/v1/me/photo');
+
+  // ---- Membership and classes ----------------------------------------------
+
+  /// The member's membership: state, plan, expiry, family, and the plans on
+  /// sale online to somebody who is not a member. Null when the venue does
+  /// not run memberships (the server answers 404), which hides the feature.
+  Future<Map<String, dynamic>?> membership() async {
+    try {
+      return await _send('GET', '/loyalty/v1/me/membership');
+    } on ApiError catch (e) {
+      if (e.status == 404) return null;
+      rethrow;
+    }
+  }
+
+  /// Start paying online: `join` (with the plan) or `renew`. Answers Dojo's
+  /// checkout `url`, our `payment_id` to check afterwards, and `amount_minor`.
+  Future<Map<String, dynamic>> membershipCheckout({required String kind, int? schemeId}) =>
+      _send('POST', '/loyalty/v1/me/membership/checkout', body: {'kind': kind, 'scheme_id': ?schemeId});
+
+  /// Back from Dojo: whether that payment went through (and was applied).
+  Future<bool> checkMembershipPayment(String paymentId) async {
+    final json = await _send(
+      'POST',
+      '/loyalty/v1/me/membership/checkout/${Uri.encodeComponent(paymentId)}/check',
+    );
+    return json['paid'] == true;
+  }
+
+  /// Classes from today for [days] days, each with `my_status`.
+  Future<List<Map<String, dynamic>>> classes({int days = 14}) =>
+      _sendList('GET', '/loyalty/v1/me/classes', query: {'days': '$days'});
+
+  /// Book a place. Answers `booked`, or `waitlist` when the class is full.
+  Future<String> bookClass(int sessionId) async {
+    final json = await _send('POST', '/loyalty/v1/me/classes/$sessionId/book');
+    return (json['status'] as String?) ?? 'booked';
+  }
+
+  Future<void> cancelClass(int sessionId) => _send('POST', '/loyalty/v1/me/classes/$sessionId/cancel');
 
   Future<void> markRead(String id) => _send('POST', '/loyalty/v1/me/messages/${Uri.encodeComponent(id)}/read');
 

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/membership.dart';
 import '../data/session.dart';
 import '../data/watch_card.dart';
 import '../platform/watch.dart';
@@ -10,8 +11,10 @@ import '../platform/push.dart';
 import 'account_page.dart';
 import '../platform/brightness.dart';
 import 'card_page.dart';
+import 'classes_page.dart';
 import 'history_page.dart';
 import 'inbox_page.dart';
+import 'membership_section.dart';
 import 'venue_page.dart';
 import 'widgets.dart';
 
@@ -27,6 +30,11 @@ import 'widgets.dart';
 ///
 /// The breakpoints are Material's, not invented here.
 ///
+/// CLASSES IS A TAB ONLY WHERE THERE ARE CLASSES: a venue running memberships
+/// whose plans include them (see offersClasses). Everywhere else the bar is
+/// the four it always was. The selected tab is remembered by name, so the
+/// tab appearing or going does not move somebody to a different page.
+///
 /// NOTIFICATIONS LIVE AT THE TOP RIGHT, where every other app on the device
 /// puts them, rather than being a destination among the others. News is
 /// something that arrives; the card, the activity and the account are places
@@ -40,15 +48,16 @@ class HomePage extends ConsumerStatefulWidget {
 }
 
 class _HomePageState extends ConsumerState<HomePage> with WidgetsBindingObserver {
-  var _tab = 0;
+  var _tabName = 'Card';
 
-  static const _pages = [CardPage(), HistoryPage(), AccountPage(), VenuePage()];
-  static const _destinations = [
-    (Icons.qr_code_2_outlined, Icons.qr_code_2, 'Card'),
-    (Icons.receipt_long_outlined, Icons.receipt_long, 'Activity'),
-    (Icons.person_outline, Icons.person, 'Account'),
-    (Icons.storefront_outlined, Icons.storefront, 'Venue'),
-  ];
+  static const _card = (Icons.qr_code_2_outlined, Icons.qr_code_2, 'Card', CardPage());
+  static const _activity = (Icons.receipt_long_outlined, Icons.receipt_long, 'Activity', HistoryPage());
+  static const _classes = (Icons.event_outlined, Icons.event, 'Classes', ClassesPage());
+  static const _account = (Icons.person_outline, Icons.person, 'Account', AccountPage());
+  static const _venue = (Icons.storefront_outlined, Icons.storefront, 'Venue', VenuePage());
+
+  List<(IconData, IconData, String, Widget)> _tabs(bool classes) =>
+      [_card, _activity, if (classes) _classes, _account, _venue];
 
   @override
   void initState() {
@@ -79,6 +88,12 @@ class _HomePageState extends ConsumerState<HomePage> with WidgetsBindingObserver
     if (state == AppLifecycleState.resumed) {
       ref.invalidate(meProvider);
       ref.invalidate(messagesProvider);
+      // Back from Dojo's payment page, most likely: see whether it was paid.
+      if (ref.read(pendingPaymentProvider) != null) {
+        unawaited(checkPendingPayment(context, ref, quiet: true));
+      } else {
+        ref.invalidate(membershipProvider);
+      }
       unawaited(_refresh());
       _glow();
     } else if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
@@ -88,12 +103,7 @@ class _HomePageState extends ConsumerState<HomePage> with WidgetsBindingObserver
   }
 
   /// Full brightness on the Card tab, where the QR code is; normal elsewhere.
-  void _glow() => unawaited(_tab == 0 ? ScreenGlow.on() : ScreenGlow.off());
-
-  void _select(int i) {
-    setState(() => _tab = i);
-    _glow();
-  }
+  void _glow() => unawaited(_tabName == 'Card' ? ScreenGlow.on() : ScreenGlow.off());
 
   Future<void> _refresh() async {
     final brand = ref.read(brandProvider).value;
@@ -153,6 +163,12 @@ class _HomePageState extends ConsumerState<HomePage> with WidgetsBindingObserver
     final width = MediaQuery.of(context).size.width;
     final rail = width >= 700;
     final wideRail = width >= 1200;
+    final tabs = _tabs(offersClasses(ref.watch(membershipProvider).value));
+    final tab = tabs.indexWhere((t) => t.$3 == _tabName).clamp(0, tabs.length - 1);
+    void select(int i) {
+      setState(() => _tabName = tabs[i].$3);
+      _glow();
+    }
 
     final appBar = AppBar(
       titleSpacing: 12,
@@ -177,17 +193,17 @@ class _HomePageState extends ConsumerState<HomePage> with WidgetsBindingObserver
       ],
     );
 
-    final body = SafeArea(child: IndexedStack(index: _tab, children: _pages));
+    final body = SafeArea(child: IndexedStack(index: tab, children: [for (final t in tabs) KeyedSubtree(key: ValueKey(t.$3), child: t.$4)]));
 
     if (!rail) {
       return Scaffold(
         appBar: appBar,
         body: body,
         bottomNavigationBar: NavigationBar(
-          selectedIndex: _tab,
-          onDestinationSelected: _select,
+          selectedIndex: tab,
+          onDestinationSelected: select,
           destinations: [
-            for (final (icon, selected, label) in _destinations)
+            for (final (icon, selected, label, _) in tabs)
               NavigationDestination(icon: Icon(icon), selectedIcon: Icon(selected), label: label),
           ],
         ),
@@ -199,12 +215,12 @@ class _HomePageState extends ConsumerState<HomePage> with WidgetsBindingObserver
       body: Row(
         children: [
           NavigationRail(
-            selectedIndex: _tab,
-            onDestinationSelected: _select,
+            selectedIndex: tab,
+            onDestinationSelected: select,
             extended: wideRail,
             labelType: wideRail ? NavigationRailLabelType.none : NavigationRailLabelType.all,
             destinations: [
-              for (final (icon, selected, label) in _destinations)
+              for (final (icon, selected, label, _) in tabs)
                 NavigationRailDestination(
                   icon: Icon(icon),
                   selectedIcon: Icon(selected),

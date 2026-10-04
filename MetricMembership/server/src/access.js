@@ -7,6 +7,7 @@
  */
 
 const db = require('./db');
+const config = require('./config');
 const plates = require('./plates');
 const activity = require('./activity');
 
@@ -20,8 +21,19 @@ const iso = (d) => (d instanceof Date ? d.toISOString().slice(0, 10) : d ? Strin
  * Why a member may or may not use a site, as one reason word.
  * 'ok' is the only one that opens anything.
  */
+// What each EPOS membership state (vesopa_server memberships.js stateOf) is
+// called here when it keeps the barrier shut.
+const EPOS_REFUSAL = { pending: 'pending', none: 'pending', frozen: 'frozen', expired: 'expired', cancelled: 'cancelled' };
+
 function standing(member, plan, siteId) {
   if (!member) return 'unknown_plate';
+  if (member.status === 'closed') return 'closed';
+  // Members live in Vesopa EPOS once it is configured: only EPOS 'active'
+  // opens. A member not linked to EPOS yet (EPOS was down when they signed
+  // up) keeps the local status until the next sync links them.
+  if (config.EPOS_ON && member.epos_member_id) {
+    if (member.epos_state !== 'active') return EPOS_REFUSAL[member.epos_state] || 'suspended';
+  }
   if (member.status === 'pending') return 'pending';
   if (member.status === 'suspended') return 'suspended';
   if (member.status !== 'active') return 'closed';
@@ -119,14 +131,14 @@ async function decide(gate, { plate: raw, direction: reported, confidence, sourc
  */
 async function allowedPlates(siteId) {
   const rows = await db.all(
-    `SELECT v.plate, m.status, m.valid_from, m.valid_to, p.site_ids
+    `SELECT v.plate, m.status, m.valid_from, m.valid_to, m.epos_member_id, m.epos_state, p.site_ids
        FROM vehicles v
        JOIN members m ON m.id = v.member_id
        LEFT JOIN plans p ON p.id = m.plan_id
       WHERE v.removed_at IS NULL AND m.status = 'active'`,
   );
   return rows
-    .filter((r) => standing({ status: r.status, valid_from: r.valid_from, valid_to: r.valid_to }, { site_ids: r.site_ids }, siteId) === 'ok')
+    .filter((r) => standing({ status: r.status, valid_from: r.valid_from, valid_to: r.valid_to, epos_member_id: r.epos_member_id, epos_state: r.epos_state }, { site_ids: r.site_ids }, siteId) === 'ok')
     .map((r) => r.plate)
     .sort();
 }

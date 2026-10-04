@@ -359,6 +359,7 @@
           <button class="nav" data-view="staff">Staff</button>
           <button class="nav" data-view="permission_groups">Staff Permissions</button>
           <button class="nav" data-view="customers">Customers</button>
+          <button class="nav" data-view="memberships">Memberships</button>
           <button class="nav" data-view="gym" id="nav-gym">Gym</button>
           <button class="nav" data-view="vouchers">Vouchers</button>
           <button class="nav" data-view="receipt_designer">Receipt Designer</button>
@@ -3721,6 +3722,91 @@
              Vesopa adds a module to a venue; the manager switches it on or off
              here. A module Vesopa has not added is listed so a manager knows it
              exists, with nothing to press. -->
+        <section id="view-memberships" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Memberships</h2>
+              <p class="muted small">
+                Members, the plans they are on, and the classes they book. The
+                tills, the kiosk and the member app all read the same list.
+              </p>
+            </div>
+            <div class="ms-actions">
+              <button class="btn" id="ms-plan-add">New plan</button>
+              <button class="btn primary" id="ms-join">Add member</button>
+            </div>
+          </div>
+
+          <div class="grid-cards" id="ms-stats"></div>
+
+          <div class="gym-tabs" role="tablist">
+            <button class="gym-tab on" data-mstab="members" role="tab">Members</button>
+            <button class="gym-tab" data-mstab="plans" role="tab">Plans</button>
+            <button class="gym-tab" data-mstab="classes" role="tab">Classes</button>
+            <button class="gym-tab" data-mstab="payments" role="tab">Paid online</button>
+          </div>
+
+          <div class="ms-panel" data-mspanel="members">
+            <div class="card rd-card">
+              <div class="gym-board-head">
+                <div class="gym-range">
+                  <input type="search" id="ms-search" placeholder="Name, email, phone or card">
+                  <select id="ms-state">
+                    <option value="">Everybody</option>
+                    <option value="active">Active</option>
+                    <option value="pending">Waiting for approval</option>
+                    <option value="frozen">Frozen</option>
+                    <option value="expired">Expired</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
+                  <select id="ms-plan"><option value="">Every plan</option></select>
+                </div>
+                <button class="btn" id="ms-csv">Download CSV</button>
+              </div>
+              <div id="ms-members"></div>
+            </div>
+          </div>
+
+          <div class="ms-panel" data-mspanel="plans" hidden>
+            <div class="card rd-card">
+              <p class="muted small">
+                A plan is a loyalty scheme that is a membership: it has a price,
+                how long it lasts and what it includes. Plans also appear under
+                Loyalty Schemes, where their discounts and points are set.
+              </p>
+              <div id="ms-plans"></div>
+            </div>
+          </div>
+
+          <div class="ms-panel" data-mspanel="classes" hidden>
+            <div class="card rd-card">
+              <div class="gym-board-head">
+                <div>
+                  <h3>This week</h3>
+                  <p class="muted small">Sessions come from the weekly timetable below. Open one to see who is booked.</p>
+                </div>
+                <div class="gym-range">
+                  <label>From <input type="date" id="ms-class-from"></label>
+                  <button class="btn" id="ms-class-add">New class</button>
+                  <button class="btn" id="ms-slot-add">Add to timetable</button>
+                </div>
+              </div>
+              <div id="ms-sessions"></div>
+            </div>
+            <div class="card rd-card">
+              <h3>Classes and the weekly timetable</h3>
+              <div id="ms-timetable"></div>
+            </div>
+          </div>
+
+          <div class="ms-panel" data-mspanel="payments" hidden>
+            <div class="card rd-card">
+              <p class="muted small">Joins and renewals paid by card in the member app, through Dojo.</p>
+              <div id="ms-payments"></div>
+            </div>
+          </div>
+        </section>
+
         <section id="view-modules" class="view" hidden>
           <div class="page-head">
             <div>

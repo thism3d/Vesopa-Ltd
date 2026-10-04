@@ -16,6 +16,8 @@ const vesopa = require('./vesopa');
 const members = require('./members');
 const activity = require('./activity');
 const sync = require('./sync');
+const epos = require('./epos');
+const eposSync = require('./epos_sync');
 const settings = require('./settings');
 const { THEMES } = require('./themes');
 const adapters = require('./adapters');
@@ -35,6 +37,7 @@ function isAdminEmail(email) {
 function wrap(fn) {
   return (req, res, next) => Promise.resolve(fn(req, res, next)).catch((e) => {
     if (e instanceof members.Refusal) return res.status(e.status).json({ error: e.message, code: e.code });
+    if (e instanceof epos.EposError) return res.status(e.status).json({ error: `Vesopa EPOS: ${e.message}`, code: 'epos' });
     if (e && e.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'That already exists.', code: 'duplicate' });
     next(e);
   });
@@ -145,6 +148,7 @@ function adminApi() {
       today: { opened: Number(today.opened || 0), denied: Number(today.denied || 0) },
       gates: gates.map((g) => ({ ...gateJson(g), site: g.site })),
       adapters: adapters.list(),
+      epos: eposSync.status(),
     });
   }));
 
@@ -192,6 +196,7 @@ function adminApi() {
     const m = await db.one('SELECT * FROM members WHERE id = ?', [req.params.id]);
     if (!m) return res.status(404).json({ error: 'No such member.' });
     const b = req.body || {};
+    if (config.EPOS_ON) return patchViaEpos(req, res, m, b);
     const next = {
       status: ['pending', 'active', 'suspended'].includes(b.status) ? b.status : m.status,
       plan_id: b.planId !== undefined ? (b.planId ? Number(b.planId) : null) : m.plan_id,
@@ -209,6 +214,31 @@ function adminApi() {
     activity.record({ actor: actor(req), action: 'admin.member_update', req, detail: { memberId: m.id, memberNo: m.member_no, changes: b } });
     sync.soon();
     res.json({ ok: true });
+  }));
+
+  /*
+   * Approve, renew, cancel or suspend in Vesopa EPOS (where the membership
+   * lives), then here. EPOS refusing changes nothing here.
+   */
+  r.post('/members/:id/actions/:action', wrap(async (req, res) => {
+    if (!config.EPOS_ON) return res.status(400).json({ error: 'Vesopa EPOS is not configured; change the status instead.', code: 'no_epos' });
+    const m = await db.one('SELECT * FROM members WHERE id = ?', [req.params.id]);
+    if (!m) return res.status(404).json({ error: 'No such member.' });
+    const action = String(req.params.action);
+    if (!['approve', 'renew', 'cancel', 'suspend'].includes(action)) return res.status(404).json({ error: 'No such action.' });
+    const after = await eposSync.staffAction(m, action, { by: req.admin.email, now: Boolean(req.body && req.body.now) });
+    activity.record({ actor: actor(req), action: `admin.member_${action}`, req, detail: { memberId: m.id, memberNo: m.member_no, eposId: after.epos_member_id, eposState: after.epos_state } });
+    res.json({ ok: true, member: memberJson(after, await members.planFor(after)) });
+  }));
+
+  // ---- Vesopa EPOS ----------------------------------------------------------
+  r.get('/epos', (req, res) => res.json(eposSync.status()));
+
+  r.post('/epos/sync', wrap(async (req, res) => {
+    if (!config.EPOS_ON) return res.status(400).json({ error: 'Vesopa EPOS is not configured (EPOS_BASE_URL, EPOS_PARTNER_KEY).', code: 'no_epos' });
+    const out = await eposSync.syncAll();
+    activity.record({ actor: actor(req), action: 'admin.epos_sync', req, detail: { plans: out.plans, members: out.members, failed: out.failed } });
+    res.json(out);
   }));
 
   r.post('/members/:id/vehicles', wrap(async (req, res) => {
@@ -243,6 +273,7 @@ function adminApi() {
   r.get('/plans', wrap(async (req, res) => res.json({ plans: await db.all('SELECT * FROM plans ORDER BY id') })));
 
   r.post('/plans', wrap(async (req, res) => {
+    if (config.EPOS_ON) return res.status(409).json({ error: 'Plans are made in Vesopa EPOS now; they appear here at the next sync.', code: 'epos' });
     const b = req.body || {};
     if (!String(b.name || '').trim()) return res.status(400).json({ error: 'A plan needs a name.' });
     const out = await db.run('INSERT INTO plans (name, description, max_vehicles, site_ids) VALUES (?, ?, ?, ?)',
@@ -255,12 +286,15 @@ function adminApi() {
     const p = await db.one('SELECT * FROM plans WHERE id = ?', [req.params.id]);
     if (!p) return res.status(404).json({ error: 'No such plan.' });
     const b = req.body || {};
+    // An EPOS plan's name, cars and on/off come from EPOS; only which sites
+    // it covers, and the default, are Metric's own.
+    const fromEpos = config.EPOS_ON && p.epos_plan_id != null;
     await db.run('UPDATE plans SET name = ?, description = ?, max_vehicles = ?, site_ids = ?, active = ? WHERE id = ?', [
-      b.name != null ? String(b.name).slice(0, 80) : p.name,
-      b.description != null ? String(b.description).slice(0, 255) : p.description,
-      b.maxVehicles != null ? Math.max(1, Math.min(20, Number(b.maxVehicles) || 3)) : p.max_vehicles,
+      b.name != null && !fromEpos ? String(b.name).slice(0, 80) : p.name,
+      b.description != null && !fromEpos ? String(b.description).slice(0, 255) : p.description,
+      b.maxVehicles != null && !fromEpos ? Math.max(1, Math.min(20, Number(b.maxVehicles) || 3)) : p.max_vehicles,
       b.siteIds !== undefined ? siteList(b.siteIds) : p.site_ids,
-      b.active != null ? (b.active ? 1 : 0) : p.active,
+      b.active != null && !fromEpos ? (b.active ? 1 : 0) : p.active,
       p.id,
     ]);
     if (b.isDefault) {
@@ -407,6 +441,55 @@ function adminApi() {
   }));
 
   return r;
+}
+
+/**
+ * A console save while Vesopa EPOS holds the membership. Status and plan go
+ * to EPOS first (approve / renew / suspend / plan) and come back from it;
+ * dates are EPOS's; notes, company, name and phone are saved here (name and
+ * phone are passed on to EPOS too). A member not linked to EPOS yet is
+ * linked by the first EPOS call.
+ */
+async function patchViaEpos(req, res, m, b) {
+  const by = req.admin.email;
+  let cur = m;
+  const done = [];
+  const wantStatus = ['pending', 'active', 'suspended'].includes(b.status) ? b.status : m.status;
+  if (wantStatus !== m.status) {
+    if (wantStatus === 'pending') {
+      throw new members.Refusal('A membership cannot go back to waiting for approval in Vesopa EPOS. Suspend it instead.', 409, 'epos');
+    }
+    let action = 'suspend';
+    if (wantStatus === 'active') {
+      if (m.epos_state === 'frozen') throw new members.Refusal('This membership is frozen in Vesopa EPOS. Unfreeze it there.', 409, 'epos');
+      action = m.epos_state === 'expired' ? 'renew' : 'approve';
+    }
+    cur = await eposSync.staffAction(cur, action, { by });
+    done.push(action);
+  }
+  if (b.planId !== undefined && b.planId !== '' && b.planId !== null && Number(b.planId) !== Number(cur.plan_id)) {
+    const plan = await db.one('SELECT * FROM plans WHERE id = ?', [Number(b.planId)]);
+    if (!plan || plan.epos_plan_id == null) throw new members.Refusal('That plan is not one of the Vesopa EPOS plans. Pick another, or sync first.', 400, 'epos');
+    cur = await eposSync.staffAction(cur, 'plan', { by, schemeId: plan.epos_plan_id });
+    done.push('plan');
+  }
+  const next = {
+    notes: b.notes !== undefined ? String(b.notes).slice(0, 500) : cur.notes,
+    name: b.name !== undefined ? String(b.name).slice(0, 120) : cur.name,
+    company: b.company !== undefined ? String(b.company).slice(0, 120) : cur.company,
+    phone: b.phone !== undefined ? String(b.phone).slice(0, 40) : cur.phone,
+  };
+  await db.run('UPDATE members SET notes = ?, name = ?, company = ?, phone = ? WHERE id = ?', [next.notes, next.name, next.company, next.phone, m.id]);
+  if (!cur.epos_member_id) {
+    // Not in EPOS yet (and nothing above needed it): dates stay local until linked.
+    await db.run('UPDATE members SET valid_from = ?, valid_to = ? WHERE id = ?', [
+      b.validFrom !== undefined ? (b.validFrom || null) : m.valid_from, b.validTo !== undefined ? (b.validTo || null) : m.valid_to, m.id]);
+  } else if (next.name !== cur.name || next.phone !== cur.phone) {
+    await eposSync.tryLink({ ...cur, name: next.name, phone: next.phone }, { by });
+  }
+  activity.record({ actor: actor(req), action: 'admin.member_update', req, detail: { memberId: m.id, memberNo: m.member_no, changes: b, epos: done } });
+  sync.soon();
+  res.json({ ok: true, epos: done });
 }
 
 function siteList(v) {

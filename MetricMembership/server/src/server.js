@@ -32,6 +32,7 @@ const config = require('./config');
 const db = require('./db');
 const activity = require('./activity');
 const sync = require('./sync');
+const eposSync = require('./epos_sync');
 const { headers } = require('./security');
 const { apiRouter } = require('./api');
 const { anprRouter } = require('./anpr');
@@ -146,6 +147,7 @@ function createApp() {
 function start() {
   const missing = config.check();
   if (missing.length) console.warn(`[metric] running without: ${missing.join(', ')}`);
+  console.log(config.EPOS_ON ? `[metric] members and plans from Vesopa EPOS at ${config.EPOS_BASE_URL}` : '[metric] standalone: EPOS_BASE_URL / EPOS_PARTNER_KEY not set');
   activity.useDb(db);
   const app = createApp();
   app.listen(config.PORT, '127.0.0.1', () => {
@@ -156,6 +158,13 @@ function start() {
     setTimeout(() => sync.syncAll().catch(() => {}), 5000).unref();
     setInterval(() => sync.syncAll().catch((e) => console.error('[sync]', e.message)), config.SYNC_EVERY_MS).unref();
     setInterval(() => activity.prune().catch(() => {}), 6 * 3600 * 1000).unref();
+    // Members and plans from Vesopa EPOS, when it is configured (EPOS_BASE_URL
+    // and EPOS_PARTNER_KEY). Without them the server is standalone, as before.
+    if (config.EPOS_ON) {
+      const pull = () => eposSync.syncAll().catch((e) => console.error('[epos]', e.message));
+      setTimeout(pull, 2000).unref();
+      setInterval(pull, config.EPOS_SYNC_EVERY_MS).unref();
+    }
     requestLog.startMaintenance();
   }
 }

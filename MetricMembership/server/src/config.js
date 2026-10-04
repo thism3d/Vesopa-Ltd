@@ -47,6 +47,14 @@ const config = {
   SYNC_EVERY_MS: Number(process.env.METRIC_SYNC_EVERY_MS) || 5 * 60 * 1000,
   SCHEDULER: String(process.env.METRIC_SCHEDULER || 'on') !== 'off',
 
+  // Vesopa EPOS: where members and plans live (owner, 2026-10). Both set: this
+  // server reads members and plans from the venue's EPOS through its partner
+  // API, and approvals go there. Either blank: standalone, as before.
+  EPOS_BASE_URL: trimSlash(process.env.EPOS_BASE_URL || ''),
+  EPOS_PARTNER_KEY: String(process.env.EPOS_PARTNER_KEY || '').trim(),
+  EPOS_SYNC_EVERY_MS: Number(process.env.EPOS_SYNC_EVERY_MS) || 5 * 60 * 1000,
+  EPOS_TIMEOUT_MS: Number(process.env.EPOS_TIMEOUT_MS) || 8000,
+
   // The activity log (every press and change, for fault finding).
   LOG_DIR: process.env.LOG_DIR || path.join(__dirname, '..', 'logs'),
   LOG_KEEP_DAYS: Number(process.env.LOG_KEEP_DAYS) || 90,
@@ -57,6 +65,7 @@ const config = {
 };
 
 config.isProd = config.NODE_ENV === 'production';
+config.EPOS_ON = Boolean(config.EPOS_BASE_URL && config.EPOS_PARTNER_KEY);
 
 function check() {
   const missing = [];

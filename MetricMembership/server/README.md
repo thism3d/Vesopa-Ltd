@@ -74,6 +74,47 @@ the first unit, because firmware versions differ.
 - Their site names and addresses, and the rules: how many cars per member, and
   whether new members are approved by hand (the default) or automatically.
 
+## Members and plans in Vesopa EPOS
+
+Owner decision, 2026-10: members and plans live **in EPOS**. This server keeps
+its own cars, number plates, sites, gates and cameras, and a copy of the EPOS
+members and plans so a barrier never waits on the internet.
+
+| Env var | Meaning |
+| --- | --- |
+| `EPOS_BASE_URL` | The EPOS server (the one serving `/partner/v1/memberships/...`) |
+| `EPOS_PARTNER_KEY` | The venue's partner key, `vpk_...`, issued in Vesopa admin |
+| `EPOS_SYNC_EVERY_MS` | How often members and plans are pulled (default 300000, 5 minutes) |
+| `EPOS_TIMEOUT_MS` | Per-request timeout to EPOS (default 8000) |
+
+**Either one blank: standalone**, exactly as before (local plans, staff
+approve here). With both set (`src/epos.js`, `src/epos_sync.js`):
+
+- **Sync** every 5 minutes, at boot, and from the console (**Sync now**, or
+  `POST /api/admin/epos/sync`; `GET /api/admin/epos` shows the last result).
+  Plans are matched by `epos_plan_id` (name, cars and on/off from EPOS; the
+  sites a plan covers stay Metric's). Members are matched by `epos_member_id`,
+  then Vesopa account (`vesopa_sub`), then email. EPOS members never seen here
+  are added with `vesopa_sub = 'epos:<id>'` and claimed by email when they
+  first sign in. Members here that EPOS does not have are created there:
+  active if Metric had already approved them, so switching EPOS on shuts
+  nobody out. A member EPOS stops listing loses access.
+- **Sign-up**: a new member is created in EPOS, pending (active if
+  `METRIC_AUTO_APPROVE`). EPOS being down never blocks a sign-in; the next
+  sync links them. Name and phone changes in the app are passed on.
+- **Staff** approve / suspend / renew / change plan go to EPOS first and are
+  saved here only from EPOS's answer (the console's status and plan fields,
+  or `POST /api/admin/members/:id/actions/approve|renew|cancel|suspend`).
+  EPOS refusing changes nothing here. Creating plans here is refused; dates
+  are EPOS's.
+- **Barriers**: a linked member opens only while their EPOS state is
+  `active` (and within dates); the car limit is the EPOS plan's
+  `max_vehicles`. A member not linked yet keeps the local status until the
+  next sync links them.
+
+The columns are added by `schema/schema.sql` (re-runnable `ADD COLUMN IF NOT
+EXISTS`, MariaDB) and stay empty until EPOS is configured.
+
 ## Logs
 
 Every member action (sign-in, cars added or removed, details changed), every
