@@ -161,6 +161,36 @@ void main() {
     expect(o.lines[1].isModifier, isTrue);
   });
 
+  test('memberships: offered only when the server says so, and what a paid one says', () {
+    final base = {'enabled': true, 'kiosk': {'id': 'k1'}, 'venue': {'name': 'Gym'}};
+    expect(KioskConfig.fromJson(base).memberships, isFalse, reason: 'an older server says nothing');
+    expect(KioskConfig.fromJson({...base, 'memberships': true}).memberships, isTrue);
+
+    final o = OrderView.fromJson({
+      'public_id': 'm1', 'number': 7, 'status': 'collected', 'stage': 'paid', 'total_minor': 3500,
+      'order_type': 'membership',
+      'lines': [{'name': 'Membership: Gold renewal', 'qty': 1, 'unit': 3500}],
+      'membership': {'kind': 'renew', 'plan_name': 'Gold', 'first_name': 'Ann', 'applied': true,
+          'expiry': '2026-12-04', 'member_number': null, 'failed': false},
+    });
+    expect(o.isMembership, isTrue);
+    expect(o.membership?.applied, isTrue);
+    expect(o.membership?.joining, isFalse);
+    expect(o.membership?.expiry, '2026-12-04');
+    expect(readableDate('2026-12-04'), '04/12/2026');
+    expect(OrderView.fromJson({'order_type': 'eat_in'}).membership, isNull);
+
+    final found = MemberFound.fromJson({
+      'member_token': 't', 'first_name': 'Ann', 'plan_name': 'Gold', 'state': 'expired',
+      'expiry': '2026-09-01', 'renew_minor': 3500, 'can_renew': true, 'reason': null,
+    });
+    expect(found.canRenew, isTrue);
+    expect(found.renewMinor, 3500);
+    final plan = MembershipPlan.fromJson({'id': 3, 'name': 'Gold', 'fee_minor': 3500, 'joining_fee_minor': 1000,
+        'join_minor': 4500, 'term_months': 1});
+    expect(plan.joinMinor, 4500);
+  });
+
   group("the open category follows the venue's page highlight", () {
     KioskConfig config(Object? highlight) => KioskConfig.fromJson({
       'enabled': true,

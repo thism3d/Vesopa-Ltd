@@ -354,41 +354,46 @@ class _DonePageState extends ConsumerState<DonePage> with SingleTickerProviderSt
             ),
             const SizedBox(height: 22),
             Text(s('thank_you'), style: Theme.of(context).textTheme.displayLarge),
-            const SizedBox(height: 26),
-            Text(s('your_number'), style: Theme.of(context).textTheme.headlineSmall?.copyWith(color: skin.inkSoft)),
-            const SizedBox(height: 14),
-            Container(
-              padding: EdgeInsets.symmetric(horizontal: numberSize * .35, vertical: numberSize * .12),
-              decoration: BoxDecoration(
-                color: Xp.night,
-                borderRadius: BorderRadius.circular(36),
-                boxShadow: [BoxShadow(color: Xp.lime.withValues(alpha: .35), blurRadius: 50)],
-              ),
-              child: Text(
-                '$number',
-                style: TextStyle(
-                  fontFamily: Xp.numerals,
-                  fontSize: numberSize,
-                  fontWeight: FontWeight.w800,
-                  color: Xp.lime,
-                  height: 1.05,
+            if (order != null && order.isMembership) ...[
+              const SizedBox(height: 26),
+              _MembershipDone(order: order),
+            ] else ...[
+              const SizedBox(height: 26),
+              Text(s('your_number'), style: Theme.of(context).textTheme.headlineSmall?.copyWith(color: skin.inkSoft)),
+              const SizedBox(height: 14),
+              Container(
+                padding: EdgeInsets.symmetric(horizontal: numberSize * .35, vertical: numberSize * .12),
+                decoration: BoxDecoration(
+                  color: Xp.night,
+                  borderRadius: BorderRadius.circular(36),
+                  boxShadow: [BoxShadow(color: Xp.lime.withValues(alpha: .35), blurRadius: 50)],
+                ),
+                child: Text(
+                  '$number',
+                  style: TextStyle(
+                    fontFamily: Xp.numerals,
+                    fontSize: numberSize,
+                    fontWeight: FontWeight.w800,
+                    color: Xp.lime,
+                    height: 1.05,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 26),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 640),
-              child: Text(note,
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600)),
-            ),
-            if (order != null) ...[
-              const SizedBox(height: 14),
-              Text(
-                '${order.orderType == 'eat_in' ? s('eat_in') : s('take_away')}  ·  ${money(order.totalMinor)}'
-                '${order.customerName != null ? '  ·  ${order.customerName}' : ''}',
-                style: TextStyle(color: skin.muted, fontSize: 18, fontWeight: FontWeight.w600),
+              const SizedBox(height: 26),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 640),
+                child: Text(note,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600)),
               ),
+              if (order != null) ...[
+                const SizedBox(height: 14),
+                Text(
+                  '${order.orderType == 'eat_in' ? s('eat_in') : s('take_away')}  ·  ${money(order.totalMinor)}'
+                  '${order.customerName != null ? '  ·  ${order.customerName}' : ''}',
+                  style: TextStyle(color: skin.muted, fontSize: 18, fontWeight: FontWeight.w600),
+                ),
+              ],
             ],
             if (ticket != null) ...[
               const SizedBox(height: 22),
@@ -435,6 +440,60 @@ class _DonePageState extends ConsumerState<DonePage> with SingleTickerProviderSt
         child: flow.reach
             ? Column(children: [const Spacer(flex: 25), Expanded(flex: 75, child: content)])
             : content,
+      ),
+    );
+  }
+}
+
+/// The thank-you for a membership: what happened to it, in place of a number
+/// to watch for -- there is nothing to collect.
+class _MembershipDone extends ConsumerWidget {
+  const _MembershipDone({required this.order});
+
+  final OrderView order;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final s = ref.watch(orderFlowProvider.select((f) => f.s));
+    final skin = XpSkin.of(context);
+    final text = Theme.of(context).textTheme;
+    final m = order.membership;
+    final plan = m?.planName ?? s('memberships');
+
+    final String title;
+    final List<String> lines;
+    if (order.stage == PayStage.demo) {
+      title = s('memberships');
+      lines = [s('membership_demo')];
+    } else if (m == null || m.failed || !m.applied) {
+      title = s('memberships');
+      lines = [order.message ?? s('membership_failed')];
+    } else {
+      title = m.joining ? s('membership_welcome').replaceAll('{plan}', plan) : s('membership_renewed');
+      lines = [
+        if (m.expiry != null)
+          s('membership_runs_to').replaceAll('{plan}', plan).replaceAll('{date}', readableDate(m.expiry)),
+        if (m.joining && m.memberNumber != null) s('membership_number').replaceAll('{n}', m.memberNumber!),
+      ];
+    }
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 640),
+      child: Column(
+        key: const ValueKey('membership-done'),
+        children: [
+          Text(title, textAlign: TextAlign.center, style: text.headlineMedium),
+          for (final line in lines) ...[
+            const SizedBox(height: 12),
+            Text(line, textAlign: TextAlign.center, style: text.headlineSmall?.copyWith(fontWeight: FontWeight.w600)),
+          ],
+          const SizedBox(height: 14),
+          Text(
+            '${s('memberships')}  ·  ${money(order.totalMinor)}'
+            '${order.customerName != null ? '  ·  ${order.customerName}' : ''}',
+            style: TextStyle(color: skin.muted, fontSize: 18, fontWeight: FontWeight.w600),
+          ),
+        ],
       ),
     );
   }

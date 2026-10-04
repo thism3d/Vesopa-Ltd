@@ -212,7 +212,14 @@ class TicketBuilder {
     bytes.addAll(_centre('YOUR ORDER NUMBER', bold: true));
     bytes.addAll(_text('${order.number}',
         styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size5, width: PosTextSize.size5)));
-    bytes.addAll(_centre(order.orderType == 'eat_in' ? 'EAT IN' : 'TAKE AWAY', bold: true, size: PosTextSize.size2));
+    bytes.addAll(_centre(
+        switch (order.orderType) {
+          'eat_in' => 'EAT IN',
+          'membership' => 'MEMBERSHIP',
+          _ => 'TAKE AWAY',
+        },
+        bold: true,
+        size: PosTextSize.size2));
     if (order.customerName != null) bytes.addAll(_centre('For ${order.customerName}'));
     bytes.addAll(_g.hr());
 
