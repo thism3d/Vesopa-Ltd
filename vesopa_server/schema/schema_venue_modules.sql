@@ -37,8 +37,50 @@
 CREATE TABLE IF NOT EXISTS bo_module_prices (
   module        VARCHAR(32)  NOT NULL PRIMARY KEY,
   price_minor   INT          NOT NULL DEFAULT 0,
+  -- Platform-wide off switch. A module turned off here disappears from every
+  -- venue at once and charges nobody, without touching any venue's own row,
+  -- so turning it back on restores exactly what each venue had.
+  active        TINYINT(1)   NOT NULL DEFAULT 1,
   updated_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
                 ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Starting prices, a month, before VAT. Admin changes them on Admin > Modules;
+-- INSERT IGNORE so a price somebody has set is never put back.
+--
+-- Researched 2026-10-04 against what a small UK venue pays elsewhere:
+--   * Memberships £29: stand-alone gym and club membership software runs from
+--     about £25 to £60 a month for a small site (Gymdesk, Glofox, Gestion Gym's
+--     €29 and €49 plans). As an add-on to a till the venue already pays for,
+--     it sits at the bottom of that range.
+--   * Gym door £15: card-in, card-out access and attendance on top of
+--     Memberships; access-control add-ons are usually priced well under the
+--     membership software itself.
+--   * Vehicle access £39: ANPR permit software is sold at about £500 a site a
+--     year (G-Cloud 15 listings for SNAP, Vaxtor and Hikvision), so about £42 a
+--     month; a little under that for one site.
+INSERT IGNORE INTO bo_module_prices (module, price_minor) VALUES
+  ('memberships', 2900),
+  ('gym_door', 1500),
+  ('vehicle_access', 3900);
+
+-- Promo codes. A code takes a percentage or a fixed amount off a module's
+-- monthly price (or every module's, when `module` is NULL), for a number of
+-- months from the day it is applied, or for ever when `months` is NULL.
+CREATE TABLE IF NOT EXISTS bo_module_promos (
+  id                INT          NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  code              VARCHAR(32)  NOT NULL,
+  description       VARCHAR(190) NOT NULL DEFAULT '',
+  module            VARCHAR(32)  NULL,
+  percent_off       TINYINT      NULL,
+  amount_off_minor  INT          NULL,
+  months            SMALLINT     NULL,
+  expires_on        DATE         NULL,
+  max_uses          INT          NULL,
+  active            TINYINT(1)   NOT NULL DEFAULT 1,
+  created_by        VARCHAR(190) NULL,
+  created_at        TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_module_promos_code (code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS bo_venue_modules (
@@ -52,6 +94,9 @@ CREATE TABLE IF NOT EXISTS bo_venue_modules (
   allowed_by    VARCHAR(190) NULL,
   enabled_at    DATETIME     NULL,
   enabled_by    VARCHAR(190) NULL,
+  -- A promo code applied to this venue's module, and the day it started.
+  promo_id      INT          NULL,
+  promo_from    DATE         NULL,
   PRIMARY KEY (office_id, module),
   CONSTRAINT fk_venue_modules_office FOREIGN KEY (office_id)
     REFERENCES offices(id) ON DELETE CASCADE

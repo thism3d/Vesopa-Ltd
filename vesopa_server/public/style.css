@@ -7762,3 +7762,9 @@ tr.ls-off td { opacity: .55; }
 .module-card .module-state { font-size: 12px; font-weight: 600; }
 .module-card .module-state.on { color: var(--green); }
 .module-card .module-state.off { color: var(--muted); }
+#view-admin_modules .section-title { margin: 28px 0 12px; font-size: 15px; }
+#view-admin_modules .table-scroll { overflow-x: auto; }
+#view-admin_modules td.module-cell { white-space: nowrap; }
+#view-admin_modules td.module-cell .muted { display: block; font-size: 12px; }
+.module-card .module-price { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.module-card .module-price input { width: 110px; }

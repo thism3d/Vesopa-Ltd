@@ -355,6 +355,7 @@ const ROUTES = {
   devices: '/devices',
   activity_log: '/activity-log',
   gym: '/gym',
+  modules: '/modules',
   // Added when the reachability check above found it missing. Price Levels has
   // had a nav button, a section and a loader since 1.6.9.0 and no URL, so the
   // address bar said /dashboard while you were looking at it and a refresh
@@ -367,6 +368,7 @@ const ROUTES = {
   subscriptions: '/subscriptions',
   offices: '/offices',
   licences: '/licences',
+  admin_modules: '/admin-modules',
   billing: '/billing',
 };
 
@@ -1360,6 +1362,7 @@ const VIEW_LOADERS = {
     cards: loadCards,
     gym: loadGym,
     modules: loadModules,
+    admin_modules: loadAdminModules,
     wallet: loadWallet,
     loyalty_app: loadLoyaltyApp,
     devices: loadDevices,
@@ -6662,8 +6665,10 @@ document.addEventListener('click', async (e) => {
       fields.push({ label: 'Part of this venue\'s system', name: `allowed_${m.key}`, type: 'checkbox', value: m.allowed ? 1 : 0,
         hint: m.allowed && !m.enabled ? 'Added, but the venue has switched it off.' : '' });
       fields.push({ label: 'Monthly price (£)', name: `price_${m.key}`, type: 'number',
-        value: (m.price_minor / 100).toFixed(2),
-        hint: `Default ${money(m.default_price_minor)}. Added to the venue's invoice while the module is part of its system.` });
+        value: m.own_price ? (m.price_minor / 100).toFixed(2) : '',
+        hint: `Blank charges the default, ${money(m.default_price_minor)}. 0 is free. Added to the venue's invoice while the module is part of its system.` });
+      fields.push({ label: 'Promo code', name: `promo_${m.key}`, value: m.promo ? m.promo.code : '',
+        hint: m.promo ? `${m.promo.label}${m.promo.applies ? '' : ' (finished)'}. Clear it to remove.` : 'Optional.' });
     }
     return modal(`Modules — ${t.dataset.officeModulesName || 'venue'}`, fields, async (d) => {
       const modules = {};
@@ -6673,28 +6678,41 @@ document.addEventListener('click', async (e) => {
           allowed: !!Number(d[`allowed_${m.key}`]),
           price_minor: pounds === '' ? null : Math.round(parseFloat(pounds) * 100),
         };
+        const code = String(d[`promo_${m.key}`] ?? '').trim();
+        if (code !== (m.promo ? m.promo.code : '')) modules[m.key].promo_code = code;
       }
       await api(`/admin/offices/${office}/modules`, { method: 'PUT', body: JSON.stringify({ modules }) });
       toast('Modules saved.');
-      await loadOffices();
+      if (currentView === 'admin_modules') await loadAdminModules();
+      else await loadOffices();
     });
   }
 
-  if (t.id === 'module-prices') {
-    const list = await api('/admin/modules');
-    return modal('Module prices', list.map((m) => ({
-      label: `${m.label} (£ a month)`,
-      name: m.key,
-      type: 'number',
-      value: (m.price_minor / 100).toFixed(2),
-      hint: `${m.summary} Used for a venue unless its own price is set.`,
-    })), async (d) => {
-      const body = {};
-      for (const m of list) body[m.key] = Math.round(parseFloat(d[m.key] || '0') * 100);
-      await api('/admin/modules/prices', { method: 'PUT', body: JSON.stringify(body) });
-      toast('Module prices saved.');
+  if (t.id === 'module-promo-add') {
+    const catalogue = await api('/admin/modules');
+    return modal('New promo code', [
+      { label: 'Code (what you give the venue)', name: 'code', required: true },
+      { label: 'Description (for you)', name: 'description' },
+      { label: 'Which module', name: 'module', type: 'select',
+        options: [{ value: '', label: 'Any module' }, ...catalogue.map((m) => ({ value: m.key, label: m.label }))] },
+      { label: 'Percent off', name: 'percent_off', type: 'number', hint: 'Fill this or Amount off, not both. 100 makes it free.' },
+      { label: 'Amount off (£ a month)', name: 'amount_off', type: 'number' },
+      { label: 'For how many months', name: 'months', type: 'number', hint: 'Blank keeps the discount for ever.' },
+      { label: 'Last day it can be used', name: 'expires_on', type: 'date', hint: 'Venues that already have it keep it after this date.' },
+      { label: 'How many venues can use it', name: 'max_uses', type: 'number', hint: 'Blank for no limit.' },
+    ], async (d) => {
+      await api('/admin/module-promos', {
+        method: 'POST',
+        body: JSON.stringify({
+          ...d,
+          amount_off_minor: String(d.amount_off || '').trim() === '' ? null : Math.round(parseFloat(d.amount_off) * 100),
+        }),
+      });
+      toast('Promo code created.');
+      if (currentView === 'admin_modules') await loadAdminModules();
     });
   }
+
 
   // Shared customer form, used by both add and edit. Discount value is a whole
   // percent for `percent`, or pence for `amount` — matching the till.
@@ -11958,6 +11976,120 @@ document.addEventListener('change', async (e) => {
     toast(err.message, 'error');
   } finally {
     box.disabled = false;
+  }
+});
+
+/** Admin > Modules: prices, platform switches, every venue, promo codes. */
+function moduleChargeText(m) {
+  if (!m.allowed) return '';
+  if (m.charge_minor === 0) return 'Free';
+  const promo = m.promo && m.promo.applies ? ` (${m.promo.code})` : '';
+  return `${money(m.charge_minor)} a month${promo}`;
+}
+
+async function loadAdminModules() {
+  const [catalogue, venues, promos] = await Promise.all([
+    api('/admin/modules'),
+    api('/admin/modules-venues'),
+    api('/admin/module-promos').catch(() => []),
+  ]);
+
+  $('admin-modules-catalogue').innerHTML = catalogue.map((m) => `
+    <article class="module-card ${m.active ? '' : 'not-added'}">
+      <h3>${esc(m.label)}
+        <label class="check-field" title="${m.active ? 'Turn off at every venue' : 'Turn back on at every venue'}">
+          <input type="checkbox" data-module-active="${esc(m.key)}" ${m.active ? 'checked' : ''}>
+        </label>
+      </h3>
+      <p>${esc(m.summary)}</p>
+      <div class="module-price">
+        <span>£</span><input type="number" min="0" step="0.01" value="${(m.price_minor / 100).toFixed(2)}" data-module-price-input="${esc(m.key)}">
+        <span class="muted small">a month by default</span>
+        <button class="btn small" data-module-price-save="${esc(m.key)}">Save</button>
+        <button class="btn small ghost" data-module-price-free="${esc(m.key)}">Make free</button>
+      </div>
+      <span class="module-state ${m.active ? 'on' : 'off'}">${
+        m.active ? `On; ${m.venues} venue${m.venues === 1 ? '' : 's'}` : 'Off at every venue'
+      }</span>
+    </article>`).join('');
+
+  $('admin-modules-head').innerHTML = `<tr><th>Venue</th>${catalogue
+    .map((m) => `<th>${esc(m.label)}</th>`).join('')}<th></th></tr>`;
+  $('admin-modules-venues').innerHTML = venues.map((o) => `<tr>
+      <td><strong>${esc(o.name)}</strong><span class="muted small" style="display:block">${esc(o.contact_email)}</span></td>
+      ${o.modules.map((m) => `<td class="module-cell">
+        <label class="check-field" title="${m.allowed ? 'Take it away from this venue' : 'Add it to this venue'}">
+          <input type="checkbox" data-venue-module="${o.id}" data-venue-module-key="${esc(m.key)}"
+                 ${m.allowed ? 'checked' : ''} ${m.retired ? 'disabled' : ''}>
+        </label>
+        <span class="muted">${m.retired ? 'Off everywhere' : m.allowed
+          ? `${m.enabled ? 'On' : 'Switched off by venue'}; ${esc(moduleChargeText(m))}` : ''}</span>
+      </td>`).join('')}
+      <td class="right"><button class="btn small ghost" data-office-modules="${o.id}" data-office-modules-name="${esc(o.name)}">Prices &amp; promos</button></td>
+    </tr>`).join('') || `<tr><td colspan="${catalogue.length + 2}" class="empty">No venues.</td></tr>`;
+
+  $('admin-modules-promos').innerHTML = promos.map((p) => `<tr>
+      <td><strong>${esc(p.code)}</strong>${p.description ? `<span class="muted small" style="display:block">${esc(p.description)}</span>` : ''}</td>
+      <td>${esc(p.label.replace(/^[^:]*: /, ''))}</td>
+      <td>${esc((catalogue.find((m) => m.key === p.module) || {}).label || 'Any')}</td>
+      <td>${p.expires_on ? date(p.expires_on) : 'Never'}</td>
+      <td>${Number(p.uses || 0)}${p.max_uses ? ` of ${p.max_uses}` : ''}</td>
+      <td class="right">${Number(p.active)
+        ? `<button class="btn small danger" data-promo-active="${p.id}" data-promo-to="0">Stop</button>`
+        : `<button class="btn small" data-promo-active="${p.id}" data-promo-to="1">Restart</button>`}</td>
+    </tr>`).join('') || '<tr><td colspan="6" class="empty">No promo codes yet.</td></tr>';
+}
+
+document.addEventListener('change', async (e) => {
+  const el = e.target;
+  const venue = el?.dataset?.venueModule;
+  const key = el?.dataset?.moduleActive;
+  if (!venue && !key) return;
+  el.disabled = true;
+  try {
+    if (venue) {
+      await api(`/admin/offices/${venue}/modules`, {
+        method: 'PUT',
+        body: JSON.stringify({ modules: { [el.dataset.venueModuleKey]: { allowed: el.checked } } }),
+      });
+      toast(el.checked ? 'Added to the venue.' : 'Taken away from the venue. Its data is kept.');
+    } else {
+      if (!el.checked && !(await confirmDialog('Turn this module off at every venue? Their data is kept and it comes back as it was when you turn it on again.'))) {
+        el.checked = true;
+        return;
+      }
+      await api(`/admin/modules/${key}`, { method: 'PUT', body: JSON.stringify({ active: el.checked }) });
+      toast(el.checked ? 'Module on.' : 'Module off at every venue.');
+    }
+    await loadAdminModules();
+  } catch (err) {
+    el.checked = !el.checked;
+    toast(err.message, 'error');
+  } finally {
+    el.disabled = false;
+  }
+});
+
+document.addEventListener('click', async (e) => {
+  const t = e.target;
+  const save = t.dataset?.modulePriceSave || t.dataset?.modulePriceFree;
+  if (save) {
+    const input = document.querySelector(`[data-module-price-input="${save}"]`);
+    const pounds = t.dataset.modulePriceFree ? 0 : parseFloat(input.value || '0');
+    try {
+      await api(`/admin/modules/${save}`, { method: 'PUT', body: JSON.stringify({ price_minor: Math.round(pounds * 100) }) });
+      toast(pounds ? 'Default price saved.' : 'Free by default now.');
+      await loadAdminModules();
+    } catch (err) { toast(err.message, 'error'); }
+    return;
+  }
+  if (t.dataset?.promoActive) {
+    try {
+      await api(`/admin/module-promos/${t.dataset.promoActive}`, {
+        method: 'PUT', body: JSON.stringify({ active: t.dataset.promoTo === '1' }),
+      });
+      await loadAdminModules();
+    } catch (err) { toast(err.message, 'error'); }
   }
 });
 

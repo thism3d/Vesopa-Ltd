@@ -379,6 +379,7 @@
             <button class="nav-group" data-group="administration">Administration<span class="caret">▼</span></button>
             <button class="nav" data-view="offices">Offices</button>
             <button class="nav" data-view="licences">Licences &amp; pricing</button>
+            <button class="nav" data-view="admin_modules">Modules</button>
             <button class="nav" data-view="billing">Billing</button>
             <button class="nav" data-view="templates">Templates</button>
             <button class="nav" data-view="subscriptions">Subscriptions</button>
@@ -4135,9 +4136,39 @@
           <div class="card rd-card"><div id="licences-table"></div></div>
         </section>
 
+        <!-- Admin > Modules (src/modules.js): what each module costs, promo
+             codes, and every venue against every module with a switch, so
+             adding or stopping anything is one click. -->
+        <section id="view-admin_modules" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Modules</h2>
+              <p class="muted small">
+                Extra parts of the system that only some venues get. Tick a module for a
+                venue to add it (it starts switched on, and the venue's manager can switch
+                it off). Prices are a month, before VAT, and are added to the venue's
+                invoice. A price of £0 is free. Turning a module off here stops it at
+                every venue at once and keeps their data.
+              </p>
+            </div>
+            <button class="btn" id="module-promo-add">New promo code</button>
+          </div>
+          <div id="admin-modules-catalogue" class="modules-list"></div>
+          <h3 class="section-title">Venues</h3>
+          <div class="card"><div class="table-scroll"><table>
+            <thead id="admin-modules-head"></thead>
+            <tbody id="admin-modules-venues"></tbody>
+          </table></div></div>
+          <h3 class="section-title">Promo codes</h3>
+          <div class="card"><table>
+            <thead><tr><th>Code</th><th>Offer</th><th>Module</th><th>Expires</th><th>Used</th><th></th></tr></thead>
+            <tbody id="admin-modules-promos"></tbody>
+          </table></div>
+        </section>
+
         <!-- Admin -->
         <section id="view-offices" class="view" hidden>
-          <div class="page-head"><div><h2>Offices</h2><p class="muted small">Every office on this installation, what it is charged, and when it is next due.</p></div><div class="page-head-actions"><button class="btn ghost" id="module-prices" title="What each module costs a venue a month, unless set per venue">Module prices</button> <button class="btn primary" id="add-office">New office</button></div></div>
+          <div class="page-head"><div><h2>Offices</h2><p class="muted small">Every office on this installation, what it is charged, and when it is next due.</p></div><button class="btn primary" id="add-office">New office</button></div>
           <div class="card"><table>
             <thead><tr><th>Office</th><th>Contact</th><th>Status</th><th>Users</th><th title="Tills signed in, and the licences paid for">Tills</th><th class="right">Charge</th><th>Next due</th><th></th></tr></thead>
             <tbody id="offices"></tbody>

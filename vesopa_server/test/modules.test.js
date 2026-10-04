@@ -31,7 +31,7 @@ const mysql = require('mysql2/promise');
 const SECRET = 'modules-test-secret';
 process.env.JWT_SECRET = SECRET;
 
-const { moduleRoutes, moduleCharges } = require('../src/modules');
+const { moduleRoutes, moduleCharges, discounted } = require('../src/modules');
 const { adminRoutes } = require('../src/admin');
 const { gymRoutes } = require('../src/gym');
 
@@ -114,6 +114,10 @@ async function main() {
   await admin.query(`CREATE TABLE backoffice_users (
     id INT AUTO_INCREMENT PRIMARY KEY, email VARCHAR(190), password VARCHAR(255),
     name VARCHAR(190), company VARCHAR(190), approved CHAR(1)) ENGINE=InnoDB`);
+  // The card row the gym's prefix lives on (schema_swipe_cards.sql makes the
+  // real one; only the key matters here, schema_till_gym.sql adds the prefix).
+  await admin.query(`CREATE TABLE epos_card_settings (
+    office VARCHAR(190) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL PRIMARY KEY) ENGINE=InnoDB`);
   await applySchema(admin, 'schema_tenancy.sql');
   await applySchema(admin, 'schema_till_gym.sql');
 
@@ -154,6 +158,7 @@ async function main() {
       const s = await call(server, 'GET', '/till/gym/settings', null);
       assert.strictEqual(s.status, 401);
       const till = await call(server, 'GET', '/till/gym/settings', tillFor(GYM));
+      assert.strictEqual(till.status, 200, JSON.stringify(till.body));
       assert.strictEqual(till.body.enabled, 1);
     });
 
@@ -234,7 +239,7 @@ async function main() {
     });
 
     await check('default prices apply where a venue has none', async () => {
-      const p = await call(server, 'PUT', '/api/admin/modules/prices', adminToken, { vehicle_access: 2500, nonsense: 9 });
+      const p = await call(server, 'PUT', '/api/admin/modules-prices', adminToken, { vehicle_access: 2500, nonsense: 9 });
       assert.strictEqual(p.status, 200);
       await call(server, 'PUT', `/api/admin/offices/${PUB.id}/modules`, adminToken,
         { modules: { vehicle_access: { allowed: true } } });
@@ -245,13 +250,81 @@ async function main() {
       assert.strictEqual(bad.status, 400);
     });
 
+    await check('the migration seeds researched default prices', async () => {
+      const r = await call(server, 'GET', '/api/admin/modules', adminToken);
+      const prices = Object.fromEntries(r.body.map((m) => [m.key, m.price_minor]));
+      // vehicle_access was changed to 25.00 above; the other two are the seed.
+      assert.deepStrictEqual(prices, { memberships: 2900, gym_door: 1500, vehicle_access: 2500 });
+    });
+
+    await check('a gym backfilled by the migration is free until admin says otherwise', async () => {
+      const r = await call(server, 'GET', `/api/admin/offices/${GYM.id}/modules`, adminToken);
+      assert.strictEqual(mod(r.body, 'gym_door').charge_minor, 0);
+    });
+
     await check('allowed modules are charged: monthly, and twelve times on a yearly plan', async () => {
-      // memberships 15.00 + vehicle_access 25.00; the gym door costs nothing.
+      // memberships 15.00 (own) + gym door 15.00 (default) + vehicle access 25.00 (default).
       const m = await moduleCharges(pool, PUB.id, 'month');
-      assert.strictEqual(m.total, 4000);
+      assert.strictEqual(m.total, 5500);
       assert.match(m.detail, /Memberships 15\.00/);
       const y = await moduleCharges(pool, PUB.id, 'year');
-      assert.strictEqual(y.total, 48000);
+      assert.strictEqual(y.total, 66000);
+    });
+
+    await check('a promo code takes its discount off, and a stopped code stops discounting', async () => {
+      const bad = await call(server, 'POST', '/api/admin/module-promos', adminToken,
+        { code: 'both', percent_off: 10, amount_off_minor: 100 });
+      assert.strictEqual(bad.status, 400);
+      const made = await call(server, 'POST', '/api/admin/module-promos', adminToken,
+        { code: 'half3', module: 'memberships', percent_off: 50, months: 3, max_uses: 1 });
+      assert.strictEqual(made.status, 201);
+      assert.strictEqual(made.body.code, 'HALF3');
+      const wrong = await call(server, 'PUT', `/api/admin/offices/${PUB.id}/modules`, adminToken,
+        { modules: { vehicle_access: { allowed: true, promo_code: 'HALF3' } } });
+      assert.strictEqual(wrong.status, 400);
+      const r = await call(server, 'PUT', `/api/admin/offices/${PUB.id}/modules`, adminToken,
+        { modules: { memberships: { allowed: true, promo_code: 'half3' } } });
+      assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+      assert.strictEqual(mod(r.body, 'memberships').charge_minor, 750);
+      assert.strictEqual(mod(r.body, 'memberships').promo.applies, true);
+      // Used up: one venue only.
+      const used = await call(server, 'PUT', `/api/admin/offices/${GYM.id}/modules`, adminToken,
+        { modules: { memberships: { allowed: true, promo_code: 'HALF3' } } });
+      assert.strictEqual(used.status, 400);
+      const [[promo]] = await pool.query("SELECT id FROM bo_module_promos WHERE code = 'HALF3'");
+      await call(server, 'PUT', `/api/admin/module-promos/${promo.id}`, adminToken, { active: false });
+      const after = await call(server, 'GET', `/api/admin/offices/${PUB.id}/modules`, adminToken);
+      assert.strictEqual(mod(after.body, 'memberships').charge_minor, 1500);
+      await call(server, 'PUT', `/api/admin/module-promos/${promo.id}`, adminToken, { active: true });
+      // Remove it, so the invoice tests below see the plain price.
+      await call(server, 'PUT', `/api/admin/offices/${PUB.id}/modules`, adminToken,
+        { modules: { memberships: { allowed: true, promo_code: '' } } });
+    });
+
+    await check('a promo ends after its months', async () => {
+      const promo = { active: 1, percent_off: 100, months: 3 };
+      const from = new Date('2026-01-10');
+      assert.strictEqual(discounted(2900, promo, from, new Date('2026-04-09')).price, 0);
+      assert.strictEqual(discounted(2900, promo, from, new Date('2026-04-10')).price, 2900);
+      assert.strictEqual(discounted(2900, { active: 1, amount_off_minor: 5000 }, from).price, 0);
+    });
+
+    await check('a module turned off platform-wide is off at every venue and charges nobody', async () => {
+      await call(server, 'PUT', '/api/admin/modules/vehicle_access', adminToken, { active: false });
+      const r = await call(server, 'GET', `/api/admin/offices/${PUB.id}/modules`, adminToken);
+      assert.strictEqual(mod(r.body, 'vehicle_access').allowed, false);
+      assert.strictEqual(mod(r.body, 'vehicle_access').retired, true);
+      assert.strictEqual((await moduleCharges(pool, PUB.id, 'month')).total, 3000);
+      await call(server, 'PUT', '/api/admin/modules/vehicle_access', adminToken, { active: true });
+      const back = await call(server, 'GET', `/api/admin/offices/${PUB.id}/modules`, adminToken);
+      assert.strictEqual(mod(back.body, 'vehicle_access').allowed, true);
+    });
+
+    await check('the venues list has every venue against every module', async () => {
+      const r = await call(server, 'GET', '/api/admin/modules-venues', adminToken);
+      assert.strictEqual(r.status, 200);
+      assert.ok(r.body.length >= 2);
+      assert.ok(r.body.every((o) => o.modules.length === 3));
     });
 
     await check('a new office with modules ticked is billed for them on its first invoice', async () => {
@@ -265,9 +338,9 @@ async function main() {
       assert.strictEqual(mod(list.body, 'gym_door').on, true);
       assert.strictEqual(mod(list.body, 'vehicle_access').allowed, false);
       const [[inv]] = await pool.query('SELECT amount_minor, modules_minor, modules_detail FROM subscription_invoices WHERE office_id = ?', [r.body.id]);
-      // 50.00 + memberships at the default price (0, none set) = 50.00.
-      assert.strictEqual(inv.amount_minor, 5000);
-      assert.strictEqual(inv.modules_minor, 0);
+      // 50.00 + memberships 29.00 + gym door 15.00, both at the default price.
+      assert.strictEqual(inv.amount_minor, 5000 + 2900 + 1500);
+      assert.strictEqual(inv.modules_minor, 4400);
     });
 
     await check('paying an invoice raises the next one with module charges', async () => {
@@ -286,8 +359,8 @@ async function main() {
         "SELECT amount_minor, modules_minor, modules_detail FROM subscription_invoices WHERE office_id = ? AND status = 'due'",
         [PUB.id]
       );
-      assert.strictEqual(next.amount_minor, 3000 + 4000);
-      assert.strictEqual(next.modules_minor, 4000);
+      assert.strictEqual(next.amount_minor, 3000 + 5500);
+      assert.strictEqual(next.modules_minor, 5500);
       assert.match(next.modules_detail, /Vehicle access 25\.00/);
     });
   } finally {
