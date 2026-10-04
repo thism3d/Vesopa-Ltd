@@ -42,6 +42,7 @@ import 'customer_picker.dart';
 import 'membership_gate.dart';
 import 'membership_prompt.dart';
 import 'permission_gate.dart';
+import '../data/price_level_controller.dart';
 import 'sale_page.dart' show productsProvider;
 import 'theme.dart';
 import 'widgets/pos_message.dart';
@@ -543,11 +544,13 @@ class _MemberSheetState extends ConsumerState<_MemberSheet> {
       );
       return;
     }
+    final customer = await _tillCustomerFor(ref, m);
+    if (!mounted) return;
     final charged = await chargeMembershipOnBill(
       context,
       ref,
       orderId: widget.orderId,
-      customer: await _tillCustomerFor(ref, m),
+      customer: customer,
       plan: plan,
       join: false,
     );

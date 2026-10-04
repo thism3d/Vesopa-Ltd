@@ -64,6 +64,7 @@ import '../printing/receipt_builder.dart';
 import 'cards_page.dart' show lastCardReadProvider;
 import 'membership_gate.dart';
 import 'membership_prompt.dart';
+import 'memberships_page.dart' show MemberCardCapture;
 import 'staff_admin.dart' show StaffCardCapture;
 import 'staff_handover.dart';
 import 'manager_approval.dart';
@@ -115,6 +116,11 @@ Future<void> handleSwipedCard(
   // the same reason as the manager's: without this, swiping a new card to give
   // to a starter would sign whoever last held it on to this terminal.
   if (StaffCardCapture.offer(card)) return;
+
+  // And a class on the Members page, checking somebody in by their card.
+  // Before the gym door and the bill, which would otherwise greet them or
+  // attach them to a sale instead.
+  if (MemberCardCapture.offer(card)) return;
 
   final settings = ref.read(cardRepositoryProvider).settings;
   if (!settings.enabled) return;
