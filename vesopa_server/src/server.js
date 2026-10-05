@@ -75,6 +75,7 @@ const { siteRoutes, resolveTillSite } = require('./sites');
 const { demoRoutes } = require('./demo_venue');
 const { licenceRoutes, adminLicenceRoutes } = require('./licences');
 const { adminHoldRoutes } = require('./admin_holds');
+const { adminOverviewRoutes } = require('./admin_overview');
 const licences = require('./licences');
 const { loyaltyAppRoutes, startLoyaltyScheduler } = require('./loyalty_app');
 const { privacyRoutes } = require('./privacy_provider');
@@ -339,6 +340,9 @@ app.use('/api/admin', adminRoutes({ pool, broadcast, secret: JWT_SECRET }));
 // Licence limits and keys are the platform admin's to set, so they sit behind
 // the same admin gate as the offices they belong to.
 app.use('/api/admin', adminLicenceRoutes({ pool }));
+// admin.vesopa.com's live overview: every venue's devices, takings, overdue
+// invoices and holds in one read. See src/admin_overview.js.
+app.use('/api/admin', adminOverviewRoutes({ pool }));
 // Pausing and removing a venue's apps, modules and Loyalty app, with a grace
 // day (admin.vesopa.com, 2026-10-05). See src/admin_holds.js.
 app.use('/api/admin', adminHoldRoutes({

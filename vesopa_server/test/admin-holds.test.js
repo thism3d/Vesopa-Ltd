@@ -31,6 +31,7 @@ const holds = require('../src/admin_holds');
 const licences = require('../src/licences');
 const { modulesFor, moduleCharges } = require('../src/modules');
 const { requireAuth } = require('../src/auth');
+const { overview } = require('../src/admin_overview');
 
 const DB = 'vesopa_admin_holds_selftest';
 const HOST = '127.0.0.1';
@@ -210,6 +211,17 @@ async function main() {
       assert.strictEqual((await moduleCharges(pool, PUB.id, 'month')).total, 0);
       const [[row]] = await pool.query("SELECT allowed FROM bo_venue_modules WHERE module = 'memberships'");
       assert.strictEqual(Number(row.allowed), 1, 'nothing is deleted or rewritten');
+    });
+
+    await check('the overview lists every venue with its holds, tables or not', async () => {
+      const o = await overview(pool);
+      assert.strictEqual(o.totals.venues, 1);
+      const v = o.venues[0];
+      assert.strictEqual(v.name, PUB.name);
+      assert.deepStrictEqual(v.devices, {}, 'no bo_devices table is no devices');
+      assert.strictEqual(v.holds.length, 1);
+      assert.strictEqual(v.holds[0].item, 'module:memberships');
+      assert.strictEqual(o.totals.holds_stopped, 1);
     });
 
     await check('something that is not sold cannot be paused', async () => {
