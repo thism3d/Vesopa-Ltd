@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title><%= locals.title ? title + ' · ' : '' %>Vesopa Admin</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/admin.css">
+<script src="/admin.js" defer></script>
+</head>
+<body>
+<% if (locals.me) { %>
+<div class="frame">
+  <aside class="rail" id="rail">
+    <a class="brand" href="/"><span class="mark">v</span><span>vesopa <b>admin</b></span></a>
+    <nav>
+      <% const nav = [
+        ['/', 'Overview', 'licences.view', null],
+        ['/venues', 'Venues', 'licences.view', 'epos'],
+        ['/catalogue', 'Catalogue', 'licences.view', 'epos'],
+        ['/hosting', 'Cloud hosting', 'licences.view', 'hosting'],
+        ['/audit', 'Audit log', 'audit.view', null],
+        ['/admins', 'Admins', 'admins.manage', null],
+      ]; %>
+      <% for (const [href, text, perm, app] of nav) { if (!can(perm, app)) continue; const on = href === '/' ? path === '/' : path.startsWith(href); %>
+        <a href="<%= href %>" class="<%= on ? 'on' : '' %>"><%= text %></a>
+      <% } %>
+    </nav>
+    <div class="soon">
+      <span>Coming next</span>
+      <p>People, sign in as a venue, then billing.</p>
+    </div>
+    <form class="me" method="post" action="/signout">
+      <div><b><%= me.name %></b><small><%= me.roleLabel %><%= me.apps === '*' ? '' : ' · ' + me.apps.map((a) => roles.APPS[a]).join(', ') %></small></div>
+      <button class="link" type="submit">Sign out</button>
+    </form>
+  </aside>
+  <main class="main">
+    <header class="top">
+      <button class="menu" type="button" data-toggle="rail" aria-label="Menu">☰</button>
+      <h1><%= locals.title || 'Admin' %></h1>
+      <form class="search" method="get" action="/venues"><input name="q" placeholder="Find a venue…" aria-label="Find a venue" value="<%= locals.q || '' %>"></form>
+    </header>
+    <% if (locals.flash) { %><div class="flash <%= flash.kind %>"><%= flash.text %></div><% } %>
+<% } else { %>
+<div class="lone">
+<% } %>

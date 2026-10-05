@@ -1,0 +1,55 @@
+<%- include('_top') %>
+<section class="card">
+  <h2>The owner</h2>
+  <p><b><%= owner %></b> is Owner of everything, always. That account cannot be removed or changed here.</p>
+</section>
+
+<section class="card">
+  <h2>Add an admin</h2>
+  <p class="muted">They sign in with Connect with Vesopa using this address. A role is limited to the apps you tick.</p>
+  <form method="post" action="/admins" class="grid-form">
+    <input type="hidden" name="_csrf" value="<%= me.csrf %>">
+    <label>Email <input name="email" type="email" required></label>
+    <label>Name <input name="name"></label>
+    <label>Role
+      <select name="role"><% for (const [k, r] of Object.entries(roles.ROLES)) { if (k === 'owner' && !me.isOwner) continue; %><option value="<%= k %>" <%= k === 'support' ? 'selected' : '' %>><%= r.label %>: <%= r.summary %></option><% } %></select>
+    </label>
+    <fieldset class="apps"><legend>Apps</legend>
+      <label class="check"><input type="checkbox" name="apps" value="*" checked> Every app</label>
+      <% for (const [k, a] of Object.entries(roles.APPS)) { %><label class="check"><input type="checkbox" name="apps" value="<%= k %>"> <%= a %></label><% } %>
+    </fieldset>
+    <button class="btn primary" type="submit">Add admin</button>
+  </form>
+</section>
+
+<section class="card flush">
+  <table class="list">
+    <thead><tr><th>Admin</th><th>Role</th><th>Apps</th><th>Last seen</th><th></th></tr></thead>
+    <% for (const a of rows) { const apps = roles.parseApps(a.apps); %>
+    <tr class="<%= a.status === 'active' ? '' : 'failed' %>">
+      <td><b><%= a.email %></b><small class="muted block"><%= a.name || '' %> · added by <%= a.added_by || '?' %></small></td>
+      <td><%= (roles.ROLES[a.role] || {}).label || a.role %><%= a.status === 'active' ? '' : ' (suspended)' %></td>
+      <td><%= apps === '*' ? 'Every app' : apps.map((x) => roles.APPS[x]).join(', ') %></td>
+      <td class="muted"><%= a.last_seen_at ? ago(a.last_seen_at) : 'never' %></td>
+      <td class="do">
+        <details class="pop"><summary class="btn">Change…</summary>
+          <form method="post" action="/admins/<%= a.id %>" class="stack">
+            <input type="hidden" name="_csrf" value="<%= me.csrf %>">
+            <label>Role <select name="role"><% for (const [k, r] of Object.entries(roles.ROLES)) { if (k === 'owner' && !me.isOwner) continue; %><option value="<%= k %>" <%= k === a.role ? 'selected' : '' %>><%= r.label %></option><% } %></select></label>
+            <fieldset class="apps"><legend>Apps</legend>
+              <label class="check"><input type="checkbox" name="apps" value="*" <%= apps === '*' ? 'checked' : '' %>> Every app</label>
+              <% for (const [k, x] of Object.entries(roles.APPS)) { %><label class="check"><input type="checkbox" name="apps" value="<%= k %>" <%= apps !== '*' && apps.includes(k) ? 'checked' : '' %>> <%= x %></label><% } %>
+            </fieldset>
+            <label>Status <select name="status"><option value="active">Active</option><option value="suspended" <%= a.status === 'suspended' ? 'selected' : '' %>>Suspended</option></select></label>
+            <div class="row">
+              <button class="btn primary" type="submit">Save</button>
+              <button class="btn red" type="submit" name="action" value="remove" data-confirm="Remove <%= a.email %>? They are signed out now.">Remove</button>
+            </div>
+          </form>
+        </details>
+      </td>
+    </tr>
+    <% } %>
+  </table>
+</section>
+<%- include('_bottom') %>

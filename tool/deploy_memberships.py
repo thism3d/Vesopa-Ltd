@@ -16,6 +16,16 @@ cannot reach port 22). It:
      running standalone, exactly as before.
   3. checks: health, a module route refusing an unsigned call, the error log
 
+    python tool/deploy_memberships.py --admin
+
+does step 1, then puts admin.vesopa.com live (2026-10-05): it bundles
+vesopa_admin (no node_modules, no .env), Gift's and Hosting's admin API and
+Auth's schema_027_admin_console_client.sql, uploads them to
+/root/admin-deploy/<stamp> and runs vesopa_admin/scripts/remote-install.sh,
+which is idempotent: DNS, web domain, certificate, database, the Auth client
+and its secret, the service keys in all four .env files, npm ci, schema twice,
+pm2 by name, checks. No secret is printed or leaves the box.
+
 Nothing here changes any venue's data: the schema adds tables and columns,
 and the only rows it writes are the default module prices and the gym door
 for venues that already run the gym.
@@ -26,6 +36,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 USER = "vesopasoftware"
@@ -110,6 +121,30 @@ def metric():
         raise SystemExit("Metric deploy failed (the back office is already live and unaffected)")
 
 
+def admin():
+    print("▶ admin.vesopa.com: bundle")
+    stage = pathlib.Path(tempfile.mkdtemp(prefix="admin-"))
+    try:
+        stage_dir(ROOT / "vesopa_admin", stage / "admin")
+        (stage / "gift").mkdir()
+        shutil.copy(ROOT / "vesopa_gift" / "src" / "admin_api.js", stage / "gift" / "admin_api.js")
+        shutil.copy(ROOT / "vesopa_gift" / "src" / "server.js", stage / "gift" / "server.js")
+        (stage / "hosting").mkdir()
+        shutil.copy(ROOT / "vesopa_hosting" / "src" / "routes" / "admin_api.js", stage / "hosting" / "admin_api.js")
+        shutil.copy(ROOT / "vesopa_hosting" / "src" / "server.js", stage / "hosting" / "server.js")
+        shutil.copy(ROOT / "vesopa_auth" / "schema" / "schema_027_admin_console_client.sql", stage)
+        # LF endings whatever the checkout did, or bash on the box stops at "$'\r'".
+        script = (stage / "admin" / "scripts" / "remote-install.sh").read_bytes().replace(b"\r\n", b"\n")
+        (stage / "remote-install.sh").write_bytes(script)
+        remote = f"/root/admin-deploy/{time.strftime('%Y%m%d_%H%M%S')}"
+        print(f"▶ admin.vesopa.com: upload to {remote}")
+        ssh("put", str(stage), remote)
+    finally:
+        shutil.rmtree(stage, ignore_errors=True)
+    print("▶ admin.vesopa.com: install (DNS, domain, certificate, database, Auth client, keys, pm2)")
+    ssh("run", f"cd {remote} && bash remote-install.sh")
+
+
 def checks():
     print("▶ checks")
     ssh("run",
@@ -118,13 +153,16 @@ def checks():
         "curl -sS -o /dev/null -w 'memberships, unsigned    %{http_code} (expect 401)\\n' https://backoffice.vesopaepos.com/api/memberships/summary; "
         "curl -sS -o /dev/null -w 'partner API, no key      %{http_code} (expect 401)\\n' https://backoffice.vesopaepos.com/partner/v1/memberships/plans; "
         "curl -sS -o /dev/null -w 'metric health            %{http_code}\\n' https://metric.vesopa.com/health; "
+        "curl -sS -o /dev/null -w 'admin.vesopa.com         %{http_code}\\n' https://admin.vesopa.com/healthz; "
         f"tail -5 {BACKOFFICE}/logs/error-0.log 2>/dev/null || true", check=False)
 
 
 if __name__ == "__main__":
     only = sys.argv[1] if len(sys.argv) > 1 else ""
-    if only in ("", "--backoffice"):
+    if only in ("", "--backoffice", "--admin"):
         backoffice()
     if only in ("", "--metric"):
         metric()
+    if only == "--admin":
+        admin()
     checks()

@@ -1,0 +1,30 @@
+<%- include('_top') %>
+<% if (error) { %><div class="flash bad"><%= error %></div><% } %>
+<form class="bar" method="get" action="/hosting"><input name="q" value="<%= q %>" placeholder="Find a domain or customer…" aria-label="Find"><span class="muted"><%= services.length %> service<%= services.length === 1 ? '' : 's' %></span></form>
+<section class="card flush">
+  <table class="list">
+    <thead><tr><th>Site</th><th>Plan</th><th>Customer</th><th>Status</th><th></th></tr></thead>
+    <% for (const s of services) { %>
+    <tr>
+      <td><b><%= s.primary_domain || 'service ' + s.id %></b></td>
+      <td><%= s.plan_name %></td>
+      <td class="muted"><%= s.email %></td>
+      <td><span class="pill <%= s.status === 'active' ? 'green' : 'red' %>"><%= s.status %></span><% if (s.suspended_reason) { %><small class="muted block"><%= s.suspended_reason %></small><% } %></td>
+      <td class="do">
+        <% if (can('licences.run', 'hosting')) { %>
+        <form method="post" action="/hosting/<%= s.id %>" class="inline">
+          <input type="hidden" name="_csrf" value="<%= me.csrf %>">
+          <% if (s.status === 'active') { %>
+            <input name="reason" placeholder="Reason" aria-label="Reason">
+            <button class="btn red" name="action" value="suspend" type="submit" data-confirm="Suspend <%= s.primary_domain %>? The site goes offline now.">Suspend</button>
+          <% } else { %>
+            <button class="btn primary" name="action" value="restore" type="submit">Restore</button>
+          <% } %>
+        </form>
+        <% } %>
+      </td>
+    </tr>
+    <% } %>
+  </table>
+</section>
+<%- include('_bottom') %>

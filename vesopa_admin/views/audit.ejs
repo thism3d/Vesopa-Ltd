@@ -1,0 +1,14 @@
+<%- include('_top') %>
+<section class="card flush">
+  <table class="list">
+    <thead><tr><th>When</th><th>Who</th><th>What</th><th>Venue</th><th>Detail</th></tr></thead>
+    <% for (const r of rows) { %>
+      <tr class="<%= r.ok ? '' : 'failed' %>">
+        <td class="muted nowrap"><%= when(r.at) %></td><td><%= r.actor %></td><td><%= describe(r.action) %><%= r.ok ? '' : ' (failed)' %></td>
+        <td><% if (r.venue_id) { %><a href="/venues/<%= r.venue_id %>"><%= r.venue_name || r.venue_id %></a><% } %></td>
+        <td class="muted small"><%= r.detail || '' %></td>
+      </tr>
+    <% } %>
+  </table>
+</section>
+<%- include('_bottom') %>

@@ -448,6 +448,8 @@ if (STUDIO_MOUNTED) {
   app.use('/build', require('./routes/build'));
 }
 app.use('/panel', require('./routes/panel'));
+// admin.vesopa.com, on its service key only. See src/routes/admin_api.js.
+app.use('/api/admin', require('./routes/admin_api'));
 app.use('/admin', require('./routes/admin'));
 
 // ---------------------------------------------------------------------------

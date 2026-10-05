@@ -1,0 +1,111 @@
+<%- include('_top') %>
+<% if (error) { %><div class="flash bad"><%= error %></div><% } %>
+<% if (data) { const v = data.venue; %>
+<section class="head card">
+  <div>
+    <h2><%= v.name %></h2>
+    <p class="muted"><%= v.email %> · venue <%= v.id %><%= v.plan ? ' · ' + v.plan : '' %></p>
+  </div>
+  <div class="facts">
+    <div><span>Status</span><b class="<%= v.status === 'active' ? 'ok' : 'bad' %>"><%= v.status %></b></div>
+    <div><span>Online</span><b><%= v.online %> / <%= v.device_count %></b><small><%= ago(v.last_seen_at) %></small></div>
+    <div><span>Today</span><b><%= money(v.today.total_minor) %></b><small><%= v.today.orders %> bills</small></div>
+    <div><span>Overdue</span><b class="<%= v.overdue.count ? 'bad' : '' %>"><%= v.overdue.count %></b><small><%= money(v.overdue.amount_minor) %></small></div>
+  </div>
+</section>
+
+<% for (const g of groups) { %>
+<section class="card flush">
+  <h2 class="pad"><%= g %></h2>
+  <% for (const l of data.lines.filter((x) => x.group === g)) {
+       const sell = can('licences.sell', l.app); const run = can('licences.run', l.app);
+       const notConnected = l.app === 'gift' && !data.connected.gift; %>
+  <div class="line">
+    <div class="what">
+      <b><%= l.label %></b>
+      <span class="pill <%= { active: 'green', off: 'grey', grace: 'amber', paused: 'red', removed: 'red' }[l.state] %>">
+        <%= { active: 'On', off: 'Not sold', grace: (l.holdState === 'removed' ? 'Removing' : 'Pausing') + ' · stops ' + when(l.until), paused: 'Paused', removed: 'Removed' }[l.state] %>
+      </span>
+      <% if (l.hasSeats && l.state !== 'off') { %>
+        <small class="muted"><%= l.used == null ? '' : l.used + ' in use' %><%= l.seats == null ? (l.used == null ? '' : ' · no limit') : ' of ' + l.seats %></small>
+      <% } %>
+      <% if (l.price_minor) { %><small class="muted"><%= money(l.price_minor) %> a month</small><% } %>
+      <% if (l.reason) { %><small class="muted">“<%= l.reason %>”</small><% } %>
+      <% if (notConnected) { %><small class="muted">Gift is not connected to admin.vesopa.com yet.</small><% } %>
+    </div>
+    <div class="do">
+      <% if (notConnected) { %>
+      <% } else if (l.state === 'off') { %>
+        <% if (sell) { %>
+        <form method="post" action="/venues/<%= v.id %>/items/<%= l.key %>" class="inline">
+          <input type="hidden" name="_csrf" value="<%= me.csrf %>"><input type="hidden" name="action" value="add">
+          <% if (l.hasSeats) { %><input class="seats" type="number" min="1" max="999" name="seats" placeholder="Seats" aria-label="Seats"><% } %>
+          <button class="btn primary" type="submit">Add</button>
+        </form>
+        <% } %>
+      <% } else if (l.state === 'active') { %>
+        <% if (sell && l.hasSeats) { %>
+        <form method="post" action="/venues/<%= v.id %>/items/<%= l.key %>" class="inline">
+          <input type="hidden" name="_csrf" value="<%= me.csrf %>"><input type="hidden" name="action" value="seats">
+          <input class="seats" type="number" min="0" max="999" name="seats" value="<%= l.seats == null ? '' : l.seats %>" placeholder="No limit" aria-label="Seats">
+          <button class="btn" type="submit">Set seats</button>
+        </form>
+        <% } %>
+        <% if (run || sell) { %>
+        <details class="pop">
+          <summary class="btn">Pause or remove…</summary>
+          <form method="post" action="/venues/<%= v.id %>/items/<%= l.key %>" class="stack">
+            <input type="hidden" name="_csrf" value="<%= me.csrf %>">
+            <label>Reason <input name="reason" placeholder="For example: unpaid since August"></label>
+            <label>When it stops
+              <select name="grace_hours">
+                <option value="<%= grace %>" selected>After a grace day (recommended)</option>
+                <option value="72">After three days</option>
+                <option value="0">Now</option>
+              </select>
+            </label>
+            <label class="check"><input type="checkbox" name="notify" value="0"> Do not email the venue</label>
+            <div class="row">
+              <% if (run) { %><button class="btn amber" name="action" value="pause" type="submit">Pause</button><% } %>
+              <% if (sell) { %><button class="btn red" name="action" value="remove" type="submit" data-confirm="Remove <%= l.label %> from <%= v.name %>? It comes off their invoice. Their data is kept.">Remove</button><% } %>
+            </div>
+          </form>
+        </details>
+        <% } %>
+      <% } else { %>
+        <% if (run) { %>
+        <form method="post" action="/venues/<%= v.id %>/items/<%= l.key %>" class="inline">
+          <input type="hidden" name="_csrf" value="<%= me.csrf %>"><input type="hidden" name="action" value="resume">
+          <button class="btn primary" type="submit">Resume</button>
+        </form>
+        <% } %>
+      <% } %>
+    </div>
+  </div>
+  <% } %>
+</section>
+<% } %>
+
+<% if (data.keys.length) { %>
+<section class="card">
+  <h2>Licence keys</h2>
+  <table class="list">
+    <thead><tr><th>Key</th><th>App</th><th>Machine</th><th>State</th></tr></thead>
+    <% for (const k of data.keys) { %>
+      <tr><td><code><%= k.key_prefix %>…</code> <%= k.label || '' %></td><td><%= k.kind %></td><td><%= k.device_name || 'not activated' %></td><td><%= k.revoked_at ? 'withdrawn' : k.activated_at ? 'in use since ' + when(k.activated_at) : 'waiting' %></td></tr>
+    <% } %>
+  </table>
+</section>
+<% } %>
+
+<section class="card">
+  <h2>History</h2>
+  <% if (!history.length) { %><p class="muted">Nothing has been changed here from admin.vesopa.com yet.</p><% } %>
+  <table class="list">
+    <% for (const r of history) { %>
+      <tr class="<%= r.ok ? '' : 'failed' %>"><td class="muted"><%= when(r.at) %></td><td><%= describe(r.action) %></td><td class="muted hide-phone"><%= r.actor %></td></tr>
+    <% } %>
+  </table>
+</section>
+<% } %>
+<%- include('_bottom') %>

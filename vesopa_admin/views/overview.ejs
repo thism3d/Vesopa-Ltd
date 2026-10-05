@@ -1,0 +1,57 @@
+<%- include('_top') %>
+<% if (error) { %>
+  <div class="flash bad">The back office did not answer: <%= error %></div>
+<% } else { const t = o.totals; %>
+<section class="tiles">
+  <a class="tile" href="/venues"><span>Venues</span><b><%= t.venues %></b><small><%= t.active %> active<%= t.paused ? ` · ${t.paused} paused` : '' %></small></a>
+  <a class="tile" href="/venues?show=offline"><span>Devices online</span><b><%= t.online %><em>/ <%= t.devices %></em></b><small>Heard from in the last <%= o.online_minutes %> min</small></a>
+  <div class="tile"><span>Taken today</span><b><%= money(t.today_minor) %></b><small><%= t.today_orders %> bills across every venue</small></div>
+  <a class="tile <%= t.overdue_invoices ? 'warn' : '' %>" href="/venues?show=owing"><span>Overdue invoices</span><b><%= t.overdue_invoices %></b><small><%= money(t.overdue_minor) %> owed</small></a>
+  <a class="tile <%= t.holds_in_grace ? 'warn' : '' %>" href="/venues?show=paused"><span>Licences paused</span><b><%= t.holds_in_grace + t.holds_stopped %></b><small><%= t.holds_in_grace %> in their grace day · <%= t.holds_stopped %> stopped</small></a>
+</section>
+
+<div class="cols">
+  <section class="card">
+    <h2>Needs a look</h2>
+    <% if (!quiet.length && !grace.length && !owing.length) { %>
+      <p class="muted">Nothing needs a look right now.</p>
+    <% } %>
+    <ul class="alerts">
+      <% for (const g of grace) { %>
+        <li class="amber"><a href="/venues/<%= g.venue.id %>"><b><%= g.venue.name %></b>: <%= label(g.hold.item) %> stops <%= when(g.hold.graceUntil) %></a></li>
+      <% } %>
+      <% for (const v of quiet) { %>
+        <li class="red"><a href="/venues/<%= v.id %>"><b><%= v.name %></b>: no device online, last heard <%= ago(v.last_seen_at) %></a></li>
+      <% } %>
+      <% for (const v of owing) { %>
+        <li class="amber"><a href="/venues/<%= v.id %>"><b><%= v.name %></b>: <%= v.overdue.count %> overdue invoice<%= v.overdue.count === 1 ? '' : 's' %>, <%= money(v.overdue.amount_minor) %></a></li>
+      <% } %>
+    </ul>
+  </section>
+
+  <section class="card">
+    <h2>Busiest today</h2>
+    <table class="list">
+      <% for (const v of top) { %>
+        <tr><td><a href="/venues/<%= v.id %>"><%= v.name %></a></td><td class="num"><%= v.today.orders %></td><td class="num"><b><%= money(v.today.total_minor) %></b></td></tr>
+      <% } %>
+    </table>
+  </section>
+</div>
+
+<section class="card">
+  <h2>Latest changes</h2>
+  <% if (!recent.length) { %><p class="muted">No changes yet.</p><% } %>
+  <table class="list">
+    <% for (const r of recent) { %>
+      <tr class="<%= r.ok ? '' : 'failed' %>"><td class="muted"><%= when(r.at) %></td><td><%= r.venue_name || '' %></td><td><%= describe(r.action) %></td><td class="muted hide-phone"><%= r.actor %></td></tr>
+    <% } %>
+  </table>
+</section>
+
+<p class="muted small">
+  Connected: back office ✓ · Gift <%= o.connected.gift ? '✓' : 'not yet' %> · Cloud hosting <%= o.connected.hosting ? '✓' : 'not yet' %>.
+  Updated <%= when(o.at) %>.
+</p>
+<% } %>
+<%- include('_bottom') %>

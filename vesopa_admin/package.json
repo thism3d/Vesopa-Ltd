@@ -1,0 +1,26 @@
+{
+  "name": "vesopa_admin",
+  "version": "1.0.0",
+  "description": "admin.vesopa.com: one place to run every Vesopa app, venue, licence and admin",
+  "main": "src/server.js",
+  "private": true,
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "license": "UNLICENSED",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "cookie-parser": "^1.4.7",
+    "dotenv": "^17.4.2",
+    "ejs": "^3.1.10",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "mysql2": "^3.22.6",
+    "nodemailer": "^7.0.13"
+  }
+}

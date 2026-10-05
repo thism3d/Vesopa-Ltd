@@ -1,0 +1,35 @@
+<%- include('_top') %>
+<% if (error) { %><div class="flash bad">The back office did not answer: <%= error %></div><% } %>
+<p class="muted">Everything a venue can have. Modules carry a monthly price that is added to the venue's invoice while it is on; a module switched off here is off for every venue at once.</p>
+<% for (const g of groups) { %>
+<section class="card flush">
+  <h2 class="pad"><%= g %></h2>
+  <% for (const i of items.filter((x) => x.group === g)) { const m = i.module ? mods.find((x) => x.key === i.module) : null; %>
+  <div class="line">
+    <div class="what">
+      <b><%= i.label %></b>
+      <small class="muted"><%= roles.APPS[i.app] %><%= i.seats ? ' · licensed per device' : '' %></small>
+      <% if (m) { %>
+        <span class="pill <%= m.active ? 'green' : 'red' %>"><%= m.active ? 'On sale' : 'Off for everyone' %></span>
+        <small class="muted"><%= m.venues %> venue<%= m.venues === 1 ? '' : 's' %> · <%= money(m.price_minor) %> a month</small>
+      <% } %>
+    </div>
+    <div class="do">
+      <% if (m && can('licences.sell', 'epos')) { %>
+      <form method="post" action="/catalogue/<%= m.key %>" class="inline">
+        <input type="hidden" name="_csrf" value="<%= me.csrf %>">
+        <label class="money">£<input name="price" inputmode="decimal" value="<%= (m.price_minor / 100).toFixed(2) %>" aria-label="Monthly price"></label>
+        <button class="btn" type="submit">Save price</button>
+      </form>
+      <form method="post" action="/catalogue/<%= m.key %>" class="inline">
+        <input type="hidden" name="_csrf" value="<%= me.csrf %>">
+        <input type="hidden" name="active" value="<%= m.active ? '0' : '1' %>">
+        <button class="btn <%= m.active ? 'red' : 'primary' %>" type="submit" <%- m.active ? `data-confirm="Switch ${i.label} off for every venue?"` : '' %>><%= m.active ? 'Switch off for everyone' : 'Put back on sale' %></button>
+      </form>
+      <% } %>
+    </div>
+  </div>
+  <% } %>
+</section>
+<% } %>
+<%- include('_bottom') %>

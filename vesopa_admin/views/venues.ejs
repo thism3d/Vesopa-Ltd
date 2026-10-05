@@ -1,0 +1,42 @@
+<%- include('_top') %>
+<% if (error) { %><div class="flash bad">The back office did not answer: <%= error %></div><% } %>
+<div class="bar">
+  <nav class="chips">
+    <% for (const [k, t] of [['all', 'All'], ['paused', 'Paused'], ['offline', 'Offline'], ['owing', 'Owing']]) { %>
+      <a class="chip <%= show === k ? 'on' : '' %>" href="/venues?show=<%= k %><%= q ? '&q=' + encodeURIComponent(q) : '' %>"><%= t %></a>
+    <% } %>
+  </nav>
+  <span class="muted"><%= list.length %> venue<%= list.length === 1 ? '' : 's' %></span>
+</div>
+<form method="post" action="/venues/bulk" class="card flush">
+  <input type="hidden" name="_csrf" value="<%= me.csrf %>">
+  <table class="list venues">
+    <thead><tr><th class="tick"><input type="checkbox" data-all="ids" aria-label="Tick every venue"></th><th>Venue</th><th>Devices</th><th>Today</th><th>Status</th></tr></thead>
+    <tbody>
+    <% for (const v of list) { %>
+      <tr>
+        <td class="tick"><input type="checkbox" name="ids" value="<%= v.id %>" aria-label="Tick <%= v.name %>"></td>
+        <td><a href="/venues/<%= v.id %>"><b><%= v.name %></b></a><small class="muted block"><%= v.email %></small></td>
+        <td><span class="dot <%= v.device_count === 0 ? 'grey' : v.online ? 'green' : 'red' %>"></span><%= v.online %> / <%= v.device_count %><small class="muted block"><%= v.device_count ? 'last heard ' + ago(v.last_seen_at) : 'no devices' %></small></td>
+        <td class="num"><%= money(v.today.total_minor) %></td>
+        <td>
+          <% if (v.status !== 'active') { %><span class="pill red"><%= v.status %></span><% } %>
+          <% for (const h of v.holds) { %><span class="pill <%= h.stopped ? 'red' : 'amber' %>"><%= label(h.item) %> <%= h.stopped ? h.state : (h.state === 'removed' ? 'removing' : 'pausing') %></span><% } %>
+          <% if (v.overdue.count) { %><span class="pill amber"><%= v.overdue.count %> overdue</span><% } %>
+          <% if (v.status === 'active' && !v.holds.length && !v.overdue.count) { %><span class="pill green">ok</span><% } %>
+        </td>
+      </tr>
+    <% } %>
+    </tbody>
+  </table>
+  <% if (can('licences.run')) { %>
+  <div class="bulk">
+    <span>With the ticked venues:</span>
+    <select name="action" aria-label="Action"><option value="pause">Pause</option><option value="resume">Resume</option></select>
+    <select name="item" aria-label="What"><% for (const i of items) { %><option value="<%= i.key %>"><%= i.label %></option><% } %></select>
+    <input name="reason" placeholder="Reason (shown in the log)" aria-label="Reason">
+    <button class="btn" type="submit" data-confirm="Change every ticked venue? Paused items keep working for a day first.">Apply</button>
+  </div>
+  <% } %>
+</form>
+<%- include('_bottom') %>

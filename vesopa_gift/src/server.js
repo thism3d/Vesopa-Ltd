@@ -126,6 +126,8 @@ app.use(async (req, res, next) => {
   next();
 });
 
+// admin.vesopa.com, on its service key only. See src/admin_api.js.
+app.use('/api/admin', require('./admin_api').adminApiRouter);
 app.use('/admin', adminRouter);
 app.use(account.attach);
 app.use(account.accountRouter);
