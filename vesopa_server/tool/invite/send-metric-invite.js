@@ -5,6 +5,7 @@
  *   node tool/invite/send-metric-invite.js --preview out.html   # look at it
  *   node tool/invite/send-metric-invite.js --eml out.eml        # Outlook draft from Muzahid
  *   node tool/invite/send-metric-invite.js --send --from-muzahid  # from muzahid@vesopa.com
+ *   ... --send --from-muzahid --only info@vesopasoftware.com      # one copy, nobody else
  *
  * --from-muzahid sends it as Muzahid Islam <muzahid@vesopa.com> exactly the way
  * auth.vesopa.com sends its sign-in codes: Auth's own SMTP settings (its .env,
@@ -223,6 +224,9 @@ async function main() {
       console.log(`would send "${SUBJECT}" from ${MUZAHID.email} to ${TO}, cc ${CC.join(', ')}. Add --send.`);
       return;
     }
+    const onlyAt = process.argv.indexOf('--only');
+    const only = onlyAt > -1 ? process.argv[onlyAt + 1] : null;
+    if (onlyAt > -1 && !/^[^@\s]+@[^@\s]+$/.test(only || '')) throw new Error('--only needs an address');
     const nodemailer = require('nodemailer');
     const authEnv = process.env.AUTH_ENV || '/home/vesopasoftware/web/auth.vesopa.com/private/nodeapp/.env';
     if (!fs.existsSync(authEnv)) throw new Error(`no Auth settings at ${authEnv} (set AUTH_ENV)`);
@@ -239,7 +243,9 @@ async function main() {
     console.log(`using Auth's mail server ${a.SMTP_HOST || 'localhost'}:${a.SMTP_PORT || 587}`);
     const info = await tx.sendMail({
       from: `${MUZAHID.name} <${MUZAHID.email}>`,
-      envelope: { from: MUZAHID.email, to: [TO, ...CC] },
+      // --only <address> delivers this same message (same To and Cc) to that
+      // one address: a copy that went astray, without Matt getting it again.
+      envelope: { from: MUZAHID.email, to: only ? [only] : [TO, ...CC] },
       to: TO,
       cc: CC,
       subject: SUBJECT,
@@ -247,7 +253,9 @@ async function main() {
       text: text(MUZAHID),
       attachments,
     });
-    console.log(`sent "${SUBJECT}" from ${MUZAHID.email} to ${TO}, cc ${CC.join(', ')} (${info.messageId})`);
+    console.log(only
+      ? `sent "${SUBJECT}" from ${MUZAHID.email} to ${only} only (${info.messageId})`
+      : `sent "${SUBJECT}" from ${MUZAHID.email} to ${TO}, cc ${CC.join(', ')} (${info.messageId})`);
     return;
   }
   const body = html(cids);
