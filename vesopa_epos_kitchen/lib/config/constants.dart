@@ -143,3 +143,7 @@ class VesopaBrand {
   static const email = 'info@vesopa.com';
   static const website = 'https://vesopaepos.com';
 }
+
+/// This build's version, for the activity log and the version check
+/// (data/app_update.dart). Keep in step with pubspec.yaml.
+const kitchenAppVersion = '1.7.3.0';

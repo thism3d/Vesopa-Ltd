@@ -5,6 +5,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../data/vesopa_setup.dart';
 import 'display_page.dart';
 import 'licence_panel.dart';
+import 'dart:async';
+import '../data/app_update.dart';
 
 /// Where this display's back office is.
 ///
@@ -262,6 +264,12 @@ class _LicensedDisplay extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final licence = ref.watch(displayLicenceProvider).value;
+    // The version this display's venue is set to on admin.vesopa.com
+    // (Versions). Customers face this screen, so nobody is asked: it is
+    // fetched quietly and taken the next time the display starts.
+    ref.listen(displayLicenceProvider, (_, next) {
+      unawaited(stageUpdate(next.value?.update, builtVersion: displayAppVersion));
+    });
     if (licence != null && licence.locked) {
       return LicenceLockedPage(
         state: licence,

@@ -32,6 +32,13 @@ const config = {
     hosting: { base: trimSlash(process.env.HOSTING_API || 'http://127.0.0.1:5075'), key: process.env.HOSTING_SERVICE_KEY || '' },
   },
 
+  // Our own Windows installers (src/releases.js). Outside the app directory,
+  // which every deploy replaces.
+  RELEASES_DIR: process.env.RELEASES_DIR || require('path').join(__dirname, '..', '..', 'releases'),
+  // Signs the download addresses devices are given, so a link works without a
+  // sign-in but cannot be guessed.
+  RELEASES_SECRET: process.env.RELEASES_SECRET || '',
+
   MAIL: {
     host: process.env.SMTP_HOST || '',
     port: Number(process.env.SMTP_PORT) || 25,

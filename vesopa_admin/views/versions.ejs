@@ -1,0 +1,109 @@
+<%- include('_top') %>
+<% if (error) { %><div class="flash bad">The back office did not answer: <%= error %></div><% } %>
+<div class="bar">
+  <nav class="chips">
+    <% for (const a of apps) { %><a class="chip <%= a.key === app.key ? 'on' : '' %>" href="/versions?app=<%= a.key %>"><%= a.short %></a><% } %>
+  </nav>
+  <form method="post" action="/versions/updates" class="inline">
+    <input type="hidden" name="_csrf" value="<%= me.csrf %>"><input type="hidden" name="app" value="<%= app.key %>">
+    <% if (enabled) { %>
+      <span class="pill green">Update prompts on</span>
+      <input type="hidden" name="enabled" value="0">
+      <button class="btn" type="submit" data-confirm="Switch update prompts off? No device will be told to change version.">Switch off</button>
+    <% } else { %>
+      <span class="pill grey">Update prompts off</span>
+      <input type="hidden" name="enabled" value="1">
+      <button class="btn" type="submit" data-confirm="Switch update prompts on? Every device installed from our own installer will offer its venue's version: Update now, or On next start.">Switch on</button>
+    <% } %>
+  </form>
+</div>
+<% if (!enabled) { %><div class="flash">Update prompts are off, so devices are not told about these choices yet. The table still shows what every device runs. Install by hand from <a href="/downloads">Downloads</a> meanwhile.</div><% } %>
+<% if (!ready) { %><div class="flash bad">RELEASES_SECRET is not set on this server, so a version cannot be chosen for venues yet.</div><% } %>
+
+<section class="card">
+  <form method="post" action="/versions/default" class="inline">
+    <input type="hidden" name="_csrf" value="<%= me.csrf %>"><input type="hidden" name="app" value="<%= app.key %>">
+    <b><%= app.key === 'loyalty' ? 'Version for every member' : 'Default for venues without their own choice' %></b>
+    <select name="choice" aria-label="Default version">
+      <option value="none" <%= defChoice === 'none' ? 'selected' : '' %>>No auto updates</option>
+      <% for (const r of list) { %><option value="<%= r.id %>" <%= defChoice === String(r.id) ? 'selected' : '' %>><%= r.version %></option><% } %>
+    </select>
+    <button class="btn" type="submit">Save</button>
+    <% if (def) { %><small class="muted">set by <%= def.set_by || 'someone' %> <%= ago(def.set_at) %></small><% } %>
+  </form>
+  <% if (!list.length) { %><p class="muted">No <%= app.short %> installer is on <a href="/downloads">Downloads</a> yet, so there is nothing to choose.</p><% } %>
+</section>
+
+<% if (app.key !== 'loyalty') { %>
+<div class="bar">
+  <nav class="chips">
+    <% for (const [k, t] of [['all', 'All'], ['ok', 'All on version'], ['some', 'Some'], ['behind', 'None'], ['hold', 'No auto updates'], ['store', 'Store only'], ['none', 'No devices']]) { %>
+      <a class="chip <%= show === k ? 'on' : '' %>" href="/versions?app=<%= app.key %>&show=<%= k %><%= q ? '&q=' + encodeURIComponent(q) : '' %>"><%= t %></a>
+    <% } %>
+  </nav>
+  <span class="muted"><%= rows.length %> venue<%= rows.length === 1 ? '' : 's' %></span>
+</div>
+<form method="post" action="/versions" class="card flush">
+  <input type="hidden" name="_csrf" value="<%= me.csrf %>"><input type="hidden" name="app" value="<%= app.key %>">
+  <input type="hidden" name="q" value="<%= q %>"><input type="hidden" name="show" value="<%= show %>">
+  <table class="list">
+    <thead><tr><th class="tick"><input type="checkbox" data-all="ids" aria-label="Tick every venue"></th><th>Venue</th><th><%= app.short %>s</th><th>Version</th><th>Status</th></tr></thead>
+    <tbody>
+    <% for (const r of rows) { const v = r.venue; %>
+      <tr>
+        <td class="tick"><input type="checkbox" name="ids" value="<%= v.id %>" aria-label="Tick <%= v.name %>"><input type="hidden" name="shown" value="<%= v.id %>"></td>
+        <td><a href="/venues/<%= v.id %>"><b><%= v.name %></b></a><small class="muted block"><%= v.id %> · <%= v.email %></small></td>
+        <td>
+          <% if (!r.devices.length) { %><span class="muted">none</span><% } else { %>
+          <details class="devices">
+            <summary><%= r.devices.length %></summary>
+            <table class="mini">
+              <% for (const d of r.devices) { %>
+                <tr class="<%= d.install !== 'store' && r.target && norm(d.version) !== r.target ? 'off' : '' %>">
+                  <td><%= d.device_name || d.device_id %></td><td><b><%= d.version || '?' %></b></td>
+                  <td><%= d.install === 'store' ? 'Store' : d.install === 'direct' ? 'Download' : '?' %></td><td class="muted"><%= ago(d.last_seen_at) %></td>
+                </tr>
+              <% } %>
+            </table>
+          </details>
+          <% } %>
+        </td>
+        <td>
+          <input type="hidden" name="was_<%= v.id %>" value="<%= r.choice %>">
+          <select name="pin_<%= v.id %>" aria-label="Version for <%= v.name %>">
+            <option value="follow" <%= r.choice === 'follow' ? 'selected' : '' %>>Default (<%= r.def && r.def.version ? r.def.version : 'No auto updates' %>)</option>
+            <option value="none" <%= r.choice === 'none' ? 'selected' : '' %>>No auto updates</option>
+            <% if (r.choice === 'unknown') { %><option value="unknown" selected><%= r.own.version %> (not on the list)</option><% } %>
+            <% for (const x of list) { %><option value="<%= x.id %>" <%= r.choice === String(x.id) ? 'selected' : '' %>><%= x.version %></option><% } %>
+          </select>
+        </td>
+        <td>
+          <%- {
+            ok: '<span class="pill green">All on version</span>',
+            some: `<span class="pill amber">Some on version</span>`,
+            behind: '<span class="pill red">None on version</span>',
+            hold: '<span class="pill grey">No auto updates</span>',
+            store: '<span class="pill grey">Store copies</span>',
+            none: '<span class="pill grey">No devices</span>',
+          }[r.status] %>
+          <% if (r.direct) { %><small class="muted block"><%= r.onTarget %> of <%= r.direct %> on <%= r.target || 'their own' %></small><% } %>
+        </td>
+      </tr>
+    <% } %>
+    </tbody>
+  </table>
+  <div class="bulk">
+    <button class="btn primary" type="submit" name="bulk" value="rows">Save changed rows</button>
+    <span>or set</span>
+    <select name="choice" aria-label="Version for many venues">
+      <option value="">Choose…</option>
+      <option value="follow">Default</option>
+      <option value="none">No auto updates</option>
+      <% for (const x of list) { %><option value="<%= x.id %>"><%= x.version %></option><% } %>
+    </select>
+    <button class="btn" type="submit" name="bulk" value="ticked">Apply to ticked</button>
+    <button class="btn amber" type="submit" name="bulk" value="shown" data-confirm="Apply this version to every venue shown?">Apply to all shown</button>
+  </div>
+</form>
+<% } %>
+<%- include('_bottom') %>

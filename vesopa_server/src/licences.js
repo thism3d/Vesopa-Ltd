@@ -442,7 +442,16 @@ function licenceRoutes({ pool, secret }) {
         return res.status(403).json({ error: 'That credential is not a device.' });
       }
 
-      return res.json(await stateFor(pool, claims.office, kind));
+      const state = await stateFor(pool, claims.office, kind);
+      // Which version this device runs, and whether its venue is set to
+      // another (admin.vesopa.com Versions). Neither can fail the answer.
+      const updates = require('./app_updates');
+      const seen = updates.fromHeaders(req);
+      if (seen.version) {
+        await updates.seen(pool, { office: claims.office, app: kind, ...seen });
+        state.update = await updates.offerFor(pool, { office: claims.office, app: kind, ...seen });
+      }
+      return res.json(state);
     } catch (e) {
       next(e);
     }

@@ -26,23 +26,27 @@ const APPS = {
  *   admins.manage    add, change and remove admins
  *   venues.signin    open a venue's back office as its manager (Stage 2)
  *   audit.view       read the audit log
+ *   releases.download  download our Windows installers, any version
+ *   versions.manage  choose which version each venue runs, and switch the
+ *                    in-app update prompt on or off
  */
-const PERMISSIONS = ['licences.view', 'licences.run', 'licences.sell', 'admins.manage', 'venues.signin', 'audit.view'];
+const PERMISSIONS = ['licences.view', 'licences.run', 'licences.sell', 'admins.manage', 'venues.signin', 'audit.view',
+  'releases.download', 'versions.manage'];
 
 const ROLES = {
   owner: { label: 'Owner', summary: 'Everything, in every app.', can: PERMISSIONS },
   support: {
     label: 'Support',
-    summary: 'Venues and people: see everything, pause and resume, sign in as a venue. No money.',
-    can: ['licences.view', 'licences.run', 'venues.signin', 'audit.view'],
+    summary: 'Venues and people: see everything, pause and resume, sign in as a venue, install and move versions. No money.',
+    can: ['licences.view', 'licences.run', 'venues.signin', 'audit.view', 'releases.download', 'versions.manage'],
   },
   billing: {
     label: 'Billing',
     summary: 'Licences, prices and invoices: add, remove, pause and resume.',
-    can: ['licences.view', 'licences.run', 'licences.sell', 'audit.view'],
+    can: ['licences.view', 'licences.run', 'licences.sell', 'audit.view', 'releases.download'],
   },
   content: { label: 'Content', summary: 'Websites, blog and Store text.', can: ['licences.view'] },
-  readonly: { label: 'Read only', summary: 'Sees everything it is given, changes nothing.', can: ['licences.view', 'audit.view'] },
+  readonly: { label: 'Read only', summary: 'Sees everything it is given and can download installers; changes nothing.', can: ['licences.view', 'audit.view', 'releases.download'] },
 };
 
 function parseApps(raw) {

@@ -28,6 +28,8 @@ import 'pages/settings.dart';
 import 'licence_panel.dart';
 import 'pages/setup.dart';
 import 'theme.dart';
+import '../data/app_update.dart';
+import '../config/constants.dart';
 
 class ExpressApp extends ConsumerWidget {
   const ExpressApp({super.key});
@@ -142,6 +144,12 @@ class _KioskShellState extends ConsumerState<KioskShell> {
      * never assumed from silence.
      */
     final licence = ref.watch(kioskLicenceProvider).value;
+    // The version this kiosk's venue is set to on admin.vesopa.com (Versions).
+    // Customers use this screen, so nobody is asked: it is fetched quietly and
+    // taken the next time the kiosk starts.
+    ref.listen(kioskLicenceProvider, (_, next) {
+      unawaited(stageUpdate(next.value?.update, builtVersion: ExpressConfig.version));
+    });
     if (licence != null && licence.locked) {
       return LicenceLockedPage(
         state: licence,

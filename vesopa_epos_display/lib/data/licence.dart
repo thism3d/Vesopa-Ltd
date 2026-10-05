@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'app_update.dart';
+
 /// What this venue is entitled to, as this device sees it.
 ///
 /// ONE FILE, FOUR APPS. The till, the kitchen screen, the display and the kiosk
@@ -27,6 +29,7 @@ class LicenceState {
     this.device,
     this.paused,
     this.notice,
+    this.update,
   });
 
   /// What this product is called, from the server, so the wording is the same
@@ -72,6 +75,11 @@ class LicenceState {
   /// been paused and stops at Tue 6 Oct, 09:00. Please contact Vesopa.").
   final String? notice;
 
+  /// The version this device's venue is set to, when it is not the one this
+  /// device runs and Vesopa has switched update prompts on. See
+  /// data/app_update.dart; null for a Store copy, and for almost everyone.
+  final AppUpdate? update;
+
   bool get hasSubscription => status != null;
   bool get lapsing => renewBy != null;
   bool get held => paused != null;
@@ -95,6 +103,7 @@ class LicenceState {
       device: j['device'] as String?,
       paused: j['paused'] as String?,
       notice: j['notice'] as String?,
+      update: AppUpdate.fromJson(j['update']),
     );
   }
 }
@@ -110,16 +119,20 @@ const licenceRecheckEvery = Duration(minutes: 5);
 /// a credential it will not accept. Every caller treats null as "carry on":
 /// a licence lookup failing must never be why a venue cannot trade, and that
 /// rule runs through every layer of this on the server too.
+///
+/// [headers] are this copy's [Installation.headers]: what it runs, so the back
+/// office can show it under Versions and say whether to move.
 Future<LicenceState?> fetchLicence({
   required String apiBase,
   required String token,
+  Map<String, String> headers = const {},
 }) async {
   if (token.isEmpty) return null;
   try {
     final res = await http
         .get(
           Uri.parse('$apiBase/api/licence/state'),
-          headers: {'Authorization': 'Bearer $token'},
+          headers: {...headers, 'Authorization': 'Bearer $token'},
         )
         .timeout(const Duration(seconds: 10));
     if (res.statusCode != 200) return null;

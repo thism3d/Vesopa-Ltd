@@ -6,6 +6,7 @@ import 'package:window_manager/window_manager.dart';
 
 import 'config/constants.dart';
 import 'data/activity_log.dart';
+import 'data/app_update.dart';
 import 'data/kitchen_branding.dart';
 import 'data/providers.dart';
 import 'ui/kitchen_shell.dart';
@@ -14,6 +15,7 @@ import 'ui/licence_panel.dart';
 import 'ui/splash_screen.dart';
 import 'ui/theme.dart';
 import 'ui/theme_controller.dart';
+import 'dart:async';
 
 /// A kitchen screen runs as a kiosk: full screen, and with no way to close or
 /// minimise it from the title bar.
@@ -49,9 +51,6 @@ Future<void> _lockWindowToKiosk() async {
   );
 }
 
-/// This build's version, for the activity log. Keep in step with pubspec.yaml.
-const kitchenAppVersion = '1.7.2.0';
-
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // The activity log: taps, screens and errors, to a local file and to the
@@ -59,6 +58,9 @@ Future<void> main() async {
   ActivityLog.instance
     ..configure(app: 'kitchen', appVersion: kitchenAppVersion, apiBase: Api.base)
     ..installErrorHandlers();
+  // An update somebody chose to take "On next start" runs now, before
+  // anything else opens (data/app_update.dart). Returns at once otherwise.
+  await Updater.applyPending(kitchenAppVersion);
   await _lockWindowToKiosk();
   runApp(const ProviderScope(child: VesopaKitchenApp()));
 }
@@ -199,6 +201,13 @@ class _LicensedShell extends ConsumerWidget {
         onRetry: () => ref.invalidate(kitchenLicenceProvider),
       );
     }
+    // The version this screen's venue is set to on admin.vesopa.com
+    // (Versions), offered as Update now or On next start. data/app_update.dart.
+    ref.listen(kitchenLicenceProvider, (_, next) {
+      final update = next.value?.update;
+      if (update == null) return;
+      unawaited(offerUpdate(context, update: update, appName: 'Vesopa Kitchen', builtVersion: kitchenAppVersion));
+    });
     final office = ref.watch(kitchenSessionProvider).value?.office ?? '';
     // Keyed on the office, as before: signing into a different venue builds a
     // fresh shell rather than handing the new venue's board to the old state.
