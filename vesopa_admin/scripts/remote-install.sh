@@ -142,6 +142,15 @@ DBNAME=${APPUSER}_admindb
 if v-list-databases "$APPUSER" plain | cut -f1 | grep -qx "$DBNAME"; then
   ok "database $DBNAME exists"
   NEWDB=0
+  # A database with no .env beside the app is one an earlier run created and
+  # then stopped before writing the .env (2026-10-05): nothing can be using it
+  # yet, so give its user a new password and let the .env below be written.
+  if [ ! -f "$APP/.env" ]; then
+    say "database exists but the app has no .env: new password for $DBNAME"
+    DBPASS=$(openssl rand -base64 30 | tr -dc 'A-Za-z0-9' | head -c 28)
+    act v-change-database-password "$APPUSER" "$DBNAME" "$DBPASS"
+    NEWDB=1
+  fi
 else
   say "creating database $DBNAME"
   DBPASS=$(openssl rand -base64 30 | tr -dc 'A-Za-z0-9' | head -c 28)
