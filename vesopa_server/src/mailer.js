@@ -95,9 +95,13 @@ function mailEnabled() {
  * and is what carries a scheduled report. Passed straight through rather than
  * wrapped: the one caller that uses it is building a PDF in memory, and
  * inventing a second vocabulary for "a file with a name" would only be
- * something to translate back again.
+ * something to translate back again. An attachment with a `cid` is a picture
+ * shown in the body (`<img src="cid:...">`).
+ *
+ * `cc` and `replyTo` are optional, for the odd letter that is not a
+ * notification: a venue's invitation copied to Vesopa's own mailboxes.
  */
-async function sendMail({ to, subject, html, text, attachments, account }) {
+async function sendMail({ to, cc, replyTo, subject, html, text, attachments, account }) {
   // A named mailbox where one is asked for and configured, the default
   // otherwise — see the note on `transports` above.
   const named = account ? accountTransport(account) : null;
@@ -119,6 +123,8 @@ async function sendMail({ to, subject, html, text, attachments, account }) {
     await tx.sendMail({
       from: `"${fromName}" <${fromAddress}>`,
       to,
+      ...(cc ? { cc } : {}),
+      ...(replyTo ? { replyTo } : {}),
       subject,
       html,
       ...(text ? { text } : {}),
