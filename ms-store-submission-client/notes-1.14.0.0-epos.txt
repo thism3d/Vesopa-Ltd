@@ -1,0 +1,7 @@
+Version 1.14.0.0 - Open price items, quick sales and a sync fix
+
+Open price items: a product can now ask for its price when it is rung up, for things like "Open Food". Turn on "Ask the price at the till" on the product, in the back office or on the till. Staff type the price and a short note saying what it was for, and the note stays on the bill and the receipt.
+
+Pay with nothing on the bill: venues that turn this on in the back office (Settings, Tender) can open the payment screen with an empty bill. An amount keyed there is rung up as a Quick sale, with a note of what it was for, and then taken in the usual way.
+
+Fixed: tills could show "Syncing" with a number that never went down. Every void sent an extra copy that the server refused, so it stayed in the queue. Voids are now sent once.
