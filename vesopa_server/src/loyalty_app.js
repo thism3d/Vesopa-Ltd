@@ -839,7 +839,10 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
           : null,
         // What the till scans. The card number where there is one -- exactly as
         // the Wallet pass does -- and the member number otherwise.
-        qr: c.card_number || (c.member_no != null ? String(c.member_no) : c.id),
+        // Never the bare member number: "41" is too short for the till's reader
+        // to take as a card, so that QR scanned as nothing at all. The id is
+        // what the till looks a member up by when there is no card.
+        qr: c.card_number || c.id,
         points,
         points_value_minor: points * pointValue,
         tier: c.tier_name || null,
@@ -1719,6 +1722,7 @@ module.exports = {
   recipientsFor,
   brandFor,
   issueLoyaltyNumber,
+  ensureCard,
   distanceM,
   WEB_DIR,
 };

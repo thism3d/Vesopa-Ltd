@@ -125,6 +125,13 @@ Future<void> handleSwipedCard(
   final settings = ref.read(cardRepositoryProvider).settings;
   if (!settings.enabled) return;
 
+  // A member's QR that carries their customer id rather than a card number.
+  // It names a customer and nothing else, so it goes straight to the member.
+  if (card.isCustomerId) {
+    await _loyaltyCard(context, ref, card, orderId: orderId);
+    return;
+  }
+
   // The door, before anything that could open a dialog.
   //
   // Taken out of the switch below rather than added to it, because it is the
@@ -339,6 +346,19 @@ Future<void> _loyaltyCard(
   if (!context.mounted) return;
 
   if (member == null) {
+    // A customer id names somebody who was here once; it is not a blank card
+    // to enrol.
+    if (card.isCustomerId) {
+      await _explain(
+        context,
+        title: 'Not a member here',
+        message:
+            'That QR code is a member card, but not one of this venue\'s '
+            'members. It may belong to another venue, or the member may have '
+            'been deleted.',
+      );
+      return;
+    }
     await _offerToEnrol(context, ref, card, orderId: orderId);
     return;
   }

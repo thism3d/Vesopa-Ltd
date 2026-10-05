@@ -603,6 +603,23 @@ function walletCore({ pool, secret }) {
         [subjectId, office]
       );
       if (!c) return null;
+      // A pass shows the card number as its QR, so a member without one is
+      // given one now, from the venue's loyalty prefix, exactly as the
+      // Loyalty app does on sign-in. Without it the QR carried the customer
+      // id, which tills before 1.14 could not read: scanning it did nothing.
+      if (!c.card_number) {
+        try {
+          await require('./loyalty_app').ensureCard(pool, office, c.id);
+          const [[again]] = await pool.query(
+            'SELECT card_number' + (memberNo.includes('member_no') ? ', member_no' : '') +
+              ' FROM epos_customers WHERE id = ? AND email_key = ?',
+            [c.id, office]
+          );
+          if (again) Object.assign(c, again);
+        } catch (e) {
+          console.warn('[wallet] could not give a card number to', c.id, e.message);
+        }
+      }
       // The membership number people read: the card without its prefix, so
       // card 999800001 is member 00001. See src/loyalty_schemes.js.
       await loyaltySchemes.decorateCustomers(pool, office, [c]);

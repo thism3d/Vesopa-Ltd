@@ -351,9 +351,25 @@ class SwipedCard {
   /// Which reader it came from. See [ReadVia].
   final ReadVia via;
 
+  /// A customer's own id rather than card digits: the QR on a Wallet pass or
+  /// in the Loyalty app of a member who has no card number (see
+  /// [isCustomerIdScan]). Looked up as the customer, never as a card.
+  bool get isCustomerId => isCustomerIdScan(number);
+
   @override
   String toString() => 'SwipedCard($number via ${via.name})';
 }
+
+/// The shape of a customer id (a UUID), which is what a member's QR carries
+/// when they have no card number: Wallet passes and the Loyalty app fall back
+/// to it. Scanning one used to do nothing at all (2026-10-05), because the
+/// reader only ever expected digits.
+final _customerId = RegExp(
+  r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+  caseSensitive: false,
+);
+
+bool isCustomerIdScan(String text) => _customerId.hasMatch(text);
 
 /// What to do with the keystroke just offered to [SwipeBuffer].
 enum SwipeVerdict {
@@ -438,6 +454,11 @@ class SwipeBuffer {
   final _run = StringBuffer();
   DateTime? _runAt;
 
+  /// Every printable character arriving at scanner speed, for the customer-id
+  /// QR the digit machine cannot read. See the top of [offer].
+  final _fast = StringBuffer();
+  DateTime? _fastAt;
+
   ReadVia _via = ReadVia.swipe;
 
   /// Set when a read is abandoned part-way — a letter where a digit should be,
@@ -464,6 +485,25 @@ class SwipeBuffer {
   /// as well as — the end sentinel.
   SwipeVerdict offer(String? character, {required DateTime at, bool isEnter = false}) {
     card = null;
+
+    // A customer id scanned off a phone. Tracked beside the digit machine
+    // below, not inside it: an id is letters and dashes as well as digits, and
+    // the digit machine rightly gives up on those. Anything typed at machine
+    // speed and ended with Return that is exactly an id is a card read.
+    if (isEnter) {
+      final text = _fast.toString();
+      _fast.clear();
+      _fastAt = null;
+      if (isCustomerIdScan(text)) {
+        _reset();
+        card = SwipedCard(raw: text, number: text.toLowerCase(), via: ReadVia.scan);
+        return SwipeVerdict.complete;
+      }
+    } else if (character != null && character.length == 1) {
+      if (_fastAt == null || at.difference(_fastAt!) > _maxScanGap) _fast.clear();
+      _fastAt = at;
+      if (_fast.length < 40) _fast.write(character);
+    }
 
     // A swipe that has stalled is not a swipe. Dropped before this keystroke is
     // considered, so the character that arrives after a long pause is judged on

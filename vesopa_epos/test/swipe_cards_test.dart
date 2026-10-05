@@ -222,6 +222,31 @@ void main() {
     expect(buffer.card!.number, '999800001');
   });
 
+  test('a QR carrying a customer id reads as that customer', () {
+    // A Wallet pass or the Loyalty app of a member with no card number shows
+    // their id. That used to scan as nothing at all (2026-10-05).
+    const id = '3f2a9c10-7b4e-4d21-9a0b-12c34d56e78f';
+    type(id, thenEnter: true);
+    expect(buffer.card, isNotNull);
+    expect(buffer.card!.number, id);
+    expect(buffer.card!.isCustomerId, isTrue);
+    expect(buffer.card!.via, ReadVia.scan);
+  });
+
+  test('an id typed by hand is not a scan', () {
+    type('3f2a9c10-7b4e-4d21-9a0b-12c34d56e78f',
+        gap: const Duration(milliseconds: 200), thenEnter: true);
+    expect(buffer.card, isNull);
+  });
+
+  test('after an id, cards still read', () {
+    type('3f2a9c10-7b4e-4d21-9a0b-12c34d56e78f', thenEnter: true);
+    clock = clock.add(const Duration(seconds: 2));
+    type('999800001', thenEnter: true);
+    expect(buffer.card!.number, '999800001');
+    expect(buffer.card!.isCustomerId, isFalse);
+  });
+
   test('a scan too short to be a card is not reported', () {
     type('99', thenEnter: true);
     expect(buffer.card, isNull);

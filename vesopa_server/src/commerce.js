@@ -1591,7 +1591,13 @@ function commerceRoutes({ pool, broadcast, secret }) {
       // till strips them before it gets here. Stripped again anyway: a route
       // that trusts its caller to have sanitised is a route that answers 404
       // for a perfectly good card the first time somebody calls it by hand.
-      const number = String(req.query.number || '')
+      // A member's QR that carries their customer id, which Wallet passes and
+      // the Loyalty app show for a member with no card number. Looked up as
+      // that customer (2026-10-05: scanning one used to do nothing).
+      const asked = String(req.query.number || '').trim();
+      const byId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(asked)
+        ? asked.toLowerCase() : null;
+      const number = byId || asked
         .replace(/^[;%B]+/, '')
         .replace(/[?].*$/, '')
         .replace(/\D/g, '');
@@ -1600,8 +1606,10 @@ function commerceRoutes({ pool, broadcast, secret }) {
         return res.status(400).json({ error: 'office and number are required' });
       }
 
-      const [customer] = await selectCustomers(
-        'email_key = ? AND card_number = ?', [office, number], 'LIMIT 1');
+      const [customer] = byId
+        ? await selectCustomers('email_key = ? AND id = ?', [office, byId], 'LIMIT 1')
+        : await selectCustomers('email_key = ? AND card_number = ?', [office, number], 'LIMIT 1');
+      if (!customer && byId) return res.status(404).json({ error: 'No member holds that card', number: byId });
 
       // Not an error, and said as its own thing rather than as a 404 with a
       // generic message: "no member holds that card" is what the till turns
