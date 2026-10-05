@@ -331,6 +331,18 @@ async function main() {
       assert.ok(Number(n) >= 5);
     });
 
+    await check('a database missing a member column still lists members', async () => {
+      const { forgetMemberColumns } = require('../src/memberships');
+      await setAllowed(pool, GYM.id, { memberships: { allowed: true } }, 'test');
+      await pool.query('ALTER TABLE epos_customers DROP COLUMN photo_url');
+      forgetMemberColumns();
+      const m = await call(server, 'GET', '/partner/v1/memberships/members', key);
+      assert.strictEqual(m.status, 200, JSON.stringify(m.body));
+      assert.ok(m.body.length > 0);
+      const b = await call(server, 'GET', '/api/memberships/members', bo);
+      assert.strictEqual(b.status, 200, JSON.stringify(b.body));
+    });
+
     await check('stateOf reads the states', async () => {
       assert.strictEqual(stateOf({ membership_status: '' }, '2026-01-01'), 'none');
       assert.strictEqual(stateOf({ membership_status: 'active', membership_expiry: '2025-12-31' }, '2026-01-01'), 'expired');

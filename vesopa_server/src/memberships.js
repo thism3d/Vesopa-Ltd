@@ -86,15 +86,49 @@ const daysBetween = (a, b) =>
 // Reading
 // ---------------------------------------------------------------------------
 
-const MEMBER_COLUMNS = `
-  c.id, c.name, c.email, c.phone, c.card_number, c.member_no, c.photo_url,
-  c.scheme_id, c.membership_status, c.family_head_id, c.vesopa_sub,
-  c.renewal_reminders, c.notes,
-  DATE_FORMAT(c.membership_expiry, '%Y-%m-%d') AS membership_expiry,
-  DATE_FORMAT(c.joined_on, '%Y-%m-%d') AS joined_on,
-  DATE_FORMAT(c.frozen_from, '%Y-%m-%d') AS frozen_from,
-  DATE_FORMAT(c.frozen_until, '%Y-%m-%d') AS frozen_until,
-  DATE_FORMAT(c.cancelled_on, '%Y-%m-%d') AS cancelled_on`;
+const MEMBER_FIELDS = [
+  ['id'], ['name'], ['email'], ['phone'], ['card_number'], ['member_no'], ['photo_url'],
+  ['scheme_id'], ['membership_status'], ['family_head_id'], ['vesopa_sub'],
+  ['renewal_reminders'], ['notes'],
+  ['membership_expiry', 'date'], ['joined_on', 'date'], ['frozen_from', 'date'],
+  ['frozen_until', 'date'], ['cancelled_on', 'date'],
+];
+
+/**
+ * The member columns, as this database has them.
+ *
+ * epos_customers is the oldest table here and has been widened by a dozen
+ * schema files over the years. A venue's server that missed one of them (a
+ * photo column, say) used to answer every member list -- the back office's,
+ * the till's and Metric's -- with a bare 500. A column this database does not
+ * have is read as NULL instead, and named once in the log so somebody applies
+ * the schema file. Looked up once per process.
+ */
+let memberColumns = null;
+async function memberSelect(db) {
+  if (memberColumns) return memberColumns;
+  let have = null;
+  try {
+    const [rows] = await db.query(
+      `SELECT COLUMN_NAME AS c FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'epos_customers'`
+    );
+    if (rows.length) have = new Set(rows.map((r) => String(r.c).toLowerCase()));
+  } catch { /* no information_schema access: assume every column */ }
+  const missing = [];
+  const list = MEMBER_FIELDS.map(([col, kind]) => {
+    if (have && !have.has(col)) {
+      missing.push(col);
+      return `NULL AS ${col}`;
+    }
+    return kind === 'date' ? `DATE_FORMAT(c.${col}, '%Y-%m-%d') AS ${col}` : `c.${col}`;
+  });
+  if (missing.length) console.warn(`[memberships] epos_customers has no ${missing.join(', ')}; read as empty. Apply the schema files.`);
+  memberColumns = list.join(', ');
+  return memberColumns;
+}
+/** For tests that change the table under a running process. */
+const forgetMemberColumns = () => { memberColumns = null; };
 
 async function venueSettings(db, office) {
   try {
@@ -175,7 +209,7 @@ async function sweepFreezes(db, office) {
         SET membership_status = 'active', frozen_from = NULL, frozen_until = NULL
       WHERE email_key = ? AND membership_status = 'frozen' AND frozen_until < CURDATE()`,
     [office]
-  );
+  ).catch((e) => { if (!isMissing(e)) throw e; });
 }
 
 async function decorate(db, office, rows) {
@@ -195,7 +229,7 @@ async function decorate(db, office, rows) {
 
 async function memberById(db, office, id) {
   const [rows] = await db.query(
-    `SELECT ${MEMBER_COLUMNS} FROM epos_customers c WHERE c.id = ? AND c.email_key = ?`,
+    `SELECT ${await memberSelect(db)} FROM epos_customers c WHERE c.id = ? AND c.email_key = ?`,
     [id, office]
   );
   if (!rows.length) return null;
@@ -209,7 +243,7 @@ async function memberDetail(db, office, id) {
   if (!m) return null;
   const headId = m.family_head_id || m.id;
   const [family] = await db.query(
-    `SELECT ${MEMBER_COLUMNS} FROM epos_customers c
+    `SELECT ${await memberSelect(db)} FROM epos_customers c
       WHERE c.email_key = ? AND (c.id = ? OR c.family_head_id = ?) ORDER BY c.family_head_id IS NOT NULL, c.name`,
     [office, headId, headId]
   );
@@ -249,7 +283,7 @@ async function listMembers(db, office, { state, plan, q, limit = 500 } = {}) {
     params.push(like, like, like, like);
   }
   const [rows] = await db.query(
-    `SELECT ${MEMBER_COLUMNS} FROM epos_customers c WHERE ${where.join(' AND ')}
+    `SELECT ${await memberSelect(db)} FROM epos_customers c WHERE ${where.join(' AND ')}
       ORDER BY c.name LIMIT ${Math.min(Math.max(Number(limit) || 500, 1), 2000)}`,
     params
   );
@@ -1056,6 +1090,18 @@ function membershipRoutes({ pool, broadcast, secret }) {
   const send = (res, next) => (e) =>
     (e && e.status ? res.status(e.status).json({ error: e.message }) : next(e));
 
+  /**
+   * A partner (Metric's server) is told what actually went wrong. Its staff
+   * see this on their console's EPOS bar, which is the only place a fault on
+   * this side shows up for them: a bare "internal error" left them, and us,
+   * guessing until somebody could read this server's log.
+   */
+  const partnerSend = (res, next) => (e) => {
+    if (e && e.status) return res.status(e.status).json({ error: e.message });
+    console.error('[partner]', e);
+    return res.status(500).json({ error: `Vesopa EPOS failed: ${String((e && (e.sqlMessage || e.message)) || e).slice(0, 200)}` });
+  };
+
   const changed = (office) => {
     broadcast({ type: 'memberships', office });
     broadcast({ type: 'customers.updated' });
@@ -1524,7 +1570,7 @@ h1{font-size:20px;margin:0 0 8px}a{display:inline-block;margin-top:16px;backgrou
   // ---- Partner (Metric) ----------------------------------------------------
 
   router.get('/partner/v1/memberships/plans', partner, async (req, res, next) => {
-    try { res.json(await plansFor(pool, req.venue)); } catch (e) { next(e); }
+    try { res.json(await plansFor(pool, req.venue)); } catch (e) { partnerSend(res, next)(e); }
   });
   router.get('/partner/v1/memberships/members', partner, async (req, res, next) => {
     try {
@@ -1532,7 +1578,7 @@ h1{font-size:20px;margin:0 0 8px}a{display:inline-block;margin-top:16px;backgrou
       const out = [];
       for (const m of list) out.push(await partnerMember(pool, req.venue, m));
       res.json(out);
-    } catch (e) { next(e); }
+    } catch (e) { partnerSend(res, next)(e); }
   });
   /**
    * Somebody signed up in the partner's app. Found by their Vesopa account (or
@@ -1567,7 +1613,7 @@ h1{font-size:20px;margin:0 0 8px}a{display:inline-block;margin-top:16px;backgrou
       }
       changed(req.venue);
       res.status(201).json(await partnerMember(pool, req.venue, m));
-    } catch (e) { send(res, next)(e); }
+    } catch (e) { partnerSend(res, next)(e); }
   });
   /** The partner's staff approving, suspending or closing a member. */
   router.post('/partner/v1/memberships/members/:id/:action', partner, json, async (req, res, next) => {
@@ -1586,7 +1632,7 @@ h1{font-size:20px;margin:0 0 8px}a{display:inline-block;margin-top:16px;backgrou
       }
       changed(req.venue);
       res.json(await partnerMember(pool, req.venue, m));
-    } catch (e) { send(res, next)(e); }
+    } catch (e) { partnerSend(res, next)(e); }
   });
 
   // ---- Admin: partner keys --------------------------------------------------
@@ -1650,4 +1696,5 @@ module.exports = {
   settleCheckout,
   sendReminders,
   issuePartnerKey,
+  forgetMemberColumns,
 };
