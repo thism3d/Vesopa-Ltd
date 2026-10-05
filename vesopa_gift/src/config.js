@@ -58,6 +58,13 @@ const config = {
   UPLOADS_DIR: process.env.UPLOADS_DIR || require('path').join(__dirname, '..', 'uploads'),
 
   NODE_ENV: process.env.NODE_ENV || 'development',
+
+  // admin.vesopa.com, once it is live. Set, a venue's shop is switched on and
+  // off there (with a grace day, an email to the venue and the audit log), and
+  // the switches on Venues here link to it instead.
+  ADMIN_CONSOLE_URL: /^https:\/\/[a-z0-9.-]+$/i.test(process.env.ADMIN_CONSOLE_URL || '')
+    ? process.env.ADMIN_CONSOLE_URL
+    : '',
 };
 
 config.production = config.NODE_ENV === 'production';

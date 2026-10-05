@@ -128,7 +128,9 @@ def admin():
         stage_dir(ROOT / "vesopa_admin", stage / "admin")
         (stage / "gift").mkdir()
         shutil.copy(ROOT / "vesopa_gift" / "src" / "admin_api.js", stage / "gift" / "admin_api.js")
-        shutil.copy(ROOT / "vesopa_gift" / "src" / "server.js", stage / "gift" / "server.js")
+        for name in ["server.js", "admin.js", "config.js"]:
+            shutil.copy(ROOT / "vesopa_gift" / "src" / name, stage / "gift" / name)
+        shutil.copy(ROOT / "vesopa_gift" / "views" / "admin" / "venues.ejs", stage / "gift" / "venues.ejs")
         (stage / "hosting").mkdir()
         shutil.copy(ROOT / "vesopa_hosting" / "src" / "routes" / "admin_api.js", stage / "hosting" / "admin_api.js")
         shutil.copy(ROOT / "vesopa_hosting" / "src" / "server.js", stage / "hosting" / "server.js")

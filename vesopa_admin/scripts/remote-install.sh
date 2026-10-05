@@ -23,8 +23,9 @@
 #   * restart anything but the four apps above, each by name
 #   * run pm2 as root (pm2 is per Hestia user; root would start a second daemon)
 #
-# The bundle holds: admin/ (vesopa_admin without node_modules), gift/ and
-# hosting/ (their admin_api.js and server.js), schema_027_admin_console_client.sql.
+# The bundle holds: admin/ (vesopa_admin without node_modules), gift/ (its
+# admin API, server.js, admin.js, config.js and Venues page), hosting/ (its
+# admin API and server.js), schema_027_admin_console_client.sql.
 
 set -euo pipefail
 
@@ -55,7 +56,8 @@ pm2u() { su - "$APPUSER" -c "PM2_HOME=/home/$APPUSER/.pm2 pm2 $*"; }
 act()  { if [ $CHECK = 1 ]; then warn "would: $*"; else "$@"; fi; }
 # One value from an .env file, without sourcing it (sourcing would overwrite
 # this script's own variables with another app's).
-envget() { grep -E "^$2=" "$1" 2>/dev/null | tail -1 | cut -d= -f2- | sed -E 's/^["'\'']//; s/["'\'']$//'; }
+# A missing key is an empty answer, not a failure (pipefail would stop here).
+envget() { { grep -E "^$2=" "$1" 2>/dev/null || true; } | tail -1 | cut -d= -f2- | sed -E 's/^["'\'']//; s/["'\'']$//'; }
 # Set KEY=VALUE in an .env: replace an empty line, add a missing one, and leave
 # a filled one alone. Prints nothing of the value.
 envfill() {
@@ -249,7 +251,7 @@ ship() {
   local name=$1 dir=$2; shift 2
   local changed=0 pair src dst
   for pair in "$@"; do
-    src=${pair%%:*}; node --check "$src" || die "$name: $src does not parse -- nothing of it shipped"
+    src=${pair%%:*}; [[ $src != *.js ]] || node --check "$src" || die "$name: $src does not parse -- nothing of it shipped"
   done
   for pair in "$@"; do
     src=${pair%%:*}; dst=$dir/${pair#*:}
@@ -264,13 +266,33 @@ ship() {
     [[ " ${RESTART[*]} " == *" $name "* ]] || RESTART+=("$name")
   fi
 }
-ship gift.vesopaepos.com "$GIFT" "$HERE/gift/admin_api.js:src/admin_api.js" "$HERE/gift/server.js:src/server.js"
+ship gift.vesopaepos.com "$GIFT" "$HERE/gift/admin_api.js:src/admin_api.js" "$HERE/gift/server.js:src/server.js" \
+  "$HERE/gift/admin.js:src/admin.js" "$HERE/gift/config.js:src/config.js" "$HERE/gift/venues.ejs:views/admin/venues.ejs"
 ship cloud.vesopa.com "$HOST_APP" "$HERE/hosting/admin_api.js:src/routes/admin_api.js" "$HERE/hosting/server.js:src/server.js"
 
 # Restart by name, without --update-env: the daemon carries Auth's PORT, and
 # each app reads its own .env when it starts.
+code() { curl -sS -o /dev/null -w '%{http_code}' "$@" 2>/dev/null || echo "---"; }
+# Where each app answers when it is up, to put the old files back if not.
+declare -A PROBE=(
+  [backoffice.vesopaepos.com]="http://127.0.0.1:$(portof "$BO" 5060)/health"
+  [gift.vesopaepos.com]="http://127.0.0.1:$(portof "$GIFT" 5070)/health"
+  [cloud.vesopa.com]="http://127.0.0.1:$(portof "$HOST_APP" 5075)/robots.txt"
+)
+declare -A DIROF=([backoffice.vesopaepos.com]=$BO [gift.vesopaepos.com]=$GIFT [cloud.vesopa.com]=$HOST_APP)
 for name in "${RESTART[@]}"; do
   pm2u "restart $name" >/dev/null && ok "restarted $name"
+  sleep 4
+  c=$(code "${PROBE[$name]}")
+  if [[ $c != 2* && $c != 3* ]]; then
+    warn "$name answered $c after the restart: putting its old files back"
+    dir=${DIROF[$name]}
+    find "$dir/src" "$dir/views" "$dir" -maxdepth 3 -name "*.pre-admin-$STAMP" 2>/dev/null | sort -u | while read -r old; do
+      cp -p "$old" "${old%.pre-admin-$STAMP}"
+    done
+    pm2u "restart $name" >/dev/null
+    die "$name did not come back with the admin API -- it is back as it was; nothing else was changed after it"
+  fi
 done
 
 # ------------------------------------------------------------------ the admin app
@@ -295,11 +317,22 @@ fi
 
 v-restart-proxy >/dev/null 2>&1 || systemctl reload nginx || true
 sleep 5
-code() { curl -sS -o /dev/null -w '%{http_code}' "$@" 2>/dev/null || echo "---"; }
 echo "admin, local health          $(code "http://127.0.0.1:$APORT/healthz")"
 echo "admin, https health          $(code "https://$DOMAIN/healthz")"
 echo "back office admin, no key    $(code "http://127.0.0.1:$(portof "$BO" 5060)/api/admin/overview") (expect 401)"
 echo "gift admin, no key           $(code "http://127.0.0.1:$(portof "$GIFT" 5070)/api/admin/venues") (expect 401)"
 echo "hosting admin, no key        $(code "http://127.0.0.1:$(portof "$HOST_APP" 5075)/api/admin/services") (expect 401)"
+# The old admin pages point here only once this answers over https, so a
+# certificate still on its way never sends anybody to a page that is not there.
+if [ "$(code "https://$DOMAIN/healthz")" = "200" ]; then
+  for pair in "backoffice.vesopaepos.com:$BO" "gift.vesopaepos.com:$GIFT"; do
+    name=${pair%%:*}; dir=${pair#*:}
+    if envfill "$dir/.env" ADMIN_CONSOLE_URL "https://$DOMAIN"; then
+      pm2u "restart $name" >/dev/null && ok "$name now points its admin pages at $DOMAIN"
+    fi
+  done
+else
+  warn "the old admin pages keep working as before until https://$DOMAIN answers; run this again then"
+fi
 tail -5 "$APP/logs/error-0.log" 2>/dev/null || pm2u "logs $DOMAIN --lines 5 --nostream" 2>/dev/null | tail -8 || true
 ok "done"

@@ -3,7 +3,7 @@
 <div class="page-head">
   <div>
     <h2>Venues</h2>
-    <p class="muted">A venue’s shop, and everything about it, stays hidden until it is switched on here.</p>
+    <p class="muted">A venue’s shop, and everything about it, stays hidden until it is switched on<% if (adminConsole) { %> on <a href="<%= adminConsole %>/venues">admin.vesopa.com</a><% } else { %> here<% } %>.</p>
   </div>
 </div>
 
@@ -31,7 +31,9 @@
           <td class="right num"><%= r.enabled ? money(r.sold30) : '—' %></td>
           <td class="right num"><%= r.enabled && r.outstanding != null ? money(r.outstanding) : '—' %></td>
           <td class="right">
-            <% if (session.isOwner) { %>
+            <% if (session.isOwner && adminConsole) { %>
+            <a class="badge <%= r.enabled ? 'ok' : 'plain' %>" href="<%= adminConsole %>/venues/<%= r.id %>" title="Switched on and off on admin.vesopa.com"><%= r.enabled ? 'On' : 'Off' %> · change</a>
+            <% } else if (session.isOwner) { %>
             <form method="post" action="/admin/venues/<%= r.id %>/<%= r.enabled ? 'disable' : 'enable' %>" data-confirm="<%= r.enabled ? '' : 'Switch ' + r.name + '’s shop on? It goes live at ' + shopHost + '/' + (r.slug || r.suggestedSlug) + '.' %>">
               <input type="hidden" name="_csrf" value="<%= session.csrf %>">
               <button class="switch <%= r.enabled ? 'on' : '' %>" type="submit" aria-label="<%= r.enabled ? 'Switch off' : 'Switch on' %> <%= r.name %>" aria-pressed="<%= r.enabled ? 'true' : 'false' %>"></button>

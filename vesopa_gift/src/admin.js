@@ -99,6 +99,7 @@ function page(req, res, view, data = {}) {
     session: req.session,
     peopleUrl,
     shopHost,
+    adminConsole: config.ADMIN_CONSOLE_URL,
     flash: takeFlash(req, res),
     money: util.money,
     when: util.when,
@@ -289,6 +290,9 @@ router.get('/venues', signedIn, everyVenue, async (req, res, next) => {
 
 router.post('/venues/:officeId/enable', signedIn, ownerOnly, async (req, res, next) => {
   try {
+    if (config.ADMIN_CONSOLE_URL) {
+      return res.redirect(303, `${config.ADMIN_CONSOLE_URL}/venues/${Number(req.params.officeId)}`);
+    }
     const ev = await epos.venue(Number(req.params.officeId));
     await venues.ensure(ev);
     await db.run(
@@ -305,6 +309,9 @@ router.post('/venues/:officeId/enable', signedIn, ownerOnly, async (req, res, ne
 
 router.post('/venues/:officeId/disable', signedIn, ownerOnly, async (req, res, next) => {
   try {
+    if (config.ADMIN_CONSOLE_URL) {
+      return res.redirect(303, `${config.ADMIN_CONSOLE_URL}/venues/${Number(req.params.officeId)}`);
+    }
     const id = Number(req.params.officeId);
     await db.run('UPDATE gift_venues SET enabled = 0 WHERE office_id = ?', [id]);
     await audit(req, 'venue.disabled', null, id);

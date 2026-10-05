@@ -1958,10 +1958,21 @@ const PUBLIC_DIR = path.join(__dirname, '..', 'public');
  */
 const assets = assetVersions(PUBLIC_DIR);
 
-/** The app shell, with a version on every asset it references. */
+/**
+ * The app shell, with a version on every asset it references.
+ *
+ * With ADMIN_CONSOLE_URL set (https://admin.vesopa.com, once it is live) the
+ * shell names it in a meta tag, and the Administration pages point there for
+ * what has moved (public/app.js, adminConsoleNote).
+ */
+const ADMIN_CONSOLE_URL = /^https:\/\/[a-z0-9.-]+$/i.test(process.env.ADMIN_CONSOLE_URL || '')
+  ? process.env.ADMIN_CONSOLE_URL
+  : '';
 const shell = assets.rewrite(
   fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8')
-);
+).replace('</head>', ADMIN_CONSOLE_URL
+  ? `  <meta name="vesopa-admin-console" content="${ADMIN_CONSOLE_URL}">\n</head>`
+  : '</head>');
 
 function sendShell(_req, res) {
   // `no-store`, not `no-cache`. This document is a few kilobytes and it is the

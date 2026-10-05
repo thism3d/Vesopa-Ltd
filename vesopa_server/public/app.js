@@ -374,6 +374,34 @@ const ROUTES = {
   billing: '/billing',
 };
 
+/*
+ * admin.vesopa.com (2026-10-05) now pauses, resumes, adds and removes every
+ * venue's licences and modules, for every Vesopa app at once. These pages keep
+ * what has not moved yet (new offices, managers, keys, prices, promos,
+ * invoices) and say where the rest went. The server names the address only
+ * once it is live (ADMIN_CONSOLE_URL), so until then nothing here changes.
+ */
+const ADMIN_CONSOLE = document.querySelector('meta[name="vesopa-admin-console"]')?.content || '';
+const ADMIN_CONSOLE_PAGES = {
+  offices: ['/venues', 'Pausing, resuming, adding and removing a venue\'s apps and modules'],
+  licences: ['/venues', 'Pausing and resuming licences, and setting how many a venue has'],
+  admin_modules: ['/catalogue', 'Adding, pausing and removing modules for a venue'],
+};
+function adminConsoleNote(view) {
+  const page = ADMIN_CONSOLE && ADMIN_CONSOLE_PAGES[view];
+  const section = $(`view-${view}`);
+  if (!page || !section || section.querySelector(':scope > .admin-console-note')) return;
+  const note = document.createElement('div');
+  note.className = 'callout warn admin-console-note';
+  const link = document.createElement('a');
+  link.href = ADMIN_CONSOLE + page[0];
+  link.textContent = 'Open admin.vesopa.com';
+  note.append(`${page[1]} has moved to admin.vesopa.com, with a grace day, an email to the venue and a record of who did it. `, link);
+  const head = section.querySelector(':scope > .page-head');
+  if (head) head.after(note);
+  else section.prepend(note);
+}
+
 const viewForPath = (path) =>
   Object.keys(ROUTES).find((v) => ROUTES[v] === path) || 'dashboard';
 
@@ -439,6 +467,7 @@ function show(view, { push = true, userInitiated = false } = {}) {
 
   document.querySelectorAll('.view').forEach((v) => (v.hidden = true));
   $(`view-${view}`).hidden = false;
+  adminConsoleNote(view);
   document.querySelectorAll('.nav').forEach((b) =>
     b.classList.toggle('active', b.dataset.view === view)
   );
