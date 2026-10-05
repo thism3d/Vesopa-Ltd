@@ -24,7 +24,10 @@ port 22). On the Cloud box it:
      syncs at boot
   4. Vesopa Auth: scripts/grant-venue-apps.js lets Matt's existing account
      into the back office, till, kitchen, display and kiosk applications
-  5. sends the invitation (to Matt, cc info@vesopasoftware.com and
+  5. makes info@vesopasoftware.com the back office's main administrator
+     (owner, 2026-10-05: "Make this account the main administration") and
+     lets it into the same applications
+  6. sends the invitation (to Matt, cc info@vesopasoftware.com and
      info@vesopa.com), then checks
 
 Every step is re-runnable; a second run changes nothing and, with --no-mail,
@@ -61,8 +64,10 @@ UPLOADS = [
     ("vesopa_server/tool/invite/metric-hero.gif", f"{BACKOFFICE}/tool/invite/metric-hero.gif"),
     ("vesopa_server/tool/invite/backoffice-memberships.png", f"{BACKOFFICE}/tool/invite/backoffice-memberships.png"),
     ("vesopa_server/tool/invite/metric-app.jpg", f"{BACKOFFICE}/tool/invite/metric-app.jpg"),
+    ("vesopa_server/tool/make-backoffice-admin.js", f"{BACKOFFICE}/tool/make-backoffice-admin.js"),
     ("vesopa_auth/scripts/grant-venue-apps.js", f"{AUTH}/scripts/grant-venue-apps.js"),
 ]
+ADMIN = "info@vesopasoftware.com"
 
 
 def sh(client, command, show=True):
@@ -143,6 +148,10 @@ def main():
 
         print("▶ Vesopa Auth: Matt's applications")
         must(client, as_user(f"cd {AUTH} && node scripts/grant-venue-apps.js {EMAIL}") + " 2>&1 | grep -v '^⚠'")
+
+        print(f"▶ main administrator: {ADMIN}")
+        must(client, as_user(f"cd {BACKOFFICE} && node tool/make-backoffice-admin.js {ADMIN}"))
+        must(client, as_user(f"cd {AUTH} && node scripts/grant-venue-apps.js {ADMIN}") + " 2>&1 | grep -v '^⚠'")
 
         print("▶ checks (after Metric's first sync)")
         sh(client,
