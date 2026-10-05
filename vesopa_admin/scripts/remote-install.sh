@@ -74,9 +74,21 @@ envfill() {
 newkey() { openssl rand -hex 32; }
 # The port an app's .env names, or its usual one.
 portof() { local p; p=$(envget "$1/.env" PORT); echo "${p:-$2}"; }
-# mysql as the database user an .env names. The password rides in MYSQL_PWD,
-# not argv, so `ps` never shows it.
-sqlas() { local f=$1; shift; MYSQL_PWD="$(envget "$f" DB_PASSWORD)" "$@" -h"$(h=$(envget "$f" DB_HOST); echo "${h:-127.0.0.1}")" -u"$(envget "$f" DB_USER)" "$(envget "$f" DB_NAME)"; }
+# mysql as the database user an .env names, from a 0600 file given as
+# --defaults-file, so `ps` never shows the password AND root's own ~/.my.cnf is
+# not read. MYSQL_PWD was used before and lost to that file: the client took
+# root's saved password for the app's user, and every login here was refused
+# (2026-10-05, "Access denied for vesopasoftware_admindb@localhost").
+sqlas() {
+  local f=$1 cmd=$2 cnf rc=0 h; shift 2
+  h=$(envget "$f" DB_HOST)
+  cnf=$(mktemp); chmod 600 "$cnf"
+  printf '[client]\nuser=%s\npassword="%s"\nhost=%s\n' \
+    "$(envget "$f" DB_USER)" "$(envget "$f" DB_PASSWORD)" "${h:-127.0.0.1}" > "$cnf"
+  "$cmd" --defaults-file="$cnf" "$@" "$(envget "$f" DB_NAME)" || rc=$?
+  rm -f "$cnf"
+  return $rc
+}
 
 [ -d "$HERE/admin/src" ] || die "no admin/ in the bundle"
 for d in "$AUTH" "$BO" "$GIFT" "$HOST_APP"; do [ -f "$d/.env" ] || die "no .env at $d"; done
