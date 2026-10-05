@@ -6,8 +6,11 @@
  *   node tool/invite/send-metric-invite.js --eml out.eml        # Outlook draft from Muzahid
  *   node tool/invite/send-metric-invite.js --send --from-muzahid  # from muzahid@vesopa.com
  *
- * --from-muzahid hands the message to the box's own Exim (sendmail), the way
- * cloud.vesopa.com's webmail sends, signed and sent as Muzahid Islam.
+ * --from-muzahid sends it as Muzahid Islam <muzahid@vesopa.com> exactly the way
+ * auth.vesopa.com sends its sign-in codes: Auth's own SMTP settings (its .env,
+ * AUTH_ENV to point elsewhere), so the relay sees a vesopa.com sender it
+ * already accepts. The back office's own sender, support@vesopaepos.com, is
+ * refused by the relay ("sender domain not verified", 2026-10-05).
  *   node tool/invite/send-metric-invite.js --send               # send it
  *
  * Owner, 2026-10-05: "Send invitation as well to Matt mail and cc to
@@ -221,7 +224,19 @@ async function main() {
       return;
     }
     const nodemailer = require('nodemailer');
-    const tx = nodemailer.createTransport({ sendmail: true, newline: 'unix', path: '/usr/sbin/sendmail' });
+    const authEnv = process.env.AUTH_ENV || '/home/vesopasoftware/web/auth.vesopa.com/private/nodeapp/.env';
+    if (!fs.existsSync(authEnv)) throw new Error(`no Auth settings at ${authEnv} (set AUTH_ENV)`);
+    const a = require('dotenv').parse(fs.readFileSync(authEnv));
+    const tx = nodemailer.createTransport({
+      host: a.SMTP_HOST || 'localhost',
+      port: Number(a.SMTP_PORT || 587),
+      secure: /^(1|true|yes)$/i.test(a.SMTP_SECURE || ''),
+      auth: a.SMTP_USER ? { user: a.SMTP_USER, pass: a.SMTP_PASSWORD } : undefined,
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 60000,
+    });
+    console.log(`using Auth's mail server ${a.SMTP_HOST || 'localhost'}:${a.SMTP_PORT || 587}`);
     const info = await tx.sendMail({
       from: `${MUZAHID.name} <${MUZAHID.email}>`,
       envelope: { from: MUZAHID.email, to: [TO, ...CC] },
