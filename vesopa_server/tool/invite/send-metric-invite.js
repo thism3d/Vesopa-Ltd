@@ -4,6 +4,10 @@
  *
  *   node tool/invite/send-metric-invite.js --preview out.html   # look at it
  *   node tool/invite/send-metric-invite.js --eml out.eml        # Outlook draft from Muzahid
+ *   node tool/invite/send-metric-invite.js --send --from-muzahid  # from muzahid@vesopa.com
+ *
+ * --from-muzahid hands the message to the box's own Exim (sendmail), the way
+ * cloud.vesopa.com's webmail sends, signed and sent as Muzahid Islam.
  *   node tool/invite/send-metric-invite.js --send               # send it
  *
  * Owner, 2026-10-05: "Send invitation as well to Matt mail and cc to
@@ -209,6 +213,26 @@ async function main() {
     });
     fs.writeFileSync(out, await mail.compile().build());
     console.log(`Outlook draft written to ${out}`);
+    return;
+  }
+  if (process.argv.includes('--from-muzahid')) {
+    if (!process.argv.includes('--send')) {
+      console.log(`would send "${SUBJECT}" from ${MUZAHID.email} to ${TO}, cc ${CC.join(', ')}. Add --send.`);
+      return;
+    }
+    const nodemailer = require('nodemailer');
+    const tx = nodemailer.createTransport({ sendmail: true, newline: 'unix', path: '/usr/sbin/sendmail' });
+    const info = await tx.sendMail({
+      from: `${MUZAHID.name} <${MUZAHID.email}>`,
+      envelope: { from: MUZAHID.email, to: [TO, ...CC] },
+      to: TO,
+      cc: CC,
+      subject: SUBJECT,
+      html: html(cids, MUZAHID),
+      text: text(MUZAHID),
+      attachments,
+    });
+    console.log(`sent "${SUBJECT}" from ${MUZAHID.email} to ${TO}, cc ${CC.join(', ')} (${info.messageId})`);
     return;
   }
   const body = html(cids);
