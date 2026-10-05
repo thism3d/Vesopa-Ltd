@@ -150,12 +150,17 @@ else
 fi
 
 # ------------------------------------------------------------------ Vesopa Auth client
+# As root over the socket, the way vesopa_auth/scripts/deploy.py applies its
+# own schema: the login in Auth's .env was refused by the mysql client on the
+# live box (2026-10-05, "Access denied for vesopasoftware_authuser@localhost").
+AUTHDBNAME=$(envget "$AUTH/.env" DB_NAME); AUTHDBNAME=${AUTHDBNAME:-vesopasoftware_authdb}
+authsql() { mysql "$@" "$AUTHDBNAME"; }
 say "Vesopa Auth: applying schema_027_admin_console_client.sql (re-runnable)"
 if [ $CHECK = 0 ]; then
   cp "$HERE/schema_027_admin_console_client.sql" "$AUTH/schema/" 2>/dev/null || true
-  sqlas "$AUTH/.env" mysql < "$HERE/schema_027_admin_console_client.sql"
+  authsql < "$HERE/schema_027_admin_console_client.sql"
 fi
-CLIENT_ID=$(sqlas "$AUTH/.env" mysql -N -e "SELECT client_id FROM applications WHERE slug='$SLUG' AND deleted_at IS NULL" 2>/dev/null || true)
+CLIENT_ID=$(authsql -N -e "SELECT client_id FROM applications WHERE slug='$SLUG' AND deleted_at IS NULL" 2>/dev/null || true)
 [ -n "$CLIENT_ID" ] && ok "client id $CLIENT_ID" || warn "no $SLUG client yet"
 
 [ $CHECK = 1 ] && { ok "check done: nothing changed"; exit 0; }
