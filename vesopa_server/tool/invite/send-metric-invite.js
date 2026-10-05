@@ -3,6 +3,7 @@
  * The invitation to Metric Group UK's manager (2026-10-05).
  *
  *   node tool/invite/send-metric-invite.js --preview out.html   # look at it
+ *   node tool/invite/send-metric-invite.js --eml out.eml        # Outlook draft from Muzahid
  *   node tool/invite/send-metric-invite.js --send               # send it
  *
  * Owner, 2026-10-05: "Send invitation as well to Matt mail and cc to
@@ -45,7 +46,11 @@ const APPS = [
   ['Customer display', 'Shows the member their plan and renewal date.', 'https://apps.microsoft.com/detail/9P8JCLQ5M3SQ', 'Microsoft Store'],
 ];
 
-function html(src) {
+/** Who signs it: the team (sent by the server), or Muzahid (sent from Outlook). */
+const TEAM = { name: 'The Vesopa team', role: 'Vesopa Software Ltd', us: 'us' };
+const MUZAHID = { name: 'Muzahid Islam', role: 'Vesopa Developer, Vesopa Software Ltd', us: 'me', email: 'muzahid@vesopa.com' };
+
+function html(src, signer = TEAM) {
   const p = (text, extra = '') =>
     `<p style="margin:0 0 16px;font-family:${FONT};font-size:16px;line-height:1.6;color:${INK};${extra}">${text}</p>`;
   const h2 = (text) =>
@@ -135,8 +140,8 @@ function html(src) {
       ${picture('app', 'The Metric Membership app sign-in screen', 'Your members keep using the Metric Membership app. Their car is their pass.')}
     </td></tr>
     <tr><td style="padding:0 24px 34px;">
-      ${p('Any questions at all, just reply to this email and it comes straight to us.')}
-      ${p(`Kind regards,<br><strong>The Vesopa team</strong><br><span style="color:${MUTED};">Vesopa Software Ltd</span>`, 'margin:0;')}
+      ${p(`Any questions at all, just reply to this email and it comes straight to ${signer.us}.`)}
+      ${p(`Kind regards,<br><strong>${signer.name}</strong><br><span style="color:${MUTED};">${signer.role}</span>${signer.email ? `<br><a href="mailto:${signer.email}" style="color:${NAVY};">${signer.email}</a>` : ''}`, 'margin:0;')}
     </td></tr>
     <tr><td style="background:#f6f5f9;padding:18px 24px;border-top:4px solid ${LIME};">
       <p style="margin:0;font-family:${FONT};font-size:12px;line-height:1.6;color:${MUTED};">You are receiving this because Metric Group UK was set up on Vesopa EPOS for you. Copied to info@vesopasoftware.com and info@vesopa.com.</p>
@@ -148,7 +153,7 @@ function html(src) {
 </html>`;
 }
 
-const TEXT = `Hi Matt,
+const text = (signer = TEAM) => `Hi Matt,
 
 Welcome to Vesopa EPOS. Metric Group UK is now set up as a venue on your account (m.hammond@metricgroup.co.uk), and Metric Membership is connected to it. Your members, plans and barriers carry on as before.
 
@@ -166,8 +171,8 @@ ${APPS.map(([n, w, h]) => `- ${n}: ${h}`).join('\n')}
 
 Any questions, just reply to this email.
 
-The Vesopa team
-Vesopa Software Ltd
+${signer.name}
+${signer.role}${signer.email ? `\n${signer.email}` : ''}
 `;
 
 async function main() {
@@ -185,13 +190,34 @@ async function main() {
     contentType: x.type,
     cid: x.cid,
   }));
-  const body = html({ hero: 'cid:hero@vesopa', backoffice: 'cid:backoffice@vesopa', app: 'cid:app@vesopa' });
+  const cids = { hero: 'cid:hero@vesopa', backoffice: 'cid:backoffice@vesopa', app: 'cid:app@vesopa' };
+  const emlAt = process.argv.indexOf('--eml');
+  if (emlAt >= 0) {
+    // An unsent message (X-Unsent) opens in Outlook as a draft ready to send,
+    // from muzahid@vesopa.com, with the pictures already inside it.
+    const MailComposer = require('nodemailer/lib/mail-composer');
+    const out = path.resolve(process.argv[emlAt + 1] || 'metric-invite.eml');
+    const mail = new MailComposer({
+      from: `${MUZAHID.name} <${MUZAHID.email}>`,
+      to: TO,
+      cc: CC,
+      subject: SUBJECT,
+      html: html(cids, MUZAHID),
+      text: text(MUZAHID),
+      attachments,
+      headers: { 'X-Unsent': '1' },
+    });
+    fs.writeFileSync(out, await mail.compile().build());
+    console.log(`Outlook draft written to ${out}`);
+    return;
+  }
+  const body = html(cids);
   if (!process.argv.includes('--send')) {
     console.log(`would send "${SUBJECT}" to ${TO}, cc ${CC.join(', ')} (${Math.round(body.length / 1024)} KB of HTML, ${attachments.length} pictures). Add --send.`);
     return;
   }
   const { sendMail } = require('../../src/mailer');
-  const ok = await sendMail({ to: TO, cc: CC, replyTo: REPLY_TO, subject: SUBJECT, html: body, text: TEXT, attachments });
+  const ok = await sendMail({ to: TO, cc: CC, replyTo: REPLY_TO, subject: SUBJECT, html: body, text: text(), attachments });
   if (!ok) throw new Error('the mail server did not take it (see the [mail] line above)');
   console.log(`sent "${SUBJECT}" to ${TO}, cc ${CC.join(', ')}`);
 }
