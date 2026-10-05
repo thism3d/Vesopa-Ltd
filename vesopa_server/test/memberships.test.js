@@ -114,7 +114,7 @@ async function main() {
   // proves each is safe to run again. Files about tables this test does not
   // build (products, staff) fail on the missing table and are skipped; the
   // ones this feature owns must apply cleanly.
-  const mustApply = /^schema_(customers|loyalty_schemes|tenancy|till_gym|venue_modules|memberships)\.sql$/;
+  const mustApply = /^schema_(customers|loyalty_schemes|tenancy|till_gym|venue_modules|memberships|memberships_collation)\.sql$/;
   const files = fs.readdirSync(path.join(__dirname, '..', 'schema')).filter((f) => f.endsWith('.sql')).sort();
   for (let pass = 0; pass < 2; pass++) {
     for (const f of files) {
