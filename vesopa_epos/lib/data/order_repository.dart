@@ -177,6 +177,7 @@ class OrderRepository {
     int priceLevel = minPriceLevel,
     bool consolidate = true,
     String? notes,
+    int? unitPriceMinor,
   }) async {
     await _db.transaction(() async {
       final now = DateTime.now();
@@ -196,7 +197,12 @@ class OrderRepository {
       // Nor is a line with a note: the note says what THIS line is for (a
       // membership plan, see data/membership.dart), and a second one merged
       // into it would be one note standing for two things.
-      final line = modifiers.isEmpty && consolidate && notes == null
+      // A price the clerk typed is never merged either: two open-priced
+      // items at different prices are not one line at quantity 2.
+      final line = modifiers.isEmpty &&
+              consolidate &&
+              notes == null &&
+              unitPriceMinor == null
           ? await _mergeableLine(orderId, product.pluId)
           : null;
 
@@ -218,7 +224,7 @@ class OrderRepository {
               // Snapshot the price: a later back-office edit must not restate
               // takings that have already been rung up — and neither must a
               // later change of price level.
-              unitPriceMinor: product.priceAt(priceLevel),
+              unitPriceMinor: unitPriceMinor ?? product.priceAt(priceLevel),
               taxPercentage: Value(product.taxPercentage),
               // Who rang it and when. Null on a venue that does not use staff
               // sign-on, and the check view simply shows no header for it.
@@ -251,6 +257,47 @@ class OrderRepository {
             );
       }
 
+      await recalculate(orderId);
+    });
+  }
+
+  /// Ring an amount keyed on the payment screen against an empty check.
+  ///
+  /// [as] is the venue's open-price product when it has one, so the money
+  /// lands in that product's department at its VAT rate. Without one the line
+  /// is "Quick sale" at the standard rate and no PLU, which every report reads
+  /// as an item with no department.
+  Future<void> addQuickSale(
+    String orderId, {
+    required int amountMinor,
+    String? note,
+    Product? as,
+    String? addedBy,
+  }) async {
+    if (as != null) {
+      return addLine(
+        orderId,
+        as,
+        addedBy: addedBy,
+        consolidate: false,
+        notes: note,
+        unitPriceMinor: amountMinor,
+      );
+    }
+    await _db.transaction(() async {
+      await _db.into(_db.orderLines).insert(
+            OrderLinesCompanion.insert(
+              id: _uuid.v4(),
+              orderId: orderId,
+              pluId: 0,
+              name: 'Quick sale',
+              unitPriceMinor: amountMinor,
+              taxPercentage: const Value(20),
+              addedBy: Value(addedBy),
+              addedAt: Value(DateTime.now()),
+              notes: Value(note),
+            ),
+          );
       await recalculate(orderId);
     });
   }
@@ -494,6 +541,10 @@ class OrderRepository {
               at: Value(at),
             ),
           );
+      // A void is already on its way to /till/voids with the items and the
+      // reason; this row is only the Z report's copy. Queuing it as well sent
+      // the server a kind it refused, and the till sat on "Syncing" for ever.
+      if (kind == 'void') return;
       await _db.into(_db.outboxEntries).insert(
             OutboxEntriesCompanion.insert(
               id: _uuid.v4(),

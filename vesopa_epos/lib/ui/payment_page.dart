@@ -41,7 +41,8 @@ import 'till_actions.dart';
 import 'void_dialog.dart';
 import 'widgets/cash_notes_panel.dart';
 import '../data/screens.dart';
-import 'sale_page.dart' show productsProvider, dealsProvider;
+import 'sale_page.dart' show productsProvider, dealsProvider, askTillField;
+import '../data/product_extras.dart';
 import 'widgets/pay_check_panel.dart';
 import 'widgets/programmed_bar.dart';
 import 'widgets/till_top_bar.dart' show VenueTopBarBody;
@@ -626,6 +627,14 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     int requested, {
     String? cashBreakdown,
   }) async {
+    // An empty check, opened because the venue allows it: the amount keyed is
+    // what is being sold, so ring it as a Quick sale first, then take it.
+    if (_tender.totals.totalMinor == 0 &&
+        _tender.tenders.isEmpty &&
+        ref.read(tenderSettingsProvider).allowEmptyPay) {
+      if (!await _ringQuickSale(requested)) return;
+    }
+
     final due = _tender.dueNowMinor;
     if (due <= 0 && kind != TenderKind.voucher && kind != TenderKind.points) {
       return;
@@ -720,6 +729,48 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
       case TenderKind.account:
         _record(TenderEntry(kind: kind, amountMinor: amount));
     }
+  }
+
+  /// Put [amount] on the empty check as a Quick sale, asking what it is for.
+  /// True once the bill has priced with it.
+  Future<bool> _ringQuickSale(int amount) async {
+    final repo = ref.read(orderRepositoryProvider);
+    if ((await repo.linesOnce(widget.orderId)).isNotEmpty) return true;
+    if (amount <= 0) {
+      _toast('Key in the amount first, then the way they are paying.');
+      return false;
+    }
+    if (!mounted) return false;
+    final said = await askTillField(
+      context,
+      'Quick sale of ${_money(amount)}: what is it for?',
+      hint: 'For example Raffle tickets',
+    );
+    if (said == null) return false;
+    final note = said.trim();
+    if (note.isEmpty) {
+      _toast('Say what it was for, so the bill makes sense later.');
+      return false;
+    }
+    final open = (ref.read(productsProvider).value ?? const <Product>[])
+        .where((p) => ProductExtras.decode(p.extras).openPrice)
+        .firstOrNull;
+    await repo.addQuickSale(
+      widget.orderId,
+      amountMinor: amount,
+      note: note,
+      as: open,
+      addedBy: ref.read(staffSessionProvider).name,
+    );
+    // The bill reprices when the lines stream catches up; wait for it rather
+    // than take money against a total of nothing.
+    for (var i = 0; i < 40 && mounted; i++) {
+      if (_tender.totals.totalMinor > 0) break;
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+    if (!mounted) return false;
+    setState(() => _entry = '');
+    return _tender.totals.totalMinor > 0;
   }
 
   /// Tell the clerk what the customer added at the card machine.

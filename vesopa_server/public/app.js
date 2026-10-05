@@ -1343,7 +1343,7 @@ const VIEW_LOADERS = {
     program_departments: () => loadCrud('departments'),
     program_groups: () => loadCrud('groups'),
     printer_categories: () => loadCrud('print-categories'),
-    import: loadImport,
+    import: () => { loadImport(); loadCustomerImport(); },
     run_report: loadRunReport,
     report_schedules: loadReportSchedules,
     modifiers: () => loadCrud('modifiers'),
@@ -6932,6 +6932,24 @@ document.addEventListener('click', async (e) => {
      * a renewal recorded when the key is pressed is a renewal a voided bill
      * leaves behind.
      */
+    // "A product setting to enable price input box. For example Open Food, a
+    // box pops up asking how much to sell for and staff will leave a note for
+    // what it's for." The price above is then only a suggestion the box opens
+    // with; zero opens it empty.
+    {
+      label: 'Ask the price at the till (open price)',
+      name: 'open_price',
+      type: 'checkbox',
+      hint: 'For things like “Open Food”: the till asks how much to charge each time it is rung up.',
+      value: p.open_price ?? 0,
+    },
+    {
+      label: 'Ask what it was for',
+      name: 'open_price_note',
+      type: 'checkbox',
+      hint: 'For an open price product: staff type a short note, which is kept on the bill and the receipt.',
+      value: p.open_price_note ?? 1,
+    },
     {
       label: 'Renews membership — paying for this moves the member’s expiry on',
       name: 'renews_membership',
@@ -11592,6 +11610,7 @@ function laForm() {
     wns_package_sid: laValue('la-wns-sid'),
     auth_policy: laValue('la-auth_policy') || 'code_first',
     self_service: $('la-self_service') && $('la-self_service').checked ? 1 : 0,
+    members_only: $('la-members_only') && $('la-members_only').checked ? 1 : 0,
     // Every method, on or off. Sending only the ones that are ON would mean
     // switching one off left no trace and the default crept back in.
     signin_methods: Object.fromEntries(
@@ -11727,6 +11746,7 @@ function laSignin(signin) {
   }
   if ($('la-auth_policy')) $('la-auth_policy').value = signin.policy || 'code_first';
   if ($('la-self_service')) $('la-self_service').checked = signin.self_service !== false;
+  if ($('la-members_only')) $('la-members_only').checked = !!signin.members_only;
 }
 
 /** The phone on the right: the member's card, in the venue's colours. */
@@ -15014,6 +15034,136 @@ function loadImport() {
   apply.disabled = true;
   result.hidden = true;
   showPickedFile(file, 'import-picked');
+}
+
+/**
+ * The customer import (2026-10-05), wired the same way as the catalogue's
+ * above: a new file disarms Import until it has been checked.
+ * See vesopa_server/src/customer_import.js.
+ */
+// The Customers page's own way in, so nobody has to know imports live under Import.
+// Guarded: the editor tests load this file where there is no document.
+if (typeof document !== 'undefined') {
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#import-customers')) return;
+    document.querySelector('.nav[data-view="import"]')?.click();
+    setTimeout(() => $('cimport-template')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
+  });
+}
+
+function loadCustomerImport() {
+  const file = $('cimport-file');
+  if (!file) return;
+  const check = $('cimport-check');
+  const apply = $('cimport-apply');
+  const result = $('cimport-result');
+  if (!file.dataset.bound) {
+    file.dataset.bound = '1';
+    $('cimport-template').addEventListener('click', customerImportTemplate);
+    file.addEventListener('change', () => {
+      check.disabled = !file.files.length;
+      apply.disabled = true;
+      result.hidden = true;
+      showPickedFile(file, 'cimport-picked');
+    });
+    check.addEventListener('click', () => customerImportRun(false));
+    apply.addEventListener('click', () => customerImportRun(true));
+  }
+  check.disabled = !file.files.length;
+  apply.disabled = true;
+  result.hidden = true;
+  showPickedFile(file, 'cimport-picked');
+}
+
+async function customerImportTemplate() {
+  const button = $('cimport-template');
+  button.disabled = true;
+  try {
+    const res = await fetch('/api/import/customers/template', {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (res.status === 401) return signOut();
+    if (!res.ok) throw new Error('The template could not be built.');
+    const url = URL.createObjectURL(await res.blob());
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'vesopa-customers-template.xlsx';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  } catch (e) {
+    toast(e.message || 'The template could not be downloaded.', 'error');
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function customerImportRun(commit) {
+  const input = $('cimport-file');
+  if (!input.files.length) return;
+  const check = $('cimport-check');
+  const apply = $('cimport-apply');
+  check.disabled = true;
+  apply.disabled = true;
+  const form = new FormData();
+  form.append('file', input.files[0]);
+  try {
+    const res = await fetch(commit ? '/api/import/customers' : '/api/import/customers/preview', {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    });
+    if (res.status === 401) return signOut();
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || 'That file could not be read.');
+    customerImportRender(body, commit);
+    if (body.applied) {
+      input.value = '';
+      apply.disabled = true;
+      check.disabled = true;
+      toast(`${body.summary.created + body.summary.updated} customers imported.`);
+    } else {
+      apply.disabled = body.blocked || !body.rows;
+    }
+  } catch (e) {
+    toast(e.message, 'error');
+    apply.disabled = true;
+  } finally {
+    check.disabled = !input.files.length;
+  }
+}
+
+function customerImportRender(body, commit) {
+  $('cimport-result').hidden = false;
+  const past = body.applied;
+  $('cimport-result-title').textContent = past
+    ? 'What this file changed'
+    : body.blocked ? 'This file cannot be imported yet' : 'What this file would do';
+  const s = body.summary || {};
+  const parts = [];
+  if (s.created) parts.push(`<li><strong>${s.created}</strong> new ${s.created === 1 ? 'customer' : 'customers'}</li>`);
+  if (s.updated) parts.push(`<li><strong>${s.updated}</strong> already here, ${past ? 'updated' : 'to update'}</li>`);
+  if (s.repeated) parts.push(`<li><strong>${s.repeated}</strong> listed twice in the file${past ? '' : ' (the later row wins)'}</li>`);
+  if (s.points) parts.push(`<li><strong>${Number(s.points).toLocaleString('en-GB')}</strong> points in balances</li>`);
+  $('cimport-summary').innerHTML = parts.length
+    ? `<ul class="import-summary">${parts.join('')}</ul>`
+    : '<p class="muted small">There is nobody in this file to import.</p>';
+  const problems = [];
+  if ((body.unknownColumns || []).length) {
+    problems.push(`<p class="muted small">${esc(body.unknownColumns.join(', '))} ` +
+      `${body.unknownColumns.length === 1 ? 'is a column' : 'are columns'} we do not import. Everything else was read.</p>`);
+  }
+  if ((body.errors || []).length) {
+    problems.push('<ul class="import-errors">' +
+      body.errors.map((e) => `<li>Row ${e.row}: ${esc(e.message)}</li>`).join('') + '</ul>');
+  }
+  if (body.blocked) {
+    problems.push('<p class="muted small">Nothing has been written. Fix the rows above and upload the file again.</p>');
+  } else if (!commit && !past) {
+    problems.push('<p class="muted small">Nothing has been written yet. Press Import customers to apply it.</p>');
+  }
+  $('cimport-problems').innerHTML = problems.join('');
 }
 
 /**

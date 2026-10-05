@@ -142,6 +142,8 @@ class _ProductEditorState extends ConsumerState<ProductEditor> {
   late String? _group = widget.product?.groupName;
   late bool _weighted = _was.isWeighted;
   late bool _manualWeight = _was.manualWeight;
+  late bool _openPrice = _was.openPrice;
+  late bool _openPriceNote = _was.openPriceNote;
   late bool _attachedOnly = widget.product?.isModifier ?? false;
   late bool _onReceipt = widget.product?.printToReceipt ?? true;
   late final Set<String> _routes = {
@@ -361,6 +363,8 @@ class _ProductEditorState extends ConsumerState<ProductEditor> {
         'calories': _calories.text.trim(),
         'is_weighted': _weighted ? 1 : 0,
         'manual_weight': _manualWeight ? 1 : 0,
+        'open_price': _openPrice ? 1 : 0,
+        'open_price_note': _openPriceNote ? 1 : 0,
         if (_allergensSeen) ...{
           'allergens': _allergens.toList(),
           'may_contain': _mayContain.toList(),
@@ -656,6 +660,22 @@ class _ProductEditorState extends ConsumerState<ProductEditor> {
           subtitle: const Text('Off: read it from the scale and type it in. Either way the till asks.'),
           value: _manualWeight,
           onChanged: (v) => setState(() => _manualWeight = v),
+        ),
+      SwitchListTile(
+        key: const Key('editor-open-price'),
+        contentPadding: EdgeInsets.zero,
+        title: const Text('Ask the price at the till'),
+        subtitle: const Text('For things like “Open Food”: the till asks how much to charge each time.'),
+        value: _openPrice,
+        onChanged: (v) => setState(() => _openPrice = v),
+      ),
+      if (_openPrice)
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Ask what it was for'),
+          subtitle: const Text('Staff type a short note, kept on the bill and the receipt.'),
+          value: _openPriceNote,
+          onChanged: (v) => setState(() => _openPriceNote = v),
         ),
       SwitchListTile(
         contentPadding: EdgeInsets.zero,
@@ -1097,6 +1117,7 @@ class _ProductEditorState extends ConsumerState<ProductEditor> {
         for (var i = 0; i < 5; i++)
           if (_levels[i].text.trim().isNotEmpty) (ref.read(priceLevelNamesProvider).nameFor(i + 2), '£${_levels[i].text.trim()}'),
         if (_attachedOnly) ('Sold', 'Attached to another item only'),
+        if (_openPrice) ('Open price', _openPriceNote ? 'Asked at the till, with a note' : 'Asked at the till'),
       ]),
       (_Step.stock, [
         ('Case size', pack?.label ?? ''),

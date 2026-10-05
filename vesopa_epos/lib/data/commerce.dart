@@ -56,6 +56,7 @@ class TenderSettings {
     this.cashQuickRound = true,
     this.allowPartialCard = true,
     this.allowSplitBill = true,
+    this.allowEmptyPay = false,
   });
 
   final bool gratuityEnabled;
@@ -75,6 +76,10 @@ class TenderSettings {
   final bool cashQuickRound;
   final bool allowPartialCard;
   final bool allowSplitBill;
+
+  /// Pay opens the payment screen on an empty check, and an amount keyed
+  /// there is rung up as a Quick sale.
+  final bool allowEmptyPay;
 
   bool get autoGratuity => gratuityEnabled && gratuityMode == 'auto';
   bool get promptGratuity => gratuityEnabled && gratuityMode == 'prompt';
@@ -126,6 +131,7 @@ class TenderSettings {
       cashQuickRound: _flag(j['cash_quick_round']),
       allowPartialCard: _flag(j['allow_partial_card']),
       allowSplitBill: _flag(j['allow_split_bill']),
+      allowEmptyPay: _flag(j['allow_empty_pay']),
     );
   }
 }

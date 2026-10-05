@@ -254,7 +254,13 @@ function commerceRoutes({ pool, broadcast, secret }) {
     cash_quick_round: 1,
     allow_partial_card: 1,
     allow_split_bill: 1,
+    // Pay on an empty check opens the payment screen, and an amount keyed
+    // there is rung up as a Quick sale (schema_open_price.sql).
+    allow_empty_pay: 0,
   };
+
+  /** Columns a database may not have yet, dropped from a save rather than failing it. */
+  const TENDER_LATER = ['allow_empty_pay'];
 
   const TENDER_FIELDS = Object.keys(TENDER_DEFAULTS);
 
@@ -303,13 +309,23 @@ function commerceRoutes({ pool, broadcast, secret }) {
         return v;
       });
 
-      const cols = ['office', ...given];
-      await pool.execute(
-        `INSERT INTO epos_tender_settings (${cols.map((c) => `\`${c}\``).join(',')})
-         VALUES (${cols.map(() => '?').join(',')})
-         ${given.length ? `ON DUPLICATE KEY UPDATE ${given.map((f) => `\`${f}\`=VALUES(\`${f}\`)`).join(',')}` : ''}`,
-        [office, ...values]
-      );
+      const save = (fields, vals) => {
+        const cols = ['office', ...fields];
+        return pool.execute(
+          `INSERT INTO epos_tender_settings (${cols.map((c) => `\`${c}\``).join(',')})
+           VALUES (${cols.map(() => '?').join(',')})
+           ${fields.length ? `ON DUPLICATE KEY UPDATE ${fields.map((f) => `\`${f}\`=VALUES(\`${f}\`)`).join(',')}` : ''}`,
+          [office, ...vals]
+        );
+      };
+      try {
+        await save(given, values);
+      } catch (e) {
+        // A database without the newest migration still saves everything else.
+        if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+        const keep = given.map((f, i) => [f, values[i]]).filter(([f]) => !TENDER_LATER.includes(f));
+        await save(keep.map(([f]) => f), keep.map(([, v]) => v));
+      }
 
       broadcast({ type: 'tender.settings' });
       res.json(await readTender(office));

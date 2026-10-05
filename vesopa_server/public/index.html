@@ -991,6 +991,7 @@
               <p class="muted small">
                 Bring your departments, sub departments and products in from a spreadsheet
                 instead of typing them one at a time. Nothing is ever deleted by an import.
+                Customers are further down this page.
               </p>
             </div>
           </div>
@@ -1047,6 +1048,55 @@
             <h3 id="import-result-title">What this file would do</h3>
             <div id="import-summary"></div>
             <div id="import-problems"></div>
+          </div>
+
+          <!-- Customers (2026-10-05): names, loyalty scheme and points from the
+               till a club is moving off. Same rules as the catalogue: check
+               first, all or nothing, nobody deleted. src/customer_import.js -->
+          <div class="page-head" style="margin-top:calc(var(--stack) * 2)">
+            <div>
+              <h2>Customers</h2>
+              <p class="muted small">
+                Bring your customers in with their loyalty scheme, points balance and membership
+                expiry. A customer already here is found by card number, email or phone and updated.
+                Nobody is ever deleted by an import.
+              </p>
+            </div>
+          </div>
+          <div class="import-grid">
+            <div class="card rd-card">
+              <h3>1. Start from the template</h3>
+              <p class="muted small" style="margin:0 0 12px">
+                Name is the only column you must fill in. Loyalty scheme must match a scheme under
+                Loyalty, and Points is the balance they have now. An export from your old till works
+                too, as .xlsx or .csv.
+              </p>
+              <button type="button" class="btn ghost" id="cimport-template">Download the template</button>
+            </div>
+            <div class="card rd-card">
+              <h3>2. Upload your file</h3>
+              <p class="muted small" style="margin:0 0 12px">An .xlsx workbook or a .csv file.</p>
+              <div class="filepick" id="cimport-pick">
+                <input type="file" id="cimport-file"
+                       accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+                <label for="cimport-file">
+                  <svg viewBox="0 -960 960 960" aria-hidden="true">
+                    <path d="M440-320h80v-168l64 64 56-56-160-160-160 160 56 56 64-64v168ZM240-80q-33 0-56.5-23.5T160-160v-640q0-33 23.5-56.5T240-880h320l240 240v480q0 33-23.5 56.5T720-80H240Zm280-520v-200H240v640h480v-440H520ZM240-800v200-200 640-640Z"/>
+                  </svg>
+                  Choose a file
+                </label>
+                <span class="picked" id="cimport-picked"></span>
+              </div>
+              <div class="denom-actions" style="margin-top:12px">
+                <button type="button" class="btn ghost" id="cimport-check" disabled>Check the file</button>
+                <button type="button" class="btn primary" id="cimport-apply" disabled>Import customers</button>
+              </div>
+            </div>
+          </div>
+          <div id="cimport-result" class="card rd-card" hidden style="margin-top:var(--stack)">
+            <h3 id="cimport-result-title">What this file would do</h3>
+            <div id="cimport-summary"></div>
+            <div id="cimport-problems"></div>
           </div>
         </section>
 
@@ -2444,7 +2494,10 @@
               <h2>Customers</h2>
               <p class="muted small">A standing discount here is applied automatically when the customer is attached to a sale on the till.</p>
             </div>
-            <button class="btn primary" id="add-customer">Add customer</button>
+            <span style="display:flex;gap:8px">
+              <button class="btn ghost" id="import-customers">Import customers</button>
+              <button class="btn primary" id="add-customer">Add customer</button>
+            </span>
           </div>
 
           <!-- A membership year is renewed for everybody on one date, and doing
@@ -2887,6 +2940,15 @@
                 </label>
                 <p class="muted small">
                   Switch this off if your membership list is your record and only the venue should change it.
+                </p>
+                <label class="la-check">
+                  <input type="checkbox" id="la-members_only" />
+                  Paid-up members only
+                </label>
+                <p class="muted small">
+                  For a club. Only customers already on your list whose membership is paid up can sign in,
+                  and nobody new can join from the app. A member whose membership lapses is shut out until
+                  they renew. Add members under Customers, Memberships or Import.
                 </p>
               </div>
 
@@ -4152,6 +4214,8 @@
                 <h3>Card &amp; splitting</h3>
                 <label class="check"><input type="checkbox" data-tender="allow_partial_card"> Allow partial card payments</label>
                 <label class="check"><input type="checkbox" data-tender="allow_split_bill"> Allow bills to be split</label>
+                <label class="check"><input type="checkbox" data-tender="allow_empty_pay"> Open the payment screen on an empty check</label>
+                <p class="muted small" style="margin:4px 0 0 26px">An amount keyed there is rung up as a Quick sale, with a note of what it was for.</p>
               </div>
             </div>
             <div class="rd-preview-pane">

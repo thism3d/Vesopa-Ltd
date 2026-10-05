@@ -24,6 +24,17 @@ void main() {
     expect(x.minStock, 2.5);
   });
 
+  test('open price reads back, asking for a note unless told not to', () {
+    final asked = ProductExtras.decode(
+        ProductExtras.encodeFrom({'open_price': 1, 'is_weighted': 0}));
+    expect(asked.openPrice, isTrue);
+    expect(asked.openPriceNote, isTrue);
+    final quiet = ProductExtras.decode(
+        ProductExtras.encodeFrom({'open_price': 1, 'open_price_note': 0}));
+    expect(quiet.openPriceNote, isFalse);
+    expect(ProductExtras.none.openPrice, isFalse);
+  });
+
   test('an older server with none of them stores nothing', () {
     expect(ProductExtras.encodeFrom({'product_name': 'Crisps'}), isNull);
     expect(ProductExtras.decode(null).isWeighted, isFalse);

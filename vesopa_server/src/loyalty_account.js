@@ -21,6 +21,7 @@ const { callbackHost } = require('./loyalty_host');
 const idtoken = require('./vesopa_idtoken');
 const crypto = require('crypto');
 
+const gate = require('./loyalty_members_only');
 const express = require('express');
 
 const auth = require('./loyalty_auth');
@@ -285,6 +286,9 @@ module.exports = function loyaltyAccountRoutes(deps) {
         [app.office, String(claims.sub)]
       );
       if (!customer) customer = await customerByEmail(pool, app.office, email);
+      if (!customer && await gate.membersOnly(pool, app.office)) {
+        return res.status(403).json({ error: gate.NOT_LISTED, members_only: true });
+      }
       if (!customer) {
         const id = await joinScheme(pool, app.office, {
           name: cleanText(claims.name, 120) || email.split('@')[0],

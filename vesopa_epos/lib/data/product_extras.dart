@@ -51,6 +51,8 @@ class ProductExtras {
     this.supplierCode,
     this.minStock,
     this.maxStock,
+    this.openPrice = false,
+    this.openPriceNote = true,
   });
 
   final String? shortDescription;
@@ -68,12 +70,19 @@ class ProductExtras {
   final double? minStock;
   final double? maxStock;
 
+  /// The till asks what to charge each time it is rung ("Open Food").
+  final bool openPrice;
+
+  /// And asks what it was for, kept as the line's note.
+  final bool openPriceNote;
+
   static const none = ProductExtras();
 
   /// The keys the server sends, which are the keys stored.
   static const _keys = [
     'short_description', 'description', 'calories', 'may_contain', 'dietary',
     'is_weighted', 'manual_weight', 'supplier_code', 'min_stock', 'max_stock',
+    'open_price', 'open_price_note',
   ];
 
   /// What to store for one catalogue row: the fields it carries, as JSON, or
@@ -106,6 +115,10 @@ class ProductExtras {
         supplierCode: _s(m['supplier_code']),
         minStock: _d(m['min_stock']),
         maxStock: _d(m['max_stock']),
+        openPrice: _b(m['open_price']),
+        // On unless the venue turned it off: the point of an open price is
+        // knowing afterwards what the money was for.
+        openPriceNote: m['open_price_note'] == null || _b(m['open_price_note']),
       );
     } catch (_) {
       return none;

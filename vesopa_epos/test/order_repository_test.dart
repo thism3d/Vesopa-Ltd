@@ -50,6 +50,38 @@ void main() {
     expect(order.taxMinor, 42);
   });
 
+  test('an open price line charges what was typed, with its note, unmerged',
+      () async {
+    final id = await repo.openOrder();
+    await repo.addLine(id, coffee,
+        consolidate: false, notes: 'Kids meal', unitPriceMinor: 450);
+    await repo.addLine(id, coffee,
+        consolidate: false, notes: 'Extra chips', unitPriceMinor: 200);
+
+    final lines = await repo.watchLines(id).first;
+    expect(lines, hasLength(2));
+    expect(lines.map((l) => l.unitPriceMinor), containsAll([450, 200]));
+    expect(lines.map((l) => l.notes), containsAll(['Kids meal', 'Extra chips']));
+    expect((await repo.watchOrder(id).first).totalMinor, 650);
+  });
+
+  test('a quick sale on an empty check is a line the bill prices', () async {
+    final id = await repo.openOrder();
+    await repo.addQuickSale(id, amountMinor: 1200, note: 'Raffle');
+    final line = (await repo.watchLines(id).first).single;
+    expect(line.name, 'Quick sale');
+    expect(line.pluId, 0);
+    expect(line.notes, 'Raffle');
+    expect((await repo.watchOrder(id).first).totalMinor, 1200);
+
+    // With an open price product, the money lands on that product instead.
+    final other = await repo.openOrder();
+    await repo.addQuickSale(other, amountMinor: 300, note: 'Cake', as: cola);
+    final onCola = (await repo.watchLines(other).first).single;
+    expect(onCola.pluId, 2);
+    expect(onCola.unitPriceMinor, 300);
+  });
+
   test('tapping the same product twice bumps quantity, not line count', () async {
     final id = await repo.openOrder();
     await repo.addLine(id, coffee);
@@ -185,6 +217,11 @@ void main() {
       contains('void'),
       reason: 'the reversal should still be auditable',
     );
+    // And only once. The Z report's copy used to be queued as an 'event' the
+    // server refused, so the till showed "Syncing" for ever (2026-10-05).
+    expect(queued.where((e) => e.entity == 'event'), isEmpty);
+    expect(await db.select(db.tillEvents).get(), hasLength(1),
+        reason: 'the Z report still counts it');
   });
 
   test('a part payment leaves the sale open and unqueued', () async {

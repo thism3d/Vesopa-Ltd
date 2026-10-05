@@ -58,6 +58,7 @@ const loyaltyAccountRoutes = require('./loyalty_account');
 const { loyaltyDeletionRoutes } = require('./privacy_provider');
 const { appPath, appUrl, RESERVED, NOT_FOUND, LOYALTY_HOST } = require('./loyalty_host');
 const loyaltyEmail = require('./loyalty_email');
+const gate = require('./loyalty_members_only');
 
 const CODE_MINUTES = 10;
 const CODE_TRIES = 5;
@@ -596,6 +597,19 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
     req.office = claims.office;
     req.customerId = claims.cid;
     req.sessionId = claims.jti;
+    // A members-only app stops working for a member whose membership lapses,
+    // on the next call rather than at the next sign-in. Signing out stays
+    // possible, so the app can be left cleanly.
+    if (!req.path.endsWith('/signout')) {
+      try {
+        if (await gate.membersOnly(pool, req.office) && !await gate.paidUp(pool, req.office, req.customerId)) {
+          return res.status(403).json({ error: gate.NOT_PAID, members_only: true });
+        }
+      } catch (e) {
+        // Fail open: a database hiccup is not a reason to lock a member out.
+        console.warn('[loyalty] members-only check failed:', e.message);
+      }
+    }
     next();
   }
 
@@ -635,6 +649,7 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
       res.json({
         ...brand,
         signin,
+        members_only: await gate.membersOnly(pool, app.office).catch(() => false),
         push: {
           web: keys ? { vapid_public_key: keys.publicKey } : null,
           windows: !!(app.wns_package_sid && app.wns_secret_enc),
@@ -677,6 +692,22 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
       );
 
       const brand = await brandFor(pool, app.office, app);
+      // Members only: somebody who is not a paid-up member is emailed why,
+      // instead of a code. The page answers exactly as it would have.
+      if (await gate.membersOnly(pool, app.office)) {
+        const listed = await customerByEmail(pool, app.office, email);
+        if (!listed || !await gate.paidUp(pool, app.office, listed.id)) {
+          const note = loyaltyEmail.membersOnly(brand, { listed: !!listed });
+          sendMail({
+            to: email,
+            subject: `${brand.name}: the app is for paid-up members`,
+            text: note.text,
+            html: note.html,
+            account: process.env.MENU_SMTP_USER ? 'menu' : undefined,
+          }).catch(() => {});
+          return res.json({ ok: true, minutes: CODE_MINUTES });
+        }
+      }
       // The venue's own email, not a bare div: see src/loyalty_email.js for
       // why it is built out of tables and inline styles.
       const mail = loyaltyEmail.signInCode(brand, { code, minutes: CODE_MINUTES });
@@ -729,6 +760,9 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
       }
 
       let customer = await customerByEmail(pool, app.office, email);
+      if (!customer && await gate.membersOnly(pool, app.office)) {
+        return res.status(403).json({ error: gate.NOT_LISTED, members_only: true });
+      }
       if (!customer) {
         const name = cleanText(body.name, 120);
         if (!name) return res.status(409).json({ needs_name: true });
@@ -1241,6 +1275,7 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
       policy: loyaltyAuth.policyFor(app, await loyaltyAuth.methodsFor(pool, office)),
       policies: loyaltyAuth.POLICIES,
       self_service: !app || app.self_service == null ? true : Number(app.self_service) === 1,
+      members_only: !!(app && Number(app.members_only)),
     };
   }
 
@@ -1321,6 +1356,8 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
       if (b.self_service !== undefined) {
         values.self_service = (b.self_service === true || b.self_service === 1 || b.self_service === '1') ? 1 : 0;
       }
+      const membersOnly = b.members_only === undefined ? undefined
+        : (b.members_only === true || b.members_only === 1 || b.members_only === '1') ? 1 : 0;
 
       const cols = Object.keys(values);
       await pool.query(
@@ -1328,6 +1365,17 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
          ON DUPLICATE KEY UPDATE ${cols.map((c) => `${c} = VALUES(${c})`).join(', ')}`,
         [office, ...cols.map((c) => values[c])]
       );
+      // Its own statement, so a server without schema_loyalty_members_only.sql
+      // still saves everything else on the page.
+      if (membersOnly !== undefined) {
+        try {
+          await pool.execute('UPDATE epos_loyalty_app SET members_only = ? WHERE office = ?', [membersOnly, office]);
+        } catch (e) {
+          if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+          console.warn('[loyalty] schema_loyalty_members_only.sql has not run; members only not saved');
+        }
+        gate.forget(office);
+      }
 
       /*
        * The ways in, one row each.

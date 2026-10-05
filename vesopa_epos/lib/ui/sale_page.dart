@@ -339,10 +339,60 @@ class SalePage extends ConsumerWidget {
         return;
       }
 
+      // Open price ("Open Food"): ask what to charge, and what it was for.
+      // The product's own price, when it has one, is what the box opens with.
+      // Never merged, since two open items are two different things.
+      final extras = ProductExtras.decode(p.extras);
+      if (extras.openPrice) {
+        final listed = p.priceAt(ref.read(currentPriceLevelProvider));
+        final typed = await _fieldDialog(
+          context,
+          '${p.name}: how much?',
+          initial: listed > 0 ? (listed / 100).toStringAsFixed(2) : '',
+          hint: 'For example 4.50',
+          mode: PosKeyboardMode.decimal,
+        );
+        if (typed == null) return;
+        final pounds = double.tryParse(typed.trim().replaceAll('£', ''));
+        if (pounds == null || pounds <= 0) {
+          if (context.mounted) {
+            PosMessenger.error(context, 'Type the price, for example 4.50.');
+          }
+          return;
+        }
+        String? note;
+        if (extras.openPriceNote) {
+          if (!context.mounted) return;
+          final said = await _fieldDialog(
+            context,
+            'What is ${money((pounds * 100).round())} for?',
+            hint: 'For example Kids meal, table 4',
+          );
+          if (said == null) return;
+          note = said.trim();
+          if (note.isEmpty) {
+            if (context.mounted) {
+              PosMessenger.error(context, 'Say what it was for, so the bill makes sense later.');
+            }
+            return;
+          }
+        }
+        await repo.addLine(
+          orderId,
+          p,
+          addedBy: addedBy,
+          priceLevel: ref.read(currentPriceLevelProvider),
+          consolidate: false,
+          notes: note,
+          unitPriceMinor: (pounds * 100).round(),
+        );
+        return;
+      }
+
       // Sold by weight (set in the product's details): the price is per kg,
       // so ask the weight and ring it as the quantity. Never merged, since
       // two weighings are two different things.
-      if (ProductExtras.decode(p.extras).isWeighted) {
+      if (extras.isWeighted) {
         final typed = await _fieldDialog(
           context,
           '${p.name}: weight in kg',
@@ -694,6 +744,8 @@ class SalePage extends ConsumerWidget {
                         screenName: programmed?.name ?? 'Sale',
                         screenId: programmed?.id,
                         onSwitchOrder: onSwitchOrder,
+                        allowEmptyPay:
+                            ref.watch(tenderSettingsProvider).allowEmptyPay,
                       ),
                       onProduct: ring,
                       onPage: (target) =>
@@ -924,6 +976,8 @@ class SalePage extends ConsumerWidget {
                         screenName: programmed?.name ?? 'Sale',
                         screenId: programmed?.id,
                         onSwitchOrder: onSwitchOrder,
+                        allowEmptyPay:
+                            ref.watch(tenderSettingsProvider).allowEmptyPay,
                       ),
                       onProduct: ring,
                       onPage: (target) =>
@@ -947,7 +1001,11 @@ class SalePage extends ConsumerWidget {
                     // to charge it.
                     primaryValue: total == 0 ? null : money(total),
                     primaryIcon: Icons.credit_card,
-                    onPrimary: total == 0
+                    // An empty check is paid only where the venue allows it
+                    // (Settings › Tender): an amount keyed on the payment
+                    // screen is then rung up as a Quick sale.
+                    onPrimary: total == 0 &&
+                            !ref.watch(tenderSettingsProvider).allowEmptyPay
                         ? null
                         : () => Navigator.of(context).push(
                             MaterialPageRoute<void>(
@@ -1215,7 +1273,11 @@ class SalePage extends ConsumerWidget {
       // the method the stock bar's own PosAction calls, so a bar programmed in
       // an office cannot behave differently from the one beside it.
       case 'pay':
-        if (order == null || (order.totalMinor) == 0) return;
+        if (order == null) return;
+        if (order.totalMinor == 0 &&
+            !ref.read(tenderSettingsProvider).allowEmptyPay) {
+          return;
+        }
         await Navigator.of(context).push(
           MaterialPageRoute<void>(
             builder: (_) => PaymentPage(orderId: orderId, onSettled: onNewOrder),
@@ -1789,6 +1851,16 @@ class SalePage extends ConsumerWidget {
     );
   }
 }
+
+/// The sale screen's own field dialog, for the payment screen's Quick sale.
+Future<String?> askTillField(
+  BuildContext context,
+  String title, {
+  String initial = '',
+  String? hint,
+  PosKeyboardMode mode = PosKeyboardMode.text,
+}) =>
+    _fieldDialog(context, title, initial: initial, hint: hint, mode: mode);
 
 Future<int?> _numberDialog(BuildContext context, String title) async {
   final typed = await _fieldDialog(

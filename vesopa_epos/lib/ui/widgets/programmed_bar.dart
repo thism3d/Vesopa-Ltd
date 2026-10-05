@@ -34,6 +34,7 @@ class BarLive {
     required this.screenName,
     required this.onSwitchOrder,
     this.screenId,
+    this.allowEmptyPay = false,
   });
 
   final String currentOrderId;
@@ -48,6 +49,9 @@ class BarLive {
   final int? screenId;
 
   final void Function(String orderId) onSwitchOrder;
+
+  /// The venue lets Pay open the payment screen on an empty check.
+  final bool allowEmptyPay;
 }
 
 /// A venue's own top or bottom bar, drawn.
@@ -652,7 +656,8 @@ class _BarKey extends ConsumerWidget {
         // Pay carries what it is about to charge, on the key that charges it —
         // the one thing the built-in bar does that a plain label cannot, and
         // the reason a venue would otherwise have to keep the built-in bar.
-        final payable = key != 'pay' || live.totalMinor != 0;
+        final payable =
+            key != 'pay' || live.totalMinor != 0 || live.allowEmptyPay;
         // Off the sale screen there is no bill in front of the clerk, so a key
         // that acts on one is drawn and dimmed rather than fired. See
         // [ProgrammedBar.onSaleScreen].

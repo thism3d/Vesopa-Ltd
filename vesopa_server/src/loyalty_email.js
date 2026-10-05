@@ -119,4 +119,24 @@ function signInCode(brand, { code, minutes }) {
   return { html, text };
 }
 
-module.exports = { layout, signInCode, onColour, esc };
+/**
+ * A members-only app (src/loyalty_members_only.js) asked for a code by an
+ * address that is not a paid-up member. Sent instead of the code, so the page
+ * answers the same either way and a stranger learns nothing about who belongs.
+ */
+function membersOnly(brand, { listed }) {
+  const why = listed
+    ? 'Your membership is not paid up at the moment, so the app is switched off for you. Renew with the club and you can sign in again straight away.'
+    : 'This email address is not on the club’s list of paid-up members. If you are a member, ask the club to add this address to your membership, then try again.';
+  const html = layout(brand, {
+    preheader: 'The app is for paid-up members only.',
+    body: `
+      <p style="margin:0 0 12px 0;font-weight:700;">The ${esc(brand.name || 'club')} app is for paid-up members only.</p>
+      <p style="margin:0 0 18px 0;">${esc(why)}</p>`,
+    footerNote: 'If you did not try to sign in, you can ignore this email.',
+  });
+  const text = `The ${brand.name || 'club'} app is for paid-up members only.\n\n${why}`;
+  return { html, text };
+}
+
+module.exports = { layout, signInCode, membersOnly, onColour, esc };

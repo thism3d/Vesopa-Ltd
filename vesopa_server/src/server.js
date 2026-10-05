@@ -40,7 +40,7 @@ const {
   tillKitchenRoutes,
 } = require('./kitchen');
 const { screensRoutes, tillScreenRoutes, placeProductOnScreen } = require('./screens');
-const { saveProductExtras, PRODUCT_EXTRA_FIELDS } = require('./product_info');
+const { saveProductExtras, PRODUCT_EXTRA_FIELDS, OPEN_PRICE_FIELDS } = require('./product_info');
 const { cleanAllergens } = require('./allergens');
 const { screenScheduleRoutes } = require('./screen_schedules');
 const { dashboardLayoutRoutes } = require('./dashboard_layout');
@@ -55,6 +55,7 @@ const { gymRoutes } = require('./gym');
 const { moduleRoutes } = require('./modules');
 const { membershipRoutes, sendReminders } = require('./memberships');
 const { importRoutes } = require('./imports');
+const { customerImportRoutes } = require('./customer_import');
 const { reportRoutes, toPdf } = require('./reports');
 const { stockRoutes } = require('./stock');
 const {
@@ -412,6 +413,7 @@ app.use(expressKiosk);
 // Bringing a catalogue in from a spreadsheet. Mounted after the CRUD routes
 // it writes through, so nothing here can shadow /api/products.
 app.use('/api', importRoutes({ pool, broadcast, secret: JWT_SECRET }));
+app.use('/api', customerImportRoutes({ pool, broadcast, secret: JWT_SECRET }));
 
 // Reports a venue hands to its accountant, and the schedules that send them.
 // Dine-in: the QR menu a customer reads on their own phone, the orders they
@@ -496,6 +498,14 @@ app.post('/till/events', async (req, res, next) => {
   const ev = req.body;
   if (!ev || !ev.id || !ev.kind) {
     return res.status(400).json({ error: 'id and kind are required' });
+  }
+  // A void is the till's own Z-report copy of one it has already sent to
+  // /till/voids. Tills before 1.14 queued that copy here too, and refusing it
+  // with a 400 left it in the outbox for ever: the till showed "Syncing" with a
+  // count that grew by one with every void (Nicki, 2026-10-05). Taken and
+  // dropped, so those outboxes empty; the void itself is already recorded.
+  if (ev.kind === 'void') {
+    return res.status(200).json({ ok: true, recorded_as: 'void' });
   }
   if (!['refund', 'no_sale', 'expense', 'cashback'].includes(ev.kind)) {
     return res.status(400).json({ error: 'That is not a kind of till event.' });
@@ -2091,6 +2101,17 @@ app.get(['/till/products', '/products.json'], async (req, res, next) => {
         [office]
       );
       const byPlu = new Map(extra.map((r) => [Number(r.pluid), r]));
+      for (const r of rows) Object.assign(r, byPlu.get(Number(r.pluid)) || {});
+    } catch (e) {
+      if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+    }
+    // Open price (schema_open_price.sql), on its own for the same reason.
+    try {
+      const [open] = await pool.query(
+        `SELECT pluid, ${OPEN_PRICE_FIELDS.join(', ')} FROM bo_products WHERE email = ?`,
+        [office]
+      );
+      const byPlu = new Map(open.map((r) => [Number(r.pluid), r]));
       for (const r of rows) Object.assign(r, byPlu.get(Number(r.pluid)) || {});
     } catch (e) {
       if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;

@@ -105,7 +105,15 @@ const FIELDS = {
   manual_weight: onOff,
 };
 
-let warned = false;
+/**
+ * Open price (schema_open_price.sql): the till asks what to charge, and what
+ * it was for. Kept apart from FIELDS so a database without that migration
+ * still saves, and still hands the till, everything above.
+ */
+const OPEN_PRICE_FIELDS = {
+  open_price: onOff,
+  open_price_note: onOff,
+};
 
 /**
  * Write whichever of the extra fields the caller sent onto one product.
@@ -114,9 +122,17 @@ let warned = false;
  * an import that knows nothing about calories must not blank them.
  */
 async function saveProductExtras(pool, id, email, body) {
+  const main = await saveFields(pool, id, email, body, FIELDS, 'schema_product_wizard.sql');
+  const open = await saveFields(pool, id, email, body, OPEN_PRICE_FIELDS, 'schema_open_price.sql');
+  return main || open;
+}
+
+const warnedFor = new Set();
+
+async function saveFields(pool, id, email, body, fields, migration) {
   const sets = [];
   const values = [];
-  for (const [field, clean] of Object.entries(FIELDS)) {
+  for (const [field, clean] of Object.entries(fields)) {
     if (!body || body[field] === undefined) continue;
     sets.push(`${field} = ?`);
     values.push(clean(body[field]));
@@ -130,9 +146,9 @@ async function saveProductExtras(pool, id, email, body) {
     return true;
   } catch (e) {
     if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
-    if (!warned) {
-      warned = true;
-      console.warn('[products] schema_product_wizard.sql has not run; extra product fields not saved');
+    if (!warnedFor.has(migration)) {
+      warnedFor.add(migration);
+      console.warn(`[products] ${migration} has not run; those product fields were not saved`);
     }
     return false;
   }
@@ -145,4 +161,5 @@ module.exports = {
   cleanCalories,
   saveProductExtras,
   PRODUCT_EXTRA_FIELDS: Object.keys(FIELDS),
+  OPEN_PRICE_FIELDS: Object.keys(OPEN_PRICE_FIELDS),
 };
