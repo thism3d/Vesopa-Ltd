@@ -32,7 +32,7 @@ USER = "vesopasoftware"
 BACKOFFICE = f"/home/{USER}/web/backoffice.vesopaepos.com/private/nodeapp"
 SCHEMAS = ["schema_venue_modules.sql", "schema_memberships.sql", "schema_till_express_memberships.sql",
            "schema_memberships_collation.sql", "schema_open_price.sql",
-           "schema_loyalty_members_only.sql"]
+           "schema_loyalty_members_only.sql", "schema_admin_holds.sql"]
 PM2 = f"su - {USER} -c 'PM2_HOME=/home/{USER}/.pm2 pm2 {{}}'"
 
 def load_env_claude():

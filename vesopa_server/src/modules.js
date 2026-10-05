@@ -182,13 +182,19 @@ async function modulesFor(db, officeId, email) {
   const promos = rows && rows.some((r) => r.promo_id) ? await promosById(db) : {};
   const byKey = Object.fromEntries((rows || []).map((r) => [r.module, r]));
 
+  // Pauses and removals from admin.vesopa.com (admin_holds.js). Required here
+  // rather than at the top because admin_holds reads MODULES from this file.
+  const holds = email ? await require('./admin_holds').holdsFor(db, email).catch(() => ({})) : {};
+
   const out = [];
   for (const m of MODULES) {
     const row = byKey[m.key];
     const retired = !cat[m.key].active;
     // No table at all: only the gym survives, on its old manager-only rule.
     const granted = rows === null ? m.key === 'gym_door' : !!(row && Number(row.allowed));
-    const allowed = granted && !retired;
+    const hold = holds[`module:${m.key}`] || null;
+    // Through the grace day it still works; past it, it reads as not allowed.
+    const allowed = granted && !retired && !(hold && hold.stopped);
     const enabled = m.managerSwitch === 'gym'
       ? (email ? await gymSwitch(db, email) : false)
       : !!(row && Number(row.enabled));
@@ -212,6 +218,7 @@ async function modulesFor(db, officeId, email) {
       promo: promo ? { id: promo.id, code: promo.code, label: promoLabel(promo), applies: !!charged.promo } : null,
       allowed_at: row ? row.allowed_at : null,
       allowed_by: row ? row.allowed_by : null,
+      hold,
     });
   }
   return out;
@@ -351,7 +358,10 @@ async function setAllowed(db, officeId, changes, by) {
 async function moduleCharges(db, officeId, intervalUnit) {
   let list;
   try {
-    list = await modulesFor(db, officeId, null);
+    // With the email, so a module paused or removed past its grace day
+    // (admin_holds.js) reads as not allowed and drops off the invoice.
+    const [[o]] = await db.query('SELECT contact_email FROM offices WHERE id = ?', [officeId]).catch(() => [[null]]);
+    list = await modulesFor(db, officeId, o ? o.contact_email : null);
   } catch (e) {
     if (isMissingTable(e)) return { total: 0, detail: null };
     throw e;

@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const tillSeats = require('./till_seats');
@@ -129,12 +130,48 @@ function issueTerminalToken(user, secret, ttl = TERMINAL_TOKEN_TTL, seatId = nul
   );
 }
 
+/**
+ * admin.vesopa.com, calling the platform admin routes (2026-10-05).
+ *
+ * One caller, identified by ADMIN_SERVICE_KEY and compared in constant time,
+ * the way gift_integration.js admits the gift shop. It is admitted as the
+ * platform admin and ONLY under /api/admin: the key opens what Admin here
+ * already opens, through the same routes, so admin.vesopa.com changes a venue
+ * exactly the way this back office does (broadcasts, invoices and all) and
+ * never writes this database itself.
+ *
+ * The person acting is named in X-Vesopa-Admin, which admin.vesopa.com sets
+ * from its own signed-in session. It is recorded in allowed_by and the like;
+ * it grants nothing.
+ */
+function adminService(req, token) {
+  const expected = process.env.ADMIN_SERVICE_KEY || '';
+  if (expected.length < 32 || token.length !== expected.length) return null;
+  if (!crypto.timingSafeEqual(Buffer.from(token), Buffer.from(expected))) return null;
+  const url = String(req.originalUrl || req.url || '');
+  if (!/^\/api\/admin(?:[/?-]|$)/.test(url)) return null;
+  const who = String(req.headers['x-vesopa-admin'] || '').trim().toLowerCase().slice(0, 190);
+  return {
+    id: 0,
+    role: 'admin',
+    email: /^[^\s@]+@[^\s@]+$/.test(who) ? `${who} (admin.vesopa.com)` : 'admin.vesopa.com',
+    name: 'admin.vesopa.com',
+    via: 'admin.vesopa.com',
+  };
+}
+
 /** Express middleware: rejects anything without a valid bearer token. */
 function requireAuth(secret) {
   return (req, res, next) => {
     const header = req.headers.authorization || '';
     const token = header.startsWith('Bearer ') ? header.slice(7) : null;
     if (!token) return res.status(401).json({ error: 'Not signed in' });
+
+    const service = adminService(req, token);
+    if (service) {
+      req.user = service;
+      return next();
+    }
 
     try {
       const claims = jwt.verify(token, secret);

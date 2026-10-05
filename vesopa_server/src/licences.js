@@ -119,6 +119,9 @@ function newKey(kind) {
  * copies it across has not run.
  */
 async function limitFor(db, office, kind) {
+  // Paused or removed from admin.vesopa.com, and past its grace day: no seats,
+  // so no new device of this kind signs in. See admin_holds.js.
+  if (await require('./admin_holds').stopped(db, office, kind)) return 0;
   try {
     const [[row]] = await db.query(
       'SELECT seats FROM bo_licence_limits WHERE office = ? AND kind = ?',
@@ -314,11 +317,24 @@ async function stateFor(pool, office, kind) {
     }
   }
 
+  // A pause or removal from admin.vesopa.com. Unlike a lapsed subscription it
+  // locks whether or not the venue was made lockable: somebody at Vesopa chose
+  // to stop it, and the grace day was the warning. Through the grace it reads
+  // as lapsing, so the apps' existing warning shows, with `notice` saying why.
+  const holds = require('./admin_holds');
+  const hold = await holds.holdFor(pool, office, kind);
+  if (hold) {
+    if (hold.stopped) locked = true;
+    else renewBy = hold.graceUntil;
+  }
+
   return {
     kind,
     label: LABELS[kind] || kind,
     locked,
     lockable,
+    paused: hold ? hold.state : null,
+    notice: hold ? holds.notice(hold, LABELS[kind] || kind) : null,
     status,
     endsAt: endsAt ? endsAt.toISOString() : null,
     renewBy,

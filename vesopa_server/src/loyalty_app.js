@@ -160,6 +160,9 @@ async function appBySlug(db, slug) {
     'SELECT * FROM epos_loyalty_app WHERE slug = ? AND enabled = 1',
     [String(slug).toLowerCase()]
   );
+  // Paused or removed from admin.vesopa.com and past its grace day: the app
+  // answers as if it were switched off. See admin_holds.js.
+  if (row && (await require('./admin_holds').stopped(db, row.office, 'loyalty_app'))) return null;
   return row || null;
 }
 
@@ -604,6 +607,9 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
       try {
         if (await gate.membersOnly(pool, req.office) && !await gate.paidUp(pool, req.office, req.customerId)) {
           return res.status(403).json({ error: gate.NOT_PAID, members_only: true });
+        }
+        if (await require('./admin_holds').stopped(pool, req.office, 'loyalty_app')) {
+          return res.status(403).json({ error: 'This app is not available at the moment. Please ask the venue.', paused: true });
         }
       } catch (e) {
         // Fail open: a database hiccup is not a reason to lock a member out.
