@@ -105,6 +105,12 @@ CALL vesopa_add_column('epos_loyalty_schemes', 'description', 'VARCHAR(500) NULL
 -- customer becomes a member by joining a plan, which sets 'active'.
 CALL vesopa_add_column('epos_customers', 'membership_status',
   "VARCHAR(12) NOT NULL DEFAULT ''");
+-- Read by every member list (MEMBER_COLUMNS) but added by older schema files
+-- a database may never have had applied; same types, so a no-op where they ran.
+CALL vesopa_add_column('epos_customers', 'scheme_id', 'INT NULL');
+CALL vesopa_add_column('epos_customers', 'member_no', 'INT UNSIGNED NULL');
+CALL vesopa_add_column('epos_customers', 'photo_url', 'VARCHAR(500) NULL');
+CALL vesopa_add_column('epos_customers', 'vesopa_sub', 'VARCHAR(64) NULL');
 CALL vesopa_add_column('epos_customers', 'joined_on', 'DATE NULL');
 -- The member who pays, for somebody on their family plan. NULL for the payer
 -- and for everybody on a single plan.
