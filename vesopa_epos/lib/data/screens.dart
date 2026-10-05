@@ -530,6 +530,32 @@ class ScreenSet {
     return surfaceById(own, surface) ?? surfaceById(venueDefault, surface);
   }
 
+  /// Whether a clerk on [screen] can already see a key back to [homeId].
+  ///
+  /// The till's own "Back to …" strip exists so a layout without a way home
+  /// does not strand anybody. A venue that put its page keys on every page
+  /// (Nicki's rail of DRAUGHTS, BOTTLES, SPIRITS…) already has one, and there
+  /// the strip only moves the grid down a row each time the page changes,
+  /// which she found confusing (2026-10-05). So it shows only when needed.
+  bool reachesHome(
+    TillScreen screen,
+    int? homeId, {
+    TillScreen? top,
+    TillScreen? bottom,
+  }) {
+    // No programmed home means the built-in grid, which no page key opens.
+    if (homeId == null) return false;
+    for (final s in [screen, top, bottom]) {
+      if (s == null) continue;
+      for (final b in s.buttons) {
+        if (b.kind == ScreenButtonKind.page && b.targetScreenId == homeId) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   factory ScreenSet.fromJson(Map<String, dynamic> j) => ScreenSet(
     ((j['screens'] as List?) ?? const [])
         .cast<Map<String, dynamic>>()

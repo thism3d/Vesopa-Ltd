@@ -648,8 +648,15 @@ class SalePage extends ConsumerWidget {
                       // venue's on purpose. A layout that forgot to include a
                       // button home would otherwise strand a clerk on a page of
                       // mixers, and "add a button" is not a fix anybody can
-                      // apply from behind a counter.
-                      if (programmed.id != settings.homeScreenId)
+                      // apply from behind a counter. Only when the page has
+                      // no key home of its own, though: see reachesHome.
+                      if (programmed.id != settings.homeScreenId &&
+                          !screenSet.reachesHome(
+                            programmed,
+                            settings.homeScreenId,
+                            top: topBar,
+                            bottom: bottomBar,
+                          ))
                         _ScreenCrumb(
                           name: programmed.name,
                           homeName: home?.name,

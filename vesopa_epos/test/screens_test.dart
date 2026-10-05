@@ -257,4 +257,39 @@ void main() {
       expect(button.imageUrl, isNull);
     });
   });
+
+  group("the till's Back strip", () {
+    TillScreen page(int id, List<ScreenButton> buttons) =>
+        TillScreen(id: id, name: 'P$id', buttons: buttons);
+    const toHome = ScreenButton(
+      row: 0,
+      col: 5,
+      kind: ScreenButtonKind.page,
+      targetScreenId: 1,
+    );
+    const toOther = ScreenButton(
+      row: 0,
+      col: 5,
+      kind: ScreenButtonKind.page,
+      targetScreenId: 3,
+    );
+
+    test('is not needed on a page with its own key home', () {
+      final bottles = page(2, [toHome]);
+      expect(ScreenSet([page(1, []), bottles]).reachesHome(bottles, 1), isTrue);
+    });
+
+    test('is not needed when a bar carries the key home', () {
+      final bar = page(9, [toHome]);
+      expect(ScreenSet.empty.reachesHome(page(2, []), 1, bottom: bar), isTrue);
+    });
+
+    test('still shows on a page that would strand the clerk', () {
+      expect(ScreenSet.empty.reachesHome(page(2, [toOther]), 1), isFalse);
+    });
+
+    test('still shows when home is the built-in grid', () {
+      expect(ScreenSet.empty.reachesHome(page(2, [toHome]), null), isFalse);
+    });
+  });
 }
