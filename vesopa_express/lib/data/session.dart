@@ -230,6 +230,11 @@ final kioskSessionProvider = NotifierProvider<KioskSession, KioskState>(KioskSes
 /// carries on either way. A licence lookup failing must never be why a
 /// customer standing at a screen cannot order.
 final kioskLicenceProvider = FutureProvider<LicenceState?>((ref) async {
+  // Asked again every few minutes while the app runs, so a pause from
+  // admin.vesopa.com shows its notice, and locks when its day is up, without
+  // anybody restarting anything. `.value` keeps the last answer meanwhile.
+  final recheck = Timer(licenceRecheckEvery, ref.invalidateSelf);
+  ref.onDispose(recheck.cancel);
   // The token lives on the API client, not on the state -- the state is what
   // the screen shows, and a credential is not that. Watched through the session
   // so a kiosk that has just been commissioned asks again with its new one.

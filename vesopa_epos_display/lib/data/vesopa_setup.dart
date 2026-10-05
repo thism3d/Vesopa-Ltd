@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -210,6 +211,11 @@ Future<DisplayCommission> commission({
 /// treats null as "carry on": a licence lookup failing must never be why a
 /// customer sees a blank screen across a counter.
 final displayLicenceProvider = FutureProvider<LicenceState?>((ref) async {
+  // Asked again every few minutes while the app runs, so a pause from
+  // admin.vesopa.com shows its notice, and locks when its day is up, without
+  // anybody restarting anything. `.value` keeps the last answer meanwhile.
+  final recheck = Timer(licenceRecheckEvery, ref.invalidateSelf);
+  ref.onDispose(recheck.cancel);
   final commission = await ref.watch(commissionProvider.future);
   if (commission == null) return null;
   return fetchLicence(apiBase: displayApiBase, token: commission.token);

@@ -25,6 +25,8 @@ class LicenceState {
     this.keyPrefix,
     this.keyLabel,
     this.device,
+    this.paused,
+    this.notice,
   });
 
   /// What this product is called, from the server, so the wording is the same
@@ -61,8 +63,18 @@ class LicenceState {
   /// The machine the key is registered to.
   final String? device;
 
+  /// `paused` or `removed` when Vesopa has held this product for the venue
+  /// from admin.vesopa.com, else null. While the grace day runs `renewBy` is
+  /// set as for a lapse; when it ends the server says `locked`.
+  final String? paused;
+
+  /// The sentence to show about that hold, worded by the server ("Till has
+  /// been paused and stops at Tue 6 Oct, 09:00. Please contact Vesopa.").
+  final String? notice;
+
   bool get hasSubscription => status != null;
   bool get lapsing => renewBy != null;
+  bool get held => paused != null;
 
   static DateTime? _date(Object? raw) {
     if (raw is! String || raw.isEmpty) return null;
@@ -81,9 +93,16 @@ class LicenceState {
       keyPrefix: key?['prefix'] as String?,
       keyLabel: key?['label'] as String?,
       device: j['device'] as String?,
+      paused: j['paused'] as String?,
+      notice: j['notice'] as String?,
     );
   }
 }
+
+/// How often a running app asks again. A pause from admin.vesopa.com gives the
+/// venue a day, so a few minutes is soon enough to show its notice, and to lock
+/// when the day is up, without asking the back office more than it needs.
+const licenceRecheckEvery = Duration(minutes: 5);
 
 /// Ask the back office about this device's licence.
 ///

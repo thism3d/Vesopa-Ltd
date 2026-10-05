@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'licence.dart';
@@ -75,6 +77,11 @@ final allergenLabelsProvider = FutureProvider<Map<String, String>>((ref) async {
 /// screen carries on either way. A licence lookup failing must never be why a
 /// kitchen loses the orders it is cooking.
 final kitchenLicenceProvider = FutureProvider<LicenceState?>((ref) async {
+  // Asked again every few minutes while the app runs, so a pause from
+  // admin.vesopa.com shows its notice, and locks when its day is up, without
+  // anybody restarting anything. `.value` keeps the last answer meanwhile.
+  final recheck = Timer(licenceRecheckEvery, ref.invalidateSelf);
+  ref.onDispose(recheck.cancel);
   final api = ref.watch(kitchenApiProvider);
   return fetchLicence(apiBase: api.apiBase, token: api.token ?? '');
 });

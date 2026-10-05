@@ -40,7 +40,7 @@ import 'ui/theme.dart';
 ///
 /// See `data/deep_links.dart` for the scheme and why it is reverse DNS.
 /// This build's version, for the activity log. Keep in step with pubspec.yaml.
-const displayAppVersion = '1.6.15.0';
+const displayAppVersion = '1.6.16.0';
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();

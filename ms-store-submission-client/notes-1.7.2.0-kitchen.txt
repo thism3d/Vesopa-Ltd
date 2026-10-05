@@ -1,0 +1,3 @@
+Version 1.7.2.0 - Vesopa notices
+
+If Vesopa pauses the kitchen screen for your venue, a strip across the top of the board now says so, and when it stops. The screen checks every few minutes and unlocks by itself when Vesopa turns it back on.

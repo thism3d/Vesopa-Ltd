@@ -1,0 +1,3 @@
+Version 1.0.9.0 - Vesopa notices
+
+If Vesopa pauses the kiosk for your venue, the Licence section in Settings now says so, and when it stops. Customers never see it. The kiosk checks every few minutes and unlocks by itself when Vesopa turns it back on.

@@ -95,7 +95,7 @@ class LicencePanel extends StatelessWidget {
         // The warning, and only while there is something to warn about. A
         // renewal notice that is always on screen is a notice nobody reads on
         // the day it matters.
-        if (s.lapsing) ...[
+        if (s.lapsing || s.notice != null) ...[
           const SizedBox(height: 14),
           Container(
             padding: const EdgeInsets.all(12),
@@ -103,9 +103,12 @@ class LicencePanel extends StatelessWidget {
               color: theme.colorScheme.errorContainer,
               borderRadius: BorderRadius.circular(8),
             ),
+            // A hold from Vesopa is not a subscription that ended, and
+            // "please renew" would send a manager to the wrong place.
             child: Text(
-              'This subscription has ended. ${s.label} keeps working until '
-              '${_day(s.renewBy!)}, then it will stop. Please renew it.',
+              s.notice ??
+                  'This subscription has ended. ${s.label} keeps working until '
+                      '${_day(s.renewBy!)}, then it will stop. Please renew it.',
               style: TextStyle(color: theme.colorScheme.onErrorContainer),
             ),
           ),
@@ -201,20 +204,28 @@ class LicenceLockedPage extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('${state.label} is locked', style: theme.textTheme.headlineMedium),
+                Text(
+                  state.held
+                      ? '${state.label} is ${state.paused == 'removed' ? 'removed' : 'paused'}'
+                      : '${state.label} is locked',
+                  style: theme.textTheme.headlineMedium,
+                ),
                 const SizedBox(height: 14),
                 Text(
-                  'This venue\'s subscription for ${state.label.toLowerCase()} has ended, '
-                  'so it can no longer be used.',
+                  state.notice ??
+                      'This venue\'s subscription for ${state.label.toLowerCase()} has ended, '
+                          'so it can no longer be used.',
                   style: theme.textTheme.bodyLarge,
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  'Renew it in the Vesopa back office, or contact Vesopa. '
-                  'This screen unlocks itself as soon as the subscription is active again.',
+                  state.held
+                      ? 'This screen unlocks itself as soon as Vesopa turns it back on.'
+                      : 'Renew it in the Vesopa back office, or contact Vesopa. '
+                          'This screen unlocks itself as soon as the subscription is active again.',
                   style: theme.textTheme.bodyMedium,
                 ),
-                if (state.endsAt != null) ...[
+                if (state.endsAt != null && !state.held) ...[
                   const SizedBox(height: 10),
                   Text(
                     'Ended ${LicencePanel._day(state.endsAt!)}.',
@@ -227,6 +238,49 @@ class LicenceLockedPage extends StatelessWidget {
                 ],
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A strip along the top of a staff screen while Vesopa has paused or removed
+/// this product: through its grace day, and on the till until the bill on
+/// screen is finished.
+///
+/// Only on screens staff work at (the till, the kitchen). A customer display or
+/// a kiosk shows it in its settings instead: "paused, contact Vesopa" is for
+/// the venue, not for somebody buying a coffee.
+class LicenceNoticeStrip extends StatelessWidget {
+  const LicenceNoticeStrip({required this.state, super.key});
+
+  final LicenceState? state;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = state;
+    // Also while locked: the till holds its lock until the bill on screen is
+    // paid or parked, and says why meanwhile.
+    if (s == null || s.notice == null) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.errorContainer,
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: [
+              Icon(Icons.pause_circle_outline, size: 20, color: theme.colorScheme.onErrorContainer),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  s.notice!,
+                  style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onErrorContainer),
+                ),
+              ),
+            ],
           ),
         ),
       ),

@@ -689,7 +689,16 @@ class _PosShellState extends ConsumerState<PosShell> {
      * lose its till because a licence lookup timed out.
      */
     final licence = ref.watch(licenceProvider).value;
-    if (licence != null && licence.locked) {
+    // A product Vesopa paused locks between sales, never in the middle of
+    // one: the bill on screen is a customer at the counter, and it is paid or
+    // parked first. Only watched once locked, so a sale does not rebuild this.
+    final onScreen = _orderId;
+    final midSale = licence != null &&
+        licence.locked &&
+        licence.held &&
+        onScreen != null &&
+        (ref.watch(orderLinesProvider(onScreen)).value?.isNotEmpty ?? false);
+    if (licence != null && licence.locked && !midSale) {
       return LicenceLockedPage(
         state: licence,
         onRetry: () => ref.invalidate(licenceProvider),
@@ -865,6 +874,7 @@ class _PosShellState extends ConsumerState<PosShell> {
           drawer: drawer,
           body: Column(
             children: [
+              LicenceNoticeStrip(state: licence),
               if (training) const TrainingBar(),
               ?topBar,
               Expanded(child: body),
@@ -880,6 +890,7 @@ class _PosShellState extends ConsumerState<PosShell> {
         drawer: drawer,
         body: Column(
           children: [
+            LicenceNoticeStrip(state: licence),
             if (training) const TrainingBar(),
             ?topBar,
             Expanded(

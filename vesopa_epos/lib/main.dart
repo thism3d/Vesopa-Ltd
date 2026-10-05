@@ -491,6 +491,11 @@ final sessionProvider = Provider<Session>((ref) {
 /// treats null as "carry on": a licence lookup failing must never be why a
 /// venue cannot trade.
 final licenceProvider = FutureProvider<LicenceState?>((ref) async {
+  // Asked again every few minutes while the app runs, so a pause from
+  // admin.vesopa.com shows its notice, and locks when its day is up, without
+  // anybody restarting anything. `.value` keeps the last answer meanwhile.
+  final recheck = Timer(licenceRecheckEvery, ref.invalidateSelf);
+  ref.onDispose(recheck.cancel);
   final session = ref.watch(sessionProvider);
   return fetchLicence(
     apiBase: ref.watch(apiBaseProvider),

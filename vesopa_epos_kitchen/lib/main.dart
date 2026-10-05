@@ -50,7 +50,7 @@ Future<void> _lockWindowToKiosk() async {
 }
 
 /// This build's version, for the activity log. Keep in step with pubspec.yaml.
-const kitchenAppVersion = '1.7.1.0';
+const kitchenAppVersion = '1.7.2.0';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -202,6 +202,14 @@ class _LicensedShell extends ConsumerWidget {
     final office = ref.watch(kitchenSessionProvider).value?.office ?? '';
     // Keyed on the office, as before: signing into a different venue builds a
     // fresh shell rather than handing the new venue's board to the old state.
-    return KitchenShell(key: ValueKey(office));
+    // Vesopa's pause notice, while its grace day runs, across the top of the
+    // board, where the chefs and the manager will see it. Always the same
+    // tree, so the notice arriving does not rebuild the board under them.
+    return Column(
+      children: [
+        LicenceNoticeStrip(state: licence),
+        Expanded(child: KitchenShell(key: ValueKey(office))),
+      ],
+    );
   }
 }
