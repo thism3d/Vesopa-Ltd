@@ -11,6 +11,10 @@ const nodemailer = require('nodemailer');
 
 const FROM_NAME = process.env.MAIL_FROM_NAME || 'Vesopa EPOS';
 const FROM = process.env.MAIL_FROM || 'support@vesopaepos.com';
+// Where answers go when a message names nobody else. Set alongside MAIL_FROM
+// when that is a no-reply address (2026-10-05: the relay refuses vesopaepos.com
+// senders, so live sends as no-reply@vesopa.com, as auth.vesopa.com does).
+const REPLY_TO = process.env.MAIL_REPLY_TO || '';
 
 /**
  * More than one mailbox.
@@ -124,7 +128,7 @@ async function sendMail({ to, cc, replyTo, subject, html, text, attachments, acc
       from: `"${fromName}" <${fromAddress}>`,
       to,
       ...(cc ? { cc } : {}),
-      ...(replyTo ? { replyTo } : {}),
+      ...(replyTo || REPLY_TO ? { replyTo: replyTo || REPLY_TO } : {}),
       subject,
       html,
       ...(text ? { text } : {}),
