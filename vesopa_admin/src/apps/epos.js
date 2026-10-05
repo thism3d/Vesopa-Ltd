@@ -23,4 +23,8 @@ module.exports = {
   holds: (id, as) => get(`/offices/${Number(id)}/holds`, as),
   setHold: (id, item, body, as) => put(`/offices/${Number(id)}/holds/${encodeURIComponent(item)}`, body, as),
   setStatus: (id, status, reason, as) => post(`/offices/${Number(id)}/status`, { status, reason }, as),
+  // Which version of each Windows app a venue runs (src/app_updates.js there).
+  appVersions: (app, as) => get(`/app-versions?app=${encodeURIComponent(app)}`, as),
+  setAppVersion: (app, body, as) => put(`/app-versions/${encodeURIComponent(app)}`, body, as),
+  setAppUpdates: (enabled, as) => put('/app-versions-settings', { enabled: !!enabled }, as),
 };

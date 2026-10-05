@@ -1,8 +1,13 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
 
 import 'data/activity_log.dart';
+import 'data/app_update.dart';
 import 'data/api.dart';
 import 'data/session.dart';
 import 'ui/home.dart';
@@ -16,10 +21,13 @@ import 'ui/venue_picker.dart';
 /// office), so a venue's app is theirs without a build of its own. See
 /// data/session.dart for how the app knows which venue it is.
 /// This build's version, for the activity log. Keep in step with pubspec.yaml.
-const loyaltyAppVersion = '1.0.9.0';
+const loyaltyAppVersion = '1.0.10.0';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // An update somebody chose to take "On next start" runs now, before
+  // anything else opens (data/app_update.dart). Returns at once otherwise.
+  await Updater.applyPending(loyaltyAppVersion);
   // The activity log: taps, screens and errors, to the back office's Activity
   // Log once the customer is signed in (and to a local file off the web). The
   // server fills in the venue and the customer from the sign-in token.
@@ -88,6 +96,27 @@ class LoyaltyApp extends ConsumerWidget {
   }
 }
 
+/// The version every member's copy is set to on admin.vesopa.com (Versions),
+/// when it is not this one. Loyalty has no venue credential, so it asks the
+/// open check rather than the licence one, every half hour, and only a copy
+/// from our own installer ever asks (a Store copy is updated by the Store).
+final loyaltyUpdateProvider = FutureProvider<AppUpdate?>((ref) async {
+  final recheck = Timer(const Duration(minutes: 30), ref.invalidateSelf);
+  ref.onDispose(recheck.cancel);
+  if (kIsWeb) return null;
+  final me = await Installation.current(loyaltyAppVersion);
+  if (!me.updatable) return null;
+  try {
+    final res = await http
+        .get(Uri.parse('${AppConfig.apiBase}/loyalty/v1/app-update'), headers: me.headers)
+        .timeout(const Duration(seconds: 10));
+    if (res.statusCode != 200) return null;
+    return AppUpdate.fromJson((jsonDecode(res.body) as Map<String, dynamic>)['update']);
+  } catch (_) {
+    return null;
+  }
+});
+
 /// Signed in or not.
 class _Gate extends ConsumerWidget {
   const _Gate();
@@ -95,6 +124,9 @@ class _Gate extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final session = ref.watch(sessionProvider);
+    ref.listen(loyaltyUpdateProvider, (_, next) {
+      unawaited(offerUpdate(context, update: next.value, appName: 'this app', builtVersion: loyaltyAppVersion));
+    });
     /*
      * SIGNED OUT OF THE STORE APP MEANS BACK TO CONTINUE WITH VESOPA.
      *

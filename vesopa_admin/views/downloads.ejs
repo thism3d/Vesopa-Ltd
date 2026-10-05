@@ -1,0 +1,47 @@
+<%- include('_top') %>
+<% if (error) { %><div class="flash bad">The release list could not be read: <%= error %></div><% } %>
+<p class="muted lead">Our own Windows installers, beside the Microsoft Store. Every version stays here, so moving a till back is installing an older one over it. A copy installed from here and a Store copy are separate apps: install one or the other on a machine, and let a till sync its sales before switching.</p>
+<% for (const a of apps) { const rows = byApp[a.key] || []; %>
+<section class="card flush">
+  <h2 class="pad"><%= a.label %></h2>
+  <% if (!rows.length) { %>
+    <p class="pad muted">No installer yet. Build one on the PC with <code>tool\build-installers.ps1 -Apps <%= a.key %> -Publish</code>.</p>
+    <div class="pad"></div>
+  <% } else { %>
+  <table class="list">
+    <thead><tr><th>Version</th><th>Added</th><th>Size</th><th>Signed</th><th></th></tr></thead>
+    <tbody>
+    <% rows.forEach((r, i) => { %>
+      <tr class="<%= r.withdrawn_at ? 'failed' : '' %>">
+        <td><b><%= r.version %></b><% if (i === 0 && !r.withdrawn_at) { %> <span class="pill green">newest</span><% } %><% if (r.withdrawn_at) { %> <span class="pill grey">hidden</span><% } %>
+          <% if (r.notes) { %><small class="muted block"><%= r.notes %></small><% } %></td>
+        <td><%= when(r.added_at) %><small class="muted block"><%= r.added_by || '' %></small></td>
+        <td class="nowrap"><%= size(r.size) %></td>
+        <td><% if (r.signed) { %><span class="pill green">Vesopa</span><% } else { %><span class="pill amber" title="Windows shows an unknown publisher warning: More info, then Run anyway">unsigned</span><% } %></td>
+        <td class="nowrap">
+          <a class="btn primary" href="/downloads/<%= r.id %>">Download</a>
+          <% if (can('versions.manage')) { %>
+          <form method="post" action="/downloads/<%= r.id %>" class="inline">
+            <input type="hidden" name="_csrf" value="<%= me.csrf %>">
+            <input type="hidden" name="action" value="<%= r.withdrawn_at ? 'restore' : 'withdraw' %>">
+            <button class="link" type="submit" <% if (!r.withdrawn_at) { %>data-confirm="Hide <%= a.short %> <%= r.version %> from this list? The file stays, and venues already set to it keep it."<% } %>><%= r.withdrawn_at ? 'Put back' : 'Hide' %></button>
+          </form>
+          <% } %>
+        </td>
+      </tr>
+    <% }) %>
+    </tbody>
+  </table>
+  <% } %>
+</section>
+<% } %>
+<details class="card help">
+  <summary><b>Installing on a till</b></summary>
+  <ol>
+    <li>Download the version above on the till itself and open it.</li>
+    <li>If Windows says it protected the PC, choose <b>More info</b>, then <b>Run anyway</b>. That goes away once our installers are signed.</li>
+    <li>It installs for the Windows user signed in, with no administrator password, and adds a Start menu and desktop shortcut.</li>
+    <li>To move a till up or down, run another version's installer over it. The till's data and sign-in are kept.</li>
+  </ol>
+</details>
+<%- include('_bottom') %>

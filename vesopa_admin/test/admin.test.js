@@ -127,6 +127,27 @@ test('admin.vesopa.com end to end', async (t) => {
     res.json({ ok: true, hold: holds[req.params.item] });
   });
   eposApp.get('/api/admin/modules', (_req, res) => res.json([{ key: 'memberships', label: 'Memberships', price_minor: 2900, active: true, venues: 0 }]));
+  // Versions (2026-10-05): what the back office holds, and what it was sent.
+  const pins = [];
+  let updatesOn = false;
+  eposApp.get('/api/admin/app-versions', (req, res) => res.json({
+    enabled: updatesOn, pins: pins.filter((p) => p.app === req.query.app),
+    devices: [
+      { office_id: 7, app: 'till', device_id: 'PC-1', device_name: 'Bar till', version: '1.14.2', install: 'direct', last_seen_at: new Date().toISOString() },
+      { office_id: 7, app: 'till', device_id: 'PC-2', device_name: 'Back till', version: '1.14.1', install: 'direct', last_seen_at: new Date().toISOString() },
+    ].filter((d) => d.app === req.query.app),
+  }));
+  eposApp.put('/api/admin/app-versions/:app', (req, res) => {
+    const b = req.body;
+    const offices = b.offices === 'default' ? ['default'] : b.offices;
+    for (const o of offices) {
+      const i = pins.findIndex((p) => p.app === req.params.app && (o === 'default' ? p.default : p.office_id === o));
+      if (i >= 0) pins.splice(i, 1);
+      if (!b.clear) pins.push({ app: req.params.app, default: o === 'default', office_id: o === 'default' ? null : o, version: b.version, url: b.url, sha256: b.sha256 });
+    }
+    res.json({ ok: true });
+  });
+  eposApp.put('/api/admin/app-versions-settings', (req, res) => { updatesOn = req.body.enabled; res.json({ ok: true, enabled: updatesOn }); });
   const eposServer = await listen(eposApp);
 
   const giftAsked = [];
@@ -142,6 +163,7 @@ test('admin.vesopa.com end to end', async (t) => {
     EPOS_API: `http://127.0.0.1:${eposServer.address().port}`, EPOS_SERVICE_KEY: KEY,
     GIFT_API: `http://127.0.0.1:${giftServer.address().port}`, GIFT_SERVICE_KEY: GKEY,
     HOSTING_SERVICE_KEY: '', SMTP_HOST: '', OWNER_EMAIL: 'info@vesopasoftware.com',
+    RELEASES_DIR: fs.mkdtempSync(path.join(require('os').tmpdir(), 'releases-')), RELEASES_SECRET: 's'.repeat(40),
   });
   const db = require('../src/db');
   const { build } = require('../src/server');
@@ -253,6 +275,80 @@ test('admin.vesopa.com end to end', async (t) => {
       assert.strictEqual(await scheduler.dailySummary(new Date('2026-10-06T05:00:00Z')), false, 'not before eight');
       assert.strictEqual(await scheduler.dailySummary(morning), true);
       assert.strictEqual(await scheduler.dailySummary(morning), false, 'once');
+    });
+    await t.test('an installer added on the box shows on Downloads and downloads for an admin', async () => {
+      const releases = require('../src/releases');
+      const src = path.join(require('os').tmpdir(), 'VesopaEPOS-Setup-1.15.0.exe');
+      fs.writeFileSync(src, 'MZ pretend installer');
+      const r = await releases.add({ app: 'till', version: '1.15.0.0', source: src, signed: true, by: 'pc' });
+      assert.strictEqual(r.version, '1.15.0');
+      assert.strictEqual(r.sha256, crypto.createHash('sha256').update('MZ pretend installer').digest('hex'));
+      await assert.rejects(releases.add({ app: 'till', version: '1.15.0', source: src }), /already there/);
+      await assert.rejects(releases.add({ app: 'spaceship', version: '1.0.0', source: src }), /No app called/);
+      const older = path.join(require('os').tmpdir(), 'VesopaEPOS-Setup-1.14.2.exe');
+      fs.writeFileSync(older, 'MZ older');
+      await releases.add({ app: 'till', version: '1.14.2', source: older });
+
+      const page = await call(server, 'GET', '/downloads', { cookie: owner.cookie });
+      assert.strictEqual(page.status, 200, page.text.slice(0, 300));
+      assert.ok(page.text.indexOf('<b>1.15.0</b>') < page.text.indexOf('<b>1.14.2</b>'), 'newest first');
+      assert.match(page.text, /unsigned/);
+      const file = await call(server, 'GET', `/downloads/${r.id}`, { cookie: owner.cookie });
+      assert.strictEqual(file.status, 200);
+      assert.strictEqual(file.text, 'MZ pretend installer');
+      assert.match(file.headers['content-disposition'], /VesopaEPOS-Setup-1\.15\.0\.exe/);
+      const [row] = await db.all("SELECT * FROM adm_audit WHERE action = 'release.download'");
+      assert.strictEqual(row.item, 'till:1.15.0');
+
+      const signedOut = await call(server, 'GET', `/downloads/${r.id}`);
+      assert.strictEqual(signedOut.status, 303, 'Downloads needs a sign-in');
+      const giftOnly = await signIn('giftonly@x.test');
+      await db.run("INSERT INTO adm_admins (email, role, apps, status) VALUES ('giftonly@x.test', 'support', 'gift', 'active')");
+      const refused = await call(server, 'GET', `/downloads/${r.id}`, { cookie: giftOnly.cookie });
+      assert.strictEqual(refused.status, 403);
+
+      const url = releases.deviceUrl(r);
+      const dl = await call(server, 'GET', new URL(url).pathname);
+      assert.strictEqual(dl.status, 200, 'a device needs no sign-in with the signed address');
+      assert.strictEqual(dl.text, 'MZ pretend installer');
+      const forged = await call(server, 'GET', new URL(url).pathname.replace(/\/dl\/(\d+)\/[0-9a-f]+/, '/dl/$1/' + '0'.repeat(40)));
+      assert.strictEqual(forged.status, 404);
+    });
+
+    await t.test('Versions: a venue is set to a version, the default saved, and prompts switched on', async () => {
+      const releases = require('../src/releases');
+      const v115 = await releases.find('till', '1.15.0');
+      const page = await call(server, 'GET', '/versions?app=till', { cookie: owner.cookie });
+      assert.strictEqual(page.status, 200, page.text.slice(0, 300));
+      assert.match(page.text, /Update prompts off/);
+      assert.match(page.text, /No auto updates/);
+      assert.match(page.text, /Bar till/);
+
+      asked.length = 0;
+      const r = await call(server, 'POST', '/versions', { cookie: owner.cookie, form: { _csrf: owner.csrf, app: 'till', bulk: 'rows', pin_7: String(v115.id), was_7: 'follow' } });
+      assert.strictEqual(r.status, 303);
+      assert.match(flashOf(r).text, /Till: 1 venue changed/);
+      const put = asked.find((a) => a.method === 'PUT' && a.url === '/api/admin/app-versions/till');
+      assert.deepStrictEqual(put.body.offices, [7]);
+      assert.strictEqual(put.body.version, '1.15.0');
+      assert.strictEqual(put.body.sha256, v115.sha256);
+      assert.strictEqual(put.body.url, releases.deviceUrl(v115));
+
+      const shown = await call(server, 'GET', '/versions?app=till', { cookie: owner.cookie });
+      assert.match(shown.text, /None on version/, 'neither till runs 1.15.0 yet');
+
+      const d = await call(server, 'POST', '/versions/default', { cookie: owner.cookie, form: { _csrf: owner.csrf, app: 'till', choice: 'none' } });
+      assert.match(flashOf(d).text, /default is now No auto updates/);
+      const on = await call(server, 'POST', '/versions/updates', { cookie: owner.cookie, form: { _csrf: owner.csrf, app: 'till', enabled: '1' } });
+      assert.match(flashOf(on).text, /Update prompts are on/);
+      assert.strictEqual(updatesOn, true);
+
+      const billing = await signIn('billing@x.test');
+      await db.run("INSERT INTO adm_admins (email, role, apps, status) VALUES ('billing@x.test', 'billing', '*', 'active')");
+      const no = await call(server, 'GET', '/versions?app=till', { cookie: billing.cookie });
+      assert.strictEqual(no.status, 403, 'billing downloads but does not move venues');
+      const yes = await call(server, 'GET', '/downloads', { cookie: billing.cookie });
+      assert.strictEqual(yes.status, 200);
     });
   } finally {
     server.close();

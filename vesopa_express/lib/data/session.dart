@@ -17,6 +17,7 @@
 /// out of date.
 library;
 
+import 'app_update.dart';
 import 'licence.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -241,5 +242,6 @@ final kioskLicenceProvider = FutureProvider<LicenceState?>((ref) async {
   ref.watch(kioskSessionProvider);
   final token = ref.read(apiProvider).token;
   if (token == null || token.isEmpty) return null;
-  return fetchLicence(apiBase: ExpressConfig.resolvedBase, token: token);
+  final me = await Installation.current(ExpressConfig.version);
+  return fetchLicence(apiBase: ExpressConfig.resolvedBase, token: token, headers: me.headers);
 });

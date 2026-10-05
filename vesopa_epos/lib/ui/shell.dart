@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../config/constants.dart';
+import '../data/app_update.dart';
 import '../data/customer_display.dart';
 import '../data/dinein_orders.dart' show allergenLabelsProvider;
 import '../data/loyalty_schemes.dart' show LoyaltyScheme;
@@ -57,6 +58,15 @@ class PosShell extends ConsumerStatefulWidget {
 class _PosShellState extends ConsumerState<PosShell> {
   int _index = 0;
   String? _orderId;
+
+  /// No bill with anything on it is on screen: the moment a till may close
+  /// for an update.
+  bool _betweenSales() {
+    if (!mounted) return false;
+    final id = _orderId;
+    if (id == null) return true;
+    return !(ref.read(orderLinesProvider(id)).value?.isNotEmpty ?? false);
+  }
 
   /// Which bill the customer display is following.
   ///
@@ -704,6 +714,22 @@ class _PosShellState extends ConsumerState<PosShell> {
         onRetry: () => ref.invalidate(licenceProvider),
       );
     }
+
+    // The version this till's venue is set to on admin.vesopa.com (Versions),
+    // when it is not this one: fetched quietly, then offered as Update now or
+    // On next start. Only between sales, never over a bill being rung up --
+    // the next licence check asks again. See data/app_update.dart.
+    ref.listen(licenceProvider, (_, next) {
+      final update = next.value?.update;
+      if (update == null) return;
+      unawaited(offerUpdate(
+        context,
+        update: update,
+        appName: 'Vesopa EPOS',
+        builtVersion: VesopaBrand.appVersion,
+        ready: _betweenSales,
+      ));
+    });
 
     // Shown instead of the shell, not inside it: a till that cannot open a bill
     // cannot do anything the tabs offer either.

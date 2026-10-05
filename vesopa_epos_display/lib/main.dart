@@ -26,9 +26,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'data/activity_log.dart';
+import 'data/app_update.dart';
 import 'data/deep_links.dart';
 import 'data/screens.dart';
 import 'data/settings.dart';
+import 'data/vesopa_setup.dart' show displayAppVersion;
 import 'ui/connect_page.dart';
 import 'ui/display_page.dart';
 import 'ui/settings_page.dart';
@@ -39,8 +41,6 @@ import 'ui/theme.dart';
 /// from a browser starts this application with that URI as an argument.
 ///
 /// See `data/deep_links.dart` for the scheme and why it is reverse DNS.
-/// This build's version, for the activity log. Keep in step with pubspec.yaml.
-const displayAppVersion = '1.6.16.0';
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -57,6 +57,9 @@ Future<void> main(List<String> args) async {
   ActivityLog.instance
     ..configure(app: 'display', appVersion: displayAppVersion)
     ..installErrorHandlers();
+  // An update somebody chose to take "On next start" runs now, before
+  // anything else opens (data/app_update.dart). Returns at once otherwise.
+  await Updater.applyPending(displayAppVersion);
 
   // The advert player's own decoder, before anything can ask it to play. It is
   // bundled rather than borrowed from Windows — see `ui/advert_panel.dart` for

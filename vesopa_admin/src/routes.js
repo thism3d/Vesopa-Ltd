@@ -18,6 +18,7 @@ const roles = require('./roles');
 const audit = require('./audit');
 const catalogue = require('./catalogue');
 const licences = require('./licences');
+const releases = require('./releases');
 const epos = require('./apps/epos');
 const hosting = require('./apps/hosting');
 const { connected } = require('./upstream');
@@ -67,6 +68,8 @@ function describe(action) {
   if (parts[0] === 'admin') return `Admin ${parts[1] || ''}`.trim();
   if (parts[0] === 'catalogue') return 'Catalogue price or switch changed';
   if (parts[0] === 'hosting') return `Hosting service ${DID[parts[1]] || parts[1]}`;
+  if (parts[0] === 'release') return `Installer ${{ download: 'downloaded', withdraw: 'withdrawn', restore: 'put back' }[parts[1]] || parts[1]}`;
+  if (parts[0] === 'versions') return { set: 'Venue versions set', default: 'Default version set', updates: 'Update prompts switched' }[parts[1]] || 'Versions changed';
   const item = catalogue.BY_KEY[parts[0]];
   const verb = parts[2] === 'stopped' ? DID.stopped : DID[parts[1]] || parts.slice(1).join(' ');
   return `${item ? item.label : parts[0]} ${verb}`;
@@ -78,7 +81,7 @@ function page(req, res, view, data = {}) {
     flash: takeFlash(req, res),
     roles,
     can: (p, app) => roles.can(req.me, p, app),
-    money, ago, when, describe,
+    money, ago, when, describe, size: releases.size,
     path: req.path,
     ...data,
   });
@@ -368,6 +371,188 @@ router.post('/admins/:id', signedIn, csrf, allow('admins.manage'), async (req, r
   await audit.record({ actor: req.me.email, action: 'admin.changed', detail: { email: row.email, role, apps, status } });
   flash(res, 'ok', `Saved ${row.email}.`);
   res.redirect(303, '/admins');
+});
+
+// ---- Downloads: our own Windows installers ---------------------------------
+
+const downloadable = (req) => releases.APPS.filter((a) => roles.can(req.me, 'releases.download', a.role));
+
+router.get('/downloads', signedIn, async (req, res, next) => {
+  try {
+    const apps = downloadable(req);
+    if (!apps.length) return allow('releases.download')(req, res, next);
+    const all = await releases.list({ withdrawn: roles.can(req.me, 'versions.manage') }).catch((e) => { req.listError = e.message; return []; });
+    const byApp = Object.fromEntries(apps.map((a) => [a.key, all.filter((r) => r.app === a.key)]));
+    page(req, res, 'downloads', { title: 'Downloads', apps, byApp, error: req.listError || null, ready: !!config.RELEASES_SECRET });
+  } catch (e) { next(e); }
+});
+
+router.get('/downloads/:id', signedIn, async (req, res, next) => {
+  try {
+    const r = await releases.get(req.params.id);
+    if (!r || !releases.BY_KEY[r.app]) return next();
+    if (!roles.can(req.me, 'releases.download', releases.BY_KEY[r.app].role)) {
+      res.status(403);
+      return page(req, res, 'noaccess', { title: 'Not for your role', body: `Your role (${req.me.roleLabel}) cannot download this app. Ask the owner.` });
+    }
+    const file = releases.fileOf(r);
+    if (!require('fs').existsSync(file)) {
+      flash(res, 'bad', `The file for ${releases.BY_KEY[r.app].short} ${r.version} is missing on the server.`);
+      return res.redirect(303, '/downloads');
+    }
+    await audit.record({ actor: req.me.email, action: 'release.download', app: releases.BY_KEY[r.app].role, item: `${r.app}:${r.version}` });
+    res.download(file, r.file);
+  } catch (e) { next(e); }
+});
+
+router.post('/downloads/:id', signedIn, csrf, allow('versions.manage'), async (req, res) => {
+  const r = await releases.get(req.params.id);
+  if (r) {
+    const back = req.body.action === 'restore';
+    await releases.withdraw(r.id, back);
+    await audit.record({ actor: req.me.email, action: back ? 'release.restore' : 'release.withdraw', app: releases.BY_KEY[r.app].role, item: `${r.app}:${r.version}` });
+    flash(res, 'ok', back ? `${releases.BY_KEY[r.app].short} ${r.version} is back on the list.` : `${releases.BY_KEY[r.app].short} ${r.version} is hidden. Venues already set to it keep it until you choose another.`);
+  }
+  res.redirect(303, '/downloads');
+});
+
+/** A device fetching the version its venue is set to. No sign-in: the signature is the permission. */
+router.get('/dl/:id/:sig/:file', async (req, res, next) => {
+  try {
+    const r = await releases.get(req.params.id);
+    if (!r || !releases.signatureOk(r, req.params.sig)) return next();
+    const file = releases.fileOf(r);
+    if (!require('fs').existsSync(file)) return next();
+    res.set('Cache-Control', 'private, max-age=3600');
+    res.download(file, r.file);
+  } catch (e) { next(e); }
+});
+
+// ---- Versions: which version each venue runs --------------------------------
+
+// Loyalty is a member's own app, not a venue's: it has a default and no venues.
+const VERSION_APPS = releases.APPS;
+
+/**
+ * What a venue is set to and how its devices compare. `target` is the version
+ * the devices should be on; null is "No auto updates".
+ */
+function venueVersion(venue, pins, devices, byId) {
+  const own = pins.find((p) => !p.default && Number(p.office_id) === Number(venue.id)) || null;
+  const def = pins.find((p) => p.default) || null;
+  const rule = own || def;
+  const target = rule && rule.version ? releases.normalise(rule.version) : null;
+  const mine = devices.filter((d) => Number(d.office_id) === Number(venue.id));
+  const direct = mine.filter((d) => d.install !== 'store');
+  const onTarget = direct.filter((d) => target && releases.normalise(d.version) === target).length;
+  let status;
+  if (!mine.length) status = 'none';
+  else if (!direct.length) status = 'store';
+  else if (!target) status = 'hold';
+  else if (onTarget === direct.length) status = 'ok';
+  else if (onTarget) status = 'some';
+  else status = 'behind';
+  const releaseId = own && own.version ? (byId[`v:${releases.normalise(own.version)}`] || null) : null;
+  return { own, def, target, devices: mine, onTarget, direct: direct.length, status,
+    choice: !own ? 'follow' : own.version ? String(releaseId ? releaseId.id : 'unknown') : 'none' };
+}
+
+router.get('/versions', signedIn, allow('versions.manage', 'epos'), async (req, res, next) => {
+  try {
+    const app = VERSION_APPS.find((a) => a.key === req.query.app) || VERSION_APPS[0];
+    const q = String(req.query.q || '').trim().toLowerCase();
+    const show = String(req.query.show || 'all');
+    let venues = [];
+    let data = { enabled: false, pins: [], devices: [] };
+    let error = null;
+    try {
+      [{ venues }, data] = await Promise.all([epos.overview(req.me.email), epos.appVersions(app.key, req.me.email)]);
+    } catch (e) { error = e.message; }
+    const list = await releases.list({ app: app.key });
+    const byId = Object.fromEntries(list.map((r) => [`v:${r.version}`, r]));
+    let rows = app.key === 'loyalty' ? [] : venues.map((v) => ({ venue: v, ...venueVersion(v, data.pins, data.devices, byId) }));
+    if (q) rows = rows.filter((r) => `${r.venue.name} ${r.venue.email} ${r.venue.id}`.toLowerCase().includes(q));
+    if (show !== 'all') rows = rows.filter((r) => r.status === show);
+    const def = data.pins.find((p) => p.default) || null;
+    page(req, res, 'versions', {
+      title: 'Versions', apps: VERSION_APPS, app, rows, list, q, show, error, enabled: data.enabled,
+      def, defChoice: def && def.version && byId[`v:${releases.normalise(def.version)}`] ? String(byId[`v:${releases.normalise(def.version)}`].id) : 'none',
+      ready: !!config.RELEASES_SECRET, norm: releases.normalise,
+    });
+  } catch (e) { next(e); }
+});
+
+/** What to send the back office for a choice: 'follow', 'none' or a release id. */
+async function pinBody(app, choice) {
+  if (choice === 'follow') return { clear: true };
+  if (choice === 'none') return { version: null };
+  const r = await releases.get(choice);
+  if (!r || r.app !== app) throw new Error('That version is not on the list for this app.');
+  const url = releases.deviceUrl(r);
+  if (!url) throw new Error('RELEASES_SECRET is not set on admin.vesopa.com, so devices cannot be given a download address yet.');
+  return { version: r.version, url, sha256: r.sha256, size: Number(r.size) };
+}
+
+router.post('/versions', signedIn, csrf, allow('versions.manage', 'epos'), async (req, res) => {
+  const b = req.body || {};
+  const app = VERSION_APPS.find((a) => a.key === b.app && a.key !== 'loyalty');
+  const back = `/versions?app=${app ? app.key : ''}${b.q ? `&q=${encodeURIComponent(b.q)}` : ''}${b.show ? `&show=${encodeURIComponent(b.show)}` : ''}`;
+  if (!app) return res.redirect(303, '/versions');
+  try {
+    // Every row whose choice changed, grouped by what it changed to. Or, with
+    // "Apply to ticked" / "Apply to all shown", one choice for many venues.
+    const groups = new Map();
+    const add = (choice, id) => { if (!groups.has(choice)) groups.set(choice, []); groups.get(choice).push(id); };
+    if (b.bulk === 'ticked' || b.bulk === 'shown') {
+      const ids = [].concat(b.bulk === 'ticked' ? b.ids || [] : b.shown || []).map(Number).filter(Boolean);
+      if (!ids.length) throw new Error(b.bulk === 'ticked' ? 'Tick at least one venue first.' : 'No venues are shown.');
+      if (!b.choice) throw new Error('Choose a version to apply.');
+      for (const id of ids) add(String(b.choice), id);
+    } else {
+      for (const [k, v] of Object.entries(b)) {
+        const m = /^pin_(\d+)$/.exec(k);
+        if (m && String(v) !== String(b[`was_${m[1]}`])) add(String(v), Number(m[1]));
+      }
+    }
+    if (!groups.size) throw new Error('Nothing changed.');
+    let n = 0;
+    for (const [choice, ids] of groups) {
+      const body = await pinBody(app.key, choice);
+      await epos.setAppVersion(app.key, { offices: ids, ...body }, req.me.email);
+      await audit.record({ actor: req.me.email, action: 'versions.set', app: 'epos', item: app.key,
+        detail: { venues: ids, version: body.version === undefined ? 'follow default' : body.version || 'no auto updates' } });
+      n += ids.length;
+    }
+    flash(res, 'ok', `${app.short}: ${n} venue${n === 1 ? '' : 's'} changed.`);
+  } catch (e) {
+    flash(res, 'bad', e.message);
+  }
+  res.redirect(303, back);
+});
+
+router.post('/versions/default', signedIn, csrf, allow('versions.manage', 'epos'), async (req, res) => {
+  const b = req.body || {};
+  const app = VERSION_APPS.find((a) => a.key === b.app);
+  if (!app) return res.redirect(303, '/versions');
+  try {
+    const body = b.choice === 'none' ? { clear: true } : await pinBody(app.key, String(b.choice));
+    await epos.setAppVersion(app.key, { offices: 'default', ...body }, req.me.email);
+    await audit.record({ actor: req.me.email, action: 'versions.default', app: 'epos', item: app.key, detail: { version: body.version || 'no auto updates' } });
+    flash(res, 'ok', `${app.short}: the default is now ${body.version || 'No auto updates'}.`);
+  } catch (e) { flash(res, 'bad', e.message); }
+  res.redirect(303, `/versions?app=${app.key}`);
+});
+
+router.post('/versions/updates', signedIn, csrf, allow('versions.manage', 'epos'), async (req, res) => {
+  const on = req.body.enabled === '1';
+  try {
+    await epos.setAppUpdates(on, req.me.email);
+    await audit.record({ actor: req.me.email, action: 'versions.updates', app: 'epos', detail: { enabled: on } });
+    flash(res, 'ok', on
+      ? 'Update prompts are on. Devices installed from our own installer offer their venue\'s version within five minutes.'
+      : 'Update prompts are off. No device is told to change version.');
+  } catch (e) { flash(res, 'bad', e.message); }
+  res.redirect(303, `/versions?app=${encodeURIComponent(req.body.app || 'till')}`);
 });
 
 module.exports = { router, oidc };

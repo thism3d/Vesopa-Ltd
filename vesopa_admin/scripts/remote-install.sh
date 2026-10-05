@@ -267,6 +267,12 @@ connect() {
 connect backoffice.vesopaepos.com "$BO" EPOS_SERVICE_KEY
 connect gift.vesopaepos.com "$GIFT" GIFT_SERVICE_KEY
 connect cloud.vesopa.com "$HOST_APP" HOSTING_SERVICE_KEY
+
+# Our own Windows installers (Downloads and Versions, 2026-10-05): kept beside
+# the app, never inside it, because every deploy replaces the app's folders.
+# The secret signs the download addresses devices are given; made once.
+mkdir -p "$W/$DOMAIN/private/releases"
+envfill "$APP/.env" RELEASES_SECRET "$(newkey)" && ok "admin: new RELEASES_SECRET" || true
 chown -R "$APPUSER:$APPUSER" "$W/$DOMAIN/private"
 chmod 600 "$APP/.env"
 

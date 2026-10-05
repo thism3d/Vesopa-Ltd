@@ -9,6 +9,7 @@ import 'hardware_fingerprint.dart';
 import 'pairing.dart' show displayDeviceId, displayDeviceName;
 import 'vesopa_sso.dart';
 import '../ui/connect_page.dart' show displayApiBase;
+import 'app_update.dart';
 import 'licence.dart';
 
 /// Signing this display in with Vesopa, before it is paired with a till.
@@ -218,8 +219,13 @@ final displayLicenceProvider = FutureProvider<LicenceState?>((ref) async {
   ref.onDispose(recheck.cancel);
   final commission = await ref.watch(commissionProvider.future);
   if (commission == null) return null;
-  return fetchLicence(apiBase: displayApiBase, token: commission.token);
+  final me = await Installation.current(displayAppVersion);
+  return fetchLicence(apiBase: displayApiBase, token: commission.token, headers: me.headers);
 });
 
 /// What this screen is commissioned as, for the app to decide its first page.
 final commissionProvider = FutureProvider<DisplayCommission?>((ref) => readCommission());
+
+/// This build's version, for the activity log and the version check
+/// (data/app_update.dart). Keep in step with pubspec.yaml.
+const displayAppVersion = '1.6.17.0';

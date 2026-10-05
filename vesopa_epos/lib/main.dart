@@ -9,6 +9,7 @@ import 'package:window_manager/window_manager.dart';
 
 import 'config/constants.dart';
 import 'data/activity_log.dart';
+import 'data/app_update.dart';
 import 'data/bill_sync.dart';
 import 'data/fonts.dart';
 import 'data/auth_service.dart';
@@ -497,9 +498,12 @@ final licenceProvider = FutureProvider<LicenceState?>((ref) async {
   final recheck = Timer(licenceRecheckEvery, ref.invalidateSelf);
   ref.onDispose(recheck.cancel);
   final session = ref.watch(sessionProvider);
+  final apiBase = ref.watch(apiBaseProvider);
+  final me = await Installation.current(VesopaBrand.appVersion);
   return fetchLicence(
-    apiBase: ref.watch(apiBaseProvider),
+    apiBase: apiBase,
     token: session.terminalToken ?? '',
+    headers: me.headers,
   );
 });
 /// Which venue this terminal belongs to. Comes from the sign-in rather than a
@@ -1055,6 +1059,10 @@ Future<void> main() async {
   // It never touches the sales database. See startup_repair.dart for why that
   // rule is not negotiable.
   final repair = await repairStorageIfNeeded();
+
+  // An update somebody chose to take "On next start" runs now, before
+  // anything else opens (data/app_update.dart). Returns at once otherwise.
+  await Updater.applyPending(VesopaBrand.appVersion);
 
   // The activity log: taps, screens, sign-ins and errors, to a local file and
   // to the back office's Activity Log. See data/activity_log.dart.

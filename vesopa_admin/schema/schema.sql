@@ -76,3 +76,28 @@ CREATE TABLE IF NOT EXISTS adm_state (
   v           VARCHAR(255) NULL,
   PRIMARY KEY (k)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- The Windows installers Vesopa hands out itself, beside the Microsoft Store
+-- (2026-10-05). "I think exe with a private link for time being will be good.
+-- That allows us to control what versions people are on." (Nicki)
+--
+-- Every version is kept, so moving a venue back is installing an older one.
+-- The file lives in RELEASES_DIR/<app>/<file>; this row is what it is.
+-- app: till | kitchen | display | express | loyalty (src/releases.js).
+CREATE TABLE IF NOT EXISTS adm_releases (
+  id          INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  app         VARCHAR(16)  NOT NULL,
+  version     VARCHAR(32)  NOT NULL,
+  file        VARCHAR(190) NOT NULL,
+  size        BIGINT       NOT NULL,
+  sha256      CHAR(64)     NOT NULL,
+  -- Signed with Vesopa's code-signing certificate (Azure Trusted Signing).
+  signed      TINYINT(1)   NOT NULL DEFAULT 0,
+  notes       TEXT         NULL,
+  added_by    VARCHAR(190) NULL,
+  added_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  -- Hidden from Downloads and from the version lists; the file stays.
+  withdrawn_at DATETIME    NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_adm_release (app, version)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

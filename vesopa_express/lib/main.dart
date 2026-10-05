@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'config/constants.dart';
 import 'data/activity_log.dart';
+import 'data/app_update.dart';
 import 'platform/kiosk_window.dart';
 import 'ui/app.dart';
 
@@ -19,6 +20,9 @@ Future<void> main() async {
   ActivityLog.instance
     ..configure(app: 'express', appVersion: ExpressConfig.version, apiBase: ExpressConfig.resolvedBase)
     ..installErrorHandlers();
+  // An update somebody chose to take "On next start" runs now, before
+  // anything else opens (data/app_update.dart). Returns at once otherwise.
+  await Updater.applyPending(ExpressConfig.version);
   await KioskWindow.lock();
   runApp(const ProviderScope(child: ExpressApp()));
 }

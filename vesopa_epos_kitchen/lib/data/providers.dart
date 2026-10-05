@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'app_update.dart';
 import 'licence.dart';
 import '../config/constants.dart';
 import 'dinein_inbox.dart';
@@ -83,5 +84,6 @@ final kitchenLicenceProvider = FutureProvider<LicenceState?>((ref) async {
   final recheck = Timer(licenceRecheckEvery, ref.invalidateSelf);
   ref.onDispose(recheck.cancel);
   final api = ref.watch(kitchenApiProvider);
-  return fetchLicence(apiBase: api.apiBase, token: api.token ?? '');
+  final me = await Installation.current(kitchenAppVersion);
+  return fetchLicence(apiBase: api.apiBase, token: api.token ?? '', headers: me.headers);
 });

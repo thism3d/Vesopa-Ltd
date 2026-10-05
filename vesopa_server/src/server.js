@@ -76,6 +76,7 @@ const { demoRoutes } = require('./demo_venue');
 const { licenceRoutes, adminLicenceRoutes } = require('./licences');
 const { adminHoldRoutes } = require('./admin_holds');
 const { adminOverviewRoutes } = require('./admin_overview');
+const appUpdates = require('./app_updates');
 const licences = require('./licences');
 const { loyaltyAppRoutes, startLoyaltyScheduler } = require('./loyalty_app');
 const { privacyRoutes } = require('./privacy_provider');
@@ -329,6 +330,9 @@ app.use('/api', siteRoutes({ pool, broadcast, secret: JWT_SECRET }));
 // Its own paths (/api/demo and /till/demo/token), so mounted at the root.
 app.use(demoRoutes({ pool, secret: JWT_SECRET }));
 app.use('/api', licenceRoutes({ pool, secret: JWT_SECRET }));
+// Loyalty's open version check (it has no venue credential), at /loyalty/v1/
+// so it also answers on loyalty.vesopa.com. src/app_updates.js.
+app.use(appUpdates.publicRoutes({ pool }));
 app.use('/api', programmingRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use('/api', commerceRoutes({ pool, broadcast, secret: JWT_SECRET }));
 // Repricing a catalogue a level at a time: preview, apply, and put back. See
@@ -346,6 +350,16 @@ app.use('/api/admin', adminOverviewRoutes({ pool }));
 // Pausing and removing a venue's apps, modules and Loyalty app, with a grace
 // day (admin.vesopa.com, 2026-10-05). See src/admin_holds.js.
 app.use('/api/admin', adminHoldRoutes({
+  pool,
+  broadcast,
+  auth: requireAuth(JWT_SECRET),
+  admin: (req, res, next) => (req.user && req.user.role === 'admin'
+    ? next()
+    : res.status(403).json({ error: 'Administrator access only' })),
+}));
+// Which version of each Windows app a venue runs (admin.vesopa.com Versions,
+// 2026-10-05). See src/app_updates.js.
+app.use('/api/admin', appUpdates.adminRoutes({
   pool,
   broadcast,
   auth: requireAuth(JWT_SECRET),
