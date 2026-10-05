@@ -217,12 +217,15 @@ async function listSchemes(pool, office, { activeOnly = false, withCounts = fals
   try {
     const [rows] = await pool.query(
       `SELECT s.*${withCounts
-        ? ', (SELECT COUNT(*) FROM epos_customers c WHERE c.email_key = s.office AND c.scheme_id = s.id) AS members'
+        // The venue by value, not c.email_key = s.office: on the live server
+        // those two columns have different collations, and comparing them
+        // fails ("Illegal mix of collations"), which broke every plan list.
+        ? ', (SELECT COUNT(*) FROM epos_customers c WHERE c.email_key = ? AND c.scheme_id = s.id) AS members'
         : ''}
          FROM epos_loyalty_schemes s
         WHERE s.office = ? ${activeOnly ? 'AND s.active = 1' : ''}
         ORDER BY s.sort_order, s.name`,
-      [office]
+      withCounts ? [office, office] : [office]
     );
     return rows.map(normaliseScheme);
   } catch (e) {

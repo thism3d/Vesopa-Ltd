@@ -343,6 +343,16 @@ async function main() {
       assert.strictEqual(b.status, 200, JSON.stringify(b.body));
     });
 
+    await check('plans and members list when office columns differ in collation', async () => {
+      // The live server: epos_customers.email_key in one collation, the
+      // office columns of older tables in another.
+      await pool.query('ALTER TABLE epos_loyalty_schemes MODIFY office VARCHAR(190) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL');
+      const p = await call(server, 'GET', '/partner/v1/memberships/plans', key);
+      assert.strictEqual(p.status, 200, JSON.stringify(p.body));
+      const m = await call(server, 'GET', '/partner/v1/memberships/members', key);
+      assert.strictEqual(m.status, 200, JSON.stringify(m.body));
+    });
+
     await check('stateOf reads the states', async () => {
       assert.strictEqual(stateOf({ membership_status: '' }, '2026-01-01'), 'none');
       assert.strictEqual(stateOf({ membership_status: 'active', membership_expiry: '2025-12-31' }, '2026-01-01'), 'expired');
