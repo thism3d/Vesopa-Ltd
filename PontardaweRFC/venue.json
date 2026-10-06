@@ -1,0 +1,17 @@
+{
+  "slug": "pontardawe-rfc",
+  "name": "Pontardawe RFC",
+  "short_name": "Pontardawe",
+  "tagline": "Members' Club · Est. 1881",
+  "app_id": "com.vesopaepos.pontardawerfc",
+  "version": "1.0.0",
+  "build": 1,
+  "colours": {
+    "background": "#8F0000",
+    "deep": "#3F0000",
+    "glow": "#C41414",
+    "text": "#FFFFFF"
+  },
+  "vesopa_client_id": "12a1047bafa611f185af42010a80000e",
+  "apple_team": "G238FR2ZC9"
+}

@@ -193,7 +193,7 @@ class _HomePageState extends ConsumerState<HomePage> with WidgetsBindingObserver
       ],
     );
 
-    final body = SafeArea(child: IndexedStack(index: tab, children: [for (final t in tabs) KeyedSubtree(key: ValueKey(t.$3), child: t.$4)]));
+    final body = SafeArea(child: FadeIndexedStack(index: tab, children: [for (final t in tabs) KeyedSubtree(key: ValueKey(t.$3), child: t.$4)]));
 
     if (!rail) {
       return Scaffold(

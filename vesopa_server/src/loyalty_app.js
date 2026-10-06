@@ -455,7 +455,7 @@ async function deliver(pool, message) {
   const senders = {
     wns: (ch) => push.sendWns(ch, payload, creds),
     fcm: (ch) => push.sendFcm(ch, payload),
-    apns: (ch) => push.sendApns(ch, payload),
+    apns: (ch) => push.sendApns(ch, payload, { slug: brand.slug || '' }),
   };
 
   await inBatches(channels, 12, async (ch) => {

@@ -12,6 +12,7 @@ import 'data/api.dart';
 import 'data/session.dart';
 import 'ui/home.dart';
 import 'ui/sign_in.dart';
+import 'ui/venue_intro.dart';
 import 'ui/venue_picker.dart';
 
 /// Vesopa Loyalty: a venue's own loyalty app.
@@ -34,7 +35,23 @@ Future<void> main() async {
   ActivityLog.instance
     ..configure(app: 'loyalty', appVersion: loyaltyAppVersion)
     ..installErrorHandlers();
-  runApp(const ProviderScope(child: LoyaltyApp()));
+  // A venue's own build opens on its crest (ui/venue_intro.dart), which
+  // decodes the crest before the first frame is let through.
+  if (VenueIntro.enabled) VenueIntro.holdFirstFrame();
+  runApp(const ProviderScope(child: VenueIntro.enabled ? _IntroHost() : LoyaltyApp()));
+}
+
+/// The app under a venue build's opening, which lifts away once the app has
+/// its venue's branding (or has failed to get it, and says so).
+class _IntroHost extends ConsumerWidget {
+  const _IntroHost();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final venue = ref.watch(venueProvider);
+    final ready = !venue.isLoading && ((venue.value ?? '').isEmpty || !ref.watch(brandProvider).isLoading);
+    return VenueIntro(ready: ready, child: const LoyaltyApp());
+  }
 }
 
 class LoyaltyApp extends ConsumerWidget {

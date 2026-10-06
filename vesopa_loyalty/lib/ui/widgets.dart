@@ -156,3 +156,98 @@ Color? hexColour(String? value) {
   final v = int.tryParse(hex, radix: 16);
   return v == null ? null : Color(0xff000000 | v);
 }
+
+/// Something arriving: it fades in and rises a little, once, after [delay].
+///
+/// For the first look at a page -- the card, then what is under it -- so the
+/// page assembles rather than blinking in whole. Plays once per element; a
+/// rebuild (a refresh, a new balance) never replays it. Off where the device
+/// asks for less motion.
+class Entrance extends StatefulWidget {
+  const Entrance({super.key, required this.child, this.delay = Duration.zero, this.rise = 18});
+
+  final Widget child;
+  final Duration delay;
+  final double rise;
+
+  @override
+  State<Entrance> createState() => _EntranceState();
+}
+
+class _EntranceState extends State<Entrance> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 520));
+  late final Animation<double> _t = CurvedAnimation(parent: _c, curve: Curves.easeOutCubic);
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_c.status != AnimationStatus.dismissed || _c.isAnimating) return;
+    if (MediaQuery.maybeOf(context)?.disableAnimations ?? false) {
+      _c.value = 1;
+    } else {
+      Future.delayed(widget.delay, () {
+        if (mounted) _c.forward();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: _t,
+    child: widget.child,
+    builder: (context, child) => Opacity(
+      opacity: _t.value,
+      child: Transform.translate(offset: Offset(0, widget.rise * (1 - _t.value)), child: child),
+    ),
+  );
+}
+
+/// An [IndexedStack] whose newly chosen page fades through rather than
+/// snapping in. Every page stays alive underneath, exactly as before, so a
+/// half-scrolled list or a half-typed field is still there on the way back.
+class FadeIndexedStack extends StatefulWidget {
+  const FadeIndexedStack({super.key, required this.index, required this.children});
+
+  final int index;
+  final List<Widget> children;
+
+  @override
+  State<FadeIndexedStack> createState() => _FadeIndexedStackState();
+}
+
+class _FadeIndexedStackState extends State<FadeIndexedStack> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 260), value: 1);
+
+  @override
+  void didUpdateWidget(FadeIndexedStack old) {
+    super.didUpdateWidget(old);
+    if (old.index != widget.index && !(MediaQuery.maybeOf(context)?.disableAnimations ?? false)) {
+      _c.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: _c,
+    builder: (context, child) {
+      final t = Curves.easeOutCubic.transform(_c.value);
+      return Opacity(
+        opacity: t,
+        child: Transform.translate(offset: Offset(0, 10 * (1 - t)), child: child),
+      );
+    },
+    child: IndexedStack(index: widget.index, children: widget.children),
+  );
+}

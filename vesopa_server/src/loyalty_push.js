@@ -276,6 +276,14 @@ async function sendFcm(channel, payload) {
 // its line breaks written as \n. APNS_ENV=sandbox points at Apple's test
 // gateway only.
 //
+// A VENUE WITH ITS OWN IPHONE APP has its own bundle id, and Apple refuses a
+// token sent under any other topic (DeviceTokenNotForTopic). APNS_TOPICS maps
+// venue slugs to their apps' bundle ids, comma separated:
+//   APNS_TOPICS=pontardawe-rfc=com.vesopaepos.pontardawerfc
+// A venue's notification tries its own app first and APNS_TOPIC after it,
+// because one of its members may be using the shared app instead; only a token
+// that NEITHER app recognises is given up on.
+//
 // PRODUCTION FIRST, THEN THE SANDBOX. An App Store or TestFlight install has a
 // production token; an app run from Xcode has a sandbox one, and Apple answers
 // BadDeviceToken when a token is sent to the other gateway. Trying the sandbox
@@ -314,6 +322,17 @@ function apnsCreds() {
 
 const apnsReady = () => apnsCreds() !== null;
 
+/** The bundle ids to try for a venue's iPhone notification, its own app's first. */
+function apnsTopics(slug, fallback) {
+  const topics = [];
+  for (const pair of String(process.env.APNS_TOPICS || '').split(',')) {
+    const [venue, topic] = pair.split('=').map((x) => (x || '').trim());
+    if (venue && topic && venue === slug) topics.push(topic);
+  }
+  if (fallback && !topics.includes(fallback)) topics.push(fallback);
+  return topics;
+}
+
 /**
  * Apple's provider token. Good for an hour, and Apple REFUSES one refreshed
  * more than about every twenty minutes -- so it is cached rather than minted
@@ -332,7 +351,7 @@ function apnsAuthToken(creds) {
 }
 
 /** One POST to one gateway. Resolves to {status, reason}; status 0 when it never got an answer. */
-function apnsPost(host, creds, deviceToken, body) {
+function apnsPost(host, creds, deviceToken, body, topic = creds.topic) {
   return new Promise((resolve) => {
     let settled = false;
     const session = http2.connect(host);
@@ -350,7 +369,7 @@ function apnsPost(host, creds, deviceToken, body) {
       ':method': 'POST',
       ':path': `/3/device/${deviceToken}`,
       authorization: `bearer ${apnsAuthToken(creds)}`,
-      'apns-topic': creds.topic,
+      'apns-topic': topic,
       'apns-push-type': 'alert',
       'apns-priority': '10',
       'content-type': 'application/json',
@@ -376,8 +395,11 @@ function apnsPost(host, creds, deviceToken, body) {
 // customers' channels over one of those would lose them for good.
 const TOKEN_GONE = new Set(['BadDeviceToken', 'DeviceTokenNotForTopic', 'Unregistered', 'ExpiredToken']);
 
-/** Send one iPhone notification. Resolves to 'ok', 'gone' or 'failed'. */
-async function sendApns(channel, payload) {
+/**
+ * Send one iPhone notification. Resolves to 'ok', 'gone' or 'failed'.
+ * `slug` is the venue's, for its own app's bundle id (APNS_TOPICS).
+ */
+async function sendApns(channel, payload, { slug = '' } = {}) {
   const creds = apnsCreds();
   if (!creds) return 'failed';
   // A device token is hex and nothing else, and it goes straight into a URL
@@ -397,9 +419,14 @@ async function sendApns(channel, payload) {
   });
 
   const sandboxOnly = process.env.APNS_ENV === 'sandbox';
-  let r = await apnsPost(sandboxOnly ? APNS_SANDBOX : APNS_PRODUCTION, creds, channel.endpoint, body);
-  if (!sandboxOnly && r.reason === 'BadDeviceToken') {
-    r = await apnsPost(APNS_SANDBOX, creds, channel.endpoint, body);
+  let r = { status: 0, reason: '' };
+  for (const topic of apnsTopics(slug, creds.topic)) {
+    r = await apnsPost(sandboxOnly ? APNS_SANDBOX : APNS_PRODUCTION, creds, channel.endpoint, body, topic);
+    if (!sandboxOnly && r.reason === 'BadDeviceToken') {
+      r = await apnsPost(APNS_SANDBOX, creds, channel.endpoint, body, topic);
+    }
+    // Another app's token: try the next app before calling it gone.
+    if (r.reason !== 'DeviceTokenNotForTopic') break;
   }
   if (r.status === 200) return 'ok';
   // 410 is Apple saying the app has gone from that phone.
@@ -417,6 +444,7 @@ module.exports = {
   sendApns,
   fcmReady,
   apnsReady,
+  apnsTopics,
   allowedWebPush,
   allowedWns,
   toastXml,

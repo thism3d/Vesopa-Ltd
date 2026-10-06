@@ -50,10 +50,13 @@ class CardPage extends ConsumerWidget {
               return ListView(
                 padding: const EdgeInsets.all(20),
                 children: [
-                  Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 440), child: card)),
-                  const _AddToWallet(),
+                  Entrance(child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 440), child: card))),
+                  const Entrance(delay: Duration(milliseconds: 120), child: _AddToWallet()),
                   const SizedBox(height: 18),
-                  Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 440), child: facts)),
+                  Entrance(
+                    delay: const Duration(milliseconds: 220),
+                    child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 440), child: facts)),
+                  ),
                 ],
               );
             }
@@ -68,13 +71,13 @@ class CardPage extends ConsumerWidget {
                       Expanded(
                         child: Column(
                           children: [
-                            ConstrainedBox(constraints: const BoxConstraints(maxWidth: 440), child: card),
-                            const _AddToWallet(),
+                            Entrance(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 440), child: card)),
+                            const Entrance(delay: Duration(milliseconds: 120), child: _AddToWallet()),
                           ],
                         ),
                       ),
                       const SizedBox(width: 28),
-                      Expanded(child: facts),
+                      Expanded(child: Entrance(delay: const Duration(milliseconds: 220), child: facts)),
                     ],
                   ),
                 ),

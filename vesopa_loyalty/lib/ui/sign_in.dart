@@ -247,15 +247,21 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    VenueLogo(brand: brand, size: 96),
+                    Entrance(rise: 26, child: VenueLogo(brand: brand, size: 96)),
                     const SizedBox(height: 20),
-                    Text(
-                      brand.name,
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
+                    Entrance(
+                      delay: const Duration(milliseconds: 90),
+                      child: Text(
+                        brand.name,
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
+                      ),
                     ),
                     const SizedBox(height: 8),
-                    Text(brand.welcome, textAlign: TextAlign.center, style: theme.textTheme.bodyLarge),
+                    Entrance(
+                      delay: const Duration(milliseconds: 170),
+                      child: Text(brand.welcome, textAlign: TextAlign.center, style: theme.textTheme.bodyLarge),
+                    ),
                     const SizedBox(height: 28),
                     if (_note != null) ...[
                       Text(_note!, textAlign: TextAlign.center, style: theme.textTheme.bodyMedium),
