@@ -106,7 +106,7 @@ def main():
     if "installers" in todo:
         current = "installers"
         run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "tool\\build-installers.ps1",
-             "-Apps", "till,kitchen,display,express,loyalty", "-Publish",
+             "-Publish",
              "-Notes", "Printing that finishes every slip, print modes, Store copies follow Versions"],
             step="EXE installers to admin.vesopa.com/downloads")
 
