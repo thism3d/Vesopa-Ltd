@@ -12,8 +12,8 @@ Run from the repository root on the owner's Windows PC, after
   build       flutter build windows + msix:create --store for the five apps:
               EPOS 1.15.0.0, Kitchen 1.7.4.0, Display 1.6.18.0,
               Express 1.0.11.0, Loyalty 1.0.11.0
-  store       stage and commit each to the Microsoft Store, manual publish:
-              nothing reaches a till until Publish now is pressed
+  store       stage and commit each to the Microsoft Store, publishing
+              automatically once certified (owner chose this 2026-10-08)
   installers  tool/build-installers.ps1 -Publish: the EXE installers, on
               admin.vesopa.com/downloads, ready to choose under Versions
 """
@@ -91,7 +91,7 @@ def main():
         node = tool("node")
         for key, _folder, version, msix, notes in APPS:
             run([node, "examples/stage.js", key, str(ROOT / msix), notes], STORE,
-                env={"STAGE_VERSION": version}, step=f"Store: stage {key} {version}")
+                env={"STAGE_VERSION": version, "PUBLISH_MODE": "Immediate"}, step=f"Store: stage {key} {version}")
             run([node, "examples/commit.js", key], STORE, step=f"Store: commit {key} {version}")
 
     if "installers" in todo:
@@ -102,7 +102,7 @@ def main():
             step="EXE installers to admin.vesopa.com/downloads")
 
     print("\n✓ Done. Back office and admin are live, the five Store submissions are with Microsoft"
-          " (press Publish now in Partner Center once certified), and the installers are on"
+          " and publish themselves once certified, and the installers are on"
           " admin.vesopa.com/downloads.")
 
 
