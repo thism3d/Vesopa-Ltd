@@ -7,6 +7,31 @@ import 'notifications.dart';
 import 'page_highlight.dart';
 import 'price_levels.dart';
 
+/// When the sale screen shows the till's own "Back to <home>" strip above a
+/// programmed page (2026-10-08).
+///
+/// The strip is the till's safety net for a layout with no key home. 1.14.1
+/// made it show only when it is needed; a venue whose pages lead home some
+/// other way (a key the till cannot see as one, a habit of the staff) can now
+/// switch it off, and one that liked the old behaviour can have it back.
+enum BackStrip {
+  /// Only on a page with no page key to home: see [ScreenSet.reachesHome].
+  auto,
+
+  /// On every programmed page but home, as before EPOS 1.14.1.
+  always,
+
+  /// Never.
+  never;
+
+  static BackStrip parse(Object? raw) => switch (raw) {
+    'always' => always,
+    'never' => never,
+    // Null, absent, or anything newer than this till: the safe default.
+    _ => auto,
+  };
+}
+
 /// How the terminal behaves *between* sales: the idle screen it drops to, and
 /// how long it waits before signing the current member of staff off.
 ///
@@ -41,7 +66,12 @@ class TillSettings {
     this.customerDisplayGreeting,
     this.customerDisplayShowMember = true,
     this.pageHighlight = PageHighlight.vesopa,
+    this.backStrip = BackStrip.auto,
   });
+
+  /// When the sale screen shows its "Back to <home>" strip (2026-10-08). Set
+  /// in the back office, Screen Programming › Page highlight.
+  final BackStrip backStrip;
 
   /// How the key for the open page lights up (2026-10-01). See
   /// `data/page_highlight.dart`.
@@ -231,6 +261,7 @@ class TillSettings {
           other.payBottomBarScreenId == payBottomBarScreenId &&
           other.fontFamily == fontFamily &&
           other.pageHighlight == pageHighlight &&
+          other.backStrip == backStrip &&
           other.idleEnabled == idleEnabled &&
           other.idleImageUrl == idleImageUrl &&
           other.idleAfterSale == idleAfterSale &&
@@ -280,7 +311,8 @@ class TillSettings {
         idleAfterSale,
         idleRequirePin,
         fontFamily,
-        pageHighlight,
+        // Paired: Object.hash takes twenty at most, and this is twenty.
+        Object.hash(pageHighlight, backStrip),
         idleMessage,
         signoffSeconds,
         changeWindowSeconds,
@@ -332,6 +364,8 @@ class TillSettings {
       homeScreenId: (j['home_screen_id'] as num?)?.toInt(),
       // Absent on a server without schema_till_highlight.sql: the default.
       pageHighlight: PageHighlight.fromSettings(j),
+      // Absent on a server without schema_till_back_strip.sql: auto.
+      backStrip: BackStrip.parse(j['nav_back_strip']),
       // Absent — a server that has not run schema_till_fonts.sql — reads as
       // null, which is "the app's own lettering". Which is what every till
       // wore before this existed.

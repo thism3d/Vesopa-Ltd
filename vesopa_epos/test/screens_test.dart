@@ -292,4 +292,33 @@ void main() {
       expect(ScreenSet.empty.reachesHome(page(2, [toHome]), null), isFalse);
     });
   });
+
+  group('the venue chooses when the Back strip shows', () {
+    test('reads always and never off the settings row', () {
+      expect(
+        TillSettings.fromJson({'nav_back_strip': 'never'}).backStrip,
+        BackStrip.never,
+      );
+      expect(
+        TillSettings.fromJson({'nav_back_strip': 'always'}).backStrip,
+        BackStrip.always,
+      );
+    });
+
+    test('anything else, or a server without the column, is auto', () {
+      expect(TillSettings.fromJson({}).backStrip, BackStrip.auto);
+      expect(
+        TillSettings.fromJson({'nav_back_strip': 'sometimes'}).backStrip,
+        BackStrip.auto,
+      );
+    });
+
+    test('a change of choice is a change of settings', () {
+      expect(
+        TillSettings.fromJson({'nav_back_strip': 'never'}) ==
+            TillSettings.fromJson({}),
+        isFalse,
+      );
+    });
+  });
 }

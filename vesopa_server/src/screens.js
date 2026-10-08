@@ -300,6 +300,18 @@ function cleanHereStyle(raw) {
   return HERE_STYLES.includes(v) ? v : null;
 }
 
+/**
+ * When the till shows its "Back to <home>" strip. 'auto' is stored as NULL, so
+ * a venue that never touched it and one that picked it by hand are the same
+ * row. Anything unknown is NULL too: a typo must not hide the way home.
+ */
+const BACK_STRIP = ['auto', 'always', 'never'];
+
+function cleanBackStrip(raw) {
+  const v = String(raw ?? '').trim().toLowerCase();
+  return BACK_STRIP.includes(v) && v !== 'auto' ? v : null;
+}
+
 function cleanHereBar(raw) {
   const v = String(raw ?? '').trim().toLowerCase();
   if (v === 'brand' || v === 'key') return v;
@@ -901,7 +913,9 @@ function screensRoutes({ pool, broadcast, secret }) {
    * already listening for.
    *
    * Every key is optional and only what is sent is written; null means "back
-   * to the Vesopa default" (white key, lime bar). Declared BEFORE
+   * to the Vesopa default" (white key, lime bar). `back` is when the till
+   * shows its "Back to <home>" strip: auto, always or never (2026-10-08).
+   * Declared BEFORE
    * `/screens/:id`, for the reason /screens/home gives.
    */
   router.put('/screens/highlight', auth, async (req, res, next) => {
@@ -913,6 +927,7 @@ function screensRoutes({ pool, broadcast, secret }) {
       if (has('style')) values.nav_here_style = cleanHereStyle(body.style);
       if (has('fill')) values.nav_here_fill = cleanHex(body.fill);
       if (has('bar')) values.nav_here_bar = cleanHereBar(body.bar);
+      if (has('back')) values.nav_back_strip = cleanBackStrip(body.back);
       const cols = Object.keys(values);
       if (!cols.length) return res.status(400).json({ error: 'Nothing to set.' });
 
@@ -930,6 +945,7 @@ function screensRoutes({ pool, broadcast, secret }) {
         ...(has('style') ? { style: values.nav_here_style } : {}),
         ...(has('fill') ? { fill: values.nav_here_fill } : {}),
         ...(has('bar') ? { bar: values.nav_here_bar } : {}),
+        ...(has('back') ? { back: values.nav_back_strip || 'auto' } : {}),
       });
     } catch (e) {
       next(e);
@@ -1594,6 +1610,7 @@ module.exports = {
   tillScreenRoutes,
   normaliseButton,
   cleanHex,
+  cleanBackStrip,
   cleanImage,
   cleanEmoji,
   cleanHereStyle,

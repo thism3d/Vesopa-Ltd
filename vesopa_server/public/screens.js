@@ -1250,6 +1250,8 @@ async function loadScreens() {
     fill: settings.nav_here_fill ?? null,
     bar: settings.nav_here_bar ?? null,
   };
+  // Undefined on a server without schema_till_back_strip.sql: 'auto'.
+  spBackStrip = settings.nav_back_strip || 'auto';
   spProductOptionsSig = '';
   // Not awaited: the badge on Scheduled fills in when it arrives.
   spLoadSchedules();
@@ -5057,6 +5059,8 @@ const SP_HERE_DEFAULT = { style: 'fill', fill: '#ffffff', bar: 'brand' };
 const SP_HERE_SWATCHES = ['#ffffff', '#f4f6fa', '#eff6d8', '#fff3c4', SP_BRAND, '#6e8a0e', '#111111'];
 
 let spHighlight = { style: null, fill: null, bar: null };
+/** When tills show "Back to <home>": 'auto', 'always' or 'never'. */
+let spBackStrip = 'auto';
 let spHerePreviewAt = null;
 let spHereSaveTimer = null;
 
@@ -5309,6 +5313,73 @@ function spRenderHighlight() {
 
   spRenderHerePreview();
   spRenderHereCheck();
+  spRenderBackStrip();
+}
+
+/**
+ * The sale pages a till would show "Back to <home>" on under 'auto': every one
+ * but home with no page key to home on the page, its top bar or its bottom
+ * bar. Mirrors ScreenSet.reachesHome and barFor in vesopa_epos
+ * lib/data/screens.dart; the two must agree or this list lies.
+ */
+function spPagesWithoutWayHome() {
+  const home = spDefaults.home;
+  if (home == null) return [];
+  const bar = (id, surface) => spScreens.find((s) => s.id === id && s.surface === surface) || null;
+  const keysHome = (s) => !!s && (s.buttons || []).some((b) => b.kind === 'page' && b.targetScreenId === home);
+  return spOnSurface('sale').filter((s) => {
+    if (s.id === home) return false;
+    const top = bar(s.topBarId, 'topbar') || bar(spDefaults.top, 'topbar');
+    const bottom = bar(s.bottomBarId, 'bottombar') || bar(spDefaults.bottom, 'bottombar');
+    return ![s, top, bottom].some(keysHome);
+  });
+}
+
+function spRenderBackStrip() {
+  const row = $('sp-back-row');
+  if (!row) return;
+  for (const b of row.querySelectorAll('[data-back]')) {
+    b.setAttribute('aria-checked', String(b.dataset.back === spBackStrip));
+  }
+  const out = $('sp-back-check');
+  const home = spScreens.find((s) => s.id === spDefaults.home);
+  if (!home) {
+    out.className = 'sp-here-check small muted';
+    out.textContent = 'No home screen is set, so tills never show it.';
+    return;
+  }
+  if (spBackStrip === 'never') {
+    out.className = 'sp-here-check small muted';
+    out.textContent = `Never shown. Make sure every page has a key back to ${home.name}.`;
+    return;
+  }
+  if (spBackStrip === 'always') {
+    out.className = 'sp-here-check small muted';
+    out.textContent = `Shown on every page except ${home.name}.`;
+    return;
+  }
+  const missing = spPagesWithoutWayHome();
+  out.className = 'sp-here-check small ' + (missing.length ? 'warn' : 'ok');
+  out.textContent = missing.length
+    ? `Shown on ${missing.map((s) => s.name).join(', ')}: no key there leads to ${home.name}. Add a page key to ${home.name} on ${missing.length === 1 ? 'that page' : 'those pages'}, or pick Never.`
+    : `Hidden everywhere: every page has a key back to ${home.name}.`;
+}
+
+async function spSetBackStrip(value) {
+  spBackStrip = value;
+  spRenderBackStrip();
+  try {
+    await api('/screens/highlight', {
+      method: 'PUT',
+      body: JSON.stringify({ back: value }),
+    });
+    const flag = $('sp-here-state');
+    flag.hidden = false;
+    flag.className = 'sp-flag ok';
+    flag.textContent = 'Saved · on your tills';
+  } catch (err) {
+    toast(err.message, 'error');
+  }
 }
 
 /**
@@ -5394,6 +5465,8 @@ function spBindHighlight() {
   card.addEventListener('click', (e) => {
     const style = e.target.closest('[data-style]');
     if (style) return spSetHighlight({ style: style.dataset.style });
+    const back = e.target.closest('[data-back]');
+    if (back) return spSetBackStrip(back.dataset.back);
     const bar = e.target.closest('[data-bar]');
     if (bar) {
       if (bar.dataset.bar === 'custom') {

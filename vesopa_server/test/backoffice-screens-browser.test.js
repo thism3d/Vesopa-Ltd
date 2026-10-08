@@ -186,6 +186,12 @@ function startStub() {
           return send(200, state.screens);
         }
         if (url.pathname === '/api/products') return send(200, state.products);
+        // The venue's modules (2026-10-04): a list, or app.js cannot draw.
+        if (url.pathname === '/api/modules') return send(200, []);
+        if (url.pathname === '/api/screens/highlight' && req.method === 'PUT') {
+          state.highlight = json;
+          return send(200, { ok: true, ...json });
+        }
         if (url.pathname === '/api/till-settings' && req.method === 'GET') {
           return send(200, {
             home_screen_id: 1,
@@ -1502,6 +1508,29 @@ check('choosing the venue font saves it on its own, not with the layout', async 
     'inter',
     'the venue font never reached the settings row'
   );
+});
+
+// The Back strip (2026-10-08): Drinks has no key home, and neither has the
+// venue's bottom bar, so a till shows "Back to <home>" there under auto.
+check('the Back strip card names the pages that show it, and Never saves', async (cdp, state) => {
+  await reset(cdp);
+  const said = await cdp.eval(
+    `return {
+       checked: document.querySelector('#sp-back-modes [aria-checked="true"]')?.dataset.back,
+       text: document.getElementById('sp-back-check').textContent,
+     };`
+  );
+  assert.strictEqual(said.checked, 'auto');
+  assert.ok(/Shown on Drinks/.test(said.text), said.text);
+  await cdp.eval(
+    `document.querySelector('#sp-back-modes [data-back="never"]').click();
+     return new Promise((go) => setTimeout(() => go(true), 250));`
+  );
+  assert.deepStrictEqual(state.highlight, { back: 'never' });
+  const after = await cdp.eval(
+    `return document.querySelector('#sp-back-modes [aria-checked="true"]')?.dataset.back;`
+  );
+  assert.strictEqual(after, 'never');
 });
 
 // ---------------------------------------------------------------------------

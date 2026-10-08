@@ -2012,7 +2012,7 @@
             <div class="sp-here-head">
               <div>
                 <h3>Page highlight</h3>
-                <span class="muted small">The key for the page a till is on lights up by itself. Every till in this venue, no setup per page.</span>
+                <span class="muted small">The key for the page a till is on lights up by itself, and you choose when tills show the "Back to home" strip. Every till in this venue, no setup per page.</span>
               </div>
               <span class="sp-flag" id="sp-here-state" hidden></span>
               <button type="button" class="btn ghost small" id="sp-here-reset" title="White key, Vesopa lime underbar">Reset to Vesopa brand</button>
@@ -2043,6 +2043,18 @@
                   <div class="sp-picker" id="sp-here-bar" hidden></div>
                 </div>
                 <p class="sp-here-check small" id="sp-here-check" aria-live="polite"></p>
+                <!-- The till's "Back to <home>" strip (2026-10-08). Here because
+                     it is the other half of "how staff find their way round
+                     the pages": one card, not a settings page of its own. -->
+                <div class="sp-here-row" id="sp-back-row">
+                  <span class="sp-here-label" id="sp-back-label">"Back to home" strip above the keys</span>
+                  <div class="sp-here-modes" role="radiogroup" aria-labelledby="sp-back-label" id="sp-back-modes">
+                    <button type="button" role="radio" data-back="auto">Only where needed</button>
+                    <button type="button" role="radio" data-back="always">Always</button>
+                    <button type="button" role="radio" data-back="never">Never</button>
+                  </div>
+                  <p class="sp-here-check small" id="sp-back-check" aria-live="polite"></p>
+                </div>
               </div>
               <div class="sp-here-stage">
                 <div class="sp-here-till" id="sp-here-preview" aria-label="Preview: tap a key to move the highlight"></div>

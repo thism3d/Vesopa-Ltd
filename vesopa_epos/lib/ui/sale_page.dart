@@ -38,6 +38,7 @@ import 'widgets/customer_card.dart';
 import 'widgets/live_receipt.dart';
 import 'widgets/line_editor.dart';
 import '../data/screens.dart';
+import '../data/till_settings.dart' show BackStrip;
 import 'widgets/on_screen_keyboard.dart';
 import 'widgets/pos_message.dart';
 import 'widgets/open_bills_strip.dart';
@@ -650,13 +651,19 @@ class SalePage extends ConsumerWidget {
                       // mixers, and "add a button" is not a fix anybody can
                       // apply from behind a counter. Only when the page has
                       // no key home of its own, though: see reachesHome.
+                      // The venue can also say always or never: see
+                      // TillSettings.backStrip.
                       if (programmed.id != settings.homeScreenId &&
-                          !screenSet.reachesHome(
-                            programmed,
-                            settings.homeScreenId,
-                            top: topBar,
-                            bottom: bottomBar,
-                          ))
+                          switch (settings.backStrip) {
+                            BackStrip.never => false,
+                            BackStrip.always => true,
+                            BackStrip.auto => !screenSet.reachesHome(
+                              programmed,
+                              settings.homeScreenId,
+                              top: topBar,
+                              bottom: bottomBar,
+                            ),
+                          })
                         _ScreenCrumb(
                           name: programmed.name,
                           homeName: home?.name,

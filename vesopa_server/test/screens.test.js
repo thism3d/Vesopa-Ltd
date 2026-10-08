@@ -24,6 +24,7 @@ const {
   tillScreenRoutes,
   normaliseButton,
   cleanHex,
+  cleanBackStrip,
   cleanImage,
   cleanEmoji,
   functionKeysFor,
@@ -1134,6 +1135,38 @@ async function check(name, fn) {
     // A fit nobody has heard of draws as cover rather than as nothing. A back
     // office one release ahead of a till must leave it drawing a key.
     assert.strictEqual(framed({ imageFit: 'tile' }).image_fit, 'cover');
+  });
+
+  // ---- Back strip (2026-10-08) ---------------------------------------------
+
+  await check('the Back strip choice is written, and auto is stored as NULL', async () => {
+    const pool = fakePool([OFFICE]);
+    const told = [];
+    const server = await listen(appWith(pool, (m) => told.push(m)));
+    const never = await call(server, 'PUT', '/api/screens/highlight', {
+      token: sessionToken,
+      body: { back: 'never' },
+    });
+    const auto = await call(server, 'PUT', '/api/screens/highlight', {
+      token: sessionToken,
+      body: { back: 'auto' },
+    });
+    server.close();
+
+    assert.strictEqual(never.status, 200, JSON.stringify(never.body));
+    assert.strictEqual(never.body.back, 'never');
+    assert.strictEqual(auto.body.back, 'auto');
+    const writes = pool.asked.filter((q) => q.sql.includes('nav_back_strip'));
+    assert.strictEqual(writes.length, 2);
+    assert.deepStrictEqual(writes[0].params.slice(-1), ['never']);
+    assert.deepStrictEqual(writes[1].params.slice(-1), [null]);
+    assert.ok(told.some((m) => m.type === 'till-settings'), 'the tills were not told');
+  });
+
+  await check('a Back strip choice nobody has heard of falls back to auto', async () => {
+    assert.strictEqual(cleanBackStrip('ALWAYS'), 'always');
+    assert.strictEqual(cleanBackStrip('hide'), null);
+    assert.strictEqual(cleanBackStrip(null), null);
   });
 
   console.log(`\n${passed} checks passed`);
