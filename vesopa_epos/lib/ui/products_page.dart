@@ -53,6 +53,7 @@ class ProductsPage extends ConsumerStatefulWidget {
 class _ProductsPageState extends ConsumerState<ProductsPage> {
   String _search = '';
   String? _department;
+  String? _subDepartment;
   _ProductFilter _filter = _ProductFilter.all;
 
   @override
@@ -72,8 +73,25 @@ class _ProductsPageState extends ConsumerState<ProductsPage> {
         }.toList()
           ..sort();
 
+        // Sub departments under the chosen department only, so the list
+        // stays short and never offers one that would empty the page.
+        final subDepartments = {
+          for (final p in all)
+            if ((p.groupName?.isNotEmpty ?? false) &&
+                (_department == null || p.departmentName == _department))
+              p.groupName!,
+        }.toList()
+          ..sort();
+        // A sync can drop the sub department that was picked; the filter
+        // lets go of it rather than holding the page on a name not listed.
+        final subDepartment =
+            subDepartments.contains(_subDepartment) ? _subDepartment : null;
+
         final visible = all.where((p) {
           if (_department != null && p.departmentName != _department) {
+            return false;
+          }
+          if (subDepartment != null && p.groupName != subDepartment) {
             return false;
           }
           if (!_filter.matches(p, stock[p.pluId])) return false;
@@ -94,7 +112,13 @@ class _ProductsPageState extends ConsumerState<ProductsPage> {
               onSearch: (v) => setState(() => _search = v),
               departments: departments,
               department: _department,
-              onDepartment: (v) => setState(() => _department = v),
+              onDepartment: (v) => setState(() {
+                _department = v;
+                _subDepartment = null;
+              }),
+              subDepartments: subDepartments,
+              subDepartment: subDepartment,
+              onSubDepartment: (v) => setState(() => _subDepartment = v),
               onApplyCase: stock.isEmpty ? null : () => _applyCase(stock, packs),
               onAdd: () => _add(all),
             ),
@@ -364,6 +388,9 @@ class _Toolbar extends StatelessWidget {
     required this.departments,
     required this.department,
     required this.onDepartment,
+    required this.subDepartments,
+    required this.subDepartment,
+    required this.onSubDepartment,
     this.onApplyCase,
     this.onAdd,
   });
@@ -375,6 +402,9 @@ class _Toolbar extends StatelessWidget {
   final List<String> departments;
   final String? department;
   final void Function(String?) onDepartment;
+  final List<String> subDepartments;
+  final String? subDepartment;
+  final void Function(String?) onSubDepartment;
 
   @override
   Widget build(BuildContext context) {
@@ -405,6 +435,22 @@ class _Toolbar extends StatelessWidget {
                   DropdownMenuItem(value: d, child: Text(d)),
               ],
               onChanged: onDepartment,
+            ),
+          ],
+          if (subDepartments.isNotEmpty) ...[
+            const SizedBox(width: 10),
+            DropdownButton<String?>(
+              key: const Key('sub-department-filter'),
+              value: subDepartment,
+              hint: const Text('All sub departments'),
+              underline: const SizedBox.shrink(),
+              items: [
+                const DropdownMenuItem(
+                    value: null, child: Text('All sub departments')),
+                for (final d in subDepartments)
+                  DropdownMenuItem(value: d, child: Text(d)),
+              ],
+              onChanged: onSubDepartment,
             ),
           ],
           if (onApplyCase != null) ...[

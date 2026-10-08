@@ -1978,6 +1978,7 @@ async function ensurePrinterNames() {
 let productRows = [];
 let productQuery = '';
 let productDept = '';
+let productSubDept = '';
 let productSort = { key: null, dir: 1 };
 let productsBound = false;
 
@@ -2278,11 +2279,19 @@ function bindProducts() {
   });
   $('prod-dept').addEventListener('change', (e) => {
     productDept = e.target.value;
+    // A sub department picked under the old department would leave the
+    // table empty, so it is let go when the department changes.
+    productSubDept = '';
+    renderProducts();
+  });
+  $('prod-subdept').addEventListener('change', (e) => {
+    productSubDept = e.target.value;
     renderProducts();
   });
   $('prod-clear').addEventListener('click', () => {
     productQuery = '';
     productDept = '';
+    productSubDept = '';
     productSort = { key: null, dir: 1 };
     $('prod-q').value = '';
     renderProducts();
@@ -2315,6 +2324,7 @@ function bindProducts() {
 function visibleProducts() {
   const rows = productRows.filter((p) => {
     if (productDept && (p.department_name || '') !== productDept) return false;
+    if (productSubDept && (p.group_name || '') !== productSubDept) return false;
     if (!productQuery) return true;
     return (
       String(p.product_name || '').toLowerCase().includes(productQuery) ||
@@ -2580,6 +2590,18 @@ function cellSelect(field, values, current) {
 }
 
 function renderProducts() {
+  // A socket push can take away the sub department being filtered on (it was
+  // renamed, or its last product moved). Let it go rather than show nothing.
+  if (
+    productSubDept &&
+    !productRows.some(
+      (p) =>
+        p.group_name === productSubDept &&
+        (!productDept || p.department_name === productDept)
+    )
+  ) {
+    productSubDept = '';
+  }
   const rows = visibleProducts();
 
   // Two products sharing a PLU is a real fault, not a curiosity: a screen
@@ -2600,6 +2622,25 @@ function renderProducts() {
       .map(
         (d) =>
           `<option value="${esc(d)}"${d === productDept ? ' selected' : ''}>${esc(d)}</option>`
+      )
+      .join('');
+
+  // The sub departments on offer are the ones under the chosen department,
+  // so "Beers & Ciders" is not listed while Food is picked.
+  const subDepartments = [
+    ...new Set(
+      productRows
+        .filter((p) => !productDept || p.department_name === productDept)
+        .map((p) => p.group_name)
+        .filter(Boolean)
+    ),
+  ].sort();
+  $('prod-subdept').innerHTML =
+    '<option value="">All sub departments</option>' +
+    subDepartments
+      .map(
+        (d) =>
+          `<option value="${esc(d)}"${d === productSubDept ? ' selected' : ''}>${esc(d)}</option>`
       )
       .join('');
 
