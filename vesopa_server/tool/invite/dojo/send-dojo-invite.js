@@ -28,7 +28,8 @@ const RECIPIENTS = [
 
 async function main() {
   const eml = path.join(__dirname, 'Vesopa-Dojo-kick-off.eml');
-  let raw = fs.readFileSync(eml, 'utf8');
+  // Git may store it with LF endings; mail wants CRLF.
+  let raw = fs.readFileSync(eml, 'utf8').replace(/\r?\n/g, '\r\n');
   const split = raw.indexOf('\r\n\r\n');
   let head = raw.slice(0, split);
   const body = raw.slice(split);
