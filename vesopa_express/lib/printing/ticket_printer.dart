@@ -142,14 +142,42 @@ class TicketPrinter {
         final path = usbPath!;
         await Isolate.run(() => sendToUsbDevice(path, payload));
       case TicketPrinterKind.network:
-        final socket = await Socket.connect(host!.trim(), port, timeout: const Duration(seconds: 5));
-        try {
-          socket.add(payload);
-          await socket.flush();
-        } finally {
-          socket.destroy();
-        }
+        await sendToNetworkPrinter(host!.trim(), port, payload);
     }
+  }
+}
+
+/// Raw TCP to a network printer, closed gracefully (2026-10-08).
+///
+/// This used to flush and `destroy()` at once. A flush only means the bytes
+/// left the kiosk; the printer reads them as fast as it prints. Destroying the
+/// socket then resets the connection, and a printer that had said anything
+/// back drops what it had not read yet: a ticket with its heading and nothing
+/// else, and no cut. Seen on the till at Pontardawe on an Xprinter; the same
+/// code was here. Now: read and drop whatever the printer says, send,
+/// half-close, and wait for the printer to close its side.
+Future<void> sendToNetworkPrinter(String host, int port, List<int> bytes) async {
+  final socket = await Socket.connect(host, port, timeout: const Duration(seconds: 5));
+  socket.setOption(SocketOption.tcpNoDelay, true);
+  final closed = Completer<void>();
+  final sub = socket.listen(
+    (_) {},
+    onError: (_) {
+      if (!closed.isCompleted) closed.complete();
+    },
+    onDone: () {
+      if (!closed.isCompleted) closed.complete();
+    },
+    cancelOnError: true,
+  );
+  try {
+    socket.add(bytes);
+    await socket.flush();
+    await socket.close().timeout(const Duration(seconds: 5));
+    await closed.future.timeout(const Duration(seconds: 3), onTimeout: () {});
+  } finally {
+    await sub.cancel();
+    socket.destroy();
   }
 }
 

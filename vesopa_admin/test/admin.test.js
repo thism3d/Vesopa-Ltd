@@ -143,7 +143,7 @@ test('admin.vesopa.com end to end', async (t) => {
     for (const o of offices) {
       const i = pins.findIndex((p) => p.app === req.params.app && (o === 'default' ? p.default : p.office_id === o));
       if (i >= 0) pins.splice(i, 1);
-      if (!b.clear) pins.push({ app: req.params.app, default: o === 'default', office_id: o === 'default' ? null : o, version: b.version, url: b.url, sha256: b.sha256 });
+      if (!b.clear) pins.push({ app: req.params.app, default: o === 'default', office_id: o === 'default' ? null : o, version: b.version, url: b.url, sha256: b.sha256, store: !!b.store });
     }
     res.json({ ok: true });
   });
@@ -349,6 +349,40 @@ test('admin.vesopa.com end to end', async (t) => {
       assert.strictEqual(no.status, 403, 'billing downloads but does not move venues');
       const yes = await call(server, 'GET', '/downloads', { cookie: billing.cookie });
       assert.strictEqual(yes.status, 200);
+    });
+
+    // 2026-10-08: one choice moves a venue's Store copies as well, once the
+    // version is live on the Store.
+    await t.test('Store: marking a version live re-sends it with the Store, and Store-only versions can be chosen', async () => {
+      const releases = require('../src/releases');
+      const v115 = await releases.find('till', '1.15.0');
+      asked.length = 0;
+      const on = await call(server, 'POST', `/downloads/${v115.id}`, { cookie: owner.cookie, form: { _csrf: owner.csrf, action: 'store-on' } });
+      assert.strictEqual(on.status, 303);
+      assert.match(flashOf(on).text, /live on the Store/);
+      const put = asked.find((a) => a.method === 'PUT' && a.url === '/api/admin/app-versions/till');
+      assert.ok(put, 'the venue already on 1.15.0 was re-sent');
+      assert.deepStrictEqual(put.body.offices, [7]);
+      assert.strictEqual(put.body.store, true);
+      assert.strictEqual(put.body.url, releases.deviceUrl(v115), 'installed copies still get the installer');
+
+      const add = await call(server, 'POST', '/downloads/store', { cookie: owner.cookie, form: { _csrf: owner.csrf, app: 'till', version: '1.15.1' } });
+      assert.match(flashOf(add).text, /1\.15\.1 is marked as live/);
+      const only = await releases.find('till', '1.15.1');
+      assert.strictEqual(only.file, '');
+      const page = await call(server, 'GET', '/downloads', { cookie: owner.cookie });
+      assert.match(page.text, /Store only/);
+      const nofile = await call(server, 'GET', `/downloads/${only.id}`, { cookie: owner.cookie });
+      assert.strictEqual(nofile.status, 303, 'nothing to download');
+
+      asked.length = 0;
+      const r = await call(server, 'POST', '/versions', { cookie: owner.cookie, form: { _csrf: owner.csrf, app: 'till', bulk: 'rows', pin_7: String(only.id), was_7: String(v115.id) } });
+      assert.match(flashOf(r).text, /1 venue changed/);
+      const sent = asked.find((a) => a.method === 'PUT' && a.url === '/api/admin/app-versions/till');
+      assert.deepStrictEqual({ version: sent.body.version, store: sent.body.store, url: sent.body.url }, { version: '1.15.1', store: true, url: undefined });
+      const versions = await call(server, 'GET', '/versions?app=till', { cookie: owner.cookie });
+      assert.match(versions.text, /1\.15\.1 · Store only/);
+      assert.match(versions.text, /1\.15\.0 · EXE \+ Store/);
     });
   } finally {
     server.close();

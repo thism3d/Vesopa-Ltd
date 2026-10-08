@@ -7803,3 +7803,16 @@ tr.ls-off td { opacity: .55; }
 [data-theme="dark"] .ms-badge.blue { background: #142a45; color: #9cc6ff; }
 [data-theme="dark"] .ms-badge.red { background: #45201d; color: #f7a69f; }
 [data-theme="dark"] .ms-badge.grey { background: #2c2c2c; color: #bbb; }
+
+/* Receipt Designer: the end of the paper, as Paper and cutting leaves it. */
+.rp-feed { width: 100%; }
+.rp-cut {
+  margin: 0 -4mm;
+  border-top: 2px dashed currentColor;
+  font-size: 9px;
+  text-align: center;
+  opacity: .55;
+  padding-top: 2px;
+}
+.rp-cut.rp-partial { border-top-style: dotted; }
+.rp-cut.rp-tear { border-top: 1px solid currentColor; }

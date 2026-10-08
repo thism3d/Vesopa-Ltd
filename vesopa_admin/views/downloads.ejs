@@ -13,14 +13,19 @@
     <tbody>
     <% rows.forEach((r, i) => { %>
       <tr class="<%= r.withdrawn_at ? 'failed' : '' %>">
-        <td><b><%= r.version %></b><% if (i === 0 && !r.withdrawn_at) { %> <span class="pill green">newest</span><% } %><% if (r.withdrawn_at) { %> <span class="pill grey">hidden</span><% } %>
+        <td><b><%= r.version %></b><% if (i === 0 && !r.withdrawn_at) { %> <span class="pill green">newest</span><% } %><% if (r.withdrawn_at) { %> <span class="pill grey">hidden</span><% } %><% if (Number(r.store_live)) { %> <span class="pill green" title="Live on the Microsoft Store: venues set to it move their Store copies too">on the Store</span><% } %>
           <% if (r.notes) { %><small class="muted block"><%= r.notes %></small><% } %></td>
         <td><%= when(r.added_at) %><small class="muted block"><%= r.added_by || '' %></small></td>
-        <td class="nowrap"><%= size(r.size) %></td>
-        <td><% if (r.signed) { %><span class="pill green">Vesopa</span><% } else { %><span class="pill amber" title="Windows shows an unknown publisher warning: More info, then Run anyway">unsigned</span><% } %></td>
+        <td class="nowrap"><%= r.file ? size(r.size) : '' %></td>
+        <td><% if (!r.file) { %><span class="muted">Store only</span><% } else if (r.signed) { %><span class="pill green">Vesopa</span><% } else { %><span class="pill amber" title="Windows shows an unknown publisher warning: More info, then Run anyway">unsigned</span><% } %></td>
         <td class="nowrap">
-          <a class="btn primary" href="/downloads/<%= r.id %>">Download</a>
+          <% if (r.file) { %><a class="btn primary" href="/downloads/<%= r.id %>">Download</a><% } %>
           <% if (can('versions.manage')) { %>
+          <form method="post" action="/downloads/<%= r.id %>" class="inline">
+            <input type="hidden" name="_csrf" value="<%= me.csrf %>">
+            <input type="hidden" name="action" value="<%= Number(r.store_live) ? 'store-off' : 'store-on' %>">
+            <button class="link" type="submit"><%= Number(r.store_live) ? 'Not on the Store' : 'Live on the Store' %></button>
+          </form>
           <form method="post" action="/downloads/<%= r.id %>" class="inline">
             <input type="hidden" name="_csrf" value="<%= me.csrf %>">
             <input type="hidden" name="action" value="<%= r.withdrawn_at ? 'restore' : 'withdraw' %>">
@@ -33,6 +38,18 @@
     </tbody>
   </table>
   <% } %>
+</section>
+<% } %>
+<% if (can('versions.manage')) { %>
+<section class="card">
+  <form method="post" action="/downloads/store" class="inline">
+    <input type="hidden" name="_csrf" value="<%= me.csrf %>">
+    <b>A version is live on the Microsoft Store</b>
+    <select name="app" aria-label="App"><% for (const a of apps) { %><option value="<%= a.key %>"><%= a.short %></option><% } %></select>
+    <input name="version" placeholder="1.15.0" aria-label="Version" size="10" required>
+    <button class="btn" type="submit">Mark as live</button>
+  </form>
+  <p class="muted">Once the Store has published a version, mark it here. A venue set to it under Versions then moves its Store copies too: they are sent to the Store page to update. A version with no installer is listed as Store only.</p>
 </section>
 <% } %>
 <details class="card help">

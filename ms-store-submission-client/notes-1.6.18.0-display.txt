@@ -1,0 +1,3 @@
+Version 1.6.18.0 - Updates from Vesopa
+
+The customer display can now follow the version Vesopa sets for your venue. Installed copies update quietly the next time they start.

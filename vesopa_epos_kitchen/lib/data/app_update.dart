@@ -22,7 +22,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 ///   * Only a copy installed from our own installer (installer/vesopa-app.iss)
 ///     ever updates itself. That installer writes `vesopa-install.txt` beside
 ///     the program with the version it installed; a Microsoft Store copy has
-///     no such file and is left to the Store.
+///     no such file. Since 2026-10-08 a Store copy is told about its venue's
+///     version too, once that version is live on the Store, and is sent to
+///     its Store page for it -- forward only, as the Store goes.
 ///   * The device says what it runs on the licence check it already makes
 ///     every five minutes ([Installation.headers]). The back office answers
 ///     with `update` when the venue is set to another version, up OR down, and
@@ -41,6 +43,7 @@ class AppUpdate {
     required this.sha256,
     this.size,
     this.downgrade = false,
+    this.storeId,
   });
 
   final String version;
@@ -51,9 +54,22 @@ class AppUpdate {
   /// The venue was moved back to an older version.
   final bool downgrade;
 
+  /// Set when this copy came from the Microsoft Store (2026-10-08): the
+  /// version is live on the Store, and this is the app's Store product. A
+  /// Store copy cannot run our installer -- that puts a second app beside it
+  /// -- so it is sent to its Store page, where the update is one press.
+  final String? storeId;
+
+  bool get viaStore => storeId != null;
+
   static AppUpdate? fromJson(Object? raw) {
     if (raw is! Map) return null;
     final version = raw['version'];
+    if (raw['store'] == true) {
+      final id = raw['store_id'];
+      if (version is! String || id is! String || !RegExp(r'^[0-9A-Z]{12}$').hasMatch(id)) return null;
+      return AppUpdate(version: version, url: '', sha256: '', storeId: id);
+    }
     final url = raw['url'];
     final sha = raw['sha256'];
     if (version is! String || url is! String || sha is! String) return null;
@@ -259,9 +275,11 @@ class Updater {
     } catch (_) {}
   }
 
-  /// Whether to offer [update] to this copy now.
+  /// Whether to offer [update] to this copy now. A Store update only to a
+  /// Store copy, an installer only to one of ours.
   static Future<bool> _wanted(AppUpdate update, Installation me) async {
-    if (!me.updatable || _same(update.version, me.version)) return false;
+    if (update.viaStore ? me.kind != 'store' : !me.updatable) return false;
+    if (_same(update.version, me.version)) return false;
     if (_handled.contains(update.version)) return false;
     try {
       // Installed once already and still not on it: the installer did not
@@ -301,6 +319,11 @@ Future<void> offerUpdate(
   if (!await Updater._wanted(update, me)) return;
   if (ready != null && !ready()) return;
   Updater._handled.add(update.version);
+  if (update.viaStore) {
+    if (!context.mounted) return;
+    await _offerFromStore(context, update, appName: appName, current: me.version);
+    return;
+  }
   final file = await Updater.fetch(update);
   if (file == null) {
     Updater._handled.remove(update.version); // try again at the next check
@@ -341,11 +364,57 @@ Future<void> offerUpdate(
   }
 }
 
+/// A Microsoft Store copy: "Open the Store" or "Later". Later is asked again
+/// the next time the app starts; the Store itself may well have updated it
+/// by then.
+Future<void> _offerFromStore(
+  BuildContext context,
+  AppUpdate update, {
+  required String appName,
+  required String current,
+}) async {
+  final go = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text('A new version of $appName is in the Microsoft Store'),
+      content: Text(
+        'Version ${update.version} is ready (this device has $current). '
+        'Open the Store and press Update. $appName closes for a moment and '
+        'opens again, with everything on it kept.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Later'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          child: const Text('Open the Store'),
+        ),
+      ],
+    ),
+  );
+  if (go != true) return;
+  try {
+    // The Store's own link to this app's page. explorer.exe hands a protocol
+    // link to whatever owns it, which is the Store, from inside the package
+    // as well as out.
+    await Process.start(
+      'explorer.exe',
+      ['ms-windows-store://pdp/?ProductId=${update.storeId}&mode=mini'],
+      mode: ProcessStartMode.detached,
+    );
+  } catch (_) {}
+}
+
 /// For a screen customers face (the customer display, the kiosk), where a
 /// question nobody at the counter can answer must not appear: fetch [update]
 /// quietly and take it the next time the app starts.
+///
+/// A Store update is not staged: nothing can press Update in the Store for a
+/// screen nobody at the counter is using, and the Store updates its own apps.
 Future<void> stageUpdate(AppUpdate? update, {required String builtVersion}) async {
-  if (update == null || kIsWeb || !Platform.isWindows) return;
+  if (update == null || update.viaStore || kIsWeb || !Platform.isWindows) return;
   final me = await Installation.current(builtVersion);
   if (!await Updater._wanted(update, me)) return;
   Updater._handled.add(update.version);

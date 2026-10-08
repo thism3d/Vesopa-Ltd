@@ -2637,6 +2637,32 @@
                   placeholder="https://…"></label>
                 <label class="check"><input type="checkbox" data-rd="show_powered_by"> "Powered by Vesopa EPOS"</label>
               </div>
+
+              <!-- Paper and cutting (2026-10-08): the venue's Standard for every
+                   till printer. A till printer set to Custom keeps its own. -->
+              <div class="card rd-card">
+                <h3>Paper and cutting</h3>
+                <p class="small muted">Every till printer on Standard (the default) uses these.
+                  A printer that needs something different is set to Custom on its till,
+                  under Settings &rsaquo; Printers.</p>
+                <label>Cut
+                  <select data-rd="print_cut">
+                    <option value="full">Full cut (recommended)</option>
+                    <option value="partial">Partial cut, leaves a small tab</option>
+                    <option value="none">No cut, for printers without a cutter</option>
+                  </select>
+                </label>
+                <label>Paper fed before the cut
+                  <select data-rd="print_feed_lines">
+                    <option value="3">3 lines, least paper</option>
+                    <option value="4">4 lines</option>
+                    <option value="5">5 lines (recommended)</option>
+                    <option value="6">6 lines</option>
+                    <option value="8">8 lines, if the cut goes through the last line</option>
+                  </select>
+                </label>
+                <label class="check"><input type="checkbox" data-rd="kitchen_beep"> Beep when a kitchen ticket prints</label>
+              </div>
             </div>
 
             <!-- Live preview -->

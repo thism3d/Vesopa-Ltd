@@ -535,6 +535,9 @@ function backofficeRoutes({ pool, broadcast, secret }) {
     'header_note', 'footer_message', 'footer_note', 'social_line',
     'paper_width_mm', 'show_logo', 'show_vat_breakdown', 'show_barcode',
     'show_qr', 'qr_url', 'show_served_by', 'show_powered_by',
+    // Paper and cutting (2026-10-08): the Standard print mode of every till
+    // printer that has not been set to Custom. schema_print_options.sql.
+    'print_cut', 'print_feed_lines', 'kitchen_beep',
   ];
 
   const BRANDING_DEFAULTS = {
@@ -544,7 +547,7 @@ function backofficeRoutes({ pool, broadcast, secret }) {
     footer_message: 'Thank you for your custom', footer_note: '',
     social_line: '', paper_width_mm: 80, show_logo: 1, show_vat_breakdown: 1,
     show_barcode: 1, show_qr: 0, qr_url: '', show_served_by: 1,
-    show_powered_by: 1,
+    show_powered_by: 1, print_cut: 'full', print_feed_lines: 5, kitchen_beep: 0,
   };
 
   /**
@@ -618,7 +621,12 @@ function backofficeRoutes({ pool, broadcast, secret }) {
           // Anything other than the two real roll widths is a mistake.
           return Number(v) === 58 ? 58 : 80;
         }
-        if (f.startsWith('show_')) return v ? 1 : 0;
+        if (f.startsWith('show_') || f === 'kitchen_beep') return v && v !== '0' ? 1 : 0;
+        if (f === 'print_cut') return ['full', 'partial', 'none'].includes(v) ? v : 'full';
+        if (f === 'print_feed_lines') {
+          const n = Number.parseInt(v, 10);
+          return Number.isFinite(n) ? Math.min(12, Math.max(0, n)) : 5;
+        }
         if (f === 'logo_url') return v || null;
         return v == null ? '' : String(v);
       });

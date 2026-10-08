@@ -153,7 +153,8 @@ class ReceiptBuilder {
     this._generator, {
     this.columns = 48,
     this.codePage = escPosGbp,
-  }) {
+    ResolvedPrint? finish,
+  }) : _finishing = finish ?? PrintOptions.standard.resolve() {
     // Recorded on the generator rather than emitted, so that every later
     // `reset()` re-selects it: `reset()` sends ESC @, which drops the printer
     // back to its factory code page, and then re-applies whatever was set here.
@@ -191,6 +192,18 @@ class ReceiptBuilder {
 
   final Generator _generator;
 
+  /// How documents end -- feed, cut, beep -- for the printer this builder is
+  /// laying out for. See print_options.dart.
+  final ResolvedPrint _finishing;
+
+  /// The end of a document: feed past the blade and cut, as this printer is
+  /// set up to. Replaces the library's `cut()`, which always fed five blank
+  /// lines and always sent a full cut, whatever the printer had.
+  List<int> _finish({bool kitchen = false}) => [
+        if (kitchen && _finishing.kitchenBeep) ..._finishing.beep(),
+        ..._finishing.finish(),
+      ];
+
   /// Which character table this printer is told to draw in. See
   /// [escPosCodePages].
   final String codePage;
@@ -211,6 +224,7 @@ class ReceiptBuilder {
   static Future<ReceiptBuilder> create({
     int paperWidthMm = 80,
     String codePage = escPosGbp,
+    PrintOptions options = PrintOptions.standard,
   }) async {
     final profile = await CapabilityProfile.load();
     final narrow = paperWidthMm == 58;
@@ -218,12 +232,17 @@ class ReceiptBuilder {
       Generator(narrow ? PaperSize.mm58 : PaperSize.mm80, profile),
       columns: narrow ? 32 : 48,
       codePage: codePage,
+      finish: options.resolve(),
     );
   }
 
   /// Build for a printer, taking its roll width and its code page from it.
   static Future<ReceiptBuilder> forPrinter(PrinterConfig printer) =>
-      create(paperWidthMm: printer.paperWidthMm, codePage: printer.codePage);
+      create(
+        paperWidthMm: printer.paperWidthMm,
+        codePage: printer.codePage,
+        options: printer.options,
+      );
 
   /// Opens a document: clears whatever the last job left behind and selects the
   /// code page. Every builder below starts with this.
@@ -433,8 +452,7 @@ class ReceiptBuilder {
 
     if (order.training) bytes.addAll(_trainingLine());
 
-    bytes.addAll(_generator.feed(2));
-    bytes.addAll(_generator.cut());
+    bytes.addAll(_finish());
     return bytes;
   }
 
@@ -608,8 +626,7 @@ class ReceiptBuilder {
 
     if (summary.training) bytes.addAll(_trainingLine());
 
-    bytes.addAll(_generator.feed(2));
-    bytes.addAll(_generator.cut());
+    bytes.addAll(_finish());
     return bytes;
   }
 
@@ -749,8 +766,7 @@ class ReceiptBuilder {
       bytes.addAll(_text(staffName));
     }
 
-    bytes.addAll(_generator.feed(2));
-    bytes.addAll(_generator.cut());
+    bytes.addAll(_finish(kitchen: true));
     return bytes;
   }
 
@@ -944,8 +960,7 @@ class ReceiptBuilder {
       );
     }
 
-    bytes.addAll(_generator.feed(2));
-    bytes.addAll(_generator.cut());
+    bytes.addAll(_finish());
     return bytes;
   }
 
@@ -1048,8 +1063,7 @@ class ReceiptBuilder {
     }
     bytes.addAll(_row('Issued', _time.format(at ?? DateTime.now())));
 
-    bytes.addAll(_generator.feed(2));
-    bytes.addAll(_generator.cut());
+    bytes.addAll(_finish());
     return bytes;
   }
 
@@ -1148,8 +1162,7 @@ class ReceiptBuilder {
       ),
     );
 
-    bytes.addAll(_generator.feed(2));
-    bytes.addAll(_generator.cut());
+    bytes.addAll(_finish());
     return bytes;
   }
 
@@ -1185,15 +1198,16 @@ class ReceiptBuilder {
     for (final line in footer) {
       bytes.addAll(_text(line));
     }
-    bytes.addAll(_generator.feed(2));
-    bytes.addAll(_generator.cut());
+    bytes.addAll(_finish());
     return bytes;
   }
 
   /// Opens the cash drawer (the "No Sale" key). The drawer is a solenoid wired
   /// into a printer's RJ11 socket, so this is a printer command with nothing to
   /// print.
-  List<int> openDrawer() => _generator.drawer();
+  List<int> openDrawer() => _generator.drawer(
+        pin: _finishing.openDrawerPin == 1 ? PosDrawer.pin5 : PosDrawer.pin2,
+      );
 
   /// A slip proving a printer is set up and reachable.
   ///
@@ -1251,8 +1265,32 @@ class ReceiptBuilder {
     // Exactly one full line for this roll: if it wraps, the printer is loaded
     // with narrower paper than it has been set up for.
     bytes.addAll(_text(('1234567890' * 5).substring(0, columns)));
-    bytes.addAll(_generator.feed(2));
-    bytes.addAll(_generator.cut());
+
+    // How this printer finishes a document, and the line that proves the
+    // whole slip arrived. A printer that drops data loses the END of a job
+    // first -- the Z report that was only its heading -- so a slip that shows
+    // this line and was cut has been sent in full.
+    bytes.addAll(_generator.hr());
+    bytes.addAll(_row('Print mode', printer.options.custom ? 'Custom' : 'Standard'));
+    bytes.addAll(_row('Cut', _finishing.cut.label));
+    bytes.addAll(_row('Feed before cut', '${_finishing.feedLines} lines'));
+    bytes.addAll(_row('Sending', _finishing.gentle ? 'Gently' : 'Normal'));
+    bytes.addAll(_generator.hr());
+    bytes.addAll(
+      _text(
+        '*** END OF TEST ***',
+        styles: const PosStyles(align: PosAlign.center, bold: true),
+      ),
+    );
+    bytes.addAll(
+      _text(
+        _finishing.cut == CutStyle.none
+            ? 'You can read this line: the whole slip arrived.'
+            : 'You can read this line and the paper cut: all is well.',
+        styles: const PosStyles(align: PosAlign.center),
+      ),
+    );
+    bytes.addAll(_finish());
     return bytes;
   }
 

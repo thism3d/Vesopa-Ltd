@@ -126,10 +126,41 @@ async function add({ app, version, source, signed = false, notes = null, by = nu
   return get(r.insertId);
 }
 
+/**
+ * Mark a version as live on the Microsoft Store (2026-10-08), or record one
+ * that is only on the Store. A venue set to it then moves its Store copies as
+ * well as its installed ones: the back office sends a Store copy to the Store.
+ */
+async function addStore({ app, version, by = null }) {
+  if (!BY_KEY[app]) throw new Error(`No app called ${app}. One of: ${APPS.map((a) => a.key).join(', ')}.`);
+  const v = normalise(version);
+  if (!v) throw new Error(`${version} is not a version number.`);
+  const existing = await db.one('SELECT * FROM adm_releases WHERE app = ? AND version = ?', [app, v]);
+  if (existing) {
+    await db.run('UPDATE adm_releases SET store_live = 1 WHERE id = ?', [existing.id]);
+    return get(existing.id);
+  }
+  const r = await db.run(
+    "INSERT INTO adm_releases (app, version, file, size, sha256, signed, notes, added_by, store_live) VALUES (?,?,'',0,'',0,?,?,1)",
+    [app, v, 'On the Microsoft Store only', by]
+  );
+  return get(r.insertId);
+}
+
+async function setStore(id, on) {
+  await db.run('UPDATE adm_releases SET store_live = ? WHERE id = ?', [on ? 1 : 0, Number(id)]);
+}
+
+/** Whether there is an installer to hand out, rather than a Store-only row. */
+const hasFile = (release) => !!(release && release.file);
+
+/** How a version reaches a device, for the lists. */
+const reach = (release) => (hasFile(release) ? (Number(release.store_live) ? 'EXE + Store' : 'EXE') : 'Store only');
+
 async function withdraw(id, back = false) {
   await db.run(`UPDATE adm_releases SET withdrawn_at = ${back ? 'NULL' : 'UTC_TIMESTAMP()'} WHERE id = ?`, [Number(id)]);
 }
 
 const size = (bytes) => `${(Number(bytes || 0) / 1048576).toFixed(1)} MB`;
 
-module.exports = { APPS, BY_KEY, normalise, byVersion, list, get, find, fileOf, deviceUrl, signatureOk, sha256Of, add, withdraw, size, safeFile };
+module.exports = { APPS, BY_KEY, normalise, byVersion, list, get, find, fileOf, deviceUrl, signatureOk, sha256Of, add, addStore, setStore, hasFile, reach, withdraw, size, safeFile };

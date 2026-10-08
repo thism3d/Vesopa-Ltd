@@ -2,6 +2,9 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../printing/print_options.dart';
 
 /// What the venue prints around the sale: logo, address, VAT number, footer
 /// copy and the layout switches the back-office Receipt Designer drives.
@@ -153,6 +156,7 @@ class BrandingRepository {
   /// Reads branding, falling back to whatever was last cached — and then to
   /// plain defaults. A venue that cannot reach the server still prints.
   Future<Branding> load({Duration timeout = const Duration(seconds: 6)}) async {
+    await _restorePrintDefaults();
     try {
       final uri = Uri.parse(
         '$apiBase/api/branding/public?office=${Uri.encodeComponent(office)}',
@@ -160,8 +164,9 @@ class BrandingRepository {
       final res = await _client.get(uri).timeout(timeout);
       if (res.statusCode != 200) return _cached ?? const Branding();
 
-      var branding =
-          Branding.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+      final json = jsonDecode(res.body) as Map<String, dynamic>;
+      var branding = Branding.fromJson(json);
+      await _keepPrintDefaults(json);
 
       // Pull the logo in the same pass so the first receipt of the day is not
       // the one that goes out without it.
@@ -177,6 +182,40 @@ class BrandingRepository {
       // Offline, slow, or malformed: keep printing with what we had.
       return _cached ?? const Branding();
     }
+  }
+
+  static const _printDefaultsKey = 'vesopa_venue_print_defaults';
+
+  /// The venue's paper and cutting choices (back office, Receipt Designer),
+  /// for every printer left on Standard. Kept on the till as well, so a till
+  /// that starts without the network still cuts the way the venue asked.
+  Future<void> _keepPrintDefaults(Map<String, dynamic> json) async {
+    VenuePrintDefaults.current = VenuePrintDefaults.fromJson(json);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _printDefaultsKey,
+        jsonEncode({
+          'print_cut': json['print_cut'],
+          'print_feed_lines': json['print_feed_lines'],
+          'kitchen_beep': json['kitchen_beep'],
+        }),
+      );
+    } catch (_) {}
+  }
+
+  static bool _restored = false;
+
+  Future<void> _restorePrintDefaults() async {
+    if (_restored) return;
+    _restored = true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_printDefaultsKey);
+      if (raw == null) return;
+      VenuePrintDefaults.current =
+          VenuePrintDefaults.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+    } catch (_) {}
   }
 
   Future<Uint8List?> _fetchLogo(String url, Duration timeout) async {

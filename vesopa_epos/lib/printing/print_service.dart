@@ -81,15 +81,17 @@ class StationPrintResult {
 /// surfaced to the clerk, but the money has already been taken and recorded.
 /// A dead printer must not stop the till trading.
 class PrintService {
-  PrintService(this._builder, this.setup);
+  /// [builder] is no longer used: every document, the cash drawer's pulse
+  /// included, is built for its own printer (see [_for]). Still taken so the
+  /// callers that make one need not change.
+  // ignore: avoid_unused_constructor_parameters
+  PrintService(ReceiptBuilder builder, this.setup);
 
-  final ReceiptBuilder _builder;
   PrinterSetup setup;
 
   /// A builder laid out for one specific printer.
   ///
-  /// [_builder] is built once for the receipt printer and is what most
-  /// documents go through. That is wrong for any document sent somewhere else:
+  /// One builder for the receipt printer, used for everything, was wrong for any document sent somewhere else:
   /// a Z report on a 58mm printer laid out at 48 columns prints the money off
   /// the edge of the paper, and — since the code page became a per-printer
   /// setting — a printer that needs the pound-sign workaround would not get it
@@ -331,7 +333,10 @@ class PrintService {
     if (printer == null) {
       throw StateError('No printer set up for the cash drawer.');
     }
-    await PrinterTransport.of(printer).send(_builder.openDrawer());
+    // The drawer's own printer's builder: the pin it is wired to is a setting
+    // of that printer, not of the receipt printer.
+    final builder = await _for(printer);
+    await PrinterTransport.of(printer).send(builder.openDrawer());
   }
 }
 

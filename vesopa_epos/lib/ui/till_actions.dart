@@ -47,7 +47,9 @@ abstract final class TillActions {
     }
 
     final settings = await ref.read(printerSettingsProvider.future);
-    final printer = settings.receiptPrinter;
+    // The cash drawer's own printer, which falls back to the receipt
+    // printer when nobody has set one -- the till with one printer.
+    final printer = settings.deviceFor(PrintTarget.cashDrawer);
 
     if (printer == null) {
       if (context.mounted) {
@@ -63,7 +65,7 @@ abstract final class TillActions {
     }
 
     try {
-      final builder = await ReceiptBuilder.create();
+      final builder = await ReceiptBuilder.forPrinter(printer);
       await PrinterTransport.of(printer).send(builder.openDrawer());
 
       // Counted on the Z report. A drawer opened outside a sale is the other
@@ -107,9 +109,11 @@ abstract final class TillActions {
     if (ref.read(trainingModeProvider)) return;
     try {
       final settings = await ref.read(printerSettingsProvider.future);
-      final printer = settings.receiptPrinter;
+      // The cash drawer's own printer, which falls back to the receipt
+    // printer when nobody has set one -- the till with one printer.
+    final printer = settings.deviceFor(PrintTarget.cashDrawer);
       if (printer == null) return;
-      final builder = await ReceiptBuilder.create();
+      final builder = await ReceiptBuilder.forPrinter(printer);
       await PrinterTransport.of(printer).send(builder.openDrawer());
     } catch (_) {
       // Deliberately swallowed — see above.

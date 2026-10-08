@@ -345,6 +345,13 @@ class _PrinterCard extends StatelessWidget {
                 ),
               ],
             ),
+            const SizedBox(height: 4),
+            Text(
+              _modeSummary(printer.options),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
             if (!printer.isComplete) ...[
               const SizedBox(height: 4),
               Text(
@@ -387,6 +394,15 @@ class _PrinterCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// One line saying how a printer finishes a document.
+String _modeSummary(PrintOptions options) {
+  final r = options.resolve();
+  final how = '${r.cut.label}, ${r.feedLines} line${r.feedLines == 1 ? '' : 's'} fed first';
+  return options.custom
+      ? 'Custom: $how${r.gentle ? ', sent gently' : ''}'
+      : 'Standard: $how (the venue\'s choice)';
 }
 
 /// One document, and the printer it comes out of.
@@ -561,6 +577,7 @@ class _PrinterDialogState extends State<_PrinterDialog> {
   late String? _usbPath = widget.existing?.usbDevicePath;
   late String? _usbLabel = widget.existing?.usbLabel;
   late String? _queue = widget.existing?.windowsQueueName;
+  late PrintOptions _options = widget.existing?.options ?? PrintOptions.standard;
 
   List<UsbPrinterDevice>? _usbDevices;
   List<WindowsPrintQueue>? _queues;
@@ -756,6 +773,8 @@ class _PrinterDialogState extends State<_PrinterDialog> {
               const SizedBox(height: 14),
 
               ..._connectionFields(theme),
+              const SizedBox(height: 18),
+              ..._printModeFields(theme),
             ],
           ),
         ),
@@ -872,6 +891,151 @@ class _PrinterDialogState extends State<_PrinterDialog> {
     ],
   };
 
+  /// STANDARD or CUSTOM (2026-10-08): "a default mode for easy operating",
+  /// and the options for the printer that needs something else. Standard
+  /// follows the venue's paper and cutting choice in the back office, so most
+  /// printers are never touched here.
+  List<Widget> _printModeFields(ThemeData theme) {
+    final o = _options;
+    final venue = VenuePrintDefaults.current;
+    Widget label(String t) => Padding(
+          padding: const EdgeInsets.only(top: 14, bottom: 6),
+          child: Text(t, style: theme.textTheme.labelLarge),
+        );
+    return [
+      Text('Print mode', style: theme.textTheme.labelLarge),
+      const SizedBox(height: 6),
+      SegmentedButton<bool>(
+        segments: const [
+          ButtonSegment(
+            value: false,
+            label: Text('Standard'),
+            icon: Icon(Icons.check_circle_outline),
+          ),
+          ButtonSegment(
+            value: true,
+            label: Text('Custom'),
+            icon: Icon(Icons.tune),
+          ),
+        ],
+        selected: {o.custom},
+        onSelectionChanged: (s) => setState(() {
+          // Custom starts from what Standard is doing now, so switching to it
+          // changes nothing until something is changed.
+          _options = s.first && !o.custom
+              ? o.copyWith(
+                  custom: true,
+                  cut: venue.cut,
+                  feedLines: venue.feedLines,
+                  kitchenBeep: venue.kitchenBeep,
+                )
+              : o.copyWith(custom: s.first);
+        }),
+      ),
+      const SizedBox(height: 6),
+      Text(
+        o.custom
+            ? 'This printer uses its own settings below.'
+            : 'Recommended. ${venue.cut.label}, ${venue.feedLines} lines fed '
+                  'before the cut${venue.kitchenBeep ? ', beeps for kitchen '
+                  'tickets' : ''}. Set for every till in the back office: '
+                  'Receipt Designer › Paper and cutting.',
+        style: theme.textTheme.bodySmall,
+      ),
+      if (o.custom) ...[
+        label('Cutting'),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final c in CutStyle.values)
+              ChoiceChip(
+                label: Text(c.label),
+                selected: o.cut == c,
+                onSelected: (_) =>
+                    setState(() => _options = o.copyWith(cut: c)),
+              ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(o.cut.blurb, style: theme.textTheme.bodySmall),
+        label('Paper fed before the cut: ${o.feedLines} lines'),
+        Slider(
+          value: o.feedLines.toDouble(),
+          min: 0,
+          max: 12,
+          divisions: 12,
+          label: '${o.feedLines}',
+          onChanged: (v) =>
+              setState(() => _options = o.copyWith(feedLines: v.round())),
+        ),
+        Text(
+          'More if the cut goes through the last line; fewer to save paper.',
+          style: theme.textTheme.bodySmall,
+        ),
+        if (o.cut != CutStyle.none) ...[
+          label('Cut command'),
+          DropdownButtonFormField<CutCommand>(
+            initialValue: o.cutCommand,
+            isExpanded: true,
+            items: [
+              for (final c in CutCommand.values)
+                DropdownMenuItem(value: c, child: Text(c.label)),
+            ],
+            onChanged: (v) => setState(
+              () => _options = o.copyWith(cutCommand: v ?? CutCommand.standard),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Try the other one only if the printer prints but never cuts.',
+            style: theme.textTheme.bodySmall,
+          ),
+        ],
+        const SizedBox(height: 8),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Send slowly'),
+          subtitle: const Text(
+            'For a printer that prints the top of a slip and then stops. '
+            'Sends the slip in small pieces with a short pause between.',
+          ),
+          value: o.gentle,
+          onChanged: (v) => setState(() => _options = o.copyWith(gentle: v)),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Beep for kitchen tickets'),
+          subtitle: const Text('On a printer with a buzzer.'),
+          value: o.kitchenBeep,
+          onChanged: (v) =>
+              setState(() => _options = o.copyWith(kitchenBeep: v)),
+        ),
+        label('Cash drawer socket'),
+        SegmentedButton<int>(
+          segments: const [
+            ButtonSegment(value: 0, label: Text('Pin 2 (most drawers)')),
+            ButtonSegment(value: 1, label: Text('Pin 5')),
+          ],
+          selected: {o.openDrawerPin},
+          onSelectionChanged: (s) =>
+              setState(() => _options = o.copyWith(openDrawerPin: s.first)),
+        ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: () => setState(
+              () => _options = PrintOptions.standard,
+            ),
+            icon: const Icon(Icons.restart_alt, size: 18),
+            label: const Text('Back to Standard'),
+          ),
+        ),
+      ],
+    ];
+  }
+
   void _save() {
     final id =
         widget.existing?.id ??
@@ -894,6 +1058,7 @@ class _PrinterDialogState extends State<_PrinterDialog> {
         usbLabel: _usbLabel,
         paperWidthMm: _width,
         codePage: _codePage,
+        options: _options,
       ),
     );
   }

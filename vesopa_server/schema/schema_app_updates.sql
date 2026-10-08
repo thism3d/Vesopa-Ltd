@@ -49,3 +49,9 @@ CREATE TABLE IF NOT EXISTS bo_app_update_settings (
   PRIMARY KEY (k)
 );
 INSERT IGNORE INTO bo_app_update_settings (k, v) VALUES ('enabled', '0');
+
+-- 2026-10-08: whether the pinned version is live on the Microsoft Store, so a
+-- Store copy can be sent to the Store for it. Store copies were left out
+-- before; with this off (the default) they still are. MariaDB (the live box)
+-- has ADD COLUMN IF NOT EXISTS, which keeps this file re-runnable.
+ALTER TABLE bo_app_pins ADD COLUMN IF NOT EXISTS store_ok TINYINT(1) NOT NULL DEFAULT 0;

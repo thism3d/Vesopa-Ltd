@@ -1,0 +1,5 @@
+Version 1.0.11.0 - Tickets that print in full
+
+Fixed: on some network printers a kiosk ticket printed only its first lines and was not cut. The kiosk now waits for the printer to take the whole ticket before letting go.
+
+The kiosk can also follow the version Vesopa sets for your venue. Installed copies update quietly the next time they start.

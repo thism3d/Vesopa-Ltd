@@ -6,7 +6,7 @@ class ExpressConfig {
 
   /// Keep in step with `version:` in pubspec.yaml. Sent with every request so
   /// the back office can say which kiosks are on which build.
-  static const version = '1.0.10';
+  static const version = '1.0.11';
   static const build = 9;
 
   /// The back office. `--dart-define=EXPRESS_API=http://127.0.0.1:4000` points

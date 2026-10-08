@@ -5,8 +5,10 @@ import 'dart:typed_data';
 
 import 'package:flutter_libserialport/flutter_libserialport.dart';
 
+import 'print_options.dart';
 import 'windows_printing.dart';
 
+export 'print_options.dart';
 export 'print_targets.dart';
 
 /// How a printer is reached.
@@ -101,6 +103,7 @@ class PrinterConfig {
     this.usbLabel,
     this.paperWidthMm = 80,
     this.codePage = escPosGbp,
+    this.options = PrintOptions.standard,
   });
 
   final String id;
@@ -149,6 +152,12 @@ class PrinterConfig {
   /// rather than guessed at.
   final String codePage;
 
+  /// How this printer cuts, feeds and is sent its data. [PrintOptions.standard]
+  /// unless somebody opened "Advanced" on this printer -- and standard follows
+  /// the venue's own choices in the back office (Receipt Designer, Paper and
+  /// cutting), so most tills never touch this.
+  final PrintOptions options;
+
   /// Characters per line for ESC/POS at Font A, which is what the receipt
   /// builder lays columns out against.
   int get columns => paperWidthMm == 58 ? 32 : 48;
@@ -184,6 +193,7 @@ class PrinterConfig {
     String? usbLabel,
     int? paperWidthMm,
     String? codePage,
+    PrintOptions? options,
   }) => PrinterConfig(
     id: id,
     name: name ?? this.name,
@@ -197,6 +207,7 @@ class PrinterConfig {
     usbLabel: usbLabel ?? this.usbLabel,
     paperWidthMm: paperWidthMm ?? this.paperWidthMm,
     codePage: codePage ?? this.codePage,
+    options: options ?? this.options,
   );
 
   Map<String, dynamic> toJson() => {
@@ -212,6 +223,7 @@ class PrinterConfig {
     'usb_label': usbLabel,
     'paper_width_mm': paperWidthMm,
     'code_page': codePage,
+    'options': options.toJson(),
   };
 
   factory PrinterConfig.fromJson(Map<String, dynamic> j) => PrinterConfig(
@@ -239,6 +251,9 @@ class PrinterConfig {
     codePage: (j['code_page'] as String?)?.trim().isNotEmpty ?? false
         ? j['code_page'] as String
         : escPosGbp,
+    // Absent on every printer set up before 1.15: standard, which is what
+    // those printers were already doing apart from the transport fixes.
+    options: PrintOptions.fromJson(j['options']),
   );
 }
 
@@ -280,6 +295,20 @@ abstract class PrinterTransport {
 
 /// Raw TCP on port 9100 — the standard for networked thermal printers, and the
 /// only path that works on iOS and Android tablets.
+///
+/// CLOSED GRACEFULLY (2026-10-08). This used to flush and then `destroy()` the
+/// socket straight away. A flush only means the bytes have left the till; the
+/// printer reads them off its own network buffer as fast as it can print,
+/// which is slower. Destroying the socket at that moment resets the connection
+/// -- and a printer that has sent anything back (many send a status byte the
+/// moment they are connected to) gets a reset rather than a goodbye, and drops
+/// whatever it had not read yet. That is a slip with the venue's name and
+/// "Z REPORT" on it and nothing else, and no cut, because the cut is the last
+/// thing sent. Pontardawe's Xprinter printed exactly that.
+///
+/// So: read and discard whatever the printer says, send, half-close (our side
+/// says "that is everything"), and give the printer time to finish reading
+/// and close its side before the socket is let go.
 class _NetworkTransport implements PrinterTransport {
   _NetworkTransport(this.config);
 
@@ -287,23 +316,70 @@ class _NetworkTransport implements PrinterTransport {
 
   @override
   Future<void> send(List<int> bytes) async {
+    final gentle = config.options.resolve().gentle;
     final socket = await Socket.connect(
       config.host,
       config.port,
       timeout: const Duration(seconds: 5),
     );
+    socket.setOption(SocketOption.tcpNoDelay, true);
+    final closed = Completer<void>();
+    // Anything the printer sends back is read and dropped. Unread incoming
+    // data is what turns a close into a reset.
+    final sub = socket.listen(
+      (_) {},
+      onError: (_) {
+        if (!closed.isCompleted) closed.complete();
+      },
+      onDone: () {
+        if (!closed.isCompleted) closed.complete();
+      },
+      cancelOnError: true,
+    );
     try {
-      socket.add(bytes);
-      await socket.flush();
+      if (gentle) {
+        for (var offset = 0; offset < bytes.length; offset += gentleChunk) {
+          final end = (offset + gentleChunk).clamp(0, bytes.length);
+          socket.add(bytes.sublist(offset, end));
+          await socket.flush();
+          await Future<void>.delayed(gentlePause);
+        }
+      } else {
+        socket.add(bytes);
+        await socket.flush();
+      }
+      // Half-close: the printer sees the end of the job, not a reset.
+      await socket.close().timeout(const Duration(seconds: 5));
+      // Wait for the printer to close its side, which it does once it has
+      // read everything. A printer that never does is let go after a moment.
+      await closed.future.timeout(
+        const Duration(seconds: 3),
+        onTimeout: () {},
+      );
     } finally {
+      await sub.cancel();
       socket.destroy();
     }
   }
 }
 
+/// How much a gentle send hands over at a time, and how long it waits between
+/// pieces. Small enough for the smallest receive buffer seen on a clone
+/// printer, with a pause long enough for it to print a line or two.
+const gentleChunk = 256;
+const gentlePause = Duration(milliseconds: 30);
+
 /// Serial/COM. Desktop only: iOS has no serial API at all, and Android needs
 /// USB-host support that most tablets do not expose. Attempting it elsewhere
 /// fails loudly rather than silently dropping the receipt.
+///
+/// BLOCKING WRITES (2026-10-08). `SerialPort.write` with no timeout is a
+/// *non-blocking* write: it hands over what fits in the driver's buffer and
+/// returns how much that was -- which was never looked at. On a slow port, or
+/// a USB "virtual COM" printer, that is the first few lines of a Z report and
+/// none of the rest. Every byte is now written with a timeout and checked,
+/// and the port is drained before it is closed. Runs on a worker isolate, as
+/// the USB path does, because a blocking write must not freeze the till.
 class _SerialTransport implements PrinterTransport {
   _SerialTransport(this.config);
 
@@ -317,25 +393,50 @@ class _SerialTransport implements PrinterTransport {
         'Use a network printer instead.',
       );
     }
+    final path = config.serialPort!;
+    final baud = config.baudRate;
+    final gentle = config.options.resolve().gentle;
+    final payload = Uint8List.fromList(bytes);
+    await Isolate.run(() => writeSerial(path, baud, payload, gentle: gentle));
+  }
+}
 
-    final port = SerialPort(config.serialPort!);
-    if (!port.openWrite()) {
-      throw StateError('Could not open ${config.serialPort}.');
+/// Write every byte of [data] to a serial port, or throw saying why not.
+void writeSerial(String path, int baud, Uint8List data, {bool gentle = false}) {
+  final port = SerialPort(path);
+  if (!port.openWrite()) {
+    port.dispose();
+    throw StateError('Could not open $path.');
+  }
+  try {
+    port.config = SerialPortConfig()
+      ..baudRate = baud
+      ..bits = 8
+      ..stopBits = 1
+      ..parity = SerialPortParity.none;
+
+    final piece = gentle ? gentleChunk : 1024;
+    var offset = 0;
+    while (offset < data.length) {
+      final end = (offset + piece).clamp(0, data.length);
+      // Blocking, with a timeout: at 9600 baud 1 KB takes about a second.
+      final wrote = port.write(
+        Uint8List.sublistView(data, offset, end),
+        timeout: 10000,
+      );
+      if (wrote <= 0) {
+        throw StateError(
+          'The printer on $path stopped accepting data. Check it is switched '
+          'on and has paper.',
+        );
+      }
+      offset += wrote;
+      if (gentle) sleep(gentlePause);
     }
-
-    try {
-      port.config = SerialPortConfig()
-        ..baudRate = config.baudRate
-        ..bits = 8
-        ..stopBits = 1
-        ..parity = SerialPortParity.none;
-
-      port.write(Uint8List.fromList(bytes));
-      port.drain();
-    } finally {
-      port.close();
-      port.dispose();
-    }
+    port.drain();
+  } finally {
+    port.close();
+    port.dispose();
   }
 }
 
@@ -359,7 +460,8 @@ class _UsbTransport implements PrinterTransport {
     }
     // Copied into a plain list before crossing the isolate boundary.
     final payload = List<int>.unmodifiable(bytes);
-    await Isolate.run(() => sendToUsbDevice(path, payload));
+    final gentle = config.options.resolve().gentle;
+    await Isolate.run(() => sendToUsbDevice(path, payload, gentle: gentle));
   }
 }
 

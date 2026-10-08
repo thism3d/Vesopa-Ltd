@@ -294,7 +294,10 @@ String? _deviceProperty(
 // ---------------------------------------------------------------------------
 
 /// Send raw bytes straight to a USB printer, with no spooler in the path.
-void sendToUsbDevice(String devicePath, List<int> bytes) {
+///
+/// [gentle] sends it in small pieces with a pause between them, for a printer
+/// that loses data when handed a whole document at once.
+void sendToUsbDevice(String devicePath, List<int> bytes, {bool gentle = false}) {
   _requireWindows();
   if (bytes.isEmpty) return;
 
@@ -326,6 +329,8 @@ void sendToUsbDevice(String devicePath, List<int> bytes) {
             WriteFile(handle.value, buffer, length, written, null).value,
         () => GetLastError(),
         'USB printer',
+        chunkSize: gentle ? 256 : 4096,
+        pause: gentle ? const Duration(milliseconds: 30) : null,
       );
     } finally {
       CloseHandle(handle.value);
@@ -414,9 +419,10 @@ void _writeInChunks(
   bool Function(Pointer<Uint8> buffer, int length, Pointer<Uint32> written)
   write,
   int Function() lastError,
-  String what,
-) {
-  const chunkSize = 4096;
+  String what, {
+  int chunkSize = 4096,
+  Duration? pause,
+}) {
   final buffer = arena<Uint8>(chunkSize);
   final written = arena<Uint32>();
   final view = buffer.asTypedList(chunkSize);
@@ -439,5 +445,6 @@ void _writeInChunks(
       );
     }
     offset += written.value;
+    if (pause != null && offset < bytes.length) sleep(pause);
   }
 }

@@ -395,6 +395,10 @@ router.get('/downloads/:id', signedIn, async (req, res, next) => {
       res.status(403);
       return page(req, res, 'noaccess', { title: 'Not for your role', body: `Your role (${req.me.roleLabel}) cannot download this app. Ask the owner.` });
     }
+    if (!releases.hasFile(r)) {
+      flash(res, 'bad', `${releases.BY_KEY[r.app].short} ${r.version} is on the Microsoft Store only: there is no installer to download.`);
+      return res.redirect(303, '/downloads');
+    }
     const file = releases.fileOf(r);
     if (!require('fs').existsSync(file)) {
       flash(res, 'bad', `The file for ${releases.BY_KEY[r.app].short} ${r.version} is missing on the server.`);
@@ -405,8 +409,46 @@ router.get('/downloads/:id', signedIn, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+/**
+ * Re-send every pin on [release]'s version, so a venue already set to it
+ * picks up a change to where it can be had (now on the Store, or not).
+ * Returns how many venues (and the default) were re-sent.
+ */
+async function repin(release, as) {
+  const fresh = await releases.get(release.id);
+  const data = await epos.appVersions(fresh.app, as);
+  const same = (data.pins || []).filter((p) => p.version && releases.normalise(p.version) === fresh.version);
+  if (!same.length) return 0;
+  const body = await pinBody(fresh.app, String(fresh.id));
+  const ids = same.filter((p) => !p.default && p.office_id).map((p) => Number(p.office_id));
+  if (ids.length) await epos.setAppVersion(fresh.app, { offices: ids, ...body }, as);
+  if (same.some((p) => p.default)) await epos.setAppVersion(fresh.app, { offices: 'default', ...body }, as);
+  return ids.length + (same.some((p) => p.default) ? 1 : 0);
+}
+
+/** Record a version that is live on the Microsoft Store (2026-10-08). */
+router.post('/downloads/store', signedIn, csrf, allow('versions.manage'), async (req, res) => {
+  try {
+    const r = await releases.addStore({ app: String(req.body.app || ''), version: String(req.body.version || ''), by: req.me.email });
+    await audit.record({ actor: req.me.email, action: 'release.store', app: releases.BY_KEY[r.app].role, item: `${r.app}:${r.version}` });
+    await repin(r, req.me.email).catch(() => null);
+    flash(res, 'ok', `${releases.BY_KEY[r.app].short} ${r.version} is marked as live on the Microsoft Store.`);
+  } catch (e) { flash(res, 'bad', e.message); }
+  res.redirect(303, '/downloads');
+});
+
 router.post('/downloads/:id', signedIn, csrf, allow('versions.manage'), async (req, res) => {
   const r = await releases.get(req.params.id);
+  if (r && (req.body.action === 'store-on' || req.body.action === 'store-off')) {
+    const on = req.body.action === 'store-on';
+    await releases.setStore(r.id, on);
+    await audit.record({ actor: req.me.email, action: on ? 'release.store' : 'release.unstore', app: releases.BY_KEY[r.app].role, item: `${r.app}:${r.version}` });
+    const moved = await repin(r, req.me.email).catch(() => null);
+    flash(res, 'ok', on
+      ? `${releases.BY_KEY[r.app].short} ${r.version} is live on the Store: venues set to it now move their Store copies too${moved ? ` (${moved} updated)` : ''}.`
+      : `${releases.BY_KEY[r.app].short} ${r.version} is no longer marked as on the Store.`);
+    return res.redirect(303, '/downloads');
+  }
   if (r) {
     const back = req.body.action === 'restore';
     await releases.withdraw(r.id, back);
@@ -443,7 +485,9 @@ function venueVersion(venue, pins, devices, byId) {
   const rule = own || def;
   const target = rule && rule.version ? releases.normalise(rule.version) : null;
   const mine = devices.filter((d) => Number(d.office_id) === Number(venue.id));
-  const direct = mine.filter((d) => d.install !== 'store');
+  // Store copies count once the version is live on the Store: they are sent
+  // there for it (2026-10-08). Until then only installed copies can follow.
+  const direct = mine.filter((d) => d.install !== 'store' || (rule && rule.store));
   const onTarget = direct.filter((d) => target && releases.normalise(d.version) === target).length;
   let status;
   if (!mine.length) status = 'none';
@@ -477,7 +521,7 @@ router.get('/versions', signedIn, allow('versions.manage', 'epos'), async (req, 
     page(req, res, 'versions', {
       title: 'Versions', apps: VERSION_APPS, app, rows, list, q, show, error, enabled: data.enabled,
       def, defChoice: def && def.version && byId[`v:${releases.normalise(def.version)}`] ? String(byId[`v:${releases.normalise(def.version)}`].id) : 'none',
-      ready: !!config.RELEASES_SECRET, norm: releases.normalise,
+      ready: !!config.RELEASES_SECRET, norm: releases.normalise, reach: releases.reach,
     });
   } catch (e) { next(e); }
 });
@@ -488,9 +532,13 @@ async function pinBody(app, choice) {
   if (choice === 'none') return { version: null };
   const r = await releases.get(choice);
   if (!r || r.app !== app) throw new Error('That version is not on the list for this app.');
+  // Installed copies get the installer; Store copies are sent to the Store,
+  // when the version is live there (2026-10-08). Either or both.
+  const store = !!Number(r.store_live);
+  if (!releases.hasFile(r)) return { version: r.version, store: true };
   const url = releases.deviceUrl(r);
-  if (!url) throw new Error('RELEASES_SECRET is not set on admin.vesopa.com, so devices cannot be given a download address yet.');
-  return { version: r.version, url, sha256: r.sha256, size: Number(r.size) };
+  if (!url && !store) throw new Error('RELEASES_SECRET is not set on admin.vesopa.com, so devices cannot be given a download address yet.');
+  return url ? { version: r.version, url, sha256: r.sha256, size: Number(r.size), store } : { version: r.version, store };
 }
 
 router.post('/versions', signedIn, csrf, allow('versions.manage', 'epos'), async (req, res) => {

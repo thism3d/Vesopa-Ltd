@@ -23,6 +23,20 @@
 const express = require('express');
 
 const APPS = ['till', 'kitchen', 'display', 'express', 'loyalty'];
+
+/**
+ * Each app's Microsoft Store product, for a Store copy told to update
+ * (2026-10-08). A Store copy cannot run our installer -- that would put a
+ * second, separate app beside it -- but it can be sent to its own page in the
+ * Store, where the newer version is one press away.
+ */
+const STORE_IDS = {
+  till: '9PDMNJXNFZCW',
+  kitchen: '9P29NN3R5PGS',
+  display: '9P8JCLQ5M3SQ',
+  express: '9N5W5VLP2948',
+  loyalty: '9N6VWPJ25VPH',
+};
 const DEFAULT = '*';
 const isMissing = (e) => e && (e.code === 'ER_NO_SUCH_TABLE' || e.code === 'ER_BAD_FIELD_ERROR');
 const clamp = (v, n) => {
@@ -93,13 +107,22 @@ async function pinFor(db, office, app) {
  * moving a venue back is the point ("I can downgrade them").
  */
 async function offerFor(db, { office, app, version, install }) {
-  if (install !== 'direct' || !APPS.includes(app) || !normalise(version)) return null;
+  if ((install !== 'direct' && install !== 'store') || !APPS.includes(app) || !normalise(version)) return null;
   try {
     if (!(await enabled(db))) return null;
     const pin = await pinFor(db, office, app);
-    if (!pin || !pin.version || !pin.url || !pin.sha256) return null;
+    if (!pin || !pin.version) return null;
     const direction = compare(pin.version, version);
     if (direction === 0) return null;
+    // A Microsoft Store copy (2026-10-08): pointed at the Store, and only
+    // forward, and only once that version is live there (store_ok, set on
+    // admin.vesopa.com). The Store cannot go back a version, and a prompt for
+    // a version the Store does not have yet is a button that does nothing.
+    if (install === 'store') {
+      if (!Number(pin.store_ok) || direction < 0 || !STORE_IDS[app]) return null;
+      return { version: normalise(pin.version), store: true, store_id: STORE_IDS[app], downgrade: false };
+    }
+    if (!pin.url || !pin.sha256) return null;
     return {
       version: normalise(pin.version),
       url: pin.url,
@@ -163,7 +186,7 @@ function adminRoutes({ pool, broadcast, auth, admin }) {
       const shape = (p) => ({
         office_id: p.office === DEFAULT ? null : p.office_id, default: p.office === DEFAULT, app: p.app,
         version: p.version, url: p.url, sha256: p.sha256, size: p.size == null ? null : Number(p.size),
-        set_by: p.set_by, set_at: p.set_at,
+        store: !!Number(p.store_ok || 0), set_by: p.set_by, set_at: p.set_at,
       });
       res.json({
         enabled: await enabled(pool),
@@ -211,18 +234,26 @@ function adminRoutes({ pool, broadcast, auth, admin }) {
       } else {
         const version = b.version == null || b.version === '' ? null : normalise(b.version);
         if (b.version && !version) return res.status(400).json({ error: 'That is not a version number.' });
-        const sha = version ? String(b.sha256 || '').toLowerCase() : null;
-        if (version && (!/^[0-9a-f]{64}$/.test(sha) || !/^https:\/\/\S+$/.test(String(b.url || '')))) {
+        // A version is reached through our installer (url + sha256), the
+        // Microsoft Store (store: true), or both. Store only is a version that
+        // was never built as an installer: direct copies are not offered it.
+        const store = !!version && b.store === true;
+        const hasFile = !!version && b.url != null && b.url !== '';
+        const sha = hasFile ? String(b.sha256 || '').toLowerCase() : null;
+        if (version && hasFile && (!/^[0-9a-f]{64}$/.test(sha) || !/^https:\/\/\S+$/.test(String(b.url || '')))) {
           return res.status(400).json({ error: 'A version needs its download address and SHA-256.' });
+        }
+        if (version && !hasFile && !store) {
+          return res.status(400).json({ error: 'A version needs its download address and SHA-256, or to be on the Microsoft Store.' });
         }
         for (const office of offices) {
           await pool.execute(
-            `INSERT INTO bo_app_pins (office, app, version, url, sha256, size, set_by, set_at)
-             VALUES (?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
+            `INSERT INTO bo_app_pins (office, app, version, url, sha256, size, store_ok, set_by, set_at)
+             VALUES (?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
              ON DUPLICATE KEY UPDATE version = VALUES(version), url = VALUES(url), sha256 = VALUES(sha256),
-               size = VALUES(size), set_by = VALUES(set_by), set_at = CURRENT_TIMESTAMP`,
-            [office, app, version, version ? String(b.url).slice(0, 500) : null, sha,
-              version && b.size != null ? Number(b.size) || null : null, by]
+               size = VALUES(size), store_ok = VALUES(store_ok), set_by = VALUES(set_by), set_at = CURRENT_TIMESTAMP`,
+            [office, app, version, hasFile ? String(b.url).slice(0, 500) : null, sha,
+              hasFile && b.size != null ? Number(b.size) || null : null, store ? 1 : 0, by]
           );
         }
       }
@@ -252,4 +283,4 @@ function adminRoutes({ pool, broadcast, auth, admin }) {
   return router;
 }
 
-module.exports = { APPS, DEFAULT, normalise, compare, enabled, seen, pinFor, offerFor, fromHeaders, publicRoutes, adminRoutes };
+module.exports = { APPS, STORE_IDS, DEFAULT, normalise, compare, enabled, seen, pinFor, offerFor, fromHeaders, publicRoutes, adminRoutes };

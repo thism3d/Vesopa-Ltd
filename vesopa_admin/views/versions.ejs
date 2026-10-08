@@ -17,6 +17,7 @@
     <% } %>
   </form>
 </div>
+<p class="muted lead">One choice per venue moves every copy it has. Copies installed from our EXE install that version, up or down. Microsoft Store copies are sent to the Store for it, when the version is live there (mark it on <a href="/downloads">Downloads</a>); the Store only goes forward.</p>
 <% if (!enabled) { %><div class="flash">Update prompts are off, so devices are not told about these choices yet. The table still shows what every device runs. Install by hand from <a href="/downloads">Downloads</a> meanwhile.</div><% } %>
 <% if (!ready) { %><div class="flash bad">RELEASES_SECRET is not set on this server, so a version cannot be chosen for venues yet.</div><% } %>
 
@@ -26,7 +27,7 @@
     <b><%= app.key === 'loyalty' ? 'Version for every member' : 'Default for venues without their own choice' %></b>
     <select name="choice" aria-label="Default version">
       <option value="none" <%= defChoice === 'none' ? 'selected' : '' %>>No auto updates</option>
-      <% for (const r of list) { %><option value="<%= r.id %>" <%= defChoice === String(r.id) ? 'selected' : '' %>><%= r.version %></option><% } %>
+      <% for (const r of list) { %><option value="<%= r.id %>" <%= defChoice === String(r.id) ? 'selected' : '' %>><%= r.version %> · <%= reach(r) %></option><% } %>
     </select>
     <button class="btn" type="submit">Save</button>
     <% if (def) { %><small class="muted">set by <%= def.set_by || 'someone' %> <%= ago(def.set_at) %></small><% } %>
@@ -61,7 +62,7 @@
               <% for (const d of r.devices) { %>
                 <tr class="<%= d.install !== 'store' && r.target && norm(d.version) !== r.target ? 'off' : '' %>">
                   <td><%= d.device_name || d.device_id %></td><td><b><%= d.version || '?' %></b></td>
-                  <td><%= d.install === 'store' ? 'Store' : d.install === 'direct' ? 'Download' : '?' %></td><td class="muted"><%= ago(d.last_seen_at) %></td>
+                  <td><%= d.install === 'store' ? 'Store' : d.install === 'direct' ? 'EXE' : '?' %></td><td class="muted"><%= ago(d.last_seen_at) %></td>
                 </tr>
               <% } %>
             </table>
@@ -74,7 +75,7 @@
             <option value="follow" <%= r.choice === 'follow' ? 'selected' : '' %>>Default (<%= r.def && r.def.version ? r.def.version : 'No auto updates' %>)</option>
             <option value="none" <%= r.choice === 'none' ? 'selected' : '' %>>No auto updates</option>
             <% if (r.choice === 'unknown') { %><option value="unknown" selected><%= r.own.version %> (not on the list)</option><% } %>
-            <% for (const x of list) { %><option value="<%= x.id %>" <%= r.choice === String(x.id) ? 'selected' : '' %>><%= x.version %></option><% } %>
+            <% for (const x of list) { %><option value="<%= x.id %>" <%= r.choice === String(x.id) ? 'selected' : '' %>><%= x.version %> · <%= reach(x) %></option><% } %>
           </select>
         </td>
         <td>
@@ -99,7 +100,7 @@
       <option value="">Choose…</option>
       <option value="follow">Default</option>
       <option value="none">No auto updates</option>
-      <% for (const x of list) { %><option value="<%= x.id %>"><%= x.version %></option><% } %>
+      <% for (const x of list) { %><option value="<%= x.id %>"><%= x.version %> · <%= reach(x) %></option><% } %>
     </select>
     <button class="btn" type="submit" name="bulk" value="ticked">Apply to ticked</button>
     <button class="btn amber" type="submit" name="bulk" value="shown" data-confirm="Apply this version to every venue shown?">Apply to all shown</button>

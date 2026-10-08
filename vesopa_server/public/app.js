@@ -4457,11 +4457,16 @@ function fieldHtml(f) {
       .join('')}</select>`;
   }
   if (f.type === 'checkbox') {
-    // A hidden 0 before the checkbox so an unchecked box submits 0 rather than
-    // dropping out of the form entirely; the checkbox's 1 overrides it when set.
+    // A hidden input carries the value so an unchecked box submits 0 rather
+    // than dropping out of the form entirely. It starts at the box's own state:
+    // it used to start at 0 whatever the box showed, so a box that was already
+    // ticked and left alone saved as OFF -- "Show on the customer receipt" was
+    // lost every time somebody edited only the price (2026-10-08, Pontardawe).
+    // The submit handler re-reads every box as well, see syncCheckFields.
+    const on = Number(f.value) ? 1 : 0;
     return `<span class="check-field">
-      <input type="hidden" name="${f.name}" value="0" />
-      <input type="checkbox" value="1" ${Number(f.value) ? 'checked' : ''}
+      <input type="hidden" name="${f.name}" value="${on}" />
+      <input type="checkbox" value="1" ${on ? 'checked' : ''}
              onchange="this.previousElementSibling.value = this.checked ? 1 : 0" />
     </span>`;
   }
@@ -5388,6 +5393,22 @@ async function saveChildProducts(parent, d, raw) {
   toast(`Child products: ${said.join(', ')}.`);
 }
 
+/**
+ * Each tick box's hidden value, set from what the box shows right now.
+ *
+ * The hidden input is what the form submits; the box only shows it. They are
+ * kept in step on change, and again here before anything is read, so a box
+ * that was ticked by a script, restored by the browser, or never touched still
+ * saves what the manager can see.
+ */
+function syncCheckFields(form) {
+  form.querySelectorAll('.check-field').forEach((wrap) => {
+    const box = wrap.querySelector('input[type=checkbox]');
+    const hidden = wrap.querySelector('input[type=hidden]');
+    if (box && hidden && !box.name) hidden.value = box.checked ? '1' : '0';
+  });
+}
+
 function modal(title, fields, onSubmit, opts = {}) {
   const root = $('modal-root');
   /*
@@ -5593,6 +5614,7 @@ function modal(title, fields, onSubmit, opts = {}) {
   $('modal-cancel').onclick = () => (root.innerHTML = '');
   $('modal-form').onsubmit = async (e) => {
     e.preventDefault();
+    syncCheckFields(e.target);
     // Not Object.fromEntries: that keeps only the last value for a repeated
     // name, which would reduce a product ticked for KP 1, KP 3 and KP 5 to
     // KP 5 alone — silently, and only discoverable in a kitchen at service.
@@ -7973,6 +7995,7 @@ const RD_DEFAULTS = {
   footer_message: 'Thank you for your custom', footer_note: '', social_line: '',
   paper_width_mm: 80, show_logo: 1, show_vat_breakdown: 1, show_barcode: 1,
   show_qr: 0, qr_url: '', show_served_by: 1, show_powered_by: 1,
+  print_cut: 'full', print_feed_lines: 5, kitchen_beep: 0,
 };
 
 let rdState = { ...RD_DEFAULTS };
@@ -8010,7 +8033,7 @@ function rdBind() {
     const event = el.type === 'checkbox' || el.tagName === 'SELECT' ? 'change' : 'input';
     el.addEventListener(event, () => {
       if (el.type === 'checkbox') rdState[key] = el.checked ? 1 : 0;
-      else if (key === 'paper_width_mm') rdState[key] = Number(el.value);
+      else if (key === 'paper_width_mm' || key === 'print_feed_lines') rdState[key] = Number(el.value);
       else rdState[key] = el.value;
       rdRenderPreview();
     });
@@ -8203,6 +8226,14 @@ function rdRenderPreview() {
   if (Number(s.show_powered_by)) {
     html += '<div class="rp-centre rp-note">Powered by VESOPA EPOS</div>';
   }
+
+  // Where the paper ends: the blank lines fed past the blade, then the cut the
+  // venue chose under Paper and cutting.
+  const feed = Number(s.print_feed_lines ?? 5);
+  html += `<div class="rp-feed" style="height:${Math.max(0, feed) * 0.9}em"></div>`;
+  html += s.print_cut === 'none'
+    ? '<div class="rp-cut rp-tear">tear off here</div>'
+    : `<div class="rp-cut${s.print_cut === 'partial' ? ' rp-partial' : ''}">&#9986; ${s.print_cut === 'partial' ? 'partial cut' : 'cut'}</div>`;
 
   paper.innerHTML = html;
 }

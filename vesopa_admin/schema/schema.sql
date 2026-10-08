@@ -101,3 +101,9 @@ CREATE TABLE IF NOT EXISTS adm_releases (
   PRIMARY KEY (id),
   UNIQUE KEY uq_adm_release (app, version)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 2026-10-08: the same version live on the Microsoft Store as well, so a venue
+-- set to it moves its Store copies too (they are sent to the Store for it). A
+-- version that is on the Store only, with no installer, is a row with an empty
+-- file. MariaDB's IF NOT EXISTS keeps this re-runnable.
+ALTER TABLE adm_releases ADD COLUMN IF NOT EXISTS store_live TINYINT(1) NOT NULL DEFAULT 0;

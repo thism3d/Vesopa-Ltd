@@ -199,9 +199,37 @@ async function main() {
       assert.strictEqual(back.body.update.version, '1.14.3', 'follows the default again');
     });
 
+    await check('a Store copy is sent to the Store, forward only, once the version is live there', async () => {
+      // On our installer only: the Store copy hears nothing.
+      await pin([PUB.id], '1.15.0');
+      const before = await call(server, 'GET', '/api/licence/state', device(PUB.email), undefined, as('1.14.2', 'store'));
+      assert.strictEqual(before.body.update, null);
+      // Live on the Store as well.
+      await pin([PUB.id], '1.15.0', { store: true });
+      const s = await call(server, 'GET', '/api/licence/state', device(PUB.email), undefined, as('1.14.2', 'store'));
+      assert.deepStrictEqual(s.body.update, { version: '1.15.0', store: true, store_id: '9PDMNJXNFZCW', downgrade: false });
+      // The direct copy still gets the installer.
+      const direct = await call(server, 'GET', '/api/licence/state', device(PUB.email), undefined, as('1.14.2'));
+      assert.strictEqual(direct.body.update.url, 'https://admin.vesopa.com/dl/x/1.15.0.exe');
+      // The Store cannot go back.
+      const newer = await call(server, 'GET', '/api/licence/state', device(PUB.email), undefined, as('1.16.0', 'store'));
+      assert.strictEqual(newer.body.update, null);
+      // Store only: no installer, so direct copies are not offered it.
+      const r = await call(server, 'PUT', '/api/admin/app-versions/till', SERVICE_KEY, { offices: [PUB.id], version: '1.15.1', store: true });
+      assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+      const st = await call(server, 'GET', '/api/licence/state', device(PUB.email), undefined, as('1.15.0', 'store'));
+      assert.strictEqual(st.body.update.version, '1.15.1');
+      const dr = await call(server, 'GET', '/api/licence/state', device(PUB.email), undefined, as('1.15.0'));
+      assert.strictEqual(dr.body.update, null);
+      const list = await call(server, 'GET', '/api/admin/app-versions?app=till', SERVICE_KEY);
+      assert.strictEqual(list.body.pins.find((p) => p.office_id === PUB.id).store, true);
+    });
+
     await check('a pin needs a real address and hash', async () => {
       const r = await call(server, 'PUT', '/api/admin/app-versions/till', SERVICE_KEY, { offices: [PUB.id], version: '1.2.3', url: 'http://x', sha256: 'nope' });
       assert.strictEqual(r.status, 400);
+      const nowhere = await call(server, 'PUT', '/api/admin/app-versions/till', SERVICE_KEY, { offices: [PUB.id], version: '1.2.3' });
+      assert.strictEqual(nowhere.status, 400, 'neither an installer nor the Store');
       const none = await call(server, 'PUT', '/api/admin/app-versions/till', SERVICE_KEY, { offices: [] });
       assert.strictEqual(none.status, 400);
       const app2 = await call(server, 'PUT', '/api/admin/app-versions/spaceship', SERVICE_KEY, { offices: 'default' });

@@ -140,10 +140,8 @@ class _PrintReceiptSheetState extends ConsumerState<PrintReceiptSheet> {
     try {
       // Laid out for the roll in *this* printer, not a default. The bill and
       // the receipt can be assigned to different printers taking different
-      // paper.
-      final builder = await ReceiptBuilder.create(
-        paperWidthMm: printer.paperWidthMm,
-      );
+      // paper -- and its character set and cut come from it too.
+      final builder = await ReceiptBuilder.forPrinter(printer);
       await PrinterTransport.of(printer).send(
         builder.receiptFromDetail(
           widget.receipt,

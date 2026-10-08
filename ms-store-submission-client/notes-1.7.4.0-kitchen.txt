@@ -1,0 +1,3 @@
+Version 1.7.4.0 - Updates from Vesopa
+
+When Vesopa sets a newer version for your venue, the kitchen screen offers it: update now, or on the next start. A screen installed from the Microsoft Store is taken to the Store page to update.

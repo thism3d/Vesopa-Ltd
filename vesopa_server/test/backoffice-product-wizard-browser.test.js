@@ -53,7 +53,8 @@ const DIETARY = [
 function startStub() {
   const state = {
     products: [
-      { id: 1, pluid: 101, product_name: 'Carling Pint', department_name: 'Drink', group_name: 'Draught', price: 4.6, tax_percentage: 20 },
+      { id: 1, pluid: 101, product_name: 'Carling Pint', department_name: 'Drink', group_name: 'Draught', price: 4.6, tax_percentage: 20,
+        print_to_receipt: 1, open_price: 1, printer_routes: 'kp1' },
       { id: 2, pluid: 102, product_name: 'Chips', department_name: 'Food', group_name: 'Sides', price: 3, tax_percentage: 20 },
     ],
     created: [],
@@ -278,6 +279,29 @@ async function main() {
       assert.ok(open, 'edit did not open the stepped form');
       await cdp.eval(`document.querySelectorAll('.wiz-steps button')[5].click(); return true;`);
       assert.strictEqual(await step(), '6 Allergens');
+    });
+
+    // 2026-10-08, Pontardawe: "it's not remembering the setting chosen if we
+    // edit one thing". A box that was already ticked, and left alone, saved
+    // as OFF -- so editing the price took "Show on the customer receipt" off.
+    await check('editing one thing keeps every tick box that was already ticked', async () => {
+      await cdp.eval(`
+        document.querySelectorAll('.wiz-steps button')[0].click();
+        const el = document.querySelector('[name=price]');
+        el.value = '4.80';
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        return true;`);
+      await cdp.clickOn('.wiz-save');
+      const saved = await cdp.until(`return document.querySelector('.modal-wizard') ? null : true;`);
+      assert.ok(saved, 'the dialog did not close');
+      const put = state.put;
+      assert.ok(put, 'nothing was saved');
+      assert.strictEqual(String(put.price), '4.80');
+      assert.strictEqual(String(put.print_to_receipt), '1', 'Show on the customer receipt was lost');
+      assert.strictEqual(String(put.open_price), '1', 'Ask the price at the till was lost');
+      assert.strictEqual(String(put.is_weighted), '0', 'an unticked box stays unticked');
+      assert.deepStrictEqual([].concat(put.printer_routes), ['kp1']);
     });
   } finally {
     await b.close();
