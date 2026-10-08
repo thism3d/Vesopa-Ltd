@@ -65,6 +65,14 @@ precise location (optional, only while the app is open), photos (optional
 profile photo); nothing shared with third parties; data can be deleted from
 Account in the app.
 
+## iPhone (no Mac needed)
+
+GitHub > Actions > "iOS - venue app" > Run workflow, venue `PontardaweRFC`.
+It builds on GitHub's Mac. With the App Store Connect API key in the
+repository secrets (ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8; see the top of
+`.github/workflows/ios-venue-app.yml`) and the app's record created in App
+Store Connect (step 1 below), it also signs it and uploads it to TestFlight.
+
 ## iPhone (Mac)
 
 From the repository root:
