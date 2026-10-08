@@ -10,7 +10,11 @@ settings as MetricMembership/server/scripts/deploy.py). On the Cloud box it:
      code). An account that already exists is left as it is;
   2. sets users.is_staff = 1, which opens auth.vesopa.com/admin to it;
   3. makes it an Owner of every app on admin.vesopa.com (adm_admins, role
-     'owner', apps '*'), the same row the Admins page writes.
+     'owner', apps '*'), the same row the Admins page writes;
+  4. makes it a full Admin of vesopaepos.com/admin (admin_table, status
+     'Admin', enabled 'Y'). That panel has no password form, only Connect with
+     Vesopa, which links the row by this verified email on first sign-in. The
+     row's password column is a hash of random bytes nobody knows.
 
 Idempotent. Sends no email and sets no password. Added 2026-10-08 when the
 owner asked for support@vesopa.com with full administration and no password.
@@ -28,6 +32,7 @@ from deploy import connect, vesopa_ssh  # noqa: E402
 W = "/home/vesopasoftware/web"
 AUTH = f"{W}/auth.vesopa.com/private/nodeapp"
 ADMIN = f"{W}/admin.vesopa.com/private/nodeapp"
+WEB = f"{W}/vesopaepos.com/private/nodeapp"
 USER = "vesopasoftware"
 
 STAFF = r"""
@@ -63,6 +68,29 @@ const db = require('../src/db');
 })().catch((e) => { console.error(e.message); process.exit(1); });
 """
 
+EPOS_ADMIN = r"""
+require('dotenv').config({ path: require('path').join(__dirname, '..', '.env'), quiet: true });
+const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
+const { pool } = require('../src/db');
+(async () => {
+  const email = process.argv[2];
+  const name = process.argv[3] || email;
+  const [rows] = await pool.query('SELECT id FROM admin_table WHERE LOWER(email) = ? LIMIT 1', [email]);
+  if (rows[0]) {
+    await pool.query("UPDATE admin_table SET status = 'Admin', enabled = 'Y' WHERE id = ?", [rows[0].id]);
+  } else {
+    const unusable = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 12);
+    await pool.query(
+      "INSERT INTO admin_table (fullname, username, email, status, password, enabled) VALUES (?, ?, ?, 'Admin', ?, 'Y')",
+      [name, email, email, unusable]);
+  }
+  console.log('  vesopaepos.com/admin: full Admin');
+  await pool.end();
+  process.exit(0);
+})().catch((e) => { console.error(e.message); process.exit(1); });
+"""
+
 
 def run(client, cmd):
     if vesopa_ssh.run(client, cmd) != 0:
@@ -71,6 +99,7 @@ def run(client, cmd):
 
 def node_snippet(client, sftp, app, code, args):
     path = f"{app}/scripts/.grant-{secrets.token_hex(6)}.js"
+    run(client, f"test -d {app}/scripts || install -d -o {USER} -g {USER} {app}/scripts")
     with sftp.open(path, "w") as f:
         f.write(code)
     try:
@@ -97,8 +126,9 @@ def main():
                     f"su - {USER} -c \"cd {AUTH} && node scripts/create-person.js '{email}' '{name}'\"")
         node_snippet(client, sftp, AUTH, STAFF, f"'{email}'")
         node_snippet(client, sftp, ADMIN, OWNER, f"'{email}' '{name}'")
+        node_snippet(client, sftp, WEB, EPOS_ADMIN, f"'{email}' '{name}'")
         print(f"\ndone. {email} signs in with an emailed code (no password) at "
-              "https://auth.vesopa.com/admin and https://admin.vesopa.com")
+              "https://auth.vesopa.com/admin, https://admin.vesopa.com and https://vesopaepos.com/admin")
     finally:
         sftp.close()
         client.close()
