@@ -3135,6 +3135,13 @@ select.cell-edit {
 }
 .sp-palette-label { font-weight: 600; }
 .sp-palette-note { margin-left: auto; }
+/* Same column every row, so prices line up and two "1 Course" rows read apart. */
+.sp-palette-price {
+  flex: 0 0 64px;
+  text-align: right;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
 .sp-palette-empty { padding: 14px; }
 .sp-palette-hint { margin: 0; padding: 8px 14px; border-top: 1px solid var(--line); }
 .sp-palette-count { margin: 0; padding: 6px 14px 0; }

@@ -311,8 +311,12 @@ function spPaletteEntries() {
       group: 'Product',
       label: p.product_name,
       // Searchable on the things a manager actually knows about a product.
-      hay: `${p.product_name} ${p.department_name || ''} ${p.group_name || ''} ${p.pluid}`,
+      hay: `${p.product_name} ${p.department_name || ''} ${p.group_name || ''} ${p.pluid} ${spFillPrice(p)}`,
       note: [p.department_name, p.group_name].filter(Boolean).join(' · '),
+      // The standard price (2026-10-08). A venue often has several products
+      // under one name at different prices, and the price is what tells them
+      // apart. Searchable too, so "3.50" finds it.
+      price: spFillPrice(p),
       apply: (b) => {
         spSetKind(b, 'product');
         b.pluId = Number(p.pluid);
@@ -620,6 +624,7 @@ function spOpenPalette() {
               <span class="sp-palette-kind">${spEsc(e.group)}</span>
               <span class="sp-palette-label">${spEsc(e.label)}</span>
               <span class="sp-palette-note muted small">${spEsc(e.note || '')}</span>
+              ${e.price ? `<span class="sp-palette-price">${spEsc(e.price)}</span>` : ''}
             </li>`
           )
           .join('')
