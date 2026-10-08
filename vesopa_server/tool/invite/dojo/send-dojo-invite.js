@@ -36,7 +36,7 @@ async function main() {
   const body = raw.slice(split);
   head = head.replace(/^X-Unsent:.*\r\n/m, '').replace(/^Date:.*$/m, `Date: ${new Date().toUTCString().replace('GMT', '+0000')}`);
   raw = head + body;
-  const subject = (head.match(/^Subject: (.*)$/m) || [])[1];
+  const subject = ((head + '\r\n').match(/^Subject:\s*([\s\S]*?)\r\n(?![ \t])/m) || [])[1]?.replace(/\r\n[ \t]+/g, ' ');
 
   const onlyAt = process.argv.indexOf('--only');
   const only = onlyAt > -1 ? process.argv[onlyAt + 1] : null;
