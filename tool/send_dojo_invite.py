@@ -3,6 +3,7 @@
     python tool/send_dojo_invite.py                  # upload and show what it would send
     python tool/send_dojo_invite.py --send           # send to Dojo, cc Meirion
     python tool/send_dojo_invite.py --send --only info@vesopa.com   # one test copy
+    python tool/send_dojo_invite.py --confirmed --send   # follow-up: 1:30pm accepted, Meet link
 
 Owner, 2026-10-08: "You send by yourself like you sent to metric group". It
 uploads vesopa_server/tool/invite/dojo to the back office on the Cloud box and

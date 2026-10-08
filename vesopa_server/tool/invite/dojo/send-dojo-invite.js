@@ -7,6 +7,7 @@
  *   node tool/invite/dojo/send-dojo-invite.js                 # says what it would send
  *   node tool/invite/dojo/send-dojo-invite.js --send          # to Dojo, cc Meirion
  *   node tool/invite/dojo/send-dojo-invite.js --send --only info@vesopa.com   # one copy only
+ *   ... --confirmed   # the follow-up: new time 1:30pm accepted, Meet link, invite SEQUENCE 1
  *
  * The message is Vesopa-Dojo-kick-off.eml next to this file, made by
  * source/build.py: branded HTML, inline picture, and a METHOD:REQUEST calendar
@@ -27,7 +28,7 @@ const RECIPIENTS = [
 ];
 
 async function main() {
-  const eml = path.join(__dirname, 'Vesopa-Dojo-kick-off.eml');
+  const eml = path.join(__dirname, process.argv.includes('--confirmed') ? 'Vesopa-Dojo-kick-off-confirmed.eml' : 'Vesopa-Dojo-kick-off.eml');
   // Git may store it with LF endings; mail wants CRLF.
   let raw = fs.readFileSync(eml, 'utf8').replace(/\r?\n/g, '\r\n');
   const split = raw.indexOf('\r\n\r\n');

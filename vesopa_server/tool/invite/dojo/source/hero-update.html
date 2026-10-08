@@ -1,0 +1,54 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+@font-face{font-family:J;src:url(PlusJakartaSans-Medium.ttf);font-weight:500}
+@font-face{font-family:J;src:url(PlusJakartaSans-Bold.ttf);font-weight:700}
+@font-face{font-family:J;src:url(PlusJakartaSans-ExtraBold.ttf);font-weight:800}
+*{box-sizing:border-box;margin:0}
+body{width:600px;height:300px;font-family:J;overflow:hidden}
+.h{position:relative;width:600px;height:300px;background:radial-gradient(circle at 82% 30%,#2a3fb8 0,#13248a 38%,#0b1a6b 70%,#070f45 100%);color:#fff;overflow:hidden}
+.grid{position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.05) 1px,transparent 1px);background-size:24px 24px;mask-image:linear-gradient(90deg,transparent,#000 60%)}
+.logo{position:absolute;left:32px;top:30px;height:22px}
+.tag{position:absolute;left:32px;top:100px;font-size:11px;font-weight:800;letter-spacing:2px;color:#a5c715}
+.t{position:absolute;left:32px;top:120px;font-size:31px;line-height:1.12;font-weight:800;white-space:nowrap}
+.t span{color:#a5c715}
+.s{position:absolute;left:32px;top:168px;font-size:14px;line-height:1.5;color:#c9d0f5;width:300px;font-weight:500}
+.chip{position:absolute;left:32px;top:236px;display:flex;gap:8px}
+.chip div{font-size:11px;font-weight:700;padding:5px 10px;border-radius:20px;background:rgba(255,255,255,.12);color:#fff}
+.chip div.g{background:#a5c715;color:#0b1a6b}
+/* till */
+.till{position:absolute;left:372px;top:56px;width:190px;height:136px;border-radius:12px;background:#1b1830;border:5px solid #26223f;box-shadow:0 18px 40px rgba(0,0,0,.45)}
+.scr{position:absolute;inset:6px;border-radius:6px;background:#f3f6ff;padding:8px}
+.row{display:flex;justify-content:space-between;font-size:8px;color:#17141c;font-weight:700;padding:3px 0;border-bottom:1px solid #e1e5f5}
+.tot{margin-top:6px;display:flex;justify-content:space-between;font-size:11px;font-weight:800;color:#0b1a6b}
+.pay{margin-top:7px;height:20px;border-radius:5px;background:#0b1a6b;color:#fff;font-size:8px;font-weight:800;display:flex;align-items:center;justify-content:center;gap:4px}
+.pay b{color:#a5c715}
+.stand{position:absolute;left:448px;top:192px;width:38px;height:30px;background:#26223f;clip-path:polygon(30% 0,70% 0,100% 100%,0 100%)}
+.base{position:absolute;left:416px;top:220px;width:102px;height:8px;border-radius:4px;background:#26223f}
+/* terminal */
+.term{position:absolute;left:508px;top:168px;width:72px;height:124px;border-radius:14px;background:linear-gradient(160deg,#2c2c34,#111116);box-shadow:0 16px 30px rgba(0,0,0,.5);transform:rotate(8deg)}
+.tscr{position:absolute;left:7px;top:8px;width:58px;height:46px;border-radius:6px;background:#0f1b5c;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.tscr .ok{width:20px;height:20px;border-radius:10px;background:#a5c715;color:#0b1a6b;font-size:13px;font-weight:800;display:flex;align-items:center;justify-content:center}
+.tscr .a{font-size:8px;font-weight:800;margin-top:3px}
+.keys{position:absolute;left:10px;top:62px;display:grid;grid-template-columns:repeat(3,14px);gap:4px}
+.keys i{display:block;width:14px;height:9px;border-radius:2px;background:#3c3c47}
+.keys i.r{background:#c0392b}.keys i.y{background:#e2b100}.keys i.gg{background:#2f8f00}
+.wave{position:absolute;left:540px;top:96px;transform:rotate(-30deg)}
+.wave div{position:absolute;border:3px solid #a5c715;border-left:0;border-bottom:0;border-radius:0 40px 0 0;opacity:.9}
+.card{position:absolute;left:552px;top:14px;width:58px;height:38px;border-radius:6px;background:linear-gradient(135deg,#a5c715,#5a9e00);transform:rotate(-18deg);box-shadow:0 8px 16px rgba(0,0,0,.35)}
+.card:before{content:"";position:absolute;left:8px;top:12px;width:12px;height:9px;border-radius:2px;background:#f5e3a0}
+</style></head><body><div class="h"><div class="grid"></div>
+<img class="logo" src="logo-dark.svg">
+<div class="tag">KICK-OFF CONFIRMED</div>
+<div class="t">Vesopa EPOS <span>+</span> Dojo</div>
+<div class="s">Card payments built into every till. Integrated, tested and ready to launch.</div>
+<div class="chip"><div class="g">Fri 9 Oct 2026</div><div>1:30pm UK time</div><div>Google Meet</div></div>
+<div class="till"><div class="scr">
+<div class="row"><span>Flat white</span><span>£3.40</span></div>
+<div class="row"><span>Club sandwich</span><span>£7.95</span></div>
+<div class="row"><span>Orange juice</span><span>£2.80</span></div>
+<div class="tot"><span>Total</span><span>£14.15</span></div>
+<div class="pay">Pay by card <b>●</b> Dojo</div></div></div>
+<div class="stand"></div><div class="base"></div>
+<div class="card"></div>
+<div class="term"><div class="tscr"><div class="ok">✓</div><div class="a">£14.15</div></div>
+<div class="keys"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="r"></i><i class="y"></i><i class="gg"></i></div></div>
+</div></body></html>
