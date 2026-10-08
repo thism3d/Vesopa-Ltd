@@ -1,6 +1,6 @@
 Version 1.15.0.0 - Printing that finishes every slip, print modes, and updates from Vesopa
 
-Fixed: on some printers a receipt, kitchen ticket or Z report printed only its first lines and was not cut, and the Z report looked blank. The till let go of the printer before it had finished reading. On a network printer it now waits for the printer to take everything. On a COM port it checks every byte is written.
+Fixed: on some printers a receipt, kitchen ticket or Z report printed only its first lines and was not cut, and the Z report looked blank. The till let go of the printer before it had finished reading. On a network printer it now waits for the printer to take everything. On a COM port it checks each byte is written.
 
 Print modes: every printer starts on Standard, which follows your venue's Paper and cutting choice in the back office (Receipt Designer). A printer that needs something different can be set to Custom under Settings, Printers: full, partial or no cut, how much paper to feed before the cut, the other cut command, sending slowly for printers that drop data, a beep for kitchen tickets and the cash drawer socket.
 
@@ -8,7 +8,7 @@ Test print: the test slip now shows the print mode and ends with "END OF TEST". 
 
 Fixed: the cash drawer now opens on the printer chosen for it in Settings, Printers, and printing a receipt again uses that printer's character set.
 
-Products: a Sub Department filter beside Department.
+Products: a Sub Department filter by Department.
 
 Back to home strip: a Screen Programming setting in the back office decides when the "Back to ..." strip shows: only where needed, always or never.
 
