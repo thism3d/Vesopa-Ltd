@@ -5,9 +5,10 @@
 
 Those are the pages where the till draws its own "Back to <home>" strip
 (EPOS 1.14.1, ScreenSet.reachesHome). The report lists each one, per venue,
-with the keys already on it and the fix it would make: the cell that the
-venue's other pages use for their key home (Pontardawe's DRINKS key at the foot
-of the rail) becomes a page key to home, with the same label and colours.
+with the keys already on it and the fix it would make: the page laid out most
+like it (the same rail of page keys) is found, and the cell where that page
+keeps its key home (LUNCH's DRINKS key at the foot of the food rail) becomes a
+page key to home on this page too, with the same label and colours.
 
 --apply changes that one cell on that one page and prints the row it replaced,
 so it can be put back by hand. Nothing else is written. Tills pick the change
@@ -68,6 +69,26 @@ def stranded(settings, screens, buttons):
         return s is not None and any(
             b["kind"] == "page" and b["target"] == home for b in keys.get(s["id"], []))
 
+    def twin(page, pages, home):
+        # The page laid out most like this one (the same rail of page keys),
+        # and the key home it has. BREAKFAST copies LUNCH's DRINKS key, not
+        # the DRAUGHTS key the drinks pages carry where BREAKFAST has its own.
+        mine = {(b["row"], b["col"]): (b["kind"], b["target"]) for b in keys.get(page["id"], [])}
+        best, score = None, 0
+        for other in pages:
+            if other["id"] in (page["id"], home):
+                continue
+            theirs = keys.get(other["id"], [])
+            homes = [b for b in theirs if b["kind"] == "page" and b["target"] == home]
+            if not homes:
+                continue
+            same = sum(1 for b in theirs
+                       if b["kind"] == "page" and mine.get((b["row"], b["col"])) == (b["kind"], b["target"]))
+            if same > score:
+                h = homes[0]
+                best, score = (h["row"], h["col"], h["label"], h["fill"], h["ink"]), same
+        return best
+
     for t in settings:
         home = t["home"]
         pages = [s for s in screens if s["office"] == t["office"] and s["surface"] == "sale"]
@@ -83,7 +104,7 @@ def stranded(settings, screens, buttons):
             bottom = bar(s["bottom"], "bottombar") or bar(t["bottom"], "bottombar")
             if any(leads_home(x, home) for x in (s, top, bottom)):
                 continue
-            proposal = habit.most_common(1)[0][0] if habit else None
+            proposal = twin(s, pages, home) or (habit.most_common(1)[0][0] if habit else None)
             yield t, s, proposal, keys.get(s["id"], [])
 
 
@@ -102,7 +123,8 @@ def report():
             row, col, label, fill, ink = proposal
             here = next((b for b in own if b["row"] == row and b["col"] == col), None)
             now = f"{here['kind']} {here['label'] or ''!r}" if here else "an empty cell"
-            print(f"   fix: r{row}c{col} ({now}) becomes {label!r} -> home, as on the other pages")
+            shown = label or names.get(t["home"], "home")
+            print(f"   fix: r{row}c{col} ({now}) becomes a key to home, shown as {shown!r}")
         else:
             print("   no other page has a key home to copy; add one in Screen Programming")
     if not found:
