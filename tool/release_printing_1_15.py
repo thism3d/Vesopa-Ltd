@@ -29,13 +29,13 @@ APPS = [
     # store key, folder, version, msix, notes
     ("vesopa-epos", "vesopa_epos", "1.15.0.0", "vesopa_epos/build/store/vesopa-epos-store.msix", "notes-1.15.0.0-epos.txt"),
     ("vesopa-kitchen", "vesopa_epos_kitchen", "1.7.4.0",
-     "vesopa_epos_kitchen/build/windows/x64/runner/Release/vesopa_epos_kitchen.msix", "notes-1.7.4.0-kitchen.txt"),
-    ("vesopa-display", "vesopa_epos_display", "1.6.18.0",
-     "vesopa_epos_display/build/store/vesopa-display-store.msix", "notes-1.6.18.0-display.txt"),
+     "vesopa_epos_kitchen/build/store/vesopa-kitchen-store.msix", "notes-1.7.4.0-kitchen.txt"),
     ("vesopa-express", "vesopa_express", "1.0.11.0",
      "vesopa_express/build/store/vesopa-express-store.msix", "notes-1.0.11.0-express.txt"),
     ("vesopa-loyalty", "vesopa_loyalty", "1.0.11.0",
      "vesopa_loyalty/build/store/vesopa-loyalty-store.msix", "notes-1.0.11.0-loyalty.txt"),
+    ("vesopa-display", "vesopa_epos_display", "1.6.18.0",
+     "vesopa_epos_display/build/store/vesopa-display-store.msix", "notes-1.6.18.0-display.txt"),
 ]
 STEPS = ["deploy", "build", "store", "installers"]
 
@@ -89,10 +89,19 @@ def main():
     if "store" in todo:
         current = "store"
         node = tool("node")
+        # One app's Store refusal (an earlier submission still in progress)
+        # must not hold back the others or the installers.
+        refused = []
         for key, _folder, version, msix, notes in APPS:
-            run([node, "examples/stage.js", key, str(ROOT / msix), notes], STORE,
-                env={"STAGE_VERSION": version, "PUBLISH_MODE": "Immediate"}, step=f"Store: stage {key} {version}")
-            run([node, "examples/commit.js", key], STORE, step=f"Store: commit {key} {version}")
+            try:
+                run([node, "examples/stage.js", key, str(ROOT / msix), notes], STORE,
+                    env={"STAGE_VERSION": version, "PUBLISH_MODE": "Immediate"}, step=f"Store: stage {key} {version}")
+                run([node, "examples/commit.js", key], STORE, step=f"Store: commit {key} {version}")
+            except SystemExit as e:
+                print(e, flush=True)
+                refused.append(key)
+        if refused:
+            print(f"\n✗ Not sent to the Store: {', '.join(refused)}. The others went.", flush=True)
 
     if "installers" in todo:
         current = "installers"
