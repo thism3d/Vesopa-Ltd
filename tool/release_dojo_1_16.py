@@ -19,8 +19,10 @@ Run from the repository root on the owner's Windows PC, after
 import os
 import pathlib
 import shutil
+import re
 import subprocess
 import sys
+import zipfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 STORE = ROOT / "ms-store-submission-client"
@@ -55,6 +57,25 @@ def tool(name):
 current = STEPS[0]
 
 
+def check_msix(msix, version):
+    """Stop if the package is missing or still the previous version.
+
+    msix:create has crashed on a read-only runner\\Release\\Images folder and
+    left the last release's package in place, which would otherwise go to the
+    Store as if it were this one.
+    """
+    path = ROOT / msix
+    if not path.exists():
+        raise SystemExit(f"✗ {msix} was not made")
+    with zipfile.ZipFile(path) as z:
+        manifest = z.read("AppxManifest.xml").decode("utf-8", "replace")
+    found = re.search(r'<Identity[^>]*\sVersion="([^"]+)"', manifest)
+    if not found or found.group(1) != version:
+        raise SystemExit(f"✗ {msix} is version {found.group(1) if found else '?'}, not {version}."
+                         " Delete it and run again with --from build")
+    print(f"  {msix}: {version} ✓", flush=True)
+
+
 def main():
     global current
     start = STEPS[0]
@@ -75,10 +96,13 @@ def main():
             run([flutter, "pub", "get"], ROOT / folder, step=f"{folder}: pub get")
             run([flutter, "build", "windows", "--release"], ROOT / folder, step=f"{folder}: build {version}")
             run([dart, "run", "msix:create", "--store"], ROOT / folder, step=f"{folder}: msix {version}")
-            if not (ROOT / msix).exists():
-                raise SystemExit(f"✗ {msix} was not made")
+            check_msix(msix, version)
 
     if "store" in todo:
+        # Again here, so `--from store` never sends an old package either.
+        for _key, _folder, version, msix, _notes in APPS:
+            check_msix(msix, version)
+
         current = "store"
         node = tool("node")
         # One app's Store refusal (an earlier submission still in progress)
