@@ -890,8 +890,10 @@ async function main() {
       const started = made.filter((c) => c.method === 'POST' && c.path === '/terminal-sessions');
       assert.strictEqual(started.length, 1);
       assert.strictEqual(started[0].body.terminalId, 'tm_sandbox_1');
-      assert.strictEqual(started[0].headers['software-house-id'], 'softwareHouse1');
-      assert.strictEqual(started[0].headers['reseller-id'], 'reseller1');
+      assert.strictEqual(started[0].headers['software-house-id'], 'SL942X04');
+      assert.strictEqual(started[0].headers['reseller-id'], 'SL942X04');
+      // And on the intent too: Dojo identify the integrator on every call.
+      assert.strictEqual(intentsMade[0].headers['software-house-id'], 'SL942X04');
       first = res.body;
     });
 

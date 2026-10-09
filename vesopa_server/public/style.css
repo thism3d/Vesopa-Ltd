@@ -1736,6 +1736,7 @@ tr.clickable:hover { background: var(--brand-soft); }
   color: var(--muted, #7a828c); text-transform: capitalize;
 }
 .pill.on { background: #e4f7ef; color: #06784f; }
+.pill.bad { background: #fde8e7; color: #b42318; }
 /* A trainee: amber, the colour the till's TRAINING bar is. */
 .pill.training-pill { background: #fff3d6; color: #8a5a00; font-weight: 600; }
 

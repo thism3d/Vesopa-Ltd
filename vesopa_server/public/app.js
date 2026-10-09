@@ -192,6 +192,7 @@ function connectSocket() {
     const msg = JSON.parse(e.data);
     if (msg.type === 'order.created') onNewSale(msg);
     if (msg.type === 'memberships' && currentView === 'memberships') loadMemberships().catch(() => {});
+    if (msg.type === 'card-transactions' && currentView === 'card_payments') loadCardLog().catch(() => {});
     if (msg.type === 'modules') applyModules().then(() => { if (currentView === 'modules') render(); });
     // The screen editor names its keys from the catalogue, so a product renamed
     // on another machine should relabel them here. Safe to reload now that
@@ -345,6 +346,7 @@ const ROUTES = {
   customers: '/customers',
   vouchers: '/vouchers',
   receipt_designer: '/receipt-designer',
+  card_payments: '/card-payments',
   promotions: '/promotions',
   gift_cards: '/gift-cards',
   deposits: '/deposits',
@@ -1385,6 +1387,7 @@ const VIEW_LOADERS = {
     screens: loadScreens,
     vouchers: () => loadCrud('vouchers'),
     receipt_designer: loadReceiptDesigner,
+    card_payments: loadCardPayments,
     promotions: loadPromotions,
     gift_cards: loadGiftCards,
     deposits: loadDeposits,
@@ -13724,6 +13727,152 @@ async function loadTender() {
   });
   renderTenderPreview();
   await loadDenominations();
+}
+
+// ---- Card payments (Dojo) -------------------------------------------------
+//
+// The venue's Dojo connection for every till, and the card log the tills
+// report to. Saving is a check first: the server calls Dojo with the key and
+// refuses a wrong one ("API key is incorrect") or a card machine that is not
+// connected, exactly as the till's own Save does. Dojo accreditation, Oct 2026.
+
+let dojoState = null;
+
+function dojoKeyState(s) {
+  const env = s.environment === 'live'
+    ? '<span class="pill amber">live</span>'
+    : '<span class="pill on">sandbox</span>';
+  return s.key_source === 'venue'
+    ? 'Your Dojo key ending <code>' + esc(s.key_hint || '') + '</code> ' + env
+    : 'Using the <b>public Dojo sandbox key</b> ' + env + ': test money only, nothing is charged.';
+}
+
+function dojoTerminalOptions(list, chosen) {
+  const sel = $('dojo-terminal');
+  const keep = chosen ?? sel.value;
+  const rows = ['<option value="">None: each till chooses its own</option>'];
+  for (const t of list || []) {
+    rows.push('<option value="' + esc(t.id) + '">' + esc((t.tid || t.id) + ' (' + t.status + ')') + '</option>');
+  }
+  if (keep && !(list || []).some((t) => t.id === keep)) {
+    rows.push('<option value="' + esc(keep) + '">' + esc(keep) + '</option>');
+  }
+  sel.innerHTML = rows.join('');
+  sel.value = keep || '';
+}
+
+function dojoSay(text, ok) {
+  const el = $('dojo-msg');
+  el.textContent = text || '';
+  el.style.color = ok ? '#06784f' : '#b42318';
+  el.style.fontWeight = '600';
+}
+
+async function loadCardPayments() {
+  dojoState = await api('/dojo-settings');
+  $('dojo-key-state').innerHTML = dojoKeyState(dojoState);
+  $('dojo-key').value = '';
+  $('dojo-reseller').value = dojoState.reseller_id || '';
+  $('dojo-seconds').value = String(dojoState.result_seconds || 5);
+  dojoTerminalOptions([], dojoState.terminal_id || '');
+  dojoSay('');
+
+  $('dojo-find').onclick = async () => {
+    dojoSay('Asking Dojo for the card machines…', true);
+    try {
+      const r = await api('/dojo-settings/test', {
+        method: 'POST',
+        body: JSON.stringify({ api_key: $('dojo-key').value.trim(), reseller_id: $('dojo-reseller').value.trim() }),
+      });
+      dojoTerminalOptions(r.terminals || []);
+      dojoSay(r.ok ? (r.terminals || []).length + ' card machines on this account.' : r.message, r.ok);
+    } catch (e) { dojoSay(e.message, false); }
+  };
+  $('dojo-use-sandbox').onclick = async () => {
+    if (!confirm('Switch this venue back to the public Dojo sandbox key? Cards will take test money only.')) return;
+    try {
+      const r = await api('/dojo-settings', { method: 'PUT', body: JSON.stringify({ reset: true }) });
+      toast(r.message || 'Back on the sandbox key');
+      await loadCardPayments();
+    } catch (e) { dojoSay(e.message, false); }
+  };
+  $('dojo-save').onclick = async () => {
+    const btn = $('dojo-save');
+    btn.disabled = true;
+    dojoSay('Checking with Dojo…', true);
+    try {
+      const r = await api('/dojo-settings', {
+        method: 'PUT',
+        body: JSON.stringify({
+          api_key: $('dojo-key').value.trim(),
+          use_public_sandbox: dojoState.key_source !== 'venue',
+          reseller_id: $('dojo-reseller').value.trim(),
+          terminal_id: $('dojo-terminal').value,
+          result_seconds: Number($('dojo-seconds').value),
+        }),
+      });
+      dojoState = r;
+      $('dojo-key').value = '';
+      $('dojo-key-state').innerHTML = dojoKeyState(r);
+      dojoSay((r.message || 'Saved.') + ' Saved for every till.', true);
+      toast('Card payment settings saved');
+    } catch (e) {
+      // Nothing was saved: the server only stores what Dojo accepted.
+      dojoSay(e.message + ' Nothing was saved.', false);
+    } finally {
+      btn.disabled = false;
+    }
+  };
+  $('dojo-log-days').onchange = () => loadCardLog();
+  $('dojo-log-outcome').onchange = () => loadCardLog();
+  await loadCardLog();
+}
+
+const DOJO_KIND = {
+  sale: 'Sale', refund: 'Refund to card', matched_refund: 'Refund on machine',
+  unlinked_refund: 'Unlinked refund', check: 'Status check', cancel: 'Cancel',
+};
+const DOJO_OUTCOME = {
+  approved: ['Approved', 'on'], declined: ['Declined', 'bad'], cancelled: ['Cancelled', 'amber'],
+  busy: ['Machine busy', 'amber'], expired: ['Expired', 'amber'], unknown: ['Not confirmed', 'amber'],
+  signature_rejected: ['Signature rejected', 'bad'], recorded_manually: ['Recorded by hand', 'amber'],
+  failed: ['Failed', 'bad'], not_paid: ['Not paid', 'bad'],
+};
+
+async function loadCardLog() {
+  const q = new URLSearchParams({ days: $('dojo-log-days').value });
+  if ($('dojo-log-outcome').value) q.set('outcome', $('dojo-log-outcome').value);
+  const rows = await api('/card-transactions?' + q);
+  const body = $('dojo-log');
+  if (!rows.length) {
+    body.innerHTML = '<tr><td colspan="8" class="muted">No card payments in this period.</td></tr>';
+    return;
+  }
+  body.innerHTML = rows.map((r) => {
+    const [label, tone] = DOJO_OUTCOME[r.outcome] || [r.outcome, ''];
+    const slip = Array.isArray(r.receipt_lines) ? r.receipt_lines
+      : (() => { try { return JSON.parse(r.receipt_lines || '[]'); } catch { return []; } })();
+    const ids = [
+      r.message && esc(r.message),
+      r.intent_id && 'Intent <code>' + esc(r.intent_id) + '</code>',
+      r.session_id && 'Session <code>' + esc(r.session_id) + '</code>',
+      r.terminal_id && 'Machine <code>' + esc(r.terminal_id) + '</code>',
+      'Software house <code>' + esc(r.software_house_id || '—') + '</code> · Reseller <code>' + esc(r.reseller_id || '—') + '</code>',
+      r.auth_code && 'Auth ' + esc(r.auth_code),
+      r.order_id && 'Bill <code>' + esc(r.order_id) + '</code>',
+      slip.length && '<pre class="small" style="white-space:pre-wrap">' + esc(slip.join('\n')) + '</pre>',
+    ].filter(Boolean).join('<br>');
+    return '<tr>'
+      + '<td>' + esc(new Date(r.at + (String(r.at).endsWith('Z') ? '' : 'Z')).toLocaleString('en-GB')) + '</td>'
+      + '<td>' + esc(DOJO_KIND[r.kind] || r.kind) + '</td>'
+      + '<td>' + money(r.amount_minor) + '</td>'
+      + '<td><span class="pill ' + tone + '">' + esc(label) + '</span></td>'
+      + '<td>' + esc(r.dojo_status || '') + '</td>'
+      + '<td>' + esc(r.card_type && r.card_last4 ? r.card_type + ' ••' + r.card_last4 : '') + '</td>'
+      + '<td>' + esc(r.staff || '') + '</td>'
+      + '<td><details><summary>View</summary><div class="small">' + ids + '</div></details></td>'
+      + '</tr>';
+  }).join('');
 }
 
 // ---- Idle screen ----------------------------------------------------------

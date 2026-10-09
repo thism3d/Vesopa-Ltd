@@ -49,6 +49,7 @@ const { fontsRoutes, tillFontRoutes } = require('./fonts');
 const { assetVersions, staticCache } = require('./assets');
 const { modifierRoutes, tillModifierRoutes } = require('./modifiers');
 const { dojoWebhookRoutes, webhookStatus } = require('./dojo');
+const { dojoSettingsRoutes } = require('./dojo_settings');
 const { terminalRoutes, timesheetRoutes } = require('./terminals');
 const { deviceRoutes } = require('./devices');
 const { cardRoutes } = require('./cards');
@@ -325,6 +326,8 @@ app.use(tillDenominationRoutes({ pool }));
 app.use('/api', permissionRoutes({ pool, broadcast, secret: JWT_SECRET }));
 
 app.use('/api', backofficeRoutes({ pool, broadcast, secret: JWT_SECRET }));
+// Dojo card settings per venue, and the card log every till reports to.
+app.use('/api', dojoSettingsRoutes({ pool, broadcast, secret: JWT_SECRET }));
 // More than one site under one login: the list and the switch. See src/sites.js.
 app.use('/api', siteRoutes({ pool, broadcast, secret: JWT_SECRET }));
 // Its own paths (/api/demo and /till/demo/token), so mounted at the root.

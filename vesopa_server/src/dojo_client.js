@@ -27,9 +27,13 @@ const crypto = require('crypto');
 const BASE = (process.env.DOJO_BASE_URL || 'https://api.dojo.tech').replace(/\/+$/, '');
 const VERSION = process.env.DOJO_API_VERSION || '2024-02-05';
 
-/** Dojo's own published sandbox partner ids, used when a sandbox key is. */
-const SANDBOX_SOFTWARE_HOUSE = 'softwareHouse1';
-const SANDBOX_RESELLER = 'reseller1';
+/**
+ * Vesopa's software house id, issued by Dojo, sent on every call whatever the
+ * key (Dojo accreditation, 9 Oct 2026: "Software house ID needs to be
+ * hardcoded to SL942X04"). A blank reseller id is sent as the software house
+ * id, which is also what Dojo asked for.
+ */
+const SOFTWARE_HOUSE_ID = 'SL942X04';
 
 class DojoError extends Error {
   constructor(status, message, body) {
@@ -45,12 +49,11 @@ function isSandboxKey(key) {
 }
 
 /** The partner ids for a key: the configured ones, or the sandbox's own. */
-function partnerIds(key) {
-  const sandbox = isSandboxKey(key);
+function partnerIds(_key) {
+  const softwareHouseId = process.env.DOJO_SOFTWARE_HOUSE_ID || SOFTWARE_HOUSE_ID;
   return {
-    softwareHouseId:
-      process.env.DOJO_SOFTWARE_HOUSE_ID || (sandbox ? SANDBOX_SOFTWARE_HOUSE : ''),
-    resellerId: process.env.DOJO_RESELLER_ID || (sandbox ? SANDBOX_RESELLER : ''),
+    softwareHouseId,
+    resellerId: process.env.DOJO_RESELLER_ID || softwareHouseId,
   };
 }
 
@@ -67,7 +70,9 @@ async function call(key, method, path, { body, terminal = false, fetchImpl } = {
     Accept: 'application/json',
   };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
-  if (terminal) {
+  // The partner ids go on every call, intents included: Dojo identify the
+  // integrator by them in their logs.
+  {
     const ids = partnerIds(key);
     if (!ids.softwareHouseId || !ids.resellerId) {
       throw new DojoError(

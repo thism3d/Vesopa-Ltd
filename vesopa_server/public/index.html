@@ -374,6 +374,7 @@
           <button class="nav" data-view="wallet">Wallet Passes</button>
           <button class="nav" data-view="loyalty_app">Loyalty App</button>
           <button class="nav" data-view="tender">Tender &amp; Gratuity</button>
+          <button class="nav" data-view="card_payments">Card Payments (Dojo)</button>
           <button class="nav" data-view="rules">Automation Rules</button>
 
           <div id="admin-group" hidden>
@@ -4262,6 +4263,99 @@
             <div class="rd-preview-pane">
               <div class="rd-preview-head"><span class="small muted">How the till will look</span></div>
               <div class="card rd-card"><div id="tender-preview"></div></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Card payments (Dojo). Per venue: the key, reseller id, default card
+             machine and how long the till shows a result; plus every card
+             attempt the tills have made, paid or not. Dojo accreditation,
+             October 2026. -->
+        <section id="view-card_payments" class="view" hidden>
+          <div class="page-head">
+            <div><h2>Card Payments (Dojo)</h2><p class="muted small">Your Dojo connection for every till, and a log of every card payment, refund and check, approved or not.</p></div>
+            <button class="btn primary" id="dojo-save">Check and save</button>
+          </div>
+          <div class="rd-layout">
+            <div class="rd-editor">
+              <div class="card rd-card">
+                <h3>Dojo connection</h3>
+                <p class="small" id="dojo-key-state"></p>
+                <label>Software house ID
+                  <input id="dojo-shid" value="SL942X04" readonly disabled title="Set by Vesopa for Dojo">
+                </label>
+                <p class="muted small">Issued to Vesopa by Dojo and sent on every payment. It cannot be changed.</p>
+                <label>Dojo secret key
+                  <input type="password" id="dojo-key" autocomplete="off" placeholder="Leave blank to keep the current key (sk_live_... or sk_sandbox_...)">
+                </label>
+                <button class="btn small" id="dojo-use-sandbox" type="button">Use the public Dojo sandbox key</button>
+                <label>Reseller ID
+                  <input id="dojo-reseller" maxlength="64" placeholder="Blank sends SL942X04">
+                </label>
+                <label>Default card machine (for a till that has none)
+                  <select id="dojo-terminal"><option value="">None: each till chooses its own</option></select>
+                </label>
+                <button class="btn small" id="dojo-find" type="button">Find card machines</button>
+                <label>Show the payment result on the till for
+                  <select id="dojo-seconds">
+                    <option value="5">5 seconds</option>
+                    <option value="10">10 seconds</option>
+                    <option value="15">15 seconds</option>
+                  </select>
+                </label>
+                <p class="small" id="dojo-msg"></p>
+                <p class="muted small">
+                  Saving checks the key with Dojo first. A wrong key shows
+                  "API key is incorrect" and nothing is saved. A chosen card
+                  machine must be switched on and connected. Every till picks
+                  the new settings up straight away.
+                </p>
+              </div>
+              <div class="card rd-card">
+                <h3>Refunds</h3>
+                <p class="small">
+                  On the till: <b>Functions › Card Machine</b> lists every card
+                  payment taken on that till. Tap one to check its status with
+                  Dojo or refund it, full or part. A refund can go straight back
+                  to the card (no card needed) or be taken on the card machine
+                  linked to the sale. <b>Refund without a sale (unlinked)</b> on
+                  the same page needs a manager. A refund can also start from
+                  <b>Refund</b> (pick the receipt) or from a receipt in
+                  <b>Receipts</b>, which shows the payment's Dojo status.
+                </p>
+              </div>
+            </div>
+            <div class="rd-preview-pane">
+              <div class="card">
+                <div class="page-head" style="margin:0 0 8px">
+                  <h3 style="margin:0">Card payment log</h3>
+                  <div>
+                    <select id="dojo-log-days">
+                      <option value="1">Today</option>
+                      <option value="7">7 days</option>
+                      <option value="14" selected>14 days</option>
+                      <option value="30">30 days</option>
+                      <option value="90">90 days</option>
+                    </select>
+                    <select id="dojo-log-outcome">
+                      <option value="">All results</option>
+                      <option value="approved">Approved</option>
+                      <option value="declined">Declined</option>
+                      <option value="cancelled">Cancelled</option>
+                      <option value="busy">Machine busy</option>
+                      <option value="expired">Expired</option>
+                      <option value="unknown">Not confirmed</option>
+                      <option value="signature_rejected">Signature rejected</option>
+                      <option value="recorded_manually">Recorded by hand</option>
+                      <option value="failed">Failed</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="table-scroll"><table>
+                  <thead><tr><th>When</th><th>Type</th><th>Amount</th><th>Result</th><th>Dojo status</th><th>Card</th><th>Staff</th><th>Details</th></tr></thead>
+                  <tbody id="dojo-log"></tbody>
+                </table></div>
+              </div>
             </div>
           </div>
         </section>

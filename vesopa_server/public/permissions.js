@@ -88,6 +88,7 @@ const NAV_PERMISSION = {
   wallet: 'commerce.wallet',
   loyalty_app: 'commerce.loyalty',
   tender: 'commerce.tender',
+  card_payments: 'commerce.tender',
   rules: 'commerce.rules',
 };
 
