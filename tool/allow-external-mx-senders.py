@@ -15,8 +15,8 @@ here and is refused. On 2026-10-08 20:47 a message from info@vesopasoftware.com
 (sent through Google) to rk@onzep.uk was rejected exactly so.
 
 WHAT IT DOES, on the box:
-  1. lists every Hestia mail domain whose MX records exist and none of them
-     points at this box, into /etc/exim4/vesopa_external_mx_domains;
+  1. lists every local mail domain whose PRIMARY MX is another server (this
+     box may still be its backup MX), into /etc/exim4/vesopa_external_mx_domains;
   2. backs up /etc/exim4/exim4.conf.template and adds
      `!sender_domains = lsearch;/etc/exim4/vesopa_external_mx_domains`
      to the ACL statement that says "smtp auth required", so only those
@@ -47,7 +47,7 @@ BOX=34.63.118.67
 MARK="lsearch;$L"
 
 command -v dig >/dev/null || { echo "dig is not installed; stopping"; exit 1; }
-echo "=== mail domains on this box whose MX points elsewhere ==="
+echo "=== local mail domains and where their primary MX points ==="
 TMP=$(mktemp)
 # The box's own resolver first; 1.1.1.1 only if that gives nothing.
 q() { r=$(dig +short +time=3 +tries=2 "$1" "$2" 2>/dev/null) || true; [ -n "$r" ] || r=$(dig +short +time=3 +tries=2 "$1" "$2" @1.1.1.1 2>/dev/null) || true; echo "$r"; }
@@ -58,13 +58,15 @@ q() { r=$(dig +short +time=3 +tries=2 "$1" "$2" 2>/dev/null) || true; [ -n "$r" 
   done; } | sort -u > "$TMP.all"
 echo "  $(wc -l < "$TMP.all") local mail domains"
 while read -r d; do
-  mx=$(q MX "$d" | awk '{print $2}' | sed 's/\.$//')
+  # Only the PRIMARY (lowest preference) MX counts: vesopa.com and
+  # vesopasoftware.com list this box as backup MX 10 behind Microsoft/Google.
+  mx=$(q MX "$d" | sort -n | awk 'NR==1{p=$1} $1==p{print $2}' | sed 's/\.$//')
   if [ -z "$mx" ]; then echo "  $d  (no MX answer)"; continue; fi
   here=no
   for h in $mx; do
     for ip in $(q A "$h"); do [ "$ip" = "$BOX" ] && here=yes; done
   done
-  if [ "$here" = no ]; then echo "$d" >> "$TMP"; echo "  $d  EXTERNAL (MX: $(echo $mx | tr '\n' ' '))"; fi
+  if [ "$here" = no ]; then echo "$d" >> "$TMP"; echo "  $d  EXTERNAL (primary MX: $(echo $mx | tr '\n' ' '))"; else echo "  $d  here"; fi
 done < "$TMP.all"
 rm -f "$TMP.all"
 
