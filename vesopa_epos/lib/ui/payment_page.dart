@@ -19,7 +19,9 @@ import '../data/customer_display.dart';
 import '../data/customer_display_control.dart';
 import '../data/till_settings.dart';
 import '../main.dart';
+import '../payments/card_log.dart';
 import '../payments/connect_pac.dart';
+import '../payments/dojo_config.dart';
 import '../payments/dojo_desktop.dart';
 import '../payments/payment_provider.dart';
 import '../data/kitchen_printing.dart';
@@ -293,9 +295,9 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     );
   }
 
-  /// Run a card. Returns true only if the money was actually taken — a decline,
-  /// an error, or a timeout all return false, so the sale is never recorded as
-  /// paid when it was not.
+  /// Run a card. Returns the result only if the money was actually taken — a
+  /// decline, an error, or a timeout all return null, so the sale is never
+  /// recorded as paid when it was not.
   ///
   /// [manual] takes the *keyed* route rather than a presented card: the number
   /// is typed in. Each acquirer expresses that differently — Connect flags the
@@ -303,7 +305,22 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
   /// card-entry UI instead of the reader — so it is passed straight through to
   /// the provider rather than decided here. A venue reaches for this when a
   /// chip will not read or the customer is on the telephone.
+  ///
+  /// "Try again" on the result screen runs the whole payment again, as a new
+  /// intent: Dojo never re-use a finished one.
   Future<PaymentResult?> _takeCard(
+    int amountMinor, {
+    bool manual = false,
+  }) async {
+    while (mounted) {
+      final attempt = await _takeCardOnce(amountMinor, manual: manual);
+      if (attempt.retry) continue;
+      return attempt.result;
+    }
+    return null;
+  }
+
+  Future<({PaymentResult? result, bool retry})> _takeCardOnce(
     int amountMinor, {
     bool manual = false,
   }) async {
@@ -315,8 +332,12 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
         'Card payments are not set up. Add your card API URL and key in '
         'Settings › Card payments.',
       );
-      return null;
+      return (result: null, retry: false);
     }
+
+    final config = ref.read(dojoConfigProvider).value ?? const DojoConfig();
+    final display = ref.read(customerDisplayProvider);
+    final staff = ref.read(servedByProvider);
 
     // The clerk needs to know the till is waiting on the customer, and must not
     // be able to press Card twice while it is.
@@ -325,14 +346,47 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     // abandoned: a card payment can sit unanswered for minutes, and a spinner
     // with no message and no way out strands the till mid-service.
     final desktop = provider is DesktopDojoProvider ? provider : null;
-    final rest = provider is DojoProvider ? provider : desktop?.intents;
+    final direct = provider is DojoProvider ? provider : null;
+    final rest = direct ?? desktop?.intents;
     final connect = provider is ConnectPacProvider ? provider : null;
 
     // One notifier drives the whole screen: the stage the till knows about,
     // plus whatever the reader is telling the customer.
     final payment = ValueNotifier<CardPaymentState>(
-      const CardPaymentState(step: CardStep.starting),
+      CardPaymentState(
+        step: CardStep.starting,
+        // Shown on every Dojo payment, as Dojo asked: the ids this payment is
+        // identified by in their logs.
+        partnerLabel: rest?.partnerLabel,
+        terminalLabel: rest?.terminalId ?? connect?.terminalId,
+      ),
     );
+
+    // The customer's screen says what the clerk's does, in fewer words.
+    void mirror(CardPaymentState st) {
+      final outcome = st.outcome;
+      unawaited(display.showCard({
+        'phase': outcome == null ? 'progress' : 'result',
+        'title': outcome?.title ?? st.step.label,
+        'detail': outcome == null
+            ? (st.step == CardStep.signature
+                  ? 'Please wait while your signature is checked'
+                  : st.step.customerDetail)
+            : outcome.customerDetail,
+        'outcome': outcome?.name,
+        'amount_minor': amountMinor,
+      }));
+    }
+
+    void setState2(CardPaymentState next) {
+      final before = payment.value;
+      payment.value = next;
+      if (next.step != before.step || next.outcome != before.outcome) {
+        mirror(next);
+      }
+    }
+
+    mirror(payment.value);
     DojoStage? lastStage;
 
     // The provider blocks on this when the reader asks for a signature; the
@@ -341,32 +395,39 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     Future<bool> askForSignature() {
       final completer = Completer<bool>();
       signature = completer;
-      payment.value = payment.value.copyWith(step: CardStep.signature);
+      setState2(payment.value.copyWith(step: CardStep.signature));
       return completer.future;
+    }
+
+    // Progress only ever moves forwards (see forwardStep): a stale poll must
+    // not put "Present card" back up after the card has gone in.
+    void advance(CardStep next, {String? prompt}) {
+      final current = payment.value.step;
+      final step = forwardStep(current, next);
+      setState2(payment.value.copyWith(
+        step: step,
+        readerPrompt: step == next ? prompt : payment.value.readerPrompt,
+      ));
     }
 
     // When the sale runs on a card machine, show what the reader is telling
     // the customer ("present card", "enter PIN") rather than a generic wait —
     // the clerk is the one who has to prompt them.
     rest?.onTerminalUpdate = (s) {
-      payment.value = payment.value.copyWith(
-        step: cardStepFor(stage: lastStage, session: s),
-        readerPrompt: s.prompt,
-        terminalLabel: rest.terminalId,
-      );
+      if (payment.value.finished) return;
+      advance(cardStepFor(stage: lastStage, session: s), prompt: s.prompt);
     };
     rest?.onSignatureRequested = askForSignature;
+    rest?.onCancelAnswered = (accepted, message) {
+      payment.value = payment.value.copyWith(cancelNote: message);
+    };
     desktop?.onStageChanged = (s) {
       lastStage = s;
-      payment.value = payment.value.copyWith(step: cardStepFor(stage: s));
+      advance(cardStepFor(stage: s));
     };
 
     connect?.onProgress = (p) {
-      payment.value = payment.value.copyWith(
-        step: cardStepForConnect(p),
-        readerPrompt: p.prompt,
-        terminalLabel: connect.terminalId,
-      );
+      advance(cardStepForConnect(p), prompt: p.prompt);
     };
     connect?.onSignatureRequested = askForSignature;
 
@@ -385,6 +446,66 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
       return true;
     };
 
+    // How the result screen ends: closed, run again, or recorded as paid.
+    final ending = Completer<_CardEnding>();
+    void end(_CardEnding e) {
+      if (!ending.isCompleted) ending.complete(e);
+    }
+
+    PaymentResult? result;
+    Timer? countdown;
+
+    Future<void> checkStatus() async {
+      final ref0 = result?.reference;
+      if (rest == null || ref0 == null || ref0.isEmpty) {
+        payment.value = payment.value.copyWith(
+          checkNote: 'There is no Dojo payment to look up. Check the card '
+              'machine\'s own screen or last-transaction slip.',
+        );
+        return;
+      }
+      countdown?.cancel();
+      payment.value = payment.value.copyWith(checking: true, clearSeconds: true);
+      try {
+        final st = await rest.paymentStatus(ref0);
+        unawaited(CardLog.instance.add(CardLogEntry(
+          at: DateTime.now(),
+          kind: 'check',
+          outcome: st.paid ? 'approved' : 'not_paid',
+          amountMinor: st.amountMinor,
+          intentId: st.id,
+          sessionId: result?.sessionId,
+          status: st.status,
+          message: st.summary,
+          orderId: widget.orderId,
+          terminalId: rest.terminalId,
+          softwareHouseId: rest.softwareHouseId,
+          resellerId: rest.resellerId,
+          authCode: st.authCode,
+          cardLast4: st.cardLast4,
+          cardType: st.cardType,
+          staff: staff,
+        )));
+        payment.value = payment.value.copyWith(
+          checking: false,
+          checkSaysPaid: st.paid,
+          checkNote: st.paid
+              ? 'Dojo confirms this payment was taken (${st.summary}). '
+                    'Record it as paid.'
+              : 'Dojo says this payment was not taken (${st.status}). It is '
+                    'safe to try again.',
+        );
+      } catch (e) {
+        payment.value = payment.value.copyWith(
+          checking: false,
+          checkNote: e is DojoException
+              ? 'Could not check: ${e.clerkMessage}'
+              : 'Could not reach Dojo to check. Look at the card machine\'s '
+                    'screen, then decide.',
+        );
+      }
+    }
+
     unawaited(
       showDialog<void>(
         context: context,
@@ -398,15 +519,24 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
             amountLabel: _money(amountMinor),
             // Only providers that poll can abandon a wait; the Android drop-in
             // owns its own screen and its own cancel button.
-            onCancel: desktop == null && connect == null
+            onCancel: rest == null && connect == null
                 ? null
                 : () {
-                    // Stop polling; the result comes back as "abandoned",
-                    // never as paid or declined.
-                    desktop?.cancel();
-                    connect?.abandon();
-                    Navigator.of(dialogContext).pop();
+                    payment.value = payment.value.copyWith(cancelling: true);
+                    if (direct != null) {
+                      // Dojo's "Cancel transaction from POS": the machine is
+                      // asked to cancel, and the screen keeps going until it
+                      // answers — the result (cancelled, or approved if the
+                      // card was already in) still comes back here.
+                      direct.requestCancel();
+                    } else {
+                      // Stop polling; the result comes back as "abandoned",
+                      // never as paid or declined.
+                      desktop?.cancel();
+                      connect?.abandon();
+                    }
                   },
+            onStopWaiting: direct == null ? null : direct.abandon,
             // Signature verification, when the reader asks for it. Answering
             // is what releases the sale, so it must be reachable here.
             onSignatureAccepted: state.step == CardStep.signature
@@ -415,71 +545,125 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
             onSignatureRejected: state.step == CardStep.signature
                 ? () => _answerSignature(payment, signature, accepted: false)
                 : null,
+            onClose: () => end(state.checkSaysPaid
+                ? _CardEnding.recordPaid
+                : _CardEnding.close),
+            onCheckStatus: rest == null ? null : checkStatus,
+            onRecordPaid: () => end(_CardEnding.recordPaid),
+            onRetry: () => end(_CardEnding.retry),
           ),
         ),
       ),
     );
 
-    final result = await provider.take(
+    final taken = await provider.take(
       amountMinor,
       orderId: widget.orderId,
       manual: manual,
     );
+    result = taken;
 
-    // Detach before disposing, or a late poll would write to a dead notifier.
+    // Detach before anything else, or a late poll would write to the screen.
     rest?.onTerminalUpdate = null;
     rest?.onSignatureRequested = null;
+    rest?.onCancelAnswered = null;
     desktop?.onStageChanged = null;
     desktop?.openCheckout = null;
     connect?.onProgress = null;
     connect?.onSignatureRequested = null;
+
+    // Logged whatever happened: Dojo's feedback was that failed payments left
+    // no record. The back office's Card payments page lists these.
+    unawaited(CardLog.instance.add(CardLogEntry.fromResult(
+      taken,
+      kind: 'sale',
+      orderId: widget.orderId,
+      terminalId: rest?.terminalId ?? connect?.terminalId,
+      softwareHouseId: rest?.softwareHouseId,
+      resellerId: rest?.resellerId,
+      staff: staff,
+    )));
+
+    // Close the hosted checkout if it is still up, leaving the result screen.
+    if (mounted) {
+      Navigator.of(context, rootNavigator: true).popUntil(
+        (route) =>
+            route.settings.name != CardCheckoutPage.routeName ||
+            route is DialogRoute,
+      );
+    }
+
+    // The result, on the till and the customer's screen, before anything else
+    // happens. It closes itself after the venue's chosen seconds unless the
+    // outcome needs a decision (not confirmed), and the clerk can close it
+    // sooner.
+    final outcome = taken.kind;
+    setState2(payment.value.copyWith(
+      outcome: outcome,
+      resultMessage: taken.message ?? outcome.title,
+      step: outcome == CardOutcome.approved ? CardStep.done : null,
+      secondsLeft: outcome.uncertain ? null : config.resultSeconds,
+      clearSeconds: outcome.uncertain,
+    ));
+    if (!outcome.uncertain) {
+      countdown = Timer.periodic(const Duration(seconds: 1), (t) {
+        final left = (payment.value.secondsLeft ?? 0) - 1;
+        if (left <= 0) {
+          t.cancel();
+          end(_CardEnding.close);
+        } else {
+          payment.value = payment.value.copyWith(secondsLeft: left);
+        }
+      });
+    }
+
+    var ended = await ending.future;
+    countdown?.cancel();
+
+    // Recording an unconfirmed payment as paid is money on the books that the
+    // till did not see taken: a manager says so, unless Dojo itself has just
+    // confirmed it.
+    if (ended == _CardEnding.recordPaid &&
+        !payment.value.checkSaysPaid &&
+        mounted &&
+        !await allowed(context, ref, TillPermission.isManager)) {
+      ended = _CardEnding.close;
+    }
+
+    final recordedPaid = ended == _CardEnding.recordPaid;
+    if (recordedPaid) {
+      unawaited(CardLog.instance.add(CardLogEntry.fromResult(
+        taken,
+        kind: 'sale',
+        outcome: payment.value.checkSaysPaid ? 'approved' : 'recorded_manually',
+        orderId: widget.orderId,
+        terminalId: rest?.terminalId,
+        softwareHouseId: rest?.softwareHouseId,
+        resellerId: rest?.resellerId,
+        staff: staff,
+      )));
+    }
+
+    unawaited(display.showCard(null));
     payment.dispose();
-    // Close the card screens. The checkout page may be sitting on top of the
-    // progress dialog, and either may already be gone if the clerk or the
-    // customer closed it, so this pops exactly the routes this flow pushed —
-    // popping a fixed number of times would take the sale screen with it.
     if (mounted) {
       Navigator.of(context, rootNavigator: true).popUntil(
         (route) => route.settings.name != CardCheckoutPage.routeName,
       );
     }
 
-    if (!result.approved) {
-      // An outcome the till cannot trust is not a decline, and a snackbar is
-      // the wrong shape for it: the clerk has to go and do something about the
-      // reader before charging the card again.
-      if (result.uncertainty != PaymentUncertainty.none && mounted) {
-        await showDialog<void>(
-          context: context,
-          barrierDismissible: false,
-          builder: (context) => AlertDialog(
-            icon: Icon(
-              result.uncertainty == PaymentUncertainty.terminalUnreachable
-                  ? Icons.error_outline
-                  : Icons.help_outline,
-              size: 30,
-              color: Theme.of(context).colorScheme.error,
-            ),
-            title: const Text('Did that payment go through?'),
-            content: Text(
-              '${result.message}\n\n'
-              'This sale has NOT been marked as paid. Do not charge the card '
-              'again until you know.',
-            ),
-            actions: [
-              FilledButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Understood'),
-              ),
-            ],
-          ),
-        );
-      } else {
-        _toast(result.message ?? 'Card payment declined.');
-      }
-      return null;
+    if (taken.approved) return (result: taken, retry: false);
+    if (recordedPaid) {
+      return (
+        result: taken.copyWith(
+          approved: true,
+          outcome: CardOutcome.approved,
+          message: 'Recorded as paid after checking',
+        ),
+        retry: false,
+      );
     }
-    return result;
+    return (result: null, retry: ended == _CardEnding.retry);
   }
 
   /// Every caller here is reporting a payment that did *not* happen — a decline,
@@ -2268,6 +2452,9 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
 /// about to sign off, with the seconds on it, does not. Touching anywhere stops
 /// it — the point is to catch a terminal nobody is at, not to hurry somebody who
 /// is standing there counting.
+/// How a card payment's result screen was closed.
+enum _CardEnding { close, retry, recordPaid }
+
 class _ChangeWindow extends StatefulWidget {
   const _ChangeWindow({required this.changeMinor, required this.seconds});
 

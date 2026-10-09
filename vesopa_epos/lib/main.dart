@@ -44,8 +44,10 @@ import 'data/table_repository.dart';
 import 'data/till_settings.dart';
 import 'payments/connect_pac.dart';
 import 'payments/connect_ws.dart';
+import 'payments/card_log.dart';
 import 'payments/dojo_config.dart';
 import 'payments/dojo_desktop.dart';
+import 'payments/dojo_office_sync.dart';
 import 'payments/dojo_native.dart';
 import 'payments/payment_provider.dart';
 import 'ui/idle_screen.dart';
@@ -382,8 +384,11 @@ final floorRepositoryProvider = FutureProvider<FloorRepository>((ref) async {
       // A keyed card must never reach for the reader, even on a till that has
       // one paired: a card machine can only take a card that is in the room.
       terminalId: keyed || terminal.isEmpty ? null : terminal,
-      softwareHouseId: softwareHouse.isEmpty ? null : softwareHouse,
-      resellerId: reseller.isEmpty ? null : reseller,
+      // Vesopa's own software house id, on every call (Dojo accreditation):
+      // never blank, never the old public placeholder. A blank reseller id is
+      // sent as the software house id.
+      softwareHouseId: config.effectiveSoftwareHouseId,
+      resellerId: config.effectiveResellerId,
     ),
     connect: null,
   );
@@ -1075,6 +1080,10 @@ Future<void> main() async {
     ..installErrorHandlers();
   unawaited(terminalDeviceId().then((id) => ActivityLog.instance.deviceId = id).catchError((_) => ''));
 
+  // Every card sale, refund and check, approved or not, to the back office's
+  // Card payments page. See payments/card_log.dart.
+  CardLog.instance.apiBase = Api.base;
+
   await _lockWindowToKiosk();
   runApp(
     ProviderScope(
@@ -1206,9 +1215,14 @@ class _VesopaEposAppState extends ConsumerState<VesopaEposApp> {
 
     final venueFont = ref.watch(venueFontFamilyProvider);
 
+    // The venue's card settings from the back office, kept in step.
+    ref.watch(dojoOfficeSyncProvider);
+
     // The activity log sends with the terminal's own token, read at send time.
     final activityToken = current?.terminalToken;
     ActivityLog.instance.token = () => activityToken;
+    CardLog.instance.token = () => activityToken;
+    unawaited(CardLog.instance.flush());
 
     return MaterialApp(
       title: 'VesopaEPOS',

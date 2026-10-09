@@ -75,6 +75,8 @@ class DojoConfig {
     this.walletMerchantName = '',
     this.walletMerchantId = '',
     this.walletGatewayMerchantId = '',
+    this.resultSeconds = 5,
+    this.fromOffice = false,
   });
 
   // ---- Presets ------------------------------------------------------------
@@ -108,7 +110,17 @@ class DojoConfig {
     defaultValue: 'https://api.dojo.tech',
   );
 
-  static const sandboxKey = String.fromEnvironment('DOJO_SANDBOX_API_KEY');
+  /// Dojo's public sandbox key. Dojo publish this one for partner testing
+  /// (Muzahid, 2026-10-09: "every venue can use the public sandbox key for the
+  /// tests ... by default set this from now on"), so unlike a live key it is
+  /// safe to ship: it moves test money only. A build-time define still wins.
+  static const publicSandboxKey =
+      'sk_sandbox_c8oLGaI__msxsXbpBDpdtwJEz_eIhfQoKHmedqgZPCdBx59zpKZLSk8OPLT0cZolbeuYJSBvzDVVsYvtpo5RkQ';
+
+  static const sandboxKey = String.fromEnvironment(
+    'DOJO_SANDBOX_API_KEY',
+    defaultValue: publicSandboxKey,
+  );
 
   /// Dojo's single host, used for both its sandbox and live keys — the key
   /// prefix (`sk_sandbox_` vs `sk_live_`) is what selects the environment, not
@@ -143,17 +155,34 @@ class DojoConfig {
     defaultValue: sandboxKey,
   );
 
-  /// The partner ids are Dojo's own published sandbox placeholders, documented
-  /// publicly, so they are safe to ship as defaults. Verified: this pair lists
-  /// real sandbox terminals and completes a pay-at-counter sale.
-  static const defaultSoftwareHouseId = String.fromEnvironment(
+  /// The software house id Dojo issued Vesopa.
+  ///
+  /// Dojo's accreditation (test sheet, 9 Oct 2026, "Identifying Headers"):
+  /// the id must be hardcoded to SL942X04 and sent on EVERY request, payment
+  /// intents and terminal sessions included. It is not a venue setting, so the
+  /// till shows it but never lets anyone edit it. The define is only for a
+  /// test build that has to impersonate another partner.
+  static const lockedSoftwareHouseId = String.fromEnvironment(
     'DOJO_SOFTWARE_HOUSE_ID',
-    defaultValue: 'softwareHouse1',
+    defaultValue: 'SL942X04',
   );
+  static const defaultSoftwareHouseId = lockedSoftwareHouseId;
+
+  /// The reseller id is free text and changes per reseller. Blank by default:
+  /// Dojo's sheet asks that a blank one is sent as the software house id.
   static const defaultResellerId = String.fromEnvironment(
     'DOJO_RESELLER_ID',
-    defaultValue: 'reseller1',
+    defaultValue: '',
   );
+
+  /// Dojo's own public placeholders, which older tills saved. They are read
+  /// as "not set", so a till upgraded from 1.15 sends the real ids.
+  static const _placeholderIds = {'softwareHouse1', 'reseller1'};
+
+  /// How long the result of a card payment (approved, declined, busy,
+  /// cancelled) stays on the till before it closes itself. Dojo asked for the
+  /// result to linger; the clerk can always close it sooner.
+  static const resultSecondsChoices = [5, 10, 15];
 
   /// Where the card API lives.
   ///
@@ -218,6 +247,32 @@ class DojoConfig {
   /// the chosen platform rather than silently switching APIs underneath.
   final CardPlatform platform;
 
+  /// Seconds the payment result stays on screen: 5, 10 or 15.
+  final int resultSeconds;
+
+  /// Whether these settings came from the venue's back office
+  /// (vesopaepos.com/admin › Card payments) rather than this till's Settings.
+  final bool fromOffice;
+
+  /// The software house id actually sent. On Dojo it is always Vesopa's own
+  /// ([lockedSoftwareHouseId]); Connect issues its own ids, so there it is
+  /// whatever was entered.
+  String get effectiveSoftwareHouseId {
+    if (platform == CardPlatform.dojo) return lockedSoftwareHouseId;
+    final v = softwareHouseId.trim();
+    return _placeholderIds.contains(v) ? '' : v;
+  }
+
+  /// The reseller id actually sent: what was entered, or the software house id
+  /// when it is blank (Dojo's instruction for a blank reseller).
+  String get effectiveResellerId {
+    final v = resellerId.trim();
+    if (v.isEmpty || _placeholderIds.contains(v)) {
+      return platform == CardPlatform.dojo ? effectiveSoftwareHouseId : '';
+    }
+    return v;
+  }
+
   bool get configured => apiKey.trim().isNotEmpty && baseUrl.trim().isNotEmpty;
 
   /// Whether the URL currently matches the chosen platform. A Dojo platform with
@@ -275,6 +330,8 @@ class DojoConfig {
     String? walletMerchantName,
     String? walletMerchantId,
     String? walletGatewayMerchantId,
+    int? resultSeconds,
+    bool? fromOffice,
   }) => DojoConfig(
     baseUrl: baseUrl ?? this.baseUrl,
     apiKey: apiKey ?? this.apiKey,
@@ -287,6 +344,8 @@ class DojoConfig {
     walletMerchantId: walletMerchantId ?? this.walletMerchantId,
     walletGatewayMerchantId:
         walletGatewayMerchantId ?? this.walletGatewayMerchantId,
+    resultSeconds: resultSeconds ?? this.resultSeconds,
+    fromOffice: fromOffice ?? this.fromOffice,
   );
 
   Map<String, dynamic> toJson() => {
@@ -300,7 +359,17 @@ class DojoConfig {
     'walletMerchantName': walletMerchantName,
     'walletMerchantId': walletMerchantId,
     'walletGatewayMerchantId': walletGatewayMerchantId,
+    'resultSeconds': resultSeconds,
+    'fromOffice': fromOffice,
   };
+
+  /// 5, 10 or 15 — anything else is rounded to the nearest choice.
+  static int cleanResultSeconds(Object? v) {
+    final n = v is num ? v.toInt() : int.tryParse('$v') ?? 5;
+    if (n >= 15) return 15;
+    if (n >= 10) return 10;
+    return 5;
+  }
 
   factory DojoConfig.fromJson(Map<String, dynamic> j) => DojoConfig(
     // Tills saved before the URL was configurable were all on Dojo's host, so
@@ -325,12 +394,18 @@ class DojoConfig {
     // Tills saved before these existed fall back to the sandbox partner ids
     // rather than to blank, which would make the terminal call 401.
     softwareHouseId: j['softwareHouseId'] as String? ?? defaultSoftwareHouseId,
-    resellerId: j['resellerId'] as String? ?? defaultResellerId,
+    // Dojo's placeholder "reseller1" was the old default; it now means blank,
+    // which sends the software house id instead.
+    resellerId: _placeholderIds.contains(j['resellerId'])
+        ? ''
+        : j['resellerId'] as String? ?? defaultResellerId,
     sandbox: j['sandbox'] as bool? ?? true,
     // Blank on an older till, which correctly means "no wallet configured".
     walletMerchantName: j['walletMerchantName'] as String? ?? '',
     walletMerchantId: j['walletMerchantId'] as String? ?? '',
     walletGatewayMerchantId: j['walletGatewayMerchantId'] as String? ?? '',
+    resultSeconds: cleanResultSeconds(j['resultSeconds'] ?? 5),
+    fromOffice: j['fromOffice'] as bool? ?? false,
   );
 }
 

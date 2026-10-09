@@ -1,10 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../main.dart';
 import '../payments/connect_pac.dart';
+import '../payments/card_log.dart';
 import '../payments/payment_provider.dart';
+import 'dojo_refund.dart';
 import 'theme.dart';
 import '../data/till_permissions.dart';
 import 'permission_gate.dart';
@@ -143,99 +147,28 @@ class _CardMachinePageState extends ConsumerState<CardMachinePage> {
     await _refundOnDojo(amount);
   }
 
-  /// Refund on a Dojo reader.
-  ///
-  /// This is an *unlinked* refund: it carries no reference to an original sale,
-  /// which is why the confirmation above spells the amount out and why it lives
-  /// behind the manager's functions rather than on the sale screen. A matched
-  /// refund — tied to the sale's `paymentIntentId`, and therefore capped at what
-  /// was actually taken — is the safer form and belongs on the sale itself.
-  ///
-  /// The session is polled exactly as a sale is, once a second, so the clerk
-  /// sees the same prompts; the signature step is answered the same way too,
-  /// because a refund can ask for one just as a sale can.
+  /// Refund on a Dojo reader, not linked to any sale (Dojo's "Unlinked
+  /// refund" scenarios): the customer presents a card and the amount goes
+  /// back on it. Followed exactly like a sale, signature check included, and
+  /// logged whatever the result.
   Future<void> _refundOnDojo(int amount) async {
     final dojo = _dojo;
     if (dojo == null) return;
-
-    try {
-      final sessionId = await dojo.startRefundSession(amountMinor: amount);
-      final deadline = DateTime.now().add(const Duration(minutes: 3));
-      var answeredSignature = false;
-
-      while (DateTime.now().isBefore(deadline)) {
-        final session = await dojo.fetchSession(sessionId);
-        if (!mounted) return;
-        setState(() => _status = session.prompt);
-
-        if (session.needsSignature && !answeredSignature) {
-          answeredSignature = true;
-          final accepted = await _askSignature();
-          if (!mounted) return;
-          await dojo.answerSignature(sessionId, accepted: accepted);
-          continue;
-        }
-
-        if (session.captured) {
-          setState(() {
-            _busy = false;
-            _status = 'Refunded ${_money(amount)}.';
-          });
-          return;
-        }
-        if (session.failed) {
-          setState(() {
-            _busy = false;
-            _status = 'The refund was ${session.status.toLowerCase()}.';
-          });
-          return;
-        }
-        await Future<void>.delayed(const Duration(seconds: 1));
-      }
-
-      // Ran out of time without a verdict. This is the one outcome that must
-      // not be guessed at: the money may or may not have gone back.
-      if (!mounted) return;
-      setState(() {
-        _busy = false;
-        _status = 'The result could not be confirmed. Check the card machine '
-            'screen before refunding again.';
-      });
-    } on DojoException catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _busy = false;
-        _status = e.clerkMessage;
-      });
-    }
-  }
-
-  /// The signature prompt. Returns false — reject — if the dialog is dismissed,
-  /// because an unanswered signature must never be taken as approval.
-  Future<bool> _askSignature() async {
-    final accepted = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        icon: const Icon(Icons.draw_outlined, size: 30),
-        title: const Text('Check the signature'),
-        content: const Text(
-          'Compare the signature on the receipt with the one on the card.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            style: TextButton.styleFrom(foregroundColor: Pos.red),
-            child: const Text('Reject'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Accept'),
-          ),
-        ],
-      ),
-    );
-    return accepted ?? false;
+    final result = await runRefundOnMachine(context, dojo, amountMinor: amount);
+    await CardLog.instance.add(CardLogEntry.fromResult(
+      result,
+      kind: 'unlinked_refund',
+      terminalId: dojo.terminalId,
+      softwareHouseId: dojo.softwareHouseId,
+      resellerId: dojo.resellerId,
+      staff: ref.read(servedByProvider),
+    ));
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _status = result.message;
+    });
+    await showRefundResult(context, result);
   }
 
   Future<int?> _askAmount() async {
@@ -353,8 +286,21 @@ class _CardMachinePageState extends ConsumerState<CardMachinePage> {
                   onPressed: _busy ? null : _refund,
                   style: OutlinedButton.styleFrom(foregroundColor: Pos.red),
                   icon: const Icon(Icons.undo, size: 18),
-                  label: const Text('Refund to card'),
+                  label: Text(
+                    _dojo != null
+                        ? 'Refund without a sale (unlinked)'
+                        : 'Refund to card',
+                  ),
                 ),
+                if (_dojo != null) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    'To refund a sale, tap it in Card payments below (or use '
+                    'Refund off its receipt): it is linked to the sale and '
+                    'can be full or part.',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ],
 
                 if (_busy || _status != null) ...[
                   const SizedBox(height: 20),
@@ -396,8 +342,260 @@ class _CardMachinePageState extends ConsumerState<CardMachinePage> {
                     ),
                   ),
                 ],
+
+                if (_dojo != null) ...[
+                  const SizedBox(height: 26),
+                  const CardPaymentsList(),
+                ],
               ],
             ),
+    );
+  }
+}
+
+/// The till's card log: every Dojo sale, refund and check on this till,
+/// approved or not, newest first. Tap a sale to check it with Dojo or refund
+/// it, full or part.
+class CardPaymentsList extends ConsumerStatefulWidget {
+  const CardPaymentsList({super.key});
+
+  @override
+  ConsumerState<CardPaymentsList> createState() => _CardPaymentsListState();
+}
+
+class _CardPaymentsListState extends ConsumerState<CardPaymentsList> {
+  List<CardLogEntry> _entries = const [];
+  StreamSubscription<void>? _sub;
+
+  /// Live Dojo status per intent, filled in when the clerk asks.
+  final Map<String, String> _live = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+    _sub = CardLog.instance.changes.listen((_) => _load());
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    final list = await CardLog.instance.recent();
+    if (mounted) setState(() => _entries = list);
+  }
+
+  Future<void> _check(CardLogEntry e) async {
+    final dojo = tillDojo(ref);
+    final id = e.intentId;
+    if (dojo == null || id == null) return;
+    setState(() => _live[id] = 'Checking…');
+    try {
+      final st = await dojo.paymentStatus(id);
+      if (mounted) setState(() => _live[id] = st.summary);
+    } catch (err) {
+      if (mounted) {
+        setState(() => _live[id] =
+            err is DojoException ? err.clerkMessage : 'Could not reach Dojo');
+      }
+    }
+  }
+
+  Future<void> _open(CardLogEntry e) async {
+    final id = e.intentId;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheet) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '${_kindLabel(e.kind)} ${_money(e.amountMinor)} · ${_outcomeLabel(e.outcome)}',
+                  style: Theme.of(sheet).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 6),
+                Text(e.message ?? '', style: const TextStyle(fontSize: 13)),
+                const SizedBox(height: 10),
+                _kv('When', DateFormat('d MMM y HH:mm:ss').format(e.at)),
+                if (e.status != null) _kv('Dojo status', e.status!),
+                if (id != null) _kv('Payment intent', id),
+                if (e.sessionId != null) _kv('Terminal session', e.sessionId!),
+                if (e.terminalId != null) _kv('Card machine', e.terminalId!),
+                if (e.softwareHouseId != null) _kv('Software house', e.softwareHouseId!),
+                if (e.resellerId != null) _kv('Reseller', e.resellerId!),
+                if (e.authCode != null) _kv('Auth code', e.authCode!),
+                if (e.cardLast4 != null) _kv('Card', '${e.cardType ?? ''} ••${e.cardLast4}'),
+                if (e.staff != null) _kv('Staff', e.staff!),
+                if (e.refundedMinor > 0) _kv('Refunded here', _money(e.refundedMinor)),
+                if (e.receiptLines.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Theme.of(sheet).colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: SelectableText(
+                      e.receiptLines.join('\n'),
+                      style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 16),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    if (id != null)
+                      OutlinedButton.icon(
+                        onPressed: () {
+                          Navigator.pop(sheet);
+                          _check(e);
+                        },
+                        icon: const Icon(Icons.manage_search, size: 18),
+                        label: const Text('Check status with Dojo'),
+                      ),
+                    if (e.refundable)
+                      FilledButton.icon(
+                        onPressed: () async {
+                          Navigator.pop(sheet);
+                          await refundDojoPayment(
+                            context,
+                            ref,
+                            intentId: id!,
+                            orderId: e.orderId,
+                          );
+                        },
+                        style: FilledButton.styleFrom(backgroundColor: Pos.red),
+                        icon: const Icon(Icons.undo, size: 18),
+                        label: const Text('Refund (full or part)'),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _kv(String k, String v) => Padding(
+    padding: const EdgeInsets.only(bottom: 3),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(width: 130, child: Text(k, style: const TextStyle(fontSize: 12.5, color: Colors.grey))),
+        Expanded(child: SelectableText(v, style: const TextStyle(fontSize: 12.5))),
+      ],
+    ),
+  );
+
+  static String _kindLabel(String kind) => switch (kind) {
+    'sale' => 'Sale',
+    'refund' => 'Refund to card',
+    'matched_refund' => 'Refund on machine',
+    'unlinked_refund' => 'Unlinked refund',
+    'check' => 'Status check',
+    _ => kind,
+  };
+
+  static String _outcomeLabel(String o) => switch (o) {
+    'approved' => 'Approved',
+    'declined' => 'Declined',
+    'cancelled' => 'Cancelled',
+    'busy' => 'Machine busy',
+    'expired' => 'Not confirmed (expired)',
+    'unknown' => 'Not confirmed',
+    'signature_rejected' => 'Signature rejected',
+    'recorded_manually' => 'Recorded as paid by hand',
+    'not_paid' => 'Not paid',
+    'failed' => 'Failed',
+    _ => o,
+  };
+
+  static Color _outcomeColour(String o) => switch (o) {
+    'approved' || 'recorded_manually' => Pos.green,
+    'busy' || 'expired' || 'unknown' || 'cancelled' => Colors.orange.shade800,
+    _ => Pos.red,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text('Card payments on this till', style: theme.textTheme.titleMedium),
+            const Spacer(),
+            IconButton(
+              tooltip: 'Refresh',
+              onPressed: _load,
+              icon: const Icon(Icons.refresh),
+            ),
+          ],
+        ),
+        Text(
+          'Every card sale, refund and check, approved or not. Tap one for its '
+          'details, to check it with Dojo, or to refund it.',
+          style: theme.textTheme.bodySmall,
+        ),
+        const SizedBox(height: 8),
+        if (_entries.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Text('No card payments yet.', style: theme.textTheme.bodySmall),
+          ),
+        for (final e in _entries.take(100))
+          Card(
+            margin: const EdgeInsets.only(bottom: 6),
+            child: ListTile(
+              dense: true,
+              onTap: () => _open(e),
+              leading: Icon(
+                e.kind == 'sale' ? Icons.credit_card : e.kind == 'check' ? Icons.manage_search : Icons.undo,
+                color: _outcomeColour(e.outcome),
+              ),
+              title: Text(
+                '${_kindLabel(e.kind)} ${_money(e.amountMinor)}'
+                '${e.refundedMinor > 0 ? ' (${_money(e.refundedMinor)} refunded)' : ''}',
+              ),
+              subtitle: Text(
+                [
+                  DateFormat('d MMM HH:mm').format(e.at),
+                  if (e.intentId != null && _live[e.intentId] != null)
+                    'Dojo: ${_live[e.intentId]}'
+                  else if (e.status != null)
+                    e.status!,
+                ].join(' · '),
+                style: const TextStyle(fontSize: 12),
+              ),
+              trailing: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: _outcomeColour(e.outcome).withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  _outcomeLabel(e.outcome),
+                  style: TextStyle(fontSize: 12, color: _outcomeColour(e.outcome), fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

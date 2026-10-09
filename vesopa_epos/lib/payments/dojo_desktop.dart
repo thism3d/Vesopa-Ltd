@@ -107,7 +107,7 @@ class DesktopDojoProvider implements PaymentProvider {
         onStageChanged?.call(DojoStage.sendingToTerminal);
         final sessionId = await intents.startTerminalSession(intent.id);
         onStageChanged?.call(DojoStage.awaitingCard);
-        return intents.awaitTerminal(sessionId, intent.id, amountMinor);
+        return await intents.awaitTerminal(sessionId, intent.id, amountMinor);
       } else {
         final url = intent.paymentLink;
         if (url == null || url.isEmpty) {
@@ -132,7 +132,7 @@ class DesktopDojoProvider implements PaymentProvider {
       }
 
       onStageChanged?.call(DojoStage.awaitingCard);
-      return _await(intent.id, amountMinor);
+      return await _await(intent.id, amountMinor);
     } catch (e) {
       // An errored card payment is NOT a payment. Never fall back to assuming
       // it worked — the till would record money it never took.

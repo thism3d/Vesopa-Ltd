@@ -49,6 +49,7 @@ import 'permission_gate.dart';
 import 'widgets/basket_panel.dart' show money;
 import 'widgets/on_screen_keyboard.dart';
 import 'widgets/pos_message.dart';
+import 'dojo_refund.dart';
 import 'void_dialog.dart';
 
 /// Start a refund. Opens on the receipt list.
@@ -375,12 +376,23 @@ class _RefundPageState extends ConsumerState<RefundPage> {
     final toCard = _toGiftCardMinor;
     final rest = _refundMinor - toCard;
 
+    // The bank-card share, when the sale was paid on Dojo: that part can go
+    // back to the card from here (full or part), rather than the clerk being
+    // sent to the card machine.
+    final dojoTenders = detail.tenders.where((t) => t.isDojo).toList();
+    final dojoPaid = dojoTenders.fold<int>(0, (s, t) => s + t.amountMinor);
+    final toDojo = tillDojo(ref) == null ? 0 : (dojoPaid < rest ? dojoPaid : rest);
+
     final ok = await _confirm(
       title: 'Give back ${money(_refundMinor)}?',
       body: toCard > 0
           ? '${money(toCard)} goes back on the gift card it was paid with.'
               '${rest > 0 ? '\nThe other ${money(rest)}: it was paid by $_tenderSummary, so hand it back the same way.' : ''}'
               '\n\n${names.join(', ')}'
+          : toDojo > 0
+          ? '${money(toDojo)} was paid by card on Dojo. Next you choose how '
+              'it goes back: to the card with no card needed, or on the card '
+              'machine.\n\n${names.join(', ')}'
           : 'It was paid by $_tenderSummary, so hand it back the same way.\n\n'
               '${names.join(', ')}\n\n'
               'A card refund is raised on the card machine itself — this records '
@@ -439,15 +451,50 @@ class _RefundPageState extends ConsumerState<RefundPage> {
     }
     if (!mounted) return;
 
+    // The Dojo card share, against the original payment(s). Never in training.
+    String? onDojo;
+    if (toDojo > 0 && !ref.read(trainingModeProvider)) {
+      var left = toDojo;
+      var back = 0;
+      for (final t in dojoTenders) {
+        if (left <= 0 || !mounted) break;
+        final got = await refundDojoPayment(
+          context,
+          ref,
+          intentId: t.reference!,
+          capMinor: t.amountMinor < left ? t.amountMinor : left,
+          orderId: detail.summary.id,
+          reason: why,
+        );
+        back += got;
+        left -= got;
+      }
+      if (!mounted) return;
+      if (back > 0) {
+        onDojo = '${money(back)} back to the card via Dojo';
+      } else {
+        // Nothing went back on the card. Recording the refund anyway is only
+        // right when it was given some other way, so the clerk says so.
+        final anyway = await _confirm(
+          title: 'No card refund was made',
+          body: 'Nothing went back on the card through Dojo. Record this '
+              'refund anyway? Only do this if the money was given back some '
+              'other way, for example on the card machine by hand.',
+        );
+        if (anyway != true || !mounted) return;
+      }
+    }
+
     await _record(
       amountMinor: _refundMinor,
       note: [
         'Receipt ${detail.summary.id}',
         names.join(', '),
         ?onCard,
+        ?onDojo,
         ?why,
       ].join(' · '),
-      done: onCard,
+      done: [?onCard, ?onDojo].isEmpty ? null : [?onCard, ?onDojo].join(', '),
     );
   }
 

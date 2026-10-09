@@ -39,6 +39,34 @@ enum CardStep {
       };
 }
 
+/// What the customer's screen says at each step: the customer's half of the
+/// conversation, not the clerk's.
+extension CardStepCustomerText on CardStep {
+  String get customerDetail => switch (this) {
+    CardStep.starting => 'Getting the card machine ready',
+    CardStep.present => 'Tap, insert or swipe your card on the card machine',
+    CardStep.pin => 'Enter your PIN on the card machine',
+    CardStep.processing => 'Authorising with your bank, please wait',
+    CardStep.signature => 'Please wait while your signature is checked',
+    CardStep.removeCard => 'Please remove your card',
+    CardStep.done => 'Payment approved. Thank you',
+  };
+}
+
+extension CardOutcomeCustomerText on CardOutcome {
+  String get customerDetail => switch (this) {
+    CardOutcome.approved => 'Thank you. Your payment has been approved.',
+    CardOutcome.declined => 'Your card was declined. No money has been taken.',
+    CardOutcome.cancelled => 'The payment was cancelled. No money has been taken.',
+    CardOutcome.signatureRejected =>
+      'The payment was cancelled. No money has been taken.',
+    CardOutcome.busy => 'The card machine is busy. Please wait a moment.',
+    CardOutcome.expired ||
+    CardOutcome.unknown => 'Please wait while we check your payment.',
+    CardOutcome.failed => 'The payment did not go through. No money has been taken.',
+  };
+}
+
 /// Translates provider progress into a [CardStep].
 ///
 /// The reader's own notification wins when there is one: it reflects what the
@@ -91,6 +119,25 @@ CardStep cardStepForConnect(ConnectProgress progress) =>
       _ => CardStep.starting,
     };
 
+/// Keep a card sale's progress moving forwards.
+///
+/// Dojo's tester saw "Present card" flash back up after the card had gone in.
+/// A poll can return a session whose newest notification is older than what
+/// the screen already shows (and the till's own stage can lag the reader's),
+/// so a step earlier on the timeline than the current one is ignored. The
+/// signature step is the one exception: it is a decision the clerk has to
+/// make whenever the reader asks for it.
+CardStep forwardStep(CardStep current, CardStep next) {
+  if (next == CardStep.signature) return next;
+  if (current == CardStep.signature) {
+    // After the signature the sale only finishes or processes.
+    return next.timelineIndex >= CardStep.processing.timelineIndex
+        ? next
+        : CardStep.processing;
+  }
+  return next.timelineIndex >= current.timelineIndex ? next : current;
+}
+
 /// Live state of a card payment, driven by the provider callbacks.
 class CardPaymentState {
   const CardPaymentState({
@@ -98,6 +145,15 @@ class CardPaymentState {
     this.readerPrompt,
     this.terminalLabel,
     this.error,
+    this.partnerLabel,
+    this.outcome,
+    this.resultMessage,
+    this.secondsLeft,
+    this.cancelling = false,
+    this.cancelNote,
+    this.checking = false,
+    this.checkNote,
+    this.checkSaysPaid = false,
   });
 
   final CardStep step;
@@ -107,17 +163,57 @@ class CardPaymentState {
   final String? terminalLabel;
   final String? error;
 
+  /// "Software house SL942X04 · Reseller …", shown on every card payment.
+  final String? partnerLabel;
+
+  /// Set once the payment has finished: the result screen replaces the steps.
+  final CardOutcome? outcome;
+  final String? resultMessage;
+
+  /// Counting down to the result closing itself. Null: it waits for the clerk.
+  final int? secondsLeft;
+
+  /// The clerk asked to cancel; [cancelNote] is Dojo's answer.
+  final bool cancelling;
+  final String? cancelNote;
+
+  /// A "Check payment status" call is running, and what it found.
+  final bool checking;
+  final String? checkNote;
+  final bool checkSaysPaid;
+
+  bool get finished => outcome != null;
+
   CardPaymentState copyWith({
     CardStep? step,
     String? readerPrompt,
     String? terminalLabel,
     String? error,
+    String? partnerLabel,
+    CardOutcome? outcome,
+    String? resultMessage,
+    int? secondsLeft,
+    bool clearSeconds = false,
+    bool? cancelling,
+    String? cancelNote,
+    bool? checking,
+    String? checkNote,
+    bool? checkSaysPaid,
   }) =>
       CardPaymentState(
         step: step ?? this.step,
         readerPrompt: readerPrompt ?? this.readerPrompt,
         terminalLabel: terminalLabel ?? this.terminalLabel,
         error: error ?? this.error,
+        partnerLabel: partnerLabel ?? this.partnerLabel,
+        outcome: outcome ?? this.outcome,
+        resultMessage: resultMessage ?? this.resultMessage,
+        secondsLeft: clearSeconds ? null : (secondsLeft ?? this.secondsLeft),
+        cancelling: cancelling ?? this.cancelling,
+        cancelNote: cancelNote ?? this.cancelNote,
+        checking: checking ?? this.checking,
+        checkNote: checkNote ?? this.checkNote,
+        checkSaysPaid: checkSaysPaid ?? this.checkSaysPaid,
       );
 }
 
@@ -127,14 +223,25 @@ class CardPaymentState {
 /// unusable for anything else and the clerk's whole job is relaying what the
 /// reader wants, so the screen shows one instruction at a time, in the largest
 /// type on the till, with the amount always visible.
+///
+/// When the payment ends the same screen turns into its result — approved,
+/// declined, cancelled, busy, not confirmed — and stays up for the venue's
+/// chosen 5, 10 or 15 seconds (Settings › Card payments) unless the clerk
+/// closes it. Dojo's tester could not read a result that "just blinks up and
+/// disappears within the space of a second".
 class CardPaymentView extends StatelessWidget {
   const CardPaymentView({
     super.key,
     required this.state,
     required this.amountLabel,
     this.onCancel,
+    this.onStopWaiting,
     this.onSignatureAccepted,
     this.onSignatureRejected,
+    this.onClose,
+    this.onCheckStatus,
+    this.onRecordPaid,
+    this.onRetry,
   });
 
   final CardPaymentState state;
@@ -143,24 +250,53 @@ class CardPaymentView extends StatelessWidget {
   /// Null when the payment cannot be abandoned from the till.
   final VoidCallback? onCancel;
 
+  /// After a cancel the machine has not acted on: stop waiting and check the
+  /// payment by hand instead.
+  final VoidCallback? onStopWaiting;
+
   /// Signature verification. Both null unless the reader has asked.
   final VoidCallback? onSignatureAccepted;
   final VoidCallback? onSignatureRejected;
+
+  /// Result actions.
+  final VoidCallback? onClose;
+  final VoidCallback? onCheckStatus;
+  final VoidCallback? onRecordPaid;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final step = state.step;
-    final isSignature = step == CardStep.signature;
-    final failed = state.error != null;
+    final isSignature = step == CardStep.signature && !state.finished;
+    final outcome = state.outcome;
+    final failed = state.error != null ||
+        (outcome != null && outcome != CardOutcome.approved);
+
+    final title = outcome?.title ?? (state.error != null ? 'Payment failed' : step.label);
+    final detail = outcome != null
+        ? (state.resultMessage ?? '')
+        : state.error ?? state.readerPrompt ?? step.detail;
+
+    final Color? titleColour = switch (outcome) {
+      CardOutcome.approved => Colors.green.shade700,
+      CardOutcome.busy || CardOutcome.cancelled || CardOutcome.expired ||
+      CardOutcome.unknown => Colors.orange.shade800,
+      null => state.error != null ? scheme.error : null,
+      _ => scheme.error,
+    };
 
     return Dialog.fullscreen(
       backgroundColor: scheme.surface,
       child: SafeArea(
         child: Column(
           children: [
-            _AmountHeader(amountLabel: amountLabel, terminal: state.terminalLabel),
+            _AmountHeader(
+              amountLabel: amountLabel,
+              terminal: state.terminalLabel,
+              partner: state.partnerLabel,
+            ),
             Expanded(
               child: Center(
                 child: SingleChildScrollView(
@@ -171,7 +307,11 @@ class CardPaymentView extends StatelessWidget {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        _StageArt(step: step, failed: failed),
+                        _StageArt(
+                          step: outcome == CardOutcome.approved ? CardStep.done : step,
+                          failed: failed,
+                          outcome: outcome,
+                        ),
                         const SizedBox(height: 28),
 
                         // The instruction. Swapped with a fade+slide so a
@@ -189,21 +329,19 @@ class CardPaymentView extends StatelessWidget {
                             ),
                           ),
                           child: Column(
-                            key: ValueKey('${step.name}|${state.readerPrompt}|$failed'),
+                            key: ValueKey('${step.name}|$title|$detail'),
                             children: [
                               Text(
-                                failed ? 'Payment failed' : step.label,
+                                title,
                                 textAlign: TextAlign.center,
                                 style: theme.textTheme.headlineMedium?.copyWith(
                                   fontWeight: FontWeight.w700,
-                                  color: failed ? scheme.error : null,
+                                  color: titleColour,
                                 ),
                               ),
                               const SizedBox(height: 10),
                               Text(
-                                state.error ??
-                                    state.readerPrompt ??
-                                    step.detail,
+                                detail,
                                 textAlign: TextAlign.center,
                                 style: theme.textTheme.titleMedium?.copyWith(
                                   color: scheme.onSurfaceVariant,
@@ -213,8 +351,37 @@ class CardPaymentView extends StatelessWidget {
                           ),
                         ),
 
+                        if (state.cancelling && !state.finished) ...[
+                          const SizedBox(height: 16),
+                          _Note(
+                            icon: Icons.hourglass_top,
+                            text: state.cancelNote ?? 'Asking the card machine to cancel…',
+                          ),
+                        ],
+                        if (state.checking || state.checkNote != null) ...[
+                          const SizedBox(height: 16),
+                          _Note(
+                            icon: state.checking
+                                ? Icons.sync
+                                : state.checkSaysPaid
+                                ? Icons.verified
+                                : Icons.info_outline,
+                            text: state.checking
+                                ? 'Asking Dojo what happened to this payment…'
+                                : state.checkNote!,
+                            good: state.checkSaysPaid,
+                          ),
+                        ],
+
                         const SizedBox(height: 32),
-                        if (!failed) _StepTimeline(step: step),
+                        if (!failed && !state.finished) _StepTimeline(step: step),
+                        if (state.finished && state.secondsLeft != null)
+                          Text(
+                            'Closing in ${state.secondsLeft}s',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -231,17 +398,31 @@ class CardPaymentView extends StatelessWidget {
                 onAccepted: onSignatureAccepted!,
                 onRejected: onSignatureRejected!,
               )
-            else if (onCancel != null && !failed)
+            else if (state.finished)
+              _ResultActions(
+                state: state,
+                onClose: onClose,
+                onCheckStatus: onCheckStatus,
+                onRecordPaid: onRecordPaid,
+                onRetry: onRetry,
+              )
+            else if (onCancel != null && state.error == null)
               Padding(
                 padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
                 child: SizedBox(
                   width: double.infinity,
                   height: 52,
-                  child: OutlinedButton.icon(
-                    onPressed: onCancel,
-                    icon: const Icon(Icons.close),
-                    label: const Text('Cancel payment'),
-                  ),
+                  child: state.cancelling && onStopWaiting != null
+                      ? OutlinedButton.icon(
+                          onPressed: onStopWaiting,
+                          icon: const Icon(Icons.stop_circle_outlined),
+                          label: const Text('Stop waiting and check the payment'),
+                        )
+                      : OutlinedButton.icon(
+                          onPressed: state.cancelling ? null : onCancel,
+                          icon: const Icon(Icons.close),
+                          label: const Text('Cancel payment'),
+                        ),
                 ),
               ),
           ],
@@ -251,11 +432,112 @@ class CardPaymentView extends StatelessWidget {
   }
 }
 
+class _Note extends StatelessWidget {
+  const _Note({required this.icon, required this.text, this.good = false});
+
+  final IconData icon;
+  final String text;
+  final bool good;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: good ? Colors.green.withValues(alpha: 0.12) : scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 18, color: good ? Colors.green.shade700 : scheme.onSurfaceVariant),
+          const SizedBox(width: 8),
+          Flexible(child: Text(text)),
+        ],
+      ),
+    );
+  }
+}
+
+/// What the clerk can do once a payment has finished.
+class _ResultActions extends StatelessWidget {
+  const _ResultActions({
+    required this.state,
+    this.onClose,
+    this.onCheckStatus,
+    this.onRecordPaid,
+    this.onRetry,
+  });
+
+  final CardPaymentState state;
+  final VoidCallback? onClose;
+  final VoidCallback? onCheckStatus;
+  final VoidCallback? onRecordPaid;
+  final VoidCallback? onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final uncertain = state.outcome?.uncertain ?? false;
+    final approved = state.outcome == CardOutcome.approved;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        spacing: 12,
+        runSpacing: 12,
+        children: [
+          if (uncertain && onCheckStatus != null)
+            SizedBox(
+              height: 56,
+              child: FilledButton.icon(
+                onPressed: state.checking ? null : onCheckStatus,
+                icon: const Icon(Icons.manage_search),
+                label: const Text('Check payment status'),
+              ),
+            ),
+          if (uncertain && onRecordPaid != null)
+            SizedBox(
+              height: 56,
+              child: OutlinedButton.icon(
+                onPressed: state.checking ? null : onRecordPaid,
+                icon: const Icon(Icons.task_alt),
+                label: Text(
+                  state.checkSaysPaid ? 'Record as paid' : 'Machine says approved: record as paid',
+                ),
+              ),
+            ),
+          if (!approved && onRetry != null && !state.checkSaysPaid)
+            SizedBox(
+              height: 56,
+              child: OutlinedButton.icon(
+                onPressed: state.checking ? null : onRetry,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Try again'),
+              ),
+            ),
+          SizedBox(
+            height: 56,
+            child: (approved ? FilledButton.icon : OutlinedButton.icon)(
+              onPressed: state.checking ? null : onClose,
+              icon: const Icon(Icons.check),
+              label: Text(approved ? 'Done' : 'Close'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _AmountHeader extends StatelessWidget {
-  const _AmountHeader({required this.amountLabel, this.terminal});
+  const _AmountHeader({required this.amountLabel, this.terminal, this.partner});
 
   final String amountLabel;
   final String? terminal;
+
+  /// The Dojo partner ids this payment is sent with.
+  final String? partner;
 
   @override
   Widget build(BuildContext context) {
@@ -300,6 +582,15 @@ class _AmountHeader extends StatelessWidget {
               ],
             ),
           ],
+          if (partner != null && partner!.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              partner!,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: scheme.onPrimaryContainer.withValues(alpha: 0.7),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -310,10 +601,11 @@ class _AmountHeader extends StatelessWidget {
 /// customer should physically do, so the screen is readable at a glance even
 /// before the words are.
 class _StageArt extends StatefulWidget {
-  const _StageArt({required this.step, required this.failed});
+  const _StageArt({required this.step, required this.failed, this.outcome});
 
   final CardStep step;
   final bool failed;
+  final CardOutcome? outcome;
 
   @override
   State<_StageArt> createState() => _StageArtState();
@@ -338,6 +630,14 @@ class _StageArtState extends State<_StageArt>
     final step = widget.step;
 
     final (IconData icon, Color colour) = switch (true) {
+      _ when widget.outcome == CardOutcome.cancelled =>
+        (Icons.block, Colors.orange.shade800),
+      _ when widget.outcome == CardOutcome.busy =>
+        (Icons.hourglass_bottom, Colors.orange.shade800),
+      _ when widget.outcome?.uncertain ?? false =>
+        (Icons.help_outline, Colors.orange.shade800),
+      _ when widget.outcome == CardOutcome.signatureRejected =>
+        (Icons.draw_outlined, scheme.error),
       _ when widget.failed => (Icons.error_outline, scheme.error),
       _ when step == CardStep.done => (Icons.check_circle, Colors.green),
       _ when step == CardStep.signature => (Icons.draw_outlined, scheme.primary),

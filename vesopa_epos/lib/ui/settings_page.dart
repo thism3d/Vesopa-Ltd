@@ -771,7 +771,9 @@ class _DojoCard extends ConsumerWidget {
               configured
                   ? '${config.sandbox ? 'Sandbox' : 'Live'} · '
                         '${Uri.tryParse(config.normalisedBaseUrl)?.host ?? config.baseUrl}\n'
-                        'Key ${_masked(config.apiKey)}\n'
+                        'Key ${_masked(config.apiKey)}'
+                        '${config.platform == CardPlatform.dojo ? ' · Software house ${config.effectiveSoftwareHouseId}' : ''}'
+                        '${config.fromOffice ? ' · from the back office' : ''}\n'
                         '${_howCardsAreTaken(config)}'
                   : 'Enter your card API URL and key to take card payments on '
                         'this till.',
@@ -807,8 +809,8 @@ class _DojoCard extends ConsumerWidget {
     }
 
     final hasPartnerIds =
-        config.softwareHouseId.trim().isNotEmpty &&
-        config.resellerId.trim().isNotEmpty;
+        config.effectiveSoftwareHouseId.isNotEmpty &&
+        config.effectiveResellerId.isNotEmpty;
 
     if (hasTerminal && hasPartnerIds) {
       return 'Card: pay at counter on machine ${config.terminalId}. '
@@ -888,6 +890,16 @@ class _DojoEditorState extends State<_DojoEditor> {
   );
   late bool _sandbox = widget.current.sandbox;
 
+  /// How long a payment's result stays on the till: 5, 10 or 15 seconds.
+  late int _resultSeconds = widget.current.resultSeconds;
+
+  /// Save is a test first (Dojo accreditation, "Incorrect authorization
+  /// credentials"): the key and the card machine are checked against Dojo, and
+  /// nothing is saved until both answer.
+  bool _checking = false;
+  String? _checkMessage;
+  bool _checkOk = false;
+
   /// Which acquirer this till talks to — an explicit choice, not guessed from
   /// the URL. Switching it swaps in that platform's preset URL and key and
   /// relabels the partner-id fields, which mean different things to each.
@@ -926,13 +938,55 @@ class _DojoEditorState extends State<_DojoEditor> {
     apiKey: _key.text.trim(),
     platform: _platform,
     terminalId: _terminal.text.trim(),
-    softwareHouseId: _softwareHouse.text.trim(),
+    softwareHouseId: _isConnect
+        ? _softwareHouse.text.trim()
+        : DojoConfig.lockedSoftwareHouseId,
     resellerId: _reseller.text.trim(),
     sandbox: _sandbox,
     walletMerchantName: _walletName.text.trim(),
     walletMerchantId: _walletMerchant.text.trim(),
     walletGatewayMerchantId: _walletGateway.text.trim(),
+    resultSeconds: _resultSeconds,
   );
+
+  /// Check, then save. Dojo only: Connect has its own pairing flow.
+  Future<void> _save() async {
+    final config = _asConfig;
+    if (_isConnect || !config.configured) {
+      Navigator.pop(context, config);
+      return;
+    }
+    setState(() {
+      _checking = true;
+      _checkMessage = null;
+    });
+    final check = await DojoProvider(
+      baseUrl: config.normalisedBaseUrl,
+      apiKey: config.apiKey,
+      softwareHouseId: config.effectiveSoftwareHouseId,
+      resellerId: config.effectiveResellerId,
+      terminalId: config.terminalId.trim(),
+    ).verifySettings();
+    if (!mounted) return;
+    setState(() {
+      _checking = false;
+      _checkOk = check.ok;
+      _checkMessage = check.message;
+      if (check.terminals.isNotEmpty) {
+        _terminals = [
+          for (final t in check.terminals)
+            (id: t.id, label: t.label, status: t.status),
+        ];
+      }
+    });
+    if (!check.ok) return;
+    // Stored as the id, whichever the clerk typed (the id or the number
+    // printed on the machine).
+    final saved = check.terminal == null
+        ? config
+        : config.copyWith(terminalId: check.terminal!.id);
+    Navigator.pop(context, saved);
+  }
 
   /// Load the shipped preset for the chosen platform in an environment. URL and
   /// key move together: a live key against a sandbox host (or the reverse)
@@ -984,9 +1038,9 @@ class _DojoEditorState extends State<_DojoEditor> {
           : (await DojoProvider(
                   baseUrl: config.normalisedBaseUrl,
                   apiKey: config.apiKey,
-                  softwareHouseId: config.softwareHouseId,
-                  resellerId: config.resellerId,
-                ).listTerminals())
+                  softwareHouseId: config.effectiveSoftwareHouseId,
+                  resellerId: config.effectiveResellerId,
+                ).listTerminals(status: null))
                 .map((t) => (id: t.id, label: t.label, status: t.status))
                 .toList();
       if (mounted) setState(() => _terminals = found);
@@ -1155,19 +1209,40 @@ class _DojoEditorState extends State<_DojoEditor> {
                 style: TextStyle(fontSize: 12, color: hint),
               ),
               const SizedBox(height: 12),
-              TextField(
-                controller: _softwareHouse,
-                decoration: const InputDecoration(
-                  labelText: 'Software-house id',
-                  border: OutlineInputBorder(),
+              // On Dojo the software house id is Vesopa's own and is sent on
+              // every call. Dojo's accreditation requires it to be fixed, so it
+              // is shown but cannot be edited. Connect issues its own.
+              if (connect)
+                TextField(
+                  controller: _softwareHouse,
+                  decoration: const InputDecoration(
+                    labelText: 'Software-house id',
+                    border: OutlineInputBorder(),
+                  ),
+                )
+              else
+                InputDecorator(
+                  decoration: const InputDecoration(
+                    labelText: 'Software house id',
+                    helperText: 'Set by Vesopa for Dojo. Sent on every payment, '
+                        'and cannot be changed on the till.',
+                    helperMaxLines: 2,
+                    border: OutlineInputBorder(),
+                    suffixIcon: Icon(Icons.lock_outline, size: 18),
+                  ),
+                  child: const Text(DojoConfig.lockedSoftwareHouseId),
                 ),
-              ),
               const SizedBox(height: 12),
               TextField(
                 controller: _reseller,
                 decoration: InputDecoration(
                   // The same value, under the name each acquirer prints on it.
                   labelText: connect ? 'Installer id' : 'Reseller id',
+                  helperText: connect
+                      ? null
+                      : 'Optional. Left blank, the software house id is sent '
+                            'in its place.',
+                  helperMaxLines: 2,
                   border: const OutlineInputBorder(),
                 ),
               ),
@@ -1247,6 +1322,37 @@ class _DojoEditorState extends State<_DojoEditor> {
                     ),
               ],
 
+              const Divider(height: 30),
+              Text(
+                'How long the payment result stays on screen',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: hint,
+                ),
+              ),
+              const SizedBox(height: 6),
+              SegmentedButton<int>(
+                segments: [
+                  for (final n in DojoConfig.resultSecondsChoices)
+                    ButtonSegment(
+                      value: n,
+                      icon: const Icon(Icons.timer_outlined, size: 17),
+                      label: Text('$n seconds'),
+                    ),
+                ],
+                selected: {_resultSeconds},
+                onSelectionChanged: (v) =>
+                    setState(() => _resultSeconds = v.first),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Approved, declined, cancelled or busy: the result stays up '
+                'this long, and the clerk can close it sooner. A payment the '
+                'machine did not confirm waits until someone checks it.',
+                style: TextStyle(fontSize: 12, color: hint),
+              ),
+
               // ---- Google Pay -------------------------------------------
               // Shown on Android in both environments, so the details stay put
               // when the till is switched between sandbox and live rather than
@@ -1321,13 +1427,43 @@ class _DojoEditorState extends State<_DojoEditor> {
         ),
       ),
       actions: [
+        if (_checkMessage != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              children: [
+                Icon(
+                  _checkOk ? Icons.check_circle : Icons.warning_amber_rounded,
+                  color: _checkOk ? Pos.green : Pos.red,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _checkMessage!,
+                    style: TextStyle(
+                      color: _checkOk ? Pos.green : Pos.red,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         TextButton(
-          onPressed: () => Navigator.pop(context),
+          onPressed: _checking ? null : () => Navigator.pop(context),
           child: const Text('Cancel'),
         ),
-        FilledButton(
-          onPressed: () => Navigator.pop(context, _asConfig),
-          child: const Text('Save'),
+        FilledButton.icon(
+          onPressed: _checking ? null : _save,
+          icon: _checking
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.verified_user_outlined, size: 18),
+          label: Text(_checking ? 'Checking with Dojo…' : 'Check and save'),
         ),
       ],
     );

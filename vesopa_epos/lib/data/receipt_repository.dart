@@ -136,10 +136,22 @@ class ReceiptTender {
     required this.method,
     required this.amountMinor,
     this.cashBreakdown,
+    this.reference,
+    this.entryMode,
   });
 
   final String method;
   final int amountMinor;
+
+  /// The acquirer's id for a card payment — Dojo's `pi_…` intent id — which
+  /// is what a refund off this receipt goes back against.
+  final String? reference;
+
+  /// terminal | manual | hosted | native, for card.
+  final String? entryMode;
+
+  /// A card payment Dojo can refund.
+  bool get isDojo => reference?.startsWith('pi_') ?? false;
 
   /// The notes counted in on the cash keys, as `2000x2,500x1`. Printed under
   /// the tender so the customer can check the receipt against what they
@@ -150,6 +162,8 @@ class ReceiptTender {
         method: j['method'] as String? ?? '',
         amountMinor: j['amount_minor'] as int? ?? 0,
         cashBreakdown: j['cash_breakdown'] as String?,
+        reference: j['reference'] as String?,
+        entryMode: j['entry_mode'] as String?,
       );
 }
 

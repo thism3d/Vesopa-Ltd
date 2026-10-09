@@ -117,6 +117,7 @@ class DisplaySnapshot {
     this.customerPoints,
     this.customerDetail,
     this.greeting,
+    this.card,
   });
 
   /// A till with nothing rung up. The display shows adverts full screen for
@@ -178,6 +179,32 @@ class DisplaySnapshot {
   /// into each of them ends up different on all four.
   final String? greeting;
 
+  /// What the card machine is doing, while a card payment runs and for a few
+  /// seconds after it ends, so the customer reads the same thing the clerk
+  /// does: `{phase: progress|result, title, detail, outcome}`. Null the rest of
+  /// the time. Additive, like the member fields: an older display ignores it.
+  final Map<String, Object?>? card;
+
+  /// The same screen with a card status on it (or taken off it).
+  DisplaySnapshot withCard(Map<String, Object?>? card) => DisplaySnapshot(
+    state: state,
+    notifyDisplay: notifyDisplay,
+    lines: lines,
+    subtotalMinor: subtotalMinor,
+    discountMinor: discountMinor,
+    taxMinor: taxMinor,
+    totalMinor: totalMinor,
+    paidMinor: paidMinor,
+    changeMinor: changeMinor,
+    message: message,
+    terminalName: terminalName,
+    customerName: customerName,
+    customerPoints: customerPoints,
+    customerDetail: customerDetail,
+    greeting: greeting,
+    card: card,
+  );
+
   Map<String, Object?> toJson() => {
     'format': customerDisplayFormat,
     'updated_at': DateTime.now().toIso8601String(),
@@ -219,6 +246,7 @@ class DisplaySnapshot {
     'customer_points': customerPoints,
     'customer_detail': customerDetail,
     'greeting': greeting,
+    'card': card,
   };
 
   /// Whether two snapshots would draw the same screen.
@@ -244,6 +272,7 @@ class DisplaySnapshot {
       customerPoints == other.customerPoints &&
       customerDetail == other.customerDetail &&
       greeting == other.greeting &&
+      _sameCard(card, other.card) &&
       lines.length == other.lines.length &&
       () {
         for (var i = 0; i < lines.length; i++) {
@@ -255,6 +284,15 @@ class DisplaySnapshot {
         }
         return true;
       }();
+}
+
+bool _sameCard(Map<String, Object?>? a, Map<String, Object?>? b) {
+  if (a == null || b == null) return a == b;
+  if (a.length != b.length) return false;
+  for (final k in a.keys) {
+    if (a[k] != b[k]) return false;
+  }
+  return true;
 }
 
 /// The folder the till and the customer display share.
@@ -547,12 +585,20 @@ class CustomerDisplayFeed {
   Future<void> publish(DisplaySnapshot snapshot) async {
     if (snapshot.state == 'idle' && _holdingThankYou) return;
 
+    // A card status in progress rides on every snapshot until it is cleared.
+    if (_card != null && snapshot.card == null) snapshot = snapshot.withCard(_card);
+
     final previous = _last;
     if (previous != null && snapshot.sameAs(previous)) return;
 
     // Recorded before the write, so a slow disk cannot shorten the hold.
     _paidAt = snapshot.state == 'paid' ? DateTime.now() : null;
+    await _write(snapshot);
+  }
 
+  Future<void> _write(DisplaySnapshot snapshot) async {
+    final previous = _last;
+    if (previous != null && snapshot.sameAs(previous)) return;
     await _resolve();
     final file = _file;
     final temp = _temp;
@@ -568,6 +614,21 @@ class CustomerDisplayFeed {
       // a far smaller one than a till that cannot take money.
     }
   }
+
+  /// Show (or, with null, take down) what the card machine is doing on the
+  /// customer's screen, over whatever bill is already there.
+  ///
+  /// The basket stream keeps publishing while a card runs, and would take the
+  /// status off again; so the status is remembered and laid over every
+  /// snapshot until it is cleared.
+  Future<void> showCard(Map<String, Object?>? card) async {
+    _card = card;
+    final base = _last;
+    if (base == null) return;
+    await _write(base.withCard(card));
+  }
+
+  Map<String, Object?>? _card;
 
   /// Put the display back to adverts. Called when a sale is finished with, and
   /// when the till shuts down.

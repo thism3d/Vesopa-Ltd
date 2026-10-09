@@ -5,6 +5,8 @@ import 'package:printing/printing.dart';
 
 import '../data/receipt_repository.dart';
 import '../main.dart';
+import '../payments/payment_provider.dart';
+import 'dojo_refund.dart';
 import 'receipt_pdf.dart';
 import 'theme.dart';
 import 'widgets/basket_panel.dart' show money;
@@ -244,6 +246,10 @@ class _ReceiptDialog extends ConsumerWidget {
                   ],
                 ),
               ),
+              // How the card share was paid, as Dojo has it now: paid,
+              // refunded, part refunded. With the refund key beside it.
+              for (final t in r.tenders.where((t) => t.isDojo))
+                _DojoTenderRow(tender: t, orderId: id),
               Padding(
                 padding: const EdgeInsets.all(8),
                 child: TextButton(
@@ -254,6 +260,78 @@ class _ReceiptDialog extends ConsumerWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// One Dojo card payment on a receipt: check its status, refund it.
+class _DojoTenderRow extends ConsumerStatefulWidget {
+  const _DojoTenderRow({required this.tender, required this.orderId});
+
+  final ReceiptTender tender;
+  final String orderId;
+
+  @override
+  ConsumerState<_DojoTenderRow> createState() => _DojoTenderRowState();
+}
+
+class _DojoTenderRowState extends ConsumerState<_DojoTenderRow> {
+  String? _status;
+  bool _loading = false;
+
+  Future<void> _check() async {
+    final dojo = tillDojo(ref);
+    if (dojo == null) {
+      setState(() => _status = 'Card payments are not set up on this till.');
+      return;
+    }
+    setState(() => _loading = true);
+    try {
+      final st = await dojo.paymentStatus(widget.tender.reference!);
+      if (mounted) setState(() => _status = st.summary);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _status =
+            e is DojoException ? e.clerkMessage : 'Could not reach Dojo.');
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = widget.tender;
+    return ListTile(
+      dense: true,
+      leading: const Icon(Icons.credit_card),
+      title: Text('Card ${money(t.amountMinor)} on Dojo'),
+      subtitle: Text(
+        _status ?? 'Tap Status to see what Dojo says about this payment.',
+        style: const TextStyle(fontSize: 12),
+      ),
+      trailing: Wrap(
+        spacing: 4,
+        children: [
+          TextButton(
+            onPressed: _loading ? null : _check,
+            child: Text(_loading ? 'Checking…' : 'Status'),
+          ),
+          TextButton(
+            onPressed: () async {
+              await refundDojoPayment(
+                context,
+                ref,
+                intentId: t.reference!,
+                capMinor: t.amountMinor,
+                orderId: widget.orderId,
+              );
+              if (mounted) await _check();
+            },
+            child: const Text('Refund'),
+          ),
+        ],
       ),
     );
   }

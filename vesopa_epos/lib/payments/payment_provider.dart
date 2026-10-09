@@ -21,6 +21,28 @@ enum PaymentUncertainty {
   terminalUnreachable,
 }
 
+/// What became of a card payment, in the words the till shows for it.
+///
+/// Dojo's accreditation tests each of these as its own scenario, and each needs
+/// a different screen: a decline is final, a busy machine is worth another go,
+/// and an expired session might still have taken the money.
+enum CardOutcome {
+  approved('Payment approved'),
+  declined('Payment declined'),
+  cancelled('Payment cancelled'),
+  signatureRejected('Signature rejected'),
+  busy('Card machine busy'),
+  expired('Result not confirmed'),
+  unknown('Result not confirmed'),
+  failed('Payment failed');
+
+  const CardOutcome(this.title);
+  final String title;
+
+  /// Outcomes where the money might still have been taken.
+  bool get uncertain => this == expired || this == unknown;
+}
+
 /// Outcome of asking a payment method for money.
 class PaymentResult {
   const PaymentResult({
@@ -32,7 +54,59 @@ class PaymentResult {
     this.gratuityMinor = 0,
     this.uncertainty = PaymentUncertainty.none,
     this.receiptLines = const [],
+    this.outcome,
+    this.sessionId,
+    this.acquirerStatus,
+    this.authCode,
+    this.cardLast4,
+    this.cardType,
   });
+
+  /// Set by the Dojo providers. Left null by the others, which [kind] then
+  /// works out from [approved] and [uncertainty].
+  final CardOutcome? outcome;
+
+  /// The Dojo terminal session the payment ran on, for the log and support.
+  final String? sessionId;
+
+  /// The acquirer's own status word: Captured, Declined, Expired…
+  final String? acquirerStatus;
+
+  /// From the card machine, when it says: printed on the receipt and the log.
+  final String? authCode;
+  final String? cardLast4;
+  final String? cardType;
+
+  CardOutcome get kind =>
+      outcome ??
+      (approved
+          ? CardOutcome.approved
+          : uncertainty != PaymentUncertainty.none
+          ? CardOutcome.unknown
+          : CardOutcome.declined);
+
+  PaymentResult copyWith({
+    bool? approved,
+    String? message,
+    CardOutcome? outcome,
+    PaymentUncertainty? uncertainty,
+    String? acquirerStatus,
+  }) => PaymentResult(
+    approved: approved ?? this.approved,
+    amountMinor: amountMinor,
+    reference: reference,
+    message: message ?? this.message,
+    cashbackMinor: cashbackMinor,
+    gratuityMinor: gratuityMinor,
+    uncertainty: uncertainty ?? this.uncertainty,
+    receiptLines: receiptLines,
+    outcome: outcome ?? this.outcome,
+    sessionId: sessionId,
+    acquirerStatus: acquirerStatus ?? this.acquirerStatus,
+    authCode: authCode,
+    cardLast4: cardLast4,
+    cardType: cardType,
+  );
 
   final bool approved;
   final int amountMinor;
@@ -109,10 +183,20 @@ class DojoSession {
     required this.id,
     required this.status,
     this.lastNotification,
+    this.receiptLines = const [],
+    this.authCode,
+    this.cardLast4,
+    this.cardType,
   });
 
   final String id;
   final String status;
+
+  /// The card machine's own slip text, which Dojo return on a finished session.
+  final List<String> receiptLines;
+  final String? authCode;
+  final String? cardLast4;
+  final String? cardType;
 
   /// The most recent prompt from the reader — "PresentCard", "PleaseWait" —
   /// so the till can tell the clerk what the customer is being asked to do.
@@ -155,14 +239,40 @@ class DojoSession {
   };
 
   factory DojoSession.fromJson(Map<String, dynamic> j) {
-    final events = (j['notificationEvents'] as List?) ?? const [];
+    // Newest by Dojo's own timestamp, not by list position. Each event carries
+    // a `createdAt`; ordering by it means a list that ever arrives out of
+    // order cannot put an old "Present card" back on the screen.
+    final events = [
+      for (final e in (j['notificationEvents'] as List?) ?? const [])
+        if (e is Map<String, dynamic>) e,
+    ];
+    events.sort(
+      (a, b) => '${a['createdAt'] ?? ''}'.compareTo('${b['createdAt'] ?? ''}'),
+    );
+    final details = j['paymentDetails'] as Map<String, dynamic>?;
+    final card = details?['card'] as Map<String, dynamic>?;
+    final pan = (card?['last4PAN'] ?? card?['cardNumber'] ?? '') as String;
     return DojoSession(
       id: j['id'] as String,
       status: j['status'] as String? ?? '',
       lastNotification: events.isEmpty
           ? null
-          : (events.last as Map<String, dynamic>)['notificationType'] as String?,
+          : events.last['notificationType'] as String?,
+      receiptLines: receiptText(j['receipt']),
+      authCode: details?['authCode'] as String?,
+      cardLast4: pan.length >= 4 ? pan.substring(pan.length - 4) : null,
+      cardType: card?['cardType'] as String?,
     );
+  }
+
+  /// Dojo's receipt is a list of typed lines; only the text ones print.
+  static List<String> receiptText(Object? receipt) {
+    if (receipt is! Map) return const [];
+    return [
+      for (final l in (receipt['lines'] as List?) ?? const [])
+        if (l is Map && l['text'] is Map)
+          '${(l['text'] as Map)['value'] ?? ''}'.trimRight(),
+    ];
   }
 }
 
@@ -299,9 +409,16 @@ class DojoProvider implements PaymentProvider {
     // The terminal endpoints (/terminals, /terminal-sessions) were added in
     // this API version; the older 2024-01-01 does not serve them.
     this.apiVersion = '2024-02-05',
-    this.pollTimeout = const Duration(minutes: 2),
+    // Long enough for a signature checked after 80 seconds and a slow
+    // customer: Dojo end the session themselves (Expired) well inside this,
+    // so it is a backstop for a reader that stops answering altogether.
+    this.pollTimeout = const Duration(minutes: 6),
+    this.pollInterval = const Duration(seconds: 1),
     http.Client? client,
   }) : _client = client ?? http.Client();
+
+  /// Dojo's sheet asks for one read per second while a terminal session runs.
+  final Duration pollInterval;
 
   final String apiKey;
 
@@ -322,13 +439,25 @@ class DojoProvider implements PaymentProvider {
   @override
   String get method => 'card';
 
+  /// Every request carries the partner ids, not only the terminal ones.
+  ///
+  /// Dojo's accreditation sheet failed "Identifying Headers" because the
+  /// software house id was null on the payment intent and terminal session
+  /// requests: their logs identify the integrator by these headers on every
+  /// call, whichever endpoint it is.
   Map<String, String> get _headers => {
         // Dojo uses Basic auth with the raw key — NOT Bearer, and NOT
         // base64-encoded. Bearer is rejected with 401.
         'Authorization': 'Basic $apiKey',
         'version': apiVersion,
         'Content-Type': 'application/json',
+        'software-house-id': ?softwareHouseId,
+        'reseller-id': ?resellerId,
       };
+
+  /// What the headers actually carry, for the payment screen and the log.
+  String get partnerLabel =>
+      'Software house ${softwareHouseId ?? '—'} · Reseller ${resellerId ?? '—'}';
 
   /// Create the intent.
   ///
@@ -478,10 +607,12 @@ class DojoProvider implements PaymentProvider {
   };
 
   /// The card machines this account can send a payment to.
-  Future<List<DojoTerminal>> listTerminals({String status = 'Available'}) async {
+  Future<List<DojoTerminal>> listTerminals({String? status = 'Available'}) async {
     final res = await _client
         .get(
-          Uri.parse('$baseUrl/terminals?statuses=$status'),
+          Uri.parse(
+            status == null ? '$baseUrl/terminals' : '$baseUrl/terminals?statuses=$status',
+          ),
           headers: _terminalHeaders,
         )
         .timeout(const Duration(seconds: 20));
@@ -877,11 +1008,45 @@ class DojoProvider implements PaymentProvider {
   /// session left unanswered never completes.
   Future<bool> Function()? onSignatureRequested;
 
+  /// Told what happened to a cancel the clerk asked for: true once Dojo has
+  /// accepted it, false when the machine refused (the card was already in),
+  /// with Dojo's reason.
+  void Function(bool accepted, String message)? onCancelAnswered;
+
+  // ---- Cancelling from the till -------------------------------------------
+
+  bool _cancelRequested = false;
+  bool _abandoned = false;
+
+  /// Ask Dojo to cancel the running sale on the card machine.
+  ///
+  /// Dojo's "Cancel transaction from POS" scenario. Only a request: Dojo
+  /// cancel it if the card has not gone in yet, and refuse with a 422 when it
+  /// has, in which case the sale carries on and its real result still comes
+  /// back. [awaitTerminal] sends it on its next poll.
+  void requestCancel() => _cancelRequested = true;
+
+  /// Stop waiting for the machine altogether.
+  ///
+  /// For a machine that has stopped answering. The payment is reported as not
+  /// confirmed (never as declined), so the till offers to check its status
+  /// with Dojo before anyone charges the card again.
+  void abandon() {
+    _cancelRequested = true;
+    _abandoned = true;
+  }
+
   /// Follow a terminal session to its conclusion.
   ///
   /// Verified against the sandbox, where a session runs
-  /// `InitiateRequested → SignatureVerificationRequired → Captured`. The
-  /// signature step is not optional — the session stalls there until answered.
+  /// `InitiateRequested → Initiated → SignatureVerificationRequired → Captured`
+  /// with notifications PresentCard then PleaseWait. The signature step is not
+  /// optional — the session stalls there until answered.
+  ///
+  /// A failed read is not a failed payment. The tablet's Wi-Fi dropping for a
+  /// few seconds used to end the sale with an error while the card went on to
+  /// be approved; now reads are retried, and only a machine silent for
+  /// [_maxSilence] ends the wait, as "not confirmed".
   Future<PaymentResult> awaitTerminal(
     String sessionId,
     String intentId,
@@ -889,9 +1054,51 @@ class DojoProvider implements PaymentProvider {
   ) async {
     final deadline = DateTime.now().add(pollTimeout);
     var signatureAnswered = false;
+    var cancelSent = false;
+    DateTime? lastHeard = DateTime.now();
+    DojoSession? last;
+
+    PaymentResult unconfirmed(String message) => PaymentResult(
+      approved: false,
+      amountMinor: amountMinor,
+      reference: intentId,
+      sessionId: sessionId,
+      acquirerStatus: last?.status,
+      outcome: CardOutcome.unknown,
+      uncertainty: PaymentUncertainty.checkTerminal,
+      message: message,
+    );
 
     while (DateTime.now().isBefore(deadline)) {
-      final session = await fetchSession(sessionId);
+      if (_abandoned) {
+        return unconfirmed(
+          'The till stopped waiting for the card machine. Check the payment '
+          'status before charging the card again.',
+        );
+      }
+
+      // The clerk's cancel goes on the next poll, once.
+      if (_cancelRequested && !cancelSent) {
+        cancelSent = true;
+        final answer = await cancelSessionWithReason(sessionId);
+        onCancelAnswered?.call(answer.accepted, answer.message);
+      }
+
+      DojoSession session;
+      try {
+        session = await fetchSession(sessionId);
+        lastHeard = DateTime.now();
+        last = session;
+      } catch (_) {
+        if (DateTime.now().difference(lastHeard!) > _maxSilence) {
+          return unconfirmed(
+            'Lost contact with the card machine. Check the payment status '
+            'before charging the card again — it may have gone through.',
+          );
+        }
+        await Future<void>.delayed(pollInterval);
+        continue;
+      }
       onTerminalUpdate?.call(session);
 
       if (session.captured) {
@@ -899,7 +1106,14 @@ class DojoProvider implements PaymentProvider {
           approved: true,
           amountMinor: amountMinor,
           reference: intentId,
-          message: session.status,
+          sessionId: sessionId,
+          acquirerStatus: session.status,
+          outcome: CardOutcome.approved,
+          message: 'Approved',
+          receiptLines: session.receiptLines,
+          authCode: session.authCode,
+          cardLast4: session.cardLast4,
+          cardType: session.cardType,
         );
       }
       if (session.failed) {
@@ -909,52 +1123,124 @@ class DojoProvider implements PaymentProvider {
         // reader knows it. Expired means the reader stopped answering — the
         // card may have been approved and the result lost on the way back. The
         // accreditation checklist is explicit that the till has to say the
-        // result cannot be confirmed and offer to record it manually or retry,
-        // which is a different screen from "declined" and a different action
-        // from the clerk.
-        final expired = session.status.toLowerCase() == 'expired';
+        // result cannot be confirmed and offer to check it and record it
+        // manually, or retry, which is a different screen from "declined".
+        final status = session.status.toLowerCase();
+        final expired = status == 'expired';
+        final cancelled = status == 'canceled' || status == 'cancelled';
         return PaymentResult(
           approved: false,
           amountMinor: amountMinor,
           reference: intentId,
+          sessionId: sessionId,
+          acquirerStatus: session.status,
+          receiptLines: session.receiptLines,
+          outcome: expired
+              ? CardOutcome.expired
+              : cancelled
+              ? CardOutcome.cancelled
+              : CardOutcome.declined,
           uncertainty: expired
               ? PaymentUncertainty.checkTerminal
               : PaymentUncertainty.none,
           message: expired
-              ? 'The card machine did not confirm the result. Check its screen '
-                    'before retrying — the payment may still have gone through.'
-              : 'Card payment ${session.status.toLowerCase()}',
+              ? 'The card machine did not confirm the result in time. Check '
+                    'the payment status: if the machine shows it approved, it '
+                    'can be recorded as paid.'
+              : cancelled
+              ? (cancelSent
+                    ? 'Cancelled from the till. No money was taken.'
+                    : 'Cancelled on the card machine. No money was taken.')
+              : 'The card was declined. No money was taken. Ask for another '
+                    'card or another way to pay.',
         );
       }
       if (session.needsSignature && !signatureAnswered) {
         signatureAnswered = true;
         final accepted = await (onSignatureRequested?.call() ?? Future.value(true));
-        await answerSignature(sessionId, accepted: accepted);
+        try {
+          await answerSignature(sessionId, accepted: accepted);
+        } on DojoException {
+          // The machine moved on (it can time the signature out itself). The
+          // next read says what it decided.
+        }
         if (!accepted) {
+          // Not returned yet: the machine reverses the sale and reports
+          // Declined/Canceled, and that verdict is what goes in the log. The
+          // outcome is renamed below so the clerk reads why.
+          final verdict = await _settleAfterRejection(sessionId);
           return PaymentResult(
             approved: false,
             amountMinor: amountMinor,
             reference: intentId,
-            message: 'Signature rejected',
+            sessionId: sessionId,
+            acquirerStatus: verdict?.status ?? 'SignatureRejected',
+            receiptLines: verdict?.receiptLines ?? const [],
+            outcome: CardOutcome.signatureRejected,
+            message: 'The signature did not match, so the payment was '
+                'reversed. No money was taken.',
           );
         }
       }
 
-      await Future<void>.delayed(const Duration(seconds: 2));
+      await Future<void>.delayed(pollInterval);
     }
 
     // Out of time with the session unresolved. The card may still be mid-flight
     // on the reader, so this is "unknown", never a decline — and it has to be
     // flagged as such, or the message says one thing while the till books the
     // other.
-    return PaymentResult(
-      approved: false,
-      amountMinor: amountMinor,
-      reference: intentId,
-      uncertainty: PaymentUncertainty.checkTerminal,
-      message: 'Timed out at the card machine. Check it before retrying — the '
-          'payment may still have gone through.',
+    return unconfirmed(
+      'Timed out at the card machine. Check the payment status before '
+      'charging the card again — it may still have gone through.',
     );
+  }
+
+  /// How long the machine may stay silent before the wait ends unconfirmed.
+  static const _maxSilence = Duration(seconds: 45);
+
+  /// After a rejected signature, follow the session briefly to its verdict so
+  /// the log carries Dojo's own word for what happened.
+  Future<DojoSession?> _settleAfterRejection(String sessionId) async {
+    for (var i = 0; i < 15; i++) {
+      try {
+        final s = await fetchSession(sessionId);
+        onTerminalUpdate?.call(s);
+        if (s.failed || s.captured) return s;
+      } catch (_) {}
+      await Future<void>.delayed(pollInterval);
+    }
+    return null;
+  }
+
+  /// Cancel a session and say why Dojo did or did not.
+  Future<({bool accepted, String message})> cancelSessionWithReason(
+    String sessionId,
+  ) async {
+    try {
+      final res = await _client
+          .put(
+            Uri.parse('$baseUrl/terminal-sessions/$sessionId/cancel'),
+            headers: _terminalHeaders,
+          )
+          .timeout(const Duration(seconds: 20));
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        return (accepted: true, message: 'Cancelling on the card machine…');
+      }
+      final e = _exception(res, 'The card machine would not cancel');
+      return (
+        accepted: false,
+        message: res.statusCode == 422
+            ? 'Too late to cancel: the card is already in. Waiting for the '
+                  'result.'
+            : e.clerkMessage,
+      );
+    } catch (e) {
+      return (
+        accepted: false,
+        message: 'Could not reach Dojo to cancel. Waiting for the result.',
+      );
+    }
   }
 
   /// Whether this till has everything it needs to send a payment to a reader.
@@ -963,14 +1249,92 @@ class DojoProvider implements PaymentProvider {
       (softwareHouseId?.isNotEmpty ?? false) &&
       (resellerId?.isNotEmpty ?? false);
 
+  // ---- Checking a payment by hand -----------------------------------------
+
+  /// Ask Dojo what became of a payment, for the "Check payment status" key.
+  ///
+  /// This is the manual reconciliation Dojo's sheet asks for after an expired
+  /// session: the intent is the source of truth, whatever the till missed.
+  Future<DojoPaymentStatus> paymentStatus(String intentId) async =>
+      DojoPaymentStatus.fromJson(await fetchIntent(intentId));
+
+  // ---- Checking the settings before they are saved ------------------------
+
+  /// Prove the key and the partner ids work, and that [terminalId] (when one
+  /// is chosen) is on this account and switched on.
+  ///
+  /// Dojo's "Incorrect authorization credentials" scenario: pressing Save
+  /// must make an API call, and a 401 must read "API key is incorrect" there
+  /// and then — not at the first sale.
+  Future<DojoSettingsCheck> verifySettings() async {
+    List<DojoTerminal> all;
+    try {
+      all = await listTerminals(status: null);
+    } on DojoException catch (e) {
+      return DojoSettingsCheck(
+        ok: false,
+        message: e.statusCode == 401
+            ? 'API key is incorrect. Please check the API key.'
+            : e.statusCode == 403
+            ? 'Dojo refused the software house or reseller id (HTTP 403).'
+            : 'Dojo did not accept these settings: ${e.message}',
+      );
+    } catch (e) {
+      return DojoSettingsCheck(
+        ok: false,
+        message: 'Could not reach Dojo to check the settings. Check this '
+            'till is online, then try again.',
+      );
+    }
+    final tid = terminalId?.trim() ?? '';
+    if (tid.isEmpty) {
+      return DojoSettingsCheck(
+        ok: true,
+        terminals: all,
+        message: 'API key accepted. No card machine chosen, so cards will be '
+            'keyed on screen.',
+      );
+    }
+    final match = all.where((t) => t.id == tid || t.tid == tid).firstOrNull;
+    if (match == null) {
+      return DojoSettingsCheck(
+        ok: false,
+        terminals: all,
+        message: 'API key accepted, but card machine $tid is not on this '
+            'Dojo account. Choose one from the list.',
+      );
+    }
+    final status = match.status.toLowerCase();
+    if (status != 'available' && status != 'busy') {
+      return DojoSettingsCheck(
+        ok: false,
+        terminals: all,
+        terminal: match,
+        message: 'Card machine ${match.label} is ${match.status}. Switch it on '
+            'and connect it, then save again.',
+      );
+    }
+    return DojoSettingsCheck(
+      ok: true,
+      terminals: all,
+      terminal: match,
+      message: 'Connected: API key accepted and card machine ${match.label} '
+          'is ${match.status.toLowerCase()}.',
+    );
+  }
+
   @override
   Future<PaymentResult> take(
     int amountMinor, {
     String? orderId,
     bool manual = false,
   }) async {
+    _cancelRequested = false;
+    _abandoned = false;
+    String? intentId;
     try {
       final intent = await createIntent(amountMinor, orderId: orderId);
+      intentId = intent.id;
 
       // With a reader configured the payment is driven through a terminal
       // session; polling the intent alone would wait forever, because nothing
@@ -981,25 +1345,127 @@ class DojoProvider implements PaymentProvider {
       // "manual" exists precisely for a chip that will not read or a customer
       // on the telephone.
       if (canUseTerminal && !manual) {
+        if (_cancelRequested) {
+          await cancelIntent(intent.id);
+          return PaymentResult(
+            approved: false,
+            amountMinor: amountMinor,
+            reference: intent.id,
+            outcome: CardOutcome.cancelled,
+            message: 'Cancelled from the till before it reached the card '
+                'machine. No money was taken.',
+          );
+        }
         final sessionId = await startTerminalSession(intent.id);
-        return awaitTerminal(sessionId, intent.id, amountMinor);
+        return await awaitTerminal(sessionId, intent.id, amountMinor);
       }
 
-      return confirm(intent.id, amountMinor);
-    } catch (e) {
-      // An errored card payment is NOT a payment. Never fall back to assuming
-      // it worked — the till would record money it never took.
-      //
-      // A Dojo failure reports its clerk-facing message rather than its
-      // `toString()`: a wrong API key has to read "check the API key in
-      // Settings", not "payment failed" and not a wall of JSON. Anything else
-      // is stringified, because there is nothing better to say about it.
+      return await confirm(intent.id, amountMinor);
+    } on DojoException catch (e) {
+      // Dojo's "Failure with busy terminal": a 409 on starting the session.
+      // Nothing was sent to the machine, so nothing was taken; the clerk is
+      // told to finish what is on its screen and try again.
+      if (intentId != null) unawaited(cancelIntent(intentId));
       return PaymentResult(
         approved: false,
         amountMinor: amountMinor,
-        message: e is DojoException ? e.clerkMessage : '$e',
+        reference: intentId,
+        outcome: e.statusCode == 409 ? CardOutcome.busy : CardOutcome.failed,
+        acquirerStatus: e.statusCode == null ? null : 'HTTP ${e.statusCode}',
+        message: e.clerkMessage,
+      );
+    } catch (e) {
+      // An errored card payment is NOT a payment. Never fall back to assuming
+      // it worked — the till would record money it never took.
+      return PaymentResult(
+        approved: false,
+        amountMinor: amountMinor,
+        reference: intentId,
+        outcome: CardOutcome.failed,
+        message: 'Could not reach Dojo: $e',
       );
     }
+  }
+}
+
+/// The result of checking card settings before they are saved.
+class DojoSettingsCheck {
+  const DojoSettingsCheck({
+    required this.ok,
+    required this.message,
+    this.terminals = const [],
+    this.terminal,
+  });
+
+  final bool ok;
+  final String message;
+  final List<DojoTerminal> terminals;
+  final DojoTerminal? terminal;
+}
+
+/// What Dojo says about one payment, for the status check and refunds.
+class DojoPaymentStatus {
+  const DojoPaymentStatus({
+    required this.id,
+    required this.status,
+    required this.amountMinor,
+    required this.refundedMinor,
+    this.authCode,
+    this.cardLast4,
+    this.cardType,
+    this.createdAt,
+  });
+
+  final String id;
+
+  /// Created, Authorized, Captured, Refunded, Reversed, Canceled…
+  final String status;
+  final int amountMinor;
+  final int refundedMinor;
+  final String? authCode;
+  final String? cardLast4;
+  final String? cardType;
+  final DateTime? createdAt;
+
+  bool get paid => DojoProvider.paidStatuses.contains(status.toLowerCase()) ||
+      status.toLowerCase() == 'refunded';
+
+  /// What can still be given back.
+  int get refundableMinor =>
+      paid ? (amountMinor - refundedMinor).clamp(0, amountMinor) : 0;
+
+  /// One line for the clerk: "Captured · £12.34 · £2.00 refunded".
+  String get summary {
+    String gbp(int m) => '£${(m / 100).toStringAsFixed(2)}';
+    return [
+      status,
+      gbp(amountMinor),
+      if (refundedMinor > 0) '${gbp(refundedMinor)} refunded',
+      if (cardType != null && cardLast4 != null) '$cardType ••$cardLast4',
+      if (authCode != null && authCode!.isNotEmpty) 'Auth $authCode',
+    ].join(' · ');
+  }
+
+  static int _minor(Object? v) => switch (v) {
+    num n => n.toInt(),
+    Map m => (m['value'] as num?)?.toInt() ?? 0,
+    _ => 0,
+  };
+
+  factory DojoPaymentStatus.fromJson(Map<String, dynamic> j) {
+    final details = j['paymentDetails'] as Map<String, dynamic>?;
+    final card = details?['card'] as Map<String, dynamic>?;
+    final pan = '${card?['last4PAN'] ?? card?['cardNumber'] ?? ''}';
+    return DojoPaymentStatus(
+      id: '${j['id'] ?? ''}',
+      status: '${j['status'] ?? 'Unknown'}',
+      amountMinor: _minor(j['totalAmount'] ?? j['amount']),
+      refundedMinor: _minor(j['refundedAmount']),
+      authCode: details?['authCode'] as String?,
+      cardLast4: pan.length >= 4 ? pan.substring(pan.length - 4) : null,
+      cardType: card?['cardType'] as String?,
+      createdAt: DateTime.tryParse('${j['createdAt'] ?? ''}'),
+    );
   }
 }
 
@@ -1037,8 +1503,8 @@ class DojoException implements Exception {
   /// error shapes depending on the endpoint, so the message is chosen by what
   /// the situation *is* rather than by parsing all of them perfectly.
   String get clerkMessage => switch (statusCode) {
-    401 => 'The card system rejected our credentials. Check the API key in '
-        'Settings.',
+    401 => 'API key is incorrect. Please check the API key in Settings › '
+        'Card payments.',
     404 => 'The card machine could not be found. Check it is switched on and '
         'connected.',
     409 => 'The card machine is busy. Finish or cancel what is on its screen, '
