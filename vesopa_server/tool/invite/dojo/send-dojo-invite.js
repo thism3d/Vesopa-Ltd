@@ -7,6 +7,7 @@
  *   node tool/invite/dojo/send-dojo-invite.js                 # says what it would send
  *   node tool/invite/dojo/send-dojo-invite.js --send          # to Dojo, cc Meirion
  *   node tool/invite/dojo/send-dojo-invite.js --send --only info@vesopa.com   # one copy only
+ *   ... --reminder2   # 9 Oct midday: reminder for 1:30pm with the new Meet link
  *   ... --correction  # 9 Oct: right time 1:30pm (not 8:30am), new Meet link, invite SEQUENCE 2
  *   ... --reminder    # morning-of reminder, 9 Oct: today 1:30pm, Meet link and dial-in
  *   ... --confirmed   # the follow-up: new time 1:30pm accepted, Meet link, invite SEQUENCE 1
@@ -30,7 +31,8 @@ const RECIPIENTS = [
 ];
 
 async function main() {
-  const eml = path.join(__dirname, process.argv.includes('--correction') ? 'Vesopa-Dojo-kick-off-correction.eml'
+  const eml = path.join(__dirname, process.argv.includes('--reminder2') ? 'Vesopa-Dojo-kick-off-reminder2.eml'
+    : process.argv.includes('--correction') ? 'Vesopa-Dojo-kick-off-correction.eml'
     : process.argv.includes('--reminder') ? 'Vesopa-Dojo-kick-off-reminder.eml'
     : process.argv.includes('--confirmed') ? 'Vesopa-Dojo-kick-off-confirmed.eml' : 'Vesopa-Dojo-kick-off.eml');
   // Git may store it with LF endings; mail wants CRLF.
