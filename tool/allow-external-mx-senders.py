@@ -49,24 +49,35 @@ MARK="lsearch;$L"
 command -v dig >/dev/null || { echo "dig is not installed; stopping"; exit 1; }
 echo "=== mail domains on this box whose MX points elsewhere ==="
 TMP=$(mktemp)
-for f in /usr/local/hestia/data/users/*/mail.conf; do
-  sed -n "s/^DOMAIN='\([^']*\)'.*/\1/p" "$f"
-done | sort -u | while read -r d; do
-  mx=$(dig +short MX "$d" @1.1.1.1 | awk '{print $2}' | sed 's/\.$//')
-  [ -z "$mx" ] && continue
+# The box's own resolver first; 1.1.1.1 only if that gives nothing.
+q() { r=$(dig +short +time=3 +tries=2 "$1" "$2" 2>/dev/null) || true; [ -n "$r" ] || r=$(dig +short +time=3 +tries=2 "$1" "$2" @1.1.1.1 2>/dev/null) || true; echo "$r"; }
+# Exim's own list of local mail domains (/etc/exim4/domains) plus Hestia's.
+{ ls /etc/exim4/domains 2>/dev/null
+  for f in /usr/local/hestia/data/users/*/mail.conf; do
+    sed -n "s/^DOMAIN='\([^']*\)'.*/\1/p" "$f"
+  done; } | sort -u > "$TMP.all"
+echo "  $(wc -l < "$TMP.all") local mail domains"
+while read -r d; do
+  mx=$(q MX "$d" | awk '{print $2}' | sed 's/\.$//')
+  if [ -z "$mx" ]; then echo "  $d  (no MX answer)"; continue; fi
   here=no
   for h in $mx; do
-    for ip in $(dig +short A "$h" @1.1.1.1); do [ "$ip" = "$BOX" ] && here=yes; done
+    for ip in $(q A "$h"); do [ "$ip" = "$BOX" ] && here=yes; done
   done
-  if [ "$here" = no ]; then echo "$d" >> "$TMP"; echo "  $d  (MX: $(echo $mx | tr '\n' ' '))"; fi
-done
-grep -q . "$TMP" || { echo "  none found; nothing to do"; rm -f "$TMP"; exit 0; }
+  if [ "$here" = no ]; then echo "$d" >> "$TMP"; echo "  $d  EXTERNAL (MX: $(echo $mx | tr '\n' ' '))"; fi
+done < "$TMP.all"
+rm -f "$TMP.all"
 
 echo
-echo "=== the ACL statement as it is now ==="
-awk '/smtp auth required/{f=1} f{print} f&&/^[[:space:]]*$/{exit}' "$C" | head -12
-N=$(grep -n "smtp auth required" "$C" | head -1 | cut -d: -f1)
-[ -n "$N" ] || { echo "no 'smtp auth required' statement found; stopping"; exit 1; }
+echo "=== every 'smtp auth required' statement in the template ==="
+grep -n -B4 -A6 "smtp auth required" "$C" || echo "  none"
+
+if ! grep -q . "$TMP"; then
+  echo; echo "NOTHING CHANGED: no local mail domain has its MX elsewhere (see the list above)"
+  rm -f "$TMP"; exit 3
+fi
+
+grep -q "smtp auth required" "$C" || { echo "no 'smtp auth required' statement found; stopping"; exit 1; }
 
 simulate() { # $1 sender, $2 recipient
   printf 'EHLO mail-lf1-f44.google.com\r\nMAIL FROM:<%s>\r\nRCPT TO:<%s>\r\nQUIT\r\n' "$1" "$2" \
@@ -125,6 +136,8 @@ def main():
     client = connect()
     try:
         status = vesopa_ssh.run(client, "bash -c " + __import__("shlex").quote(REMOTE.replace("__CHECK__", "1" if check else "0")))
+        if status == 3:
+            raise SystemExit("nothing changed on the box: read the output above")
         if status != 0:
             raise SystemExit("failed on the box: read the output above")
         if not check:
