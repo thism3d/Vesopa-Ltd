@@ -80,6 +80,54 @@ class BasketLine {
   }
 }
 
+/// A card payment in progress on the till's card machine, as the customer
+/// should see it: what to do now, and then how it ended.
+///
+/// Written by the till only while its card dialog is open (EPOS 1.16 and
+/// later). Absent otherwise, and absent from every older till, which leaves
+/// the screen exactly as it was.
+class CardStatus {
+  const CardStatus({
+    required this.phase,
+    required this.title,
+    this.detail,
+    this.outcome,
+    this.amountMinor = 0,
+  });
+
+  /// 'progress' while the machine is working, 'result' once it has answered.
+  final String phase;
+  final String title;
+  final String? detail;
+
+  /// approved | declined | cancelled | signatureRejected | busy | expired |
+  /// unknown | failed. Null while still in progress.
+  final String? outcome;
+  final int amountMinor;
+
+  bool get isResult => phase == 'result';
+  bool get approved => outcome == 'approved';
+
+  /// A result that is neither a yes nor a no: the till is still checking.
+  bool get uncertain => outcome == 'expired' || outcome == 'unknown';
+
+  static CardStatus? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final title = raw['title'];
+    if (title is! String || title.trim().isEmpty) return null;
+    return CardStatus(
+      phase: raw['phase'] == 'result' ? 'result' : 'progress',
+      title: title.trim(),
+      detail: switch (raw['detail']) {
+        final String s when s.trim().isNotEmpty => s.trim(),
+        _ => null,
+      },
+      outcome: raw['outcome'] as String?,
+      amountMinor: (raw['amount_minor'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
 /// What the till says the customer should be looking at.
 class Basket {
   const Basket({
@@ -99,6 +147,7 @@ class Basket {
     this.customerPoints,
     this.customerDetail,
     this.greeting,
+    this.card,
   });
 
   /// The state before the till has ever written a file: a display switched on
@@ -137,6 +186,10 @@ class Basket {
 
   /// What the venue says above the name. Null for the built-in "Welcome".
   final String? greeting;
+
+  /// The card machine's progress while the till is taking a card. Null when no
+  /// card payment is open.
+  final CardStatus? card;
 
   /// Whether there is a bill worth showing a customer.
   ///
@@ -192,6 +245,7 @@ class Basket {
         _ => null,
       },
       terminal: raw['terminal'] as String?,
+      card: CardStatus.fromJson(raw['card']),
       // Absent on a till that predates this, and absent means off — which is
       // also the default for a venue that has one and has not turned it on.
       notifyAllowed: raw['notify_display'] == true,

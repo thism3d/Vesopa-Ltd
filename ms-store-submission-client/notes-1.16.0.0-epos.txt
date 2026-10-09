@@ -1,0 +1,13 @@
+Version 1.16.0.0 - Card payments with Dojo
+
+Clear results: after every card payment the till shows Approved, Declined, Cancelled or Not confirmed, and keeps it on screen for 5, 10 or 15 seconds (your choice in Settings > Card payments). Press Done to close it sooner.
+
+Cancel and check: cancel a payment from the till, or check with Dojo whether it went through. If the machine stops answering, check the payment or try again.
+
+Refunds: refund a card payment in full or in part from Functions > Card Machine, from a receipt, or from Receipts. A manager can also make a refund without a sale.
+
+Safer setup: the till checks the API key and the card machine before it saves, and your venue's Dojo settings can be set once in the back office.
+
+Card log: every card payment, including failed ones, is kept with Dojo's receipt and sent to the back office.
+
+Customer display: shows each step of the card payment and how it ended.

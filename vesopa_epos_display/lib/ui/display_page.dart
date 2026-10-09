@@ -32,6 +32,7 @@ import '../data/screens.dart';
 import '../data/settings.dart';
 import 'advert_panel.dart';
 import 'bill_panel.dart';
+import 'card_overlay.dart';
 import 'settings_page.dart';
 import 'theme.dart';
 
@@ -557,6 +558,11 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
                     },
                   ),
           ),
+
+          // The card machine's progress while the till takes a card, over
+          // everything else so the customer is never left guessing.
+          if (_basket.card case final card?)
+            Positioned.fill(child: CardOverlay(card: card)),
 
           // Nothing at all over the adverts until somebody asks for it.
           //
