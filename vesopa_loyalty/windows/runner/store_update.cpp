@@ -48,8 +48,8 @@ void Post(HWND window, Answer* answer) {
 
 bool Packaged() {
   try {
-    winrt::Windows::ApplicationModel::Package::Current();
-    return true;
+    const auto package = winrt::Windows::ApplicationModel::Package::Current();
+    return package != nullptr;
   } catch (...) {
     return false;
   }
