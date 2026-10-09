@@ -102,6 +102,9 @@ def main():
         refused = []
         for key, _folder, version, msix, notes in APPS:
             try:
+                # "If any update in certification, cancel and update with the
+                # latest versions" (the owner, 2026-10-09).
+                run([node, "examples/cancel-pending.js", key], STORE, step=f"Store: cancel what {key} has in progress")
                 run([node, "examples/stage.js", key, str(ROOT / msix), notes], STORE,
                     env={"STAGE_VERSION": version, "PUBLISH_MODE": "Immediate"}, step=f"Store: stage {key} {version}")
                 run([node, "examples/commit.js", key], STORE, step=f"Store: commit {key} {version}")
