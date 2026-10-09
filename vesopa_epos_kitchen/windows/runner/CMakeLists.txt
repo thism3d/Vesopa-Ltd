@@ -8,6 +8,7 @@ project(runner LANGUAGES CXX)
 # Any new source files that you add to the application should be added here.
 add_executable(${BINARY_NAME} WIN32
   "flutter_window.cpp"
+  "store_update.cpp"
   "main.cpp"
   "utils.cpp"
   "win32_window.cpp"
@@ -35,6 +36,12 @@ target_compile_definitions(${BINARY_NAME} PRIVATE "NOMINMAX")
 target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app)
 target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib")
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
+
+# C++/WinRT, for updating a Store copy in place (store_update.cpp). C++20,
+# because under C++17 its headers reach for <experimental/coroutine>, which the
+# current MSVC refuses outright.
+target_link_libraries(${BINARY_NAME} PRIVATE "windowsapp.lib")
+target_compile_features(${BINARY_NAME} PRIVATE cxx_std_20)
 
 # Run the Flutter tool portions of the build. This must not be removed.
 add_dependencies(${BINARY_NAME} flutter_assemble)

@@ -166,15 +166,19 @@ async function main() {
       assert.strictEqual(s.body.update, null);
     });
 
-    await check('switched on, the venue is offered its version; the Store copy is not', async () => {
+    await check('switched on, the venue is offered its version, the Store copy through the Store', async () => {
       const on = await call(server, 'PUT', '/api/admin/app-versions-settings', SERVICE_KEY, { enabled: true });
       assert.strictEqual(on.body.enabled, true);
       const s = await call(server, 'GET', '/api/licence/state', device(PUB.email), undefined, as('1.14.2'));
       assert.deepStrictEqual(s.body.update, {
         version: '1.15.0', url: 'https://admin.vesopa.com/dl/x/1.15.0.exe', sha256: SHA, size: 1000, downgrade: false,
       });
+      // A 1.15.0 Store copy can only open its Store page: it waits for the mark.
       const store = await call(server, 'GET', '/api/licence/state', device(PUB.email), undefined, as('1.14.2', 'store'));
       assert.strictEqual(store.body.update, null);
+      // One that asks the Store itself is told straight away.
+      const checks = await call(server, 'GET', '/api/licence/state', device(PUB.email), undefined, { ...as('1.14.2', 'store'), 'X-Vesopa-Store-Check': '1' });
+      assert.deepStrictEqual(checks.body.update, { version: '1.15.0', store: true, store_id: '9PDMNJXNFZCW', downgrade: false });
       const there = await call(server, 'GET', '/api/licence/state', device(PUB.email), undefined, as('1.15.0.0'));
       assert.strictEqual(there.body.update, null, 'already on it');
     });
@@ -199,21 +203,25 @@ async function main() {
       assert.strictEqual(back.body.update.version, '1.14.3', 'follows the default again');
     });
 
-    await check('a Store copy is sent to the Store, forward only, once the version is live there', async () => {
-      // On our installer only: the Store copy hears nothing.
+    await check('a Store copy goes forward through the Store, and back through our installer', async () => {
+      // Without the Store mark, only a copy that asks the Store itself hears.
       await pin([PUB.id], '1.15.0');
       const before = await call(server, 'GET', '/api/licence/state', device(PUB.email), undefined, as('1.14.2', 'store'));
       assert.strictEqual(before.body.update, null);
-      // Live on the Store as well.
       await pin([PUB.id], '1.15.0', { store: true });
       const s = await call(server, 'GET', '/api/licence/state', device(PUB.email), undefined, as('1.14.2', 'store'));
       assert.deepStrictEqual(s.body.update, { version: '1.15.0', store: true, store_id: '9PDMNJXNFZCW', downgrade: false });
       // The direct copy still gets the installer.
       const direct = await call(server, 'GET', '/api/licence/state', device(PUB.email), undefined, as('1.14.2'));
       assert.strictEqual(direct.body.update.url, 'https://admin.vesopa.com/dl/x/1.15.0.exe');
-      // The Store cannot go back.
-      const newer = await call(server, 'GET', '/api/licence/state', device(PUB.email), undefined, as('1.16.0', 'store'));
+      // The Store cannot go back: an older copy is left alone, and one that
+      // can ask the Store itself is moved to our installer instead.
+      const newer = await call(server, 'GET', '/api/licence/state', device(PUB.email), undefined, as('1.16.0', 'store', 'PC-OLD'));
       assert.strictEqual(newer.body.update, null);
+      const back = await call(server, 'GET', '/api/licence/state', device(PUB.email), undefined, { ...as('1.16.0', 'store'), 'X-Vesopa-Store-Check': '1' });
+      assert.deepStrictEqual(back.body.update, {
+        version: '1.15.0', url: 'https://admin.vesopa.com/dl/x/1.15.0.exe', sha256: SHA, size: 1000, downgrade: true, switch: true,
+      });
       // Store only: no installer, so direct copies are not offered it.
       const r = await call(server, 'PUT', '/api/admin/app-versions/till', SERVICE_KEY, { offices: [PUB.id], version: '1.15.1', store: true });
       assert.strictEqual(r.status, 200, JSON.stringify(r.body));
@@ -243,6 +251,8 @@ async function main() {
       assert.strictEqual(r.body.update.version, '1.0.10');
       const store = await call(server, 'GET', '/loyalty/v1/app-update', null, undefined, as('1.0.9', 'store'));
       assert.strictEqual(store.body.update, null);
+      const checks = await call(server, 'GET', '/loyalty/v1/app-update', null, undefined, { ...as('1.0.9', 'store'), 'X-Vesopa-Store-Check': '1' });
+      assert.deepStrictEqual(checks.body.update, { version: '1.0.10', store: true, store_id: '9N6VWPJ25VPH', downgrade: false });
     });
 
     await check('only an admin may set versions', async () => {

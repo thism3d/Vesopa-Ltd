@@ -1047,6 +1047,10 @@ final startupRepairProvider = Provider<StartupRepair>((ref) => StartupRepair.ok)
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // A Store copy moved to our installer hands its data over here, before
+  // anything opens local storage (data/app_update.dart, Handover).
+  await Handover.adopt(r'Vesopa EPOS Limited\Vesopa EPOS');
+
   // BEFORE anything reads local storage, and before the window is even shown.
   //
   // A till that lost power mid-write is left with a truncated preferences file,

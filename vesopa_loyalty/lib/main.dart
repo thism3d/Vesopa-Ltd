@@ -22,10 +22,13 @@ import 'ui/venue_picker.dart';
 /// office), so a venue's app is theirs without a build of its own. See
 /// data/session.dart for how the app knows which venue it is.
 /// This build's version, for the activity log. Keep in step with pubspec.yaml.
-const loyaltyAppVersion = '1.0.11.0';
+const loyaltyAppVersion = '1.0.12.0';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // A Store copy moved to our installer hands its data over here, before
+  // anything opens local storage (data/app_update.dart, Handover).
+  await Handover.adopt(r'Vesopa Software Ltd\The Vesopa Kitchen');
   // An update somebody chose to take "On next start" runs now, before
   // anything else opens (data/app_update.dart). Returns at once otherwise.
   await Updater.applyPending(loyaltyAppVersion);

@@ -58,6 +58,9 @@ Future<void> main() async {
   ActivityLog.instance
     ..configure(app: 'kitchen', appVersion: kitchenAppVersion, apiBase: Api.base)
     ..installErrorHandlers();
+  // A Store copy moved to our installer hands its data over here, before
+  // anything opens local storage (data/app_update.dart, Handover).
+  await Handover.adopt(r'Vesopa EPOS Ltd\Vesopa Kitchen');
   // An update somebody chose to take "On next start" runs now, before
   // anything else opens (data/app_update.dart). Returns at once otherwise.
   await Updater.applyPending(kitchenAppVersion);

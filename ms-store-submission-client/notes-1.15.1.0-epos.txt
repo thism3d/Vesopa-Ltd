@@ -1,0 +1,5 @@
+Version 1.15.1.0 - Updates that work the same on every till
+
+Updates: a till from the Microsoft Store now updates the same way as any other. When Vesopa sets a newer version for your venue, the till asks between sales: Update now, or On next start. It updates through the Store in place, and everything on it is kept.
+
+Going back a version: the Microsoft Store only goes forward. If Vesopa sets your venue back to an earlier version, a Store till asks the same question and then moves to Vesopa's own installer, taking its settings, sign-in and sales with it. From then on it can be moved either way.

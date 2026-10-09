@@ -1,0 +1,3 @@
+Version 1.6.19.0 - Updates that work the same on every copy
+
+Updates: a copy from the Microsoft Store now updates the same way as any other, through the Store and in place, as soon as Vesopa sets a newer version and the Store has it. If Vesopa sets an earlier version, it moves to Vesopa's own installer with everything on it, as the Store only goes forward.

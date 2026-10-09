@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -23,8 +24,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 ///     ever updates itself. That installer writes `vesopa-install.txt` beside
 ///     the program with the version it installed; a Microsoft Store copy has
 ///     no such file. Since 2026-10-08 a Store copy is told about its venue's
-///     version too, once that version is live on the Store, and is sent to
-///     its Store page for it -- forward only, as the Store goes.
+///     version too and, once the Store has it, asks the same question and
+///     updates in place through the Store's own update service ([StoreUpdate])
+///     -- forward only, as the Store goes.
 ///   * The device says what it runs on the licence check it already makes
 ///     every five minutes ([Installation.headers]). The back office answers
 ///     with `update` when the venue is set to another version, up OR down, and
@@ -44,6 +46,7 @@ class AppUpdate {
     this.size,
     this.downgrade = false,
     this.storeId,
+    this.switchToDirect = false,
   });
 
   final String version;
@@ -54,13 +57,18 @@ class AppUpdate {
   /// The venue was moved back to an older version.
   final bool downgrade;
 
-  /// Set when this copy came from the Microsoft Store (2026-10-08): the
-  /// version is live on the Store, and this is the app's Store product. A
-  /// Store copy cannot run our installer -- that puts a second app beside it
-  /// -- so it is sent to its Store page, where the update is one press.
+  /// Set when this copy came from the Microsoft Store (2026-10-08): this is
+  /// the app's Store product. A Store copy cannot run our installer -- that
+  /// puts a second app beside it -- so it updates through the Store
+  /// ([StoreUpdate]).
   final String? storeId;
 
   bool get viaStore => storeId != null;
+
+  /// A Store copy set back to an older version (2026-10-08): the Store cannot
+  /// go back, so it moves to our own installer, taking everything on it with
+  /// it ([Handover]). From then on it moves either way like any of ours.
+  final bool switchToDirect;
 
   static AppUpdate? fromJson(Object? raw) {
     if (raw is! Map) return null;
@@ -80,6 +88,7 @@ class AppUpdate {
       sha256: sha.toLowerCase(),
       size: (raw['size'] as num?)?.toInt(),
       downgrade: raw['downgrade'] == true,
+      switchToDirect: raw['switch'] == true,
     );
   }
 }
@@ -111,6 +120,9 @@ class Installation {
         'X-Vesopa-Install': kind,
         'X-Vesopa-Device-Id': deviceId,
         if (deviceName.isNotEmpty) 'X-Vesopa-Device-Name': deviceName,
+        // This copy asks the Store itself whether an update is there, so the
+        // back office need not wait for the "live on the Store" mark.
+        if (kind == 'store') 'X-Vesopa-Store-Check': '1',
       };
 
   static Future<Installation>? _current;
@@ -161,10 +173,43 @@ class Installation {
   }
 }
 
+/// A Microsoft Store copy updating in place (2026-10-08): "on store apps it
+/// should act the same way no matter" (the owner). The Windows side is
+/// windows/runner/store_update.cpp, through Windows.Services.Store -- the
+/// update still comes from the Store, which is what the Store allows.
+class StoreUpdate {
+  static const _channel = MethodChannel('vesopa/store_update');
+
+  /// The newest version the Store has for this copy, or null when it has
+  /// none (or this is not a Store package, or the Store did not answer).
+  static Future<String?> available() async {
+    try {
+      final r = await _channel.invokeMethod<Object?>('check');
+      if (r is! Map || r['available'] != true) return null;
+      final v = r['version'];
+      return v is String && v.isNotEmpty ? v : '';
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Download and install it. On success Windows closes the app and opens it
+  /// again on the new version; anything else returns and the app carries on.
+  static Future<String> install() async {
+    try {
+      return await _channel.invokeMethod<String>('install') ?? 'failed';
+    } catch (_) {
+      return 'failed';
+    }
+  }
+}
+
 /// Fetching and running installers.
 class Updater {
   static const _pendingKey = 'vesopa_pending_update';
   static const _triedKey = 'vesopa_update_tried';
+  static const _pendingStoreKey = 'vesopa_pending_store_update';
+  static const _pendingMoveKey = 'vesopa_pending_move_to_direct';
 
   /// Versions this run has already dealt with, so a prompt waved away is not
   /// put back every five minutes.
@@ -186,9 +231,11 @@ class Updater {
   }
 
   /// The installer for [update], downloaded and checked, or null.
-  static Future<File?> fetch(AppUpdate update) async {
+  static Future<File?> fetch(AppUpdate update, {Directory? into}) async {
     try {
-      final dir = _folder();
+      // A Store copy's AppData is its own private copy, which an installer
+      // started outside it cannot see: it downloads to [Handover]'s folder.
+      final dir = into ?? _folder();
       await dir.create(recursive: true);
       final file = File('${dir.path}\\${update.sha256.substring(0, 16)}-setup.exe');
       if (await _matches(file, update.sha256)) return file;
@@ -256,6 +303,7 @@ class Updater {
     if (kIsWeb || !Platform.isWindows) return;
     try {
       final me = await Installation.current(builtVersion);
+      if (me.kind == 'store') return await _applyPendingStore(me);
       if (!me.updatable) return;
       final prefs = await SharedPreferences.getInstance();
       final raw = prefs.getString(_pendingKey);
@@ -275,10 +323,57 @@ class Updater {
     } catch (_) {}
   }
 
+  /// "On next start" on a Store copy: take the Store's update now, if it
+  /// still has one. Asked once: a failure does not loop at every start.
+  static Future<void> _applyPendingStore(Installation me) async {
+    final prefs = await SharedPreferences.getInstance();
+    final move = prefs.getString(_pendingMoveKey);
+    if (move != null) {
+      await prefs.remove(_pendingMoveKey);
+      final pending = jsonDecode(move) as Map<String, dynamic>;
+      final update = AppUpdate.fromJson(pending);
+      final file = File(pending['path'] as String? ?? '');
+      if (update != null && await _matches(file, update.sha256)) {
+        await Handover.leave(update, file);
+      }
+    }
+    final version = prefs.getString(_pendingStoreKey);
+    if (version == null) return;
+    await prefs.remove(_pendingStoreKey);
+    if (_same(version, me.version)) return;
+    if (await StoreUpdate.available() == null) return;
+    await prefs.setString(_triedKey, version);
+    await StoreUpdate.install();
+  }
+
+  static Future<void> _moveLater(AppUpdate update, File installer) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _pendingMoveKey,
+        jsonEncode({
+          'version': update.version,
+          'url': update.url,
+          'sha256': update.sha256,
+          'downgrade': true,
+          'switch': true,
+          'path': installer.path,
+        }),
+      );
+    } catch (_) {}
+  }
+
+  static Future<void> _laterFromStore(AppUpdate update) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_pendingStoreKey, update.version);
+    } catch (_) {}
+  }
+
   /// Whether to offer [update] to this copy now. A Store update only to a
   /// Store copy, an installer only to one of ours.
   static Future<bool> _wanted(AppUpdate update, Installation me) async {
-    if (update.viaStore ? me.kind != 'store' : !me.updatable) return false;
+    if (update.viaStore || update.switchToDirect ? me.kind != 'store' : !me.updatable) return false;
     if (_same(update.version, me.version)) return false;
     if (_handled.contains(update.version)) return false;
     try {
@@ -304,7 +399,7 @@ class Updater {
 /// Offer [update]: fetch it quietly, then ask "Update now" or "On next start".
 ///
 /// Safe to call on every licence answer: it asks at most once per version per
-/// run, and does nothing for a Store copy or when nothing changed. [ready] is
+/// run, and does nothing when nothing changed. [ready] is
 /// checked again just before asking, so a till can decline while a bill is
 /// open and be asked at the next check instead.
 Future<void> offerUpdate(
@@ -319,9 +414,39 @@ Future<void> offerUpdate(
   if (!await Updater._wanted(update, me)) return;
   if (ready != null && !ready()) return;
   Updater._handled.add(update.version);
+  if (update.switchToDirect) {
+    final file = await Updater.fetch(update, into: Handover.folder());
+    if (file == null || !context.mounted || (ready != null && !ready())) {
+      Updater._handled.remove(update.version);
+      return;
+    }
+    final now = await _ask(context, update, appName: appName, current: me.version, version: update.version);
+    if (now == true) {
+      await Handover.leave(update, file);
+    } else {
+      await Updater._moveLater(update, file);
+    }
+    return;
+  }
   if (update.viaStore) {
-    if (!context.mounted) return;
-    await _offerFromStore(context, update, appName: appName, current: me.version);
+    // Only once the Store has it: until then (certification) there is
+    // nothing to install, so ask again at the next check.
+    final there = await StoreUpdate.available();
+    if (there == null || !context.mounted || (ready != null && !ready())) {
+      Updater._handled.remove(update.version);
+      return;
+    }
+    final now = await _ask(context, update, appName: appName, current: me.version,
+        version: there.isEmpty ? update.version : _short(there));
+    if (now == true) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(Updater._triedKey, update.version);
+      } catch (_) {}
+      await StoreUpdate.install();
+    } else {
+      await Updater._laterFromStore(update);
+    }
     return;
   }
   final file = await Updater.fetch(update);
@@ -333,30 +458,7 @@ Future<void> offerUpdate(
     Updater._handled.remove(update.version);
     return;
   }
-  final now = await showDialog<bool>(
-    context: context,
-    barrierDismissible: false,
-    builder: (context) => AlertDialog(
-      title: Text(update.downgrade ? '$appName is moving to version ${update.version}' : 'A new version of $appName is ready'),
-      content: Text(
-        update.downgrade
-            ? 'Vesopa has set this device back to version ${update.version} (it has ${me.version}). '
-                'Updating closes $appName for about a minute and opens it again.'
-            : 'Version ${update.version} is ready to install (this device has ${me.version}). '
-                'Updating closes $appName for about a minute and opens it again.',
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(false),
-          child: const Text('On next start'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop(true),
-          child: const Text('Update now'),
-        ),
-      ],
-    ),
-  );
+  final now = await _ask(context, update, appName: appName, current: me.version, version: update.version);
   if (now == true) {
     await Updater.install(update, file);
   } else {
@@ -364,59 +466,73 @@ Future<void> offerUpdate(
   }
 }
 
-/// A Microsoft Store copy: "Open the Store" or "Later". Later is asked again
-/// the next time the app starts; the Store itself may well have updated it
-/// by then.
-Future<void> _offerFromStore(
+/// "Update now" (true) or "On next start", the same for every kind of copy.
+Future<bool?> _ask(
   BuildContext context,
   AppUpdate update, {
   required String appName,
   required String current,
-}) async {
-  final go = await showDialog<bool>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: Text('A new version of $appName is in the Microsoft Store'),
-      content: Text(
-        'Version ${update.version} is ready (this device has $current). '
-        'Open the Store and press Update. $appName closes for a moment and '
-        'opens again, with everything on it kept.',
+  required String version,
+}) =>
+    showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Text(update.downgrade ? '$appName is moving to version $version' : 'A new version of $appName is ready'),
+        content: Text(
+          update.switchToDirect
+              ? 'Vesopa has set this device back to version $version (it has $current). '
+                  'The Microsoft Store cannot go back a version, so this moves $appName to '
+                  "Vesopa's own installer, with everything on it. It closes for about a minute "
+                  'and opens again.'
+              : update.downgrade
+              ? 'Vesopa has set this device back to version $version (it has $current). '
+                  'Updating closes $appName for about a minute and opens it again.'
+              : 'Version $version is ready to install (this device has $current). '
+                  'Updating closes $appName for about a minute and opens it again.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('On next start'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Update now'),
+          ),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(false),
-          child: const Text('Later'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop(true),
-          child: const Text('Open the Store'),
-        ),
-      ],
-    ),
-  );
-  if (go != true) return;
-  try {
-    // The Store's own link to this app's page. explorer.exe hands a protocol
-    // link to whatever owns it, which is the Store, from inside the package
-    // as well as out.
-    await Process.start(
-      'explorer.exe',
-      ['ms-windows-store://pdp/?ProductId=${update.storeId}&mode=mini'],
-      mode: ProcessStartMode.detached,
     );
-  } catch (_) {}
-}
+
+/// 1.15.1.0 as people read it: 1.15.1.
+String _short(String v) => Updater._norm(v);
 
 /// For a screen customers face (the customer display, the kiosk), where a
 /// question nobody at the counter can answer must not appear: fetch [update]
 /// quietly and take it the next time the app starts.
 ///
-/// A Store update is not staged: nothing can press Update in the Store for a
-/// screen nobody at the counter is using, and the Store updates its own apps.
+/// A Store copy does the same: once the Store has the update, it is taken
+/// at the next start.
 Future<void> stageUpdate(AppUpdate? update, {required String builtVersion}) async {
-  if (update == null || update.viaStore || kIsWeb || !Platform.isWindows) return;
+  if (update == null || kIsWeb || !Platform.isWindows) return;
   final me = await Installation.current(builtVersion);
   if (!await Updater._wanted(update, me)) return;
+  if (update.switchToDirect) {
+    Updater._handled.add(update.version);
+    final file = await Updater.fetch(update, into: Handover.folder());
+    if (file == null) {
+      Updater._handled.remove(update.version);
+      return;
+    }
+    await Updater._moveLater(update, file);
+    return;
+  }
+  if (update.viaStore) {
+    if (await StoreUpdate.available() == null) return; // not there yet: next check
+    Updater._handled.add(update.version);
+    await Updater._laterFromStore(update);
+    return;
+  }
   Updater._handled.add(update.version);
   final file = await Updater.fetch(update);
   if (file == null) {
@@ -424,4 +540,125 @@ Future<void> stageUpdate(AppUpdate? update, {required String builtVersion}) asyn
     return;
   }
   await Updater.later(update, file);
+}
+
+/// Moving a Microsoft Store copy to our own installer (2026-10-08): "I need
+/// to move back" (the owner), which the Store cannot do.
+///
+/// A Store copy keeps its AppData in a private copy under
+/// %LOCALAPPDATA%\Packages\<family>\LocalCache\Roaming, so:
+///
+///   1. The Store copy downloads our installer (checked against its SHA-256)
+///      into a plain folder in the user's profile, leaves a marker there,
+///      starts the installer through Explorer -- outside its package, where
+///      an install is a real one -- and closes.
+///   2. Our copy, first thing at its first start ([adopt]), sees the marker,
+///      copies the Store copy's whole data folder over -- settings, sign-in,
+///      and the till's database with its -wal file of unsent sales -- keeps
+///      anything already there beside it, and removes the Store copy, so
+///      nobody opens the old one by mistake.
+class Handover {
+  static Directory folder() => Directory(
+        '${Platform.environment['USERPROFILE'] ?? Directory.systemTemp.path}\\Vesopa Handover',
+      );
+
+  static String _exe() =>
+      File(Platform.resolvedExecutable).uri.pathSegments.last.toLowerCase();
+
+  static File _marker() => File('${folder().path}\\${_exe()}.move');
+
+  /// The Store copy's half: hand over to [installer] and close.
+  static Future<void> leave(AppUpdate update, File installer) async {
+    try {
+      final dir = folder();
+      await dir.create(recursive: true);
+      await _marker().writeAsString(jsonEncode({
+        'version': update.version,
+        'at': DateTime.now().toIso8601String(),
+      }));
+      // A moment's pause first, so this copy has closed its files.
+      final script = File('${dir.path}\\move-${_exe()}.cmd');
+      await script.writeAsString(
+        '@echo off\r\n'
+        'ping -n 4 127.0.0.1 >nul\r\n'
+        '"${installer.path}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /RELAUNCH=1\r\n',
+      );
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(Updater._triedKey, update.version);
+      await Process.start('explorer.exe', [script.path], mode: ProcessStartMode.detached);
+    } catch (_) {
+      return; // Could not start it: carry on as we are.
+    }
+    exit(0);
+  }
+
+  /// Our copy's half. Call first thing in main(), before anything opens
+  /// local storage. [dataFolder] is `<CompanyName>\<ProductName>` from
+  /// windows/runner/Runner.rc, where Windows keeps this app's AppData.
+  static Future<void> adopt(String dataFolder) async {
+    if (kIsWeb || !Platform.isWindows) return;
+    try {
+      final marker = _marker();
+      if (!marker.existsSync()) return;
+      final mine = File('${File(Platform.resolvedExecutable).parent.path}\\vesopa-install.txt');
+      if (!mine.existsSync()) return; // the Store copy itself: not yet
+      final local = Platform.environment['LOCALAPPDATA'];
+      final roaming = Platform.environment['APPDATA'];
+      if (local == null || roaming == null) return;
+      Directory? from;
+      String? family;
+      var newest = DateTime(1970);
+      for (final pkg in Directory('$local\\Packages').listSync().whereType<Directory>()) {
+        final d = Directory('${pkg.path}\\LocalCache\\Roaming\\$dataFolder');
+        if (!d.existsSync()) continue;
+        final t = d.statSync().modified;
+        if (from == null || t.isAfter(newest)) {
+          from = d;
+          newest = t;
+          family = pkg.uri.pathSegments.where((x) => x.isNotEmpty).last;
+        }
+      }
+      if (from == null) {
+        marker.deleteSync();
+        return;
+      }
+      final to = Directory('$roaming\\$dataFolder');
+      if (to.existsSync()) {
+        // Kept beside it, not thrown away. Copied rather than renamed: the
+        // activity log may already hold a file open in there.
+        final stamp = DateTime.now().toIso8601String().replaceAll(RegExp(r'[^0-9]'), '').substring(0, 14);
+        await _copy(to, Directory('${to.path} before move $stamp'));
+      }
+      await _copy(from, to);
+      marker.deleteSync();
+      // The old Store copy goes, now that everything on it is here.
+      await Process.start(
+        'powershell',
+        [
+          '-NoProfile',
+          '-Command',
+          "Get-AppxPackage | Where-Object { \$_.PackageFamilyName -eq '$family' } | Remove-AppxPackage",
+        ],
+        mode: ProcessStartMode.detached,
+      );
+    } catch (_) {
+      // Nothing here may stop the app opening.
+    }
+  }
+
+  static Future<void> _copy(Directory from, Directory to) async {
+    await to.create(recursive: true);
+    for (final e in from.listSync()) {
+      final name = e.uri.pathSegments.where((x) => x.isNotEmpty).last;
+      if (e is Directory) {
+        await _copy(e, Directory('${to.path}\\$name'));
+      } else if (e is File) {
+        try {
+          await e.copy('${to.path}\\$name');
+        } catch (_) {
+          // One file held open (a log): the rest still comes over.
+        }
+      }
+    }
+  }
 }

@@ -20,6 +20,9 @@ Future<void> main() async {
   ActivityLog.instance
     ..configure(app: 'express', appVersion: ExpressConfig.version, apiBase: ExpressConfig.resolvedBase)
     ..installErrorHandlers();
+  // A Store copy moved to our installer hands its data over here, before
+  // anything opens local storage (data/app_update.dart, Handover).
+  await Handover.adopt(r'Vesopa EPOS Ltd\Vesopa Express');
   // An update somebody chose to take "On next start" runs now, before
   // anything else opens (data/app_update.dart). Returns at once otherwise.
   await Updater.applyPending(ExpressConfig.version);

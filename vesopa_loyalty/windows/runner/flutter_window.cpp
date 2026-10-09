@@ -11,6 +11,7 @@
 #include <winrt/Windows.Networking.PushNotifications.h>
 
 #include "flutter/generated_plugin_registrant.h"
+#include "store_update.h"
 
 namespace {
 
@@ -71,6 +72,8 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+  store_update::Register(flutter_controller_->engine()->messenger(),
+                         GetHandle());
 
   HWND window = GetHandle();
   g_wns_channel =
@@ -108,6 +111,7 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  store_update::Unregister();
   g_wns_pending = nullptr;
   g_wns_channel = nullptr;
   if (flutter_controller_) {
@@ -121,6 +125,9 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
+  if (auto answer = store_update::HandleMessage(message, lparam)) {
+    return *answer;
+  }
   if (message == kWnsChannelReady) {
     std::unique_ptr<std::string> uri(reinterpret_cast<std::string*>(lparam));
     if (g_wns_pending) {

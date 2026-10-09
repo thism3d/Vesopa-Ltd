@@ -17,7 +17,7 @@
     <% } %>
   </form>
 </div>
-<p class="muted lead">One choice per venue moves every copy it has. Copies installed from our EXE install that version, up or down. Microsoft Store copies are sent to the Store for it, when the version is live there (mark it on <a href="/downloads">Downloads</a>); the Store only goes forward.</p>
+<p class="muted lead">One choice per venue moves every copy it has, up or down. Copies installed from our EXE install that version. Microsoft Store copies (from version 1.15.1 on) update through the Store as soon as it has the version; set back to an older one, they move to our EXE with everything on them, as the Store only goes forward.</p>
 <% if (!enabled) { %><div class="flash">Update prompts are off, so devices are not told about these choices yet. The table still shows what every device runs. Install by hand from <a href="/downloads">Downloads</a> meanwhile.</div><% } %>
 <% if (!ready) { %><div class="flash bad">RELEASES_SECRET is not set on this server, so a version cannot be chosen for venues yet.</div><% } %>
 

@@ -146,4 +146,4 @@ class VesopaBrand {
 
 /// This build's version, for the activity log and the version check
 /// (data/app_update.dart). Keep in step with pubspec.yaml.
-const kitchenAppVersion = '1.7.4.0';
+const kitchenAppVersion = '1.7.5.0';

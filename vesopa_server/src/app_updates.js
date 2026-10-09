@@ -106,7 +106,7 @@ async function pinFor(db, office, app) {
  * `version` is what the device runs. Older AND newer pins are both offered:
  * moving a venue back is the point ("I can downgrade them").
  */
-async function offerFor(db, { office, app, version, install }) {
+async function offerFor(db, { office, app, version, install, storeCheck = false }) {
   if ((install !== 'direct' && install !== 'store') || !APPS.includes(app) || !normalise(version)) return null;
   try {
     if (!(await enabled(db))) return null;
@@ -114,12 +114,25 @@ async function offerFor(db, { office, app, version, install }) {
     if (!pin || !pin.version) return null;
     const direction = compare(pin.version, version);
     if (direction === 0) return null;
-    // A Microsoft Store copy (2026-10-08): pointed at the Store, and only
-    // forward, and only once that version is live there (store_ok, set on
-    // admin.vesopa.com). The Store cannot go back a version, and a prompt for
-    // a version the Store does not have yet is a button that does nothing.
+    // A Microsoft Store copy (2026-10-08): only forward -- the Store cannot
+    // go back a version. "It should act the same way no matter" (the owner):
+    // a copy that can ask the Store itself whether the update is there yet
+    // (storeCheck, X-Vesopa-Store-Check, from EPOS 1.15.1 on) is told
+    // straight away and updates in place. An older one (1.15.0) can only open
+    // its Store page, so it waits for the "live on the Store" mark (store_ok).
     if (install === 'store') {
-      if (!Number(pin.store_ok) || direction < 0 || !STORE_IDS[app]) return null;
+      if (!STORE_IDS[app]) return null;
+      if (direction < 0) {
+        // Set back: the Store cannot go back, so a copy that knows how
+        // (storeCheck) moves to our installer, data and all -- "I need to move
+        // back" (the owner). switch says so; the installer is the venue's.
+        if (!storeCheck || !pin.url || !pin.sha256) return null;
+        return {
+          version: normalise(pin.version), url: pin.url, sha256: pin.sha256,
+          size: pin.size == null ? null : Number(pin.size), downgrade: true, switch: true,
+        };
+      }
+      if (!storeCheck && !Number(pin.store_ok)) return null;
       return { version: normalise(pin.version), store: true, store_id: STORE_IDS[app], downgrade: false };
     }
     if (!pin.url || !pin.sha256) return null;
@@ -143,6 +156,7 @@ function fromHeaders(req) {
     deviceId: clamp(req.get('x-vesopa-device-id'), 64),
     deviceName: clamp(req.get('x-vesopa-device-name'), 120),
     install: clamp(req.get('x-vesopa-install'), 8),
+    storeCheck: req.get('x-vesopa-store-check') === '1',
   };
 }
 
@@ -157,7 +171,7 @@ function publicRoutes({ pool }) {
     const app = 'loyalty';
     const h = fromHeaders(req);
     res.set('Cache-Control', 'no-store');
-    res.json({ update: await offerFor(pool, { office: DEFAULT, app, version: h.version || req.query.version, install: h.install || req.query.install }) });
+    res.json({ update: await offerFor(pool, { office: DEFAULT, app, version: h.version || req.query.version, install: h.install || req.query.install, storeCheck: h.storeCheck }) });
   });
   return router;
 }
