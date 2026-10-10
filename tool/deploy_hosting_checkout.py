@@ -32,12 +32,11 @@ APP = f"/home/{base.USER}/web/{DOMAIN}/private/nodeapp"
 
 
 def at_base(path):
+    """sha256 of the file at BASE_COMMIT with CRs removed, or "" if it did not exist."""
     r = subprocess.run(["git", "show", f"{BASE_COMMIT}:{path}"], cwd=base.ROOT, capture_output=True)
-    if r.returncode != 0:
-        return set()
-    # A Windows checkout may have uploaded it with CRLF endings; both count.
-    return {hashlib.sha256(r.stdout).hexdigest(),
-            hashlib.sha256(r.stdout.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")).hexdigest()}
+    # Windows checkouts upload CRLF, sometimes mixed with LF, so line endings
+    # never count as a difference.
+    return hashlib.sha256(r.stdout.replace(b"\r", b"")).hexdigest() if r.returncode == 0 else ""
 
 
 def main():
@@ -54,9 +53,9 @@ def main():
         drift = []
         for f in files:
             live = posixpath.join(APP, f[len(FOLDER) + 1:])
-            _, out = base.sh(client, f"sha256sum {live} 2>/dev/null | cut -d' ' -f1", quiet=True)
+            _, out = base.sh(client, f"test -f {live} && tr -d '\\r' < {live} | sha256sum | cut -d' ' -f1", quiet=True)
             want = at_base(f)
-            same = out.strip() in want
+            same = out.strip() == want  # a new file is absent on both sides
             print(f"   {'ok   ' if same else 'DRIFT'} {f}")
             if not same:
                 drift.append(f)
