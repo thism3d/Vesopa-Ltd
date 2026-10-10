@@ -13,6 +13,11 @@ anywhere else with the same three variables set:
     ASC_ISSUER_ID   the Issuer ID
     ASC_KEY_P8      the AuthKey_XXXXXXXXXX.p8 file's contents (or ASC_KEY_PATH)
 
+signing     makes this run's distribution certificate and App Store profiles
+            (app and Watch app) into a folder, with ExportOptions.plist;
+            sign-project then sets the venue's project to sign with them.
+            See "signing" below for why not Xcode's automatic signing.
+
 prepare     registers the App IDs (the app and its Watch app) with Push
             Notifications on, finds the app's record, and prints the next free
             build number for venue.json's version (as `build=N`, for the
@@ -44,6 +49,7 @@ Needs PyJWT with its crypto extra (`pip install "pyjwt[crypto]"`).
 import hashlib
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -334,6 +340,141 @@ def cmd_prepare(venue_name):
             f.write(f"build={build}\napp={app['id']}\n")
     else:
         print(f"build={build}")
+
+
+# ---- signing ------------------------------------------------------------------
+#
+# WHY NOT XCODE'S AUTOMATIC SIGNING. On a build machine Xcode's automatic
+# signing archives with a development profile, and Apple will not make one for
+# a team with no registered iPhone ("Your team has no devices"). App Store
+# profiles need no devices, so they are made here instead: a distribution
+# certificate from a key made on the runner (it never leaves it), and a
+# profile for the app and one for its Watch app. Each is named after the run's
+# certificate, so the next run revokes it: the team's certificate limit never
+# fills. Revoking does not touch what is already uploaded -- Apple re-signs
+# everything it distributes.
+
+CI_PREFIX = "Vesopa CI"
+
+
+def cmd_signing(venue_name, out_dir):
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.x509.oid import NameOID
+    import base64
+    import plistlib
+
+    _, v, _ = load_venue(venue_name)
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    c = Client()
+
+    # What earlier runs left: their profiles name their certificates.
+    old_certs = set()
+    for p in c.all("/v1/profiles", **{"filter[profileType]": "IOS_APP_STORE", "limit": "200"}):
+        name = p["attributes"].get("name", "")
+        if name.startswith(CI_PREFIX):
+            m = re.search(r"cert ([A-Z0-9]+)$", name)
+            if m:
+                old_certs.add(m.group(1))
+            try:
+                c.delete(f"/v1/profiles/{p['id']}")
+            except AppleError as e:
+                note(f"  old profile {name}: {e.detail()}")
+    for cid in old_certs:
+        try:
+            c.delete(f"/v1/certificates/{cid}")
+            note(f"  revoked the previous run's certificate {cid}")
+        except AppleError as e:
+            note(f"  previous certificate {cid}: {e.detail()}")
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    csr = (
+        x509.CertificateSigningRequestBuilder()
+        .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, CI_PREFIX)]))
+        .sign(key, hashes.SHA256())
+    )
+    try:
+        cert = c.post("/v1/certificates", {"data": {"type": "certificates", "attributes": {
+            "certificateType": "DISTRIBUTION",
+            "csrContent": csr.public_bytes(serialization.Encoding.PEM).decode(),
+        }}})["data"]
+    except AppleError as e:
+        raise SystemExit(
+            f"Apple would not make a distribution certificate: {e.detail()}\n"
+            "If the team is at its limit, revoke an unused one in Certificates, Identifiers & Profiles."
+        )
+    note(f"  distribution certificate {cert['id']}")
+    (out / "dist.key.pem").write_bytes(key.private_bytes(
+        serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
+    (out / "dist.cer").write_bytes(base64.b64decode(cert["attributes"]["certificateContent"]))
+
+    profiles = {}
+    for identifier in (v["app_id"], f"{v['app_id']}.watchkitapp"):
+        bundles = [b for b in c.all("/v1/bundleIds", **{"filter[identifier]": identifier})
+                   if b["attributes"]["identifier"] == identifier]
+        if not bundles:
+            raise SystemExit(f"No App ID {identifier}: run `prepare` first.")
+        name = f"{CI_PREFIX} {identifier} cert {cert['id']}"
+        prof = c.post("/v1/profiles", {"data": {
+            "type": "profiles",
+            "attributes": {"name": name, "profileType": "IOS_APP_STORE"},
+            "relationships": {
+                "bundleId": {"data": {"type": "bundleIds", "id": bundles[0]["id"]}},
+                "certificates": {"data": [{"type": "certificates", "id": cert["id"]}]},
+            },
+        }})["data"]
+        content = base64.b64decode(prof["attributes"]["profileContent"])
+        uuid = prof["attributes"]["uuid"]
+        (out / f"{uuid}.mobileprovision").write_bytes(content)
+        profiles[identifier] = name
+        note(f"  App Store profile for {identifier}")
+
+    with open(out / "ExportOptions.plist", "wb") as f:
+        plistlib.dump({
+            "method": "app-store-connect",
+            "destination": "upload",
+            "teamID": v.get("apple_team", ""),
+            "signingStyle": "manual",
+            "signingCertificate": "Apple Distribution",
+            "provisioningProfiles": profiles,
+            "uploadSymbols": True,
+            "manageAppVersionAndBuildNumber": False,
+        }, f)
+    (out / "profiles.json").write_text(json.dumps(profiles, indent=2))
+
+
+def cmd_sign_project(venue_name, profiles_json):
+    """Manual signing in the venue's project, target by target: the app and
+    the Watch app each with its own App Store profile."""
+    venue_dir, v, _ = load_venue(venue_name)
+    profiles = json.loads(Path(profiles_json).read_text())
+    pbx = venue_dir / "build" / "app" / "ios" / "Runner.xcodeproj" / "project.pbxproj"
+    text = pbx.read_text(encoding="utf-8")
+    out, changed = [], 0
+    # Each build configuration is a `buildSettings = { ... };` block; the ones
+    # for the app and the Watch app are told apart by their bundle id.
+    for block in re.split(r"(buildSettings = \{.*?\n\t\t\t\};)", text, flags=re.S):
+        m = re.search(r"PRODUCT_BUNDLE_IDENTIFIER = ([^;]+);", block) if block.startswith("buildSettings") else None
+        ident = m.group(1).strip('"') if m else None
+        if ident in profiles:
+            block = re.sub(r"\n\t\t\t\tCODE_SIGN_STYLE = [^;]+;", "", block)
+            block = re.sub(r"\n\t\t\t\t\"?CODE_SIGN_IDENTITY(\[[^\]]*\])?\"? = [^;]+;", "", block)
+            block = re.sub(r"\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = [^;]+;", "", block)
+            block = block.replace("buildSettings = {", (
+                "buildSettings = {\n"
+                "\t\t\t\tCODE_SIGN_STYLE = Manual;\n"
+                "\t\t\t\tCODE_SIGN_IDENTITY = \"Apple Distribution\";\n"
+                f"\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"{profiles[ident]}\";"
+            ), 1)
+            changed += 1
+        out.append(block)
+    if not changed:
+        raise SystemExit(f"{pbx}: no build settings for {', '.join(profiles)}")
+    pbx.write_text("".join(out), encoding="utf-8")
+    note(f"  manual signing on {changed} build configurations")
+
 
 
 # ---- store ----------------------------------------------------------------------
@@ -830,11 +971,15 @@ def summary():
 
 
 def main():
-    if len(sys.argv) < 3 or sys.argv[1] not in ("status", "prepare", "store", "testflight"):
+    if len(sys.argv) < 3 or sys.argv[1] not in ("status", "prepare", "signing", "sign-project", "store", "testflight"):
         raise SystemExit(__doc__)
     cmd, venue = sys.argv[1], sys.argv[2]
     if cmd == "status":
         cmd_status(venue)
+    elif cmd == "signing":
+        cmd_signing(venue, sys.argv[3])
+    elif cmd == "sign-project":
+        cmd_sign_project(venue, sys.argv[3])
     elif cmd == "prepare":
         cmd_prepare(venue)
     elif cmd == "store":

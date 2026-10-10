@@ -112,6 +112,37 @@ jobs:
           flutter build ios --release --no-codesign --dart-define-from-file=venue_defines.json \
             ${BUILD_NUMBER:+--build-number=$BUILD_NUMBER}
 
+      # Xcode's automatic signing wants a development profile to archive, and
+      # Apple will not make one for a team with no registered iPhone. So:
+      # a distribution certificate and App Store profiles made for this run
+      # (app_store_connect.py signing), in a keychain of the run's own.
+      - name: Distribution signing
+        if: steps.key.outputs.upload == 'true' && inputs.mode != 'check'
+        env:
+          ASC_KEY_PATH: ${{ runner.temp }}/keys/AuthKey_${{ secrets.ASC_KEY_ID }}.p8
+        run: |
+          S="$RUNNER_TEMP/signing"
+          "$RUNNER_TEMP/asc/bin/python" vesopa_loyalty/tool/app_store_connect.py signing "$VENUE" "$S"
+          pass="$(uuidgen)"
+          # The system LibreSSL writes the older PKCS#12 that the keychain reads.
+          /usr/bin/openssl x509 -inform DER -in "$S/dist.cer" -out "$S/dist.pem"
+          /usr/bin/openssl pkcs12 -export -inkey "$S/dist.key.pem" -in "$S/dist.pem" -out "$S/dist.p12" -passout "pass:$pass"
+          KC="$RUNNER_TEMP/signing.keychain-db"
+          security create-keychain -p "$pass" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$pass" "$KC"
+          curl -fsSL -o "$S/AppleWWDRCAG3.cer" https://www.apple.com/certificateauthority/AppleWWDRCAG3.cer
+          security import "$S/AppleWWDRCAG3.cer" -k "$KC" -A || true
+          security import "$S/dist.p12" -k "$KC" -P "$pass" -A -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$pass" "$KC" >/dev/null
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          security find-identity -v -p codesigning "$KC"
+          for d in "$HOME/Library/MobileDevice/Provisioning Profiles" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
+            mkdir -p "$d"; cp "$S"/*.mobileprovision "$d/"
+          done
+          rm -f "$S/dist.key.pem" "$S/dist.p12"
+          python3 vesopa_loyalty/tool/app_store_connect.py sign-project "$VENUE" "$S/profiles.json"
+
       - name: Archive (iPhone app with the Watch app)
         if: steps.key.outputs.upload == 'true' && inputs.mode != 'check'
         working-directory: ${{ inputs.venue }}/build/app
@@ -121,11 +152,7 @@ jobs:
             -scheme Runner \
             -configuration Release \
             -destination 'generic/platform=iOS' \
-            -archivePath "$RUNNER_TEMP/Venue.xcarchive" \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey_$ASC_KEY_ID.p8" \
-            -authenticationKeyID "$ASC_KEY_ID" \
-            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+            -archivePath "$RUNNER_TEMP/Venue.xcarchive"
 
       - name: Sign and upload to App Store Connect
         if: steps.key.outputs.upload == 'true' && inputs.mode != 'check'
@@ -133,9 +160,8 @@ jobs:
         run: |
           xcodebuild -exportArchive \
             -archivePath "$RUNNER_TEMP/Venue.xcarchive" \
-            -exportOptionsPlist ios/ExportOptions.plist \
+            -exportOptionsPlist "$RUNNER_TEMP/signing/ExportOptions.plist" \
             -exportPath "$RUNNER_TEMP/export" \
-            -allowProvisioningUpdates \
             -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey_$ASC_KEY_ID.p8" \
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID"
@@ -160,6 +186,8 @@ jobs:
         run: |
           "$RUNNER_TEMP/asc/bin/python" vesopa_loyalty/tool/app_store_connect.py testflight "$VENUE" "${{ steps.asc.outputs.build }}"
 
-      - name: Remove the key
+      - name: Remove the key and the signing keychain
         if: always()
-        run: rm -rf "$RUNNER_TEMP/keys"
+        run: |
+          rm -rf "$RUNNER_TEMP/keys" "$RUNNER_TEMP/signing"
+          security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true
