@@ -136,7 +136,7 @@ class _VenuePickerPageState extends ConsumerState<VenuePickerPage> {
                           ? const SizedBox(
                               width: 20,
                               height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2.5),
+                              child: CircularProgressIndicator.adaptive(strokeWidth: 2.5),
                             )
                           : const Icon(Icons.login),
                       label: const Text('Continue with Vesopa'),

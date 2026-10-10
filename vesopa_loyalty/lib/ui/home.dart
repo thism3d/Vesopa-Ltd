@@ -16,6 +16,7 @@ import 'history_page.dart';
 import 'inbox_page.dart';
 import 'membership_section.dart';
 import 'venue_page.dart';
+import '../data/venue_style.dart';
 import 'widgets.dart';
 
 /// The app, signed in: the card, what has happened on it, the venue's news,
@@ -171,6 +172,11 @@ class _HomePageState extends ConsumerState<HomePage> with WidgetsBindingObserver
     }
 
     final appBar = AppBar(
+      // A venue app's bar is its club colour, moving (lib/data/venue_style.dart).
+      flexibleSpace: VenueStyle.enabled ? const ClubGradient(intensity: 0.6) : null,
+      backgroundColor: VenueStyle.enabled ? Colors.transparent : null,
+      foregroundColor: VenueStyle.enabled ? Colors.white : null,
+      titleTextStyle: VenueStyle.enabled ? Theme.of(context).appBarTheme.titleTextStyle?.copyWith(color: Colors.white) : null,
       titleSpacing: 12,
       title: Row(
         children: [

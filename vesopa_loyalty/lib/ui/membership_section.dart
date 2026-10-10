@@ -153,15 +153,15 @@ class MembershipSection extends ConsumerWidget {
         : money(amount);
     final go = await showDialog<bool>(
       context: context,
-      builder: (dialog) => AlertDialog(
+      builder: (dialog) => AlertDialog.adaptive(
         title: Text(kind == 'join' ? 'Join $planName' : 'Renew $planName'),
         content: Text(
           '$breakdown.\n\nYou pay on Dojo\'s secure payment page, which opens in your browser. '
           'Come back to the app when you have paid and your membership will update.',
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(dialog, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(dialog, true), child: Text('Pay ${money(amount)}')),
+          DialogAction(onPressed: () => Navigator.pop(dialog, false), child: const Text('Cancel')),
+          DialogAction(primary: true, onPressed: () => Navigator.pop(dialog, true), child: Text('Pay ${money(amount)}')),
         ],
       ),
     );

@@ -41,7 +41,10 @@ const _wait = Duration(minutes: 5);
 
 bool get _inApp => Platform.isIOS;
 
-Future<VesopaAnswer?> startVesopaSignIn({required String slug, required String venue}) async {
+/// [idp] goes straight to one way in on auth.vesopa.com -- `apple`, `google`,
+/// `phone` or `passkey` -- for the buttons that name one; without it the
+/// member sees Vesopa's own sign-in page with all of them.
+Future<VesopaAnswer?> startVesopaSignIn({required String slug, required String venue, String? idp}) async {
   if (_clientId.isEmpty) {
     return const VesopaAnswer(error: 'This app was built without a Vesopa sign-in.');
   }
@@ -65,6 +68,7 @@ Future<VesopaAnswer?> startVesopaSignIn({required String slug, required String v
       'nonce': nonce,
       'code_challenge': challenge,
       'code_challenge_method': 'S256',
+      'idp': ?idp,
     });
     // AN IPHONE SIGNS IN INSIDE THE APP. Sent out to Safari, the app is
     // suspended within seconds and this listener with it, so the page Vesopa

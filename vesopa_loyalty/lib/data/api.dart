@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 
 /// Something the server said no to, in words a customer can read.
 class ApiError implements Exception {
@@ -279,7 +280,7 @@ class LoyaltyApi {
   Future<String> uploadPhoto(List<int> bytes, String filename) async {
     final req = http.MultipartRequest('POST', _u('/loyalty/v1/me/photo'))
       ..headers.addAll({if (token != null) 'Authorization': 'Bearer $token', 'Accept': 'application/json'})
-      ..files.add(http.MultipartFile.fromBytes('image', bytes, filename: filename));
+      ..files.add(http.MultipartFile.fromBytes('image', bytes, filename: filename, contentType: _imageType(bytes)));
     final http.Response res;
     try {
       res = await http.Response.fromStream(await _http.send(req).timeout(const Duration(seconds: 60)));
@@ -295,6 +296,15 @@ class LoyaltyApi {
     }
     if (res.statusCode >= 200 && res.statusCode < 300) return json['photo_url'] as String;
     throw ApiError((json['error'] as String?) ?? 'The photo could not be saved.', status: res.statusCode);
+  }
+
+  /// What a picture is, from its first bytes rather than its name: an iPad
+  /// hands back names like "image_picker_7F3A.jpg" for a HEIC it has already
+  /// converted, and sometimes no extension at all.
+  static MediaType _imageType(List<int> b) {
+    if (b.length > 3 && b[0] == 0x89 && b[1] == 0x50 && b[2] == 0x4E && b[3] == 0x47) return MediaType('image', 'png');
+    if (b.length > 11 && b[0] == 0x52 && b[1] == 0x49 && b[8] == 0x57 && b[9] == 0x45) return MediaType('image', 'webp');
+    return MediaType('image', 'jpeg');
   }
 
   Future<void> removePhoto() => _send('DELETE', '/loyalty/v1/me/photo');

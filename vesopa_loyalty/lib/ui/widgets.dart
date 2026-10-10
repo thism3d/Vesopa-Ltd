@@ -1,3 +1,5 @@
+import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -250,4 +252,22 @@ class _FadeIndexedStackState extends State<FadeIndexedStack> with SingleTickerPr
     },
     child: IndexedStack(index: widget.index, children: widget.children),
   );
+}
+
+/// A button in an [AlertDialog.adaptive]: the iPhone's own dialog button on
+/// Apple devices, Material's elsewhere. [primary] is the one the dialog is
+/// asking for (bold on Apple, filled elsewhere).
+class DialogAction extends StatelessWidget {
+  const DialogAction({super.key, required this.onPressed, required this.child, this.primary = false});
+
+  final VoidCallback? onPressed;
+  final Widget child;
+  final bool primary;
+
+  @override
+  Widget build(BuildContext context) {
+    final apple = defaultTargetPlatform == TargetPlatform.iOS || defaultTargetPlatform == TargetPlatform.macOS;
+    if (apple) return CupertinoDialogAction(onPressed: onPressed, isDefaultAction: primary, child: child);
+    return primary ? FilledButton(onPressed: onPressed, child: child) : TextButton(onPressed: onPressed, child: child);
+  }
 }

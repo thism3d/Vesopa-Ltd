@@ -40,6 +40,26 @@ settles up into place (`vesopa_loyalty/lib/ui/venue_intro.dart`). Inside the
 app the sign-in page assembles itself, the card and what is under it arrive in
 turn, and the tabs fade through. Reduced-motion settings are respected.
 
+## The look
+
+In this app (and only here: the shared Store app and the web page keep the
+back office's colours) everything is in the club's own palette from
+`venue.json` and set in Montserrat (`overlay/assets/venue/fonts/`, bundled by
+the generator as "VenueFont"). It follows the phone into dark mode: warm
+white with club red in the light, near black with club red in the dark. The
+sign-in page, the bar along the top and the membership card are club red with
+slowly drifting light (`vesopa_loyalty/lib/data/venue_style.dart`); it stands
+still when the phone asks for less motion. Dialogs, switches and spinners are
+the iPhone's own on Apple devices.
+
+## Signing in
+
+Members can use an emailed code, email and password, a passkey, a texted
+code, or Continue with Vesopa, which gives the app its Continue with Apple,
+Continue with Google, phone and passkey buttons (each goes straight there
+through auth.vesopa.com's `idp` hint). They are switched on in the back office
+(Loyalty App > Sign-in) or by `python tool/deploy_pontardawe_app.py --apply`.
+
 ## Android (Windows PC)
 
 From the repository root in PowerShell:

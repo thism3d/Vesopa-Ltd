@@ -99,15 +99,15 @@ class _VenuePageState extends ConsumerState<VenuePage> {
   Future<void> _changeVenue() async {
     final sure = await showDialog<bool>(
       context: context,
-      builder: (d) => AlertDialog(
+      builder: (d) => AlertDialog.adaptive(
         title: const Text('Change venue?'),
         content: const Text(
           'You will continue with Vesopa again and can choose another venue your '
           'account has a card at. Your points stay with this venue.',
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(d, true), child: const Text('Change')),
+          DialogAction(onPressed: () => Navigator.pop(d, false), child: const Text('Cancel')),
+          DialogAction(primary: true, onPressed: () => Navigator.pop(d, true), child: const Text('Change')),
         ],
       ),
     );
@@ -189,7 +189,7 @@ class _VenuePageState extends ConsumerState<VenuePage> {
           padding: const EdgeInsets.symmetric(horizontal: 20),
           child: Text('Your settings', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
         ),
-        SwitchListTile(
+        SwitchListTile.adaptive(
           secondary: const Icon(Icons.notifications_active_outlined),
           title: const Text('Notifications'),
           subtitle: Text(canPush ? 'Offers and news as they happen.' : 'Not available on this device. Our news is always in the News tab.'),
@@ -197,7 +197,7 @@ class _VenuePageState extends ConsumerState<VenuePage> {
           onChanged: (choices == null || _busy || !canPush) ? null : (v) => _setNotifications(brand, v),
         ),
         if (brand.location != null)
-          SwitchListTile(
+          SwitchListTile.adaptive(
             secondary: const Icon(Icons.near_me_outlined),
             title: const Text("Offers when I'm nearby"),
             subtitle: const Text('Uses your location only while the app is open, and forgets it after a day.'),

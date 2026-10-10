@@ -243,6 +243,20 @@ def dart(app: Path, v):
     text = re.sub(r"^version: .*$", f"version: {v['version']}+{v['build']}", text, count=1, flags=re.M)
     (app / "pubspec.yaml").write_text(text, encoding="utf-8")
 
+    # The venue's typeface, when its overlay brings one (assets/venue/fonts/,
+    # files named Family-Weight.ttf): the whole app is set in it.
+    weights = {"Thin": 100, "ExtraLight": 200, "Light": 300, "Regular": 400, "Medium": 500,
+               "SemiBold": 600, "Bold": 700, "ExtraBold": 800, "Black": 900}
+    faces = sorted((app / "assets" / "venue" / "fonts").glob("*.ttf")) if (app / "assets" / "venue" / "fonts").is_dir() else []
+    font = ""
+    if faces:
+        font = "VenueFont"
+        block = "\n  # The venue's own typeface (lib/data/venue_style.dart).\n  fonts:\n    - family: VenueFont\n      fonts:\n"
+        for f in faces:
+            w = weights.get(f.stem.rsplit("-", 1)[-1], 400)
+            block += f"        - asset: assets/venue/fonts/{f.name}\n          weight: {w}\n"
+        edit(app / "pubspec.yaml", [("  uses-material-design: true\n", "  uses-material-design: true\n" + block)])
+
     c = v["colours"]
     defines = {
         "LOYALTY_SLUG": v["slug"],
@@ -252,6 +266,7 @@ def dart(app: Path, v):
         "VENUE_SPLASH_BG": c["background"].lstrip("#"),
         "VENUE_SPLASH_DEEP": c.get("deep", "").lstrip("#"),
         "VENUE_SPLASH_GLOW": c.get("glow", "").lstrip("#"),
+        "VENUE_FONT": font,
     }
     (app / "venue_defines.json").write_text(json.dumps(defines, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 

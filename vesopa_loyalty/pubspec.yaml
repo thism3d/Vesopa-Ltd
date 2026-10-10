@@ -36,6 +36,9 @@ dependencies:
   cupertino_icons: ^1.0.8
   flutter_riverpod: ^3.4.3
   http: ^1.6.0
+  # The photo upload names its type; without one it goes as octet-stream and
+  # the server, which only takes JPEG, PNG and WebP, turns it away.
+  http_parser: ^4.1.2
   shared_preferences: ^2.5.5
   qr_flutter: ^4.1.0
   url_launcher: ^6.3.2

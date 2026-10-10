@@ -19,13 +19,13 @@ class ClassesPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final classes = ref.watch(classesProvider);
     return classes.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
+      loading: () => const Center(child: CircularProgressIndicator.adaptive()),
       error: (e, _) => LoadFailed(error: e, onRetry: () => ref.invalidate(classesProvider)),
       data: (list) {
         final now = DateTime.now();
         final days = classesByDay(list, now);
         final theme = Theme.of(context);
-        return RefreshIndicator(
+        return RefreshIndicator.adaptive(
           onRefresh: () => ref.refresh(classesProvider.future),
           child: Center(
             child: ConstrainedBox(
@@ -118,7 +118,7 @@ class _ClassTileState extends ConsumerState<_ClassTile> {
 
     Widget? action;
     if (_busy) {
-      action = const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.5));
+      action = const SizedBox(width: 24, height: 24, child: CircularProgressIndicator.adaptive(strokeWidth: 2.5));
     } else if (!cancelled && !started) {
       if (mine == 'booked' || mine == 'waitlist') {
         action = OutlinedButton(

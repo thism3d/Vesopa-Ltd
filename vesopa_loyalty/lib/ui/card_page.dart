@@ -9,6 +9,7 @@ import '../data/brand.dart';
 import '../data/api.dart';
 import '../data/session.dart';
 import '../platform/wallet.dart';
+import '../data/venue_style.dart';
 import 'widgets.dart';
 
 /// The card: a QR code the till scans, and what is on it.
@@ -29,9 +30,9 @@ class CardPage extends ConsumerWidget {
     final brand = ref.watch(brandProvider).requireValue;
     final me = ref.watch(meProvider);
     return me.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
+      loading: () => const Center(child: CircularProgressIndicator.adaptive()),
       error: (e, _) => LoadFailed(error: e, onRetry: () => ref.invalidate(meProvider)),
-      data: (m) => RefreshIndicator(
+      data: (m) => RefreshIndicator.adaptive(
         onRefresh: () => ref.refresh(meProvider.future),
         child: LayoutBuilder(
           builder: (context, box) {
@@ -175,7 +176,30 @@ class _Face extends StatelessWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context) => Container(
+  Widget build(BuildContext context) {
+    if (!VenueStyle.enabled) return _plain();
+    // A venue app's card is its club colour, moving, with a fine light edge.
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [BoxShadow(color: VenueStyle.club.withValues(alpha: 0.38), blurRadius: 28, offset: const Offset(0, 12))],
+      ),
+      child: ClubGradient(
+        radius: BorderRadius.circular(22),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(22, 22, 22, 18),
+          constraints: const BoxConstraints(minHeight: 430),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  Widget _plain() => Container(
     padding: const EdgeInsets.fromLTRB(22, 22, 22, 18),
     constraints: const BoxConstraints(minHeight: 430),
     decoration: BoxDecoration(
@@ -469,7 +493,7 @@ class _AddToWalletState extends ConsumerState<_AddToWallet> {
                 AppleWalletButton(onPressed: _add),
                 if (_busy)
                   const IgnorePointer(
-                    child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5)),
+                    child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator.adaptive(strokeWidth: 2.5)),
                   ),
               ],
             ),
@@ -551,22 +575,26 @@ class _Facts extends StatelessWidget {
         (expired ? Icons.event_busy : Icons.event_available, expired ? 'Membership ran out' : 'Membership until', when(expiry, time: false)),
       if (brand.minRedeem > 0) (Icons.redeem, 'Spend points from', '${brand.minRedeem} points'),
     ];
-    final text = Theme.of(context).textTheme;
+    final theme = Theme.of(context);
+    final text = theme.textTheme;
+    final ink = theme.colorScheme.onSurface;
     // The venue's text colour on a shade of the venue's background, and the
     // venue's icon colour: every one of these three is the venue's to set.
+    // Read from the theme, so a venue app in the device's dark mode has them
+    // in its dark shades.
     return Card(
       elevation: 0,
-      color: brand.surface(0.10),
+      color: theme.colorScheme.surfaceContainerHigh,
       child: Column(
         children: [
           for (final (icon, label, value) in rows)
             ListTile(
               dense: true,
-              leading: Icon(icon, color: brand.iconColour),
-              title: Text(label, style: text.bodyLarge?.copyWith(color: brand.text)),
+              leading: Icon(icon, color: theme.iconTheme.color),
+              title: Text(label, style: text.bodyLarge?.copyWith(color: ink)),
               trailing: Text(
                 value,
-                style: text.bodyLarge?.copyWith(color: brand.text, fontWeight: FontWeight.w700),
+                style: text.bodyLarge?.copyWith(color: ink, fontWeight: FontWeight.w700),
               ),
             ),
         ],
