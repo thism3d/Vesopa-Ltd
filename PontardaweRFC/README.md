@@ -69,7 +69,7 @@ Account in the app.
 
 GitHub > Actions > "iOS - venue app" > Run workflow, venue `PontardaweRFC`.
 It builds on GitHub's Mac. With the App Store Connect API key in the
-`production` environment (ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8; see the top
+"App Store Connect API" environment (ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8; see the top
 of `.github/workflows/ios-venue-app.yml`) it also:
 
 - registers the App IDs (app and Watch app) with Push Notifications on,

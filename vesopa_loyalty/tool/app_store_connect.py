@@ -662,7 +662,7 @@ def set_review_details(c, version, store):
     else:
         todo("App Review sign-in: the app is members-only. Add a member account for Apple's reviewer "
              "(back office > Customers, with a password set), and give it as ASC_REVIEW_USER and "
-             "ASC_REVIEW_PASSWORD in the production environment, or under App Review Information.")
+             "ASC_REVIEW_PASSWORD in the App Store Connect API environment, or under App Review Information.")
     if not attrs["contactPhone"]:
         todo("App Review contact phone number: ASC_REVIEW_PHONE, or under App Review Information.")
     try:
