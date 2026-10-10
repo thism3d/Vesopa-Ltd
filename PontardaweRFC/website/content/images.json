@@ -1,0 +1,27 @@
+{
+  "lineout": {
+    "w": 640,
+    "h": 438,
+    "alt": "Pontardawe RFC players contest a lineout"
+  },
+  "squad-sponsor": {
+    "w": 640,
+    "h": 356,
+    "alt": "The Pontardawe RFC squad with their sponsor's banner outside the clubhouse"
+  },
+  "squad-pitch": {
+    "w": 640,
+    "h": 480,
+    "alt": "Two squads line up together on the pitch at the Recreation Ground"
+  },
+  "bones": {
+    "w": 674,
+    "h": 1024,
+    "alt": "Brian 'Bones' Williams at the club"
+  },
+  "hiring": {
+    "w": 216,
+    "h": 134,
+    "alt": "We're hiring: join our team"
+  }
+}

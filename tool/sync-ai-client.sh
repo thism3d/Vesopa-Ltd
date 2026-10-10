@@ -7,6 +7,7 @@ src="$repo/shared/ai-client/vesopa_ai.js"
 targets=(
   vesopa_hosting/src/ai/vesopa_ai.js          # cloud.vesopa.com (CommonJS)
   vesopasoftware/server/lib/vesopa_ai.cjs     # vesopasoftware.com (ESM package, so .cjs)
+  PontardaweRFC/website/src/vesopa_ai.js      # pontardawerfc.com club helper
 )
 for t in "${targets[@]}"; do
   cp "$src" "$repo/$t"

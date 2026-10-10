@@ -29,7 +29,7 @@ const offPeak = () => new Date('2026-10-03T12:00:00Z'); // a Saturday
 
 test('every copy of the client matches the shared one', () => {
   const canonical = fs.readFileSync(path.join(__dirname, '../vesopa_ai.js'), 'utf8');
-  for (const copy of ['vesopa_hosting/src/ai/vesopa_ai.js', 'vesopasoftware/server/lib/vesopa_ai.cjs']) {
+  for (const copy of ['vesopa_hosting/src/ai/vesopa_ai.js', 'vesopasoftware/server/lib/vesopa_ai.cjs', 'PontardaweRFC/website/src/vesopa_ai.js']) {
     assert.strictEqual(fs.readFileSync(path.join(repo, copy), 'utf8'), canonical, `${copy} has drifted: run tool/sync-ai-client.sh`);
   }
 });

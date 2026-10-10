@@ -2,7 +2,7 @@
 
 The club's own members app, under its own name, icon and store listings. It is
 the Vesopa Loyalty app (`vesopa_loyalty/`) built for one venue: it opens
-straight on Pontardawe RFC (https://loyalty.vesopa.com/pontardawe-rfc/) with no
+straight on Pontardawe RFC (on the web at https://member.pontardawerfc.com/) with no
 venue code to type, and everything a member sees inside it (colours, logo,
 the welcome line, members-only sign-in, news) comes from Loyalty App in the
 back office, as it does on the web.
@@ -122,3 +122,11 @@ after a new crest: replace `brand/crest.png` and run
 
 Copy this folder, change `venue.json` and `brand/crest.png`, run
 `make_venue_art.py` on it, and build. Nothing in `vesopa_loyalty/` changes.
+
+## The club website (pontardawerfc.com)
+
+`website/` is the club's own site: history, teams, news, the clubhouse,
+the live menu with ordering (to a table, or for collection), membership and
+an AI helper. See [website/README.md](website/README.md). It is deployed with
+`python tool/deploy_pontardawe_site.py`, which also puts the members' app on
+member.pontardawerfc.com.

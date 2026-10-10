@@ -1,0 +1,19 @@
+{
+  "name": "pontardawerfc-website",
+  "version": "1.0.0",
+  "private": true,
+  "description": "pontardawerfc.com: Pontardawe RFC's website, menu and ordering from Vesopa EPOS, and the club AI helper.",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "express": "^4.22.2"
+  }
+}

@@ -34,9 +34,9 @@ pontardawe,rfc,rugby,club,members,membership,card,discount,wales,swansea valley
 
 **Category:** Lifestyle (Play: Lifestyle)
 
-**Privacy policy URL:** https://loyalty.vesopa.com/pontardawe-rfc/privacy
+**Privacy policy URL:** https://pontardawerfc.com/privacy
 
-**Support URL:** https://loyalty.vesopa.com/pontardawe-rfc/
+**Support URL:** https://member.pontardawerfc.com/ (club website: https://pontardawerfc.com)
 
 **Contact email:** info@vesopasoftware.com
 

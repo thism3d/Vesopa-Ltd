@@ -1,0 +1,223 @@
+{
+  "_about": "Everything the site states as fact about the club, with where it came from. The AI helper is told this is the whole of what it may say. Sources: the club's own site pontardawe.rfc.wales (December 2024, saved in content/source/), Wikipedia 'Pontardawe RFC' (read 2026-10-10), Companies House 10056776, the club's Facebook page. Edit here, not in the page templates.",
+  "name": "Pontardawe RFC",
+  "full_name": "Pontardawe Rugby Football Club",
+  "welsh_name": "Clwb Rygbi Pontardawe",
+  "company": {
+    "name": "Pontardawe Rugby Football Club Limited",
+    "number": "10056776",
+    "registered_office": "Ynysderw Road, Pontardawe, Neath Port Talbot, SA8 4EG"
+  },
+  "founded": 1881,
+  "tagline": "Rugby in the heart of the Swansea Valley since 1881",
+  "short": "Pontardawe RFC is a community rugby union club in Pontardawe, in the Swansea Valley, Wales. Founded in 1881, it is a member club of the Welsh Rugby Union with a clubhouse, bar and members' club on Ynysderw Road.",
+  "colours": {
+    "primary": "#8F0000",
+    "deep": "#3F0000",
+    "glow": "#C41414",
+    "kit": "Red and white hoops"
+  },
+  "address": {
+    "name": "Pontardawe RFC Clubhouse",
+    "street": "Ynysderw Road",
+    "town": "Pontardawe",
+    "county": "Neath Port Talbot",
+    "postcode": "SA8 4EG",
+    "country": "GB",
+    "lat": 51.717502,
+    "lng": -3.850214
+  },
+  "phone": "01792 864811",
+  "phone_e164": "+441792864811",
+  "email": "pontardawe.rfc@hotmail.co.uk",
+  "web": {
+    "site": "https://pontardawerfc.com",
+    "members": "https://member.pontardawerfc.com",
+    "facebook": "https://www.facebook.com/PontardaweRFC/",
+    "old_site": "https://pontardawe.rfc.wales",
+    "wru_league": "https://community.wru.wales/club/national-leagues/national-leagues-fixtures-and-results/league-5-west-central/",
+    "wikipedia": "https://en.wikipedia.org/wiki/Pontardawe_RFC",
+    "android_package": "com.vesopaepos.pontardawerfc"
+  },
+  "ground": "Recreation Ground, Pontardawe",
+  "league": "WRU National League (West Central)",
+  "league_note": "Wikipedia lists the club in WRU Division 4 West Central, finishing 2nd in 2022-23. League names change from season to season; the WRU site has the current table and fixtures.",
+  "coaches": [
+    "Nathan Jones",
+    "Rhys Morgan"
+  ],
+  "history": [
+    "Pontardawe Rugby Football Club was founded in 1881 in Pontardawe, a small town on the River Tawe in the Swansea Valley. It is one of the long-standing member clubs of the Welsh Rugby Union, and in 2007 it celebrated its 125th year of WRU membership.",
+    "Over the years Pontardawe has produced a number of first-class players and coaches. The club's junior section has provided age-group rugby with qualified coaches from under 7 through to under 16, and many other clubs, premiership sides included, have benefited from players who learned the game at Pontardawe.",
+    "In May 2006 Pontardawe was one of the thirteen 'rebel' clubs that brought a vote of no confidence in the Welsh Rugby Union over its finances and the departure of national coach Mike Ruddock. The motion failed, but it showed a club willing to stand up for the community game.",
+    "Like many clubs, Pontardawe has sold vintage rugby memorabilia to raise money to improve its facilities. A history of the club, The History of Pontardawe RFC by J. R. Jones, was published in 1985."
+  ],
+  "timeline": [
+    {
+      "year": "1881",
+      "text": "Pontardawe Rugby Football Club is founded in the Swansea Valley."
+    },
+    {
+      "year": "1985",
+      "text": "J. R. Jones publishes The History of Pontardawe RFC."
+    },
+    {
+      "year": "2006",
+      "text": "The club plays the Cwmtawe 7s, and is one of 13 clubs to challenge the WRU over the Mike Ruddock affair."
+    },
+    {
+      "year": "2007",
+      "text": "125 years as a member club of the Welsh Rugby Union."
+    },
+    {
+      "year": "2016",
+      "text": "Pontardawe Rugby Football Club Limited is incorporated (company 10056776)."
+    },
+    {
+      "year": "2023",
+      "text": "The first XV finish 2nd in WRU Division 4 West Central (2022-23)."
+    },
+    {
+      "year": "2024",
+      "text": "The club says goodbye to Brian 'Bones' Williams, former player and captain."
+    },
+    {
+      "year": "2026",
+      "text": "A new website, online ordering and the members' app at member.pontardawerfc.com."
+    }
+  ],
+  "notable_players": [
+    {
+      "name": "James Griffiths",
+      "honours": "Wales (1 cap), Wales Youth (15 caps), Wales U21 (5 caps), Wales A (4 caps)"
+    },
+    {
+      "name": "Phil Hopkins",
+      "honours": "Wales (4 caps)"
+    },
+    {
+      "name": "Percy Lloyd",
+      "honours": "Wales (4 caps)"
+    },
+    {
+      "name": "Joe Hawkins",
+      "honours": "Wales (1 cap)"
+    }
+  ],
+  "teams": [
+    {
+      "name": "First XV",
+      "text": "Senior men's rugby in the WRU National Leagues, playing home games at the Recreation Ground."
+    },
+    {
+      "name": "Juniors and youth",
+      "text": "Age-group rugby with qualified coaches. The club has run sides from under 7 up to under 16; ask the club which age groups are training this season."
+    },
+    {
+      "name": "Social sections",
+      "text": "Darts, bowls and sport on the screens: the clubhouse is home to more than rugby."
+    }
+  ],
+  "clubhouse": {
+    "text": "The clubhouse on Ynysderw Road is the heart of the club: a members' bar with food, rugby and sport on the screens, and a home for darts, bowls and club events.",
+    "features": [
+      {
+        "icon": "beer",
+        "title": "Members' bar",
+        "text": "A proper club bar, with members' discount through the club app."
+      },
+      {
+        "icon": "plate",
+        "title": "Café and food",
+        "text": "The club café and kitchen. See the menu and order to your table or for collection, straight from this site."
+      },
+      {
+        "icon": "screen",
+        "title": "Live sport",
+        "text": "Internationals and big games on the screens with a full house."
+      },
+      {
+        "icon": "party",
+        "title": "Functions",
+        "text": "Birthdays, wakes, christenings and celebrations. Call the club to book."
+      },
+      {
+        "icon": "darts",
+        "title": "Darts and bowls",
+        "text": "Teams and friendly games for members."
+      },
+      {
+        "icon": "handshake",
+        "title": "Sponsorship",
+        "text": "Put your business in front of the community and support local rugby."
+      }
+    ],
+    "hours_note": "Opening hours change with the fixtures and the season. Call the club on 01792 864811 to check."
+  },
+  "membership": {
+    "text": "Membership supports the club and gives you members' prices at the bar. Your membership card lives in the Pontardawe RFC app at member.pontardawerfc.com: show the code at the bar and the discount is applied every time.",
+    "benefits": [
+      "Members' discount at the bar, applied at the till every visit",
+      "Your membership card on your phone, Apple Wallet and Apple Watch",
+      "See what you have spent and saved",
+      "Club news and offers sent to your phone",
+      "A say in your club and its future"
+    ],
+    "join": "The members' app is for paid-up members. To join or renew, ask behind the bar or call the club, and the club will add you; then sign in at member.pontardawerfc.com with your email address and a one-time code."
+  },
+  "faq": [
+    {
+      "q": "Where is Pontardawe RFC?",
+      "a": "The clubhouse is on Ynysderw Road, Pontardawe, Neath Port Talbot, SA8 4EG. Home games are at the Recreation Ground in Pontardawe."
+    },
+    {
+      "q": "What is the club's phone number?",
+      "a": "Call the clubhouse on 01792 864811."
+    },
+    {
+      "q": "When was the club founded?",
+      "a": "Pontardawe RFC was founded in 1881, and celebrated 125 years as a Welsh Rugby Union member club in 2007."
+    },
+    {
+      "q": "How do I become a member?",
+      "a": "Ask behind the bar or call 01792 864811. Once the club has added you, sign in to the members' app at member.pontardawerfc.com with your email address and the code we send."
+    },
+    {
+      "q": "How do I use my members' discount?",
+      "a": "Open the members' app at member.pontardawerfc.com and show your card's code at the bar. The discount is applied at the till."
+    },
+    {
+      "q": "Can I order food online?",
+      "a": "Yes. On the Menu & Order page you can order to your table when you are in the clubhouse, or order for collection and pay at the bar when you collect."
+    },
+    {
+      "q": "How do I pay for a collection order?",
+      "a": "Collection orders are paid at the bar when you collect them, by card or cash."
+    },
+    {
+      "q": "Where are the fixtures and results?",
+      "a": "The current fixtures, results and league table are on the WRU community site, and the club posts match news on its Facebook page."
+    },
+    {
+      "q": "Can I hire the clubhouse for a function?",
+      "a": "Yes, the clubhouse hosts parties, celebrations and wakes. Call the club on 01792 864811 to check dates and prices."
+    },
+    {
+      "q": "Does the club have junior rugby?",
+      "a": "The club has a history of age-group rugby from under 7 to under 16 with qualified coaches. Call the club to find out which age groups are training this season."
+    },
+    {
+      "q": "Can my business sponsor the club?",
+      "a": "Yes, the club welcomes sponsors. Call the club on 01792 864811 to talk about kit, match-day and pitch-side sponsorship."
+    },
+    {
+      "q": "Who coaches the club?",
+      "a": "Wikipedia lists Nathan Jones and Rhys Morgan as the club's coaches."
+    },
+    {
+      "q": "Which famous players came from Pontardawe?",
+      "a": "Wales internationals James Griffiths, Phil Hopkins, Percy Lloyd and Joe Hawkins all played for Pontardawe."
+    }
+  ],
+  "email_note": "Published by the club in its September 2024 vacancy notice on pontardawe.rfc.wales. Confirm with the club that it is still read."
+}
