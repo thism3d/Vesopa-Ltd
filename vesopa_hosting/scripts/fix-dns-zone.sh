@@ -9,7 +9,7 @@
 # hand. The registry has no DS, so DNSSEC is not wanted here. This script:
 #   1. shows the zone check (named-checkzone) and the local answer, before
 #   2. turns Hestia's DNSSEC off for the zone, if on
-#   3. deletes the hand-added DNSKEY and the apex NS records not ours
+#   3. deletes the hand-added DNSKEY, any apex DS (illegal at a zone top) and the apex NS records not ours
 #   4. adds ns1/ns2.vesopa.com as apex NS, rebuilds and reloads the zone
 #   5. shows the check and the local answer again
 # Every other record (A, MX, mail, DKIM, SPF) is left as it is.
@@ -36,7 +36,7 @@ check before
 $BIN/v-change-dns-domain-dnssec "$OWNER" "$DOMAIN" no >/dev/null 2>&1 && echo "dnssec off"
 
 $BIN/v-list-dns-records "$OWNER" "$DOMAIN" plain | while IFS=$'\t' read -r id rec type _ value _; do
-  if [ "$type" = "DNSKEY" ] || { [ "$type" = "NS" ] && [ "$rec" = "@" ] && [[ "$value" != ns1.vesopa.com* && "$value" != ns2.vesopa.com* ]]; }; then
+  if [ "$type" = "DNSKEY" ] || { [ "$type" = "DS" ] && [ "$rec" = "@" ]; } || { [ "$type" = "NS" ] && [ "$rec" = "@" ] && [[ "$value" != ns1.vesopa.com* && "$value" != ns2.vesopa.com* ]]; }; then
     $BIN/v-delete-dns-record "$OWNER" "$DOMAIN" "$id" no && echo "deleted $id $rec $type $value"
   fi
 done
