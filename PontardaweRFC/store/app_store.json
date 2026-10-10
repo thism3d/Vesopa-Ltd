@@ -15,7 +15,7 @@
     "contact_first_name": "Vesopa",
     "contact_last_name": "Support",
     "contact_email": "info@vesopasoftware.com",
-    "notes": "Pontardawe RFC's members' app. Sign-in is for club members only: use the reviewer account in Sign-In Information with \"Use a password\" on the first page. Once signed in: Card shows the member's QR code for the till and the Add to Apple Wallet button; the bell at the top right opens club news; Venue has the notifications switch. Notifications are sent by the club from its back office, so none may arrive during review."
+    "notes": "Pontardawe RFC's members' app. Sign-in is for club members only: use the reviewer account in Sign-In Information. Once signed in: Card shows the member's QR code for the till and the Add to Apple Wallet button; the bell at the top right opens club news; Venue has the notifications switch. Notifications are sent by the club from its back office, so none may arrive during review."
   },
   "testflight": {
     "internal_group": "Vesopa team",

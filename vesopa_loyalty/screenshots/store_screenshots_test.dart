@@ -49,7 +49,15 @@ DateTime _daysAgo(int d, [int hour = 19]) {
 
 String _iso(DateTime d) => d.toUtc().toIso8601String();
 
+/// The venue's look as the back office has it: screenshots/brand.json is the
+/// live `/loyalty/v1/app/<slug>` answer, saved by make_store_screenshots.py.
+/// Without it (offline), a look made from venue.json's colours.
 Map<String, dynamic> _brand() {
+  final live = File('screenshots/brand.json');
+  if (live.existsSync()) {
+    final b = jsonDecode(live.readAsStringSync()) as Map<String, dynamic>;
+    return {...b, 'logo': _logoUrl, 'icon': _logoUrl, 'hero': null, 'push': {'web': null, 'windows': false}};
+  }
   final c = (_venue['colours'] as Map).cast<String, dynamic>();
   return {
     'slug': _slug,

@@ -21,6 +21,7 @@ import os
 import shutil
 import subprocess
 import sys
+import urllib.request
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
@@ -28,6 +29,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 HERE = Path(__file__).resolve().parents[1]  # vesopa_loyalty
 REPO = HERE.parent
 
+LIVE = "https://loyalty.vesopa.com"
 SIZES = {"iphone-6.9": (1290, 2796), "ipad-13": (2048, 2732)}
 FONT_BOLD = REPO / "vesopa_server" / "public" / "assets" / "fonts" / "oswald" / "oswald-700.ttf"
 FONT_TEXT = REPO / "vesopa_server" / "public" / "assets" / "fonts" / "inter" / "inter-400.ttf"
@@ -118,6 +120,13 @@ def main():
     (app / "screenshots").mkdir(exist_ok=True)
     shutil.copy2(HERE / "screenshots" / "store_screenshots_test.dart", app / "screenshots")
     shutil.copy2(venue_dir / "venue.json", app / "screenshots" / "venue.json")
+    # The venue's look as members see it today, from the back office.
+    try:
+        with urllib.request.urlopen(f"{LIVE}/loyalty/v1/app/{v['slug']}", timeout=20) as res:
+            (app / "screenshots" / "brand.json").write_bytes(res.read())
+        print(f"  branding from {LIVE}")
+    except OSError as e:
+        print(f"! could not fetch the live branding ({e}); using venue.json's colours")
     raw = app / "build" / "screenshots" / "raw"
     shutil.rmtree(raw, ignore_errors=True)
 

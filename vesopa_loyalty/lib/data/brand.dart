@@ -186,7 +186,12 @@ class Brand {
     final base = ThemeData(colorScheme: scheme, useMaterial3: true, scaffoldBackgroundColor: background);
     final bodyFamily = bodyFont?.family;
     final headFamily = headingFont?.family ?? bodyFamily;
-    var textTheme = base.textTheme
+    // ThemeData's own text styles have colours but no sizes yet (Flutter adds
+    // them later, in Theme.of), and a size factor on a style with no size is
+    // an assertion in debug and silently nothing in release: the venue's
+    // font scale never took. The sizes first, then the scale.
+    var textTheme = base.typography.englishLike
+        .merge(base.textTheme)
         .apply(fontFamily: bodyFamily, bodyColor: text, displayColor: text, fontSizeFactor: fontScale);
     if (headFamily != null) {
       TextStyle? h(TextStyle? s) => s?.copyWith(fontFamily: headFamily);
