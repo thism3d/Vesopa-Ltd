@@ -242,6 +242,21 @@ async function loadDineIn() {
         needs a till switched on and signed in &mdash; accepting is what puts the
         order on a bill, and nothing else can do that.
       </p>
+      <label class="check">
+        <input type="checkbox" id="di-collection" ${v.collection_open ? 'checked' : ''}>
+        <span><b>Orders for collection.</b> People can order from your own website
+        without a table, leaving a name and phone number, and pay at the bar when
+        they collect. These arrive on the till as "Collect" orders, like a kiosk's
+        pay-at-the-counter order.</span>
+      </label>
+      <label style="margin:4px 0 0 28px">Ready for collection in
+        <span class="row" style="align-items:center;gap:8px">
+          <input id="di-collection-min" type="number" min="5" max="240" step="5"
+                 value="${v.collection_minutes == null ? '' : Number(v.collection_minutes)}"
+                 placeholder="${Number(v.eta_minutes) || 25}" style="flex:0 1 110px">
+          <span class="muted small" style="flex:0 0 auto">minutes (blank: the usual wait)</span>
+        </span>
+      </label>
       <hr>
       <label class="check">
         <input type="checkbox" id="di-image-product" ${v.image_source === 'product' ? 'checked' : ''}>
@@ -822,6 +837,8 @@ async function diSaveVenue() {
     is_published: $('di-published').checked,
     ordering_open: $('di-ordering').checked,
     auto_accept_orders: $('di-auto-accept').checked,
+    collection_open: $('di-collection').checked,
+    collection_minutes: $('di-collection-min').value,
     // A pair rather than a boolean: the server stores which source leads, and
     // a third one later is a new value here rather than a second checkbox.
     image_source: $('di-image-product').checked ? 'product' : 'menu',

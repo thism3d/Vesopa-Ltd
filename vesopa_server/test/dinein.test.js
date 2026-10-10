@@ -165,7 +165,9 @@ CREATE TABLE IF NOT EXISTS bo_products (
   email VARCHAR(255) NOT NULL,
   pluid INT NOT NULL,
   product_name VARCHAR(255) NOT NULL,
-  price DOUBLE NOT NULL DEFAULT 0
+  price DOUBLE NOT NULL DEFAULT 0,
+  tax_percentage DOUBLE NOT NULL DEFAULT 0,
+  allergens TEXT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 `;
 
@@ -196,12 +198,23 @@ async function main() {
   // Only the files this feature needs. Applying all of them would drag in the
   // rest of the platform's legacy dependencies for no gain.
   const schemaDir = path.join(__dirname, '..', 'schema');
-  for (const file of ['schema_layout.sql', 'schema_menu_dinein.sql']) {
+  // The dine-in files in the order a deploy replays them (sorted names), so
+  // the columns later features added are here too.
+  const dinein = fs.readdirSync(schemaDir)
+    .filter((f) => /^schema_menu_dinein.*\.sql$/.test(f))
+    .sort();
+  for (const file of ['schema_layout.sql', 'schema_floor_designer.sql', 'schema_screens.sql', 'schema_screens_modifiers.sql', ...dinein]) {
     const sql = fs.readFileSync(path.join(schemaDir, file), 'utf8');
     // DELIMITER is a client instruction, not SQL. The driver does not know it,
     // so the stored-procedure blocks are run as their own statements.
     await runScript(conn, sql);
   }
+  // The one column of schema_product_allergens.sql this needs; that file also
+  // alters kitchen tables this test does not create.
+  await conn.query('ALTER TABLE dinein_items ADD COLUMN allergens TEXT NULL');
+  // Opening hours default to 09:00-23:00, which would make this test fail
+  // whenever it is run late at night. dinein-hours.test.js covers the hours.
+  await conn.query('ALTER TABLE dinein_venue ALTER schedule_enabled SET DEFAULT 0');
 
   for (const office of [ALPHA, BETA]) {
     await conn.execute(
@@ -474,7 +487,7 @@ async function main() {
         },
       }
     );
-    assert.strictEqual(res.status, 201);
+    assert.strictEqual(res.status, 201, JSON.stringify(res.body));
     // 2 x 15.95 + 1 x 7.00
     assert.strictEqual(res.body.total_minor, 1595 * 2 + 700);
     orderPublicId = res.body.public_id;
@@ -700,6 +713,77 @@ async function main() {
     );
     assert.strictEqual(res.status, 200);
     assert.strictEqual(res.body.status, 'cancelled');
+  });
+
+  // -------------------------------------------------------------------------
+  // Orders for collection, from the venue's own website (2026-10-10)
+  // -------------------------------------------------------------------------
+
+  const collect = (body) =>
+    call(base, 'POST', '/api/public/dinein/venue/the-alpha-arms/order', { body });
+  let fishId = null;
+
+  await check('collection is off until the venue switches it on', async () => {
+    const menu = await call(base, 'GET', '/api/public/dinein/venue/the-alpha-arms');
+    assert.strictEqual(menu.status, 200);
+    assert.strictEqual(menu.body.venue.collection_open, false);
+    fishId = menu.body.sections[0].items.find((i) => i.plu_id === 100).id;
+    const res = await collect({ name: 'Rhys', phone: '07700 900123', lines: [{ item_id: fishId, qty: 1 }] });
+    assert.strictEqual(res.status, 403);
+  });
+
+  await check('the back office switches it on, with its own wait', async () => {
+    const res = await call(base, 'PUT', '/api/dinein/venue', {
+      token: alpha, body: { collection_open: true, collection_minutes: '30' },
+    });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.venue.collection_open, 1);
+    assert.strictEqual(res.body.venue.collection_minutes, 30);
+    const menu = await call(base, 'GET', '/api/public/dinein/venue/the-alpha-arms');
+    assert.strictEqual(menu.body.venue.collection_open, true);
+    assert.strictEqual(menu.body.venue.collection_minutes, 30);
+  });
+
+  await check('a collection order needs a name and a phone number', async () => {
+    let res = await collect({ phone: '07700 900123', lines: [{ item_id: fishId, qty: 1 }] });
+    assert.strictEqual(res.status, 400);
+    res = await collect({ name: 'Rhys', phone: '12', lines: [{ item_id: fishId, qty: 1 }] });
+    assert.strictEqual(res.status, 400);
+  });
+
+  await check('a collection order is priced by the server and has no table', async () => {
+    const res = await collect({
+      name: 'Rhys', phone: '07700 900123', collect_at: '18:30',
+      lines: [{ item_id: fishId, qty: 2, unit_price_minor: 1 }],
+    });
+    assert.strictEqual(res.status, 201, JSON.stringify(res.body));
+    assert.strictEqual(res.body.total_minor, 1595 * 2);
+    assert.strictEqual(res.body.ready_in_minutes, 30);
+    const [[row]] = await conn.query('SELECT * FROM dinein_orders WHERE public_id = ?', [res.body.public_id]);
+    assert.strictEqual(row.table_id, null);
+    assert.strictEqual(row.table_label, 'Collect Rhys');
+    assert.strictEqual(row.customer_phone, '07700 900123');
+    assert.match(row.note, /pay at the bar/);
+    assert.match(row.note, /18:30/);
+    const push = sent.filter((x) => x.message.type === 'dinein.order').pop();
+    assert.strictEqual(push.options.office, ALPHA.email);
+    assert.strictEqual(push.message.table, 'Collect Rhys');
+  });
+
+  await check('the till gets it as a counter order, numbered as the customer was told', async () => {
+    const res = await call(base, 'GET', '/till/dinein/orders', { token: alphaTill });
+    const order = res.body.find((o) => o.table_label === 'Collect Rhys');
+    assert.ok(order, 'the collection order reaches the till');
+    assert.strictEqual(order.kiosk_number, order.id);
+    // A table's order is never mistaken for one.
+    assert.ok(res.body.filter((o) => o.table_id != null).every((o) => o.kiosk_number == null));
+  });
+
+  await check('a closed kitchen takes no collection orders', async () => {
+    await call(base, 'PUT', '/api/dinein/venue', { token: alpha, body: { ordering_open: false } });
+    const res = await collect({ name: 'Rhys', phone: '07700 900123', lines: [{ item_id: fishId, qty: 1 }] });
+    assert.strictEqual(res.status, 403);
+    await call(base, 'PUT', '/api/dinein/venue', { token: alpha, body: { ordering_open: true } });
   });
 
   // -------------------------------------------------------------------------

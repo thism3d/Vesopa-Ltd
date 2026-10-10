@@ -583,6 +583,9 @@ function dineinRoutes({ pool, broadcast, secret }) {
         // app." Read by the TILL, which is what does the accepting — see
         // schema_menu_dinein_auto_accept.sql for why the server cannot.
         'auto_accept_orders',
+        // Orders for collection from the venue's own website, paid at the bar
+        // (schema_menu_dinein_collection.sql).
+        'collection_open',
       ];
       for (const field of flags) {
         if (body[field] === undefined) continue;
@@ -606,6 +609,13 @@ function dineinRoutes({ pool, broadcast, secret }) {
         const eta = Math.max(0, Math.min(240, parseInt(body.eta_minutes, 10) || 0));
         sets.push('eta_minutes = ?');
         params.push(eta);
+      }
+
+      if (body.collection_minutes !== undefined) {
+        // Blank goes back to the kitchen's own estimate (eta_minutes).
+        const raw = String(body.collection_minutes ?? '').trim();
+        sets.push('collection_minutes = ?');
+        params.push(raw === '' ? null : Math.max(5, Math.min(240, parseInt(raw, 10) || 0)));
       }
 
       if (body.offer_percent !== undefined) {
@@ -1372,7 +1382,11 @@ function dineinRoutes({ pool, broadcast, secret }) {
 
     return orders.map((o) => ({
       ...o,
-      kiosk_number: kioskNumbers.get(o.id) ?? null,
+      // A website order for collection has no table either and is paid at
+      // the counter the same way, so it carries its own order number as the
+      // collection number -- the number the customer was shown on placing it.
+      // Every till that takes a kiosk counter order then takes this one.
+      kiosk_number: kioskNumbers.get(o.id) ?? (o.table_id == null ? o.id : null),
       lines: lines
         .filter((l) => l.dinein_order_id === o.id)
         .map((l) => ({
@@ -1635,6 +1649,10 @@ function dineinRoutes({ pool, broadcast, secret }) {
         schedule: openState(venue),
         closed_message: venue.closed_message || null,
         eta_minutes: Number(venue.eta_minutes) || 25,
+        // Orders for collection from the venue's website (no table). Absent
+        // column (schema not applied yet) reads as off.
+        collection_open: !!venue.collection_open,
+        collection_minutes: Number(venue.collection_minutes) || Number(venue.eta_minutes) || 25,
         base: publicBase(req, venue),
       },
       sections,
@@ -1744,80 +1762,204 @@ function dineinRoutes({ pool, broadcast, secret }) {
       const discount = discountFor(offer, subtotal);
       total = subtotal - discount;
 
-      const publicId = newPublicId();
       const label = tableName(table);
-
-      await conn.beginTransaction();
-      const [order] = await conn.execute(
-        'INSERT INTO dinein_orders' +
-          ' (public_id, office_id, table_id, table_label, customer_name,' +
-          '  customer_phone, note, status, diner_id, total_minor)' +
-          ' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [
-          publicId,
-          table.office_id,
-          table.id,
-          label,
-          name || null,
-          phone || null,
-          String(body.note || '').trim().slice(0, 500) || null,
-          'placed',
-          dinerId,
-          total,
-        ]
-      );
-      // Parents first, then their add-ons, so a child always has a real id to
-      // name. The rows are inserted in basket order, which is also reading
-      // order — a modifier immediately follows the item it belongs to, which
-      // is what every reader downstream relies on to indent it.
-      const rowIds = [];
-      for (const line of lines) {
-        const parentRowId =
-          line.parentIndex === null ? null : rowIds[line.parentIndex] ?? null;
-        const [written] = await conn.execute(
-          'INSERT INTO dinein_order_lines' +
-            ' (dinein_order_id, plu_id, name, qty, unit_price_minor, note,' +
-            '  parent_line_id, is_modifier, unavailable_action)' +
-            ' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-          [
-            order.insertId,
-            line.plu_id,
-            line.name,
-            line.qty,
-            line.unit,
-            line.note,
-            parentRowId,
-            line.isModifier ? 1 : 0,
-            line.unavailable,
-          ]
-        );
-        rowIds.push(written.insertId);
-      }
-      await conn.commit();
-
-      // The till is told immediately. Scoped to the office, so one venue's
-      // socket never sees another's order arrive.
-      broadcast(
-        {
-          type: 'dinein.order',
-          order_id: order.insertId,
-          public_id: publicId,
-          table: label,
-          total_minor: total,
-          lines: lines.length,
-        },
-        { office: email }
-      );
+      const { orderId, publicId } = await writeOrder(conn, {
+        officeId: table.office_id,
+        email,
+        tableId: table.id,
+        label,
+        name,
+        phone,
+        note: String(body.note || '').trim().slice(0, 500) || null,
+        dinerId,
+        total,
+        lines,
+      });
 
       res.status(201).json({
         ok: true,
         public_id: publicId,
         // The number the tracker shows and the customer says across a bar.
-        number: order.insertId,
+        number: orderId,
         subtotal_minor: subtotal,
         discount_minor: discount,
         total_minor: total,
         status: 'placed',
+      });
+    } catch (e) {
+      await conn.rollback().catch(() => {});
+      next(e);
+    } finally {
+      conn.release();
+    }
+  });
+
+  /**
+   * Write a priced order and its lines in one transaction, then tell the till.
+   *
+   * Shared by a table's order and a collection order, so the two cannot drift:
+   * the till reads both from the same rows. `tableId` null is an order with no
+   * table, the shape a Vesopa Express "pay at the counter" order already has
+   * (express_kiosk.js, sendToCounter), which every till accepts.
+   */
+  async function writeOrder(conn, { officeId, email, tableId, label, name, phone, note, dinerId, total, lines }) {
+    const publicId = newPublicId();
+    await conn.beginTransaction();
+    const [order] = await conn.execute(
+      'INSERT INTO dinein_orders' +
+        ' (public_id, office_id, table_id, table_label, customer_name,' +
+        '  customer_phone, note, status, diner_id, total_minor)' +
+        ' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        publicId,
+        officeId,
+        tableId,
+        label,
+        name || null,
+        phone || null,
+        note || null,
+        'placed',
+        dinerId,
+        total,
+      ]
+    );
+    // Parents first, then their add-ons, so a child always has a real id to
+    // name. The rows are inserted in basket order, which is also reading
+    // order — a modifier immediately follows the item it belongs to, which
+    // is what every reader downstream relies on to indent it.
+    const rowIds = [];
+    for (const line of lines) {
+      const parentRowId =
+        line.parentIndex === null ? null : rowIds[line.parentIndex] ?? null;
+      const [written] = await conn.execute(
+        'INSERT INTO dinein_order_lines' +
+          ' (dinein_order_id, plu_id, name, qty, unit_price_minor, note,' +
+          '  parent_line_id, is_modifier, unavailable_action)' +
+          ' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [
+          order.insertId,
+          line.plu_id,
+          line.name,
+          line.qty,
+          line.unit,
+          line.note,
+          parentRowId,
+          line.isModifier ? 1 : 0,
+          line.unavailable,
+        ]
+      );
+      rowIds.push(written.insertId);
+    }
+    await conn.commit();
+
+    // The till is told immediately. Scoped to the office, so one venue's
+    // socket never sees another's order arrive.
+    broadcast(
+      {
+        type: 'dinein.order',
+        order_id: order.insertId,
+        public_id: publicId,
+        table: label,
+        total_minor: total,
+        lines: lines.length,
+      },
+      { office: email }
+    );
+    return { orderId: order.insertId, publicId };
+  }
+
+  /**
+   * An order for collection, from the venue's own website (2026-10-10,
+   * Pontardawe RFC on pontardawerfc.com).
+   *
+   * No table: the customer is not in the building yet. A name and a phone
+   * number are always required, because the bar has to call out who it is for
+   * and ring somebody who has not turned up. It is paid at the bar on
+   * collection, so it arrives on the till as an order with no table, labelled
+   * "Collect <name>", exactly as a kiosk "pay at the counter" order does. Only
+   * when the venue has switched collection on (schema_menu_dinein_collection.sql),
+   * is published and taking orders, and within its hours.
+   */
+  router.post('/api/public/dinein/venue/:slug/order', async (req, res, next) => {
+    const conn = await pool.getConnection();
+    try {
+      const [[venue]] = await conn.query(
+        'SELECT * FROM dinein_venue WHERE slug = ?',
+        [cleanSlug(req.params.slug)]
+      );
+      if (!venue || !venue.is_published) {
+        return res.status(404).json({ error: 'No venue at that address.' });
+      }
+      if (!venue.ordering_open || !venue.collection_open) {
+        return res.status(403).json({
+          error: 'Orders for collection are not being taken online just now. Please call the club.',
+        });
+      }
+      const state = openState(venue);
+      if (state.enforced && !state.open) {
+        return res.status(409).json({
+          error: venue.closed_message
+            || (state.next
+              ? 'The kitchen is closed. It opens ' +
+                (state.next.today ? 'today' : state.next.day) + ' at ' + state.next.at + '.'
+              : 'The kitchen is closed just now.'),
+          closed: true,
+          schedule: state,
+        });
+      }
+
+      const body = req.body || {};
+      const name = String(body.name || '').trim().slice(0, 120);
+      const phone = String(body.phone || '').trim().slice(0, 40);
+      if (!name) return res.status(400).json({ error: 'Please leave a name for the order.' });
+      if (phone.replace(/[^0-9]/g, '').length < 7) {
+        return res.status(400).json({ error: 'Please leave a phone number we can call.' });
+      }
+
+      const email = await emailOf(venue.office_id);
+      let priced;
+      try {
+        priced = await core.priceBasket(conn, { officeId: venue.office_id, email, basket: body.lines });
+      } catch (e) {
+        if (e instanceof BasketError) return res.status(e.status).json({ error: e.message });
+        throw e;
+      }
+      const subtotal = priced.subtotal;
+      const discount = discountFor(offerOf(venue), subtotal);
+      const total = subtotal - discount;
+
+      const who = dinerOf(req);
+      const dinerId = who && who.office === venue.office_id ? who.id : null;
+      const when = String(body.collect_at || '').trim().slice(0, 40);
+      const note = [
+        'Online order for collection - pay at the bar',
+        when ? 'Collect: ' + when : null,
+        String(body.note || '').trim().slice(0, 400) || null,
+      ].filter(Boolean).join('. ');
+
+      const label = ('Collect ' + name).slice(0, 60);
+      const { orderId, publicId } = await writeOrder(conn, {
+        officeId: venue.office_id,
+        email,
+        tableId: null,
+        label,
+        name,
+        phone,
+        note,
+        dinerId,
+        total,
+        lines: priced.lines,
+      });
+
+      res.status(201).json({
+        ok: true,
+        public_id: publicId,
+        number: orderId,
+        subtotal_minor: subtotal,
+        discount_minor: discount,
+        total_minor: total,
+        status: 'placed',
+        ready_in_minutes: Number(venue.collection_minutes) || Number(venue.eta_minutes) || 25,
       });
     } catch (e) {
       await conn.rollback().catch(() => {});

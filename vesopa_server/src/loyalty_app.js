@@ -1631,7 +1631,7 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
       const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
       const base = appPath(req, app.slug);
       // Shared links are read by other sites, which need a whole address.
-      const absolute = (u) => (/^https?:\/\//.test(String(u)) ? u : `${appUrl(app.slug).replace(/\/[^/]*\/$/, '')}${u}`);
+      const absolute = (u) => (/^https?:\/\//.test(String(u)) ? u : `${new URL(appUrl(app.slug)).origin}${u}`);
       const html = fs.readFileSync(indexFile, 'utf8')
         // Built with --base-href /__SLUG__/ (older builds: /app/__SLUG__/).
         .replace(/\/app\/__SLUG__\//g, base)

@@ -26,6 +26,32 @@
 const LOYALTY_HOST = String(process.env.LOYALTY_HOST || '').trim().toLowerCase();
 const SLUG = /^[a-z0-9](?:[a-z0-9-]{1,62}[a-z0-9])?$/;
 
+/*
+ * A VENUE'S OWN ADDRESS (2026-10-10). Pontardawe RFC: "member.pontardawerfc.com
+ * would be the new URL for pontardawe rfc membership program, not the
+ * loyalty.vesopa.com". The same app and the same process, at the root of a
+ * host that belongs to one venue:
+ *
+ *   LOYALTY_VENUE_HOSTS=member.pontardawerfc.com=pontardawe-rfc[,host=slug...]
+ *
+ * On that host `/` is the venue's app (there is nobody else's to choose), the
+ * API, uploads, wallet links and the Continue with Vesopa callback pass
+ * through as they do on loyalty.vesopa.com, and the back office is not
+ * reachable. loyalty.vesopa.com/<slug>/ and the older /app/<slug>/ send a
+ * member there with a permanent redirect, so cards, QR codes and saved icons
+ * keep working. Unset, nothing changes.
+ */
+function parseVenueHosts(raw) {
+  const hosts = new Map();
+  for (const pair of String(raw || '').split(',')) {
+    const [host, slug] = pair.split('=').map((x) => String(x || '').trim().toLowerCase());
+    if (host && slug && SLUG.test(slug) && /^[a-z0-9.-]+\.[a-z]{2,}$/.test(host)) hosts.set(host, slug);
+  }
+  return hosts;
+}
+const VENUE_HOSTS = parseVenueHosts(process.env.LOYALTY_VENUE_HOSTS);
+const HOST_OF_SLUG = new Map([...VENUE_HOSTS].map(([host, slug]) => [slug, host]));
+
 // Paths on the loyalty host that are not a venue.
 // /wallet/c/ and /wallet/s/ are a member's own card as an Apple or Google Wallet
 // pass: the app hands out a short-lived link on this name (loyalty_app.js,
@@ -44,12 +70,15 @@ function hostOf(req) {
 
 /** The app's path for a venue, as the page being served should write it. */
 function appPath(req, slug) {
+  if (req.loyaltyVenueHost && req.loyaltyVenueHost === String(slug).toLowerCase()) return '/';
   const onLoyalty = req.loyaltyHost || (LOYALTY_HOST && hostOf(req) === LOYALTY_HOST);
   return onLoyalty ? `/${slug}/` : `/app/${slug}/`;
 }
 
 /** The app's public address, for links that leave the page: emails, the back office, notifications. */
 function appUrl(slug) {
+  const own = HOST_OF_SLUG.get(String(slug || '').toLowerCase());
+  if (own) return `https://${own}/`;
   if (LOYALTY_HOST) return `https://${LOYALTY_HOST}/${slug}/`;
   return `https://${(process.env.MENU_HOST || 'menu.vesopaepos.com').trim()}/app/${slug}/`;
 }
@@ -71,8 +100,33 @@ const NOT_FOUND = notFoundPage({
   links: [['Try the demo app', '/thevesopakitchen/'], ['Get an app for your venue', '/#pricing']],
 });
 
+/** A venue's own app host: the whole host is that one venue's app. */
+function venueHostGate(req, res, next, slug) {
+  const [path, qs] = req.url.split('?');
+  const query = qs ? `?${qs}` : '';
+  // Marked even when passing through, so the sign-in callback sends the
+  // member back to `/` on this host rather than to the shared address.
+  req.loyaltyVenueHost = slug;
+  if (path === '/health' || PASS.some((p) => path.startsWith(p))) return next();
+  if (path === '/robots.txt') {
+    return res.type('text/plain').send(`User-agent: *\nAllow: /\nSitemap: https://${hostOf(req)}/sitemap.xml\n`);
+  }
+  if (path === '/sitemap.xml') {
+    return res.type('application/xml').send('<?xml version="1.0" encoding="UTF-8"?>\n'
+      + `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://${hostOf(req)}/</loc></url></urlset>`);
+  }
+  // The address it used to have, typed onto the new host by habit.
+  const old = path.match(/^\/(?:app\/)?([^/]+)(\/.*)?$/);
+  if (old && old[1] === slug) return res.redirect(301, `${old[2] || '/'}${query}`);
+  req.loyaltyHost = true;
+  req.url = `/app/${slug}${req.url}`;
+  return next();
+}
+
 function loyaltyHostGate() {
   return (req, res, next) => {
+    const own = VENUE_HOSTS.get(hostOf(req));
+    if (own) return venueHostGate(req, res, next, own);
     if (!LOYALTY_HOST) return next();
     const [path, qs] = req.url.split('?');
     const query = qs ? `?${qs}` : '';
@@ -82,7 +136,10 @@ function loyaltyHostGate() {
       // The old address. /app/vesopa/* is the sign-in callback, still in flight
       // for anybody who started signing in before the move.
       if (old && old[1] !== 'vesopa' && SLUG.test(old[1])) {
-        return res.redirect(301, `https://${LOYALTY_HOST}/${old[1]}${old[2] || '/'}${query}`);
+        const home = HOST_OF_SLUG.get(old[1]);
+        return res.redirect(301, home
+          ? `https://${home}${old[2] || '/'}${query}`
+          : `https://${LOYALTY_HOST}/${old[1]}${old[2] || '/'}${query}`);
       }
       return next();
     }
@@ -96,6 +153,10 @@ function loyaltyHostGate() {
     if (old && SLUG.test(old[1])) return res.redirect(301, `/${old[1]}${old[2] || '/'}${query}`);
 
     const venue = path.match(/^\/([^/]+)(\/.*)?$/);
+    // A venue that has moved to its own address is sent there, deep link and all.
+    if (venue && HOST_OF_SLUG.has(venue[1])) {
+      return res.redirect(301, `https://${HOST_OF_SLUG.get(venue[1])}${venue[2] || '/'}${query}`);
+    }
     if (venue && SLUG.test(venue[1]) && !RESERVED.has(venue[1])) {
       if (!venue[2]) return res.redirect(301, `/${venue[1]}/${query}`);
       req.loyaltyHost = true;
@@ -106,4 +167,12 @@ function loyaltyHostGate() {
   };
 }
 
-module.exports = { loyaltyHostGate, appPath, appUrl, callbackHost, RESERVED, LOYALTY_HOST, NOT_FOUND };
+/** The host a request arrived on, when it is a venue's own app host; else null. */
+function venueHostOf(req) {
+  return VENUE_HOSTS.has(hostOf(req)) ? hostOf(req) : null;
+}
+
+module.exports = {
+  loyaltyHostGate, appPath, appUrl, callbackHost, venueHostOf, parseVenueHosts,
+  RESERVED, LOYALTY_HOST, NOT_FOUND,
+};

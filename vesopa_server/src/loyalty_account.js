@@ -17,7 +17,17 @@
  * software on somebody's phone and cannot be trusted to have stopped drawing
  * it. Turning off passwords has to mean passwords stop working.
  */
-const { callbackHost } = require('./loyalty_host');
+const { callbackHost, venueHostOf } = require('./loyalty_host');
+
+/*
+ * A passkey belongs to the host the page was served from. A venue with its
+ * own app host (member.pontardawerfc.com, loyalty_host.js) is its own relying
+ * party there; everywhere else the shared one in loyalty_auth.js applies.
+ */
+function passkeyEnv(req) {
+  const own = venueHostOf(req);
+  return own ? { ...process.env, LOYALTY_RP_ID: own, LOYALTY_WEBAUTHN_ORIGINS: '' } : process.env;
+}
 const idtoken = require('./vesopa_idtoken');
 const crypto = require('crypto');
 
@@ -119,7 +129,7 @@ module.exports = function loyaltyAccountRoutes(deps) {
       const email = String((req.body || {}).email || '').trim().toLowerCase();
       const customer = email && emailOk(email)
         ? await customerByEmail(pool, app.office, email) : null;
-      res.json(await auth.authenticationOptions(pool, { office: app.office, customer }));
+      res.json(await auth.authenticationOptions(pool, { office: app.office, customer, env: passkeyEnv(req) }));
     } catch (e) {
       next(e);
     }
@@ -129,7 +139,7 @@ module.exports = function loyaltyAccountRoutes(deps) {
     try {
       const app = await venue(req, res, 'passkey');
       if (!app) return;
-      const result = await auth.verifyAuthentication(pool, { office: app.office, body: req.body || {} });
+      const result = await auth.verifyAuthentication(pool, { office: app.office, body: req.body || {}, env: passkeyEnv(req) });
       if (result.error) return res.status(401).json({ error: result.error });
       await ensureCard(pool, app.office, result.customerId);
       res.json({ token: await signIn(req, app.office, result.customerId) });
@@ -570,7 +580,7 @@ module.exports = function loyaltyAccountRoutes(deps) {
         [req.customerId, req.office]
       );
       if (!c) return res.status(404).json({ error: 'Your membership could not be found.' });
-      res.json(await auth.registrationOptions(pool, { office: req.office, customer: c }));
+      res.json(await auth.registrationOptions(pool, { office: req.office, customer: c, env: passkeyEnv(req) }));
     } catch (e) {
       next(e);
     }
@@ -585,7 +595,7 @@ module.exports = function loyaltyAccountRoutes(deps) {
       );
       if (!c) return res.status(404).json({ error: 'Your membership could not be found.' });
       const result = await auth.saveRegistration(pool, {
-        office: req.office, customer: c, body: req.body || {}, name: (req.body || {}).name,
+        office: req.office, customer: c, body: req.body || {}, name: (req.body || {}).name, env: passkeyEnv(req),
       });
       if (result.error) return res.status(400).json({ error: result.error });
       res.json({ ok: true });
