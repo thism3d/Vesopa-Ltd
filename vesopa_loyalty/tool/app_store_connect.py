@@ -1,6 +1,7 @@
 """
 A venue's iPhone app in App Store Connect, through Apple's API.
 
+    python vesopa_loyalty/tool/app_store_connect.py status   PontardaweRFC
     python vesopa_loyalty/tool/app_store_connect.py prepare  PontardaweRFC
     python vesopa_loyalty/tool/app_store_connect.py store    PontardaweRFC
     python vesopa_loyalty/tool/app_store_connect.py testflight PontardaweRFC <build>
@@ -202,6 +203,65 @@ def load_venue(name):
 def find_app(c, bundle_id):
     apps = c.get("/v1/apps", **{"filter[bundleId]": bundle_id}).get("data", [])
     return apps[0] if apps else None
+
+
+# ---- status -------------------------------------------------------------------
+
+
+def cmd_status(venue_name):
+    """What App Store Connect has for the app, changing nothing."""
+    _, v, _ = load_venue(venue_name)
+    c = Client()
+    app = find_app(c, v["app_id"])
+    if not app:
+        note(f"No app record for {v['app_id']}.")
+        return
+    a = app["attributes"]
+    note(f"App: {a.get('name')}  Apple ID {app['id']}  bundle {a.get('bundleId')}  SKU {a.get('sku')}  "
+         f"primary language {a.get('primaryLocale')}")
+
+    def safe(label, fn):
+        try:
+            fn()
+        except AppleError as e:
+            note(f"  {label}: {e.detail()}")
+
+    def infos():
+        for info in c.all(f"/v1/apps/{app['id']}/appInfos"):
+            ia = info["attributes"]
+            note(f"  app info: state {ia.get('state') or ia.get('appStoreState')}, age rating {ia.get('appStoreAgeRating')}")
+            for loc in c.all(f"/v1/appInfos/{info['id']}/appInfoLocalizations"):
+                la = loc["attributes"]
+                note(f"    {la['locale']}: name {la.get('name')!r}, subtitle {la.get('subtitle')!r}, privacy {la.get('privacyPolicyUrl')!r}")
+
+    def versions():
+        for ver in c.all(f"/v1/apps/{app['id']}/appStoreVersions"):
+            va = ver["attributes"]
+            note(f"  version {va['versionString']} ({va.get('platform')}): {va.get('appVersionState') or va.get('appStoreState')}")
+            for loc in c.all(f"/v1/appStoreVersions/{ver['id']}/appStoreVersionLocalizations"):
+                la = loc["attributes"]
+                sets = c.all(f"/v1/appStoreVersionLocalizations/{loc['id']}/appScreenshotSets")
+                note(f"    {la['locale']}: description {len(la.get('description') or '')} chars, "
+                     f"keywords {la.get('keywords')!r}, support {la.get('supportUrl')!r}, "
+                     f"screenshot sets {[s['attributes']['screenshotDisplayType'] for s in sets]}")
+
+    def builds():
+        found = c.all("/v1/builds", **{"filter[app]": app["id"], "limit": "50", "include": "preReleaseVersion"})
+        if not found:
+            note("  builds: none uploaded yet")
+        for b in found[:10]:
+            ba = b["attributes"]
+            note(f"  build {ba.get('version')}: {ba.get('processingState')}, uploaded {ba.get('uploadedDate')}, expired {ba.get('expired')}")
+
+    def groups():
+        for g in c.all(f"/v1/apps/{app['id']}/betaGroups"):
+            ga = g["attributes"]
+            testers = c.all(f"/v1/betaGroups/{g['id']}/betaTesters")
+            note(f"  TestFlight group {ga['name']!r}: internal {ga.get('isInternalGroup')}, "
+                 f"every build {ga.get('hasAccessToAllBuilds')}, {len(testers)} testers")
+
+    for label, fn in (("app info", infos), ("versions", versions), ("builds", builds), ("TestFlight", groups)):
+        safe(label, fn)
 
 
 # ---- prepare ------------------------------------------------------------------
@@ -770,10 +830,12 @@ def summary():
 
 
 def main():
-    if len(sys.argv) < 3 or sys.argv[1] not in ("prepare", "store", "testflight"):
+    if len(sys.argv) < 3 or sys.argv[1] not in ("status", "prepare", "store", "testflight"):
         raise SystemExit(__doc__)
     cmd, venue = sys.argv[1], sys.argv[2]
-    if cmd == "prepare":
+    if cmd == "status":
+        cmd_status(venue)
+    elif cmd == "prepare":
         cmd_prepare(venue)
     elif cmd == "store":
         cmd_store(venue)

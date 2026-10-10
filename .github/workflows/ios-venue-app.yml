@@ -22,8 +22,8 @@
 # Nothing is submitted for App Review. The run's summary lists anything Apple's
 # API cannot do (the app record the first time, App Privacy).
 #
-# The key is in the "production" environment (Settings > Environments >
-# production), from App Store Connect > Users and Access > Integrations >
+# The key is in the "App Store Connect API" environment (Settings >
+# Environments), from App Store Connect > Users and Access > Integrations >
 # App Store Connect API > Team Keys, Admin role:
 #   ASC_KEY_ID      the key's ID
 #   ASC_ISSUER_ID   the Issuer ID shown above the list of keys
@@ -41,6 +41,11 @@ on:
         description: The venue's folder
         required: true
         default: PontardaweRFC
+      mode:
+        description: check = only report what App Store Connect has; full = build, upload, listing and TestFlight
+        type: choice
+        options: [full, check]
+        default: full
 
 permissions:
   contents: read
@@ -49,7 +54,7 @@ jobs:
   ios:
     runs-on: macos-latest
     timeout-minutes: 120
-    environment: production
+    environment: App Store Connect API
     env:
       ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
       ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
@@ -74,7 +79,7 @@ jobs:
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
         run: |
           if [ -z "$ASC_KEY_ID" ] || [ -z "$ASC_ISSUER_ID" ] || [ -z "$ASC_KEY_P8" ]; then
-            echo "::warning::Built, not uploaded: set ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_P8 in the production environment (see the top of this file)."
+            echo "::warning::Built, not uploaded: set ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_P8 in the App Store Connect API environment (see the top of this file)."
             echo "upload=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -90,12 +95,15 @@ jobs:
         env:
           ASC_KEY_PATH: ${{ runner.temp }}/keys/AuthKey_${{ secrets.ASC_KEY_ID }}.p8
         run: |
+          "$RUNNER_TEMP/asc/bin/python" vesopa_loyalty/tool/app_store_connect.py status "$VENUE"
           "$RUNNER_TEMP/asc/bin/python" vesopa_loyalty/tool/app_store_connect.py prepare "$VENUE"
 
       - name: Make the venue's project
+        if: inputs.mode != 'check'
         run: python3 vesopa_loyalty/tool/make_venue_app.py "$VENUE"
 
       - name: Flutter build
+        if: inputs.mode != 'check'
         working-directory: ${{ inputs.venue }}/build/app
         env:
           BUILD_NUMBER: ${{ steps.asc.outputs.build }}
@@ -105,7 +113,7 @@ jobs:
             ${BUILD_NUMBER:+--build-number=$BUILD_NUMBER}
 
       - name: Archive (iPhone app with the Watch app)
-        if: steps.key.outputs.upload == 'true'
+        if: steps.key.outputs.upload == 'true' && inputs.mode != 'check'
         working-directory: ${{ inputs.venue }}/build/app
         run: |
           xcodebuild archive \
@@ -120,7 +128,7 @@ jobs:
             -authenticationKeyIssuerID "$ASC_ISSUER_ID"
 
       - name: Sign and upload to App Store Connect
-        if: steps.key.outputs.upload == 'true'
+        if: steps.key.outputs.upload == 'true' && inputs.mode != 'check'
         working-directory: ${{ inputs.venue }}/build/app
         run: |
           xcodebuild -exportArchive \
@@ -133,7 +141,7 @@ jobs:
             -authenticationKeyIssuerID "$ASC_ISSUER_ID"
 
       - name: App Store listing and screenshots
-        if: steps.key.outputs.upload == 'true'
+        if: steps.key.outputs.upload == 'true' && inputs.mode != 'check'
         env:
           ASC_KEY_PATH: ${{ runner.temp }}/keys/AuthKey_${{ secrets.ASC_KEY_ID }}.p8
           ASC_REVIEW_USER: ${{ secrets.ASC_REVIEW_USER }}
@@ -143,7 +151,7 @@ jobs:
           "$RUNNER_TEMP/asc/bin/python" vesopa_loyalty/tool/app_store_connect.py store "$VENUE"
 
       - name: TestFlight
-        if: steps.key.outputs.upload == 'true'
+        if: steps.key.outputs.upload == 'true' && inputs.mode != 'check'
         env:
           ASC_KEY_PATH: ${{ runner.temp }}/keys/AuthKey_${{ secrets.ASC_KEY_ID }}.p8
           ASC_REVIEW_USER: ${{ secrets.ASC_REVIEW_USER }}
