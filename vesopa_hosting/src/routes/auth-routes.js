@@ -12,6 +12,7 @@
  */
 
 const express = require('express');
+const countries = require('../countries');
 const db = require('../db');
 const auth = require('../auth');
 const { sendMail, shell, escapeHtml } = require('../mailer');
@@ -132,7 +133,7 @@ router.post('/register', async (req, res, next) => {
       first_name: field(req.body.first_name, 80),
       last_name: field(req.body.last_name, 80),
       company: field(req.body.company, 160),
-      phone: field(req.body.phone, 40),
+      phone: countries.joinPhone(req.body.phone_cc, field(req.body.phone, 40)),
     };
     const password = String(req.body.password || '');
 

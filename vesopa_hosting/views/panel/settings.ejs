@@ -26,7 +26,7 @@
           </div>
           <div class="field">
             <label class="label" for="phone"><%= t('Phone') %></label>
-            <input class="input" id="phone" name="phone" value="<%= values.phone !== undefined ? values.phone : customer.phone %>">
+            <%- include('../partials/phone-field', { value: values.phone !== undefined ? values.phone : customer.phone, country: values.country || (typeof country !== 'undefined' ? country : customer.country) }) %>
           </div>
         </div>
         <div class="field">

@@ -12,6 +12,7 @@
 
 const express = require('express');
 const crypto = require('crypto');
+const countries = require('../countries');
 const db = require('../db');
 const pricing = require('../pricing');
 const registrar = require('../integrations/domainnameapi');
@@ -814,7 +815,7 @@ router.post('/checkout', async (req, res, next) => {
       first_name: field(req.body.first_name, 80),
       last_name: field(req.body.last_name, 80),
       company: field(req.body.company, 160),
-      phone: field(req.body.phone, 40),
+      phone: countries.joinPhone(req.body.phone_cc, field(req.body.phone, 40)),
       address1: field(req.body.address1, 160),
       address2: field(req.body.address2, 160),
       city: field(req.body.city, 80),

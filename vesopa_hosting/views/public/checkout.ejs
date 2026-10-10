@@ -74,7 +74,7 @@
             </div>
             <div class="field <%= errors.phone ? 'field-error' : '' %>">
               <label class="label" for="phone"><%= t('Phone') %></label>
-              <input class="input" id="phone" name="phone" autocomplete="tel" value="<%= values.phone || '' %>">
+              <%- include('../partials/phone-field', { value: values.phone || '', country: countries.pick(values.country, typeof geoCountry !== 'undefined' ? geoCountry : ''), required: true }) %>
               <% if (errors.phone) { %><p class="error-text"><%= errors.phone %></p><% } %>
             </div>
           </div>

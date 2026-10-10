@@ -180,4 +180,49 @@ function pick(stored, geo) {
   return 'GB';
 }
 
-module.exports = { NAMES, PRIORITY, DIAL, dialCode, isValid, nameOf, options, pick };
+
+/*
+ * The phone number, as a calling-code picker plus the number.
+ *
+ * One free-text box let people type "01977 978353" with no code, "+88 01977…",
+ * or "8801977…" — the registry needs exactly "+<code>.<number>", and each of
+ * those had to be guessed back apart. The form now asks for the code from a
+ * list (pre-set from the country) and the number on its own, and the two are
+ * stored joined as "+<code><number>", which toContact() already splits exactly.
+ */
+
+/** Split a stored "+<code><number>" into { cc: ISO country, local } for the form. */
+function splitPhone(phone, country) {
+  const raw = String(phone || '').replace(/[^\d+]/g, '');
+  const fallback = pick(country, '');
+  if (!raw.startsWith('+')) return { cc: fallback, local: String(phone || '').trim() };
+  const digits = raw.slice(1);
+  const own = dialCode(fallback);
+  // Prefer the customer's own country where its code matches (+1 is shared by
+  // the US, Canada and the Caribbean; +44 by GB, Jersey, Guernsey and Man).
+  if (own && digits.startsWith(own)) return { cc: fallback, local: digits.slice(own.length) };
+  const hit = Object.keys(DIAL)
+    .filter((c) => digits.startsWith(DIAL[c]))
+    .sort((a, b) => DIAL[b].length - DIAL[a].length || (PRIORITY.includes(b) - PRIORITY.includes(a)))[0];
+  return hit ? { cc: hit, local: digits.slice(DIAL[hit].length) } : { cc: fallback, local: digits };
+}
+
+/**
+ * Join the picker and the number into "+<code><number>". A number typed with
+ * its own "+" wins over the picker; a national trunk "0" is dropped, because
+ * the registry rejects "+880 01977…". Returns '' when there are no digits.
+ */
+function joinPhone(cc, local) {
+  const typed = String(local || '').trim();
+  if (!typed.replace(/\D/g, '')) return '';
+  if (typed.startsWith('+') || typed.startsWith('00')) {
+    return `+${typed.replace(/^00/, '').replace(/\D/g, '')}`.slice(0, 40);
+  }
+  const code = dialCode(cc);
+  const digits = typed.replace(/\D/g, '').replace(/^0+/, '');
+  // Already starts with the code ("8801977…" with Bangladesh picked): keep it once.
+  const body = code && digits.startsWith(code) && digits.length > code.length + 6 ? digits.slice(code.length) : digits;
+  return code ? `+${code}${body}`.slice(0, 40) : body.slice(0, 40);
+}
+
+module.exports = { NAMES, PRIORITY, DIAL, dialCode, isValid, nameOf, options, pick, splitPhone, joinPhone };

@@ -1,0 +1,51 @@
+<%#
+  A phone number as a calling-code picker plus the number.
+
+  The registry wants "+<code>.<number>"; one free-text box got "01977…",
+  "+88 01977…" and "8801977…" for the same phone. The picker is pre-set from
+  the stored number, else the country, and follows the Country select on the
+  same form until the customer picks a code themselves. The server joins the
+  two with countries.joinPhone().
+
+  Options:
+    value     the stored phone ("+8801977978353")
+    country   the country to fall back on for the code
+    required  mark the number required
+%>
+<%
+  const pfSplit = countries.splitPhone(typeof value !== 'undefined' ? value : '', typeof country !== 'undefined' ? country : '');
+  const pfList = countries.options();
+%>
+<div class="phone-field" style="display:flex;gap:8px">
+  <select class="input select" name="phone_cc" id="phone_cc" aria-label="<%= t('Country code') %>" style="flex:0 0 7.5em;min-width:0" data-phone-cc>
+    <% pfList.forEach(function (c) { const d = countries.dialCode(c.code); if (!d) return; %>
+      <option value="<%= c.code %>" <%= c.code === pfSplit.cc ? 'selected' : '' %>>+<%= d %> <%= c.name %></option>
+    <% }); %>
+  </select>
+  <input class="input" id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel-national" style="flex:1;min-width:0" value="<%= pfSplit.local %>" <%= typeof required !== 'undefined' && required ? 'required' : '' %>>
+</div>
+<script nonce="<%= nonce %>">
+  (function () {
+    var cc = document.querySelector('[data-phone-cc]');
+    var country = document.getElementById('country');
+    if (!cc) return;
+    // The closed select shows just "+880"; the open list keeps the names.
+    function shorten() {
+      for (var i = 0; i < cc.options.length; i++) {
+        var o = cc.options[i];
+        if (!o.dataset.full) o.dataset.full = o.textContent;
+        o.textContent = o.selected ? o.dataset.full.split(' ')[0] : o.dataset.full;
+      }
+    }
+    var touched = false;
+    cc.addEventListener('focus', function () { for (var i = 0; i < cc.options.length; i++) if (cc.options[i].dataset.full) cc.options[i].textContent = cc.options[i].dataset.full; });
+    cc.addEventListener('blur', shorten);
+    cc.addEventListener('change', function () { touched = true; shorten(); });
+    if (country) country.addEventListener('change', function () {
+      if (touched) return;
+      for (var i = 0; i < cc.options.length; i++) if (cc.options[i].value === country.value) { cc.selectedIndex = i; break; }
+      shorten();
+    });
+    shorten();
+  })();
+</script>
