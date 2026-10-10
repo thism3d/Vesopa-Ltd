@@ -52,6 +52,7 @@ sh = base.sh
 USER = "vesopasoftware"
 SLUG = "pontardawe-rfc"
 BUNDLE = "com.vesopaepos.pontardawerfc"
+CLIENT_ID = "12a1047bafa611f185af42010a80000e"  # PontardaweRFC/venue.json vesopa_client_id
 METHODS = ["code_email", "password", "passkey", "code_sms", "vesopa"]  # loyalty_auth.js METHODS
 BACKOFFICE = f"/home/{USER}/web/backoffice.vesopaepos.com/private/nodeapp"
 AUTH_DOMAIN = "auth.vesopa.com"
@@ -102,9 +103,14 @@ def checks():
     results.append(("the app offers email and password", '"password"' in listed))
     results.append(("the app offers Continue with Vesopa (Apple, Google, phone, passkey)", '"vesopa"' in listed))
     st, headers, _ = fetch(
-        f"https://{AUTH_DOMAIN}/oauth/authorize?response_type=code&client_id=x&redirect_uri=http://127.0.0.1/&idp=google")
+        # The app's own request (vesopa_sso_io.dart): its client, a loopback
+        # /callback and PKCE. A made-up client is refused with 400 first.
+        f"https://{AUTH_DOMAIN}/oauth/authorize?response_type=code&client_id={CLIENT_ID}"
+        "&redirect_uri=http%3A%2F%2F127.0.0.1%3A53123%2Fcallback&scope=openid%20profile%20email"
+        "&code_challenge=abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrs&code_challenge_method=S256&state=x&idp=google")
     where = (headers or {}).get("Location", "") if headers else ""
     print(f"   /oauth/authorize?idp=google answers {st} -> {where[:60]}")
+    results.append(("the app's Google button goes straight to Google", st == 303 and where.startswith("/auth/google")))
     st, _, _ = fetch(f"https://{AUTH_DOMAIN}/health")
     results.append(("auth health", st == 200))
     st, _, _ = fetch("https://backoffice.vesopaepos.com/health")
