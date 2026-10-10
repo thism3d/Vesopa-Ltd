@@ -57,7 +57,6 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-import jwt
 
 API = "https://api.appstoreconnect.apple.com"
 
@@ -111,6 +110,8 @@ class Client:
         # Apple allows twenty minutes; a fresh one every ten.
         if not self._token or time.time() - self._made > 600:
             now = int(time.time())
+            import jwt  # here, so sign-project runs without it
+
             self._token = jwt.encode(
                 {"iss": self.issuer, "iat": now, "exp": now + 1200, "aud": "appstoreconnect-v1"},
                 self.p8,

@@ -141,7 +141,7 @@ jobs:
             mkdir -p "$d"; cp "$S"/*.mobileprovision "$d/"
           done
           rm -f "$S/dist.key.pem" "$S/dist.p12"
-          python3 vesopa_loyalty/tool/app_store_connect.py sign-project "$VENUE" "$S/profiles.json"
+          "$RUNNER_TEMP/asc/bin/python" vesopa_loyalty/tool/app_store_connect.py sign-project "$VENUE" "$S/profiles.json"
 
       - name: Archive (iPhone app with the Watch app)
         if: steps.key.outputs.upload == 'true' && inputs.mode != 'check'
