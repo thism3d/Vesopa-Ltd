@@ -55,9 +55,10 @@ the iPhone's own on Apple devices.
 ## Signing in
 
 Members can use an emailed code, email and password, a passkey, a texted
-code, or Continue with Vesopa, which gives the app its Continue with Apple,
-Continue with Google, phone and passkey buttons (each goes straight there
-through auth.vesopa.com's `idp` hint). They are switched on in the back office
+code, and Continue with Apple, Continue with Google, phone and passkey
+buttons. Those four ARE Continue with Vesopa (there is no separate Vesopa
+button), so the venue's "vesopa" method must stay on; each goes straight
+there through auth.vesopa.com's `idp` hint. They are switched on in the back office
 (Loyalty App > Sign-in) or by `python tool/deploy_pontardawe_app.py --apply`.
 
 ## Android (Windows PC)
