@@ -10,6 +10,7 @@ import '../platform/watch.dart';
 import 'watch_card.dart';
 import 'api.dart';
 import 'brand.dart';
+import 'venue_style.dart';
 
 /// Which venue this app is, and where its server is.
 ///
@@ -164,7 +165,8 @@ final brandProvider = FutureProvider<Brand>((ref) async {
   final api = ref.watch(apiProvider);
   final brand = Brand.fromJson(await api.app(), api.resolve);
   await brand.loadFonts();
-  return brand;
+  // A venue app's own palette and typeface (nothing changes elsewhere).
+  return VenueStyle.apply(brand);
 });
 
 String _tokenKey(String slug) => 'loyalty_token_$slug';

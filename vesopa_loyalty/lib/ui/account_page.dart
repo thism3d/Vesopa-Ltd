@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -34,9 +35,9 @@ class AccountPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final account = ref.watch(accountProvider);
     return account.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
+      loading: () => const Center(child: CircularProgressIndicator.adaptive()),
       error: (e, _) => LoadFailed(error: e, onRetry: () => ref.invalidate(accountProvider)),
-      data: (a) => RefreshIndicator(
+      data: (a) => RefreshIndicator.adaptive(
         onRefresh: () {
           ref.invalidate(membershipProvider);
           return ref.refresh(accountProvider.future);
@@ -170,28 +171,55 @@ class _PhotoRow extends ConsumerWidget {
     final phone = !kIsWeb && (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS);
     var source = ImageSource.gallery;
     if (phone) {
-      final chosen = await showModalBottomSheet<ImageSource>(
-        context: context,
-        showDragHandle: true,
-        builder: (sheet) => SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.photo_camera_outlined),
-                title: const Text('Take a photo'),
-                onTap: () => Navigator.pop(sheet, ImageSource.camera),
+      // The device's own chooser: an action sheet on an iPhone and iPad (a
+      // popover-style sheet there, as Photos and Contacts use), the bottom
+      // sheet on Android.
+      final ios = defaultTargetPlatform == TargetPlatform.iOS;
+      final chosen = ios
+          ? await showCupertinoModalPopup<ImageSource>(
+              context: context,
+              builder: (sheet) => CupertinoActionSheet(
+                title: const Text('Your photo'),
+                message: const Text('Shown on your card at the till.'),
+                actions: [
+                  CupertinoActionSheetAction(
+                    onPressed: () => Navigator.pop(sheet, ImageSource.camera),
+                    child: const Text('Take a photo'),
+                  ),
+                  CupertinoActionSheetAction(
+                    onPressed: () => Navigator.pop(sheet, ImageSource.gallery),
+                    child: const Text('Choose from your photos'),
+                  ),
+                ],
+                cancelButton: CupertinoActionSheetAction(
+                  isDefaultAction: true,
+                  onPressed: () => Navigator.pop(sheet),
+                  child: const Text('Cancel'),
+                ),
               ),
-              ListTile(
-                leading: const Icon(Icons.photo_library_outlined),
-                title: const Text('Choose from your photos'),
-                onTap: () => Navigator.pop(sheet, ImageSource.gallery),
+            )
+          : await showModalBottomSheet<ImageSource>(
+              context: context,
+              showDragHandle: true,
+              builder: (sheet) => SafeArea(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ListTile(
+                      leading: const Icon(Icons.photo_camera_outlined),
+                      title: const Text('Take a photo'),
+                      onTap: () => Navigator.pop(sheet, ImageSource.camera),
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.photo_library_outlined),
+                      title: const Text('Choose from your photos'),
+                      onTap: () => Navigator.pop(sheet, ImageSource.gallery),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                ),
               ),
-              const SizedBox(height: 8),
-            ],
-          ),
-        ),
-      );
+            );
       if (chosen == null) return;
       source = chosen;
     }
@@ -203,6 +231,10 @@ class _PhotoRow extends ConsumerWidget {
         maxHeight: 900,
         imageQuality: 85,
         preferredCameraDevice: CameraDevice.front,
+        // The system photo picker needs no library permission; asking for
+        // full metadata would put a "allow access to all photos" prompt
+        // between the member and their picture for nothing.
+        requestFullMetadata: false,
       );
     } catch (_) {
       if (context.mounted) {
@@ -225,12 +257,12 @@ class _PhotoRow extends ConsumerWidget {
   Future<void> _remove(BuildContext context, WidgetRef ref) async {
     final sure = await showDialog<bool>(
       context: context,
-      builder: (dialog) => AlertDialog(
+      builder: (dialog) => AlertDialog.adaptive(
         title: const Text('Remove your photo?'),
         content: const Text('Your card will show your initials instead.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(dialog, false), child: const Text('Keep it')),
-          FilledButton(onPressed: () => Navigator.pop(dialog, true), child: const Text('Remove')),
+          DialogAction(onPressed: () => Navigator.pop(dialog, false), child: const Text('Keep it')),
+          DialogAction(primary: true, onPressed: () => Navigator.pop(dialog, true), child: const Text('Remove')),
         ],
       ),
     );
@@ -373,14 +405,14 @@ class _Membership extends ConsumerWidget {
             : '';
     return showDialog<void>(
       context: context,
-      builder: (dialog) => AlertDialog(
+      builder: (dialog) => AlertDialog.adaptive(
         title: const Text('Renewing your membership'),
         content: Text(
           '${fee > 0 ? 'It costs ${money(fee)}, ' : ''}'
           'paid at the till. Show your card and ask to renew; your membership then runs $until '
           'and your points ${expired ? 'can be spent again' : 'carry on as they are'}.',
         ),
-        actions: [FilledButton(onPressed: () => Navigator.pop(dialog), child: const Text('Got it'))],
+        actions: [DialogAction(primary: true, onPressed: () => Navigator.pop(dialog), child: const Text('Got it'))],
       ),
     );
   }
@@ -655,15 +687,15 @@ class _LeaveCardState extends ConsumerState<_LeaveCard> {
     if (remove) {
       final sure = await showDialog<bool>(
         context: context,
-        builder: (d) => AlertDialog(
+        builder: (d) => AlertDialog.adaptive(
           title: const Text('Remove the app from your membership?'),
           content: const Text(
             'Every device you signed in on is signed out, notifications stop and nearby offers '
             'are switched off. Your membership and points stay with the venue.',
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Cancel')),
-            FilledButton(onPressed: () => Navigator.pop(d, true), child: const Text('Remove')),
+            DialogAction(onPressed: () => Navigator.pop(d, false), child: const Text('Cancel')),
+            DialogAction(primary: true, onPressed: () => Navigator.pop(d, true), child: const Text('Remove')),
           ],
         ),
       );

@@ -149,9 +149,9 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
     if (_error != null && _items.isEmpty) {
       return LoadFailed(error: _error!, onRetry: () => _load(fresh: true));
     }
-    if (_loading && _items.isEmpty) return const Center(child: CircularProgressIndicator());
+    if (_loading && _items.isEmpty) return const Center(child: CircularProgressIndicator.adaptive());
     if (_items.isEmpty) {
-      return RefreshIndicator(
+      return RefreshIndicator.adaptive(
         onRefresh: () => _load(fresh: true),
         child: ListView(
           children: const [
@@ -161,7 +161,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
         ),
       );
     }
-    return RefreshIndicator(
+    return RefreshIndicator.adaptive(
       onRefresh: () => _load(fresh: true),
       child: ListView.separated(
         padding: const EdgeInsets.symmetric(vertical: 8),
@@ -173,7 +173,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
               padding: const EdgeInsets.all(16),
               child: Center(
                 child: _loading
-                    ? const CircularProgressIndicator()
+                    ? const CircularProgressIndicator.adaptive()
                     : OutlinedButton(onPressed: _load, child: const Text('Show older')),
               ),
             );

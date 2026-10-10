@@ -10,6 +10,7 @@ import 'data/activity_log.dart';
 import 'data/app_update.dart';
 import 'data/api.dart';
 import 'data/session.dart';
+import 'data/venue_style.dart';
 import 'ui/home.dart';
 import 'ui/sign_in.dart';
 import 'ui/venue_intro.dart';
@@ -74,7 +75,7 @@ class LoyaltyApp extends ConsumerWidget {
     if (venue.isLoading) {
       return const MaterialApp(
         debugShowCheckedModeBanner: false,
-        home: Scaffold(body: Center(child: CircularProgressIndicator())),
+        home: Scaffold(body: Center(child: CircularProgressIndicator.adaptive())),
       );
     }
     if ((venue.value ?? '').isEmpty) {
@@ -87,7 +88,7 @@ class LoyaltyApp extends ConsumerWidget {
     return brand.when(
       loading: () => const MaterialApp(
         debugShowCheckedModeBanner: false,
-        home: Scaffold(body: Center(child: CircularProgressIndicator())),
+        home: Scaffold(body: Center(child: CircularProgressIndicator.adaptive())),
       ),
       error: (e, _) => MaterialApp(
         debugShowCheckedModeBanner: false,
@@ -106,7 +107,11 @@ class LoyaltyApp extends ConsumerWidget {
         return MaterialApp(
           title: b.name,
           debugShowCheckedModeBanner: false,
-          theme: b.theme(),
+          // A venue app follows the device into dark mode, in the club's own
+          // shades (lib/data/venue_style.dart); elsewhere, the back office's.
+          theme: VenueStyle.enabled ? VenueStyle.forBrightness(b, Brightness.light).theme() : b.theme(),
+          darkTheme: VenueStyle.enabled ? VenueStyle.forBrightness(b, Brightness.dark).theme() : null,
+          themeMode: VenueStyle.enabled ? ThemeMode.system : ThemeMode.light,
           navigatorObservers: [ActivityLog.instance.observer],
           builder: (context, child) => ActivityLog.instance.wrap(child ?? const SizedBox.shrink()),
           home: const _Gate(),
@@ -160,11 +165,11 @@ class _Gate extends ConsumerWidget {
     Widget signedOut() {
       if (!storeApp) return const SignInPage();
       WidgetsBinding.instance.addPostFrameCallback((_) => ref.read(venueProvider.notifier).forget());
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(body: Center(child: CircularProgressIndicator.adaptive()));
     }
 
     return session.when(
-      loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
+      loading: () => const Scaffold(body: Center(child: CircularProgressIndicator.adaptive())),
       error: (_, _) => signedOut(),
       data: (token) => token == null ? signedOut() : const HomePage(),
     );

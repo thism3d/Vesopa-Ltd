@@ -106,7 +106,7 @@ class _InboxPageState extends ConsumerState<InboxPage> {
   Widget build(BuildContext context) {
     final messages = ref.watch(messagesProvider);
     return messages.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
+      loading: () => const Center(child: CircularProgressIndicator.adaptive()),
       error: (e, _) => LoadFailed(error: e, onRetry: () => ref.invalidate(messagesProvider)),
       data: (data) {
         // A fresh first page (pull to refresh, a new notification) drops the
@@ -122,7 +122,7 @@ class _InboxPageState extends ConsumerState<InboxPage> {
         ];
         final limited = data['mode'] == 'limit';
         if (items.isEmpty) {
-          return RefreshIndicator(
+          return RefreshIndicator.adaptive(
             onRefresh: () => ref.refresh(messagesProvider.future),
             child: ListView(
               children: const [
@@ -137,7 +137,7 @@ class _InboxPageState extends ConsumerState<InboxPage> {
             ),
           );
         }
-        return RefreshIndicator(
+        return RefreshIndicator.adaptive(
           onRefresh: () => ref.refresh(messagesProvider.future),
           child: LayoutBuilder(
             builder: (context, box) {
@@ -156,7 +156,7 @@ class _InboxPageState extends ConsumerState<InboxPage> {
                     if (_loading) {
                       return const Padding(
                         padding: EdgeInsets.all(20),
-                        child: Center(child: CircularProgressIndicator()),
+                        child: Center(child: CircularProgressIndicator.adaptive()),
                       );
                     }
                     if (limited && items.length >= ((data['limit'] as num?)?.toInt() ?? 12)) {

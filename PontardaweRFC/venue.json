@@ -4,8 +4,8 @@
   "short_name": "Pontardawe",
   "tagline": "Members' Club · Est. 1881",
   "app_id": "com.vesopaepos.pontardawerfc",
-  "version": "1.0.0",
-  "build": 1,
+  "version": "1.1.0",
+  "build": 2,
   "colours": {
     "background": "#8F0000",
     "deep": "#3F0000",

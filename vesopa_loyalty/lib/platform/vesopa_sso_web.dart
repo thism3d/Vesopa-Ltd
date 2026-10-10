@@ -37,7 +37,9 @@ String _random(int bytes) {
 /// the time this would return, and the code arrives in the address on the way
 /// back, where [takeVesopaAnswer] picks it up. The signature matches the
 /// native one so the caller does not have to know which platform it is on.
-Future<VesopaAnswer?> startVesopaSignIn({required String slug, required String venue}) async {
+/// [idp] goes straight to one way in on auth.vesopa.com (`apple`, `google`,
+/// `phone`, `passkey`); see vesopa_sso_io.dart.
+Future<VesopaAnswer?> startVesopaSignIn({required String slug, required String venue, String? idp}) async {
   if (_clientId.isEmpty) {
     return const VesopaAnswer(error: 'This app was built without a Vesopa sign-in.');
   }
@@ -66,6 +68,7 @@ Future<VesopaAnswer?> startVesopaSignIn({required String slug, required String v
     'state': state,
     'code_challenge': challenge,
     'code_challenge_method': 'S256',
+    'idp': ?idp,
   });
   web.window.location.assign(url.toString());
   return null;

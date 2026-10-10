@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -5,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/api.dart';
 import '../data/session.dart';
 import '../data/signin.dart';
+import '../data/venue_style.dart';
 import '../platform/passkey.dart';
 import '../platform/vesopa_sso.dart';
 import 'widgets.dart';
@@ -170,11 +172,14 @@ class _SignInPageState extends ConsumerState<SignInPage> {
     await ref.read(sessionProvider.notifier).signedIn(token);
   });
 
-  Future<void> _startVesopa() => _run(() async {
+  /// [idp] goes straight to one way in at Vesopa (Apple, Google, the phone,
+  /// a passkey) instead of Vesopa's own page of choices.
+  Future<void> _startVesopa([String? idp]) => _run(() async {
     final brand = ref.read(brandProvider).requireValue;
     final answer = await startVesopaSignIn(
       slug: ref.read(configProvider).slug,
       venue: brand.name,
+      idp: idp,
     );
     // Null on the web: the page has left for auth.vesopa.com and the answer
     // arrives in the address when it comes back.
@@ -227,6 +232,45 @@ class _SignInPageState extends ConsumerState<SignInPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (!VenueStyle.enabled) return _page(context);
+    // A venue app signs in on its club colour, moving, whatever the device's
+    // mode: white words and a white button on the club's red, as the crest
+    // and the splash before it.
+    final brand = ref.watch(brandProvider).requireValue;
+    final dark = VenueStyle.forBrightness(brand, Brightness.dark).theme();
+    return Theme(
+      data: dark.copyWith(
+        scaffoldBackgroundColor: Colors.transparent,
+        filledButtonTheme: FilledButtonThemeData(
+          style: dark.filledButtonTheme.style?.copyWith(
+            backgroundColor: const WidgetStatePropertyAll(Colors.white),
+            foregroundColor: WidgetStatePropertyAll(VenueStyle.club),
+          ),
+        ),
+        textButtonTheme: TextButtonThemeData(
+          style: TextButton.styleFrom(
+            foregroundColor: Colors.white,
+            textStyle: dark.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600, decoration: TextDecoration.underline),
+          ),
+        ),
+        inputDecorationTheme: dark.inputDecorationTheme.copyWith(
+          fillColor: Colors.black.withValues(alpha: 0.22),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.18)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: Colors.white, width: 1.6),
+          ),
+        ),
+      ),
+      child: ClubGradient(child: Builder(builder: _page)),
+    );
+  }
+
+  Widget _page(BuildContext context) {
     final brand = ref.watch(brandProvider).requireValue;
     final theme = Theme.of(context);
     final config = brand.signIn;
@@ -280,7 +324,7 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                     FilledButton(
                       onPressed: _busy ? null : primary.action,
                       child: _busy
-                          ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5))
+                          ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator.adaptive(strokeWidth: 2.5))
                           : Text(primary.label),
                     ),
                     if (_stage != _Stage.start)
@@ -424,8 +468,22 @@ class _SignInPageState extends ConsumerState<SignInPage> {
     if (others.isEmpty) return const [];
 
     const oneTap = {'vesopa', 'passkey'};
-    final buttons = others.where(oneTap.contains).toList();
     final links = others.where((m) => !oneTap.contains(m)).toList();
+
+    // Through Vesopa come Apple, Google, the phone and a passkey, each a
+    // button of its own that goes straight there: members know those marks,
+    // and nobody looks for them behind "Continue with Vesopa".
+    final viaVesopa = config.usable.contains('vesopa');
+    final apple = defaultTargetPlatform == TargetPlatform.iOS || defaultTargetPlatform == TargetPlatform.macOS;
+    final buttons = <_Way>[
+      if (viaVesopa && apple) const _Way.apple(),
+      if (viaVesopa) const _Way.google(),
+      if (viaVesopa && !apple) const _Way.apple(),
+      if (others.contains('passkey')) const _Way.passkey(null) else if (viaVesopa) const _Way.passkey('passkey'),
+      if (viaVesopa && !config.usable.contains('code_sms')) const _Way.phone(),
+      if (others.contains('vesopa')) const _Way.vesopa(),
+    ];
+    if (buttons.isEmpty && links.isEmpty) return const [];
 
     return [
       const SizedBox(height: 14),
@@ -440,11 +498,14 @@ class _SignInPageState extends ConsumerState<SignInPage> {
         ],
       ),
       const SizedBox(height: 10),
-      for (final m in buttons) ...[
-        _ProviderButton(
-          method: m,
-          busy: _busy,
-          onPressed: () => m == 'vesopa' ? _startVesopa() : _signInWithPasskey(),
+      for (final (i, way) in buttons.indexed) ...[
+        Entrance(
+          delay: Duration(milliseconds: 60 * i),
+          child: _ProviderButton(
+            way: way,
+            busy: _busy,
+            onPressed: () => way.method == 'passkey' && way.idp == null ? _signInWithPasskey() : _startVesopa(way.idp),
+          ),
         ),
         const SizedBox(height: 8),
       ],
@@ -463,52 +524,79 @@ class _SignInPageState extends ConsumerState<SignInPage> {
   }
 }
 
-/// A way in that needs nothing typed: its own mark, and it goes on one tap.
-class _ProviderButton extends StatelessWidget {
-  const _ProviderButton({required this.method, required this.busy, required this.onPressed});
+/// A way in that needs nothing typed.
+class _Way {
+  const _Way.apple() : method = 'vesopa', idp = 'apple', label = 'Continue with Apple';
+  const _Way.google() : method = 'vesopa', idp = 'google', label = 'Continue with Google';
+  const _Way.phone() : method = 'vesopa', idp = 'phone', label = 'Continue with your phone';
+  const _Way.passkey(this.idp) : method = 'passkey', label = 'Use a passkey';
+  const _Way.vesopa() : method = 'vesopa', idp = null, label = 'Continue with Vesopa';
 
   final String method;
+
+  /// Where Vesopa sends the member at once; null for its own page of choices
+  /// (or, for a passkey, the device's own passkey prompt).
+  final String? idp;
+  final String label;
+}
+
+/// A way in that needs nothing typed: its own mark, and it goes on one tap.
+/// Apple's is black (white in the dark) as Apple asks; the rest sit on the
+/// page's own surface.
+class _ProviderButton extends StatelessWidget {
+  const _ProviderButton({required this.way, required this.busy, required this.onPressed});
+
+  final _Way way;
   final bool busy;
   final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final vesopa = method == 'vesopa';
+    final dark = theme.brightness == Brightness.dark;
+    final isApple = way.idp == 'apple';
+    final fg = isApple ? (dark ? Colors.black : Colors.white) : theme.colorScheme.onSurface;
+    final Widget mark = switch (way.idp) {
+      'apple' => Icon(Icons.apple, size: 24, color: fg),
+      'google' => const _GoogleMark(),
+      'phone' => Icon(Icons.phone_iphone_rounded, size: 22, color: fg),
+      'passkey' => Icon(Icons.fingerprint, size: 24, color: fg),
+      _ when way.method == 'passkey' => Icon(Icons.fingerprint, size: 24, color: fg),
+      _ => ClipRRect(
+        // The mark is a hard-cornered square; rounded, it sits in the button
+        // rather than looking stuck onto it.
+        borderRadius: BorderRadius.circular(5),
+        child: Image.asset(
+          'assets/vesopa-mark.png',
+          width: 22,
+          height: 22,
+          // A provider button with a hole where its logo should be is worse
+          // than one with none, so a missing asset simply leaves the words.
+          errorBuilder: (_, _, _) => const SizedBox.shrink(),
+        ),
+      ),
+    };
     return SizedBox(
-      height: 50,
+      height: 52,
       child: OutlinedButton(
         onPressed: busy ? null : onPressed,
         style: OutlinedButton.styleFrom(
-          side: BorderSide(color: theme.colorScheme.outlineVariant),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          backgroundColor: isApple ? (dark ? Colors.white : Colors.black) : theme.colorScheme.surface.withValues(alpha: 0.6),
+          foregroundColor: fg,
+          side: isApple ? BorderSide.none : BorderSide(color: theme.colorScheme.outlineVariant),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            if (vesopa)
-              ClipRRect(
-                // The mark is a hard-cornered square; rounded, it sits in the
-                // button rather than looking stuck onto it.
-                borderRadius: BorderRadius.circular(5),
-                child: Image.asset(
-                  'assets/vesopa-mark.png',
-                  width: 22,
-                  height: 22,
-                  // A provider button with a hole where its logo should be is
-                  // worse than one with none, so a missing asset simply leaves
-                  // the words.
-                  errorBuilder: (_, _, _) => const SizedBox.shrink(),
-                ),
-              )
-            else
-              Icon(Icons.fingerprint, size: 24, color: theme.colorScheme.onSurface),
+            SizedBox(width: 24, child: Center(child: mark)),
             const SizedBox(width: 10),
-            Text(
-              vesopa ? 'Continue with Vesopa' : 'Use a passkey',
-              style: theme.textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w700,
-                color: theme.colorScheme.onSurface,
+            Flexible(
+              child: Text(
+                way.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700, color: fg),
               ),
             ),
           ],
@@ -516,4 +604,36 @@ class _ProviderButton extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Google's "G", drawn: four arcs in Google's colours.
+class _GoogleMark extends StatelessWidget {
+  const _GoogleMark();
+
+  @override
+  Widget build(BuildContext context) => const SizedBox(width: 20, height: 20, child: CustomPaint(painter: _GooglePainter()));
+}
+
+class _GooglePainter extends CustomPainter {
+  const _GooglePainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final stroke = size.width * 0.2;
+    final rect = Rect.fromLTWH(stroke / 2, stroke / 2, size.width - stroke, size.height - stroke);
+    Paint p(int c) => Paint()
+      ..color = Color(c)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke;
+    const deg = 3.14159265 / 180;
+    canvas.drawArc(rect, -40 * deg, -100 * deg, false, p(0xFFEA4335)); // red, top
+    canvas.drawArc(rect, -140 * deg, -90 * deg, false, p(0xFFFBBC05)); // yellow, left
+    canvas.drawArc(rect, -230 * deg, -95 * deg, false, p(0xFF34A853)); // green, bottom
+    canvas.drawArc(rect, -325 * deg, -35 * deg, false, p(0xFF4285F4)); // blue, right
+    final y = size.height / 2;
+    canvas.drawLine(Offset(size.width / 2, y), Offset(size.width - stroke / 2, y), p(0xFF4285F4)..strokeCap = StrokeCap.butt);
+  }
+
+  @override
+  bool shouldRepaint(_GooglePainter old) => false;
 }

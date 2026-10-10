@@ -145,6 +145,37 @@ class Brand {
     );
   }
 
+  /// The same venue in other colours: a venue app's own palette, or its
+  /// shades for the device's light or dark mode (lib/data/venue_style.dart).
+  Brand recoloured({Color? primary, Color? accent, Color? background, Color? text, Color? iconTint, BrandFont? font}) => Brand(
+    slug: slug,
+    name: name,
+    venue: venue,
+    welcome: welcome,
+    logo: logo,
+    icon: icon,
+    hero: hero,
+    primary: primary ?? this.primary,
+    accent: accent ?? this.accent,
+    background: background ?? this.background,
+    text: text ?? this.text,
+    iconTint: iconTint ?? this.iconTint,
+    fontScale: fontScale,
+    inboxMode: inboxMode,
+    inboxLimit: inboxLimit,
+    headingFont: headingFont ?? font,
+    bodyFont: bodyFont ?? font,
+    links: links,
+    address: address,
+    hours: hours,
+    location: location,
+    pointValueMinor: pointValueMinor,
+    minRedeem: minRedeem,
+    vapidPublicKey: vapidPublicKey,
+    windowsPush: windowsPush,
+    signIn: signIn,
+  );
+
   /// Text that reads on [c].
   static Color onColour(Color c) => c.computeLuminance() > 0.5 ? const Color(0xFF111111) : Colors.white;
 

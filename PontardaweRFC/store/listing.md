@@ -26,7 +26,7 @@ members' discount is applied, every time, with no card to carry or lose.
 - Add your card to Apple Wallet on iPhone
 - Your card on your Apple Watch
 
-Sign in with your email address and a one-time code. The app is for club
+Sign in with Apple, Google, your phone, a passkey, or your email address with a one-time code or a password. The app is for club
 members: if you are not a member yet, ask at the club.
 
 **Keywords (App Store, max 100):**

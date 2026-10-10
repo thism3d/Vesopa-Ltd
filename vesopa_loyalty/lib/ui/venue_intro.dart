@@ -36,6 +36,8 @@ class VenueIntro extends StatefulWidget {
   static const _glow = String.fromEnvironment('VENUE_SPLASH_GLOW');
   static const _name = String.fromEnvironment('VENUE_NAME');
   static const _tagline = String.fromEnvironment('VENUE_TAGLINE');
+  static const _font = String.fromEnvironment('VENUE_FONT');
+  static const String? font = _font == '' ? null : _font;
 
   /// The crest's height on every splash. tool/make_venue_art.py SPLASH_DP.
   static const crestHeight = 140.0;
@@ -282,6 +284,7 @@ class _VenueIntroState extends State<VenueIntro> with TickerProviderStateMixin {
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           color: Colors.white,
+                          fontFamily: VenueIntro.font,
                           fontSize: 24,
                           fontWeight: FontWeight.w800,
                           // The letters close up as the name arrives.
@@ -305,6 +308,7 @@ class _VenueIntroState extends State<VenueIntro> with TickerProviderStateMixin {
                         textAlign: TextAlign.center,
                         style: const TextStyle(
                           color: Colors.white,
+                          fontFamily: VenueIntro.font,
                           fontSize: 14,
                           fontWeight: FontWeight.w500,
                           letterSpacing: 0.6,

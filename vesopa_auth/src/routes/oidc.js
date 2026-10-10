@@ -31,6 +31,7 @@ const factors = require('../factors');
 const csrf = require('../csrf');
 const clients = require('../oauth/clients');
 const tokens = require('../oauth/tokens');
+const providers = require('../providers');
 const { newId, newToken, hashToken, safeEqual } = require('../crypto');
 
 const router = express.Router();
@@ -280,6 +281,27 @@ router.get('/oauth/authorize', async (req, res, next) => {
     const hint = /^[^\s@]{1,120}@[^\s@]{1,120}$/.test(String(req.query.login_hint || ''))
       ? String(req.query.login_hint).toLowerCase()
       : '';
+
+    /*
+     * ONE WAY IN, NAMED BY THE APPLICATION. An app's "Continue with Apple"
+     * button means exactly that: straight to Apple, not to a page that asks
+     * again. `idp` is a hint like login_hint -- honoured once (until
+     * `chosen=1`), and only for ways this server actually offers; anything
+     * else falls through to the ordinary page, which still has them all.
+     */
+    const idp = String(req.query.idp || '');
+    if (!chosen && prompt !== 'none' && ['google', 'apple', 'phone', 'passkey'].includes(idp)) {
+      if (idp === 'phone') {
+        return res.redirect(303, `/login?channel=phone&return_to=${encodeURIComponent(back)}`);
+      }
+      if (idp === 'passkey') {
+        return res.redirect(303, `/login?return_to=${encodeURIComponent(back)}`);
+      }
+      const provider = providers.get(idp);
+      if (provider && provider.configured) {
+        return res.redirect(303, `/auth/${idp}?return_to=${encodeURIComponent(back)}`);
+      }
+    }
 
     let session = await sessions.load(req);
     const roster = await accounts.list(req, res);
