@@ -51,5 +51,27 @@ and note in the review notes that the sign-in code is emailed to that address,
 or set a password on it so the reviewer can use "Sign in with a password".
 
 **Pictures:** `play-icon-512.png`, `play-feature-graphic-1024x500.png`,
-`app-store-icon-1024.png` (in this folder). Phone screenshots are taken from
-the running app once it is signed in as a member.
+`app-store-icon-1024.png` (in this folder). The App Store screenshots are in
+`screenshots/` (iPhone 6.9" and iPad 13"), drawn from the app itself by
+`python vesopa_loyalty/tool/make_store_screenshots.py PontardaweRFC`; the
+captions are in `app_store.json`.
+
+**App Store fields:** `app_store.json` holds what the iOS workflow types into
+App Store Connect (name, subtitle, description, keywords, URLs, categories,
+review notes, TestFlight text). Change it there and run the workflow again.
+
+## App Privacy (App Store Connect, by hand: Apple's API cannot set it)
+
+Data collected, all **linked to the user**, none used for tracking:
+
+| Data | Used for |
+|---|---|
+| Contact info: Name | App Functionality |
+| Contact info: Email Address | App Functionality |
+| Contact info: Phone Number (optional) | App Functionality |
+| User Content: Photos (optional profile photo) | App Functionality |
+| Location: Coarse and Precise (optional, only while the app is open; compared with the club's and not stored) | App Functionality |
+| Identifiers: Device ID (the notification token) | App Functionality |
+| Purchases: Purchase History (what was spent at the club) | App Functionality |
+
+"Do you or your third-party partners use data for tracking purposes?" No.

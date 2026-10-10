@@ -1,0 +1,33 @@
+{
+  "locale": "en-GB",
+  "name": "Pontardawe RFC",
+  "subtitle": "Members' card and club news",
+  "promotional_text": "Your Pontardawe RFC membership card on your phone and in Apple Wallet, with club news and match-day notices the moment they go out.",
+  "description": "The official members' app of Pontardawe RFC, est. 1881.\n\nYour membership card lives on your phone. Show the code at the bar and your members' discount is applied, every time, with no card to carry or lose.\n\n• Your members' card: one tap to show the code at the till, with the screen turned up so it scans first time\n• Members' discount on every visit\n• See what you have spent, earned and saved\n• Club news, fixtures and offers, sent straight to your phone as notifications\n• Add your card to Apple Wallet\n• Your card on your Apple Watch\n\nSign in with your email address and a one-time code. The app is for club members: if you are not a member yet, ask at the club.",
+  "keywords": "pontardawe,rfc,rugby,club,members,membership,card,discount,wales,swansea valley",
+  "support_url": "https://loyalty.vesopa.com/pontardawe-rfc/",
+  "marketing_url": "https://loyalty.vesopa.com/pontardawe-rfc/",
+  "privacy_url": "https://loyalty.vesopa.com/pontardawe-rfc/privacy",
+  "copyright": "2026 Vesopa Software Limited",
+  "category": "LIFESTYLE",
+  "secondary_category": "SPORTS",
+  "review": {
+    "contact_first_name": "Vesopa",
+    "contact_last_name": "Support",
+    "contact_email": "info@vesopasoftware.com",
+    "notes": "Pontardawe RFC's members' app. Sign-in is for club members only: use the reviewer account in Sign-In Information with \"Use a password\" on the first page. Once signed in: Card shows the member's QR code for the till and the Add to Apple Wallet button; the bell at the top right opens club news; Venue has the notifications switch. Notifications are sent by the club from its back office, so none may arrive during review."
+  },
+  "testflight": {
+    "internal_group": "Vesopa team",
+    "feedback_email": "info@vesopasoftware.com",
+    "description": "The Pontardawe RFC members' app: the membership card with its QR code for the till, Add to Apple Wallet, club news and notifications, and the card on Apple Watch.",
+    "what_to_test": "Sign in with a member's email address (a code is emailed) or a password. Check the card and its QR code at the till, Add to Apple Wallet on the Card page, turning notifications on (Venue) and receiving one sent from the back office, and the card on a paired Apple Watch."
+  },
+  "screenshots": [
+    {"screen": "1-card", "title": "Your members' card", "subtitle": "Show the code at the bar and your members' discount is applied, every time."},
+    {"screen": "3-news", "title": "Club news, first", "subtitle": "Match days, fixtures and offers, straight to your phone."},
+    {"screen": "2-activity", "title": "Every visit counted", "subtitle": "What you have spent, earned and saved at the club."},
+    {"screen": "4-venue", "title": "Never miss a game", "subtitle": "Turn notifications on and hear from the club the moment it posts."},
+    {"screen": "5-sign-in", "title": "Members only", "subtitle": "Sign in with your email address and a one-time code."}
+  ]
+}

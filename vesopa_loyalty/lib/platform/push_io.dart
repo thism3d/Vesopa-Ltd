@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -15,7 +16,10 @@ const _mobile = MethodChannel('vesopa_loyalty/push');
 
 const _lastUri = 'wns_channel_uri';
 
-bool get _isPhone => Platform.isAndroid || Platform.isIOS;
+/// Flutter's own idea of the platform: the same answer as dart:io's on a
+/// device, and one the store screenshots (screenshots/) can set.
+bool get _isPhone =>
+    defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS;
 
 /// Whether notifications can be offered here.
 ///

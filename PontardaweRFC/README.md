@@ -69,9 +69,23 @@ Account in the app.
 
 GitHub > Actions > "iOS - venue app" > Run workflow, venue `PontardaweRFC`.
 It builds on GitHub's Mac. With the App Store Connect API key in the
-repository secrets (ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8; see the top of
-`.github/workflows/ios-venue-app.yml`) and the app's record created in App
-Store Connect (step 1 below), it also signs it and uploads it to TestFlight.
+`production` environment (ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8; see the top
+of `.github/workflows/ios-venue-app.yml`) it also:
+
+- registers the App IDs (app and Watch app) with Push Notifications on,
+- picks the next free build number, signs the app and uploads it,
+- fills the App Store listing from `store/app_store.json` and uploads the
+  screenshots in `store/screenshots/` (categories, age rating 4+, free, every
+  country, copyright, review notes),
+- waits for Apple to process the build, gives it to the internal TestFlight
+  group (everyone on the App Store Connect team) and attaches it to the App
+  Store version.
+
+Nothing is sent for App Review. The run's summary lists what is left by hand:
+the app record the very first time (Apple's API cannot create one; the run
+says exactly what to type), App Privacy (answers in `store/listing.md`), and
+a member account for Apple's reviewer (ASC_REVIEW_USER / ASC_REVIEW_PASSWORD,
+plus ASC_REVIEW_PHONE, in the same environment).
 
 ## iPhone (Mac)
 

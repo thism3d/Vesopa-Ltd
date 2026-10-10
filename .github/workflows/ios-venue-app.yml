@@ -1,4 +1,5 @@
-# A venue's own iPhone app (with its Apple Watch app), built on a Mac runner.
+# A venue's own iPhone app (with its Apple Watch app), built on a Mac runner,
+# uploaded to TestFlight, with its App Store listing filled in.
 #
 # Nobody at Vesopa builds on a Mac, so a venue app made by
 # vesopa_loyalty/tool/make_venue_app.py (PontardaweRFC/ and the like) is
@@ -7,19 +8,29 @@
 #
 # WITHOUT the App Store Connect key it still builds the app (unsigned), which
 # proves the project compiles and leaves nothing to fix but signing. WITH the
-# key it archives, lets Apple sign it (cloud-managed certificates, no .p12 in
-# this repository; Xcode registers the app's App IDs itself) and uploads it,
-# where it appears under TestFlight. The app must already have a record in
-# App Store Connect (Apps > + New App, its bundle id from venue.json).
+# key, vesopa_loyalty/tool/app_store_connect.py and xcodebuild do the rest:
 #
-# The key is the same three repository secrets ios-kitchen.yml uses
-# (Settings > Secrets and variables > Actions), from App Store Connect > Users
-# and Access > Integrations > App Store Connect API > Team Keys, Admin role:
+#   1. register the App IDs (the app and its Watch app), Push Notifications on,
+#      and pick the next free build number for venue.json's version
+#   2. archive, let Apple sign it (cloud-managed certificates, no .p12 in this
+#      repository) and upload it
+#   3. fill the App Store listing from <venue>/store/app_store.json and upload
+#      <venue>/store/screenshots/ (tool/make_store_screenshots.py draws them)
+#   4. wait for Apple to process the build, then give it to the internal
+#      TestFlight group and attach it to the App Store version
+#
+# Nothing is submitted for App Review. The run's summary lists anything Apple's
+# API cannot do (the app record the first time, App Privacy).
+#
+# The key is in the "production" environment (Settings > Environments >
+# production), from App Store Connect > Users and Access > Integrations >
+# App Store Connect API > Team Keys, Admin role:
 #   ASC_KEY_ID      the key's ID
 #   ASC_ISSUER_ID   the Issuer ID shown above the list of keys
 #   ASC_KEY_P8      the whole downloaded AuthKey_XXXXXXXXXX.p8, pasted in
-#
-# The version and build number are venue.json's: raise "build" for each upload.
+# and, optionally, for App Review (the app is members-only):
+#   ASC_REVIEW_USER, ASC_REVIEW_PASSWORD   a member account with a password
+#   ASC_REVIEW_PHONE                       a contact number for the reviewer
 
 name: iOS - venue app
 
@@ -37,7 +48,8 @@ permissions:
 jobs:
   ios:
     runs-on: macos-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
+    environment: production
     env:
       ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
       ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
@@ -51,17 +63,10 @@ jobs:
           flutter-version: 3.47.2
           cache: true
 
-      - name: Make the venue's project
+      - name: Venue folder
         run: |
           case "$VENUE" in *[!A-Za-z0-9_-]*|'') echo "::error::Not a venue folder: $VENUE"; exit 1;; esac
           test -f "$VENUE/venue.json" || { echo "::error::$VENUE/venue.json not found"; exit 1; }
-          python3 vesopa_loyalty/tool/make_venue_app.py "$VENUE"
-
-      - name: Flutter build
-        working-directory: ${{ inputs.venue }}/build/app
-        run: |
-          flutter pub get
-          flutter build ios --release --no-codesign --dart-define-from-file=venue_defines.json
 
       - name: App Store Connect key
         id: key
@@ -69,13 +74,35 @@ jobs:
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
         run: |
           if [ -z "$ASC_KEY_ID" ] || [ -z "$ASC_ISSUER_ID" ] || [ -z "$ASC_KEY_P8" ]; then
-            echo "::warning::Built, not uploaded: set ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_P8 to sign and upload (see the top of this file)."
+            echo "::warning::Built, not uploaded: set ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_P8 in the production environment (see the top of this file)."
             echo "upload=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           mkdir -p "$RUNNER_TEMP/keys"
           printf '%s\n' "$ASC_KEY_P8" > "$RUNNER_TEMP/keys/AuthKey_$ASC_KEY_ID.p8"
+          python3 -m venv "$RUNNER_TEMP/asc"
+          "$RUNNER_TEMP/asc/bin/pip" install --quiet "pyjwt[crypto]"
           echo "upload=true" >> "$GITHUB_OUTPUT"
+
+      - name: App IDs, app record and build number
+        id: asc
+        if: steps.key.outputs.upload == 'true'
+        env:
+          ASC_KEY_PATH: ${{ runner.temp }}/keys/AuthKey_${{ secrets.ASC_KEY_ID }}.p8
+        run: |
+          "$RUNNER_TEMP/asc/bin/python" vesopa_loyalty/tool/app_store_connect.py prepare "$VENUE"
+
+      - name: Make the venue's project
+        run: python3 vesopa_loyalty/tool/make_venue_app.py "$VENUE"
+
+      - name: Flutter build
+        working-directory: ${{ inputs.venue }}/build/app
+        env:
+          BUILD_NUMBER: ${{ steps.asc.outputs.build }}
+        run: |
+          flutter pub get
+          flutter build ios --release --no-codesign --dart-define-from-file=venue_defines.json \
+            ${BUILD_NUMBER:+--build-number=$BUILD_NUMBER}
 
       - name: Archive (iPhone app with the Watch app)
         if: steps.key.outputs.upload == 'true'
@@ -104,6 +131,26 @@ jobs:
             -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey_$ASC_KEY_ID.p8" \
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+
+      - name: App Store listing and screenshots
+        if: steps.key.outputs.upload == 'true'
+        env:
+          ASC_KEY_PATH: ${{ runner.temp }}/keys/AuthKey_${{ secrets.ASC_KEY_ID }}.p8
+          ASC_REVIEW_USER: ${{ secrets.ASC_REVIEW_USER }}
+          ASC_REVIEW_PASSWORD: ${{ secrets.ASC_REVIEW_PASSWORD }}
+          ASC_REVIEW_PHONE: ${{ secrets.ASC_REVIEW_PHONE }}
+        run: |
+          "$RUNNER_TEMP/asc/bin/python" vesopa_loyalty/tool/app_store_connect.py store "$VENUE"
+
+      - name: TestFlight
+        if: steps.key.outputs.upload == 'true'
+        env:
+          ASC_KEY_PATH: ${{ runner.temp }}/keys/AuthKey_${{ secrets.ASC_KEY_ID }}.p8
+          ASC_REVIEW_USER: ${{ secrets.ASC_REVIEW_USER }}
+          ASC_REVIEW_PASSWORD: ${{ secrets.ASC_REVIEW_PASSWORD }}
+          ASC_REVIEW_PHONE: ${{ secrets.ASC_REVIEW_PHONE }}
+        run: |
+          "$RUNNER_TEMP/asc/bin/python" vesopa_loyalty/tool/app_store_connect.py testflight "$VENUE" "${{ steps.asc.outputs.build }}"
 
       - name: Remove the key
         if: always()
