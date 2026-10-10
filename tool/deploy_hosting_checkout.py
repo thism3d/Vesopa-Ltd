@@ -33,7 +33,11 @@ APP = f"/home/{base.USER}/web/{DOMAIN}/private/nodeapp"
 
 def at_base(path):
     r = subprocess.run(["git", "show", f"{BASE_COMMIT}:{path}"], cwd=base.ROOT, capture_output=True)
-    return hashlib.sha256(r.stdout).hexdigest() if r.returncode == 0 else None
+    if r.returncode != 0:
+        return set()
+    # A Windows checkout may have uploaded it with CRLF endings; both count.
+    return {hashlib.sha256(r.stdout).hexdigest(),
+            hashlib.sha256(r.stdout.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")).hexdigest()}
 
 
 def main():
@@ -52,7 +56,7 @@ def main():
             live = posixpath.join(APP, f[len(FOLDER) + 1:])
             _, out = base.sh(client, f"sha256sum {live} 2>/dev/null | cut -d' ' -f1", quiet=True)
             want = at_base(f)
-            same = (out.strip() or None) == want
+            same = out.strip() in want
             print(f"   {'ok   ' if same else 'DRIFT'} {f}")
             if not same:
                 drift.append(f)
