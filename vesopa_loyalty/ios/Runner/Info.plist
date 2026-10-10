@@ -80,6 +80,11 @@
 	     the position is compared with the venue's and never stored. -->
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>To tell whether you are near the venue so it can send you offers while you are there. Your location is used there and then and never stored.</string>
+	<!-- The app never asks for Always. App Store Connect still wants this
+	     string (ITMS-90683, on every upload) because the geolocator plugin
+	     contains the code that could ask, whether or not it is called. -->
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>To tell whether you are near the venue so it can send you offers while you are there. The app only checks while it is open, and your location is never stored.</string>
 	<!-- HTTPS only, through the system's own encryption: exempt from export
 	     paperwork, and saying so here saves the question on every upload. -->
 	<key>ITSAppUsesNonExemptEncryption</key>
