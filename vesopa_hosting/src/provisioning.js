@@ -40,7 +40,7 @@ const nameservers = require('./nameservers');
 const registrantVerification = require('./registrant-verification');
 const { sendMail, shell, detailTable, escapeHtml } = require('./mailer');
 const notify = require('./notifications');
-const { SITE_URL, NAMESERVERS } = require('./config');
+const { SITE_URL, NAMESERVERS, NAMESERVER_ALIASES } = require('./config');
 
 /**
  * How long ICANN gives a registrant to confirm their email address before the
@@ -681,13 +681,34 @@ async function registerDomainOnce(domainRow, customer) {
    * from "your key names do not match". One shape, defined once, in
    * `toContact()` in the adapter.
    */
-  const result = await registrar.register({
+  /*
+   * ns1/ns2.vesopa.com are not host objects at the .com registry yet (RDAP
+   * 404, checked 2026-10-10): a nameserver inside a .com domain can only be
+   * created by that domain's own registrar, and vesopa.com is at Register.it.
+   * Until those child nameservers exist, a .com/.net registration naming them
+   * is refused by the registry. NS_ALIASES are the same machine under names the
+   * registry already knows, so a nameserver refusal is retried once with them;
+   * the domain resolves identically and can be moved to ns1/ns2.vesopa.com
+   * once the hosts exist.
+   */
+  const attempt = (ns) => registrar.register({
     domain: domainRow.domain,
     years: domainRow.years || 1,
     contact: customer,
-    nameservers: NAMESERVERS,
+    nameservers: ns,
     privacy: Boolean(domainRow.privacy),
   });
+  let result;
+  try {
+    result = await attempt(NAMESERVERS);
+  } catch (err) {
+    const nsRefused = /name ?server|host/i.test(String(err && err.message));
+    const aliases = NAMESERVER_ALIASES.slice(0, 2);
+    if (!nsRefused || aliases.length < 2) throw err;
+    console.warn(`[provisioning] ${domainRow.domain}: nameservers refused (${err.message}); retrying with ${aliases.join(', ')}`);
+    result = await attempt(aliases);
+    result.nameservers_fallback = aliases;
+  }
 
   /*
    * ICANN's registrant verification, written down at the moment we learn a
@@ -741,7 +762,7 @@ async function registerDomainOnce(domainRow, customer) {
             contacts_verified = ?, contacts_warning = ?
       WHERE id = ?`,
     [
-      result.expires_at || null, result.registrar_ref || '', NAMESERVERS[0], NAMESERVERS[1],
+      result.expires_at || null, result.registrar_ref || '', (result.nameservers_fallback || NAMESERVERS)[0], (result.nameservers_fallback || NAMESERVERS)[1],
       customer.email || '', deadline,
       alreadyVerified ? alreadyVerified.verified_at : null,
       result.contacts_verified ? 1 : 0,
