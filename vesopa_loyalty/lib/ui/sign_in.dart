@@ -472,7 +472,9 @@ class _SignInPageState extends ConsumerState<SignInPage> {
 
     // Through Vesopa come Apple, Google, the phone and a passkey, each a
     // button of its own that goes straight there: members know those marks,
-    // and nobody looks for them behind "Continue with Vesopa".
+    // and nobody looks for them behind "Continue with Vesopa". So there is no
+    // separate Vesopa button: these ARE Continue with Vesopa (owner,
+    // 2026-10-10).
     final viaVesopa = config.usable.contains('vesopa');
     final apple = defaultTargetPlatform == TargetPlatform.iOS || defaultTargetPlatform == TargetPlatform.macOS;
     final buttons = <_Way>[
@@ -481,7 +483,6 @@ class _SignInPageState extends ConsumerState<SignInPage> {
       if (viaVesopa && !apple) const _Way.apple(),
       if (others.contains('passkey')) const _Way.passkey(null) else if (viaVesopa) const _Way.passkey('passkey'),
       if (viaVesopa && !config.usable.contains('code_sms')) const _Way.phone(),
-      if (others.contains('vesopa')) const _Way.vesopa(),
     ];
     if (buttons.isEmpty && links.isEmpty) return const [];
 
@@ -530,7 +531,6 @@ class _Way {
   const _Way.google() : method = 'vesopa', idp = 'google', label = 'Continue with Google';
   const _Way.phone() : method = 'vesopa', idp = 'phone', label = 'Continue with your phone';
   const _Way.passkey(this.idp) : method = 'passkey', label = 'Use a passkey';
-  const _Way.vesopa() : method = 'vesopa', idp = null, label = 'Continue with Vesopa';
 
   final String method;
 

@@ -43,11 +43,13 @@ class _Wait extends ConsumerWidget {
 }
 
 void main() {
-  testWidgets('through Vesopa, Apple, Google, a passkey and the phone each have a button of their own', (tester) async {
+  testWidgets('through Vesopa, Apple, Google, a passkey and the phone each have a button, and Vesopa none of its own', (tester) async {
     await _pump(tester, {'code_email', 'password', 'vesopa'});
-    for (final label in ['Continue with Apple', 'Continue with Google', 'Use a passkey', 'Continue with your phone', 'Continue with Vesopa']) {
+    for (final label in ['Continue with Apple', 'Continue with Google', 'Use a passkey', 'Continue with your phone']) {
       expect(find.text(label), findsOneWidget, reason: label);
     }
+    // They are Continue with Vesopa; it has no button of its own.
+    expect(find.text('Continue with Vesopa'), findsNothing);
     // The password is a form, so it stays a link.
     expect(find.text(signInLabel('password')), findsOneWidget);
   });
