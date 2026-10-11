@@ -32,12 +32,21 @@ function Run($what, [scriptblock]$cmd) {
 # an Administrator window can run as another account, whose ANDROID_HOME and
 # Flutter settings (%APPDATA%\.flutter_settings) are not azureuser's, and then
 # Flutter says "No Android SDK found" although the SDK is on this PC.
-$sdk = @($env:ANDROID_HOME, $env:ANDROID_SDK_ROOT,
+$candidates = @($env:ANDROID_HOME, $env:ANDROID_SDK_ROOT,
     [Environment]::GetEnvironmentVariable('ANDROID_HOME', 'User'),
     (Join-Path $env:LOCALAPPDATA 'Android\Sdk'),
-    'C:\Users\azureuser\AppData\Local\Android\Sdk') |
-    Where-Object { $_ -and (Test-Path (Join-Path $_ 'platform-tools')) } | Select-Object -First 1
-if (-not $sdk) { throw 'No Android SDK on this PC (looked for platform-tools under ANDROID_HOME and AppData\Local\Android\Sdk).' }
+    'C:\Users\azureuser\AppData\Local\Android\Sdk') | Where-Object { $_ } | Select-Object -Unique
+$sdk = $candidates | Where-Object {
+    (Test-Path (Join-Path $_ 'platform-tools')) -or (Test-Path (Join-Path $_ 'platforms')) -or (Test-Path (Join-Path $_ 'build-tools'))
+} | Select-Object -First 1
+if (-not $sdk) {
+    $seen = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+    if ($seen) {
+        $why = try { (Get-ChildItem $seen -ErrorAction Stop | Select-Object -ExpandProperty Name) -join ', ' } catch { $_.Exception.Message }
+        throw "This window, running as $env:USERNAME, can't use the Android SDK at $seen ($why). Close it and run the build from a normal window: double-click PontardaweRFC\build-android.cmd in File Explorer, not 'Run as administrator'."
+    }
+    throw "No Android SDK on this PC (looked in: $($candidates -join '; '))."
+}
 $env:ANDROID_HOME = $sdk
 $env:ANDROID_SDK_ROOT = $sdk
 if (-not ($env:JAVA_HOME -and (Test-Path (Join-Path $env:JAVA_HOME 'bin\java.exe')))) {
