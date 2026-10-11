@@ -1,6 +1,7 @@
 """Pontardawe RFC's online menu (menu.vesopa.com/pontardawe-rfc), for the website.
 
     python tool/pontardawe_menu.py            read only: the venue's menu settings, sections, items, till products
+    python tool/pontardawe_menu.py --till     read only: the till's screens and product fields
     python tool/pontardawe_menu.py --apply    publish the menu, ordering on, collection on
 
 Run from the repository root on the owner's PC (cloud sessions cannot SSH).
@@ -35,6 +36,13 @@ SELECT COUNT(*) AS till_products FROM bo_products WHERE email = @email;
 SELECT COUNT(*) AS tables_with_codes FROM floor_tables WHERE office_id = @office AND qr_enabled = 1 AND public_id IS NOT NULL;
 """
 
+TILL = FIND + """
+SELECT s.id, s.name, COUNT(b.id) AS product_keys FROM epos_screens s
+  LEFT JOIN epos_screen_buttons b ON b.screen_id = s.id AND b.kind = 'product'
+ WHERE s.office = @email GROUP BY s.id ORDER BY s.id;
+SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'bo_products';
+"""
+
 APPLY = FIND + f"""
 INSERT INTO dinein_venue (office_id, slug, display_name, phone, address_line, postcode, accent_colour,
                           is_published, ordering_open, collection_open, collection_minutes)
@@ -56,6 +64,10 @@ def run(sql):
 
 
 if __name__ == "__main__":
+    if "--till" in sys.argv:
+        print("▶ Pontardawe RFC's till screens (read only)")
+        run(TILL)
+        raise SystemExit
     if "--apply" in sys.argv:
         print("▶ publishing Pontardawe RFC's menu")
         run(APPLY)
