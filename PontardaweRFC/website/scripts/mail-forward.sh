@@ -20,6 +20,8 @@
 #
 # Idempotent; backs up the template and puts it back if any check fails.
 set -euo pipefail
+# The panel's commands (v-*) are not on a plain ssh session's PATH.
+export PATH="$PATH:/usr/local/hestia/bin"
 
 CHECK=0
 if [ "${1:-}" = "--check" ]; then CHECK=1; shift; fi
