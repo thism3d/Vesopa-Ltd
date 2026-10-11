@@ -122,7 +122,7 @@ def main():
            "sleep 5; "
            "curl -sS -o /dev/null -w 'back office health        %{http_code}\\n' https://backoffice.vesopaepos.com/health; "
            "curl -sS -o /dev/null -w 'member.pontardawerfc.com  %{http_code}\\n' https://member.pontardawerfc.com/; "
-           "curl -sS https://member.pontardawerfc.com/ | grep -q 'vesopa-look' && echo 'members site has the club look' || echo 'members site: no club look yet'; "
+           "curl -sS https://member.pontardawerfc.com/ | grep -qi 'email me a code\\|vesopa-look' && echo 'members site: the club app' || echo 'members site: not the club app yet'; "
            "curl -sS -o /dev/null -w 'old members link          %{http_code} -> %{redirect_url}\\n' https://loyalty.vesopa.com/pontardawe-rfc/; "
            "curl -sS -o /dev/null -w 'pontardawerfc.com         %{http_code}\\n' https://pontardawerfc.com/; "
            "curl -sS -o /dev/null -w 'menu API for the site     %{http_code} (404 until the menu is published)\\n' https://menu.vesopa.com/api/public/dinein/venue/pontardawe-rfc",
