@@ -60,6 +60,7 @@ const { appPath, appUrl, RESERVED, NOT_FOUND, LOYALTY_HOST } = require('./loyalt
 const loyaltyEmail = require('./loyalty_email');
 const gate = require('./loyalty_members_only');
 const venueLooks = require('./venue_looks');
+const { memberWebRoutes } = require('./member_web');
 
 const CODE_MINUTES = 10;
 const CODE_TRIES = 5;
@@ -1569,6 +1570,11 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
 
   // ---- The web app ----------------------------------------------------------------
 
+  // A venue whose look says `web: 'node'` gets server-rendered pages instead
+  // of the Flutter build, which it keeps at its address's /app/. See
+  // src/member_web.js; every other venue is served exactly as below.
+  router.use(memberWebRoutes({ secret, flutterPage: page }));
+
   /** The per-venue install manifest: its own name, colour and icon. */
   router.get('/app/:slug/manifest.webmanifest', async (req, res, next) => {
     try {
@@ -1638,7 +1644,7 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
       }
       const brand = await brandFor(pool, app.office, app);
       const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-      const base = appPath(req, app.slug);
+      const base = appPath(req, app.slug) + (req.flutterFallback ? 'app/' : '');
       // Shared links are read by other sites, which need a whole address.
       const absolute = (u) => (/^https?:\/\//.test(String(u)) ? u : `${new URL(appUrl(app.slug)).origin}${u}`);
       // A venue's own look (src/venue_looks.js), for the app to read at start.

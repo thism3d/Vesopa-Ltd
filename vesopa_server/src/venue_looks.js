@@ -15,6 +15,11 @@
  * chosen fonts of its own in the back office; `website`, `phone` and `email` fill the
  * app's links the same way.
  *
+ * `web: 'node'` serves the venue's members' site as server-rendered pages
+ * (src/member_web.js) instead of the Flutter web build: the owner, 2026-10-11,
+ * "for the web app can we use node application not the flutter one and zero
+ * loading". Without it the venue keeps the Flutter build exactly as before.
+ *
  * A venue not listed here looks exactly as it always did.
  */
 'use strict';
@@ -25,6 +30,7 @@ const LOOKS = {
     // The club's own website, which shares these colours and this typeface.
     // Filled in only where the back office has no link of its own.
     website: 'https://pontardawerfc.com', phone: '01792 864811', email: 'info@pontardawerfc.com',
+    web: 'node',
   },
 };
 
@@ -43,4 +49,10 @@ function pageMeta(slug) {
   return look ? `<meta name="vesopa-look" content="${look.club},${look.deep},${look.glow}">` : '';
 }
 
-module.exports = { lookFor, pageMeta, LOOKS };
+/** Whether the venue's members' site is the server-rendered one (src/member_web.js). */
+function nodeWeb(slug) {
+  const look = lookFor(slug);
+  return !!(look && look.web === 'node');
+}
+
+module.exports = { lookFor, pageMeta, nodeWeb, LOOKS };
