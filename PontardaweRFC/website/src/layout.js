@@ -52,7 +52,7 @@ function clubLd() {
     },
     geo: { '@type': 'GeoCoordinates', latitude: a.lat, longitude: a.lng },
     hasMap: `https://www.openstreetmap.org/?mlat=${a.lat}&mlon=${a.lng}#map=17/${a.lat}/${a.lng}`,
-    sameAs: [club.web.facebook, club.web.wikipedia],
+    sameAs: [club.web.facebook, club.web.x, club.web.wikipedia],
     memberOf: { '@type': 'SportsOrganization', name: 'Welsh Rugby Union', url: 'https://www.wru.wales/' },
     hasMenu: `${SITE}/menu`,
     servesCuisine: 'Pub food',
@@ -130,7 +130,7 @@ function header(path) {
   <div class="intro-sub">Est. ${club.founded} · Swansea Valley</div>
 </div>
 <a class="skip" href="#main">Skip to content</a>
-<header class="site-head" data-head>
+<header class="site-head" data-head><span class="progress-bar" data-progress-bar aria-hidden="true"></span>
   <div class="wrap head-row">
     <a class="brand" href="/" aria-label="${esc(club.name)} home">
       <picture><source srcset="/img/crest-128.webp" type="image/webp"><img src="/img/icon-192.png" alt="" width="44" height="44"></picture>
@@ -152,7 +152,7 @@ function footer() {
     <div class="foot-club">
       <a class="brand brand-foot" href="/"><picture><source srcset="/img/crest-128.webp" type="image/webp"><img src="/img/icon-192.png" alt="" width="56" height="56" loading="lazy"></picture><span class="brand-text"><b>Pontardawe RFC</b><small>${esc(club.welsh_name)}</small></span></a>
       <p>${esc(club.tagline)}.</p>
-      <p class="foot-social"><a href="${club.web.facebook}" rel="noopener" target="_blank">${icon('facebook', { size: 20 })}<span>Facebook</span></a></p>
+      <p class="foot-social"><a href="${club.web.facebook}" rel="noopener" target="_blank">${icon('facebook', { size: 20 })}<span>Facebook</span></a><a href="${club.web.x}" rel="noopener" target="_blank">${icon('x', { size: 20 })}<span>X @PontardaweRFC</span></a></p>
     </div>
     <div>
       <h2>Visit</h2>

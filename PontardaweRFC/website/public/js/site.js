@@ -16,7 +16,25 @@
 
   /* Header: solid once scrolled; the burger opens the menu on phones. */
   var head = d.querySelector('[data-head]');
-  var onScroll = function () { if (head) head.classList.toggle('scrolled', window.scrollY > 10); };
+  var bar = d.querySelector('[data-progress-bar]');
+  var onScroll = function () {
+    if (head) head.classList.toggle('scrolled', window.scrollY > 10);
+    if (bar) {
+      var max = d.documentElement.scrollHeight - window.innerHeight;
+      bar.style.setProperty('--p', max > 0 ? Math.min(1, window.scrollY / max).toFixed(4) : 0);
+    }
+  };
+
+  /* A soft spotlight that follows the pointer over cards and tiles. */
+  if (!reduced && window.matchMedia && matchMedia('(hover: hover)').matches) {
+    d.addEventListener('pointermove', function (e) {
+      var el = e.target.closest && e.target.closest('.tile, a.card');
+      if (!el) return;
+      var r = el.getBoundingClientRect();
+      el.style.setProperty('--mx', (e.clientX - r.left) + 'px');
+      el.style.setProperty('--my', (e.clientY - r.top) + 'px');
+    }, { passive: true });
+  }
   window.addEventListener('scroll', onScroll, { passive: true });
   onScroll();
 

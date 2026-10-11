@@ -37,7 +37,8 @@
     "old_site": "https://pontardawe.rfc.wales",
     "wru_league": "https://community.wru.wales/club/national-leagues/national-leagues-fixtures-and-results/league-5-west-central/",
     "wikipedia": "https://en.wikipedia.org/wiki/Pontardawe_RFC",
-    "android_package": "com.vesopaepos.pontardawerfc"
+    "android_package": "com.vesopaepos.pontardawerfc",
+    "x": "https://x.com/PontardaweRFC"
   },
   "ground": "Recreation Ground, Pontardawe",
   "league": "WRU National League (West Central)",
@@ -70,6 +71,10 @@
       "text": "125 years as a member club of the Welsh Rugby Union."
     },
     {
+      "year": "2012",
+      "text": "The club joins Twitter (now X) as @PontardaweRFC and launches a new website, pontardawerfc.co.uk."
+    },
+    {
       "year": "2016",
       "text": "Pontardawe Rugby Football Club Limited is incorporated (company 10056776)."
     },
@@ -80,6 +85,10 @@
     {
       "year": "2024",
       "text": "The club says goodbye to Brian 'Bones' Williams, former player and captain."
+    },
+    {
+      "year": "2025",
+      "text": "With the Friends of King George V Park, the club hosts a May Day bank holiday event for the 80th anniversary of VE Day."
     },
     {
       "year": "2026",
@@ -219,5 +228,13 @@
       "a": "Wales internationals James Griffiths, Phil Hopkins, Percy Lloyd and Joe Hawkins all played for Pontardawe."
     }
   ],
-  "email_note": "Published by the club in its September 2024 vacancy notice on pontardawe.rfc.wales. Confirm with the club that it is still read."
+  "email_note": "Published by the club in its September 2024 vacancy notice on pontardawe.rfc.wales. Confirm with the club that it is still read.",
+  "social": {
+    "x": {
+      "handle": "@PontardaweRFC",
+      "joined": "July 2012",
+      "bio": "Official twitter page of Pontardawe RFC, Rugby in the heart of the Swansea Valley since 1881",
+      "source": "x.com/PontardaweRFC, saved 2026-10-11"
+    }
+  }
 }

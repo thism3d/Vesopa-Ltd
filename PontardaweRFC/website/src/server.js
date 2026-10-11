@@ -153,6 +153,7 @@ app.get('/llms.txt', (req, res) => {
 - League: ${club.league}
 - Members' app: ${MEMBERS}/
 - Facebook: ${club.web.facebook}
+- X (Twitter): ${club.web.x}
 - Company: ${club.company.name}, ${club.company.number}
 
 ## Pages

@@ -50,7 +50,7 @@ function home() {
     <span class="hoop"></span><span class="hoop"></span><span class="hoop"></span><span class="hoop"></span>
     <span class="glow"></span>
   </div>
-  <div class="hero-photo" aria-hidden="true">${photo('squad-pitch', { lazy: false, sizes: '100vw' })}</div>
+  <div class="hero-photo" aria-hidden="true">${photo('squad-2024', { lazy: false, sizes: '100vw' })}</div>
   <div class="wrap hero-in">
     <div class="hero-copy">
       <p class="kicker reveal">${icon('ball', { size: 18 })} Est. ${club.founded} · Swansea Valley</p>
@@ -78,6 +78,8 @@ function home() {
   </div>
 </section>
 
+<div class="ticker" aria-hidden="true"><div class="ticker-track">${Array.from({ length: 2 }, () => ['Clwb Rygbi Pontardawe', `Est. ${club.founded}`, 'Swansea Valley', 'WRU member club', 'Ynysderw Road', 'First XV', 'Juniors', 'Clubhouse &amp; bar'].map((t) => `<span>${t}</span><i>${icon('ball', { size: 18 })}</i>`).join('')).join('')}</div></div>
+
 <section class="section" id="quick">
   <div class="wrap">
     <div class="tiles">
@@ -98,6 +100,18 @@ function home() {
       <p class="reveal">${esc(club.history[0])}</p>
       <p class="reveal">${esc(club.history[1])}</p>
       <a class="btn btn-line reveal" href="/club">${icon('history', { size: 20 })} Read the club's history</a>
+    </div>
+  </div>
+</section>
+
+<section class="section gallery-sec">
+  <div class="wrap">
+    <div class="sec-head"><div><p class="kicker reveal">On the pitch</p><h2 class="reveal">Rugby in the Swansea Valley</h2></div><a class="btn btn-line reveal" href="${esc(club.web.facebook)}" rel="noopener">${icon('facebook', { size: 18 })} More on Facebook</a></div>
+    <div class="gallery">
+      <figure class="g-wide reveal">${photo('squad-2024', { sizes: '(max-width: 1200px) 100vw, 1180px' })}<figcaption>The squad, coaches and committee, 2024</figcaption></figure>
+      <figure class="reveal">${photo('squad-pitch')}<figcaption>Two squads line up at the Recreation Ground</figcaption></figure>
+      <figure class="reveal">${photo('lineout')}<figcaption>Contesting a lineout</figcaption></figure>
+      <figure class="reveal">${photo('squad-sponsor')}<figcaption>The squad and their sponsors</figcaption></figure>
     </div>
   </div>
 </section>
@@ -234,7 +248,7 @@ function teamsPage() {
       <p>${esc(club.league_note)}</p>
       <div class="cta-row"><a class="btn btn-glow" href="${club.web.wru_league}" rel="noopener" target="_blank">${icon('calendar', { size: 20 })} WRU fixtures &amp; table ${icon('external', { size: 16 })}</a><a class="btn btn-line" href="${club.web.facebook}" rel="noopener" target="_blank">${icon('facebook', { size: 20 })} Match news on Facebook</a></div>
     </div>
-    <div class="reveal">${photo('squad-pitch')}</div>
+    <div class="reveal">${photo('squad-2024')}</div>
   </div>
 </section>
 <section class="section">
@@ -426,6 +440,7 @@ function contactPage() {
     <a class="card contact-card reveal" href="tel:${club.phone_e164}"><span class="tile-ic">${icon('phone')}</span><h2>Phone</h2><p class="big">${esc(club.phone)}</p><p class="muted">The clubhouse</p></a>
     ${club.email ? `<a class="card contact-card reveal" href="mailto:${esc(club.email)}"><span class="tile-ic">${icon('mail')}</span><h2>Email</h2><p class="big small-break">${esc(club.email)}</p><p class="muted">The club committee</p></a>` : ''}
     <a class="card contact-card reveal" href="${club.web.facebook}" rel="noopener" target="_blank"><span class="tile-ic">${icon('facebook')}</span><h2>Facebook</h2><p class="big">PontardaweRFC</p><p class="muted">News, photos and messages</p></a>
+    <a class="card contact-card reveal" href="${club.web.x}" rel="noopener" target="_blank"><span class="tile-ic">${icon('x')}</span><h2>X (Twitter)</h2><p class="big">@PontardaweRFC</p><p class="muted">Club news since 2012</p></a>
   </div>
 </section>
 <section class="section visit">

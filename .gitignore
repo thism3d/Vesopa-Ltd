@@ -243,3 +243,6 @@ vesopa_server/public/uploads/giftart_*
 
 # Firebase Admin SDK service account keys: never commit
 firebase-adminsdk*.json
+
+# The owner's saved copy of the club's X page (2026-10-11); what the site uses is in PontardaweRFC/website/content.
+pontardawe_rfc_x_com_posts/

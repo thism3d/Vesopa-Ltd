@@ -36,6 +36,8 @@ PHOTOS = {
     "squad-pitch": ("image21.jpeg", "Two squads line up together on the pitch at the Recreation Ground"),
     "bones": ("image.jpg", "Brian 'Bones' Williams at the club"),
     "hiring": ("image-3.jpg", "We're hiring: join our team"),
+    # The club's X (Twitter) banner, September 2024, saved by the owner from x.com/PontardaweRFC.
+    "squad-2024": ("../x/x-banner-1500x500.jpg", "The Pontardawe RFC squad, coaches and committee line up on the pitch in the club's red and white kit, 2024"),
 }
 
 SHARE = {
