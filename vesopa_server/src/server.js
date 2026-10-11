@@ -56,6 +56,7 @@ const { cardRoutes } = require('./cards');
 const { gymRoutes } = require('./gym');
 const { moduleRoutes } = require('./modules');
 const { membershipRoutes, sendReminders } = require('./memberships');
+const { eventRoutes } = require('./events');
 const { importRoutes } = require('./imports');
 const { customerImportRoutes } = require('./customer_import');
 const { reportRoutes, toPdf } = require('./reports');
@@ -439,6 +440,11 @@ app.use(moduleRoutes({ pool, broadcast, secret: JWT_SECRET }));
 // loyalty app, the Dojo return page and the partner API Metric reads. Every
 // route answers 404 for a venue without the Memberships module switched on.
 app.use(membershipRoutes({ pool, broadcast, secret: JWT_SECRET }));
+
+// Events & tickets (src/events.js): the back office, the till at the gate, and
+// the venue's own website buying tickets through /api/public/events. Every
+// route answers 404 for a venue without the module switched on.
+app.use(eventRoutes({ pool, broadcast, secret: JWT_SECRET }));
 
 // Vesopa Express, the self-service kiosk. Off for every venue until a manager
 // turns it on; see src/express_kiosk.js and schema_till_express.sql.

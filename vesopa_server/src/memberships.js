@@ -1694,6 +1694,7 @@ module.exports = {
   checkIn,
   startCheckout,
   settleCheckout,
+  paymentKeyFor,
   sendReminders,
   issuePartnerKey,
   forgetMemberColumns,

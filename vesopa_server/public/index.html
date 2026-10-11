@@ -360,6 +360,7 @@
           <button class="nav" data-view="permission_groups">Staff Permissions</button>
           <button class="nav" data-view="customers">Customers</button>
           <button class="nav" data-view="memberships">Memberships</button>
+          <button class="nav" data-view="events">Events &amp; Tickets</button>
           <button class="nav" data-view="gym" id="nav-gym">Gym</button>
           <button class="nav" data-view="vouchers">Vouchers</button>
           <button class="nav" data-view="receipt_designer">Receipt Designer</button>
@@ -3908,6 +3909,47 @@
               <p class="muted small">Joins and renewals paid by card in the member app, through Dojo.</p>
               <div id="ms-payments"></div>
             </div>
+          </div>
+        </section>
+
+        <!-- Events & tickets (src/events.js): matches and events, tickets
+             sold on the venue's website, and the gate. Hidden from the menu
+             for a venue that has not been given the module. -->
+        <section id="view-events" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Events &amp; Tickets</h2>
+              <p class="muted small">
+                Matches and events, the tickets for them, and who has come in.
+                Tickets are bought on your website and arrive by email with a QR
+                code; the till scans them at the gate.
+              </p>
+            </div>
+            <div class="ms-actions">
+              <button class="btn" id="ev-settings">Settings</button>
+              <button class="btn" id="ev-import">Import home matches from the WRU</button>
+              <button class="btn primary" id="ev-add">New event</button>
+            </div>
+          </div>
+
+          <div class="grid-cards" id="ev-stats"></div>
+
+          <div class="card rd-card ev-gate">
+            <form id="ev-gate-form" class="ev-gate-form" autocomplete="off">
+              <label>Check a ticket in
+                <input type="text" id="ev-gate-code" placeholder="Ticket code, e.g. K7MP2QXR9D" maxlength="20" spellcheck="false">
+              </label>
+              <button type="submit" class="btn primary">Check in</button>
+            </form>
+            <p id="ev-gate-result" class="ev-gate-result" aria-live="polite"></p>
+          </div>
+
+          <div class="gym-tabs" role="tablist">
+            <button class="gym-tab on" data-evtab="upcoming" role="tab">Upcoming</button>
+            <button class="gym-tab" data-evtab="past" role="tab">Past</button>
+          </div>
+          <div class="card rd-card">
+            <div id="ev-list"></div>
           </div>
         </section>
 

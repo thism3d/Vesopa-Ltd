@@ -24,6 +24,7 @@ const ITEMS = [
   { key: 'memberships', label: 'Memberships', group: 'Modules', app: 'epos', hold: 'epos', holdKey: 'module:memberships', module: 'memberships' },
   { key: 'gym_door', label: 'Gym door', group: 'Modules', app: 'epos', hold: 'epos', holdKey: 'module:gym_door', module: 'gym_door' },
   { key: 'vehicle_access', label: 'Vehicle access', group: 'Modules', app: 'epos', hold: 'epos', holdKey: 'module:vehicle_access', module: 'vehicle_access' },
+  { key: 'events', label: 'Events & tickets', group: 'Modules', app: 'epos', hold: 'epos', holdKey: 'module:events', module: 'events' },
 ];
 
 const BY_KEY = Object.fromEntries(ITEMS.map((i) => [i.key, i]));

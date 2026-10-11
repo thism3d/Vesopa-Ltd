@@ -253,8 +253,8 @@ async function main() {
     await check('the migration seeds researched default prices', async () => {
       const r = await call(server, 'GET', '/api/admin/modules', adminToken);
       const prices = Object.fromEntries(r.body.map((m) => [m.key, m.price_minor]));
-      // vehicle_access was changed to 25.00 above; the other two are the seed.
-      assert.deepStrictEqual(prices, { memberships: 2900, gym_door: 1500, vehicle_access: 2500 });
+      // vehicle_access was changed to 25.00 above; the others are the seed.
+      assert.deepStrictEqual(prices, { memberships: 2900, gym_door: 1500, vehicle_access: 2500, events: 1900 });
     });
 
     await check('a gym backfilled by the migration is free until admin says otherwise', async () => {
@@ -324,7 +324,7 @@ async function main() {
       const r = await call(server, 'GET', '/api/admin/modules-venues', adminToken);
       assert.strictEqual(r.status, 200);
       assert.ok(r.body.length >= 2);
-      assert.ok(r.body.every((o) => o.modules.length === 3));
+      assert.ok(r.body.every((o) => o.modules.length === 4));
     });
 
     await check('a new office with modules ticked is billed for them on its first invoice', async () => {
