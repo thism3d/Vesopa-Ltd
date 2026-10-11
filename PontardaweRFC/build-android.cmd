@@ -12,6 +12,11 @@ if exist "%~dp0build\app\android\gradlew.bat" (
     popd
 )
 
+rem Gradle and Kotlin daemons from any earlier build (including one started
+rem by Claude) keep folders open in the Flutter SDK and build\app, and the
+rem next build then cannot delete them ("Unable to delete directory").
+powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='java.exe'\" | Where-Object { $_.CommandLine -match 'GradleDaemon|KotlinCompileDaemon|kotlin-daemon' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
+
 rem The Android SDK and JDK 17, when this window doesn't already know them
 rem (an Administrator window can run as another account with other settings).
 if not defined ANDROID_HOME if exist "%LOCALAPPDATA%\Android\Sdk\platform-tools" set "ANDROID_HOME=%LOCALAPPDATA%\Android\Sdk"
