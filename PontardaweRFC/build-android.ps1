@@ -4,6 +4,9 @@
 #
 #   powershell -ExecutionPolicy Bypass -File PontardaweRFC\build-android.ps1
 #
+# or double-click build-android.cmd beside it, which also stops a leftover
+# Gradle daemon and sets the Java temp folder this PC needs.
+#
 # Writes PontardaweRFC-<version>-<build>.aab and .apk to Desktop\Android-builds.
 # The version and build number are venue.json's: raise "build" for every
 # upload to Play, which refuses a number it has seen before.
