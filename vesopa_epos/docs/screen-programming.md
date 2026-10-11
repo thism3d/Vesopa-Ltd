@@ -448,7 +448,7 @@ release, so it is checked at both ends.
 | --- | --- |
 | the bill | `pay` `void` `cancel` `save_table` `new_bill` `qty` `note` `covers` `customer` |
 | paper and cash | `print_bill` `last_bill` `open_drawer` |
-| go to | `go_sale` `go_tables` `go_receipts` `go_reports` `go_products` `go_functions` `go_settings` `sign_off` |
+| go to | `go_sale` `go_tables` `go_receipts` `go_reports` `go_products` `go_functions` `go_settings` `go_tickets` `sign_off` |
 | live displays | `open_bills` `order_total` `clock` `venue_name` `staff_name` `sync_status` `screen_name` `spacer` |
 
 The whitelist is per surface. `pay`, `void` and `cancel` are refused on a sale

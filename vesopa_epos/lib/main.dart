@@ -23,6 +23,7 @@ import 'data/card_repository.dart';
 import 'data/demo_session.dart';
 import 'data/licence.dart';
 import 'data/gym.dart';
+import 'data/events_api.dart';
 import 'data/memberships_api.dart';
 import 'data/wallet_passes.dart';
 import 'data/device_registry.dart';
@@ -180,6 +181,15 @@ class TillModulesRevision extends Notifier<int> {
 /// data/memberships_api.dart.
 final membershipsRepositoryProvider = Provider<MembershipsRepository>(
   (ref) => MembershipsRepository(
+    apiBase: ref.watch(apiBaseProvider),
+    terminalToken: ref.watch(sessionControllerProvider).value?.terminalToken,
+  ),
+);
+
+/// The gate for a venue with the Events & tickets module. See
+/// data/events_api.dart.
+final eventsRepositoryProvider = Provider<EventsRepository>(
+  (ref) => EventsRepository(
     apiBase: ref.watch(apiBaseProvider),
     terminalToken: ref.watch(sessionControllerProvider).value?.terminalToken,
   ),

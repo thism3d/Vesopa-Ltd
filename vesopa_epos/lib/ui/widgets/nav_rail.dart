@@ -44,16 +44,23 @@ const gymDestination = NavDestination(Icons.fitness_center, 'Gym');
 List<NavDestination> navDestinationsFor({
   required bool gym,
   bool members = false,
+  bool tickets = false,
 }) {
-  if (!gym && !members) return navDestinations;
+  if (!gym && !members && !tickets) return navDestinations;
   final after = navDestinations.indexWhere((d) => d.label == 'Reports');
   return [
     ...navDestinations.take(after + 1),
     if (gym) gymDestination,
     if (members) membersDestination,
+    if (tickets) ticketsDestination,
     ...navDestinations.skip(after + 1),
   ];
 }
+
+/// The gate: scanning tickets in, for a venue with the Events & tickets
+/// module switched on in the back office. With the front-desk sections,
+/// because on an event night it is the screen the till is left on.
+const ticketsDestination = NavDestination(Icons.confirmation_number, 'Tickets');
 
 /// Memberships: members, plans and today's classes, for a venue with the
 /// Memberships module switched on in the back office (1.13). Beside the gym,

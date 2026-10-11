@@ -34,6 +34,7 @@ class BarLive {
     required this.screenName,
     required this.onSwitchOrder,
     this.screenId,
+    this.section,
     this.allowEmptyPay = false,
   });
 
@@ -48,11 +49,31 @@ class BarLive {
   /// on the bar that points at it is drawn as "you are here" (2026-10-01).
   final int? screenId;
 
+  /// The nav section the till is showing ('Sale', 'Tickets', ...), when the
+  /// bar knows it. A `go_*` key for that section is drawn as "you are here",
+  /// in the same page highlight a page key gets.
+  final String? section;
+
   final void Function(String orderId) onSwitchOrder;
 
   /// The venue lets Pay open the payment screen on an empty check.
   final bool allowEmptyPay;
 }
+
+/// The nav section each `go_*` key opens, by the section's label in the
+/// rail. One list, read by the bar's highlight and by the two places that act
+/// on the keys (the sale page and the top bar off it).
+const goSections = <String, String>{
+  'go_sale': 'Sale',
+  'go_tables': 'Table',
+  'go_receipts': 'Receipts',
+  'go_reports': 'Reports',
+  'go_products': 'Product',
+  'go_functions': 'Functions',
+  'go_settings': 'Settings',
+  // The gate, for a venue with Events & tickets (tickets_page.dart).
+  'go_tickets': 'Tickets',
+};
 
 /// A venue's own top or bottom bar, drawn.
 ///
@@ -137,6 +158,7 @@ class ProgrammedBar extends ConsumerWidget {
     'go_products',
     'go_functions',
     'go_settings',
+    'go_tickets',
     'sign_off',
     // Handing the till over, and the time clock. Neither touches the bill, and
     // both are things a member of staff arriving mid-service needs from
@@ -356,6 +378,7 @@ class _BarKey extends ConsumerWidget {
     'go_products': Icons.shopping_bag,
     'go_functions': Icons.exit_to_app,
     'go_settings': Icons.settings,
+    'go_tickets': Icons.confirmation_number,
     'sign_off': Icons.logout,
     'sign_on': Icons.login,
     'clock_in_out': Icons.schedule,
@@ -392,6 +415,7 @@ class _BarKey extends ConsumerWidget {
     'go_products': 'Products',
     'go_functions': 'Functions',
     'go_settings': 'Settings',
+    'go_tickets': 'Tickets',
     'sign_off': 'Sign off',
     'sign_on': 'Sign on',
     'clock_in_out': 'Clock in / out',
@@ -723,10 +747,15 @@ class _BarKey extends ConsumerWidget {
     // A page key for the page already open: the venue's navigation row is
     // the same on every page, and this is the one that says where you are.
     // Drawn in the venue's page highlight (2026-10-01).
-    final here = button.kind == ScreenButtonKind.page &&
-        onSaleScreen &&
-        live.screenId != null &&
-        button.targetScreenId == live.screenId;
+    final here = (button.kind == ScreenButtonKind.page &&
+            onSaleScreen &&
+            live.screenId != null &&
+            button.targetScreenId == live.screenId) ||
+        // And a `go_*` key for the section that is open — the Tickets key
+        // while the gate is up — through the same resolver.
+        (button.kind == ScreenButtonKind.function &&
+            live.section != null &&
+            goSections[button.functionKey] == live.section);
     final hl = here ? highlight.lookFor(button, button.fill ?? pal.keyFill) : null;
 
     final fill = hl?.fill ?? button.fill ?? pal.keyFill;

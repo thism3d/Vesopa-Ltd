@@ -28,6 +28,7 @@ import 'card_actions.dart';
 import 'functions_page.dart';
 import 'gym_page.dart';
 import 'memberships_page.dart';
+import 'tickets_page.dart';
 import 'logout_dialog.dart';
 import 'nav_panel_controller.dart';
 import 'pair_request_overlay.dart';
@@ -253,6 +254,7 @@ class _PosShellState extends ConsumerState<PosShell> {
     return navDestinationsFor(
       gym: ref.watch(gymRepositoryProvider).settings.enabled,
       members: ref.watch(tillModulesProvider).memberships,
+      tickets: ref.watch(tillModulesProvider).events,
     );
   }
 
@@ -970,7 +972,12 @@ class _PosShellState extends ConsumerState<PosShell> {
       );
 
   Widget _hearingCards(Widget child) => SwipeCardListener(
-    enabled: ref.watch(cardRepositoryProvider).settings.enabled,
+    // Stood down at the gate: a ticket's QR is typed by the same scanner, and
+    // its digits belong in the Tickets page's scan box, not in a member
+    // lookup. See tickets_page.dart.
+    enabled:
+        ref.watch(cardRepositoryProvider).settings.enabled &&
+        _sectionLabel != 'Tickets',
     onCard: (card) => handleSwipedCard(
       context,
       ref,
@@ -1070,6 +1077,8 @@ class _PosShellState extends ConsumerState<PosShell> {
           orderId: orderId,
           onGoToSale: () => _goTo('Sale'),
         );
+      case 'Tickets':
+        return const TicketsPage();
       case 'Receipts':
         return const ReceiptsPage();
       case 'Settings':
@@ -1095,7 +1104,17 @@ class _PosShellState extends ConsumerState<PosShell> {
   /// Jump to another nav section by its label, from a button inside a page.
   void _goTo(String label) {
     final i = _destinations.indexWhere((d) => d.label == label);
-    if (i != -1) setState(() => _index = i);
+    if (i != -1) {
+      setState(() => _index = i);
+    } else if (label == 'Tickets') {
+      // A Tickets key programmed on a bar at a venue whose module is off, or
+      // on a till that has not heard yet. Said, rather than a dead key.
+      PosMessenger.info(
+        context,
+        'Tickets is not switched on for this venue. A manager turns on '
+        'Events & tickets in the back office under Modules.',
+      );
+    }
   }
 
   /// Sections driven from the back office. Each explains what it does rather
