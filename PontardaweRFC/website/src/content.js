@@ -17,7 +17,10 @@ const club = read('club.json');
 const news = read('news.json').sort((a, b) => String(b.date).localeCompare(String(a.date)));
 const images = read('images.json');
 // The club's posts on X, as saved from x.com/PontardaweRFC (content/source/x-posts.json).
-const xPosts = read('source/x-posts.json').posts
+// Missing file = no X archive, never a site that will not start.
+let xSaved = { posts: [] };
+try { xSaved = read('source/x-posts.json'); } catch { /* none shipped */ }
+const xPosts = (xSaved.posts || [])
   .filter((p) => p && p.text && !/^@\w+$/.test(p.text.trim()))
   .sort((a, b) => String(b.date).localeCompare(String(a.date)));
 

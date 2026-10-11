@@ -59,6 +59,10 @@ def bundle():
     (site / "content").mkdir()
     for f in (SITE / "content").glob("*.json"):
         shutil.copy(f, site / "content" / f.name)
+    # The club's X posts are read at start-up (src/content.js); without them the
+    # site does not start (2026-10-11: 502 until this was copied by hand).
+    (site / "content" / "source").mkdir()
+    shutil.copy(SITE / "content" / "source" / "x-posts.json", site / "content" / "source" / "x-posts.json")
     for name in ["package.json", "package-lock.json"]:
         shutil.copy(SITE / name, site / name)
     # LF endings whatever the checkout did, or bash on the box stops at "$'\r'".
