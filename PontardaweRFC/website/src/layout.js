@@ -1,7 +1,6 @@
 /**
  * The page around every page: head (titles, share cards, structured data),
- * the header and its menu, the footer, the opening animation and the club
- * helper's chat panel.
+ * the header and its menu, the footer and the club helper's chat panel.
  */
 'use strict';
 
@@ -109,11 +108,13 @@ ${noindex ? '<meta name="robots" content="noindex">' : '<meta name="robots" cont
 <link rel="stylesheet" href="/css/site.css?v=${ASSET_VERSION}">
 <link rel="alternate" type="application/rss+xml" title="${esc(club.name)} news" href="/news/feed.xml">
 <script>
-/* The opening plays once per visit, and never for reduced motion. Decided
-   here, before anything is drawn, so the page never flashes underneath it. */
-(function(){try{var d=document.documentElement;d.classList.add('js');
-if(!sessionStorage.getItem('prfc-intro')&&!matchMedia('(prefers-reduced-motion: reduce)').matches){d.classList.add('intro');sessionStorage.setItem('prfc-intro','1');}}catch(e){}})();
+/* Zero loading (2026-10-11): no opening screen, nothing hidden while scripts
+   load. Content already on screen is shown as it is; only what is further down
+   rises in as it is scrolled to (site.js). Links to other pages are fetched
+   ahead when the visitor points at or presses them, so they open at once. */
+document.documentElement.classList.add('js');
 </script>
+<script type="speculationrules">{"prerender":[{"where":{"and":[{"href_matches":"/*"},{"not":{"href_matches":["/api/*","/tickets/buy*","/tickets/order*"]}}]},"eagerness":"moderate"}]}</script>
 <script type="application/ld+json">${JSON.stringify(graph).replace(/</g, '\\u003c')}</script>
 </head>`;
 }
@@ -124,12 +125,6 @@ function header(path) {
     return `<a href="${href}"${on ? ' aria-current="page"' : ''}>${label}</a>`;
   };
   return `
-<div class="intro-screen" aria-hidden="true">
-  <div class="intro-ring"></div>
-  <picture class="intro-crest"><source srcset="/img/crest-256.webp" type="image/webp"><img src="/img/crest-512.png" alt="" width="180" height="180"></picture>
-  <div class="intro-name">Pontardawe RFC</div>
-  <div class="intro-sub">Est. ${club.founded} · Swansea Valley</div>
-</div>
 <a class="skip" href="#main">Skip to content</a>
 <header class="site-head" data-head><span class="progress-bar" data-progress-bar aria-hidden="true"></span>
   <div class="wrap head-row">

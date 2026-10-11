@@ -1,18 +1,10 @@
-/* pontardawerfc.com: the opening animation, header, scroll reveals, counters,
+/* pontardawerfc.com: the header, scroll reveals, counters,
    kitchen hours on the clubhouse page and the club helper. No libraries. */
 (function () {
   'use strict';
   var d = document;
   var root = d.documentElement;
   var reduced = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-  /* Opening animation: the CSS plays it, this lets the page scroll after. */
-  if (root.classList.contains('intro')) {
-    var done = function () { root.classList.add('intro-done'); };
-    setTimeout(done, 2900);
-    d.addEventListener('keydown', done, { once: true });
-    d.addEventListener('click', done, { once: true });
-  }
 
   /* Header: solid once scrolled; the burger opens the menu on phones. */
   var head = d.querySelector('[data-head]');
@@ -54,6 +46,14 @@
   /* Reveal on scroll, with a small stagger between neighbours. */
   var reveals = d.querySelectorAll('.reveal');
   if ('IntersectionObserver' in window && !reduced) {
+    // Whatever is already on screen stays exactly as drawn; only what is
+    // below it waits to rise in. Nothing is ever hidden before this runs.
+    var fold = window.innerHeight;
+    reveals = Array.prototype.filter.call(reveals, function (el) {
+      if (el.getBoundingClientRect().top < fold) { el.classList.add('in'); return false; }
+      return true;
+    });
+    root.classList.add('reveal-on');
     var io = new IntersectionObserver(function (entries) {
       var n = 0;
       entries.forEach(function (en) {

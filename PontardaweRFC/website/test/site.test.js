@@ -6,12 +6,14 @@
 process.env.DEEPSEEK_API_KEY = '';
 process.env.GEMINI_API_KEY = '';
 process.env.WRU_OFF = '1';
+process.env.VENUE_API_OFF = '1';
 
 const test = require('node:test');
 const assert = require('node:assert');
 const app = require('../src/server');
 const { news, xPosts } = require('../src/content');
 const wru = require('../src/wru');
+const venue = require('../src/venue_api');
 
 // A season as the WRU sends it (shapes from api.wru.wales, 2026-10-11).
 const team = (org, name, score) => ({ orgId: org, organisationName: name, childValue: '1st Team', score, organisationLogoUrl: `https://public.wru.wales/organisation/logos/${name}.png` });
@@ -129,7 +131,7 @@ test('fixtures: the WRU season from the club side, next match, table and tickets
   const tickets = await (await fetch(`${base}/tickets`)).text();
   assert.match(tickets, /id="m-1"/);
   assert.ok(!/id="m-2"/.test(tickets), 'only home matches on the tickets page');
-  assert.match(tickets, /\/js\/tickets\.js/);
+  assert.match(tickets, /Pay on the gate on match day/);
 });
 
 test('news shows every saved X post, links made safe', async () => {
@@ -144,4 +146,52 @@ test('the club email is the new address on every page', async () => {
   const html = await (await fetch(`${base}/contact`)).text();
   assert.match(html, /info@pontardawerfc\.com/);
   assert.ok(!/hotmail/.test(html));
+});
+
+test('zero loading: no opening screen, nothing hidden before scripts, menu drawn in the page', async () => {
+  const home = await (await fetch(`${base}/`)).text();
+  assert.ok(!/intro-screen|prfc-intro/.test(home));
+  assert.match(home, /type="speculationrules"/);
+  venue.set('menu', { venue: { name: 'Pontardawe RFC' }, sections: [{ id: 7, name: 'Lunch', items: [{ id: 1, name: 'Chips </script><b>', price_minor: 350 }] }] });
+  const menu = await (await fetch(`${base}/menu`)).text();
+  assert.match(menu, /<script type="application\/json" id="menu-data">/);
+  assert.ok(!/class="skeleton"/.test(menu), 'no placeholder when the menu is there');
+  assert.ok(!/Chips <\/script>/.test(menu), 'the menu cannot close its script tag');
+  venue.set('menu', null);
+});
+
+test('tickets: events on sale with a form, buying goes to card payment, the order shows the tickets', async () => {
+  venue.set('events', { events: [{
+    id: 5, title: 'Pontardawe v Penlan', kind: 'match', starts_at: '2099-10-17T14:30', location: 'Recreation Ground', on_sale: 1, wru_fixture_id: 1,
+    ticket_types: [{ id: 11, name: 'Adult', price_minor: 800, remaining: null, max_per_order: 6 }, { id: 12, name: 'Under 16', price_minor: 0, remaining: 0, max_per_order: 6 }],
+  }] });
+  const html = await (await fetch(`${base}/tickets`)).text();
+  assert.match(html, /id="e-5"/);
+  assert.match(html, /name="qty_11"/);
+  assert.ok(!/name="qty_12"/.test(html), 'sold-out types are not offered');
+  assert.match(html, /£8\.00/);
+
+  const post = (body) => fetch(`${base}/tickets/buy`, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(body) });
+  let r = await post({ event_id: '5', qty_11: '0', name: 'Sam', email: 'sam@example.com' });
+  assert.strictEqual(r.status, 400);
+  assert.match(await r.text(), /Choose how many tickets/);
+  r = await post({ event_id: '5', qty_11: '2', name: 'Sam', email: 'not-an-email' });
+  assert.match(await r.text(), /check your email/);
+
+  const sent = [];
+  const real = { checkout: venue.checkout, order: venue.order };
+  venue.checkout = async (b) => { sent.push(b); return { ok: true, status: 200, data: { order_id: 'abc', pay_url: 'https://pay.dojo.tech/checkout/pi_1' } }; };
+  r = await post({ event_id: '5', qty_11: '2', name: 'Sam Jones', email: 'sam@example.com' });
+  assert.strictEqual(r.status, 303);
+  assert.strictEqual(r.headers.get('location'), 'https://pay.dojo.tech/checkout/pi_1');
+  assert.deepStrictEqual(sent[0].items, [{ ticket_type_id: 11, qty: 2 }]);
+  assert.strictEqual(sent[0].return_url, 'https://pontardawerfc.com/tickets/order');
+
+  venue.order = async () => ({ ok: true, status: 200, data: { status: 'paid', name: 'Sam Jones', event: { title: 'Pontardawe v Penlan', starts_at: '2099-10-17T14:30' }, tickets: [{ code: 'ABCDE12345', type: 'Adult', holder: 'Sam Jones' }] } });
+  const done = await (await fetch(`${base}/tickets/order?order=abc`)).text();
+  assert.match(done, /Your tickets/);
+  assert.match(done, /ticket\/ABCDE12345\.svg/);
+  assert.match(done, /noindex/);
+  Object.assign(venue, real);
+  venue.set('events', null);
 });

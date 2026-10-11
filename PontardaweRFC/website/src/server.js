@@ -20,6 +20,7 @@ const pages = require('./pages');
 const { SITE, MEMBERS } = require('./layout');
 const { helperRoute } = require('./helper');
 const wru = require('./wru');
+const venue = require('./venue_api');
 
 const app = express();
 app.disable('x-powered-by');
@@ -45,13 +46,14 @@ app.use((req, res, next) => {
       `connect-src 'self' ${pages.MENU_API}`,
       "frame-ancestors 'self'",
       "base-uri 'self'",
-      "form-action 'self'",
+      "form-action 'self' https://pay.dojo.tech",
     ].join('; '),
   });
   next();
 });
 
 wru.start();
+venue.start();
 
 app.get('/health', (req, res) => res.json({ ok: true, site: 'pontardawerfc.com', started: STARTED }));
 
@@ -73,6 +75,43 @@ app.get('/club', html(() => pages.clubPage()));
 app.get('/teams', html(() => pages.teamsPage()));
 app.get('/fixtures', html(() => pages.fixturesPage()));
 app.get('/tickets', html(() => pages.ticketsPage()));
+
+// Buying tickets: a plain form, so it works with no script. The back office
+// takes the order and gives a card payment page (Dojo) that comes back to
+// /tickets/order?order=<id>, where the tickets are shown and emailed.
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+app.post('/tickets/buy', express.urlencoded({ extended: false, limit: '8kb' }), async (req, res) => {
+  const b = req.body || {};
+  const form = { name: String(b.name || '').trim().slice(0, 80), email: String(b.email || '').trim().slice(0, 120), phone: String(b.phone || '').trim().slice(0, 30) };
+  Object.keys(b).filter((k) => /^qty_\d+$/.test(k)).forEach((k) => { form[k] = b[k]; });
+  const items = Object.keys(form).filter((k) => k.startsWith('qty_'))
+    .map((k) => ({ ticket_type_id: Number(k.slice(4)), qty: Math.max(0, Math.min(20, parseInt(form[k], 10) || 0)) }))
+    .filter((i) => i.qty > 0);
+  const again = (error, status = 400) => {
+    res.status(status).set('Cache-Control', 'no-store').type('html')
+      .send(pages.ticketsPage({ error, eventId: b.event_id, form }));
+  };
+  if (!items.length) return again('Choose how many tickets you would like.');
+  if (!form.name) return again('Please add your name, for the tickets.');
+  if (!EMAIL.test(form.email)) return again('Please check your email address: your tickets are sent there.');
+  try {
+    const r = await venue.checkout({
+      event_id: Number(b.event_id), items, ...form, return_url: `${SITE}/tickets/order`,
+    });
+    if (!r.ok) return again(r.data && r.data.error ? r.data.error : 'Those tickets could not be booked just now. Please try again.', r.status >= 500 ? 502 : 400);
+    if (r.data.pay_url && /^https:\/\//.test(r.data.pay_url)) return res.redirect(303, r.data.pay_url);
+    return res.redirect(303, `/tickets/order?order=${encodeURIComponent(r.data.order_id)}`);
+  } catch (e) {
+    console.error('tickets:', String(e.message || e).slice(0, 200));
+    return again('Tickets could not be booked just now. Please try again, or pay on the gate.', 502);
+  }
+});
+app.get('/tickets/order', async (req, res) => {
+  const id = String(req.query.order || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64);
+  let r = null;
+  if (id) r = await venue.order(id).catch(() => null);
+  res.set('Cache-Control', 'no-store').type('html').send(pages.ticketOrderPage(r));
+});
 app.get('/news', html(() => pages.newsPage()));
 app.get('/clubhouse', html(() => pages.clubhousePage()));
 app.get('/menu', html(() => pages.menuPage()));

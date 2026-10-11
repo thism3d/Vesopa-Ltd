@@ -82,7 +82,14 @@
     : API + '/api/public/dinein/venue/' + encodeURIComponent(SLUG);
 
   showLastOrder();
-  getJSON(url).then(function (res) {
+  // The page carries the club's menu already (no wait); a table's own link is
+  // still asked for, since it says which table.
+  var inline = d.getElementById('menu-data');
+  var first = null;
+  if (inline && !tableCode) {
+    try { first = { ok: true, status: 200, body: JSON.parse(inline.textContent) }; } catch (e) { first = null; }
+  }
+  (first ? Promise.resolve(first) : getJSON(url)).then(function (res) {
     if (!res.ok) {
       if (tableCode && res.status === 404) {
         // A stale or mistyped table code: fall back to the club's own menu.

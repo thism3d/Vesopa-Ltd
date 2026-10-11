@@ -7,6 +7,7 @@
 
 const { club, news, images, xPosts, longDate, yearsOld } = require('./content');
 const wru = require('./wru');
+const venue = require('./venue_api');
 const { page, pageHero, esc, icon, SITE, MEMBERS, ASSET_VERSION } = require('./layout');
 
 const MENU_API = (process.env.MENU_API || 'https://menu.vesopa.com').replace(/\/+$/, '');
@@ -348,12 +349,19 @@ function clubhousePage() {
   }, body);
 }
 
+/** JSON for a <script type="application/json">: nothing in it can close the tag. */
+const inlineJson = (v) => JSON.stringify(v).replace(/</g, '\\u003c');
+
 function menuPage() {
+  // The menu is drawn from the server's copy at once; the script fetches only
+  // for a table's own link (?table=), or when the server has no copy yet.
+  const menu = venue.menu();
   const body = `${pageHero({ kicker: 'Live from the bar', title: 'Menu & Order', lead: 'Order to your table in the clubhouse, or ahead for collection and pay at the bar.' })}
+${menu ? `<script type="application/json" id="menu-data">${inlineJson(menu)}</script>` : ''}
 <section class="section order-app" id="order" data-order data-api="${esc(MENU_API)}" data-slug="${esc(MENU_SLUG)}" data-phone="${esc(club.phone)}" data-tel="${esc(club.phone_e164)}">
   <div class="wrap">
     <div class="order-status" data-order-status aria-live="polite">
-      <div class="skeleton"><span></span><span></span><span></span></div>
+      ${menu ? '' : '<div class="skeleton"><span></span><span></span><span></span></div>'}
       <noscript><p class="notice">${icon('info', { size: 20 })} The menu needs JavaScript. You can also order at the bar or call ${esc(club.phone)}.</p></noscript>
     </div>
     <div class="order-modes" data-modes hidden>
@@ -648,34 +656,124 @@ ${nextMatch()}
   }, body);
 }
 
-function ticketsPage() {
+const money = (minor) => `£${(Math.round(Number(minor) || 0) / 100).toFixed(2)}`;
+
+/** "Saturday 18 October, 2:30pm" from "2026-10-18T14:30". */
+function eventWhen(iso) {
+  const [day, time] = String(iso || '').split('T');
+  const d = new Date(`${day}T12:00:00Z`);
+  const date = d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/London' });
+  if (!time) return date;
+  const [h, m] = time.split(':').map(Number);
+  return `${date}, ${((h + 11) % 12) + 1}${m ? `:${String(m).padStart(2, '0')}` : ''}${h < 12 ? 'am' : 'pm'}`;
+}
+
+/** One event on sale, with its own buying form (works with no script at all). */
+function eventCard(e, { error = '', form = {} } = {}) {
+  const types = (e.ticket_types || []).filter((t) => t.remaining === null || t.remaining === undefined || t.remaining > 0);
+  const soldOut = !types.length;
+  const anchors = `id="e-${esc(e.id)}"${e.wru_fixture_id ? ` data-fixture="${esc(e.wru_fixture_id)}"` : ''}`;
+  const rows = types.map((t) => {
+    const max = Math.max(0, Math.min(Number(t.max_per_order) || 10, t.remaining == null ? 10 : t.remaining));
+    const chosen = Number(form[`qty_${t.id}`]) || 0;
+    const opts = Array.from({ length: max + 1 }, (_, n) => `<option value="${n}"${n === chosen ? ' selected' : ''}>${n}</option>`).join('');
+    return `<li><label for="q-${esc(e.id)}-${esc(t.id)}"><span>${esc(t.name)}</span><b>${t.price_minor ? money(t.price_minor) : 'Free'}</b></label><select id="q-${esc(e.id)}-${esc(t.id)}" name="qty_${esc(t.id)}">${opts}</select></li>`;
+  }).join('');
+  return `<article class="card event-card reveal" ${anchors}>
+  ${e.image_url && /^https:\/\//.test(e.image_url) ? `<img class="event-img" src="${esc(e.image_url)}" alt="" loading="lazy">` : ''}
+  <p class="kicker">${icon(e.kind === 'match' ? 'whistle' : 'calendar', { size: 16 })} ${esc(e.kind === 'match' ? 'Home match' : 'Club event')}</p>
+  <h3>${esc(e.title)}</h3>
+  <p class="event-meta"><time datetime="${esc(e.starts_at)}">${esc(eventWhen(e.starts_at))}</time>${e.location ? ` · ${esc(e.location)}` : ''}</p>
+  ${e.description ? `<p>${esc(e.description)}</p>` : ''}
+  ${soldOut || !e.on_sale ? `<p class="notice">${soldOut ? 'Sold out online.' : 'Not on sale online yet.'} Pay on the gate on the day.</p>` : `
+  <form class="buy-form" method="post" action="/tickets/buy#e-${esc(e.id)}">
+    <input type="hidden" name="event_id" value="${esc(e.id)}">
+    <ul class="ticket-list">${rows}</ul>
+    <div class="buy-who">
+      <label>Name<input name="name" autocomplete="name" required maxlength="80" value="${esc(form.name || '')}"></label>
+      <label>Email<input name="email" type="email" autocomplete="email" required maxlength="120" value="${esc(form.email || '')}"></label>
+      <label>Mobile <small>(optional)</small><input name="phone" type="tel" autocomplete="tel" maxlength="30" value="${esc(form.phone || '')}"></label>
+    </div>
+    ${error ? `<p class="notice notice-error" role="alert">${esc(error)}</p>` : ''}
+    <button class="btn btn-glow btn-block" type="submit">${icon('ticket', { size: 20 })} Buy tickets</button>
+    <p class="muted small">Pay by card on the next page. Your tickets come by email with a QR code to show at the gate. <a href="/ordering-terms">Terms</a> · <a href="/privacy">Privacy</a></p>
+  </form>`}
+</article>`;
+}
+
+/** Tickets sold as menu items (a "Tickets" section), for before the club uses events. */
+function menuTickets() {
+  const menu = venue.menu();
+  const sec = ((menu && menu.sections) || []).find((x) => /ticket/i.test(x.name || ''));
+  if (!sec || !sec.items || !sec.items.length) return '';
+  return `<ul class="ticket-list">${sec.items.map((it) => `<li><span>${esc(it.name)}</span><b>${money(it.price_minor)}</b></li>`).join('')}</ul><a class="btn btn-glow btn-block" href="/menu#sec-${esc(sec.id)}">Buy tickets</a>`;
+}
+
+function ticketsPage({ error = '', eventId = null, form = {} } = {}) {
   const home = wru.fixtures().upcoming.filter((f) => f.home);
-  const body = `${pageHero({ kicker: 'Match days', title: 'Tickets', lead: 'Home games at the Recreation Ground, Ynysderw Road.' })}
-<section class="section tickets" data-tickets data-api="${esc(MENU_API)}" data-slug="${esc(MENU_SLUG)}">
+  const events = venue.events();
+  const listed = events.length
+    ? `<div class="event-list">${events.map((e) => eventCard(e, String(e.id) === String(eventId) ? { error, form } : {})).join('')}</div>`
+    : '';
+  const fromMenu = events.length ? '' : menuTickets();
+  const body = `${pageHero({ kicker: 'Match days and club events', title: 'Tickets', lead: 'Buy online and show the QR code at the gate, or pay on the day.' })}
+<section class="section tickets">
   <div class="wrap tickets-grid">
     <div>
+      ${listed ? `<h2 class="reveal">${icon('ticket', { size: 26 })} On sale now</h2>${listed}` : ''}
       <h2 class="reveal">${icon('calendar', { size: 26 })} Home matches</h2>
       ${home.length ? `<ol class="fx-list">${home.map((f) => fixtureRow(f, { tickets: false })).join('')}</ol>` : `<p class="muted">The next home matches will show here from the WRU's fixture list. <a href="/fixtures">All fixtures</a>.</p>`}
     </div>
     <aside>
-      <div class="card side-card reveal" data-ticket-box>
+      ${listed ? '' : `<div class="card side-card reveal">
         <h3>${icon('ticket', { size: 22 })} Buy tickets</h3>
-        <p data-ticket-text>Pay on the gate on match day, by card or cash. Online tickets show here as soon as the club puts them on sale.</p>
-        <div data-ticket-items></div>
-      </div>
+        <p>${fromMenu ? 'Buy online, then collect at the gate and pay if you have not already. Or pay on the gate on the day.' : 'Pay on the gate on match day, by card or cash. Online tickets show here as soon as the club puts them on sale.'}</p>
+        ${fromMenu}
+      </div>`}
       <div class="card side-card reveal"><h3>${icon('card', { size: 22 })} Members</h3><p>Show your members' card at the gate and the bar.</p><a class="btn btn-line" href="${MEMBERS}/">Members' card</a></div>
       <div class="card side-card reveal"><h3>${icon('phone', { size: 22 })} Groups and questions</h3><p>Call the club on <a href="tel:${club.phone_e164}">${esc(club.phone)}</a> or email <a href="mailto:${esc(club.email)}">${esc(club.email)}</a>.</p></div>
     </aside>
   </div>
 </section>`;
+  const offers = events.filter((e) => e.on_sale).map((e) => ({
+    '@context': 'https://schema.org',
+    '@type': e.kind === 'match' ? 'SportsEvent' : 'Event',
+    name: e.title,
+    startDate: e.starts_at,
+    eventStatus: 'https://schema.org/EventScheduled',
+    location: { '@type': 'Place', name: e.location || club.ground, address: `${club.address.street}, ${club.address.town} ${club.address.postcode}` },
+    organizer: { '@id': `${SITE}/#club` },
+    offers: (e.ticket_types || []).map((t) => ({ '@type': 'Offer', name: t.name, price: (Number(t.price_minor) / 100).toFixed(2), priceCurrency: 'GBP', url: `${SITE}/tickets#e-${e.id}`, availability: t.remaining === 0 ? 'https://schema.org/SoldOut' : 'https://schema.org/InStock' })),
+  }));
   return page({
     title: 'Tickets',
-    description: `Match tickets for ${club.name} home games at the Recreation Ground, Ynysderw Road, Pontardawe: buy online and collect at the gate, or pay on the day.`,
+    description: `Match and event tickets for ${club.name} at the Recreation Ground, Ynysderw Road, Pontardawe: buy online with a QR code for the gate, or pay on the day.`,
     path: '/tickets',
     og: 'teams',
-    ld: [crumbs([['Home', '/'], ['Tickets', '/tickets']])],
-    scripts: `<script src="/js/tickets.js?v=${ASSET_VERSION}" defer></script>`,
+    noindex: Boolean(error),
+    ld: [crumbs([['Home', '/'], ['Tickets', '/tickets']]), ...offers],
   }, body);
+}
+
+/** After paying: the tickets, or what went wrong. */
+function ticketOrderPage(r) {
+  const o = (r && r.data) || {};
+  let inner;
+  if (!r || !r.ok) {
+    inner = `<p class="notice notice-error">We couldn't find that order. If you paid, your tickets are on their way by email; or call ${esc(club.phone)}.</p>`;
+  } else if (o.status === 'paid') {
+    inner = `<div class="done"><div class="tick">${icon('check', { size: 40 })}</div><h2>You're in, ${esc(String(o.name || '').split(' ')[0])}!</h2>
+<p>${esc(o.event && o.event.title)}${o.event && o.event.starts_at ? ` · ${esc(eventWhen(o.event.starts_at))}` : ''}</p>
+<p class="muted">We've emailed your tickets too. Show a code at the gate, on your phone or printed.</p></div>
+<ol class="ticket-qrs">${(o.tickets || []).map((t) => `<li class="card"><img src="${esc(venue.ticketQr(t.code))}" alt="Ticket QR code ${esc(t.code)}" width="200" height="200"><b>${esc(t.type)}</b><span>${esc(t.holder || o.name || '')}</span><code>${esc(t.code)}</code></li>`).join('')}</ol>`;
+  } else if (o.status === 'pending') {
+    inner = `<p class="notice">Waiting for the card payment to finish. <a href="">Check again</a>. If you closed the payment page, <a href="/tickets">start again</a>.</p>`;
+  } else {
+    inner = `<p class="notice notice-error">The payment didn't go through, so no tickets were issued and nothing was taken. <a href="/tickets">Try again</a>.</p>`;
+  }
+  const body = `${pageHero({ kicker: 'Tickets', title: o.status === 'paid' ? 'Your tickets' : 'Your order' })}
+<section class="section"><div class="wrap ticket-order">${inner}</div></section>`;
+  return page({ title: 'Your tickets', description: 'Your tickets.', path: '/tickets/order', og: 'teams', noindex: true }, body);
 }
 
 // --- The club's posts on X ---------------------------------------------------
@@ -710,6 +808,6 @@ function notFound() {
 
 module.exports = {
   home, clubPage, teamsPage, newsPage, articlePage, clubhousePage, menuPage, membershipPage,
-  contactPage, privacyPage, cookiesPage, termsPage, accessibilityPage, notFound, fixturesPage, ticketsPage,
+  contactPage, privacyPage, cookiesPage, termsPage, accessibilityPage, notFound, fixturesPage, ticketsPage, ticketOrderPage,
   MENU_API, MENU_SLUG,
 };
