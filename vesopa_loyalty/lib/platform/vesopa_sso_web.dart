@@ -128,3 +128,10 @@ VesopaAnswer? takeVesopaAnswer() {
   }
   return VesopaAnswer(code: code, verifier: verifier, redirectUri: _redirectUri());
 }
+
+/// The device's own sheets are an iPhone and iPad thing; a browser has
+/// Vesopa's page.
+Future<VesopaAnswer?> nativeVesopaSignIn(Map<String, Object?> proof, {required VesopaConsent consent}) async =>
+    throw const VesopaNeedsPage('Continue with Vesopa');
+
+Future<Map<String, dynamic>> vesopaPasskeyOptions() async => throw const VesopaNeedsPage('Continue with Vesopa');

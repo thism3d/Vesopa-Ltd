@@ -210,141 +210,155 @@ async function handleCallback(req, res, next) {
       return await finishLink(req, res, { provider, flow, existing, subject, profile, assertedEmail, relay, tokenSet });
     }
 
-    if (existing) {
-      if (existing.user_status !== 'active') {
-        return fail(res, 'That account is not available', 'Please contact info@vesopasoftware.com.');
-      }
-      await identity.touchIdentity(existing.id);
-      return await signIn(req, res, { userId: existing.user_id, provider, flow });
+    const found = await accountFor(req, { provider, profile, tokenSet, subject, assertedEmail, relay, existing });
+    if (found.unavailable) {
+      return fail(res, 'That account is not available', 'Please contact info@vesopasoftware.com.');
     }
-
-    // ------------------------------------------------------------------
-    // New provider account. Is there already a Vesopa account for the person?
-    // ------------------------------------------------------------------
-    const candidate = relay
-      ? null
-      : await identity.findLinkCandidate(profile.email, assertedEmail, provider.trustsEmail && profile.emailVerified);
-
-    if (candidate) {
-      /*
-       * SAME PERSON, SAME ADDRESS — LINK IT AND LET THEM IN.
-       *
-       * This used to stop and render `link-required`: "you already have a
-       * Vesopa account, sign in to it first, then link Google." It was the
-       * cautious reading, and it was the wrong one. Somebody who presses
-       * Continue with Google has answered the question of who they are. Being
-       * told to go and fetch a code from their email instead is the moment
-       * they decide the sign-in is broken — and they are half right, because
-       * the code proves ownership of the very address Google just proved.
-       *
-       * WHAT MAKES THIS SAFE, and it is not a judgement call — every one of
-       * these is already enforced by identity.findLinkCandidate, which returns
-       * null unless ALL of them hold:
-       *
-       *   the provider is one we trust to verify addresses at all;
-       *   the provider asserted email_verified for THIS sign-in;
-       *   the Vesopa identity it matches is itself verified (verified_at);
-       *   the address is not an Apple private relay.
-       *
-       * So the match is verified-to-verified. That is the same bar Google and
-       * Microsoft use to merge an account, and it is strictly stronger than
-       * the emailed code the old page demanded: a code proves somebody can
-       * read the mailbox now, which is exactly what the provider's assertion
-       * already says.
-       *
-       * If any of those fail, `candidate` is null and we never reach here —
-       * an unverified provider address still cannot claim an existing account.
-       */
-      await identity.attachIdentity(candidate.user_id, {
-        type: provider.key,
-        identifier: profile.email || subject,
-        normalised: subject,
-        display: profile.email || '',
-        verified: true,
-        verifiedVia: provider.key,
-      });
-
-      await events.recordLogin({
-        userId: candidate.user_id,
-        method: provider.key,
-        outcome: 'success',
-        // Kept in the record: this sign-in is also the moment the provider
-        // became attached, and a support call about "when did Google appear on
-        // my account" is answered by this row.
-        failureReason: 'auto_linked',
-        identifier: assertedEmail,
-        ip: req.clientIp,
-        userAgent: req.userAgent,
-      });
-
-      return await signIn(req, res, { userId: candidate.user_id, provider, flow });
-    }
-
-    // ------------------------------------------------------------------
-    // Nobody here by that name: make an account.
-    // ------------------------------------------------------------------
-    let userId;
-    try {
-      const created = await identity.createUser({
-        type: provider.key,
-        identifier: profile.email || subject,
-        normalised: subject,
-        display: profile.email || '',
-        verified: true,
-        verifiedVia: provider.key,
-        displayName: profile.name || '',
-        profile: profile.raw,
-        assertedEmail: profile.email || '',
-        assertedEmailVerified: profile.emailVerified,
-      });
-      userId = created.userId;
-
-      /*
-       * The address becomes a real identity of its own — so the person can
-       * later sign in with a code to it, or set a password — but ONLY when the
-       * provider is one we trust to have verified it, and never for an Apple
-       * relay address, which can be switched off and stop existing.
-       *
-       * A duplicate here is not fatal: it means somebody else already holds
-       * that address, and the account still works through the provider.
-       */
-      if (assertedEmail && profile.emailVerified && provider.trustsEmail && !relay) {
-        try {
-          await identity.attachIdentity(userId, {
-            type: 'email',
-            identifier: profile.email,
-            normalised: assertedEmail,
-            verified: true,
-            verifiedVia: provider.key,
-          });
-        } catch (error) {
-          if (!db.isDuplicate(error)) throw error;
-        }
-      }
-
-      await captureAvatar({ provider, userId, publicId: created.publicId, profile, tokenSet });
-
-      await events.recordAudit({
-        actorUserId: userId,
-        action: 'account.created',
-        targetType: 'user',
-        targetId: created.publicId,
-        detail: { via: provider.key },
-        ip: req.clientIp,
-      });
-    } catch (error) {
-      // Two callbacks for the same brand-new provider account, racing. The
-      // index refused the second; adopt whichever won.
-      if (!db.isDuplicate(error)) throw error;
-      const now = await identity.findIdentity(provider.key, subject);
-      if (!now) throw error;
-      userId = now.user_id;
-    }
-
-    return await signIn(req, res, { userId, provider, flow });
+    return await signIn(req, res, { userId: found.userId, provider, flow });
   } catch (error) {
     return next(error);
   }
+}
+
+/**
+ * The Vesopa account a provider sign-in belongs to: the one already holding
+ * this provider account, else the verified-address match (linked here), else
+ * a new one. `{ unavailable: true }` for an account that is not active.
+ *
+ * Shared with routes/native.js, where the same Apple or Google sign-in
+ * arrives from a venue's own app instead of through this site's callback.
+ */
+async function accountFor(req, { provider, profile, tokenSet, subject, assertedEmail, relay, existing }) {
+  if (existing) {
+    if (existing.user_status !== 'active') return { unavailable: true };
+    await identity.touchIdentity(existing.id);
+    return { userId: existing.user_id };
+  }
+
+  // ------------------------------------------------------------------
+  // New provider account. Is there already a Vesopa account for the person?
+  // ------------------------------------------------------------------
+  const candidate = relay
+    ? null
+    : await identity.findLinkCandidate(profile.email, assertedEmail, provider.trustsEmail && profile.emailVerified);
+
+  if (candidate) {
+    /*
+     * SAME PERSON, SAME ADDRESS — LINK IT AND LET THEM IN.
+     *
+     * This used to stop and render `link-required`: "you already have a
+     * Vesopa account, sign in to it first, then link Google." It was the
+     * cautious reading, and it was the wrong one. Somebody who presses
+     * Continue with Google has answered the question of who they are. Being
+     * told to go and fetch a code from their email instead is the moment
+     * they decide the sign-in is broken — and they are half right, because
+     * the code proves ownership of the very address Google just proved.
+     *
+     * WHAT MAKES THIS SAFE, and it is not a judgement call — every one of
+     * these is already enforced by identity.findLinkCandidate, which returns
+     * null unless ALL of them hold:
+     *
+     *   the provider is one we trust to verify addresses at all;
+     *   the provider asserted email_verified for THIS sign-in;
+     *   the Vesopa identity it matches is itself verified (verified_at);
+     *   the address is not an Apple private relay.
+     *
+     * So the match is verified-to-verified. That is the same bar Google and
+     * Microsoft use to merge an account, and it is strictly stronger than
+     * the emailed code the old page demanded: a code proves somebody can
+     * read the mailbox now, which is exactly what the provider's assertion
+     * already says.
+     *
+     * If any of those fail, `candidate` is null and we never reach here —
+     * an unverified provider address still cannot claim an existing account.
+     */
+    await identity.attachIdentity(candidate.user_id, {
+      type: provider.key,
+      identifier: profile.email || subject,
+      normalised: subject,
+      display: profile.email || '',
+      verified: true,
+      verifiedVia: provider.key,
+    });
+
+    await events.recordLogin({
+      userId: candidate.user_id,
+      method: provider.key,
+      outcome: 'success',
+      // Kept in the record: this sign-in is also the moment the provider
+      // became attached, and a support call about "when did Google appear on
+      // my account" is answered by this row.
+      failureReason: 'auto_linked',
+      identifier: assertedEmail,
+      ip: req.clientIp,
+      userAgent: req.userAgent,
+    });
+
+    return { userId: candidate.user_id };
+  }
+
+  // ------------------------------------------------------------------
+  // Nobody here by that name: make an account.
+  // ------------------------------------------------------------------
+  let userId;
+  try {
+    const created = await identity.createUser({
+      type: provider.key,
+      identifier: profile.email || subject,
+      normalised: subject,
+      display: profile.email || '',
+      verified: true,
+      verifiedVia: provider.key,
+      displayName: profile.name || '',
+      profile: profile.raw,
+      assertedEmail: profile.email || '',
+      assertedEmailVerified: profile.emailVerified,
+    });
+    userId = created.userId;
+
+    /*
+     * The address becomes a real identity of its own — so the person can
+     * later sign in with a code to it, or set a password — but ONLY when the
+     * provider is one we trust to have verified it, and never for an Apple
+     * relay address, which can be switched off and stop existing.
+     *
+     * A duplicate here is not fatal: it means somebody else already holds
+     * that address, and the account still works through the provider.
+     */
+    if (assertedEmail && profile.emailVerified && provider.trustsEmail && !relay) {
+      try {
+        await identity.attachIdentity(userId, {
+          type: 'email',
+          identifier: profile.email,
+          normalised: assertedEmail,
+          verified: true,
+          verifiedVia: provider.key,
+        });
+      } catch (error) {
+        if (!db.isDuplicate(error)) throw error;
+      }
+    }
+
+    await captureAvatar({ provider, userId, publicId: created.publicId, profile, tokenSet });
+
+    await events.recordAudit({
+      actorUserId: userId,
+      action: 'account.created',
+      targetType: 'user',
+      targetId: created.publicId,
+      detail: { via: provider.key },
+      ip: req.clientIp,
+    });
+  } catch (error) {
+    // Two callbacks for the same brand-new provider account, racing. The
+    // index refused the second; adopt whichever won.
+    if (!db.isDuplicate(error)) throw error;
+    const now = await identity.findIdentity(provider.key, subject);
+    if (!now) throw error;
+    userId = now.user_id;
+  }
+
+  return { userId };
 }
 
 /** Attach this provider account to the person who is already signed in. */
@@ -539,3 +553,4 @@ async function notify(userId, { heading, body, req }) {
 }
 
 module.exports = router;
+module.exports.accountFor = accountFor;

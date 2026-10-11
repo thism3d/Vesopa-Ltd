@@ -1645,7 +1645,10 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
         // The loading screen shows what the APP shows. A venue that set a logo
         // but no separate app icon was getting Vesopa's mark on the splash and
         // its own a second later, which reads as having opened the wrong thing.
-        .replace(/__ICON__/g, esc(brand.icon || brand.logo || `${base}icons/Icon-192.png`));
+        .replace(/__ICON__/g, esc(brand.icon || brand.logo || `${base}icons/Icon-192.png`))
+        // Which venue, for a venue's own host where the address is just `/`
+        // (lib/platform/page_venue.dart).
+        .replace('</head>', `  <meta name="loyalty-venue" content="${esc(app.slug)}">\n</head>`);
       res.set('Cache-Control', 'no-cache');
       res.type('html').send(html);
     } catch (e) {

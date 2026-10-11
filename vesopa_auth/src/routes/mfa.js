@@ -437,77 +437,92 @@ router.post('/webauthn/authenticate/options', async (req, res, next) => {
   }
 });
 
+/**
+ * A passkey sign-in's assertion checked and its counter recorded:
+ * `{ stored }` (the passkey row, with user_id) or `{ status, error }`.
+ *
+ * `origins` is this site's own for the web page; routes/native.js adds the
+ * ones a venue's own app signs with (an iPhone sends https://<rp id>).
+ */
+async function checkPasskey(req, body, origins = config.webauthn.rpOrigins) {
+  const credentialId = body.rawId || body.id;
+  if (!credentialId) return { status: 400, error: 'no_credential' };
+
+  const stored = await db.one(
+    `SELECT p.*, u.public_id AS user_public_id, u.status AS user_status
+       FROM user_passkeys p
+       JOIN users u ON u.id = p.user_id
+      WHERE p.credential_id = ? AND p.revoked_at IS NULL`,
+    [Buffer.from(credentialId, 'base64url')],
+  );
+  if (!stored) return { status: 400, error: 'unknown_credential' };
+  if (stored.user_status !== 'active') return { status: 403, error: 'account_unavailable' };
+
+  const challengeValue = String(body.expectedChallenge || body.challenge || '');
+  const row = await claimChallenge(challengeValue, 'authenticate');
+  if (!row) return { status: 400, error: 'challenge_expired' };
+
+  const verification = await verifyAuthenticationResponse({
+    response: body,
+    expectedChallenge: row.challenge,
+    expectedOrigin: origins,
+    expectedRPID: config.webauthn.rpId,
+    requireUserVerification: true,
+    credential: {
+      id: Buffer.from(stored.credential_id).toString('base64url'),
+      publicKey: new Uint8Array(stored.public_key),
+      counter: Number(stored.sign_count),
+      transports: stored.transports ? stored.transports.split(',') : undefined,
+    },
+  });
+
+  if (!verification.verified) {
+    await events.recordLogin({
+      userId: stored.user_id,
+      method: 'passkey',
+      outcome: 'failure',
+      failureReason: 'not_verified',
+      ip: req.clientIp,
+      userAgent: req.userAgent,
+    });
+    return { status: 400, error: 'not_verified' };
+  }
+
+  /*
+   * SIGN COUNT, IN 2026.
+   *
+   * The counter was designed to catch a cloned authenticator. Most passkeys
+   * today are synced across a person's devices and report zero for ever, so
+   * refusing a login because the counter did not increase locks out the
+   * ordinary case. It is recorded, and a DECREASE from a non-zero counter is
+   * worth an alert — never a refusal.
+   */
+  const newCount = Number(verification.authenticationInfo.newCounter || 0);
+  if (Number(stored.sign_count) > 0 && newCount > 0 && newCount <= Number(stored.sign_count)) {
+    console.warn(`[webauthn] sign count did not advance for credential ${stored.id}`);
+    await events.recordLogin({
+      userId: stored.user_id,
+      method: 'passkey',
+      outcome: 'challenge',
+      failureReason: 'sign_count_anomaly',
+      ip: req.clientIp,
+      userAgent: req.userAgent,
+    });
+  }
+
+  await db.execute(
+    'UPDATE user_passkeys SET sign_count = ?, last_used_at = NOW() WHERE id = ?',
+    [newCount, stored.id],
+  );
+
+  return { stored };
+}
+
 router.post('/webauthn/authenticate/verify', async (req, res, next) => {
   try {
-    const credentialId = req.body.rawId || req.body.id;
-    if (!credentialId) return res.status(400).json({ error: 'no_credential' });
-
-    const stored = await db.one(
-      `SELECT p.*, u.public_id AS user_public_id, u.status AS user_status
-         FROM user_passkeys p
-         JOIN users u ON u.id = p.user_id
-        WHERE p.credential_id = ? AND p.revoked_at IS NULL`,
-      [Buffer.from(credentialId, 'base64url')],
-    );
-    if (!stored) return res.status(400).json({ error: 'unknown_credential' });
-    if (stored.user_status !== 'active') return res.status(403).json({ error: 'account_unavailable' });
-
-    const challengeValue = String(req.body.expectedChallenge || req.body.challenge || '');
-    const row = await claimChallenge(challengeValue, 'authenticate');
-    if (!row) return res.status(400).json({ error: 'challenge_expired' });
-
-    const verification = await verifyAuthenticationResponse({
-      response: req.body,
-      expectedChallenge: row.challenge,
-      expectedOrigin: config.webauthn.rpOrigins,
-      expectedRPID: config.webauthn.rpId,
-      requireUserVerification: true,
-      credential: {
-        id: Buffer.from(stored.credential_id).toString('base64url'),
-        publicKey: new Uint8Array(stored.public_key),
-        counter: Number(stored.sign_count),
-        transports: stored.transports ? stored.transports.split(',') : undefined,
-      },
-    });
-
-    if (!verification.verified) {
-      await events.recordLogin({
-        userId: stored.user_id,
-        method: 'passkey',
-        outcome: 'failure',
-        failureReason: 'not_verified',
-        ip: req.clientIp,
-        userAgent: req.userAgent,
-      });
-      return res.status(400).json({ error: 'not_verified' });
-    }
-
-    /*
-     * SIGN COUNT, IN 2026.
-     *
-     * The counter was designed to catch a cloned authenticator. Most passkeys
-     * today are synced across a person's devices and report zero for ever, so
-     * refusing a login because the counter did not increase locks out the
-     * ordinary case. It is recorded, and a DECREASE from a non-zero counter is
-     * worth an alert — never a refusal.
-     */
-    const newCount = Number(verification.authenticationInfo.newCounter || 0);
-    if (Number(stored.sign_count) > 0 && newCount > 0 && newCount <= Number(stored.sign_count)) {
-      console.warn(`[webauthn] sign count did not advance for credential ${stored.id}`);
-      await events.recordLogin({
-        userId: stored.user_id,
-        method: 'passkey',
-        outcome: 'challenge',
-        failureReason: 'sign_count_anomaly',
-        ip: req.clientIp,
-        userAgent: req.userAgent,
-      });
-    }
-
-    await db.execute(
-      'UPDATE user_passkeys SET sign_count = ?, last_used_at = NOW() WHERE id = ?',
-      [newCount, stored.id],
-    );
+    const checked = await checkPasskey(req, req.body);
+    if (checked.error) return res.status(checked.status).json({ error: checked.error });
+    const { stored } = checked;
 
     const session = await sessions.create({
       userId: stored.user_id,
@@ -601,3 +616,4 @@ async function notify(userId, { heading, body, req }) {
 
 module.exports = router;
 module.exports.issueRecoveryCodes = issueRecoveryCodes;
+module.exports.checkPasskey = checkPasskey;

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../platform/location.dart';
+import '../platform/page_venue.dart';
 import '../platform/push.dart';
 import '../platform/watch.dart';
 import 'watch_card.dart';
@@ -54,6 +55,9 @@ class AppConfig {
     if (segments.isNotEmpty && RegExp(r'^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$').hasMatch(segments.first)) {
       return segments.first;
     }
+    // A venue's own host: the page says which venue.
+    final fromPage = pageVenue();
+    if (fromPage != null && RegExp(r'^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$').hasMatch(fromPage)) return fromPage;
     return null;
   }
 

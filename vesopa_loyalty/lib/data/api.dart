@@ -1,8 +1,10 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
+
+import '../platform/device_label.dart';
 
 /// Something the server said no to, in words a customer can read.
 class ApiError implements Exception {
@@ -51,6 +53,8 @@ class LoyaltyApi {
 
   Map<String, String> get _headers => {
     'Content-Type': 'application/json',
+    // A browser sends its own, and will not let a page change it.
+    if (!kIsWeb) 'User-Agent': deviceUserAgent,
     'Accept': 'application/json',
     if (token != null) 'Authorization': 'Bearer $token',
   };

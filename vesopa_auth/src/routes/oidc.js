@@ -346,71 +346,29 @@ router.get('/oauth/authorize', async (req, res, next) => {
     // Whoever this application goes through as is one this browser has used.
     await recent.rememberUser(req, res, session.user_id);
 
-    /*
-     * Isolation: may this person use this application at all?
-     *
-     * One pool of people, per-application membership. A QR menu enrols whoever
-     * turns up; a back office does not, and says so rather than silently
-     * creating an account nobody meant to create.
-     */
-    const member = await clients.membership(application.id, session.user_id);
-    if (!member || member.status === 'removed') {
-      if (!application.allow_self_enroll) {
-        /*
-         * TURNED AWAY, AND TOLD WHY, HERE.
-         *
-         * This used to redirect back to the application with
-         * `error=access_denied`, which is what the specification says and what
-         * the owner experienced as "the link is not working": press Continue
-         * with Vesopa, sign in perfectly successfully, and land back on the
-         * back office looking at "we could not finish signing you in". Nothing
-         * had gone wrong — the account simply was not on the list — and there
-         * was no way to tell those two apart from where he was standing.
-         *
-         * So the refusal is a page on this origin, in words, naming the
-         * application and the address that was refused, with the two things a
-         * person in that position actually wants: try a different account, or
-         * go back and ask. The link back to the application is still there and
-         * still carries `error=access_denied`, so a client that wants the
-         * callback can still have it — it is one press away instead of
-         * automatic.
-         */
-        return await refuse(res, req, {
-          application,
-          session,
-          reason: 'not_invited',
-          redirectUri,
-          state,
-        });
-      }
-      await clients.enrol(application.id, session.user_id);
-
+    // Isolation: may this person use this application at all? (admit)
+    const admitted = await admit(application, session.user_id);
+    if (admitted !== 'ok') {
       /*
-       * `user.created` means "new TO YOU", not new to Vesopa.
+       * TURNED AWAY, AND TOLD WHY, HERE.
        *
-       * The person may have held a Vesopa account for two years; this is the
-       * first time this application has seen them, which is exactly the moment
-       * it wants to create its own row. Telling an application about an account
-       * created elsewhere, for somebody who has never used it, would be
-       * reporting a stranger's existence to a third party.
+       * This used to redirect back to the application with
+       * `error=access_denied`, which is what the specification says and what
+       * the owner experienced as "the link is not working": press Continue
+       * with Vesopa, sign in perfectly successfully, and land back on the
+       * back office looking at "we could not finish signing you in". Nothing
+       * had gone wrong — the account simply was not on the list — and there
+       * was no way to tell those two apart from where he was standing.
+       *
+       * So the refusal is a page on this origin, in words, naming the
+       * application and the address that was refused, with the two things a
+       * person in that position actually wants: try a different account, or
+       * go back and ask. The link back to the application is still there and
+       * still carries `error=access_denied`, so a client that wants the
+       * callback can still have it — it is one press away instead of
+       * automatic.
        */
-      const person = await identity.getUser(session.user_id);
-      await webhooks.emit(application.id, 'user.created', {
-        subject: tokens.subjectFor(application, person.public_id),
-        payload: {
-          sub: tokens.subjectFor(application, person.public_id),
-          name: person.display_name || undefined,
-          created_at: person.created_at,
-        },
-      });
-    } else if (member.status === 'suspended') {
-      return await refuse(res, req, {
-        application,
-        session,
-        reason: 'suspended',
-        redirectUri,
-        state,
-      });
+      return await refuse(res, req, { application, session, reason: admitted, redirectUri, state });
     }
 
     /*
@@ -591,14 +549,50 @@ router.post('/oauth/consent', csrf.verify, async (req, res, next) => {
 });
 
 /**
+ * Isolation: may this person use this application at all? 'ok',
+ * 'not_invited' or 'suspended'.
+ *
+ * One pool of people, per-application membership. A QR menu enrols whoever
+ * turns up; a back office does not, and says so rather than silently
+ * creating an account nobody meant to create.
+ */
+async function admit(application, userId) {
+  const member = await clients.membership(application.id, userId);
+  if (member && member.status === 'suspended') return 'suspended';
+  if (member && member.status !== 'removed') return 'ok';
+  if (!application.allow_self_enroll) return 'not_invited';
+  await clients.enrol(application.id, userId);
+
+  /*
+   * `user.created` means "new TO YOU", not new to Vesopa.
+   *
+   * The person may have held a Vesopa account for two years; this is the
+   * first time this application has seen them, which is exactly the moment
+   * it wants to create its own row. Telling an application about an account
+   * created elsewhere, for somebody who has never used it, would be
+   * reporting a stranger's existence to a third party.
+   */
+  const person = await identity.getUser(userId);
+  await webhooks.emit(application.id, 'user.created', {
+    subject: tokens.subjectFor(application, person.public_id),
+    payload: {
+      sub: tokens.subjectFor(application, person.public_id),
+      name: person.display_name || undefined,
+      created_at: person.created_at,
+    },
+  });
+  return 'ok';
+}
+
+/**
  * Mint the authorisation code and send them back.
  *
  * The code is hashed, single-use and lives sixty seconds. It is long because it
  * is a bearer credential for the length of one HTTP round trip, and short-lived
  * because that is all it ever needs to be.
  */
-async function issueCode(res, { application, session, scopes, req, override = null }) {
-  const source = override || req.query;
+/** The code itself: also what routes/native.js hands a venue's own app. */
+async function mintCode({ application, session, scopes, redirectUri, nonce, codeChallenge }) {
   const code = newToken(32);
 
   await db.execute(
@@ -611,10 +605,10 @@ async function issueCode(res, { application, session, scopes, req, override = nu
       application.id,
       session.user_id,
       session.id,
-      source.redirect_uri,
+      redirectUri,
       scopes.join(' '),
-      source.nonce || '',
-      source.code_challenge,
+      nonce || '',
+      codeChallenge,
       typeof session.amr === 'string' ? session.amr : JSON.stringify(session.amr || []),
       session.acr || 'aal1',
       session.created_at,
@@ -626,6 +620,19 @@ async function issueCode(res, { application, session, scopes, req, override = nu
     'UPDATE application_members SET last_seen_at = NOW() WHERE application_id = ? AND user_id = ?',
     [application.id, session.user_id],
   );
+  return code;
+}
+
+async function issueCode(res, { application, session, scopes, req, override = null }) {
+  const source = override || req.query;
+  const code = await mintCode({
+    application,
+    session,
+    scopes,
+    redirectUri: source.redirect_uri,
+    nonce: source.nonce,
+    codeChallenge: source.code_challenge,
+  });
 
   const url = new URL(source.redirect_uri);
   url.searchParams.set('code', code);
@@ -1067,3 +1074,5 @@ async function sessionPublicIdFor(sessionId) {
 }
 
 module.exports = router;
+module.exports.admit = admit;
+module.exports.mintCode = mintCode;

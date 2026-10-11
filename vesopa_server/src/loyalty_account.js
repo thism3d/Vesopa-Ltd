@@ -42,6 +42,24 @@ const { cleanPhone, postcoderSend, postcoderVerify } = require('./dinein_otp');
 const SMS_MINUTES = 10;
 const SMS_PER_HOUR = 5;
 
+/**
+ * What a member calls the device a session is on: "iPad", "iPhone",
+ * "Safari on a Mac". The app says what it runs on in its User-Agent
+ * ("Pontardawe RFC (iPad; iOS 26.0)", lib/data/api.dart); a browser's own
+ * says enough to tell a phone from a computer. Null when it cannot tell.
+ */
+function deviceLabel(platform, userAgent) {
+  const ua = String(userAgent || '');
+  const app = ua.match(/\((iPad|iPhone|iPod|Android[^;)]*|Windows)[;)]/);
+  if (app && platform !== 'web') return app[1].startsWith('Android') ? 'Android phone or tablet' : app[1];
+  if (platform !== 'web') return null;
+  const device = /iPad/.test(ua) ? 'an iPad' : /iPhone/.test(ua) ? 'an iPhone' : /Android/.test(ua) ? 'Android'
+    : /Macintosh/.test(ua) ? 'a Mac' : /Windows/.test(ua) ? 'Windows' : '';
+  const browser = /Edg\//.test(ua) ? 'Edge' : /CriOS|Chrome\//.test(ua) ? 'Chrome' : /FxiOS|Firefox\//.test(ua) ? 'Firefox'
+    : /Safari\//.test(ua) ? 'Safari' : 'A web browser';
+  return device ? `${browser} on ${device}` : (browser === 'A web browser' ? null : browser);
+}
+
 module.exports = function loyaltyAccountRoutes(deps) {
   const {
     pool, json, requireCustomer, customerToken, appBySlug, revokeSessions,
@@ -445,7 +463,7 @@ module.exports = function loyaltyAccountRoutes(deps) {
         [req.office, req.customerId]
       );
       const [devices] = await pool.query(
-        `SELECT id, platform, created_at, last_seen_at FROM epos_loyalty_app_sessions
+        `SELECT id, platform, user_agent, created_at, last_seen_at FROM epos_loyalty_app_sessions
           WHERE office = ? AND customer_id = ? AND revoked_at IS NULL ORDER BY last_seen_at DESC`,
         [req.office, req.customerId]
       );
@@ -461,7 +479,9 @@ module.exports = function loyaltyAccountRoutes(deps) {
         has_password: !!c.password_set_at,
         vesopa_linked: !!c.vesopa_sub,
         passkeys: keys,
-        devices: devices.map((d) => ({ ...d, current: d.id === req.sessionId })),
+        devices: devices.map(({ user_agent: ua, ...d }) => ({
+          ...d, label: deviceLabel(d.platform, ua), current: d.id === req.sessionId,
+        })),
         can_edit: config.self_service,
         methods: config.methods,
       });
@@ -677,3 +697,4 @@ module.exports = function loyaltyAccountRoutes(deps) {
 
   return router;
 };
+module.exports.deviceLabel = deviceLabel;
