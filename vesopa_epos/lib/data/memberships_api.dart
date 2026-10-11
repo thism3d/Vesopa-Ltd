@@ -473,6 +473,11 @@ class TillModules {
   bool get memberships =>
       isOn('memberships') && (terminalToken ?? '').isNotEmpty;
 
+  /// Whether the Events & tickets module is on, and this till can take part.
+  /// Gates the Tickets section at the gate, the way [memberships] gates
+  /// Members.
+  bool get events => isOn('events') && (terminalToken ?? '').isNotEmpty;
+
   /// What this terminal knew last time. Never throws.
   Future<void> load() async {
     try {

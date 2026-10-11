@@ -172,6 +172,9 @@ const BAR_KEYS = [
   'go_products',
   'go_functions',
   'go_settings',
+  // The gate: the till's Tickets section, for a venue with Events & tickets.
+  // The till lights it while the gate is open, like any page key.
+  'go_tickets',
   // The floor plan, as a key in its own right.
   //
   // Not the same thing as `go_tables`, which opens the Tables *section*, and

@@ -1347,15 +1347,8 @@ class SalePage extends ConsumerWidget {
       case 'go_products':
       case 'go_functions':
       case 'go_settings':
-        final label = const {
-          'go_sale': 'Sale',
-          'go_tables': 'Table',
-          'go_receipts': 'Receipts',
-          'go_reports': 'Reports',
-          'go_products': 'Product',
-          'go_functions': 'Functions',
-          'go_settings': 'Settings',
-        }[key]!;
+      case 'go_tickets':
+        final label = goSections[key]!;
         final go = onNavigate;
         if (go == null) {
           // No shell around this page. Said plainly rather than doing nothing,

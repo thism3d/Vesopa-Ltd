@@ -521,6 +521,10 @@ class VenueTopBarBody extends ConsumerWidget {
         // Not a sale screen, so the `screen_name` key names the section rather
         // than a page of products that is not on show.
         screenName: sectionName,
+        // Off the sale screen, the `go_*` key for the section on show is the
+        // one that says where you are. Not passed on the sale screen, where a
+        // page key for the open page already does.
+        section: sectionName,
         onSwitchOrder: onSwitchOrder,
       ),
       // Dimmed rather than wired: nothing here can ring anything up. The
@@ -554,16 +558,7 @@ class VenueTopBarBody extends ConsumerWidget {
           // Functions, where a manager looks for it.
           return punchSignedOnStaff(context, ref);
         }
-        const sections = <String, String>{
-          'go_sale': 'Sale',
-          'go_tables': 'Table',
-          'go_receipts': 'Receipts',
-          'go_reports': 'Reports',
-          'go_products': 'Product',
-          'go_functions': 'Functions',
-          'go_settings': 'Settings',
-        };
-        final section = sections[key];
+        final section = goSections[key];
         if (section != null) onNavigate(section);
       },
     );

@@ -121,6 +121,7 @@ const SP_BAR_GROUPS = [
     ['go_products', 'Products'],
     ['go_functions', 'Functions'],
     ['go_settings', 'Settings'],
+    ['go_tickets', 'Tickets — the gate (Events & tickets)'],
     ['table_plan', 'Table plan — open the floor'],
     ['sign_off', 'Sign off'],
   ]],
