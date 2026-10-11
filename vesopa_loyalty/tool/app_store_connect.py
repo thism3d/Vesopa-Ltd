@@ -65,6 +65,10 @@ API = "https://api.appstoreconnect.apple.com"
 SCREENSHOT_SETS = {
     "iphone-6.9": ("APP_IPHONE_67", {(1290, 2796), (1320, 2868)}),
     "ipad-13": ("APP_IPAD_PRO_3GEN_129", {(2048, 2732), (2064, 2752)}),
+    # The Apple Watch app's own (tool/make_watch_screenshots.py): the listing
+    # shows them under Apple Watch.
+    "watch-ultra": ("APP_WATCH_ULTRA", {(410, 502), (422, 514)}),
+    "watch-series-10": ("APP_WATCH_SERIES_10", {(416, 496)}),
 }
 
 # Left for the end of the run: what still needs a person in App Store Connect.
