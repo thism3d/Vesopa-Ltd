@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../platform/location.dart';
+import '../platform/page_venue.dart';
 import '../platform/push.dart';
 import '../platform/watch.dart';
 import 'watch_card.dart';
@@ -50,6 +51,9 @@ class AppConfig {
     // The old address, /app/<slug>/, for a page opened before the redirect.
     final i = segments.indexOf('app');
     if (i >= 0 && i + 1 < segments.length) return segments[i + 1];
+    // A venue's own address (member.pontardawerfc.com/): the page says.
+    final fromPage = pageVenue();
+    if (fromPage != null && RegExp(r'^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$').hasMatch(fromPage)) return fromPage;
     // loyalty.vesopa.com/<slug>/
     if (segments.isNotEmpty && RegExp(r'^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$').hasMatch(segments.first)) {
       return segments.first;

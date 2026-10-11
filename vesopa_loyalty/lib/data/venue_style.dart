@@ -3,15 +3,18 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../platform/page_venue.dart';
 import 'brand.dart';
 
 /// A venue app's own look: its club colours, its own typeface, the device's
 /// light or dark mode, and colour that moves.
 ///
-/// ONLY IN A VENUE'S OWN BUILD. tool/make_venue_app.py passes the venue's
-/// colours (venue.json) as dart-defines and bundles its typeface as the
-/// "VenueFont" family; the shared Store app and the browser have neither and
-/// look exactly as they always did, in the colours set in the back office.
+/// ONLY IN A VENUE'S OWN BUILD, OR ITS OWN PAGE. tool/make_venue_app.py
+/// passes the venue's colours (venue.json) as dart-defines and bundles its
+/// typeface as the "VenueFont" family. In a browser the server writes the
+/// colours into the page for a venue with a look (venue_looks.js) and sends
+/// its typeface as the venue's font; the shared Store app and every other
+/// venue's page look exactly as they always did.
 ///
 /// WHY THE BUILD'S COLOURS WIN OVER THE BACK OFFICE'S HERE: the store
 /// listing, the icon and the splash are all drawn in venue.json's colours, and
@@ -19,13 +22,20 @@ import 'brand.dart';
 /// red) turns to black on near-black in dark mode. The app is the club's, so
 /// it is the club's palette, in both modes.
 class VenueStyle {
-  static const _bg = String.fromEnvironment('VENUE_SPLASH_BG');
-  static const _deep = String.fromEnvironment('VENUE_SPLASH_DEEP');
-  static const _glow = String.fromEnvironment('VENUE_SPLASH_GLOW');
+  static const _bgDefine = String.fromEnvironment('VENUE_SPLASH_BG');
   static const _font = String.fromEnvironment('VENUE_FONT');
 
-  /// A venue build with a look of its own.
-  static const enabled = !kIsWeb && _bg != '';
+  /// In a browser, the look the server wrote into the page for a venue that
+  /// has one (vesopa_server/src/venue_looks.js): the club's members' site
+  /// looks like the club's app. Every other venue's page has none.
+  static final List<String>? _page = kIsWeb ? pageLook() : null;
+
+  static String get _bg => _page?[0] ?? _bgDefine;
+  static String get _deep => _page?[1] ?? const String.fromEnvironment('VENUE_SPLASH_DEEP');
+  static String get _glow => _page?[2] ?? const String.fromEnvironment('VENUE_SPLASH_GLOW');
+
+  /// A venue build with a look of its own, or a venue's page that has one.
+  static final bool enabled = kIsWeb ? _page != null : _bgDefine != '';
 
   static Color _colour(String hex, Color fallback) {
     final v = int.tryParse(hex.replaceFirst('#', ''), radix: 16);

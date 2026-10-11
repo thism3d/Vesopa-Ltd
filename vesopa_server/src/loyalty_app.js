@@ -59,6 +59,7 @@ const { loyaltyDeletionRoutes } = require('./privacy_provider');
 const { appPath, appUrl, RESERVED, NOT_FOUND, LOYALTY_HOST } = require('./loyalty_host');
 const loyaltyEmail = require('./loyalty_email');
 const gate = require('./loyalty_members_only');
+const venueLooks = require('./venue_looks');
 
 const CODE_MINUTES = 10;
 const CODE_TRIES = 5;
@@ -192,8 +193,13 @@ async function brandFor(db, office, app) {
   const a = app || {};
   // The venue's own fonts, from the same library its tills use: a family and
   // its faces, each a URL on this server the app downloads and registers.
+  // A venue with a look of its own (src/venue_looks.js) letters its app in
+  // that look's typeface until it chooses fonts in the back office.
+  const look = venueLooks.lookFor(a.slug);
+  const headingFont = a.font_heading || (look && look.font) || null;
+  const bodyFont = a.font_body || (look && look.font) || null;
   let catalogue = [];
-  if (a.font_heading || a.font_body) {
+  if (headingFont || bodyFont) {
     try {
       catalogue = await catalogueFor(db, office);
     } catch {
@@ -208,6 +214,8 @@ async function brandFor(db, office, app) {
   const links = parseJson(a.links, {});
   if (!links.website && w.homepage_url) links.website = w.homepage_url;
   if (!links.phone && w.support_phone) links.phone = w.support_phone;
+  if (look && look.website && !links.website) links.website = look.website;
+  if (look && look.phone && !links.phone) links.phone = look.phone;
   const lat = a.latitude ?? w.latitude ?? null;
   const lng = a.longitude ?? w.longitude ?? null;
   return {
@@ -229,7 +237,7 @@ async function brandFor(db, office, app) {
       // before the venue could choose.
       icon: a.colour_icon || null,
     },
-    fonts: { heading: font(a.font_heading), body: font(a.font_body) },
+    fonts: { heading: font(headingFont), body: font(bodyFont) },
     // How much bigger (or smaller) than the app's own type. 1 is as it was.
     font_scale: fontScale(a.font_scale),
     // How the news page keeps its messages: the newest `limit`, or all of
@@ -1632,7 +1640,11 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
       const base = appPath(req, app.slug);
       // Shared links are read by other sites, which need a whole address.
       const absolute = (u) => (/^https?:\/\//.test(String(u)) ? u : `${new URL(appUrl(app.slug)).origin}${u}`);
+      // The venue and its look, for the app to read at start: on a venue's own
+      // host the address is `/` and says nothing about which venue it is.
+      const look = venueLooks.lookFor(app.slug);
       const html = fs.readFileSync(indexFile, 'utf8')
+        .replace('<meta charset="UTF-8">', `<meta charset="UTF-8">\n  ${venueLooks.pageMeta(app.slug)}`)
         // Built with --base-href /__SLUG__/ (older builds: /app/__SLUG__/).
         .replace(/\/app\/__SLUG__\//g, base)
         .replace(/\/__SLUG__\//g, base)
@@ -1640,7 +1652,7 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
         .replace(/__URL__/g, esc(appUrl(app.slug)))
         .replace(/__OG_IMAGE__/g, esc(absolute(brand.icon || brand.logo || `${base}icons/Icon-512.png`)))
         .replace(/__APP_NAME__/g, esc(brand.name))
-        .replace(/__THEME__/g, esc(brand.colours.primary))
+        .replace(/__THEME__/g, esc(look ? look.club : brand.colours.primary))
         .replace(/__BACKGROUND__/g, esc(brand.colours.background))
         // The loading screen shows what the APP shows. A venue that set a logo
         // but no separate app icon was getting Vesopa's mark on the splash and
