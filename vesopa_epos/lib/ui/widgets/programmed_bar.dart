@@ -751,9 +751,10 @@ class _BarKey extends ConsumerWidget {
             onSaleScreen &&
             live.screenId != null &&
             button.targetScreenId == live.screenId) ||
-        // And a `go_*` key for the section that is open — the Tickets key
-        // while the gate is up — through the same resolver.
+        // And the Tickets key while the gate is up, through the same resolver.
+        // Only that key: other venues' go_* keys look exactly as before.
         (button.kind == ScreenButtonKind.function &&
+            button.functionKey == 'go_tickets' &&
             live.section != null &&
             goSections[button.functionKey] == live.section);
     final hl = here ? highlight.lookFor(button, button.fill ?? pal.keyFill) : null;
