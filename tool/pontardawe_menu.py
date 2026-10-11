@@ -98,7 +98,9 @@ SELECT @s, @office, p.pluid, MIN(p.product_name), MIN(sc.id * 1000 + b.grid_row 
 
 def run(sql):
     sql = " ".join(line.strip() for line in sql.strip().splitlines())
-    dm.ssh("run", f'{DB} -e "{sql}" 2>&1 | grep -v Deprecated')
+    # grep finds nothing to print when the SQL succeeds quietly and then exits 1,
+    # so the exit status is mariadb's, not grep's.
+    dm.ssh("run", f'out=$({DB} -e "{sql}" 2>&1); rc=$?; printf "%s\\n" "$out" | grep -v Deprecated; exit $rc')
 
 
 if __name__ == "__main__":
