@@ -1,0 +1,15 @@
+{
+  // Keep VS Code's Java and Gradle extensions out of generated venue apps
+  // (<venue>/build/app): their Gradle daemon locks files there and stops
+  // tool/make_venue_app.py from rebuilding the folder.
+  "java.import.exclusions": [
+    "**/node_modules/**",
+    "**/.metadata/**",
+    "**/archetype-resources/**",
+    "**/META-INF/maven/**",
+    "**/build/app/**"
+  ],
+  "files.watcherExclude": {
+    "**/build/app/**": true
+  }
+}

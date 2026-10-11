@@ -41,8 +41,10 @@ Then build in <venue>/build/app with the venue's dart-defines:
 """
 
 import json
+import os
 import re
 import shutil
+import stat
 import struct
 import sys
 from pathlib import Path
@@ -288,6 +290,30 @@ def dart(app: Path, v):
     (app / "venue_defines.json").write_text(json.dumps(defines, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
+def clear(app):
+    """Delete the last generated project. On Windows a Gradle daemon (VS Code's
+    Java extension starts one on any Android project it sees) can hold files in
+    android/.gradle open; that folder is only Gradle's cache, so it is left for
+    the next build to reuse rather than failing the build over it."""
+    held = []
+
+    def retry(func, path, exc):
+        try:
+            os.chmod(path, stat.S_IWRITE)  # read-only files stop rmtree on Windows
+            func(path)
+        except OSError:
+            path = os.fspath(path)
+            # A held cache file also keeps every folder above it.
+            if ".gradle" not in Path(path).parts and not any(h.startswith(path + os.sep) for h in held):
+                raise
+            held.append(path)
+
+    shutil.rmtree(app, onexc=retry) if sys.version_info >= (3, 12) else shutil.rmtree(
+        app, onerror=lambda f, p, e: retry(f, p, e[1]))
+    if held:
+        print("Left Gradle's cache in android/.gradle: another program has it open. The build reuses it.")
+
+
 def main():
     if len(sys.argv) != 2:
         raise SystemExit("usage: python vesopa_loyalty/tool/make_venue_app.py <venue folder>")
@@ -299,12 +325,12 @@ def main():
 
     app = venue_dir / "build" / "app"
     if app.exists():
-        shutil.rmtree(app)
-    app.mkdir(parents=True)
+        clear(app)
+    app.mkdir(parents=True, exist_ok=True)
     for name in COPY:
         src = HERE / name
         if src.is_dir():
-            shutil.copytree(src, app / name, ignore=ignore)
+            shutil.copytree(src, app / name, ignore=ignore, dirs_exist_ok=True)
         else:
             shutil.copy2(src, app / name)
     shutil.copytree(overlay, app, dirs_exist_ok=True)
