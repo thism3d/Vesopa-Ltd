@@ -38,6 +38,7 @@ const device = require('./routes/device');
 const reauth = require('./routes/reauth');
 const choose = require('./routes/choose');
 const appapi = require('./routes/appapi');
+const native = require('./routes/native');
 const deletionRoutes = require('./routes/deletion');
 const deletion = require('./deletion');
 
@@ -172,6 +173,7 @@ app.get('/.well-known/security.txt', (req, res) => {
 app.use('/', appapi);
 app.use('/', deletionRoutes);
 app.use('/', oidc);
+app.use('/', native);
 app.use('/', social);
 app.use('/', mfa);
 app.use('/', choose);

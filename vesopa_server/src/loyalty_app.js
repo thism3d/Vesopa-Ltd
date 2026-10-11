@@ -1640,11 +1640,10 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
       const base = appPath(req, app.slug);
       // Shared links are read by other sites, which need a whole address.
       const absolute = (u) => (/^https?:\/\//.test(String(u)) ? u : `${new URL(appUrl(app.slug)).origin}${u}`);
-      // The venue and its look, for the app to read at start: on a venue's own
-      // host the address is `/` and says nothing about which venue it is.
+      // A venue's own look (src/venue_looks.js), for the app to read at start.
       const look = venueLooks.lookFor(app.slug);
       const html = fs.readFileSync(indexFile, 'utf8')
-        .replace('<meta charset="UTF-8">', `<meta charset="UTF-8">\n  ${venueLooks.pageMeta(app.slug)}`)
+        .replace('<meta charset="UTF-8">', `<meta charset="UTF-8">\n  ${venueLooks.pageMeta(app.slug)}`.trimEnd())
         // Built with --base-href /__SLUG__/ (older builds: /app/__SLUG__/).
         .replace(/\/app\/__SLUG__\//g, base)
         .replace(/\/__SLUG__\//g, base)
@@ -1657,7 +1656,10 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
         // The loading screen shows what the APP shows. A venue that set a logo
         // but no separate app icon was getting Vesopa's mark on the splash and
         // its own a second later, which reads as having opened the wrong thing.
-        .replace(/__ICON__/g, esc(brand.icon || brand.logo || `${base}icons/Icon-192.png`));
+        .replace(/__ICON__/g, esc(brand.icon || brand.logo || `${base}icons/Icon-192.png`))
+        // Which venue, for a venue's own host where the address is just `/`
+        // (lib/platform/page_venue.dart).
+        .replace('</head>', `  <meta name="loyalty-venue" content="${esc(app.slug)}">\n</head>`);
       res.set('Cache-Control', 'no-cache');
       res.type('html').send(html);
     } catch (e) {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/brand.dart';
 import '../data/session.dart';
 import 'widgets.dart';
 
@@ -72,7 +73,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
     final kind = t['kind'] as String?;
     final note = (t['note'] as String?)?.trim();
     final negative = points < 0 || kind == 'redeem' || kind == 'expire';
-    final tone = negative ? theme.colorScheme.error : theme.colorScheme.primary;
+    final tone = Brand.readableOn(negative ? theme.colorScheme.error : theme.colorScheme.primary, theme.scaffoldBackgroundColor);
 
     final rows = <(String, String)>[
       ('When', when(t['created_at'])),
@@ -190,11 +191,14 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
             if (kind == 'redeem' && value > 0) 'saved ${money(value)}',
             if ((t['note'] as String?)?.trim().isNotEmpty ?? false) (t['note'] as String).trim(),
           ].join(' · ');
+          // Points are words on the page: the main colour, made to read on it
+          // (a deep club red on a dark page did not).
+          final tone = Brand.readableOn(negative ? theme.colorScheme.error : theme.colorScheme.primary, theme.scaffoldBackgroundColor);
           return ListTile(
             onTap: () => _detail(t),
             leading: CircleAvatar(
-              backgroundColor: (negative ? theme.colorScheme.error : theme.colorScheme.primary).withValues(alpha: 0.12),
-              child: Icon(negative ? Icons.remove : Icons.add, color: negative ? theme.colorScheme.error : theme.colorScheme.primary),
+              backgroundColor: tone.withValues(alpha: 0.12),
+              child: Icon(negative ? Icons.remove : Icons.add, color: tone),
             ),
             title: Text(_label(kind)),
             subtitle: Text(detail),
@@ -205,7 +209,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                   '${negative ? '-' : '+'}${points.abs()}',
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w800,
-                    color: negative ? theme.colorScheme.error : theme.colorScheme.primary,
+                    color: tone,
                   ),
                 ),
                 // Faint, but there: without it nobody discovers the row opens.

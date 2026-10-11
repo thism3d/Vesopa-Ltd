@@ -272,15 +272,19 @@ def dart(app: Path, v):
         "GOOGLE_IOS_CLIENT_ID": v.get("google_ios_client_id", ""),
     }
 
-    # The entitlements those need: Sign in with Apple, and the site whose
-    # passkeys the app may use (its apple-app-site-association names the app:
-    # vesopa_server/src/loyalty_host.js).
+    # The entitlements those need: Sign in with Apple, and the sites whose
+    # passkeys the app may use, each of which names the app in its own
+    # apple-app-site-association: vesopa.com for the member's Vesopa passkey
+    # (auth.vesopa.com's RP ID; tool/deploy_pontardawe_app.py), and
+    # loyalty.vesopa.com for one made for the venue's own sign-in
+    # (vesopa_server/src/loyalty_host.js).
     ent = app / "ios" / "Runner" / "Runner.entitlements"
-    domain = v.get("passkey_domain", "loyalty.vesopa.com")
+    domains = v.get("passkey_domains", ["vesopa.com", "loyalty.vesopa.com"])
     edit(ent, [("</dict>\n</plist>", (
         "\t<key>com.apple.developer.applesignin</key>\n\t<array>\n\t\t<string>Default</string>\n\t</array>\n"
         "\t<key>com.apple.developer.associated-domains</key>\n\t<array>\n"
-        f"\t\t<string>webcredentials:{domain}</string>\n\t</array>\n</dict>\n</plist>"))])
+        + "".join(f"\t\t<string>webcredentials:{d}</string>\n" for d in domains)
+        + "\t</array>\n</dict>\n</plist>"))])
     (app / "venue_defines.json").write_text(json.dumps(defines, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 

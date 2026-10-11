@@ -135,11 +135,12 @@ const google = {
     });
   },
 
-  async profile(tokens, { nonce }) {
+  /** `audience` is for a token a venue's own app got on the device (routes/native.js). */
+  async profile(tokens, { nonce, audience = null }) {
     const { payload } = await jwtVerify(
       tokens.id_token,
       keysFor('google', 'https://www.googleapis.com/oauth2/v3/certs'),
-      { issuer: ['https://accounts.google.com', 'accounts.google.com'], audience: this.clientId },
+      { issuer: ['https://accounts.google.com', 'accounts.google.com'], audience: audience || this.clientId },
     );
     if (nonce && payload.nonce !== nonce) throw new Error('google: nonce mismatch');
 
@@ -485,11 +486,12 @@ const apple = {
     });
   },
 
-  async profile(tokens, { nonce, callbackBody }) {
+  /** `audience` is for a token a venue's own app got on the device (routes/native.js). */
+  async profile(tokens, { nonce, callbackBody, audience = null }) {
     const { payload } = await jwtVerify(
       tokens.id_token,
       keysFor('apple', 'https://appleid.apple.com/auth/keys'),
-      { issuer: 'https://appleid.apple.com', audience: this.clientId },
+      { issuer: 'https://appleid.apple.com', audience: audience || this.clientId },
     );
     if (nonce && payload.nonce !== nonce) throw new Error('apple: nonce mismatch');
 

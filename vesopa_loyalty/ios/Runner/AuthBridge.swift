@@ -7,6 +7,7 @@ import UIKit
 ///
 /// `vesopa_loyalty/auth`:
 ///   available                        -> {apple: Bool, passkeys: Bool}
+///   device                           -> {model: "iPad", system: "26.0"}
 ///   apple                            -> {identity_token, user, email?, given_name?, family_name?}
 ///   passkeyGet(json options)         -> WebAuthn assertion as JSON (the web build's shape)
 ///   passkeyCreate(json options)      -> WebAuthn attestation as JSON
@@ -41,6 +42,9 @@ final class AuthBridge: NSObject, ASAuthorizationControllerDelegate,
     switch call.method {
     case "available":
       result(["apple": true, "passkeys": true])
+    case "device":
+      // "iPad" or "iPhone": the member's own word for it, under Where you're signed in.
+      result(["model": UIDevice.current.model, "system": UIDevice.current.systemVersion])
     case "apple":
       let request = ASAuthorizationAppleIDProvider().createRequest()
       request.requestedScopes = [.fullName, .email]

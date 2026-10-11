@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -179,6 +181,27 @@ class Brand {
   /// Text that reads on [c].
   static Color onColour(Color c) => c.computeLuminance() > 0.5 ? const Color(0xFF111111) : Colors.white;
 
+  /// How well [a] reads on [b], as WCAG measures it: 1 (not at all) to 21.
+  static double contrast(Color a, Color b) {
+    final x = a.computeLuminance(), y = b.computeLuminance();
+    return (math.max(x, y) + 0.05) / (math.min(x, y) + 0.05);
+  }
+
+  /// [c], lightened or darkened just enough to read as text on [on].
+  static Color readableOn(Color c, Color on, [double min = 4.5]) {
+    final toward = on.computeLuminance() < 0.4 ? Colors.white : Colors.black;
+    var out = c;
+    for (var t = 0.05; contrast(out, on) < min && t <= 1; t += 0.05) {
+      out = Color.lerp(c, toward, t)!;
+    }
+    return out;
+  }
+
+  /// The main colour where it is text on the page -- a link, a points figure.
+  /// A back office that chose black buttons on a red page (Pontardawe RFC's)
+  /// gets its text colour for those instead: black words on red do not read.
+  Color get primaryText => contrast(primary, background) >= 3 ? primary : text;
+
   bool get _dark => background.computeLuminance() <= 0.4;
 
   /// A shade of the venue's background for a card or a sheet to sit on.
@@ -262,6 +285,7 @@ class Brand {
         centerTitle: false,
         titleTextStyle: textTheme.titleLarge?.copyWith(color: onColour(primary), fontWeight: FontWeight.w700),
       ),
+      textButtonTheme: TextButtonThemeData(style: TextButton.styleFrom(foregroundColor: primaryText)),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           backgroundColor: primary,

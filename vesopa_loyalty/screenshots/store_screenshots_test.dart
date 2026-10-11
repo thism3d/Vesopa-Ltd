@@ -224,6 +224,13 @@ Future<void> _fonts() async {
     await load(family, roboto);
   }
   await load('MaterialIcons', ['$material/MaterialIcons-Regular.otf']);
+  // A venue build's own typeface (make_venue_app.py bundles it as VenueFont):
+  // a test loads no font by itself, and every word would be a box.
+  final venueFonts = Directory('assets/venue/fonts');
+  if (venueFonts.existsSync()) {
+    final faces = venueFonts.listSync().whereType<File>().map((f) => f.path).where((p) => p.endsWith('.ttf')).toList();
+    if (faces.isNotEmpty) await load('VenueFont', faces);
+  }
 }
 
 /// The phone's own channels, answered as an iPhone with notifications on.
@@ -288,6 +295,10 @@ void main() {
   for (final MapEntry(key: device, value: (size, ratio)) in _devices.entries) {
     testWidgets('store screenshots, $device', (tester) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      // The club colour drifts for ever (ClubGradient); stood still, the
+      // pages settle and the pictures are the same every run.
+      tester.platformDispatcher.accessibilityFeaturesTestValue = const FakeAccessibilityFeatures(disableAnimations: true);
+      addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
       _platform();
       tester.view
         ..physicalSize = size * ratio

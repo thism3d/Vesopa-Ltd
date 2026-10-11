@@ -1,14 +1,9 @@
-/// What the page the web app was served in says about its venue.
+/// The venue a page was served for, when its address does not say.
 ///
-/// On a venue's own address (member.pontardawerfc.com) the app sits at `/`,
-/// so the address names no venue. The server writes it into the page instead,
-/// with the venue's colours where it has a look of its own
-/// (vesopa_server/src/venue_looks.js):
-///
-///   <meta name="vesopa-venue" content="pontardawe-rfc">
-///   <meta name="vesopa-look" content="#8F0000,#3F0000,#C41414">
-///
-/// Everything but the browser has no page, and answers null.
+/// A venue's own app host (member.pontardawerfc.com) is that one venue's app
+/// at `/`, so there is no slug in the address; the server writes it into the
+/// page instead (`<meta name="loyalty-venue">`, vesopa_server/src/loyalty_app.js),
+/// with the venue's colours where it has a look of its own (`pageLook`).
 library;
 
 export 'page_venue_io.dart' if (dart.library.js_interop) 'page_venue_web.dart';

@@ -100,14 +100,17 @@ class NativeAuth {
       return await _channel.invokeMethod<T>(method, args);
     } on PlatformException catch (e) {
       if (e.code == 'cancelled') return null;
-      throw NativeAuthError(e.message ?? 'That sign-in could not be completed.');
+      throw NativeAuthError(e.message ?? 'That sign-in could not be completed.', code: e.code);
     }
   }
 }
 
 class NativeAuthError implements Exception {
-  NativeAuthError(this.message);
+  NativeAuthError(this.message, {this.code = 'failed'});
   final String message;
+
+  /// `none`: no passkey for that site on this device.
+  final String code;
   @override
   String toString() => message;
 }

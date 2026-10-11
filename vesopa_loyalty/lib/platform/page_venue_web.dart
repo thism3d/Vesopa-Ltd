@@ -1,16 +1,18 @@
 import 'package:web/web.dart' as web;
 
-String? _meta(String name) {
-  final value = web.document.querySelector('meta[name="$name"]')?.getAttribute('content')?.trim();
-  return value == null || value.isEmpty ? null : value;
+/// The `<meta name="loyalty-venue">` the server wrote into this page.
+String? pageVenue() {
+  final meta = web.document.querySelector('meta[name="loyalty-venue"]');
+  final slug = meta?.getAttribute('content')?.trim() ?? '';
+  return slug.isEmpty ? null : slug;
 }
 
-/// The venue the server wrote into the page, or null.
-String? pageVenue() => _meta('vesopa-venue');
-
-/// The venue's club, deep and bright colours as `#RRGGBB`, or null.
+/// The club, deep and bright colours (`#RRGGBB`) the server wrote into the
+/// page for a venue with a look of its own (vesopa_server/src/venue_looks.js),
+/// as `<meta name="vesopa-look">`; null for every other venue.
 List<String>? pageLook() {
-  final parts = _meta('vesopa-look')?.split(',').map((s) => s.trim()).toList();
+  final value = web.document.querySelector('meta[name="vesopa-look"]')?.getAttribute('content');
+  final parts = value?.split(',').map((s) => s.trim()).toList();
   if (parts == null || parts.length != 3) return null;
   final hex = RegExp(r'^#[0-9a-fA-F]{6}$');
   return parts.every(hex.hasMatch) ? parts : null;

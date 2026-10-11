@@ -53,3 +53,16 @@ class VesopaAnswer {
 
   bool get isEmpty => code == null && idToken == null && error == null;
 }
+
+/// What a Vesopa app shows the member the first time they sign in to it from
+/// the device's own sheet: the app's name and what it will see. True to allow.
+typedef VesopaConsent = Future<bool> Function(String app, List<({String title, String description})> scopes);
+
+/// Vesopa needs its own page for this sign-in (the account has two-step
+/// sign-in): the caller goes through Continue with Vesopa instead.
+class VesopaNeedsPage implements Exception {
+  const VesopaNeedsPage(this.message);
+  final String message;
+  @override
+  String toString() => message;
+}

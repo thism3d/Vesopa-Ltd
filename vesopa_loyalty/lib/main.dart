@@ -11,6 +11,7 @@ import 'data/app_update.dart';
 import 'data/api.dart';
 import 'data/session.dart';
 import 'data/venue_style.dart';
+import 'platform/device_label.dart';
 import 'ui/home.dart';
 import 'ui/sign_in.dart';
 import 'ui/venue_intro.dart';
@@ -42,6 +43,8 @@ Future<void> main() async {
   // A venue's own build opens on its crest (ui/venue_intro.dart), which
   // decodes the crest before the first frame is let through.
   if (VenueIntro.enabled) VenueIntro.holdFirstFrame();
+  // "iPad" rather than "iPhone or iPad" under Where you're signed in.
+  await loadDeviceLabel();
   runApp(const ProviderScope(child: VenueIntro.enabled ? _IntroHost() : LoyaltyApp()));
 }
 

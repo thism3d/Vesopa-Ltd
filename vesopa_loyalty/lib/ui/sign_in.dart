@@ -175,30 +175,94 @@ class _SignInPageState extends ConsumerState<SignInPage> {
     await ref.read(sessionProvider.notifier).signedIn(token);
   });
 
-  /// Sign in with Apple on the device: Apple's own sheet, no web page.
+  /*
+   * APPLE, GOOGLE AND PASSKEYS ON AN IPHONE OR IPAD: THE DEVICE'S OWN SHEETS,
+   * INTO THE MEMBER'S VESOPA ACCOUNT. The sheet's answer goes to
+   * auth.vesopa.com (/oauth/native), which signs in to the same Vesopa account
+   * Continue with Vesopa would, and the venue gets it exactly as it does from
+   * Vesopa's page. No web page opens -- except for an account with two-step
+   * sign-in, which only Vesopa's page can ask for.
+   */
+
+  /// Sign in with Apple: Apple's own sheet.
   Future<void> _signInWithApple() => _run(() async {
     final answer = await NativeAuth.apple();
     if (answer == null) return;
-    final token = await ref.read(apiProvider).signInWithProvider(
-      provider: 'apple',
-      idToken: answer.token,
-      name: answer.name,
-      platform: ref.read(configProvider).platform,
-    );
-    await ref.read(sessionProvider.notifier).signedIn(token);
+    await _nativeVesopa({'provider': 'apple', 'id_token': answer.token, 'name': ?answer.name}, idp: 'apple');
   });
 
   /// Google's own sign-in sheet, as Google's SDK shows it.
   Future<void> _signInWithGoogle() => _run(() async {
     final idToken = await NativeAuth.googleIdToken();
     if (idToken == null) return;
-    final token = await ref.read(apiProvider).signInWithProvider(
-      provider: 'google',
-      idToken: idToken,
-      platform: ref.read(configProvider).platform,
-    );
-    await ref.read(sessionProvider.notifier).signedIn(token);
+    await _nativeVesopa({'provider': 'google', 'id_token': idToken}, idp: 'google');
   });
+
+  /// The device's own passkey prompt, for the member's Vesopa passkey. One
+  /// made for this venue's own sign-in (an older one, on loyalty.vesopa.com)
+  /// is tried when there is no Vesopa one on the device.
+  Future<void> _signInWithVesopaPasskey() => _run(() async {
+    final options = await vesopaPasskeyOptions();
+    final PasskeyResult result;
+    try {
+      result = await NativeAuth.passkeyGet(options);
+    } on NativeAuthError catch (e) {
+      if (e.code == 'none' && _config.usable.contains('passkey')) {
+        final api = ref.read(apiProvider);
+        final venue = await passkeyGet(await api.passkeyOptions());
+        final token = await api.signInWithPasskey(
+          challenge: venue.challenge,
+          credential: venue.credential,
+          platform: ref.read(configProvider).platform,
+        );
+        await ref.read(sessionProvider.notifier).signedIn(token);
+        return;
+      }
+      rethrow;
+    }
+    await _nativeVesopa(
+      {'provider': 'passkey', 'credential': result.credential, 'challenge': result.challenge},
+      idp: 'passkey',
+    );
+  });
+
+  Future<void> _nativeVesopa(Map<String, Object?> proof, {required String idp}) async {
+    final VesopaAnswer? answer;
+    try {
+      answer = await nativeVesopaSignIn(proof, consent: _askConsent);
+    } on VesopaNeedsPage {
+      // Two-step sign-in: Vesopa's own page asks for it, then straight back.
+      final brand = ref.read(brandProvider).requireValue;
+      final paged = await startVesopaSignIn(slug: ref.read(configProvider).slug, venue: brand.name, idp: idp);
+      if (paged != null) await _completeVesopa(paged);
+      return;
+    }
+    if (answer != null) await _completeVesopa(answer);
+  }
+
+  /// The first time only: what the venue's app will see of the Vesopa account,
+  /// asked here rather than on a web page.
+  Future<bool> _askConsent(String app, List<({String title, String description})> scopes) async {
+    if (!mounted) return false;
+    final venue = ref.read(brandProvider).value?.name ?? app;
+    final allowed = await showAdaptiveDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog.adaptive(
+        title: Text('Use your Vesopa account with $venue?'),
+        content: Text([
+          '$venue will see:',
+          for (final s in scopes) if (s.title.isNotEmpty) '• ${s.title}',
+          '',
+          'You can stop this at any time in your Vesopa account.',
+        ].join('\n')),
+        actions: [
+          DialogAction(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          DialogAction(primary: true, onPressed: () => Navigator.pop(context, true), child: const Text('Allow')),
+        ],
+      ),
+    );
+    return allowed ?? false;
+  }
 
   /// [idp] goes straight to one way in at Vesopa (Apple, Google, the phone,
   /// a passkey) instead of Vesopa's own page of choices.
@@ -511,9 +575,11 @@ class _SignInPageState extends ConsumerState<SignInPage> {
       if (viaVesopa && !apple) const _Way.apple(),
       // In a venue's own app on an iPhone or iPad the passkey is the device's
       // own, and nothing here opens a web page (NativeAuth).
-      if (others.contains('passkey'))
+      if (viaVesopa && NativeAuth.enabled)
+        const _Way.passkey('passkey')
+      else if (others.contains('passkey'))
         const _Way.passkey(null)
-      else if (viaVesopa && !NativeAuth.enabled)
+      else if (viaVesopa)
         const _Way.passkey('passkey'),
       if (viaVesopa && !config.usable.contains('code_sms') && !NativeAuth.enabled) const _Way.phone(),
     ];
@@ -540,6 +606,7 @@ class _SignInPageState extends ConsumerState<SignInPage> {
             busy: _busy,
             onPressed: () => switch (way) {
               _Way(method: 'passkey', idp: null) => _signInWithPasskey(),
+              _Way(idp: 'passkey') when NativeAuth.enabled => _signInWithVesopaPasskey(),
               _Way(idp: 'apple') when NativeAuth.enabled => _signInWithApple(),
               _Way(idp: 'google') when NativeAuth.google => _signInWithGoogle(),
               _ => _startVesopa(way.idp),

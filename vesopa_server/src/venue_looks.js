@@ -37,13 +37,10 @@ function lookFor(slug) {
   return look;
 }
 
-/** The meta tags the app reads its venue and look from. Values are fixed hex and slugs, nothing to escape. */
+/** The meta tag the app reads its look from, or ''. Values are fixed hex, nothing to escape. */
 function pageMeta(slug) {
-  const s = String(slug || '').toLowerCase();
-  const tags = [`<meta name="vesopa-venue" content="${s.replace(/[^a-z0-9-]/g, '')}">`];
-  const look = lookFor(s);
-  if (look) tags.push(`<meta name="vesopa-look" content="${look.club},${look.deep},${look.glow}">`);
-  return tags.join('\n  ');
+  const look = lookFor(slug);
+  return look ? `<meta name="vesopa-look" content="${look.club},${look.deep},${look.glow}">` : '';
 }
 
 module.exports = { lookFor, pageMeta, LOOKS };

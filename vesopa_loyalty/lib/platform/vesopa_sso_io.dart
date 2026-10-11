@@ -7,6 +7,7 @@ import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
+import 'device_label.dart';
 import 'vesopa_sso.dart';
 
 /// Continue with Vesopa on Windows, Android and iOS.
@@ -179,6 +180,90 @@ Future<String> _exchange({
   final claims = jsonDecode(utf8.decode(base64Url.decode(payload))) as Map<String, dynamic>;
   if (claims['nonce'] != nonce) throw const _Failed('The identity token did not match this sign-in.');
   return idToken;
+}
+
+/// Signing in to Vesopa with the device's own sheet: Sign in with Apple,
+/// Google's sign-in, or a passkey (lib/platform/native_auth.dart). [proof] is
+/// what the sheet gave back ({provider: apple, id_token, name}, or
+/// {provider: passkey, credential, challenge}); auth.vesopa.com turns it into
+/// a code for this app (vesopa_auth/src/routes/native.js), swapped here for
+/// the identity token exactly as after Vesopa's page. No web page opens.
+///
+/// Null when the member said no to [consent]. [VesopaNeedsPage] when Vesopa
+/// must ask something only its own page can (a second factor).
+Future<VesopaAnswer?> nativeVesopaSignIn(Map<String, Object?> proof, {required VesopaConsent consent}) async {
+  if (_clientId.isEmpty) {
+    return const VesopaAnswer(error: 'This app was built without a Vesopa sign-in.');
+  }
+  final verifier = _randomString(32);
+  final challenge = base64Url.encode(sha256.convert(ascii.encode(verifier)).bytes).replaceAll('=', '');
+  final nonce = _randomString(16);
+  // Never listened on: the code comes back in the answer. It is the address
+  // the app is registered with, which the code is bound to.
+  const redirectUri = 'http://127.0.0.1/callback';
+  final request = <String, Object?>{
+    'client_id': _clientId,
+    'redirect_uri': redirectUri,
+    'scope': 'openid profile email',
+    'nonce': nonce,
+    'code_challenge': challenge,
+    'code_challenge_method': 'S256',
+  };
+
+  Future<(int, Map<String, dynamic>)> post(Map<String, Object?> body) async {
+    final res = await http
+        .post(
+          Uri.parse('$_issuer/oauth/native'),
+          headers: {'Content-Type': 'application/json', 'Accept': 'application/json', 'User-Agent': deviceUserAgent},
+          body: jsonEncode(body),
+        )
+        .timeout(const Duration(seconds: 20));
+    Map<String, dynamic> json;
+    try {
+      json = jsonDecode(res.body) as Map<String, dynamic>;
+    } catch (_) {
+      json = const {};
+    }
+    return (res.statusCode, json);
+  }
+
+  try {
+    var (status, answer) = await post({...request, ...proof});
+    if (status == 409 && answer['error'] == 'consent_required' && answer['ticket'] != null) {
+      final scopes = [
+        for (final s in (answer['scopes'] as List? ?? const []).cast<Map>())
+          (title: '${s['title'] ?? s['name'] ?? ''}', description: '${s['description'] ?? ''}'),
+      ];
+      if (!await consent('${answer['application'] ?? 'This app'}', scopes)) return null;
+      (status, answer) = await post({...request, 'ticket': answer['ticket'], 'consent': true});
+    }
+    if (status == 409 && answer['error'] != 'consent_required') {
+      throw VesopaNeedsPage('${answer['error_description'] ?? 'Vesopa needs to ask you something first.'}');
+    }
+    final code = answer['code'] as String?;
+    if (status != 200 || code == null) {
+      return VesopaAnswer(error: '${answer['error_description'] ?? 'That sign-in could not be completed. Please try again.'}');
+    }
+    final idToken = await _exchange(code: code, verifier: verifier, redirectUri: redirectUri, nonce: nonce);
+    return VesopaAnswer(idToken: idToken);
+  } on _Failed catch (e) {
+    return VesopaAnswer(error: e.message);
+  } on VesopaNeedsPage {
+    rethrow;
+  } catch (_) {
+    return const VesopaAnswer(error: 'That sign-in could not be completed. Please try again.');
+  }
+}
+
+/// A passkey challenge from Vesopa, for the device's own passkey sheet.
+Future<Map<String, dynamic>> vesopaPasskeyOptions() async {
+  final res = await http
+      .post(Uri.parse('$_issuer/webauthn/authenticate/options'),
+          headers: {'Content-Type': 'application/json', 'Accept': 'application/json', 'User-Agent': deviceUserAgent},
+          body: '{}')
+      .timeout(const Duration(seconds: 20));
+  if (res.statusCode != 200) throw const _Failed('Vesopa could not start a passkey sign-in. Please try again.');
+  return jsonDecode(res.body) as Map<String, dynamic>;
 }
 
 Future<void> _reply(HttpRequest request, String venue, String heading, String message) async {
