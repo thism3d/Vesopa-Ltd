@@ -46,40 +46,73 @@ class CardPage extends ConsumerWidget {
              */
             final wide = box.maxWidth >= 900;
             final card = _FlipCard(brand: brand, me: m);
-            final facts = _Facts(brand: brand, me: m);
+            // A tablet held upright: one column, but with the summary tiles.
+            final roomy = box.maxWidth >= 600;
+            final facts = _Facts(brand: brand, me: m, tiles: wide || roomy);
             if (!wide) {
               return ListView(
                 padding: const EdgeInsets.all(20),
                 children: [
-                  Entrance(child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 440), child: card))),
+                  Entrance(child: Center(child: ConstrainedBox(constraints: BoxConstraints(maxWidth: box.maxWidth >= 600 ? 520 : 440), child: card))),
                   const Entrance(delay: Duration(milliseconds: 120), child: _AddToWallet()),
                   const SizedBox(height: 18),
+                  if (roomy) ...[
+                    Entrance(
+                      delay: const Duration(milliseconds: 170),
+                      child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 520), child: _Summary(brand: brand, me: m))),
+                    ),
+                    const SizedBox(height: 18),
+                  ],
                   Entrance(
                     delay: const Duration(milliseconds: 220),
-                    child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 440), child: facts)),
+                    child: Center(child: ConstrainedBox(constraints: BoxConstraints(maxWidth: box.maxWidth >= 600 ? 520 : 440), child: facts)),
                   ),
                 ],
               );
             }
+            /*
+             * AN IPAD (or a laptop) IS NOT A BIG PHONE. The card takes the
+             * left, as large as it reads well, and the right is the member's
+             * own summary: who they are, their numbers as tiles, then the
+             * facts. Both columns sit in the middle of the screen's height
+             * rather than leaving a page of empty space under them.
+             */
             return SingleChildScrollView(
-              padding: const EdgeInsets.all(28),
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 980),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          children: [
-                            Entrance(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 440), child: card)),
-                            const Entrance(delay: Duration(milliseconds: 120), child: _AddToWallet()),
-                          ],
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 32),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: box.maxHeight - 64),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 1180),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Expanded(
+                          flex: 11,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Entrance(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 540), child: card)),
+                              const Entrance(delay: Duration(milliseconds: 120), child: _AddToWallet()),
+                            ],
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 28),
-                      Expanded(child: Entrance(delay: const Duration(milliseconds: 220), child: facts)),
-                    ],
+                        const SizedBox(width: 40),
+                        Expanded(
+                          flex: 10,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Entrance(delay: const Duration(milliseconds: 140), child: _Summary(brand: brand, me: m)),
+                              const SizedBox(height: 20),
+                              Entrance(delay: const Duration(milliseconds: 240), child: facts),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -557,10 +590,13 @@ class _Hint extends StatelessWidget {
 }
 
 class _Facts extends StatelessWidget {
-  const _Facts({required this.brand, required this.me});
+  const _Facts({required this.brand, required this.me, this.tiles = false});
 
   final Brand brand;
   final Map<String, dynamic> me;
+
+  /// The visits are already on a tile beside it (_Summary).
+  final bool tiles;
 
   @override
   Widget build(BuildContext context) {
@@ -568,7 +604,7 @@ class _Facts extends StatelessWidget {
     final expiry = membership['expiry'] ?? me['membership_expiry'];
     final expired = membership['expired'] == true;
     final rows = <(IconData, String, String)>[
-      (Icons.event_repeat, 'Visits', '${me['visits'] ?? 0}'),
+      if (!tiles) (Icons.event_repeat, 'Visits', '${me['visits'] ?? 0}'),
       if (me['last_visit'] != null) (Icons.history, 'Last visit', when(me['last_visit'], time: false)),
       if (me['member_since'] != null) (Icons.card_membership, 'Member since', when(me['member_since'], time: false)),
       if (expiry != null)
@@ -599,6 +635,72 @@ class _Facts extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+/// The member's own summary beside the card on an iPad: a greeting, and their
+/// numbers as tiles big enough to read across a table.
+class _Summary extends StatelessWidget {
+  const _Summary({required this.brand, required this.me});
+
+  final Brand brand;
+  final Map<String, dynamic> me;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final hour = DateTime.now().hour;
+    final hello = hour < 12 ? 'Good morning' : (hour < 18 ? 'Good afternoon' : 'Good evening');
+    final first = ((me['name'] as String?) ?? '').trim().split(RegExp(r'\s+')).first;
+    final tiles = <(IconData, String, String)>[
+      (Icons.stars_rounded, 'Points', '${(me['points'] as num?)?.toInt() ?? 0}'),
+      (Icons.event_repeat, 'Visits', '${me['visits'] ?? 0}'),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(first.isEmpty ? hello : '$hello, $first', style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800)),
+        const SizedBox(height: 6),
+        Text(brand.welcome.isEmpty ? brand.name : brand.welcome,
+            style: theme.textTheme.titleMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+        const SizedBox(height: 20),
+        LayoutBuilder(
+          builder: (context, box) {
+            final w = (box.maxWidth - 14) / 2;
+            return Wrap(
+              spacing: 14,
+              runSpacing: 14,
+              children: [
+                for (final (icon, label, value) in tiles)
+                  SizedBox(
+                    width: w,
+                    child: Container(
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surfaceContainerHigh,
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(icon, color: theme.iconTheme.color, size: 26),
+                          const SizedBox(height: 12),
+                          Text(value,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
+                          const SizedBox(height: 2),
+                          Text(label, style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+      ],
     );
   }
 }

@@ -35,6 +35,7 @@ const gate = require('./loyalty_members_only');
 const express = require('express');
 
 const auth = require('./loyalty_auth');
+const social = require('./loyalty_social');
 const { cleanPhone, postcoderSend, postcoderVerify } = require('./dinein_otp');
 
 /** How long a texted code stands, matching the emailed one. */
@@ -316,6 +317,50 @@ module.exports = function loyaltyAccountRoutes(deps) {
       next(e);
     }
   });
+
+  /**
+   * Sign in with Apple, and with Google, from a venue's own app.
+   *
+   * The app signs in on the device and sends the provider's id token
+   * (src/loyalty_social.js checks it). They come under the venue's "Continue
+   * with Vesopa" switch: it is what the app's Apple and Google buttons are,
+   * whichever way they reach the provider.
+   *
+   * MATCHED ON THE CONFIRMED EMAIL, as the code flow is. An Apple member who
+   * chose "Hide my email" arrives with a relay address the club does not hold,
+   * and in a members-only venue is told to ask the club, like any address
+   * that is not on the books.
+   */
+  for (const provider of ['apple', 'google']) {
+    router.post(`/loyalty/v1/app/:slug/${provider}`, json, async (req, res, next) => {
+      try {
+        const app = await venue(req, res, 'vesopa');
+        if (!app) return;
+        const body = req.body || {};
+        const claims = await social.verify(provider, String(body.id_token || ''));
+        if (!claims) return res.status(401).json({ error: 'That sign-in could not be accepted.' });
+        const email = social.verifiedEmail(claims);
+        if (!email || !emailOk(email)) {
+          return res.status(400).json({ error: 'That account needs a confirmed email address to be used here.' });
+        }
+        let customer = await customerByEmail(pool, app.office, email);
+        if (!customer && await gate.membersOnly(pool, app.office)) {
+          return res.status(403).json({ error: gate.NOT_LISTED, members_only: true });
+        }
+        if (!customer) {
+          const id = await joinScheme(pool, app.office, {
+            name: cleanText(body.name || claims.name, 120) || email.split('@')[0],
+            email,
+          });
+          customer = { id };
+        }
+        await ensureCard(pool, app.office, customer.id);
+        res.json({ token: await signIn(req, app.office, customer.id) });
+      } catch (e) {
+        next(e);
+      }
+    });
+  }
 
   /**
    * Continue with Vesopa from the Store app, which has no venue yet.

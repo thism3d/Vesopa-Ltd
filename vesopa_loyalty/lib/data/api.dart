@@ -139,6 +139,19 @@ class LoyaltyApi {
     return json['token'] as String;
   }
 
+  /// Sign in with Apple or Google, done on the device: the provider's id
+  /// token (src/loyalty_social.js on the server checks it).
+  Future<String> signInWithProvider({
+    required String provider,
+    required String idToken,
+    String? name,
+    required String platform,
+  }) async {
+    final json = await _send('POST', '$_app/$provider',
+        body: {'id_token': idToken, 'name': ?name, 'platform': platform});
+    return json['token'] as String;
+  }
+
   /// What the browser needs to offer a passkey. The address is a hint: with
   /// one we can name that member's keys, without one the browser offers
   /// whatever it holds for this site.

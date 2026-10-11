@@ -288,7 +288,7 @@ def ensure_bundle_id(c, identifier, name):
         raise SystemExit(f"Could not register {identifier}: {e.detail()}")
 
 
-def ensure_capability(c, bundle, capability):
+def ensure_capability(c, bundle, capability, settings=None):
     have = c.all(f"/v1/bundleIds/{bundle['id']}/bundleIdCapabilities")
     if any(x["attributes"].get("capabilityType") == capability for x in have):
         note(f"  {bundle['attributes']['identifier']}: {capability} already on")
@@ -296,7 +296,7 @@ def ensure_capability(c, bundle, capability):
     try:
         c.post("/v1/bundleIdCapabilities", {"data": {
             "type": "bundleIdCapabilities",
-            "attributes": {"capabilityType": capability},
+            "attributes": {"capabilityType": capability, **({"settings": settings} if settings else {})},
             "relationships": {"bundleId": {"data": {"type": "bundleIds", "id": bundle["id"]}}},
         }})
         note(f"  {bundle['attributes']['identifier']}: {capability} switched on")
@@ -321,6 +321,11 @@ def cmd_prepare(venue_name):
     phone = ensure_bundle_id(c, app_id, v["name"])
     ensure_bundle_id(c, f"{app_id}.watchkitapp", f"{v['name']} Watch")
     ensure_capability(c, phone, "PUSH_NOTIFICATIONS")
+    # Sign in with Apple and passkeys on the device (ios/Runner/AuthBridge.swift;
+    # make_venue_app.py writes the matching entitlements).
+    ensure_capability(c, phone, "APPLE_ID_AUTH", [{
+        "key": "APPLE_ID_AUTH_APP_CONSENT", "options": [{"key": "PRIMARY_APP_CONSENT"}]}])
+    ensure_capability(c, phone, "ASSOCIATED_DOMAINS")
 
     app = find_app(c, app_id)
     out = os.environ.get("GITHUB_OUTPUT")

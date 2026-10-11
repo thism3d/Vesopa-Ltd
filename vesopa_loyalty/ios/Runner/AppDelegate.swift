@@ -43,6 +43,7 @@ import UserNotifications
   /// Held for the life of the app; each owns its channel.
   private var wallet: WalletBridge?
   private var watch: WatchBridge?
+  private var auth: AuthBridge?
 
   override func application(
     _ application: UIApplication,
@@ -88,6 +89,10 @@ import UserNotifications
     }
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "VesopaLoyaltyWatch") {
       watch = WatchBridge(messenger: registrar.messenger())
+    }
+    // Sign in with Apple, passkeys and Google's sheet (AuthBridge.swift).
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "VesopaLoyaltyAuth") {
+      auth = AuthBridge(messenger: registrar.messenger())
     }
   }
 

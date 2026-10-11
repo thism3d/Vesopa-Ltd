@@ -267,7 +267,20 @@ def dart(app: Path, v):
         "VENUE_SPLASH_DEEP": c.get("deep", "").lstrip("#"),
         "VENUE_SPLASH_GLOW": c.get("glow", "").lstrip("#"),
         "VENUE_FONT": font,
+        # Sign in with Apple, passkeys and Google on the device (lib/platform/native_auth.dart).
+        "VENUE_NATIVE_AUTH": "true",
+        "GOOGLE_IOS_CLIENT_ID": v.get("google_ios_client_id", ""),
     }
+
+    # The entitlements those need: Sign in with Apple, and the site whose
+    # passkeys the app may use (its apple-app-site-association names the app:
+    # vesopa_server/src/loyalty_host.js).
+    ent = app / "ios" / "Runner" / "Runner.entitlements"
+    domain = v.get("passkey_domain", "loyalty.vesopa.com")
+    edit(ent, [("</dict>\n</plist>", (
+        "\t<key>com.apple.developer.applesignin</key>\n\t<array>\n\t\t<string>Default</string>\n\t</array>\n"
+        "\t<key>com.apple.developer.associated-domains</key>\n\t<array>\n"
+        f"\t\t<string>webcredentials:{domain}</string>\n\t</array>\n</dict>\n</plist>"))])
     (app / "venue_defines.json").write_text(json.dumps(defines, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 

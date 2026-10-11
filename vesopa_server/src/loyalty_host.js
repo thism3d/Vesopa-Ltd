@@ -123,8 +123,48 @@ function venueHostGate(req, res, next, slug) {
   return next();
 }
 
+/*
+ * WHICH APPS MAY USE THIS SITE'S PASSKEYS. A passkey belongs to a domain; iOS
+ * lets an app use one only when the app's entitlements name the domain AND the
+ * domain names the app, here. Android reads assetlinks.json the same way.
+ *
+ *   LOYALTY_IOS_APPS      TEAMID.bundle.id, comma separated
+ *   LOYALTY_ANDROID_APPS  package=SHA256:FINGERPRINT, comma separated (the
+ *                         Play app signing key's fingerprint)
+ */
+function iosApps() {
+  return String(process.env.LOYALTY_IOS_APPS
+    || 'G238FR2ZC9.com.vesopaepos.pontardawerfc,G238FR2ZC9.com.vesopaepos.thevesopakitchen')
+    .split(',').map((s) => s.trim()).filter(Boolean);
+}
+
+function androidApps() {
+  return String(process.env.LOYALTY_ANDROID_APPS || '').split(',').map((s) => s.trim()).filter(Boolean)
+    .map((pair) => pair.split('='))
+    .filter(([pkg, print]) => pkg && print)
+    .map(([pkg, print]) => ({
+      relation: ['delegate_permission/common.get_login_creds', 'delegate_permission/common.handle_all_urls'],
+      target: { namespace: 'android_app', package_name: pkg.trim(), sha256_cert_fingerprints: [print.trim()] },
+    }));
+}
+
+function wellKnown(req, res) {
+  const path = req.url.split('?')[0];
+  if (path === '/.well-known/apple-app-site-association') {
+    res.type('application/json').set('Cache-Control', 'public, max-age=3600')
+      .send(JSON.stringify({ webcredentials: { apps: iosApps() } }));
+    return true;
+  }
+  if (path === '/.well-known/assetlinks.json') {
+    res.type('application/json').set('Cache-Control', 'public, max-age=3600').send(JSON.stringify(androidApps()));
+    return true;
+  }
+  return false;
+}
+
 function loyaltyHostGate() {
   return (req, res, next) => {
+    if (wellKnown(req, res)) return;
     const own = VENUE_HOSTS.get(hostOf(req));
     if (own) return venueHostGate(req, res, next, own);
     if (!LOYALTY_HOST) return next();

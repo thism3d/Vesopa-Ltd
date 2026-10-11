@@ -25,6 +25,7 @@
 		7E5A00000000000000000017 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 7E5A00000000000000000007 /* Assets.xcassets */; };
 		7E5A00000000000000000018 /* VesopaWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 7E5A00000000000000000009 /* VesopaWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		7E5A00000000000000000032 /* WalletBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E5A00000000000000000031 /* WalletBridge.swift */; };
+		7E5A00000000000000000042 /* AuthBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E5A00000000000000000041 /* AuthBridge.swift */; };
 		7E5A00000000000000000034 /* WatchBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E5A00000000000000000033 /* WatchBridge.swift */; };
 /* End PBXBuildFile section */
 
@@ -98,6 +99,7 @@
 		7E5A00000000000000000009 /* VesopaWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VesopaWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7E5A00000000000000000030 /* Runner.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Runner.entitlements; sourceTree = "<group>"; };
 		7E5A00000000000000000031 /* WalletBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalletBridge.swift; sourceTree = "<group>"; };
+		7E5A00000000000000000041 /* AuthBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthBridge.swift; sourceTree = "<group>"; };
 		7E5A00000000000000000033 /* WatchBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchBridge.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -174,6 +176,7 @@
 				7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
 				7E5A00000000000000000031 /* WalletBridge.swift */,
+				7E5A00000000000000000041 /* AuthBridge.swift */,
 				7E5A00000000000000000033 /* WatchBridge.swift */,
 				7E5A00000000000000000030 /* Runner.entitlements */,
 			);
@@ -383,6 +386,7 @@
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 				7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */,
 				7E5A00000000000000000032 /* WalletBridge.swift in Sources */,
+				7E5A00000000000000000042 /* AuthBridge.swift in Sources */,
 				7E5A00000000000000000034 /* WatchBridge.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
