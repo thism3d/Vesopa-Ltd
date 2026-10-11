@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import '../platform/native_auth.dart';
+
 /// What the venue allows, and what this device can actually do about it.
 ///
 /// TWO DIFFERENT QUESTIONS, and the app gets them wrong if it mixes them.
@@ -51,7 +53,7 @@ class SignInConfig {
   /// Android and iOS builds simply do not offer it and use the other methods.
   /// That is a real limit, not a gap left to fill in later.
   static bool deviceCan(String method) {
-    if (method == 'passkey') return kIsWeb;
+    if (method == 'passkey') return kIsWeb || NativeAuth.enabled;
     return true;
   }
 

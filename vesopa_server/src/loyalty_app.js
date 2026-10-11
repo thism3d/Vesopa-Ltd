@@ -785,7 +785,7 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
         [app.office, email]
       );
       const sessionId = crypto.randomUUID();
-      const platform = ['web', 'windows'].includes(body.platform) ? body.platform : 'web';
+      const platform = ['web', 'windows', 'android', 'ios'].includes(body.platform) ? body.platform : 'web';
       await pool.execute(
         `INSERT INTO epos_loyalty_app_sessions (id, office, customer_id, platform, user_agent, last_seen_at)
          VALUES (?, ?, ?, ?, ?, NOW())`,

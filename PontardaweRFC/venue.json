@@ -5,7 +5,7 @@
   "tagline": "Members' Club · Est. 1881",
   "app_id": "com.vesopaepos.pontardawerfc",
   "version": "1.1.0",
-  "build": 3,
+  "build": 4,
   "colours": {
     "background": "#8F0000",
     "deep": "#3F0000",
@@ -13,5 +13,6 @@
     "text": "#FFFFFF"
   },
   "vesopa_client_id": "12a1047bafa611f185af42010a80000e",
-  "apple_team": "G238FR2ZC9"
+  "apple_team": "G238FR2ZC9",
+  "google_ios_client_id": ""
 }

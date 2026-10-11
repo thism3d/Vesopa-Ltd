@@ -7,6 +7,7 @@ import '../data/api.dart';
 import '../data/session.dart';
 import '../data/signin.dart';
 import '../data/venue_style.dart';
+import '../platform/native_auth.dart';
 import '../platform/passkey.dart';
 import '../platform/vesopa_sso.dart';
 import 'widgets.dart';
@@ -72,6 +73,8 @@ class _SignInPageState extends ConsumerState<SignInPage> {
       await job();
     } on PasskeyCancelled {
       // Somebody changed their mind. Not an error, and nothing to say.
+    } on NativeAuthError catch (e) {
+      setState(() => _error = e.message);
     } on ApiError catch (e) {
       if (e.needsName) {
         setState(() {
@@ -167,6 +170,31 @@ class _SignInPageState extends ConsumerState<SignInPage> {
     final token = await api.signInWithPasskey(
       challenge: result.challenge,
       credential: result.credential,
+      platform: ref.read(configProvider).platform,
+    );
+    await ref.read(sessionProvider.notifier).signedIn(token);
+  });
+
+  /// Sign in with Apple on the device: Apple's own sheet, no web page.
+  Future<void> _signInWithApple() => _run(() async {
+    final answer = await NativeAuth.apple();
+    if (answer == null) return;
+    final token = await ref.read(apiProvider).signInWithProvider(
+      provider: 'apple',
+      idToken: answer.token,
+      name: answer.name,
+      platform: ref.read(configProvider).platform,
+    );
+    await ref.read(sessionProvider.notifier).signedIn(token);
+  });
+
+  /// Google's own sign-in sheet, as Google's SDK shows it.
+  Future<void> _signInWithGoogle() => _run(() async {
+    final idToken = await NativeAuth.googleIdToken();
+    if (idToken == null) return;
+    final token = await ref.read(apiProvider).signInWithProvider(
+      provider: 'google',
+      idToken: idToken,
       platform: ref.read(configProvider).platform,
     );
     await ref.read(sessionProvider.notifier).signedIn(token);
@@ -481,8 +509,13 @@ class _SignInPageState extends ConsumerState<SignInPage> {
       if (viaVesopa && apple) const _Way.apple(),
       if (viaVesopa) const _Way.google(),
       if (viaVesopa && !apple) const _Way.apple(),
-      if (others.contains('passkey')) const _Way.passkey(null) else if (viaVesopa) const _Way.passkey('passkey'),
-      if (viaVesopa && !config.usable.contains('code_sms')) const _Way.phone(),
+      // In a venue's own app on an iPhone or iPad the passkey is the device's
+      // own, and nothing here opens a web page (NativeAuth).
+      if (others.contains('passkey'))
+        const _Way.passkey(null)
+      else if (viaVesopa && !NativeAuth.enabled)
+        const _Way.passkey('passkey'),
+      if (viaVesopa && !config.usable.contains('code_sms') && !NativeAuth.enabled) const _Way.phone(),
     ];
     if (buttons.isEmpty && links.isEmpty) return const [];
 
@@ -505,7 +538,12 @@ class _SignInPageState extends ConsumerState<SignInPage> {
           child: _ProviderButton(
             way: way,
             busy: _busy,
-            onPressed: () => way.method == 'passkey' && way.idp == null ? _signInWithPasskey() : _startVesopa(way.idp),
+            onPressed: () => switch (way) {
+              _Way(method: 'passkey', idp: null) => _signInWithPasskey(),
+              _Way(idp: 'apple') when NativeAuth.enabled => _signInWithApple(),
+              _Way(idp: 'google') when NativeAuth.google => _signInWithGoogle(),
+              _ => _startVesopa(way.idp),
+            },
           ),
         ),
         const SizedBox(height: 8),
