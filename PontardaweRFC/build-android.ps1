@@ -28,6 +28,30 @@ function Run($what, [scriptblock]$cmd) {
     if ($LASTEXITCODE -ne 0) { throw "$what failed (exit $LASTEXITCODE)" }
 }
 
+# The Android SDK and JDK 17, found here rather than trusted to the window:
+# an Administrator window can run as another account, whose ANDROID_HOME and
+# Flutter settings (%APPDATA%\.flutter_settings) are not azureuser's, and then
+# Flutter says "No Android SDK found" although the SDK is on this PC.
+$sdk = @($env:ANDROID_HOME, $env:ANDROID_SDK_ROOT,
+    [Environment]::GetEnvironmentVariable('ANDROID_HOME', 'User'),
+    (Join-Path $env:LOCALAPPDATA 'Android\Sdk'),
+    'C:\Users\azureuser\AppData\Local\Android\Sdk') |
+    Where-Object { $_ -and (Test-Path (Join-Path $_ 'platform-tools')) } | Select-Object -First 1
+if (-not $sdk) { throw 'No Android SDK on this PC (looked for platform-tools under ANDROID_HOME and AppData\Local\Android\Sdk).' }
+$env:ANDROID_HOME = $sdk
+$env:ANDROID_SDK_ROOT = $sdk
+if (-not ($env:JAVA_HOME -and (Test-Path (Join-Path $env:JAVA_HOME 'bin\java.exe')))) {
+    $jdk = Get-ChildItem 'C:\Program Files\Eclipse Adoptium' -Directory -Filter 'jdk-17*' -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($jdk) { $env:JAVA_HOME = $jdk.FullName }
+}
+# Java needs a short temp folder for its sockets on this PC.
+New-Item -ItemType Directory -Force -Path 'C:\gtmp' | Out-Null
+$env:JAVA_TOOL_OPTIONS = '-Djdk.net.unixdomain.tmpdir=C:\gtmp'
+Write-Host "Android SDK: $sdk   Java: $env:JAVA_HOME   as $env:USERNAME"
+Run 'Tell Flutter where the Android SDK and Java are' {
+    if ($env:JAVA_HOME) { flutter config --android-sdk $sdk --jdk-dir $env:JAVA_HOME } else { flutter config --android-sdk $sdk }
+}
+
 if (-not (Test-Path (Join-Path $venueDir 'google-services.json'))) {
     Run 'Firebase: register the app and fetch google-services.json' {
         python (Join-Path $repo 'vesopa_loyalty\tool\firebase_android_app.py') $venueDir
