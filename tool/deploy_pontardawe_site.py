@@ -13,11 +13,15 @@ cannot reach port 22). It:
      certificates, LOYALTY_VENUE_HOSTS in the back office .env, the members'
      app sign-in address in Vesopa Auth, the site's .env (keys never printed),
      npm ci, pm2 "pontardawerfc.com" by name, checks
-  3. (not with --check) the members' web app (vesopa_loyalty, flutter build
+  3. scripts/mail-forward.sh: info@ and contact@pontardawerfc.com forwarded
+     to the club's old address (club.json email_forwards_to); an Exim
+     redirect, no mailbox. The SMTP2GO relay takes it only once
+     pontardawerfc.com is a verified sender domain there
+  4. (not with --check) the members' web app (vesopa_loyalty, flutter build
      web --base-href /__SLUG__/; the build already in vesopa_loyalty/build/web
      when Flutter is not installed) to the back office's loyalty_web, the old
      one kept in backup/loyalty_web.pre-member-look
-  4. (not with --check) tool/deploy_memberships.py --backoffice: the back
+  5. (not with --check) tool/deploy_memberships.py --backoffice: the back
      office code with collection orders, the member host and the club's look
      there (src/venue_looks.js), its schema (re-runnable) and its restart
 
@@ -25,8 +29,10 @@ Rolling back the site: `pm2 stop pontardawerfc.com` as vesopasoftware puts the
 old "site is ready" page back; the back office changes are additive, and the
 previous members' web app is in backup/loyalty_web.pre-member-look.
 """
+import json
 import os
 import pathlib
+import shlex
 import shutil
 import subprocess
 import sys
@@ -58,6 +64,8 @@ def bundle():
     # LF endings whatever the checkout did, or bash on the box stops at "$'\r'".
     script = (SITE / "scripts" / "remote-install.sh").read_bytes().replace(b"\r\n", b"\n")
     (stage / "remote-install.sh").write_bytes(script)
+    forward = (SITE / "scripts" / "mail-forward.sh").read_bytes().replace(b"\r\n", b"\n")
+    (stage / "mail-forward.sh").write_bytes(forward)
     return stage
 
 
@@ -92,6 +100,9 @@ def main():
         shutil.rmtree(stage, ignore_errors=True)
     print("▶ install (DNS, domains, certificates, back office host, Auth address, site, pm2)")
     dm.ssh("run", f"cd {remote} && bash remote-install.sh {'--check' if check else ''}")
+    print("▶ info@pontardawerfc.com, forwarded to the club's old address (no mailbox)")
+    club = json.loads((SITE / "content" / "club.json").read_text(encoding="utf-8"))
+    dm.ssh("run", f"cd {remote} && bash mail-forward.sh {'--check' if check else ''} {shlex.quote(club['email_forwards_to'])}", check=False)
     if check:
         print("check only: nothing changed. Run again without --check.")
         return

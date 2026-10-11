@@ -5,7 +5,8 @@
  */
 'use strict';
 
-const { club, news, images, longDate, yearsOld } = require('./content');
+const { club, news, images, xPosts, longDate, yearsOld } = require('./content');
+const wru = require('./wru');
 const { page, pageHero, esc, icon, SITE, MEMBERS, ASSET_VERSION } = require('./layout');
 
 const MENU_API = (process.env.MENU_API || 'https://menu.vesopa.com').replace(/\/+$/, '');
@@ -80,12 +81,14 @@ function home() {
 
 <div class="ticker" aria-hidden="true"><div class="ticker-track">${Array.from({ length: 2 }, () => ['Clwb Rygbi Pontardawe', `Est. ${club.founded}`, 'Swansea Valley', 'WRU member club', 'Ynysderw Road', 'First XV', 'Juniors', 'Clubhouse &amp; bar'].map((t) => `<span>${t}</span><i>${icon('ball', { size: 18 })}</i>`).join('')).join('')}</div></div>
 
+${nextMatch()}
+
 <section class="section" id="quick">
   <div class="wrap">
     <div class="tiles">
       <a class="tile reveal" href="/menu"><span class="tile-ic">${icon('plate')}</span><h2>Menu &amp; order</h2><p>Order to your table, or for collection and pay at the bar.</p><span class="more">Order now ${icon('arrow', { size: 18 })}</span></a>
       <a class="tile reveal" href="${MEMBERS}/"><span class="tile-ic">${icon('card')}</span><h2>Members' card</h2><p>Your card and members' discount at member.pontardawerfc.com.</p><span class="more">Open the app ${icon('arrow', { size: 18 })}</span></a>
-      <a class="tile reveal" href="/teams"><span class="tile-ic">${icon('whistle')}</span><h2>Fixtures &amp; results</h2><p>The First XV, the juniors and the league table.</p><span class="more">See the teams ${icon('arrow', { size: 18 })}</span></a>
+      <a class="tile reveal" href="/fixtures"><span class="tile-ic">${icon('whistle')}</span><h2>Fixtures &amp; results</h2><p>The next match, every score and the league table, live from the WRU.</p><span class="more">See fixtures ${icon('arrow', { size: 18 })}</span></a>
       <a class="tile reveal" href="/clubhouse"><span class="tile-ic">${icon('beer')}</span><h2>The clubhouse</h2><p>Bar, café, live sport and functions on Ynysderw Road.</p><span class="more">Visit ${icon('arrow', { size: 18 })}</span></a>
     </div>
   </div>
@@ -246,7 +249,8 @@ function teamsPage() {
       <p class="kicker">Fixtures, results and tables</p>
       <h2>Follow the First XV</h2>
       <p>${esc(club.league_note)}</p>
-      <div class="cta-row"><a class="btn btn-glow" href="${club.web.wru_league}" rel="noopener" target="_blank">${icon('calendar', { size: 20 })} WRU fixtures &amp; table ${icon('external', { size: 16 })}</a><a class="btn btn-line" href="${club.web.facebook}" rel="noopener" target="_blank">${icon('facebook', { size: 20 })} Match news on Facebook</a></div>
+      ${wru.fixtures().upcoming.length ? `<ol class="fx-list">${wru.fixtures().upcoming.slice(0, 3).map((f) => fixtureRow(f)).join('')}</ol>` : ''}
+      <div class="cta-row"><a class="btn btn-glow" href="/fixtures">${icon('calendar', { size: 20 })} Fixtures, results &amp; table</a><a class="btn btn-line" href="/tickets">${icon('ticket', { size: 20 })} Tickets</a></div>
     </div>
     <div class="reveal">${photo('squad-2024')}</div>
   </div>
@@ -270,8 +274,9 @@ function newsPage() {
   const body = `${pageHero({ kicker: 'Club news', title: 'News', lead: 'What\'s happening at the club.' })}
 <section class="section">
   <div class="wrap grid-3">${news.map((p, i) => newsCard(p, { big: i === 0 })).join('')}</div>
-  <div class="wrap"><p class="muted center reveal">More match news and photos on our <a href="${club.web.facebook}" rel="noopener">Facebook page</a>.</p></div>
-</section>`;
+  <div class="wrap"><p class="muted center reveal">More match news and photos on our <a href="${club.web.facebook}" rel="noopener">Facebook page</a> and <a href="${club.web.x}" rel="noopener">X</a>.</p></div>
+</section>
+${xArchive()}`;
   return page({
     title: 'News',
     description: `News from ${club.name}: club announcements, tributes and the latest from the clubhouse on Ynysderw Road.`,
@@ -541,6 +546,162 @@ function accessibilityPage() {
   });
 }
 
+// --- Fixtures, from the WRU (src/wru.js) ------------------------------------
+
+/** "Sat 17 Oct" from 2026-10-17. */
+function shortDate(day) {
+  const d = new Date(`${day}T12:00:00Z`);
+  return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Europe/London' });
+}
+
+function crest(f) {
+  return f.opponentLogo
+    ? `<img class="opp-logo" src="${esc(encodeURI(f.opponentLogo))}" alt="" width="40" height="40" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`
+    : `<span class="opp-logo opp-none" aria-hidden="true">${icon('shield', { size: 22 })}</span>`;
+}
+
+function fixtureRow(f, { tickets = true } = {}) {
+  const ha = f.home ? 'Home' : 'Away';
+  const score = f.result
+    ? `<span class="score score-${f.result.toLowerCase()}" title="${{ W: 'Won', L: 'Lost', D: 'Drawn' }[f.result]}"><b>${f.result}</b> ${f.us}–${f.them}</span>`
+    : f.status === 'POSTPONED' ? '<span class="tag">Postponed</span>'
+      : `<span class="ko">${f.kickoff ? `${icon('clock', { size: 16 })} ${esc(f.kickoff)}` : 'Time TBC'}</span>`;
+  const buy = tickets && !f.result && f.home && f.status !== 'POSTPONED'
+    ? `<a class="btn btn-sm btn-line" href="/tickets#m-${f.id}">${icon('ticket', { size: 16 })} Tickets</a>` : '';
+  return `<li class="fx reveal" id="m-${f.id}">
+  <time class="fx-date" datetime="${esc(f.day)}">${esc(shortDate(f.day))}</time>
+  ${crest(f)}
+  <div class="fx-main"><b>${f.home ? 'Pontardawe' : esc(f.opponent)} <span class="vs">v</span> ${f.home ? esc(f.opponent) : 'Pontardawe'}</b><small><span class="ha ha-${ha.toLowerCase()}">${ha}</span>${f.competition ? ` · ${esc(f.competition.replace(/^WRU /, ''))}` : ''}${f.team && f.team !== '1st Team' ? ` · ${esc(f.team)}` : ''}</small></div>
+  <div class="fx-end">${score}${buy}</div>
+</li>`;
+}
+
+/** The next match, big: on the home page and at the top of the fixtures page. */
+function nextMatch({ heading = 'Next match' } = {}) {
+  const f = wru.fixtures().upcoming[0];
+  if (!f) return '';
+  const when = `${f.day}T${f.kickoff || '14:30'}:00`;
+  const opp = esc(f.opponent.replace(/ RFC$/, ''));
+  return `<section class="next-match" aria-label="${esc(heading)}">
+  <div class="wrap next-in reveal">
+    <p class="kicker">${icon('whistle', { size: 18 })} ${esc(heading)}${f.competition ? ` · ${esc(f.competition.replace(/^WRU /, ''))}` : ''}</p>
+    <div class="nm-teams">
+      <div class="nm-side"><img src="/img/crest-128.webp" alt="" width="72" height="72"><b>${f.home ? 'Pontardawe' : opp}</b></div>
+      <div class="nm-mid"><span class="nm-v">v</span><time datetime="${esc(when)}"><span class="nm-long">${esc(longDate(f.day))}</span><span class="nm-short">${esc(shortDate(f.day))}</span>${f.kickoff ? ` <span class="nm-ko">${esc(f.kickoff)}</span>` : ''}</time><span class="nm-count" data-countdown="${esc(when)}"></span></div>
+      <div class="nm-side">${f.home ? crest(f).replace('width="40" height="40"', 'width="72" height="72"') : '<img src="/img/crest-128.webp" alt="" width="72" height="72">'}<b>${f.home ? opp : 'Pontardawe'}</b></div>
+    </div>
+    <p class="nm-where">${icon('pin', { size: 18 })} ${f.home ? `${esc(String(club.ground).split(',')[0])}, Ynysderw Road` : `Away at ${esc(f.opponent)}`}</p>
+    <div class="cta-row center">${f.home ? `<a class="btn btn-white" href="/tickets#m-${f.id}">${icon('ticket', { size: 20 })} Tickets</a>` : ''}<a class="btn btn-ghost" href="/fixtures">${icon('calendar', { size: 20 })} All fixtures</a></div>
+  </div>
+</section>`;
+}
+
+function leagueTable(t) {
+  if (!t || !t.rows.length) return '';
+  return `<div class="table-wrap reveal"><table class="league">
+  <caption>${esc(t.name)} ${esc(t.season)}</caption>
+  <thead><tr><th scope="col">#</th><th scope="col">Team</th><th scope="col">P</th><th scope="col">W</th><th scope="col">D</th><th scope="col">L</th><th scope="col" title="Points difference">PD</th><th scope="col">Pts</th></tr></thead>
+  <tbody>${t.rows.map((r) => `<tr${r.us ? ' class="us"' : ''}><td>${r.pos}</td><th scope="row">${esc(r.team.replace(/ RFC$/, ''))}</th><td>${r.p}</td><td>${r.w}</td><td>${r.d}</td><td>${r.l}</td><td>${r.pd > 0 ? '+' : ''}${r.pd}</td><td><b>${r.pts}</b></td></tr>`).join('')}</tbody>
+</table></div>`;
+}
+
+function fixturesPage() {
+  const fx = wru.fixtures();
+  const none = `<p class="muted">The fixture list is loading from the WRU. In the meantime, see <a href="${club.web.wru_league}" rel="noopener">the WRU's fixtures page</a>.</p>`;
+  const body = `${pageHero({ kicker: 'First XV', title: 'Fixtures & Results', lead: 'Live from the WRU: every match, every score and the league table.' })}
+${nextMatch()}
+<section class="section">
+  <div class="wrap fixtures-grid">
+    <div>
+      <h2 class="reveal">${icon('calendar', { size: 26 })} Fixtures</h2>
+      ${fx.upcoming.length ? `<ol class="fx-list">${fx.upcoming.map((f) => fixtureRow(f)).join('')}</ol>` : none}
+      ${fx.postponed.length ? `<h3 class="reveal">Postponed</h3><ol class="fx-list">${fx.postponed.map((f) => fixtureRow(f, { tickets: false })).join('')}</ol>` : ''}
+      <h2 class="reveal">${icon('trophy', { size: 26 })} Results</h2>
+      ${fx.results.length ? `<ol class="fx-list">${fx.results.map((f) => fixtureRow(f)).join('')}</ol>` : '<p class="muted">No results yet this season.</p>'}
+    </div>
+    <aside>
+      <h2 class="reveal">${icon('star', { size: 26 })} League table</h2>
+      ${leagueTable(fx.table) || none}
+      <div class="card reveal side-card"><h3>${icon('ticket', { size: 22 })} Match tickets</h3><p>Home games are at the Recreation Ground on Ynysderw Road. Buy online and collect at the gate, or pay on the day.</p><a class="btn btn-glow" href="/tickets">Tickets</a></div>
+      <p class="small muted reveal">From the <a href="${club.web.wru_league}" rel="noopener">WRU</a>${fx.updated ? `, checked ${esc(new Date(fx.updated).toLocaleString('en-GB', { timeZone: 'Europe/London', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}` : ''}.</p>
+    </aside>
+  </div>
+</section>`;
+  const events = fx.upcoming.map((f) => ({
+    '@context': 'https://schema.org',
+    '@type': 'SportsEvent',
+    name: f.home ? `Pontardawe RFC v ${f.opponent}` : `${f.opponent} v Pontardawe RFC`,
+    startDate: `${f.day}T${f.kickoff || '14:30'}:00`,
+    sport: 'Rugby union',
+    eventStatus: 'https://schema.org/EventScheduled',
+    location: f.home ? { '@type': 'Place', name: 'Recreation Ground, Pontardawe', address: `${club.address.street}, ${club.address.town} ${club.address.postcode}` } : { '@type': 'Place', name: f.opponent },
+    homeTeam: { '@type': 'SportsTeam', name: f.home ? club.name : f.opponent },
+    awayTeam: { '@type': 'SportsTeam', name: f.home ? f.opponent : club.name },
+    ...(f.home ? { offers: { '@type': 'Offer', url: `${SITE}/tickets#m-${f.id}`, availability: 'https://schema.org/InStock' } } : {}),
+  }));
+  return page({
+    title: 'Fixtures & Results',
+    description: `${club.name} First XV fixtures, results and the league table, live from the WRU. Next match, kick-off times and match tickets.`,
+    path: '/fixtures',
+    og: 'teams',
+    ld: [crumbs([['Home', '/'], ['Fixtures', '/fixtures']]), ...events],
+  }, body);
+}
+
+function ticketsPage() {
+  const home = wru.fixtures().upcoming.filter((f) => f.home);
+  const body = `${pageHero({ kicker: 'Match days', title: 'Tickets', lead: 'Home games at the Recreation Ground, Ynysderw Road.' })}
+<section class="section tickets" data-tickets data-api="${esc(MENU_API)}" data-slug="${esc(MENU_SLUG)}">
+  <div class="wrap tickets-grid">
+    <div>
+      <h2 class="reveal">${icon('calendar', { size: 26 })} Home matches</h2>
+      ${home.length ? `<ol class="fx-list">${home.map((f) => fixtureRow(f, { tickets: false })).join('')}</ol>` : `<p class="muted">The next home matches will show here from the WRU's fixture list. <a href="/fixtures">All fixtures</a>.</p>`}
+    </div>
+    <aside>
+      <div class="card side-card reveal" data-ticket-box>
+        <h3>${icon('ticket', { size: 22 })} Buy tickets</h3>
+        <p data-ticket-text>Pay on the gate on match day, by card or cash. Online tickets show here as soon as the club puts them on sale.</p>
+        <div data-ticket-items></div>
+      </div>
+      <div class="card side-card reveal"><h3>${icon('card', { size: 22 })} Members</h3><p>Show your members' card at the gate and the bar.</p><a class="btn btn-line" href="${MEMBERS}/">Members' card</a></div>
+      <div class="card side-card reveal"><h3>${icon('phone', { size: 22 })} Groups and questions</h3><p>Call the club on <a href="tel:${club.phone_e164}">${esc(club.phone)}</a> or email <a href="mailto:${esc(club.email)}">${esc(club.email)}</a>.</p></div>
+    </aside>
+  </div>
+</section>`;
+  return page({
+    title: 'Tickets',
+    description: `Match tickets for ${club.name} home games at the Recreation Ground, Ynysderw Road, Pontardawe: buy online and collect at the gate, or pay on the day.`,
+    path: '/tickets',
+    og: 'teams',
+    ld: [crumbs([['Home', '/'], ['Tickets', '/tickets']])],
+    scripts: `<script src="/js/tickets.js?v=${ASSET_VERSION}" defer></script>`,
+  }, body);
+}
+
+// --- The club's posts on X ---------------------------------------------------
+
+/** Plain text with its links made into links; everything escaped first. */
+function linkify(text) {
+  return esc(text).replace(/https?:\/\/[^\s<]+/g, (u) => {
+    const clean = u.replace(/[.,!)]+$/, '');
+    return `<a href="${clean}" rel="noopener nofollow">${clean.replace(/^https?:\/\//, '')}</a>${u.slice(clean.length)}`;
+  });
+}
+
+function xArchive() {
+  if (!xPosts.length) return '';
+  return `<section class="section x-archive">
+  <div class="wrap">
+    <div class="sec-head"><div><p class="kicker reveal">${icon('x', { size: 16 })} @${esc(club.social.x.handle.replace(/^@/, ''))}</p><h2 class="reveal">From the club's X</h2></div><a class="btn btn-line reveal" href="${esc(club.web.x)}" rel="noopener" target="_blank">${icon('x', { size: 18 })} Follow on X</a></div>
+    <ol class="x-list">${xPosts.map((p) => {
+      const day = String(p.date).slice(0, 10);
+      const result = /\d+\s*-\s*\d+/.test(p.text) && /rfc/i.test(p.text);
+      return `<li class="x-post reveal${result ? ' x-result' : ''}"><img src="/img/crest-128.webp" alt="" width="40" height="40" loading="lazy"><div><p class="x-meta"><b>${esc(club.name)}</b> <span>@PontardaweRFC · <time datetime="${esc(day)}">${esc(longDate(day))}</time></span>${result ? ' <span class="tag">Result</span>' : ''}</p><p>${linkify(p.text)}</p></div></li>`;
+    }).join('')}</ol>
+  </div>
+</section>`;
+}
+
 function notFound() {
   const body = `${pageHero({ kicker: '404', title: 'Knock-on!', lead: 'That page isn\'t here. It may have moved when we built the new site.' })}
 <section class="section"><div class="wrap center"><div class="cta-row center"><a class="btn btn-glow" href="/">${icon('ball', { size: 20 })} Back to the home page</a><a class="btn btn-line" href="/menu">Menu &amp; order</a><a class="btn btn-line" href="${MEMBERS}/">Members' card</a></div></div></section>`;
@@ -549,5 +710,6 @@ function notFound() {
 
 module.exports = {
   home, clubPage, teamsPage, newsPage, articlePage, clubhousePage, menuPage, membershipPage,
-  contactPage, privacyPage, cookiesPage, termsPage, accessibilityPage, notFound, MENU_API, MENU_SLUG,
+  contactPage, privacyPage, cookiesPage, termsPage, accessibilityPage, notFound, fixturesPage, ticketsPage,
+  MENU_API, MENU_SLUG,
 };

@@ -91,6 +91,21 @@
     counters.forEach(function (el) { co.observe(el); });
   }
 
+  /* The next match: days and hours to kick-off (UK time as the WRU gives it). */
+  d.querySelectorAll('[data-countdown]').forEach(function (el) {
+    var at = new Date(el.getAttribute('data-countdown'));
+    var tick = function () {
+      var ms = at - new Date();
+      if (isNaN(ms) || ms <= 0) { el.textContent = ms > -2 * 3600e3 ? 'Kick-off!' : ''; return; }
+      var days = Math.floor(ms / 864e5);
+      var hours = Math.floor((ms % 864e5) / 36e5);
+      var mins = Math.floor((ms % 36e5) / 6e4);
+      el.textContent = (days > 0 ? days + 'd ' + hours + 'h' : hours + 'h ' + mins + 'm') + ' to kick-off';
+    };
+    tick();
+    setInterval(tick, 60000);
+  });
+
   /* Kitchen hours, from the bar's own menu settings, once the menu is live. */
   var hoursBox = d.querySelector('[data-hours]');
   if (hoursBox && window.fetch) {

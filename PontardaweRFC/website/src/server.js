@@ -19,6 +19,7 @@ const { club, news } = require('./content');
 const pages = require('./pages');
 const { SITE, MEMBERS } = require('./layout');
 const { helperRoute } = require('./helper');
+const wru = require('./wru');
 
 const app = express();
 app.disable('x-powered-by');
@@ -50,6 +51,8 @@ app.use((req, res, next) => {
   next();
 });
 
+wru.start();
+
 app.get('/health', (req, res) => res.json({ ok: true, site: 'pontardawerfc.com', started: STARTED }));
 
 app.use(express.static(PUBLIC, {
@@ -68,6 +71,8 @@ const html = (render) => (req, res) => {
 app.get('/', html(() => pages.home()));
 app.get('/club', html(() => pages.clubPage()));
 app.get('/teams', html(() => pages.teamsPage()));
+app.get('/fixtures', html(() => pages.fixturesPage()));
+app.get('/tickets', html(() => pages.ticketsPage()));
 app.get('/news', html(() => pages.newsPage()));
 app.get('/clubhouse', html(() => pages.clubhousePage()));
 app.get('/menu', html(() => pages.menuPage()));
@@ -95,14 +100,13 @@ const OLD = {
   '/order': '/menu',
   '/members': '/membership',
   '/history': '/club',
-  '/fixtures': '/teams',
 };
 app.get(Object.keys(OLD).flatMap((k) => [k, `${k}/`]), (req, res) => res.redirect(301, OLD[req.path.replace(/\/$/, '')]));
 app.get(['/feed', '/feed/'], (req, res) => res.redirect(301, '/news/feed.xml'));
 
 // --- For machines ------------------------------------------------------------
 
-const PATHS = ['/', '/club', '/teams', '/news', '/clubhouse', '/menu', '/membership', '/contact',
+const PATHS = ['/', '/club', '/teams', '/fixtures', '/tickets', '/news', '/clubhouse', '/menu', '/membership', '/contact',
   '/privacy', '/cookies', '/ordering-terms', '/accessibility'];
 
 app.get('/sitemap.xml', (req, res) => {
@@ -159,6 +163,8 @@ app.get('/llms.txt', (req, res) => {
 ## Pages
 - [The Club](${SITE}/club): history since ${club.founded}, timeline, Wales internationals
 - [Teams & Fixtures](${SITE}/teams): First XV, juniors, WRU fixtures and table
+- [Fixtures & Results](${SITE}/fixtures): the next match, results and the league table, live from the WRU
+- [Tickets](${SITE}/tickets): match tickets for home games
 - [News](${SITE}/news)
 - [The Clubhouse](${SITE}/clubhouse): bar, café, live sport, function hire, sponsorship
 - [Menu & Order](${SITE}/menu): live menu; order to your table or for collection, pay at the bar

@@ -29,7 +29,8 @@
   },
   "phone": "01792 864811",
   "phone_e164": "+441792864811",
-  "email": "pontardawe.rfc@hotmail.co.uk",
+  "email": "info@pontardawerfc.com",
+  "email_forwards_to": "pontardawe.rfc@hotmail.co.uk",
   "web": {
     "site": "https://pontardawerfc.com",
     "members": "https://member.pontardawerfc.com",
@@ -228,7 +229,7 @@
       "a": "Wales internationals James Griffiths, Phil Hopkins, Percy Lloyd and Joe Hawkins all played for Pontardawe."
     }
   ],
-  "email_note": "Published by the club in its September 2024 vacancy notice on pontardawe.rfc.wales. Confirm with the club that it is still read.",
+  "email_note": "info@pontardawerfc.com is the club's address on its own domain. It is a forwarder, not a mailbox: mail to it goes on to the club's old address, pontardawe.rfc@hotmail.co.uk, which the club published in its September 2024 vacancy notice on pontardawe.rfc.wales (tool/pontardawe_mail_forward.py). Confirm with the club that the old address is still read.",
   "social": {
     "x": {
       "handle": "@PontardaweRFC",

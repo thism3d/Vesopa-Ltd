@@ -40,3 +40,10 @@ From the repository root on the owner's PC:
     python tool/deploy_pontardawe_site.py
 
 `scripts/remote-install.sh` does the box side and is safe to run again.
+
+## Fixtures, tickets, X posts and the club email (2026-10-11)
+
+- `/fixtures`: fixtures, results and the league table, read every 20 minutes from the WRU's public API (`src/wru.js`, organisation 165). The next match also shows on the home page with a countdown. `WRU_OFF=1` stops the reads (the tests set it).
+- `/tickets`: home matches. Online tickets appear when the club has a "Tickets" section on its online menu (a TICKETS screen on the till; `tool/pontardawe_menu.py`), bought through the normal order and collected at the gate.
+- `/news` lists every post saved from x.com/PontardaweRFC (`content/source/x-posts.json`).
+- `info@pontardawerfc.com` (and `contact@`) forwards to the club's old address (`club.json` `email_forwards_to`) through `scripts/mail-forward.sh`, an Exim redirect with no mailbox, run by `tool/deploy_pontardawe_site.py`. The SMTP2GO relay takes it only once pontardawerfc.com is a verified sender domain there.

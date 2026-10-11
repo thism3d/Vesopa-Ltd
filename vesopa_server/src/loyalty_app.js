@@ -216,6 +216,7 @@ async function brandFor(db, office, app) {
   if (!links.phone && w.support_phone) links.phone = w.support_phone;
   if (look && look.website && !links.website) links.website = look.website;
   if (look && look.phone && !links.phone) links.phone = look.phone;
+  if (look && look.email && !links.email) links.email = look.email;
   const lat = a.latitude ?? w.latitude ?? null;
   const lng = a.longitude ?? w.longitude ?? null;
   return {

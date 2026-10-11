@@ -72,6 +72,9 @@ SECTIONS = [
     ("Snacks", ["SNACKS"]),
     ("Hot drinks", ["HOT DRINKS"]),
     ("Soft drinks", ["SOFT DRINKS"]),
+    # Match tickets, once the club has a Tickets screen on the till; the
+    # website's Tickets page lists this section (public/js/tickets.js).
+    ("Tickets", ["TICKETS", "MATCH TICKETS"]),
 ]
 
 

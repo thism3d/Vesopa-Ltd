@@ -5,11 +5,28 @@
 // with no AI key set.
 process.env.DEEPSEEK_API_KEY = '';
 process.env.GEMINI_API_KEY = '';
+process.env.WRU_OFF = '1';
 
 const test = require('node:test');
 const assert = require('node:assert');
 const app = require('../src/server');
-const { news } = require('../src/content');
+const { news, xPosts } = require('../src/content');
+const wru = require('../src/wru');
+
+// A season as the WRU sends it (shapes from api.wru.wales, 2026-10-11).
+const team = (org, name, score) => ({ orgId: org, organisationName: name, childValue: '1st Team', score, organisationLogoUrl: `https://public.wru.wales/organisation/logos/${name}.png` });
+const raw = [
+  { fixtureId: 1, homeTeam: team(165, 'Pontardawe RFC', 0), awayTeam: team(303, 'Penlan RFC', 0), date: '2099-10-17T14:30:00', competitionName: 'WRU Men’s National League', status: 'UPCOMING' },
+  { fixtureId: 2, homeTeam: team(119, 'Baglan RFC', 0), awayTeam: team(165, 'Pontardawe RFC', 0), date: '2099-10-31T14:30:00', competitionName: 'WRU Men’s National League', status: 'UPCOMING' },
+  { fixtureId: 3, homeTeam: team(165, 'Pontardawe RFC', 41), awayTeam: team(153, 'Banwen RFC', 69), date: '2026-10-03T14:30:00', competitionName: 'WRU Men’s National Knockout Competitions', status: 'PLAYED' },
+  { fixtureId: 4, homeTeam: team(165, 'Pontardawe RFC', 0), awayTeam: team(1, 'Brynamman RFC', 0), date: '2026-09-20T00:00:00', competitionName: null, status: 'PLAYED' },
+].map(wru.shape);
+wru.set({
+  upcoming: raw.filter((f) => f.status === 'UPCOMING'),
+  results: raw.filter((f) => f.status === 'PLAYED' && f.competition),
+  table: { name: 'WRU Men’s National League, 4 West Central', season: '2026/2027', rows: [{ pos: 1, team: 'Cefn Cribbwr RFC', p: 3, w: 3, d: 0, l: 0, pd: 73, pts: 14, us: false }, { pos: 9, team: 'Pontardawe RFC', p: 2, w: 0, d: 0, l: 2, pd: -71, pts: 1, us: true }] },
+  updated: '2026-10-11T01:00:00Z',
+});
 
 let base;
 let server;
@@ -21,7 +38,7 @@ test.before(async () => {
 });
 test.after(() => server.close());
 
-const PAGES = ['/', '/club', '/teams', '/news', '/clubhouse', '/menu', '/membership', '/contact',
+const PAGES = ['/', '/club', '/teams', '/fixtures', '/tickets', '/news', '/clubhouse', '/menu', '/membership', '/contact',
   '/privacy', '/cookies', '/ordering-terms', '/accessibility', ...news.map((n) => `/news/${n.slug}`)];
 
 for (const p of PAGES) {
@@ -93,4 +110,38 @@ test('helper answers from the FAQ without a key', async () => {
   }
   const empty = await fetch(`${base}/api/ask`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
   assert.strictEqual(empty.status, 400);
+});
+
+test('fixtures: the WRU season from the club side, next match, table and tickets', async () => {
+  assert.deepStrictEqual(raw.map((f) => [f.home, f.opponent, f.result]), [
+    [true, 'Penlan RFC', null], [false, 'Baglan RFC', null], [true, 'Banwen RFC', 'L'], [true, 'Brynamman RFC', 'D']]);
+  assert.strictEqual(raw[3].kickoff, null);
+  const html = await (await fetch(`${base}/fixtures`)).text();
+  assert.match(html, /Pontardawe <span class="vs">v<\/span> Penlan RFC/);
+  assert.match(html, /data-countdown="2099-10-17T14:30:00"/);
+  assert.match(html, /<b>L<\/b> 41–69/);
+  assert.match(html, /<tr class="us">/);
+  assert.match(html, /href="\/tickets#m-1"/);
+  assert.ok(!/href="\/tickets#m-2"/.test(html), 'no tickets for an away game');
+  assert.match(html, /"@type":"SportsEvent"/);
+  const home = await (await fetch(`${base}/`)).text();
+  assert.match(home, /class="next-match"/);
+  const tickets = await (await fetch(`${base}/tickets`)).text();
+  assert.match(tickets, /id="m-1"/);
+  assert.ok(!/id="m-2"/.test(tickets), 'only home matches on the tickets page');
+  assert.match(tickets, /\/js\/tickets\.js/);
+});
+
+test('news shows every saved X post, links made safe', async () => {
+  const html = await (await fetch(`${base}/news`)).text();
+  assert.ok(xPosts.length >= 15);
+  assert.strictEqual((html.match(/class="x-post/g) || []).length, xPosts.length);
+  assert.match(html, /<a href="http:\/\/pontardawerfc\.co\.uk" rel="noopener nofollow">pontardawerfc\.co\.uk<\/a>/);
+  assert.match(html, /Pontardawe RFC 24 - 0 Cefn Cribbwr/);
+});
+
+test('the club email is the new address on every page', async () => {
+  const html = await (await fetch(`${base}/contact`)).text();
+  assert.match(html, /info@pontardawerfc\.com/);
+  assert.ok(!/hotmail/.test(html));
 });

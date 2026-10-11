@@ -16,6 +16,10 @@ const read = (name) => JSON.parse(fs.readFileSync(path.join(ROOT, name), 'utf8')
 const club = read('club.json');
 const news = read('news.json').sort((a, b) => String(b.date).localeCompare(String(a.date)));
 const images = read('images.json');
+// The club's posts on X, as saved from x.com/PontardaweRFC (content/source/x-posts.json).
+const xPosts = read('source/x-posts.json').posts
+  .filter((p) => p && p.text && !/^@\w+$/.test(p.text.trim()))
+  .sort((a, b) => String(b.date).localeCompare(String(a.date)));
 
 /** "10 October 2026" from 2026-10-10. */
 function longDate(iso) {
@@ -25,4 +29,4 @@ function longDate(iso) {
 
 const yearsOld = (now = new Date()) => now.getFullYear() - club.founded;
 
-module.exports = { club, news, images, longDate, yearsOld };
+module.exports = { club, news, images, xPosts, longDate, yearsOld };

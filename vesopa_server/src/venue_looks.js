@@ -12,7 +12,7 @@
  *
  * Keep these the same as the venue's venue.json "colours". `font` is a
  * built-in family from public/assets/fonts, used when the venue has not
- * chosen fonts of its own in the back office; `website` and `phone` fill the
+ * chosen fonts of its own in the back office; `website`, `phone` and `email` fill the
  * app's links the same way.
  *
  * A venue not listed here looks exactly as it always did.
@@ -24,7 +24,7 @@ const LOOKS = {
     club: '#8F0000', deep: '#3F0000', glow: '#C41414', font: 'montserrat',
     // The club's own website, which shares these colours and this typeface.
     // Filled in only where the back office has no link of its own.
-    website: 'https://pontardawerfc.com', phone: '01792 864811',
+    website: 'https://pontardawerfc.com', phone: '01792 864811', email: 'info@pontardawerfc.com',
   },
 };
 
