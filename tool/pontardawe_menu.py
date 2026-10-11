@@ -5,10 +5,12 @@
     python tool/pontardawe_menu.py --apply    publish the menu, ordering on, collection on
 
 Run from the repository root on the owner's PC (cloud sessions cannot SSH).
---apply only changes Pontardawe's own dinein_venue row: the address
-pontardawe-rfc, the club's name, phone and address, the club red, and the
-switches is_published, ordering_open and collection_open. It does not touch
-the menu's sections or dishes, prices or any other venue.
+--apply changes only Pontardawe's own menu: if it has no sections yet, it
+makes them from the till's food, hot drink and soft drink screens (SECTIONS
+below; the manager can edit them after in Dine-in), then sets its dinein_venue
+row: the address pontardawe-rfc, the club's name, phone and address, the club
+red, and is_published, ordering_open and collection_open. Prices stay the
+till's. No other venue is touched.
 """
 import sys
 import pathlib
@@ -58,6 +60,39 @@ ON DUPLICATE KEY UPDATE slug = '{SLUG}',
 """
 
 
+# The online menu, made from the till's own food screens the first time only
+# (when the venue has no sections yet). Alcohol is left off: the website takes
+# food, hot and soft drinks; drinks from the bar are ordered at the bar.
+SECTIONS = [
+    ("Breakfast", ["BREAKFAST", "Eggs Benedict", "Pancakes"]),
+    ("Lunch", ["LUNCH", "Jacket Potato", "Wraps", "Loaded Fries", "Basket Meals"]),
+    ("Carvery", ["CARVERY"]),
+    ("Kids", ["KIDS", "Kids Breakfast", "Kids Pancakes"]),
+    ("Desserts", ["DESSERTS"]),
+    ("Snacks", ["SNACKS"]),
+    ("Hot drinks", ["HOT DRINKS"]),
+    ("Soft drinks", ["SOFT DRINKS"]),
+]
+
+
+def menu_sql():
+    out = [FIND, "SET @fresh = ((SELECT COUNT(*) FROM dinein_sections WHERE office_id = @office) = 0);"]
+    for n, (name, screens) in enumerate(SECTIONS, 1):
+        names = ", ".join(f"'{x}'" for x in screens)
+        out.append(f"""
+INSERT INTO dinein_sections (office_id, name, sort_order) SELECT @office, '{name}', {n} FROM DUAL WHERE @fresh;
+SET @s = IF(@fresh, LAST_INSERT_ID(), NULL);
+INSERT INTO dinein_items (section_id, office_id, plu_id, name, sort_order)
+SELECT @s, @office, p.pluid, MIN(p.product_name), MIN(sc.id * 1000 + b.grid_row * 20 + b.grid_col)
+  FROM epos_screens sc
+  JOIN epos_screen_buttons b ON b.screen_id = sc.id AND b.kind = 'product'
+  JOIN bo_products p ON p.pluid = b.plu_id AND p.email = @email
+ WHERE @fresh AND sc.office = @email AND sc.name IN ({names})
+   AND p.price > 0 AND COALESCE(p.is_modifier, 0) = 0 AND COALESCE(p.active, 1) = 1
+ GROUP BY p.pluid;""")
+    return "\n".join(out)
+
+
 def run(sql):
     sql = " ".join(line.strip() for line in sql.strip().splitlines())
     dm.ssh("run", f'{DB} -e "{sql}" 2>&1 | grep -v Deprecated')
@@ -69,6 +104,8 @@ if __name__ == "__main__":
         run(TILL)
         raise SystemExit
     if "--apply" in sys.argv:
+        print("▶ making the online menu from the till's food screens (first time only)")
+        run(menu_sql())
         print("▶ publishing Pontardawe RFC's menu")
         run(APPLY)
     print("▶ Pontardawe RFC's menu settings")
