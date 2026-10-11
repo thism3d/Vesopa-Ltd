@@ -35,7 +35,14 @@ function Run($what, [scriptblock]$cmd) {
 $candidates = @($env:ANDROID_HOME, $env:ANDROID_SDK_ROOT,
     [Environment]::GetEnvironmentVariable('ANDROID_HOME', 'User'),
     (Join-Path $env:LOCALAPPDATA 'Android\Sdk'),
-    'C:\Users\azureuser\AppData\Local\Android\Sdk') | Where-Object { $_ } | Select-Object -Unique
+    'C:\Users\azureuser\AppData\Local\Android\Sdk') + @(
+    # The SDK on this PC was installed from inside the Claude desktop app,
+    # which is a packaged (MSIX) app: Windows quietly moved its AppData\Local
+    # writes into the app's own LocalCache. Seen from Claude it is at
+    # AppData\Local\Android\Sdk; from any other window, only here.
+    Get-ChildItem 'C:\Users\azureuser\AppData\Local\Packages' -Directory -Filter 'Claude_*' -ErrorAction SilentlyContinue |
+        ForEach-Object { Join-Path $_.FullName 'LocalCache\Local\Android\Sdk' }) |
+    Where-Object { $_ } | Select-Object -Unique
 $sdk = $candidates | Where-Object {
     (Test-Path (Join-Path $_ 'platform-tools')) -or (Test-Path (Join-Path $_ 'platforms')) -or (Test-Path (Join-Path $_ 'build-tools'))
 } | Select-Object -First 1
