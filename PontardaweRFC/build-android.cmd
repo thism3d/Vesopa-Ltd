@@ -24,6 +24,15 @@ if not defined JAVA_HOME for /d %%J in ("C:\Program Files\Eclipse Adoptium\jdk-1
 echo Android SDK: %ANDROID_HOME%
 echo Java: %JAVA_HOME%
 
+rem Gradle daemons left from earlier runs (or VS Code's Java extension) keep
+rem Flutter's Gradle plugin build folder open, and the build then stops with
+rem "Unable to delete directory ...\flutter\packages\flutter_tools\gradle\build".
+rem Stop them and clear that folder; Flutter rebuilds it.
+powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='java.exe'\" | Where-Object { $_.CommandLine -match 'Gradle' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
+set "FLUTTER_ROOT_DIR="
+for /f "delims=" %%F in ('where flutter.bat 2^>nul') do if not defined FLUTTER_ROOT_DIR set "FLUTTER_ROOT_DIR=%%~dpF.."
+if defined FLUTTER_ROOT_DIR if exist "%FLUTTER_ROOT_DIR%\packages\flutter_tools\gradle\build" rmdir /s /q "%FLUTTER_ROOT_DIR%\packages\flutter_tools\gradle\build"
+
 rem Java needs a short temp folder for its sockets on this PC.
 if not exist C:\gtmp mkdir C:\gtmp
 set "JAVA_TOOL_OPTIONS=-Djdk.net.unixdomain.tmpdir=C:\gtmp"
