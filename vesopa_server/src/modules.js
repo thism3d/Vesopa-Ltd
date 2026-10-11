@@ -61,6 +61,12 @@ const MODULES = [
     summary: 'Members register cars and number-plate cameras open the barrier.',
     price: 3900,
   },
+  {
+    key: 'events',
+    label: 'Events & tickets',
+    summary: 'Matches and events with tickets sold on your website, QR tickets by email and scanning at the gate.',
+    price: 1900,
+  },
 ];
 
 const KEYS = new Set(MODULES.map((m) => m.key));

@@ -59,10 +59,13 @@ CREATE TABLE IF NOT EXISTS bo_module_prices (
 --   * Vehicle access £39: ANPR permit software is sold at about £500 a site a
 --     year (G-Cloud 15 listings for SNAP, Vaxtor and Hikvision), so about £42 a
 --     month; a little under that for one site.
+--   * Events & tickets £19 (added 2026-10-11): a starting figure for admin to
+--     change, below Memberships; online card fees are the venue's own Dojo's.
 INSERT IGNORE INTO bo_module_prices (module, price_minor) VALUES
   ('memberships', 2900),
   ('gym_door', 1500),
-  ('vehicle_access', 3900);
+  ('vehicle_access', 3900),
+  ('events', 1900);
 
 -- Promo codes. A code takes a percentage or a fixed amount off a module's
 -- monthly price (or every module's, when `module` is NULL), for a number of

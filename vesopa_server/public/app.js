@@ -192,6 +192,7 @@ function connectSocket() {
     const msg = JSON.parse(e.data);
     if (msg.type === 'order.created') onNewSale(msg);
     if (msg.type === 'memberships' && currentView === 'memberships') loadMemberships().catch(() => {});
+    if (msg.type === 'events' && currentView === 'events') evRefresh().catch(() => {});
     if (msg.type === 'card-transactions' && currentView === 'card_payments') loadCardLog().catch(() => {});
     if (msg.type === 'modules') applyModules().then(() => { if (currentView === 'modules') render(); });
     // The screen editor names its keys from the catalogue, so a product renamed
@@ -359,6 +360,7 @@ const ROUTES = {
   activity_log: '/activity-log',
   gym: '/gym',
   memberships: '/memberships',
+  events: '/events',
   modules: '/modules',
   // Added when the reachability check above found it missing. Price Levels has
   // had a nav button, a section and a loader since 1.6.9.0 and no URL, so the
@@ -1396,6 +1398,7 @@ const VIEW_LOADERS = {
     cards: loadCards,
     gym: loadGym,
     memberships: loadMemberships,
+    events: loadEvents,
     modules: loadModules,
     admin_modules: loadAdminModules,
     wallet: loadWallet,
@@ -12045,7 +12048,7 @@ const deviceKindLabel = (kind) => ({
  * switch it back on, and it says so. Admin sees everything.
  */
 let venueModules = [];
-const MODULE_VIEWS = { gym: 'gym_door', memberships: 'memberships' };
+const MODULE_VIEWS = { gym: 'gym_door', memberships: 'memberships', events: 'events' };
 
 async function applyModules() {
   try {
@@ -12606,6 +12609,340 @@ document.addEventListener('change', (e) => {
   const id = e.target?.id;
   if (id === 'ms-state' || id === 'ms-plan') msLoadMembers().catch((err) => toast(err.message, 'error'));
   if (id === 'ms-class-from') msLoadClasses().catch((err) => toast(err.message, 'error'));
+});
+
+// ---- Events & tickets -----------------------------------------------------
+//
+// The Events & tickets module (src/events.js): matches and events, their
+// ticket types, what has been sold, and the gate. Hidden from the menu for a
+// venue that has not been given the module; see MODULE_VIEWS.
+
+let evTab = 'upcoming';
+let evEvents = [];
+let evOpenId = null;
+
+const evWhen = (t) => (t
+  ? new Date(`${t}:00`).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  : '—');
+const evTime = (t) => (t ? String(t).slice(11, 16) : '');
+const evPounds = (minor) => (minor == null || minor === '' ? '' : (Number(minor) / 100).toFixed(2));
+const evPence = (pounds) => Math.round(Number(String(pounds ?? '').replace(/[£,\s]/g, '') || 0) * 100);
+const evBadges = (e) => [
+  e.kind === 'match' ? '<span class="ms-badge blue">Match</span>' : '',
+  e.published ? '' : '<span class="ms-badge grey">Not published</span>',
+  e.published && e.on_sale ? '<span class="ms-badge green">On sale</span>' : '',
+  e.published && !e.on_sale ? '<span class="ms-badge amber">Not on sale</span>' : '',
+].join(' ');
+
+async function loadEvents() {
+  try {
+    evEvents = await api(`/events?when=${evTab}`);
+  } catch (e) {
+    $('ev-stats').innerHTML = '';
+    $('ev-list').innerHTML = `<p class="muted small">${esc(e.message || 'Events & tickets are not switched on for this venue.')} `
+      + 'Switch Events &amp; tickets on under <b>Programming &gt; Modules</b>.</p>';
+    return;
+  }
+  document.querySelectorAll('[data-evtab]').forEach((t) => t.classList.toggle('on', t.dataset.evtab === evTab));
+  if (evTab === 'upcoming') {
+    statCards($('ev-stats'), [
+      { label: 'Upcoming events', value: String(evEvents.length) },
+      { label: 'On sale', value: String(evEvents.filter((e) => e.published && e.on_sale).length), tone: 'green' },
+      { label: 'Tickets sold', value: String(evEvents.reduce((n, e) => n + e.sold, 0)) },
+      { label: 'Taken', value: money(evEvents.reduce((n, e) => n + e.revenue_minor, 0)) },
+    ]);
+  }
+  $('ev-list').innerHTML = evEvents.length ? `
+    <table class="table">
+      <thead><tr><th>When</th><th>Event</th><th class="right">Sold</th><th class="right">In</th><th class="right">Taken</th><th></th></tr></thead>
+      <tbody>${evEvents.map((e) => `
+        <tr>
+          <td>${esc(evWhen(e.starts_at))}</td>
+          <td><b>${esc(e.title)}</b> ${evBadges(e)}
+            <div class="muted small">${esc(e.ticket_types.map((t) => `${t.name} ${money(t.price_minor)}${t.remaining != null ? ` (${t.remaining} left)` : ''}`).join(' · ') || 'No tickets yet')}</div></td>
+          <td class="right">${e.sold}</td>
+          <td class="right">${e.checked_in}</td>
+          <td class="right">${money(e.revenue_minor)}</td>
+          <td><button class="btn small" data-ev-open="${e.id}">Open</button></td>
+        </tr>`).join('')}</tbody>
+    </table>`
+    : `<p class="muted small">${evTab === 'past' ? 'No past events.' : 'Nothing coming up. <b>New event</b> adds one; <b>Import home matches from the WRU</b> brings in the fixture list.'}</p>`;
+}
+
+/** After a change somewhere else (a till at the gate): the list, and the event open here. */
+async function evRefresh() {
+  await loadEvents();
+  if (evOpenId && document.querySelector(`[data-ev-modal="${evOpenId}"]`)) await evOpen(evOpenId);
+}
+
+function evEventFields(e = {}) {
+  return [
+    { label: 'Title', name: 'title', value: e.title || '', required: true },
+    { label: 'Kind', name: 'kind', type: 'select', value: e.kind || 'event',
+      options: [{ value: 'event', label: 'Event' }, { value: 'match', label: 'Match' }] },
+    { label: 'Starts', name: 'starts_at', type: 'datetime-local', value: e.starts_at || '', required: true },
+    { label: 'Finishes (optional)', name: 'ends_at', type: 'datetime-local', value: e.ends_at || '' },
+    { label: 'Where', name: 'location', value: e.location || '' },
+    { label: 'Description', name: 'description', value: e.description || '' },
+    { label: 'Picture address (optional)', name: 'image_url', type: 'url', value: e.image_url || '',
+      hint: 'An https:// link to a picture, shown on your website.' },
+    { label: 'Published', name: 'published', type: 'checkbox', value: e.published ? 1 : 0,
+      hint: 'Shown on your website.' },
+    { label: 'On sale', name: 'on_sale', type: 'checkbox', value: e.on_sale ? 1 : 0,
+      hint: 'Tickets can be bought online. Published as well, or nobody sees it.' },
+  ];
+}
+
+const evEventBody = (d) => ({
+  title: d.title, kind: d.kind, starts_at: d.starts_at, ends_at: d.ends_at || null,
+  location: d.location, description: d.description, image_url: d.image_url,
+  published: ticked(d.published), on_sale: ticked(d.on_sale),
+});
+
+/** Opens the event again once the form that changed it has closed. */
+const evReopen = (id) => {
+  evOpenId = id;
+  setTimeout(() => evOpen(id).then(loadEvents).catch((err) => toast(err.message, 'error')), 0);
+};
+
+function evEdit(e = null) {
+  modal(e ? `Edit ${e.title}` : 'New event', [
+    ...evEventFields(e || {}),
+    ...(e ? [] : [{ label: 'First ticket (optional)', name: 't_name', value: 'Adult', hint: 'More ticket types can be added once it is saved.' },
+      { label: 'Its price (£)', name: 't_price', type: 'money', value: '' },
+      { label: 'How many can be sold (blank for no limit)', name: 't_capacity', type: 'number', value: '' }]),
+  ], async (d) => {
+    const body = evEventBody(d);
+    if (e) {
+      await api(`/events/${e.id}`, { method: 'PUT', body: JSON.stringify(body) });
+      toast('Saved.');
+      return evReopen(e.id);
+    }
+    if (String(d.t_name || '').trim()) {
+      body.ticket_types = [{ name: d.t_name, price_minor: evPence(d.t_price), capacity: d.t_capacity === '' ? null : d.t_capacity }];
+    }
+    const made = await api('/events', { method: 'POST', body: JSON.stringify(body) });
+    toast('Event added.');
+    return evReopen(made.id);
+  });
+}
+
+function evEditType(eventId, t = null) {
+  modal(t ? `Edit ${t.name}` : 'Add a ticket type', [
+    { label: 'Name', name: 'name', value: t ? t.name : '', required: true, hint: 'Adult, Junior, Member, Concession...' },
+    { label: 'Price (£)', name: 'price', type: 'money', value: t ? evPounds(t.price_minor) : '' },
+    { label: 'How many can be sold', name: 'capacity', type: 'number', value: t && t.capacity != null ? t.capacity : '',
+      hint: 'Blank for no limit.' },
+    { label: 'Most in one order', name: 'max_per_order', type: 'number', value: t ? t.max_per_order : 10 },
+    { label: 'Order on the page', name: 'sort', type: 'number', value: t ? t.sort : 0 },
+  ], async (d) => {
+    const body = { name: d.name, price_minor: evPence(d.price), capacity: d.capacity === '' ? null : d.capacity,
+      max_per_order: d.max_per_order, sort: d.sort };
+    await api(t ? `/events/ticket-types/${t.id}` : `/events/${eventId}/ticket-types`,
+      { method: t ? 'PUT' : 'POST', body: JSON.stringify(body) });
+    toast(t ? 'Ticket saved.' : 'Ticket added.');
+    evReopen(eventId);
+  });
+}
+
+function evIssue(e) {
+  if (!e.ticket_types.length) {
+    toast('Add a ticket type first.', 'error');
+    return;
+  }
+  modal(`Issue tickets for ${e.title}`, [
+    { label: 'Name', name: 'name', required: true },
+    { label: 'Email (optional)', name: 'email', type: 'email', hint: 'The tickets are emailed here, with their QR codes.' },
+    { label: 'Phone (optional)', name: 'phone' },
+    ...e.ticket_types.map((t) => ({ label: `${t.name} (${money(t.price_minor)})`, name: `qty_${t.id}`, type: 'number', value: 0 })),
+    { label: 'Paid at the bar (£)', name: 'paid', type: 'money', value: '',
+      hint: 'Leave empty for complimentary tickets.' },
+    { label: 'Email the tickets', name: 'send_email', type: 'checkbox', value: 1 },
+  ], async (d) => {
+    const items = e.ticket_types.map((t) => ({ ticket_type_id: t.id, qty: Number(d[`qty_${t.id}`]) || 0 })).filter((i) => i.qty > 0);
+    if (!items.length) throw new Error('How many tickets?');
+    const r = await api(`/events/${e.id}/issue`, { method: 'POST', body: JSON.stringify({
+      name: d.name, email: d.email, phone: d.phone, items,
+      amount_minor: String(d.paid || '').trim() ? evPence(d.paid) : 0, send_email: ticked(d.send_email),
+    }) });
+    toast(`${r.tickets.length} ticket${r.tickets.length === 1 ? '' : 's'} issued.`);
+    evReopen(e.id);
+  });
+}
+
+const EV_STATUS = {
+  paid: ['Paid', 'green'], pending: ['Not paid yet', 'amber'], failed: ['Not paid', 'grey'], refunded: ['Refunded', 'red'],
+};
+
+async function evOpen(id) {
+  evOpenId = Number(id);
+  const { event: e, orders, totals } = await api(`/events/${id}/orders`);
+  const root = $('modal-root');
+  root.innerHTML = `
+    <div class="modal-back">
+      <div class="modal ms-member ev-modal" data-ev-modal="${e.id}">
+        <h3>${esc(e.title)} ${evBadges(e)}</h3>
+        <dl class="ms-facts">
+          <dt>When</dt><dd>${esc(evWhen(e.starts_at))}${e.ends_at ? ` to ${esc(evWhen(e.ends_at))}` : ''}</dd>
+          ${e.location ? `<dt>Where</dt><dd>${esc(e.location)}</dd>` : ''}
+          ${e.wru_fixture_id ? `<dt>WRU fixture</dt><dd>${esc(e.wru_fixture_id)}</dd>` : ''}
+          <dt>Sold</dt><dd>${totals.tickets} ticket${totals.tickets === 1 ? '' : 's'} in ${totals.orders} order${totals.orders === 1 ? '' : 's'} · ${money(totals.revenue_minor)} (${money(totals.online_minor)} online)</dd>
+          <dt>Through the gate</dt><dd>${totals.checked_in} of ${totals.tickets}</dd>
+        </dl>
+        <h4>Tickets</h4>
+        ${e.ticket_types.length ? `<table class="table"><thead><tr><th>Ticket</th><th class="right">Price</th><th class="right">Sold</th><th class="right">Left</th><th></th></tr></thead>
+          <tbody>${e.ticket_types.map((t) => `<tr>
+            <td>${esc(t.name)}<div class="muted small">Up to ${t.max_per_order} an order</div></td>
+            <td class="right">${money(t.price_minor)}</td>
+            <td class="right">${t.sold}</td>
+            <td class="right">${t.remaining == null ? 'No limit' : t.remaining}</td>
+            <td class="right"><button class="btn small" data-ev-type-edit="${t.id}">Edit</button>
+              <button class="btn small ghost" data-ev-type-del="${t.id}">Remove</button></td></tr>`).join('')}</tbody></table>`
+          : '<p class="muted small">No ticket types yet. Add one before putting it on sale.</p>'}
+        <p><button class="btn small" data-ev-type-add>Add a ticket type</button></p>
+        <h4>Sales</h4>
+        ${orders.length ? `<table class="table ev-orders"><thead><tr><th>Who</th><th>Tickets</th><th class="right">Paid</th><th></th></tr></thead>
+          <tbody>${orders.map((o) => {
+            const [label, tone] = EV_STATUS[o.status] || [o.status, 'grey'];
+            return `<tr class="${o.status === 'paid' ? '' : 'muted'}">
+              <td><b>${esc(o.name)}</b> <span class="ms-badge ${tone}">${esc(label)}</span>
+                <div class="muted small">${esc([o.email, o.phone].filter(Boolean).join(' · '))}</div>
+                <div class="muted small">${o.source === 'backoffice' ? `Issued by ${esc(o.issued_by || 'the back office')}` : 'Online'} · ${esc(evWhen(o.created_at))}</div></td>
+              <td>${o.tickets.length ? o.tickets.map((t) => `<div class="ev-ticket">
+                  <code>${esc(t.code)}</code> ${esc(t.type)}
+                  ${t.checked_in_at
+                    ? `<span class="ms-badge green">In ${esc(evTime(t.checked_in_at))}</span> <button class="btn small ghost" data-ev-undo="${esc(t.code)}">Undo</button>`
+                    : `<button class="btn small" data-ev-checkin="${esc(t.code)}">Check in</button>`}
+                </div>`).join('')
+                : `<span class="muted small">${esc(o.items.map((i) => `${i.qty} × ${i.name}`).join(', '))}</span>`}</td>
+              <td class="right">${money(o.total_minor)}</td>
+              <td class="right">${o.status === 'paid' ? `<button class="btn small ghost" data-ev-resend="${o.id}" data-ev-email="${esc(o.email || '')}">Email tickets</button>` : ''}</td>
+            </tr>`;
+          }).join('')}</tbody></table>` : '<p class="muted small">Nothing sold yet.</p>'}
+        <div class="modal-actions ms-member-actions">
+          <button type="button" class="btn" data-ev-edit>Edit event</button>
+          <button type="button" class="btn" data-ev-issue>Issue tickets</button>
+          <button type="button" class="btn danger" data-ev-delete>Delete</button>
+          <button type="button" class="btn ghost" id="ev-close">Close</button>
+        </div>
+      </div>
+    </div>`;
+  const box = root.querySelector('[data-ev-modal]');
+  const again = () => evOpen(e.id).then(loadEvents);
+  const run = (p) => Promise.resolve(p).catch((err) => toast(err.message, 'error'));
+  $('ev-close').onclick = () => { root.innerHTML = ''; evOpenId = null; };
+  box.querySelector('[data-ev-edit]').onclick = () => evEdit(e);
+  box.querySelector('[data-ev-issue]').onclick = () => evIssue(e);
+  box.querySelector('[data-ev-type-add]').onclick = () => evEditType(e.id);
+  box.querySelector('[data-ev-delete]').onclick = () => run((async () => {
+    if (!(await confirmDialog(`Delete ${e.title}? This cannot be undone.`, { title: 'Delete event', confirmLabel: 'Delete', danger: true }))) return;
+    await api(`/events/${e.id}`, { method: 'DELETE' });
+    root.innerHTML = '';
+    evOpenId = null;
+    toast('Deleted.');
+    await loadEvents();
+  })());
+  box.querySelectorAll('[data-ev-type-edit]').forEach((b) => {
+    b.onclick = () => evEditType(e.id, e.ticket_types.find((t) => t.id === Number(b.dataset.evTypeEdit)));
+  });
+  box.querySelectorAll('[data-ev-type-del]').forEach((b) => {
+    b.onclick = () => run((async () => {
+      if (!(await confirmDialog('Remove this ticket type from the event?', { title: 'Remove ticket', confirmLabel: 'Remove', danger: true }))) return;
+      await api(`/events/ticket-types/${b.dataset.evTypeDel}`, { method: 'DELETE' });
+      await again();
+    })());
+  });
+  box.querySelectorAll('[data-ev-checkin]').forEach((b) => {
+    b.onclick = () => run(api('/events/checkin', { method: 'POST', body: JSON.stringify({ code: b.dataset.evCheckin }) })
+      .then((r) => { toast(r.ok ? 'Checked in.' : r.message); return again(); }));
+  });
+  box.querySelectorAll('[data-ev-undo]').forEach((b) => {
+    b.onclick = () => run(api(`/events/tickets/${encodeURIComponent(b.dataset.evUndo)}/undo`, { method: 'POST', body: '{}' })
+      .then(() => { toast('Check-in undone.'); return again(); }));
+  });
+  box.querySelectorAll('[data-ev-resend]').forEach((b) => {
+    b.onclick = () => modal('Email the tickets', [
+      { label: 'Send them to', name: 'email', type: 'email', value: b.dataset.evEmail || '', required: true },
+    ], async (d) => {
+      await api(`/events/orders/${b.dataset.evResend}/resend`, { method: 'POST', body: JSON.stringify({ email: d.email }) });
+      toast(`Tickets sent to ${d.email}.`);
+      evReopen(e.id);
+    });
+  });
+}
+
+async function evSettings() {
+  const s = await api('/events/settings');
+  modal('Events & tickets settings', [
+    { label: 'Your WRU club number', name: 'wru_org_id', type: 'number', value: s.wru_org_id ?? '',
+      hint: 'The organisation id on wru.wales, for importing your home fixtures. Pontardawe RFC is 165.' },
+    { label: 'Your team, in match titles', name: 'home_name', value: s.home_name || '',
+      hint: 'Matches are called "<this> v <opponent>". Blank uses the club name from the WRU.' },
+    { label: 'Where home matches are', name: 'location', value: s.location || '' },
+    { label: 'Your websites', name: 'site_origins', value: (s.site_origins || []).join(', '),
+      hint: 'After paying, buyers are only ever sent back to these: https:// addresses, separated by commas.' },
+  ], async (d) => {
+    await api('/events/settings', { method: 'PUT', body: JSON.stringify(d) });
+    toast('Settings saved.');
+  });
+}
+
+async function evImport() {
+  const b = $('ev-import');
+  b.disabled = true;
+  try {
+    const r = await api('/events/import-wru', { method: 'POST', body: '{}' });
+    toast(r.created || r.updated
+      ? `${r.created} new match${r.created === 1 ? '' : 'es'}, ${r.updated} updated. New matches are published but not on sale until you say.`
+      : `All ${r.fixtures} upcoming home match${r.fixtures === 1 ? ' is' : 'es are'} already here.`);
+    await loadEvents();
+  } finally {
+    b.disabled = false;
+  }
+}
+
+/**
+ * The gate box. Not api(): a ticket that is not valid is a 404 with an answer
+ * to show, not an error to throw.
+ */
+async function evGate(e) {
+  e.preventDefault();
+  const input = $('ev-gate-code');
+  const out = $('ev-gate-result');
+  const code = input.value.trim();
+  if (!code) return;
+  const res = await fetch('/api/events/checkin', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify({ code }),
+  });
+  if (res.status === 401) { signOut(); return; }
+  const r = await res.json().catch(() => ({}));
+  const t = r.ticket;
+  out.className = `ev-gate-result ${r.ok ? 'ok' : 'bad'}`;
+  out.textContent = r.ok
+    ? `In: ${t.type} · ${t.holder || ''} · ${t.event_title} (${evWhen(t.starts_at)})`
+    : `${r.message || r.error || 'Not a valid ticket'}${t ? ` · ${t.type} · ${t.holder || ''} · ${t.event_title}` : ''}`;
+  input.value = '';
+  input.focus();
+  if (r.ok) loadEvents().catch(() => {});
+}
+
+document.addEventListener('click', (e) => {
+  const t = e.target.closest ? e.target : null;
+  if (!t) return;
+  const run = (p) => Promise.resolve(p).catch((err) => toast(err.message, 'error'));
+  const tab = t.closest('[data-evtab]');
+  if (tab) { evTab = tab.dataset.evtab; return run(loadEvents()); }
+  const open = t.closest('[data-ev-open]');
+  if (open) return run(evOpen(open.dataset.evOpen));
+  if (t.id === 'ev-add') return evEdit(null);
+  if (t.id === 'ev-import') return run(evImport());
+  if (t.id === 'ev-settings') return run(evSettings());
+});
+document.addEventListener('submit', (e) => {
+  if (e.target?.id !== 'ev-gate-form') return;
+  evGate(e).catch((err) => toast(err.message, 'error'));
 });
 
 // ---- Admin: partner keys --------------------------------------------------
