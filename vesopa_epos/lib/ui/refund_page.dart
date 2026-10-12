@@ -41,6 +41,7 @@ import 'package:intl/intl.dart';
 
 import '../data/commerce.dart' show CommerceException;
 import '../data/receipt_repository.dart';
+import '../data/refund_ledger.dart';
 import '../data/training_mode.dart';
 import 'receipts_page.dart' show receiptListProvider, receiptRepoProvider;
 import '../data/till_permissions.dart';
@@ -49,21 +50,29 @@ import 'permission_gate.dart';
 import 'widgets/basket_panel.dart' show money;
 import 'widgets/on_screen_keyboard.dart';
 import 'widgets/pos_message.dart';
+import 'widgets/receipt_status_badge.dart';
 import 'dojo_refund.dart';
 import 'void_dialog.dart';
 
-/// Start a refund. Opens on the receipt list.
-Future<void> showRefund(BuildContext context, WidgetRef ref) async {
+/// Start a refund. Opens on the receipt list, or straight on [receipt].
+Future<void> showRefund(
+  BuildContext context,
+  WidgetRef ref, {
+  ReceiptSummary? receipt,
+}) async {
   if (!await allowed(context, ref, TillPermission.refund)) return;
   if (!context.mounted) return;
 
   await Navigator.of(context).push(
-    MaterialPageRoute<void>(builder: (_) => const RefundPage()),
+    MaterialPageRoute<void>(builder: (_) => RefundPage(initial: receipt)),
   );
 }
 
 class RefundPage extends ConsumerStatefulWidget {
-  const RefundPage({super.key});
+  const RefundPage({super.key, this.initial});
+
+  /// Open on this receipt rather than the list (from Receipts › Refund).
+  final ReceiptSummary? initial;
 
   @override
   ConsumerState<RefundPage> createState() => _RefundPageState();
@@ -82,6 +91,22 @@ class _RefundPageState extends ConsumerState<RefundPage> {
   /// ReceiptLine.isModifier.
   final Set<int> _picked = {};
 
+  @override
+  void initState() {
+    super.initState();
+    final first = widget.initial;
+    if (first != null) Future.microtask(() => _open(first));
+  }
+
+  /// Lines already given back, on any till. Not offered again.
+  Set<int> get _refundedLines => _detail?.refundedLineNos ?? const {};
+
+  /// What can still go back on this receipt.
+  int get _remainingMinor => _detail?.summary.refundableMinor ?? 0;
+
+  bool get _fullyRefunded =>
+      _detail != null && _detail!.summary.status == ReceiptStatus.refunded;
+
   Future<void> _open(ReceiptSummary summary) async {
     setState(() {
       _chosen = summary;
@@ -90,8 +115,10 @@ class _RefundPageState extends ConsumerState<RefundPage> {
       _loading = true;
     });
     try {
-      final detail =
-          await ref.read(receiptRepoProvider).detail(summary.id);
+      // The server's refunds plus this till's not yet sent, so a refund
+      // given a moment ago is already counted.
+      final detail = (await ref.read(receiptRepoProvider).detail(summary.id))
+          .withLocal(await RefundLedger.instance.forOrder(summary.id));
       if (mounted) setState(() => _detail = detail);
     } catch (e) {
       if (mounted) {
@@ -182,7 +209,14 @@ class _RefundPageState extends ConsumerState<RefundPage> {
                       if (r.customerName?.isNotEmpty ?? false) r.customerName!,
                     ].join('  ·  '),
                   ),
-                  trailing: const Icon(Icons.chevron_right),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ReceiptStatusBadge(receipt: r, compact: true),
+                      const SizedBox(width: 6),
+                      const Icon(Icons.chevron_right),
+                    ],
+                  ),
                   onTap: () => _open(r),
                 );
               },
@@ -238,21 +272,28 @@ class _RefundPageState extends ConsumerState<RefundPage> {
                   ),
                 ),
                 TextButton(
-                  onPressed: () => setState(() {
-                    // Everything, or nothing. Refunding a whole bill is the
-                    // common case and eighteen taps is not the way to say so.
-                    if (_picked.length == detail.lines.length) {
-                      _picked.clear();
-                    } else {
-                      _picked
-                        ..clear()
-                        ..addAll(
-                          List.generate(detail.lines.length, (i) => i),
-                        );
-                    }
-                  }),
+                  onPressed: _fullyRefunded
+                      ? null
+                      : () => setState(() {
+                          // Everything still to give back, or nothing.
+                          // Refunding a whole bill is the common case and
+                          // eighteen taps is not the way to say so.
+                          final open = [
+                            for (var i = 0; i < detail.lines.length; i++)
+                              if (!_refundedLines.contains(i)) i,
+                          ];
+                          if (_picked.length == open.length) {
+                            _picked.clear();
+                          } else {
+                            _picked
+                              ..clear()
+                              ..addAll(open);
+                          }
+                        }),
                   child: Text(
-                    _picked.length == detail.lines.length
+                    _picked.isNotEmpty &&
+                            _picked.length ==
+                                detail.lines.length - _refundedLines.length
                         ? 'Clear'
                         : 'Everything',
                   ),
@@ -261,14 +302,17 @@ class _RefundPageState extends ConsumerState<RefundPage> {
             ),
           ),
         ),
+        if (detail.refunds.isNotEmpty || _fullyRefunded)
+          _AlreadyRefunded(detail: detail),
         Expanded(
           child: ListView.builder(
             itemCount: detail.lines.length,
             itemBuilder: (context, i) {
               final line = detail.lines[i];
+              final done = _refundedLines.contains(i) || _fullyRefunded;
               return CheckboxListTile(
-                value: _picked.contains(i),
-                onChanged: (on) => setState(() {
+                value: done || _picked.contains(i),
+                onChanged: done ? null : (on) => setState(() {
                   if (on ?? false) {
                     _picked.add(i);
                     // A modifier goes back with the item above it, always.
@@ -293,10 +337,20 @@ class _RefundPageState extends ConsumerState<RefundPage> {
                       ? line.name
                       : '${_qty(line.quantity)} × ${line.name}',
                 ),
-                subtitle: Text(money(line.lineTotalMinor)),
+                subtitle: Text(
+                  done
+                      ? '${money(line.lineTotalMinor)}  ·  Already refunded'
+                      : money(line.lineTotalMinor),
+                  style: done
+                      ? const TextStyle(
+                          color: Color(0xFFA3221A),
+                          fontWeight: FontWeight.w600,
+                        )
+                      : null,
+                ),
                 // A modifier is ticked and unticked with its item, never on its
                 // own — the same rule that governs splitting a bill.
-                enabled: !line.isModifier,
+                enabled: !line.isModifier && !done,
                 // A modifier goes back with the item it belongs to, so it is
                 // indented and not offered as a choice of its own — the same
                 // rule that governs splitting a bill.
@@ -325,7 +379,11 @@ class _RefundPageState extends ConsumerState<RefundPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Refunding',
+                      _fullyRefunded
+                          ? 'Nothing left to refund'
+                          : _remainingMinor < (_detail?.summary.totalMinor ?? 0)
+                          ? 'Refunding  ·  ${money(_remainingMinor)} left'
+                          : 'Refunding',
                       style: TextStyle(color: scheme.onSurfaceVariant),
                     ),
                     Text(
@@ -339,7 +397,9 @@ class _RefundPageState extends ConsumerState<RefundPage> {
                 ),
               ),
               FilledButton.icon(
-                onPressed: _refundMinor > 0 ? _confirmFromReceipt : null,
+                onPressed: _refundMinor > 0 && !_fullyRefunded
+                    ? _confirmFromReceipt
+                    : null,
                 icon: const Icon(Icons.undo),
                 label: const Text('Give it back'),
               ),
@@ -364,6 +424,21 @@ class _RefundPageState extends ConsumerState<RefundPage> {
   Future<void> _confirmFromReceipt() async {
     final detail = _detail;
     if (detail == null || _refundMinor <= 0) return;
+
+    // The guard: never more than is left on the receipt, whichever till gave
+    // the earlier refunds. Lines already refunded cannot be ticked; this
+    // catches the bill refunded by amount before lines were recorded.
+    if (_fullyRefunded || _refundMinor > _remainingMinor) {
+      PosMessenger.error(
+        context,
+        _remainingMinor <= 0
+            ? 'This receipt has already been refunded in full.'
+            : 'Only ${money(_remainingMinor)} is left to refund on this '
+                  'receipt. ${money(detail.summary.refundedMinor)} has already '
+                  'gone back.',
+      );
+      return;
+    }
 
     final names = [
       for (var i = 0; i < detail.lines.length; i++)
@@ -463,6 +538,8 @@ class _RefundPageState extends ConsumerState<RefundPage> {
           ref,
           intentId: t.reference!,
           capMinor: t.amountMinor < left ? t.amountMinor : left,
+          paidMinor: t.amountMinor,
+          alreadyRefundedMinor: detail.cardRefundedMinor[t.reference] ?? 0,
           orderId: detail.summary.id,
           reason: why,
         );
@@ -494,6 +571,9 @@ class _RefundPageState extends ConsumerState<RefundPage> {
         ?onDojo,
         ?why,
       ].join(' · '),
+      reason: why,
+      orderId: detail.summary.id,
+      lineNos: (_picked.toList()..sort()),
       done: [?onCard, ?onDojo].isEmpty ? null : [?onCard, ?onDojo].join(', '),
     );
   }
@@ -548,15 +628,38 @@ class _RefundPageState extends ConsumerState<RefundPage> {
   Future<void> _record({
     required int amountMinor,
     required String note,
+    String? reason,
+    String? orderId,
+    List<int> lineNos = const [],
     String? done,
   }) async {
     final session = await ref.read(sessionRepositoryProvider).current();
-    await ref.read(orderRepositoryProvider).logRefund(
+    final staff = ref.read(servedByProvider);
+    final id = await ref.read(orderRepositoryProvider).logRefund(
           sessionId: session.id,
           amountMinor: amountMinor,
           note: note,
-          staffName: ref.read(servedByProvider),
+          reason: reason,
+          staffName: staff,
+          orderId: orderId,
+          lineNos: lineNos,
         );
+    // Held on this till until the server has it, so the receipt reads as
+    // refunded straight away, on this screen and in the receipt list.
+    if (id != null && orderId != null) {
+      await RefundLedger.instance.add(
+        orderId,
+        ReceiptRefund(
+          id: id,
+          amountMinor: amountMinor,
+          at: DateTime.now(),
+          staffName: staff,
+          reason: reason,
+          lineNos: lineNos,
+        ),
+      );
+    }
+    ref.invalidate(receiptListProvider);
     if (!mounted) return;
     PosMessenger.success(
       context,
@@ -564,6 +667,57 @@ class _RefundPageState extends ConsumerState<RefundPage> {
       'It is on the Z report.',
     );
     Navigator.of(context).pop();
+  }
+}
+
+/// What has already gone back on this receipt, above its lines.
+class _AlreadyRefunded extends StatelessWidget {
+  const _AlreadyRefunded({required this.detail});
+
+  final ReceiptDetail detail;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = detail.summary;
+    final look = ReceiptStatusBadge.look(s.status);
+    final when = DateFormat('d MMM HH:mm');
+    return Container(
+      width: double.infinity,
+      color: look.bg,
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(look.icon, color: look.fg, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  s.status == ReceiptStatus.refunded
+                      ? 'Refunded in full. This receipt cannot be refunded again.'
+                      : '${money(s.refundedMinor)} already refunded. '
+                            '${money(s.refundableMinor)} can still go back.',
+                  style: TextStyle(color: look.fg, fontWeight: FontWeight.w700),
+                ),
+              ),
+            ],
+          ),
+          for (final r in detail.refunds)
+            Padding(
+              padding: const EdgeInsets.only(left: 28, top: 3),
+              child: Text(
+                [
+                  '${money(r.amountMinor)} on ${when.format(r.at)}',
+                  if (r.staffName?.isNotEmpty ?? false) r.staffName!,
+                  if (r.reason?.isNotEmpty ?? false) r.reason!,
+                ].join('  ·  '),
+                style: TextStyle(color: look.fg, fontSize: 12),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }
 

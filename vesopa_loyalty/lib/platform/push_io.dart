@@ -56,7 +56,12 @@ Future<PushChannel?> pushSubscribe(Brand brand) async {
 /// honest state of an app whose venue has no Firebase project yet.
 Future<PushChannel?> _phoneToken() async {
   try {
-    final result = await _mobile.invokeMapMethod<String, dynamic>('token');
+    // iOS answers through a delegate, and a phone that cannot reach Apple
+    // (no network, a simulator) never answers at all: a start that waited on
+    // it would never get on to the customer's nearby offers.
+    final result = await _mobile
+        .invokeMapMethod<String, dynamic>('token')
+        .timeout(const Duration(seconds: 20));
     final kind = result?['kind'] as String?;
     final token = (result?['token'] as String?)?.trim();
     if (kind == null || token == null || token.isEmpty) return null;
@@ -73,6 +78,30 @@ Future<PushChannel?> _phoneToken() async {
   }
 }
 
+/// Ask the customer whether this app may send notifications, and nothing
+/// more: the welcome (ui/onboarding.dart) asks before anybody has signed in,
+/// when there is no account to hand a token to yet.
+///
+/// True when they said yes (or already had). The token itself is fetched and
+/// handed to the server as always, by [pushCurrent] on the first start after
+/// signing in -- the welcome records the yes as the customer's choice
+/// (Choices.setNotifications) so that start knows to.
+///
+/// The question is the platform's own: iOS's alert, Android 13's
+/// POST_NOTIFICATIONS. Older Android asks nobody and answers whether the
+/// app's notifications are switched on. Windows has nothing to ask.
+Future<bool> pushAskPermission() async {
+  if (!_isPhone) return true;
+  try {
+    return await _mobile.invokeMethod<bool>('permission') ?? false;
+  } on MissingPluginException {
+    // A native half from before `permission`: asking for the token asks.
+    return await _phoneToken() != null;
+  } catch (_) {
+    return false;
+  }
+}
+
 /// A WNS channel lasts thirty days and a phone token can be replaced by the
 /// platform at any time, so both are asked for again on every start.
 Future<PushChannel?> pushCurrent(Brand brand) => pushSubscribe(brand);
@@ -86,11 +115,12 @@ Future<String?> pushUnsubscribe() async {
 
 /// A tapped notification.
 ///
-/// Windows opens the app itself on a tapped toast. An iPhone tells the app
-/// (ios/Runner/AppDelegate.swift): `open` while it is running, or kept for
-/// `opened` when the tap is what started it. The address is `/inbox/<id>`.
+/// Windows opens the app itself on a tapped toast. A phone tells the app
+/// (ios/Runner/AppDelegate.swift, android/.../MainActivity.kt): `open` while
+/// it is running, or kept for `opened` when the tap is what started it. The
+/// address is `/inbox/<id>`.
 void onOpenRequest(void Function(String hash) handler) {
-  if (!Platform.isIOS) return;
+  if (!Platform.isIOS && !Platform.isAndroid) return;
   _mobile.setMethodCallHandler((call) async {
     if (call.method == 'open') handler('${call.arguments}');
   });

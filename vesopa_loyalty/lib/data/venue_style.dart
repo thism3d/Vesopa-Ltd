@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
@@ -37,6 +38,11 @@ class VenueStyle {
   /// A venue build with a look of its own, or a venue's page that has one.
   static final bool enabled = kIsWeb ? _page != null : _bgDefine != '';
 
+  /// A venue's own phone or desktop build, which carries the venue's pictures
+  /// in assets/venue/ (the crest, the Venue tab's header, the empty-page
+  /// picture; tool/make_venue_art.py). The browser and the Store app have none.
+  static final bool art = !kIsWeb && _bgDefine != '';
+
   static Color _colour(String hex, Color fallback) {
     final v = int.tryParse(hex.replaceFirst('#', ''), radix: 16);
     return v == null ? fallback : Color(0xFF000000 | v);
@@ -50,6 +56,19 @@ class VenueStyle {
   /// The club colour for the device's mode: a bright red reads on near-black
   /// where the deep club red sinks into it.
   static Color clubFor(Brightness b) => b == Brightness.dark ? Color.lerp(club, glow, 0.65)! : club;
+
+  /// How a venue app moves between pages: the iPhone's own slide on an
+  /// iPhone, and elsewhere the page fading forward as current Android does,
+  /// rather than the older zoom every Flutter app has by default.
+  static const transitions = PageTransitionsTheme(
+    builders: {
+      TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+      TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+      TargetPlatform.android: FadeForwardsPageTransitionsBuilder(),
+      TargetPlatform.windows: FadeForwardsPageTransitionsBuilder(),
+      TargetPlatform.linux: FadeForwardsPageTransitionsBuilder(),
+    },
+  );
 
   /// The venue in its own palette, before light or dark is chosen.
   static Brand apply(Brand brand) {
@@ -78,6 +97,90 @@ class VenueStyle {
     return brand.recoloured(
       background: Color.lerp(const Color(0xFFFFFCFA), club, 0.035)!,
       text: Color.lerp(const Color(0xFF17100F), club, 0.08)!,
+    );
+  }
+
+  /// What reads as a warning on the club's red: a light amber. Material's
+  /// error red is the club colour's own shade and vanished into it.
+  static const onClubError = Color(0xFFFFD27A);
+
+  /// [base] for a page drawn ON the club colour (the sign-in page's moving
+  /// red), in either of the device's modes.
+  ///
+  /// EVERYTHING THE THEME COLOURS WITH "PRIMARY" WAS RED ON RED. The floating
+  /// label, the focused border, the cursor, the selection handles and the
+  /// spinner all take the theme's primary colour, which here is the club's
+  /// red, and the error text took Material's red: on the red page they were
+  /// not there (owner, 2026-10-12: "the label colours red are not blending
+  /// with the red background"). On this page the main colour is white, words
+  /// are white or nearly, a box is a pane of frosted white, and a problem is
+  /// amber. Dialogs opened from the page keep the dark surface they have, on
+  /// which all of that reads too.
+  static ThemeData onClub(ThemeData base) {
+    const white = Colors.white;
+    final soft = white.withValues(alpha: 0.78);
+    final faint = white.withValues(alpha: 0.55);
+    OutlineInputBorder edge(Color c, [double width = 1.2]) =>
+        OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: c, width: width));
+    final scheme = base.colorScheme.copyWith(
+      primary: white,
+      onPrimary: club,
+      secondary: white,
+      onSecondary: club,
+      error: onClubError,
+      onError: deep,
+      onSurface: white,
+      onSurfaceVariant: soft,
+      outline: white.withValues(alpha: 0.45),
+      outlineVariant: white.withValues(alpha: 0.28),
+    );
+    return base.copyWith(
+      colorScheme: scheme,
+      scaffoldBackgroundColor: Colors.transparent,
+      dividerColor: white.withValues(alpha: 0.3),
+      dividerTheme: DividerThemeData(color: white.withValues(alpha: 0.3)),
+      iconTheme: const IconThemeData(color: white),
+      textSelectionTheme: TextSelectionThemeData(
+        cursorColor: white,
+        selectionColor: white.withValues(alpha: 0.32),
+        selectionHandleColor: white,
+      ),
+      // The spinner in the white button: the club colour, not white on white.
+      progressIndicatorTheme: ProgressIndicatorThemeData(color: club),
+      filledButtonTheme: FilledButtonThemeData(
+        style: base.filledButtonTheme.style?.copyWith(
+          backgroundColor: WidgetStateProperty.resolveWith(
+            (s) => s.contains(WidgetState.disabled) ? white.withValues(alpha: 0.7) : white,
+          ),
+          foregroundColor: WidgetStatePropertyAll(club),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: white,
+          disabledForegroundColor: faint,
+          textStyle: base.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600, decoration: TextDecoration.underline, decorationColor: white),
+        ),
+      ),
+      inputDecorationTheme: base.inputDecorationTheme.copyWith(
+        filled: true,
+        fillColor: white.withValues(alpha: 0.12),
+        labelStyle: TextStyle(color: soft),
+        floatingLabelStyle: WidgetStateTextStyle.resolveWith(
+          (s) => TextStyle(color: s.contains(WidgetState.error) ? onClubError : white, fontWeight: FontWeight.w600),
+        ),
+        hintStyle: TextStyle(color: faint),
+        helperStyle: TextStyle(color: soft),
+        errorStyle: const TextStyle(color: onClubError, fontWeight: FontWeight.w600),
+        prefixIconColor: soft,
+        suffixIconColor: soft,
+        border: edge(white.withValues(alpha: 0.4)),
+        enabledBorder: edge(white.withValues(alpha: 0.4)),
+        disabledBorder: edge(white.withValues(alpha: 0.2)),
+        focusedBorder: edge(white, 1.8),
+        errorBorder: edge(onClubError),
+        focusedErrorBorder: edge(onClubError, 1.8),
+      ),
     );
   }
 }

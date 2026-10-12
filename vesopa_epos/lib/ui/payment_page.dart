@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
@@ -413,6 +414,10 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     // When the sale runs on a card machine, show what the reader is telling
     // the customer ("present card", "enter PIN") rather than a generic wait —
     // the clerk is the one who has to prompt them.
+    // The hosted card page, once it is open in the browser, for "Open the
+    // card page again".
+    final checkoutUrl = ValueNotifier<String?>(null);
+
     rest?.onTerminalUpdate = (s) {
       if (payment.value.finished) return;
       advance(cardStepFor(stage: lastStage, session: s), prompt: s.prompt);
@@ -434,16 +439,38 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     // Render the hosted card page inside the till rather than handing it to the
     // system browser: on a Windows touch till there may be no browser to hand
     // it to, and on a tablet the customer ends up holding the whole device.
+    //
+    // Where the till cannot host the page (the embedded view is switched off
+    // on Windows for now), the page opens in the computer's browser and the
+    // till's own payment screen stays up, saying what is happening, with
+    // Cancel and "Open the card page again". Before, a "could not open inside
+    // the till" page went over the payment screen: the till never moved on and
+    // there was no way to cancel the payment.
     desktop?.openCheckout = (url) async {
       if (!mounted) return false;
-      unawaited(
-        CardCheckoutPage.show(
-          context,
-          url: url,
-          amountLabel: _money(amountMinor),
-        ),
+      if (CardCheckoutPage.supported) {
+        unawaited(
+          CardCheckoutPage.show(
+            context,
+            url: url,
+            amountLabel: _money(amountMinor),
+          ),
+        );
+        return true;
+      }
+      checkoutUrl.value = url;
+      final opened = await launchUrl(
+        Uri.parse(url),
+        mode: LaunchMode.externalApplication,
       );
-      return true;
+      if (opened) {
+        advance(
+          CardStep.present,
+          prompt: 'Dojo\'s card page is open in the browser. Key the card '
+              'there; this screen moves on by itself when it is paid.',
+        );
+      }
+      return opened;
     };
 
     // How the result screen ends: closed, run again, or recorded as paid.
@@ -517,6 +544,16 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
           builder: (_, state, _) => CardPaymentView(
             state: state,
             amountLabel: _money(amountMinor),
+            extraAction: checkoutUrl.value == null
+                ? null
+                : (
+                    label: 'Open the card page again',
+                    icon: Icons.open_in_new,
+                    onPressed: () => launchUrl(
+                      Uri.parse(checkoutUrl.value!),
+                      mode: LaunchMode.externalApplication,
+                    ),
+                  ),
             // Only providers that poll can abandon a wait; the Android drop-in
             // owns its own screen and its own cancel button.
             onCancel: rest == null && connect == null
@@ -646,6 +683,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
 
     unawaited(display.showCard(null));
     payment.dispose();
+    checkoutUrl.dispose();
     if (mounted) {
       Navigator.of(context, rootNavigator: true).popUntil(
         (route) => route.settings.name != CardCheckoutPage.routeName,

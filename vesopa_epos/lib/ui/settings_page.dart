@@ -1,10 +1,9 @@
 import 'dart:async';
-import 'dart:io' show File, Platform, exit;
+import 'dart:io' show File, Platform;
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:window_manager/window_manager.dart';
 
 import '../config/constants.dart';
 import '../data/customer_display_control.dart';

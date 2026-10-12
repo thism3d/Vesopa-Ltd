@@ -155,10 +155,16 @@ void main() {
     expect(result.message, contains('failed'));
   });
 
-  test('cancelling stops the wait and never reports the money as taken', () async {
+  test('cancelling cancels the intent at Dojo and reports cancelled', () async {
     // An intent that never leaves "created" — the customer walked away.
+    final deleted = <String>[];
     final provider = DesktopDojoProvider(
-      intents: restWith(dojo(statuses: ['created'])),
+      intents: restWith(dojo(
+        statuses: ['created'],
+        onRequest: (req) {
+          if (req.method == 'DELETE') deleted.add(req.url.path);
+        },
+      )),
       openCheckout: (_) async => true,
       pollTimeout: const Duration(seconds: 30),
     );
@@ -171,7 +177,37 @@ void main() {
     final result = await provider.take(700);
 
     expect(result.approved, isFalse);
-    expect(result.message, contains('abandoned'));
+    expect(result.kind, CardOutcome.cancelled);
+    // "The payment can't be cancelled": the customer must not be able to pay
+    // on the page after the till has given up on it.
+    expect(deleted, ['/payment-intents/pi_test']);
+  });
+
+  test('a card keyed just before Cancel still comes back as paid', () async {
+    final provider = DesktopDojoProvider(
+      intents: restWith(dojo(statuses: ['created', 'captured'])),
+      openCheckout: (_) async => true,
+      pollTimeout: const Duration(seconds: 30),
+    );
+    provider.onStageChanged = (stage) {
+      if (stage == DojoStage.awaitingCard) provider.cancel();
+    };
+
+    final result = await provider.take(700);
+    expect(result.approved, isTrue);
+  });
+
+  test('the screen stays on "present card" while the customer keys it', () async {
+    final stages = <DojoStage>[];
+    final provider = DesktopDojoProvider(
+      intents: restWith(dojo(statuses: ['created', 'created', 'captured'])),
+      openCheckout: (_) async => true,
+    );
+    provider.onStageChanged = stages.add;
+
+    final result = await provider.take(700);
+    expect(result.approved, isTrue);
+    expect(stages, isNot(contains(DojoStage.checking)));
   });
 
   test('timing out is reported as unknown, not as a decline', () async {

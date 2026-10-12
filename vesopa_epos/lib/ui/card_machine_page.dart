@@ -162,13 +162,16 @@ class _CardMachinePageState extends ConsumerState<CardMachinePage> {
       softwareHouseId: dojo.softwareHouseId,
       resellerId: dojo.resellerId,
       staff: ref.read(servedByProvider),
+      outcome: result.acquirerStatus == recordedManually
+          ? 'recorded_manually'
+          : null,
     ));
     if (!mounted) return;
+    // The refund screen has already shown the result, like a sale's.
     setState(() {
       _busy = false;
       _status = result.message;
     });
-    await showRefundResult(context, result);
   }
 
   Future<int?> _askAmount() async {
@@ -473,6 +476,7 @@ class _CardPaymentsListState extends ConsumerState<CardPaymentsList> {
                             context,
                             ref,
                             intentId: id!,
+                            paidMinor: e.amountMinor,
                             orderId: e.orderId,
                           );
                         },

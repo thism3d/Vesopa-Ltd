@@ -157,7 +157,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
         child: ListView(
           children: const [
             SizedBox(height: 120),
-            Center(child: Text('Nothing yet. Your points will show here after your first visit.', textAlign: TextAlign.center)),
+            Center(child: EmptyState('Nothing yet. Your points will show here after your first visit.')),
           ],
         ),
       );
