@@ -9,7 +9,7 @@
  *   node tool/invite/dojo/send-dojo-invite.js --send --only info@vesopa.com   # one copy only
  *   ... --final       # 11 Oct: accreditation fixes done, final testing Mon 12 Oct 10:30 (new invite)
  *   ... --confirm     # 12 Oct morning: please confirm today's final testing at 10:30
- *   ... --review      # 12 Oct: UAT round 2 fixes (EPOS 1.16.3) + accreditation review 21:00, Alex and Finn only
+ *   ... --review      # 12 Oct: UAT round 2 fixes (EPOS 1.16.3) + accreditation review 4pm UK, Alex and Finn only
  *   ... --reminder2   # 9 Oct midday: reminder for 1:30pm with the new Meet link
  *   ... --correction  # 9 Oct: right time 1:30pm (not 8:30am), new Meet link, invite SEQUENCE 2
  *   ... --reminder    # morning-of reminder, 9 Oct: today 1:30pm, Meet link and dial-in

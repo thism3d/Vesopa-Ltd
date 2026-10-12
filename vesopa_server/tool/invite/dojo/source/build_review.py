@@ -1,4 +1,4 @@
-"""Builds the Dojo accreditation review email (12 Oct 21:00): HTML, plain text, .ics invite and an Outlook-ready .eml."""
+"""Builds the Dojo accreditation review email (12 Oct 4pm UK): HTML, plain text, .ics invite and an Outlook-ready .eml."""
 import os, sys, uuid, urllib.parse
 from datetime import datetime, timezone
 from email.message import EmailMessage
@@ -9,9 +9,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = sys.argv[1]
 os.makedirs(OUT, exist_ok=True)
 
-SUBJECT = "Vesopa + Dojo accreditation review tonight, 21:00 UK time: UAT round 2 fixes in EPOS 1.16.3"
-START_UTC, END_UTC = "20261012T200000Z", "20261012T204500Z"  # 21:00-21:45 BST
-START_LOCAL, END_LOCAL = "20261012T210000", "20261012T214500"
+SUBJECT = "Vesopa + Dojo accreditation review today, 4pm UK time: UAT round 2 fixes in EPOS 1.16.3"
+START_UTC, END_UTC = "20261012T150000Z", "20261012T154500Z"  # 16:00-16:45 BST
+START_LOCAL, END_LOCAL = "20261012T160000", "20261012T164500"
 MEET = "https://meet.google.com/bpa-fqef-rpz"
 PHONE, PIN = "+1 401-830-3638", "899656638"
 MORE_PHONES = "https://tel.meet/bpa-fqef-rpz?pin=6859843447630"
@@ -42,8 +42,8 @@ gcal = "https://calendar.google.com/calendar/render?" + urllib.parse.urlencode({
     "details": DESC_TXT.replace("\\n", "\n").replace("\\,", ","),
     "add": ",".join(e for _, e in TO + CC)})
 outlook = "https://outlook.office.com/calendar/0/deeplink/compose?" + urllib.parse.urlencode({
-    "subject": "Vesopa Dojo Accreditation Review", "startdt": "2026-10-12T20:00:00Z",
-    "enddt": "2026-10-12T20:45:00Z", "location": LOCATION,
+    "subject": "Vesopa Dojo Accreditation Review", "startdt": "2026-10-12T15:00:00Z",
+    "enddt": "2026-10-12T15:45:00Z", "location": LOCATION,
     "body": DESC_TXT.replace("\\n", "\n").replace("\\,", ","), "to": ",".join(e for _, e in TO + CC)})
 
 
@@ -100,12 +100,12 @@ html = f'''<!doctype html>
 <title>{SUBJECT}</title>
 </head>
 <body style="margin:0;padding:0;background:#eef0f7;">
-<div style="display:none;max-height:0;overflow:hidden;opacity:0;">Every UAT round 2 point is fixed in Vesopa EPOS 1.16.3, now live on the Microsoft Store. Accreditation review tonight, 21:00 UK time.</div>
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;">Every UAT round 2 point is fixed in Vesopa EPOS 1.16.3, now live on the Microsoft Store. Accreditation review today, 4pm UK time.</div>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#eef0f7;">
 <tr><td align="center" style="padding:28px 12px;">
   <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:#ffffff;border-radius:18px;overflow:hidden;">
     <tr><td style="background:#0b1a6b;">
-      <img src="cid:hero@vesopa" width="600" alt="Vesopa EPOS and Dojo: UAT round 2 fixed in EPOS 1.16.3, accreditation review on Monday 12 October 2026 at 21:00 UK time." style="display:block;width:100%;max-width:600px;height:auto;border:0;">
+      <img src="cid:hero@vesopa" width="600" alt="Vesopa EPOS and Dojo: UAT round 2 fixed in EPOS 1.16.3, accreditation review on Monday 12 October 2026 at 4pm UK time." style="display:block;width:100%;max-width:600px;height:auto;border:0;">
     </td></tr>
     <tr><td style="padding:34px 24px 6px;">
       <p {P}>Hi Alex and Finn,</p>
@@ -137,7 +137,7 @@ html = f'''<!doctype html>
           </td>
           <td valign="top" style="padding:18px 18px 18px 6px;">
             <div style="{F}font-size:17px;font-weight:800;color:#0b1a6b;">Vesopa Dojo Accreditation Review</div>
-            <div style="margin-top:6px;{F}font-size:14px;line-height:1.6;color:#17141c;"><strong>Monday 12 October 2026</strong><br>21:00 to 21:45 UK time (BST)<br>Google Meet: <a href="{MEET}" style="color:#0b1a6b;font-weight:700;">meet.google.com/bpa-fqef-rpz</a><br>Or dial: {PHONE}, PIN {PIN}<br><a href="{MORE_PHONES}" style="color:#0b1a6b;">More phone numbers</a></div>
+            <div style="margin-top:6px;{F}font-size:14px;line-height:1.6;color:#17141c;"><strong>Monday 12 October 2026</strong><br>4pm to 4:45pm UK time (BST)<br>Google Meet: <a href="{MEET}" style="color:#0b1a6b;font-weight:700;">meet.google.com/bpa-fqef-rpz</a><br>Or dial: {PHONE}, PIN {PIN}<br><a href="{MORE_PHONES}" style="color:#0b1a6b;">More phone numbers</a></div>
             <div style="margin-top:6px;{F}font-size:13px;line-height:1.5;color:#5f5a68;">Hosted by Muzahid Islam, with Meirion Davies, Director</div>
           </td>
         </tr>
@@ -165,7 +165,7 @@ html = f'''<!doctype html>
     </td></tr>
     <tr><td style="padding:12px 24px 34px;">
       <p {P}>If the time does not suit, just reply with one that works better and we will fit around it. Once the review is signed off, we are ready to move to live API access and launch.</p>
-      <p {P}>Thank you again for your help with the accreditation. We look forward to speaking with you tonight.</p>
+      <p {P}>Thank you again for your help with the accreditation. We look forward to speaking with you this afternoon.</p>
       <p style="margin:0 0 18px;{F}font-size:16px;line-height:1.6;color:#17141c;">Kind regards,<br><strong>Muzahid Islam</strong><br><span style="color:#5f5a68;">Developer, Vesopa Software Ltd</span><br><a href="mailto:muzahid@vesopa.com" style="color:#0b1a6b;">muzahid@vesopa.com</a></p>
       <table role="presentation" cellpadding="0" cellspacing="0" style="border-left:4px solid #a5c715;"><tr><td style="padding:2px 0 2px 12px;{F}font-size:14px;line-height:1.6;color:#5f5a68;">
         On behalf of <strong style="color:#17141c;">Meirion Davies</strong>, Director<br>Vesopa Software Ltd and Vesopa Ltd<br>
@@ -201,7 +201,7 @@ This release also reads member cards and QR codes at the till, closes the apps s
 
 ACCREDITATION REVIEW
 Vesopa Dojo Accreditation Review
-Monday 12 October 2026, 21:00 to 21:45 UK time (BST)
+Monday 12 October 2026, 4pm to 4:45pm UK time (BST)
 Join with Google Meet: {MEET}
 Or dial: {PHONE} PIN: {PIN}
 More phone numbers: {MORE_PHONES}
@@ -213,7 +213,7 @@ What we would like to do:
 
 If the time does not suit, just reply with one that works better and we will fit around it. Once the review is signed off, we are ready to move to live API access and launch.
 
-Thank you again for your help with the accreditation. We look forward to speaking with you tonight.
+Thank you again for your help with the accreditation. We look forward to speaking with you this afternoon.
 
 Kind regards,
 Muzahid Islam
