@@ -12,9 +12,13 @@ unfinished app. This gives that one member what a real one has after a season:
   * a name (default "Alex Morgan") and a member-since date four months back
   * the venue's membership plan, active, running to the club's renewal date
     or the plan's term (if the venue has membership plans)
-  * sixteen weeks of points: Saturday home matches, Friday nights at the bar,
-    food, and one reward spent, with the balance, visits and last visit to match
-  * two messages from the club in their news, plus the club's latest real news
+  * sixteen weeks of points: the club's real home matches this season (from
+    the WRU, with the scores), Friday nights at the bar, food, and one reward
+    spent, with the balance, visits and last visit to match
+  * the club's real news in their inbox: the latest result, a postponement,
+    the next home game and the club's own latest story (from the WRU and
+    PontardaweRFC/website/content/news.json), plus whatever the club sent
+    everybody
 
 ONLY THAT MEMBER, AND ONLY A TEST ADDRESS. Anything but an @test.com address is
 refused here and again on the server, and every statement names the member's
@@ -26,6 +30,7 @@ it all away. Nothing a real member, sale or report touches is changed.
 Run from the repository root on the owner's PC, like the other deploy tools.
 """
 import json
+import os
 import pathlib
 import re
 import sys
@@ -60,8 +65,6 @@ let seed = 1881;
 const rand = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
 const pick = (list) => list[Math.floor(rand() * list.length)];
 
-const OPPONENTS = ['Ystalyfera', 'Ystradgynlais', 'Trebanos', 'Cwmgors', 'Gowerton', 'Tycroes',
-  'Penclawdd', 'Amman United', 'Vardre', 'Seven Sisters', 'Alltwen', 'Pontarddulais'];
 
 (async () => {
   const job = JSON.parse(fs.readFileSync(0, 'utf8'));
@@ -157,13 +160,20 @@ const OPPONENTS = ['Ystalyfera', 'Ystradgynlais', 'Trebanos', 'Cwmgors', 'Gowert
   const rows = [];
   const earn = (when, spendPence, note) => rows.push({ when, kind: 'earn', spend: spendPence,
     points: Math.floor(spendPence / 100) * perPound, note });
+  // The club's real home games (from the WRU, read on the PC), by day.
+  const homeGames = new Map((job.matches || []).map((m) => [m.day, m]));
   for (let week = 16; week >= 0; week--) {
     const saturday = week * 7 + ((today.getDay() + 1) % 7); // days back to that week's Saturday
     if (saturday <= 0) continue;
-    if (week % 2 === 0) {
-      earn(daysAgo(saturday, 14, 35), 500, `Match day: Pontardawe v ${pick(OPPONENTS)}`);
-      earn(daysAgo(saturday, 17, 20 + Math.floor(rand() * 30)), pick([920, 1380, 1460, 1840]), 'Bar');
-      if (rand() < 0.5) earn(daysAgo(saturday, 18, 5), pick([650, 795, 1150]), 'Clubhouse food');
+    const game = homeGames.get(day(daysAgo(saturday)));
+    if (game) {
+      const score = game.us != null && (game.us || game.them) ? ` (${game.us}-${game.them})` : '';
+      earn(daysAgo(saturday, 14, 5), 500, `Match day: Pontardawe v ${game.opponent}${score}`);
+      earn(daysAgo(saturday, 16, 40 + Math.floor(rand() * 15)), pick([920, 1380, 1460, 1840]), 'Bar');
+      if (rand() < 0.6) earn(daysAgo(saturday, 17, 30), pick([650, 795, 1150]), 'Clubhouse food');
+    } else if (week % 2 === 0) {
+      earn(daysAgo(saturday, 19, 20 + Math.floor(rand() * 30)), pick([920, 1380, 1460]), 'Bar');
+      if (rand() < 0.4) earn(daysAgo(saturday, 19, 50), pick([650, 795, 1150]), 'Clubhouse food');
     } else if (rand() < 0.7) {
       earn(daysAgo(saturday + 1, 20, 10 + Math.floor(rand() * 40)), pick([460, 920, 1380]), 'Bar');
     }
@@ -226,10 +236,10 @@ const OPPONENTS = ['Ystalyfera', 'Ystradgynlais', 'Trebanos', 'Cwmgors', 'Gowert
 
   // ---- News --------------------------------------------------------------
   const news = [
-    { at: daysAgo(9, 10, 0), title: 'Thanks for your support', body:
-      `Thanks for coming down this season, ${job.name.split(' ')[0]}. Show your card at the bar on match days and the points add up.` },
-    { at: daysAgo(2, 18, 30), title: 'Saturday at the Parc', body:
-      'Home game this Saturday, kick-off 2:30. The bar opens at noon and food is on from 12:30. Come and cheer the boys on.' },
+    { at: daysAgo(30, 10, 0), title: 'Thanks for your support', body:
+      `Thanks for coming down, ${job.name.split(' ')[0]}. Show your card at the bar and the points add up.` },
+    // The club's real news, written on the PC from the WRU and the club's site.
+    ...(job.news || []).map((n) => ({ ...n, at: new Date(n.at) })),
   ];
   for (const n of news) {
     const id = seededId();
@@ -267,6 +277,89 @@ const OPPONENTS = ['Ystalyfera', 'Ystradgynlais', 'Trebanos', 'Cwmgors', 'Gowert
 """
 
 
+WRU = "https://api.wru.wales/fixtures-results"
+WRU_ORG = 165  # Pontardawe RFC, as PontardaweRFC/website/src/wru.js
+NEWS = ROOT / "PontardaweRFC" / "website" / "content" / "news.json"
+
+
+def _wru(path):
+    import urllib.request
+    req = urllib.request.Request(f"{WRU}/{path}", headers={
+        "Accept": "application/json", "User-Agent": "pontardawerfc.com (review member)"})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        return json.loads(r.read())
+
+
+def _fixture(f):
+    home = (f.get("homeTeam") or {}).get("orgId") == WRU_ORG
+    us, them = (f["homeTeam"], f["awayTeam"]) if home else (f["awayTeam"], f["homeTeam"])
+    day, _, time = str(f.get("date", "")).partition("T")
+    return {"day": day, "kickoff": time[:5] if time and time != "00:00:00" else None, "home": home,
+            "opponent": them.get("organisationName", "").replace(" RFC", ""),
+            "status": f.get("status"), "competition": f.get("competitionName") or "",
+            "us": us.get("score"), "them": them.get("score"), "tries": us.get("tryCount")}
+
+
+def _when(day):
+    import datetime
+    return datetime.date.fromisoformat(day).strftime("%A %-d %B") if os.name != "nt" else \
+        datetime.date.fromisoformat(day).strftime("%A %#d %B")
+
+
+def club_news():
+    """The club's real season so far, for the member's points and inbox.
+
+    Home games played (with the score) become match-day visits; the latest
+    result, a postponement, the next home game and the club's newest story
+    become messages. All from the WRU's public fixtures API and the club
+    site's own news.json, read now; if the WRU cannot be reached the member
+    still gets the club's story and bar visits, never a made-up match."""
+    import datetime
+    now = datetime.datetime.now()
+    matches, news = [], []
+    try:
+        past = [_fixture(f) for f in _wru(f"organisation-fixtures?upcoming=false&organisationId={WRU_ORG}")["fixtures"]]
+        upcoming = [_fixture(f) for f in _wru(f"organisation-fixtures?upcoming=true&organisationId={WRU_ORG}")["fixtures"]]
+    except Exception as e:  # noqa: BLE001
+        print(f"   ! the WRU could not be read ({e}); no match days or results this time")
+        past, upcoming = [], []
+    played = [m for m in past if m["status"] == "PLAYED" and m["competition"] and (m["us"] or m["them"])]
+    matches = [m for m in played if m["home"]]
+    if played:
+        m = max(played, key=lambda m: m["day"])
+        where = "at the Rec" if m["home"] else f"away at {m['opponent']}"
+        verdict = "a win" if m["us"] > m["them"] else "a draw" if m["us"] == m["them"] else "a tough afternoon"
+        tries = f" {m['tries']} tries for Pontardawe." if m.get("tries") else ""
+        kind = "Cup tie" if "Knockout" in m["competition"] else "League game"
+        news.append({"at": f"{m['day']}T17:15:00", "title": f"Full time: Pontardawe {m['us']}-{m['them']} {m['opponent']}",
+                     "body": f"{kind} {where}: {verdict}.{tries} Thanks to everyone who came down to support the boys."})
+    off = [m for m in past if m["status"] == "POSTPONED"]
+    if off:
+        m = max(off, key=lambda m: m["day"])
+        where = f"at home to {m['opponent']}" if m["home"] else f"away at {m['opponent']}"
+        news.append({"at": f"{m['day']}T09:30:00", "title": "Saturday's game is off",
+                     "body": f"Our league game {where} on {_when(m['day'])} has been postponed. We'll let you know the new date."})
+    home_next = [m for m in upcoming if m["home"]]
+    if home_next:
+        m = min(home_next, key=lambda m: m["day"])
+        ko = ""
+        if m["kickoff"]:
+            h, mins = (int(x) for x in m["kickoff"].split(":"))
+            ko = f", kick-off {(h - 1) % 12 + 1}{f':{mins:02d}' if mins else ''}{'pm' if h >= 12 else 'am'}"
+        at = min(now - datetime.timedelta(hours=2), datetime.datetime.fromisoformat(m["day"]) - datetime.timedelta(days=4))
+        news.append({"at": at.strftime("%Y-%m-%dT18:30:00"), "title": f"Next at the Rec: Pontardawe v {m['opponent']}",
+                     "body": f"Home league game on {_when(m['day'])}{ko} at the Recreation Ground. "
+                             "Come down, cheer the boys on, and show your card at the bar."})
+    try:
+        story = max(json.loads(NEWS.read_text(encoding="utf-8")), key=lambda n: n["date"])
+        news.append({"at": f"{story['date']}T10:00:00", "title": story["title"], "body": story["summary"]})
+    except (OSError, ValueError, KeyError) as e:
+        print(f"   ! the club's news.json could not be read ({e})")
+    news = [n for n in news if n["at"] <= now.strftime("%Y-%m-%dT%H:%M:%S")]
+    print(f"   from the club: {len(matches)} home games this season, {len(news)} messages")
+    return [{k: m[k] for k in ("day", "opponent", "us", "them")} for m in matches], news
+
+
 def main():
     emails = [a for a in sys.argv[1:] if "@" in a]
     if len(emails) != 1:
@@ -280,7 +373,9 @@ def main():
     if not re.fullmatch(r"[a-z0-9-]+", slug) or not re.fullmatch(r"[A-Za-z][A-Za-z' .-]{1,60}", name):
         raise SystemExit("! that slug or name does not look right")
 
-    job = json.dumps({"slug": slug, "email": email, "name": name, "remove": "--remove" in sys.argv})
+    matches, news = club_news() if "--remove" not in sys.argv else ([], [])
+    job = json.dumps({"slug": slug, "email": email, "name": name, "remove": "--remove" in sys.argv,
+                      "matches": matches, "news": news})
     client = base.vesopa_ssh.connect()
     try:
         sftp = client.open_sftp()
