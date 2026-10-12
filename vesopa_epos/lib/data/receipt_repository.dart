@@ -25,6 +25,12 @@ class ReceiptSummary {
     this.orderNote,
     this.covers,
     this.training = false,
+    this.methods = const [],
+    this.hasCard = false,
+    this.refundedMinor = 0,
+    this.refundCount = 0,
+    this.lastRefundAt,
+    this.status = ReceiptStatus.paid,
   });
 
   final String id;
@@ -55,6 +61,23 @@ class ReceiptSummary {
   /// not sent there.
   final bool training;
 
+  /// How it was paid: cash, card, giftcard… (EPOS 1.17; empty from an older
+  /// server, which reads as "paid").
+  final List<String> methods;
+
+  /// Paid, at least in part, on Dojo.
+  final bool hasCard;
+
+  /// What has gone back on this bill so far, from every till.
+  final int refundedMinor;
+  final int refundCount;
+  final DateTime? lastRefundAt;
+  final ReceiptStatus status;
+
+  /// What can still be refunded.
+  int get refundableMinor =>
+      (totalMinor - refundedMinor).clamp(0, totalMinor < 0 ? 0 : totalMinor);
+
   bool get hasVoucher => voucherMinor > 0 || (voucherCode?.isNotEmpty ?? false);
 
   /// What the goods came to before discounts, vouchers and service.
@@ -82,7 +105,101 @@ class ReceiptSummary {
         clerkName: j['clerk_name'] as String?,
         orderNote: j['order_note'] as String? ?? j['notes'] as String?,
         covers: (j['covers'] as num?)?.toInt(),
+        methods: [
+          for (final m in (j['methods'] as List?) ?? const []) '$m',
+        ],
+        hasCard: j['has_card'] == true || j['has_card'] == 1,
+        refundedMinor: _int(j['refunded_minor']),
+        refundCount: _int(j['refund_count']),
+        lastRefundAt: DateTime.tryParse('${j['last_refund_at'] ?? ''}')
+            ?.toLocal(),
+        status: ReceiptStatus.parse(j['status']),
       );
+
+  /// The same receipt with what is now known to have gone back.
+  ReceiptSummary withRefunds(int refunded, {int? count, DateTime? last}) =>
+      ReceiptSummary(
+        id: id,
+        totalMinor: totalMinor,
+        taxMinor: taxMinor,
+        discountMinor: discountMinor,
+        closedAt: closedAt,
+        tableNumber: tableNumber,
+        customerName: customerName,
+        voucherCode: voucherCode,
+        voucherMinor: voucherMinor,
+        serviceMinor: serviceMinor,
+        pointsEarned: pointsEarned,
+        pointsRedeemed: pointsRedeemed,
+        pointsBalance: pointsBalance,
+        clerkName: clerkName,
+        orderNote: orderNote,
+        covers: covers,
+        training: training,
+        methods: methods,
+        hasCard: hasCard,
+        refundedMinor: refunded,
+        refundCount: count ?? refundCount,
+        lastRefundAt: last ?? lastRefundAt,
+        status: ReceiptStatus.of(refunded, totalMinor),
+      );
+}
+
+/// Where a settled bill stands now.
+enum ReceiptStatus {
+  paid('Paid'),
+  partRefunded('Part refunded'),
+  refunded('Refunded');
+
+  const ReceiptStatus(this.label);
+  final String label;
+
+  static ReceiptStatus parse(Object? v) => switch ('$v') {
+    'refunded' => refunded,
+    'part_refunded' => partRefunded,
+    _ => paid,
+  };
+
+  static ReceiptStatus of(int refundedMinor, int totalMinor) =>
+      refundedMinor <= 0
+      ? paid
+      : refundedMinor >= totalMinor
+      ? refunded
+      : partRefunded;
+}
+
+/// One refund already given against a receipt.
+class ReceiptRefund {
+  const ReceiptRefund({
+    required this.id,
+    required this.amountMinor,
+    required this.at,
+    this.staffName,
+    this.reason,
+    this.lineNos = const [],
+  });
+
+  final String id;
+  final int amountMinor;
+  final DateTime at;
+  final String? staffName;
+  final String? reason;
+
+  /// The receipt lines it gave back, by position. Empty for a refund made
+  /// before EPOS 1.17, which recorded only the amount.
+  final List<int> lineNos;
+
+  factory ReceiptRefund.fromJson(Map<String, dynamic> j) => ReceiptRefund(
+    id: '${j['id']}',
+    amountMinor: (j['amount_minor'] as num?)?.toInt() ?? 0,
+    at: DateTime.tryParse('${j['at'] ?? ''}')?.toLocal() ?? DateTime.now(),
+    staffName: j['staff_name'] as String?,
+    reason: j['reason'] as String?,
+    lineNos: [
+      for (final n in (j['line_nos'] as List?) ?? const [])
+        if (n is num) n.toInt(),
+    ],
+  );
 }
 
 class ReceiptLine {
@@ -173,11 +290,49 @@ class ReceiptDetail {
     required this.summary,
     required this.lines,
     required this.tenders,
+    this.refunds = const [],
+    this.cardRefundedMinor = const {},
   });
 
   final ReceiptSummary summary;
   final List<ReceiptLine> lines;
   final List<ReceiptTender> tenders;
+
+  /// Every refund given against it so far, oldest first.
+  final List<ReceiptRefund> refunds;
+
+  /// Approved Dojo refunds per payment intent, from every till's card log.
+  final Map<String, int> cardRefundedMinor;
+
+  /// Receipt lines already given back.
+  Set<int> get refundedLineNos => {for (final r in refunds) ...r.lineNos};
+
+  /// This receipt with refunds this till made that the server has not seen
+  /// yet (still in the outbox). Matched by id, so nothing counts twice.
+  ReceiptDetail withLocal(List<ReceiptRefund> local) {
+    final known = {for (final r in refunds) r.id};
+    final extra = [
+      for (final r in local)
+        if (!known.contains(r.id)) r,
+    ];
+    if (extra.isEmpty) return this;
+    final all = [...refunds, ...extra]..sort((a, b) => a.at.compareTo(b.at));
+    final events = all.fold<int>(0, (s, r) => s + r.amountMinor);
+    final refunded = events > summary.refundedMinor
+        ? events
+        : summary.refundedMinor;
+    return ReceiptDetail(
+      summary: summary.withRefunds(
+        refunded,
+        count: all.length,
+        last: all.last.at,
+      ),
+      lines: lines,
+      tenders: tenders,
+      refunds: all,
+      cardRefundedMinor: cardRefundedMinor,
+    );
+  }
 }
 
 /// Reads settled receipts back from the server for the history screen.
@@ -222,8 +377,29 @@ class ReceiptRepository {
     }
 
     final body = jsonDecode(res.body) as Map<String, dynamic>;
+    final status = body['status'] as Map<String, dynamic>?;
     return ReceiptDetail(
-      summary: ReceiptSummary.fromJson(body['order'] as Map<String, dynamic>),
+      summary: ReceiptSummary.fromJson({
+        ...body['order'] as Map<String, dynamic>,
+        // The order row is the sale; the status is what has happened since.
+        if (status != null) ...{
+          'methods': status['methods'],
+          'has_card': status['has_card'],
+          'refunded_minor': status['refunded_minor'],
+          'refund_count': status['refund_count'],
+          'last_refund_at': status['last_refund_at'],
+          'status': status['status'],
+        },
+      }),
+      refunds: [
+        for (final r in (status?['refunds'] as List?) ?? const [])
+          ReceiptRefund.fromJson(r as Map<String, dynamic>),
+      ],
+      cardRefundedMinor: {
+        for (final e
+            in ((status?['card_refunds'] as Map?) ?? const {}).entries)
+          '${e.key}': (e.value as num?)?.toInt() ?? 0,
+      },
       lines: (body['lines'] as List<dynamic>)
           .cast<Map<String, dynamic>>()
           .map(ReceiptLine.fromJson)

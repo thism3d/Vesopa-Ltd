@@ -444,18 +444,28 @@ class OrderRepository {
   /// [amountMinor] is positive. The sign belongs to the report, which knows a
   /// refund is money out; storing it negative would mean every reader had to
   /// know that too, and one of them would not.
-  Future<void> logRefund({
+  ///
+  /// [orderId] and [lineNos] tie it to the receipt it came off (EPOS 1.17), so
+  /// the same lines cannot be refunded twice. Returns the event id, which is
+  /// what the server stores it under, or null in training.
+  Future<String?> logRefund({
     required String sessionId,
     required int amountMinor,
     String? note,
+    String? reason,
     String? staffName,
+    String? orderId,
+    List<int> lineNos = const [],
   }) =>
       _logEvent(
         kind: 'refund',
         sessionId: sessionId,
         amountMinor: amountMinor.abs(),
         note: note,
+        reason: reason,
         staffName: staffName,
+        orderId: orderId,
+        lineNos: lineNos,
       );
 
   /// Money paid out of the drawer that is not a refund: the window cleaner,
@@ -511,7 +521,7 @@ class OrderRepository {
   /// refund, a no-sale or an expense and so could not report on them. The
   /// local row is the Z report's; the outbox entry is the server's; the id is
   /// shared, so a retry cannot land twice.
-  Future<void> _logEvent({
+  Future<String?> _logEvent({
     required String kind,
     required String sessionId,
     int amountMinor = 0,
@@ -520,10 +530,12 @@ class OrderRepository {
     String? staffName,
     int? pluId,
     double? quantity,
+    String? orderId,
+    List<int> lineNos = const [],
   }) async {
     // Practice is not counted: a trainee's voids, no-sales and refunds do not
     // belong on the Z a manager reconciles the drawer against.
-    if (_training()) return;
+    if (_training()) return null;
     final id = _uuid.v4();
     final at = DateTime.now();
     await _db.transaction(() async {
@@ -562,11 +574,14 @@ class OrderRepository {
                 'session_id': sessionId,
                 'plu_id': pluId,
                 'quantity': quantity,
+                'order_id': ?orderId,
+                if (lineNos.isNotEmpty) 'line_nos': lineNos,
                 'at': at.toIso8601String(),
               }),
             ),
           );
     });
+    return id;
   }
 
   /// Void selected lines off an open check, leaving the rest of the sale alone.
