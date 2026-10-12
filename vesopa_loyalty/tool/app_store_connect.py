@@ -659,12 +659,13 @@ def set_availability(c, app_id):
 
 
 def review_account(r):
-    """The reviewers' sign-in: the environment's secrets, else the venue's own
-    throwaway review member (store/app_store.json review.demo_user and
-    demo_password, made with tool/make_review_member.py). Only ever a test
-    account made for Apple's reviewers, never a real member's."""
-    return (os.environ.get("ASC_REVIEW_USER") or r.get("demo_user", ""),
-            os.environ.get("ASC_REVIEW_PASSWORD") or r.get("demo_password", ""))
+    """The reviewers' sign-in: the venue's own throwaway review member
+    (store/app_store.json review.demo_user and demo_password, made with
+    tool/make_review_member.py), else the environment's ASC_REVIEW_* secrets.
+    Only ever a test account made for Apple's reviewers, never a real member's."""
+    if r.get("demo_user") and r.get("demo_password"):
+        return r["demo_user"], r["demo_password"]
+    return os.environ.get("ASC_REVIEW_USER", ""), os.environ.get("ASC_REVIEW_PASSWORD", "")
 
 
 def set_review_details(c, version, store):
