@@ -59,6 +59,7 @@ import 'ui/recovery_page.dart';
 import 'ui/splash_page.dart';
 import 'ui/theme.dart';
 import 'ui/theme_controller.dart';
+import 'data/trusted_roots.dart';
 
 /// Where the server lives. Both resolve from [Api], which reads the single
 /// `useLiveServer` switch in `config/constants.dart` — see that file to move
@@ -1061,6 +1062,8 @@ final startupRepairProvider = Provider<StartupRepair>((ref) => StartupRepair.ok)
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Before any request: see data/trusted_roots.dart.
+  trustOurServerRoots();
 
   // A Store copy moved to our installer hands its data over here, before
   // anything opens local storage (data/app_update.dart, Handover).

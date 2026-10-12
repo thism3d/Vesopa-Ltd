@@ -6,6 +6,7 @@ import 'data/activity_log.dart';
 import 'data/app_update.dart';
 import 'platform/kiosk_window.dart';
 import 'ui/app.dart';
+import 'data/trusted_roots.dart';
 
 /// Vesopa Express: the self-service ordering kiosk.
 ///
@@ -15,6 +16,8 @@ import 'ui/app.dart';
 /// passcode, and leave from there.
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Before any request: see data/trusted_roots.dart.
+  trustOurServerRoots();
   // The activity log: taps, screens and errors, to a local file and to the
   // back office's Activity Log. See data/activity_log.dart.
   ActivityLog.instance
