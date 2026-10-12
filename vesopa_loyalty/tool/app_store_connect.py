@@ -766,6 +766,28 @@ def set_screenshots(c, version_loc, venue_dir):
             todo(f"Screenshots {folder}: {e.detail()}")
 
 
+def set_beta_review_details(c, app, store):
+    """TestFlight's own review contact and sign-in, for the app. Kept the same as
+    the App Store's, so the listing and TestFlight runs both refresh it."""
+    r = store.get("review", {})
+    try:
+        detail = c.get(f"/v1/apps/{app['id']}/betaAppReviewDetail")["data"]
+        attrs = {
+            "contactFirstName": r.get("contact_first_name"),
+            "contactLastName": r.get("contact_last_name"),
+            "contactEmail": r.get("contact_email"),
+            "contactPhone": os.environ.get("ASC_REVIEW_PHONE") or r.get("contact_phone"),
+            "notes": r.get("notes"),
+        }
+        user, password = review_account(r)
+        if user and password:
+            attrs.update(demoAccountRequired=True, demoAccountName=user, demoAccountPassword=password)
+        patch_attributes(c, "betaAppReviewDetails", detail["id"], {k: val for k, val in attrs.items() if val},
+                         "TestFlight review contact")
+    except AppleError as e:
+        todo(f"TestFlight review contact: {e.detail()}")
+
+
 def cmd_store(venue_name):
     venue_dir, v, store = load_venue(venue_name)
     if not store:
@@ -813,6 +835,7 @@ def cmd_store(venue_name):
         "marketingUrl": store.get("marketing_url"),
     }, "description, keywords, promotional text, URLs")
     set_review_details(c, version, store)
+    set_beta_review_details(c, app, store)
     set_screenshots(c, vloc, venue_dir)
 
     todo("App Privacy (App Store Connect > the app > App Privacy): Apple's API cannot answer it. "
@@ -893,23 +916,7 @@ def cmd_testflight(venue_name, number):
     except AppleError as e:
         todo(f"TestFlight test information: {e.detail()}")
 
-    r = store.get("review", {})
-    try:
-        detail = c.get(f"/v1/apps/{app['id']}/betaAppReviewDetail")["data"]
-        attrs = {
-            "contactFirstName": r.get("contact_first_name"),
-            "contactLastName": r.get("contact_last_name"),
-            "contactEmail": r.get("contact_email"),
-            "contactPhone": os.environ.get("ASC_REVIEW_PHONE") or r.get("contact_phone"),
-            "notes": r.get("notes"),
-        }
-        user, password = review_account(r)
-        if user and password:
-            attrs.update(demoAccountRequired=True, demoAccountName=user, demoAccountPassword=password)
-        patch_attributes(c, "betaAppReviewDetails", detail["id"], {k: val for k, val in attrs.items() if val},
-                         "TestFlight review contact")
-    except AppleError as e:
-        todo(f"TestFlight review contact: {e.detail()}")
+    set_beta_review_details(c, app, store)
 
     group = internal_group(c, app["id"], tf.get("internal_group", "Vesopa team"))
     if group:
