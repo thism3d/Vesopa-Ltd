@@ -11,7 +11,8 @@ A venue app's App Store screenshots, from the app itself.
 
 and writes them to <venue>/store/screenshots/iphone-6.9/ (1290x2796) and
 ipad-13/ (2048x2732), where tool/app_store_connect.py `store` uploads them
-from. Captions and their order are "screenshots" in <venue>/store/app_store.json.
+from, and to android-phone/ (1080x1920), android-tablet-7/ (1200x1920) and
+android-tablet-10/ (1600x2560) for Google Play, uploaded by hand. Captions and their order are "screenshots" in <venue>/store/app_store.json.
 
 Needs Flutter on the PATH and Pillow.
 """
@@ -30,7 +31,12 @@ HERE = Path(__file__).resolve().parents[1]  # vesopa_loyalty
 REPO = HERE.parent
 
 LIVE = "https://loyalty.vesopa.com"
-SIZES = {"iphone-6.9": (1290, 2796), "ipad-13": (2048, 2732)}
+# App Store sizes, then Google Play's: a phone and 7- and 10-inch tablets, each
+# no longer than twice its width, as Play requires.
+SIZES = {
+    "iphone-6.9": (1290, 2796), "ipad-13": (2048, 2732),
+    "android-phone": (1080, 1920), "android-tablet-7": (1200, 1920), "android-tablet-10": (1600, 2560),
+}
 FONT_BOLD = REPO / "vesopa_server" / "public" / "assets" / "fonts" / "oswald" / "oswald-700.ttf"
 FONT_TEXT = REPO / "vesopa_server" / "public" / "assets" / "fonts" / "inter" / "inter-400.ttf"
 

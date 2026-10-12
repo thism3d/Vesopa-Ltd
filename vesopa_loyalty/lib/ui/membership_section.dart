@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -39,6 +41,12 @@ class MembershipSection extends ConsumerWidget {
     final canRenew = payer && plan != null && const ['active', 'frozen', 'expired'].contains(state);
     final frozenFrom = m['frozen_from'];
     final planName = plan == null ? '' : '${plan['name']}';
+    // The ring and "member since" for a membership with a plan and a term.
+    final header = plan != null && const ['active', 'frozen', 'expired'].contains(state);
+    final benefits = plan == null || state == 'none'
+        ? const <(IconData, String)>[]
+        : planBenefits(plan, freezeUsed: (m['freeze_days_used'] as num?)?.toInt());
+    final history = ((m['history'] as List?) ?? const []).whereType<Map>().map(Map<String, dynamic>.from).toList();
 
     final stateIcon = switch (state) {
       'active' => Icons.verified_outlined,
@@ -52,12 +60,16 @@ class MembershipSection extends ConsumerWidget {
     return SettingsCard(
       title: 'Membership',
       children: [
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: Icon(stateIcon, color: bad ? theme.colorScheme.error : null),
-          title: Text(plan != null ? planName : 'No membership'),
-          subtitle: Text(membershipStateText(m)),
-        ),
+        if (header)
+          _StatusHeader(membership: m, plan: plan, icon: stateIcon)
+        else
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(stateIcon, color: bad ? theme.colorScheme.error : null),
+            title: Text(plan != null ? planName : 'No membership'),
+            subtitle: Text(membershipStateText(m)),
+          ),
+        if (renewalDue(m) && payer && pending == null) _RenewalReminder(daysLeft: (m['days_left'] as num).toInt()),
         if (state == 'active' && frozenFrom != null && m['frozen_until'] != null)
           ListTile(
             contentPadding: EdgeInsets.zero,
@@ -72,7 +84,7 @@ class MembershipSection extends ConsumerWidget {
             title: const Text('Member number'),
             subtitle: Text('${m['member_number']}'),
           ),
-        if (m['joined_on'] != null && state != 'none')
+        if (m['joined_on'] != null && state != 'none' && !header)
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.event_note_outlined),
@@ -90,6 +102,7 @@ class MembershipSection extends ConsumerWidget {
                     '${f['state'] != null && f['state'] != state ? ' - ${f['state']}' : ''}',
             ].join('\n')),
           ),
+        if (benefits.isNotEmpty) _Benefits(lines: benefits),
         if (!payer && state != 'none')
           const ListTile(
             contentPadding: EdgeInsets.zero,
@@ -117,6 +130,7 @@ class MembershipSection extends ConsumerWidget {
               ),
             ),
         ],
+        if (history.isNotEmpty) _History(events: history),
         if (forSale.isNotEmpty && payer && pending == null) ...[
           const SizedBox(height: 10),
           Text(
@@ -175,6 +189,261 @@ class MembershipSection extends ConsumerWidget {
       final opened = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
       if (!opened) throw ApiError('The payment page could not be opened.');
     }, done: 'Finish paying in your browser, then come back here.');
+  }
+}
+
+/// Whether to nudge the member to renew: active, an end date within a month.
+bool renewalDue(Map<String, dynamic> m) {
+  final left = (m['days_left'] as num?)?.toInt();
+  return m['state'] == 'active' && m['plan'] is Map && left != null && left >= 0 && left <= 30;
+}
+
+/// How far through its current term a membership is, 0 to 1, from its end
+/// date and the plan's length. Null where there is no end date to count to.
+double? termProgress({required String? expiry, required int? termMonths, required DateTime today}) {
+  final end = expiry == null ? null : DateTime.tryParse(expiry);
+  if (end == null || termMonths == null || termMonths <= 0) return null;
+  final start = DateTime(end.year, end.month - termMonths, end.day);
+  final total = end.difference(start).inDays;
+  if (total <= 0) return null;
+  final done = DateTime(today.year, today.month, today.day).difference(start).inDays;
+  return (done / total).clamp(0.0, 1.0);
+}
+
+/// What the plan includes, in plain words, from what the server says of it.
+/// [freezeUsed] is the days frozen in the last year (/me/membership).
+List<(IconData, String)> planBenefits(Map<String, dynamic> plan, {int? freezeUsed}) {
+  final credits = (plan['class_credits_per_month'] as num?)?.toInt();
+  final family = (plan['family_size'] as num?)?.toInt() ?? 1;
+  final freeze = (plan['freeze_days_per_year'] as num?)?.toInt() ?? 0;
+  final term = (plan['term_months'] as num?)?.toInt();
+  final description = '${plan['description'] ?? ''}'.trim();
+  return [
+    if (description.isNotEmpty) (Icons.star_outline, description),
+    if (term != null && term > 0) (Icons.event_repeat, 'Runs for $term month${term == 1 ? '' : 's'} at a time'),
+    if (plan['includes_gym'] == true) (Icons.fitness_center, 'Gym included'),
+    if (plan['includes_classes'] == true)
+      (Icons.event_available, credits != null && credits > 0 ? '$credits class${credits == 1 ? '' : 'es'} a month' : 'Classes included'),
+    if (family > 1) (Icons.family_restroom, 'Covers up to $family people'),
+    if (freeze > 0)
+      (
+        Icons.ac_unit,
+        freezeUsed != null
+            ? '${math.max(0, freeze - freezeUsed)} of $freeze freeze days left this year'
+            : 'Up to $freeze days a year to freeze it',
+      ),
+  ];
+}
+
+/// The plan, at a glance: a ring for how much of the term is left, the days
+/// in the middle of it, and when they joined.
+class _StatusHeader extends StatelessWidget {
+  const _StatusHeader({required this.membership, required this.plan, required this.icon});
+
+  final Map<String, dynamic> membership;
+  final Map<String, dynamic>? plan;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final m = membership;
+    final state = '${m['state']}';
+    final daysLeft = (m['days_left'] as num?)?.toInt();
+    final progress = termProgress(
+      expiry: m['expiry'] as String?,
+      termMonths: (plan?['term_months'] as num?)?.toInt(),
+      today: DateTime.now(),
+    );
+    final expired = state == 'expired';
+    final colour = expired
+        ? theme.colorScheme.error
+        : daysLeft != null && daysLeft <= 30
+            ? Colors.orange.shade700
+            : theme.colorScheme.primary;
+    final joined = m['joined_on'];
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          Semantics(
+            label: daysLeft == null ? null : expired ? 'Expired' : '$daysLeft days left',
+            child: SizedBox(
+              width: 76,
+              height: 76,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  SizedBox.expand(
+                    child: CircularProgressIndicator(
+                      // What is left, so the ring empties as the term runs out.
+                      value: progress == null ? 1 : expired ? 0 : 1 - progress,
+                      strokeWidth: 7,
+                      strokeCap: StrokeCap.round,
+                      color: colour,
+                      backgroundColor: colour.withValues(alpha: 0.15),
+                    ),
+                  ),
+                  if (daysLeft != null && !expired && state != 'frozen')
+                    ExcludeSemantics(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('$daysLeft', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800, height: 1)),
+                          Text(daysLeft == 1 ? 'day' : 'days', style: theme.textTheme.labelSmall),
+                        ],
+                      ),
+                    )
+                  else
+                    Icon(icon, color: colour),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('${plan?['name'] ?? ''}', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 2),
+                Text(membershipStateText(m)),
+                if (joined != null)
+                  Text(
+                    'Member since ${dayText(joined)}',
+                    style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A gentle nudge in the last month, before the card stops working.
+class _RenewalReminder extends StatelessWidget {
+  const _RenewalReminder({required this.daysLeft});
+
+  final int daysLeft;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(top: 4, bottom: 6),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.notifications_active_outlined, color: Colors.orange.shade800),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              daysLeft == 0
+                  ? 'Your membership ends today. Renew to keep your card working.'
+                  : 'Your membership ends in $daysLeft day${daysLeft == 1 ? '' : 's'}. '
+                      'Renew early and you lose nothing: the new term starts when this one ends.',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// What the plan includes.
+class _Benefits extends StatelessWidget {
+  const _Benefits({required this.lines});
+
+  final List<(IconData, String)> lines;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 6, bottom: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('What your membership includes', style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 6),
+          for (final (icon, text) in lines)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(icon, size: 20),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text(text)),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The membership's own record: joined, renewed, frozen, and what was paid.
+/// The server sends the latest twenty.
+class _History extends StatelessWidget {
+  const _History({required this.events});
+
+  final List<Map<String, dynamic>> events;
+
+  static (IconData, String) _what(Object? kind) => switch (kind) {
+    'join' => (Icons.how_to_reg_outlined, 'Joined'),
+    'renew' => (Icons.autorenew, 'Renewed'),
+    'freeze' => (Icons.ac_unit, 'Frozen'),
+    'unfreeze' => (Icons.wb_sunny_outlined, 'Freeze ended'),
+    'plan' => (Icons.swap_horiz, 'Plan changed'),
+    'cancel' => (Icons.block, 'Cancelled'),
+    'leave' => (Icons.logout, 'Left the family plan'),
+    _ => (Icons.history, 'Updated'),
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Theme(
+      data: theme.copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: EdgeInsets.zero,
+        leading: const Icon(Icons.history),
+        title: const Text('Membership history'),
+        subtitle: Text('${events.length} update${events.length == 1 ? '' : 's'}'),
+        children: [
+          for (final e in events) _row(theme, e),
+        ],
+      ),
+    );
+  }
+
+  Widget _row(ThemeData theme, Map<String, dynamic> e) {
+    final (icon, label) = _what(e['kind']);
+    final amount = (e['amount_minor'] as num?)?.toInt();
+    final details = [
+      when(e['at'], time: false),
+      if (e['expiry_after'] != null && const ['join', 'renew', 'plan'].contains(e['kind']))
+        'runs to ${dayText(e['expiry_after'])}',
+      if (e['via'] == 'online') 'paid online',
+    ];
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      dense: true,
+      leading: Icon(icon, size: 20),
+      title: Text(label),
+      subtitle: Text(details.join(' · ')),
+      trailing: amount != null && amount > 0
+          ? Text(money(amount), style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700))
+          : null,
+    );
   }
 }
 

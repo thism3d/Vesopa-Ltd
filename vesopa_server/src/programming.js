@@ -1,5 +1,6 @@
 const express = require('express');
 const { requireAuth } = require('./auth');
+const receiptStatus = require('./receipt_status');
 
 /**
  * Programming (tax, finalise keys, error reasons, mix & match, vouchers) and
@@ -1088,7 +1089,9 @@ function programmingRoutes({ pool, broadcast, secret }) {
          LIMIT ${limit} OFFSET ${offset}`,
         [office]
       );
-      res.json(rows);
+      // Paid, part refunded or refunded, beside each bill.
+      const status = await receiptStatus.statusFor(pool, office, rows);
+      res.json(rows.map((r) => ({ ...r, ...receiptStatus.brief(status.get(r.id)) })));
     } catch (e) {
       next(e);
     }

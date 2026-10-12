@@ -75,6 +75,7 @@ CardStep cardStepFor({DojoStage? stage, DojoSession? session}) {
   if (session != null) {
     if (session.captured) return CardStep.done;
     if (session.needsSignature) return CardStep.signature;
+    if (session.signatureAccepted) return CardStep.processing;
     switch (session.lastNotification) {
       case 'PresentCard':
         return CardStep.present;
@@ -242,10 +243,23 @@ class CardPaymentView extends StatelessWidget {
     this.onCheckStatus,
     this.onRecordPaid,
     this.onRetry,
+    this.heading = 'Card payment',
+    this.refund = false,
+    this.extraAction,
   });
 
   final CardPaymentState state;
   final String amountLabel;
+
+  /// Above the amount: "Card payment", or "Card refund".
+  final String heading;
+
+  /// Words for a refund: "Refund approved", "Refund declined"…
+  final bool refund;
+
+  /// One more button beside Cancel while waiting, such as "Open the card page
+  /// again" for a card keyed in the browser.
+  final ({String label, IconData icon, VoidCallback onPressed})? extraAction;
 
   /// Null when the payment cannot be abandoned from the till.
   final VoidCallback? onCancel;
@@ -274,7 +288,11 @@ class CardPaymentView extends StatelessWidget {
     final failed = state.error != null ||
         (outcome != null && outcome != CardOutcome.approved);
 
-    final title = outcome?.title ?? (state.error != null ? 'Payment failed' : step.label);
+    final rawTitle =
+        outcome?.title ?? (state.error != null ? 'Payment failed' : step.label);
+    final title = refund
+        ? rawTitle.replaceAll('Payment', 'Refund').replaceAll('payment', 'refund')
+        : rawTitle;
     final detail = outcome != null
         ? (state.resultMessage ?? '')
         : state.error ?? state.readerPrompt ?? step.detail;
@@ -293,6 +311,7 @@ class CardPaymentView extends StatelessWidget {
         child: Column(
           children: [
             _AmountHeader(
+              heading: heading,
               amountLabel: amountLabel,
               terminal: state.terminalLabel,
               partner: state.partnerLabel,
@@ -405,24 +424,49 @@ class CardPaymentView extends StatelessWidget {
                 onCheckStatus: onCheckStatus,
                 onRecordPaid: onRecordPaid,
                 onRetry: onRetry,
+                refund: refund,
               )
             else if (onCancel != null && state.error == null)
               Padding(
                 padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-                child: SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: state.cancelling && onStopWaiting != null
-                      ? OutlinedButton.icon(
-                          onPressed: onStopWaiting,
-                          icon: const Icon(Icons.stop_circle_outlined),
-                          label: const Text('Stop waiting and check the payment'),
-                        )
-                      : OutlinedButton.icon(
-                          onPressed: state.cancelling ? null : onCancel,
-                          icon: const Icon(Icons.close),
-                          label: const Text('Cancel payment'),
+                child: Row(
+                  children: [
+                    if (extraAction != null && !state.cancelling) ...[
+                      Expanded(
+                        child: SizedBox(
+                          height: 52,
+                          child: FilledButton.tonalIcon(
+                            onPressed: extraAction!.onPressed,
+                            icon: Icon(extraAction!.icon),
+                            label: Text(extraAction!.label),
+                          ),
                         ),
+                      ),
+                      const SizedBox(width: 12),
+                    ],
+                    Expanded(
+                      child: SizedBox(
+                        height: 52,
+                        child: state.cancelling && onStopWaiting != null
+                            ? OutlinedButton.icon(
+                                onPressed: onStopWaiting,
+                                icon: const Icon(Icons.stop_circle_outlined),
+                                label: Text(
+                                  refund
+                                      ? 'Stop waiting and check the refund'
+                                      : 'Stop waiting and check the payment',
+                                ),
+                              )
+                            : OutlinedButton.icon(
+                                onPressed: state.cancelling ? null : onCancel,
+                                icon: const Icon(Icons.close),
+                                label: Text(
+                                  refund ? 'Cancel refund' : 'Cancel payment',
+                                ),
+                              ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
           ],
@@ -468,6 +512,7 @@ class _ResultActions extends StatelessWidget {
     this.onCheckStatus,
     this.onRecordPaid,
     this.onRetry,
+    this.refund = false,
   });
 
   final CardPaymentState state;
@@ -475,6 +520,7 @@ class _ResultActions extends StatelessWidget {
   final VoidCallback? onCheckStatus;
   final VoidCallback? onRecordPaid;
   final VoidCallback? onRetry;
+  final bool refund;
 
   @override
   Widget build(BuildContext context) {
@@ -493,7 +539,7 @@ class _ResultActions extends StatelessWidget {
               child: FilledButton.icon(
                 onPressed: state.checking ? null : onCheckStatus,
                 icon: const Icon(Icons.manage_search),
-                label: const Text('Check payment status'),
+                label: Text(refund ? 'Check refund status' : 'Check payment status'),
               ),
             ),
           if (uncertain && onRecordPaid != null)
@@ -503,7 +549,11 @@ class _ResultActions extends StatelessWidget {
                 onPressed: state.checking ? null : onRecordPaid,
                 icon: const Icon(Icons.task_alt),
                 label: Text(
-                  state.checkSaysPaid ? 'Record as paid' : 'Machine says approved: record as paid',
+                  refund
+                      ? 'Machine says approved: record as refunded'
+                      : state.checkSaysPaid
+                      ? 'Record as paid'
+                      : 'Machine says approved: record as paid',
                 ),
               ),
             ),
@@ -531,8 +581,14 @@ class _ResultActions extends StatelessWidget {
 }
 
 class _AmountHeader extends StatelessWidget {
-  const _AmountHeader({required this.amountLabel, this.terminal, this.partner});
+  const _AmountHeader({
+    required this.amountLabel,
+    this.terminal,
+    this.partner,
+    this.heading = 'Card payment',
+  });
 
+  final String heading;
   final String amountLabel;
   final String? terminal;
 
@@ -550,7 +606,7 @@ class _AmountHeader extends StatelessWidget {
       child: Column(
         children: [
           Text(
-            'Card payment',
+            heading,
             style: theme.textTheme.labelLarge?.copyWith(
               color: scheme.onPrimaryContainer.withValues(alpha: 0.8),
               letterSpacing: 1.1,

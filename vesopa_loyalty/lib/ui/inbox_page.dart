@@ -127,12 +127,7 @@ class _InboxPageState extends ConsumerState<InboxPage> {
             child: ListView(
               children: const [
                 SizedBox(height: 120),
-                Center(
-                  child: Text(
-                    'No news yet. Offers and news from the venue will appear here.',
-                    textAlign: TextAlign.center,
-                  ),
-                ),
+                Center(child: EmptyState('No news yet. Offers and news from the venue will appear here.')),
               ],
             ),
           );

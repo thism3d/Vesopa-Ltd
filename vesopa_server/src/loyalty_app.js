@@ -218,6 +218,10 @@ async function brandFor(db, office, app) {
   if (look && look.website && !links.website) links.website = look.website;
   if (look && look.phone && !links.phone) links.phone = look.phone;
   if (look && look.email && !links.email) links.email = look.email;
+  // A venue with its own icons (venue_looks.js `art`): its crest is the logo
+  // and the icon, as a whole address, since emails and other sites use them.
+  const art = venueLooks.artFor(a.slug);
+  const own = (p) => (art ? `${new URL(appUrl(a.slug)).origin}${p}` : null);
   const lat = a.latitude ?? w.latitude ?? null;
   const lng = a.longitude ?? w.longitude ?? null;
   return {
@@ -225,8 +229,8 @@ async function brandFor(db, office, app) {
     name: a.app_name || w.program_name || (dinein && dinein.display_name) || (officeRow && officeRow.name) || 'Loyalty',
     venue: w.issuer_name || (dinein && dinein.display_name) || (officeRow && officeRow.name) || '',
     welcome: a.welcome_text || 'Your card, your points and our latest news.',
-    logo: a.logo_url || w.logo_url || (dinein && dinein.logo_url) || null,
-    icon: a.icon_url || a.logo_url || w.logo_url || null,
+    logo: (art && own(art.crest)) || a.logo_url || w.logo_url || (dinein && dinein.logo_url) || null,
+    icon: (art && own(art.icon512)) || a.icon_url || a.logo_url || w.logo_url || null,
     hero: a.hero_url || w.hero_url || null,
     colours: {
       primary: a.colour_primary || (w.hex_background && HEX.test(w.hex_background) ? w.hex_background : null)
@@ -301,33 +305,87 @@ async function issueLoyaltyNumber(conn, office, customerId) {
   return card;
 }
 
+/**
+ * The member at this venue with this email address, the oldest where (from
+ * before this was guarded) there are two.
+ *
+ * Case and stray spaces are not a different person: a till that typed
+ * " Sam@Example.com" and an app that sends "sam@example.com" mean the same
+ * member. Nothing cleverer than that -- Gmail's dots are left alone here, as
+ * everywhere else in the back office, because at most providers a dot IS a
+ * different mailbox.
+ */
 async function customerByEmail(db, office, email) {
+  const clean = String(email || '').trim().toLowerCase();
+  if (!clean) return null;
   const [[row]] = await db.query(
     `SELECT id, name, email, card_number FROM epos_customers
-      WHERE email_key = ? AND LOWER(email) = ? ORDER BY created_at LIMIT 1`,
-    [office, String(email).toLowerCase()]
+      WHERE email_key = ? AND LOWER(TRIM(email)) = ? ORDER BY created_at LIMIT 1`,
+    [office, clean]
   );
   return row || null;
 }
 
-/** A new member, from the app. A card number straight away, so the QR works at once. */
+/** The name the join lock for one address at one venue goes by: 64 characters at most. */
+function joinLockName(office, email) {
+  return `vjoin:${crypto.createHash('sha1').update(`${office}\n${email}`).digest('hex')}`;
+}
+
+/**
+ * A new member, from the app. A card number straight away, so the QR works at once.
+ *
+ * ONE PERSON, ONE MEMBER PER VENUE (owner, 2026-10-12: "no duplicate accounts
+ * same mail"). Every way in -- a code, Apple, Google, Vesopa -- arrives here
+ * only after finding nobody with the address, and two of them can arrive at
+ * once: the code verified on a phone while Apple finishes on an iPad, or one
+ * tap sent twice on a slow connection. Each would look, find nobody, and make
+ * a member. So the look and the insert happen under a lock on that address at
+ * that venue, and the second arrival finds the first one's member and gets it.
+ *
+ * A NAMED LOCK, NOT A UNIQUE INDEX. epos_customers cannot carry a unique key on
+ * (email_key, email): live already has duplicates (tool/merge_duplicate_members.py
+ * is how they go), till customers share family addresses on purpose, and an
+ * index that refused those would break the till. GET_LOCK serialises exactly
+ * the joins for one address and nothing else. Answers the id either way.
+ */
 async function joinScheme(pool, office, { name, email }) {
-  const id = crypto.randomUUID();
+  const clean = String(email || '').trim().toLowerCase();
   const conn = await pool.getConnection();
+  let id = null;
+  let created = false;
+  let locked = false;
   try {
-    await conn.beginTransaction();
-    await conn.execute(
-      `INSERT INTO epos_customers (id, email_key, name, email, notes)
-       VALUES (?, ?, ?, ?, 'Joined in the loyalty app')`,
-      [id, office, name, email]
-    );
-    await issueLoyaltyNumber(conn, office, id);
-    await conn.commit();
-  } catch (e) {
-    await conn.rollback();
-    throw e;
+    if (clean) {
+      const [[got]] = await conn.query('SELECT GET_LOCK(?, 10) AS ok', [joinLockName(office, clean)]);
+      locked = !!(got && Number(got.ok) === 1);
+      const existing = await customerByEmail(conn, office, clean);
+      if (existing) id = existing.id;
+    }
+    if (!id) {
+      id = crypto.randomUUID();
+      await conn.beginTransaction();
+      try {
+        await conn.execute(
+          `INSERT INTO epos_customers (id, email_key, name, email, notes)
+           VALUES (?, ?, ?, ?, 'Joined in the loyalty app')`,
+          [id, office, name, clean || email]
+        );
+        await issueLoyaltyNumber(conn, office, id);
+        await conn.commit();
+      } catch (e) {
+        await conn.rollback();
+        throw e;
+      }
+      created = true;
+    }
   } finally {
+    if (locked) await conn.query('SELECT RELEASE_LOCK(?)', [joinLockName(office, clean)]).catch(() => {});
     conn.release();
+  }
+  if (!created) {
+    // Somebody else's sign-in made them a moment ago: theirs, with its card.
+    await ensureCard(pool, office, id);
+    return id;
   }
   // The venue's default loyalty scheme, with its welcome points, and a member
   // number that is the card without its prefix. See src/loyalty_schemes.js.
@@ -1591,7 +1649,14 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
        * own icons. The maskable pair matters on Android: without one it crops
        * the square inside its circle and takes the corners off the logo.
        */
-      const icons = brand.icon
+      const art = venueLooks.artFor(app.slug);
+      const icons = art
+        ? [
+          { src: art.icon192, sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: art.icon512, sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: art.maskable512, sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+        ]
+        : brand.icon
         ? [
           { src: brand.icon, sizes: '192x192', type: 'image/png', purpose: 'any' },
           { src: brand.icon, sizes: '512x512', type: 'image/png', purpose: 'any' },
@@ -1743,6 +1808,8 @@ function distanceM(lat1, lng1, lat2, lng2) {
 
 module.exports = {
   loyaltyAppRoutes,
+  customerByEmail,
+  joinScheme,
   startLoyaltyScheduler,
   sendDue,
   deliver,

@@ -1304,6 +1304,22 @@ tr[draggable="true"] { cursor: grabbing; }
 .receipt-view td, .receipt-view th { padding: 5px 4px; border: 0; font-size: 13px; }
 .receipt-view .r-tot td { border-top: 1px dashed var(--line); font-weight: 700; padding-top: 8px; }
 .receipt-view .r-line-tot { text-align: right; }
+.receipt-view .r-refund td { color: #a3221a; font-size: 12.5px; }
+
+/* Paid / Part refunded / Refunded, with how the bill was paid (EPOS 1.17). */
+.r-badges { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.pay-ico { display: inline-flex; width: 20px; height: 20px; color: var(--muted); }
+.pay-ico svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.pay-ico.dojo { color: #2f7fd1; }
+.r-pill { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+.r-pill.paid { background: #ddf3e6; color: #1b6e3e; }
+.r-pill.part_refunded { background: #ffebc8; color: #8a4b00; }
+.r-pill.refunded { background: #fde0dc; color: #a3221a; }
+.receipt-status { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; margin-bottom: 12px; border-radius: 10px; font-size: 13px; font-weight: 600; }
+.receipt-status.st-paid { background: #eef8f2; color: #1b6e3e; }
+.receipt-status.st-part_refunded { background: #fff5e3; color: #8a4b00; }
+.receipt-status.st-refunded { background: #fdeeec; color: #a3221a; }
+@media print { .receipt-status { display: none !important; } }
 .linkish { cursor: pointer; color: var(--brand-deep); text-decoration: underline; }
 
 /* ---------- Image cropper ---------- */

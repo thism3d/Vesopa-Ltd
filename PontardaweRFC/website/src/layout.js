@@ -113,10 +113,31 @@ ${noindex ? '<meta name="robots" content="noindex">' : '<meta name="robots" cont
    rises in as it is scrolled to (site.js). Links to other pages are fetched
    ahead when the visitor points at or presses them, so they open at once. */
 document.documentElement.classList.add('js');
+/* Which phone, so each visitor is shown the one app store their phone uses. */
+(function(){var u=navigator.userAgent||'',d=document.documentElement;
+if(/iPhone|iPad|iPod/.test(u)||(/Macintosh/.test(u)&&navigator.maxTouchPoints>1))d.classList.add('os-ios');
+else if(/Android/.test(u))d.classList.add('os-android');})();
 </script>
 <script type="speculationrules">{"prerender":[{"where":{"and":[{"href_matches":"/*"},{"not":{"href_matches":["/api/*","/tickets/buy*","/tickets/order*"]}}]},"eagerness":"moderate"}]}</script>
 <script type="application/ld+json">${JSON.stringify(graph).replace(/</g, '\\u003c')}</script>
 </head>`;
+}
+
+const IOS_APP = club.web.ios_app;
+const ANDROID_APP = club.web.android_app;
+
+/**
+ * The official store badges (Apple's and Google's own artwork, unaltered
+ * apart from Google's transparent margin). An iPhone is shown only the App
+ * Store, an Android phone only Google Play (the head script decides, before
+ * anything is drawn), a computer both and a QR code for /app.
+ */
+function appBadges({ qr = false, cls = '' } = {}) {
+  return `<div class="store-badges${cls ? ` ${cls}` : ''}">
+  <a class="store-badge badge-ios" href="${esc(IOS_APP)}" rel="noopener" data-store="ios"><img src="/img/badges/app-store.svg" alt="Download on the App Store" width="120" height="40"></a>
+  <a class="store-badge badge-android" href="${esc(ANDROID_APP)}" rel="noopener" data-store="android"><img src="/img/badges/google-play.png" alt="Get it on Google Play" width="135" height="40"></a>
+  ${qr ? `<figure class="store-qr"><img src="/img/badges/app-qr.svg" alt="QR code: scan with your phone camera to get the app" width="96" height="96" loading="lazy"><figcaption>Scan with your phone</figcaption></figure>` : ''}
+</div>`;
 }
 
 function header(path) {
@@ -172,6 +193,10 @@ function footer() {
         <li><a href="/sitemap.xml">Sitemap</a></li>
       </ul>
     </div>
+  </div>
+  <div class="wrap foot-app">
+    <div><h2>Get the club app</h2><p>Your members' card, club news and offers on your phone.</p></div>
+    ${appBadges({ qr: true })}
   </div>
   <div class="wrap foot-base">
     <p>© ${new Date().getFullYear()} ${esc(club.company.name)}. Registered in England and Wales, company ${esc(club.company.number)}. Registered office: ${esc(club.company.registered_office)}.</p>
@@ -232,4 +257,5 @@ function pageHero({ kicker, title, lead, art = '' }) {
 </section>`;
 }
 
-module.exports = { page, pageHero, esc, icon, SITE, MEMBERS, NAV, clubLd, ASSET_VERSION };
+module.exports = {
+  appBadges, IOS_APP, ANDROID_APP, page, pageHero, esc, icon, SITE, MEMBERS, NAV, clubLd, ASSET_VERSION };

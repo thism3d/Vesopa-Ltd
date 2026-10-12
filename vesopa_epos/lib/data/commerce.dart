@@ -57,6 +57,7 @@ class TenderSettings {
     this.allowPartialCard = true,
     this.allowSplitBill = true,
     this.allowEmptyPay = false,
+    this.manualViaDojo = false,
   });
 
   final bool gratuityEnabled;
@@ -80,6 +81,11 @@ class TenderSettings {
   /// Pay opens the payment screen on an empty check, and an amount keyed
   /// there is rung up as a Quick sale.
   final bool allowEmptyPay;
+
+  /// Manual card goes through Dojo's keyed payment. Off (the default), the
+  /// key records a card payment taken on a separate card machine, with
+  /// nothing sent to Dojo.
+  final bool manualViaDojo;
 
   bool get autoGratuity => gratuityEnabled && gratuityMode == 'auto';
   bool get promptGratuity => gratuityEnabled && gratuityMode == 'prompt';
@@ -132,6 +138,7 @@ class TenderSettings {
       allowPartialCard: _flag(j['allow_partial_card']),
       allowSplitBill: _flag(j['allow_split_bill']),
       allowEmptyPay: _flag(j['allow_empty_pay']),
+      manualViaDojo: _flag(j['allow_manual_dojo']),
     );
   }
 }

@@ -8,6 +8,8 @@
  *   node tool/invite/dojo/send-dojo-invite.js --send          # to Dojo, cc Meirion
  *   node tool/invite/dojo/send-dojo-invite.js --send --only info@vesopa.com   # one copy only
  *   ... --final       # 11 Oct: accreditation fixes done, final testing Mon 12 Oct 10:30 (new invite)
+ *   ... --confirm     # 12 Oct morning: please confirm today's final testing at 10:30
+ *   ... --review      # 12 Oct: UAT round 2 fixes (EPOS 1.16.3) + accreditation review 4pm UK, Alex and Finn only
  *   ... --reminder2   # 9 Oct midday: reminder for 1:30pm with the new Meet link
  *   ... --correction  # 9 Oct: right time 1:30pm (not 8:30am), new Meet link, invite SEQUENCE 2
  *   ... --reminder    # morning-of reminder, 9 Oct: today 1:30pm, Meet link and dial-in
@@ -32,7 +34,9 @@ const RECIPIENTS = [
 ];
 
 async function main() {
-  const eml = path.join(__dirname, process.argv.includes('--final') ? 'Vesopa-Dojo-final-testing.eml'
+  const eml = path.join(__dirname, process.argv.includes('--review') ? 'Vesopa-Dojo-review.eml'
+    : process.argv.includes('--confirm') ? 'Vesopa-Dojo-confirm.eml'
+    : process.argv.includes('--final') ? 'Vesopa-Dojo-final-testing.eml'
     : process.argv.includes('--reminder2') ? 'Vesopa-Dojo-kick-off-reminder2.eml'
     : process.argv.includes('--correction') ? 'Vesopa-Dojo-kick-off-correction.eml'
     : process.argv.includes('--reminder') ? 'Vesopa-Dojo-kick-off-reminder.eml'
@@ -49,7 +53,9 @@ async function main() {
   const onlyAt = process.argv.indexOf('--only');
   const only = onlyAt > -1 ? process.argv[onlyAt + 1] : null;
   if (onlyAt > -1 && !/^[^@\s]+@[^@\s]+$/.test(only || '')) throw new Error('--only needs an address');
-  const to = only ? [only] : RECIPIENTS;
+  // The 12 Oct review email goes to Alex and Finn only (cc Meirion), not Oliver.
+  const list = process.argv.includes('--review') ? RECIPIENTS.filter((r) => r !== 'oliver.england@paymentsense.com') : RECIPIENTS;
+  const to = only ? [only] : list;
 
   if (!process.argv.includes('--send')) {
     console.log(`would send "${subject}" from ${FROM} to ${to.join(', ')} (${Math.round(raw.length / 1024)} KB). Add --send.`);

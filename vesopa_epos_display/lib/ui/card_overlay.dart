@@ -28,6 +28,18 @@ class CardOverlay extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (card.heading != null) ...[
+                  Text(
+                    card.heading!.toUpperCase(),
+                    style: const TextStyle(
+                      color: Brand.inkSoft,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 2,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
                 if (card.amountMinor > 0)
                   Text(
                     money(card.amountMinor),

@@ -202,22 +202,32 @@ class _SignInPageState extends ConsumerState<SignInPage> {
   /// made for this venue's own sign-in (an older one, on loyalty.vesopa.com)
   /// is tried when there is no Vesopa one on the device.
   Future<void> _signInWithVesopaPasskey() => _run(() async {
+    final api = ref.read(apiProvider);
+    Future<void> venuePasskey() async {
+      final venue = await passkeyGet(await api.passkeyOptions());
+      final token = await api.signInWithPasskey(
+        challenge: venue.challenge,
+        credential: venue.credential,
+        platform: ref.read(configProvider).platform,
+      );
+      await ref.read(sessionProvider.notifier).signedIn(token);
+    }
+
+    // A passkey added on this device from Account > Signing in is the venue's
+    // own: ask for that one first (lib/platform/passkey.dart says why).
+    if (_config.usable.contains('passkey') && await venuePasskeyHere()) {
+      try {
+        return await venuePasskey();
+      } on NativeAuthError catch (e) {
+        if (e.code != 'none') rethrow;
+      }
+    }
     final options = await vesopaPasskeyOptions();
     final PasskeyResult result;
     try {
       result = await NativeAuth.passkeyGet(options);
     } on NativeAuthError catch (e) {
-      if (e.code == 'none' && _config.usable.contains('passkey')) {
-        final api = ref.read(apiProvider);
-        final venue = await passkeyGet(await api.passkeyOptions());
-        final token = await api.signInWithPasskey(
-          challenge: venue.challenge,
-          credential: venue.credential,
-          platform: ref.read(configProvider).platform,
-        );
-        await ref.read(sessionProvider.notifier).signedIn(token);
-        return;
-      }
+      if (e.code == 'none' && _config.usable.contains('passkey')) return venuePasskey();
       rethrow;
     }
     await _nativeVesopa(
@@ -420,35 +430,9 @@ class _SignInPageState extends ConsumerState<SignInPage> {
     // mode: white words and a white button on the club's red, as the crest
     // and the splash before it.
     final brand = ref.watch(brandProvider).requireValue;
-    final dark = VenueStyle.forBrightness(brand, Brightness.dark).theme();
+    // Every colour on it chosen to read on that red (VenueStyle.onClub).
     return Theme(
-      data: dark.copyWith(
-        scaffoldBackgroundColor: Colors.transparent,
-        filledButtonTheme: FilledButtonThemeData(
-          style: dark.filledButtonTheme.style?.copyWith(
-            backgroundColor: const WidgetStatePropertyAll(Colors.white),
-            foregroundColor: WidgetStatePropertyAll(VenueStyle.club),
-          ),
-        ),
-        textButtonTheme: TextButtonThemeData(
-          style: TextButton.styleFrom(
-            foregroundColor: Colors.white,
-            textStyle: dark.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600, decoration: TextDecoration.underline),
-          ),
-        ),
-        inputDecorationTheme: dark.inputDecorationTheme.copyWith(
-          fillColor: Colors.black.withValues(alpha: 0.22),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.18)),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: Colors.white, width: 1.6),
-          ),
-        ),
-      ),
+      data: VenueStyle.onClub(VenueStyle.forBrightness(brand, Brightness.dark).theme()),
       child: ClubGradient(child: Builder(builder: _page)),
     );
   }

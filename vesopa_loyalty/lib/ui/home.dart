@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/membership.dart';
+import '../data/preferences.dart';
 import '../data/session.dart';
 import '../data/watch_card.dart';
 import '../platform/watch.dart';
@@ -15,6 +16,7 @@ import 'classes_page.dart';
 import 'history_page.dart';
 import 'inbox_page.dart';
 import 'membership_section.dart';
+import 'settings_page.dart';
 import 'venue_page.dart';
 import '../data/venue_style.dart';
 import 'widgets.dart';
@@ -70,11 +72,18 @@ class _HomePageState extends ConsumerState<HomePage> with WidgetsBindingObserver
     }
     onOpenRequest((hash) {
       if (!mounted) return;
+      // Siri's "show my card", or a points notification (ios/Runner/SiriShortcuts.swift).
+      if (hash.startsWith('/card')) {
+        setState(() => _tabName = 'Card');
+        _glow();
+        return;
+      }
       ref.invalidate(messagesProvider);
       _openNews();
     });
     unawaited(_refresh());
-    _glow();
+    // The member's "Brighten the screen for my card" first, then the glow.
+    loadCardGlow().then((_) => _glow());
   }
 
   @override
@@ -104,7 +113,10 @@ class _HomePageState extends ConsumerState<HomePage> with WidgetsBindingObserver
   }
 
   /// Full brightness on the Card tab, where the QR code is; normal elsewhere.
-  void _glow() => unawaited(_tabName == 'Card' ? ScreenGlow.on() : ScreenGlow.off());
+  void _glow() {
+    if (!mounted) return;
+    unawaited(_tabName == 'Card' ? ScreenGlow.on() : ScreenGlow.off());
+  }
 
   Future<void> _refresh() async {
     final brand = ref.read(brandProvider).value;
@@ -159,6 +171,8 @@ class _HomePageState extends ConsumerState<HomePage> with WidgetsBindingObserver
   Widget build(BuildContext context) {
     ref.listen(meProvider, (_, _) => _syncWatch());
     ref.listen(messagesProvider, (_, _) => _syncWatch());
+    // Switched back on in Settings while the card is behind it.
+    ref.listen(cardGlowProvider, (_, _) => _glow());
     final brand = ref.watch(brandProvider).requireValue;
     final unread = (ref.watch(messagesProvider).value?['unread'] as num?)?.toInt() ?? 0;
     final width = MediaQuery.of(context).size.width;
@@ -194,6 +208,13 @@ class _HomePageState extends ConsumerState<HomePage> with WidgetsBindingObserver
             label: Text('$unread'),
             child: Icon(unread > 0 ? Icons.notifications_active : Icons.notifications_none),
           ),
+        ),
+        // The app's own settings, from wherever they are: the Account tab is
+        // the member, this is the app (ui/settings_page.dart).
+        IconButton(
+          onPressed: () => SettingsPage.open(context),
+          tooltip: 'Settings',
+          icon: const Icon(Icons.settings_outlined),
         ),
         const SizedBox(width: 4),
       ],

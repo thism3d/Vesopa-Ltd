@@ -50,6 +50,11 @@
       "screen": "5-sign-in",
       "title": "Members only",
       "subtitle": "Sign in with your email address and a one-time code."
+    },
+    {
+      "screen": "6-welcome",
+      "title": "Welcome to the club",
+      "subtitle": "A quick tour, then your card, news and match-day notices in one place."
     }
   ]
 }

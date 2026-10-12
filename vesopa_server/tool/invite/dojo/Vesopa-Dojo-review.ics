@@ -1,0 +1,62 @@
+BEGIN:VCALENDAR
+PRODID:-//Vesopa Software Ltd//Vesopa Mail//EN
+VERSION:2.0
+CALSCALE:GREGORIAN
+METHOD:REQUEST
+BEGIN:VTIMEZONE
+TZID:Europe/London
+BEGIN:DAYLIGHT
+TZOFFSETFROM:+0000
+TZOFFSETTO:+0100
+TZNAME:BST
+DTSTART:19700329T010000
+RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU
+END:DAYLIGHT
+BEGIN:STANDARD
+TZOFFSETFROM:+0100
+TZOFFSETTO:+0000
+TZNAME:GMT
+DTSTART:19701025T020000
+RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU
+END:STANDARD
+END:VTIMEZONE
+BEGIN:VEVENT
+UID:11e1b14e-6200-4e14-8b52-d0326eedfaaf@vesopa.com
+DTSTAMP:20261012T134632Z
+DTSTART;TZID=Europe/London:20261012T160000
+DTEND;TZID=Europe/London:20261012T164500
+SUMMARY:Vesopa Dojo Accreditation Review
+URL:https://meet.google.com/bpa-fqef-rpz
+X-GOOGLE-CONFERENCE:https://meet.google.com/bpa-fqef-rpz
+DESCRIPTION:Vesopa Dojo accreditation review of Vesopa EPOS 1.16.3.\n\nJoi
+ n with Google Meet: https://meet.google.com/bpa-fqef-rpz\nOr dial: +1 401-
+ 830-3638 PIN: 899656638\nMore phone numbers: https://tel.meet/bpa-fqef-rpz
+ ?pin=6859843447630\n\nAgenda:\n1. A quick walk through the UAT round 2 fix
+ es in Vesopa EPOS 1.16.3\n2. Retest the signature flow: accepted, rejected
+ , and Dojo's 80-second auto-accept\n3. Retest matched and unlinked refunds
+ , including expired results\n4. Sign-off, live API access and the go-live 
+ date\n\nIf this time does not suit, reply to muzahid@vesopa.com with a tim
+ e that does.
+LOCATION:https://meet.google.com/bpa-fqef-rpz
+ORGANIZER;CN="Muzahid Islam":mailto:muzahid@vesopa.com
+ATTENDEE;CN="Alex Radzio";ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=
+ TRUE:mailto:alex.radzio@dojo.tech
+ATTENDEE;CN="Fintan Bridger";ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RS
+ VP=TRUE:mailto:fintan.bridger@paymentsense.com
+ATTENDEE;CN="Meirion Davies";ROLE=OPT-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RS
+ VP=TRUE:mailto:info@vesopasoftware.com
+ATTENDEE;CN="Meirion Davies";ROLE=OPT-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RS
+ VP=TRUE:mailto:info@vesopa.com
+SEQUENCE:0
+STATUS:CONFIRMED
+TRANSP:OPAQUE
+CLASS:PUBLIC
+X-MICROSOFT-CDO-BUSYSTATUS:BUSY
+X-MICROSOFT-CDO-IMPORTANCE:1
+BEGIN:VALARM
+ACTION:DISPLAY
+DESCRIPTION:Vesopa Dojo Accreditation Review
+TRIGGER:-PT15M
+END:VALARM
+END:VEVENT
+END:VCALENDAR

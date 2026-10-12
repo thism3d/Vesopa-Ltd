@@ -18,8 +18,12 @@ class ScreenGlow {
 
   static bool _on = false;
 
+  /// The member's "Brighten the screen for my card" (Settings; kept by
+  /// data/preferences.dart). Off means [on] does nothing at all.
+  static bool allowed = true;
+
   static Future<void> on() async {
-    if (kIsWeb || _on) return;
+    if (kIsWeb || _on || !allowed) return;
     try {
       await ScreenBrightness.instance.setApplicationScreenBrightness(1.0);
       _on = true;

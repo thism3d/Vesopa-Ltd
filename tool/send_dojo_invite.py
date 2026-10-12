@@ -5,6 +5,8 @@
     python tool/send_dojo_invite.py --send --only info@vesopa.com   # one test copy
     python tool/send_dojo_invite.py --confirmed --send   # follow-up: 1:30pm accepted, Meet link
     python tool/send_dojo_invite.py --final --send       # fixes done, final testing Mon 12 Oct 10:30
+    python tool/send_dojo_invite.py --confirm --send     # 12 Oct: please confirm today's 10:30 final testing
+    python tool/send_dojo_invite.py --review --send      # 12 Oct: UAT round 2 fixes, review 4pm UK (Alex, Finn)
     python tool/send_dojo_invite.py --reminder2 --send   # 9 Oct midday: reminder, new Meet link
     python tool/send_dojo_invite.py --correction --send  # 9 Oct: 1:30pm not 8:30am, new Meet link
     python tool/send_dojo_invite.py --reminder --send    # 9 Oct morning: reminder for today 1:30pm

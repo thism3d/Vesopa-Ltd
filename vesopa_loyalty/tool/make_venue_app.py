@@ -17,7 +17,8 @@ from three things in the venue's folder:
 
     <venue>/venue.json        slug, names, package name, colours, version
     <venue>/overlay/          files laid over the copy at the same paths:
-                              icons, splash pictures, the intro's crest
+                              icons, splash pictures, the intro's crest,
+                              the Venue tab's header
                               (tool/make_venue_art.py draws them)
     <venue>/google-services.json   Firebase's file for the venue's package
                               (gitignored; tool/firebase_android_app.py
@@ -321,6 +322,15 @@ def dart(app: Path, v):
         "\t<key>com.apple.developer.applesignin</key>\n\t<array>\n\t\t<string>Default</string>\n\t</array>\n"
         "\t<key>com.apple.developer.associated-domains</key>\n\t<array>\n"
         + "".join(f"\t\t<string>webcredentials:{d}</string>\n" for d in domains)
+        + "\t</array>\n"
+        # Wallet: the card and membership passes (ios/Runner/WalletBridge.swift).
+        # Adding a pass needs no entitlement, but telling whether it is already
+        # in Wallet (PKPassLibrary.containsPass) does. The team's literal id
+        # rather than $(TeamIdentifierPrefix), which is empty when the build is
+        # not signed with a team. app_store_connect.py prepare turns WALLET on.
+        + "\t<key>com.apple.developer.pass-type-identifiers</key>\n\t<array>\n"
+        + "".join(f"\t\t<string>{v.get('apple_team', 'G238FR2ZC9')}.{t}</string>\n"
+                  for t in ("pass.com.vesopa.loyalty", "pass.com.vesopa.membership"))
         + "\t</array>\n</dict>\n</plist>"))])
     (app / "venue_defines.json").write_text(json.dumps(defines, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
@@ -368,6 +378,13 @@ def main():
             shutil.copytree(src, app / name, ignore=ignore, dirs_exist_ok=True)
         else:
             shutil.copy2(src, app / name)
+    # An icon set the overlay brings whole (its own Contents.json: the
+    # venue's single 1024 icon with its dark and tinted versions) replaces the
+    # app's, rather than landing on top of the Kitchen's per-size PNGs, which
+    # Xcode would then warn about as icons nobody uses.
+    for own in overlay.rglob("*.appiconset"):
+        if (own / "Contents.json").exists():
+            shutil.rmtree(app / own.relative_to(overlay), ignore_errors=True)
     shutil.copytree(overlay, app, dirs_exist_ok=True)
 
     android(app, venue_dir, v)

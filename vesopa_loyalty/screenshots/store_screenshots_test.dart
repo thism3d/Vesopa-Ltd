@@ -36,10 +36,14 @@ final _venue = jsonDecode(File('screenshots/venue.json').readAsStringSync()) as 
 final _slug = _venue['slug'] as String;
 final _logoUrl = '$_base/uploads/app/$_slug-crest.png';
 
-/// The devices, as App Store Connect sizes them: logical size and pixel ratio.
+/// The devices, as App Store Connect and Google Play size them: logical size,
+/// pixel ratio, and which phone's look the pages take.
 const _devices = {
-  'iphone-6.9': (Size(430, 932), 3.0),
-  'ipad-13': (Size(1024, 1366), 2.0),
+  'iphone-6.9': (Size(430, 932), 3.0, TargetPlatform.iOS),
+  'ipad-13': (Size(1024, 1366), 2.0, TargetPlatform.iOS),
+  'android-phone': (Size(412, 915), 2.625, TargetPlatform.android),
+  'android-tablet-7': (Size(600, 960), 2.0, TargetPlatform.android),
+  'android-tablet-10': (Size(800, 1280), 2.0, TargetPlatform.android),
 };
 
 DateTime _daysAgo(int d, [int hour = 19]) {
@@ -56,7 +60,9 @@ Map<String, dynamic> _brand() {
   final live = File('screenshots/brand.json');
   if (live.existsSync()) {
     final b = jsonDecode(live.readAsStringSync()) as Map<String, dynamic>;
-    return {...b, 'logo': _logoUrl, 'icon': _logoUrl, 'hero': null, 'push': {'web': null, 'windows': false}};
+    // Its fonts are the venue's own, already loaded from the build by
+    // _fonts(): nothing here is fetched.
+    return {...b, 'logo': _logoUrl, 'icon': _logoUrl, 'hero': null, 'fonts': {'heading': null, 'body': null}, 'push': {'web': null, 'windows': false}};
   }
   final c = (_venue['colours'] as Map).cast<String, dynamic>();
   return {
@@ -292,9 +298,9 @@ void main() {
     await _fonts();
   });
 
-  for (final MapEntry(key: device, value: (size, ratio)) in _devices.entries) {
+  for (final MapEntry(key: device, value: (size, ratio, platform)) in _devices.entries) {
     testWidgets('store screenshots, $device', (tester) async {
-      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      debugDefaultTargetPlatformOverride = platform;
       // The club colour drifts for ever (ClubGradient); stood still, the
       // pages settle and the pictures are the same every run.
       tester.platformDispatcher.accessibilityFeaturesTestValue = const FakeAccessibilityFeatures(disableAnimations: true);
@@ -308,13 +314,15 @@ void main() {
       addTearDown(tester.view.reset);
       await _crest(tester);
 
-      Future<void> run(Future<void> Function(GlobalKey shot) body, {bool signedIn = true}) async {
+      Future<void> run(Future<void> Function(GlobalKey shot) body, {bool signedIn = true, bool welcomed = true}) async {
         // Outside test/, so the analyzer does not know this is a test.
         // ignore: invalid_use_of_visible_for_testing_member
         SharedPreferences.setMockInitialValues({
           'loyalty_venue_slug': _slug,
           if (signedIn) 'loyalty_token_$_slug': 'store-screenshots',
           'push_on_$_slug': true,
+          // The welcome a venue build shows once (ui/onboarding.dart).
+          if (welcomed) 'welcome_seen': true,
         });
         final shot = GlobalKey();
         await http.runWithClient(() async {
@@ -349,6 +357,10 @@ void main() {
       await run((shot) async {
         await _save(tester, shot, device, ratio, '5-sign-in');
       }, signedIn: false);
+
+      await run((shot) async {
+        await _save(tester, shot, device, ratio, '6-welcome');
+      }, signedIn: false, welcomed: false);
 
       debugDefaultTargetPlatformOverride = null;
     });

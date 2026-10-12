@@ -98,7 +98,15 @@ AUTH_FILES = [
     "vesopa_auth/src/server.js",
     "vesopa_auth/test/native.test.js",
     "vesopa_auth/package.json",
+    # 2026-10-12: a member's Vesopa passkeys listed and removed from a venue app
+    # (routes/member_passkeys.js), and the one-account-per-person tests.
+    "vesopa_auth/src/routes/member_passkeys.js",
+    "vesopa_auth/test/accounts.test.js",
 ]
+# Files the server may not have yet: a failed test run deletes them rather
+# than restoring them from a backup that never held them.
+NEW_AUTH_FILES = {"vesopa_auth/src/routes/member_passkeys.js",
+                  "vesopa_auth/test/accounts.test.js"}
 TEAM = "G238FR2ZC9"
 IOS_APPS = [f"{TEAM}.{BUNDLE}", f"{TEAM}.com.vesopaepos.thevesopakitchen"]
 RP_DOMAIN = "vesopa.com"  # auth's WEBAUTHN_RP_ID
@@ -421,8 +429,9 @@ def deploy_auth(client, stamp):
     st, out = sh(client, f"su - {USER} -c 'cd {AUTH} && {NODE} npm test 2>&1 | tail -12'", quiet=True)
     if not re.search(r"^\s*(#|ℹ) fail 0\s*$", out, re.M):
         print("    " + out.strip().replace("\n", "\n    "))
-        back = " ".join("./" + f[len("vesopa_auth/"):] for f in AUTH_FILES if f != "vesopa_auth/test/native.test.js")
-        sh(client, f"tar -xzf {backup} -C {AUTH} {back}; rm -f {AUTH}/test/native.test.js", quiet=True)
+        back = " ".join("./" + f[len("vesopa_auth/"):] for f in AUTH_FILES if f not in NEW_AUTH_FILES)
+        new = " ".join(f"{AUTH}/{f[len('vesopa_auth/'):]}" for f in NEW_AUTH_FILES)
+        sh(client, f"rm -f {new}; tar -xzf {backup} -C {AUTH} {back}", quiet=True)
         raise SystemExit("! auth tests failed on the server: its files were put back, auth NOT restarted")
     print("   npm test passes on the server")
     google_audiences(client, stamp)

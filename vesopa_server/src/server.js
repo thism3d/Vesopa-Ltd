@@ -60,6 +60,7 @@ const { eventRoutes } = require('./events');
 const { importRoutes } = require('./imports');
 const { customerImportRoutes } = require('./customer_import');
 const { reportRoutes, toPdf } = require('./reports');
+const receiptStatus = require('./receipt_status');
 const { stockRoutes } = require('./stock');
 const {
   reportScheduleRoutes,
@@ -553,25 +554,41 @@ app.post('/till/events', async (req, res, next) => {
     if (await training.isTrainingSale(pool, ev.office, ev)) {
       return res.status(200).json(training.IGNORED);
     }
-    await pool.execute(
-      `INSERT IGNORE INTO epos_till_events
-         (id, office, kind, amount_minor, note, reason, staff_name, terminal,
-          session_id, order_id, at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        ev.id,
-        ev.office || 'default',
-        ev.kind,
-        Math.abs(Number(ev.amount_minor) || 0),
-        ev.note ?? null,
-        ev.reason ?? null,
-        ev.staff_name ?? null,
-        ev.terminal ?? null,
-        ev.session_id ?? null,
-        ev.order_id ?? null,
-        ev.at ? new Date(ev.at) : new Date(),
-      ]
-    );
+    const row = [
+      ev.id,
+      ev.office || 'default',
+      ev.kind,
+      Math.abs(Number(ev.amount_minor) || 0),
+      ev.note ?? null,
+      ev.reason ?? null,
+      ev.staff_name ?? null,
+      ev.terminal ?? null,
+      ev.session_id ?? null,
+      ev.order_id ?? null,
+      ev.at ? new Date(ev.at) : new Date(),
+    ];
+    // The receipt lines a refund gave back (EPOS 1.17), so the refund screen
+    // greys them out next time and the bill shows as refunded.
+    const lines = receiptStatus.lineNos(ev.line_nos);
+    try {
+      await pool.execute(
+        `INSERT IGNORE INTO epos_till_events
+           (id, office, kind, amount_minor, note, reason, staff_name, terminal,
+            session_id, order_id, at, line_nos)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [...row, lines.length ? lines.join(',').slice(0, 255) : null]
+      );
+    } catch (e) {
+      // Before schema_refund_lines.sql has run: keep the refund, lose the lines.
+      if (!e || e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+      await pool.execute(
+        `INSERT IGNORE INTO epos_till_events
+           (id, office, kind, amount_minor, note, reason, staff_name, terminal,
+            session_id, order_id, at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        row
+      );
+    }
     res.status(201).json({ ok: true });
   } catch (e) {
     next(e);
@@ -670,7 +687,10 @@ app.get('/till/receipts', async (req, res, next) => {
        LIMIT 200`,
       params
     );
-    res.json(rows);
+    // How each was paid and whether any of it has gone back, for the status
+    // on the right of every receipt (EPOS 1.17). Older tills ignore it.
+    const status = await receiptStatus.statusFor(pool, office, rows);
+    res.json(rows.map((r) => ({ ...r, ...receiptStatus.brief(status.get(r.id)) })));
   } catch (e) {
     next(e);
   }
@@ -703,7 +723,10 @@ app.get('/till/receipts/:id', async (req, res, next) => {
       [req.params.id]
     );
 
-    res.json({ order, lines, payments });
+    // Every refund already given against it, so the till can stop a second
+    // refund of the same lines and show what went back and when.
+    const status = (await receiptStatus.statusFor(pool, office, [order])).get(order.id);
+    res.json({ order, lines, payments, status });
   } catch (e) {
     next(e);
   }

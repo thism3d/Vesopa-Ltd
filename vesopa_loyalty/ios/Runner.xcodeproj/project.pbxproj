@@ -27,6 +27,7 @@
 		7E5A00000000000000000032 /* WalletBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E5A00000000000000000031 /* WalletBridge.swift */; };
 		7E5A00000000000000000042 /* AuthBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E5A00000000000000000041 /* AuthBridge.swift */; };
 		7E5A00000000000000000034 /* WatchBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E5A00000000000000000033 /* WatchBridge.swift */; };
+		7E5A00000000000000000052 /* SiriShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E5A00000000000000000051 /* SiriShortcuts.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -101,6 +102,7 @@
 		7E5A00000000000000000031 /* WalletBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalletBridge.swift; sourceTree = "<group>"; };
 		7E5A00000000000000000041 /* AuthBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthBridge.swift; sourceTree = "<group>"; };
 		7E5A00000000000000000033 /* WatchBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchBridge.swift; sourceTree = "<group>"; };
+		7E5A00000000000000000051 /* SiriShortcuts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiriShortcuts.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -178,6 +180,7 @@
 				7E5A00000000000000000031 /* WalletBridge.swift */,
 				7E5A00000000000000000041 /* AuthBridge.swift */,
 				7E5A00000000000000000033 /* WatchBridge.swift */,
+				7E5A00000000000000000051 /* SiriShortcuts.swift */,
 				7E5A00000000000000000030 /* Runner.entitlements */,
 			);
 			path = Runner;
@@ -388,6 +391,7 @@
 				7E5A00000000000000000032 /* WalletBridge.swift in Sources */,
 				7E5A00000000000000000042 /* AuthBridge.swift in Sources */,
 				7E5A00000000000000000034 /* WatchBridge.swift in Sources */,
+				7E5A00000000000000000052 /* SiriShortcuts.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -507,6 +511,11 @@
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
+				);
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-weak_framework",
+					AppIntents,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.vesopaepos.thevesopakitchen;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -695,6 +704,11 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-weak_framework",
+					AppIntents,
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.vesopaepos.thevesopakitchen;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
@@ -719,6 +733,11 @@
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
+				);
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-weak_framework",
+					AppIntents,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.vesopaepos.thevesopakitchen;
 				PRODUCT_NAME = "$(TARGET_NAME)";

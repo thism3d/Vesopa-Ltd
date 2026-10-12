@@ -3,6 +3,7 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const { requireAuth } = require('./auth');
 const applePush = require('./wallet_apple_push');
+const memberPush = require('./loyalty_push');
 const { ensureMemberNumber } = require('./member_numbers');
 const schemes = require('./loyalty_schemes');
 const training = require('./training');
@@ -257,10 +258,13 @@ function commerceRoutes({ pool, broadcast, secret }) {
     // Pay on an empty check opens the payment screen, and an amount keyed
     // there is rung up as a Quick sale (schema_open_price.sql).
     allow_empty_pay: 0,
+    // Manual card goes through Dojo's keyed payment. Off: the key records a
+    // card payment taken on a separate machine (schema_manual_card.sql).
+    allow_manual_dojo: 0,
   };
 
   /** Columns a database may not have yet, dropped from a save rather than failing it. */
-  const TENDER_LATER = ['allow_empty_pay'];
+  const TENDER_LATER = ['allow_empty_pay', 'allow_manual_dojo'];
 
   const TENDER_FIELDS = Object.keys(TENDER_DEFAULTS);
 
@@ -2022,6 +2026,14 @@ function commerceRoutes({ pool, broadcast, secret }) {
       for (const kind of ['loyalty', 'customer']) {
         applePush
           .notifyPassChanged({ pool, office, kind, subjectId: customerId })
+          .catch(() => {});
+      }
+      // And the member's phone, if they have the app: "+12 points". Skipped on
+      // an iPhone whose Wallet card has just said the same (loyalty_push.js).
+      const words = memberPush.pointsMessage({ kind, points: delta, balance: balanceAfter });
+      if (words) {
+        memberPush
+          .notifyMember({ pool, office, customerId, ...words, walletCovers: true })
           .catch(() => {});
       }
 

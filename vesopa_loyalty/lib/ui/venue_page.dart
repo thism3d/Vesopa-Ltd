@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../data/brand.dart';
 import '../data/session.dart';
+import '../data/venue_style.dart';
 import '../platform/location.dart';
 import '../platform/push.dart';
 import 'widgets.dart';
@@ -150,7 +151,22 @@ class _VenuePageState extends ConsumerState<VenuePage> {
     return ListView(
       padding: const EdgeInsets.only(bottom: 24),
       children: [
-        if (brand.hero != null)
+        // A venue's own build opens on its own header (the crest at its
+        // ground, posts and a ball in flight; tool/make_venue_art.py), there
+        // before the network is. Everywhere else, the back office's picture.
+        if (VenueStyle.art)
+          AspectRatio(
+            aspectRatio: 16 / 7,
+            child: Image.asset(
+              'assets/venue/header.webp',
+              fit: BoxFit.cover,
+              semanticLabel: brand.name,
+              errorBuilder: (_, _, _) => brand.hero == null
+                  ? const SizedBox()
+                  : Image.network(brand.hero!, fit: BoxFit.cover, errorBuilder: (_, _, _) => const SizedBox()),
+            ),
+          )
+        else if (brand.hero != null)
           AspectRatio(
             aspectRatio: 16 / 7,
             child: Image.network(brand.hero!, fit: BoxFit.cover, errorBuilder: (_, _, _) => const SizedBox()),

@@ -16,6 +16,7 @@ import 'ui/splash_screen.dart';
 import 'ui/theme.dart';
 import 'ui/theme_controller.dart';
 import 'dart:async';
+import 'data/trusted_roots.dart';
 
 /// A kitchen screen runs as a kiosk: full screen, and with no way to close or
 /// minimise it from the title bar.
@@ -53,6 +54,8 @@ Future<void> _lockWindowToKiosk() async {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Before any request: see data/trusted_roots.dart.
+  trustOurServerRoots();
   // The activity log: taps, screens and errors, to a local file and to the
   // back office's Activity Log. See data/activity_log.dart.
   ActivityLog.instance

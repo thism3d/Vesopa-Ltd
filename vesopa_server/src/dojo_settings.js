@@ -252,6 +252,15 @@ function dojoSettingsRoutes({ pool, broadcast, secret, fetchImpl }) {
       let extra = '';
       if (req.query.outcome) { extra += ' AND outcome = ?'; params.push(String(req.query.outcome)); }
       if (req.query.kind) { extra += ' AND kind = ?'; params.push(String(req.query.kind)); }
+      // Failed card payments and refunds that Dojo know about (they carry a
+      // reference), for the Bill Report's own tab: kept apart from the paid
+      // bills, each with its reason and whatever a later check found.
+      const failed = req.query.failed === '1';
+      if (failed) {
+        extra += ` AND kind IN ('sale', 'refund', 'matched_refund', 'unlinked_refund')
+                   AND outcome NOT IN ('approved', 'recorded_manually')
+                   AND (intent_id IS NOT NULL OR session_id IS NOT NULL)`;
+      }
       const [rows] = await pool.query(
         `SELECT id, terminal, at, kind, outcome, amount_minor, intent_id, session_id, dojo_status,
                 message, order_id, terminal_id, software_house_id, reseller_id, auth_code,
@@ -261,6 +270,29 @@ function dojoSettingsRoutes({ pool, broadcast, secret, fetchImpl }) {
           ORDER BY at DESC LIMIT 1000`,
         params
       );
+      if (failed && rows.length) {
+        // What happened next to the same payment: a status check, or the sale
+        // recorded after all. Newest wins.
+        const intents = [...new Set(rows.map((r) => r.intent_id).filter(Boolean))];
+        const sessions = [...new Set(rows.map((r) => r.session_id).filter(Boolean))];
+        const [later] = await pool.query(
+          `SELECT intent_id, session_id, at, kind, outcome, dojo_status, message
+             FROM epos_card_transactions
+            WHERE office = ? AND (kind = 'check' OR outcome IN ('approved', 'recorded_manually'))
+              AND (intent_id IN (?) OR session_id IN (?))
+            ORDER BY at DESC`,
+          [office, intents.length ? intents : ['-'], sessions.length ? sessions : ['-']]
+        );
+        for (const r of rows) {
+          const next = later.find(
+            (l) => new Date(l.at) > new Date(r.at)
+              && ((r.intent_id && l.intent_id === r.intent_id) || (r.session_id && l.session_id === r.session_id))
+          );
+          r.later = next
+            ? { at: next.at, kind: next.kind, outcome: next.outcome, status: next.dojo_status, message: next.message }
+            : null;
+        }
+      }
       res.json(rows);
     } catch (e) { next(e); }
   });

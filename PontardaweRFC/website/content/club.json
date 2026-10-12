@@ -39,6 +39,8 @@
     "wru_league": "https://community.wru.wales/club/national-leagues/national-leagues-fixtures-and-results/league-5-west-central/",
     "wikipedia": "https://en.wikipedia.org/wiki/Pontardawe_RFC",
     "android_package": "com.vesopaepos.pontardawerfc",
+    "ios_app": "https://testflight.apple.com/join/cWqDESsD",
+    "android_app": "https://play.google.com/store/apps/details?id=com.vesopaepos.pontardawerfc",
     "x": "https://x.com/PontardaweRFC"
   },
   "ground": "Recreation Ground, Pontardawe",

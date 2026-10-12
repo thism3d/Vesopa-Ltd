@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
 import 'signin.dart';
+import 'venue_style.dart';
 
 /// Everything the app draws for a venue, from `/loyalty/v1/app/:slug`.
 ///
@@ -262,6 +263,8 @@ class Brand {
     }
     return base.copyWith(
       textTheme: textTheme,
+      // A venue's own app moves as its platform does (data/venue_style.dart).
+      pageTransitionsTheme: VenueStyle.enabled ? VenueStyle.transitions : null,
       // The icons are the venue's icon colour everywhere an icon is not
       // drawn on the main colour (the app bar and buttons keep their own).
       iconTheme: IconThemeData(color: iconColour),

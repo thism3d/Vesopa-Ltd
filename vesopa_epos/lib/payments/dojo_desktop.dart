@@ -69,9 +69,36 @@ class DesktopDojoProvider implements PaymentProvider {
   /// ends promptly rather than running to the timeout.
   bool _cancelled = false;
 
-  /// Give up waiting. The intent is NOT cancelled at Dojo — the customer may
-  /// still be mid-payment — so this reports "unknown", never "declined".
-  void cancel() => _cancelled = true;
+  /// The intent being waited on, so [cancel] can cancel it at Dojo.
+  String? _current;
+
+  /// Wakes the poll loop early, so a cancel is answered at once.
+  Completer<void>? _wake;
+
+  /// Cancel the payment from the till.
+  ///
+  /// "In web manual payment the till cannot cancel the payment." It only
+  /// stopped polling, and left the intent open, so the customer could still
+  /// pay on the page after the till had given up. Now the intent is cancelled
+  /// at Dojo too (only possible while nobody has paid: Dojo refuses once it is
+  /// authorised), and the loop checks one last time, so a card keyed a moment
+  /// before the clerk pressed Cancel still comes back as paid.
+  bool _onTerminal = false;
+
+  void cancel() {
+    // On a card machine the session is cancelled, as Dojo's "Cancel from
+    // POS" asks, and its real result still comes back: deleting the intent
+    // under a card that is already in would lose a payment.
+    if (_onTerminal) {
+      intents.requestCancel();
+      return;
+    }
+    _cancelled = true;
+    final id = _current;
+    if (id != null) unawaited(intents.cancelIntent(id));
+    final w = _wake;
+    if (w != null && !w.isCompleted) w.complete();
+  }
 
   /// Which route this till will use, given what is configured.
   DesktopCardMode get mode => intents.canUseTerminal
@@ -88,6 +115,9 @@ class DesktopDojoProvider implements PaymentProvider {
     bool manual = false,
   }) async {
     _cancelled = false;
+    _current = null;
+    _onTerminal = false;
+    intents.resetControls();
     try {
       onStageChanged?.call(DojoStage.creating);
       final useTerminal = mode == DesktopCardMode.terminal && !manual;
@@ -98,6 +128,7 @@ class DesktopDojoProvider implements PaymentProvider {
         // checkout page, and must be flagged as card-not-present.
         cardHolderNotPresent: !useTerminal,
       );
+      _current = intent.id;
 
       // A keyed card goes to the checkout even where a reader is attached: the
       // reader can only take a card that is in the room.
@@ -105,6 +136,7 @@ class DesktopDojoProvider implements PaymentProvider {
         // A reader on the counter: the payment runs as a terminal session, and
         // that session — not the intent — is what says whether money was taken.
         onStageChanged?.call(DojoStage.sendingToTerminal);
+        _onTerminal = true;
         final sessionId = await intents.startTerminalSession(intent.id);
         onStageChanged?.call(DojoStage.awaitingCard);
         return await intents.awaitTerminal(sessionId, intent.id, amountMinor);
@@ -133,6 +165,14 @@ class DesktopDojoProvider implements PaymentProvider {
 
       onStageChanged?.call(DojoStage.awaitingCard);
       return await _await(intent.id, amountMinor);
+    } on DojoException catch (e) {
+      return PaymentResult(
+        approved: false,
+        amountMinor: amountMinor,
+        reference: _current,
+        outcome: CardOutcome.failed,
+        message: e.clerkMessage,
+      );
     } catch (e) {
       // An errored card payment is NOT a payment. Never fall back to assuming
       // it worked — the till would record money it never took.
@@ -148,56 +188,93 @@ class DesktopDojoProvider implements PaymentProvider {
       launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
 
   /// Poll until the intent settles, the clerk cancels, or we time out.
+  ///
+  /// The stage stays on "awaiting card" while the customer keys it: flicking
+  /// to "checking" on every poll moved the till's screen to "Authorising with
+  /// the bank" before any card had been typed, and there it stuck.
   Future<PaymentResult> _await(String intentId, int amountMinor) async {
+    _current = intentId;
     final deadline = DateTime.now().add(pollTimeout);
+    var lastStatus = '';
 
-    while (DateTime.now().isBefore(deadline)) {
-      if (_cancelled) {
-        return PaymentResult(
-          approved: false,
-          amountMinor: amountMinor,
-          reference: intentId,
-          message:
-              'Payment abandoned on the till. If the customer completed it, '
-              'check Dojo before charging again.',
-        );
+    try {
+      while (true) {
+        final stopping = _cancelled || !DateTime.now().isBefore(deadline);
+        Map<String, dynamic>? intent;
+        try {
+          intent = await intents.fetchIntent(intentId);
+        } catch (_) {
+          // One missed poll is not a result. Keep going until the deadline.
+        }
+        final status = (intent?['status'] as String? ?? lastStatus)
+            .toLowerCase();
+        lastStatus = status;
+
+        if (DojoProvider.paidStatuses.contains(status)) {
+          return PaymentResult(
+            approved: true,
+            amountMinor: amountMinor,
+            reference: intentId,
+            outcome: CardOutcome.approved,
+            acquirerStatus: intent?['status'] as String?,
+            message: 'Payment approved.',
+          );
+        }
+        if (DojoProvider.failedStatuses.contains(status)) {
+          final cancelled = status == 'canceled' || status == 'cancelled';
+          return PaymentResult(
+            approved: false,
+            amountMinor: amountMinor,
+            reference: intentId,
+            outcome: cancelled ? CardOutcome.cancelled : CardOutcome.declined,
+            acquirerStatus: intent?['status'] as String?,
+            message: cancelled
+                ? 'The payment was cancelled. No money was taken.'
+                : 'The card was declined ($status). No money was taken.',
+          );
+        }
+
+        if (stopping) {
+          if (_cancelled) {
+            // Cancelled at Dojo (see [cancel]) and still not paid.
+            return PaymentResult(
+              approved: false,
+              amountMinor: amountMinor,
+              reference: intentId,
+              outcome: CardOutcome.cancelled,
+              acquirerStatus: intent?['status'] as String?,
+              message:
+                  'The payment was cancelled on the till. No money was taken.',
+            );
+          }
+          // Timed out with the intent still open. This is NOT a decline — the
+          // money may yet be taken — so it must never be recorded as either
+          // paid or refused.
+          return PaymentResult(
+            approved: false,
+            amountMinor: amountMinor,
+            reference: intentId,
+            outcome: CardOutcome.unknown,
+            uncertainty: PaymentUncertainty.checkTerminal,
+            message:
+                'Timed out waiting for the card. Check the payment status '
+                'before trying again: it may still have gone through.',
+          );
+        }
+
+        final wake = _wake = Completer<void>();
+        await Future.any([
+          wake.future,
+          Future<void>.delayed(const Duration(seconds: 2)),
+        ]);
+        if (_cancelled) {
+          // Give Dojo a moment to apply the cancel before the last look.
+          await Future<void>.delayed(const Duration(milliseconds: 800));
+        }
       }
-
-      onStageChanged?.call(DojoStage.checking);
-      final intent = await intents.fetchIntent(intentId);
-      final status = (intent['status'] as String? ?? '').toLowerCase();
-
-      if (DojoProvider.paidStatuses.contains(status)) {
-        return PaymentResult(
-          approved: true,
-          amountMinor: amountMinor,
-          reference: intentId,
-          message: status,
-        );
-      }
-      if (DojoProvider.failedStatuses.contains(status)) {
-        return PaymentResult(
-          approved: false,
-          amountMinor: amountMinor,
-          reference: intentId,
-          message: 'Card payment $status',
-        );
-      }
-
-      onStageChanged?.call(DojoStage.awaitingCard);
-      await Future<void>.delayed(const Duration(seconds: 2));
+    } finally {
+      _current = null;
+      _wake = null;
     }
-
-    // Timed out with the intent still open. This is NOT a decline — the money
-    // may yet be taken — so it must never be recorded as either paid or
-    // refused.
-    return PaymentResult(
-      approved: false,
-      amountMinor: amountMinor,
-      reference: intentId,
-      message:
-          'Timed out waiting for the card. Check the terminal or Dojo before '
-          'retrying — the payment may still have gone through.',
-    );
   }
 }

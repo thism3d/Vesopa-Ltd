@@ -7,6 +7,7 @@ import 'dinein_orders.dart';
 import 'kitchen_branding.dart';
 import 'screen_profile.dart';
 import 'ticket.dart';
+import 'trusted_roots.dart';
 
 /// Something the server said no to, in words worth showing a chef.
 ///
@@ -426,9 +427,13 @@ class KitchenApi {
         _ => _client.get(uri, headers: _headers),
       }.timeout(_timeout);
     } catch (e) {
-      // Network, DNS, TLS, timeout. All the same thing to a chef, and all
-      // recovered the same way — by the poll, a moment later.
-      throw KitchenApiError('The back office cannot be reached right now.');
+      // Network, DNS, TLS, timeout. Recovered the same way, by the poll a
+      // moment later, but named: "cannot be reached" for a certificate the
+      // machine would not accept sent people checking a server that was up
+      // (2026-10-12).
+      throw KitchenApiError(
+        connectionProblem(e) ?? 'The back office cannot be reached right now.',
+      );
     }
 
     if (res.statusCode >= 200 && res.statusCode < 300) {
