@@ -753,10 +753,32 @@
         <!-- Bill Report -->
         <section id="view-bill_report" class="view" hidden>
           <div class="page-head"><div><h2>Bill Report</h2><p class="muted small">Click a bill to view or print its receipt.</p></div><button class="btn ghost" data-print-report>Export PDF</button></div>
-          <div class="card"><table>
+          <!-- Paid bills, and the card payments and refunds that failed: kept
+               apart so a declined or unconfirmed card never reads as a sale,
+               each failure with Dojo's reference and the reason. -->
+          <div class="seg" id="br-tabs" style="margin-bottom:12px">
+            <button class="seg-btn active" data-br="paid">Paid bills</button>
+            <button class="seg-btn" data-br="failed">Failed card payments</button>
+          </div>
+          <div class="card" id="br-paid"><table>
             <thead><tr><th>When</th><th>Bill</th><th>Table</th><th>Covers</th><th>Tender</th><th class="right">Total</th><th class="right">Status</th></tr></thead>
             <tbody id="billreport"></tbody>
           </table></div>
+          <div class="card" id="br-failed" hidden>
+            <div class="tbl-bar">
+              <label class="sp-pick">Period
+                <select id="br-failed-days">
+                  <option value="7">Last 7 days</option>
+                  <option value="30" selected>Last 30 days</option>
+                  <option value="90">Last 90 days</option>
+                </select>
+              </label>
+            </div>
+            <table>
+              <thead><tr><th>When</th><th>What</th><th class="right">Amount</th><th>Result</th><th>Reason</th><th>Reference</th><th>Later</th><th>Staff</th></tr></thead>
+              <tbody id="br-failed-rows"></tbody>
+            </table>
+          </div>
           <!-- The foot of the list, and what the next page is fetched off —
                the same sentinel the Sales Explorer uses. Always present, so the
                space it needs is reserved rather than appearing under the last

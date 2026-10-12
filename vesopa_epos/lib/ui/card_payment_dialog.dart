@@ -75,6 +75,7 @@ CardStep cardStepFor({DojoStage? stage, DojoSession? session}) {
   if (session != null) {
     if (session.captured) return CardStep.done;
     if (session.needsSignature) return CardStep.signature;
+    if (session.signatureAccepted) return CardStep.processing;
     switch (session.lastNotification) {
       case 'PresentCard':
         return CardStep.present;

@@ -623,7 +623,9 @@ class CustomerDisplayFeed {
   /// snapshot until it is cleared.
   Future<void> showCard(Map<String, Object?>? card) async {
     _card = card;
-    final base = _last;
+    // A refund from Receipts can run before this till has shown a basket:
+    // the overlay goes over the idle screen then.
+    final base = _last ?? (card == null ? null : DisplaySnapshot.idle());
     if (base == null) return;
     await _write(base.withCard(card));
   }

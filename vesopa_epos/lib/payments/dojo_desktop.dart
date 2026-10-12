@@ -83,7 +83,16 @@ class DesktopDojoProvider implements PaymentProvider {
   /// at Dojo too (only possible while nobody has paid: Dojo refuses once it is
   /// authorised), and the loop checks one last time, so a card keyed a moment
   /// before the clerk pressed Cancel still comes back as paid.
+  bool _onTerminal = false;
+
   void cancel() {
+    // On a card machine the session is cancelled, as Dojo's "Cancel from
+    // POS" asks, and its real result still comes back: deleting the intent
+    // under a card that is already in would lose a payment.
+    if (_onTerminal) {
+      intents.requestCancel();
+      return;
+    }
     _cancelled = true;
     final id = _current;
     if (id != null) unawaited(intents.cancelIntent(id));
@@ -107,6 +116,8 @@ class DesktopDojoProvider implements PaymentProvider {
   }) async {
     _cancelled = false;
     _current = null;
+    _onTerminal = false;
+    intents.resetControls();
     try {
       onStageChanged?.call(DojoStage.creating);
       final useTerminal = mode == DesktopCardMode.terminal && !manual;
@@ -125,6 +136,7 @@ class DesktopDojoProvider implements PaymentProvider {
         // A reader on the counter: the payment runs as a terminal session, and
         // that session — not the intent — is what says whether money was taken.
         onStageChanged?.call(DojoStage.sendingToTerminal);
+        _onTerminal = true;
         final sessionId = await intents.startTerminalSession(intent.id);
         onStageChanged?.call(DojoStage.awaitingCard);
         return await intents.awaitTerminal(sessionId, intent.id, amountMinor);

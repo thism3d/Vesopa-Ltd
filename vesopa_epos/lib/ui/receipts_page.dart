@@ -13,6 +13,7 @@ import '../data/refund_ledger.dart';
 import '../main.dart';
 import '../payments/payment_provider.dart';
 import 'dojo_refund.dart';
+import 'failed_card_payments.dart';
 import 'receipt_pdf.dart';
 import 'refund_page.dart' show showRefund;
 import 'theme.dart';
@@ -65,6 +66,18 @@ final receiptListProvider = FutureProvider<List<ReceiptSummary>>((ref) async {
   ];
 });
 
+/// Which list the Receipts screen shows: paid receipts, or the card
+/// payments that failed.
+final receiptsTabProvider = NotifierProvider<ReceiptsTabNotifier, bool>(
+  ReceiptsTabNotifier.new,
+);
+
+class ReceiptsTabNotifier extends Notifier<bool> {
+  @override
+  bool build() => false;
+  void showFailed(bool v) => state = v;
+}
+
 /// Past receipts: filter by date, open one to view or reprint. History is
 /// server-backed — it spans every terminal in the venue, which no single till
 /// holds — so this screen needs the network.
@@ -76,6 +89,42 @@ class ReceiptsPage extends ConsumerWidget {
     final receipts = ref.watch(receiptListProvider);
     final filter = ref.watch(receiptFilterProvider);
     final fmt = DateFormat('dd/MM/yyyy HH:mm');
+    final failedTab = ref.watch(receiptsTabProvider);
+    final tabs = SegmentedButton<bool>(
+      segments: const [
+        ButtonSegment(
+          value: false,
+          icon: Icon(Icons.receipt_long),
+          label: Text('Receipts'),
+        ),
+        ButtonSegment(
+          value: true,
+          icon: Icon(Icons.credit_card_off),
+          label: Text('Failed card payments'),
+        ),
+      ],
+      selected: {failedTab},
+      onSelectionChanged: (v) =>
+          ref.read(receiptsTabProvider.notifier).showFailed(v.first),
+    );
+    if (failedTab) {
+      return Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Receipts',
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 12),
+            tabs,
+            const SizedBox(height: 12),
+            const Expanded(child: FailedCardPayments()),
+          ],
+        ),
+      );
+    }
 
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -96,6 +145,8 @@ class ReceiptsPage extends ConsumerWidget {
               ),
             ],
           ),
+          const SizedBox(height: 12),
+          tabs,
           const SizedBox(height: 12),
 
           // Date filter — the common presets plus a custom range.

@@ -423,6 +423,16 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
       advance(cardStepFor(stage: lastStage, session: s), prompt: s.prompt);
     };
     rest?.onSignatureRequested = askForSignature;
+    // Dojo accepted the signature themselves (80 seconds), or the session
+    // ended while the prompt was up: the buttons come down and the screen
+    // follows the machine to its result.
+    rest?.onSignatureSettled = (note) {
+      if (payment.value.finished) return;
+      setState2(payment.value.copyWith(
+        step: CardStep.processing,
+        readerPrompt: note,
+      ));
+    };
     rest?.onCancelAnswered = (accepted, message) {
       payment.value = payment.value.copyWith(cancelNote: message);
     };
@@ -482,19 +492,33 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     PaymentResult? result;
     Timer? countdown;
 
-    Future<void> checkStatus() async {
+    // Returns true once Dojo say the money was taken. [auto] is the till
+    // checking by itself while a "not confirmed" result is on screen: quiet
+    // while Dojo have no answer, and only one log row per change.
+    String? lastCheck;
+    Future<bool> checkStatus({bool auto = false}) async {
       final ref0 = result?.reference;
       if (rest == null || ref0 == null || ref0.isEmpty) {
-        payment.value = payment.value.copyWith(
-          checkNote: 'There is no Dojo payment to look up. Check the card '
-              'machine\'s own screen or last-transaction slip.',
-        );
-        return;
+        if (!auto) {
+          payment.value = payment.value.copyWith(
+            checkNote: 'There is no Dojo payment to look up. Check the card '
+                'machine\'s own screen or last-transaction slip.',
+          );
+        }
+        return false;
       }
-      countdown?.cancel();
-      payment.value = payment.value.copyWith(checking: true, clearSeconds: true);
+      if (payment.value.checking) return false;
+      if (!auto) countdown?.cancel();
+      payment.value = payment.value.copyWith(
+        checking: !auto,
+        clearSeconds: !auto,
+      );
       try {
         final st = await rest.paymentStatus(ref0);
+        if (auto && st.status == lastCheck && !st.paid) {
+          return false;
+        }
+        lastCheck = st.status;
         unawaited(CardLog.instance.add(CardLogEntry(
           at: DateTime.now(),
           kind: 'check',
@@ -519,17 +543,24 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
           checkNote: st.paid
               ? 'Dojo confirms this payment was taken (${st.summary}). '
                     'Record it as paid.'
+              : auto
+              ? 'Dojo have no payment on this yet (${st.status}). The till '
+                    'keeps checking; check the card machine screen too.'
               : 'Dojo says this payment was not taken (${st.status}). It is '
                     'safe to try again.',
         );
+        return st.paid;
       } catch (e) {
         payment.value = payment.value.copyWith(
           checking: false,
-          checkNote: e is DojoException
+          checkNote: auto
+              ? payment.value.checkNote
+              : e is DojoException
               ? 'Could not check: ${e.clerkMessage}'
               : 'Could not reach Dojo to check. Look at the card machine\'s '
                     'screen, then decide.',
         );
+        return false;
       }
     }
 
@@ -573,7 +604,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
                       connect?.abandon();
                     }
                   },
-            onStopWaiting: direct == null ? null : direct.abandon,
+            onStopWaiting: rest?.abandon,
             // Signature verification, when the reader asks for it. Answering
             // is what releases the sale, so it must be reachable here.
             onSignatureAccepted: state.step == CardStep.signature
@@ -585,7 +616,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
             onClose: () => end(state.checkSaysPaid
                 ? _CardEnding.recordPaid
                 : _CardEnding.close),
-            onCheckStatus: rest == null ? null : checkStatus,
+            onCheckStatus: rest == null ? null : () => checkStatus(),
             onRecordPaid: () => end(_CardEnding.recordPaid),
             onRetry: () => end(_CardEnding.retry),
           ),
@@ -603,6 +634,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     // Detach before anything else, or a late poll would write to the screen.
     rest?.onTerminalUpdate = null;
     rest?.onSignatureRequested = null;
+    rest?.onSignatureSettled = null;
     rest?.onCancelAnswered = null;
     desktop?.onStageChanged = null;
     desktop?.openCheckout = null;
@@ -642,20 +674,54 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
       secondsLeft: outcome.uncertain ? null : config.resultSeconds,
       clearSeconds: outcome.uncertain,
     ));
-    if (!outcome.uncertain) {
+    void countDown(_CardEnding then) {
+      countdown?.cancel();
       countdown = Timer.periodic(const Duration(seconds: 1), (t) {
         final left = (payment.value.secondsLeft ?? 0) - 1;
         if (left <= 0) {
           t.cancel();
-          end(_CardEnding.close);
+          end(then);
         } else {
           payment.value = payment.value.copyWith(secondsLeft: left);
         }
       });
     }
 
+    if (!outcome.uncertain) countDown(_CardEnding.close);
+
+    // "Not confirmed" is not left to the clerk alone: the till keeps asking
+    // Dojo every few seconds while the result is up, for up to five minutes,
+    // and the moment Dojo say the money was taken the screen turns to
+    // approved and records the payment by itself.
+    Timer? autoCheck;
+    if (outcome.uncertain && rest != null && (taken.reference ?? '').isNotEmpty) {
+      final until = DateTime.now().add(const Duration(minutes: 5));
+      Future<void> tick() async {
+        if (ending.isCompleted || payment.value.checkSaysPaid) return;
+        if (DateTime.now().isAfter(until)) {
+          autoCheck?.cancel();
+          return;
+        }
+        if (await checkStatus(auto: true) && !ending.isCompleted) {
+          autoCheck?.cancel();
+          setState2(payment.value.copyWith(
+            outcome: CardOutcome.approved,
+            step: CardStep.done,
+            resultMessage: 'Dojo confirmed the payment was taken. It is '
+                'recorded as paid.',
+            secondsLeft: config.resultSeconds,
+          ));
+          countDown(_CardEnding.recordPaid);
+        }
+      }
+
+      unawaited(tick());
+      autoCheck = Timer.periodic(const Duration(seconds: 5), (_) => tick());
+    }
+
     var ended = await ending.future;
     countdown?.cancel();
+    autoCheck?.cancel();
 
     // Recording an unconfirmed payment as paid is money on the books that the
     // till did not see taken: a manager says so, unless Dojo itself has just

@@ -1795,7 +1795,58 @@ async function loadTillReport() {
 const BR_PAGE = 100;
 let brFeed = { token: 0, offset: 0, done: false, loading: false, watcher: null };
 
+// Bill Report's two tabs: the paid bills, and failed card payments.
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('#br-tabs .seg-btn');
+  if (!btn) return;
+  document.querySelectorAll('#br-tabs .seg-btn').forEach((b) => b.classList.toggle('active', b === btn));
+  const failed = btn.dataset.br === 'failed';
+  $('br-paid').hidden = failed;
+  $('br-more').hidden = failed;
+  $('br-failed').hidden = !failed;
+  if (failed) loadFailedCards().catch((err) => toast(err.message));
+});
+document.addEventListener('change', (e) => {
+  if (e.target && e.target.id === 'br-failed-days') loadFailedCards().catch((err) => toast(err.message));
+});
+
+/** Card payments and refunds that failed, with Dojo's reference and why. */
+async function loadFailedCards() {
+  const q = new URLSearchParams({ failed: '1', days: $('br-failed-days').value });
+  const rows = await api('/card-transactions?' + q);
+  const body = $('br-failed-rows');
+  if (!rows.length) {
+    body.innerHTML = '<tr><td colspan="8" class="empty">No failed card payments in this period.</td></tr>';
+    return;
+  }
+  const when = (at) => new Date(at + (String(at).endsWith('Z') ? '' : 'Z')).toLocaleString('en-GB');
+  body.innerHTML = rows.map((r) => {
+    const [label, tone] = DOJO_OUTCOME[r.outcome] || [r.outcome, ''];
+    const ref = [
+      r.intent_id && '<code>' + esc(r.intent_id) + '</code>',
+      r.session_id && '<code class="muted">' + esc(r.session_id) + '</code>',
+      r.order_id && '<span class="muted small">Bill ' + esc(String(r.order_id).slice(0, 8)) + '</span>',
+    ].filter(Boolean).join('<br>');
+    const later = r.later
+      ? (r.later.outcome === 'approved' || r.later.outcome === 'recorded_manually'
+        ? '<span class="pill on" title="' + esc(r.later.message || '') + '">Taken after all · ' + esc(when(r.later.at)) + '</span>'
+        : '<span class="pill" title="' + esc(r.later.message || '') + '">Checked: ' + esc(r.later.status || 'not taken') + '</span>')
+      : '';
+    return '<tr>'
+      + '<td>' + esc(when(r.at)) + '</td>'
+      + '<td>' + esc(DOJO_KIND[r.kind] || r.kind) + '</td>'
+      + '<td class="right">' + money(r.amount_minor) + '</td>'
+      + '<td><span class="pill ' + tone + '">' + esc(label) + '</span>' + (r.dojo_status ? '<div class="muted small">' + esc(r.dojo_status) + '</div>' : '') + '</td>'
+      + '<td class="small">' + esc(r.message || '—') + '</td>'
+      + '<td class="small">' + ref + '</td>'
+      + '<td>' + later + '</td>'
+      + '<td>' + esc(r.staff || '') + '</td>'
+      + '</tr>';
+  }).join('');
+}
+
 async function loadBillReport() {
+  if (!$('br-failed').hidden) loadFailedCards().catch(() => {});
   brFeed.watcher?.disconnect();
   brFeed = { token: brFeed.token + 1, offset: 0, done: false, loading: false, watcher: null };
 

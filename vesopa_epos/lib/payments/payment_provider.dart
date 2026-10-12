@@ -177,6 +177,10 @@ class DojoTerminal {
   String get label => tid.isEmpty ? id : tid;
 }
 
+/// What a terminal session is for: the words on screen and how a session
+/// that stops at "signature accepted" is settled differ between them.
+enum TerminalSessionKind { sale, matchedRefund, unlinkedRefund }
+
 /// A pay-at-counter session: one attempt to take a card on a reader.
 class DojoSession {
   const DojoSession({
@@ -226,6 +230,15 @@ class DojoSession {
   /// session can finish.
   bool get needsSignature =>
       status.toLowerCase() == 'signatureverificationrequired';
+
+  /// The signature was accepted (by the clerk, or by Dojo after 80 seconds)
+  /// and the session is finishing.
+  bool get signatureAccepted =>
+      status.toLowerCase() == 'signatureverificationaccepted';
+
+  /// The signature was rejected: the sale or refund did not go through.
+  bool get signatureRejected =>
+      status.toLowerCase() == 'signatureverificationrejected';
 
   /// The reader's prompt, in words the clerk can act on. Observed in the
   /// sandbox: PresentCard → EnterPin → RemoveCard on a chip-and-PIN sale.
@@ -1036,52 +1049,163 @@ class DojoProvider implements PaymentProvider {
     _abandoned = true;
   }
 
-  /// Follow a terminal session to its conclusion.
-  ///
-  /// Verified against the sandbox, where a session runs
-  /// `InitiateRequested → Initiated → SignatureVerificationRequired → Captured`
-  /// with notifications PresentCard then PleaseWait. The signature step is not
-  /// optional — the session stalls there until answered.
-  ///
-  /// A failed read is not a failed payment. The tablet's Wi-Fi dropping for a
-  /// few seconds used to end the sale with an error while the card went on to
-  /// be approved; now reads are retried, and only a machine silent for
-  /// [_maxSilence] ends the wait, as "not confirmed".
+  /// Forget a cancel or abandon from the last run, before a new one starts.
+  /// [take] does this itself; a refund on the machine calls it first.
+  void resetControls() {
+    _cancelRequested = false;
+    _abandoned = false;
+  }
+
+  /// Told when the reader's signature step is over without the clerk's
+  /// answer deciding it: Dojo accept a signature by themselves after 80
+  /// seconds, and the session can also end (cancelled, expired) while the
+  /// prompt is still up. The till takes the Accept / Reject buttons down and
+  /// shows [note] instead.
+  void Function(String note)? onSignatureSettled;
+
+  /// Follow a sale on the card machine to its end. See [followSession].
   Future<PaymentResult> awaitTerminal(
     String sessionId,
     String intentId,
     int amountMinor,
-  ) async {
+  ) => followSession(sessionId, intentId: intentId, amountMinor: amountMinor);
+
+  /// Follow a terminal session (a sale or a refund) to its conclusion.
+  ///
+  /// Verified against the sandbox, where a sale runs `InitiateRequested →
+  /// Initiated → SignatureVerificationRequired → Captured`.
+  ///
+  /// The signature step does not stop the polling. The clerk's Accept /
+  /// Reject is asked for and the session is read every second while the
+  /// prompt is up, because Dojo give the clerk 80 seconds and then accept the
+  /// signature themselves ("Successful with signature after 80 seconds"):
+  /// the sale captures while the prompt is still on the till. Before, the
+  /// till stopped reading the machine until the clerk answered, so the screen
+  /// sat on the signature for 80 seconds and more with the money already
+  /// taken, and a Reject pressed after that was booked as "No money was
+  /// taken" while the customer's card had been charged ("Late signature
+  /// rejection after 80 seconds").
+  ///
+  /// So the verdict is always Dojo's, never the button's: whatever the clerk
+  /// pressed, a `Captured` session is a payment, and a rejected signature is
+  /// only reported as one once Dojo say the session did not complete.
+  ///
+  /// `SignatureVerificationAccepted` is followed on to `Captured`. A session
+  /// that stays there (Dojo's own sample treats it as final) is settled from
+  /// the payment intent for a sale or a matched refund, which is the source
+  /// of truth for both.
+  ///
+  /// A failed read is not a failed payment: reads are retried, and only a
+  /// machine silent for [maxSilence] ends the wait, as "not confirmed".
+  Future<PaymentResult> followSession(
+    String sessionId, {
+    String? intentId,
+    required int amountMinor,
+    TerminalSessionKind kind = TerminalSessionKind.sale,
+  }) async {
     final deadline = DateTime.now().add(pollTimeout);
-    var signatureAnswered = false;
+    final refund = kind != TerminalSessionKind.sale;
+    final noun = refund ? 'refund' : 'payment';
     var cancelSent = false;
-    DateTime? lastHeard = DateTime.now();
+    DateTime lastHeard = DateTime.now();
     DojoSession? last;
 
-    PaymentResult unconfirmed(String message) => PaymentResult(
+    // The signature, as a decision the clerk may or may not have made yet.
+    var signatureAsked = false;
+    bool? answer;
+    var answerSent = false;
+    var settledTold = false;
+    DateTime? acceptedSince;
+    DateTime? lastIntentCheck;
+
+    PaymentResult unconfirmed(String message, {CardOutcome? outcome}) =>
+        PaymentResult(
+          approved: false,
+          amountMinor: amountMinor,
+          reference: intentId,
+          sessionId: sessionId,
+          acquirerStatus: last?.status,
+          receiptLines: last?.receiptLines ?? const [],
+          outcome: outcome ?? CardOutcome.unknown,
+          uncertainty: PaymentUncertainty.checkTerminal,
+          message: message,
+        );
+
+    PaymentResult approved(DojoSession? s, {String? status}) => PaymentResult(
+      approved: true,
+      amountMinor: amountMinor,
+      reference: intentId,
+      sessionId: sessionId,
+      acquirerStatus: status ?? s?.status,
+      outcome: CardOutcome.approved,
+      message: answer == false
+          ? (refund
+                ? 'The card machine had already accepted the signature (it '
+                      'does after 80 seconds), so the refund went through.'
+                : 'The card machine had already accepted the signature (it '
+                      'does after 80 seconds), so the payment went through. '
+                      'Refund it if the signature was wrong.')
+          : refund
+          ? 'Refunded £${(amountMinor / 100).toStringAsFixed(2)} to the card.'
+          : 'Approved',
+      receiptLines: s?.receiptLines ?? const [],
+      authCode: s?.authCode,
+      cardLast4: s?.cardLast4,
+      cardType: s?.cardType,
+    );
+
+    PaymentResult rejected(DojoSession s) => PaymentResult(
       approved: false,
       amountMinor: amountMinor,
       reference: intentId,
       sessionId: sessionId,
-      acquirerStatus: last?.status,
-      outcome: CardOutcome.unknown,
-      uncertainty: PaymentUncertainty.checkTerminal,
-      message: message,
+      acquirerStatus: s.status,
+      receiptLines: s.receiptLines,
+      outcome: CardOutcome.signatureRejected,
+      message: refund
+          ? 'The signature was rejected, so the refund was declined. Nothing '
+                'went back to the card.'
+          : 'The signature was rejected, so the payment was declined. No '
+                'money was taken.',
     );
+
+    // The prompt is up but the machine has moved on without the clerk.
+    void settleSignature(DojoSession s) {
+      if (!signatureAsked || settledTold || answer != null) return;
+      settledTold = true;
+      onSignatureSettled?.call(
+        s.captured || s.signatureAccepted
+            ? 'The card machine accepted the signature by itself (it does '
+                  'after 80 seconds).'
+            : 'The card machine finished without a signature answer.',
+      );
+    }
 
     while (DateTime.now().isBefore(deadline)) {
       if (_abandoned) {
         return unconfirmed(
-          'The till stopped waiting for the card machine. Check the payment '
-          'status before charging the card again.',
+          'The till stopped waiting for the card machine. Check the $noun '
+          'status before trying again: it may have gone through.',
         );
       }
 
       // The clerk's cancel goes on the next poll, once.
       if (_cancelRequested && !cancelSent) {
         cancelSent = true;
-        final answer = await cancelSessionWithReason(sessionId);
-        onCancelAnswered?.call(answer.accepted, answer.message);
+        final reply = await cancelSessionWithReason(sessionId);
+        onCancelAnswered?.call(reply.accepted, reply.message);
+      }
+
+      // The clerk's signature answer, sent as soon as it is given and only
+      // while the machine is still asking.
+      if (answer != null && !answerSent && (last?.needsSignature ?? false)) {
+        answerSent = true;
+        try {
+          await answerSignature(sessionId, accepted: answer!);
+        } on DojoException {
+          // The machine moved on (it accepts by itself after 80 seconds).
+          // The next read says what it decided.
+        } catch (_) {}
       }
 
       DojoSession session;
@@ -1090,10 +1214,10 @@ class DojoProvider implements PaymentProvider {
         lastHeard = DateTime.now();
         last = session;
       } catch (_) {
-        if (DateTime.now().difference(lastHeard!) > _maxSilence) {
+        if (DateTime.now().difference(lastHeard) > maxSilence) {
           return unconfirmed(
-            'Lost contact with the card machine. Check the payment status '
-            'before charging the card again — it may have gone through.',
+            'Lost contact with the card machine. Check the $noun status '
+            'before trying again: it may have gone through.',
           );
         }
         await Future<void>.delayed(pollInterval);
@@ -1102,32 +1226,19 @@ class DojoProvider implements PaymentProvider {
       onTerminalUpdate?.call(session);
 
       if (session.captured) {
-        return PaymentResult(
-          approved: true,
-          amountMinor: amountMinor,
-          reference: intentId,
-          sessionId: sessionId,
-          acquirerStatus: session.status,
-          outcome: CardOutcome.approved,
-          message: 'Approved',
-          receiptLines: session.receiptLines,
-          authCode: session.authCode,
-          cardLast4: session.cardLast4,
-          cardType: session.cardType,
-        );
+        settleSignature(session);
+        return approved(session);
       }
+      if (session.signatureRejected) return rejected(session);
       if (session.failed) {
-        // `Expired` is not a decline and must never be shown as one.
-        //
-        // Declined and Canceled are verdicts: the money did not move and the
-        // reader knows it. Expired means the reader stopped answering — the
-        // card may have been approved and the result lost on the way back. The
-        // accreditation checklist is explicit that the till has to say the
-        // result cannot be confirmed and offer to check it and record it
-        // manually, or retry, which is a different screen from "declined".
+        settleSignature(session);
+        // `Expired` is not a decline and must never be shown as one: the
+        // machine stopped answering, and the card may have been approved with
+        // the answer lost on the way back. Declined and Canceled are verdicts.
         final status = session.status.toLowerCase();
         final expired = status == 'expired';
         final cancelled = status == 'canceled' || status == 'cancelled';
+        if (!expired && !cancelled && answer == false) return rejected(session);
         return PaymentResult(
           approved: false,
           amountMinor: amountMinor,
@@ -1144,74 +1255,88 @@ class DojoProvider implements PaymentProvider {
               ? PaymentUncertainty.checkTerminal
               : PaymentUncertainty.none,
           message: expired
-              ? 'The card machine did not confirm the result in time. Check '
-                    'the payment status: if the machine shows it approved, it '
-                    'can be recorded as paid.'
+              ? (refund
+                    ? 'The result of the refund cannot be confirmed. Please '
+                          'check the card machine screen for the result, then '
+                          'record it as refunded, or try again.'
+                    : 'The result of the payment cannot be confirmed. Please '
+                          'check the card machine screen for the result, then '
+                          'record it as paid, or try again.')
               : cancelled
               ? (cancelSent
-                    ? 'Cancelled from the till. No money was taken.'
-                    : 'Cancelled on the card machine. No money was taken.')
+                    ? 'Cancelled from the till. ${refund ? 'Nothing went back.' : 'No money was taken.'}'
+                    : 'Cancelled on the card machine. ${refund ? 'Nothing went back.' : 'No money was taken.'}')
+              : refund
+              ? 'The refund was declined. Nothing went back to the card.'
               : 'The card was declined. No money was taken. Ask for another '
                     'card or another way to pay.',
         );
       }
-      if (session.needsSignature && !signatureAnswered) {
-        signatureAnswered = true;
-        final accepted = await (onSignatureRequested?.call() ?? Future.value(true));
-        try {
-          await answerSignature(sessionId, accepted: accepted);
-        } on DojoException {
-          // The machine moved on (it can time the signature out itself). The
-          // next read says what it decided.
+
+      if (session.needsSignature) {
+        if (!signatureAsked) {
+          signatureAsked = true;
+          final ask = onSignatureRequested;
+          if (ask == null) {
+            // Nobody to ask (a test, or a till with no screen): accept, as
+            // Dojo would after 80 seconds anyway.
+            answer = true;
+          } else {
+            unawaited(
+              ask().then((v) => answer ??= v, onError: (_) => null),
+            );
+          }
         }
-        if (!accepted) {
-          // Not returned yet: the machine reverses the sale and reports
-          // Declined/Canceled, and that verdict is what goes in the log. The
-          // outcome is renamed below so the clerk reads why.
-          final verdict = await _settleAfterRejection(sessionId);
-          return PaymentResult(
-            approved: false,
-            amountMinor: amountMinor,
-            reference: intentId,
-            sessionId: sessionId,
-            acquirerStatus: verdict?.status ?? 'SignatureRejected',
-            receiptLines: verdict?.receiptLines ?? const [],
-            outcome: CardOutcome.signatureRejected,
-            message: 'The signature did not match, so the payment was '
-                'reversed. No money was taken.',
-          );
+      } else if (signatureAsked) {
+        settleSignature(session);
+      }
+
+      // Accepted and not yet captured. Dojo's own sample stops here, so a
+      // session that stays put is settled from the intent rather than left
+      // to run out the clock as "not confirmed".
+      if (session.signatureAccepted) {
+        final now = DateTime.now();
+        acceptedSince ??= now;
+        final waited = now.difference(acceptedSince);
+        final due = lastIntentCheck == null ||
+            now.difference(lastIntentCheck) >= acceptedGrace;
+        if (waited >= acceptedGrace && due) {
+          lastIntentCheck = now;
+          if (intentId != null && intentId.isNotEmpty) {
+            try {
+              final st = await paymentStatus(intentId);
+              final done = refund ? st.refundedMinor > 0 : st.paid;
+              if (done) return approved(session, status: st.status);
+            } catch (_) {}
+          } else if (waited >= acceptedGrace * 3) {
+            // An unlinked refund has no intent to ask. The signature was
+            // accepted, which is the last decision in it.
+            return approved(session);
+          }
         }
+      } else {
+        acceptedSince = null;
       }
 
       await Future<void>.delayed(pollInterval);
     }
 
-    // Out of time with the session unresolved. The card may still be mid-flight
-    // on the reader, so this is "unknown", never a decline — and it has to be
-    // flagged as such, or the message says one thing while the till books the
-    // other.
+    // Out of time with the session unresolved. The card may still be
+    // mid-flight on the reader, so this is "unknown", never a decline.
     return unconfirmed(
-      'Timed out at the card machine. Check the payment status before '
-      'charging the card again — it may still have gone through.',
+      'Timed out at the card machine. Check the $noun status before trying '
+      'again: it may still have gone through.',
     );
   }
 
   /// How long the machine may stay silent before the wait ends unconfirmed.
-  static const _maxSilence = Duration(seconds: 45);
+  /// Longer than the 80 seconds Dojo give a signature, so a slow signature
+  /// cannot read as a lost machine.
+  Duration maxSilence = const Duration(seconds: 90);
 
-  /// After a rejected signature, follow the session briefly to its verdict so
-  /// the log carries Dojo's own word for what happened.
-  Future<DojoSession?> _settleAfterRejection(String sessionId) async {
-    for (var i = 0; i < 15; i++) {
-      try {
-        final s = await fetchSession(sessionId);
-        onTerminalUpdate?.call(s);
-        if (s.failed || s.captured) return s;
-      } catch (_) {}
-      await Future<void>.delayed(pollInterval);
-    }
-    return null;
-  }
+  /// How long a session may sit at "signature accepted" before the till asks
+  /// the payment intent instead. Shortened by tests.
+  Duration acceptedGrace = const Duration(seconds: 3);
 
   /// Cancel a session and say why Dojo did or did not.
   Future<({bool accepted, String message})> cancelSessionWithReason(
@@ -1375,6 +1500,21 @@ class DojoProvider implements PaymentProvider {
         message: e.clerkMessage,
       );
     } catch (e) {
+      // The connection dropped after the intent was made: the machine may
+      // have been sent the sale and taken the card. Not confirmed, never
+      // failed, so the result screen offers Check status and Try again.
+      if (intentId != null) {
+        return PaymentResult(
+          approved: false,
+          amountMinor: amountMinor,
+          reference: intentId,
+          outcome: CardOutcome.unknown,
+          uncertainty: PaymentUncertainty.checkTerminal,
+          message: 'Lost contact with Dojo while the payment was starting. '
+              'Check the payment status before trying again: it may have '
+              'gone through.',
+        );
+      }
       // An errored card payment is NOT a payment. Never fall back to assuming
       // it worked — the till would record money it never took.
       return PaymentResult(

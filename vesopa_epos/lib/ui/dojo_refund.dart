@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../data/customer_display.dart';
 import '../data/till_permissions.dart';
 import '../main.dart';
 import '../payments/card_log.dart';
@@ -349,15 +350,29 @@ int _resultSeconds(BuildContext context) {
 /// button, the signature check, and then the result (approved, declined,
 /// cancelled, not confirmed) held on screen like a payment's.
 ///
-/// "After the refund the success and declined or status are not showing like
-/// the screen after the payment." They now are the same screen. [intentId]
-/// makes it a matched refund; without it, it is unlinked.
+/// The refund is followed by the same code as a sale ([DojoProvider.
+/// followSession]), so it behaves the same way at every step Dojo test:
+///
+///  * the signature prompt does not stop the till reading the machine, and
+///    a signature Dojo accept by themselves after 80 seconds takes the
+///    buttons down and shows the real result;
+///  * a machine that stops answering, or a session that ends Expired, is
+///    "not confirmed", never a bare error: Check refund status, Record as
+///    refunded and Try again are offered, and the till keeps checking with
+///    Dojo by itself while the result is up;
+///  * Try again runs a new session on the same screen.
+///
+/// [intentId] makes it a matched refund; without it, it is unlinked.
 Future<PaymentResult> runRefundOnMachine(
   BuildContext context,
   DojoProvider dojo, {
   required int amountMinor,
   String? intentId,
 }) async {
+  final matched = intentId != null && intentId.isNotEmpty;
+  final kind = matched
+      ? TerminalSessionKind.matchedRefund
+      : TerminalSessionKind.unlinkedRefund;
   final payment = ValueNotifier<CardPaymentState>(
     CardPaymentState(
       step: CardStep.starting,
@@ -366,38 +381,124 @@ Future<PaymentResult> runRefundOnMachine(
       terminalLabel: dojo.terminalId,
     ),
   );
-  var stop = false;
+  final display = _display(context);
+  final seconds = _resultSeconds(context);
+
+  // The customer's screen follows the refund as it follows a sale.
+  void mirror(CardPaymentState st) {
+    final outcome = st.outcome;
+    final title = outcome == null
+        ? (st.step == CardStep.signature ? 'Signature' : 'Refund')
+        : outcome.title.replaceAll('Payment', 'Refund');
+    unawaited(display?.showCard({
+      'phase': outcome == null ? 'progress' : 'result',
+      'heading': 'Card refund',
+      'title': title,
+      'detail': outcome == null
+          ? (st.step == CardStep.signature
+                ? 'Please wait while your signature is checked'
+                : st.step == CardStep.present
+                ? 'Tap, insert or swipe your card to get your refund'
+                : st.step.customerDetail)
+          : switch (outcome) {
+              CardOutcome.approved => 'The money is going back to your card.',
+              CardOutcome.expired || CardOutcome.unknown =>
+                'Please wait while we check your refund.',
+              _ => 'Nothing went back to your card.',
+            },
+      'outcome': outcome?.name,
+      'amount_minor': amountMinor,
+    }));
+  }
+
+  void set(CardPaymentState next) {
+    final before = payment.value;
+    payment.value = next;
+    if (next.step != before.step || next.outcome != before.outcome) {
+      mirror(next);
+    }
+  }
+
+  mirror(payment.value);
+
   String? sessionId;
   Completer<bool>? signature;
-  final ending = Completer<_RefundEnding>();
+  var ending = Completer<_RefundEnding>();
   void end(_RefundEnding e) {
     if (!ending.isCompleted) ending.complete(e);
   }
 
-  Future<void> checkStatus() async {
-    final id = sessionId;
-    if (id == null) return;
-    payment.value = payment.value.copyWith(checking: true, clearSeconds: true);
+  PaymentResult? result;
+  String? lastCheck;
+
+  // True once Dojo say the refund went through. [auto]: the till checking by
+  // itself while "not confirmed" is up, quietly until there is news.
+  Future<bool> checkStatus({bool auto = false}) async {
+    final id = sessionId ?? result?.sessionId;
+    if (payment.value.checking) return false;
+    if (id == null && !matched) {
+      if (!auto) {
+        payment.value = payment.value.copyWith(
+          checkNote: 'The refund never reached Dojo, so there is nothing to '
+              'look up. Check the card machine screen.',
+        );
+      }
+      return false;
+    }
+    payment.value = payment.value.copyWith(
+      checking: !auto,
+      clearSeconds: !auto,
+    );
     try {
-      final s = await dojo.fetchSession(id);
+      bool done;
+      bool over;
+      String word;
+      if (id != null) {
+        final s = await dojo.fetchSession(id);
+        done = s.captured || (s.signatureAccepted && !matched);
+        over = s.failed || s.signatureRejected;
+        word = s.status;
+        if (!done && s.signatureAccepted && matched) {
+          final st = await dojo.paymentStatus(intentId);
+          done = st.refundedMinor > 0;
+          word = st.summary;
+        }
+      } else {
+        final st = await dojo.paymentStatus(intentId!);
+        done = st.status.toLowerCase() == 'refunded';
+        over = false;
+        word = st.summary;
+      }
+      if (auto && word == lastCheck && !done) {
+        payment.value = payment.value.copyWith(checking: false);
+        return false;
+      }
+      lastCheck = word;
       payment.value = payment.value.copyWith(
         checking: false,
-        checkSaysPaid: s.captured,
-        checkNote: s.captured
-            ? 'Dojo confirms the refund went through. Record it as refunded.'
-            : s.failed
-            ? 'Dojo says the refund did not go through (${s.status}). Nothing '
-                  'went back.'
-            : 'Dojo has no final answer yet (${s.status}). Check the card '
-                  'machine screen.',
+        checkSaysPaid: done,
+        checkNote: done
+            ? 'Dojo confirms the refund went through ($word).'
+            : over
+            ? 'Dojo says the refund did not go through ($word). Nothing went '
+                  'back. It is safe to try again.'
+            : auto
+            ? 'Dojo have no final answer yet ($word). The till keeps '
+                  'checking; check the card machine screen too.'
+            : 'Dojo have no final answer yet ($word). Check the card machine '
+                  'screen.',
       );
+      return done;
     } catch (e) {
       payment.value = payment.value.copyWith(
         checking: false,
-        checkNote: e is DojoException
+        checkNote: auto
+            ? payment.value.checkNote
+            : e is DojoException
             ? 'Could not check: ${e.clerkMessage}'
             : 'Could not reach Dojo. Check the card machine screen.',
       );
+      return false;
     }
   }
 
@@ -413,211 +514,212 @@ Future<PaymentResult> runRefundOnMachine(
         refund: true,
         amountLabel: _money(amountMinor),
         onCancel: () {
-          stop = true;
           payment.value = payment.value.copyWith(
             cancelling: true,
             cancelNote: 'Asking the card machine to cancel the refund…',
           );
-          final id = sessionId;
-          if (id != null) {
-            dojo.cancelSessionWithReason(id).then((r) {
-              payment.value = payment.value.copyWith(cancelNote: r.message);
-            });
-          }
+          dojo.requestCancel();
         },
+        onStopWaiting: dojo.abandon,
         onSignatureAccepted: state.step == CardStep.signature
-            ? () => signature?.complete(true)
+            ? () => _answer(payment, signature, true)
             : null,
         onSignatureRejected: state.step == CardStep.signature
-            ? () => signature?.complete(false)
+            ? () => _answer(payment, signature, false)
             : null,
         onClose: () => end(
           state.checkSaysPaid ? _RefundEnding.recordRefunded : _RefundEnding.close,
         ),
-        onCheckStatus: checkStatus,
+        onCheckStatus: () => checkStatus(),
         onRecordPaid: () => end(_RefundEnding.recordRefunded),
+        onRetry: () => end(_RefundEnding.retry),
       ),
     ),
   );
 
-  PaymentResult result;
-  try {
-    sessionId = await dojo.startRefundSession(
-      amountMinor: amountMinor,
-      intentId: intentId,
-    );
-    result = await _followRefund(
-      dojo,
-      sessionId,
-      amountMinor,
-      intentId,
-      onSession: (s) {
-        if (payment.value.finished) return;
-        final next = forwardStep(payment.value.step, cardStepFor(session: s));
-        payment.value = payment.value.copyWith(
-          step: next,
-          readerPrompt: s.prompt,
-        );
-      },
-      askSignature: () {
-        final c = signature = Completer<bool>();
-        payment.value = payment.value.copyWith(step: CardStep.signature);
-        return c.future;
-      },
-      stopped: () => stop,
-    );
-  } on DojoException catch (e) {
-    result = PaymentResult(
-      approved: false,
-      amountMinor: amountMinor,
-      reference: intentId,
-      outcome: e.statusCode == 409 ? CardOutcome.busy : CardOutcome.failed,
-      message: e.clerkMessage,
-    );
-  } catch (e) {
-    result = PaymentResult(
-      approved: false,
-      amountMinor: amountMinor,
-      reference: intentId,
-      outcome: CardOutcome.failed,
-      message: 'Could not reach Dojo: $e',
-    );
-  }
+  dojo.onTerminalUpdate = (s) {
+    if (payment.value.finished) return;
+    final next = forwardStep(payment.value.step, cardStepFor(session: s));
+    set(payment.value.copyWith(step: next, readerPrompt: s.prompt));
+  };
+  dojo.onSignatureRequested = () {
+    final c = signature = Completer<bool>();
+    set(payment.value.copyWith(step: CardStep.signature));
+    return c.future;
+  };
+  dojo.onSignatureSettled = (note) {
+    if (payment.value.finished) return;
+    set(payment.value.copyWith(step: CardStep.processing, readerPrompt: note));
+  };
+  dojo.onCancelAnswered = (_, message) {
+    payment.value = payment.value.copyWith(cancelNote: message);
+  };
 
-  final outcome = result.kind;
-  final seconds = context.mounted ? _resultSeconds(context) : 5;
-  payment.value = payment.value.copyWith(
-    outcome: outcome,
-    resultMessage: result.message ?? outcome.title,
-    step: outcome == CardOutcome.approved ? CardStep.done : null,
-    secondsLeft: outcome.uncertain ? null : seconds,
-    clearSeconds: outcome.uncertain,
-  );
   Timer? countdown;
-  if (!outcome.uncertain) {
-    countdown = Timer.periodic(const Duration(seconds: 1), (t) {
-      final left = (payment.value.secondsLeft ?? 0) - 1;
-      if (left <= 0) {
-        t.cancel();
-        end(_RefundEnding.close);
-      } else {
-        payment.value = payment.value.copyWith(secondsLeft: left);
+  Timer? autoCheck;
+  _RefundEnding ended;
+  while (true) {
+    dojo.resetControls();
+    sessionId = null;
+    try {
+      sessionId = await dojo.startRefundSession(
+        amountMinor: amountMinor,
+        intentId: intentId,
+      );
+      result = await dojo.followSession(
+        sessionId,
+        intentId: intentId,
+        amountMinor: amountMinor,
+        kind: kind,
+      );
+    } on DojoException catch (e) {
+      result = PaymentResult(
+        approved: false,
+        amountMinor: amountMinor,
+        reference: intentId,
+        outcome: e.statusCode == 409 ? CardOutcome.busy : CardOutcome.failed,
+        acquirerStatus: e.statusCode == null ? null : 'HTTP ${e.statusCode}',
+        message: e.clerkMessage,
+      );
+    } catch (e) {
+      // The connection dropped while the refund was being sent: it may have
+      // reached the machine. Not confirmed, with the buttons to find out.
+      result = PaymentResult(
+        approved: false,
+        amountMinor: amountMinor,
+        reference: intentId,
+        sessionId: sessionId,
+        outcome: CardOutcome.unknown,
+        uncertainty: PaymentUncertainty.checkTerminal,
+        message: 'Lost contact with Dojo while sending the refund. Check the '
+            'card machine screen and the refund status before trying again.',
+      );
+    }
+
+    final r = result;
+    final outcome = r.kind;
+    set(payment.value.copyWith(
+      outcome: outcome,
+      resultMessage: r.message ?? outcome.title,
+      step: outcome == CardOutcome.approved ? CardStep.done : null,
+      secondsLeft: outcome.uncertain ? null : seconds,
+      clearSeconds: outcome.uncertain,
+    ));
+
+    void countDown(_RefundEnding then) {
+      countdown?.cancel();
+      countdown = Timer.periodic(const Duration(seconds: 1), (t) {
+        final left = (payment.value.secondsLeft ?? 0) - 1;
+        if (left <= 0) {
+          t.cancel();
+          end(then);
+        } else {
+          payment.value = payment.value.copyWith(secondsLeft: left);
+        }
+      });
+    }
+
+    if (!outcome.uncertain) countDown(_RefundEnding.close);
+    if (outcome.uncertain) {
+      final until = DateTime.now().add(const Duration(minutes: 5));
+      Future<void> tick() async {
+        if (ending.isCompleted || payment.value.checkSaysPaid) return;
+        if (DateTime.now().isAfter(until)) {
+          autoCheck?.cancel();
+          return;
+        }
+        if (await checkStatus(auto: true) && !ending.isCompleted) {
+          autoCheck?.cancel();
+          set(payment.value.copyWith(
+            outcome: CardOutcome.approved,
+            step: CardStep.done,
+            resultMessage: 'Dojo confirmed the refund went through. It is '
+                'recorded as refunded.',
+            secondsLeft: seconds,
+          ));
+          countDown(_RefundEnding.recordRefunded);
+        }
       }
-    });
+
+      unawaited(tick());
+      autoCheck = Timer.periodic(const Duration(seconds: 5), (_) => tick());
+    }
+
+    ended = await ending.future;
+    countdown?.cancel();
+    autoCheck?.cancel();
+    if (ended != _RefundEnding.retry) break;
+
+    // Try again: a new session on the same screen.
+    ending = Completer<_RefundEnding>();
+    lastCheck = null;
+    signature = null;
+    set(CardPaymentState(
+      step: CardStep.starting,
+      readerPrompt: 'Starting the refund on the card machine again…',
+      partnerLabel: dojo.partnerLabel,
+      terminalLabel: dojo.terminalId,
+    ));
   }
 
-  final ended = await ending.future;
-  countdown?.cancel();
+  dojo.onTerminalUpdate = null;
+  dojo.onSignatureRequested = null;
+  dojo.onSignatureSettled = null;
+  dojo.onCancelAnswered = null;
+  unawaited(display?.showCard(null));
+  final confirmedByDojo = payment.value.checkSaysPaid;
   if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
   await dialog;
   payment.dispose();
 
-  if (ended == _RefundEnding.recordRefunded && !result.approved) {
+  final r = result;
+  if (ended == _RefundEnding.recordRefunded && !r.approved) {
+    if (confirmedByDojo) {
+      return r.copyWith(
+        approved: true,
+        outcome: CardOutcome.approved,
+        message: 'Dojo confirmed the refund went through.',
+      );
+    }
     // The machine showed it approved but Dojo never said so. On the record,
     // marked as recorded by hand rather than confirmed.
-    return result.copyWith(
+    return r.copyWith(
       approved: true,
       outcome: CardOutcome.approved,
       acquirerStatus: recordedManually,
       message: 'Recorded as refunded after checking the card machine.',
     );
   }
-  return result;
+  return r;
 }
 
-enum _RefundEnding { close, recordRefunded }
-
-Future<PaymentResult> _followRefund(
-  DojoProvider dojo,
-  String sessionId,
-  int amountMinor,
-  String? intentId, {
-  required void Function(DojoSession s) onSession,
-  required Future<bool> Function() askSignature,
-  required bool Function() stopped,
-}) async {
-  final deadline = DateTime.now().add(const Duration(minutes: 6));
-  var answeredSignature = false;
-  var lastHeard = DateTime.now();
-  while (DateTime.now().isBefore(deadline)) {
-    DojoSession s;
-    try {
-      s = await dojo.fetchSession(sessionId);
-      lastHeard = DateTime.now();
-    } catch (_) {
-      if (DateTime.now().difference(lastHeard) > const Duration(seconds: 45)) {
-        break;
-      }
-      await Future<void>.delayed(const Duration(seconds: 1));
-      continue;
-    }
-    if (!stopped() || s.needsSignature) onSession(s);
-
-    if (s.needsSignature && !answeredSignature) {
-      answeredSignature = true;
-      final ok = await askSignature();
-      try {
-        await dojo.answerSignature(sessionId, accepted: ok);
-      } catch (_) {}
-      continue;
-    }
-    if (s.captured) {
-      return PaymentResult(
-        approved: true,
-        amountMinor: amountMinor,
-        reference: intentId,
-        sessionId: sessionId,
-        acquirerStatus: s.status,
-        outcome: CardOutcome.approved,
-        receiptLines: s.receiptLines,
-        authCode: s.authCode,
-        cardLast4: s.cardLast4,
-        cardType: s.cardType,
-        message: 'Refunded ${_money(amountMinor)} to the card.',
-      );
-    }
-    if (s.failed) {
-      final st = s.status.toLowerCase();
-      final outcome = st == 'expired'
-          ? CardOutcome.expired
-          : (st == 'canceled' || st == 'cancelled')
-          ? CardOutcome.cancelled
-          : answeredSignature && st == 'declined'
-          ? CardOutcome.signatureRejected
-          : CardOutcome.declined;
-      return PaymentResult(
-        approved: false,
-        amountMinor: amountMinor,
-        reference: intentId,
-        sessionId: sessionId,
-        acquirerStatus: s.status,
-        outcome: outcome,
-        receiptLines: s.receiptLines,
-        message: switch (outcome) {
-          CardOutcome.expired =>
-            'The card machine did not confirm the refund. Check its screen, '
-                'then check the status or record it as refunded.',
-          CardOutcome.cancelled =>
-            'The refund was cancelled. Nothing went back.',
-          CardOutcome.signatureRejected =>
-            'The signature was rejected. Nothing went back.',
-          _ => 'The refund was declined. Nothing went back.',
-        },
-      );
-    }
-    await Future<void>.delayed(const Duration(seconds: 1));
-  }
-  return PaymentResult(
-    approved: false,
-    amountMinor: amountMinor,
-    reference: intentId,
-    sessionId: sessionId,
-    outcome: CardOutcome.unknown,
-    message:
-        'The refund result could not be confirmed. Check the card machine '
-        'before refunding again.',
+/// Pass the clerk's signature decision to the waiting refund, once.
+void _answer(
+  ValueNotifier<CardPaymentState> payment,
+  Completer<bool>? signature,
+  bool accepted,
+) {
+  if (signature == null || signature.isCompleted) return;
+  signature.complete(accepted);
+  payment.value = payment.value.copyWith(
+    step: CardStep.processing,
+    readerPrompt: accepted ? 'Finishing the refund' : 'Rejecting the signature',
   );
 }
+
+/// The customer's screen, when this till drives one.
+CustomerDisplayFeed? _display(BuildContext context) {
+  try {
+    return ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(customerDisplayProvider);
+  } catch (_) {
+    return null;
+  }
+}
+
+enum _RefundEnding { close, recordRefunded, retry }
 
 /// Dojo's answer for a refund made without the machine (straight to the
 /// card), on the same full-screen result as a payment: approved in green,

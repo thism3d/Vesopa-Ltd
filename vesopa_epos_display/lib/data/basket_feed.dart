@@ -93,7 +93,12 @@ class CardStatus {
     this.detail,
     this.outcome,
     this.amountMinor = 0,
+    this.heading,
   });
+
+  /// Above the amount, when the till names it: "Card refund" while a refund
+  /// runs on the card machine (EPOS 1.16.3 and later). Absent on a sale.
+  final String? heading;
 
   /// 'progress' while the machine is working, 'result' once it has answered.
   final String phase;
@@ -124,6 +129,10 @@ class CardStatus {
       },
       outcome: raw['outcome'] as String?,
       amountMinor: (raw['amount_minor'] as num?)?.toInt() ?? 0,
+      heading: switch (raw['heading']) {
+        final String s when s.trim().isNotEmpty => s.trim(),
+        _ => null,
+      },
     );
   }
 }
