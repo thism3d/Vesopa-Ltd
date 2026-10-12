@@ -3,6 +3,7 @@
     python tool/deploy_pontardawe_app.py            # check only: show what it would do
     python tool/deploy_pontardawe_app.py --apply    # do it
     python tool/deploy_pontardawe_app.py --apply --no-web   # without the web app
+    python tool/deploy_pontardawe_app.py --audiences        # only auth's Google client ids
 
 Run from the repository root on the owner's PC (cloud sessions cannot reach
 port 22). With --apply, in order, stopping at the first failure:
@@ -250,8 +251,60 @@ def checks():
     return ok
 
 
+WEB_GOOGLE_CLIENT = "561180189171-na3jtfi2d08052cah8er327k58rvbg5u.apps.googleusercontent.com"
+
+
+def google_audiences(client, stamp):
+    """auth's NATIVE_GOOGLE_AUDIENCES gains the club app's iOS client id
+    (venue.json google_ios_client_id) and the web client the Android app asks
+    for, keeping whatever is there. Backed up first. True when it changed."""
+    venue_json = json.loads((ROOT / "PontardaweRFC" / "venue.json").read_text(encoding="utf-8"))
+    wanted = [c for c in (venue_json.get("google_ios_client_id", "").strip(), WEB_GOOGLE_CLIENT) if c]
+    env = f"{AUTH}/.env"
+    st, out = sh(client, f"grep -E '^NATIVE_GOOGLE_AUDIENCES=' {env} || true", quiet=True)
+    line = out.strip()
+    have = [a.strip() for a in line.split("=", 1)[1].strip().strip('"').strip("'").split(",")] if line else []
+    have = [a for a in have if a]
+    new = have + [w for w in wanted if w not in have]
+    if new == have:
+        print(f"   NATIVE_GOOGLE_AUDIENCES already has {', '.join(wanted)}")
+        return False
+    sh(client, f"cp -p {env} {BACKUPS}/auth-env-{stamp} && chmod 600 {BACKUPS}/auth-env-{stamp}", quiet=True)
+    value = ",".join(new)
+    if line:
+        sh(client, f"sed -i 's|^NATIVE_GOOGLE_AUDIENCES=.*$|NATIVE_GOOGLE_AUDIENCES={value}|' {env}", quiet=True)
+    else:
+        sh(client, f"printf '\\nNATIVE_GOOGLE_AUDIENCES={value}\\n' >> {env}", quiet=True)
+    sh(client, f"grep -E '^NATIVE_GOOGLE_AUDIENCES=' {env}")
+    print(f"   backup {BACKUPS}/auth-env-{stamp}")
+    return True
+
+
+def audiences_only(client):
+    """--audiences: only the Google client ids on auth, a restart, the check."""
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    sh(client, f"mkdir -p {BACKUPS}", quiet=True)
+    print(f"\n== {AUTH_DOMAIN} .env: NATIVE_GOOGLE_AUDIENCES")
+    if google_audiences(client, stamp):
+        st, _ = sh(client, PM2.format(f"restart {AUTH_DOMAIN} --update-env") + " >/dev/null && echo '   restarted'")
+        if st != 0:
+            raise SystemExit(f"! pm2 restart failed; the old .env is {BACKUPS}/auth-env-{stamp}")
+        time.sleep(6)
+    st, _, body = post_json(f"https://{AUTH_DOMAIN}/oauth/native", {"client_id": CLIENT_ID})
+    print(f"   POST /oauth/native answers {st}: {body[:80]}")
+    st, _, _ = fetch(f"https://{AUTH_DOMAIN}/health")
+    print(f"   {'ok ' if st == 200 else 'BAD'} auth health ({st})")
+
+
 def main():
     apply = "--apply" in sys.argv
+    if "--audiences" in sys.argv:
+        client = vesopa_ssh.connect()
+        try:
+            audiences_only(client)
+        finally:
+            client.close()
+        return
     print(f"Pontardawe RFC app: sign-in methods, APNS topic, back office and auth  "
           f"({'APPLY' if apply else 'check only; --apply to do it'})")
     client = vesopa_ssh.connect()
@@ -317,7 +370,8 @@ def main():
             sh(client, f"tar -xzf {backup} -C {AUTH} {back}; rm -f {AUTH}/test/native.test.js", quiet=True)
             raise SystemExit("! auth tests failed on the server: its files were put back, auth NOT restarted")
         print("   npm test passes on the server")
-        st, _ = sh(client, PM2.format(f"restart {AUTH_DOMAIN}") + " >/dev/null && echo '   restarted'")
+        google_audiences(client, stamp)
+        st, _ = sh(client, PM2.format(f"restart {AUTH_DOMAIN} --update-env") + " >/dev/null && echo '   restarted'")
         if st != 0:
             raise SystemExit(f"! pm2 restart failed; roll back with: tar -xzf {backup} -C {AUTH}")
 
