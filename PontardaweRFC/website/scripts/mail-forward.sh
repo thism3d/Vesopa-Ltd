@@ -30,6 +30,8 @@
 #
 # Idempotent; backs up the template and puts it back if any check fails.
 # Never test an Exim redirect with an unconditional errors_to (bounce loop).
+# File names in a router must not come from $domain (tainted since Exim 4.94:
+# "failed to expand", mail deferred), so the accounts path is written out.
 set -euo pipefail
 # The panel's commands (v-*) are not on a plain ssh session's PATH.
 export PATH="$PATH:/usr/local/hestia/bin"
@@ -105,7 +107,7 @@ pontardawe_forward:
   domains = $DOMAIN
   local_parts = info : contact
   data = $TO
-  unseen = \${lookup{\$local_part}lsearch{/etc/exim4/domains/\$domain/accounts}{yes}{no}}
+  unseen = \${lookup{\$local_part}lsearch{/etc/exim4/domains/$DOMAIN/accounts}{yes}{no}}
   errors_to = \${if eq{\$sender_address}{}{}{info@$DOMAIN}}
   headers_remove = From : Reply-To : Sender : DKIM-Signature
   headers_add = From: \${if def:h_from: {\${quote:\${if eq{\${sg{\${sg{\$h_from:}{\\N\\s*<[^>]*>\\s*\$\\N}{}}}{\\N["']\\N}{}}}{}{\${address:\$h_from:}}{\${sg{\${sg{\$h_from:}{\\N\\s*<[^>]*>\\s*\$\\N}{}}}{\\N["']\\N}{}}}} via $DOMAIN} <$FROM>}{Pontardawe RFC <$FROM>}}
@@ -153,7 +155,7 @@ open(path, "w").write(s[:i] + "\n" + os.environ["BLOCK"] + "\n\n" + s[i:])
 PY
   update-exim4.conf
   R=$(exim -bt "info@$DOMAIN" 2>&1 || true)
-  if ! exim -bV >/dev/null 2>&1 || ! grep -q "router = pontardawe_forward_out" <<<"$R" || ! grep -qF "$TO" <<<"$R"; then
+  if ! exim -bV >/dev/null 2>&1 || ! grep -q "router = pontardawe_forward_out" <<<"$R" || ! grep -qF "$TO" <<<"$R" || grep -q -E "cannot be resolved|failed to expand|is undeliverable" <<<"$R"; then
     cp -p "$B" "$C"
     update-exim4.conf
     echo "  ✗ check failed: the backup is back in place and nothing changed"

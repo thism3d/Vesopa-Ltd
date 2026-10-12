@@ -53,19 +53,9 @@ echo "  ✓ SMTP settings saved in $F: $(grep -c '^SMTP_' "$F") SMTP_ keys (pass
 
 TEST = r'''
 ID="fwdtest-$(date +%s)"
-python3 - "$ID" <<'PY'
-import smtplib, sys
-from email.message import EmailMessage
-m = EmailMessage()
-m["From"] = "Forward test <forward-test@vesopasoftware.com>"
-m["To"] = "__ADDR__"
-m["Subject"] = f"pontardawerfc.com inbox and forward test {sys.argv[1]}"
-m["Message-ID"] = f"<{sys.argv[1]}@vesopasoftware.com>"
-m.set_content("Sent to info@pontardawerfc.com to check it lands in the mailbox and is forwarded.")
-with smtplib.SMTP("127.0.0.1", 25, timeout=20) as s:
-    s.send_message(m)
-print("  ✓ test message handed to Exim:", sys.argv[1])
-PY
+printf 'From: Forward test <forward-test@vesopasoftware.com>\nTo: __ADDR__\nSubject: pontardawerfc.com inbox and forward test %s\nMessage-ID: <%s@vesopasoftware.com>\n\nSent to __ADDR__ to check it lands in the mailbox and is forwarded.\n' "$ID" "$ID" \
+  | exim -f forward-test@vesopasoftware.com __ADDR__
+echo "  ✓ test message handed to Exim: $ID"
 sleep 12
 QID=$(grep -F "id=$ID@" /var/log/exim4/mainlog | tail -1 | awk '{print $3}')
 echo "  Exim log for $QID:"
