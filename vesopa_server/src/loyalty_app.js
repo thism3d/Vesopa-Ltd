@@ -218,6 +218,10 @@ async function brandFor(db, office, app) {
   if (look && look.website && !links.website) links.website = look.website;
   if (look && look.phone && !links.phone) links.phone = look.phone;
   if (look && look.email && !links.email) links.email = look.email;
+  // A venue with its own icons (venue_looks.js `art`): its crest is the logo
+  // and the icon, as a whole address, since emails and other sites use them.
+  const art = venueLooks.artFor(a.slug);
+  const own = (p) => (art ? `${new URL(appUrl(a.slug)).origin}${p}` : null);
   const lat = a.latitude ?? w.latitude ?? null;
   const lng = a.longitude ?? w.longitude ?? null;
   return {
@@ -225,8 +229,8 @@ async function brandFor(db, office, app) {
     name: a.app_name || w.program_name || (dinein && dinein.display_name) || (officeRow && officeRow.name) || 'Loyalty',
     venue: w.issuer_name || (dinein && dinein.display_name) || (officeRow && officeRow.name) || '',
     welcome: a.welcome_text || 'Your card, your points and our latest news.',
-    logo: a.logo_url || w.logo_url || (dinein && dinein.logo_url) || null,
-    icon: a.icon_url || a.logo_url || w.logo_url || null,
+    logo: (art && own(art.crest)) || a.logo_url || w.logo_url || (dinein && dinein.logo_url) || null,
+    icon: (art && own(art.icon512)) || a.icon_url || a.logo_url || w.logo_url || null,
     hero: a.hero_url || w.hero_url || null,
     colours: {
       primary: a.colour_primary || (w.hex_background && HEX.test(w.hex_background) ? w.hex_background : null)
@@ -1591,7 +1595,14 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
        * own icons. The maskable pair matters on Android: without one it crops
        * the square inside its circle and takes the corners off the logo.
        */
-      const icons = brand.icon
+      const art = venueLooks.artFor(app.slug);
+      const icons = art
+        ? [
+          { src: art.icon192, sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: art.icon512, sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: art.maskable512, sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+        ]
+        : brand.icon
         ? [
           { src: brand.icon, sizes: '192x192', type: 'image/png', purpose: 'any' },
           { src: brand.icon, sizes: '512x512', type: 'image/png', purpose: 'any' },

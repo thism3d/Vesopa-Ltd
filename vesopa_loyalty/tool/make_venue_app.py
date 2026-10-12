@@ -17,7 +17,8 @@ from three things in the venue's folder:
 
     <venue>/venue.json        slug, names, package name, colours, version
     <venue>/overlay/          files laid over the copy at the same paths:
-                              icons, splash pictures, the intro's crest
+                              icons, splash pictures, the intro's crest,
+                              the Venue tab's header
                               (tool/make_venue_art.py draws them)
     <venue>/google-services.json   Firebase's file for the venue's package
                               (gitignored; tool/firebase_android_app.py
@@ -335,6 +336,13 @@ def main():
             shutil.copytree(src, app / name, ignore=ignore, dirs_exist_ok=True)
         else:
             shutil.copy2(src, app / name)
+    # An icon set the overlay brings whole (its own Contents.json: the
+    # venue's single 1024 icon with its dark and tinted versions) replaces the
+    # app's, rather than landing on top of the Kitchen's per-size PNGs, which
+    # Xcode would then warn about as icons nobody uses.
+    for own in overlay.rglob("*.appiconset"):
+        if (own / "Contents.json").exists():
+            shutil.rmtree(app / own.relative_to(overlay), ignore_errors=True)
     shutil.copytree(overlay, app, dirs_exist_ok=True)
 
     android(app, venue_dir, v)

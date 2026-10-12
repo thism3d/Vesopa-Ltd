@@ -1,6 +1,8 @@
 package uk.co.vesopa.vesopa_loyalty
 
 import android.Manifest
+import android.app.NotificationManager
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import com.google.firebase.messaging.FirebaseMessaging
@@ -34,21 +36,90 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
     private var waiting: MethodChannel.Result? = null
 
+    /** Whether [waiting] wants the token after the answer, or only the answer. */
+    private var waitingForToken = true
+
+    private var channel: MethodChannel? = null
+
+    /** A tapped notification's address, waiting for Dart to start and ask. */
+    private var opened: String? = null
+    private var dartListening = false
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         PushService.ensureChannel(this)
         // Google and passkeys from Android's own sheet (AuthBridge.kt).
         AuthBridge(this, flutterEngine.dartExecutor.binaryMessenger)
 
-        MethodChannel(
+        // Started by a tap on one of the venue's notifications.
+        opened = tappedAddress(intent)
+
+        channel = MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             "vesopa_loyalty/push",
-        ).setMethodCallHandler { call, result ->
-            when (call.method) {
-                "token" -> deviceToken(result)
-                else -> result.notImplemented()
+        ).apply {
+            setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "token" -> deviceToken(result)
+                    "permission" -> askPermission(result)
+                    "opened" -> {
+                        dartListening = true
+                        result.success(opened)
+                        opened = null
+                    }
+                    else -> result.notImplemented()
+                }
             }
         }
+    }
+
+    /** Tapped while the app was already running (launchMode singleTop). */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        val address = tappedAddress(intent) ?: return
+        val open = channel
+        if (dartListening && open != null) open.invokeMethod("open", address) else opened = address
+    }
+
+    /**
+     * `/inbox/<id>` when [intent] is a tapped notification, else null.
+     *
+     * Android draws a notification itself while the app is in the background
+     * and hands its data over as extras with `google.message_id` beside them;
+     * PushService draws the ones that arrive while it is open, with the same
+     * data. Read once: the extras are taken off so turning the phone round
+     * (which starts the activity again on the same intent) does not open the
+     * news a second time.
+     */
+    private fun tappedAddress(intent: Intent?): String? {
+        if (intent == null) return null
+        val extras = intent.extras ?: return null
+        if (!extras.containsKey("id") && !extras.containsKey("google.message_id")) return null
+        val id = extras.getString("id").orEmpty()
+        intent.removeExtra("id")
+        intent.removeExtra("google.message_id")
+        return if (id.isEmpty()) "/inbox" else "/inbox/$id"
+    }
+
+    /**
+     * Only the question, for the welcome before sign-in (lib/ui/onboarding.dart):
+     * true when the customer said yes. Below Android 13 nobody is asked, and
+     * the answer is whether the app's notifications are switched on.
+     */
+    private fun askPermission(result: MethodChannel.Result) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        ) {
+            result.success(getSystemService(NotificationManager::class.java).areNotificationsEnabled())
+            return
+        }
+        if (waiting != null) {
+            result.success(false)
+            return
+        }
+        waiting = result
+        waitingForToken = false
+        requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), ASK_NOTIFICATIONS)
     }
 
     /**
@@ -69,6 +140,7 @@ class MainActivity : FlutterActivity() {
                 return
             }
             waiting = result
+            waitingForToken = true
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), ASK_NOTIFICATIONS)
             return
         }
@@ -82,7 +154,10 @@ class MainActivity : FlutterActivity() {
         if (requestCode != ASK_NOTIFICATIONS) return
         val result = waiting ?: return
         waiting = null
-        if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+        val granted = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
+        if (!waitingForToken) {
+            result.success(granted)
+        } else if (granted) {
             fetchToken(result)
         } else {
             result.success(null)

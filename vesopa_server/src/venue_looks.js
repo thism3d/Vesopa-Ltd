@@ -10,7 +10,8 @@
  * the server writes the look into the page (loyalty_app.js) and the app reads
  * it at start (lib/platform/page_venue_web.dart).
  *
- * Keep these the same as the venue's venue.json "colours". `font` is a
+ * Keep these the same as the venue's venue.json "colours". `art` is the
+ * folder of the venue's own icons under public/ (see artFor). `font` is a
  * built-in family from public/assets/fonts, used when the venue has not
  * chosen fonts of its own in the back office; `website`, `phone` and `email` fill the
  * app's links the same way.
@@ -30,7 +31,17 @@ const LOOKS = {
     // The club's own website, which shares these colours and this typeface.
     // Filled in only where the back office has no link of its own.
     website: 'https://pontardawerfc.com', phone: '01792 864811', email: 'info@pontardawerfc.com',
+    // The club's own phone app (owner 2026-10-12): the web app shows the
+    // official store badges for these at the bottom of every page.
+    ios_app: 'https://testflight.apple.com/join/cWqDESsD',
+    android_app: 'https://play.google.com/store/apps/details?id=com.vesopaepos.pontardawerfc',
     web: 'node',
+    // The club's crest on nothing, as its phone app's icon is: the members'
+    // site's favicon, home-screen and install icons, and the logo at the top
+    // of its pages, ahead of whatever the back office holds (owner,
+    // 2026-10-12: "only the crest, without the background, everywhere").
+    // Drawn by vesopa_loyalty/tool/make_venue_art.py into public/.
+    art: '/assets/venues/pontardawe-rfc/',
   },
 };
 
@@ -55,4 +66,24 @@ function nodeWeb(slug) {
   return !!(look && look.web === 'node');
 }
 
-module.exports = { lookFor, pageMeta, nodeWeb, LOOKS };
+/**
+ * The venue's own icons, as paths on this server, or null.
+ *
+ * `apple` is on white: an iPhone fills a transparent home-screen icon with
+ * black. Everything else is the crest on nothing.
+ */
+function artFor(slug) {
+  const look = lookFor(slug);
+  if (!look || !/^\/assets\/[a-z0-9/_-]+\/$/.test(look.art || '')) return null;
+  const at = (file) => `${look.art}${file}`;
+  return {
+    crest: at('crest.png'),
+    favicon: at('favicon-32.png'),
+    apple: at('apple-touch-icon.png'),
+    icon192: at('icon-192.png'),
+    icon512: at('icon-512.png'),
+    maskable512: at('maskable-512.png'),
+  };
+}
+
+module.exports = { lookFor, pageMeta, nodeWeb, artFor, LOOKS };

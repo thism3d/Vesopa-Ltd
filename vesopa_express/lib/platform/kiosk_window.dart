@@ -17,6 +17,7 @@
 /// Access); this file is where they will go.
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -86,9 +87,13 @@ class KioskWindow {
 
   /// Leave for good. Only ever reached from Settings, behind the passcode.
   static Future<void> exitApp() async {
+    // Hidden, then exit(0): destroy() waited for the engine to wind down,
+    // which kept a frozen window on screen and sometimes left the process
+    // behind (owner, 2026-10-12). Nothing here needs that teardown.
     if (_desktop) {
-      await windowManager.setPreventClose(false);
-      await windowManager.destroy();
+      try {
+        await windowManager.hide().timeout(const Duration(seconds: 1));
+      } on Object catch (_) {}
     }
     exit(0);
   }

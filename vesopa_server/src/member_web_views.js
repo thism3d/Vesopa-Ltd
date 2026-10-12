@@ -271,7 +271,9 @@ function logo(brand, size) {
   const url = brand.logo || brand.icon;
   const initial = `<span class="initial" style="width:${size}px;height:${size}px;font-size:${Math.round(size * 0.45)}px">${esc((brand.name || '?').trim().charAt(0).toUpperCase() || '?')}</span>`;
   if (!url) return initial;
-  return `<img class="logo" src="${esc(url)}" width="${size}" height="${size}" alt="">`;
+  // The venue's own crest is a shape on nothing: no rounded box round it.
+  const crest = venueLooks.artFor(brand.slug) ? ' crest' : '';
+  return `<img class="logo${crest}" src="${esc(url)}" width="${size}" height="${size}" alt="">`;
 }
 
 const hidden = (m) => `<input type="hidden" name="_csrf" value="${esc(m.csrf)}">`;
@@ -282,6 +284,9 @@ const button = (m, action, label, { cls = 'btn', fields = '' } = {}) =>
 function document({ m, brand, title, body, bodyClass = '', script = '' }) {
   const t = theme(brand);
   const icon = brand.icon || brand.logo || `${m.base}icons/Icon-192.png`;
+  // The venue's own icons where it has them: the crest on nothing in the
+  // tab, and on white for an iPhone's home screen (venue_looks.js artFor).
+  const art = venueLooks.artFor(brand.slug);
   const description = `${brand.name}: ${String(brand.welcome || '').replace(/\.$/, '')}.`;
   return '<!doctype html><html lang="en-GB"><head><meta charset="utf-8">'
     + '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'
@@ -291,7 +296,9 @@ function document({ m, brand, title, body, bodyClass = '', script = '' }) {
     + '<meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes">'
     + `<meta name="apple-mobile-web-app-title" content="${esc(brand.name)}">`
     + `<link rel="manifest" href="${esc(m.base)}manifest.webmanifest">`
-    + `<link rel="icon" href="${esc(icon)}"><link rel="apple-touch-icon" href="${esc(icon)}">`
+    + (art
+      ? `<link rel="icon" type="image/png" sizes="32x32" href="${esc(art.favicon)}"><link rel="icon" type="image/png" sizes="192x192" href="${esc(art.icon192)}"><link rel="apple-touch-icon" href="${esc(art.apple)}">`
+      : `<link rel="icon" href="${esc(icon)}"><link rel="apple-touch-icon" href="${esc(icon)}">`)
     + t.preload.map((u) => `<link rel="preload" href="${esc(u)}" as="font" type="font/woff2" crossorigin>`).join('')
     + `<style>${t.css}${CSS}</style></head>`
     + `<body class="${bodyClass}" data-base="${esc(m.base)}" data-csrf="${esc(m.csrf)}">${body}`
@@ -326,7 +333,7 @@ function signedIn({ m, brand, unread, classes, tab, title, body, script = '' }) 
     `<a href="${esc(m.base + href)}"${key === tab ? ' aria-current="page"' : ''}><span>${icon(key)}</span>${label}</a>`).join('')}</nav>`;
   return document({
     m, brand, title,
-    body: `${bar}${nav}<main>${body}</main>`,
+    body: `${bar}${nav}<main>${body}${storeBadges(m, brand)}</main>`,
     script: OPENED_FROM_NOTIFICATION + script,
   });
 }
@@ -338,6 +345,26 @@ const row = (ico, title, sub, { value = '', cls = '' } = {}) =>
 const opener = (ico, title, sub, inner, { open = false, cls = '', id = '' } = {}) =>
   `<details class="more"${open ? ' open' : ''}${id ? ` id="${id}"` : ''}><summary class="row${cls ? ` ${cls}` : ''}">${icon(ico)}<div class="t"><b>${title}</b>${sub ? `<small>${sub}</small>` : ''}</div>${icon('chev', 'ico chev')}</summary><div class="body">${inner}</div></details>`;
 const powered = '<p class="powered">Powered by Vesopa</p>';
+
+/**
+ * The venue's own phone app, as the official App Store and Google Play badges
+ * (public/assets/badges), for a venue whose look names its store links. An
+ * iPhone or iPad is shown only the App Store, an Android phone only Google
+ * Play, a computer both. Nothing inside the app itself.
+ */
+function storeBadges(m, brand) {
+  const look = venueLooks.lookFor(brand.slug);
+  if (!look || (!look.ios_app && !look.android_app)) return '';
+  const ua = (m && m.ua) || '';
+  if (/VesopaLoyalty/.test(ua)) return '';
+  const ios = /iPhone|iPad|iPod/.test(ua);
+  const android = /Android/.test(ua);
+  const badges = [];
+  if (look.ios_app && !android) badges.push(`<a class="store" href="${esc(look.ios_app)}" rel="noopener"><img src="/assets/badges/app-store.svg" alt="Download on the App Store" width="120" height="40"></a>`);
+  if (look.android_app && !ios) badges.push(`<a class="store" href="${esc(look.android_app)}" rel="noopener"><img src="/assets/badges/google-play.png" alt="Get it on Google Play" width="135" height="40"></a>`);
+  if (!badges.length) return '';
+  return `<section class="get-app" aria-label="Get the app"><p>Get the ${esc(brand.name)} app</p><div>${badges.join('')}</div></section>`;
+}
 
 // ---------------------------------------------------------------------------
 // Signing in (sign_in.dart)
@@ -434,6 +461,7 @@ function signIn({ m, brand, ua, state }) {
     + (state.error ? `<p class="err" role="alert">${esc(state.error)}</p>` : '')
     + (usesPasskey ? `<p class="err" role="alert" data-passkey-error hidden></p><form method="post" action="${action('passkey')}" data-passkey-form hidden>${hidden(m)}<input type="hidden" name="proof"></form>` : '')
     + others
+    + storeBadges(m, brand)
     + powered
     + '</div></main>';
   return document({

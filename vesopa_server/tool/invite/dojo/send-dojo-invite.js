@@ -8,6 +8,7 @@
  *   node tool/invite/dojo/send-dojo-invite.js --send          # to Dojo, cc Meirion
  *   node tool/invite/dojo/send-dojo-invite.js --send --only info@vesopa.com   # one copy only
  *   ... --final       # 11 Oct: accreditation fixes done, final testing Mon 12 Oct 10:30 (new invite)
+ *   ... --confirm     # 12 Oct morning: please confirm today's final testing at 10:30
  *   ... --reminder2   # 9 Oct midday: reminder for 1:30pm with the new Meet link
  *   ... --correction  # 9 Oct: right time 1:30pm (not 8:30am), new Meet link, invite SEQUENCE 2
  *   ... --reminder    # morning-of reminder, 9 Oct: today 1:30pm, Meet link and dial-in
@@ -32,7 +33,8 @@ const RECIPIENTS = [
 ];
 
 async function main() {
-  const eml = path.join(__dirname, process.argv.includes('--final') ? 'Vesopa-Dojo-final-testing.eml'
+  const eml = path.join(__dirname, process.argv.includes('--confirm') ? 'Vesopa-Dojo-confirm.eml'
+    : process.argv.includes('--final') ? 'Vesopa-Dojo-final-testing.eml'
     : process.argv.includes('--reminder2') ? 'Vesopa-Dojo-kick-off-reminder2.eml'
     : process.argv.includes('--correction') ? 'Vesopa-Dojo-kick-off-correction.eml'
     : process.argv.includes('--reminder') ? 'Vesopa-Dojo-kick-off-reminder.eml'
