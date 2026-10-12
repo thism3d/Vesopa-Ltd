@@ -21,6 +21,7 @@ import '../data/pairing.dart';
 import '../data/screens.dart';
 import '../data/settings.dart';
 import 'settings_controls.dart';
+import 'quit.dart';
 import 'theme.dart';
 
 class SettingsPage extends ConsumerStatefulWidget {
@@ -317,14 +318,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
     if (quit != true) return;
 
-    // destroy(), not close(): a full-screen window with no title bar has had no
-    // close request to honour, and destroy() tears it down regardless. exit(0)
-    // is the backstop if the platform channel is not there for any reason.
-    try {
-      await windowManager.destroy();
-    } catch (_) {
-      exit(0);
-    }
+    await quitNow();
   }
 
   @override

@@ -23,6 +23,7 @@ import 'layout.dart';
 import 'nav_panel_controller.dart';
 import 'customer_display_page.dart';
 import 'printers_page.dart';
+import 'quit.dart';
 import 'theme.dart';
 import 'theme_controller.dart';
 import 'till_actions.dart';
@@ -440,7 +441,7 @@ class SettingsPage extends ConsumerWidget {
                 style: TextStyle(fontSize: 12.5),
               ),
               trailing: const Icon(Icons.chevron_right),
-              onTap: () => _confirmExit(context),
+              onTap: () => _confirmExit(context, ref),
             ),
           ),
         ],
@@ -459,7 +460,7 @@ class SettingsPage extends ConsumerWidget {
   /// This is one tap away from ending service, and the same finger that reaches
   /// for Printing is inches from it — so the confirmation is not ceremony, it
   /// is the thing standing between a mis-tap and a dark till.
-  Future<void> _confirmExit(BuildContext context) async {
+  Future<void> _confirmExit(BuildContext context, WidgetRef ref) async {
     final quit = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -485,15 +486,7 @@ class SettingsPage extends ConsumerWidget {
 
     if (quit != true) return;
 
-    // destroy(), not close(): the window was made unclosable at startup, and a
-    // close request against it is simply ignored. destroy() tears it down
-    // regardless, and exit(0) is the backstop if the platform channel is not
-    // there for any reason.
-    try {
-      await windowManager.destroy();
-    } catch (_) {
-      exit(0);
-    }
+    await quitNow(closeFirst: () => ref.read(databaseProvider).close());
   }
 }
 
