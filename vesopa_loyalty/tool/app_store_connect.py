@@ -35,7 +35,9 @@ store       fills the App Store listing from <venue>/store/app_store.json and
 testflight  waits for the uploaded build to finish processing, gives it its
             "What to Test", fills TestFlight's own test information, puts it
             in the internal group (every App Store Connect user on the team,
-            added as testers) and attaches it to the App Store version.
+            added as testers), adds it to every external group (open testers)
+            and sends it to Beta App Review for them, and attaches it to the
+            App Store version.
 
 Everything is safe to run again: what is already right is left alone.
 
@@ -911,6 +913,34 @@ def cmd_testflight(venue_name, number):
                 todo(f"Add the build to {group['attributes']['name']}: {e.detail()}")
         else:
             note(f"  \"{group['attributes']['name']}\" gets every build")
+
+    # External groups (open testers, public link): every build goes to each,
+    # then to Beta App Review, which Apple needs before outside testers get it.
+    try:
+        external = [g for g in c.all(f"/v1/apps/{app['id']}/betaGroups")
+                    if not g["attributes"].get("isInternalGroup")]
+    except AppleError as e:
+        external = []
+        todo(f"TestFlight external groups: {e.detail()}")
+    for g in external:
+        try:
+            c.post(f"/v1/betaGroups/{g['id']}/relationships/builds",
+                   {"data": [{"type": "builds", "id": build["id"]}]})
+            note(f"  build added to \"{g['attributes']['name']}\" (external)")
+        except AppleError as e:
+            todo(f"Add the build to {g['attributes']['name']}: {e.detail()}")
+    if external:
+        try:
+            c.post("/v1/betaAppReviewSubmissions", {"data": {
+                "type": "betaAppReviewSubmissions",
+                "relationships": {"build": {"data": {"type": "builds", "id": build["id"]}}},
+            }})
+            note("  build sent to Beta App Review for the external testers")
+        except AppleError as e:
+            if e.status == 409:
+                note(f"  Beta App Review: {e.detail()}")
+            else:
+                todo(f"Send the build to Beta App Review: {e.detail()}")
 
     # The build the App Store version will go out with, when it is submitted.
     try:
