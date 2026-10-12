@@ -4,6 +4,8 @@
     python tool/deploy_pontardawe_app.py --apply    # do it
     python tool/deploy_pontardawe_app.py --apply --no-web   # without the web app
     python tool/deploy_pontardawe_app.py --audiences        # only auth's Google client ids
+    python tool/deploy_pontardawe_app.py --android          # only the Android passkey links (below)
+    python tool/deploy_pontardawe_app.py --android-check    # print the fingerprints it would use
 
 Run from the repository root on the owner's PC (cloud sessions cannot reach
 port 22). With --apply, in order, stopping at the first failure:
@@ -37,6 +39,17 @@ port 22). With --apply, in order, stopping at the first failure:
   7. CHECKS: the app's branding lists the methods, /oauth/authorize?idp=google
      goes to Google, /oauth/native answers, both well-known files name the
      app, both healths answer.
+
+ANDROID PASSKEYS (--android, 2026-10-12). Android's Credential Manager lets the
+app use a vesopa.com passkey only when https://vesopa.com/.well-known/assetlinks.json
+names the app's package and signing key, and the assertion it makes carries
+the origin android:apk-key-hash:<that key's SHA-256>, which auth must accept
+(NATIVE_PASSKEY_ORIGINS). The keys: PontardaweRFC/venue.json android_sha256
+(Play's app signing key, from Play Console > App integrity) plus the upload
+key, read here from android/key.properties with keytool (sideloaded APKs).
+--android writes the assetlinks file into the vesopa.com nginx include,
+NATIVE_PASSKEY_ORIGINS on auth and LOYALTY_ANDROID_APPS on the back office
+(loyalty.vesopa.com's own assetlinks), backed up, restarts both, and checks.
 
 Credentials: VESOPA_SSH_PASSWORD from .env.claude-tools or .env.claude, as the
 other deploy tools. Nothing secret is printed.
@@ -119,8 +132,9 @@ def post_json(url, payload):
         return e.code, e.headers, e.read().decode("utf-8", "replace")
 
 
-def well_known(client, stamp):
-    """vesopa.com's apple-app-site-association, ahead of its redirect."""
+def well_known(client, stamp, prints=None):
+    """vesopa.com's apple-app-site-association (and, given Android signing key
+    fingerprints, its assetlinks.json), ahead of its redirect."""
     st, out = sh(client, f"ls -d /home/*/conf/web/{RP_DOMAIN} 2>/dev/null | head -1", quiet=True)
     conf = out.strip()
     if not conf:
@@ -137,6 +151,13 @@ def well_known(client, stamp):
         "    default_type application/json;",
         f"    return 200 '{body}';",
         "}",
+        *([
+            r"rewrite ^/\.well-known/assetlinks\.json$ /.well-known/vesopa-assetlinks last;",
+            "location = /.well-known/vesopa-assetlinks {",
+            "    default_type application/json;",
+            f"    return 200 '{assetlinks(prints)}';",
+            "}",
+        ] if prints else []),
         "",
     ])
     sh(client, f"[ -f {path} ] && cp -p {path} {BACKUPS}/vesopa-wellknown-{stamp} || true", quiet=True)
@@ -197,6 +218,92 @@ def web_app(client, stamp):
 
 def aasa():
     return json.dumps({"webcredentials": {"apps": IOS_APPS}}, separators=(",", ":"))
+
+
+def upload_key_sha256():
+    """The upload key's SHA-256, from key.properties with keytool. None when absent."""
+    import os
+    for src in (ROOT / "vesopa_loyalty" / "android" / "key.properties",
+                ROOT / "MetricMembership" / "app" / "android" / "key.properties"):
+        if not src.exists():
+            continue
+        props = dict(l.split("=", 1) for l in src.read_text(encoding="utf-8").splitlines() if "=" in l)
+        store = pathlib.Path(props.get("storeFile", "").strip())
+        if not store.is_absolute():
+            store = (src.parent / "app" / store).resolve()
+        keytool = shutil.which("keytool") or (os.environ.get("JAVA_HOME") and str(pathlib.Path(os.environ["JAVA_HOME"]) / "bin" / "keytool"))
+        if not keytool or not store.exists():
+            return None
+        env = dict(os.environ, VESOPA_KS_PASS=props.get("storePassword", "").strip())
+        out = subprocess.run([keytool, "-list", "-v", "-keystore", str(store), "-alias", props.get("keyAlias", "").strip(),
+                              "-storepass:env", "VESOPA_KS_PASS"], capture_output=True, text=True, env=env).stdout
+        m = re.search(r"SHA256:\s*([0-9A-F:]{95})", out)
+        return m.group(1) if m else None
+    return None
+
+
+def android_prints():
+    venue_json = json.loads((ROOT / "PontardaweRFC" / "venue.json").read_text(encoding="utf-8"))
+    prints = [p.strip().upper() for p in venue_json.get("android_sha256", []) if p.strip()]
+    upload = upload_key_sha256()
+    if upload and upload not in prints:
+        prints.append(upload)
+    return prints
+
+
+def apk_key_hash(fingerprint):
+    import base64
+    raw = bytes.fromhex(fingerprint.replace(":", ""))
+    return "android:apk-key-hash:" + base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+
+def assetlinks(prints):
+    return json.dumps([{
+        "relation": ["delegate_permission/common.get_login_creds", "delegate_permission/common.handle_all_urls"],
+        "target": {"namespace": "android_app", "package_name": BUNDLE, "sha256_cert_fingerprints": prints},
+    }], separators=(",", ":"))
+
+
+def env_list(client, env, key, wanted, stamp, label):
+    """Add [wanted] to a comma list in a .env, keeping what is there. True when it changed."""
+    st, out = sh(client, f"grep -E '^{key}=' {env} || true", quiet=True)
+    line = out.strip()
+    have = [a.strip() for a in line.split("=", 1)[1].strip().strip('"').strip("'").split(",")] if line else []
+    have = [a for a in have if a]
+    new = have + [w for w in wanted if w not in have]
+    if new == have:
+        print(f"   {key} already right")
+        return False
+    sh(client, f"cp -p {env} {BACKUPS}/{label}-env-{stamp} && chmod 600 {BACKUPS}/{label}-env-{stamp}", quiet=True)
+    value = ",".join(new)
+    if line:
+        sh(client, f"sed -i 's|^{key}=.*$|{key}={value}|' {env}", quiet=True)
+    else:
+        sh(client, f"printf '\\n{key}={value}\\n' >> {env}", quiet=True)
+    print(f"   {key} set ({len(new)} entries); backup {BACKUPS}/{label}-env-{stamp}")
+    return True
+
+
+def android_only(client, prints):
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    sh(client, f"mkdir -p {BACKUPS}", quiet=True)
+    print(f"\n== {RP_DOMAIN}: apple-app-site-association and assetlinks.json")
+    well_known(client, stamp, prints)
+    print(f"\n== {AUTH_DOMAIN} .env: NATIVE_PASSKEY_ORIGINS")
+    if env_list(client, f"{AUTH}/.env", "NATIVE_PASSKEY_ORIGINS", [apk_key_hash(p) for p in prints], stamp, "auth"):
+        sh(client, PM2.format(f"restart {AUTH_DOMAIN} --update-env") + " >/dev/null && echo '   restarted'")
+    print("\n== back office .env: LOYALTY_ANDROID_APPS (loyalty.vesopa.com assetlinks)")
+    if env_list(client, f"{BACKOFFICE}/.env", "LOYALTY_ANDROID_APPS", [f"{BUNDLE}={p}" for p in prints], stamp, "backoffice"):
+        sh(client, PM2.format("restart backoffice.vesopaepos.com --update-env") + " >/dev/null && echo '   restarted'")
+    time.sleep(6)
+    for site in (RP_DOMAIN, "loyalty.vesopa.com"):
+        st, _, body = fetch(f"https://{site}/.well-known/assetlinks.json")
+        ok = st == 200 and BUNDLE in body and all(p in body for p in prints)
+        print(f"   {'ok ' if ok else 'BAD'} {site}/.well-known/assetlinks.json ({st})")
+    st, _, _ = fetch(f"https://{AUTH_DOMAIN}/health")
+    print(f"   {'ok ' if st == 200 else 'BAD'} auth health ({st})")
+    st, _, _ = fetch("https://backoffice.vesopaepos.com/health")
+    print(f"   {'ok ' if st == 200 else 'BAD'} back office health ({st})")
 
 
 def office(client):
@@ -298,6 +405,22 @@ def audiences_only(client):
 
 def main():
     apply = "--apply" in sys.argv
+    if "--android-check" in sys.argv:
+        prints = android_prints()
+        print("Android signing keys:" if prints else "No Android signing keys found (venue.json android_sha256, key.properties).")
+        for p in prints:
+            print(f"   {p}\n     {apk_key_hash(p)}")
+        return
+    if "--android" in sys.argv:
+        prints = android_prints()
+        if not prints:
+            raise SystemExit("! no Android signing keys: add Play's app signing SHA-256 to PontardaweRFC/venue.json android_sha256")
+        client = vesopa_ssh.connect()
+        try:
+            android_only(client, prints)
+        finally:
+            client.close()
+        return
     if "--audiences" in sys.argv:
         client = vesopa_ssh.connect()
         try:
@@ -376,7 +499,7 @@ def main():
             raise SystemExit(f"! pm2 restart failed; roll back with: tar -xzf {backup} -C {AUTH}")
 
         print(f"\n== 5. {RP_DOMAIN}/.well-known/apple-app-site-association")
-        well_known(client, stamp)
+        well_known(client, stamp, android_prints())
 
         print("\n== 6. the web app")
         if "--no-web" in sys.argv:

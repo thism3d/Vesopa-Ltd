@@ -3,9 +3,8 @@ import 'passkey.dart';
 
 /// Everywhere that is not a browser.
 ///
-/// A venue's own app on an iPhone or iPad uses the device's own passkeys
-/// (NativeAuth, ios/Runner/AuthBridge.swift): the same passkeys as the web
-/// page, because they belong to loyalty.vesopa.com. Windows, Android and the
+/// A venue's own app on an iPhone, iPad or Android phone uses the device's own
+/// passkeys (NativeAuth: AuthBridge.swift, AuthBridge.kt). Windows and the
 /// shared app have none this app can reach, so passkeys are not offered there.
 bool passkeysSupported() => NativeAuth.enabled;
 

@@ -58,6 +58,18 @@ class VesopaAnswer {
 /// the device's own sheet: the app's name and what it will see. True to allow.
 typedef VesopaConsent = Future<bool> Function(String app, List<({String title, String description})> scopes);
 
+/// The second step of a two-step account, asked in the app's own dialog.
+/// [methods] is what the account can take (`totp`, `sms`, `recovery`),
+/// [phoneHint] the last digits of the number a text goes to, [sendText] texts
+/// a code (false when it could not), and [error] the words from a wrong code
+/// last time. Answers `(method, code)`, or null when the member gave up.
+typedef VesopaSecondFactor = Future<({String method, String code})?> Function({
+  required List<String> methods,
+  required String phoneHint,
+  required Future<bool> Function() sendText,
+  String? error,
+});
+
 /// Vesopa needs its own page for this sign-in (the account has two-step
 /// sign-in): the caller goes through Continue with Vesopa instead.
 class VesopaNeedsPage implements Exception {

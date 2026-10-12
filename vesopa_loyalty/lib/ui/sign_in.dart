@@ -176,12 +176,12 @@ class _SignInPageState extends ConsumerState<SignInPage> {
   });
 
   /*
-   * APPLE, GOOGLE AND PASSKEYS ON AN IPHONE OR IPAD: THE DEVICE'S OWN SHEETS,
+   * APPLE, GOOGLE AND PASSKEYS IN A VENUE'S OWN APP: THE DEVICE'S OWN SHEETS,
    * INTO THE MEMBER'S VESOPA ACCOUNT. The sheet's answer goes to
    * auth.vesopa.com (/oauth/native), which signs in to the same Vesopa account
    * Continue with Vesopa would, and the venue gets it exactly as it does from
-   * Vesopa's page. No web page opens -- except for an account with two-step
-   * sign-in, which only Vesopa's page can ask for.
+   * Vesopa's page. No web page opens, not even for two-step sign-in: its code
+   * is asked here (_askSecondFactor).
    */
 
   /// Sign in with Apple: Apple's own sheet.
@@ -227,17 +227,107 @@ class _SignInPageState extends ConsumerState<SignInPage> {
   });
 
   Future<void> _nativeVesopa(Map<String, Object?> proof, {required String idp}) async {
-    final VesopaAnswer? answer;
-    try {
-      answer = await nativeVesopaSignIn(proof, consent: _askConsent);
-    } on VesopaNeedsPage {
-      // Two-step sign-in: Vesopa's own page asks for it, then straight back.
-      final brand = ref.read(brandProvider).requireValue;
-      final paged = await startVesopaSignIn(slug: ref.read(configProvider).slug, venue: brand.name, idp: idp);
-      if (paged != null) await _completeVesopa(paged);
-      return;
-    }
+    final answer = await nativeVesopaSignIn(proof, consent: _askConsent, secondFactor: _askSecondFactor);
     if (answer != null) await _completeVesopa(answer);
+  }
+
+  /// Two-step sign-in, in the app: the code from the authenticator app, a
+  /// texted code, or a recovery code. Null when they gave up.
+  Future<({String method, String code})?> _askSecondFactor({
+    required List<String> methods,
+    required String phoneHint,
+    required Future<bool> Function() sendText,
+    String? error,
+  }) async {
+    if (!mounted || methods.isEmpty) return null;
+    var method = methods.first;
+    var sent = false;
+    var problem = error;
+    final code = TextEditingController();
+    String label(String m) => switch (m) {
+      'totp' => 'Use my authenticator app',
+      'sms' => 'Text me a code${phoneHint.isEmpty ? '' : ' ($phoneHint)'}',
+      _ => 'Use a recovery code',
+    };
+    try {
+      return await showAdaptiveDialog<({String method, String code})>(
+        context: context,
+        builder: (context) => StatefulBuilder(
+          builder: (context, setDialog) {
+            final prompt = switch (method) {
+              'totp' => 'Enter the six-digit code from your authenticator app.',
+              'sms' => sent
+                  ? 'Enter the code we texted to $phoneHint.'
+                  : 'We will text a code to the number on your Vesopa account.',
+              _ => 'Enter one of your Vesopa recovery codes.',
+            };
+            final needsSend = method == 'sms' && !sent;
+            return AlertDialog.adaptive(
+              title: const Text('Two-step sign-in'),
+              content: Material(
+                type: MaterialType.transparency,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(prompt),
+                    if (!needsSend) ...[
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: code,
+                        autofocus: true,
+                        autofillHints: const [AutofillHints.oneTimeCode],
+                        keyboardType: method == 'recovery' ? TextInputType.text : TextInputType.number,
+                        textCapitalization: TextCapitalization.characters,
+                        decoration: InputDecoration(
+                          hintText: method == 'recovery' ? 'Recovery code' : '123456',
+                          errorText: problem,
+                          errorMaxLines: 3,
+                        ),
+                      ),
+                    ] else if (problem != null) ...[
+                      const SizedBox(height: 8),
+                      Text(problem!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                    ],
+                    for (final other in methods.where((m) => m != method))
+                      TextButton(
+                        onPressed: () => setDialog(() {
+                          method = other;
+                          problem = null;
+                          code.clear();
+                        }),
+                        child: Text(label(other)),
+                      ),
+                  ],
+                ),
+              ),
+              actions: [
+                DialogAction(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+                DialogAction(
+                  primary: true,
+                  onPressed: needsSend
+                      ? () async {
+                          final ok = await sendText();
+                          setDialog(() {
+                            sent = ok;
+                            problem = ok ? null : 'We could not send that text. Try another way.';
+                          });
+                        }
+                      : () {
+                          final typed = code.text.trim();
+                          if (typed.isEmpty) return setDialog(() => problem = 'Please enter the code.');
+                          Navigator.pop(context, (method: method, code: typed));
+                        },
+                  child: Text(needsSend ? 'Send code' : 'Continue'),
+                ),
+              ],
+            );
+          },
+        ),
+      );
+    } finally {
+      code.dispose();
+    }
   }
 
   /// The first time only: what the venue's app will see of the Vesopa account,
@@ -288,7 +378,8 @@ class _SignInPageState extends ConsumerState<SignInPage> {
   Future<void> _completeVesopa(VesopaAnswer answer) async {
     if (answer.error != null) {
       setState(() {
-        _method = 'vesopa';
+        // A venue's own app stays where it was: its Vesopa buttons are native.
+        if (!NativeAuth.enabled) _method = 'vesopa';
         _error = answer.error;
       });
       return;
@@ -571,8 +662,11 @@ class _SignInPageState extends ConsumerState<SignInPage> {
     final apple = defaultTargetPlatform == TargetPlatform.iOS || defaultTargetPlatform == TargetPlatform.macOS;
     final buttons = <_Way>[
       if (viaVesopa && apple) const _Way.apple(),
-      if (viaVesopa) const _Way.google(),
-      if (viaVesopa && !apple) const _Way.apple(),
+      // In a venue's own app every way in is the device's own sheet (owner,
+      // 2026-10-12: no web sign-in in the apps). Google only where the build
+      // has its client, and Apple only on Apple devices, where it is native.
+      if (viaVesopa && (!NativeAuth.enabled || NativeAuth.google)) const _Way.google(),
+      if (viaVesopa && !apple && !NativeAuth.enabled) const _Way.apple(),
       // In a venue's own app on an iPhone or iPad the passkey is the device's
       // own, and nothing here opens a web page (NativeAuth).
       if (viaVesopa && NativeAuth.enabled)
@@ -607,7 +701,7 @@ class _SignInPageState extends ConsumerState<SignInPage> {
             onPressed: () => switch (way) {
               _Way(method: 'passkey', idp: null) => _signInWithPasskey(),
               _Way(idp: 'passkey') when NativeAuth.enabled => _signInWithVesopaPasskey(),
-              _Way(idp: 'apple') when NativeAuth.enabled => _signInWithApple(),
+              _Way(idp: 'apple') when NativeAuth.appleSheet => _signInWithApple(),
               _Way(idp: 'google') when NativeAuth.google => _signInWithGoogle(),
               _ => _startVesopa(way.idp),
             },

@@ -8,14 +8,19 @@ import 'package:http/http.dart' as http;
 
 import 'passkey.dart';
 
-/// Signing in with what an iPhone or iPad already has, in a venue's own app:
-/// Sign in with Apple, passkeys, and Google's own sign-in sheet. No web page
-/// of ours opens (ios/Runner/AuthBridge.swift).
+/// Signing in with what the phone already has, in a venue's own app. No web
+/// page of ours opens, and no web view (owner, 2026-10-12).
 ///
-/// ONLY IN A VENUE BUILD ON APPLE DEVICES. tool/make_venue_app.py gives the
-/// app the Sign in with Apple and associated-domains entitlements and sets
-/// VENUE_NATIVE_AUTH; the shared app has neither and keeps Continue with
-/// Vesopa as it was.
+///   iPhone, iPad  Sign in with Apple, passkeys, Google's own sign-in sheet
+///                 (ios/Runner/AuthBridge.swift)
+///   Android       Google and passkeys through Android's Credential Manager,
+///                 the system's own account sheet (android/.../AuthBridge.kt).
+///                 Apple has no Android sign-in of its own, so it is not
+///                 offered there.
+///
+/// ONLY IN A VENUE BUILD. tool/make_venue_app.py gives the app its
+/// entitlements and sets VENUE_NATIVE_AUTH; the shared app has neither and
+/// keeps Continue with Vesopa as it was.
 class NativeAuth {
   NativeAuth._();
 
@@ -23,11 +28,22 @@ class NativeAuth {
   static const _flag = bool.fromEnvironment('VENUE_NATIVE_AUTH');
 
   /// Google's iOS OAuth client for this app (venue.json google_ios_client_id).
-  /// Empty until one is made in Google Cloud; Google then goes through Vesopa.
   static const googleClientId = String.fromEnvironment('GOOGLE_IOS_CLIENT_ID');
 
-  static bool get enabled => _flag && !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
-  static bool get google => enabled && googleClientId.isNotEmpty;
+  /// The web client Android's Credential Manager mints the Google id token
+  /// for (venue.json google_server_client_id): Android apps have no client
+  /// of their own to name, only the package and signing key Google checks.
+  static const googleServerClientId = String.fromEnvironment('GOOGLE_SERVER_CLIENT_ID');
+
+  static bool get _ios => defaultTargetPlatform == TargetPlatform.iOS;
+  static bool get _android => defaultTargetPlatform == TargetPlatform.android;
+
+  static bool get enabled => _flag && !kIsWeb && (_ios || _android);
+  static bool get google =>
+      enabled && (_ios ? googleClientId.isNotEmpty : googleServerClientId.isNotEmpty);
+
+  /// Sign in with Apple's own sheet: Apple devices only.
+  static bool get appleSheet => enabled && _ios;
 
   /// Apple's sheet. Null when the member cancelled.
   static Future<({String token, String? name})?> apple() async {
@@ -54,9 +70,15 @@ class NativeAuth {
     );
   }
 
-  /// Google's own sign-in sheet (the one Google's SDK shows), then the code
-  /// swapped for an id token with PKCE. An iOS client has no secret.
+  /// Google's id token. Android: the system's account sheet. iPhone: Google's
+  /// own sign-in sheet (the one Google's SDK shows), then the code swapped for
+  /// an id token with PKCE. An iOS client has no secret.
   static Future<String?> googleIdToken() async {
+    if (_android) {
+      final token = await _call<String>('google', {'serverClientId': googleServerClientId});
+      if (token == null || token.isEmpty) return null;
+      return token;
+    }
     final id = googleClientId;
     final scheme = 'com.googleusercontent.apps.${id.replaceFirst('.apps.googleusercontent.com', '')}';
     final redirect = '$scheme:/oauth2redirect';
