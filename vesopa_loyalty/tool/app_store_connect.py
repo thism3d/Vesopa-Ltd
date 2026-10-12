@@ -658,6 +658,15 @@ def set_availability(c, app_id):
         todo(f"Availability: {e.detail()}")
 
 
+def review_account(r):
+    """The reviewers' sign-in: the environment's secrets, else the venue's own
+    throwaway review member (store/app_store.json review.demo_user and
+    demo_password, made with tool/make_review_member.py). Only ever a test
+    account made for Apple's reviewers, never a real member's."""
+    return (os.environ.get("ASC_REVIEW_USER") or r.get("demo_user", ""),
+            os.environ.get("ASC_REVIEW_PASSWORD") or r.get("demo_password", ""))
+
+
 def set_review_details(c, version, store):
     r = store.get("review", {})
     attrs = {
@@ -667,7 +676,7 @@ def set_review_details(c, version, store):
         "contactPhone": os.environ.get("ASC_REVIEW_PHONE") or r.get("contact_phone"),
         "notes": r.get("notes"),
     }
-    user, password = os.environ.get("ASC_REVIEW_USER", ""), os.environ.get("ASC_REVIEW_PASSWORD", "")
+    user, password = review_account(r)
     if user and password:
         attrs.update(demoAccountRequired=True, demoAccountName=user, demoAccountPassword=password)
     else:
@@ -893,7 +902,7 @@ def cmd_testflight(venue_name, number):
             "contactPhone": os.environ.get("ASC_REVIEW_PHONE") or r.get("contact_phone"),
             "notes": r.get("notes"),
         }
-        user, password = os.environ.get("ASC_REVIEW_USER", ""), os.environ.get("ASC_REVIEW_PASSWORD", "")
+        user, password = review_account(r)
         if user and password:
             attrs.update(demoAccountRequired=True, demoAccountName=user, demoAccountPassword=password)
         patch_attributes(c, "betaAppReviewDetails", detail["id"], {k: val for k, val in attrs.items() if val},
