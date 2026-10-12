@@ -66,7 +66,26 @@ if (-not ($env:JAVA_HOME -and (Test-Path (Join-Path $env:JAVA_HOME 'bin\java.exe
 # Java needs a short temp folder for its sockets on this PC.
 New-Item -ItemType Directory -Force -Path 'C:\gtmp' | Out-Null
 $env:JAVA_TOOL_OPTIONS = '-Djdk.net.unixdomain.tmpdir=C:\gtmp'
-Write-Host "Android SDK: $sdk   Java: $env:JAVA_HOME   as $env:USERNAME"
+# Flutter, likewise: a double-click from File Explorer gets the PATH Windows
+# has saved, which may not be the one the terminal Flutter was set up in.
+if (-not (Get-Command flutter -ErrorAction SilentlyContinue)) {
+    $flutterBin = @(
+        [Environment]::GetEnvironmentVariable('FLUTTER_ROOT', 'User'), $env:FLUTTER_ROOT,
+        'C:\Users\azureuser\develop\flutter', 'C:\Users\Administrator\develop\flutter',
+        'C:\src\flutter', 'C:\flutter', 'C:\tools\flutter', (Join-Path $env:LOCALAPPDATA 'flutter')) + @(
+        Get-ChildItem 'C:\Users\azureuser\AppData\Local\Packages' -Directory -Filter 'Claude_*' -ErrorAction SilentlyContinue |
+            ForEach-Object { Join-Path $_.FullName 'LocalCache\Local\flutter' }) |
+        Where-Object { $_ } | ForEach-Object { Join-Path $_ 'bin' } |
+        Where-Object { Test-Path (Join-Path $_ 'flutter.bat') } | Select-Object -First 1
+    if (-not $flutterBin) {
+        $found = Get-ChildItem 'C:\Users\azureuser', 'C:\src', 'C:\tools' -Filter 'flutter.bat' -Recurse -Depth 4 -ErrorAction SilentlyContinue |
+            Where-Object { $_.DirectoryName -like '*\flutter\bin' } | Select-Object -First 1
+        if ($found) { $flutterBin = $found.DirectoryName }
+    }
+    if (-not $flutterBin) { throw "Flutter is not on this PC's PATH and was not found in the usual folders. Set FLUTTER_ROOT to the Flutter folder and run again." }
+    $env:PATH = "$flutterBin;$env:PATH"
+}
+Write-Host "Android SDK: $sdk   Java: $env:JAVA_HOME   Flutter: $((Get-Command flutter).Source)   as $env:USERNAME"
 Run 'Tell Flutter where the Android SDK and Java are' {
     if ($env:JAVA_HOME) { flutter config --android-sdk $sdk --jdk-dir $env:JAVA_HOME } else { flutter config --android-sdk $sdk }
 }
