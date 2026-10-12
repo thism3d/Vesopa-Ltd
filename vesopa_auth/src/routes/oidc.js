@@ -1076,3 +1076,4 @@ async function sessionPublicIdFor(sessionId) {
 module.exports = router;
 module.exports.admit = admit;
 module.exports.mintCode = mintCode;
+module.exports.userFromSubject = userFromSubject;

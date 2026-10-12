@@ -192,8 +192,24 @@ function rp(env = process.env) {
   return {
     id: host,
     name: 'Vesopa Loyalty',
-    origins: [`https://${host}`, ...extra],
+    origins: [`https://${host}`, ...extra, ...androidOrigins(env)],
   };
+}
+
+/*
+ * A VENUE'S ANDROID APP SIGNS ITS OWN PASSKEYS. Android's Credential Manager
+ * puts `android:apk-key-hash:<the app's signing key>` in clientDataJSON where a
+ * browser puts the page's address, so the app is an origin of its own. The
+ * apps allowed this site's passkeys are already listed for assetlinks.json
+ * (LOYALTY_ANDROID_APPS, package=SHA256:FINGERPRINT; loyalty_host.js), and the
+ * origin is that same fingerprint in base64url -- so it is worked out here
+ * rather than kept in step by hand in a second setting.
+ */
+function androidOrigins(env = process.env) {
+  return String(env.LOYALTY_ANDROID_APPS || '').split(',')
+    .map((pair) => String(pair.split('=')[1] || '').replace(/^SHA256:/i, '').replace(/[^0-9a-f]/gi, ''))
+    .filter((hex) => hex.length === 64)
+    .map((hex) => `android:apk-key-hash:${Buffer.from(hex, 'hex').toString('base64url')}`);
 }
 const CHALLENGE_MINUTES = 5;
 
@@ -265,7 +281,7 @@ async function registrationOptions(db, { office, customer, env = process.env }) 
 }
 
 /** Check what the browser made, and keep it. */
-async function saveRegistration(db, { office, customer, body, name, env = process.env }) {
+async function saveRegistration(db, { office, customer, body, name, device = null, env = process.env }) {
   const row = await claimChallenge(db, body && body.challenge, 'register');
   if (!row || row.customer_id !== customer.id) {
     return { error: 'That took too long. Please try again.' };
@@ -287,19 +303,40 @@ async function saveRegistration(db, { office, customer, body, name, env = proces
     return { error: 'That passkey could not be checked. Please try again.' };
   }
   const info = result.registrationInfo.credential;
-  await db.execute(
-    `INSERT INTO epos_loyalty_passkeys
-       (id, office, customer_id, credential_id, public_key, counter, transports, name)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      crypto.randomUUID(), office, customer.id,
-      info.id,
-      Buffer.from(info.publicKey).toString('base64'),
-      Number(info.counter) || 0,
-      (info.transports || []).join(',') || null,
-      String(name || '').trim().slice(0, 80) || null,
-    ]
-  );
+  const values = [
+    crypto.randomUUID(), office, customer.id,
+    info.id,
+    Buffer.from(info.publicKey).toString('base64'),
+    Number(info.counter) || 0,
+    (info.transports || []).join(',') || null,
+    String(name || '').trim().slice(0, 80) || null,
+  ];
+  /*
+   * What it is and where it was added, so the member's list can say "iCloud
+   * Keychain, added on an iPad" (schema_loyalty_passkey_devices.sql). A server
+   * whose schema has not caught up still keeps the passkey, without them.
+   */
+  try {
+    await db.execute(
+      `INSERT INTO epos_loyalty_passkeys
+         (id, office, customer_id, credential_id, public_key, counter, transports, name, aaguid, device, backed_up)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        ...values,
+        String(result.registrationInfo.aaguid || '').slice(0, 36) || null,
+        String(device || '').slice(0, 80) || null,
+        result.registrationInfo.credentialBackedUp ? 1 : 0,
+      ]
+    );
+  } catch (e) {
+    if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+    await db.execute(
+      `INSERT INTO epos_loyalty_passkeys
+         (id, office, customer_id, credential_id, public_key, counter, transports, name)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      values
+    );
+  }
   return { ok: true };
 }
 
@@ -427,9 +464,9 @@ async function venuesForVesopa(db, { sub, email }) {
   }
   if (email) {
     const [rows] = await db.query(
-      `SELECT id, email_key, vesopa_sub FROM epos_customers WHERE email = ?
+      `SELECT id, email_key, vesopa_sub FROM epos_customers WHERE LOWER(TRIM(email)) = ?
         ORDER BY created_at`,
-      [String(email)]
+      [String(email).trim().toLowerCase()]
     );
     for (const r of rows) {
       if (byOffice.has(r.email_key)) continue;
@@ -466,6 +503,7 @@ module.exports = {
   hashPassword,
   passwordMatches,
   rp,
+  androidOrigins,
   registrationOptions,
   saveRegistration,
   authenticationOptions,

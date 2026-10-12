@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../data/api.dart';
 import '../data/membership.dart';
 import '../data/session.dart';
+import '../platform/native_auth.dart';
 import '../platform/passkey.dart';
 import '../platform/push.dart';
 import 'membership_section.dart';
@@ -607,10 +608,46 @@ class _Security extends ConsumerWidget {
     await runWithFeedback(context, ref, () async {
       final api = ref.read(apiProvider);
       final options = await api.passkeyRegistrationOptions();
-      final result = await passkeyCreate(options);
+      final PasskeyResult result;
+      try {
+        result = await passkeyCreate(options);
+      } on NativeAuthError catch (e) {
+        // The phone's own words ("this device has no screen lock") beat a
+        // general "that did not work". A cancel never gets here: it is
+        // PasskeyCancelled, which runWithFeedback keeps quiet about.
+        throw ApiError(e.message);
+      }
       await api.addPasskey(challenge: result.challenge, credential: result.credential);
+      await rememberVenuePasskeyHere();
       ref.invalidate(accountProvider);
     }, done: 'Passkey added.');
+  }
+
+  /// Ask first: a passkey removed is a way in gone, on every device it synced to.
+  Future<void> _removePasskey(BuildContext context, WidgetRef ref, Map<String, dynamic> key) async {
+    final vesopa = key['kind'] == 'vesopa';
+    final sure = await showDialog<bool>(
+      context: context,
+      builder: (d) => AlertDialog.adaptive(
+        title: const Text('Remove this passkey?'),
+        content: Text(
+          vesopa
+              ? 'It comes off your Vesopa account, so it stops working everywhere you use that account. '
+                  'You can still sign in another way.'
+              : 'You will not be able to sign in with it any more. You can still sign in another way, '
+                  'and add a new passkey whenever you like.',
+        ),
+        actions: [
+          DialogAction(onPressed: () => Navigator.pop(d, false), child: const Text('Cancel')),
+          DialogAction(primary: true, onPressed: () => Navigator.pop(d, true), child: const Text('Remove')),
+        ],
+      ),
+    );
+    if (sure != true || !context.mounted) return;
+    await runWithFeedback(context, ref, () async {
+      await ref.read(apiProvider).removePasskey('${key['id']}');
+      ref.invalidate(accountProvider);
+    }, done: 'Passkey removed.');
   }
 
   @override
@@ -637,47 +674,77 @@ class _Security extends ConsumerWidget {
             trailing: canEdit ? const Icon(Icons.chevron_right) : null,
             onTap: canEdit ? () => _password(context, ref, has: hasPassword) : null,
           ),
-        if (offersPasskey) ...[
-          for (final k in passkeys)
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.fingerprint),
-              title: Text('${k['name'] ?? 'Passkey'}'),
-              subtitle: Text(
-                k['last_used_at'] != null
-                    ? 'Last used ${when(k['last_used_at'], time: false)}'
-                    : 'Added ${when(k['created_at'], time: false)}',
-              ),
-              trailing: canEdit
-                  ? TextButton(
-                      onPressed: () => runWithFeedback(context, ref, () async {
-                        await ref.read(apiProvider).removePasskey('${k['id']}');
-                        ref.invalidate(accountProvider);
-                      }, done: 'Passkey removed.'),
-                      child: const Text('Remove'),
-                    )
-                  : null,
-            ),
-          if (canEdit)
-            passkeysSupported()
-                ? ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.add_moderator_outlined),
-                    title: const Text('Add a passkey'),
-                    subtitle: const Text('Sign in with your face, fingerprint or device PIN.'),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () => _addPasskey(context, ref),
-                  )
-                : const ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: Icon(Icons.info_outline),
-                    title: Text('Passkeys'),
-                    // Said plainly rather than left as a button that does
-                    // nothing: this app on this device genuinely cannot.
-                    subtitle: Text('Open your card in a web browser to add one.'),
-                  ),
-        ],
+        // Every passkey that signs this member in, the venue's own and the one
+        // on their Vesopa account alike: in a venue's own app the Vesopa one
+        // is usually the one they use, so leaving it out would show an empty
+        // list to somebody who signs in with a passkey every day.
+        for (final k in passkeys)
+          _PasskeyTile(
+            passkey: k,
+            onRemove: canEdit ? () => _removePasskey(context, ref, k) : null,
+          ),
+        if (offersPasskey && canEdit)
+          passkeysSupported()
+              ? ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.add_moderator_outlined),
+                  title: const Text('Add a passkey'),
+                  subtitle: const Text('Sign in with your face, fingerprint or device PIN.'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => _addPasskey(context, ref),
+                )
+              : const ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.info_outline),
+                  title: Text('Passkeys'),
+                  // Said plainly rather than left as a button that does
+                  // nothing: this app on this device genuinely cannot.
+                  subtitle: Text('Open your card in a web browser to add one.'),
+                ),
       ],
+    );
+  }
+}
+
+/// One passkey: what it is, where it lives, what it was added on, and when.
+///
+///   iCloud Keychain
+///   Added 3 Oct · iPhone · last used 10 Oct
+///
+/// The server works out "iCloud Keychain" from the authenticator's id
+/// (vesopa_server/src/passkey_providers.js) and "iPhone" from the device the
+/// member added it on; either can be missing for an older passkey, and the
+/// line simply says less.
+class _PasskeyTile extends StatelessWidget {
+  const _PasskeyTile({required this.passkey, this.onRemove});
+
+  final Map<String, dynamic> passkey;
+  final VoidCallback? onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final k = passkey;
+    final name = (k['name'] as String?)?.trim();
+    final provider = k['provider'] as String?;
+    final device = k['device'] as String?;
+    final vesopa = k['kind'] == 'vesopa';
+    final title = name != null && name.isNotEmpty ? name : (provider ?? 'Passkey');
+    final where = [
+      if (name != null && name.isNotEmpty && provider != null) provider,
+      if (vesopa) 'On your Vesopa account',
+    ].join(' · ');
+    final dates = [
+      'Added ${when(k['created_at'], time: false)}',
+      if (device != null && device.isNotEmpty) device,
+      if (k['last_used_at'] != null) 'last used ${when(k['last_used_at'], time: false)}',
+    ].join(' · ');
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(vesopa ? Icons.verified_user_outlined : Icons.fingerprint),
+      title: Text(title),
+      subtitle: Text(where.isEmpty ? dates : '$where\n$dates'),
+      isThreeLine: where.isNotEmpty,
+      trailing: onRemove == null ? null : TextButton(onPressed: onRemove, child: const Text('Remove')),
     );
   }
 }
