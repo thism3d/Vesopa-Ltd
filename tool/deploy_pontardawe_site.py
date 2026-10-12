@@ -14,9 +14,8 @@ cannot reach port 22). It:
      app sign-in address in Vesopa Auth, the site's .env (keys never printed),
      npm ci, pm2 "pontardawerfc.com" by name, checks
   3. scripts/mail-forward.sh: info@ and contact@pontardawerfc.com forwarded
-     to the club's old address (club.json email_forwards_to); an Exim
-     redirect, no mailbox. The SMTP2GO relay takes it only once
-     pontardawerfc.com is a verified sender domain there
+     to club.json email_forwards_to; info@ is also a mailbox and keeps its
+     copy (tool/pontardawe_mail_fix.py)
   4. (not with --check) the members' web app (vesopa_loyalty, flutter build
      web --base-href /__SLUG__/; the build already in vesopa_loyalty/build/web
      when Flutter is not installed) to the back office's loyalty_web, the old
@@ -104,7 +103,7 @@ def main():
         shutil.rmtree(stage, ignore_errors=True)
     print("▶ install (DNS, domains, certificates, back office host, Auth address, site, pm2)")
     dm.ssh("run", f"cd {remote} && bash remote-install.sh {'--check' if check else ''}")
-    print("▶ info@pontardawerfc.com, forwarded to the club's old address (no mailbox)")
+    print("▶ info@pontardawerfc.com, mailbox copy kept and forwarded")
     club = json.loads((SITE / "content" / "club.json").read_text(encoding="utf-8"))
     dm.ssh("run", f"cd {remote} && bash mail-forward.sh {'--check' if check else ''} {shlex.quote(club['email_forwards_to'])}", check=False)
     if check:
