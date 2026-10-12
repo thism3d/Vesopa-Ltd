@@ -25,7 +25,8 @@ from three things in the venue's folder:
 
 and edits the rest in place: the applicationId and bundle ids, the label, the
 notification colour, the Android 12+ and older splash themes, the iPhone
-launch screen's colour, and the Watch app's name.
+launch screen's colour, the Watch app's name, and the Wear OS app's
+package name, name, colours and crest.
 
 NOTHING IN vesopa_loyalty CHANGES, so the Kitchen demonstration build and the
 Store app are untouched, and a fix made there reaches every venue's app the
@@ -165,6 +166,8 @@ def android(app: Path, venue_dir: Path, v):
         (res / d).mkdir(exist_ok=True)
         (res / d / "styles.xml").write_text(styles.format(extra=extra), encoding="utf-8")
 
+    wear(app, venue_dir, v)
+
     # Firebase binds its file to the package name, and the Gradle plugin
     # refuses to build without one.
     gs = venue_dir / "google-services.json"
@@ -197,6 +200,36 @@ def android(app: Path, venue_dir: Path, v):
         break
     else:
         print("! no android/key.properties found: a release build needs the Vesopa upload key.")
+
+
+def wear(app: Path, venue_dir: Path, v):
+    """The Wear OS app (android/wear): the phone's package name, which is what
+    puts it on the same Play listing and lets the Data Layer join the two; the
+    venue's name; its colours; and the crest beside the card. Its launcher
+    icon is the phone's, copied by its own build."""
+    w = app / "android" / "wear"
+    if not w.exists():
+        return
+    edit(w / "build.gradle.kts", [(f'applicationId = "{SOURCE_APP_ID}"', f'applicationId = "{v["app_id"]}"')])
+    res = w / "src" / "main" / "res"
+    edit(res / "values" / "strings.xml", [(f">{SOURCE_NAME}<", f">{xml_escape(v['name'])}<")])
+    c = v["colours"]
+    # The glow, where there is one, reads better than the deep club colour on
+    # a black watch screen.
+    accent = c.get("glow") or c["background"]
+    (res / "values" / "colors.xml").write_text(
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        "<!-- Written by vesopa_loyalty/tool/make_venue_app.py from venue.json. -->\n"
+        "<resources>\n"
+        f'    <color name="brand">{c["background"]}</color>\n'
+        f'    <color name="wear_accent">{accent}</color>\n'
+        f'    <color name="wear_on_accent">{c.get("text", "#FFFFFF")}</color>\n'
+        "</resources>\n",
+        encoding="utf-8",
+    )
+    crest = venue_dir / "brand" / "crest.png"
+    if crest.exists():
+        shutil.copy2(crest, res / "drawable-nodpi" / "crest.png")
 
 
 def ios(app: Path, v):

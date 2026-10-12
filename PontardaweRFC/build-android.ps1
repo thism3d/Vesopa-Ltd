@@ -7,9 +7,12 @@
 # or double-click build-android.cmd beside it, which also stops a leftover
 # Gradle daemon and sets the Java temp folder this PC needs.
 #
-# Writes PontardaweRFC-<version>-<build>.aab and .apk to Desktop\Android-builds.
-# The version and build number are venue.json's: raise "build" for every
-# upload to Play, which refuses a number it has seen before.
+# Writes PontardaweRFC-<version>-<build>.aab and .apk to Desktop\Android-builds,
+# and PontardaweRFC-<version>-<build>-wear.aab, the Wear OS app (android\wear),
+# which goes up to the Wear OS track of the same Play listing. The version and
+# build number are venue.json's: raise "build" for every upload to Play, which
+# refuses a number it has seen before. The watch bundle's versionCode is the
+# build number plus 1,000,000, so the two never collide.
 #
 # Needs, once: Flutter on PATH, JDK 17 and the Android SDK (as for the other
 # Vesopa apps), the upload key's android\key.properties beside vesopa_loyalty
@@ -84,6 +87,14 @@ try {
     Run 'flutter pub get' { flutter pub get }
     Run 'Build the Play bundle' { flutter build appbundle --release --dart-define-from-file=venue_defines.json }
     Run 'Build the APK' { flutter build apk --release --dart-define-from-file=venue_defines.json }
+    # The watch app is plain Gradle, signed with the same upload key; Flutter
+    # has just written the wrapper it runs with.
+    Push-Location (Join-Path $app 'android')
+    try {
+        Run 'Build the Wear OS bundle' { .\gradlew.bat :wear:bundleRelease }
+    } finally {
+        Pop-Location
+    }
 } finally {
     Pop-Location
 }
@@ -93,8 +104,9 @@ New-Item -ItemType Directory -Force -Path $out | Out-Null
 $name = "PontardaweRFC-$($venue.version)-$($venue.build)"
 Copy-Item (Join-Path $app 'build\app\outputs\bundle\release\app-release.aab') (Join-Path $out "$name.aab") -Force
 Copy-Item (Join-Path $app 'build\app\outputs\flutter-apk\app-release.apk') (Join-Path $out "$name.apk") -Force
+Copy-Item (Join-Path $app 'build\wear\outputs\bundle\release\wear-release.aab') (Join-Path $out "$name-wear.aab") -Force
 Write-Host ""
-Write-Host "Done: $out\$name.aab (Play) and $name.apk (install directly)" -ForegroundColor Green
+Write-Host "Done: $out\$name.aab (Play), $name.apk (install directly) and $name-wear.aab (Play, Wear OS track)" -ForegroundColor Green
 
 # Firebase App Distribution (owner, 2026-10-12): when the Firebase CLI is on
 # this PC and signed in, the new build goes straight to testers. The groups

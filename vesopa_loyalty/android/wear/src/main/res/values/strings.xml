@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- tool/make_venue_app.py writes the venue's name over the Kitchen's. -->
+<resources>
+    <string name="app_name">The Vesopa Kitchen</string>
+    <string name="tile_label">My card</string>
+    <string name="complication_label">Points</string>
+</resources>

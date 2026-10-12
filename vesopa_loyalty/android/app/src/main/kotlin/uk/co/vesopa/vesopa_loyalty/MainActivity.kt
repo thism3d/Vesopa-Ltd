@@ -39,6 +39,8 @@ class MainActivity : FlutterActivity() {
         PushService.ensureChannel(this)
         // Google and passkeys from Android's own sheet (AuthBridge.kt).
         AuthBridge(this, flutterEngine.dartExecutor.binaryMessenger)
+        // The card on a Wear OS watch (WearBridge.kt).
+        WearBridge(this, flutterEngine.dartExecutor.binaryMessenger)
 
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,

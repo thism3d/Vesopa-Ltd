@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The club's colours on the watch. tool/make_venue_app.py rewrites this
+     file from venue.json; these are the Kitchen's. -->
+<resources>
+    <!-- Behind the launcher icon (the phone's mipmap-anydpi-v26 names it). -->
+    <color name="brand">#A5C715</color>
+    <!-- Titles, the tier badge, unread dots, the Tile's button. -->
+    <color name="wear_accent">#A5C715</color>
+    <!-- Text on wear_accent. -->
+    <color name="wear_on_accent">#121212</color>
+</resources>

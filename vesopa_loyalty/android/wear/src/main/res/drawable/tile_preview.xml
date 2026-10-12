@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- What the Tile picker shows: the crest on black, as the Tile sits on the
+     watch. Drawn from the crest, so a venue build's own crest is in it too. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="#000000"/>
+            <size android:width="192dp" android:height="192dp"/>
+        </shape>
+    </item>
+    <item android:width="96dp" android:height="96dp" android:gravity="center" android:drawable="@drawable/crest"/>
+</layer-list>
