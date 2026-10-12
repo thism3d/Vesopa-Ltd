@@ -35,6 +35,9 @@ final class WatchBridge: NSObject, WCSessionDelegate {
   }
 
   private func update(_ card: [String: Any]) {
+    // Siri's "check my points" answers from this (SiriShortcuts.swift), watch
+    // or no watch.
+    SiriCard.save(card)
     var context = (Self.plist(card) as? [String: Any]) ?? [:]
     // watchOS has no Core Image, so the code is drawn here and sent as a PNG.
     if let qr = card["qr"] as? String, !qr.isEmpty, let png = Self.qrPng(qr) {

@@ -70,6 +70,12 @@ class _HomePageState extends ConsumerState<HomePage> with WidgetsBindingObserver
     }
     onOpenRequest((hash) {
       if (!mounted) return;
+      // Siri's "show my card", or a points notification (ios/Runner/SiriShortcuts.swift).
+      if (hash.startsWith('/card')) {
+        setState(() => _tabName = 'Card');
+        _glow();
+        return;
+      }
       ref.invalidate(messagesProvider);
       _openNews();
     });

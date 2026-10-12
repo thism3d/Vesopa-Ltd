@@ -288,6 +288,15 @@ def dart(app: Path, v):
         "\t<key>com.apple.developer.applesignin</key>\n\t<array>\n\t\t<string>Default</string>\n\t</array>\n"
         "\t<key>com.apple.developer.associated-domains</key>\n\t<array>\n"
         + "".join(f"\t\t<string>webcredentials:{d}</string>\n" for d in domains)
+        + "\t</array>\n"
+        # Wallet: the card and membership passes (ios/Runner/WalletBridge.swift).
+        # Adding a pass needs no entitlement, but telling whether it is already
+        # in Wallet (PKPassLibrary.containsPass) does. The team's literal id
+        # rather than $(TeamIdentifierPrefix), which is empty when the build is
+        # not signed with a team. app_store_connect.py prepare turns WALLET on.
+        + "\t<key>com.apple.developer.pass-type-identifiers</key>\n\t<array>\n"
+        + "".join(f"\t\t<string>{v.get('apple_team', 'G238FR2ZC9')}.{t}</string>\n"
+                  for t in ("pass.com.vesopa.loyalty", "pass.com.vesopa.membership"))
         + "\t</array>\n</dict>\n</plist>"))])
     (app / "venue_defines.json").write_text(json.dumps(defines, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
