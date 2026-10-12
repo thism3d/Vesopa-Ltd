@@ -30,6 +30,10 @@ const LOOKS = {
     // The club's own website, which shares these colours and this typeface.
     // Filled in only where the back office has no link of its own.
     website: 'https://pontardawerfc.com', phone: '01792 864811', email: 'info@pontardawerfc.com',
+    // The club's own phone app (owner 2026-10-12): the web app shows the
+    // official store badges for these at the bottom of every page.
+    ios_app: 'https://testflight.apple.com/join/cWqDESsD',
+    android_app: 'https://play.google.com/store/apps/details?id=com.vesopaepos.pontardawerfc',
     web: 'node',
   },
 };

@@ -213,3 +213,4 @@ fieldset{border:0;padding:0;margin:0 0 10px}
 .choice input{margin-top:4px;width:18px;height:18px;accent-color:var(--primary)}
 .choice small{display:block;color:var(--muted)}
 .choice select{min-height:40px;width:auto;padding:4px 10px;margin-left:4px}
+.get-app{text-align:center;margin:28px 0 8px}.get-app p{margin:0 0 10px;font-weight:700;font-size:.9rem;opacity:.8}.get-app div{display:flex;flex-wrap:wrap;gap:10px;justify-content:center}.get-app .store{display:inline-flex;border-radius:8px}.get-app img{display:block;height:44px;width:auto}

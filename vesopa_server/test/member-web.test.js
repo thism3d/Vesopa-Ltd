@@ -234,7 +234,21 @@ test('signed in, the card is in the first response', async () => {
   for (const url of ['/activity', '/news', '/account', '/venue']) {
     const page = await call('GET', MEMBER, url, { cookie });
     assert.equal(page.status, 200, url);
+    // The club's phone app at the bottom of every page: Android sees Google Play.
+    assert.match(page.body, /alt="Get it on Google Play"/, url);
+    assert.doesNotMatch(page.body, /Download on the App Store/, url);
   }
+});
+
+test('the store badges: each phone sees its own store, a computer both, the app itself none', async () => {
+  const badges = async (ua) => (await call('GET', MEMBER, '/', { ua })).body;
+  const iphone = await badges('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)');
+  assert.match(iphone, /href="https:\/\/testflight\.apple\.com\/join\/cWqDESsD"/);
+  assert.doesNotMatch(iphone, /Google Play/);
+  const pc = await badges('Mozilla/5.0 (Windows NT 10.0; Win64; x64)');
+  assert.match(pc, /Download on the App Store/);
+  assert.match(pc, /href="https:\/\/play\.google\.com\/store\/apps\/details\?id=com\.vesopaepos\.pontardawerfc"/);
+  assert.doesNotMatch(await badges('VesopaLoyalty (iPad; iOS 18.0)'), /class="get-app"/);
 });
 
 test('a session revoked elsewhere signs this browser out', async () => {

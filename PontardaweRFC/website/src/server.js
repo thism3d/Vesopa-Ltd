@@ -76,6 +76,17 @@ app.get('/teams', html(() => pages.teamsPage()));
 app.get('/fixtures', html(() => pages.fixturesPage()));
 app.get('/tickets', html(() => pages.ticketsPage()));
 
+// pontardawerfc.com/app: one link for posters, QR codes and posts. An iPhone
+// or iPad goes to the App Store (TestFlight for now), an Android phone to
+// Google Play, and anything else to the page with both.
+app.get(['/app', '/app/'], (req, res) => {
+  const ua = String(req.headers['user-agent'] || '');
+  res.set('Cache-Control', 'no-store').set('Vary', 'User-Agent');
+  if (/iPhone|iPad|iPod/.test(ua)) return res.redirect(302, club.web.ios_app);
+  if (/Android/.test(ua)) return res.redirect(302, club.web.android_app);
+  return res.redirect(302, '/membership#app');
+});
+
 // Buying tickets: a plain form, so it works with no script. The back office
 // takes the order and gives a card payment page (Dojo) that comes back to
 // /tickets/order?order=<id>, where the tickets are shown and emailed.
@@ -194,7 +205,7 @@ app.get('/llms.txt', (req, res) => {
 - Phone: ${club.phone}${club.email ? `\n- Email: ${club.email}` : ''}
 - Home ground: ${club.ground}
 - League: ${club.league}
-- Members' app: ${MEMBERS}/
+- Members' app: ${MEMBERS}/ (or the Pontardawe RFC app for iPhone and Android: ${SITE}/app)
 - Facebook: ${club.web.facebook}
 - X (Twitter): ${club.web.x}
 - Company: ${club.company.name}, ${club.company.number}

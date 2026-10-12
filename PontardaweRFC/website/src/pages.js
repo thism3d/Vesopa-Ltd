@@ -8,7 +8,7 @@
 const { club, news, images, xPosts, longDate, yearsOld } = require('./content');
 const wru = require('./wru');
 const venue = require('./venue_api');
-const { page, pageHero, esc, icon, SITE, MEMBERS, ASSET_VERSION } = require('./layout');
+const { page, pageHero, esc, icon, SITE, MEMBERS, ASSET_VERSION, appBadges } = require('./layout');
 
 const MENU_API = (process.env.MENU_API || 'https://menu.vesopa.com').replace(/\/+$/, '');
 const MENU_SLUG = process.env.MENU_SLUG || 'pontardawe-rfc';
@@ -154,10 +154,12 @@ ${nextMatch()}
       </div>
     </div>
     <div>
-      <p class="kicker reveal">Membership</p>
-      <h2 class="reveal">Your members' card, on your phone</h2>
+      <p class="kicker reveal">The club app · Membership</p>
+      <h2 class="reveal">The Pontardawe RFC app</h2>
+      <p class="reveal">Your members' card, club news and offers, for iPhone, iPad and Android.</p>
       <ul class="ticks">${club.membership.benefits.map((b) => `<li class="reveal">${icon('check', { size: 20 })}${esc(b)}</li>`).join('')}</ul>
-      <div class="cta-row reveal"><a class="btn btn-glow" href="${MEMBERS}/">${icon('card', { size: 20 })} Open member.pontardawerfc.com</a><a class="btn btn-line" href="/membership">How to join</a></div>
+      <div class="reveal">${appBadges({ cls: 'badges-lg' })}</div>
+      <div class="cta-row reveal"><a class="btn btn-line" href="${MEMBERS}/">${icon('card', { size: 20 })} Or use it in your browser</a><a class="btn btn-line" href="/membership">How to join</a></div>
     </div>
   </div>
 </section>
@@ -419,14 +421,16 @@ function membershipPage() {
     <div>
       <h2 class="reveal">What you get</h2>
       <ul class="ticks">${club.membership.benefits.map((b) => `<li class="reveal">${icon('check', { size: 20 })}${esc(b)}</li>`).join('')}</ul>
-      <div class="cta-row reveal"><a class="btn btn-glow" href="${MEMBERS}/">${icon('card', { size: 20 })} Open the members' app</a></div>
+      <h3 class="reveal" id="app">Get the club app</h3>
+      <div class="reveal">${appBadges({ qr: true, cls: 'badges-lg' })}</div>
+      <div class="cta-row reveal"><a class="btn btn-line" href="${MEMBERS}/">${icon('card', { size: 20 })} Or use it in your browser</a></div>
     </div>
   </div>
 </section>
 <section class="section">
   <div class="wrap grid-3">
     <div class="card step-card reveal"><span class="num">1</span><h2>Join at the club</h2><p>${esc(club.membership.join.split('; then')[0])}.</p></div>
-    <div class="card step-card reveal"><span class="num">2</span><h2>Sign in</h2><p>Go to <a href="${MEMBERS}/">member.pontardawerfc.com</a> and sign in with your email address and the one-time code we send you.</p></div>
+    <div class="card step-card reveal"><span class="num">2</span><h2>Get the app</h2><p>Download the Pontardawe RFC app (<a href="/app">iPhone or Android</a>) or go to <a href="${MEMBERS}/">member.pontardawerfc.com</a>, and sign in with your email address and the one-time code we send you.</p></div>
     <div class="card step-card reveal"><span class="num">3</span><h2>Show your card</h2><p>Show the code at the bar. Your members' discount is applied at the till, every visit.</p></div>
   </div>
 </section>
