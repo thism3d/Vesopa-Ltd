@@ -73,6 +73,8 @@ import UserNotifications
       switch call.method {
       case "token":
         self?.deviceToken(result)
+      case "permission":
+        self?.askPermission(result)
       case "opened":
         self?.dartListening = true
         result(self?.opened)
@@ -121,6 +123,20 @@ import UserNotifications
       opened = address
     }
     completionHandler()
+  }
+
+  /// Only the question, for the welcome before sign-in (lib/ui/onboarding.dart).
+  /// Answers whether they said yes. A yes registers with APNs straight away so
+  /// the token is ready for the first `token` call after signing in; nobody
+  /// is waiting on that registration, so its answer simply goes nowhere.
+  private func askPermission(_ result: @escaping FlutterResult) {
+    UNUserNotificationCenter.current()
+      .requestAuthorization(options: [.alert, .badge, .sound]) { granted, _ in
+        DispatchQueue.main.async {
+          if granted { UIApplication.shared.registerForRemoteNotifications() }
+          result(granted)
+        }
+      }
   }
 
   /// Ask the customer, then ask iOS.

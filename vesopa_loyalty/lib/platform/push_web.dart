@@ -53,6 +53,11 @@ Future<PushChannel?> pushCurrent(Brand brand) async {
   }
 }
 
+/// The browser's question comes with subscribing ([pushSubscribe]), which
+/// needs the venue's key and a signed-in customer; the welcome that asks
+/// before sign-in is only in a venue's own phone build, never here.
+Future<bool> pushAskPermission() async => false;
+
 /// Drop it. Returns the endpoint that went, for the server to forget.
 Future<String?> pushUnsubscribe() async {
   try {
