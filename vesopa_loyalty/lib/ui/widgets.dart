@@ -6,9 +6,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/api.dart';
 import '../data/brand.dart';
 import '../data/session.dart';
+import '../data/venue_style.dart';
 import '../platform/passkey.dart';
 
 /// The venue's logo, or its initial on its colour.
+///
+/// In a venue's own build it is the crest the build carries, on nothing: the
+/// same picture as the icon on the home screen and the splash before it, not
+/// a back-office logo boxed into a rounded square (owner, 2026-10-12). It is
+/// there before the network is.
 class VenueLogo extends StatelessWidget {
   const VenueLogo({super.key, required this.brand, this.size = 40});
 
@@ -28,13 +34,25 @@ class VenueLogo extends StatelessWidget {
       ),
     );
     final url = brand.logo ?? brand.icon;
-    if (url == null) return Center(child: fallback);
-    return Center(
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(size * 0.22),
-        child: Image.network(url, width: size, height: size, fit: BoxFit.contain, errorBuilder: (_, _, _) => fallback),
-      ),
-    );
+    final Widget remote = url == null
+        ? fallback
+        : ClipRRect(
+            borderRadius: BorderRadius.circular(size * 0.22),
+            child: Image.network(url, width: size, height: size, fit: BoxFit.contain, errorBuilder: (_, _, _) => fallback),
+          );
+    if (VenueStyle.art) {
+      return Center(
+        child: Image.asset(
+          'assets/venue/crest.png',
+          width: size,
+          height: size,
+          fit: BoxFit.contain,
+          semanticLabel: brand.name,
+          errorBuilder: (_, _, _) => remote,
+        ),
+      );
+    }
+    return Center(child: remote);
   }
 }
 
@@ -109,6 +127,36 @@ Future<bool> runWithFeedback(
     say('That did not work. Please try again.', bad: true);
     return false;
   }
+}
+
+/// A page with nothing on it yet: what will be here, said plainly. A venue's
+/// own build puts its picture above the words (posts and a ball on its way
+/// over, assets/venue/empty.png); everywhere else it is the words alone, as
+/// before.
+class EmptyState extends StatelessWidget {
+  const EmptyState(this.text, {super.key});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 32),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (VenueStyle.art) ...[
+          Image.asset(
+            'assets/venue/empty.png',
+            width: 220,
+            excludeFromSemantics: true,
+            errorBuilder: (_, _, _) => const SizedBox.shrink(),
+          ),
+          const SizedBox(height: 16),
+        ],
+        Text(text, textAlign: TextAlign.center),
+      ],
+    ),
+  );
 }
 
 class PoweredBy extends StatelessWidget {

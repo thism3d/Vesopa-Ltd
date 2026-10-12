@@ -420,35 +420,9 @@ class _SignInPageState extends ConsumerState<SignInPage> {
     // mode: white words and a white button on the club's red, as the crest
     // and the splash before it.
     final brand = ref.watch(brandProvider).requireValue;
-    final dark = VenueStyle.forBrightness(brand, Brightness.dark).theme();
+    // Every colour on it chosen to read on that red (VenueStyle.onClub).
     return Theme(
-      data: dark.copyWith(
-        scaffoldBackgroundColor: Colors.transparent,
-        filledButtonTheme: FilledButtonThemeData(
-          style: dark.filledButtonTheme.style?.copyWith(
-            backgroundColor: const WidgetStatePropertyAll(Colors.white),
-            foregroundColor: WidgetStatePropertyAll(VenueStyle.club),
-          ),
-        ),
-        textButtonTheme: TextButtonThemeData(
-          style: TextButton.styleFrom(
-            foregroundColor: Colors.white,
-            textStyle: dark.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600, decoration: TextDecoration.underline),
-          ),
-        ),
-        inputDecorationTheme: dark.inputDecorationTheme.copyWith(
-          fillColor: Colors.black.withValues(alpha: 0.22),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.18)),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: Colors.white, width: 1.6),
-          ),
-        ),
-      ),
+      data: VenueStyle.onClub(VenueStyle.forBrightness(brand, Brightness.dark).theme()),
       child: ClubGradient(child: Builder(builder: _page)),
     );
   }

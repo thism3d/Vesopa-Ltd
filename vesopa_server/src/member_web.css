@@ -58,6 +58,7 @@ body.signin{background:var(--base-dark)}
 .way svg{width:22px;height:22px;flex:none}
 .ways{display:flex;flex-wrap:wrap;justify-content:center}
 .logo{display:block;margin:0 auto;object-fit:contain;border-radius:22%}
+.logo.crest{border-radius:0}
 .initial{display:flex;align-items:center;justify-content:center;margin:0 auto;border-radius:22%;background:var(--primary);color:var(--on-primary);font-weight:800}
 .powered{text-align:center;font-size:.8rem;opacity:.55;margin:24px 0 8px}
 

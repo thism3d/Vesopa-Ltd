@@ -271,7 +271,9 @@ function logo(brand, size) {
   const url = brand.logo || brand.icon;
   const initial = `<span class="initial" style="width:${size}px;height:${size}px;font-size:${Math.round(size * 0.45)}px">${esc((brand.name || '?').trim().charAt(0).toUpperCase() || '?')}</span>`;
   if (!url) return initial;
-  return `<img class="logo" src="${esc(url)}" width="${size}" height="${size}" alt="">`;
+  // The venue's own crest is a shape on nothing: no rounded box round it.
+  const crest = venueLooks.artFor(brand.slug) ? ' crest' : '';
+  return `<img class="logo${crest}" src="${esc(url)}" width="${size}" height="${size}" alt="">`;
 }
 
 const hidden = (m) => `<input type="hidden" name="_csrf" value="${esc(m.csrf)}">`;
@@ -282,6 +284,9 @@ const button = (m, action, label, { cls = 'btn', fields = '' } = {}) =>
 function document({ m, brand, title, body, bodyClass = '', script = '' }) {
   const t = theme(brand);
   const icon = brand.icon || brand.logo || `${m.base}icons/Icon-192.png`;
+  // The venue's own icons where it has them: the crest on nothing in the
+  // tab, and on white for an iPhone's home screen (venue_looks.js artFor).
+  const art = venueLooks.artFor(brand.slug);
   const description = `${brand.name}: ${String(brand.welcome || '').replace(/\.$/, '')}.`;
   return '<!doctype html><html lang="en-GB"><head><meta charset="utf-8">'
     + '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'
@@ -291,7 +296,9 @@ function document({ m, brand, title, body, bodyClass = '', script = '' }) {
     + '<meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes">'
     + `<meta name="apple-mobile-web-app-title" content="${esc(brand.name)}">`
     + `<link rel="manifest" href="${esc(m.base)}manifest.webmanifest">`
-    + `<link rel="icon" href="${esc(icon)}"><link rel="apple-touch-icon" href="${esc(icon)}">`
+    + (art
+      ? `<link rel="icon" type="image/png" sizes="32x32" href="${esc(art.favicon)}"><link rel="icon" type="image/png" sizes="192x192" href="${esc(art.icon192)}"><link rel="apple-touch-icon" href="${esc(art.apple)}">`
+      : `<link rel="icon" href="${esc(icon)}"><link rel="apple-touch-icon" href="${esc(icon)}">`)
     + t.preload.map((u) => `<link rel="preload" href="${esc(u)}" as="font" type="font/woff2" crossorigin>`).join('')
     + `<style>${t.css}${CSS}</style></head>`
     + `<body class="${bodyClass}" data-base="${esc(m.base)}" data-csrf="${esc(m.csrf)}">${body}`
