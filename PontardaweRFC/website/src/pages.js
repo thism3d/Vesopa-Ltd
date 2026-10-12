@@ -413,6 +413,22 @@ ${menu ? `<script type="application/json" id="menu-data">${inlineJson(menu)}</sc
   }, body);
 }
 
+/**
+ * The Android apps as files, for a phone without Google Play or anybody who
+ * would rather not wait for it: the phone app and the Wear OS watch app. The
+ * files sit on the box under public/downloads (tool/deploy_pontardawe_site.py
+ * --apks), never in git. iPhone stays on TestFlight, so nothing here for it.
+ */
+function directDownloads() {
+  const { android_apk: phone, wear_apk: watch } = club.web;
+  if (!phone && !watch) return '';
+  return `<div class="apk-downloads reveal">
+        <p><b>Android without Google Play?</b> Download the app directly:</p>
+        <p class="apk-links">${phone ? `<a class="btn btn-sm btn-line" href="${esc(phone)}" download>${icon('card', { size: 18 })} Phone app (APK)</a>` : ''}${watch ? `<a class="btn btn-sm btn-line" href="${esc(watch)}" download>${icon('card', { size: 18 })} Wear OS watch app (APK)</a>` : ''}</p>
+        <p class="apk-note">Open the file on your phone and allow installs from your browser when Android asks. On a watch, install it with your phone's Wear OS app or ADB.</p>
+      </div>`;
+}
+
 function membershipPage() {
   const body = `${pageHero({ kicker: 'Members\' club', title: 'Membership', lead: esc(club.membership.text) })}
 <section class="section members-band light">
@@ -423,6 +439,7 @@ function membershipPage() {
       <ul class="ticks">${club.membership.benefits.map((b) => `<li class="reveal">${icon('check', { size: 20 })}${esc(b)}</li>`).join('')}</ul>
       <h3 class="reveal" id="app">Get the club app</h3>
       <div class="reveal">${appBadges({ qr: true, cls: 'badges-lg' })}</div>
+      ${directDownloads()}
       <div class="cta-row reveal"><a class="btn btn-line" href="${MEMBERS}/">${icon('card', { size: 20 })} Or use it in your browser</a></div>
     </div>
   </div>

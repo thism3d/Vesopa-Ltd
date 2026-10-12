@@ -563,6 +563,11 @@ a.tile:hover, a.card:hover, .news-card:hover { transform: translateY(-6px); box-
 .store-qr { display: flex; align-items: center; gap: 10px; margin: 0 0 0 8px; font-size: .8rem; color: inherit; opacity: .85; }
 .store-qr img { width: 72px; height: 72px; border-radius: 8px; background: #fff; padding: 4px; }
 /* A phone sees only its own store, and no QR code to scan with itself. */
+.apk-downloads { margin: 0 0 18px; font-size: .95rem; }
+.apk-downloads p { margin: 0 0 8px; }
+.apk-links { display: flex; flex-wrap: wrap; gap: 10px; }
+.apk-note { font-size: .82rem; opacity: .8; }
+.os-ios .apk-downloads { display: none; }
 .os-ios .badge-android, .os-android .badge-ios, .os-ios .store-qr, .os-android .store-qr { display: none; }
 @media (hover: none) and (pointer: coarse) { .store-qr { display: none; } }
 .foot-app { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 18px; margin-top: 34px; padding: 22px 24px; border-radius: 18px; background: rgba(255, 255, 255, .05); border: 1px solid rgba(255, 255, 255, .1); }

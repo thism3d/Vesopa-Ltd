@@ -2,6 +2,7 @@
 
     python tool/deploy_pontardawe_site.py --check    what exists, what it would do
     python tool/deploy_pontardawe_site.py            set up what is missing, then ship
+    python tool/deploy_pontardawe_site.py --site-only  steps 1-3 only (the site and its APK downloads)
 
 Run from the repository root on the owner's Windows folder (cloud sessions
 cannot reach port 22). It:
@@ -64,6 +65,20 @@ def bundle():
     shutil.copy(SITE / "content" / "source" / "x-posts.json", site / "content" / "source" / "x-posts.json")
     for name in ["package.json", "package-lock.json"]:
         shutil.copy(SITE / name, site / name)
+    # The Android apps as files (club.json android_apk, wear_apk), from the
+    # latest build-android.ps1 run. Never in git; public/ is replaced on every
+    # deploy, so they travel with each one.
+    club = json.loads((SITE / "content" / "club.json").read_text(encoding="utf-8"))["web"]
+    outputs = ROOT / "PontardaweRFC" / "build" / "app" / "build"
+    for key, built in [("android_apk", outputs / "app" / "outputs" / "flutter-apk" / "app-release.apk"),
+                       ("wear_apk", outputs / "wear" / "outputs" / "apk" / "release" / "wear-release.apk")]:
+        if club.get(key) and built.is_file():
+            dest = site / "public" / club[key].lstrip("/")
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(built, dest)
+            print(f"   {club[key]}: {built.stat().st_size // 1_000_000} MB from {built.relative_to(ROOT)}")
+        elif club.get(key):
+            print(f"   ! {club[key]}: no build at {built.relative_to(ROOT)} (run PontardaweRFC/build-android.ps1)")
     # LF endings whatever the checkout did, or bash on the box stops at "$'\r'".
     script = (SITE / "scripts" / "remote-install.sh").read_bytes().replace(b"\r\n", b"\n")
     (stage / "remote-install.sh").write_bytes(script)
@@ -108,6 +123,11 @@ def main():
     dm.ssh("run", f"cd {remote} && bash mail-forward.sh {'--check' if check else ''} {shlex.quote(club['email_forwards_to'])}", check=False)
     if check:
         print("check only: nothing changed. Run again without --check.")
+        return
+    if "--site-only" in sys.argv:
+        dm.ssh("run", "sleep 4; for u in / /membership /downloads/pontardawe-rfc.apk /downloads/pontardawe-rfc-wear-os.apk; do "
+                      "curl -sS -o /dev/null -w \"https://pontardawerfc.com$u %{http_code} %{size_download}\n\" https://pontardawerfc.com$u; done",
+               check=False)
         return
     web = web_build()
     print("▶ members' web app")

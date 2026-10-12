@@ -41,6 +41,8 @@
     "android_package": "com.vesopaepos.pontardawerfc",
     "ios_app": "https://testflight.apple.com/join/cWqDESsD",
     "android_app": "https://play.google.com/store/apps/details?id=com.vesopaepos.pontardawerfc",
+    "android_apk": "/downloads/pontardawe-rfc.apk",
+    "wear_apk": "/downloads/pontardawe-rfc-wear-os.apk",
     "x": "https://x.com/PontardaweRFC"
   },
   "ground": "Recreation Ground, Pontardawe",
