@@ -326,7 +326,7 @@ function signedIn({ m, brand, unread, classes, tab, title, body, script = '' }) 
     `<a href="${esc(m.base + href)}"${key === tab ? ' aria-current="page"' : ''}><span>${icon(key)}</span>${label}</a>`).join('')}</nav>`;
   return document({
     m, brand, title,
-    body: `${bar}${nav}<main>${body}</main>`,
+    body: `${bar}${nav}<main>${body}${storeBadges(m, brand)}</main>`,
     script: OPENED_FROM_NOTIFICATION + script,
   });
 }
@@ -338,6 +338,26 @@ const row = (ico, title, sub, { value = '', cls = '' } = {}) =>
 const opener = (ico, title, sub, inner, { open = false, cls = '', id = '' } = {}) =>
   `<details class="more"${open ? ' open' : ''}${id ? ` id="${id}"` : ''}><summary class="row${cls ? ` ${cls}` : ''}">${icon(ico)}<div class="t"><b>${title}</b>${sub ? `<small>${sub}</small>` : ''}</div>${icon('chev', 'ico chev')}</summary><div class="body">${inner}</div></details>`;
 const powered = '<p class="powered">Powered by Vesopa</p>';
+
+/**
+ * The venue's own phone app, as the official App Store and Google Play badges
+ * (public/assets/badges), for a venue whose look names its store links. An
+ * iPhone or iPad is shown only the App Store, an Android phone only Google
+ * Play, a computer both. Nothing inside the app itself.
+ */
+function storeBadges(m, brand) {
+  const look = venueLooks.lookFor(brand.slug);
+  if (!look || (!look.ios_app && !look.android_app)) return '';
+  const ua = (m && m.ua) || '';
+  if (/VesopaLoyalty/.test(ua)) return '';
+  const ios = /iPhone|iPad|iPod/.test(ua);
+  const android = /Android/.test(ua);
+  const badges = [];
+  if (look.ios_app && !android) badges.push(`<a class="store" href="${esc(look.ios_app)}" rel="noopener"><img src="/assets/badges/app-store.svg" alt="Download on the App Store" width="120" height="40"></a>`);
+  if (look.android_app && !ios) badges.push(`<a class="store" href="${esc(look.android_app)}" rel="noopener"><img src="/assets/badges/google-play.png" alt="Get it on Google Play" width="135" height="40"></a>`);
+  if (!badges.length) return '';
+  return `<section class="get-app" aria-label="Get the app"><p>Get the ${esc(brand.name)} app</p><div>${badges.join('')}</div></section>`;
+}
 
 // ---------------------------------------------------------------------------
 // Signing in (sign_in.dart)
@@ -434,6 +454,7 @@ function signIn({ m, brand, ua, state }) {
     + (state.error ? `<p class="err" role="alert">${esc(state.error)}</p>` : '')
     + (usesPasskey ? `<p class="err" role="alert" data-passkey-error hidden></p><form method="post" action="${action('passkey')}" data-passkey-form hidden>${hidden(m)}<input type="hidden" name="proof"></form>` : '')
     + others
+    + storeBadges(m, brand)
     + powered
     + '</div></main>';
   return document({

@@ -287,6 +287,7 @@ function memberWebRoutes({ secret, flutterPage }) {
       csrf: hmac(raw),
       csrfSent: jar[CSRF_COOKIE] ? hmac(jar[CSRF_COOKIE]) : null,
       nonce: rand(12),
+      ua: String(req.headers['user-agent'] || ''),
     };
     res.set({
       'X-Content-Type-Options': 'nosniff',
