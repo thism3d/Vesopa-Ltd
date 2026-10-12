@@ -1,0 +1,59 @@
+BEGIN:VCALENDAR
+PRODID:-//Vesopa Software Ltd//Vesopa Mail//EN
+VERSION:2.0
+CALSCALE:GREGORIAN
+METHOD:REQUEST
+BEGIN:VTIMEZONE
+TZID:Europe/London
+BEGIN:DAYLIGHT
+TZOFFSETFROM:+0000
+TZOFFSETTO:+0100
+TZNAME:BST
+DTSTART:19700329T010000
+RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU
+END:DAYLIGHT
+BEGIN:STANDARD
+TZOFFSETFROM:+0100
+TZOFFSETTO:+0000
+TZNAME:GMT
+DTSTART:19701025T020000
+RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU
+END:STANDARD
+END:VTIMEZONE
+BEGIN:VEVENT
+UID:5885c584-039e-4ee7-8225-16a22f4e8667@vesopa.com
+DTSTAMP:20261012T091311Z
+DTSTART;TZID=Europe/London:20261012T103000
+DTEND;TZID=Europe/London:20261012T111500
+SUMMARY:Vesopa + Dojo final testing
+DESCRIPTION:Final accreditation testing of Vesopa EPOS 1.16.0 with Dojo.\n
+ \nAgenda:\n1. A quick walk through the fixes in Vesopa EPOS 1.16.0\n2. You
+ r final test run against the accreditation sheet\n3. Retests of matched re
+ funds and signature verification\n4. Sign-off, live API access and the go-
+ live date\n\nIf this time does not suit, reply to muzahid@vesopa.com with 
+ a time that does.
+LOCATION:Online meeting (joining link to follow)
+ORGANIZER;CN="Muzahid Islam":mailto:muzahid@vesopa.com
+ATTENDEE;CN="Alex Radzio";ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=
+ TRUE:mailto:alex.radzio@dojo.tech
+ATTENDEE;CN="Fintan Bridger";ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RS
+ VP=TRUE:mailto:fintan.bridger@paymentsense.com
+ATTENDEE;CN="Oliver England";ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RS
+ VP=TRUE:mailto:oliver.england@paymentsense.com
+ATTENDEE;CN="Meirion Davies";ROLE=OPT-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RS
+ VP=TRUE:mailto:info@vesopasoftware.com
+ATTENDEE;CN="Meirion Davies";ROLE=OPT-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RS
+ VP=TRUE:mailto:info@vesopa.com
+SEQUENCE:1
+STATUS:CONFIRMED
+TRANSP:OPAQUE
+CLASS:PUBLIC
+X-MICROSOFT-CDO-BUSYSTATUS:BUSY
+X-MICROSOFT-CDO-IMPORTANCE:1
+BEGIN:VALARM
+ACTION:DISPLAY
+DESCRIPTION:Vesopa + Dojo final testing
+TRIGGER:-PT15M
+END:VALARM
+END:VEVENT
+END:VCALENDAR
