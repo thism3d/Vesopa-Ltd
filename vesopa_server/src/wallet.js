@@ -13,6 +13,7 @@ const A = require('./wallet_apple');
 const { wantsApple } = require('./wallet_apple_service');
 const { ensureMemberNumber } = require('./member_numbers');
 const loyaltySchemes = require('./loyalty_schemes');
+const venueLooks = require('./venue_looks');
 
 /**
  * Google Wallet passes: the back-office routes that configure and mint them,
@@ -112,7 +113,39 @@ function walletCore({ pool, secret }) {
     if (!brand.logo_url) brand.logo_url = absolute(receipt?.logo_url) || '';
     if (!brand.homepage_url) brand.homepage_url = receipt?.website || '';
     if (!brand.support_phone) brand.support_phone = receipt?.phone || '';
+    await applyLook(office, brand, row);
     return brand;
+  }
+
+  /**
+   * A venue with a look of its own (src/venue_looks.js: Pontardawe RFC) gets
+   * its card in its own colours and crest until it designs one in the back
+   * office. Without this a club whose app is deep red handed its members a
+   * Wallet card in Vesopa's default colours with Vesopa's mark on it -- the
+   * one place outside the app a member actually shows to somebody.
+   *
+   * Only what the venue has left empty is filled: anything set in the
+   * Wallet screen wins. `look_art` names the folder of committed artwork
+   * (assets/wallet/looks/<slug>/) that wallet_apple.js artworkFor() reads.
+   */
+  async function applyLook(office, brand, own) {
+    let slug = '';
+    try {
+      const [[app]] = await pool.query('SELECT slug FROM epos_loyalty_app WHERE office = ?', [office]);
+      slug = (app && app.slug) || '';
+    } catch {
+      return;
+    }
+    const look = venueLooks.lookFor(slug);
+    if (!look) return;
+    if (!brand.hex_background) brand.hex_background = look.club;
+    if (!brand.hex_foreground) brand.hex_foreground = '#FFFFFF';
+    if (!brand.hex_label) brand.hex_label = '#F4C7C7';
+    if (!brand.homepage_url && look.website) brand.homepage_url = look.website;
+    if (!brand.support_phone && look.phone) brand.support_phone = look.phone;
+    // The crest, unless the venue uploaded a Wallet logo of its own (a
+    // receipt logo is a black-and-white print mark and loses to it).
+    if (!(own && own.logo_url)) brand.look_art = String(slug).toLowerCase();
   }
 
   // ---- The sign-up code ---------------------------------------------------
@@ -595,10 +628,12 @@ function walletCore({ pool, secret }) {
     if (kind === 'loyalty' || kind === 'customer') {
       const memberNo = ((await hasColumn('epos_customers', 'member_no'))
         ? ', member_no'
-        : '') + ((await hasColumn('epos_customers', 'scheme_id')) ? ', scheme_id' : '');
+        : '') + ((await hasColumn('epos_customers', 'scheme_id')) ? ', scheme_id' : '')
+        + ((await hasColumn('epos_customers', 'membership_status')) ? ', membership_status' : '');
       const [[c]] = await pool.query(
         `SELECT id, name, phone, card_number, points_balance, tier_name,
-                discount_type, discount_value, created_at${memberNo}
+                discount_type, discount_value, created_at,
+                DATE_FORMAT(membership_expiry, '%Y-%m-%d') AS membership_expiry${memberNo}
          FROM epos_customers WHERE id = ? AND email_key = ?`,
         [subjectId, office]
       );
@@ -647,6 +682,12 @@ function walletCore({ pool, secret }) {
         discount,
         member_since: c.created_at ? new Date(c.created_at).toISOString().slice(0, 10) : '',
         history: await pointsHistory(office, c.id),
+        // The membership the card stands for, when there is one: its plan and
+        // the day it runs to. Not `expires_on`, which would void the whole
+        // pass on that day -- a lapsed member still has their points, and a
+        // renewal moves the date (memberships.js wakes the pass).
+        membership_until: c.membership_expiry && c.membership_status !== 'cancelled' ? c.membership_expiry : '',
+        membership_frozen: c.membership_status === 'frozen',
         // What the points are *for*. `min_redeem_points` and `point_value_minor`
         // are the two numbers that turn a balance into a sentence a customer can
         // act on — "forty more and you can spend them" rather than "you have
