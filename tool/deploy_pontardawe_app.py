@@ -105,7 +105,7 @@ AUTH_FILES = [
 ]
 # Files the server may not have yet: a failed test run deletes them rather
 # than restoring them from a backup that never held them.
-NEW_AUTH_FILES = {"vesopa_auth/test/native.test.js", "vesopa_auth/src/routes/member_passkeys.js",
+NEW_AUTH_FILES = {"vesopa_auth/src/routes/member_passkeys.js",
                   "vesopa_auth/test/accounts.test.js"}
 TEAM = "G238FR2ZC9"
 IOS_APPS = [f"{TEAM}.{BUNDLE}", f"{TEAM}.com.vesopaepos.thevesopakitchen"]
