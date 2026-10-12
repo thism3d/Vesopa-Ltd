@@ -3,6 +3,7 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const { requireAuth } = require('./auth');
 const applePush = require('./wallet_apple_push');
+const memberPush = require('./loyalty_push');
 const { ensureMemberNumber } = require('./member_numbers');
 const schemes = require('./loyalty_schemes');
 const training = require('./training');
@@ -2022,6 +2023,14 @@ function commerceRoutes({ pool, broadcast, secret }) {
       for (const kind of ['loyalty', 'customer']) {
         applePush
           .notifyPassChanged({ pool, office, kind, subjectId: customerId })
+          .catch(() => {});
+      }
+      // And the member's phone, if they have the app: "+12 points". Skipped on
+      // an iPhone whose Wallet card has just said the same (loyalty_push.js).
+      const words = memberPush.pointsMessage({ kind, points: delta, balance: balanceAfter });
+      if (words) {
+        memberPush
+          .notifyMember({ pool, office, customerId, ...words, walletCovers: true })
           .catch(() => {});
       }
 

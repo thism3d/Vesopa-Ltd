@@ -241,6 +241,8 @@ async function sendFcm(channel, payload) {
         id: String(payload.id || ''),
         link: String(payload.link || ''),
         url: String(payload.url || ''),
+        // "card" for a points or membership notification: where a tap goes.
+        open: String(payload.open || ''),
       },
       android: { notification: { image: payload.image || undefined } },
     },
@@ -258,11 +260,30 @@ async function sendFcm(channel, payload) {
     if (res.ok) return 'ok';
     // The app was uninstalled, or the token was replaced. Forgotten rather than
     // retried for the next ten sends at a device that no longer exists.
-    if (res.status === 404 || res.status === 400) return 'gone';
+    if (await fcmTokenGone(res)) return 'gone';
+    console.warn(`[loyalty push] FCM ${res.status}`);
     return 'failed';
   } catch {
     return 'failed';
   }
+}
+
+/**
+ * Whether FCM's refusal is about the token rather than about us.
+ *
+ * Every 400 used to count as a dead phone. But FCM answers 400 for a bad
+ * message too -- an image URL it dislikes, a field over its limit -- and
+ * treating that as "gone" switched off every Android member's notifications
+ * at once, for good. Only UNREGISTERED (404), and a 400 that names the
+ * registration token, mean the device has gone.
+ */
+async function fcmTokenGone(res) {
+  if (res.status === 404) return true;
+  if (res.status !== 400) return false;
+  let text = '';
+  try { text = await res.text(); } catch { return false; }
+  if (/UNREGISTERED/.test(text)) return true;
+  return /registration token/i.test(text);
 }
 
 // ---- iPhone (APNs) ---------------------------------------------------------
@@ -308,7 +329,11 @@ function apnsKey() {
       return '';
     }
   }
-  return (process.env.APNS_PRIVATE_KEY || '').split('\n').join('\n');
+  // Written in .env on one line with its line breaks as \n, the same as
+  // FCM_PRIVATE_KEY. This used to split on a real newline, which a one-line
+  // value never has, so the key reached jwt.sign() unreadable and every
+  // iPhone notification failed with nothing logged.
+  return (process.env.APNS_PRIVATE_KEY || '').split('\\n').join('\n');
 }
 
 function apnsCreds() {
@@ -316,7 +341,9 @@ function apnsCreds() {
   const teamId = process.env.APNS_TEAM_ID || '';
   const privateKey = apnsKey();
   const topic = process.env.APNS_TOPIC || '';
-  if (!keyId || !teamId || !privateKey || !topic) return null;
+  // A server that only ever talks to venue apps (APNS_TOPICS) needs no shared
+  // app's bundle id; one of the two is enough.
+  if (!keyId || !teamId || !privateKey || (!topic && !String(process.env.APNS_TOPICS || '').trim())) return null;
   return { keyId, teamId, privateKey, topic };
 }
 
@@ -416,11 +443,16 @@ async function sendApns(channel, payload, { slug = '' } = {}) {
     link: payload.link || null,
     url: payload.url || null,
     image: payload.image || null,
+    // "card": AppDelegate.swift opens the card rather than the news.
+    open: payload.open || null,
   });
 
   const sandboxOnly = process.env.APNS_ENV === 'sandbox';
+  const topics = apnsTopics(slug, creds.topic);
+  // Only venue apps are configured, and this is not one of their venues.
+  if (!topics.length) return 'failed';
   let r = { status: 0, reason: '' };
-  for (const topic of apnsTopics(slug, creds.topic)) {
+  for (const topic of topics) {
     r = await apnsPost(sandboxOnly ? APNS_SANDBOX : APNS_PRODUCTION, creds, channel.endpoint, body, topic);
     if (!sandboxOnly && r.reason === 'BadDeviceToken') {
       r = await apnsPost(APNS_SANDBOX, creds, channel.endpoint, body, topic);
@@ -435,7 +467,138 @@ async function sendApns(channel, payload, { slug = '' } = {}) {
   return 'failed';
 }
 
+// ---- One member, about their own card -----------------------------------------
+//
+// News goes through epos_push_messages and the inbox (loyalty_app.js
+// deliver()). Points and membership changes are different: they are about one
+// member, they are already on the Activity page, and an inbox full of "+12
+// points" would bury the club's news. So they go straight to that member's
+// devices, and a tap opens the card (`open: "card"`).
+//
+// An iPhone that has the card in Apple Wallet is skipped for points: Wallet
+// already says "+12 points" on the lock screen when the pass updates
+// (wallet_apple.js changeMessage), and two notifications for one pint is how
+// people come to switch both off.
+
+/**
+ * Notify one member's registered devices. Never throws: the callers are a sale
+ * and a membership desk, which must not fail because a phone did.
+ * Resolves to {sent, failed}.
+ */
+async function notifyMember({ pool, office, customerId, title, body, walletCovers = false }) {
+  const out = { sent: 0, failed: 0 };
+  try {
+    const [[app]] = await pool.query(
+      'SELECT slug, wns_package_sid, wns_secret_enc FROM epos_loyalty_app WHERE office = ?',
+      [office]
+    );
+    // No app, no devices: a venue that has not set the app up has nobody to tell.
+    if (!app) return out;
+    const [channels] = await pool.query(
+      `SELECT * FROM epos_push_channels
+        WHERE office = ? AND customer_id = ? AND disabled_at IS NULL`,
+      [office, String(customerId)]
+    );
+    if (!channels.length) return out;
+
+    let walletPhones = false;
+    if (walletCovers) {
+      try {
+        const [[w]] = await pool.query(
+          `SELECT 1 AS yes FROM epos_wallet_passes p
+             JOIN epos_wallet_devices d ON d.serial_number = p.apple_serial
+            WHERE p.office = ? AND p.kind = 'loyalty' AND p.subject_id = ? LIMIT 1`,
+          [office, String(customerId)]
+        );
+        walletPhones = !!w;
+      } catch {
+        walletPhones = false;
+      }
+    }
+
+    let creds = null;
+    if (app.wns_package_sid && app.wns_secret_enc) {
+      try {
+        creds = { packageSid: app.wns_package_sid, secret: require('./express_kiosk').unseal(app.wns_secret_enc) };
+      } catch {
+        creds = null;
+      }
+    }
+    let url = null;
+    try {
+      url = app.slug ? `${require('./loyalty_host').appUrl(app.slug)}#/card` : null;
+    } catch {
+      url = null;
+    }
+    const payload = { id: '', title: String(title || ''), body: String(body || ''), open: 'card', url };
+    const slug = app.slug || '';
+
+    for (const ch of channels) {
+      if (walletPhones && ch.kind === 'apns') continue;
+      let result;
+      if (ch.kind === 'apns') result = await sendApns(ch, payload, { slug });
+      else if (ch.kind === 'fcm') result = await sendFcm(ch, payload);
+      else if (ch.kind === 'wns') result = await sendWns(ch, payload, creds);
+      else result = await sendWebPush(ch, payload);
+      if (result === 'ok') {
+        out.sent++;
+        await pool.execute('UPDATE epos_push_channels SET last_ok_at = NOW(), fail_count = 0 WHERE id = ?', [ch.id]);
+      } else if (result === 'gone') {
+        out.failed++;
+        await pool.execute('UPDATE epos_push_channels SET disabled_at = NOW() WHERE id = ?', [ch.id]);
+      } else {
+        out.failed++;
+      }
+    }
+  } catch (e) {
+    if (e && e.code !== 'ER_NO_SUCH_TABLE') console.warn('[loyalty push] member notification:', e.message);
+  }
+  return out;
+}
+
+/** The words for a points movement, or null when there is nothing worth saying. */
+function pointsMessage({ kind, points, balance }) {
+  const n = Math.abs(Number(points) || 0);
+  if (!n) return null;
+  const pts = (x) => `${x} ${x === 1 ? 'point' : 'points'}`;
+  if (kind === 'earn') return { title: `+${pts(n)}`, body: `Thanks for coming in. You now have ${pts(Number(balance) || 0)}.` };
+  if (kind === 'redeem') return { title: `${pts(n)} spent`, body: `Enjoy. You have ${pts(Number(balance) || 0)} left.` };
+  return null;
+}
+
+/** The words for a membership change (memberships.js logEvent), or null. */
+function membershipMessage({ kind, plan, after }) {
+  const until = after ? ` It runs to ${longDate(after)}.` : '';
+  const name = plan ? `${plan} membership` : 'membership';
+  switch (kind) {
+    case 'join': return { title: 'Welcome to the club', body: `Your ${name} has started.${until}` };
+    case 'renew': return { title: 'Membership renewed', body: `Thanks for renewing your ${name}.${until}` };
+    case 'freeze': return { title: 'Membership frozen', body: `Your ${name} is on hold.` };
+    case 'unfreeze': return { title: 'Welcome back', body: `Your ${name} is active again.` };
+    case 'cancel': return { title: 'Membership cancelled', body: `Your ${name} has been cancelled.` };
+    case 'approve': return { title: 'Welcome to the club', body: `Your ${name} has been approved.${until}` };
+    case 'reinstate': return { title: 'Membership back on', body: `Your ${name} is active again.${until}` };
+    case 'plan': return { title: 'Membership changed', body: `You are now on the ${name}.` };
+    default: return null;
+  }
+}
+
+/** 2027-10-12 as "12 October 2027". */
+function longDate(value) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value instanceof Date ? value.toISOString() : value || ''));
+  if (!m) return String(value || '');
+  const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August',
+    'September', 'October', 'November', 'December'];
+  return `${Number(m[3])} ${months[Number(m[2]) - 1]} ${m[1]}`;
+}
+
 module.exports = {
+  notifyMember,
+  pointsMessage,
+  membershipMessage,
+  longDate,
+  apnsCreds,
+  fcmTokenGone,
   webPushReady,
   vapid,
   sendWebPush,

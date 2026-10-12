@@ -115,14 +115,32 @@ import UserNotifications
     withCompletionHandler completionHandler: @escaping () -> Void
   ) {
     let info = response.notification.request.content.userInfo
-    let id = (info["id"] as? CustomStringConvertible)?.description ?? ""
-    let address = id.isEmpty ? "/inbox" : "/inbox/\(id)"
+    // A points or membership notification says where it belongs (`open`:
+    // "card", src/loyalty_push.js notifyMember); news has an id and opens
+    // that message.
+    if (info["open"] as? String) == "card" {
+      open("/card")
+    } else {
+      let id = (info["id"] as? CustomStringConvertible)?.description ?? ""
+      open(id.isEmpty ? "/inbox" : "/inbox/\(id)")
+    }
+    completionHandler()
+  }
+
+  /// Send Dart to `/card` or `/inbox[/<id>]`: now if it is listening,
+  /// otherwise when it starts and asks (`opened`).
+  func open(_ address: String) {
     if dartListening, let channel = channel {
       channel.invokeMethod("open", arguments: address)
     } else {
       opened = address
     }
-    completionHandler()
+  }
+
+  /// Siri's way in (SiriShortcuts.swift): the same road as a tapped
+  /// notification.
+  static func openFromSiri(_ address: String) {
+    (UIApplication.shared.delegate as? AppDelegate)?.open(address)
   }
 
   /// Only the question, for the welcome before sign-in (lib/ui/onboarding.dart).

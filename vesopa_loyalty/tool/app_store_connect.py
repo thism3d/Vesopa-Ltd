@@ -332,6 +332,10 @@ def cmd_prepare(venue_name):
     ensure_capability(c, phone, "APPLE_ID_AUTH", [{
         "key": "APPLE_ID_AUTH_APP_CONSENT", "options": [{"key": "PRIMARY_APP_CONSENT"}]}])
     ensure_capability(c, phone, "ASSOCIATED_DOMAINS")
+    # Apple Wallet: the member's card as a pass (ios/Runner/WalletBridge.swift;
+    # make_venue_app.py writes the pass-type-identifiers entitlement). The
+    # profile made in `signing` then carries the team's pass types.
+    ensure_capability(c, phone, "WALLET")
 
     app = find_app(c, app_id)
     out = os.environ.get("GITHUB_OUTPUT")

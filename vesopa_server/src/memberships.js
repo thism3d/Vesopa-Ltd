@@ -9,6 +9,8 @@ const dojo = require('./dojo_client');
 const { venueKey } = require('./express_kiosk');
 const { sendMail } = require('./mailer');
 const { appUrl } = require('./loyalty_host');
+const applePush = require('./wallet_apple_push');
+const memberPush = require('./loyalty_push');
 
 /**
  * Memberships: plans, members, family, freezes, classes and paying online.
@@ -332,6 +334,35 @@ async function logEvent(db, e) {
     );
   } catch (err) {
     if (!isMissing(err)) throw err;
+  }
+  // Not awaited: the desk, the till or Dojo's webhook is waiting on this, and
+  // a phone being a few seconds behind costs nothing.
+  memberChanged(db, e);
+}
+
+/**
+ * Tell the member's own devices and their Wallet cards that the membership
+ * moved. The Wallet pass shows the plan and its end date (wallet_apple.js),
+ * so it has to be woken; the app gets a notification that opens the card.
+ * Not for a change the member made themselves in the app, which already
+ * shows them the result.
+ */
+async function memberChanged(db, e) {
+  try {
+    for (const kind of ['loyalty', 'customer']) {
+      applePush.notifyPassChanged({ pool: db, office: e.office, kind, subjectId: e.customer_id }).catch(() => {});
+    }
+    if (e.via === 'app') return;
+    let plan = '';
+    if (e.scheme_id != null) {
+      const [[s]] = await db.query('SELECT name FROM epos_loyalty_schemes WHERE id = ?', [e.scheme_id]);
+      plan = (s && s.name) || '';
+    }
+    const words = memberPush.membershipMessage({ kind: e.kind, plan, after: e.after });
+    if (words) await memberPush.notifyMember({ pool: db, office: e.office, customerId: e.customer_id, ...words });
+  } catch {
+    // A closed pool at shutdown, or a table this server has not got: the
+    // membership itself has already changed, which is what mattered.
   }
 }
 

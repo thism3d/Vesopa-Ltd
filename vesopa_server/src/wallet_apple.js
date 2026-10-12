@@ -518,6 +518,14 @@ function nextReward(subject) {
 }
 
 /** `March 2024`. A joining date needs no day; the day is noise on a card. */
+/** 2027-10-12 as "12 Oct 2027", or '' for nothing. */
+function dayMonthYear(value) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value || ''));
+  if (!m) return '';
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${Number(m[3])} ${months[Number(m[2]) - 1]} ${m[1]}`;
+}
+
 function monthYear(value) {
   if (!value) return '';
   const when = new Date(value);
@@ -900,6 +908,16 @@ function buildPassJson({ kind, config, brand, subject, serial, authToken, link }
       // row on labels.
       push(body.secondaryFields, 'tier', 'TIER', tierLine(subject));
       push(body.auxiliaryFields, 'number', 'MEMBER NO.', memberNumber(brand, subject));
+      // How long the membership runs. A club card is shown at the bar as
+      // proof of membership as much as for points, so the date is on the
+      // front; Wallet says so on the lock screen when a renewal moves it.
+      push(
+        body.auxiliaryFields,
+        'until',
+        subject.membership_frozen ? 'FROZEN, UNTIL' : 'MEMBER UNTIL',
+        dayMonthYear(subject.membership_until),
+        { changeMessage: 'Your membership now runs to %@.' }
+      );
 
       push(back, 'since', 'Member since', subject.member_since);
       // The ledger behind the number on the front. `PKTextAlignmentLeft` so the
@@ -1128,7 +1146,26 @@ function artworkFor(kind, brand, assetsDir, progress = null, uploadsDir = null) 
   // already resolved per kind by readProgramBrand(); `photo_url` is the single
   // picture on the Wallet screen, which a venue with one look sets once.
   const ownStrip = venuePair(brand.strip_url) || venuePair(brand.photo_url);
-  const ownLogo = venuePair(brand.logo_url);
+  let ownLogo = venuePair(brand.logo_url);
+
+  // A venue with a look of its own and no Wallet logo uploaded (wallet.js
+  // applyLook): its crest, and a band in its colours, committed under
+  // assets/wallet/looks/<slug>/. The slug is checked to the shape of one, so
+  // it can only ever name a folder in there.
+  let lookIcon = null;
+  let lookStrip = null;
+  if (brand.look_art && /^[a-z0-9-]{1,64}$/.test(String(brand.look_art))) {
+    const lookRead = (name) => read(path.join('looks', String(brand.look_art), name));
+    const pair = (name) => {
+      const one = lookRead(name);
+      const two = lookRead(`${name}@2x`);
+      return one && two ? { '': one, '@2x': two } : null;
+    };
+    ownLogo = pair('logo') || ownLogo;
+    // Its band only where the venue has not uploaded one.
+    lookStrip = ownStrip ? null : pair('strip');
+    lookIcon = pair('icon');
+  }
 
   // The progress bar, chosen rather than drawn.
   //
@@ -1176,6 +1213,9 @@ function artworkFor(kind, brand, assetsDir, progress = null, uploadsDir = null) 
     // it with a photograph would quietly delete the one thing on the card that
     // says how close somebody is to a reward.
     const art =
+      // A look's band beats the generic progress bands, which are drawn in
+      // Vesopa's colours and would sit on a club-red card like a sticker.
+      (lookStrip && lookStrip[suffix]) ||
       (band && read(`strip_${kind}${band}${suffix}`)) ||
       (ownStrip && ownStrip[suffix]) ||
       read(`strip_${kind}${suffix}`) ||
@@ -1195,8 +1235,8 @@ function artworkFor(kind, brand, assetsDir, progress = null, uploadsDir = null) 
   // is rejected outright, with no message naming the file. So it falls back to
   // something generated here, which cannot fail.
   const background = rgb(brand.hex_background, BRAND.background);
-  files['icon.png'] = read('icon') || solidPng(29, 29, background);
-  files['icon@2x.png'] = read('icon@2x') || solidPng(58, 58, background);
+  files['icon.png'] = (lookIcon && lookIcon['']) || read('icon') || solidPng(29, 29, background);
+  files['icon@2x.png'] = (lookIcon && lookIcon['@2x']) || read('icon@2x') || solidPng(58, 58, background);
 
   return files;
 }
