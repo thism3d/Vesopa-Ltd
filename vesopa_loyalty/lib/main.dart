@@ -12,7 +12,9 @@ import 'data/api.dart';
 import 'data/session.dart';
 import 'data/venue_style.dart';
 import 'platform/device_label.dart';
+import 'platform/push.dart';
 import 'ui/home.dart';
+import 'ui/onboarding.dart';
 import 'ui/sign_in.dart';
 import 'ui/venue_intro.dart';
 import 'ui/venue_picker.dart';
@@ -166,15 +168,32 @@ class _Gate extends ConsumerWidget {
      */
     final storeApp = !kIsWeb && AppConfig.buildSlug.isEmpty;
     Widget signedOut() {
-      if (!storeApp) return const SignInPage();
+      if (!storeApp) {
+        // A venue's own build welcomes a new member first (ui/onboarding.dart).
+        if (!Onboarding.enabled) return const SignInPage();
+        final brand = ref.read(brandProvider).value;
+        return OnboardingGate(
+          slug: ref.read(configProvider).slug,
+          venueName: brand?.name ?? '',
+          canNotify: brand != null && pushAvailable(brand),
+          child: const SignInPage(),
+        );
+      }
       WidgetsBinding.instance.addPostFrameCallback((_) => ref.read(venueProvider.notifier).forget());
       return const Scaffold(body: Center(child: CircularProgressIndicator.adaptive()));
     }
 
-    return session.when(
-      loading: () => const Scaffold(body: Center(child: CircularProgressIndicator.adaptive())),
-      error: (_, _) => signedOut(),
-      data: (token) => token == null ? signedOut() : const HomePage(),
+    // Signing in and out cross-fade rather than cut.
+    final (key, page) = session.when(
+      loading: () => ('wait', const ClubWaiting()),
+      error: (_, _) => ('out', signedOut()),
+      data: (token) => token == null ? ('out', signedOut()) : ('in', const HomePage()),
+    );
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 400),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      child: KeyedSubtree(key: ValueKey(key), child: page),
     );
   }
 }

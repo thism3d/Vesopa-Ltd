@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
@@ -50,6 +51,19 @@ class VenueStyle {
   /// The club colour for the device's mode: a bright red reads on near-black
   /// where the deep club red sinks into it.
   static Color clubFor(Brightness b) => b == Brightness.dark ? Color.lerp(club, glow, 0.65)! : club;
+
+  /// How a venue app moves between pages: the iPhone's own slide on an
+  /// iPhone, and elsewhere the page fading forward as current Android does,
+  /// rather than the older zoom every Flutter app has by default.
+  static const transitions = PageTransitionsTheme(
+    builders: {
+      TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+      TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+      TargetPlatform.android: FadeForwardsPageTransitionsBuilder(),
+      TargetPlatform.windows: FadeForwardsPageTransitionsBuilder(),
+      TargetPlatform.linux: FadeForwardsPageTransitionsBuilder(),
+    },
+  );
 
   /// The venue in its own palette, before light or dark is chosen.
   static Brand apply(Brand brand) {
