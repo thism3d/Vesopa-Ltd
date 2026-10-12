@@ -47,9 +47,9 @@ Refunds on the card machine now work like payments: signature check, cancel, Che
 
 Receipts has a Failed card payments tab listing declined, cancelled and unconfirmed card payments with Dojo's reference and the reason.
 
-Includes 1.16.2: refunds cannot repeat, receipts show Paid, Card or Refunded, receipt PDFs open on the computer.
+Also: refunds cannot repeat, receipts show Paid, Card or Refunded, and receipt PDFs open on the computer. Member cards and app QR codes without the card prefix find the member. Exit application closes the till straight away. The till reaches the back office on computers missing the newer security certificates.
 """,
-    "notes-1.6.22.0-display.txt": """Version 1.6.22.0
+    "notes-1.6.22.0-display.txt": """Version 1.6.22.0 - Card refunds on the customer screen
 
 The customer screen now shows card refunds as well as card payments: what the card machine is asking for, then whether the refund went through.
 """,
@@ -129,7 +129,9 @@ def main():
         current = "store"
         node = tool("node")
         for name, text in NOTES.items():
-            (STORE / name).write_text(text, encoding="utf-8")
+            # LF only: Windows text mode writes CRLF, and the notes checker
+            # then misses the blank line after the title.
+            (STORE / name).write_bytes(text.encode("utf-8"))
         # One app's Store refusal (an earlier submission still in progress)
         # must not hold back the others or the installers.
         for key, _folder, version, msix, notes in APPS:
