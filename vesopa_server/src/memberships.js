@@ -1483,6 +1483,8 @@ function membershipRoutes({ pool, broadcast, secret }) {
         frozen_from: m.frozen_from,
         frozen_until: m.frozen_until,
         member_number: m.member_number || null,
+        // Read-only, for the app's "freeze days left this year".
+        freeze_days_used: m.freeze_days_used || 0,
         family: m.family,
         payer,
         renew_minor: payer && m.plan ? priceOf(m.plan, 'renew') : null,
@@ -1490,7 +1492,7 @@ function membershipRoutes({ pool, broadcast, secret }) {
         plans_for_sale: m.state === 'none' || m.state === 'cancelled' || m.state === 'expired'
           ? plans.map((p) => ({ ...p, join_minor: priceOf(p, 'join') }))
           : [],
-        history: m.history.slice(0, 20).map((h) => ({ kind: h.kind, at: h.created_at, expiry_after: h.expiry_after, amount_minor: h.amount_minor })),
+        history: m.history.slice(0, 20).map((h) => ({ kind: h.kind, at: h.created_at, expiry_after: h.expiry_after, amount_minor: h.amount_minor, via: h.via || null })),
       });
     } catch (e) { next(e); }
   });

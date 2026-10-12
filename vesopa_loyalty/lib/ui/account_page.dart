@@ -11,6 +11,8 @@ import '../data/session.dart';
 import '../platform/passkey.dart';
 import '../platform/push.dart';
 import 'membership_section.dart';
+import 'photo_crop.dart';
+import 'settings_page.dart';
 import 'widgets.dart';
 
 /// What this member can change about themselves, and what they can prove.
@@ -59,6 +61,20 @@ class AccountPage extends ConsumerWidget {
                 const _LeaveCard(),
                 const SizedBox(height: 10),
                 const _DeleteCard(),
+                const SizedBox(height: 10),
+                // The app rather than the member: how it looks, notifications,
+                // privacy and terms, and about the venue and Vesopa.
+                Card(
+                  elevation: 0,
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.45),
+                  child: ListTile(
+                    leading: const Icon(Icons.settings_outlined),
+                    title: const Text('Settings'),
+                    subtitle: const Text('Appearance, notifications, privacy and about'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => SettingsPage.open(context),
+                  ),
+                ),
                 const SizedBox(height: 22),
                 const PoweredBy(),
               ],
@@ -161,9 +177,10 @@ class _You extends ConsumerWidget {
 /// reaches the till the same way. A clerk who can see it is them is the
 /// whole point of a photo on a membership.
 ///
-/// The picture is scaled down before it leaves the phone -- a 12-megapixel
-/// photograph is not a face for a 60-pixel circle -- and a browser gets a
-/// file picker, which on a phone opens the camera anyway.
+/// The member frames it themselves under a round window (ui/photo_crop.dart)
+/// and only that square leaves the phone -- a 12-megapixel photograph is not
+/// a face for a 60-pixel circle -- and a browser gets a file picker, which on
+/// a phone opens the camera anyway.
 class _PhotoRow extends ConsumerWidget {
   const _PhotoRow();
 
@@ -227,9 +244,11 @@ class _PhotoRow extends ConsumerWidget {
     try {
       picked = await ImagePicker().pickImage(
         source: source,
-        maxWidth: 900,
-        maxHeight: 900,
-        imageQuality: 85,
+        // Room to zoom in on a face before cropping; the crop itself is
+        // what is sent, at most 1024 square (ui/photo_crop.dart).
+        maxWidth: 2048,
+        maxHeight: 2048,
+        imageQuality: 92,
         preferredCameraDevice: CameraDevice.front,
         // The system photo picker needs no library permission; asking for
         // full metadata would put a "allow access to all photos" prompt
@@ -245,11 +264,13 @@ class _PhotoRow extends ConsumerWidget {
       return;
     }
     if (picked == null || !context.mounted) return;
-    final bytes = await picked.readAsBytes();
-    final filename = picked.name.isEmpty ? 'photo.jpg' : picked.name;
+    // Framed by the member before it goes anywhere: pinch, drag, Save.
+    final raw = await picked.readAsBytes();
     if (!context.mounted) return;
+    final bytes = await PhotoCropPage.open(context, raw);
+    if (bytes == null || !context.mounted) return;
     await runWithFeedback(context, ref, () async {
-      await ref.read(apiProvider).uploadPhoto(bytes, filename);
+      await ref.read(apiProvider).uploadPhoto(bytes, 'photo.jpg');
       ref.invalidate(meProvider);
     }, done: 'Your photo is on your card.');
   }

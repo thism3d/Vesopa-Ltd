@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 import 'data/activity_log.dart';
 import 'data/app_update.dart';
 import 'data/api.dart';
+import 'data/preferences.dart';
 import 'data/session.dart';
 import 'data/venue_style.dart';
 import 'platform/device_label.dart';
@@ -111,10 +112,12 @@ class LoyaltyApp extends ConsumerWidget {
           title: b.name,
           debugShowCheckedModeBanner: false,
           // A venue app follows the device into dark mode, in the club's own
-          // shades (lib/data/venue_style.dart); elsewhere, the back office's.
+          // shades (lib/data/venue_style.dart), unless the member chose Light
+          // or Dark in Settings; elsewhere, the back office's, which has one
+          // set of colours and so no dark mode to choose.
           theme: VenueStyle.enabled ? VenueStyle.forBrightness(b, Brightness.light).theme() : b.theme(),
           darkTheme: VenueStyle.enabled ? VenueStyle.forBrightness(b, Brightness.dark).theme() : null,
-          themeMode: VenueStyle.enabled ? ThemeMode.system : ThemeMode.light,
+          themeMode: VenueStyle.enabled ? ref.watch(appearanceProvider) : ThemeMode.light,
           navigatorObservers: [ActivityLog.instance.observer],
           builder: (context, child) => ActivityLog.instance.wrap(child ?? const SizedBox.shrink()),
           home: const _Gate(),
