@@ -210,11 +210,17 @@ class ReceiptLine {
     this.note,
     this.taxPercentage = 0,
     this.isModifier = false,
+    this.discountMinor = 0,
   });
 
   final String name;
   final double quantity;
   final int unitPriceMinor;
+
+  /// What came off this line itself: an offer, a line discount. Order-wide
+  /// money (a bill discount, a voucher, points) is not in here; see
+  /// [ReceiptDetail.lineValues].
+  final int discountMinor;
 
   /// Kitchen instruction for this line ("no onions"). Prints indented under
   /// the item on both the customer receipt and the kitchen ticket.
@@ -245,6 +251,7 @@ class ReceiptLine {
         // Absent on a sale recorded before modifiers existed, which was an
         // item in its own right — so the default is the truth, not a guess.
         isModifier: (j['is_modifier'] as num?) == 1 || j['is_modifier'] == true,
+        discountMinor: (j['discount_minor'] as num?)?.toInt() ?? 0,
       );
 }
 
@@ -303,6 +310,40 @@ class ReceiptDetail {
 
   /// Approved Dojo refunds per payment intent, from every till's card log.
   final Map<String, int> cardRefundedMinor;
+
+  /// What each line is worth back to the customer, in receipt order.
+  ///
+  /// The receipt's total, shared across its lines: each line's price less its
+  /// own offer, then scaled so offers, bill discounts, vouchers, points and
+  /// service on the whole bill are shared out too. The values always add up to
+  /// exactly the receipt total, so refunding every line gives back what was
+  /// paid and the refund page and the receipt show the same balance. Pennies
+  /// left by rounding go to the largest lines.
+  List<int> get lineValues {
+    final weights = [
+      for (final l in lines)
+        (l.lineTotalMinor - l.discountMinor).clamp(0, 1 << 62),
+    ];
+    final total = summary.totalMinor < 0 ? 0 : summary.totalMinor;
+    final sum = weights.fold<int>(0, (a, b) => a + b);
+    if (lines.isEmpty) return const [];
+    if (sum == 0) return List.filled(lines.length, 0);
+    final values = [for (final w in weights) w * total ~/ sum];
+    var left = total - values.fold<int>(0, (a, b) => a + b);
+    final order = [for (var i = 0; i < lines.length; i++) i]
+      ..sort((a, b) {
+        final ra = weights[a] * total % sum;
+        final rb = weights[b] * total % sum;
+        return rb != ra ? rb.compareTo(ra) : weights[b].compareTo(weights[a]);
+      });
+    for (final i in order) {
+      if (left <= 0) break;
+      if (weights[i] == 0) continue;
+      values[i]++;
+      left--;
+    }
+    return values;
+  }
 
   /// Receipt lines already given back.
   Set<int> get refundedLineNos => {for (final r in refunds) ...r.lineNos};

@@ -12,6 +12,7 @@ import '../printing/receipt_builder.dart';
 import 'kitchen_ticket_pdf.dart';
 import 'printers_page.dart' show printerSettingsProvider;
 import 'receipt_pdf.dart';
+import 'receipt_pdf_view.dart';
 import 'widgets/pos_message.dart';
 
 /// What the clerk chose to do with a finished sale.
@@ -88,7 +89,16 @@ class PrintReceiptSheet extends ConsumerStatefulWidget {
 class _PrintReceiptSheetState extends ConsumerState<PrintReceiptSheet> {
   bool _busy = false;
 
-  Future<Uint8List> _receiptPdf() => buildReceiptPdf(
+  /// One document per receipt and kind, shared by the preview, Share and
+  /// the Windows print path, so the PDF is built once.
+  String get _pdfKey =>
+      '${widget.isBill ? 'bill' : widget.isReprint ? 'reprint' : 'receipt'}:'
+      '${widget.receipt.summary.id}:${widget.receipt.summary.totalMinor}:'
+      '${widget.receipt.lines.length}';
+
+  Future<Uint8List> _receiptPdf() => ReceiptPdfView.bytesFor(_pdfKey, _buildReceiptPdf);
+
+  Future<Uint8List> _buildReceiptPdf() => buildReceiptPdf(
         widget.receipt,
         venueName: widget.venueName,
         branding: widget.branding,
@@ -271,21 +281,10 @@ class _PrintReceiptSheetState extends ConsumerState<PrintReceiptSheet> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 clipBehavior: Clip.antiAlias,
-                child: PdfPreview(
-                  build: (_) => _receiptPdf(),
-                  useActions: true,
-                  allowPrinting: false,
-                  allowSharing: true,
-                  canChangePageFormat: false,
-                  canChangeOrientation: false,
-                  canDebug: false,
-                  pdfFileName: widget.isBill ? 'bill.pdf' : 'receipt.pdf',
-                  scrollViewDecoration: BoxDecoration(
-                    color: scheme.surfaceContainerHighest,
-                  ),
-                  loadingWidget: const Center(
-                    child: CircularProgressIndicator(),
-                  ),
+                child: ReceiptPdfView(
+                  cacheKey: _pdfKey,
+                  build: _buildReceiptPdf,
+                  background: scheme.surfaceContainerHighest,
                 ),
               ),
             ),
@@ -379,6 +378,22 @@ class _PrintReceiptSheetState extends ConsumerState<PrintReceiptSheet> {
                           icon: const Icon(Icons.desktop_windows_outlined,
                               size: 18),
                           label: const Text('Windows / PDF'),
+                        ),
+                      ),
+                      // Share or save the PDF: a till with no printer, or one
+                      // whose printer died mid-service, can still hand over a
+                      // receipt.
+                      Expanded(
+                        child: TextButton.icon(
+                          onPressed: _busy
+                              ? null
+                              : () async => Printing.sharePdf(
+                                  bytes: await _receiptPdf(),
+                                  filename:
+                                      widget.isBill ? 'bill.pdf' : 'receipt.pdf',
+                                ),
+                          icon: const Icon(Icons.share, size: 18),
+                          label: const Text('Share'),
                         ),
                       ),
                     ],

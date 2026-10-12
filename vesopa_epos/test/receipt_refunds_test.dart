@@ -69,4 +69,35 @@ void main() {
     expect(totals['order-1']!.minor, 250);
     expect(await RefundLedger.instance.forOrder('order-2'), isEmpty);
   });
+
+  test('line refund values add up to what was paid, after offers and points', () {
+    // £4 + £4 pint with a 2-for-£7 offer (£1 off the second), a £2.50 burger,
+    // and £1 of loyalty points off the bill: £9.50 paid.
+    final detail = ReceiptDetail(
+      summary: summary({'total_minor': 950, 'discount_minor': 100}),
+      lines: [
+        ReceiptLine.fromJson({'name': 'Pint', 'quantity': 1, 'unit_price_minor': 400}),
+        ReceiptLine.fromJson({'name': 'Pint', 'quantity': 1, 'unit_price_minor': 400, 'discount_minor': 100}),
+        ReceiptLine.fromJson({'name': 'Burger', 'quantity': 1, 'unit_price_minor': 250}),
+        ReceiptLine.fromJson({'name': 'No onion', 'quantity': 1, 'unit_price_minor': 0, 'is_modifier': 1}),
+      ],
+      tenders: const [],
+    );
+    final values = detail.lineValues;
+    expect(values.reduce((a, b) => a + b), 950);
+    expect(values[3], 0);
+    expect(values[0], greaterThan(values[1]));
+  });
+
+  test('a receipt with nothing off refunds each line at its price', () {
+    final detail = ReceiptDetail(
+      summary: summary({'total_minor': 700}),
+      lines: [
+        ReceiptLine.fromJson({'name': 'A', 'quantity': 2, 'unit_price_minor': 200}),
+        ReceiptLine.fromJson({'name': 'B', 'quantity': 1, 'unit_price_minor': 300}),
+      ],
+      tenders: const [],
+    );
+    expect(detail.lineValues, [400, 300]);
+  });
 }

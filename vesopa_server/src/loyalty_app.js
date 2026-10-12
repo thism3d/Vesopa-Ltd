@@ -45,7 +45,7 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 
 const { accessGuard } = require('./permissions');
-const { sendMail } = require('./mailer');
+const { sendMail, venueAccount } = require('./mailer');
 const { ensureMemberNumber } = require('./member_numbers');
 const loyaltySchemes = require('./loyalty_schemes');
 const { seal, unseal } = require('./express_kiosk');
@@ -777,7 +777,8 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
             subject: `${brand.name}: the app is for paid-up members`,
             text: note.text,
             html: note.html,
-            account: process.env.MENU_SMTP_USER ? 'menu' : undefined,
+            account: venueAccount(app.slug),
+        fromName: brand.name,
           }).catch(() => {});
           return res.json({ ok: true, minutes: CODE_MINUTES });
         }
@@ -790,7 +791,8 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
         subject: `${brand.name}: your sign-in code is ${code}`,
         text: mail.text,
         html: mail.html,
-        account: process.env.MENU_SMTP_USER ? 'menu' : undefined,
+        account: venueAccount(app.slug),
+        fromName: brand.name,
       }).catch(() => {});
       res.json({ ok: true, minutes: CODE_MINUTES });
     } catch (e) {

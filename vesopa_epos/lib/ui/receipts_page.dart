@@ -15,6 +15,7 @@ import '../payments/payment_provider.dart';
 import 'dojo_refund.dart';
 import 'failed_card_payments.dart';
 import 'receipt_pdf.dart';
+import 'receipt_pdf_view.dart';
 import 'refund_page.dart' show showRefund;
 import 'theme.dart';
 import 'widgets/basket_panel.dart' show money;
@@ -293,11 +294,20 @@ class _ReceiptDialog extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final detail = ref.watch(_detailProvider(id));
 
-    Future<Uint8List> pdf(ReceiptDetail r) => buildReceiptPdf(
-      r,
-      venueName: ref.read(sessionProvider).venueName,
-      branding: ref.read(brandingProvider),
-      isReprint: true,
+    // Marked a reprint, and rendered with the venue's branding — a second
+    // copy that looks identical to the original can be passed off as a second
+    // sale. One key per receipt and refund state, so print, share and the
+    // preview all use the one built document.
+    String keyFor(ReceiptDetail r) =>
+        'reprint:${r.summary.id}:${r.summary.refundedMinor}:${r.refunds.length}';
+    Future<Uint8List> pdf(ReceiptDetail r) => ReceiptPdfView.bytesFor(
+      keyFor(r),
+      () => buildReceiptPdf(
+        r,
+        venueName: ref.read(sessionProvider).venueName,
+        branding: ref.read(brandingProvider),
+        isReprint: true,
+      ),
     );
 
     return Dialog(
@@ -321,17 +331,17 @@ class _ReceiptDialog extends ConsumerWidget {
                     : () => _refund(context, ref, r),
               ),
               Expanded(
-                // Render the actual PDF, so what the clerk sees is exactly what
-                // reprints — no second "preview" layout to drift out of sync.
-                child: PdfPreview(
-                  // Marked a reprint, and rendered with the venue's branding —
-                  // a second copy that looks identical to the original can be
-                  // passed off as a second sale.
-                  build: (_) => pdf(r),
-                  allowSharing: true,
-                  canChangePageFormat: false,
-                  canChangeOrientation: false,
-                  canDebug: false,
+                // The actual PDF, so what the clerk sees is exactly what
+                // reprints. Built and drawn once per receipt (see
+                // ReceiptPdfView): PdfPreview started again on every rebuild.
+                child: ReceiptPdfView(
+                  cacheKey: keyFor(r),
+                  build: () => buildReceiptPdf(
+                    r,
+                    venueName: ref.read(sessionProvider).venueName,
+                    branding: ref.read(brandingProvider),
+                    isReprint: true,
+                  ),
                   // "The receipt PDF cannot be viewed on the computer." When
                   // the preview cannot draw it, say so and offer the file in
                   // the computer's own PDF viewer rather than a blank panel.
@@ -339,19 +349,6 @@ class _ReceiptDialog extends ConsumerWidget {
                     error: error,
                     onOpen: () => _openPdfFile(context, r, pdf),
                   ),
-                  actions: [
-                    PdfPreviewAction(
-                      icon: const Icon(Icons.print),
-                      onPressed: (_, build, format) async {
-                        await Printing.layoutPdf(onLayout: (f) => pdf(r));
-                      },
-                    ),
-                    PdfPreviewAction(
-                      icon: const Icon(Icons.open_in_new),
-                      onPressed: (context, build, format) =>
-                          _openPdfFile(context, r, pdf),
-                    ),
-                  ],
                 ),
               ),
               // How the card share was paid, as Dojo has it now: paid,
@@ -366,6 +363,22 @@ class _ReceiptDialog extends ConsumerWidget {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
+                    IconButton(
+                      tooltip: 'Print',
+                      onPressed: () => Printing.layoutPdf(
+                        onLayout: (_) => pdf(r),
+                        name: 'Receipt',
+                      ),
+                      icon: const Icon(Icons.print),
+                    ),
+                    IconButton(
+                      tooltip: 'Share',
+                      onPressed: () async => Printing.sharePdf(
+                        bytes: await pdf(r),
+                        filename: 'receipt-${r.summary.id.substring(0, 8)}.pdf',
+                      ),
+                      icon: const Icon(Icons.share),
+                    ),
                     TextButton.icon(
                       onPressed: () => _openPdfFile(context, r, pdf),
                       icon: const Icon(Icons.picture_as_pdf_outlined),

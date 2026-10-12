@@ -135,14 +135,34 @@ class _RefundPageState extends ConsumerState<RefundPage> {
   /// Summed off the receipt's own stored line values, not recalculated from
   /// today's prices: a product that has gone up since Tuesday must not change
   /// what Tuesday's customer gets back.
+  ///
+  /// Each line at its share of what was actually paid (see
+  /// [ReceiptDetail.lineValues]), so offers, discounts, vouchers and points
+  /// come off here as they did on the receipt. Picking every line still to go
+  /// back refunds exactly what is left, never a penny over or under.
   int get _refundMinor {
     final detail = _detail;
     if (detail == null) return 0;
+    final values = detail.lineValues;
     var total = 0;
+    var allOpen = true;
     for (var i = 0; i < detail.lines.length; i++) {
-      if (_picked.contains(i)) total += detail.lines[i].lineTotalMinor;
+      if (_picked.contains(i)) {
+        total += values[i];
+      } else if (!_refundedLines.contains(i)) {
+        allOpen = false;
+      }
     }
-    return total;
+    if (allOpen && _picked.isNotEmpty) return _remainingMinor;
+    return total > _remainingMinor ? _remainingMinor : total;
+  }
+
+  /// A line's refund value, with its full price beside it when an offer or
+  /// discount made the two differ.
+  String _lineValue(ReceiptDetail detail, int i) {
+    final value = detail.lineValues[i];
+    final full = detail.lines[i].lineTotalMinor;
+    return value == full ? money(value) : '${money(value)}  (was ${money(full)})';
   }
 
   /// How the sale was paid for, in words, so the clerk hands it back that way.
@@ -339,8 +359,8 @@ class _RefundPageState extends ConsumerState<RefundPage> {
                 ),
                 subtitle: Text(
                   done
-                      ? '${money(line.lineTotalMinor)}  ·  Already refunded'
-                      : money(line.lineTotalMinor),
+                      ? '${_lineValue(detail, i)}  ·  Already refunded'
+                      : _lineValue(detail, i),
                   style: done
                       ? const TextStyle(
                           color: Color(0xFFA3221A),

@@ -40,7 +40,14 @@ function onColour(hex) {
   return (0.2126 * r + 0.7152 * g + 0.0722 * b) > 150 ? '#111111' : '#ffffff';
 }
 
-const SAFE = 'Arial, "Helvetica Neue", Helvetica, sans-serif';
+// Single quotes only. This goes inside style="...", and a double quote there
+// ends the attribute: Gmail then dropped every rule after it, which took the
+// padding off the message and left the venue's name black on a black header.
+const SAFE = "Arial, 'Helvetica Neue', Helvetica, sans-serif";
+
+/** A font as separate properties, not the `font:` shorthand some clients drop. */
+const font = (weight, size, line) =>
+  `font-family:${SAFE};font-weight:${weight};font-size:${size}px;line-height:${line};`;
 
 /**
  * The shell every message sits in.
@@ -70,22 +77,22 @@ function layout(brand, { preheader = '', body = '', footerNote = '' }) {
     <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0"
            style="width:100%;max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden;">
       <tr>
-        <td style="background:${primary};padding:22px 26px;" align="left">
+        <td style="background:${primary};padding:20px 28px;" align="left">
           <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
-            ${logo ? `<td style="padding-right:12px;" valign="middle">
-              <img src="${esc(logo)}" width="40" height="40" alt=""
-                   style="display:block;width:40px;height:40px;border-radius:9px;border:0;">
+            ${logo ? `<td style="padding:0 14px 0 0;" valign="middle">
+              <img src="${esc(logo)}" width="56" height="56" alt="${name}"
+                   style="display:block;width:56px;height:56px;border:0;outline:none;text-decoration:none;">
             </td>` : ''}
             <td valign="middle">
-              <span style="font:700 19px/1.2 ${SAFE};color:${ink};">${name}</span>
+              <span style="${font(700, 20, 1.25)}color:${ink};">${name}</span>
             </td>
           </tr></table>
         </td>
       </tr>
-      <tr><td style="padding:28px 26px 8px 26px;font:400 16px/1.5 ${SAFE};color:#111111;">
+      <tr><td style="padding:28px 28px 8px 28px;${font(400, 16, 1.5)}color:#111111;">
         ${body}
       </td></tr>
-      <tr><td style="padding:18px 26px 28px 26px;font:400 13px/1.5 ${SAFE};color:#6b6b6b;">
+      <tr><td style="padding:18px 28px 28px 28px;${font(400, 13, 1.5)}color:#6b6b6b;">
         ${footerNote ? `<p style="margin:0 0 10px 0;">${esc(footerNote)}</p>` : ''}
         <p style="margin:0;">Sent by ${name} · powered by Vesopa</p>
       </td></tr>
@@ -109,7 +116,7 @@ function signInCode(brand, { code, minutes }) {
     preheader: `Your sign-in code is ${code}. It works for ${minutes} minutes.`,
     body: `
       <p style="margin:0 0 6px 0;">Your sign-in code is</p>
-      <p style="margin:0 0 6px 0;font:700 40px/1.1 ${SAFE};letter-spacing:8px;color:${primary};">${esc(code)}</p>
+      <p style="margin:0 0 6px 0;${font(700, 40, 1.1)}letter-spacing:8px;color:${primary};">${esc(code)}</p>
       <p style="margin:0 0 18px 0;color:#6b6b6b;font-size:14px;">It works for ${minutes} minutes.</p>`,
     footerNote: 'If you did not ask for this code, you can ignore this email — nobody can use it without your inbox.',
   });

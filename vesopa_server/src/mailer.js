@@ -105,7 +105,7 @@ function mailEnabled() {
  * `cc` and `replyTo` are optional, for the odd letter that is not a
  * notification: a venue's invitation copied to Vesopa's own mailboxes.
  */
-async function sendMail({ to, cc, replyTo, subject, html, text, attachments, account }) {
+async function sendMail({ to, cc, replyTo, subject, html, text, attachments, account, fromName: shownAs }) {
   // A named mailbox where one is asked for and configured, the default
   // otherwise — see the note on `transports` above.
   const named = account ? accountTransport(account) : null;
@@ -119,9 +119,12 @@ async function sendMail({ to, cc, replyTo, subject, html, text, attachments, acc
   const fromAddress = named
     ? (process.env[`${prefix}_MAIL_FROM`] || process.env[`${prefix}_SMTP_USER`])
     : FROM;
-  const fromName = named
-    ? (process.env[`${prefix}_MAIL_FROM_NAME`] || FROM_NAME)
-    : FROM_NAME;
+  // `fromName` lets a venue's own email carry the venue's name ("Pontardawe
+  // RFC") whichever mailbox sends it. Only the name: the address stays the
+  // authenticated mailbox, for SPF and DMARC. Quotes are stripped so a name
+  // cannot break out of the header.
+  const fromName = String(shownAs || '').replace(/["\r\n]/g, '').trim()
+    || (named ? (process.env[`${prefix}_MAIL_FROM_NAME`] || FROM_NAME) : FROM_NAME);
 
   try {
     await tx.sendMail({
@@ -168,4 +171,18 @@ async function verifyMail() {
   }
 }
 
-module.exports = { sendMail, verifyMail, mailEnabled };
+/**
+ * The mailbox a venue's own emails go from.
+ *
+ * A venue with its own mailbox set up on the server sends from it: for the
+ * slug `pontardawe-rfc`, LOYALTY_PONTARDAWE_RFC_SMTP_USER / _SMTP_PASSWORD
+ * (and optionally _SMTP_HOST, _SMTP_PORT, _SMTP_SECURE, _MAIL_FROM). Otherwise
+ * menu@ when that is configured, otherwise the default mailbox.
+ */
+function venueAccount(slug) {
+  const key = `LOYALTY_${String(slug || '').toUpperCase().replace(/[^A-Z0-9]+/g, '_')}`;
+  if (slug && process.env[`${key}_SMTP_USER`] && process.env[`${key}_SMTP_PASSWORD`]) return key;
+  return process.env.MENU_SMTP_USER ? 'menu' : undefined;
+}
+
+module.exports = { sendMail, verifyMail, mailEnabled, venueAccount };
