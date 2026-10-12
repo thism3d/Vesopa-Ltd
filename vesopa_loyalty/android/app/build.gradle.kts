@@ -96,6 +96,11 @@ dependencies {
     // Firebase artefact to versions known to work together.
     implementation(platform("com.google.firebase:firebase-bom:34.3.0"))
     implementation("com.google.firebase:firebase-messaging")
+    // Signing in with the phone's own sheet, no web page (AuthBridge.kt):
+    // Credential Manager for passkeys and Google accounts.
+    implementation("androidx.credentials:credentials:1.5.0")
+    implementation("androidx.credentials:credentials-play-services-auth:1.5.0")
+    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
 }
 
 flutter {

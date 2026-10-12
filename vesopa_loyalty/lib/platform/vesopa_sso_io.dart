@@ -187,11 +187,15 @@ Future<String> _exchange({
 /// what the sheet gave back ({provider: apple, id_token, name}, or
 /// {provider: passkey, credential, challenge}); auth.vesopa.com turns it into
 /// a code for this app (vesopa_auth/src/routes/native.js), swapped here for
-/// the identity token exactly as after Vesopa's page. No web page opens.
+/// the identity token exactly as after Vesopa's page. No web page opens, for
+/// anything: a second factor is asked in [secondFactor], consent in [consent].
 ///
-/// Null when the member said no to [consent]. [VesopaNeedsPage] when Vesopa
-/// must ask something only its own page can (a second factor).
-Future<VesopaAnswer?> nativeVesopaSignIn(Map<String, Object?> proof, {required VesopaConsent consent}) async {
+/// Null when the member said no or gave up.
+Future<VesopaAnswer?> nativeVesopaSignIn(
+  Map<String, Object?> proof, {
+  required VesopaConsent consent,
+  required VesopaSecondFactor secondFactor,
+}) async {
   if (_clientId.isEmpty) {
     return const VesopaAnswer(error: 'This app was built without a Vesopa sign-in.');
   }
@@ -229,6 +233,34 @@ Future<VesopaAnswer?> nativeVesopaSignIn(Map<String, Object?> proof, {required V
 
   try {
     var (status, answer) = await post({...request, ...proof});
+
+    // Two-step sign-in: the code, in the app, until it is right or they stop.
+    if (status == 409 && answer['error'] == 'second_factor_required' && answer['ticket'] != null) {
+      final ticket = answer['ticket'];
+      final methods = [for (final m in (answer['methods'] as List? ?? const [])) '$m'];
+      final hint = '${answer['phone_hint'] ?? ''}';
+      Future<bool> sendText() async {
+        final (sent, _) = await post({
+          ...request, 'ticket': ticket, 'second_factor': {'method': 'sms', 'send': true},
+        });
+        return sent == 202;
+      }
+
+      String? wrong;
+      while (true) {
+        final step = await secondFactor(methods: methods, phoneHint: hint, sendText: sendText, error: wrong);
+        if (step == null) return null;
+        (status, answer) = await post({
+          ...request, 'ticket': ticket, 'second_factor': {'method': step.method, 'code': step.code},
+        });
+        if (status == 401 && answer['error'] == 'invalid_second_factor') {
+          wrong = '${answer['error_description'] ?? 'That code is not right.'}';
+          continue;
+        }
+        break;
+      }
+    }
+
     if (status == 409 && answer['error'] == 'consent_required' && answer['ticket'] != null) {
       final scopes = [
         for (final s in (answer['scopes'] as List? ?? const []).cast<Map>())
@@ -236,9 +268,6 @@ Future<VesopaAnswer?> nativeVesopaSignIn(Map<String, Object?> proof, {required V
       ];
       if (!await consent('${answer['application'] ?? 'This app'}', scopes)) return null;
       (status, answer) = await post({...request, 'ticket': answer['ticket'], 'consent': true});
-    }
-    if (status == 409 && answer['error'] != 'consent_required') {
-      throw VesopaNeedsPage('${answer['error_description'] ?? 'Vesopa needs to ask you something first.'}');
     }
     final code = answer['code'] as String?;
     if (status != 200 || code == null) {
@@ -248,8 +277,6 @@ Future<VesopaAnswer?> nativeVesopaSignIn(Map<String, Object?> proof, {required V
     return VesopaAnswer(idToken: idToken);
   } on _Failed catch (e) {
     return VesopaAnswer(error: e.message);
-  } on VesopaNeedsPage {
-    rethrow;
   } catch (_) {
     return const VesopaAnswer(error: 'That sign-in could not be completed. Please try again.');
   }

@@ -1,3 +1,5 @@
 build/
 google-services.json
 GoogleService-Info.plist
+# Keys, .env files and console screenshots the owner keeps beside the app; never committed
+FirebaseAndAuthAndEnv/

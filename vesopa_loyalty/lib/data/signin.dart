@@ -64,7 +64,9 @@ class SignInConfig {
   /// Which way in to open on, after anything this device cannot do is dropped.
   String get leads {
     if (policy == 'password_first' && has('password')) return 'password';
-    if (policy == 'vesopa_first' && has('vesopa')) return 'vesopa';
+    // Not in a venue's own app: there Vesopa's ways in are the device's own
+    // sheets underneath, never Vesopa's web page (owner, 2026-10-12).
+    if (policy == 'vesopa_first' && has('vesopa') && !NativeAuth.enabled) return 'vesopa';
     return 'code_email';
   }
 

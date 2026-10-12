@@ -38,3 +38,11 @@ test('apple takes the venue apps by default; google takes the web client', () =>
 test("an iPhone's passkey origin (https://<rp id>) is accepted", () => {
   assert.ok(passkeyOrigins().includes('https://vesopa.com'));
 });
+
+test('a half ticket (second factor still to come) is never read as a whole one, nor the other way', () => {
+  const half = makeTicket(who, app, 'c', { half: true });
+  assert.strictEqual(readTicket(half, app, 'c'), null);
+  assert.deepStrictEqual(readTicket(half, app, 'c', { half: true }), who);
+  const whole = makeTicket(who, app, 'c');
+  assert.strictEqual(readTicket(whole, app, 'c', { half: true }), null);
+});

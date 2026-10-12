@@ -35,7 +35,9 @@ store       fills the App Store listing from <venue>/store/app_store.json and
 testflight  waits for the uploaded build to finish processing, gives it its
             "What to Test", fills TestFlight's own test information, puts it
             in the internal group (every App Store Connect user on the team,
-            added as testers) and attaches it to the App Store version.
+            added as testers), adds it to every external group (open testers)
+            and sends it to Beta App Review for them, and attaches it to the
+            App Store version.
 
 Everything is safe to run again: what is already right is left alone.
 
@@ -656,6 +658,16 @@ def set_availability(c, app_id):
         todo(f"Availability: {e.detail()}")
 
 
+def review_account(r):
+    """The reviewers' sign-in: the venue's own throwaway review member
+    (store/app_store.json review.demo_user and demo_password, made with
+    tool/make_review_member.py), else the environment's ASC_REVIEW_* secrets.
+    Only ever a test account made for Apple's reviewers, never a real member's."""
+    if r.get("demo_user") and r.get("demo_password"):
+        return r["demo_user"], r["demo_password"]
+    return os.environ.get("ASC_REVIEW_USER", ""), os.environ.get("ASC_REVIEW_PASSWORD", "")
+
+
 def set_review_details(c, version, store):
     r = store.get("review", {})
     attrs = {
@@ -665,7 +677,7 @@ def set_review_details(c, version, store):
         "contactPhone": os.environ.get("ASC_REVIEW_PHONE") or r.get("contact_phone"),
         "notes": r.get("notes"),
     }
-    user, password = os.environ.get("ASC_REVIEW_USER", ""), os.environ.get("ASC_REVIEW_PASSWORD", "")
+    user, password = review_account(r)
     if user and password:
         attrs.update(demoAccountRequired=True, demoAccountName=user, demoAccountPassword=password)
     else:
@@ -754,6 +766,28 @@ def set_screenshots(c, version_loc, venue_dir):
             todo(f"Screenshots {folder}: {e.detail()}")
 
 
+def set_beta_review_details(c, app, store):
+    """TestFlight's own review contact and sign-in, for the app. Kept the same as
+    the App Store's, so the listing and TestFlight runs both refresh it."""
+    r = store.get("review", {})
+    try:
+        detail = c.get(f"/v1/apps/{app['id']}/betaAppReviewDetail")["data"]
+        attrs = {
+            "contactFirstName": r.get("contact_first_name"),
+            "contactLastName": r.get("contact_last_name"),
+            "contactEmail": r.get("contact_email"),
+            "contactPhone": os.environ.get("ASC_REVIEW_PHONE") or r.get("contact_phone"),
+            "notes": r.get("notes"),
+        }
+        user, password = review_account(r)
+        if user and password:
+            attrs.update(demoAccountRequired=True, demoAccountName=user, demoAccountPassword=password)
+        patch_attributes(c, "betaAppReviewDetails", detail["id"], {k: val for k, val in attrs.items() if val},
+                         "TestFlight review contact")
+    except AppleError as e:
+        todo(f"TestFlight review contact: {e.detail()}")
+
+
 def cmd_store(venue_name):
     venue_dir, v, store = load_venue(venue_name)
     if not store:
@@ -801,6 +835,7 @@ def cmd_store(venue_name):
         "marketingUrl": store.get("marketing_url"),
     }, "description, keywords, promotional text, URLs")
     set_review_details(c, version, store)
+    set_beta_review_details(c, app, store)
     set_screenshots(c, vloc, venue_dir)
 
     todo("App Privacy (App Store Connect > the app > App Privacy): Apple's API cannot answer it. "
@@ -881,23 +916,7 @@ def cmd_testflight(venue_name, number):
     except AppleError as e:
         todo(f"TestFlight test information: {e.detail()}")
 
-    r = store.get("review", {})
-    try:
-        detail = c.get(f"/v1/apps/{app['id']}/betaAppReviewDetail")["data"]
-        attrs = {
-            "contactFirstName": r.get("contact_first_name"),
-            "contactLastName": r.get("contact_last_name"),
-            "contactEmail": r.get("contact_email"),
-            "contactPhone": os.environ.get("ASC_REVIEW_PHONE") or r.get("contact_phone"),
-            "notes": r.get("notes"),
-        }
-        user, password = os.environ.get("ASC_REVIEW_USER", ""), os.environ.get("ASC_REVIEW_PASSWORD", "")
-        if user and password:
-            attrs.update(demoAccountRequired=True, demoAccountName=user, demoAccountPassword=password)
-        patch_attributes(c, "betaAppReviewDetails", detail["id"], {k: val for k, val in attrs.items() if val},
-                         "TestFlight review contact")
-    except AppleError as e:
-        todo(f"TestFlight review contact: {e.detail()}")
+    set_beta_review_details(c, app, store)
 
     group = internal_group(c, app["id"], tf.get("internal_group", "Vesopa team"))
     if group:
@@ -911,6 +930,34 @@ def cmd_testflight(venue_name, number):
                 todo(f"Add the build to {group['attributes']['name']}: {e.detail()}")
         else:
             note(f"  \"{group['attributes']['name']}\" gets every build")
+
+    # External groups (open testers, public link): every build goes to each,
+    # then to Beta App Review, which Apple needs before outside testers get it.
+    try:
+        external = [g for g in c.all(f"/v1/apps/{app['id']}/betaGroups")
+                    if not g["attributes"].get("isInternalGroup")]
+    except AppleError as e:
+        external = []
+        todo(f"TestFlight external groups: {e.detail()}")
+    for g in external:
+        try:
+            c.post(f"/v1/betaGroups/{g['id']}/relationships/builds",
+                   {"data": [{"type": "builds", "id": build["id"]}]})
+            note(f"  build added to \"{g['attributes']['name']}\" (external)")
+        except AppleError as e:
+            todo(f"Add the build to {g['attributes']['name']}: {e.detail()}")
+    if external:
+        try:
+            c.post("/v1/betaAppReviewSubmissions", {"data": {
+                "type": "betaAppReviewSubmissions",
+                "relationships": {"build": {"data": {"type": "builds", "id": build["id"]}}},
+            }})
+            note("  build sent to Beta App Review for the external testers")
+        except AppleError as e:
+            if e.status == 409:
+                note(f"  Beta App Review: {e.detail()}")
+            else:
+                todo(f"Send the build to Beta App Review: {e.detail()}")
 
     # The build the App Store version will go out with, when it is submitted.
     try:

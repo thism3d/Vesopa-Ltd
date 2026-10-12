@@ -41,10 +41,17 @@
  * signed, lasts five minutes and is bound to that code_challenge. Consent is
  * only ever granted here for Vesopa's own applications.
  *
- * WHAT IS NOT DONE HERE: a second factor. An Apple or Google sign-in to an
- * account that holds one answers `second_factor_required`, and the app goes
- * through Continue with Vesopa's page, where it is asked for. A passkey is
- * already aal2.
+ * A SECOND FACTOR, IN THE APP TOO (2026-10-12: no web page at all, owner). An
+ * Apple or Google sign-in to an account that holds one answers 409
+ * `second_factor_required` with a `ticket` (signed, five minutes, bound to the
+ * code_challenge, and marked as only half way) and the `methods` it can take:
+ *
+ *   { ticket, second_factor: { method: 'totp' | 'recovery', code } }
+ *   { ticket, second_factor: { method: 'sms', send: true } }   -> 202 { sent }
+ *   { ticket, second_factor: { method: 'sms', code } }
+ *
+ * checked by the same checkSecondFactor (and rate limit) as Vesopa's page. A
+ * passkey is already aal2, so it is never asked for one.
  */
 const crypto = require('crypto');
 const express = require('express');
@@ -62,6 +69,8 @@ const { normaliseEmail, normaliseSubject, isPrivateRelay } = require('../normali
 const { accountFor } = require('./social');
 const { checkPasskey } = require('./mfa');
 const { admit, mintCode } = require('./oidc');
+const { checkSecondFactor } = require('./stepup');
+const challenges = require('../challenges');
 
 const router = express.Router();
 
@@ -98,15 +107,20 @@ function mac(body) {
   return crypto.createHmac('sha256', config.secrets.codePepper).update(`native.${body}`).digest('base64url');
 }
 
-function makeTicket(who, application, codeChallenge) {
+/**
+ * [half]: the first factor only, waiting for the second. A half ticket is
+ * never read as a whole one (and so never as consent), nor the other way.
+ */
+function makeTicket(who, application, codeChallenge, { half = false } = {}) {
   const body = Buffer.from(JSON.stringify({
     u: who.userId, m: who.amr, l: who.acr, a: application.id, c: codeChallenge,
+    ...(half ? { h: 1 } : {}),
     exp: Date.now() + TICKET_MINUTES * 60000,
   })).toString('base64url');
   return `${body}.${mac(body)}`;
 }
 
-function readTicket(raw, application, codeChallenge) {
+function readTicket(raw, application, codeChallenge, { half = false } = {}) {
   const [body, given] = String(raw || '').split('.', 2);
   if (!body || !given) return null;
   const a = Buffer.from(given);
@@ -115,6 +129,7 @@ function readTicket(raw, application, codeChallenge) {
   try {
     const t = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
     if (!t.u || t.exp < Date.now() || t.a !== application.id || t.c !== codeChallenge) return null;
+    if (Boolean(t.h) !== half) return null;
     return { userId: t.u, amr: t.m, acr: t.l };
   } catch {
     return null;
@@ -183,18 +198,88 @@ async function fromProvider(req, res, key) {
     return null;
   }
 
-  // ONE factor, as on the website (social.js signIn): somebody who holds a
-  // second one is asked for it, on Vesopa's page.
-  const held = await factors.enrolled(found.userId);
-  if (held.any) {
-    await events.recordLogin({
-      userId: found.userId, method: key, outcome: 'challenge', failureReason: 'second_factor_required',
-      ip: req.clientIp, userAgent: req.userAgent,
-    });
-    refuse(res, 409, 'second_factor_required', 'Your account has two-step sign-in, so Vesopa will ask for it.');
+  return { userId: found.userId, amr: [key], acr: 'aal1' };
+}
+
+/** What the app can ask for as the second step, for somebody who signed in with [amr]. */
+async function secondFactorMethods(userId) {
+  const held = await factors.enrolled(userId);
+  return {
+    held,
+    methods: [
+      ...(held.totp ? ['totp'] : []),
+      ...(held.sms ? ['sms'] : []),
+      ...(held.recoveryCodesLeft > 0 ? ['recovery'] : []),
+    ],
+  };
+}
+
+/** 409 second_factor_required, with a half ticket when there is a way to finish in the app. */
+async function askSecondFactor(req, res, who, application, codeChallenge, description) {
+  const { held, methods } = await secondFactorMethods(who.userId);
+  await events.recordLogin({
+    userId: who.userId, method: who.amr[0], outcome: 'challenge', failureReason: 'second_factor_required',
+    ip: req.clientIp, userAgent: req.userAgent,
+  });
+  if (!methods.length) {
+    return refuse(res, 409, 'second_factor_required', held.passkeys.length
+      ? 'Your account has two-step sign-in. Please sign in with your passkey.'
+      : 'This app needs two-step sign-in. Please add an authenticator app to your Vesopa account first.');
+  }
+  return res.status(409).json({
+    error: 'second_factor_required',
+    error_description: description,
+    methods,
+    passkey: held.passkeys.length > 0,
+    phone_hint: held.sms ? `•••${String(held.sms.identifier).slice(-3)}` : '',
+    ticket: makeTicket(who, application, codeChallenge, { half: true }),
+  });
+}
+
+/** { ticket, second_factor } -> who, both factors in; or null with the answer already sent. */
+async function finishSecondFactor(req, res, application, body) {
+  const half = readTicket(body.ticket, application, body.code_challenge, { half: true });
+  if (!half) {
+    refuse(res, 400, 'invalid_grant', 'That took too long. Please sign in again.');
     return null;
   }
-  return { userId: found.userId, amr: [key], acr: 'aal1' };
+  const step = body.second_factor && typeof body.second_factor === 'object' ? body.second_factor : {};
+  const method = String(step.method || '');
+  if (method === 'sms' && step.send === true) {
+    const { held } = await secondFactorMethods(half.userId);
+    if (!held.sms) {
+      refuse(res, 400, 'invalid_request', 'There is no number on this account we can text.');
+      return null;
+    }
+    const sent = await challenges.create({
+      channel: 'sms',
+      purpose: 'step_up',
+      destination: held.sms.identifier,
+      destinationNorm: held.sms.identifier_norm,
+      userId: half.userId,
+      ip: req.clientIp,
+      userAgent: req.userAgent,
+      force: true,
+    });
+    if (!sent.ok) {
+      refuse(res, 502, 'not_sent', 'We could not send that text. Try your authenticator app instead.');
+      return null;
+    }
+    res.status(202).json({ sent: true });
+    return null;
+  }
+  const result = await checkSecondFactor(half.userId, { method, code: step.code }, { ip: req.clientIp });
+  if (!result.ok) {
+    await events.recordLogin({
+      userId: half.userId,
+      method: method === 'totp' ? 'totp' : method === 'recovery' ? 'recovery_code' : 'sms_otp',
+      outcome: 'failure', failureReason: 'second_factor', ip: req.clientIp, userAgent: req.userAgent,
+    });
+    refuse(res, 401, 'invalid_second_factor', result.error);
+    return null;
+  }
+  const amr = [...(half.amr || []), result.method];
+  return { userId: half.userId, amr, acr: factors.acrFor(amr) };
 }
 
 router.post('/oauth/native', async (req, res, next) => {
@@ -226,7 +311,10 @@ router.post('/oauth/native', async (req, res, next) => {
     // ---- Who is this ------------------------------------------------------------
     let who;
     const provider = String(body.provider || '');
-    if (body.ticket) {
+    if (body.ticket && body.second_factor) {
+      who = await finishSecondFactor(req, res, application, body);
+      if (!who) return undefined;
+    } else if (body.ticket) {
       who = readTicket(body.ticket, application, body.code_challenge);
       if (!who) return refuse(res, 400, 'invalid_grant', 'That took too long. Please sign in again.');
     } else if (provider === 'apple' || provider === 'google') {
@@ -247,7 +335,8 @@ router.post('/oauth/native', async (req, res, next) => {
     // ---- May they use this app, and is this sign-in strong enough ---------------
     const required = await factors.requiredFor({ userId: who.userId, application, scopes: scopes.granted });
     if (!factors.meets(who.acr, required)) {
-      return refuse(res, 409, 'second_factor_required', 'This app needs two-step sign-in, so Vesopa will ask for it.');
+      return askSecondFactor(req, res, who, application, body.code_challenge,
+        'Your account has two-step sign-in. Enter your code to finish.');
     }
 
     const admitted = await admit(application, who.userId);

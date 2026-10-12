@@ -17,9 +17,10 @@
 #   3. fill the App Store listing from <venue>/store/app_store.json and upload
 #      <venue>/store/screenshots/ (tool/make_store_screenshots.py draws them)
 #   4. wait for Apple to process the build, then give it to the internal
-#      TestFlight group and attach it to the App Store version
+#      TestFlight group and every external group (sent to Beta App Review for
+#      those), and attach it to the App Store version
 #
-# Nothing is submitted for App Review. The run's summary lists anything Apple's
+# Nothing is submitted for App Review (only TestFlight's Beta App Review). The run's summary lists anything Apple's
 # API cannot do (the app record the first time, App Privacy).
 #
 # The key is in the "App Store Connect API" environment (Settings >

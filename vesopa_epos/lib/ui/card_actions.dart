@@ -182,9 +182,7 @@ Future<void> handleSwipedCard(
       // the same reader reads a bottle as reads a loyalty card, and "not a
       // card this venue uses" is true and useless when the thing in the
       // clerk's hand is a bottle. See ui/barcode_actions.dart.
-      if (!context.mounted) return;
-      final product = await handleScannedBarcode(context, ref, card.number);
-      if (product != null) {
+      Future<void> ringIt(Product product) async {
         final ring = onScannedProduct;
         if (ring != null) {
           await ring(product);
@@ -197,6 +195,32 @@ Future<void> handleSwipedCard(
             '${product.name} — go to the sale screen to ring it up.',
           );
         }
+      }
+
+      // A product that carries this barcode wins: it is on this till already,
+      // and a bottle must ring at the speed of a key.
+      final known = await productForBarcode(ref, card.number);
+      if (known != null) {
+        await ringIt(known);
+        return;
+      }
+
+      // Then a member whose card does not start with a venue prefix. Members
+      // imported from an old system, or given their member number as the
+      // card (Pontardawe RFC's 00001), hold cards like that, and their app QR
+      // and Wallet pass carry the same number. Without this the till offered
+      // to make the member's card into a product (2026-10-12).
+      final holder = await _memberHoldingCard(ref, card.number);
+      if (holder != null) {
+        if (!context.mounted) return;
+        await _loyaltyCard(context, ref, card, orderId: orderId, found: holder);
+        return;
+      }
+
+      if (!context.mounted) return;
+      final product = await handleScannedBarcode(context, ref, card.number);
+      if (product != null) {
+        await ringIt(product);
         return;
       }
       // handleScannedBarcode has already had its say wherever it offered to
@@ -315,17 +339,36 @@ Future<void> _signOnWithCard(
 // Loyalty
 // -----------------------------------------------------------------------------
 
+/// The member holding card [number] when it carries none of the venue's
+/// prefixes, or null.
+///
+/// Null too when the back office cannot be reached, and quickly: this is asked
+/// of every scan that is not a known product, so an offline till must fall
+/// through to the barcode path rather than keep the clerk waiting.
+Future<LoyaltyCustomer?> _memberHoldingCard(WidgetRef ref, String number) async {
+  try {
+    return await ref
+        .read(commerceRepositoryProvider)
+        .loyaltyByCard(number)
+        .timeout(const Duration(seconds: 4));
+  } on Object catch (_) {
+    return null;
+  }
+}
+
 Future<void> _loyaltyCard(
   BuildContext context,
   WidgetRef ref,
   SwipedCard card, {
   required String? orderId,
+  /// The member, where the caller has already looked the card up.
+  LoyaltyCustomer? found,
 }) async {
   final commerce = ref.read(commerceRepositoryProvider);
 
   final LoyaltyCustomer? member;
   try {
-    member = await commerce.loyaltyByCard(card.number);
+    member = found ?? await commerce.loyaltyByCard(card.number);
   } on Object catch (e) {
     if (!context.mounted) return;
     // Deliberately *not* "no member holds this card". The two are completely

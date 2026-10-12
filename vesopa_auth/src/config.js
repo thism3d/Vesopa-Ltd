@@ -261,6 +261,22 @@ const config = {
     ),
   },
 
+  /*
+   * Firebase email links (verify, reset, change of address, 2-step revert)
+   * land on /__/auth/action here instead of the plain firebaseapp.com page.
+   *
+   * The Web API key arrives in the link itself. It is a public key, but this
+   * server spends its own requests on whatever key it is handed, so a
+   * comma-separated list here limits it to ours. Left empty, any well-formed
+   * key is accepted — the state of the server until somebody sets it.
+   */
+  firebase: {
+    apiKeys: optional('FIREBASE_WEB_API_KEYS')
+      .split(',')
+      .map((key) => key.trim())
+      .filter(Boolean),
+  },
+
   features: {
     passkeys: flag('FEATURE_PASSKEYS', false),
     social: flag('FEATURE_SOCIAL', false),

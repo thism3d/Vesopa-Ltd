@@ -37,6 +37,8 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         PushService.ensureChannel(this)
+        // Google and passkeys from Android's own sheet (AuthBridge.kt).
+        AuthBridge(this, flutterEngine.dartExecutor.binaryMessenger)
 
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,

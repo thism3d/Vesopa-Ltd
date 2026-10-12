@@ -95,3 +95,24 @@ Copy-Item (Join-Path $app 'build\app\outputs\bundle\release\app-release.aab') (J
 Copy-Item (Join-Path $app 'build\app\outputs\flutter-apk\app-release.apk') (Join-Path $out "$name.apk") -Force
 Write-Host ""
 Write-Host "Done: $out\$name.aab (Play) and $name.apk (install directly)" -ForegroundColor Green
+
+# Firebase App Distribution (owner, 2026-10-12): when the Firebase CLI is on
+# this PC and signed in, the new build goes straight to testers. The groups
+# come from venue.json firebase_tester_groups (comma separated aliases from
+# Firebase > App Distribution > Testers & Groups); with none, the release is
+# uploaded and waits in the console for testers to be added. A failure here
+# never undoes the build above.
+$firebase = Get-Command firebase -ErrorAction SilentlyContinue
+if ($firebase -and $venue.firebase_android_app) {
+    $notes = "Pontardawe RFC $($venue.version) ($($venue.build)): sign-in with the phone's own Google and passkey sheets, two-step codes in the app."
+    $fbArgs = @('appdistribution:distribute', (Join-Path $out "$name.apk"), '--app', $venue.firebase_android_app, '--release-notes', $notes)
+    if ($venue.firebase_tester_groups) { $fbArgs += @('--groups', $venue.firebase_tester_groups) }
+    Write-Host ""
+    Write-Host "== Firebase App Distribution" -ForegroundColor Cyan
+    & firebase @fbArgs
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "Sent to Firebase App Distribution." -ForegroundColor Green
+    } else {
+        Write-Host "Firebase App Distribution did not take it (exit $LASTEXITCODE); the build itself is fine." -ForegroundColor Yellow
+    }
+}
