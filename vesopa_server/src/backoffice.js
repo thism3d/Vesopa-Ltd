@@ -10,6 +10,8 @@ const {
 } = require('./member_numbers');
 const { accessGuard } = require('./permissions');
 const loyaltySchemes = require('./loyalty_schemes');
+const receiptStatus = require('./receipt_status');
+const { receiptPdf } = require('./receipt_pdf');
 const { ALLERGENS, cleanAllergens } = require('./allergens');
 const { DIETARY, saveProductExtras } = require('./product_info');
 const { inviteToVesopa, LIVE: VESOPA_SIGN_IN, ONLY: VESOPA_ONLY } = require('./backoffice_auth');
@@ -2071,28 +2073,59 @@ function backofficeRoutes({ pool, broadcast, secret }) {
    * cannot pull another office's receipt by guessing an id; the platform admin
    * may read any.
    */
+  async function receipt(req) {
+    const email = await tenantEmail(req);
+    const [[order]] = await pool.query(
+      `SELECT * FROM epos_orders
+       WHERE id = ? AND (email = ? OR ? = 'admin')`,
+      [req.params.id, email, req.user.role]
+    );
+    if (!order) return null;
+
+    const [lines] = await pool.query(
+      `SELECT name, quantity, unit_price_minor, tax_percentage, note,
+              is_modifier
+       FROM epos_order_lines WHERE order_id = ? ORDER BY line_no`,
+      [req.params.id]
+    );
+    const [payments] = await pool.query(
+      `SELECT method, amount_minor, taken_at, reference, entry_mode
+       FROM epos_payments WHERE order_id = ?`,
+      [req.params.id]
+    );
+    // Paid, part refunded or refunded, with the refunds behind it.
+    const status = (await receiptStatus.statusFor(pool, order.email, [order])).get(order.id);
+    return { order, lines, payments, status };
+  }
+
   router.get('/receipts/:id', auth, async (req, res, next) => {
     try {
-      const email = await tenantEmail(req);
-      const [[order]] = await pool.query(
-        `SELECT * FROM epos_orders
-         WHERE id = ? AND (email = ? OR ? = 'admin')`,
-        [req.params.id, email, req.user.role]
-      );
-      if (!order) return res.status(404).json({ error: 'No such receipt' });
+      const r = await receipt(req);
+      if (!r) return res.status(404).json({ error: 'No such receipt' });
+      res.json(r);
+    } catch (e) {
+      next(e);
+    }
+  });
 
-      const [lines] = await pool.query(
-        `SELECT name, quantity, unit_price_minor, tax_percentage, note,
-                is_modifier
-         FROM epos_order_lines WHERE order_id = ? ORDER BY line_no`,
-        [req.params.id]
-      );
-      const [payments] = await pool.query(
-        `SELECT method, amount_minor, taken_at
-         FROM epos_payments WHERE order_id = ?`,
-        [req.params.id]
-      );
-      res.json({ order, lines, payments });
+  /**
+   * The same receipt as a PDF file, so it opens in any PDF reader on any
+   * computer rather than depending on the browser's print dialog. `inline`
+   * by default (it opens in a tab); `?download=1` saves it.
+   */
+  router.get('/receipts/:id/pdf', auth, async (req, res, next) => {
+    try {
+      const r = await receipt(req);
+      if (!r) return res.status(404).json({ error: 'No such receipt' });
+      const pdf = await receiptPdf(r, req.user.officeName);
+      const name = `receipt-${String(r.order.id).slice(0, 8)}.pdf`;
+      res.set({
+        'Content-Type': 'application/pdf',
+        'Content-Length': pdf.length,
+        'Content-Disposition': `${req.query.download ? 'attachment' : 'inline'}; filename="${name}"`,
+        'Cache-Control': 'private, no-store',
+      });
+      res.end(pdf);
     } catch (e) {
       next(e);
     }

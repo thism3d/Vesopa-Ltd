@@ -1829,8 +1829,9 @@ async function brNextPage() {
         <td class="muted small">${esc(String(r.id).slice(0, 8))}</td>
         <td>${r.table_number ?? '—'}</td>
         <td>${r.covers ?? '—'}</td>
-        <td>${esc(r.methods || '—')}</td>
+        <td>${esc((Array.isArray(r.methods) ? r.methods.join(', ') : r.methods) || '—')}</td>
         <td class="right">${money(r.total_minor)}</td>
+        <td class="right">${receiptBadge(r)}</td>
       </tr>`
         )
         .join('')
@@ -1843,7 +1844,7 @@ async function brNextPage() {
 
     if (!brFeed.offset) {
       $('billreport').innerHTML =
-        '<tr><td colspan="6" class="empty">No bills.</td></tr>';
+        '<tr><td colspan="7" class="empty">No bills.</td></tr>';
       feedSay('br-more', '');
     } else if (brFeed.done) {
       feedSay('br-more', `All ${brFeed.offset} bills.`);
@@ -6257,7 +6258,7 @@ async function showReceipt(id) {
   } catch (err) {
     return toast(err.message, 'error');
   }
-  const { order, lines, payments } = data;
+  const { order, lines, payments, status } = data;
 
   const linesHtml = lines
     .map(
@@ -6271,8 +6272,18 @@ async function showReceipt(id) {
 
   const paysHtml = payments
     .map(
-      (p) => `<tr><td colspan="2">${esc(p.method)}</td>
+      (p) => `<tr><td colspan="2">${esc(receiptMethod(p))}</td>
         <td class="r-line-tot">${money(p.amount_minor)}</td></tr>`
+    )
+    .join('');
+
+  // Paid, part refunded or refunded, with every refund behind it (EPOS 1.17).
+  const st = status || { status: 'paid', refunds: [], methods: [] };
+  const refundsHtml = (st.refunds || [])
+    .map(
+      (f) => `<tr class="r-refund"><td colspan="2">Refund ${date(f.at)} ${time(f.at)}${
+        f.staff_name ? ` · ${esc(f.staff_name)}` : ''}${f.reason ? ` · ${esc(f.reason)}` : ''}</td>
+        <td class="r-line-tot">−${money(f.amount_minor)}</td></tr>`
     )
     .join('');
 
@@ -6280,6 +6291,10 @@ async function showReceipt(id) {
   root.innerHTML = `
     <div class="modal-back">
       <div class="modal">
+        <div class="receipt-status st-${esc(st.status)}">
+          ${receiptBadge({ ...st, total_minor: order.total_minor })}
+          <span>${esc(receiptStatusLine({ ...st, total_minor: order.total_minor }))}</span>
+        </div>
         <div id="receipt-print" class="receipt-view">
           <h3>${esc(me?.officeName || 'Vesopa EPOS')}</h3>
           <p class="r-sub">
@@ -6294,12 +6309,15 @@ async function showReceipt(id) {
             <tr><td colspan="2">VAT</td><td class="r-line-tot">${money(order.tax_minor)}</td></tr>
             <tr class="r-tot"><td colspan="2">Total</td><td class="r-line-tot">${money(order.total_minor)}</td></tr>
             ${paysHtml}
+            ${refundsHtml}
           </table>
           <p class="r-sub" style="margin-top:14px">Thank you</p>
         </div>
         <div class="modal-actions">
           <button type="button" class="btn ghost" id="receipt-close">Close</button>
-          <button type="button" class="btn primary" id="receipt-print-btn">Print / Save PDF</button>
+          <button type="button" class="btn ghost" id="receipt-print-btn">Print</button>
+          <button type="button" class="btn ghost" id="receipt-download-btn">Download PDF</button>
+          <button type="button" class="btn primary" id="receipt-pdf-btn">Open PDF</button>
         </div>
       </div>
     </div>`;
@@ -6307,9 +6325,99 @@ async function showReceipt(id) {
   $('receipt-close').onclick = () => (root.innerHTML = '');
   $('receipt-print-btn').onclick = () => {
     document.body.classList.add('printing-receipt');
+    // Taken off after the dialog closes, not straight after print() returns:
+    // on Safari and some Windows browsers print() does not block, so the page
+    // printed (or saved) everything instead of the receipt.
+    const done = () => {
+      document.body.classList.remove('printing-receipt');
+      window.removeEventListener('afterprint', done);
+    };
+    window.addEventListener('afterprint', done);
     window.print();
-    document.body.classList.remove('printing-receipt');
   };
+  // A real PDF file from the server, so it opens in any PDF reader on any
+  // computer. "Receipt PDFs can't be viewed or opened on a computer."
+  $('receipt-pdf-btn').onclick = () => openReceiptPdf(id, false);
+  $('receipt-download-btn').onclick = () => openReceiptPdf(id, true);
+}
+
+/** Fetch /api/receipts/:id/pdf with the session and open or save it. */
+async function openReceiptPdf(id, download) {
+  // Opened before the fetch, so the browser treats it as the click's own
+  // window rather than a pop-up to block.
+  const win = download ? null : window.open('', '_blank');
+  try {
+    const res = await fetch(`/api/receipts/${encodeURIComponent(id)}/pdf`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const name = `receipt-${String(id).slice(0, 8)}.pdf`;
+    if (win) {
+      win.location.href = url;
+    } else {
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (err) {
+    if (win) win.close();
+    toast(`Could not open the receipt PDF: ${err.message}`, 'error');
+  }
+}
+
+/** "Card (Dojo)", "Cash", "Gift card". */
+function receiptMethod(p) {
+  const names = { cash: 'Cash', card: 'Card', giftcard: 'Gift card', voucher: 'Voucher', account: 'Account' };
+  const base = names[String(p.method || '').toLowerCase()] || p.method || 'Payment';
+  return p.reference && String(p.reference).startsWith('pi_') ? `${base} (Dojo)` : base;
+}
+
+const RECEIPT_STATUS = { paid: 'Paid', part_refunded: 'Part refunded', refunded: 'Refunded' };
+
+/**
+ * The right-hand side of a bill: an icon for each way it was paid (a card for
+ * Dojo, notes for cash) and a pill saying Paid, Part refunded or Refunded.
+ */
+function receiptBadge(r) {
+  const status = r.status || 'paid';
+  const methods = Array.isArray(r.methods)
+    ? r.methods
+    : String(r.methods || '').split(',').filter(Boolean);
+  const icon = (m) => {
+    const card = m === 'card';
+    const label = card ? (r.has_card ? 'Card on Dojo' : 'Card') : (RECEIPT_METHOD_LABEL[m] || m);
+    const svg = card
+      ? '<rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 9.5h19"/><path d="M6 15h4"/>'
+      : m === 'cash'
+      ? '<rect x="2.5" y="6" width="19" height="12" rx="2"/><circle cx="12" cy="12" r="2.6"/>'
+      : '<path d="M5 3h14v18l-3-2-2 2-2-2-2 2-2-2-3 2z"/>';
+    return `<span class="pay-ico${card && r.has_card ? ' dojo' : ''}" title="${esc(label)}" aria-label="${esc(label)}">` +
+      `<svg viewBox="0 0 24 24" aria-hidden="true">${svg}</svg></span>`;
+  };
+  const pill = status === 'part_refunded' && r.refunded_minor
+    ? `${money(r.refunded_minor)} refunded`
+    : RECEIPT_STATUS[status] || 'Paid';
+  return `<span class="r-badges">${methods.map(icon).join('')}` +
+    `<span class="r-pill ${esc(status)}" title="${esc(receiptStatusLine(r))}">${esc(pill)}</span></span>`;
+}
+const RECEIPT_METHOD_LABEL = { cash: 'Cash', giftcard: 'Gift card', voucher: 'Voucher', account: 'Account' };
+
+/** One sentence: what happened to this bill. */
+function receiptStatusLine(r) {
+  const status = r.status || 'paid';
+  const last = r.last_refund_at ? ` (last on ${date(r.last_refund_at)} ${time(r.last_refund_at)})` : '';
+  if (status === 'refunded') return `Refunded in full${last}. It cannot be refunded again.`;
+  if (status === 'part_refunded') {
+    const left = Math.max(0, (Number(r.total_minor) || 0) - (Number(r.refunded_minor) || 0));
+    return `${money(r.refunded_minor)} refunded${last}. ${money(left)} can still go back.`;
+  }
+  return 'Paid. Nothing refunded.';
 }
 
 // ---- Actions --------------------------------------------------------------
