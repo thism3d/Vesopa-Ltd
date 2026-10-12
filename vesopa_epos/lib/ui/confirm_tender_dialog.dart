@@ -28,6 +28,7 @@ Future<bool> confirmTender(
   required int amountMinor,
   required int dueMinor,
   bool manual = false,
+  bool separateMachine = false,
 }) async {
   final result = await showDialog<bool>(
     context: context,
@@ -39,6 +40,7 @@ Future<bool> confirmTender(
       amountMinor: amountMinor,
       dueMinor: dueMinor,
       manual: manual,
+      separateMachine: separateMachine,
     ),
   );
   return result ?? false;
@@ -50,7 +52,12 @@ class _ConfirmTenderDialog extends StatelessWidget {
     required this.amountMinor,
     required this.dueMinor,
     required this.manual,
+    this.separateMachine = false,
   });
+
+  /// Manual card taken on a card machine the till does not drive: the amount
+  /// is saved as card and nothing goes to Dojo.
+  final bool separateMachine;
 
   final TenderKind kind;
   final int amountMinor;
@@ -98,7 +105,11 @@ class _ConfirmTenderDialog extends StatelessWidget {
   String get _action => switch (kind) {
     TenderKind.cash => 'Take cash',
     TenderKind.card ||
-    TenderKind.manualCard => manual ? 'Key the card' : 'Take card',
+    TenderKind.manualCard => separateMachine
+        ? 'Save card payment'
+        : manual
+        ? 'Key the card'
+        : 'Take card',
     _ => 'Take payment',
   };
 
@@ -159,7 +170,10 @@ class _ConfirmTenderDialog extends StatelessWidget {
             if (isCard) ...[
               const SizedBox(height: 10),
               Text(
-                manual
+                separateMachine
+                    ? 'Take the card on the card machine first. This saves the '
+                          'amount as a card payment; nothing is sent to Dojo.'
+                    : manual
                     ? 'The card number is keyed rather than presented. Only do '
                           'this when the card cannot be read or the customer is '
                           'not here.'

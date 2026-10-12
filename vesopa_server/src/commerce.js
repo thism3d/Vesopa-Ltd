@@ -258,10 +258,13 @@ function commerceRoutes({ pool, broadcast, secret }) {
     // Pay on an empty check opens the payment screen, and an amount keyed
     // there is rung up as a Quick sale (schema_open_price.sql).
     allow_empty_pay: 0,
+    // Manual card goes through Dojo's keyed payment. Off: the key records a
+    // card payment taken on a separate machine (schema_manual_card.sql).
+    allow_manual_dojo: 0,
   };
 
   /** Columns a database may not have yet, dropped from a save rather than failing it. */
-  const TENDER_LATER = ['allow_empty_pay'];
+  const TENDER_LATER = ['allow_empty_pay', 'allow_manual_dojo'];
 
   const TENDER_FIELDS = Object.keys(TENDER_DEFAULTS);
 

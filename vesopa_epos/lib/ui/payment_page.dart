@@ -983,6 +983,22 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
         // card number is a different liability from a presented one.
         final manual = kind == TenderKind.manualCard;
         if (!await _confirm(kind, amount, due, manual: manual)) return;
+
+        // Manual card, by default, is a card taken on a separate card machine:
+        // the amount is saved as a card payment and nothing goes to Dojo.
+        // "The manual card button needs to take card payment without going
+        // through Dojo" (Nicki, Pontardawe going live). Back office › Tender
+        // settings › "Manual card goes through Dojo" puts it back on Dojo's
+        // keyed payment.
+        if (manual && !ref.read(tenderSettingsProvider).manualViaDojo) {
+          _record(TenderEntry(
+            kind: kind,
+            amountMinor: amount,
+            entryMode: 'manual',
+          ));
+          return;
+        }
+
         final result = await _takeCard(amount, manual: manual);
         if (result == null) return;
 
@@ -1125,6 +1141,8 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
       amountMinor: amountMinor,
       dueMinor: dueMinor,
       manual: manual,
+      separateMachine: kind == TenderKind.manualCard &&
+          !ref.read(tenderSettingsProvider).manualViaDojo,
     );
   }
 
