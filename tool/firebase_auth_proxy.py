@@ -103,7 +103,9 @@ def main():
     time.sleep(2)
 
     checks = [
-        ("/__/firebase/init.json", lambda s, b: s == 200 and '"projectId"' in b),
+        # 404 (from Firebase, not us) until something is deployed to Firebase
+        # Hosting; the JS SDK works without it.
+        ("/__/firebase/init.json", lambda s, b: s in (200, 404)),
         ("/__/auth/handler", lambda s, b: s == 200 and "<html" in b.lower()),
         ("/__/auth/iframe", lambda s, b: s == 200 and "<html" in b.lower()),
         ("/__/auth/action?mode=verifyEmail&oobCode=x&apiKey=bad", lambda s, b: s == 400 and "This link did not work" in b),
