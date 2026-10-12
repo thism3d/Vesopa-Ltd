@@ -5,3 +5,5 @@ Member cards and app QR codes: a member card, Wallet pass or app QR code whose n
 Barcode scanners: products are still found first, so scanning stock at the bar is as quick as before.
 
 Closing the till: Exit application now closes the till straight away, instead of leaving a frozen screen while it shuts down.
+
+Connection: works on computers that have not yet downloaded the security certificates our servers use, which could stop the app reaching the back office.

@@ -35,6 +35,7 @@ import 'ui/connect_page.dart';
 import 'ui/display_page.dart';
 import 'ui/settings_page.dart';
 import 'ui/theme.dart';
+import 'data/trusted_roots.dart';
 
 /// [args] is the command line, which on Windows is how a deep link arrives:
 /// the runner passes it straight through, so following `com.vesopa.display:`
@@ -44,6 +45,8 @@ import 'ui/theme.dart';
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Before any request: see data/trusted_roots.dart.
+  trustOurServerRoots();
 
   // Whether somebody arrived here deliberately. A screen opened from a link is
   // one somebody is setting up right now, so it opens with its settings in

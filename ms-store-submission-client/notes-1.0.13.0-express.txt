@@ -1,3 +1,5 @@
 Version 1.0.13.0 - Faster exit
 
 Exit now closes the kiosk straight away, instead of leaving a frozen screen while it shuts down.
+
+Connection: works on computers that have not yet downloaded the security certificates our servers use, which could stop the app reaching the back office.
