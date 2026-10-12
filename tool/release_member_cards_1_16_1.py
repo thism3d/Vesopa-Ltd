@@ -6,9 +6,9 @@
 Run from the repository root on the owner's Windows PC, after
 `git pull origin main`. Only the apps changed, so there is no deploy step:
 
-  build       flutter build windows + msix:create --store for Kitchen 1.7.6.0,
-              Display 1.6.21.0 and Express 1.0.13.0. EPOS ships as 1.16.2.0
-              with tool/release_refunds_1_16_2.py, which carries all of this
+  build       flutter build windows + msix:create --store for Kitchen 1.7.6.0
+              and Express 1.0.13.0. EPOS (1.16.3.0) and Display (1.6.22.0)
+              ship with tool/release_dojo_1_16_3.py, which carries all of this
   store       stage and commit each to the Microsoft Store, publishing
               automatically once certified (owner chose this 2026-10-08)
   installers  tool/build-installers.ps1 -Publish: their EXE installers, on
@@ -28,8 +28,6 @@ APPS = [
     # store key, folder, version, msix, notes
     ("vesopa-kitchen", "vesopa_epos_kitchen", "1.7.6.0",
      "vesopa_epos_kitchen/build/store/vesopa-kitchen-store.msix", "notes-1.7.6.0-kitchen.txt"),
-    ("vesopa-display", "vesopa_epos_display", "1.6.21.0",
-     "vesopa_epos_display/build/store/vesopa-display-store.msix", "notes-1.6.21.0-display.txt"),
     ("vesopa-express", "vesopa_express", "1.0.13.0",
      "vesopa_express/build/store/vesopa-express-store.msix", "notes-1.0.13.0-express.txt"),
 ]
@@ -121,11 +119,11 @@ def main():
         # -Command, not -File: -File hands "till,display" over as one string,
         # which the installer script's list of apps refuses.
         run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
-             "& .\\tool\\build-installers.ps1 -Publish -Apps kitchen,display,express"
+             "& .\\tool\\build-installers.ps1 -Publish -Apps kitchen,express"
              " -Notes 'Member cards without the card prefix find the member; Exit closes at once'"],
             step="EXE installers to admin.vesopa.com/downloads")
 
-    print("\n✓ Done. Kitchen 1.7.6.0, Display 1.6.21.0 and Express 1.0.13.0"
+    print("\n✓ Done. Kitchen 1.7.6.0 and Express 1.0.13.0"
           " are with Microsoft and publish themselves once certified, and the installers"
           " are on admin.vesopa.com/downloads.")
 
