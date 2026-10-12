@@ -47,6 +47,13 @@ dependencies:
   web: ^1.1.1
   # A member's own photograph, from the camera or the gallery.
   image_picker: ^1.1.2
+  # Encodes the cropped photo as a JPEG (lib/ui/photo_crop.dart). The crop
+  # itself is drawn by Flutter; this is only the encoder, pure Dart, so it is
+  # the same on a phone, Windows and in a browser.
+  image: ^4.3.0
+  # The app's version and build under Settings > About, as the stores see it
+  # (a venue build has its own, from its venue.json).
+  package_info_plus: ^10.2.1
   # The card page turns the screen right up while the QR code is showing, as
   # airline and coffee-shop apps do; no browser can, so the web app does not.
   screen_brightness: ^2.1.3
