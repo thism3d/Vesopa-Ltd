@@ -69,6 +69,9 @@ tL4ndQavEi51mI38AjEAi/V3bNTIZargCyzuFJ0nN6T5U6VR5CmD1/iQMVtCnwr1
 -----END CERTIFICATE-----
 ''';
 
+/// The two roots, for a test that builds its own context.
+const pemsForTest = [_isrgRootX1, _isrgRootX2];
+
 /// Call once at start-up, before the first request.
 void trustOurServerRoots() {
   for (final pem in const [_isrgRootX1, _isrgRootX2]) {
