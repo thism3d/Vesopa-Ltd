@@ -48,10 +48,10 @@ class SignInConfig {
 
   /// Whether this device can perform a method at all.
   ///
-  /// Passkeys are the only one that differs by platform. WebAuthn is a browser
-  /// API: there is no Dart or Win32 equivalent to fall back to, so the Windows,
-  /// Android and iOS builds simply do not offer it and use the other methods.
-  /// That is a real limit, not a gap left to fill in later.
+  /// Passkeys are the only one that differs by platform: a browser has
+  /// WebAuthn, and a venue's own app on an iPhone, iPad or Android phone has
+  /// the device's own sheets (NativeAuth). The Windows build and the shared
+  /// Store app have neither, and use the other methods.
   static bool deviceCan(String method) {
     if (method == 'passkey') return kIsWeb || NativeAuth.enabled;
     return true;

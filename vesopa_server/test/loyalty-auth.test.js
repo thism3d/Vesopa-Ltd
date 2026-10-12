@@ -78,7 +78,9 @@ function venueDb(customers, apps) {
     query: async (sql, params) => {
       queries.push(sql);
       if (/vesopa_sub = \?/.test(sql)) return [customers.filter((c) => c.vesopa_sub === params[0])];
-      if (/WHERE email = \?/.test(sql)) return [customers.filter((c) => c.email === params[0])];
+      if (/WHERE LOWER\(TRIM\(email\)\) = \?/.test(sql)) {
+        return [customers.filter((c) => String(c.email || '').trim().toLowerCase() === params[0])];
+      }
       if (/FROM epos_loyalty_app/.test(sql)) {
         return [apps.filter((a) => a.enabled && params[0].includes(a.office))];
       }

@@ -40,6 +40,7 @@ const choose = require('./routes/choose');
 const appapi = require('./routes/appapi');
 const native = require('./routes/native');
 const deletionRoutes = require('./routes/deletion');
+const memberPasskeys = require('./routes/member_passkeys');
 const deletion = require('./deletion');
 const firebaseAction = require('./routes/firebase_action');
 
@@ -174,6 +175,7 @@ app.get('/.well-known/security.txt', (req, res) => {
 app.use('/', firebaseAction);
 app.use('/', appapi);
 app.use('/', deletionRoutes);
+app.use('/', memberPasskeys);
 app.use('/', oidc);
 app.use('/', native);
 app.use('/', social);

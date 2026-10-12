@@ -202,22 +202,32 @@ class _SignInPageState extends ConsumerState<SignInPage> {
   /// made for this venue's own sign-in (an older one, on loyalty.vesopa.com)
   /// is tried when there is no Vesopa one on the device.
   Future<void> _signInWithVesopaPasskey() => _run(() async {
+    final api = ref.read(apiProvider);
+    Future<void> venuePasskey() async {
+      final venue = await passkeyGet(await api.passkeyOptions());
+      final token = await api.signInWithPasskey(
+        challenge: venue.challenge,
+        credential: venue.credential,
+        platform: ref.read(configProvider).platform,
+      );
+      await ref.read(sessionProvider.notifier).signedIn(token);
+    }
+
+    // A passkey added on this device from Account > Signing in is the venue's
+    // own: ask for that one first (lib/platform/passkey.dart says why).
+    if (_config.usable.contains('passkey') && await venuePasskeyHere()) {
+      try {
+        return await venuePasskey();
+      } on NativeAuthError catch (e) {
+        if (e.code != 'none') rethrow;
+      }
+    }
     final options = await vesopaPasskeyOptions();
     final PasskeyResult result;
     try {
       result = await NativeAuth.passkeyGet(options);
     } on NativeAuthError catch (e) {
-      if (e.code == 'none' && _config.usable.contains('passkey')) {
-        final api = ref.read(apiProvider);
-        final venue = await passkeyGet(await api.passkeyOptions());
-        final token = await api.signInWithPasskey(
-          challenge: venue.challenge,
-          credential: venue.credential,
-          platform: ref.read(configProvider).platform,
-        );
-        await ref.read(sessionProvider.notifier).signedIn(token);
-        return;
-      }
+      if (e.code == 'none' && _config.usable.contains('passkey')) return venuePasskey();
       rethrow;
     }
     await _nativeVesopa(

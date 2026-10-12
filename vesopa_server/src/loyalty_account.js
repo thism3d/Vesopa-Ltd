@@ -37,6 +37,8 @@ const express = require('express');
 const auth = require('./loyalty_auth');
 const social = require('./loyalty_social');
 const { cleanPhone, postcoderSend, postcoderVerify } = require('./dinein_otp');
+const { passkeyProvider } = require('./passkey_providers');
+const vesopaPasskeys = require('./vesopa_member_passkeys');
 
 /** How long a texted code stands, matching the emailed one. */
 const SMS_MINUTES = 10;
@@ -58,6 +60,41 @@ function deviceLabel(platform, userAgent) {
   const browser = /Edg\//.test(ua) ? 'Edge' : /CriOS|Chrome\//.test(ua) ? 'Chrome' : /FxiOS|Firefox\//.test(ua) ? 'Firefox'
     : /Safari\//.test(ua) ? 'Safari' : 'A web browser';
   return device ? `${browser} on ${device}` : (browser === 'A web browser' ? null : browser);
+}
+
+/**
+ * A passkey as the account page shows it: what it is called, where it lives
+ * ("iCloud Keychain"), what it was added on ("iPhone"), and when.
+ *
+ * `kind` says which sign-in it belongs to: `venue` for one made for this
+ * venue's own sign-in, `vesopa` for one on the member's Vesopa account.
+ */
+function passkeyRow(k) {
+  const device = k.device || null;
+  return {
+    id: k.id,
+    kind: 'venue',
+    name: k.name || null,
+    provider: passkeyProvider(k.aaguid, device),
+    device,
+    synced: k.backed_up == null ? null : !!Number(k.backed_up),
+    created_at: k.created_at,
+    last_used_at: k.last_used_at || null,
+  };
+}
+
+/** One from auth.vesopa.com (vesopa_auth/src/routes/member_passkeys.js), the same shape. */
+function vesopaPasskeyRow(k) {
+  return {
+    id: `vesopa:${k.id}`,
+    kind: 'vesopa',
+    name: k.name && k.name !== 'Passkey' ? k.name : null,
+    provider: passkeyProvider(k.aaguid, k.device),
+    device: k.device || null,
+    synced: k.backup_state == null ? null : !!Number(k.backup_state),
+    created_at: k.created_at,
+    last_used_at: k.last_used_at || null,
+  };
 }
 
 module.exports = function loyaltyAccountRoutes(deps) {
@@ -117,7 +154,7 @@ module.exports = function loyaltyAccountRoutes(deps) {
       }
       const [[customer]] = await pool.query(
         `SELECT id, password_hash FROM epos_customers
-          WHERE email_key = ? AND LOWER(email) = ? ORDER BY created_at LIMIT 1`,
+          WHERE email_key = ? AND LOWER(TRIM(email)) = ? ORDER BY created_at LIMIT 1`,
         [app.office, email]
       );
       // Always spends the bcrypt time, member or not.
@@ -199,7 +236,8 @@ module.exports = function loyaltyAccountRoutes(deps) {
 
       const [[customer]] = await pool.query(
         `SELECT id FROM epos_customers
-          WHERE email_key = ? AND phone = ? AND phone_verified_at IS NOT NULL LIMIT 1`,
+          WHERE email_key = ? AND phone = ? AND phone_verified_at IS NOT NULL
+          ORDER BY created_at LIMIT 1`,
         [app.office, phone]
       );
       if (customer) {
@@ -245,7 +283,8 @@ module.exports = function loyaltyAccountRoutes(deps) {
 
       const [[customer]] = await pool.query(
         `SELECT id FROM epos_customers
-          WHERE email_key = ? AND phone = ? AND phone_verified_at IS NOT NULL LIMIT 1`,
+          WHERE email_key = ? AND phone = ? AND phone_verified_at IS NOT NULL
+          ORDER BY created_at LIMIT 1`,
         [app.office, phone]
       );
       if (!customer) return res.status(400).json({ error: 'That code is not right. Please try again.' });
@@ -311,7 +350,7 @@ module.exports = function loyaltyAccountRoutes(deps) {
       }
 
       let [[customer]] = await pool.query(
-        'SELECT id FROM epos_customers WHERE email_key = ? AND vesopa_sub = ? LIMIT 1',
+        'SELECT id FROM epos_customers WHERE email_key = ? AND vesopa_sub = ? ORDER BY created_at LIMIT 1',
         [app.office, String(claims.sub)]
       );
       if (!customer) customer = await customerByEmail(pool, app.office, email);
@@ -457,11 +496,15 @@ module.exports = function loyaltyAccountRoutes(deps) {
         [req.customerId, req.office]
       );
       if (!c) return res.status(404).json({ error: 'Your membership could not be found.' });
+      // SELECT *: aaguid, device and backed_up arrive with
+      // schema_loyalty_passkey_devices.sql, and a server without them yet
+      // still lists the passkeys (passkeyRow reads what is there).
       const [keys] = await pool.query(
-        `SELECT id, name, created_at, last_used_at FROM epos_loyalty_passkeys
+        `SELECT * FROM epos_loyalty_passkeys
           WHERE office = ? AND customer_id = ? AND revoked_at IS NULL ORDER BY created_at`,
         [req.office, req.customerId]
       );
+      const vesopaKeys = c.vesopa_sub ? await vesopaPasskeys.listVesopaPasskeys(c.vesopa_sub) : null;
       const [devices] = await pool.query(
         `SELECT id, platform, user_agent, created_at, last_seen_at FROM epos_loyalty_app_sessions
           WHERE office = ? AND customer_id = ? AND revoked_at IS NULL ORDER BY last_seen_at DESC`,
@@ -478,7 +521,10 @@ module.exports = function loyaltyAccountRoutes(deps) {
         phone_verified: !!c.phone_verified_at,
         has_password: !!c.password_set_at,
         vesopa_linked: !!c.vesopa_sub,
-        passkeys: keys,
+        passkeys: [
+          ...keys.map(passkeyRow),
+          ...(vesopaKeys || []).map(vesopaPasskeyRow),
+        ],
         devices: devices.map(({ user_agent: ua, ...d }) => ({
           ...d, label: deviceLabel(d.platform, ua), current: d.id === req.sessionId,
         })),
@@ -659,8 +705,14 @@ module.exports = function loyaltyAccountRoutes(deps) {
         'SELECT id FROM epos_customers WHERE id = ? AND email_key = ?', [req.customerId, req.office]
       );
       if (!c) return res.status(404).json({ error: 'Your membership could not be found.' });
+      // Where it was added, in the words the devices list uses: this
+      // session's platform and the User-Agent of the request making it.
+      const [[session]] = await pool.query(
+        'SELECT platform FROM epos_loyalty_app_sessions WHERE id = ?', [req.sessionId]
+      );
+      const device = deviceLabel(session ? session.platform : 'web', req.headers['user-agent']);
       const result = await auth.saveRegistration(pool, {
-        office: req.office, customer: c, body: req.body || {}, name: (req.body || {}).name, env: passkeyEnv(req),
+        office: req.office, customer: c, body: req.body || {}, name: (req.body || {}).name, device, env: passkeyEnv(req),
       });
       if (result.error) return res.status(400).json({ error: result.error });
       res.json({ ok: true });
@@ -671,6 +723,19 @@ module.exports = function loyaltyAccountRoutes(deps) {
 
   router.delete('/loyalty/v1/me/passkeys/:id', requireCustomer, async (req, res, next) => {
     try {
+      const id = String(req.params.id);
+      // One on the member's Vesopa account: auth removes it (see
+      // src/vesopa_member_passkeys.js), for the account linked to THIS
+      // membership and no other.
+      if (id.startsWith('vesopa:')) {
+        const [[c]] = await pool.query(
+          'SELECT vesopa_sub FROM epos_customers WHERE id = ? AND email_key = ?', [req.customerId, req.office]
+        );
+        if (!c || !c.vesopa_sub) return res.status(404).json({ error: 'That passkey could not be found.' });
+        const result = await vesopaPasskeys.removeVesopaPasskey(c.vesopa_sub, id.slice('vesopa:'.length));
+        if (result.error) return res.status(409).json({ error: result.error });
+        return res.json({ ok: true });
+      }
       await pool.execute(
         `UPDATE epos_loyalty_passkeys SET revoked_at = NOW()
           WHERE id = ? AND office = ? AND customer_id = ? AND revoked_at IS NULL`,
@@ -698,3 +763,5 @@ module.exports = function loyaltyAccountRoutes(deps) {
   return router;
 };
 module.exports.deviceLabel = deviceLabel;
+module.exports.passkeyRow = passkeyRow;
+module.exports.vesopaPasskeyRow = vesopaPasskeyRow;
