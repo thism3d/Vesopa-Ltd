@@ -4,6 +4,7 @@
     python tool/deploy_pontardawe_app.py --apply    # do it
     python tool/deploy_pontardawe_app.py --apply --no-web   # without the web app
     python tool/deploy_pontardawe_app.py --audiences        # only auth's Google client ids
+    python tool/deploy_pontardawe_app.py --auth             # only auth.vesopa.com's files (step 4)
     python tool/deploy_pontardawe_app.py --android          # only the Android passkey links (below)
     python tool/deploy_pontardawe_app.py --android-check    # print the fingerprints it would use
 
@@ -403,6 +404,33 @@ def audiences_only(client):
     print(f"   {'ok ' if st == 200 else 'BAD'} auth health ({st})")
 
 
+def deploy_auth(client, stamp):
+    """Auth's files (AUTH_FILES), backed up, npm test on the server before the restart."""
+    backup = f"{BACKUPS}/{AUTH_DOMAIN}-{stamp}.tgz"
+    st, _ = sh(client, f"tar -czf {backup} -C {AUTH} --exclude=./node_modules --exclude=./logs . && chmod 600 {backup}")
+    if st != 0:
+        raise SystemExit("! auth backup failed; auth was not changed")
+    print(f"   backup {backup}")
+    sftp = client.open_sftp()
+    try:
+        for f in AUTH_FILES:
+            sftp.put(str(ROOT / f), posixpath.join(AUTH, f[len("vesopa_auth/"):]))
+    finally:
+        sftp.close()
+    sh(client, f"chown -R {USER}:{USER} {AUTH}/src {AUTH}/test {AUTH}/package.json", quiet=True)
+    st, out = sh(client, f"su - {USER} -c 'cd {AUTH} && {NODE} npm test 2>&1 | tail -12'", quiet=True)
+    if not re.search(r"^\s*(#|ℹ) fail 0\s*$", out, re.M):
+        print("    " + out.strip().replace("\n", "\n    "))
+        back = " ".join("./" + f[len("vesopa_auth/"):] for f in AUTH_FILES if f != "vesopa_auth/test/native.test.js")
+        sh(client, f"tar -xzf {backup} -C {AUTH} {back}; rm -f {AUTH}/test/native.test.js", quiet=True)
+        raise SystemExit("! auth tests failed on the server: its files were put back, auth NOT restarted")
+    print("   npm test passes on the server")
+    google_audiences(client, stamp)
+    st, _ = sh(client, PM2.format(f"restart {AUTH_DOMAIN} --update-env") + " >/dev/null && echo '   restarted'")
+    if st != 0:
+        raise SystemExit(f"! pm2 restart failed; roll back with: tar -xzf {backup} -C {AUTH}")
+
+
 def main():
     apply = "--apply" in sys.argv
     if "--android-check" in sys.argv:
@@ -418,6 +446,21 @@ def main():
         client = vesopa_ssh.connect()
         try:
             android_only(client, prints)
+        finally:
+            client.close()
+        return
+    if "--auth" in sys.argv:
+        client = vesopa_ssh.connect()
+        try:
+            stamp = time.strftime("%Y%m%d-%H%M%S")
+            sh(client, f"mkdir -p {BACKUPS}", quiet=True)
+            print(f"== {AUTH_DOMAIN}")
+            deploy_auth(client, stamp)
+            time.sleep(6)
+            st, _, body = post_json(f"https://{AUTH_DOMAIN}/oauth/native", {"client_id": CLIENT_ID})
+            print(f"   POST /oauth/native answers {st}: {body[:80]}")
+            st, _, _ = fetch(f"https://{AUTH_DOMAIN}/health")
+            print(f"   {'ok ' if st == 200 else 'BAD'} auth health ({st})")
         finally:
             client.close()
         return
@@ -474,29 +517,7 @@ def main():
         deploy_memberships.backoffice()
 
         print(f"\n== 4. {AUTH_DOMAIN}")
-        backup = f"{BACKUPS}/{AUTH_DOMAIN}-{stamp}.tgz"
-        st, _ = sh(client, f"tar -czf {backup} -C {AUTH} --exclude=./node_modules --exclude=./logs . && chmod 600 {backup}")
-        if st != 0:
-            raise SystemExit("! auth backup failed; auth was not changed")
-        print(f"   backup {backup}")
-        sftp = client.open_sftp()
-        try:
-            for f in AUTH_FILES:
-                sftp.put(str(ROOT / f), posixpath.join(AUTH, f[len("vesopa_auth/"):]))
-        finally:
-            sftp.close()
-        sh(client, f"chown -R {USER}:{USER} {AUTH}/src {AUTH}/test {AUTH}/package.json", quiet=True)
-        st, out = sh(client, f"su - {USER} -c 'cd {AUTH} && {NODE} npm test 2>&1 | tail -12'", quiet=True)
-        if not re.search(r"^\s*(#|ℹ) fail 0\s*$", out, re.M):
-            print("    " + out.strip().replace("\n", "\n    "))
-            back = " ".join("./" + f[len("vesopa_auth/"):] for f in AUTH_FILES if f != "vesopa_auth/test/native.test.js")
-            sh(client, f"tar -xzf {backup} -C {AUTH} {back}; rm -f {AUTH}/test/native.test.js", quiet=True)
-            raise SystemExit("! auth tests failed on the server: its files were put back, auth NOT restarted")
-        print("   npm test passes on the server")
-        google_audiences(client, stamp)
-        st, _ = sh(client, PM2.format(f"restart {AUTH_DOMAIN} --update-env") + " >/dev/null && echo '   restarted'")
-        if st != 0:
-            raise SystemExit(f"! pm2 restart failed; roll back with: tar -xzf {backup} -C {AUTH}")
+        deploy_auth(client, stamp)
 
         print(f"\n== 5. {RP_DOMAIN}/.well-known/apple-app-site-association")
         well_known(client, stamp, android_prints())
