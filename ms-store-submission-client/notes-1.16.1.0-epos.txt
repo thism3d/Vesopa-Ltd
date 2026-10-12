@@ -3,3 +3,5 @@ Version 1.16.1.0 - Member cards and QR codes
 Member cards and app QR codes: a member card, Wallet pass or app QR code whose number does not start with your card prefix now finds the member, instead of offering to add it as a product. This covers members brought in from an older system and cards numbered with the member number.
 
 Barcode scanners: products are still found first, so scanning stock at the bar is as quick as before.
+
+Closing the till: Exit application now closes the till straight away, instead of leaving a frozen screen while it shuts down.

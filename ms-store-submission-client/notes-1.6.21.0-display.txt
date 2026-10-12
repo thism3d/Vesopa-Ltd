@@ -1,0 +1,3 @@
+Version 1.6.21.0 - Faster exit
+
+Exit now closes the customer display straight away, instead of leaving a frozen screen while it shuts down.

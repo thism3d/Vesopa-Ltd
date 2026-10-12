@@ -8,6 +8,7 @@ import 'licence_panel.dart';
 import '../data/providers.dart';
 import '../data/screen_profile.dart';
 import 'branding_page.dart';
+import 'quit.dart';
 import 'theme.dart';
 import 'theme_controller.dart';
 
@@ -345,15 +346,7 @@ class _SettingsSheet extends ConsumerWidget {
 
     if (quit != true) return;
 
-    // destroy(), not close(): the window was made unclosable at startup and a
-    // close request against it is simply ignored. destroy() tears it down
-    // regardless, and exit(0) is the backstop if the platform channel is not
-    // there for any reason.
-    try {
-      await windowManager.destroy();
-    } catch (_) {
-      exit(0);
-    }
+    await quitNow();
   }
 
   static String _describe(

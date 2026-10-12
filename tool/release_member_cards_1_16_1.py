@@ -1,15 +1,16 @@
-"""Release member cards with no venue prefix (2026-10-12): Store, installers.
+"""Release member cards with no venue prefix and the quick Exit (2026-10-12).
 
     python tool/release_member_cards_1_16_1.py              # everything, in order
     python tool/release_member_cards_1_16_1.py --from store # pick up at a step
 
 Run from the repository root on the owner's Windows PC, after
-`git pull origin main`. Only the till changed, so there is no deploy step:
+`git pull origin main`. Only the apps changed, so there is no deploy step:
 
-  build       flutter build windows + msix:create --store for EPOS 1.16.1.0
-  store       stage and commit it to the Microsoft Store, publishing
+  build       flutter build windows + msix:create --store for EPOS 1.16.1.0,
+              Kitchen 1.7.6.0, Display 1.6.21.0 and Express 1.0.13.0
+  store       stage and commit each to the Microsoft Store, publishing
               automatically once certified (owner chose this 2026-10-08)
-  installers  tool/build-installers.ps1 -Publish: the till's EXE installer, on
+  installers  tool/build-installers.ps1 -Publish: their EXE installers, on
               admin.vesopa.com/downloads, ready to choose under Versions
 """
 import os
@@ -25,6 +26,12 @@ STORE = ROOT / "ms-store-submission-client"
 APPS = [
     # store key, folder, version, msix, notes
     ("vesopa-epos", "vesopa_epos", "1.16.1.0", "vesopa_epos/build/store/vesopa-epos-store.msix", "notes-1.16.1.0-epos.txt"),
+    ("vesopa-kitchen", "vesopa_epos_kitchen", "1.7.6.0",
+     "vesopa_epos_kitchen/build/store/vesopa-kitchen-store.msix", "notes-1.7.6.0-kitchen.txt"),
+    ("vesopa-display", "vesopa_epos_display", "1.6.21.0",
+     "vesopa_epos_display/build/store/vesopa-display-store.msix", "notes-1.6.21.0-display.txt"),
+    ("vesopa-express", "vesopa_express", "1.0.13.0",
+     "vesopa_express/build/store/vesopa-express-store.msix", "notes-1.0.13.0-express.txt"),
 ]
 STEPS = ["build", "store", "installers"]
 
@@ -114,12 +121,13 @@ def main():
         # -Command, not -File: -File hands "till,display" over as one string,
         # which the installer script's list of apps refuses.
         run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
-             "& .\\tool\\build-installers.ps1 -Publish -Apps till"
-             " -Notes 'Member cards and app QR codes without the card prefix find the member'"],
+             "& .\\tool\\build-installers.ps1 -Publish -Apps till,kitchen,display,express"
+             " -Notes 'Member cards without the card prefix find the member; Exit closes at once'"],
             step="EXE installers to admin.vesopa.com/downloads")
 
-    print("\n✓ Done. EPOS 1.16.1.0 is with Microsoft and publishes itself once certified,"
-          " and its installer is on admin.vesopa.com/downloads.")
+    print("\n✓ Done. EPOS 1.16.1.0, Kitchen 1.7.6.0, Display 1.6.21.0 and Express 1.0.13.0"
+          " are with Microsoft and publish themselves once certified, and the installers"
+          " are on admin.vesopa.com/downloads.")
 
 
 if __name__ == "__main__":
