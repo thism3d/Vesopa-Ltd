@@ -1,0 +1,113 @@
+<%- include('partials/head') %>
+
+<%
+  /*
+   * One page for every Firebase email link. src/routes/firebase_action.js
+   * explains why the GET only shows what will happen and the button does it.
+   *
+   * The link's own fields travel in hidden inputs so the POST can act on the
+   * same code; the code is single-use and short-lived, so carrying it in the
+   * form is no worse than carrying it in the URL it arrived in.
+   */
+  const copy = {
+    verifyEmail: {
+      heading: 'Confirm your email',
+      ask: 'Confirm that this address is yours.',
+      button: 'Confirm email',
+      doneHeading: 'Email confirmed',
+      doneText: 'Thank you. Your address is confirmed and you can go back to the app.',
+    },
+    resetPassword: {
+      heading: 'Choose a new password',
+      ask: 'Choose a new password for',
+      button: 'Save password',
+      doneHeading: 'Password changed',
+      doneText: 'Your new password is set. Sign in with it in the app.',
+    },
+    recoverEmail: {
+      heading: 'Undo the change of email',
+      ask: 'Put this sign-in address back on your account.',
+      button: 'Put my email back',
+      doneHeading: 'Your email is back',
+      doneText: 'If you did not ask for the change, reset your password in the app now, because somebody else may know it.',
+    },
+    verifyAndChangeEmail: {
+      heading: 'Confirm your new email',
+      ask: 'Use this address to sign in from now on.',
+      button: 'Confirm new email',
+      doneHeading: 'Email changed',
+      doneText: 'Sign in with your new address from now on.',
+    },
+    revertSecondFactorAddition: {
+      heading: 'Remove the new sign-in step',
+      ask: 'A second sign-in step was added to your account. If it was not you, remove it here.',
+      button: 'Remove it',
+      doneHeading: 'Second step removed',
+      doneText: 'It has been taken off your account. Reset your password in the app too, in case somebody else knows it.',
+    },
+  }[stage] || null;
+%>
+
+<main class="signin">
+  <a class="signin-mark" href="/" aria-label="Vesopa">
+    <img src="/brand/icon-192.png" alt="" width="44" height="44">
+  </a>
+
+  <% if (stage === 'error' || !copy) { %>
+    <h1 class="signin-hi">This link did not work</h1>
+    <div class="form-error" role="alert"><%= error %></div>
+  <% } else if (done) { %>
+    <h1 class="signin-hi"><%= copy.doneHeading %></h1>
+    <div class="notice-good" role="status"><%= copy.doneText %></div>
+  <% } else { %>
+    <h1 class="signin-hi"><%= copy.heading %></h1>
+
+    <p class="signin-sub">
+      <%= copy.ask %>
+      <% if (newEmail) { %><b><%= newEmail %></b><% } else if (email) { %><b><%= email %></b><% } %>
+    </p>
+
+    <div class="form-error" role="alert" aria-live="polite" id="form-error"><%= error || '' %></div>
+
+    <form method="post" action="/__/auth/action" class="signin-form" novalidate>
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="mode" value="<%= link.mode %>">
+      <input type="hidden" name="oobCode" value="<%= link.oobCode %>">
+      <input type="hidden" name="apiKey" value="<%= link.apiKey %>">
+      <input type="hidden" name="continueUrl" value="<%= link.continueUrl %>">
+      <input type="hidden" name="lang" value="<%= link.lang %>">
+
+      <% if (stage === 'resetPassword') { %>
+        <input type="hidden" name="email" value="<%= email %>">
+        <%# The username field lets a password manager file the new password under the right account. %>
+        <input type="email" name="username" value="<%= email %>" autocomplete="username" hidden>
+
+        <div class="float-field">
+          <input type="password" id="new-password" name="password"
+                 autocomplete="new-password" placeholder=" "
+                 minlength="8" autofocus required aria-describedby="form-error password-hint">
+          <label for="new-password">New password</label>
+        </div>
+
+        <div class="float-field">
+          <input type="password" id="confirm-password" name="confirm"
+                 autocomplete="new-password" placeholder=" "
+                 minlength="8" required aria-describedby="form-error">
+          <label for="confirm-password">Confirm password</label>
+        </div>
+
+        <p class="signin-hint" id="password-hint">At least 8 characters.</p>
+      <% } %>
+
+      <div class="signin-actions">
+        <button type="submit" class="btn btn-primary btn-auto"><%= copy.button %></button>
+      </div>
+    </form>
+  <% } %>
+
+  <% if (next && (done || stage === 'error')) { %>
+    <p class="signin-alt"><a class="linklike" href="<%= next.href %>">Continue to <%= next.host %></a></p>
+  <% } %>
+</main>
+
+<%- include('partials/foot') %>

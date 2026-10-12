@@ -41,6 +41,7 @@ const appapi = require('./routes/appapi');
 const native = require('./routes/native');
 const deletionRoutes = require('./routes/deletion');
 const deletion = require('./deletion');
+const firebaseAction = require('./routes/firebase_action');
 
 const app = express();
 
@@ -170,6 +171,7 @@ app.get('/.well-known/security.txt', (req, res) => {
  * page route must never be able to shadow one — and /.well-known/ in
  * particular has to answer before anything else claims it.
  */
+app.use('/', firebaseAction);
 app.use('/', appapi);
 app.use('/', deletionRoutes);
 app.use('/', oidc);

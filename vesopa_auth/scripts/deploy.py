@@ -42,7 +42,12 @@ SSH = ROOT / "tool" / "auth_ssh.py"
 
 # `plan/` is working material for people, not for the server. `content/` is
 # uploaded because the policy pages are rendered from it.
-EXCLUDES = ["plan", "node_modules", ".env"]
+#
+# `.env.production` and `keys/` are this machine's local copy of the server's
+# secrets (saved 2026-10-11 so the tools here can read them). Matched by exact
+# name, so each has to be listed: without them the next deploy would copy the
+# production .env up beside the real one and overwrite the live keys folder.
+EXCLUDES = ["plan", "node_modules", ".env", ".env.production", "keys"]
 
 
 def ssh(*args):
