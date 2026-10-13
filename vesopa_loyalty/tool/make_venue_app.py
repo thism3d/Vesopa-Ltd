@@ -254,37 +254,17 @@ def firebase_ios(ios_dir: Path, v, venue_dir: Path | None):
         print("Firebase phone sign-in on iPhone: not set up for this build (no FIREBASE_IOS_API_KEY or ids).")
         return
     scheme = "app-" + app_id.replace(":", "-")
-    edit(ios_dir / "Runner" / "Info.plist", [("</dict>
-</plist>", (
-        f"	<key>VesopaFirebaseAppID</key>
-	<string>{app_id}</string>
-"
-        f"	<key>VesopaFirebaseAPIKey</key>
-	<string>{key}</string>
-"
-        f"	<key>VesopaFirebaseProjectID</key>
-	<string>{project}</string>
-"
-        f"	<key>VesopaFirebaseSenderID</key>
-	<string>{sender}</string>
-"
-        "	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-"
-        "			<key>CFBundleURLName</key>
-			<string>firebase-phone</string>
-"
-        f"			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>{scheme}</string>
-			</array>
-"
-        "		</dict>
-	</array>
-"
-        "</dict>
-</plist>"))])
+    plist_keys = (
+        f"\t<key>VesopaFirebaseAppID</key>\n\t<string>{app_id}</string>\n"
+        f"\t<key>VesopaFirebaseAPIKey</key>\n\t<string>{key}</string>\n"
+        f"\t<key>VesopaFirebaseProjectID</key>\n\t<string>{project}</string>\n"
+        f"\t<key>VesopaFirebaseSenderID</key>\n\t<string>{sender}</string>\n"
+        "\t<key>CFBundleURLTypes</key>\n\t<array>\n\t\t<dict>\n"
+        "\t\t\t<key>CFBundleURLName</key>\n\t\t\t<string>firebase-phone</string>\n"
+        f"\t\t\t<key>CFBundleURLSchemes</key>\n\t\t\t<array>\n\t\t\t\t<string>{scheme}</string>\n\t\t\t</array>\n"
+        "\t\t</dict>\n\t</array>\n"
+    )
+    edit(ios_dir / "Runner" / "Info.plist", [("</dict>\n</plist>", plist_keys + "</dict>\n</plist>")])
 
 
 def ios(app: Path, v, venue_dir: Path | None = None):
