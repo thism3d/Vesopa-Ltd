@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.12+14
+version: 1.0.13+15
 
 environment:
   sdk: ^3.13.2
@@ -151,10 +151,13 @@ msix_config:
   # Four parts, and the Store requires the last to be 0. A version can never
   # be reused, so bump this -- and `version:` above -- for every submission,
   # including a resubmission after a failed certification.
-  msix_version: 1.0.12.0
+  msix_version: 1.0.13.0
 
   # The demonstration venue's own logo (tool/make_store_art.py writes it).
   logo_path: assets/brand/kitchen_demo_mark_512.png
+  # Off: msix trims the tile's border colour away by default, which left only a
+  # tightly cropped V on the taskbar and Start after a Store install.
+  trim_logo: false
 
   # internetClient is all it needs: the app talks to the back office over
   # HTTPS and to nothing on the venue's own network. Asking for more than is

@@ -11,7 +11,7 @@ publish_to: 'none'
 # reason the kitchen screen does: the two ship together, and a display and a
 # till on different major versions is a support question nobody can answer over
 # the phone. The build number is this app's own.
-version: 1.6.22+21
+version: 1.6.23+22
 
 environment:
   sdk: ^3.12.2
@@ -139,9 +139,15 @@ msix_config:
 
   # Four parts, and the last must be 0 — the Store reserves the revision field
   # and rejects anything else. Tracks `version:` at the top of this file.
-  msix_version: 1.6.22.0
+  msix_version: 1.6.23.0
 
   logo_path: assets/brand/512x512.png
+
+  # Off: msix trims the tile's border colour away by default, which left only a
+
+  # tightly cropped V on the taskbar and Start after a Store install.
+
+  trim_logo: false
 
   # No network capability at all, and that is the point rather than an omission.
   # This screen reads one file the till writes and plays media off a local

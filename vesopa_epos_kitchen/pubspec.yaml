@@ -10,7 +10,7 @@ publish_to: 'none'
 # ship together: a kitchen screen and a till on different major versions is a
 # support question nobody can answer over the phone. The build number is this
 # app's own.
-version: 1.7.6+19
+version: 1.7.7+20
 
 environment:
   sdk: ^3.11.3
@@ -147,9 +147,15 @@ msix_config:
 
   # Four parts, and the last must be 0 — the Store reserves the revision field
   # and rejects anything else. Tracks `version:` at the top of this file.
-  msix_version: 1.7.6.0
+  msix_version: 1.7.7.0
 
   logo_path: assets/brand/kitchen_mark.png
+
+  # Off: msix trims the tile's border colour away by default, which left only a
+
+  # tightly cropped V on the taskbar and Start after a Store install.
+
+  trim_logo: false
 
   # internetClient          reaches the back office over HTTPS.
   # privateNetworkClientServer  reaches a back office on the venue's own LAN,
