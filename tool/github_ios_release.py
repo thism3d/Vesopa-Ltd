@@ -3,6 +3,8 @@
     python tool/github_ios_release.py                 # secret, then run the workflow (full)
     python tool/github_ios_release.py --secret-only
     python tool/github_ios_release.py --run-only [--mode check|full|listing] [--venue PontardaweRFC]
+    python tool/github_ios_release.py --status        # the latest run, its steps, and the log of a failed one
+    python tool/github_ios_release.py --wait          # --status until the run finishes
 
 Uses the GitHub sign-in git already has on this PC (Git Credential Manager,
 `git credential fill`); nothing is printed. The secret goes into the
@@ -80,9 +82,41 @@ def run(tok, venue, mode):
     print(f"started 'iOS - venue app' for {venue} ({mode}): https://github.com/{OWNER}/{REPO}/actions/workflows/{WORKFLOW}")
 
 
+def status(tok, wait=False):
+    import time
+    while True:
+        st, runs = api(tok, "GET", f"/repos/{OWNER}/{REPO}/actions/workflows/{WORKFLOW}/runs?per_page=1")
+        run_ = (runs.get("workflow_runs") or [None])[0]
+        if not run_:
+            raise SystemExit("! no runs")
+        st, jobs = api(tok, "GET", f"/repos/{OWNER}/{REPO}/actions/runs/{run_['id']}/jobs")
+        done = run_["status"] == "completed"
+        if done or not wait:
+            print(f"run {run_['id']}: {run_['status']} {run_.get('conclusion') or ''}  {run_['html_url']}")
+            for job in jobs.get("jobs", []):
+                for step in job.get("steps", []):
+                    print(f"   {step.get('conclusion') or step['status']:<10} {step['name']}")
+                if job.get("conclusion") == "failure":
+                    req = urllib.request.Request(f"https://api.github.com/repos/{OWNER}/{REPO}/actions/jobs/{job['id']}/logs",
+                                                 headers={"Authorization": f"Bearer {tok}", "User-Agent": "vesopa-release"})
+                    try:
+                        with urllib.request.urlopen(req, timeout=60) as r:
+                            lines = r.read().decode(errors="replace").splitlines()
+                        bad = [l for l in lines if "error" in l.lower() or "##[error]" in l]
+                        print("   --- last errors ---")
+                        for l in (bad[-25:] or lines[-40:]):
+                            print("   " + l[:300])
+                    except urllib.error.HTTPError as e:
+                        print(f"   (log: HTTP {e.code})")
+            return
+        time.sleep(60)
+
+
 def main():
     venue = arg("--venue", "PontardaweRFC")
     tok = token()
+    if "--status" in sys.argv or "--wait" in sys.argv:
+        return status(tok, wait="--wait" in sys.argv)
     if "--run-only" not in sys.argv:
         set_secret(tok, venue)
     if "--secret-only" not in sys.argv:
