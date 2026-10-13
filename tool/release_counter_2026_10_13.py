@@ -128,12 +128,14 @@ def main():
 
     if "installers" in todo:
         current = "installers"
-        run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "tool\\build-installers.ps1",
-             "-Publish",
-             "-Apps", "till,kitchen", "-Notes", "Card straight to the machine, split bill pay-and-keep, points on the member, readable PIN pad"],
+        # -Command, not -File: -File hands "till,kitchen" over as one string,
+        # which the installer script's list of apps refuses.
+        run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
+             "& .\\tool\\build-installers.ps1 -Publish -Apps till,kitchen"
+             " -Notes 'Card straight to the machine, split bill pay-and-keep, points on the member, readable PIN pad'"],
             step="EXE installers to admin.vesopa.com/downloads")
 
-    print("\n✓ Done. Back office and admin are live, both Store submissions are with Microsoft"
+    print("\n✓ Done. Both Store submissions are with Microsoft"
           " and publish themselves once certified, and the installers are on"
           " admin.vesopa.com/downloads.")
 
