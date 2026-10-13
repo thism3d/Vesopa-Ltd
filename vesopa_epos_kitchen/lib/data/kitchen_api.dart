@@ -438,7 +438,18 @@ class KitchenApi {
 
     if (res.statusCode >= 200 && res.statusCode < 300) {
       if (res.body.isEmpty) return null;
-      return jsonDecode(res.body);
+      try {
+        return jsonDecode(res.body);
+      } on FormatException {
+        // A web page, or text, where data was expected: a proxy, a captive
+        // portal, a wrong server address. Said in words, with where it came
+        // from, instead of "FormatException: Unexpected character" (Pontardawe
+        // RFC's screen, 2026-10-13).
+        throw KitchenApiError(
+          'The back office sent a page instead of data for ${uri.path} '
+          '(HTTP ${res.statusCode}${_server(res)}). Check the server address under Settings.',
+        );
+      }
     }
 
     // 401 is the credential; 402 is a paused office, which is also a sign-out
@@ -449,6 +460,12 @@ class KitchenApi {
       status: res.statusCode,
       signedOut: res.statusCode == 401 || res.statusCode == 402,
     );
+  }
+
+  /// `, from <server>` when the reply says which program sent it.
+  static String _server(http.Response res) {
+    final s = res.headers['server'] ?? res.headers['x-powered-by'];
+    return s == null || s.isEmpty ? '' : ', from $s';
   }
 
   static String _messageFrom(http.Response res) {

@@ -56,6 +56,7 @@ class SplitChoice {
     this.ways = 0,
     this.groups,
     this.payShare,
+    this.payAndKeep,
   });
 
   final SplitMode mode;
@@ -68,6 +69,11 @@ class SplitChoice {
   /// already asking for the right money when the sheet closes. Null means they
   /// finished with Done and will choose a share on the board.
   final int? payShare;
+
+  /// "One person is leaving": the order's own line ids to move onto a bill of
+  /// their own and pay now, while the rest stays on the table for the others
+  /// to pay later (Pontardawe RFC, 2026-10-13).
+  final List<String>? payAndKeep;
 }
 
 /// Which way of dividing the bill is on screen.
@@ -90,17 +96,21 @@ Future<SplitChoice?> showSplitDialog(
     int totalMinor,
     Map<String, double> quantities,
   )? onPrintShare,
+  /// Whether "pay these, keep the rest on the table" is offered: a bill on a
+  /// table with nothing paid on it yet.
+  bool canKeepRest = false,
 }) =>
     showDialog<SplitChoice>(
       context: context,
-      builder: (_) => SplitBillSheet(state: state, onPrintShare: onPrintShare),
+      builder: (_) => SplitBillSheet(state: state, onPrintShare: onPrintShare, canKeepRest: canKeepRest),
     );
 
 /// The screen itself. Public so a widget test can drive it directly.
 class SplitBillSheet extends StatefulWidget {
-  const SplitBillSheet({super.key, required this.state, this.onPrintShare});
+  const SplitBillSheet({super.key, required this.state, this.onPrintShare, this.canKeepRest = false});
 
   final TenderState state;
+  final bool canKeepRest;
   final Future<void> Function(
     Set<String> lineIds,
     String title,
@@ -422,6 +432,26 @@ class SplitBillSheetState extends State<SplitBillSheet> {
 
   void _payShare(int index) => Navigator.pop(context, _asChoice(payShare: index));
 
+  /// Once a payment has been taken on this bill the split is fixed: undoing
+  /// it, or putting a share's items back, would move money that has already
+  /// been paid (Pontardawe RFC, 2026-10-13: "after one payment is taken,
+  /// please remove the undo feature").
+  bool get _locked => widget.state.paidMinor > 0;
+
+  /// The share's items as the order's own lines, or null when the share holds
+  /// part of a divided line (a portion has no line of its own to move).
+  List<String>? _wholeLines(int index) {
+    final ids = _shares[index];
+    if (ids.any(isPortion)) return null;
+    return ids.toList();
+  }
+
+  void _payAndKeep(int index) {
+    final ids = _wholeLines(index);
+    if (ids == null) return;
+    Navigator.pop(context, SplitChoice(mode: SplitMode.none, payAndKeep: ids));
+  }
+
   /// How many of each real line a share holds.
   ///
   /// A share paying for one of three proseccos must not be handed a bill that
@@ -658,7 +688,15 @@ class SplitBillSheetState extends State<SplitBillSheet> {
                   if (_shares[i].contains(line.id)) line,
               ],
               totalMinor: _shareTotal(i),
-              onReturn: () => _returnShare(i),
+              onReturn: _locked ? null : () => _returnShare(i),
+              // Something must be left for the table: other items still in the
+              // pool or on other shares.
+              onPayAndKeep: widget.canKeepRest &&
+                      !_locked &&
+                      _wholeLines(i) != null &&
+                      (_pool.isNotEmpty || _shares.length > 1)
+                  ? () => _payAndKeep(i)
+                  : null,
               onPrint: widget.onPrintShare == null
                   ? null
                   : () => _printShare(i),
@@ -760,9 +798,9 @@ class SplitBillSheetState extends State<SplitBillSheet> {
                 ),
               ],
               selected: {_method},
-              onSelectionChanged: (s) => setState(() => _method = s.first),
+              onSelectionChanged: _locked ? null : (s) => setState(() => _method = s.first),
             ),
-            if (_method == SplitMethod.items && _shares.isNotEmpty)
+            if (_method == SplitMethod.items && _shares.isNotEmpty && !_locked)
               TextButton.icon(
                 onPressed: _undo,
                 icon: const Icon(Icons.undo),
@@ -900,12 +938,14 @@ class _ShareCard extends StatelessWidget {
     required this.onReturn,
     this.onPrint,
     this.onPay,
+    this.onPayAndKeep,
   });
 
   final int index;
   final List<PricedLine> lines;
   final int totalMinor;
-  final VoidCallback onReturn;
+  final VoidCallback? onReturn;
+  final VoidCallback? onPayAndKeep;
   final VoidCallback? onPrint;
   final VoidCallback? onPay;
 
@@ -934,13 +974,14 @@ class _ShareCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                  IconButton(
-                    onPressed: onReturn,
-                    visualDensity: VisualDensity.compact,
-                    iconSize: 20,
-                    tooltip: 'Put these back',
-                    icon: const Icon(Icons.undo),
-                  ),
+                  if (onReturn != null)
+                    IconButton(
+                      onPressed: onReturn,
+                      visualDensity: VisualDensity.compact,
+                      iconSize: 20,
+                      tooltip: 'Put these back',
+                      icon: const Icon(Icons.undo),
+                    ),
                 ],
               ),
             ),
@@ -1019,6 +1060,15 @@ class _ShareCard extends StatelessWidget {
                 ],
               ),
             ),
+            if (onPayAndKeep != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+                child: OutlinedButton.icon(
+                  onPressed: onPayAndKeep,
+                  icon: const Icon(Icons.table_restaurant_outlined, size: 18),
+                  label: const Text('Pay these, rest stays on table'),
+                ),
+              ),
           ],
         ),
       ),

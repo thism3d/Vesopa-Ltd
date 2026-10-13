@@ -166,6 +166,41 @@ async function findByToken(token) {
 async function accept(token, userId, { ip = '' } = {}) {
   const invitation = await findByToken(token);
   if (!invitation) return { ok: false, error: 'expired' };
+  return apply(invitation, userId, { ip });
+}
+
+/**
+ * Accept the open invitations to one application for an address this person
+ * has proved, without the link (2026-10-13).
+ *
+ * Somebody invited to a back office who signs in to it directly, rather than
+ * through the emailed link, used to be told they had no access while their
+ * invitation sat unaccepted. The rule is the link's own: the invitation is
+ * applied only to the account holding the invited address, verified.
+ */
+async function acceptPendingFor(applicationId, userId, { ip = '' } = {}) {
+  const rows = await db.query(
+    `SELECT i.*, o.name AS organisation_name, a.name AS application_name, r.name AS role_name
+       FROM invitations i
+       LEFT JOIN organisations o ON o.id = i.organisation_id
+       LEFT JOIN applications a ON a.id = i.application_id
+       LEFT JOIN application_roles r ON r.id = i.role_id
+       JOIN user_identities ui
+         ON ui.identifier_norm = i.email_norm AND ui.type = 'email'
+        AND ui.user_id = ? AND ui.revoked_at IS NULL AND ui.verified_at IS NOT NULL
+      WHERE i.application_id = ? AND i.accepted_at IS NULL AND i.revoked_at IS NULL
+        AND i.expires_at > NOW()`,
+    [userId, applicationId],
+  );
+  let accepted = 0;
+  for (const invitation of rows) {
+    const result = await apply(invitation, userId, { ip });
+    if (result.ok) accepted += 1;
+  }
+  return accepted;
+}
+
+async function apply(invitation, userId, { ip = '' } = {}) {
 
   const holds = await db.one(
     `SELECT id FROM user_identities
@@ -346,4 +381,4 @@ async function resend(publicId, actorUserId, ip = '') {
   return { ok: true, url };
 }
 
-module.exports = { create, findByToken, accept, list, forApplication, revoke, resend, TTL_DAYS };
+module.exports = { create, findByToken, accept, acceptPendingFor, list, forApplication, revoke, resend, TTL_DAYS };

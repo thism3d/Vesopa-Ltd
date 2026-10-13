@@ -1560,12 +1560,17 @@ function commerceRoutes({ pool, broadcast, secret }) {
     try {
       const office = tillOffice(req);
       const phone = String(req.query.phone || '').replace(/\s+/g, '');
-      if (!office || !phone) {
+      // By id too: the member already on the bill (a scanned card), so Redeem
+      // points opens on them without staff searching (2026-10-13).
+      const id = String(req.query.id || '').trim();
+      if (!office || (!phone && !id)) {
         return res.status(400).json({ error: 'office and phone are required' });
       }
 
-      const [customer] = await selectCustomers(
-        "email_key = ? AND REPLACE(phone, ' ', '') = ?", [office, phone], 'LIMIT 1');
+      const [customer] = id
+        ? await selectCustomers('email_key = ? AND id = ?', [office, id], 'LIMIT 1')
+        : await selectCustomers(
+          "email_key = ? AND REPLACE(phone, ' ', '') = ?", [office, phone], 'LIMIT 1');
       if (!customer) return res.status(404).json({ error: 'No customer with that number' });
 
       // What those points are actually worth comes with them, so the till does

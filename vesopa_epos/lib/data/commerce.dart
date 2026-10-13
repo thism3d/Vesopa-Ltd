@@ -1024,6 +1024,17 @@ class CommerceRepository {
         .toList();
   }
 
+  /// The member with this id, with their scheme and points; null if none.
+  Future<LoyaltyCustomer?> loyaltyById(String id) async {
+    final res = await _client
+        .get(Uri.parse(
+            '$apiBase/api/loyalty/customer?$_officeParam&id=${Uri.encodeComponent(id)}'),
+            headers: _headers())
+        .timeout(_timeout);
+    if (res.statusCode != 200) return null;
+    return LoyaltyCustomer.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+  }
+
   Future<LoyaltyCustomer> loyaltyByPhone(String phone) async {
     final res = await _client
         .get(Uri.parse(

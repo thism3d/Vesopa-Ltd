@@ -2547,6 +2547,28 @@ async function bulkEditProducts() {
         type: 'checkbox',
         value: 0,
       },
+      // Questions asked when the product is rung (mixers on spirits, how a
+      // steak is cooked), for every picked product at once (2026-10-13).
+      {
+        label: 'Modifier questions',
+        name: 'modifier_mode',
+        type: 'select',
+        options: [
+          { value: '', label: 'Leave as they are' },
+          { value: 'add', label: 'Add the questions ticked below' },
+          { value: 'replace', label: 'Replace with the questions ticked below' },
+          { value: 'remove', label: 'Remove the questions ticked below' },
+        ],
+        value: '',
+      },
+      {
+        label: 'Questions',
+        name: 'modifier_groups',
+        // The multi-tick grid the printer stations use.
+        type: 'stations',
+        options: (productRefs.modifierGroups || []).map((g) => ({ value: String(g.id), label: g.name })),
+        value: '',
+      },
     ],
     async (d) => {
       const fields = {};
@@ -2571,8 +2593,27 @@ async function bulkEditProducts() {
       }
       if (d.non_stock === '0' || d.non_stock === '1') stockFields.non_stock = Number(d.non_stock);
 
-      if (!Object.keys(fields).length && !Object.keys(stockFields).length) {
+      const modifierMode = d.modifier_mode || '';
+      const modifierGroups = [].concat(d.modifier_groups ?? []).filter(Boolean).map(Number);
+      if (modifierMode && modifierMode !== 'replace' && !modifierGroups.length) {
+        throw new Error('Tick the questions to add or remove.');
+      }
+
+      if (!Object.keys(fields).length && !Object.keys(stockFields).length && !modifierMode) {
         throw new Error('Nothing was chosen to change.');
+      }
+      if (modifierMode) {
+        const res = await api('/products/bulk/modifiers', {
+          method: 'PUT',
+          body: JSON.stringify({ ids: ids.map(Number), group_ids: modifierGroups, mode: modifierMode }),
+        });
+        if (!Object.keys(fields).length && !Object.keys(stockFields).length) {
+          productPicks.clear();
+          renderBulkBar();
+          toast(`Questions updated on ${res.updated} product${res.updated === 1 ? '' : 's'}.`);
+          await loadProducts();
+          return;
+        }
       }
 
       let updated = 0;

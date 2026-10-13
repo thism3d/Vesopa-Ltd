@@ -216,7 +216,14 @@ class VesopaSso {
       },
     ).timeout(const Duration(seconds: 20));
 
-    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    // Read as data only if it is data: an error page here used to surface as
+    // "FormatException: Unexpected character" on the sign-in screen.
+    Map<String, dynamic> body;
+    try {
+      body = jsonDecode(res.body) as Map<String, dynamic>;
+    } on FormatException {
+      throw VesopaSsoFailed('Vesopa sign-in answered with a page instead of data (HTTP ${res.statusCode}). Please try again.');
+    }
     if (res.statusCode != 200) {
       throw VesopaSsoFailed(
         (body['error_description'] as String?) ?? 'Vesopa would not issue a token.',

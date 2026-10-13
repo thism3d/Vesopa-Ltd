@@ -105,6 +105,9 @@ AUTH_FILES = [
     # 2026-10-13: the /invite/:token page restored (every invitation link was 404).
     "vesopa_auth/src/routes/pages.js",
     "vesopa_auth/test/invite-route.test.js",
+    # 2026-10-13: an open invitation is accepted when its person signs in directly.
+    "vesopa_auth/src/invitations.js",
+    "vesopa_auth/src/routes/oidc.js",
 ]
 # Files the server may not have yet: a failed test run deletes them rather
 # than restoring them from a backup that never held them.

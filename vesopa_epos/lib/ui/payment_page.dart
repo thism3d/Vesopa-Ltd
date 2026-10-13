@@ -1135,6 +1135,12 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     bool manual = false,
   }) async {
     if (!mounted || amountMinor <= 0) return false;
+    // Card goes straight to the card machine (Pontardawe RFC, 2026-10-13:
+    // "when clicking Card can it go straight to the card machine instead of a
+    // confirmation box"). The machine shows the amount, and the till's card
+    // screen can still cancel it before the customer taps. A keyed (manual)
+    // card keeps its check: it carries different liability.
+    if (kind == TenderKind.card) return true;
     return confirmTender(
       context,
       kind: kind,
@@ -1479,9 +1485,25 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
       return;
     }
 
+    // The member already on the bill (a scanned card, or chosen earlier), so
+    // the till knows their scheme and nobody has to search for it.
+    final commerce = ref.read(commerceRepositoryProvider);
+    var known = _customer;
+    if (known == null) {
+      final onOrder = (await ref.read(orderRepositoryProvider).orderOnce(widget.orderId))?.customerId;
+      if (onOrder != null && onOrder.isNotEmpty) {
+        try {
+          known = await commerce.loyaltyById(onOrder);
+        } catch (_) {
+          // Offline or unknown: the search is still there.
+        }
+      }
+    }
+    if (!mounted) return;
     final result = await showLoyaltyDialog(
       context,
-      commerce: ref.read(commerceRepositoryProvider),
+      commerce: commerce,
+      known: known,
       outstandingMinor: _tender.dueNowMinor,
       // So the dialog can tell the customer what this sale will earn them,
       // which is half of why they hand over their number.
@@ -1722,9 +1744,14 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
   }
 
   Future<void> _chooseSplit() async {
+    final order = await ref.read(orderRepositoryProvider).orderOnce(widget.orderId);
+    if (!mounted) return;
     final choice = await showSplitDialog(
       context,
       state: _tender,
+      // One person leaving a table early pays for their items, and the rest
+      // stays on the table. Only on a table, and only before money is taken.
+      canKeepRest: order?.tableNumber != null && _tender.paidMinor == 0,
       // Each share can be printed as its own bill, which is the whole point of
       // splitting one in a restaurant: three people want three slips before
       // anybody pays. The total is passed in because only the tender engine
@@ -1745,6 +1772,12 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     );
     if (choice == null || !mounted) return;
 
+    final leaving = choice.payAndKeep;
+    if (leaving != null && leaving.isNotEmpty && order?.tableNumber != null) {
+      await _payAndKeepRest(order!, leaving);
+      return;
+    }
+
     setState(() {
       final split = switch (choice.mode) {
         SplitMode.equally => _tender.splitEqually(choice.ways),
@@ -1756,6 +1789,30 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
       final wanted = choice.payShare;
       _tender = wanted == null ? split : split.selectShare(wanted);
     });
+  }
+
+  /// Move [lineIds] onto a bill of their own, put the rest of the table's
+  /// bill back on the table, and take payment for the new bill only.
+  ///
+  /// The move is the table repository's splitLines: one transaction, both
+  /// bills recalculated, so money is never on neither bill.
+  Future<void> _payAndKeepRest(Order order, List<String> lineIds) async {
+    final tables = ref.read(tableRepositoryProvider);
+    final String newId;
+    try {
+      newId = await tables.splitLines(widget.orderId, lineIds);
+      await tables.park(widget.orderId, order.tableNumber!, roomId: order.roomId);
+    } catch (e) {
+      if (mounted) PosMessenger.error(context, 'Could not split that off: $e');
+      return;
+    }
+    if (!mounted) return;
+    PosMessenger.info(context, 'The rest is saved on table ${order.tableNumber}.');
+    await Navigator.of(context).pushReplacement(
+      MaterialPageRoute<void>(
+        builder: (_) => PaymentPage(orderId: newId, onSettled: widget.onSettled),
+      ),
+    );
   }
 
   /// Whether the sale is already being committed.

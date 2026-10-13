@@ -16,6 +16,7 @@
  */
 
 const express = require('express');
+const invitations = require('../invitations');
 const crypto = require('crypto');
 
 const config = require('../config');
@@ -560,7 +561,12 @@ async function admit(application, userId) {
   const member = await clients.membership(application.id, userId);
   if (member && member.status === 'suspended') return 'suspended';
   if (member && member.status !== 'removed') return 'ok';
-  if (!application.allow_self_enroll) return 'not_invited';
+  if (!application.allow_self_enroll) {
+    // Invited, but signing in directly instead of through the email's link:
+    // the invitation for an address they have proved is accepted here.
+    if (await invitations.acceptPendingFor(application.id, userId)) return 'ok';
+    return 'not_invited';
+  }
   await clients.enrol(application.id, userId);
 
   /*

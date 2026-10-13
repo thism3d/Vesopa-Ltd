@@ -16,3 +16,12 @@ test('the invitation page has its template, and the email points at the route', 
   const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'invitations.js'), 'utf8');
   assert.match(src, /\$\{config\.issuer\}\/invite\/\$\{token\}/);
 });
+
+test('signing in directly accepts an open invitation for a proved address', () => {
+  const inv = require('../src/invitations');
+  assert.strictEqual(typeof inv.acceptPendingFor, 'function');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'oidc.js'), 'utf8');
+  assert.match(src, /acceptPendingFor\(application\.id, userId\)/);
+  const invSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'invitations.js'), 'utf8');
+  assert.match(invSrc, /ui\.verified_at IS NOT NULL/, 'only a verified address may accept');
+});

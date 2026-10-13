@@ -483,6 +483,7 @@ Future<RedemptionResult?> showLoyaltyDialog(
   required int outstandingMinor,
   bool redeem = true,
   int spendMinor = 0,
+  LoyaltyCustomer? known,
 }) =>
     showDialog<RedemptionResult>(
       context: context,
@@ -491,6 +492,7 @@ Future<RedemptionResult?> showLoyaltyDialog(
         outstandingMinor: outstandingMinor,
         redeem: redeem,
         spendMinor: spendMinor,
+        known: known,
       ),
     );
 
@@ -500,7 +502,12 @@ class _LoyaltyDialog extends StatefulWidget {
     required this.outstandingMinor,
     required this.redeem,
     required this.spendMinor,
+    this.known,
   });
+
+  /// The member already on the bill (a scanned card): the dialog opens on
+  /// their scheme and points, no search (Pontardawe RFC, 2026-10-13).
+  final LoyaltyCustomer? known;
 
   final CommerceRepository commerce;
   final int outstandingMinor;
@@ -533,6 +540,13 @@ class _LoyaltyDialogState extends State<_LoyaltyDialog> {
   /// The schemes somebody new may join, with the venue's default picked.
   late final List<LoyaltyScheme> _schemes = tillSchemes(widget.commerce.schemes);
   late int? _schemeId = initialSchemeId(_schemes);
+
+  @override
+  void initState() {
+    super.initState();
+    final known = widget.known;
+    if (known != null) _select(known);
+  }
 
   @override
   void dispose() {

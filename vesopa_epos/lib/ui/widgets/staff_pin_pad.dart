@@ -75,35 +75,64 @@ class StaffPinPad extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // On a dark panel of its own, like the keypad: on an idle screen with a
+    // busy picture behind it (a club crest, a photo) white and red text laid
+    // straight on the image could not be read (Pontardawe RFC, 2026-10-13).
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          prompt,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 19,
-            fontWeight: FontWeight.w700,
+        Container(
+          constraints: const BoxConstraints(maxWidth: 360),
+          padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
+          decoration: BoxDecoration(
+            color: const Color(0xE6151515),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0x33FFFFFF)),
           ),
-        ),
-        const SizedBox(height: 16),
-        // The dots and the message move together, because they are one answer
-        // to one question: "did that PIN work?"
-        _Shake(
-          trigger: rejections,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _Dots(length: pin.length, busy: busy),
-              if (error != null) ...[
-                const SizedBox(height: 12),
-                Text(
-                  error!,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: Pos.red, fontSize: 14),
+              Text(
+                prompt,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 21,
+                  fontWeight: FontWeight.w800,
                 ),
-              ],
+              ),
+              const SizedBox(height: 14),
+              // The dots and the message move together, because they are one
+              // answer to one question: "did that PIN work?"
+              _Shake(
+                trigger: rejections,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _Dots(length: pin.length, busy: busy),
+                    if (error != null) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFC62828),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          error!,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            height: 1.3,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ],
           ),
         ),
@@ -112,9 +141,14 @@ class StaffPinPad extends StatelessWidget {
         const SizedBox(height: 14),
         TextButton(
           onPressed: onCancel,
+          style: TextButton.styleFrom(
+            backgroundColor: const Color(0xE6151515),
+            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
           child: Text(
             cancelLabel,
-            style: const TextStyle(color: Color(0xB3FFFFFF)),
+            style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
           ),
         ),
       ],

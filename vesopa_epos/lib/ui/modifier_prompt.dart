@@ -20,7 +20,8 @@
 ///   max 1            The tap *is* the confirmation: the box closes and the
 ///                    next question opens. This is the common case and the
 ///                    reason a mixer costs one press rather than three.
-///   max above 1      Answers accumulate and Done ends it.
+///   max above 1      Answers accumulate; the box closes by itself when the
+///                    last one allowed is picked, or Done ends it sooner.
 ///   max 0            No ceiling.
 ///
 /// ---------------------------------------------------------------------------
@@ -151,6 +152,13 @@ class _ModifierDialogState extends State<_ModifierDialog> {
     if (!_group.canTakeMore(_chosen.length)) return;
 
     setState(() => _chosen.add(answer));
+
+    // At the ceiling the question is answered: close without Done, as the
+    // one-answer case does (Pontardawe RFC, 2026-10-13: "after the item is
+    // clicked can the box close instead of having to click done").
+    if (!_group.unlimited && _chosen.length >= _group.maxSelect) {
+      Navigator.of(context).pop(List<Product>.of(_chosen));
+    }
   }
 
   @override

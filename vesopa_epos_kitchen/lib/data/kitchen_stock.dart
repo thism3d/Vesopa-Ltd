@@ -131,6 +131,8 @@ class KitchenStock extends Notifier<KitchenStockState> {
       }
       final rows = (jsonDecode(res.body) as List).cast<Map<String, dynamic>>();
       state = KitchenStockState(items: [for (final r in rows) KitchenStockItem(r)], loaded: true);
+    } on FormatException {
+      state = KitchenStockState(items: state.items, loaded: state.loaded, error: 'The back office sent a page instead of stock data. Check the server address under Settings.');
     } catch (_) {
       state = KitchenStockState(items: state.items, loaded: state.loaded, error: 'The back office cannot be reached right now.');
     } finally {

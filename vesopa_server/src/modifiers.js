@@ -307,6 +307,81 @@ function modifierRoutes({ pool, broadcast, secret }) {
   });
 
   /**
+   * Ask the same question of many products at once (Pontardawe RFC,
+   * 2026-10-13: "mass apply mixers modifiers to the spirits").
+   *
+   * { ids: [bo_products.id, ...], group_ids: [...], mode: 'add' | 'replace' | 'remove' }
+   *   add      each product keeps its questions and gains these, after them
+   *   replace  each product asks exactly these, in this order
+   *   remove   these questions are taken off each product
+   *
+   * Registered before /products/:plu/modifiers so "bulk" is never read as a PLU.
+   */
+  router.put('/products/bulk/modifiers', auth, async (req, res, next) => {
+    const conn = await pool.getConnection();
+    try {
+      const office = await tenantEmail(req);
+      const mode = ['add', 'replace', 'remove'].includes(req.body?.mode) ? req.body.mode : 'add';
+      const rowIds = [...new Set((Array.isArray(req.body?.ids) ? req.body.ids : [])
+        .map((n) => Number.parseInt(n, 10)).filter(Number.isFinite))];
+      const wanted = [...new Set((Array.isArray(req.body?.group_ids) ? req.body.group_ids : [])
+        .map((n) => Number.parseInt(n, 10)).filter(Number.isFinite))];
+      if (!rowIds.length) return res.status(400).json({ error: 'Pick the products first.' });
+      if (!wanted.length && mode !== 'replace') {
+        return res.status(400).json({ error: 'Choose at least one question.' });
+      }
+
+      // This office's products and questions only, checked, not trusted.
+      const [prods] = await conn.query(
+        `SELECT pluid FROM bo_products WHERE email = ? AND id IN (${rowIds.map(() => '?').join(',')})`,
+        [office, ...rowIds]
+      );
+      const plus = prods.map((r) => r.pluid);
+      let groups = [];
+      if (wanted.length) {
+        const [rows] = await conn.query(
+          `SELECT id FROM epos_modifier_groups WHERE office = ? AND id IN (${wanted.map(() => '?').join(',')})`,
+          [office, ...wanted]
+        );
+        const mine = rows.map((r) => r.id);
+        groups = wanted.filter((id) => mine.includes(id));
+      }
+      if (!plus.length) return res.status(404).json({ error: 'None of those products belong to this venue.' });
+
+      await conn.beginTransaction();
+      try {
+        for (const plu of plus) {
+          const [have] = await conn.query(
+            'SELECT group_id FROM epos_product_modifiers WHERE office = ? AND plu_id = ? ORDER BY sort_order, id',
+            [office, plu]
+          );
+          const current = have.map((r) => r.group_id);
+          const next = mode === 'replace' ? groups
+            : mode === 'remove' ? current.filter((g) => !groups.includes(g))
+              : [...current, ...groups.filter((g) => !current.includes(g))];
+          await conn.execute('DELETE FROM epos_product_modifiers WHERE office = ? AND plu_id = ?', [office, plu]);
+          for (const [i, id] of next.entries()) {
+            await conn.execute(
+              'INSERT INTO epos_product_modifiers (office, plu_id, group_id, sort_order) VALUES (?, ?, ?, ?)',
+              [office, plu, id, i]
+            );
+          }
+        }
+        await conn.commit();
+      } catch (e) {
+        await conn.rollback();
+        throw e;
+      }
+      pushed(office);
+      res.json({ ok: true, updated: plus.length });
+    } catch (e) {
+      next(e);
+    } finally {
+      conn.release();
+    }
+  });
+
+  /**
    * Replace the ordered list of questions a product asks.
    *
    * The whole list, not a patch. The order is the meaning here — singles before
