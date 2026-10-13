@@ -243,6 +243,12 @@ class Choices {
   bool get notifications => _prefs.getBool('push_on_$_slug') ?? false;
   Future<void> setNotifications(bool on) => _prefs.setBool('push_on_$_slug', on);
 
+  /// Whether this device has been asked about notifications yet, by the
+  /// welcome tour, the switch in Settings, or the start-up question.
+  bool get notificationsAsked =>
+      _prefs.getBool('push_asked_$_slug') ?? _prefs.containsKey('push_on_$_slug');
+  Future<void> setNotificationsAsked() => _prefs.setBool('push_asked_$_slug', true);
+
   bool get nearby => _prefs.getBool('near_on_$_slug') ?? false;
   Future<void> setNearby(bool on) => _prefs.setBool('near_on_$_slug', on);
 }
@@ -253,6 +259,14 @@ class Choices {
 /// Returns whether they are at the venue now.
 Future<bool> refreshChannels(LoyaltyApi api, Brand brand, String slug) async {
   final choices = await Choices.of(slug);
+  // A member who skipped the welcome tour, or signed in before it asked, was
+  // never asked about notifications, so on Android 13+ and iPhone they never
+  // got any. Asked once, here, with the platform's own question. Not in a
+  // browser: it only allows the question after a tap (the bell does that).
+  if (!kIsWeb && !choices.notificationsAsked && pushAvailable(brand)) {
+    await choices.setNotificationsAsked();
+    if (await pushAskPermission()) await choices.setNotifications(true);
+  }
   if (choices.notifications && pushAvailable(brand)) {
     final channel = await pushCurrent(brand);
     if (channel != null) {

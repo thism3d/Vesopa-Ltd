@@ -62,12 +62,18 @@ Future<void> applyOfficeDojo(Ref ref, Map<String, dynamic> office) async {
   final current = await ref
       .read(dojoConfigProvider.future)
       .catchError((_) => const DojoConfig());
-  final sandbox =
-      key.startsWith('sk_sandbox_') || office['environment'] == 'sandbox';
+  // A Paymentsense Connect account (Pontardawe RFC's live account) has its own
+  // host and goes through the Connect integration. This used to force every
+  // office key onto api.dojo.tech, where a Connect key is always refused.
+  final connectUrl = '${office['base_url'] ?? ''}'.trim();
+  final connect = office['platform'] == 'connect' &&
+      CardPlatform.forUrl(connectUrl) == CardPlatform.connect;
+  final sandbox = !connect &&
+      (key.startsWith('sk_sandbox_') || office['environment'] == 'sandbox');
   final officeTerminal = '${office['terminal_id'] ?? ''}'.trim();
   final next = current.copyWith(
-    platform: CardPlatform.dojo,
-    baseUrl: DojoConfig.dojoBaseUrl,
+    platform: connect ? CardPlatform.connect : CardPlatform.dojo,
+    baseUrl: connect ? connectUrl : DojoConfig.dojoBaseUrl,
     apiKey: key,
     sandbox: sandbox,
     resellerId: '${office['reseller_id'] ?? ''}'.trim(),

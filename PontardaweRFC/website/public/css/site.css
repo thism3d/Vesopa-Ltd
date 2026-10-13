@@ -267,10 +267,23 @@ a.tile:hover, a.card:hover, .news-card:hover { transform: translateY(-6px); box-
 .timeline-sec { background: var(--paper-2); }
 .timeline { list-style: none; margin: 30px 0 0; padding: 0; position: relative; display: grid; gap: 18px; }
 .timeline::before { content: ""; position: absolute; left: 70px; top: 6px; bottom: 6px; width: 3px; border-radius: 3px; background: linear-gradient(var(--red-3), var(--red)); }
-.timeline li { display: grid; grid-template-columns: 70px 1fr; gap: 34px; align-items: start; position: relative; }
+.timeline li { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 34px; align-items: start; position: relative; }
 .timeline li::before { content: ""; position: absolute; left: 63px; top: 6px; width: 17px; height: 17px; border-radius: 50%; background: var(--card); border: 4px solid var(--red-2); }
 .timeline b { font: 600 1.35rem/1 "Oswald", sans-serif; color: var(--red-2); text-align: right; }
 .timeline p { margin: 0; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 18px; box-shadow: var(--shadow); }
+.timeline b { white-space: nowrap; }
+.timeline p { min-width: 0; overflow-wrap: anywhere; }
+/* Phones: the line and dots down the left, each year above its card, so a
+   large year (or a large phone font) can never sit on the dot or push the
+   card off the screen. */
+@media (max-width: 640px) {
+  .timeline { gap: 16px; margin-top: 22px; }
+  .timeline::before { left: 8px; }
+  .timeline li { grid-template-columns: minmax(0, 1fr); gap: 6px; padding-left: 32px; }
+  .timeline li::before { left: 1px; top: 3px; width: 17px; height: 17px; }
+  .timeline b { text-align: left; font-size: 1.2rem; line-height: 1.3; }
+  .timeline p { padding: 12px 14px; font-size: .95rem; line-height: 1.55; }
+}
 .player { text-align: center; }
 .cap { display: inline-grid; place-items: center; width: 54px; height: 54px; border-radius: 50%; background: var(--grad-btn); color: var(--gold); margin-bottom: 12px; }
 .callout { display: flex; gap: 22px; align-items: flex-start; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 30px; box-shadow: var(--shadow); }
@@ -568,9 +581,38 @@ a.tile:hover, a.card:hover, .news-card:hover { transform: translateY(-6px); box-
 .apk-links { display: flex; flex-wrap: wrap; gap: 10px; }
 .apk-note { font-size: .82rem; opacity: .8; }
 .os-ios .apk-downloads { display: none; }
-.os-ios .badge-android, .os-android .badge-ios, .os-ios .store-qr, .os-android .store-qr { display: none; }
+/* Both stores on every device, so an iPhone user can see the app is on Android
+   too and the other way round; the visitor's own store comes first. */
+.os-ios .store-qr, .os-android .store-qr { display: none; }
+.os-android .badge-android, .os-ios .badge-ios { order: -1; }
+.store-avail { order: -2; flex-basis: 100%; margin: 0; font-size: .85rem; font-weight: 600; opacity: .85; }
 @media (hover: none) and (pointer: coarse) { .store-qr { display: none; } }
 .foot-app { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 18px; margin-top: 34px; padding: 22px 24px; border-radius: 18px; background: rgba(255, 255, 255, .05); border: 1px solid rgba(255, 255, 255, .1); }
 .foot-app h2 { margin: 0 0 4px; }
 .foot-app p { margin: 0; color: #d9c6c3; }
 .foot-app .store-badges { margin: 0; }
+
+/* Small phones (2026-10-13). A grid column will not shrink below its widest
+   word or input unless told it may, which pushed the fixtures, membership and
+   menu pages off a 320px screen. Every layout grid's children may shrink, and
+   the fixture rows and gaps tighten on the smallest screens. */
+.split-in > *, .order-band-in > *, .members-in > *, .visit-in > *, .prose-grid > *,
+.fixtures-in > *, .order-layout > *, .grid-2 > *, .grid-3 > *, .grid-4 > *, .tiles > *,
+.foot-grid > *, .fx-list, .fx > * { min-width: 0; }
+.fx-main b, .fx-main span { overflow-wrap: anywhere; }
+@media (max-width: 960px) { .order-layout { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 860px) {
+  .split-in, .order-band-in, .members-in, .visit-in, .prose-grid, .fixtures-in { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+}
+@media (max-width: 420px) {
+  .wrap { width: calc(100% - 28px); }
+  .section { padding-top: 48px; padding-bottom: 48px; }
+  .fx { grid-template-columns: 56px minmax(0, 1fr) auto; gap: 8px; padding: 10px 12px; }
+  .fx > :nth-child(2) { display: none; }
+  .store-badges { gap: 10px; }
+  .apk-links .btn { width: 100%; justify-content: center; }
+}
+.fixtures-grid > *, .tickets-grid > *, .callout > div { min-width: 0; }
+.callout > div { flex: 1 1 auto; overflow-wrap: anywhere; }
+@media (max-width: 860px) { .fixtures-grid, .tickets-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 520px) { .callout { flex-direction: column; gap: 14px; padding: 20px; } }

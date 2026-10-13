@@ -119,10 +119,73 @@ function publicView(row) {
     reseller_id: (row && row.reseller_id) || '',
     reseller_sent: cleanId(row && row.reseller_id) || SOFTWARE_HOUSE_ID,
     terminal_id: (row && row.terminal_id) || '',
+    platform: own && row.platform === 'connect' ? 'connect' : 'dojo',
+    base_url: own && row.platform === 'connect' ? row.base_url || '' : '',
     result_seconds: row ? cleanSeconds(row.result_seconds) : 5,
     updated_at: row ? row.updated_at : null,
     updated_by: row ? row.updated_by : null,
   };
+}
+
+/**
+ * A Paymentsense Connect host, or null. Connect gives every merchant its own
+ * https://<account>.connect.paymentsense.cloud; nothing else is accepted, so a
+ * typo cannot send a card key to some other server.
+ */
+function cleanConnectUrl(v) {
+  const raw = String(v || '').trim().replace(/\/+$/, '');
+  const m = /^https:\/\/([a-z0-9-]+)\.connect\.paymentsense\.cloud$/i.exec(raw);
+  return m ? `https://${m[1].toLowerCase()}.connect.paymentsense.cloud` : null;
+}
+
+/**
+ * Check a Paymentsense Connect account the way the till uses it
+ * (lib/payments/connect_pac.dart): Basic auth with the key as the password,
+ * Connect v2, GET /pac/terminals.
+ */
+async function verifyConnect({ key, baseUrl, terminalId, fetchImpl = fetch }) {
+  let res;
+  try {
+    res = await fetchImpl(`${baseUrl}/pac/terminals`, {
+      headers: {
+        Authorization: 'Basic ' + Buffer.from(`epos:${key}`).toString('base64'),
+        Accept: 'application/connect.v2+json',
+        'Software-House-Id': SOFTWARE_HOUSE_ID,
+      },
+      signal: AbortSignal.timeout(15000),
+    });
+  } catch {
+    return { ok: false, message: 'Could not reach the Paymentsense Connect account to check it. Try again.' };
+  }
+  if (res.status === 401 || res.status === 403) {
+    return { ok: false, message: `The Connect account refused the key (HTTP ${res.status}). Check the key and the account address.` };
+  }
+  if (!res.ok) {
+    return { ok: false, message: `The Connect account did not accept these settings (HTTP ${res.status}).` };
+  }
+  const body = await res.json().catch(() => ({}));
+  const terminals = (Array.isArray(body.terminals) ? body.terminals : []).map((t) => ({
+    id: t.tpi || t.tid || t.id || '',
+    tid: t.tpi || t.tid || '',
+    status: t.status || '',
+  }));
+  const tid = cleanId(terminalId);
+  if (!tid) {
+    return {
+      ok: true,
+      terminals,
+      message: terminals.length
+        ? `Connect account accepted: ${terminals.length} card machine(s) online.`
+        : 'Connect account accepted. No card machine is online on it right now.',
+    };
+  }
+  const match = terminals.find((t) => t.id === tid || t.tid === tid);
+  if (!match) {
+    // Saved anyway: a Connect machine that is switched off is simply absent
+    // from the list, and the till uses it once it is back.
+    return { ok: true, terminals, terminal: { id: tid }, message: `Connect account accepted. Card machine ${tid} is not online right now; it is saved and the till uses it once it is.` };
+  }
+  return { ok: true, terminals, terminal: match, message: `Connected: card machine ${match.tid || match.id} is ${String(match.status || 'online').toLowerCase()}.` };
 }
 
 /** A stable id for one till record, so a re-send is not a second row. */
@@ -181,10 +244,22 @@ function dojoSettingsRoutes({ pool, broadcast, secret, fetchImpl }) {
       const row = await rowFor(office);
       const typed = String((req.body && req.body.api_key) || '').trim();
       const key = typed || (row && row.api_key_enc ? unseal(row.api_key_enc) : PUBLIC_SANDBOX_KEY);
+      const body = req.body || {};
+      const connect = body.platform === 'connect' || (!body.platform && row && row.platform === 'connect');
+      if (connect) {
+        const baseUrl = cleanConnectUrl(body.base_url || (row && row.base_url));
+        if (!baseUrl) {
+          return res.status(400).json({ ok: false, message: 'Enter the Connect account address: https://<account>.connect.paymentsense.cloud' });
+        }
+        if (!typed && !(row && row.api_key_enc && row.platform === 'connect')) {
+          return res.status(400).json({ ok: false, message: 'Enter the Connect account key.' });
+        }
+        return res.json(await verifyConnect({ key, baseUrl, terminalId: body.terminal_id, fetchImpl }));
+      }
       const result = await verifyDojo({
         key,
-        resellerId: req.body && req.body.reseller_id,
-        terminalId: req.body && req.body.terminal_id,
+        resellerId: body.reseller_id,
+        terminalId: body.terminal_id,
         fetchImpl,
       });
       res.json(result);
@@ -204,8 +279,22 @@ function dojoSettingsRoutes({ pool, broadcast, secret, fetchImpl }) {
       }
 
       const typed = String(body.api_key || '').trim();
-      if (typed && !/^sk_(sandbox|live)_[A-Za-z0-9_-]{16,}$/.test(typed)) {
-        return res.status(400).json({ error: 'That does not look like a Dojo secret key. It starts sk_live_ (or sk_sandbox_ for testing).' });
+      const connect = body.platform === 'connect';
+      const baseUrl = connect ? cleanConnectUrl(body.base_url) : null;
+      if (connect && !baseUrl) {
+        return res.status(400).json({ error: 'Enter the Connect account address: https://<account>.connect.paymentsense.cloud' });
+      }
+      // Dojo's live keys start sk_prod_ (older ones sk_live_), sandbox ones
+      // sk_sandbox_. sk_prod_ was refused here before, so a real Dojo live key
+      // could not be saved. A Connect key has no fixed prefix; only its shape is checked.
+      if (typed && !connect && !/^sk_(sandbox|live|prod)_[A-Za-z0-9_-]{16,}$/.test(typed)) {
+        return res.status(400).json({ error: 'That does not look like a Dojo secret key. It starts sk_prod_ (or sk_sandbox_ for testing). For a Paymentsense Connect account, choose Paymentsense Connect.' });
+      }
+      if (typed && connect && !/^[A-Za-z0-9_.:-]{16,200}$/.test(typed)) {
+        return res.status(400).json({ error: 'That does not look like a Connect account key.' });
+      }
+      if (connect && !typed && !(row && row.api_key_enc && row.platform === 'connect')) {
+        return res.status(400).json({ error: 'Enter the Connect account key.' });
       }
       const key = typed
         || (row && row.api_key_enc ? unseal(row.api_key_enc) : null)
@@ -216,7 +305,9 @@ function dojoSettingsRoutes({ pool, broadcast, secret, fetchImpl }) {
 
       const resellerId = cleanId(body.reseller_id);
       const terminalId = cleanId(body.terminal_id);
-      const check = await verifyDojo({ key, resellerId, terminalId, fetchImpl });
+      const check = connect
+        ? await verifyConnect({ key, baseUrl, terminalId, fetchImpl })
+        : await verifyDojo({ key, resellerId, terminalId, fetchImpl });
       if (!check.ok) return res.status(400).json({ error: check.message, terminals: check.terminals || [] });
 
       const sealed = seal(key);
@@ -225,16 +316,19 @@ function dojoSettingsRoutes({ pool, broadcast, secret, fetchImpl }) {
       }
       await pool.execute(
         `INSERT INTO epos_dojo_settings
-           (office, api_key_enc, key_hint, environment, reseller_id, terminal_id, result_seconds, updated_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+           (office, api_key_enc, key_hint, environment, reseller_id, terminal_id, result_seconds, updated_by,
+            platform, base_url)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE api_key_enc = VALUES(api_key_enc), key_hint = VALUES(key_hint),
            environment = VALUES(environment), reseller_id = VALUES(reseller_id),
            terminal_id = VALUES(terminal_id), result_seconds = VALUES(result_seconds),
-           updated_by = VALUES(updated_by), updated_at = CURRENT_TIMESTAMP`,
+           updated_by = VALUES(updated_by), platform = VALUES(platform), base_url = VALUES(base_url),
+           updated_at = CURRENT_TIMESTAMP`,
         [
-          office, sealed, key.slice(-4), isSandboxKey(key) ? 'sandbox' : 'live',
+          office, sealed, key.slice(-4), !connect && isSandboxKey(key) ? 'sandbox' : 'live',
           resellerId || null, (check.terminal && check.terminal.id) || null,
           cleanSeconds(body.result_seconds), req.user.email || null,
+          connect ? 'connect' : 'dojo', baseUrl,
         ]
       );
       // Every till in the venue picks the change up.
@@ -311,6 +405,8 @@ function dojoSettingsRoutes({ pool, broadcast, secret, fetchImpl }) {
         software_house_id: SOFTWARE_HOUSE_ID,
         reseller_id: view.reseller_id,
         terminal_id: view.terminal_id,
+        platform: view.platform,
+        base_url: view.base_url,
         result_seconds: view.result_seconds,
         updated_at: row ? new Date(row.updated_at).toISOString() : null,
       });
@@ -354,6 +450,8 @@ function dojoSettingsRoutes({ pool, broadcast, secret, fetchImpl }) {
 module.exports = {
   dojoSettingsRoutes,
   verifyDojo,
+  verifyConnect,
+  cleanConnectUrl,
   publicView,
   eventId,
   SOFTWARE_HOUSE_ID,

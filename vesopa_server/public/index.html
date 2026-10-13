@@ -4351,8 +4351,17 @@
                   <input id="dojo-shid" value="SL942X04" readonly disabled title="Set by Vesopa for Dojo">
                 </label>
                 <p class="muted small">Issued to Vesopa by Dojo and sent on every payment. It cannot be changed.</p>
-                <label>Dojo secret key
-                  <input type="password" id="dojo-key" autocomplete="off" placeholder="Leave blank to keep the current key (sk_live_... or sk_sandbox_...)">
+                <label>Card account type
+                  <select id="dojo-platform">
+                    <option value="dojo">Dojo (api.dojo.tech, key sk_prod_... or sk_sandbox_...)</option>
+                    <option value="connect">Paymentsense Connect (the account's own address)</option>
+                  </select>
+                </label>
+                <label id="dojo-url-row" hidden>Connect account address
+                  <input id="dojo-url" autocomplete="off" placeholder="https://xxxxxxxx.connect.paymentsense.cloud">
+                </label>
+                <label><span id="dojo-key-label">Dojo secret key</span>
+                  <input type="password" id="dojo-key" autocomplete="off" placeholder="Leave blank to keep the current key (sk_prod_... or sk_sandbox_...)">
                 </label>
                 <button class="btn small" id="dojo-use-sandbox" type="button">Use the public Dojo sandbox key</button>
                 <label>Reseller ID

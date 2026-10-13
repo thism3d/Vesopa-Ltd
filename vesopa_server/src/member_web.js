@@ -295,6 +295,10 @@ function memberWebRoutes({ secret, flutterPage }) {
       'Content-Security-Policy': [
         "default-src 'self'", "img-src 'self' https: data:", "style-src 'self' 'unsafe-inline'",
         `script-src 'nonce-${req.member.nonce}'`, "connect-src 'self'", "font-src 'self' https:",
+        // The notifications worker (push-sw.js). Without this a service
+        // worker falls under script-src, which only allows the nonce, and
+        // Chrome refused it: "violates the Content Security Policy".
+        "worker-src 'self'", "manifest-src 'self'",
         "frame-ancestors 'none'", "base-uri 'none'", "object-src 'none'",
       ].join('; '),
     });

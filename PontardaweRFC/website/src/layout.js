@@ -128,12 +128,14 @@ const ANDROID_APP = club.web.android_app;
 
 /**
  * The official store badges (Apple's and Google's own artwork, unaltered
- * apart from Google's transparent margin). An iPhone is shown only the App
- * Store, an Android phone only Google Play (the head script decides, before
- * anything is drawn), a computer both and a QR code for /app.
+ * apart from Google's transparent margin). Every device is shown both, so it
+ * is plain the app is on iPhone and Android; the visitor's own store comes
+ * first (the head script decides, before anything is drawn), and a computer
+ * also gets a QR code for /app.
  */
 function appBadges({ qr = false, cls = '' } = {}) {
   return `<div class="store-badges${cls ? ` ${cls}` : ''}">
+  <p class="store-avail">On iPhone and Android</p>
   <a class="store-badge badge-ios" href="${esc(IOS_APP)}" rel="noopener" data-store="ios"><img src="/img/badges/app-store.svg" alt="Download on the App Store" width="120" height="40"></a>
   <a class="store-badge badge-android" href="${esc(ANDROID_APP)}" rel="noopener" data-store="android"><img src="/img/badges/google-play.png" alt="Get it on Google Play" width="135" height="40"></a>
   ${qr ? `<figure class="store-qr"><img src="/img/badges/app-qr.svg" alt="QR code: scan with your phone camera to get the app" width="96" height="96" loading="lazy"><figcaption>Scan with your phone</figcaption></figure>` : ''}

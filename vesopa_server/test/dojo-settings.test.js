@@ -109,3 +109,37 @@ test('a till re-sending the same event gets the same id', () => {
   console.log(`\ndojo-settings: ${tests.length - failed}/${tests.length} passed`);
   if (failed) process.exit(1);
 })();
+
+// Paymentsense Connect accounts (2026-10-13): Pontardawe RFC's live account.
+{
+  const { test: t2 } = require('node:test');
+  const assert2 = require('node:assert');
+  const { verifyConnect, cleanConnectUrl } = require('../src/dojo_settings');
+
+  t2('only a Connect host is accepted as the account address', () => {
+    assert2.strictEqual(cleanConnectUrl('https://SP0123ABC.connect.paymentsense.cloud/'), 'https://sp0123abc.connect.paymentsense.cloud');
+    assert2.strictEqual(cleanConnectUrl('https://evil.example.com'), null);
+    assert2.strictEqual(cleanConnectUrl('http://sp1.connect.paymentsense.cloud'), null);
+    assert2.strictEqual(cleanConnectUrl('https://a.connect.paymentsense.cloud.evil.com'), null);
+  });
+
+  t2('a Connect account is checked the way the till uses it', async () => {
+    let seen;
+    const fetchImpl = async (url, opts) => {
+      seen = { url, opts };
+      return { ok: true, status: 200, json: async () => ({ terminals: [{ tpi: '22160001', status: 'AVAILABLE' }] }) };
+    };
+    const r = await verifyConnect({ key: 'k'.repeat(20), baseUrl: 'https://sp1.connect.paymentsense.cloud', terminalId: '22160001', fetchImpl });
+    assert2.strictEqual(seen.url, 'https://sp1.connect.paymentsense.cloud/pac/terminals');
+    assert2.strictEqual(seen.opts.headers.Authorization, 'Basic ' + Buffer.from('epos:' + 'k'.repeat(20)).toString('base64'));
+    assert2.strictEqual(seen.opts.headers.Accept, 'application/connect.v2+json');
+    assert2.ok(r.ok);
+    assert2.strictEqual(r.terminal.tid, '22160001');
+  });
+
+  t2('a refused Connect key says so', async () => {
+    const r = await verifyConnect({ key: 'k'.repeat(20), baseUrl: 'https://sp1.connect.paymentsense.cloud', fetchImpl: async () => ({ ok: false, status: 401 }) });
+    assert2.strictEqual(r.ok, false);
+    assert2.match(r.message, /refused the key/);
+  });
+}

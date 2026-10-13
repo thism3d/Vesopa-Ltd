@@ -14238,6 +14238,9 @@ function dojoKeyState(s) {
   const env = s.environment === 'live'
     ? '<span class="pill amber">live</span>'
     : '<span class="pill on">sandbox</span>';
+  if (s.key_source === 'venue' && s.platform === 'connect') {
+    return 'Paymentsense Connect account <code>' + esc((s.base_url || '').replace(/^https:\/\//, '')) + '</code>, key ending <code>' + esc(s.key_hint || '') + '</code> ' + env;
+  }
   return s.key_source === 'venue'
     ? 'Your Dojo key ending <code>' + esc(s.key_hint || '') + '</code> ' + env
     : 'Using the <b>public Dojo sandbox key</b> ' + env + ': test money only, nothing is charged.';
@@ -14268,6 +14271,18 @@ async function loadCardPayments() {
   dojoState = await api('/dojo-settings');
   $('dojo-key-state').innerHTML = dojoKeyState(dojoState);
   $('dojo-key').value = '';
+  $('dojo-platform').value = dojoState.platform === 'connect' ? 'connect' : 'dojo';
+  $('dojo-url').value = dojoState.base_url || '';
+  const showPlatform = () => {
+    const connect = $('dojo-platform').value === 'connect';
+    $('dojo-url-row').hidden = !connect;
+    $('dojo-key-label').textContent = connect ? 'Connect account key' : 'Dojo secret key';
+    $('dojo-key').placeholder = connect
+      ? 'Leave blank to keep the current Connect key'
+      : 'Leave blank to keep the current key (sk_prod_... or sk_sandbox_...)';
+  };
+  $('dojo-platform').onchange = showPlatform;
+  showPlatform();
   $('dojo-reseller').value = dojoState.reseller_id || '';
   $('dojo-seconds').value = String(dojoState.result_seconds || 5);
   dojoTerminalOptions([], dojoState.terminal_id || '');
@@ -14278,7 +14293,12 @@ async function loadCardPayments() {
     try {
       const r = await api('/dojo-settings/test', {
         method: 'POST',
-        body: JSON.stringify({ api_key: $('dojo-key').value.trim(), reseller_id: $('dojo-reseller').value.trim() }),
+        body: JSON.stringify({
+          api_key: $('dojo-key').value.trim(),
+          reseller_id: $('dojo-reseller').value.trim(),
+          platform: $('dojo-platform').value,
+          base_url: $('dojo-url').value.trim(),
+        }),
       });
       dojoTerminalOptions(r.terminals || []);
       dojoSay(r.ok ? (r.terminals || []).length + ' card machines on this account.' : r.message, r.ok);
@@ -14301,7 +14321,9 @@ async function loadCardPayments() {
         method: 'PUT',
         body: JSON.stringify({
           api_key: $('dojo-key').value.trim(),
-          use_public_sandbox: dojoState.key_source !== 'venue',
+          platform: $('dojo-platform').value,
+          base_url: $('dojo-url').value.trim(),
+          use_public_sandbox: dojoState.key_source !== 'venue' && $('dojo-platform').value !== 'connect',
           reseller_id: $('dojo-reseller').value.trim(),
           terminal_id: $('dojo-terminal').value,
           result_seconds: Number($('dojo-seconds').value),
