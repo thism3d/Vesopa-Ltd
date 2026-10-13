@@ -123,6 +123,7 @@ class ConnectPacProvider implements PaymentProvider {
     // Connect's own guidance: poll once a second. Rate limiting kicks in at
     // 0.1s, so anything faster is refused rather than quicker.
     this.pollInterval = const Duration(seconds: 1),
+    this.cancelGrace = const Duration(seconds: 30),
     http.Client? client,
   }) : _client = client ?? http.Client();
 
@@ -142,6 +143,10 @@ class ConnectPacProvider implements PaymentProvider {
   final String currency;
   final Duration pollTimeout;
   final Duration pollInterval;
+
+  /// How long the till waits for the machine's verdict after asking it to
+  /// cancel, before it stops waiting and says to check the machine.
+  final Duration cancelGrace;
   final http.Client _client;
 
   /// The live socket, when one is available.
@@ -173,10 +178,66 @@ class ConnectPacProvider implements PaymentProvider {
   /// this callback exists to avoid.
   Future<bool> Function()? onSignatureRequested;
 
-  /// Set when the clerk abandons the wait. Checked between polls.
+  /// Told what happened to a cancel the clerk asked for, for the payment
+  /// screen: the machine was asked, or could not be.
+  void Function(bool accepted, String message)? onCancelAnswered;
+
+  /// Set when the clerk presses Cancel. Checked between polls.
   bool _abandoned = false;
 
-  void abandon() => _abandoned = true;
+  /// The TID of a sale running over the socket, so Cancel can reach it.
+  String? _socketSale;
+
+  /// Completed when the clerk stops waiting for an answer altogether.
+  Completer<void>? _stopWaiting;
+
+  /// The clerk's Cancel: ask the card machine to stop the sale.
+  ///
+  /// Before, this only set a flag the REST poll read, and a sale over the
+  /// socket (every card sale, once the socket is up) never looked at it:
+  /// the till sat on "Present card" and the machine kept waiting
+  /// (Pontardawe RFC, 2026-10-13). Now the socket sends Connect's
+  /// cancelTransaction straight away and REST sends its DELETE on the next
+  /// poll. Either way the till then waits for the machine's own verdict, so a
+  /// card that was already in still comes back as paid, never as cancelled.
+  void abandon() {
+    if (_abandoned) return;
+    _abandoned = true;
+    final tid = _socketSale;
+    final live = socket;
+    if (tid != null && live != null) unawaited(_cancelOnSocket(live, tid));
+  }
+
+  /// Stop waiting for the machine after a cancel it has not answered. The
+  /// result is "check the card machine", never paid or declined.
+  void stopWaiting() {
+    final stop = _stopWaiting;
+    if (stop != null && !stop.isCompleted) stop.complete();
+  }
+
+  Future<void> _cancelOnSocket(ConnectSocket live, String tid) async {
+    try {
+      await live.cancelTransaction(tid);
+      onCancelAnswered?.call(true, 'Cancelling on the card machine…');
+    } catch (e) {
+      onCancelAnswered?.call(
+        false,
+        'The card machine would not cancel (${e is ConnectException ? e.message : e}). '
+        'If the card is already in, wait for the result.',
+      );
+    }
+  }
+
+  PaymentResult _stoppedWaiting(int amountMinor, String? requestId) =>
+      PaymentResult(
+        approved: false,
+        amountMinor: amountMinor,
+        reference: requestId,
+        uncertainty: PaymentUncertainty.checkTerminal,
+        message:
+            'Payment abandoned on the till. If the customer completed it, '
+            'check the card machine before charging again.',
+      );
 
   /// Whether this till can actually send a payment to a reader.
   bool get canUseTerminal => terminalId?.trim().isNotEmpty ?? false;
@@ -410,6 +471,7 @@ class ConnectPacProvider implements PaymentProvider {
     int cashbackMinor = 0,
   }) async {
     _abandoned = false;
+    _stopWaiting = Completer<void>();
     String? requestId;
     try {
       // Cashback goes over REST, where the request carries amountCashback.
@@ -478,15 +540,43 @@ class ConnectPacProvider implements PaymentProvider {
       return null; // Nothing was asked of the reader; REST can take over.
     }
 
+    // Cancelled while the socket was opening: nothing reached the machine.
+    if (_abandoned) {
+      return PaymentResult(
+        approved: false,
+        amountMinor: amountMinor,
+        message: 'Cancelled from the till. No money was taken.',
+      );
+    }
+
+    _socketSale = tid;
     try {
-      final result = await live.performTransaction(
+      final sale = live.performTransaction(
         tid: tid,
         amountMinor: amountMinor,
         method: 'sale',
         currency: currency,
         cardholderNotPresent: manual,
       );
-      return _resultOf(result, amountMinor, reference: null);
+      final stop = _stopWaiting?.future;
+      final result = stop == null
+          ? await sale
+          : await Future.any<Map<String, dynamic>?>([sale, stop.then((_) => null)]);
+      if (result == null) {
+        unawaited(sale.then((_) {}, onError: (_) {}));
+        return _stoppedWaiting(amountMinor, null);
+      }
+      final read = _resultOf(result, amountMinor, reference: null);
+      if (_abandoned &&
+          !read.approved &&
+          (result['transactionResult'] as String? ?? '').toUpperCase() == 'CANCELLED') {
+        return PaymentResult(
+          approved: false,
+          amountMinor: amountMinor,
+          message: 'Cancelled from the till. No money was taken.',
+        );
+      }
+      return read;
     } on ConnectException catch (e) {
       // The reader was already engaged, so this is an outcome, not a reason to
       // try again down another pipe.
@@ -496,6 +586,8 @@ class ConnectPacProvider implements PaymentProvider {
         uncertainty: PaymentUncertainty.checkTerminal,
         message: e.message,
       );
+    } finally {
+      _socketSale = null;
     }
   }
 
@@ -543,20 +635,27 @@ class ConnectPacProvider implements PaymentProvider {
 
   /// Poll a transaction to its conclusion, relaying prompts as they arrive.
   Future<PaymentResult> _follow(String requestId, int amountMinor) async {
-    final deadline = DateTime.now().add(pollTimeout);
+    var deadline = DateTime.now().add(pollTimeout);
     var signatureAnswered = false;
+    var cancelSent = false;
 
     while (DateTime.now().isBefore(deadline)) {
-      if (_abandoned) {
-        await cancel(requestId);
-        return PaymentResult(
-          approved: false,
-          amountMinor: amountMinor,
-          reference: requestId,
-          message:
-              'Payment abandoned on the till. If the customer completed it, '
-              'check the card machine before charging again.',
+      if (_stopWaiting?.isCompleted ?? false) {
+        return _stoppedWaiting(amountMinor, requestId);
+      }
+      // The clerk's cancel goes once, then the poll carries on to the
+      // machine's own verdict: cancelled, or paid if the card was already in.
+      if (_abandoned && !cancelSent) {
+        cancelSent = true;
+        final asked = await cancel(requestId);
+        onCancelAnswered?.call(
+          asked,
+          asked
+              ? 'Cancelling on the card machine…'
+              : 'Could not reach the card machine to cancel. Waiting for the result.',
         );
+        final grace = DateTime.now().add(cancelGrace);
+        if (grace.isBefore(deadline)) deadline = grace;
       }
 
       final body = await fetchTransaction(requestId);
@@ -606,15 +705,19 @@ class ConnectPacProvider implements PaymentProvider {
           approved: false,
           amountMinor: amountMinor,
           reference: requestId,
-          message:
-              body['userMessage'] as String? ??
-              'Card payment ${result.toLowerCase().replaceAll('_', ' ')}',
+          message: cancelSent && result == 'CANCELLED'
+              ? 'Cancelled from the till. No money was taken.'
+              : body['userMessage'] as String? ??
+                    'Card payment ${result.toLowerCase().replaceAll('_', ' ')}',
         );
       }
       if (result == 'TIMED_OUT') return _afterTimeout(requestId, amountMinor);
 
       await Future<void>.delayed(pollInterval);
     }
+
+    // Asked to cancel and the machine never said either way.
+    if (cancelSent) return _stoppedWaiting(amountMinor, requestId);
 
     // Out of time on the till's own clock, with the transaction unresolved.
     // Same problem, same handling.

@@ -446,6 +446,9 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     connect?.onProgress = (p) {
       advance(cardStepForConnect(p), prompt: p.prompt);
     };
+    connect?.onCancelAnswered = (accepted, message) {
+      payment.value = payment.value.copyWith(cancelNote: message);
+    };
     connect?.onSignatureRequested = askForSignature;
 
     // Render the hosted card page inside the till rather than handing it to the
@@ -606,7 +609,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
                       connect?.abandon();
                     }
                   },
-            onStopWaiting: rest?.abandon,
+            onStopWaiting: rest?.abandon ?? connect?.stopWaiting,
             // Signature verification, when the reader asks for it. Answering
             // is what releases the sale, so it must be reachable here.
             onSignatureAccepted: state.step == CardStep.signature
@@ -643,6 +646,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     desktop?.openCheckout = null;
     connect?.onProgress = null;
     connect?.onSignatureRequested = null;
+    connect?.onCancelAnswered = null;
 
     // Logged whatever happened: Dojo's feedback was that failed payments left
     // no record. The back office's Card payments page lists these.
