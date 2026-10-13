@@ -159,7 +159,6 @@ class PhoneField extends StatelessWidget {
             decoration: InputDecoration(
               labelText: label,
               hintText: country.iso == 'GB' ? '7700 900123' : null,
-              helperText: 'With or without the first 0',
             ),
           ),
         ),

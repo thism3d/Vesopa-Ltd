@@ -254,6 +254,10 @@ class LoyaltyApi {
   Future<void> removePasskey(String id) =>
       _send('DELETE', '/loyalty/v1/me/passkeys/${Uri.encodeComponent(id)}');
 
+  /// Sign out one other device (Account > Where you are signed in).
+  Future<void> signOutDevice(String id) =>
+      _send('DELETE', '/loyalty/v1/me/devices/${Uri.encodeComponent(id)}');
+
   Future<int> signOutOthers() async {
     final json = await _send('POST', '/loyalty/v1/me/signout-others');
     return (json['signed_out'] as num?)?.toInt() ?? 0;

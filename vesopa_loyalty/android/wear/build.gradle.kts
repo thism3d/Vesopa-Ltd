@@ -65,9 +65,21 @@ android {
         }
     }
 
+    // The NDK the phone app uses (Flutter's), so the release can pack the
+    // native libraries' debug symbols.
+    ndkVersion = "28.2.13676358"
+
     buildTypes {
         release {
             if (!keyProperties.isEmpty) signingConfig = signingConfigs.getByName("release")
+            // Play Console warned on every watch bundle: no deobfuscation file
+            // and native code without debug symbols. R8 shrinks the app and
+            // writes the mapping into the bundle, and the native libraries'
+            // symbols go in beside it, so Play's crash reports read as code.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            ndk { debugSymbolLevel = "FULL" }
         }
     }
 

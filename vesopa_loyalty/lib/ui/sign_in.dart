@@ -149,7 +149,7 @@ class _SignInPageState extends ConsumerState<SignInPage> {
 
   Future<void> _sendTextCode() => _run(() async {
     final phone = toInternational(_country, _phone.text);
-    if (phone == null) throw ApiError('Please enter your mobile number, with or without the first 0.');
+    if (phone == null) throw ApiError('Please enter your mobile number.');
     // The phone apps prove the number with Firebase, any country; a browser,
     // Windows, or a build without Firebase gets the code the server texts.
     final brand = ref.read(brandProvider).requireValue;

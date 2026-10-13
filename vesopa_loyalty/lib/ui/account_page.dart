@@ -484,7 +484,7 @@ class _PhoneRow extends ConsumerWidget {
             try {
               if (!sent) {
                 e164 = toInternational(country, phone.text);
-                if (e164 == null) throw ApiError('Please enter your mobile number, with or without the first 0.');
+                if (e164 == null) throw ApiError('Please enter your mobile number.');
                 if (useFirebase) {
                   try {
                     final check = await firebasePhoneStart(e164!);
@@ -1115,6 +1115,26 @@ class _Devices extends ConsumerWidget {
     _ => 'Device',
   };
 
+  Future<void> _signOutOne(BuildContext context, WidgetRef ref, Map<String, dynamic> d) async {
+    final name = (d['label'] as String?)?.isNotEmpty == true ? d['label'] as String : _platform(d['platform']);
+    final sure = await showDialog<bool>(
+      context: context,
+      builder: (dialog) => AlertDialog.adaptive(
+        title: Text('Sign out $name?'),
+        content: const Text('It will need to sign in again to use your card.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialog, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(dialog, true), child: const Text('Sign out')),
+        ],
+      ),
+    );
+    if (sure != true || !context.mounted) return;
+    await runWithFeedback(context, ref, () async {
+      await ref.read(apiProvider).signOutDevice('${d['id']}');
+      ref.invalidate(accountProvider);
+    }, done: '$name signed out.');
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final devices = (account['devices'] as List? ?? const []).cast<Map<String, dynamic>>();
@@ -1126,12 +1146,20 @@ class _Devices extends ConsumerWidget {
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: Icon(d['current'] == true ? Icons.check_circle : Icons.devices_other),
-            title: Text(_platform(d['platform'])),
+            title: Text((d['label'] as String?)?.isNotEmpty == true ? d['label'] as String : _platform(d['platform'])),
             subtitle: Text(
               d['current'] == true
                   ? 'This device'
                   : 'Last used ${when(d['last_seen_at'], time: false)}',
             ),
+            // One device at a time: a lost phone, an old tablet. This device
+            // signs out from Sign out, not from here.
+            trailing: d['current'] == true
+                ? null
+                : TextButton(
+                    onPressed: () => _signOutOne(context, ref, d),
+                    child: const Text('Sign out'),
+                  ),
           ),
         if (devices.length > 1)
           Padding(

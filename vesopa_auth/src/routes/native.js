@@ -198,7 +198,17 @@ async function fromProvider(req, res, key) {
     return null;
   }
 
-  return { userId: found.userId, amr: [key], acr: 'aal1' };
+  /*
+   * SIGN IN WITH APPLE IS ALREADY TWO-STEP. Apple only lets an Apple ID use
+   * Sign in with Apple once it has two-factor authentication, and the sheet
+   * itself is unlocked with Face ID, Touch ID or the device passcode. So an
+   * Apple sign-in meets aal2 by itself. Without this, an account that had
+   * added a passkey (which counts as two-step here) could no longer sign in
+   * with Apple in the app at all: it was asked for a second step the app has
+   * no way to give (2026-10-13). Google's sign-in carries no such guarantee
+   * and stays aal1.
+   */
+  return { userId: found.userId, amr: key === 'apple' ? [key, 'mfa'] : [key], acr: key === 'apple' ? 'aal2' : 'aal1' };
 }
 
 /** What the app can ask for as the second step, for somebody who signed in with [amr]. */
@@ -223,7 +233,7 @@ async function askSecondFactor(req, res, who, application, codeChallenge, descri
   });
   if (!methods.length) {
     return refuse(res, 409, 'second_factor_required', held.passkeys.length
-      ? 'Your account has two-step sign-in. Please sign in with your passkey.'
+      ? 'Your account has two-step sign-in. Tap Use a passkey (or Continue with Apple) to sign in.'
       : 'This app needs two-step sign-in. Please add an authenticator app to your Vesopa account first.');
   }
   return res.status(409).json({

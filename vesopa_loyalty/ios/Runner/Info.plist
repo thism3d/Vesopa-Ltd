@@ -59,6 +59,13 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<!-- iPad multitasking (Split View, Slide Over, resizable windows): the app
+	     is never full-screen-only, said explicitly for iPadOS 26. With all four
+	     iPad orientations below and the launch storyboard, iPadOS offers it. -->
+	<key>UIRequiresFullScreen</key>
+	<false/>
+	<key>UIRequiresFullScreen~ipad</key>
+	<false/>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

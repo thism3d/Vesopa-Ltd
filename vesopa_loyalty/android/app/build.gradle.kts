@@ -80,6 +80,11 @@ android {
                 )
             }
             signingConfig = signingConfigs.getByName("release")
+            // Native debug symbols in the bundle (Flutter's engine and the
+            // app's own code are native), so Play does not warn and its crash
+            // reports have symbols. Flutter's release already shrinks with R8
+            // and packs the mapping file.
+            ndk { debugSymbolLevel = "SYMBOL_TABLE" }
         }
     }
 }

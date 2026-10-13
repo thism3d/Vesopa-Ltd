@@ -807,6 +807,24 @@ module.exports = function loyaltyAccountRoutes(deps) {
   });
 
   /** Sign every other device out, leaving this one signed in. */
+  /** Sign out one device, from the list under Account. Never the one asking. */
+  router.delete('/loyalty/v1/me/devices/:id', requireCustomer, async (req, res, next) => {
+    try {
+      const id = String(req.params.id || '');
+      if (id === req.sessionId) {
+        return res.status(400).json({ error: 'That is this device. Use Sign out instead.' });
+      }
+      const n = await revokeSessions(
+        'office = ? AND customer_id = ? AND id = ?',
+        [req.office, req.customerId, id]
+      );
+      if (!n) return res.status(404).json({ error: 'That device is already signed out.' });
+      res.json({ ok: true });
+    } catch (e) {
+      next(e);
+    }
+  });
+
   router.post('/loyalty/v1/me/signout-others', requireCustomer, async (req, res, next) => {
     try {
       const n = await revokeSessions(
