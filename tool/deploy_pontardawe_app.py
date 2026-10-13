@@ -428,8 +428,14 @@ def deploy_auth(client, stamp):
     print(f"   backup {backup}")
     sftp = client.open_sftp()
     try:
+        # Each file goes up under a temporary name and is renamed into place, so
+        # a deploy stopped half way never leaves a live file empty (2026-10-13:
+        # an interrupted upload left src/routes/oidc.js at 0 bytes, and auth
+        # would not have started again).
         for f in AUTH_FILES:
-            sftp.put(str(ROOT / f), posixpath.join(AUTH, f[len("vesopa_auth/"):]))
+            dest = posixpath.join(AUTH, f[len("vesopa_auth/"):])
+            sftp.put(str(ROOT / f), dest + ".uploading")
+            sftp.posix_rename(dest + ".uploading", dest)
     finally:
         sftp.close()
     sh(client, f"chown -R {USER}:{USER} {AUTH}/src {AUTH}/test {AUTH}/package.json", quiet=True)
