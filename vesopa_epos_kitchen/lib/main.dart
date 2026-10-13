@@ -17,6 +17,7 @@ import 'ui/theme.dart';
 import 'ui/theme_controller.dart';
 import 'dart:async';
 import 'data/trusted_roots.dart';
+import 'data/startup_repair.dart';
 
 /// A kitchen screen runs as a kiosk: full screen, and with no way to close or
 /// minimise it from the title bar.
@@ -64,6 +65,10 @@ Future<void> main() async {
   // A Store copy moved to our installer hands its data over here, before
   // anything opens local storage (data/app_update.dart, Handover).
   await Handover.adopt(r'Vesopa EPOS Ltd\Vesopa Kitchen');
+  // A preferences file left unreadable by a power cut stops the app at a
+  // spinner on every launch; set it aside before anything reads it
+  // (data/startup_repair.dart).
+  await repairPreferencesIfNeeded(r'Vesopa EPOS Ltd\Vesopa Kitchen');
   // An update somebody chose to take "On next start" runs now, before
   // anything else opens (data/app_update.dart). Returns at once otherwise.
   await Updater.applyPending(kitchenAppVersion);

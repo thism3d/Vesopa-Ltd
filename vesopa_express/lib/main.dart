@@ -1,3 +1,4 @@
+import 'data/startup_repair.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -26,6 +27,10 @@ Future<void> main() async {
   // A Store copy moved to our installer hands its data over here, before
   // anything opens local storage (data/app_update.dart, Handover).
   await Handover.adopt(r'Vesopa EPOS Ltd\Vesopa Express');
+  // A preferences file left unreadable by a power cut stops the app at a
+  // spinner on every launch; set it aside before anything reads it
+  // (data/startup_repair.dart).
+  await repairPreferencesIfNeeded(r'Vesopa EPOS Ltd\Vesopa Express');
   // An update somebody chose to take "On next start" runs now, before
   // anything else opens (data/app_update.dart). Returns at once otherwise.
   await Updater.applyPending(ExpressConfig.version);
