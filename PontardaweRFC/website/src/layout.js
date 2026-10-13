@@ -171,7 +171,7 @@ function footer() {
     <div class="foot-club">
       <a class="brand brand-foot" href="/"><picture><source srcset="/img/crest-128.webp" type="image/webp"><img src="/img/icon-192.png" alt="" width="56" height="56" loading="lazy"></picture><span class="brand-text"><b>Pontardawe RFC</b><small>${esc(club.welsh_name)}</small></span></a>
       <p>${esc(club.tagline)}.</p>
-      <p class="foot-social"><a href="${club.web.facebook}" rel="noopener" target="_blank">${icon('facebook', { size: 20 })}<span>Facebook</span></a><a href="${club.web.x}" rel="noopener" target="_blank">${icon('x', { size: 20 })}<span>X @PontardaweRFC</span></a></p>
+      <p class="foot-social"><a href="${club.web.facebook}" rel="noopener" target="_blank">${icon('facebook', { size: 20 })}<span>Facebook</span></a><a href="${club.web.x}" rel="noopener" target="_blank">${icon('x', { size: 20 })}<span>@PontardaweRFC</span></a></p>
     </div>
     <div>
       <h2>Visit</h2>

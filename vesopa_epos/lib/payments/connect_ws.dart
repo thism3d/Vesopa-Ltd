@@ -74,10 +74,8 @@ class ConnectSocket {
     return Uri.parse('wss://$host/pac').replace(queryParameters: {
       'token': apiKey.trim(),
       'api-version': apiVersion,
-      if (softwareHouseId?.trim().isNotEmpty ?? false)
-        'software-house-id': softwareHouseId!.trim(),
-      if (installerId?.trim().isNotEmpty ?? false)
-        'installer-id': installerId!.trim(),
+      'software-house-id': connectSoftwareHouse(softwareHouseId),
+      'installer-id': connectInstaller(installerId, softwareHouseId),
     });
   }
 

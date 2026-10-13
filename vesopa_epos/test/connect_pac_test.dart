@@ -71,14 +71,18 @@ void main() {
       expect(headers['installer-id'], 'installer');
     });
 
-    test('omits partner headers entirely when unset', () async {
+    // Connect refuses a call with no Installer-Id (422 "Installer-Id header
+    // must be set", Pontardawe RFC's live account), so unset ids fall back to
+    // Vesopa's software house id rather than being left out.
+    test("sends Vesopa's ids when none are set", () async {
       final provider = ConnectPacProvider(
         baseUrl: 'https://acct.connect.paymentsense.cloud',
         apiKey: 'k',
         client: _client((_) async => http.Response('{"terminals":[]}', 200)),
       );
       await provider.listTerminals();
-      expect(_sent.single.headers.containsKey('software-house-id'), isFalse);
+      expect(_sent.single.headers['software-house-id'], 'SL942X04');
+      expect(_sent.single.headers['installer-id'], 'SL942X04');
     });
   });
 

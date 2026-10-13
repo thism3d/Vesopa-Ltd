@@ -1015,12 +1015,22 @@ function venueScript(vapid) {
     + (vapid
       ? `var key=${JSON.stringify(vapid)};`
         + "if('serviceWorker' in navigator&&'PushManager' in window&&'Notification' in window){"
+        // Chrome on Android only shows its question when it is asked straight
+        // from the tap, before anything else is awaited; asked after the
+        // worker registration it could answer "default" with no question at
+        // all. And a site Chrome has blocked answers "denied" without asking,
+        // so the member is told how to unblock it rather than "not allowed".
+        + "var note=document.querySelector('[data-push-note]'),BLOCKED='Notifications are blocked for this site in your browser. Tap the icon to the left of the address, then Permissions (or Site settings) > Notifications > Allow, and switch this on again.';"
+        + "if(Notification.permission==='denied')note.textContent=BLOCKED;"
         + "navigator.serviceWorker.getRegistration(d.base).then(function(g){return g&&g.pushManager.getSubscription()}).then(function(s){set(ps,!!s);ps.disabled=false});"
-        + "ps.addEventListener('click',async function(){ps.disabled=true;try{var g=await navigator.serviceWorker.register(d.base+'push-sw.js',{scope:d.base});"
-        + "var s=await g.pushManager.getSubscription();if(s){var e=s.endpoint;await s.unsubscribe();await post('push-off',{endpoint:e});set(ps,false)}"
-        + "else{if(await Notification.requestPermission()!=='granted'){document.querySelector('[data-push-note]').textContent='Notifications were not allowed. You can still read all our news in News.';return}"
-        + "await navigator.serviceWorker.ready;s=await g.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b2u(key)});await post('push',{subscription:s.toJSON()});set(ps,true)}"
-        + "}catch(x){document.querySelector('[data-push-note]').textContent=x.message}finally{ps.disabled=false}})}"
+        + "ps.addEventListener('click',function(){var on=ps.getAttribute('aria-pressed')==='true';"
+        + "var asked=on?Promise.resolve('granted'):(Notification.permission==='granted'?Promise.resolve('granted'):Notification.requestPermission());"
+        + "ps.disabled=true;(async function(){try{var answer=await asked;"
+        + "if(!on&&answer!=='granted'){note.textContent=answer==='denied'?BLOCKED:'Your browser did not show the question. If a bell appeared in the address bar, tap it and choose Allow, then switch this on again.';return}"
+        + "var g=await navigator.serviceWorker.register(d.base+'push-sw.js',{scope:d.base});"
+        + "var s=await g.pushManager.getSubscription();if(on){if(s){var e=s.endpoint;await s.unsubscribe();await post('push-off',{endpoint:e})}set(ps,false);note.textContent='';return}"
+        + "await navigator.serviceWorker.ready;if(!s)s=await g.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b2u(key)});await post('push',{subscription:s.toJSON()});set(ps,true);note.textContent='Notifications are on.'"
+        + "}catch(x){note.textContent=x.message}finally{ps.disabled=false}})()})}"
       : '')
     + "if(ns&&navigator.geolocation){var k='nearby:'+d.base,on=false;try{on=!!localStorage.getItem(k)}catch(e){}set(ns,on);ns.disabled=false;"
     + "ns.addEventListener('click',function(){ns.disabled=true;var note=document.querySelector('[data-near-note]');"

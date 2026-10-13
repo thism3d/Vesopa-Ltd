@@ -6,6 +6,24 @@ import 'package:http/http.dart' as http;
 import 'connect_ws.dart';
 import 'payment_provider.dart';
 
+/// Vesopa's software house id, which Connect also takes as the installer.
+const _vesopaId = 'SL942X04';
+
+/// The Software-House-Id header: the configured one, or Vesopa's.
+String connectSoftwareHouse(String? softwareHouseId) {
+  final id = softwareHouseId?.trim() ?? '';
+  return id.isEmpty ? _vesopaId : id;
+}
+
+/// The Installer-Id header, which Connect requires: without it every call is
+/// refused with 422 "Installer-Id header must be set" (Pontardawe RFC's live
+/// account, 2026-10-13). The reseller id when the venue has one, otherwise the
+/// software house id, the same rule Dojo's sheet gives for a blank reseller.
+String connectInstaller(String? installerId, String? softwareHouseId) {
+  final id = installerId?.trim() ?? '';
+  return id.isEmpty ? connectSoftwareHouse(softwareHouseId) : id;
+}
+
 /// A card machine on a Paymentsense Connect account.
 class ConnectTerminal {
   const ConnectTerminal({
@@ -172,8 +190,8 @@ class ConnectPacProvider implements PaymentProvider {
     // the partner headers below and answers 415.
     'Accept': 'application/connect.v2+json',
     'Content-Type': 'application/json',
-    'Software-House-Id': ?softwareHouseId,
-    'Installer-Id': ?installerId,
+    'Software-House-Id': connectSoftwareHouse(softwareHouseId),
+    'Installer-Id': connectInstaller(installerId, softwareHouseId),
   };
 
   Uri _uri(String path) => Uri.parse('$baseUrl$path');

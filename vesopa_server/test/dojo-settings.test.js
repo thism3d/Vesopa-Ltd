@@ -133,6 +133,7 @@ test('a till re-sending the same event gets the same id', () => {
     assert2.strictEqual(seen.url, 'https://sp1.connect.paymentsense.cloud/pac/terminals');
     assert2.strictEqual(seen.opts.headers.Authorization, 'Basic ' + Buffer.from('epos:' + 'k'.repeat(20)).toString('base64'));
     assert2.strictEqual(seen.opts.headers.Accept, 'application/connect.v2+json');
+    assert2.strictEqual(seen.opts.headers['Installer-Id'], 'SL942X04');
     assert2.ok(r.ok);
     assert2.strictEqual(r.terminal.tid, '22160001');
   });

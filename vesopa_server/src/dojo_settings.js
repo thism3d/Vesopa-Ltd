@@ -143,7 +143,7 @@ function cleanConnectUrl(v) {
  * (lib/payments/connect_pac.dart): Basic auth with the key as the password,
  * Connect v2, GET /pac/terminals.
  */
-async function verifyConnect({ key, baseUrl, terminalId, fetchImpl = fetch }) {
+async function verifyConnect({ key, baseUrl, terminalId, resellerId, fetchImpl = fetch }) {
   let res;
   try {
     res = await fetchImpl(`${baseUrl}/pac/terminals`, {
@@ -151,6 +151,9 @@ async function verifyConnect({ key, baseUrl, terminalId, fetchImpl = fetch }) {
         Authorization: 'Basic ' + Buffer.from(`epos:${key}`).toString('base64'),
         Accept: 'application/connect.v2+json',
         'Software-House-Id': SOFTWARE_HOUSE_ID,
+        // Required: without it Connect answers 422 "Installer-Id header must
+        // be set". The reseller id when there is one, else Vesopa's id.
+        'Installer-Id': cleanId(resellerId) || SOFTWARE_HOUSE_ID,
       },
       signal: AbortSignal.timeout(15000),
     });
@@ -254,7 +257,7 @@ function dojoSettingsRoutes({ pool, broadcast, secret, fetchImpl }) {
         if (!typed && !(row && row.api_key_enc && row.platform === 'connect')) {
           return res.status(400).json({ ok: false, message: 'Enter the Connect account key.' });
         }
-        return res.json(await verifyConnect({ key, baseUrl, terminalId: body.terminal_id, fetchImpl }));
+        return res.json(await verifyConnect({ key, baseUrl, terminalId: body.terminal_id, resellerId: body.reseller_id, fetchImpl }));
       }
       const result = await verifyDojo({
         key,
@@ -306,7 +309,7 @@ function dojoSettingsRoutes({ pool, broadcast, secret, fetchImpl }) {
       const resellerId = cleanId(body.reseller_id);
       const terminalId = cleanId(body.terminal_id);
       const check = connect
-        ? await verifyConnect({ key, baseUrl, terminalId, fetchImpl })
+        ? await verifyConnect({ key, baseUrl, terminalId, resellerId, fetchImpl })
         : await verifyDojo({ key, resellerId, terminalId, fetchImpl });
       if (!check.ok) return res.status(400).json({ error: check.message, terminals: check.terminals || [] });
 
