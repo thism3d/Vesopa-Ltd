@@ -52,6 +52,12 @@ assert.strictEqual(run('member.pontardawerfc.com', '/uploads/a.png').next, '/upl
 // The back office is not reachable on this host: it is the app's deep link.
 assert.strictEqual(run('member.pontardawerfc.com', '/api/offices').next, '/app/pontardawe-rfc/api/offices');
 
+// A kitchen screen, till or display set up with the venue's own host gets its
+// data, not the members' home page (2026-10-13, FormatException on the board).
+assert.strictEqual(run('member.pontardawerfc.com', '/api/kitchen/board?minutes=60').next, '/api/kitchen/board?minutes=60');
+assert.strictEqual(run('member.pontardawerfc.com', '/till/kitchen/tickets').next, '/till/kitchen/tickets');
+assert.strictEqual(run('member.pontardawerfc.com', '/ws').next, '/ws');
+
 // Its old paths, typed on the new host, go to the root.
 assert.deepStrictEqual(run('member.pontardawerfc.com', '/pontardawe-rfc/?x=1').redirect, [301, '/?x=1']);
 

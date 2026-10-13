@@ -56,7 +56,14 @@ const HOST_OF_SLUG = new Map([...VENUE_HOSTS].map(([host, slug]) => [slug, host]
 // /wallet/c/ and /wallet/s/ are a member's own card as an Apple or Google Wallet
 // pass: the app hands out a short-lived link on this name (loyalty_app.js,
 // /loyalty/v1/me/wallet) rather than sending anybody to the back office's.
-const PASS = ['/activity/v1/', '/loyalty/v1/', '/privacy/v1/', '/uploads/', '/assets/', '/app/vesopa/', '/wallet/c/', '/wallet/s/'];
+// And what a venue's screens read (2026-10-13). A kitchen screen set up with
+// the club's member address (member.pontardawerfc.com) was sent the members'
+// home page for /api/kitchen/board and showed "FormatException: Unexpected
+// character". Only the screens' own routes, each with its own sign-in check:
+// the back office itself stays unreachable on a venue's host.
+const PASS = ['/activity/v1/', '/loyalty/v1/', '/privacy/v1/', '/uploads/', '/assets/', '/app/vesopa/', '/wallet/c/', '/wallet/s/',
+  '/api/kitchen/', '/api/display/', '/api/terminal/', '/api/till/', '/api/till-settings/public', '/api/allergens',
+  '/api/licence/', '/till/', '/ws'];
 
 /** Words no venue may take as its address, because the paths above use them. */
 const RESERVED = new Set([
