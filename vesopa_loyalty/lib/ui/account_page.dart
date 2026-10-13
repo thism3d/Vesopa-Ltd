@@ -15,6 +15,8 @@ import 'membership_section.dart';
 import 'photo_crop.dart';
 import 'settings_page.dart';
 import 'widgets.dart';
+import 'phone_field.dart';
+import '../platform/firebase_phone.dart';
 
 /// What this member can change about themselves, and what they can prove.
 ///
@@ -445,66 +447,139 @@ class _PhoneRow extends ConsumerWidget {
 
   final Map<String, dynamic> account;
 
+  /// Add a mobile number, any country.
+  ///
+  /// On the phone apps Firebase texts the code and proves the number
+  /// (lib/platform/firebase_phone.dart); elsewhere, or on a build without
+  /// Firebase, the server texts it as before. Errors are shown inside the
+  /// dialog: a snackbar would sit on the page behind it, dimmed and unread.
   Future<void> _add(BuildContext context, WidgetRef ref) async {
     final phone = TextEditingController();
     final code = TextEditingController();
+    var country = countries.first;
     var sent = false;
+    var busy = false;
+    String? error;
+    String? verification;
+    String? e164;
+    final brand = ref.read(brandProvider).value;
+    var useFirebase = firebasePhoneOnDevice && (brand?.signIn.firebasePhone ?? false);
+    final api = ref.read(apiProvider);
 
-    await showDialog<void>(
+    final added = await showDialog<String>(
       context: context,
       builder: (dialog) => StatefulBuilder(
-        builder: (dialog, setLocal) => AlertDialog(
-          title: Text(sent ? 'Enter the code' : 'Add your mobile number'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: phone,
-                enabled: !sent,
-                keyboardType: TextInputType.phone,
-                decoration: const InputDecoration(labelText: 'Mobile number', hintText: '07…'),
-              ),
-              if (sent) ...[
-                const SizedBox(height: 12),
-                TextField(
-                  controller: code,
-                  autofocus: true,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Code from the text'),
-                ),
-              ],
-            ],
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(dialog), child: const Text('Cancel')),
-            FilledButton(
-              onPressed: () async {
-                if (!sent) {
-                  final ok = await runWithFeedback(
-                    dialog, ref,
-                    () => ref.read(apiProvider).addPhone(phone.text.trim()),
-                    done: 'Code sent.',
-                  );
-                  if (ok) setLocal(() => sent = true);
-                  return;
+        builder: (dialog, setLocal) {
+          Future<void> proved(String idToken) async {
+            final stored = await api.addPhoneProved(idToken);
+            ref.invalidate(accountProvider);
+            if (dialog.mounted) Navigator.pop(dialog, stored);
+          }
+
+          Future<void> go() async {
+            setLocal(() {
+              busy = true;
+              error = null;
+            });
+            try {
+              if (!sent) {
+                e164 = toInternational(country, phone.text);
+                if (e164 == null) throw ApiError('Please enter your mobile number, with or without the first 0.');
+                if (useFirebase) {
+                  try {
+                    final check = await firebasePhoneStart(e164!);
+                    if (check.token != null) return await proved(check.token!);
+                    verification = check.verification;
+                  } on FirebasePhoneUnavailable {
+                    useFirebase = false;
+                    await api.addPhone(e164!);
+                  }
+                } else {
+                  await api.addPhone(e164!);
                 }
-                final ok = await runWithFeedback(dialog, ref, () async {
-                  await ref.read(apiProvider).confirmPhone(
-                    phone: phone.text.trim(),
-                    code: code.text.trim(),
-                  );
-                  ref.invalidate(accountProvider);
-                }, done: 'Number confirmed.');
-                if (ok && dialog.mounted) Navigator.pop(dialog);
-              },
-              child: Text(sent ? 'Confirm' : 'Text me a code'),
+                setLocal(() => sent = true);
+                return;
+              }
+              if (code.text.trim().isEmpty) throw ApiError('Enter the code from the text message.');
+              if (useFirebase && verification != null) {
+                return await proved(await firebasePhoneConfirm(verification!, code.text.trim()));
+              }
+              await api.confirmPhone(phone: e164!, code: code.text.trim());
+              ref.invalidate(accountProvider);
+              if (dialog.mounted) Navigator.pop(dialog, e164);
+            } on ApiError catch (e) {
+              setLocal(() => error = e.message);
+            } catch (_) {
+              setLocal(() => error = 'That did not work. Please try again.');
+            } finally {
+              if (dialog.mounted) setLocal(() => busy = false);
+            }
+          }
+
+          final scheme = Theme.of(dialog).colorScheme;
+          return AlertDialog(
+            title: Text(sent ? 'Enter the code' : 'Add your mobile number'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  PhoneField(
+                    controller: phone,
+                    country: country,
+                    enabled: !sent && !busy,
+                    autofocus: true,
+                    onCountry: (c) => setLocal(() => country = c),
+                  ),
+                  if (sent) ...[
+                    const SizedBox(height: 12),
+                    Text('We sent a code to $e164.', style: Theme.of(dialog).textTheme.bodySmall),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: code,
+                      autofocus: true,
+                      enabled: !busy,
+                      keyboardType: TextInputType.number,
+                      autofillHints: const [AutofillHints.oneTimeCode],
+                      decoration: const InputDecoration(labelText: 'Code from the text'),
+                      onSubmitted: (_) => go(),
+                    ),
+                  ],
+                  if (error != null) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: scheme.errorContainer,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(error!, style: TextStyle(color: scheme.onErrorContainer)),
+                    ),
+                  ],
+                ],
+              ),
             ),
-          ],
-        ),
+            actions: [
+              TextButton(onPressed: busy ? null : () => Navigator.pop(dialog), child: const Text('Cancel')),
+              FilledButton(
+                onPressed: busy ? null : go,
+                child: busy
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                    : Text(sent ? 'Confirm' : 'Text me a code'),
+              ),
+            ],
+          );
+        },
       ),
     );
     phone.dispose();
     code.dispose();
+    if (added != null && context.mounted) {
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(content: Text('$added confirmed.'), behavior: SnackBarBehavior.floating),
+      );
+    }
   }
 
   @override

@@ -228,6 +228,19 @@ class LoyaltyApi {
 
   Future<void> removePhone() => _send('DELETE', '/loyalty/v1/me/phone');
 
+  /// Add a number Firebase proved: it counts as confirmed at once. Answers
+  /// the number as the server stored it.
+  Future<String> addPhoneProved(String idToken) async {
+    final json = await _send('POST', '/loyalty/v1/me/phone/firebase', body: {'id_token': idToken});
+    return json['phone'] as String? ?? '';
+  }
+
+  /// Sign in with a number Firebase proved, already on a membership here.
+  Future<String> signInWithProvedPhone({required String idToken, required String platform}) async {
+    final json = await _send('POST', '$_app/phone/firebase', body: {'id_token': idToken, 'platform': platform});
+    return json['token'] as String;
+  }
+
   Future<Map<String, dynamic>> passkeyRegistrationOptions() =>
       _send('POST', '/loyalty/v1/me/passkeys/options');
 

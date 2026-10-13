@@ -29,6 +29,8 @@
 #   ASC_KEY_ID      the key's ID
 #   ASC_ISSUER_ID   the Issuer ID shown above the list of keys
 #   ASC_KEY_P8      the whole downloaded AuthKey_XXXXXXXXXX.p8, pasted in
+#   FIREBASE_IOS_API_KEY  API_KEY from the venue's GoogleService-Info.plist, for
+#                   phone sign-in (without it the app keeps the texted code)
 # and, optionally, for App Review (the app is members-only):
 #   ASC_REVIEW_USER, ASC_REVIEW_PASSWORD   a member account with a password
 #   ASC_REVIEW_PHONE                       a contact number for the reviewer
@@ -101,6 +103,10 @@ jobs:
 
       - name: Make the venue's project
         if: inputs.mode == 'full'
+        env:
+          # Firebase phone sign-in on the iPhone (make_venue_app.py firebase_ios):
+          # the iOS app's Firebase API key, from the venue's GoogleService-Info.plist.
+          FIREBASE_IOS_API_KEY: ${{ secrets.FIREBASE_IOS_API_KEY }}
         run: python3 vesopa_loyalty/tool/make_venue_app.py "$VENUE"
 
       - name: Flutter build

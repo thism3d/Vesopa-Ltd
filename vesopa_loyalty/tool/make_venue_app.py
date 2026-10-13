@@ -233,7 +233,61 @@ def wear(app: Path, venue_dir: Path, v):
         shutil.copy2(crest, res / "drawable-nodpi" / "crest.png")
 
 
-def ios(app: Path, v):
+def firebase_ios(ios_dir: Path, v, venue_dir: Path | None):
+    """Firebase phone sign-in on the iPhone (ios/Runner/PhoneBridge.swift).
+
+    The app is configured from Info.plist keys rather than a bundled
+    GoogleService-Info.plist. Its ids are public and live in venue.json
+    (firebase_ios_app_id, firebase_project_id, firebase_sender_id); the API key
+    comes from FIREBASE_IOS_API_KEY (a GitHub secret on the iOS workflow) or
+    the venue's own gitignored GoogleService-Info.plist on the owner's PC.
+    Without all four the keys are left out and the app keeps the texted code.
+    The app-<GOOGLE_APP_ID> URL scheme brings Firebase's check page back."""
+    app_id = v.get("firebase_ios_app_id", "")
+    key = os.environ.get("FIREBASE_IOS_API_KEY", "").strip()
+    plist = (venue_dir / "GoogleService-Info.plist") if venue_dir else None
+    if not key and plist and plist.exists():
+        import plistlib
+        key = str(plistlib.loads(plist.read_bytes()).get("API_KEY", ""))
+    project, sender = v.get("firebase_project_id", ""), v.get("firebase_sender_id", "")
+    if not (app_id and key and project and sender):
+        print("Firebase phone sign-in on iPhone: not set up for this build (no FIREBASE_IOS_API_KEY or ids).")
+        return
+    scheme = "app-" + app_id.replace(":", "-")
+    edit(ios_dir / "Runner" / "Info.plist", [("</dict>
+</plist>", (
+        f"	<key>VesopaFirebaseAppID</key>
+	<string>{app_id}</string>
+"
+        f"	<key>VesopaFirebaseAPIKey</key>
+	<string>{key}</string>
+"
+        f"	<key>VesopaFirebaseProjectID</key>
+	<string>{project}</string>
+"
+        f"	<key>VesopaFirebaseSenderID</key>
+	<string>{sender}</string>
+"
+        "	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+"
+        "			<key>CFBundleURLName</key>
+			<string>firebase-phone</string>
+"
+        f"			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>{scheme}</string>
+			</array>
+"
+        "		</dict>
+	</array>
+"
+        "</dict>
+</plist>"))])
+
+
+def ios(app: Path, v, venue_dir: Path | None = None):
     ios_dir = app / "ios"
     name = v["name"]
     display = v.get("ios_display_name", name)
@@ -253,6 +307,7 @@ def ios(app: Path, v):
         (f"<string>{SOURCE_NAME}</string>", f"<string>{plist_escape(display)}</string>"),
         ("<string>vesopa_loyalty</string>", f"<string>{plist_escape(short[:15])}</string>"),
     ])
+    firebase_ios(ios_dir, v, venue_dir)
     for swift in (ios_dir / "VesopaWatch").glob("*.swift"):
         edit(swift, [(SOURCE_NAME, name)], count_required=False)
 
@@ -388,7 +443,7 @@ def main():
     shutil.copytree(overlay, app, dirs_exist_ok=True)
 
     android(app, venue_dir, v)
-    ios(app, v)
+    ios(app, v, venue_dir)
     dart(app, v)
     print(f"{v['name']} {v['version']} ({v['build']}) as {v['app_id']}: {app}")
 

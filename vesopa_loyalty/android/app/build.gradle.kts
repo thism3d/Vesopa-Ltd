@@ -96,6 +96,8 @@ dependencies {
     // Firebase artefact to versions known to work together.
     implementation(platform("com.google.firebase:firebase-bom:34.3.0"))
     implementation("com.google.firebase:firebase-messaging")
+    // Phone number sign-in and proof (PhoneBridge.kt).
+    implementation("com.google.firebase:firebase-auth")
     // Signing in with the phone's own sheet, no web page (AuthBridge.kt):
     // Credential Manager for passkeys and Google accounts.
     implementation("androidx.credentials:credentials:1.5.0")

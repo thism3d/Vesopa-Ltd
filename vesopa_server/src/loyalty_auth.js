@@ -111,6 +111,9 @@ async function configFor(db, office, settings, env = process.env) {
     policy: policyFor(settings, methods),
     // Whether a member may edit their own name, email and phone.
     self_service: !settings || settings.self_service == null ? true : !!Number(settings.self_service),
+    // The phone apps prove a mobile number with Firebase (any country) when
+    // the server can check the token (src/firebase_phone.js).
+    firebase_phone: !!String(env.FIREBASE_PROJECT_ID || '').trim(),
   };
 }
 

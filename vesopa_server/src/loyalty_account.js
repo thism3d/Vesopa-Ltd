@@ -37,6 +37,7 @@ const express = require('express');
 const auth = require('./loyalty_auth');
 const social = require('./loyalty_social');
 const { cleanPhone, postcoderSend, postcoderVerify } = require('./dinein_otp');
+const firebasePhone = require('./firebase_phone');
 const { passkeyProvider } = require('./passkey_providers');
 const vesopaPasskeys = require('./vesopa_member_passkeys');
 
@@ -294,6 +295,39 @@ module.exports = function loyaltyAccountRoutes(deps) {
           WHERE office = ? AND channel = 'sms' AND phone = ? AND used_at IS NULL`,
         [app.office, phone]
       );
+      await ensureCard(pool, app.office, customer.id);
+      res.json({ token: await signIn(req, app.office, customer.id) });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /**
+   * Sign in with a mobile number Firebase proved (the phone apps, any
+   * country). The number must already be proved on a membership at this venue,
+   * exactly as with a texted code; it never creates one.
+   */
+  router.post('/loyalty/v1/app/:slug/phone/firebase', json, async (req, res, next) => {
+    try {
+      const app = await venue(req, res, 'code_sms');
+      if (!app) return;
+      let proved;
+      try {
+        proved = await firebasePhone.verifyPhoneToken((req.body || {}).id_token);
+      } catch (e) {
+        return res.status(400).json({ error: e.message });
+      }
+      const [[customer]] = await pool.query(
+        `SELECT id FROM epos_customers
+          WHERE email_key = ? AND phone = ? AND phone_verified_at IS NOT NULL
+          ORDER BY created_at LIMIT 1`,
+        [app.office, proved.phone]
+      );
+      if (!customer) {
+        return res.status(404).json({
+          error: 'That number is not on a membership here yet. Sign in another way, then add it under Account.',
+        });
+      }
       await ensureCard(pool, app.office, customer.id);
       res.json({ token: await signIn(req, app.office, customer.id) });
     } catch (e) {
@@ -663,6 +697,31 @@ module.exports = function loyaltyAccountRoutes(deps) {
         [req.office, phone]
       );
       res.json({ ok: true, phone });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /** Add a mobile number Firebase proved: it counts at once, as a confirmed number. */
+  router.post('/loyalty/v1/me/phone/firebase', requireCustomer, json, async (req, res, next) => {
+    try {
+      let proved;
+      try {
+        proved = await firebasePhone.verifyPhoneToken((req.body || {}).id_token);
+      } catch (e) {
+        return res.status(400).json({ error: e.message });
+      }
+      // One proved number per membership, per venue (see /me/phone/verify).
+      await pool.execute(
+        `UPDATE epos_customers SET phone_verified_at = NULL
+          WHERE email_key = ? AND phone = ? AND id <> ?`,
+        [req.office, proved.phone, req.customerId]
+      );
+      await pool.execute(
+        'UPDATE epos_customers SET phone = ?, phone_verified_at = NOW() WHERE id = ? AND email_key = ?',
+        [proved.phone, req.customerId, req.office]
+      );
+      res.json({ ok: true, phone: proved.phone });
     } catch (e) {
       next(e);
     }

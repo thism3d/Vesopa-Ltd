@@ -20,6 +20,7 @@ class SignInConfig {
     this.offered = const {'code_email'},
     this.policy = 'code_first',
     this.selfService = true,
+    this.firebasePhone = false,
   });
 
   /// `code_email`, `password`, `passkey`, `code_sms`, `vesopa`.
@@ -30,6 +31,11 @@ class SignInConfig {
 
   /// Whether a member may change their own name, phone and password.
   final bool selfService;
+
+  /// Whether the server can check a number Firebase proved
+  /// (vesopa_server/src/firebase_phone.js). The phone apps then prove numbers
+  /// with Firebase, any country; the web keeps the texted code.
+  final bool firebasePhone;
 
   /// An emailed code is always there. The server guarantees it — it is what it
   /// falls back to when a venue switches everything else off — so the app can
@@ -43,6 +49,7 @@ class SignInConfig {
       offered: list.isEmpty ? const {'code_email'} : list,
       policy: (json['policy'] as String?) ?? 'code_first',
       selfService: json['self_service'] != false,
+      firebasePhone: json['firebase_phone'] == true,
     );
   }
 

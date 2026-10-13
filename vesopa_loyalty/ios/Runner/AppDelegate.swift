@@ -44,6 +44,7 @@ import UserNotifications
   private var wallet: WalletBridge?
   private var watch: WatchBridge?
   private var auth: AuthBridge?
+  private var phone: PhoneBridge?
 
   override func application(
     _ application: UIApplication,
@@ -95,6 +96,12 @@ import UserNotifications
     // Sign in with Apple, passkeys and Google's sheet (AuthBridge.swift).
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "VesopaLoyaltyAuth") {
       auth = AuthBridge(messenger: registrar.messenger())
+    }
+    // Mobile numbers proved by Firebase, any country (PhoneBridge.swift).
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "VesopaLoyaltyPhone") {
+      let bridge = PhoneBridge(messenger: registrar.messenger())
+      registrar.addSceneDelegate(bridge)
+      phone = bridge
     }
   }
 

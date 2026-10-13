@@ -52,6 +52,8 @@ class MainActivity : FlutterActivity() {
         AuthBridge(this, flutterEngine.dartExecutor.binaryMessenger)
         // The card on a Wear OS watch (WearBridge.kt).
         WearBridge(this, flutterEngine.dartExecutor.binaryMessenger)
+        // Mobile numbers proved by Firebase, any country (PhoneBridge.kt).
+        PhoneBridge(this, flutterEngine.dartExecutor.binaryMessenger)
 
         // Started by a tap on one of the venue's notifications.
         opened = tappedAddress(intent)

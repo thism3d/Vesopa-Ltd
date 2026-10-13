@@ -11,6 +11,8 @@ import '../platform/native_auth.dart';
 import '../platform/passkey.dart';
 import '../platform/vesopa_sso.dart';
 import 'widgets.dart';
+import 'phone_field.dart';
+import '../platform/firebase_phone.dart';
 
 /// Signing in, whichever ways the venue offers.
 ///
@@ -38,6 +40,11 @@ class _SignInPageState extends ConsumerState<SignInPage> {
   final _phone = TextEditingController();
   final _code = TextEditingController();
   final _name = TextEditingController();
+
+  /// The mobile number's country (UK by default) and, on the phone apps, the
+  /// Firebase check the code is typed against (lib/platform/firebase_phone.dart).
+  Country _country = countries.first;
+  String? _verification;
 
   /// Which way in is on screen. Set from the venue's policy on first build.
   String? _method;
@@ -141,8 +148,26 @@ class _SignInPageState extends ConsumerState<SignInPage> {
   });
 
   Future<void> _sendTextCode() => _run(() async {
-    final phone = _phone.text.trim();
-    if (phone.length < 7) throw ApiError('Please enter your mobile number.');
+    final phone = toInternational(_country, _phone.text);
+    if (phone == null) throw ApiError('Please enter your mobile number, with or without the first 0.');
+    // The phone apps prove the number with Firebase, any country; a browser,
+    // Windows, or a build without Firebase gets the code the server texts.
+    final brand = ref.read(brandProvider).requireValue;
+    if (firebasePhoneOnDevice && brand.signIn.firebasePhone) {
+      try {
+        final check = await firebasePhoneStart(phone);
+        if (check.token != null) return await _signInProved(check.token!);
+        setState(() {
+          _verification = check.verification;
+          _stage = _Stage.code;
+          _note = 'We sent a code to $phone.';
+        });
+        return;
+      } on FirebasePhoneUnavailable {
+        // Fall through to the server's text.
+      }
+    }
+    _verification = null;
     await ref.read(apiProvider).requestSmsCode(phone);
     setState(() {
       _stage = _Stage.code;
@@ -153,9 +178,21 @@ class _SignInPageState extends ConsumerState<SignInPage> {
     });
   });
 
+  Future<void> _signInProved(String idToken) async {
+    final token = await ref.read(apiProvider).signInWithProvedPhone(
+      idToken: idToken,
+      platform: ref.read(configProvider).platform,
+    );
+    await ref.read(sessionProvider.notifier).signedIn(token);
+  }
+
   Future<void> _verifyTextCode() => _run(() async {
+    final verification = _verification;
+    if (verification != null) {
+      return _signInProved(await firebasePhoneConfirm(verification, _code.text.trim()));
+    }
     final token = await ref.read(apiProvider).signInWithSms(
-      phone: _phone.text.trim(),
+      phone: toInternational(_country, _phone.text) ?? _phone.text.trim(),
       code: _code.text.trim(),
       platform: ref.read(configProvider).platform,
     );
@@ -555,13 +592,11 @@ class _SignInPageState extends ConsumerState<SignInPage> {
 
     if (method == 'code_sms') {
       return [
-        TextField(
+        PhoneField(
           controller: _phone,
+          country: _country,
           enabled: !_busy,
-          keyboardType: TextInputType.phone,
-          autofillHints: const [AutofillHints.telephoneNumber],
-          decoration: const InputDecoration(labelText: 'Mobile number', hintText: '07…'),
-          onSubmitted: (_) => _primary!.action(),
+          onCountry: (c) => setState(() => _country = c),
         ),
       ];
     }
