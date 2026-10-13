@@ -51,6 +51,31 @@ http.Client _sequence(List<Map<String, dynamic>> polls) {
 void main() {
   setUp(_sent.clear);
 
+  group("cashback (the till's Cashback key, 2026-10-13)", () {
+    test('asked-for cashback goes to the machine, and what it took comes back', () async {
+      final provider = _provider(_sequence([
+        {'transactionResult': 'SUCCESSFUL', 'amountBase': 1000, 'amountCashback': 2000, 'amountTotal': 3000},
+      ]));
+      final result = await provider.take(1000, cashbackMinor: 2000);
+      final post = _sent.firstWhere((r) => r.method == 'POST');
+      final body = jsonDecode(post.body) as Map<String, dynamic>;
+      expect(body['amount'], 1000);
+      expect(body['amountCashback'], 2000);
+      expect(result.approved, isTrue);
+      expect(result.cashbackMinor, 2000);
+    });
+
+    test('no cashback asked, none sent', () async {
+      final provider = _provider(_sequence([
+        {'transactionResult': 'SUCCESSFUL', 'amountBase': 1000, 'amountTotal': 1000},
+      ]));
+      final result = await provider.take(1000);
+      final body = jsonDecode(_sent.firstWhere((r) => r.method == 'POST').body) as Map<String, dynamic>;
+      expect(body.containsKey('amountCashback'), isFalse);
+      expect(result.cashbackMinor, 0);
+    });
+  });
+
   group('authentication and headers', () {
     test('sends Basic auth with the key as the password, and v2', () async {
       final provider = _provider(

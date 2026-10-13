@@ -113,6 +113,7 @@ class DesktopDojoProvider implements PaymentProvider {
     int amountMinor, {
     String? orderId,
     bool manual = false,
+    int cashbackMinor = 0,
   }) async {
     _cancelled = false;
     _current = null;

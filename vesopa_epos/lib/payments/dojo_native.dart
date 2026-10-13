@@ -68,6 +68,7 @@ class NativeDojoProvider implements PaymentProvider {
     int amountMinor, {
     String? orderId,
     bool manual = false,
+    int cashbackMinor = 0,
   }) async {
     try {
       // 1. Create the intent, and mint the client session secret with it.

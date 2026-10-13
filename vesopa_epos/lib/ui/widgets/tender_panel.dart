@@ -39,8 +39,12 @@ class TenderColumn extends StatelessWidget {
     this.onCustomer,
     this.onDiscount,
     this.onPrintBill,
+    this.onCashback,
     this.amountMinor,
   });
+
+  /// Card with cashback, shown only when the venue has the Cashback key on.
+  final void Function(int amountMinor)? onCashback;
 
   final TenderState state;
   final TenderSettings settings;
@@ -408,6 +412,17 @@ class TenderColumn extends StatelessWidget {
                 : () => onTender(TenderKind.manualCard, _cardAmount!),
           ),
         ),
+        if (settings.allowCashback && onCashback != null) ...[
+          SizedBox(width: 16 * v),
+          Expanded(
+            child: _FlatKey(
+              label: 'Cashback',
+              scale: v,
+              fontSize: 22 * v,
+              onTap: _cardAmount == null ? null : () => onCashback!(_cardAmount!),
+            ),
+          ),
+        ],
         if (settings.allowSplitBill) ...[
           SizedBox(width: 16 * v),
           Expanded(

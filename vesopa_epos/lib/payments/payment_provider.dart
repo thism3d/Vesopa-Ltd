@@ -305,6 +305,7 @@ abstract class PaymentProvider {
     int amountMinor, {
     String? orderId,
     bool manual = false,
+    int cashbackMinor = 0,
   });
 }
 
@@ -318,6 +319,7 @@ class CashProvider implements PaymentProvider {
     int amountMinor, {
     String? orderId,
     bool manual = false,
+    int cashbackMinor = 0,
   }) async {
     return PaymentResult(approved: true, amountMinor: amountMinor);
   }
@@ -1453,12 +1455,15 @@ class DojoProvider implements PaymentProvider {
     int amountMinor, {
     String? orderId,
     bool manual = false,
+    int cashbackMinor = 0,
   }) async {
     _cancelRequested = false;
     _abandoned = false;
     String? intentId;
     try {
-      final intent = await createIntent(amountMinor, orderId: orderId);
+      // Cashback asked for at the till goes on the intent, so the machine
+      // asks the customer to approve sale + cashback in one (2026-10-13).
+      final intent = await createIntent(amountMinor, orderId: orderId, cashbackMinor: cashbackMinor);
       intentId = intent.id;
 
       // With a reader configured the payment is driven through a terminal

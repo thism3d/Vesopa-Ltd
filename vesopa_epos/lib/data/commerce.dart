@@ -58,6 +58,7 @@ class TenderSettings {
     this.allowSplitBill = true,
     this.allowEmptyPay = false,
     this.manualViaDojo = false,
+    this.allowCashback = false,
   });
 
   final bool gratuityEnabled;
@@ -86,6 +87,11 @@ class TenderSettings {
   /// key records a card payment taken on a separate card machine, with
   /// nothing sent to Dojo.
   final bool manualViaDojo;
+
+  /// A Cashback key beside Card (back office › Tender settings, off by
+  /// default): it asks how much and sends it to the card machine with the
+  /// sale. Card on its own still goes straight to the machine.
+  final bool allowCashback;
 
   bool get autoGratuity => gratuityEnabled && gratuityMode == 'auto';
   bool get promptGratuity => gratuityEnabled && gratuityMode == 'prompt';
@@ -139,6 +145,7 @@ class TenderSettings {
       allowSplitBill: _flag(j['allow_split_bill']),
       allowEmptyPay: _flag(j['allow_empty_pay']),
       manualViaDojo: _flag(j['allow_manual_dojo']),
+      allowCashback: _flag(j['allow_cashback']),
     );
   }
 }

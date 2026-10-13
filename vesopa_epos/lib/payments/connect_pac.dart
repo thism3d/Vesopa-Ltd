@@ -285,6 +285,7 @@ class ConnectPacProvider implements PaymentProvider {
     int amountMinor, {
     String type = 'SALE',
     bool cardholderNotPresent = false,
+    int cashbackMinor = 0,
   }) async {
     final tid = terminalId?.trim();
     if (tid == null || tid.isEmpty) {
@@ -303,6 +304,10 @@ class ConnectPacProvider implements PaymentProvider {
             'amount': amountMinor,
             'currency': currency,
             if (cardholderNotPresent) 'cardholderNotPresent': true,
+            // Cashback asked for at the till: the machine adds it to the
+            // amount the customer approves, and reports it back as
+            // amountCashback (2026-10-13).
+            if (cashbackMinor > 0 && type == 'SALE') 'amountCashback': cashbackMinor,
           }),
         )
         .timeout(const Duration(seconds: 30));
@@ -402,11 +407,13 @@ class ConnectPacProvider implements PaymentProvider {
     int amountMinor, {
     String? orderId,
     bool manual = false,
+    int cashbackMinor = 0,
   }) async {
     _abandoned = false;
     String? requestId;
     try {
-      if (_preferSocket) {
+      // Cashback goes over REST, where the request carries amountCashback.
+      if (_preferSocket && cashbackMinor == 0) {
         final overSocket = await _takeOverSocket(
           amountMinor,
           manual: manual,
@@ -421,6 +428,7 @@ class ConnectPacProvider implements PaymentProvider {
       requestId = await startTransaction(
         amountMinor,
         cardholderNotPresent: manual,
+        cashbackMinor: manual ? 0 : cashbackMinor,
       );
       return await _follow(requestId, amountMinor);
     } on ConnectException catch (e) {

@@ -261,10 +261,13 @@ function commerceRoutes({ pool, broadcast, secret }) {
     // Manual card goes through Dojo's keyed payment. Off: the key records a
     // card payment taken on a separate machine (schema_manual_card.sql).
     allow_manual_dojo: 0,
+    // A Cashback key beside Card that asks how much and sends it to the card
+    // machine with the sale. Off: Card alone (schema_cashback.sql).
+    allow_cashback: 0,
   };
 
   /** Columns a database may not have yet, dropped from a save rather than failing it. */
-  const TENDER_LATER = ['allow_empty_pay', 'allow_manual_dojo'];
+  const TENDER_LATER = ['allow_empty_pay', 'allow_manual_dojo', 'allow_cashback'];
 
   const TENDER_FIELDS = Object.keys(TENDER_DEFAULTS);
 

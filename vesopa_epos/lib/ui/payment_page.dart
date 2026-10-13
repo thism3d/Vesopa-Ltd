@@ -312,9 +312,10 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
   Future<PaymentResult?> _takeCard(
     int amountMinor, {
     bool manual = false,
+    int cashbackMinor = 0,
   }) async {
     while (mounted) {
-      final attempt = await _takeCardOnce(amountMinor, manual: manual);
+      final attempt = await _takeCardOnce(amountMinor, manual: manual, cashbackMinor: cashbackMinor);
       if (attempt.retry) continue;
       return attempt.result;
     }
@@ -324,6 +325,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
   Future<({PaymentResult? result, bool retry})> _takeCardOnce(
     int amountMinor, {
     bool manual = false,
+    int cashbackMinor = 0,
   }) async {
     final provider = manual
         ? ref.read(manualCardProvider)
@@ -628,6 +630,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
       amountMinor,
       orderId: widget.orderId,
       manual: manual,
+      cashbackMinor: cashbackMinor,
     );
     result = taken;
 
@@ -1125,6 +1128,90 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
         ],
       ),
     );
+  }
+
+  /// Card with cashback: ask how much, then the card machine charges the sale
+  /// plus the cashback in one, and the clerk is told to hand the cash over.
+  ///
+  /// What is recorded is what the machine reports, never what was asked: a
+  /// machine (or a card) that will not do cashback approves the sale alone,
+  /// and the clerk must not then give money out (2026-10-13).
+  Future<void> _cardWithCashback(int amountMinor) async {
+    if (amountMinor <= 0 || !mounted) return;
+    final cashback = await _askCashback();
+    if (cashback == null || cashback <= 0 || !mounted) return;
+    if (await _isPractice()) {
+      _toast(trainingCardMessage);
+      _record(TenderEntry(kind: TenderKind.card, amountMinor: amountMinor, entryMode: 'training'));
+      return;
+    }
+    final result = await _takeCard(amountMinor, cashbackMinor: cashback);
+    if (result == null || !mounted) return;
+    if (result.cashbackMinor > 0 || result.gratuityMinor > 0) {
+      await _reportReaderExtras(result);
+      // The cash comes out of the drawer, so open it.
+      if (result.cashbackMinor > 0) unawaited(TillActions.openCashDrawerQuietly(ref));
+    } else {
+      _toast('The card machine took the sale without cashback, so there is no cash to give.');
+    }
+    _record(TenderEntry(
+      kind: TenderKind.card,
+      amountMinor: amountMinor,
+      entryMode: 'terminal',
+      reference: result.reference,
+      cashbackMinor: result.cashbackMinor,
+      gratuityMinor: result.gratuityMinor,
+    ));
+  }
+
+  /// How much cashback: quick amounts, or one keyed in. Null to cancel.
+  Future<int?> _askCashback() async {
+    final typed = TextEditingController();
+    final picked = await showDialog<int>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: const Text('How much cashback?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                for (final pounds in const [5, 10, 20, 30, 40, 50])
+                  FilledButton.tonal(
+                    onPressed: () => Navigator.pop(dialog, pounds * 100),
+                    child: Text('£$pounds', style: const TextStyle(fontSize: 20)),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: typed,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: 'Other amount (£)', prefixText: '£'),
+              onSubmitted: (v) {
+                final pounds = double.tryParse(v.trim());
+                if (pounds != null && pounds > 0) Navigator.pop(dialog, (pounds * 100).round());
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialog), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () {
+              final pounds = double.tryParse(typed.text.trim());
+              if (pounds != null && pounds > 0) Navigator.pop(dialog, (pounds * 100).round());
+            },
+            child: const Text('Take card'),
+          ),
+        ],
+      ),
+    );
+    typed.dispose();
+    return picked;
   }
 
   /// Last check before money moves. Returns false if the clerk backs out.
@@ -2300,6 +2387,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
               ),
               onGratuity: _chooseGratuity,
               onSplit: settings.allowSplitBill ? _chooseSplit : null,
+              onCashback: settings.allowCashback ? _cardWithCashback : null,
               onSelectShare: (i) =>
                   setState(() => _tender = _tender.selectShare(i)),
               onClearSplit: () =>
