@@ -40,7 +40,7 @@ test.before(async () => {
 });
 test.after(() => server.close());
 
-const PAGES = ['/', '/whats-on', '/club', '/teams', '/fixtures', '/tickets', '/news', '/clubhouse', '/menu', '/membership', '/contact',
+const PAGES = ['/', '/whats-on', '/play', '/licences', '/club', '/teams', '/fixtures', '/tickets', '/news', '/clubhouse', '/menu', '/membership', '/contact',
   '/privacy', '/cookies', '/ordering-terms', '/accessibility', ...news.map((n) => `/news/${n.slug}`)];
 
 for (const p of PAGES) {

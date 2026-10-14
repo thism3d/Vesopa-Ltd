@@ -21,6 +21,7 @@ const { SITE, MEMBERS } = require('./layout');
 const { helperRoute } = require('./helper');
 const wru = require('./wru');
 const venue = require('./venue_api');
+const game = require('./game_rooms');
 
 const app = express();
 app.disable('x-powered-by');
@@ -43,7 +44,7 @@ app.use((req, res, next) => {
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: https:",
       "font-src 'self'",
-      `connect-src 'self' ${pages.MENU_API}`,
+      `connect-src 'self' wss://pontardawerfc.com ws://127.0.0.1:* ws://localhost:* ${pages.MENU_API}`,
       "frame-ancestors 'self'",
       "base-uri 'self'",
       "form-action 'self' https://pay.dojo.tech",
@@ -75,6 +76,8 @@ app.get('/club', html(() => pages.clubPage()));
 app.get('/teams', html(() => pages.teamsPage()));
 app.get('/fixtures', html(() => pages.fixturesPage()));
 app.get('/whats-on', html(() => pages.whatsOnPage()));
+app.get('/play', html(() => pages.playPage()));
+app.get(['/game', '/games', '/play/'], (req, res) => res.redirect(301, '/play'));
 app.get(['/whatson', '/events', '/whats-on/'], (req, res) => res.redirect(301, '/whats-on'));
 app.get('/tickets', html(() => pages.ticketsPage()));
 
@@ -134,6 +137,8 @@ app.get('/privacy', html(() => pages.privacyPage()));
 app.get('/cookies', html(() => pages.cookiesPage()));
 app.get('/ordering-terms', html(() => pages.termsPage()));
 app.get('/accessibility', html(() => pages.accessibilityPage()));
+app.get('/licences', html(() => pages.licencesPage()));
+app.get(['/licenses', '/credits', '/licences/'], (req, res) => res.redirect(301, '/licences'));
 app.get('/news/:slug', (req, res, next) => {
   const post = news.find((p) => p.slug === req.params.slug);
   if (!post) return next();
@@ -158,7 +163,7 @@ app.get(['/feed', '/feed/'], (req, res) => res.redirect(301, '/news/feed.xml'));
 
 // --- For machines ------------------------------------------------------------
 
-const PATHS = ['/', '/whats-on', '/club', '/teams', '/fixtures', '/tickets', '/news', '/clubhouse', '/menu', '/membership', '/contact',
+const PATHS = ['/', '/whats-on', '/play', '/licences', '/club', '/teams', '/fixtures', '/tickets', '/news', '/clubhouse', '/menu', '/membership', '/contact',
   '/privacy', '/cookies', '/ordering-terms', '/accessibility'];
 
 app.get('/sitemap.xml', (req, res) => {
@@ -266,6 +271,8 @@ app.get('/.well-known/security.txt', (req, res) => {
 });
 
 app.post('/api/ask', express.json({ limit: '24kb' }), helperRoute());
+// Ponty Kicks online (src/game_rooms.js): HTTP here, the socket on the server below.
+app.use('/api/play', game.gameRoutes(express));
 
 app.use((req, res) => {
   res.status(404).type('html').send(pages.notFound());
@@ -276,6 +283,15 @@ app.use((err, req, res, next) => {
   console.error(err);
   res.status(500).type('text/plain').send('Something went wrong. Please call the club on 01792 864811.');
 });
+
+// Every server this app listens on (the box, and the tests) also takes the
+// game's WebSocket at /api/play/ws.
+const listen = app.listen.bind(app);
+app.listen = (...args) => {
+  const server = listen(...args);
+  game.attach(server);
+  return server;
+};
 
 if (require.main === module) {
   const port = Number(process.env.PORT) || 5090;

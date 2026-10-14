@@ -9,6 +9,7 @@ const { club, news, updates, images, xPosts, longDate, yearsOld } = require('./c
 const wru = require('./wru');
 const venue = require('./venue_api');
 const { page, pageHero, esc, icon, SITE, MEMBERS, ASSET_VERSION, appBadges } = require('./layout');
+const GAME = require('../public/js/game-rules.js');
 
 const MENU_API = (process.env.MENU_API || 'https://menu.vesopa.com').replace(/\/+$/, '');
 const MENU_SLUG = process.env.MENU_SLUG || 'pontardawe-rfc';
@@ -165,6 +166,8 @@ function home() {
 ${nextMatch()}
 
 ${homeWhatsOn()}
+
+${playBand()}
 
 <section class="section" id="quick">
   <div class="wrap">
@@ -675,6 +678,28 @@ function accessibilityPage() {
   });
 }
 
+/** The fonts and software the site uses, and their licences (the owner, 2026-10-15). */
+function licencesPage() {
+  const font = (name, by, licence, file, use) => `<tr><th scope="row">${esc(name)}</th><td>${esc(by)}</td><td>${esc(use)}</td><td><a href="/fonts/${file}">${esc(licence)}</a></td></tr>`;
+  return legal({
+    path: '/licences',
+    title: 'Licences',
+    lead: 'The fonts and open-source software this site is built with, and the licences they come under.',
+    description: `The fonts and open-source software used on pontardawerfc.com, the ${club.name} website, and their licences.`,
+    sections: [
+      ['fonts', 'Fonts', `<p>Every font is served from this site, so nothing is loaded from anybody else's servers.</p>
+<div class="table-wrap"><table class="league licences"><thead><tr><th scope="col">Font</th><th scope="col">By</th><th scope="col">Used for</th><th scope="col">Licence</th></tr></thead><tbody>
+${font('Oswald', 'Vernon Adams, Kalapi Gajjar, Cyreal', 'SIL Open Font License 1.1', 'LICENSE-Oswald.txt', 'Headings and numbers')}
+${font('Montserrat', 'Julieta Ulanovsky and the Montserrat Project Authors', 'SIL Open Font License 1.1', 'LICENSE-Montserrat.txt', 'Text')}
+${font('Permanent Marker', 'Font Diner', 'Apache License 2.0', 'LICENSE-PermanentMarker.txt', 'The lettering in Ponty Kicks')}
+</tbody></table></div>`],
+      ['software', 'Software', `<p>The site runs on <a href="https://nodejs.org/" rel="noopener">Node.js</a> with <a href="https://expressjs.com/" rel="noopener">Express</a>, <a href="https://github.com/motdotla/dotenv" rel="noopener">dotenv</a> and, for playing <a href="/play">Ponty Kicks</a> with a friend online, <a href="https://github.com/websockets/ws" rel="noopener">ws</a>, all under the MIT License. The animations, the game and its physics are written for the club and use no outside libraries.</p>`],
+      ['club', 'The club\'s own', `<p>The club crest, the club's photographs and posters, and the text of this site belong to ${esc(club.company.name)}. Please ask before using them: call ${esc(club.phone)}${club.email ? ` or email <a href="mailto:${esc(club.email)}">${esc(club.email)}</a>` : ''}.</p>
+<p>The App Store and Google Play badges are trademarks of Apple Inc. and Google LLC, used as their makers ask.</p>`],
+    ],
+  });
+}
+
 // --- Fixtures, from the WRU (src/wru.js) ------------------------------------
 
 /** "Sat 17 Oct" from 2026-10-17. */
@@ -968,6 +993,7 @@ ${nextMatch({ heading: 'Next match' })}
     <div class="sec-head"><div><p class="kicker reveal">${icon('calendar', { size: 16 })} Coming up</p><h2 class="reveal">Don't miss</h2></div><a class="btn btn-line reveal" href="${esc(club.web.instagram)}" rel="noopener">${icon('instagram', { size: 18 })} Follow @pontardawerfc</a></div>
     ${first ? `<div class="ev-feature">${eventTile(first, { big: true })}<div class="ev-grid ev-grid-side">${rest.slice(0, 4).map((u) => eventTile(u)).join('')}</div></div>${rest.length > 4 ? `<div class="ev-grid">${rest.slice(4).map((u) => eventTile(u)).join('')}</div>` : ''}`
     : `<p class="muted reveal">Nothing announced just yet. Follow the club on <a href="${esc(club.web.instagram)}" rel="noopener">Instagram</a> or <a href="${esc(club.web.facebook)}" rel="noopener">Facebook</a>.</p>`}
+    ${playBand()}
     <div class="callout reveal lotto-call"><span class="tile-ic">${icon('lotto')}</span><div><h2>Weekly Lotto</h2><p>Every week, for the club. Ask behind the bar to play, and see the latest numbers in <a href="/news/weekly-lotto">the lotto results</a>.</p></div></div>
   </div>
 </section>
@@ -1009,6 +1035,89 @@ ${nextMatch({ heading: 'Next match' })}
   }, body);
 }
 
+/** The club's game: Ponty Kicks, the conversion challenge (public/js/game.js). */
+function playPage() {
+  const body = `${pageHero({ kicker: 'New · Free to play', title: 'Ponty Kicks', lead: 'The conversion challenge at The Rec. Beat the computer, a mate on the same screen, or a friend online.' })}
+<section class="section game-sec">
+  <div class="wrap">
+    <div class="game" data-game>
+      <canvas aria-label="Ponty Kicks: a rugby goal-kicking game. Swipe up from the ball to kick." role="img"></canvas>
+      <div class="g-hud" data-g-hud aria-live="polite"></div>
+      <div class="g-banner" data-g-banner aria-live="polite"></div>
+      <p class="g-toast" data-g-toast hidden role="status"></p>
+      <div class="g-tools"><button type="button" data-g-mute aria-label="Sound on or off" aria-pressed="false">🔊</button><button type="button" data-g-full aria-label="Full screen">⛶</button><button type="button" data-g-menu-open aria-label="Back to the menu">☰</button></div>
+      <p class="g-rotate" aria-hidden="true"><span>⟳</span> Turn your phone sideways for the best view</p>
+
+      <div class="g-menu" data-g-menu>
+        <div class="g-menu-in">
+          <p class="g-logo"><img src="/img/ponty-kicks.svg" alt="" width="64" height="64"><span><b>Ponty Kicks</b><small>Pontardawe RFC · The conversion challenge</small></span></p>
+          <label class="g-name">Your name <input data-g-name maxlength="16" autocomplete="nickname" placeholder="Your name"></label>
+          ${['me', 'opp'].map((side) => `<div class="g-teams" role="group" aria-label="${side === 'me' ? 'Your team' : 'The other side'}"><span class="g-teams-label">${side === 'me' ? 'Your team' : 'Against'}</span>${GAME.TEAM_KEYS.map((k) => {
+    const t = GAME.TEAMS[k];
+    return `<button type="button" class="g-team" data-g-team="${side}" data-key="${esc(k)}" aria-pressed="false" style="--a:${esc(t.shirt)};--b:${esc(t.hoop)}">${t.crest ? `<img src="${esc(t.crest)}" alt="" width="22" height="22">` : `<span class="g-shield">${esc(t.short)}</span>`}<span>${esc(t.name)}</span></button>`;
+  }).join('')}</div>`).join('')}
+          <div class="g-modes">
+            <div class="g-mode"><h3>${icon('star', { size: 18 })} vs the computer</h3><p>Five kicks each from further out and wider, with the wind getting up. Then sudden death.</p>
+              <div class="g-row"><button type="button" class="btn btn-sm btn-line" data-g-ai="easy">Easy</button><button type="button" class="btn btn-sm btn-glow" data-g-ai="normal">Normal</button><button type="button" class="btn btn-sm btn-line" data-g-ai="hard">Hard</button></div></div>
+            <div class="g-mode"><h3>${icon('users', { size: 18 })} Two players</h3><p>Same screen, pass it over between kicks.</p>
+              <div class="g-row"><button type="button" class="btn btn-sm btn-glow" data-g-local>Play</button></div></div>
+            <div class="g-mode" id="online"><h3>${icon('send', { size: 18 })} Play a friend online</h3><p>Start a game and send the code, or type a friend's.</p>
+              <div class="g-row"><button type="button" class="btn btn-sm btn-glow" data-g-host>Start a game</button></div>
+              <div class="g-row g-join"><input data-g-code maxlength="5" placeholder="CODE" autocapitalize="characters" autocomplete="off" aria-label="Your friend's game code"><button type="button" class="btn btn-sm btn-line" data-g-join>Join</button></div>
+              <div data-g-lobby></div></div>
+          </div>
+          <p class="g-best small" data-g-best></p>
+        </div>
+      </div>
+
+      <div class="g-over" data-g-over hidden>
+        <div class="g-over-in"><p class="kicker">Full time</p><h2 data-g-title></h2><p class="g-final" data-g-final></p>
+          <div class="g-row"><button type="button" class="btn btn-glow" data-g-again>Play again</button><button type="button" class="btn btn-ghost" data-g-menu-open>Menu</button></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+<section class="section">
+  <div class="wrap grid-3">
+    <div class="card reveal"><span class="tile-ic">${icon('ball')}</span><h2>How to kick</h2><p>Put your finger (or the mouse) on the ball and swipe up. Further means more power; to the side means aiming left or right. On a keyboard: arrow keys to aim, hold the space bar for power.</p></div>
+    <div class="card reveal"><span class="tile-ic">${icon('leaf')}</span><h2>Mind the wind</h2><p>The flags on the posts and the arrow at the top show the wind. Aim into it: a strong wind can carry a good kick wide.</p></div>
+    <div class="card reveal"><span class="tile-ic">${icon('trophy')}</span><h2>Scoring</h2><p>Two points a conversion, five kicks each, the same spot and wind for both. Level after five? Sudden death until somebody misses.</p></div>
+  </div>
+  <p class="wrap muted small center reveal">Ponty Kicks is written for the club. Its lettering is Permanent Marker by Font Diner (Apache License 2.0): <a href="/licences">fonts and licences</a>.</p>
+</section>`;
+  return page({
+    title: 'Ponty Kicks: the conversion game',
+    description: `Ponty Kicks, ${club.name}'s free rugby goal-kicking game: kick conversions at The Rec against the computer, a friend on the same screen, or a friend online.`,
+    path: '/play',
+    og: 'play',
+    icon: '/img/ponty-kicks',
+    ld: [crumbs([['Home', '/'], ['Ponty Kicks', '/play']]), {
+      '@context': 'https://schema.org', '@type': 'VideoGame', name: 'Ponty Kicks', url: `${SITE}/play`, image: `${SITE}/img/og-play.jpg`,
+      description: 'A rugby conversion-kicking game in the browser: one player against the computer, two on one screen, or two online.',
+      genre: 'Sports', gamePlatform: 'Web browser', playMode: ['SinglePlayer', 'MultiPlayer', 'CoOp'],
+      publisher: { '@id': `${SITE}/#club` }, offers: { '@type': 'Offer', price: '0', priceCurrency: 'GBP' },
+    }],
+    scripts: `<link rel="stylesheet" href="/css/game.css?v=${ASSET_VERSION}"><script src="/js/game-rules.js?v=${ASSET_VERSION}" defer></script><script src="/js/game-players.js?v=${ASSET_VERSION}" defer></script><script src="/js/game.js?v=${ASSET_VERSION}" defer></script>`,
+  }, body);
+}
+
+/** The game, highlighted: on the home page and What's On. */
+function playBand() {
+  return `<section class="play-band" aria-label="Ponty Kicks">
+  <div class="wrap play-in">
+    <div class="play-art" aria-hidden="true"><img class="play-icon" src="/img/ponty-kicks.svg" alt="" width="96" height="96" loading="lazy">
+      <svg viewBox="0 0 220 200"><path class="pb-post" d="M70 190 V20 M150 190 V20 M70 110 H150"/><path class="pb-trail" d="M30 196 Q 80 110 110 64"/><g class="pb-ball"><ellipse cx="0" cy="0" rx="9" ry="14"/><path d="M0-9v18M-4-4h8M-4 0h8M-4 4h8"/></g></svg>
+    </div>
+    <div class="play-copy reveal">
+      <p class="kicker">${icon('sparkle', { size: 16 })} New · Free to play</p>
+      <h2>Ponty Kicks: can you convert from 40 metres?</h2>
+      <p>The club's own goal-kicking game. Beat the computer, take on a mate on the same screen, or challenge a friend online with a code.</p>
+      <div class="cta-row"><a class="btn btn-white" href="/play">${icon('ball', { size: 20 })} Play now</a><a class="btn btn-ghost" href="/play#online">${icon('users', { size: 20 })} Challenge a friend</a></div>
+    </div>
+  </div>
+</section>`;
+}
+
 function notFound() {
   const body = `${pageHero({ kicker: '404', title: 'Knock-on!', lead: 'That page isn\'t here. It may have moved when we built the new site.' })}
 <section class="section"><div class="wrap center"><div class="cta-row center"><a class="btn btn-glow" href="/">${icon('ball', { size: 20 })} Back to the home page</a><a class="btn btn-line" href="/menu">Menu &amp; order</a><a class="btn btn-line" href="${MEMBERS}/">Members' card</a></div></div></section>`;
@@ -1017,6 +1126,6 @@ function notFound() {
 
 module.exports = {
   home, clubPage, teamsPage, newsPage, articlePage, clubhousePage, menuPage, membershipPage,
-  contactPage, privacyPage, cookiesPage, termsPage, accessibilityPage, notFound, fixturesPage, ticketsPage, ticketOrderPage, whatsOnPage,
+  contactPage, privacyPage, cookiesPage, termsPage, accessibilityPage, notFound, fixturesPage, ticketsPage, ticketOrderPage, whatsOnPage, playPage, licencesPage,
   MENU_API, MENU_SLUG,
 };

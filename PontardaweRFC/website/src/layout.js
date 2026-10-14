@@ -16,6 +16,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const NAV = [
   ['/', 'Home'],
   ['/whats-on', "What's On"],
+  ['/play', 'Play'],
   ['/club', 'The Club'],
   ['/teams', 'Teams'],
   ['/fixtures', 'Fixtures'],
@@ -62,7 +63,7 @@ function clubLd() {
   };
 }
 
-function head({ title, description, path, og = 'home', ld = [], noindex = false }) {
+function head({ title, description, path, og = 'home', ld = [], noindex = false, icon: tabIcon = null }) {
   const full = path === '/' ? `${club.name} | ${club.tagline}` : `${title} | ${club.name}`;
   const url = `${SITE}${path}`;
   const image = `${SITE}/img/og-${og}.jpg`;
@@ -100,7 +101,9 @@ ${noindex ? '<meta name="robots" content="noindex">' : '<meta name="robots" cont
 <meta name="twitter:title" content="${esc(full)}">
 <meta name="twitter:description" content="${esc(description)}">
 <meta name="twitter:image" content="${esc(image)}">
-<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png?v=2">
+${tabIcon ? `<link rel="icon" type="image/svg+xml" href="${tabIcon}.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="${tabIcon}-32.png">
+<link rel="apple-touch-icon" href="${tabIcon}-192.png">` : ''}<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png?v=2">
 <link rel="icon" type="image/png" sizes="16x16" href="/img/favicon-16.png?v=2">
 <link rel="icon" type="image/png" sizes="192x192" href="/img/icon-192.png?v=2">
 <link rel="icon" href="/favicon.ico?v=2" sizes="any">
@@ -191,7 +194,7 @@ function footer() {
     <div>
       <h2>Club</h2>
       <ul class="foot-links">
-        <li><a href="/whats-on">What's on</a></li><li><a href="/club">History</a></li><li><a href="/teams">Teams</a></li><li><a href="/fixtures">Fixtures &amp; results</a></li><li><a href="/tickets">Match tickets</a></li>
+        <li><a href="/whats-on">What's on</a></li><li><a href="/play">Ponty Kicks (game)</a></li><li><a href="/club">History</a></li><li><a href="/teams">Teams</a></li><li><a href="/fixtures">Fixtures &amp; results</a></li><li><a href="/tickets">Match tickets</a></li>
         <li><a href="/news">News</a></li><li><a href="/clubhouse">Clubhouse & functions</a></li>
         <li><a href="/menu">Menu & order</a></li><li><a href="${MEMBERS}/">Members' app</a></li>
       </ul>
@@ -201,7 +204,7 @@ function footer() {
       <ul class="foot-links">
         <li><a href="/privacy">Privacy policy</a></li><li><a href="/cookies">Cookies</a></li>
         <li><a href="/ordering-terms">Ordering terms</a></li><li><a href="/accessibility">Accessibility</a></li>
-        <li><a href="/sitemap.xml">Sitemap</a></li>
+        <li><a href="/licences">Licences</a></li><li><a href="/sitemap.xml">Sitemap</a></li>
       </ul>
     </div>
   </div>
