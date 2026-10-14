@@ -663,6 +663,9 @@ class _LoyaltyDialogState extends State<_LoyaltyDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // The member is already on the bill (their card was scanned), so
+              // there is nobody to search for (Pontardawe RFC, 2026-10-14).
+              if (widget.known == null)
               PosTextField(
                 controller: _search,
                 autofocus: true,

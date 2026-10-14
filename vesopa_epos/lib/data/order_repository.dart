@@ -697,6 +697,13 @@ class OrderRepository {
       // after we zero it, that figure is gone. Only a bill that had something
       // on it is worth logging -- and never a practice bill.
       if (order.totalMinor > 0 && !order.training) {
+        // What was on it, so Voids & Cancels in the back office says what a
+        // cancelled check held rather than "—" (2026-10-14).
+        final summary = (await (_db.select(_db.orderLines)
+                  ..where((l) => l.orderId.equals(orderId)))
+                .get())
+            .map((l) => '${_qtyLabel(l.quantity)}x ${l.name}')
+            .join(', ');
         await _db.into(_db.outboxEntries).insert(
               OutboxEntriesCompanion.insert(
                 id: _uuid.v4(),
@@ -707,6 +714,10 @@ class OrderRepository {
                   'order_id': orderId,
                   'clerk_pin': order.clerkPin,
                   'reason': reason,
+                  if (summary.isNotEmpty)
+                    'items': summary.length > 500
+                        ? '${summary.substring(0, 497)}...'
+                        : summary,
                   'scope': 'sale',
                   'amount_minor': order.totalMinor,
                   'voided_at': DateTime.now().toIso8601String(),

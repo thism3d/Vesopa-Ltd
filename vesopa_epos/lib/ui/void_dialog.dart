@@ -235,6 +235,16 @@ class _ReasonSheet extends ConsumerWidget {
 /// entire sale, while the default removes the picked lines. The dialog says
 /// which, and names the items, so a clerk cannot clear a table's whole bill
 /// while believing they are dropping one coffee.
+/// Whether Cancel must refuse this bill: one saved to a table, with items
+/// on it, comes off item by item with Void instead (2026-10-14). An empty
+/// bill on a table still clears.
+bool cancelRefused({required int? tableNumber, required int lineCount}) =>
+    tableNumber != null && lineCount > 0;
+
+/// Said when Cancel is pressed on a bill saved to a table (2026-10-14).
+const cancelTableMessage =
+    'This table has been saved. Use Void to remove items from it.';
+
 Future<String?> showVoidDialog(
   BuildContext context,
   WidgetRef ref, {

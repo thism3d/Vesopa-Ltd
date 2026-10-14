@@ -390,6 +390,7 @@ class _BarKey extends ConsumerWidget {
     'price_override': Icons.price_change,
     'refund': Icons.undo,
     'split': Icons.call_split,
+    'transfer': Icons.swap_horiz,
   };
 
   /// Mirrors the labels the back office offers. A key not in here still draws —
@@ -426,6 +427,10 @@ class _BarKey extends ConsumerWidget {
     'price_override': 'Override',
     'refund': 'Refund',
     'split': 'Split',
+    // Both were offered by the back office and missing here, so they drew as
+    // their raw key: "transfer" in lower case (Pontardawe RFC, 2026-10-14).
+    'transfer': 'Transfer',
+    'display_lock': 'Lock display',
   };
 
   @override

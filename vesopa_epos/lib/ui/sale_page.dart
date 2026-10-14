@@ -1781,6 +1781,19 @@ class SalePage extends ConsumerWidget {
   }) async {
     final repo = ref.read(orderRepositoryProvider);
 
+    // A bill saved to a table is not cancelled in one go (Pontardawe RFC,
+    // 2026-10-14): the table is open, items may have gone to the kitchen, and
+    // a whole table vanishing with one key is a void nobody can follow. Items
+    // come off with Void, one by one or ticked together, each logged with
+    // what it was.
+    if (cancelRefused(
+      tableNumber: (await repo.orderOnce(orderId))?.tableNumber,
+      lineCount: lines.length,
+    )) {
+      if (context.mounted) PosMessenger.error(context, cancelTableMessage);
+      return;
+    }
+
     // Nothing on the bill: clear silently, no reason needed.
     if (lines.isEmpty) {
       await repo.voidOrder(orderId, reason: 'Empty');
@@ -1789,6 +1802,7 @@ class SalePage extends ConsumerWidget {
       return;
     }
 
+    if (!context.mounted) return;
     final reason = await showVoidDialog(context, ref, wholeCheck: true);
     if (reason == null) return;
 
