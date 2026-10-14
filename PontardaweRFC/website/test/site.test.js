@@ -154,10 +154,11 @@ test('the kick-off opening never hides the page; menu drawn in the page', async 
   // crawler or reduced motion, and lifted by a timer even with no motion.js.
   assert.match(home, /<div class="kick" data-kick aria-hidden="true">/);
   assert.match(home, /sessionStorage\.getItem\('prfc-kick'\)/);
-  assert.match(home, /setTimeout\(function\(\)\{d\.classList\.remove\('kick-on'\)\},2400\)/);
+  assert.match(home, /setTimeout\(function\(\)\{d\.classList\.remove\('kick-on'\)\},6500\)/);
   const css = await (await fetch(`${base}/css/motion.css`)).text();
   assert.match(css, /^\.kick \{ display: none; \}$/m);
-  assert.match(css, /html\.kick-on \.kick \{[^}]*kick-out \.38s[^}]*1\.12s/);
+  assert.match(css, /--T: 5\.2s;/);
+  assert.match(home, /data-kick-skip/);
   assert.match(home, /type="speculationrules"/);
   venue.set('menu', { venue: { name: 'Pontardawe RFC' }, sections: [{ id: 7, name: 'Lunch', items: [{ id: 1, name: 'Chips </script><b>', price_minor: 350 }] }] });
   const menu = await (await fetch(`${base}/menu`)).text();

@@ -10,23 +10,41 @@
   var reduced = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
   var finePointer = window.matchMedia && matchMedia('(hover: hover) and (pointer: fine)').matches;
 
-  /* --- The kick-off opening ------------------------------------------------ */
+  /* --- The kick-off opening (5.7s; motion.css has the scenes) -------------- */
   var kick = d.querySelector('[data-kick]');
   if (kick && root.classList.contains('kick-on')) {
     var stage = kick.querySelector('.kick-stage');
-    var done = function () { root.classList.remove('kick-on', 'kick-skip'); };
-    var skip = function () { root.classList.add('kick-skip'); setTimeout(done, 260); };
+    var pct = kick.querySelector('[data-kick-pct]');
+    var t0k = performance.now();
+    var LOAD = 5200;
+    var ended = false;
+    var done = function () {
+      if (ended) return;
+      ended = true;
+      root.classList.remove('kick-on', 'kick-skip');
+      window.dispatchEvent(new Event('kickoff-done'));
+    };
+    var skip = function () { root.classList.add('kick-skip'); setTimeout(done, 320); };
+    // The counter follows the bar's easing closely enough: slow, quick, slow.
+    var count = function (now) {
+      if (ended) return;
+      var p = Math.min(1, (now - t0k) / LOAD);
+      var e = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+      if (pct) pct.textContent = p >= 1 ? 'Kick-off!' : 'Loading ' + Math.round(e * 100) + '%';
+      if (p < 1) requestAnimationFrame(count);
+    };
+    requestAnimationFrame(count);
     kick.addEventListener('animationend', function (e) { if (e.target === kick) done(); });
     kick.addEventListener('pointerdown', skip);
-    d.addEventListener('keydown', skip, { once: true });
-    // The posts lean toward the pointer, so the opening answers a hand.
+    d.addEventListener('keydown', function (e) { if (!ended && (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ')) skip(); });
+    // The posts and the crest lean toward the pointer or a finger.
     kick.addEventListener('pointermove', function (e) {
       var x = e.clientX / innerWidth - 0.5;
       var y = e.clientY / innerHeight - 0.5;
-      stage.style.setProperty('--ky', (x * 18).toFixed(2) + 'deg');
-      stage.style.setProperty('--kx', (-y * 14).toFixed(2) + 'deg');
+      stage.style.setProperty('--ky', (x * 16).toFixed(2) + 'deg');
+      stage.style.setProperty('--kx', (-y * 12).toFixed(2) + 'deg');
     });
-    setTimeout(done, 1700);
+    setTimeout(done, 6000);
   }
   if (reduced) return;
 
@@ -153,7 +171,7 @@
       new IntersectionObserver(function (en) { visible = en[0].isIntersecting; play(); }).observe(hero);
     }
     // Wait for the opening, so the two do not compete for the first second.
-    setTimeout(function () { canvas.classList.add('on'); play(); }, root.classList.contains('kick-on') ? 1150 : 60);
+    setTimeout(function () { canvas.classList.add('on'); play(); }, root.classList.contains('kick-on') ? 5200 : 60);
   }
 
   /* --- The crest and the posters lean toward the pointer --------------------- */

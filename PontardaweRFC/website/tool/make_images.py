@@ -84,21 +84,34 @@ def crest():
     return Image.open(CREST).convert("RGBA")
 
 
+def square(c, size, pad=0.0):
+    """The crest alone, no background: cropped to itself and centred in a
+    transparent square, so it fills a browser tab (the owner, 2026-10-15)."""
+    tight = c.crop(c.split()[3].getbbox())
+    room = round(size * (1 - 2 * pad))
+    scale = room / max(tight.size)
+    fit = tight.resize((max(1, round(tight.width * scale)), max(1, round(tight.height * scale))), Image.LANCZOS)
+    out = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    out.paste(fit, ((size - fit.width) // 2, (size - fit.height) // 2), fit)
+    return out
+
+
 def icons():
     c = crest()
     for size in (192, 512):
-        c.resize((size, size), Image.LANCZOS).save(OUT / f"icon-{size}.png", optimize=True)
-    # Maskable: the crest inside the safe zone, on the club's red.
+        square(c, size, 0.02).save(OUT / f"icon-{size}.png", optimize=True)
+    # Maskable (Android's installed app only): the crest inside the safe zone, on the club's red.
     m = Image.new("RGBA", (512, 512), RED + (255,))
     inner = c.resize((340, 340), Image.LANCZOS)
     m.paste(inner, (86, 86), inner)
     m.save(OUT / "maskable-512.png", optimize=True)
-    a = Image.new("RGBA", (180, 180), RED + (255,))
-    inner = c.resize((150, 150), Image.LANCZOS)
-    a.paste(inner, (15, 15), inner)
-    a.convert("RGB").save(OUT / "apple-touch-icon.png", optimize=True)
-    c.resize((64, 64), Image.LANCZOS).save(OUT.parent / "favicon.ico", sizes=[(16, 16), (32, 32), (48, 48), (64, 64)])
-    c.resize((32, 32), Image.LANCZOS).save(OUT / "favicon-32.png", optimize=True)
+    # Safari on an iPad shows this in its tabs and favourites: the crest
+    # alone, transparent, like every other icon.
+    square(c, 180, 0.03).save(OUT / "apple-touch-icon.png", optimize=True)
+    ico = square(c, 64)
+    ico.save(OUT.parent / "favicon.ico", sizes=[(16, 16), (32, 32), (48, 48), (64, 64)])
+    square(c, 32).save(OUT / "favicon-32.png", optimize=True)
+    square(c, 16).save(OUT / "favicon-16.png", optimize=True)
     c.resize((512, 512), Image.LANCZOS).save(OUT / "crest-512.png", optimize=True)
     for size in (256, 128):
         c.resize((size, size), Image.LANCZOS).save(OUT / f"crest-{size}.webp", quality=90, method=6)

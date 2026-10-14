@@ -100,9 +100,11 @@ ${noindex ? '<meta name="robots" content="noindex">' : '<meta name="robots" cont
 <meta name="twitter:title" content="${esc(full)}">
 <meta name="twitter:description" content="${esc(description)}">
 <meta name="twitter:image" content="${esc(image)}">
-<link rel="icon" href="/favicon.ico" sizes="any">
-<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
-<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png?v=2">
+<link rel="icon" type="image/png" sizes="16x16" href="/img/favicon-16.png?v=2">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/icon-192.png?v=2">
+<link rel="icon" href="/favicon.ico?v=2" sizes="any">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png?v=2">
 <link rel="manifest" href="/site.webmanifest">
 <link rel="preload" href="/fonts/oswald-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/montserrat-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
@@ -115,11 +117,11 @@ ${noindex ? '<meta name="robots" content="noindex">' : '<meta name="robots" cont
    (site.js). Links to other pages are fetched ahead, so they open at once.
    The kick-off opening (2026-10-15, the owner) plays over a page that is
    already drawn, once per visit, never for reduced motion or a crawler, and
-   lifts itself after 1.5s whatever happens (motion.js; this timer if not). */
+   lifts itself after 5.7s whatever happens (motion.js; this timer if not). */
 document.documentElement.classList.add('js');
 (function(){try{var d=document.documentElement,u=navigator.userAgent||'';
 if(!navigator.webdriver&&!/bot|crawl|spider|slurp|lighthouse|preview|headless/i.test(u)&&!(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches)&&!sessionStorage.getItem('prfc-kick')){
-sessionStorage.setItem('prfc-kick','1');d.classList.add('kick-on');setTimeout(function(){d.classList.remove('kick-on')},2400);}}catch(e){}})();
+sessionStorage.setItem('prfc-kick','1');d.classList.add('kick-on');setTimeout(function(){d.classList.remove('kick-on')},6500);}}catch(e){}})();
 /* Which phone, so each visitor is shown the one app store their phone uses. */
 (function(){var u=navigator.userAgent||'',d=document.documentElement;
 if(/iPhone|iPad|iPod/.test(u)||(/Macintosh/.test(u)&&navigator.maxTouchPoints>1))d.classList.add('os-ios');
@@ -163,7 +165,7 @@ function header(path) {
       <span class="brand-text"><b>Pontardawe RFC</b><small>Est. ${club.founded}</small></span>
     </a>
     <nav class="nav" id="nav" aria-label="Main">${NAV.map(link).join('')}</nav>
-    <a class="btn btn-sm btn-glow head-cta" href="${MEMBERS}/">${icon('card', { size: 18 })}<span>Members</span></a>
+    <a class="btn btn-sm btn-glow head-cta" href="${MEMBERS}/" aria-label="Members' card"><span class="head-cta-ic" aria-hidden="true"><svg viewBox="0 0 32 24" width="22" height="17"><rect class="hc-card" x="1.5" y="1.5" width="29" height="21" rx="4"/><rect class="hc-chip" x="5.5" y="7" width="6" height="5" rx="1.2"/><path class="hc-line" d="M5.5 16.5h12M21 16.5h5.5"/><circle class="hc-dot" cx="25" cy="7.5" r="2.4"/></svg></span><span class="head-cta-text">Members</span></a>
     <button class="burger" type="button" aria-controls="nav" aria-expanded="false" aria-label="Open the menu" data-burger>${icon('menu')}</button>
   </div>
 </header>`;
@@ -239,23 +241,37 @@ function footer() {
 }
 
 /**
- * The kick-off opening: a ball kicked between the posts that becomes the
- * crest. Drawn only when the head script sets html.kick-on (motion.css).
+ * The kick-off opening (motion.css): floodlights, the pitch, a conversion
+ * between the posts, then the crest and the club's name. Drawn only when the
+ * head script sets html.kick-on; the page itself is already underneath.
  */
+const KICK_CONFETTI = '<i style="--i:0;--a:-180deg;--r:150px;--c:#f2c14e"></i><i style="--i:1;--a:-164deg;--r:197px;--c:#ffffff"></i><i style="--i:2;--a:-148deg;--r:244px;--c:#e8312f"></i><i style="--i:3;--a:-131deg;--r:151px;--c:#f2c14e"></i><i style="--i:4;--a:-115deg;--r:198px;--c:#c41414"></i><i style="--i:5;--a:-99deg;--r:245px;--c:#f2c14e"></i><i style="--i:6;--a:-82deg;--r:152px;--c:#ffffff"></i><i style="--i:7;--a:-66deg;--r:199px;--c:#e8312f"></i><i style="--i:8;--a:-50deg;--r:246px;--c:#f2c14e"></i><i style="--i:9;--a:-33deg;--r:153px;--c:#c41414"></i><i style="--i:10;--a:-17deg;--r:200px;--c:#f2c14e"></i><i style="--i:11;--a:0deg;--r:247px;--c:#ffffff"></i><i style="--i:12;--a:16deg;--r:154px;--c:#e8312f"></i><i style="--i:13;--a:32deg;--r:201px;--c:#f2c14e"></i><i style="--i:14;--a:49deg;--r:248px;--c:#c41414"></i><i style="--i:15;--a:65deg;--r:155px;--c:#f2c14e"></i><i style="--i:16;--a:81deg;--r:202px;--c:#ffffff"></i><i style="--i:17;--a:98deg;--r:249px;--c:#e8312f"></i><i style="--i:18;--a:114deg;--r:156px;--c:#f2c14e"></i><i style="--i:19;--a:130deg;--r:203px;--c:#c41414"></i><i style="--i:20;--a:147deg;--r:250px;--c:#f2c14e"></i><i style="--i:21;--a:163deg;--r:157px;--c:#ffffff"></i>';
+const KICK_LETTERS = '<span style="--i:0">P</span><span style="--i:1">O</span><span style="--i:2">N</span><span style="--i:3">T</span><span style="--i:4">A</span><span style="--i:5">R</span><span style="--i:6">D</span><span style="--i:7">A</span><span style="--i:8">W</span><span style="--i:9">E</span><span style="--i:10">&nbsp;</span><span style="--i:11">R</span><span style="--i:12">F</span><span style="--i:13">C</span>';
 function kickOff() {
   return `<div class="kick" data-kick aria-hidden="true">
+  <span class="kick-light l1"></span><span class="kick-light l2"></span>
+  <svg class="kick-pitch" viewBox="0 0 1000 600" preserveAspectRatio="xMidYMax slice">
+    <defs><linearGradient id="kick-turf" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1d4d1f" stop-opacity="0"/><stop offset="1" stop-color="#1d4d1f" stop-opacity=".55"/></linearGradient></defs>
+    <path class="turf" d="M380 120 L620 120 L1120 600 L-120 600 Z"/>
+    <path d="M380 120 L-120 600"/><path d="M620 120 L1120 600"/>
+    <path d="M330 168 L670 168"/><path d="M230 264 L770 264"/><path d="M60 428 L940 428"/>
+  </svg>
   <div class="kick-stage">
     <svg class="kick-svg" viewBox="0 0 400 400">
-      <defs><linearGradient id="kick-trail" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#f2c14e" stop-opacity="0"/><stop offset="1" stop-color="#fff" stop-opacity=".9"/></linearGradient></defs>
-      <path class="kick-ground" d="M40 352 H360"/>
-      <g class="kick-posts"><path d="M140 352 V96"/><path d="M260 352 V96"/><path d="M140 236 H260"/></g>
-      <path class="kick-trail" d="M50 360 Q 150 120 200 182"/>
-      <circle class="kick-burst" cx="200" cy="182" r="40"/><circle class="kick-burst b2" cx="200" cy="182" r="40"/>
-      <g class="kick-ball"><ellipse cx="200" cy="200" rx="30" ry="18"/><path d="M186 200 H214 M193 194 V206 M200 194 V206 M207 194 V206"/></g>
+      <defs><linearGradient id="kick-trail" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#f2c14e" stop-opacity="0"/><stop offset="1" stop-color="#fff" stop-opacity=".95"/></linearGradient></defs>
+      <g class="kick-posts"><path class="pad" d="M150 300 V270 M250 300 V270"/><path d="M150 300 V40"/><path d="M250 300 V40"/><path d="M150 190 H250"/></g>
+      <path class="kick-trail" d="M200 352 Q 180 220 200 96"/>
+      <path class="kick-tee" d="M188 372 L212 372 L206 358 L194 358 Z"/>
+      <g class="kick-ball"><ellipse cx="200" cy="340" rx="16" ry="25"/><path d="M200 322 V358 M194 330 H206 M194 340 H206 M194 350 H206"/></g>
     </svg>
-    <img class="kick-crest" src="/img/crest-256.webp" alt="" width="256" height="256">
-    <p class="kick-word">Pontardawe RFC<small>Est. ${club.founded} · Clwb Rygbi</small></p>
   </div>
+  <span class="kick-flash"></span>
+  <span class="kick-confetti">${KICK_CONFETTI}</span>
+  <p class="kick-cheer">Converted!</p>
+  <div class="kick-crest-wrap"><span class="kick-ring"></span><span class="kick-ring r2"></span><div class="kick-crest"><img src="/img/crest-256.webp" alt="" width="256" height="256"></div></div>
+  <p class="kick-word">${KICK_LETTERS}<small>Est. ${club.founded} · Clwb Rygbi Pontardawe</small></p>
+  <p class="kick-load"><span class="kick-bar"></span><span data-kick-pct>Loading 0%</span></p>
+  <button class="kick-skip" type="button" data-kick-skip tabindex="-1">Skip ›</button>
 </div>`;
 }
 
