@@ -1,0 +1,320 @@
+{
+  "about": "The club's own updates, from its Instagram (@pontardawerfc) and Facebook posts, July to October 2026. Read from the owner's phone screenshots in PontardaweRFC/InstagramScreenshots; each image is a crop in content/images/instagram/ (tool/crop_instagram.py), published by tool/make_update_images.py. See content/instagram-notes.md for which screenshot each came from. Events show on What's On until their day has passed.",
+  "updates": [
+    {
+      "slug": "home-v-penlan-17-october",
+      "posted": "2026-10-14",
+      "kind": "match",
+      "title": "Home game: Pontardawe v Penlan RFC, Saturday 17 October",
+      "summary": "We're back at The Rec this Saturday as Pontardawe RFC welcome Penlan RFC for another big league clash. Kick-off 2:30pm.",
+      "paragraphs": [
+        "Home game this Saturday! We're back at The Rec as Pontardawe RFC welcome Penlan RFC for another big league clash.",
+        "Kick-off is at 2:30pm on Saturday 17 October 2026 at the Recreation Ground, Ynysderw Road. Come down, bring your voice and get behind the boys. The bar is open before and after the game."
+      ],
+      "event": { "start": "2026-10-17T14:30", "place": "The Rec, Ynysderw Road", "opponent": "Penlan RFC", "home": true },
+      "images": [{ "crop": "post-004.jpg", "name": "home-v-penlan", "alt": "Home game poster: Pontardawe RFC v Penlan RFC, Saturday 17/10/2026, kick-off 2:30pm at The Rec" }]
+    },
+    {
+      "slug": "little-daffs-on-tour-resolven",
+      "posted": "2026-10-13",
+      "kind": "juniors",
+      "title": "Little Daffs on tour at Resolven",
+      "summary": "Our Pontardawe Little Daffs girls' touch rugby team were away at Resolven RFC and put in a fantastic effort. Daff of the match: Addie-Mai.",
+      "paragraphs": [
+        "Our Pontardawe Little Daffs were away at Resolven RFC this week and the girls put in a fantastic effort.",
+        "The girls' confidence is growing week in, week out. They absolutely loved the evening, and a huge thank you to Resolven for having them and hosting after the game with food.",
+        "Daff of the match: Addie-Mai. Play, enjoy, belong: the Daffs!"
+      ],
+      "images": [{ "crop": "post-005.jpg", "name": "little-daffs-resolven", "alt": "Match report: Resolven v Pontardawe Little Daffs girls' touch rugby, team photo and Daff of the match Addie-Mai" }]
+    },
+    {
+      "slug": "fireworks-night-5-november",
+      "posted": "2026-10-09",
+      "kind": "event",
+      "title": "Fireworks Night, Thursday 5 November",
+      "summary": "Bring the family for a spectacular night at the club. Gates 6pm, fireworks 7:30pm. £5 adults, £3 children, £15 for a family of four.",
+      "paragraphs": [
+        "Fireworks Night at Pontardawe RFC! Bring the family for a spectacular night on Thursday 5 November.",
+        "Gates open at 6pm and the fireworks start at 7:30pm. Food and drinks, sweet treats, and family friendly.",
+        "Entry: £5 per adult, £3 per child (under 16), or £15 for a family of four (two adults and two children). A night to remember, and a great way to support your local club."
+      ],
+      "event": { "start": "2026-11-05T18:00", "end": "2026-11-05T21:00", "place": "Pontardawe RFC, Ynysderw Road", "price": "£5 adults · £3 under-16s · £15 family of 4", "note": "Gates 6pm · Fireworks 7:30pm" },
+      "images": [{ "crop": "post-006.jpg", "name": "fireworks-night", "alt": "Fireworks Night at Pontardawe RFC poster: Thursday 5th November, gates 6pm, fireworks 7:30pm, £5 adult, £3 child, £15 family of 4" }]
+    },
+    {
+      "slug": "kids-halloween-party-30-october",
+      "posted": "2026-10-05",
+      "kind": "event",
+      "title": "Kids Halloween Party & Disco, Friday 30 October",
+      "summary": "Fancy dress Halloween party and disco for the children at the club, 6pm to 8pm. £2 entry, pay on the door.",
+      "paragraphs": [
+        "Kids Halloween Party & Disco at Pontardawe RFC, with the Daffs!",
+        "Friday 30 October, 6pm to 8pm. Fancy dress, music and spooky fun.",
+        "£2 entry, pay on the door."
+      ],
+      "event": { "start": "2026-10-30T18:00", "end": "2026-10-30T20:00", "place": "Pontardawe RFC, Ynysderw Road", "price": "£2 entry, pay on the door", "note": "Fancy dress" },
+      "images": [{ "crop": "post-007.jpg", "name": "kids-halloween", "alt": "Kids Halloween Party and Disco poster: fancy dress at Pontardawe RFC, Friday 30th October, 6pm to 8pm, £2 entry, pay on the door" }]
+    },
+    {
+      "slug": "oktoberfest-2026",
+      "posted": "2026-10-03",
+      "kind": "event",
+      "title": "Oktoberfest at Pontardawe RFC",
+      "summary": "Great beer, live music and good times: Jono, John Jones, Double or Nothing and Helix and the Hounds, with Little Goat Brewery, Wok Stix and Nellie May's.",
+      "paragraphs": [
+        "Oktoberfest came to Pontardawe RFC on Saturday 3 October, with live music from 4pm until 11pm and £3 entry.",
+        "The line-up: Jono at 4pm, John Jones (live entertainment) from 5:30 to 6:30pm, Double or Nothing at 7pm and Helix and the Hounds at 9pm.",
+        "Little Goat Brewery came along, with food from Wok Stix (Asian-inspired noodles) and Nellie May's Fish & Chip Co. Best dress won a £50 bar tab: lederhosen were encouraged!",
+        "Thank you to everyone who came. Great beer, live music, good times."
+      ],
+      "images": [
+        { "crop": "post-008.jpg", "name": "oktoberfest-lineup", "alt": "Oktoberfest at Pontardawe RFC, Saturday 3rd October: 4pm Jono, 5:30 to 6:30pm John Jones, 7pm Double or Nothing, 9pm Helix and the Hounds" },
+        { "crop": "post-011.jpg", "name": "oktoberfest-little-goat", "alt": "Little Goat Brewery will be attending Pontardawe RFC Oktoberfest, Saturday 3rd October from 4pm" },
+        { "crop": "post-014.jpg", "name": "oktoberfest-food", "alt": "Wok Stix and Nellie May's Fish and Chip Co at Pontardawe RFC Oktoberfest, Saturday 3rd October from 4pm" },
+        { "crop": "post-009.jpg", "name": "oktoberfest-one-day", "alt": "Oktoberfest one day to go: live music from 4pm, £3 entry, music until 11pm, £50 bar tab for the best dress" }
+      ]
+    },
+    {
+      "slug": "cup-game-v-banwen",
+      "posted": "2026-09-29",
+      "kind": "match",
+      "title": "Cup game: Pontardawe v Banwen RFC at The Rec",
+      "summary": "A home cup tie against Banwen RFC on Saturday 3 October, kick-off 2pm at The Rec, on Oktoberfest day.",
+      "paragraphs": [
+        "Cup game, home at The Rec! Pontardawe RFC v Banwen RFC on Saturday 3 October 2026, kick-off 2pm.",
+        "The same day as the club's Oktoberfest, so it was rugby first and the party after."
+      ],
+      "event": { "start": "2026-10-03T14:00", "place": "The Rec, Ynysderw Road", "opponent": "Banwen RFC", "home": true, "competition": "Cup" },
+      "images": [{ "crop": "post-013.jpg", "name": "home-v-banwen", "alt": "Home game poster: Pontardawe RFC v Banwen RFC, Saturday 03/10/2026, kick-off 2pm at The Rec" }]
+    },
+    {
+      "slug": "little-daffs-welcome-resolven",
+      "posted": "2026-09-30",
+      "kind": "juniors",
+      "title": "Little Daffs welcome Resolven to The Rec",
+      "summary": "Our Little Daffs took on Resolven Hillbetties Teens at home in a fast-paced game. Daff of the match: Rosie.",
+      "paragraphs": [
+        "Our Little Daffs welcomed Resolven Hillbetties Teens to The Rec for a fast-paced game, and what a brilliant game it was!",
+        "All the girls enjoyed themselves, gave it their all and were amazing from start to finish. Brilliant teamwork, fantastic attitudes and real Daff spirit on display. We are so proud of you all.",
+        "Daff of the match: Rosie."
+      ],
+      "images": [{ "crop": "post-012.jpg", "name": "little-daffs-v-resolven", "alt": "Match report: Pontardawe Little Daffs v Resolven at the Rec, team photo and Daff of the match Rosie" }]
+    },
+    {
+      "slug": "weekly-lotto",
+      "posted": "2026-09-28",
+      "kind": "lotto",
+      "title": "Weekly Lotto: the jackpot rolls over",
+      "summary": "No winner on 27 September (numbers 3, 7 and 11), so the jackpot rolled over to £285. Support your club and play your luck!",
+      "paragraphs": [
+        "The Pontardawe RFC Weekly Lotto supports the club every week. Thank you to everyone who plays: your support makes a huge difference.",
+        "27 September: winning numbers 3, 7 and 11. No winner, so this week's £150 jackpot rolled over to £285 for the next draw.",
+        "Earlier draws: 3 August (4, 7, 11, no winner, rolled to £205); 26 July (2, 7, 8, no winner, rolled to £195); 19 July (5, 11, 17, no winner, rolled to £185).",
+        "Ask behind the bar to play. Support your club, play your luck!"
+      ],
+      "images": [{ "crop": "post-015.jpg", "name": "weekly-lotto", "alt": "Weekly Lotto results 27-9-26: winning numbers 3, 7, 11, no winner, jackpot for next week £285, next draw 4-10-26" }]
+    },
+    {
+      "slug": "team-announcement-briton-ferry",
+      "posted": "2026-09-26",
+      "kind": "match",
+      "title": "Starting XV v Briton Ferry",
+      "summary": "The team to face Briton Ferry RFC at The Rec on Saturday 26 September, kick-off 2:30pm. Come on Ponty!",
+      "paragraphs": [
+        "Team announcement: game day at The Rec, Pontardawe RFC v Briton Ferry RFC, Saturday 26 September, kick-off 2:30pm.",
+        "Starting XV: 1 Elijah Pickin, 2 Connor Walters, 3 Joseph Mort (captain), 4 Charlie Macklin, 5 Josh Jones, 6 Dewi Morgan, 7 Milo Macklin, 8 Noah Barker, 9 Jack Morgan, 10 Andy Huseyman, 11 Callum Jones, 12 Kian Warlow, 13 Callum Harris, 14 Ben Davies, 15 Ieuan Ace.",
+        "Replacements: 16 Morgan Jones, 17 Dylan Davies, 18 Dominic Davies, 19 Sam Maben, 20 Callum Mitchell.",
+        "Come on Ponty!"
+      ],
+      "event": { "start": "2026-09-26T14:30", "place": "The Rec, Ynysderw Road", "opponent": "Briton Ferry RFC", "home": true },
+      "images": [
+        { "crop": "post-017.jpg", "name": "starting-xv-briton-ferry", "alt": "Starting XV for Pontardawe RFC v Briton Ferry RFC, Saturday 26/09/2026, kick-off 2:30pm at The Rec" },
+        { "crop": "post-019.jpg", "name": "home-v-briton-ferry", "alt": "Home game poster: Pontardawe RFC v Briton Ferry RFC, Saturday 26/09/2026, kick-off 2:30pm at The Rec" }
+      ]
+    },
+    {
+      "slug": "smokin-griddle-pop-up",
+      "posted": "2026-09-21",
+      "kind": "food",
+      "title": "Smokin Griddle pop-up at the club",
+      "summary": "Burgers, loaded fries and good vibes: Smokin Griddle popped up at Pontardawe RFC on Friday 25 September, 5pm to 9pm.",
+      "paragraphs": [
+        "Smokin Griddle came to Pontardawe RFC! A pop-up on Friday 25 September from 5pm to 9pm: burgers, loaded fries, good food and good vibes.",
+        "Food, friends and rugby: keep an eye on What's On for the next pop-up at the club."
+      ],
+      "images": [{ "crop": "post-020.jpg", "name": "smokin-griddle", "alt": "Smokin Griddle pop-up at Pontardawe RFC, Friday 25th September, 5pm to 9pm: burgers and loaded fries" }]
+    },
+    {
+      "slug": "medium-nights",
+      "posted": "2026-09-25",
+      "kind": "event",
+      "title": "Medium Nights at the club",
+      "summary": "An evening of insight, guidance and good company on the first Monday of the month. 7pm start, £5 entry, cash only. Next: Monday 2 November.",
+      "paragraphs": [
+        "Medium Night at Pontardawe RFC: join us for an evening of insight, guidance and good company. Open minds, open hearts, all welcome.",
+        "7pm start, £5 entry (cash only). October's medium was Rodney Frost (Monday 5 October). Earlier this year the club welcomed Pat Howells (3 August) and Jackie Rickard and Helen Jones (7 September).",
+        "Our Medium Night on 3 August raised £334, split equally: £167 to our Daffs team fundraising for the Touched by Cancer tournament fundraiser, and £167 to LATCH, the charity raising funds to support children and young people with cancer in Wales. Thank you to everyone who attended and donated.",
+        "The next Medium Night is on Monday 2 November."
+      ],
+      "event": { "start": "2026-11-02T19:00", "place": "Pontardawe RFC, Ynysderw Road", "price": "£5 entry, cash only", "note": "7pm start" },
+      "images": [
+        { "crop": "post-018.jpg", "name": "medium-night", "alt": "Medium Night poster: Monday October 5th, 7pm start at Pontardawe RFC, £5 entry cash only, this month's medium Rodney Frost, with the year's Monday dates" },
+        { "crop": "post-046.jpg", "name": "medium-night-thank-you", "alt": "Thank you: the Medium Night on Monday 3rd August raised £334, split £167 to the Daffs team and £167 to LATCH charity" }
+      ]
+    },
+    {
+      "slug": "away-at-nantymoel",
+      "posted": "2026-09-17",
+      "kind": "match",
+      "title": "Away day at Nantymoel",
+      "summary": "On the road to Nantymoel RFC on Saturday 19 September, kick-off 2:30pm, at the end of a jam-packed weekend at the club.",
+      "paragraphs": [
+        "Away day! Pontardawe RFC travelled to Nantymoel RFC on Saturday 19 September, kick-off 2:30pm.",
+        "A jam-packed weekend at the club, with Wokstix Pizza popping up at the clubhouse the same evening."
+      ],
+      "event": { "start": "2026-09-19T14:30", "place": "Nantymoel RFC", "opponent": "Nantymoel RFC", "home": false },
+      "images": [{ "crop": "post-022.jpg", "name": "away-at-nantymoel", "alt": "Away game poster: Pontardawe RFC v Nantymoel RFC, Saturday 19/09/2026, kick-off 2:30pm, away" }]
+    },
+    {
+      "slug": "wokstix-pizza-pop-up",
+      "posted": "2026-09-16",
+      "kind": "food",
+      "title": "Wokstix Pizza pops up at Pontardawe RFC",
+      "summary": "Authentic wood-fired Neapolitan pizza at the club on Saturday 19 September, 5:30pm to 8:30pm, with special offers on the night.",
+      "paragraphs": [
+        "Same Wokstix passion, now with pizza! Wokstix Pizza popped up at Pontardawe RFC on Saturday 19 September from 5:30pm to 8:30pm.",
+        "Authentic wood-fired Neapolitan pizza: hand-stretched, with fresh ingredients. Special offers on the night. Pizza, people, together."
+      ],
+      "images": [{ "crop": "post-023.jpg", "name": "wokstix-pizza", "alt": "Wokstix Pizza will be popping up at Pontardawe RFC, Saturday 19th September, from 5:30pm til 8:30pm" }]
+    },
+    {
+      "slug": "new-signings-macklen-and-davies",
+      "posted": "2026-09-10",
+      "kind": "club",
+      "title": "Signed: Milo Macklen and Dominic Davies",
+      "summary": "Two new signings for the season: Milo Macklen in the back row and Dominic Davies on the wing.",
+      "paragraphs": [
+        "Signed! Milo Macklen joins Pontardawe RFC in the back row.",
+        "Signed! Dominic Davies joins on the wing.",
+        "Welcome to the club, both of you."
+      ],
+      "images": [
+        { "crop": "post-025.jpg", "name": "signed-milo-macklen", "alt": "Signed: Milo Macklen, position back row, in the Pontardawe RFC shirt" },
+        { "crop": "post-027.jpg", "name": "signed-dominic-davies", "alt": "Signed: Dominic Davies, position wing, in the Pontardawe RFC shirt" }
+      ]
+    },
+    {
+      "slug": "first-up-at-home-cwmgwrach",
+      "posted": "2026-09-10",
+      "kind": "match",
+      "title": "First up at home: Pontardawe v Cwmgwrach",
+      "summary": "The league season opened at The Rec against Cwmgwrach RFC on Saturday 12 September, kick-off 2:30pm.",
+      "paragraphs": [
+        "First up at home! The season opened at The Rec with Pontardawe RFC v Cwmgwrach RFC on Saturday 12 September 2026, kick-off 2:30pm."
+      ],
+      "event": { "start": "2026-09-12T14:30", "place": "The Rec, Ynysderw Road", "opponent": "Cwmgwrach RFC", "home": true },
+      "images": [{ "crop": "post-026.jpg", "name": "home-v-cwmgwrach", "alt": "First up home: Pontardawe RFC v Cwmgwrach RFC, Saturday 12/09/2026, kick-off 14:30" }]
+    },
+    {
+      "slug": "wok-stix-pop-up",
+      "posted": "2026-08-29",
+      "kind": "food",
+      "title": "Wok Stix pop-up: noodle bowls and family munch boxes",
+      "summary": "Wok Stix brought Asian-inspired noodle bowls and family munch boxes to the club on Friday 4 September, 5:30pm to 8:30pm.",
+      "paragraphs": [
+        "Wok Stix came to Pontardawe RFC on Friday 4 September 2026, from 5:30pm till 8:30pm.",
+        "Asian-inspired noodle bowls and family munch boxes, served from their airstream outside the clubhouse."
+      ],
+      "images": [{ "crop": "post-029.jpg", "name": "wok-stix", "alt": "Wok Stix Asian inspired bowls will pop up at Pontardawe RFC, Friday 4th September 2026, 5:30pm til 8:30pm" }]
+    },
+    {
+      "slug": "pre-season-at-pantyffynnon",
+      "posted": "2026-08-24",
+      "kind": "match",
+      "title": "Pre-season continues at Pantyffynnon",
+      "summary": "A pre-season fixture away at Clwb Rygbi Pantyffynnon on Saturday 29 August, kick-off 2:30pm.",
+      "paragraphs": [
+        "Pre-season continues! Pontardawe RFC v Pantyffynnon RFC, away at Pantyffynnon, on Saturday 29 August, kick-off 2:30pm."
+      ],
+      "event": { "start": "2026-08-29T14:30", "place": "Pantyffynnon RFC", "opponent": "Pantyffynnon RFC", "home": false, "competition": "Pre-season" },
+      "images": [{ "crop": "post-032.jpg", "name": "pre-season-pantyffynnon", "alt": "Pre-season fixture: Pontardawe RFC v Clwb Rygbi Pantyffynnon, Saturday August 29th, away, 2:30 kick-off" }]
+    },
+    {
+      "slug": "juniors-sponsors-wanted",
+      "posted": "2026-08-19",
+      "kind": "juniors",
+      "title": "Juniors sponsors wanted",
+      "summary": "Our juniors are growing and new kit is needed. Could your business sponsor the juniors? Message the club on Facebook.",
+      "paragraphs": [
+        "Sponsors wanted for Pontardawe RFC Juniors! Our juniors are growing, new kit is needed, and your support makes the difference.",
+        "If you or your business can help, contact us via Facebook Messenger, call the club or email us. One club, one community, one future."
+      ],
+      "cta": { "label": "Message us on Facebook", "href": "https://www.facebook.com/PontardaweRFC" },
+      "images": [{ "crop": "post-033.jpg", "name": "juniors-sponsors-wanted", "alt": "Pontardawe RFC Juniors sponsors wanted: our juniors are growing, new kit is needed, contact us via Facebook Messenger" }]
+    },
+    {
+      "slug": "ponty-fest-2026",
+      "posted": "2026-08-16",
+      "kind": "event",
+      "title": "Ponty Fest: Pontardawe Music Festival 2026",
+      "summary": "Four days of free live music, food and family fun at the club, 13 to 16 August, with Kidsfest and headliners Smooth Operator and Polar Berries.",
+      "paragraphs": [
+        "Ponty Fest 2026, the Pontardawe Music Festival, brought the Swansea Valley community together at the club for four days of live music, food and gratitude from Thursday 13 to Sunday 16 August. Free entry.",
+        "Thursday was Kidsfest: from midday, stalls, trampolines, food, sweets, ice cream, a character visit and music, with Mad Jay's kids' entertainment from 1pm to 5pm and Dick Daztardly live at 6pm. Bring a picnic blanket and enjoy!",
+        "Friday: Jono at 7pm and Double or Nothing at 9pm. Saturday: Woolfey (12pm), Jonesy (2pm), Rodeo & the Juliets (4pm), Zac and the New Men (7pm) and headliners Smooth Operator at 9pm. Sunday: Lisa J Lewis (12pm), This River (2pm), The Stray Pursuit (4pm), Everything's Electric (7pm) and headliners Polar Berries at 9pm.",
+        "Food came from local vendors: loaded nachos, smokin' good BBQ, Aroy Dee Thai food and The Chunky Chip Co. Thank you for supporting local, and to every family who helped make it a safe, fun weekend for everyone."
+      ],
+      "images": [
+        { "crop": "post-043.jpg", "name": "ponty-fest-line-up", "alt": "Pontardawe Music Festival 13th to 16th August 2026 at Pontardawe RFC, SA8 4EG: the four days' line-up, Kidsfest, and Saturday and Sunday headliners", "trim": true },
+        { "crop": "post-058.jpg", "name": "ponty-fest-kidsfest", "alt": "Kidsfest at Pontardawe Music Festival, Thursday 13th August 2026, starts at midday: stalls, trampolines, food, Mad Jay 1pm to 5pm, Dick Daztardly live at 6pm" },
+        { "crop": "post-042.jpg", "name": "ponty-fest-food", "alt": "Ponty Fest food vendors at Pontardawe RFC: nachos, BBQ, Aroy Dee Thai food and The Chunky Chip Co, free entry" },
+        { "crop": "post-037.jpg", "name": "ponty-fest-saturday", "alt": "Pontardawe Music Festival 2026, Saturday 15th August: Woolfey, Jonesy, Rodeo and the Juliets, Zac and the New Men, headliner Smooth Operator at 9pm" },
+        { "crop": "post-036.jpg", "name": "ponty-fest-sunday", "alt": "Pontardawe Music Festival 2026, Sunday 16th August: Lisa J Lewis, This River, The Stray Pursuit, Everything's Electric, headliner Polar Berries at 9pm" }
+      ]
+    },
+    {
+      "slug": "old-boys-touch-rugby-round-robin",
+      "posted": "2026-08-12",
+      "kind": "touch",
+      "title": "Old Boys touch rugby round robin at Alltwen",
+      "summary": "Men's touch rugby round robin on Friday 14 August at Alltwen Rugby Field, tap-off 6:30pm. All support welcome.",
+      "paragraphs": [
+        "Old Boys touch rugby round robin on Friday 14 August, away at Alltwen Rugby Field, tap-off 6:30pm.",
+        "Alltwen RFC Antiques v Pontardawe RFC Old Boys, and BOB RFC v Yogits RFC. All support welcome, with refreshments back at Alltwen RFC after the matches."
+      ],
+      "images": [{ "crop": "post-040.jpg", "name": "old-boys-round-robin", "alt": "Match day: men's touch rugby round robin, Friday 14th August 2026, tap-off 6:30pm at Alltwen Rugby Field: Alltwen Antiques v Pontardawe Old Boys, BOB RFC v Yogits RFC" }]
+    },
+    {
+      "slug": "cwmtawe-sevens-2026",
+      "posted": "2026-07-31",
+      "kind": "touch",
+      "title": "Cwmtawe Sevens vets' touch rugby tournament",
+      "summary": "Two Pontardawe squads, Ponty Old Boys and the Cherry & Whites, at the Cwmtawe Sevens on Saturday 1 August, with 24 men's and 8 women's teams.",
+      "paragraphs": [
+        "The Cwmtawe Seven's vets' touch rugby tournament was on Saturday 1 August 2026, with fantastic news: for the first time a women's competition, with 8 teams, alongside 24 teams in the men's competition. Both are made up of a main shield, plate and bowl.",
+        "Pontardawe sent two men's squads: Ponty Old Boys (team manager Zak Beynon) and the Cherry & Whites (team manager Tony Trumper). Ponty Daff's played in the women's competition. One squad, one passion!",
+        "The tournament was proudly sponsored by Clearsafe Knotweed & Bamboo."
+      ],
+      "images": [
+        { "crop": "post-052.jpg", "name": "cwmtawe-sevens", "alt": "Cwmtawe Seven's vets' touch rugby tournament, Saturday 1st August 2026: women's competition with 8 teams and men's competition with 24 teams" },
+        { "crop": "post-053.jpg", "name": "cwmtawe-sevens-old-boys", "alt": "Ponty Old Boys squad for Cwmtawe Seven's 2026, team manager Zak Beynon" },
+        { "crop": "post-054.jpg", "name": "cwmtawe-sevens-cherry-whites", "alt": "The Cherry and Whites squad for the Cwmtawe Seven's touch rugby tournament 2026, team manager Tony Trumper" }
+      ]
+    },
+    {
+      "slug": "what-a-weekend-for-touch-rugby",
+      "posted": "2026-07-21",
+      "kind": "touch",
+      "title": "What a weekend for Pontardawe touch rugby!",
+      "summary": "Ponty Old Boys and our women's touch rugby team had a weekend to remember.",
+      "paragraphs": [
+        "What a weekend for Pontardawe touch rugby! Ponty Old Boys and our women's team were out in force in the sunshine.",
+        "Touch rugby is fast, fit and fun, and open to everyone. Want to play? Message the club on Facebook or call the clubhouse."
+      ],
+      "images": [
+        { "crop": "post-060.jpg", "name": "touch-rugby-old-boys", "alt": "The Ponty Old Boys touch rugby squad in red and white hoops in front of their gazebo", "trim": true },
+        { "crop": "post-061.jpg", "name": "touch-rugby-women", "alt": "Pontardawe's women's touch rugby team kneeling together on the field in black and red kit" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,225 @@
+/* pontardawerfc.com: the kick-off opening, the hero's motion, What's On and
+   the club's updates (2026-10-15). Loaded after site.css. Everything here is
+   decoration on a page that is already complete: with no script, reduced
+   motion or a crawler, none of it runs and nothing is hidden. */
+
+/* --- Kick-off opening --------------------------------------------------------
+   A ball is kicked between the posts and becomes the crest, then the curtain
+   lifts. Once per visit, at most 1.5s, and a tap skips it. The page is drawn
+   underneath the whole time; only html.kick-on (set in the head) shows this. */
+.kick { display: none; }
+html.kick-on .kick {
+  display: grid; place-items: center; position: fixed; inset: 0; z-index: 300; overflow: hidden; cursor: pointer;
+  background: radial-gradient(900px 600px at 50% 40%, #a30d0d 0%, #5a0000 45%, #1a0101 100%);
+  animation: kick-out .38s cubic-bezier(.7, 0, .3, 1) 1.12s forwards;
+  perspective: 900px;
+}
+html.kick-on.kick-skip .kick { animation: kick-out .25s ease forwards; }
+html.kick-on .kick::before {
+  content: ""; position: absolute; inset: -20%;
+  background: repeating-linear-gradient(-12deg, transparent 0 70px, rgba(255, 255, 255, .035) 70px 140px);
+  animation: kick-pan 1.5s linear forwards;
+}
+.kick-stage { position: relative; width: min(420px, 82vw); aspect-ratio: 1; transform: rotateX(var(--kx, 0deg)) rotateY(var(--ky, 0deg)); transition: transform .2s ease-out; transform-style: preserve-3d; }
+.kick-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.kick-posts path { fill: none; stroke: rgba(255, 255, 255, .9); stroke-width: 7; stroke-linecap: round; stroke-dasharray: 260; stroke-dashoffset: 260; animation: kick-draw .42s cubic-bezier(.3, .7, .2, 1) forwards; }
+.kick-posts, .kick-ground { animation: kick-fade .3s ease .82s forwards; }
+@keyframes kick-fade { to { opacity: .18; } }
+.kick-posts path:nth-child(2) { animation-delay: .06s; }
+.kick-posts path:nth-child(3) { animation-delay: .12s; stroke-width: 6; }
+.kick-ground { fill: none; stroke: rgba(255, 255, 255, .25); stroke-width: 3; stroke-dasharray: 6 10; }
+.kick-trail { fill: none; stroke: url(#kick-trail); stroke-width: 10; stroke-linecap: round; stroke-dasharray: 420; stroke-dashoffset: 420; animation: kick-trail .6s cubic-bezier(.3, .6, .3, 1) .12s forwards; }
+.kick-ball { transform-box: fill-box; transform-origin: center; animation: kick-flight .62s cubic-bezier(.25, .6, .35, 1) .12s both, kick-morph .26s ease-in .74s forwards; }
+.kick-ball ellipse { fill: #fff; stroke: #8f0000; stroke-width: 3; }
+.kick-ball path { stroke: #8f0000; stroke-width: 2.4; fill: none; stroke-linecap: round; }
+.kick-burst { fill: none; stroke: #f2c14e; stroke-width: 4; opacity: 0; transform-box: fill-box; transform-origin: center; animation: kick-burst .5s ease-out .78s forwards; }
+.kick-burst.b2 { stroke: #fff; animation-delay: .86s; }
+.kick-crest { position: absolute; left: 50%; top: 44%; width: 46%; translate: -50% -50%; opacity: 0; scale: .3; filter: drop-shadow(0 24px 40px rgba(0, 0, 0, .6)); animation: kick-crest .42s cubic-bezier(.2, 1.4, .4, 1) .8s forwards; }
+.kick-word { position: absolute; left: 0; right: 0; bottom: 4%; text-align: center; color: #fff; font: 600 clamp(1.3rem, 4.2vw, 2rem)/1 "Oswald", Impact, sans-serif; letter-spacing: .3em; text-transform: uppercase; opacity: 0; animation: kick-word .4s ease .9s forwards; }
+.kick-word small { display: block; margin-top: 8px; font: 700 .7rem/1 "Montserrat", sans-serif; letter-spacing: .35em; color: #f2c14e; }
+@keyframes kick-draw { to { stroke-dashoffset: 0; } }
+@keyframes kick-trail { 70% { opacity: 1; } to { stroke-dashoffset: 0; opacity: 0; } }
+@keyframes kick-flight {
+  0% { transform: translate(-150px, 170px) scale(.55) rotate(0deg); }
+  60% { transform: translate(-20px, -70px) scale(.9) rotate(430deg); }
+  100% { transform: translate(0, -18px) scale(1) rotate(720deg); }
+}
+@keyframes kick-morph { to { transform: translate(0, -18px) scale(2.6) rotate(760deg); opacity: 0; filter: blur(6px); } }
+@keyframes kick-burst { from { opacity: 1; transform: scale(.3); } to { opacity: 0; transform: scale(2.4); } }
+@keyframes kick-crest { to { opacity: 1; scale: 1; } }
+@keyframes kick-word { from { opacity: 0; transform: translateY(12px); letter-spacing: .6em; } to { opacity: 1; transform: none; } }
+@keyframes kick-pan { to { transform: translateX(-140px); } }
+@keyframes kick-out { to { clip-path: inset(0 0 100% 0); visibility: hidden; } }
+
+/* --- Hero ------------------------------------------------------------------- */
+.hero-canvas { position: absolute; inset: 0; width: 100%; height: 100%; z-index: -1; pointer-events: none; opacity: 0; transition: opacity 1.2s ease; }
+.hero-canvas.on { opacity: 1; }
+.hero-title { font-size: clamp(2.6rem, 7.4vw, 5.6rem); }
+.ht-line { display: block; overflow: hidden; padding-bottom: .04em; }
+.ht-line > span { display: inline-block; }
+.js .ht-line > span { animation: ht-up .9s cubic-bezier(.2, .9, .2, 1) backwards; }
+.js .ht-line:nth-child(2) > span { animation-delay: .1s; }
+.js .ht-line:nth-child(3) > span { animation-delay: .2s; }
+html.kick-on .ht-line > span { animation-delay: 1.25s; }
+html.kick-on .ht-line:nth-child(2) > span { animation-delay: 1.35s; }
+html.kick-on .ht-line:nth-child(3) > span { animation-delay: 1.45s; }
+.ht-line.hl > span { background: linear-gradient(90deg, #fff 0%, #ffd2cc 30%, #f2c14e 50%, #ffd2cc 70%, #fff 100%); -webkit-background-clip: text; background-clip: text; color: transparent; background-size: 200% 100%; animation: ht-up .9s cubic-bezier(.2, .9, .2, 1) .1s backwards, shine 5s linear infinite; }
+html.kick-on .ht-line.hl > span { animation-delay: 1.35s, 0s; }
+@keyframes ht-up { from { transform: translateY(105%) skewY(4deg); } }
+
+.hero-badge { transform: perspective(900px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)); transition: transform .25s ease-out; transform-style: preserve-3d; }
+.hero-badge picture { transform: translateZ(40px); }
+.orbit { position: absolute; inset: -6%; width: 112%; height: 112%; overflow: visible; pointer-events: none; }
+.orbit-path { fill: none; stroke: rgba(242, 193, 78, .28); stroke-width: 1; stroke-dasharray: 2 7; }
+.orbit-ball { offset-path: path("M100 4 a96 96 0 1 1 -0.1 0"); offset-rotate: auto 90deg; animation: orbit 9s linear infinite; }
+.orbit-ball ellipse { fill: #fff; stroke: #c41414; stroke-width: 1.6; }
+.orbit-ball path { stroke: #c41414; stroke-width: 1.2; fill: none; }
+@keyframes orbit { to { offset-distance: 100%; } }
+
+.hero-match { display: inline-grid; grid-template-columns: auto auto; column-gap: 14px; row-gap: 2px; align-items: center; margin-top: 26px; padding: 12px 18px 12px 14px; border-radius: 16px; color: #fff; text-decoration: none; background: rgba(255, 255, 255, .08); border: 1px solid rgba(255, 255, 255, .18); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: 0 18px 40px -20px rgba(0, 0, 0, .7); transition: transform .25s ease, background .25s ease; position: relative; overflow: hidden; }
+.hero-match::before { content: ""; position: absolute; inset: 0; background: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, .16) 50%, transparent 70%); transform: translateX(-100%); animation: sweep 4s ease-in-out 2s infinite; }
+.hero-match:hover { transform: translateY(-3px); background: rgba(255, 255, 255, .14); }
+.hm-label { grid-column: 1 / -1; display: inline-flex; align-items: center; gap: 6px; font-size: .72rem; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; color: #f2c14e; }
+.hm-label::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #3ddc84; box-shadow: 0 0 0 0 rgba(61, 220, 132, .7); animation: live 1.6s ease-out infinite; }
+.hero-match b { font: 600 1.25rem/1.15 "Oswald", sans-serif; text-transform: uppercase; letter-spacing: .02em; }
+.hm-when { grid-column: 1; font-size: .88rem; opacity: .88; }
+.hm-count { grid-column: 2; grid-row: 2 / 4; align-self: center; font: 700 .85rem/1.2 "Montserrat", sans-serif; padding: 8px 12px; border-radius: 12px; background: rgba(0, 0, 0, .25); text-align: center; white-space: nowrap; }
+.hm-count:empty { display: none; }
+@keyframes sweep { 0%, 60% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+@keyframes live { to { box-shadow: 0 0 0 10px rgba(61, 220, 132, 0); } }
+
+/* --- Next match, highlighted ------------------------------------------------- */
+.next-match { padding: clamp(46px, 7vw, 84px) 0; }
+.nm-stripes { position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(-14deg, transparent 0 46px, rgba(255, 255, 255, .045) 46px 92px); animation: stripes 22s linear infinite; }
+@keyframes stripes { to { background-position: 0 -920px; } }
+.next-grid { position: relative; display: grid; gap: clamp(24px, 4vw, 56px); align-items: center; }
+.next-match.has-poster .next-grid { grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); }
+.nm-poster { position: relative; display: block; border-radius: 22px; overflow: hidden; box-shadow: 0 40px 70px -30px rgba(0, 0, 0, .85), 0 0 0 1px rgba(255, 255, 255, .12); transform: perspective(900px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, -6deg)); transition: transform .3s ease-out; }
+.nm-poster img { width: 100%; height: auto; }
+.nm-poster-tag { position: absolute; left: 12px; bottom: 12px; display: inline-flex; gap: 6px; align-items: center; padding: 6px 12px; border-radius: 999px; background: rgba(0, 0, 0, .55); color: #fff; font-size: .78rem; font-weight: 700; backdrop-filter: blur(6px); }
+.nm-clock { display: flex; justify-content: center; gap: 10px; margin: 18px 0 6px; }
+.nm-clock .box { min-width: 70px; padding: 12px 8px 10px; border-radius: 16px; background: rgba(0, 0, 0, .28); border: 1px solid rgba(255, 255, 255, .14); text-align: center; }
+.nm-clock .box b { display: block; font: 600 clamp(1.8rem, 4.6vw, 2.6rem)/1 "Oswald", sans-serif; font-variant-numeric: tabular-nums; }
+.nm-clock .box b.tick { animation: tick .45s ease; }
+.nm-clock .box small { display: block; margin-top: 4px; font-size: .68rem; font-weight: 800; letter-spacing: .18em; text-transform: uppercase; opacity: .75; }
+.nm-clock .kicked { font: 600 1.6rem/1 "Oswald", sans-serif; text-transform: uppercase; color: #f2c14e; }
+@keyframes tick { from { transform: translateY(-30%); opacity: .2; } }
+
+/* Next to the poster the team names get less room: they shrink, not break. */
+@media (min-width: 761px) {
+  .next-match.has-poster .nm-side { font-size: clamp(.95rem, 1.9vw, 1.6rem); }
+  .next-match.has-poster .nm-side b { overflow-wrap: normal; }
+}
+
+/* --- What's on: event tiles -------------------------------------------------- */
+.ev-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; align-items: start; }
+.ev-feature { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: 22px; margin-bottom: 22px; align-items: start; }
+.ev-grid-side { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ev-tile { position: relative; border-radius: var(--radius); background: var(--card); border: 1px solid var(--line); box-shadow: var(--shadow); overflow: hidden; transform: perspective(1000px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)) translateY(var(--lift, 0)); transition: transform .25s ease-out, box-shadow .3s ease; }
+.ev-tile:hover { --lift: -4px; box-shadow: var(--shadow-lg); }
+.ev-link { display: flex; flex-direction: column; height: 100%; color: inherit; text-decoration: none; }
+/* Each poster at its own shape: they are full of dates and prices, so none is cropped. */
+.ev-poster { position: relative; overflow: hidden; background: #1a0303; }
+.ev-poster img { width: 100%; height: auto; transition: transform .7s cubic-bezier(.2, .8, .2, 1); }
+.ev-tile:hover .ev-poster img { transform: scale(1.06); }
+.ev-poster::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, transparent 60%, rgba(20, 3, 3, .55)); pointer-events: none; }
+.ev-date { position: absolute; left: 12px; top: 12px; z-index: 1; display: grid; place-items: center; width: 58px; height: 62px; border-radius: 14px; background: #fff; color: var(--red); box-shadow: 0 10px 24px -10px rgba(0, 0, 0, .6); text-transform: uppercase; }
+.ev-date b { font: 600 1.6rem/1 "Oswald", sans-serif; }
+.ev-date span { font-size: .7rem; font-weight: 800; letter-spacing: .14em; margin-top: -6px; }
+.ev-soon { position: absolute; right: 12px; top: 12px; z-index: 1; padding: 6px 12px; border-radius: 999px; background: var(--grad-btn); color: #fff; font-size: .75rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; animation: pulse 2s ease-in-out infinite; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 8px rgba(232, 49, 47, 0); } 0% { box-shadow: 0 0 0 0 rgba(232, 49, 47, .55); } }
+.ev-body { padding: 18px 20px 20px; display: flex; flex-direction: column; flex: 1; }
+.ev-body h3 { font-size: 1.3rem; margin-bottom: .4em; }
+.ev-big .ev-body h3 { font-size: clamp(1.4rem, 2.6vw, 1.9rem); }
+.ev-kind { display: inline-flex; align-items: center; gap: 6px; margin: 0 0 8px; font-size: .74rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: var(--red-2); }
+.ev-meta { display: flex; align-items: center; gap: 6px; margin: 0 0 4px; font-size: .9rem; color: var(--muted); font-weight: 600; }
+.ev-body .more { margin-top: auto; padding-top: 10px; }
+@media (prefers-color-scheme: dark) { .ev-kind { color: #ff8a83; } }
+.whats-on-home { background: linear-gradient(180deg, var(--paper-2), var(--paper)); }
+.lotto-call { margin-top: 28px; background: linear-gradient(135deg, #2a0000, #5a0000); color: #fff; border: 0; }
+.lotto-call a { color: #f2c14e; }
+.lotto-call .tile-ic { background: rgba(242, 193, 78, .16); color: #f2c14e; }
+
+/* --- An update's own page ---------------------------------------------------- */
+.event-box { display: flex; gap: 18px; align-items: center; margin: 0 0 26px; padding: 18px 20px; border-radius: var(--radius); background: var(--card); border: 1px solid var(--line); box-shadow: var(--shadow); }
+.event-box .ev-date { position: static; flex: none; }
+.event-box.is-next { background: linear-gradient(135deg, #8f0000, #2a0000); color: #fff; border: 0; }
+.event-box.is-next .ev-kind { color: #f2c14e; }
+.event-box h2 { font-size: 1.3rem; margin: 0 0 4px; }
+.event-box p { display: flex; align-items: center; gap: 6px; margin: 2px 0 0; font-size: .95rem; }
+.article-img { max-width: 640px; }
+.article-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; margin: 28px 0; }
+.article-gallery figure { margin: 0; }
+.article-gallery img { border-radius: 14px; box-shadow: var(--shadow); width: 100%; height: auto; }
+
+/* --- The season timeline ----------------------------------------------------- */
+.season-sec { background: var(--paper-2); }
+.filter-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 26px; }
+.filter-chips button { font: 700 .88rem/1 "Montserrat", sans-serif; padding: 10px 16px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer; transition: background .2s, color .2s, transform .2s; }
+.filter-chips button:hover { transform: translateY(-2px); }
+.filter-chips button[aria-pressed="true"] { background: var(--grad-btn); color: #fff; border-color: transparent; }
+.season { --sp: 0; list-style: none; margin: 0; padding: 0 0 0 42px; position: relative; display: grid; gap: 18px; }
+.season::before { content: ""; position: absolute; left: 15px; top: 8px; bottom: 8px; width: 3px; border-radius: 3px; background: var(--line); }
+.season::after { content: ""; position: absolute; left: 15px; top: 8px; width: 3px; border-radius: 3px; height: calc((100% - 16px) * var(--sp)); background: linear-gradient(var(--red-3), var(--red)); }
+.season-item { position: relative; }
+.season-item[hidden] { display: none !important; }
+.season-dot { position: absolute; left: -42px; top: 14px; z-index: 1; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--card); color: var(--red-2); border: 3px solid var(--red-2); }
+.season-card { display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 18px; align-items: center; padding: 14px; border-radius: 16px; background: var(--card); border: 1px solid var(--line); box-shadow: var(--shadow); color: inherit; text-decoration: none; transition: transform .25s ease, box-shadow .25s; }
+.season-card:hover { transform: translateX(6px); box-shadow: var(--shadow-lg); }
+.season-card h3 { font-size: 1.15rem; margin: 0 0 .3em; }
+.season-card p { margin: 0; font-size: .93rem; }
+.season-card .meta { margin-bottom: 4px; }
+.season-img img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 12px; }
+.tag-match { background: rgba(196, 20, 20, .12); color: var(--red-2); }
+.tag-event { background: rgba(242, 193, 78, .22); color: #8a5a00; }
+.tag-juniors, .tag-touch { background: rgba(29, 122, 70, .14); color: var(--ok); }
+@media (prefers-color-scheme: dark) { .tag-event { color: var(--gold); } .tag-juniors, .tag-touch { color: #7fdba7; } }
+
+/* --- Moving a little more -------------------------------------------------- */
+.reveal-on .ev-tile.reveal:not(.in) { transform: translateY(40px) scale(.96); }
+.reveal-on .season-item.reveal:not(.in) { transform: translateX(-30px); }
+
+/* --- Phones, iPads and desktops ---------------------------------------------
+   An iPad (768 to 1080px wide) gets the desktop's layouts, two columns side
+   by side; only its menu folds into the burger. Phones get one column. */
+@media (min-width: 761px) and (max-width: 1080px) {
+  .hero-in { grid-template-columns: 1.2fr .8fr; text-align: left; }
+  .hero-badge { order: 0; width: min(300px, 34vw); justify-self: center; }
+  .split-in, .members-in, .visit-in, .order-band-in, .fixtures-in { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .tiles, .grid-4 { grid-template-columns: repeat(2, 1fr); }
+  .ev-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+  .ev-feature { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .ev-grid-side { grid-template-columns: minmax(0, 1fr); }
+}
+/* Ten links fit on one line from 1241px; below that they fold into the burger. */
+.nav a { white-space: nowrap; }
+@media (min-width: 1241px) { .nav a { padding: 10px 9px; font-size: .9rem; } }
+@media (max-width: 1240px) { .burger { display: block; } .head-cta span { display: none; } .nav a { font-size: 1.05rem; } }
+@media (max-width: 980px) and (min-width: 761px) { .ev-grid-side .ev-tile:nth-child(n+3) { display: none; } }
+@media (max-width: 760px) {
+  .next-match.has-poster .next-grid { grid-template-columns: minmax(0, 1fr); }
+  .nm-poster { max-width: 420px; margin-inline: auto; width: 100%; }
+  .ev-grid, .ev-feature, .ev-grid-side { grid-template-columns: minmax(0, 1fr); }
+  .hero-match { display: grid; width: 100%; }
+  .hero-badge { width: 128px; margin-bottom: -6px; }
+  .orbit { inset: -10%; width: 120%; height: 120%; }
+  .nm-clock { gap: 6px; }
+  .nm-clock .box { min-width: 0; flex: 1; padding: 10px 4px 8px; }
+  .season { padding-left: 34px; }
+  .season::before, .season::after { left: 11px; }
+  .season-dot { left: -34px; width: 26px; height: 26px; border-width: 2px; }
+  .season-dot svg { width: 14px; height: 14px; }
+  .season-card { grid-template-columns: 88px minmax(0, 1fr); gap: 12px; padding: 10px; }
+  .season-card p:not(.meta) { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .event-box { flex-direction: row; padding: 14px; }
+}
+@media (max-width: 420px) {
+  .hero-title { font-size: clamp(2.2rem, 11vw, 3rem); }
+  .nm-clock .box small { letter-spacing: .08em; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kick, html.kick-on .kick { display: none !important; }
+  .hero-canvas { display: none; }
+  .hero-badge, .ev-tile, .nm-poster { transform: none !important; }
+}

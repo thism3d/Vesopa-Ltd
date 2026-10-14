@@ -92,7 +92,8 @@
   }
 
   /* The next match: days and hours to kick-off (UK time as the WRU gives it). */
-  d.querySelectorAll('[data-countdown]').forEach(function (el) {
+  // The big match clock draws its own boxes (motion.js).
+  d.querySelectorAll('[data-countdown]:not([data-boxes])').forEach(function (el) {
     var at = new Date(el.getAttribute('data-countdown'));
     var tick = function () {
       var ms = at - new Date();

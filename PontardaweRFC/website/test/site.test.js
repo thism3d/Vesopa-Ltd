@@ -11,7 +11,7 @@ process.env.VENUE_API_OFF = '1';
 const test = require('node:test');
 const assert = require('node:assert');
 const app = require('../src/server');
-const { news, xPosts } = require('../src/content');
+const { news, xPosts, updates } = require('../src/content');
 const wru = require('../src/wru');
 const venue = require('../src/venue_api');
 
@@ -40,7 +40,7 @@ test.before(async () => {
 });
 test.after(() => server.close());
 
-const PAGES = ['/', '/club', '/teams', '/fixtures', '/tickets', '/news', '/clubhouse', '/menu', '/membership', '/contact',
+const PAGES = ['/', '/whats-on', '/club', '/teams', '/fixtures', '/tickets', '/news', '/clubhouse', '/menu', '/membership', '/contact',
   '/privacy', '/cookies', '/ordering-terms', '/accessibility', ...news.map((n) => `/news/${n.slug}`)];
 
 for (const p of PAGES) {
@@ -148,9 +148,16 @@ test('the club email is the new address on every page', async () => {
   assert.ok(!/hotmail/.test(html));
 });
 
-test('zero loading: no opening screen, nothing hidden before scripts, menu drawn in the page', async () => {
+test('the kick-off opening never hides the page; menu drawn in the page', async () => {
   const home = await (await fetch(`${base}/`)).text();
-  assert.ok(!/intro-screen|prfc-intro/.test(home));
+  // Shown only when the head script turns it on: once a visit, never for a
+  // crawler or reduced motion, and lifted by a timer even with no motion.js.
+  assert.match(home, /<div class="kick" data-kick aria-hidden="true">/);
+  assert.match(home, /sessionStorage\.getItem\('prfc-kick'\)/);
+  assert.match(home, /setTimeout\(function\(\)\{d\.classList\.remove\('kick-on'\)\},2400\)/);
+  const css = await (await fetch(`${base}/css/motion.css`)).text();
+  assert.match(css, /^\.kick \{ display: none; \}$/m);
+  assert.match(css, /html\.kick-on \.kick \{[^}]*kick-out \.38s[^}]*1\.12s/);
   assert.match(home, /type="speculationrules"/);
   venue.set('menu', { venue: { name: 'Pontardawe RFC' }, sections: [{ id: 7, name: 'Lunch', items: [{ id: 1, name: 'Chips </script><b>', price_minor: 350 }] }] });
   const menu = await (await fetch(`${base}/menu`)).text();
@@ -207,4 +214,31 @@ test('the club app: store badges on every page, and /app sends each phone to its
   assert.strictEqual(await go('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)'), 'https://testflight.apple.com/join/cWqDESsD');
   assert.strictEqual(await go('Mozilla/5.0 (Linux; Android 15; Pixel 9)'), 'https://play.google.com/store/apps/details?id=com.vesopaepos.pontardawerfc');
   assert.strictEqual(await go('Mozilla/5.0 (Windows NT 10.0; Win64; x64)'), '/membership#app');
+});
+
+test("the club's updates: What's On, a page for each, pictures that load lazily", async () => {
+  assert.ok(updates.length >= 20, 'the posts from the screenshots');
+  for (const u of updates) assert.ok(u.image, `${u.slug} has its picture`);
+  const html = await (await fetch(`${base}/whats-on`)).text();
+  assert.match(html, /<h1 class="reveal">What&#39;s On<\/h1>/);
+  assert.match(html, /class="season"/);
+  assert.match(html, /data-filter="match"/);
+  assert.strictEqual((html.match(/class="season-item/g) || []).length, updates.length);
+  // Every update picture on the page waits to be scrolled to, in two sizes.
+  const pics = [...html.matchAll(/<img src="\/img\/ig\/[^"]+"[^>]*>/g)].map((m) => m[0]);
+  assert.ok(pics.length >= updates.length);
+  for (const img of pics) assert.match(img, /loading="lazy"/);
+  assert.match(html, /srcset="\/img\/ig\/[a-z0-9-]+-480\.webp 480w, \/img\/ig\/[a-z0-9-]+\.webp 960w"/);
+  const home = await (await fetch(`${base}/`)).text();
+  assert.match(home, /href="\/whats-on"/);
+  assert.match(home, /class="hero-match/);
+  assert.match(home, /data-hero-canvas/);
+  for (const img of home.matchAll(/<img src="\/img\/ig\/[^"]+"[^>]*>/g)) assert.match(img[0], /loading="lazy"/);
+  const post = await (await fetch(`${base}/news/ponty-fest-2026`)).text();
+  assert.match(post, /class="article-gallery"/);
+  assert.match(post, /instagram\.com\/pontardawerfc/);
+  const map = await (await fetch(`${base}/sitemap.xml`)).text();
+  assert.match(map, /\/whats-on<\/loc>/);
+  assert.match(map, /\/news\/fireworks-night-5-november<\/loc>/);
+  assert.strictEqual((await fetch(`${base}/events`, { redirect: 'manual' })).status, 301);
 });

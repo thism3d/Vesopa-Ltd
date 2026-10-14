@@ -15,7 +15,7 @@
  */
 'use strict';
 
-const { club, news } = require('./content');
+const { club, news, updates } = require('./content');
 const { createClient, redact, BudgetError } = require('./vesopa_ai');
 
 const MAX_TURNS = 10;
@@ -46,8 +46,10 @@ ${JSON.stringify({
 
 LATEST NEWS: ${news.map((n) => `${n.date}: ${n.title}. ${n.summary}`).join(' | ')}
 
+CLUB EVENTS AND MATCHES (start time, UK; only those after today are still to come; the What's On page lists them): ${updates.filter((u) => u.event).map((u) => `${u.event.start}: ${u.title}${u.event.price ? ` (${u.event.price})` : ''}`).join(' | ')}
+
 PAGES YOU MAY LINK TO, as Markdown links [label](url):
-- Home ${SITE}/ ; History ${SITE}/club ; Teams ${SITE}/teams ; Fixtures, results and league table ${SITE}/fixtures ; Match tickets ${SITE}/tickets ; News ${SITE}/news
+- Home ${SITE}/ ; What's on (events, next match, lotto) ${SITE}/whats-on ; History ${SITE}/club ; Teams ${SITE}/teams ; Fixtures, results and league table ${SITE}/fixtures ; Match tickets ${SITE}/tickets ; News ${SITE}/news
 - Clubhouse, functions and sponsorship ${SITE}/clubhouse ; Menu and ordering ${SITE}/menu
 - Membership ${SITE}/membership ; Members' app in the browser ${MEMBERS}/ ; The club app for iPhone and Android ${SITE}/app (App Store via TestFlight, Google Play) ; Contact ${SITE}/contact
 - Privacy ${SITE}/privacy ; Ordering terms ${SITE}/ordering-terms

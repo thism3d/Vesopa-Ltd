@@ -15,12 +15,13 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 
 const NAV = [
   ['/', 'Home'],
+  ['/whats-on', "What's On"],
   ['/club', 'The Club'],
   ['/teams', 'Teams'],
   ['/fixtures', 'Fixtures'],
   ['/news', 'News'],
   ['/clubhouse', 'Clubhouse'],
-  ['/menu', 'Menu & Order'],
+  ['/menu', 'Menu'],
   ['/membership', 'Membership'],
   ['/contact', 'Contact'],
 ];
@@ -52,7 +53,7 @@ function clubLd() {
     },
     geo: { '@type': 'GeoCoordinates', latitude: a.lat, longitude: a.lng },
     hasMap: `https://www.openstreetmap.org/?mlat=${a.lat}&mlon=${a.lng}#map=17/${a.lat}/${a.lng}`,
-    sameAs: [club.web.facebook, club.web.x, club.web.wikipedia],
+    sameAs: [club.web.facebook, club.web.instagram, club.web.x, club.web.wikipedia],
     memberOf: { '@type': 'SportsOrganization', name: 'Welsh Rugby Union', url: 'https://www.wru.wales/' },
     hasMenu: `${SITE}/menu`,
     servesCuisine: 'Pub food',
@@ -106,13 +107,19 @@ ${noindex ? '<meta name="robots" content="noindex">' : '<meta name="robots" cont
 <link rel="preload" href="/fonts/oswald-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/montserrat-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/css/site.css?v=${ASSET_VERSION}">
+<link rel="stylesheet" href="/css/motion.css?v=${ASSET_VERSION}">
 <link rel="alternate" type="application/rss+xml" title="${esc(club.name)} news" href="/news/feed.xml">
 <script>
-/* Zero loading (2026-10-11): no opening screen, nothing hidden while scripts
-   load. Content already on screen is shown as it is; only what is further down
-   rises in as it is scrolled to (site.js). Links to other pages are fetched
-   ahead when the visitor points at or presses them, so they open at once. */
+/* Nothing is hidden while scripts load: content already on screen is shown
+   as it is, and only what is further down rises in as it is scrolled to
+   (site.js). Links to other pages are fetched ahead, so they open at once.
+   The kick-off opening (2026-10-15, the owner) plays over a page that is
+   already drawn, once per visit, never for reduced motion or a crawler, and
+   lifts itself after 1.5s whatever happens (motion.js; this timer if not). */
 document.documentElement.classList.add('js');
+(function(){try{var d=document.documentElement,u=navigator.userAgent||'';
+if(!navigator.webdriver&&!/bot|crawl|spider|slurp|lighthouse|preview|headless/i.test(u)&&!(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches)&&!sessionStorage.getItem('prfc-kick')){
+sessionStorage.setItem('prfc-kick','1');d.classList.add('kick-on');setTimeout(function(){d.classList.remove('kick-on')},2400);}}catch(e){}})();
 /* Which phone, so each visitor is shown the one app store their phone uses. */
 (function(){var u=navigator.userAgent||'',d=document.documentElement;
 if(/iPhone|iPad|iPod/.test(u)||(/Macintosh/.test(u)&&navigator.maxTouchPoints>1))d.classList.add('os-ios');
@@ -171,7 +178,7 @@ function footer() {
     <div class="foot-club">
       <a class="brand brand-foot" href="/"><picture><source srcset="/img/crest-128.webp" type="image/webp"><img src="/img/icon-192.png" alt="" width="56" height="56" loading="lazy"></picture><span class="brand-text"><b>Pontardawe RFC</b><small>${esc(club.welsh_name)}</small></span></a>
       <p>${esc(club.tagline)}.</p>
-      <p class="foot-social"><a href="${club.web.facebook}" rel="noopener" target="_blank">${icon('facebook', { size: 20 })}<span>Facebook</span></a><a href="${club.web.x}" rel="noopener" target="_blank">${icon('x', { size: 20 })}<span>@PontardaweRFC</span></a></p>
+      <p class="foot-social"><a href="${club.web.facebook}" rel="noopener" target="_blank">${icon('facebook', { size: 20 })}<span>Facebook</span></a><a href="${club.web.instagram}" rel="noopener" target="_blank">${icon('instagram', { size: 20 })}<span>Instagram</span></a><a href="${club.web.x}" rel="noopener" target="_blank">${icon('x', { size: 20 })}<span>@PontardaweRFC</span></a></p>
     </div>
     <div>
       <h2>Visit</h2>
@@ -182,7 +189,7 @@ function footer() {
     <div>
       <h2>Club</h2>
       <ul class="foot-links">
-        <li><a href="/club">History</a></li><li><a href="/teams">Teams</a></li><li><a href="/fixtures">Fixtures &amp; results</a></li><li><a href="/tickets">Match tickets</a></li>
+        <li><a href="/whats-on">What's on</a></li><li><a href="/club">History</a></li><li><a href="/teams">Teams</a></li><li><a href="/fixtures">Fixtures &amp; results</a></li><li><a href="/tickets">Match tickets</a></li>
         <li><a href="/news">News</a></li><li><a href="/clubhouse">Clubhouse & functions</a></li>
         <li><a href="/menu">Menu & order</a></li><li><a href="${MEMBERS}/">Members' app</a></li>
       </ul>
@@ -227,13 +234,36 @@ function footer() {
     <p class="helper-note">Please don't type personal details. Answers can be wrong; for anything important call ${esc(club.phone)}. <a href="/privacy#helper">How this works</a></p>
   </section>
 </div>
-<script src="/js/site.js?v=${ASSET_VERSION}" defer></script>`;
+<script src="/js/site.js?v=${ASSET_VERSION}" defer></script>
+<script src="/js/motion.js?v=${ASSET_VERSION}" defer></script>`;
+}
+
+/**
+ * The kick-off opening: a ball kicked between the posts that becomes the
+ * crest. Drawn only when the head script sets html.kick-on (motion.css).
+ */
+function kickOff() {
+  return `<div class="kick" data-kick aria-hidden="true">
+  <div class="kick-stage">
+    <svg class="kick-svg" viewBox="0 0 400 400">
+      <defs><linearGradient id="kick-trail" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#f2c14e" stop-opacity="0"/><stop offset="1" stop-color="#fff" stop-opacity=".9"/></linearGradient></defs>
+      <path class="kick-ground" d="M40 352 H360"/>
+      <g class="kick-posts"><path d="M140 352 V96"/><path d="M260 352 V96"/><path d="M140 236 H260"/></g>
+      <path class="kick-trail" d="M50 360 Q 150 120 200 182"/>
+      <circle class="kick-burst" cx="200" cy="182" r="40"/><circle class="kick-burst b2" cx="200" cy="182" r="40"/>
+      <g class="kick-ball"><ellipse cx="200" cy="200" rx="30" ry="18"/><path d="M186 200 H214 M193 194 V206 M200 194 V206 M207 194 V206"/></g>
+    </svg>
+    <img class="kick-crest" src="/img/crest-256.webp" alt="" width="256" height="256">
+    <p class="kick-word">Pontardawe RFC<small>Est. ${club.founded} · Clwb Rygbi</small></p>
+  </div>
+</div>`;
 }
 
 /** A whole page. */
 function page(opts, body) {
   return `${head(opts)}
 <body class="page-${esc(opts.og || 'page')}">
+${kickOff()}
 ${header(opts.path)}
 <main id="main">
 ${body}

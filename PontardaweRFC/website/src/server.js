@@ -74,6 +74,8 @@ app.get('/', html(() => pages.home()));
 app.get('/club', html(() => pages.clubPage()));
 app.get('/teams', html(() => pages.teamsPage()));
 app.get('/fixtures', html(() => pages.fixturesPage()));
+app.get('/whats-on', html(() => pages.whatsOnPage()));
+app.get(['/whatson', '/events', '/whats-on/'], (req, res) => res.redirect(301, '/whats-on'));
 app.get('/tickets', html(() => pages.ticketsPage()));
 
 // pontardawerfc.com/app: one link for posters, QR codes and posts. An iPhone
@@ -156,7 +158,7 @@ app.get(['/feed', '/feed/'], (req, res) => res.redirect(301, '/news/feed.xml'));
 
 // --- For machines ------------------------------------------------------------
 
-const PATHS = ['/', '/club', '/teams', '/fixtures', '/tickets', '/news', '/clubhouse', '/menu', '/membership', '/contact',
+const PATHS = ['/', '/whats-on', '/club', '/teams', '/fixtures', '/tickets', '/news', '/clubhouse', '/menu', '/membership', '/contact',
   '/privacy', '/cookies', '/ordering-terms', '/accessibility'];
 
 app.get('/sitemap.xml', (req, res) => {

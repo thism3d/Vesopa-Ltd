@@ -5,7 +5,7 @@
  */
 'use strict';
 
-const { club, news, images, xPosts, longDate, yearsOld } = require('./content');
+const { club, news, updates, images, xPosts, longDate, yearsOld } = require('./content');
 const wru = require('./wru');
 const venue = require('./venue_api');
 const { page, pageHero, esc, icon, SITE, MEMBERS, ASSET_VERSION, appBadges } = require('./layout');
@@ -16,7 +16,84 @@ const MENU_SLUG = process.env.MENU_SLUG || 'pontardawe-rfc';
 function photo(name, { cls = '', sizes = '(max-width: 700px) 100vw, 640px', lazy = true } = {}) {
   const m = images[name];
   if (!m) return '';
-  return `<picture class="${cls}"><source srcset="/img/${name}.webp" type="image/webp"><img src="/img/${name}.jpg" alt="${esc(m.alt)}" width="${m.w}" height="${m.h}" sizes="${sizes}"${lazy ? ' loading="lazy" decoding="async"' : ''}></picture>`;
+  // The club's update posters come in two sizes: a phone or a card in a grid
+  // takes the 480px one, a big screen the 960px one. Everything but the
+  // opening picture loads lazily, as it is scrolled to.
+  const set = name.startsWith('ig/') ? ` srcset="/img/${name}-480.webp 480w, /img/${name}.webp ${m.w}w"` : ` srcset="/img/${name}.webp"`;
+  return `<picture class="${cls}"><source${set} type="image/webp" sizes="${sizes}"><img src="/img/${name}.jpg" alt="${esc(m.alt)}" width="${m.w}" height="${m.h}" sizes="${sizes}"${lazy ? ' loading="lazy" decoding="async"' : ' fetchpriority="high"'}></picture>`;
+}
+
+/** What kind of update a post is: its label and icon. */
+const KINDS = {
+  match: ['Match', 'whistle'], event: ['Event', 'party'], juniors: ['Juniors', 'child'], food: ['Pop-up food', 'food'],
+  lotto: ['Weekly Lotto', 'lotto'], touch: ['Touch rugby', 'ball'], club: ['Club news', 'star'],
+};
+const kindOf = (k) => KINDS[k] || KINDS.club;
+
+/** Today in the UK, as YYYY-MM-DD. */
+const todayUK = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London' }).format(new Date());
+
+/** The club's events still to come (from its own posts), soonest first. */
+function comingUp() {
+  const now = todayUK();
+  return updates.filter((u) => u.event && u.event.start.slice(0, 10) >= now)
+    .sort((a, b) => a.event.start.localeCompare(b.event.start));
+}
+
+/** "Sat 17 Oct" and "2:30pm" from 2026-10-17T14:30. */
+function whenParts(iso) {
+  const [day, time] = String(iso).split('T');
+  const d = new Date(`${day}T12:00:00Z`);
+  const part = (o) => d.toLocaleDateString('en-GB', { ...o, timeZone: 'Europe/London' });
+  let t = '';
+  if (time) {
+    const [h, m] = time.split(':').map(Number);
+    t = `${((h + 11) % 12) + 1}${m ? `:${String(m).padStart(2, '0')}` : ''}${h < 12 ? 'am' : 'pm'}`;
+  }
+  return { day, wd: part({ weekday: 'short' }), dd: part({ day: 'numeric' }), mon: part({ month: 'short' }), long: part({ weekday: 'long', day: 'numeric', month: 'long' }), time: t };
+}
+
+/** Days from today (UK) to an ISO date. */
+function daysTo(iso) {
+  const a = new Date(`${todayUK()}T12:00:00Z`);
+  const b = new Date(`${String(iso).slice(0, 10)}T12:00:00Z`);
+  return Math.round((b - a) / 864e5);
+}
+
+/** The club's own poster for a match on this day, if it posted one. */
+const posterFor = (day) => updates.find((u) => u.kind === 'match' && u.event && u.event.start.slice(0, 10) === day && u.image);
+
+/**
+ * The next First XV match: the WRU's list first (it has the real kick-off and
+ * the opponent's crest), else the club's own post about it.
+ */
+function nextFixture() {
+  const f = wru.fixtures().upcoming[0];
+  if (f) return f;
+  const u = comingUp().find((x) => x.kind === 'match');
+  if (!u) return null;
+  const [day, time] = u.event.start.split('T');
+  return { id: `club-${u.slug}`, day, kickoff: time || null, home: Boolean(u.event.home), opponent: u.event.opponent || 'TBC', opponentLogo: null, competition: u.event.competition || null, status: 'UPCOMING', fromClub: true };
+}
+
+/** One upcoming event as a card with its poster and a date badge. */
+function eventTile(u, { big = false } = {}) {
+  const w = whenParts(u.event.start);
+  const n = daysTo(u.event.start);
+  const soon = n <= 0 ? 'Today' : n === 1 ? 'Tomorrow' : n <= 7 ? `In ${n} days` : '';
+  const [label, ic] = kindOf(u.kind);
+  return `<article class="ev-tile reveal${big ? ' ev-big' : ''}" data-tilt>
+  <a href="/news/${esc(u.slug)}" class="ev-link">
+    <div class="ev-poster">${photo(u.image, { sizes: big ? '(max-width: 760px) 100vw, 560px' : '(max-width: 760px) 100vw, 380px' })}<span class="ev-date"><b>${esc(w.dd)}</b><span>${esc(w.mon)}</span></span>${soon ? `<span class="ev-soon">${esc(soon)}</span>` : ''}</div>
+    <div class="ev-body">
+      <p class="ev-kind">${icon(ic, { size: 16 })} ${esc(label)}</p>
+      <h3>${esc(u.title)}</h3>
+      <p class="ev-meta">${icon('clock', { size: 16 })} ${esc(w.long)}${w.time ? `, ${esc(w.time)}` : ''}</p>
+      ${u.event.price ? `<p class="ev-meta">${icon('ticket', { size: 16 })} ${esc(u.event.price)}</p>` : ''}
+      <span class="more">Details ${icon('arrow', { size: 18 })}</span>
+    </div>
+  </a>
+</article>`;
 }
 
 function crumbs(items) {
@@ -28,12 +105,12 @@ function crumbs(items) {
 }
 
 function newsCard(post, { big = false } = {}) {
-  const img = post.image ? photo(post.image, { cls: 'card-img' }) : `<div class="card-img card-img-art" aria-hidden="true"><img src="/img/crest-128.webp" alt="" width="96" height="96" loading="lazy"></div>`;
+  const img = post.image ? photo(post.image, { cls: 'card-img', sizes: '(max-width: 640px) 100vw, (max-width: 980px) 50vw, 380px' }) : `<div class="card-img card-img-art" aria-hidden="true"><img src="/img/crest-128.webp" alt="" width="96" height="96" loading="lazy"></div>`;
   return `<article class="card news-card reveal${big ? ' news-big' : ''}">
   <a href="/news/${esc(post.slug)}" class="card-link">
     ${img}
     <div class="card-body">
-      <p class="meta">${icon('calendar', { size: 16 })} <time datetime="${esc(post.date)}">${esc(longDate(post.date))}</time>${post.closed ? ' · <span class="tag">Closed</span>' : ''}</p>
+      <p class="meta">${icon('calendar', { size: 16 })} <time datetime="${esc(post.date)}">${esc(longDate(post.date))}</time>${post.closed ? ' · <span class="tag">Closed</span>' : ''}${post.kind ? ` · <span class="tag tag-${esc(post.kind)}">${esc(kindOf(post.kind)[0])}</span>` : ''}</p>
       <h3>${esc(post.title)}</h3>
       <p>${esc(post.summary)}</p>
       <span class="more">Read more ${icon('arrow', { size: 18 })}</span>
@@ -47,7 +124,8 @@ function newsCard(post, { big = false } = {}) {
 function home() {
   const years = yearsOld();
   const body = `
-<section class="hero" aria-label="Welcome">
+<section class="hero" aria-label="Welcome" data-hero>
+  <canvas class="hero-canvas" data-hero-canvas aria-hidden="true"></canvas>
   <div class="hero-bg" aria-hidden="true">
     <span class="hoop"></span><span class="hoop"></span><span class="hoop"></span><span class="hoop"></span>
     <span class="glow"></span>
@@ -56,16 +134,18 @@ function home() {
   <div class="wrap hero-in">
     <div class="hero-copy">
       <p class="kicker reveal">${icon('ball', { size: 18 })} Est. ${club.founded} · Swansea Valley</p>
-      <h1 class="reveal"><span>Pride of</span> <span class="hl">Pontardawe</span> <span>since ${club.founded}</span></h1>
+      <h1 class="hero-title"><span class="ht-line"><span>Pride of</span></span> <span class="ht-line hl"><span>Pontardawe</span></span> <span class="ht-line"><span>since ${club.founded}</span></span></h1>
       <p class="lead reveal">${esc(club.short)}</p>
       <div class="cta-row reveal">
-        <a class="btn btn-glow" href="/menu">${icon('plate', { size: 20 })} Menu &amp; order</a>
-        <a class="btn btn-ghost" href="${MEMBERS}/">${icon('card', { size: 20 })} Members' card</a>
+        <a class="btn btn-glow" href="/whats-on">${icon('calendar', { size: 20 })} What's on</a>
+        <a class="btn btn-ghost" href="/menu">${icon('plate', { size: 20 })} Menu &amp; order</a>
       </div>
+      ${heroMatch()}
     </div>
-    <div class="hero-badge reveal" aria-hidden="true">
+    <div class="hero-badge" data-tilt-crest aria-hidden="true">
       <div class="badge-ring"></div><div class="badge-ring r2"></div>
-      <picture><source srcset="/img/crest-256.webp" type="image/webp"><img src="/img/crest-512.png" alt="" width="320" height="320"></picture>
+      <svg class="orbit" viewBox="0 0 200 200"><ellipse cx="100" cy="100" rx="96" ry="96" class="orbit-path"/><g class="orbit-ball"><ellipse cx="0" cy="0" rx="9" ry="5.5"/><path d="M-4 0h8M-2-2v4M0-2v4M2-2v4"/></g></svg>
+      <picture><source srcset="/img/crest-256.webp" type="image/webp"><img src="/img/crest-512.png" alt="" width="320" height="320" fetchpriority="high"></picture>
     </div>
   </div>
   <a class="scroll-cue" href="#quick" aria-label="Scroll down"><span></span></a>
@@ -83,6 +163,8 @@ function home() {
 <div class="ticker" aria-hidden="true"><div class="ticker-track">${Array.from({ length: 2 }, () => ['Clwb Rygbi Pontardawe', `Est. ${club.founded}`, 'Swansea Valley', 'WRU member club', 'Ynysderw Road', 'First XV', 'Juniors', 'Clubhouse &amp; bar'].map((t) => `<span>${t}</span><i>${icon('ball', { size: 18 })}</i>`).join('')).join('')}</div></div>
 
 ${nextMatch()}
+
+${homeWhatsOn()}
 
 <section class="section" id="quick">
   <div class="wrap">
@@ -110,7 +192,7 @@ ${nextMatch()}
 
 <section class="section gallery-sec">
   <div class="wrap">
-    <div class="sec-head"><div><p class="kicker reveal">On the pitch</p><h2 class="reveal">Rugby in the Swansea Valley</h2></div><a class="btn btn-line reveal" href="${esc(club.web.facebook)}" rel="noopener">${icon('facebook', { size: 18 })} More on Facebook</a></div>
+    <div class="sec-head"><div><p class="kicker reveal">On the pitch</p><h2 class="reveal">Rugby in the Swansea Valley</h2></div><a class="btn btn-line reveal" href="${esc(club.web.instagram)}" rel="noopener">${icon('instagram', { size: 18 })} More on Instagram</a></div>
     <div class="gallery">
       <figure class="g-wide reveal">${photo('squad-2024', { sizes: '(max-width: 1200px) 100vw, 1180px' })}<figcaption>The squad, coaches and committee, 2024</figcaption></figure>
       <figure class="reveal">${photo('squad-pitch')}<figcaption>Two squads line up at the Recreation Ground</figcaption></figure>
@@ -139,7 +221,7 @@ ${nextMatch()}
 <section class="section">
   <div class="wrap">
     <div class="sec-head"><div><p class="kicker reveal">Club news</p><h2 class="reveal">Latest from Ynysderw Road</h2></div><a class="btn btn-line reveal" href="/news">All news ${icon('arrow', { size: 18 })}</a></div>
-    <div class="grid-3">${news.slice(0, 3).map((p) => newsCard(p)).join('')}</div>
+    <div class="grid-3">${news.slice(0, 6).map((p) => newsCard(p)).join('')}</div>
   </div>
 </section>
 
@@ -290,14 +372,31 @@ ${xArchive()}`;
 }
 
 function articlePage(post) {
-  const img = post.image ? `<figure class="article-img reveal">${photo(post.image, { lazy: false })}</figure>` : '';
+  const img = post.image ? `<figure class="article-img reveal">${photo(post.image, { lazy: false, sizes: '(max-width: 820px) 100vw, 780px' })}</figure>` : '';
+  const ev = post.event;
+  const w = ev ? whenParts(ev.start) : null;
+  const upcoming = ev && daysTo(ev.start) >= 0;
+  const eventBox = ev ? `<aside class="event-box reveal${upcoming ? ' is-next' : ''}">
+      <span class="ev-date"><b>${esc(w.dd)}</b><span>${esc(w.mon)}</span></span>
+      <div><p class="ev-kind">${upcoming ? 'Coming up' : 'Took place'}</p><h2>${esc(w.long)}${w.time ? `, ${esc(w.time)}` : ''}</h2>
+      <p>${icon('pin', { size: 16 })} ${esc(ev.place || club.address.name)}${ev.note ? ` · ${esc(ev.note)}` : ''}</p>
+      ${ev.price ? `<p>${icon('ticket', { size: 16 })} ${esc(ev.price)}</p>` : ''}</div>
+    </aside>` : '';
+  const gallery = (post.gallery || []).slice(1);
+  const more = gallery.length ? `<div class="article-gallery">${gallery.map((g) => `<figure class="reveal">${photo(g, { sizes: '(max-width: 640px) 100vw, 380px' })}</figure>`).join('')}</div>` : '';
+  const cta = post.cta ? `<p class="cta-row"><a class="btn btn-glow" href="${esc(post.cta.href)}" rel="noopener">${icon('facebook', { size: 20 })} ${esc(post.cta.label)}</a></p>` : '';
+  const source = post.source === 'instagram' ? `<p class="muted small">From the club's <a href="${esc(club.web.instagram)}" rel="noopener">Instagram</a> and <a href="${esc(club.web.facebook)}" rel="noopener">Facebook</a>.</p>` : '';
   const body = `${pageHero({ kicker: longDate(post.date), title: post.title, lead: '' })}
 <section class="section">
   <article class="wrap article">
     ${post.closed ? `<p class="notice">${icon('info', { size: 20 })} This vacancy closed on 7 October 2024. It is kept here as part of the club's news.</p>` : ''}
+    ${eventBox}
     ${img}
     ${post.paragraphs.map((p) => (/^\d+\.\s|^\d+\.[A-Z]/.test(p) ? `<h2>${esc(p)}</h2>` : `<p>${esc(p)}</p>`)).join('\n    ')}
-    <p class="back"><a href="/news">${icon('arrow', { size: 18 })} All news</a></p>
+    ${cta}
+    ${more}
+    ${source}
+    <p class="back"><a href="${ev ? '/whats-on' : '/news'}">${icon('arrow', { size: 18 })} ${ev ? "What's on" : 'All news'}</a></p>
   </article>
 </section>`;
   return page({
@@ -606,22 +705,55 @@ function fixtureRow(f, { tickets = true } = {}) {
 </li>`;
 }
 
-/** The next match, big: on the home page and at the top of the fixtures page. */
-function nextMatch({ heading = 'Next match' } = {}) {
-  const f = wru.fixtures().upcoming[0];
+/** The next match in the hero: a small glass card with the countdown. */
+function heroMatch() {
+  const f = nextFixture();
   if (!f) return '';
   const when = `${f.day}T${f.kickoff || '14:30'}:00`;
   const opp = esc(f.opponent.replace(/ RFC$/, ''));
-  return `<section class="next-match" aria-label="${esc(heading)}">
-  <div class="wrap next-in reveal">
-    <p class="kicker">${icon('whistle', { size: 18 })} ${esc(heading)}${f.competition ? ` · ${esc(f.competition.replace(/^WRU /, ''))}` : ''}</p>
-    <div class="nm-teams">
-      <div class="nm-side"><img src="/img/crest-128.webp" alt="" width="72" height="72"><b>${f.home ? 'Pontardawe' : opp}</b></div>
-      <div class="nm-mid"><span class="nm-v">v</span><time datetime="${esc(when)}"><span class="nm-long">${esc(longDate(f.day))}</span><span class="nm-short">${esc(shortDate(f.day))}</span>${f.kickoff ? ` <span class="nm-ko">${esc(f.kickoff)}</span>` : ''}</time><span class="nm-count" data-countdown="${esc(when)}"></span></div>
-      <div class="nm-side">${f.home ? crest(f).replace('width="40" height="40"', 'width="72" height="72"') : '<img src="/img/crest-128.webp" alt="" width="72" height="72">'}<b>${f.home ? opp : 'Pontardawe'}</b></div>
+  return `<a class="hero-match reveal" href="#next-match">
+  <span class="hm-label">${icon('whistle', { size: 16 })} Next match</span>
+  <b>${f.home ? `Pontardawe v ${opp}` : `${opp} v Pontardawe`}</b>
+  <span class="hm-when">${esc(shortDate(f.day))}${f.kickoff ? ` · ${esc(f.kickoff)}` : ''} · ${f.home ? 'The Rec' : 'Away'}</span>
+  <span class="hm-count" data-countdown="${esc(when)}"></span>
+</a>`;
+}
+
+/** The next match, big: on the home page and at the top of the fixtures page. */
+function nextMatch({ heading = 'Next match' } = {}) {
+  const f = nextFixture();
+  if (!f) return '';
+  const when = `${f.day}T${f.kickoff || '14:30'}:00`;
+  const opp = esc(f.opponent.replace(/ RFC$/, ''));
+  const poster = posterFor(f.day);
+  const tickets = f.home && !f.fromClub ? `<a class="btn btn-white" href="/tickets#m-${f.id}">${icon('ticket', { size: 20 })} Tickets</a>` : '';
+  return `<section class="next-match${poster ? ' has-poster' : ''}" id="next-match" aria-label="${esc(heading)}">
+  <div class="nm-stripes" aria-hidden="true"></div>
+  <div class="wrap next-grid">
+    ${poster ? `<a class="nm-poster reveal" href="/news/${esc(poster.slug)}" data-tilt>${photo(poster.image, { sizes: '(max-width: 760px) 100vw, 460px' })}<span class="nm-poster-tag">${icon('instagram', { size: 16 })} From the club</span></a>` : ''}
+    <div class="next-in reveal">
+      <p class="kicker">${icon('whistle', { size: 18 })} ${esc(heading)}${f.competition ? ` · ${esc(f.competition.replace(/^WRU /, ''))}` : ''}</p>
+      <div class="nm-teams">
+        <div class="nm-side"><img src="/img/crest-128.webp" alt="" width="72" height="72" loading="lazy"><b>${f.home ? 'Pontardawe' : opp}</b></div>
+        <div class="nm-mid"><span class="nm-v">v</span><time datetime="${esc(when)}"><span class="nm-long">${esc(longDate(f.day))}</span><span class="nm-short">${esc(shortDate(f.day))}</span>${f.kickoff ? ` <span class="nm-ko">${esc(f.kickoff)}</span>` : ''}</time></div>
+        <div class="nm-side">${f.home ? crest(f).replace('width="40" height="40"', 'width="72" height="72"') : '<img src="/img/crest-128.webp" alt="" width="72" height="72" loading="lazy">'}<b>${f.home ? opp : 'Pontardawe'}</b></div>
+      </div>
+      <div class="nm-clock" data-countdown="${esc(when)}" data-boxes><span class="nm-count"></span></div>
+      <p class="nm-where">${icon('pin', { size: 18 })} ${f.home ? `${esc(String(club.ground).split(',')[0])}, Ynysderw Road` : `Away at ${esc(f.opponent)}`}</p>
+      <div class="cta-row center">${tickets}<a class="btn btn-ghost" href="/fixtures">${icon('calendar', { size: 20 })} All fixtures</a></div>
     </div>
-    <p class="nm-where">${icon('pin', { size: 18 })} ${f.home ? `${esc(String(club.ground).split(',')[0])}, Ynysderw Road` : `Away at ${esc(f.opponent)}`}</p>
-    <div class="cta-row center">${f.home ? `<a class="btn btn-white" href="/tickets#m-${f.id}">${icon('ticket', { size: 20 })} Tickets</a>` : ''}<a class="btn btn-ghost" href="/fixtures">${icon('calendar', { size: 20 })} All fixtures</a></div>
+  </div>
+</section>`;
+}
+
+/** The home page's look at what is coming up at the club. */
+function homeWhatsOn() {
+  const list = comingUp().filter((u) => u.kind !== 'match').slice(0, 3);
+  if (!list.length) return '';
+  return `<section class="section whats-on-home">
+  <div class="wrap">
+    <div class="sec-head"><div><p class="kicker reveal">${icon('calendar', { size: 16 })} At the club</p><h2 class="reveal">What's on</h2></div><a class="btn btn-line reveal" href="/whats-on">Everything coming up ${icon('arrow', { size: 18 })}</a></div>
+    <div class="ev-grid">${list.map((u) => eventTile(u)).join('')}</div>
   </div>
 </section>`;
 }
@@ -822,6 +954,61 @@ function xArchive() {
 </section>`;
 }
 
+/** Everything coming up at the club, and the season so far. */
+function whatsOnPage() {
+  const coming = comingUp();
+  const f = nextFixture();
+  // The next match has the band at the top; the grid is everything else.
+  const [first, ...rest] = coming.filter((u) => u.kind !== 'match' || !f || u.event.start.slice(0, 10) !== f.day);
+  const kinds = [...new Set(updates.map((u) => u.kind))];
+  const body = `${pageHero({ kicker: 'At the club', title: "What's On", lead: "Match days, family nights, pop-ups and the weekly lotto, from the club's own posts." })}
+${nextMatch({ heading: 'Next match' })}
+<section class="section">
+  <div class="wrap">
+    <div class="sec-head"><div><p class="kicker reveal">${icon('calendar', { size: 16 })} Coming up</p><h2 class="reveal">Don't miss</h2></div><a class="btn btn-line reveal" href="${esc(club.web.instagram)}" rel="noopener">${icon('instagram', { size: 18 })} Follow @pontardawerfc</a></div>
+    ${first ? `<div class="ev-feature">${eventTile(first, { big: true })}<div class="ev-grid ev-grid-side">${rest.slice(0, 4).map((u) => eventTile(u)).join('')}</div></div>${rest.length > 4 ? `<div class="ev-grid">${rest.slice(4).map((u) => eventTile(u)).join('')}</div>` : ''}`
+    : `<p class="muted reveal">Nothing announced just yet. Follow the club on <a href="${esc(club.web.instagram)}" rel="noopener">Instagram</a> or <a href="${esc(club.web.facebook)}" rel="noopener">Facebook</a>.</p>`}
+    <div class="callout reveal lotto-call"><span class="tile-ic">${icon('lotto')}</span><div><h2>Weekly Lotto</h2><p>Every week, for the club. Ask behind the bar to play, and see the latest numbers in <a href="/news/weekly-lotto">the lotto results</a>.</p></div></div>
+  </div>
+</section>
+<section class="section season-sec">
+  <div class="wrap">
+    <p class="kicker reveal">${icon('history', { size: 16 })} 2026 so far</p>
+    <h2 class="reveal">The season at Pontardawe</h2>
+    <div class="filter-chips reveal" role="group" aria-label="Show">${['all', ...kinds].map((k, i) => `<button type="button" data-filter="${esc(k)}" aria-pressed="${i ? 'false' : 'true'}">${esc(k === 'all' ? 'Everything' : kindOf(k)[0])}</button>`).join('')}</div>
+    <ol class="season" data-season>${updates.slice().sort((a, b) => b.date.localeCompare(a.date)).map((u) => `<li class="season-item reveal" data-kind="${esc(u.kind)}">
+      <span class="season-dot" aria-hidden="true">${icon(kindOf(u.kind)[1], { size: 18 })}</span>
+      <a class="season-card" href="/news/${esc(u.slug)}">
+        ${u.image ? photo(u.image, { cls: 'season-img', sizes: '(max-width: 640px) 40vw, 220px' }) : ''}
+        <div><p class="meta"><time datetime="${esc(u.date)}">${esc(longDate(u.date))}</time> · <span class="tag tag-${esc(u.kind)}">${esc(kindOf(u.kind)[0])}</span></p><h3>${esc(u.title)}</h3><p>${esc(u.summary)}</p></div>
+      </a>
+    </li>`).join('')}</ol>
+  </div>
+</section>`;
+  const ld = coming.map((u) => ({
+    '@context': 'https://schema.org',
+    '@type': u.kind === 'match' ? 'SportsEvent' : 'Event',
+    name: u.title,
+    startDate: u.event.start,
+    ...(u.event.end ? { endDate: u.event.end } : {}),
+    eventStatus: 'https://schema.org/EventScheduled',
+    eventAttendanceMode: 'https://schema.org/OfflineEventAttendanceMode',
+    location: { '@type': 'Place', name: u.event.place || club.address.name, address: `${club.address.street}, ${club.address.town} ${club.address.postcode}` },
+    image: u.image ? `${SITE}/img/${u.image}.jpg` : `${SITE}/img/og-home.jpg`,
+    description: u.summary,
+    organizer: { '@id': `${SITE}/#club` },
+    url: `${SITE}/news/${u.slug}`,
+  }));
+  const named = coming.filter((u) => u.kind !== 'match').map((u) => u.title.split(',')[0]).slice(0, 3).join(', ');
+  return page({
+    title: "What's On",
+    description: `What's on at ${club.name}: ${f ? `the next match (${f.home ? `v ${f.opponent}` : `away at ${f.opponent}`}, ${longDate(f.day)}), ` : ''}${named || 'club events'} and the weekly lotto.`,
+    path: '/whats-on',
+    og: 'home',
+    ld: [crumbs([['Home', '/'], ["What's On", '/whats-on']]), ...ld],
+  }, body);
+}
+
 function notFound() {
   const body = `${pageHero({ kicker: '404', title: 'Knock-on!', lead: 'That page isn\'t here. It may have moved when we built the new site.' })}
 <section class="section"><div class="wrap center"><div class="cta-row center"><a class="btn btn-glow" href="/">${icon('ball', { size: 20 })} Back to the home page</a><a class="btn btn-line" href="/menu">Menu &amp; order</a><a class="btn btn-line" href="${MEMBERS}/">Members' card</a></div></div></section>`;
@@ -830,6 +1017,6 @@ function notFound() {
 
 module.exports = {
   home, clubPage, teamsPage, newsPage, articlePage, clubhousePage, menuPage, membershipPage,
-  contactPage, privacyPage, cookiesPage, termsPage, accessibilityPage, notFound, fixturesPage, ticketsPage, ticketOrderPage,
+  contactPage, privacyPage, cookiesPage, termsPage, accessibilityPage, notFound, fixturesPage, ticketsPage, ticketOrderPage, whatsOnPage,
   MENU_API, MENU_SLUG,
 };
