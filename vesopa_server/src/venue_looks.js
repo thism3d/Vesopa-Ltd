@@ -28,6 +28,8 @@
 const LOOKS = {
   'pontardawe-rfc': {
     club: '#8F0000', deep: '#3F0000', glow: '#C41414', font: 'montserrat',
+    // The name on its cards (Wallet), unless the back office sets one.
+    name: 'Pontardawe RFC',
     // The club's own website, which shares these colours and this typeface.
     // Filled in only where the back office has no link of its own.
     website: 'https://pontardawerfc.com', phone: '01792 864811', email: 'info@pontardawerfc.com',

@@ -54,7 +54,7 @@ class CardPage extends ConsumerWidget {
                 padding: const EdgeInsets.all(20),
                 children: [
                   Entrance(child: Center(child: ConstrainedBox(constraints: BoxConstraints(maxWidth: box.maxWidth >= 600 ? 520 : 440), child: card))),
-                  const Entrance(delay: Duration(milliseconds: 120), child: _AddToWallet()),
+                  Entrance(delay: const Duration(milliseconds: 120), child: _AddToWallet(maxWidth: box.maxWidth >= 600 ? 520 : 440)),
                   const SizedBox(height: 18),
                   if (roomy) ...[
                     Entrance(
@@ -94,7 +94,7 @@ class CardPage extends ConsumerWidget {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Entrance(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 540), child: card)),
-                              const Entrance(delay: Duration(milliseconds: 120), child: _AddToWallet()),
+                              const Entrance(delay: Duration(milliseconds: 120), child: _AddToWallet(maxWidth: 540)),
                             ],
                           ),
                         ),
@@ -480,7 +480,10 @@ class _Back extends StatelessWidget {
 /// the same code as the card above, and once added it is on the lock screen
 /// at the till and on a paired Apple Watch without opening the app.
 class _AddToWallet extends ConsumerStatefulWidget {
-  const _AddToWallet();
+  const _AddToWallet({this.maxWidth = 440});
+
+  /// The card's own width, so the button lines up under it.
+  final double maxWidth;
 
   @override
   ConsumerState<_AddToWallet> createState() => _AddToWalletState();
@@ -520,15 +523,18 @@ class _AddToWalletState extends ConsumerState<_AddToWallet> {
         return Padding(
           padding: const EdgeInsets.only(top: 18),
           child: Center(
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                AppleWalletButton(onPressed: _add),
-                if (_busy)
-                  const IgnorePointer(
-                    child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator.adaptive(strokeWidth: 2.5)),
-                  ),
-              ],
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: widget.maxWidth),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  AppleWalletButton(onPressed: _add, radius: 16),
+                  if (_busy)
+                    const IgnorePointer(
+                      child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator.adaptive(strokeWidth: 2.5)),
+                    ),
+                ],
+              ),
             ),
           ),
         );

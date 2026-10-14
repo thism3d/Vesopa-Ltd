@@ -99,7 +99,8 @@ final class WalletButtonFactory: NSObject, FlutterPlatformViewFactory {
   }
 
   func create(withFrame frame: CGRect, viewIdentifier viewId: Int64, arguments args: Any?) -> FlutterPlatformView {
-    WalletButtonView(frame: frame, viewId: viewId, channel: channel)
+    let radius = ((args as? [String: Any])?["radius"] as? NSNumber)?.doubleValue ?? 8
+    return WalletButtonView(frame: frame, viewId: viewId, channel: channel, radius: CGFloat(radius))
   }
 
   func createArgsCodec() -> FlutterMessageCodec & NSObjectProtocol {
@@ -112,11 +113,16 @@ final class WalletButtonView: NSObject, FlutterPlatformView {
   private let viewId: Int64
   private let channel: FlutterMethodChannel
 
-  init(frame: CGRect, viewId: Int64, channel: FlutterMethodChannel) {
+  init(frame: CGRect, viewId: Int64, channel: FlutterMethodChannel, radius: CGFloat) {
     self.viewId = viewId
     self.channel = channel
     super.init()
     button.frame = frame
+    // As wide as the card above it, with the card's corners (2026-10-15):
+    // Apple's own button, so its artwork and wording stay Apple's.
+    button.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    button.layer.cornerRadius = radius
+    button.layer.masksToBounds = true
     button.addTarget(self, action: #selector(tapped), for: .touchUpInside)
   }
 

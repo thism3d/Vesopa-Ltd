@@ -138,6 +138,12 @@ function walletCore({ pool, secret }) {
     }
     const look = venueLooks.lookFor(slug);
     if (!look) return;
+    // The club's own name, over the receipt's (Pontardawe's passes said
+    // "Vesopa", 2026-10-15), unless the Wallet screen names the card itself.
+    if (look.name && !(own && String(own.issuer_name || '').trim())) {
+      brand.issuer_name = look.name;
+      if (!(own && String(own.program_name || '').trim())) brand.program_name = `${look.name} Members`;
+    }
     if (!brand.hex_background) brand.hex_background = look.club;
     if (!brand.hex_foreground) brand.hex_foreground = '#FFFFFF';
     if (!brand.hex_label) brand.hex_label = '#F4C7C7';

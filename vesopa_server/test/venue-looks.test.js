@@ -12,6 +12,8 @@ test('Pontardawe RFC has the club look; other venues have none', () => {
   assert.equal(look.club, '#8F0000');
   assert.equal(look.font, 'montserrat');
   assert.equal(lookFor('PONTARDAWE-RFC'), look);
+  // Its cards carry its own name, not the receipt's (2026-10-15).
+  assert.equal(look.name, 'Pontardawe RFC');
   assert.equal(lookFor('thevesopakitchen'), null);
   assert.equal(lookFor(''), null);
 });

@@ -57,9 +57,12 @@ class AppleWallet {
 /// Apple's own "Add to Apple Wallet" button (PKAddPassButton), which Apple
 /// requires rather than a lookalike.
 class AppleWalletButton extends StatefulWidget {
-  const AppleWalletButton({super.key, required this.onPressed});
+  const AppleWalletButton({super.key, required this.onPressed, this.radius = 16});
 
   final VoidCallback onPressed;
+
+  /// Corner radius, to sit under a card with the same corners.
+  final double radius;
 
   @override
   State<AppleWalletButton> createState() => _AppleWalletButtonState();
@@ -80,11 +83,13 @@ class _AppleWalletButtonState extends State<AppleWalletButton> {
     return Semantics(
       button: true,
       label: 'Add to Apple Wallet',
+      // As wide as its parent allows (the card's width, from the card page).
       child: SizedBox(
-        height: 48,
-        width: 280,
+        height: 54,
+        width: double.infinity,
         child: UiKitView(
           viewType: 'vesopa_loyalty/wallet_button',
+          creationParams: {'radius': widget.radius},
           creationParamsCodec: const StandardMessageCodec(),
           // The native button takes its own taps, including inside the card
           // page's scrolling list.
