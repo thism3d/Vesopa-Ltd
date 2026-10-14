@@ -89,7 +89,15 @@
   var lastResult = '';
 
   function scoreOf(p) {
-    return game.kicks.filter(function (k) { return k.player === p && k.verdict === 'over'; }).length * 2;
+    return game.kicks.reduce(function (sum, k) {
+      return sum + (k.player === p && k.verdict === 'over' ? spot(game.seed, k.round).points : 0);
+    }, 0);
+  }
+  /** What the rounds still to come are worth. */
+  function pointsLeft(fromRound) {
+    var t = 0;
+    for (var i = fromRound; i < ROUNDS; i++) t += spot(game.seed, i).points;
+    return t;
   }
   function turn() { // whose kick, and in which round
     var n = game.kicks.length;
@@ -101,7 +109,7 @@
     var rounds = n / 2;
     if (rounds < ROUNDS) {
       // Decided early: one side cannot catch up.
-      var a = scoreOf(1), b = scoreOf(2), left = (ROUNDS - rounds) * 2;
+      var a = scoreOf(1), b = scoreOf(2), left = pointsLeft(rounds);
       return a > b + left || b > a + left;
     }
     return scoreOf(1) !== scoreOf(2) || rounds >= MAX_ROUNDS;
@@ -124,20 +132,25 @@
   function next() {
     if (finished()) return gameOver();
     var t = turn();
-    current = spot(game.seed, t.round);
+    current = R.placed(spot(game.seed, t.round));
     flight = null; drag = null; keyAim = 0; keyPower = 0;
+    // The shot clock: 90 seconds for a conversion, 60 for a penalty (Law 8).
+    clockEnd = performance.now() + current.clock * 1000 + (reduced ? 0 : 1500);
+    placeUi();
     // Every new kick opens wide, from high behind the posts, and the camera
     // comes down behind the kicker (the owner: the camera should move).
     camIntro = { t0: performance.now(), dur: reduced ? 0 : 1500 };
     hud();
     if (humanTurn(t.player)) {
       phase = 'aim';
-      say(game.mode === 'local' ? game.names[t.player - 1] + "'s kick" : 'Your kick', 'Swipe up from the ball');
+      say(current.kind === 'penalty' ? 'Penalty goal' : 'Conversion', current.kind === 'penalty' ? 'Kick from the mark · 3 points' : 'Pick your distance, then swipe up · 2 points');
     } else if (game.mode === 'ai') {
       phase = 'wait';
       say('Computer', 'Lining it up…');
       setTimeout(function () {
         var k = computerKick(current, game.level, game.ai);
+        current = R.placed(current, k.dist);
+        placeUi();
         kickNow(k.aim, k.power, 2);
       }, 1300);
     } else {
@@ -146,10 +159,12 @@
     }
   }
 
-  function kickNow(aim, power, player, sent) {
+  function kickNow(aim, power, player, sent, late) {
     var t = turn();
     if (player !== t.player) return;
-    var f = fly(current, aim, power);
+    if (sent && sent.dist != null) current = R.placed(spot(game.seed, t.round), sent.dist);
+    var f = late ? { verdict: 'time', how: null, path: [[current.x, 0.32, 0, 0]], events: [], decided: 0 } : fly(current, aim, power);
+    if (sent && sent.verdict === 'time') late = true;
     if (game.mode === 'online' && !sent) {
       if (!net) return;
       // The server is the one record of turns: the kick plays here when it
@@ -158,11 +173,13 @@
       // clipped a post.
       phase = 'wait';
       say('', 'Kicking…');
-      net.send({ type: 'kick', round: t.round, aim: aim, power: power, verdict: f.verdict, how: f.how || '' });
+      net.send({ type: 'kick', round: t.round, aim: aim, power: power, dist: current.dist, verdict: f.verdict, how: f.how || '' });
       return;
     }
     if (sent && sent.verdict) { f.verdict = sent.verdict; f.how = sent.how || null; }
-    game.kicks.push({ player: player, round: t.round, aim: aim, power: power, verdict: f.verdict, how: f.how });
+    game.kicks.push({ player: player, round: t.round, aim: aim, power: power, dist: current.dist, verdict: f.verdict, how: f.how });
+    placeUi(true);
+    if (late || f.verdict === 'time') { phase = 'flight'; flight = null; landed(); return; }
     // The kicker runs in first: the ball leaves the tee when his boot meets it.
     var startedAt = performance.now();
     flight = { f: f, ks: startedAt, t0: startedAt + CONTACT * 1000, player: player, aim: aim, heard: 0 };
@@ -187,7 +204,7 @@
     phase = 'result';
     if (k.verdict === 'over') { tone('cheer'); burst(); } else tone(k.verdict === 'post' ? 'post' : 'groan');
     hud();
-    say(lastResult, k.verdict === 'over' ? '+2 points' : '', k.verdict === 'over' ? 'good' : 'bad');
+    say(lastResult, k.verdict === 'over' ? '+' + spot(game.seed, k.round).points + ' points' : k.verdict === 'charged' ? 'Too close: the defence got to it' : '', k.verdict === 'over' ? 'good' : 'bad');
     setTimeout(next, 1700);
   }
 
@@ -228,10 +245,42 @@
     };
     ui.hud.innerHTML =
       '<div class="g-side' + (t.player === 1 && phase !== 'over' ? ' on' : '') + '">' + badge(1) + '<b>' + esc(game.names[0]) + '</b><span class="g-dots">' + dots(1) + '</span><strong>' + scoreOf(1) + '</strong></div>' +
-      '<div class="g-mid"><span class="g-round">' + (t.round < ROUNDS ? 'Kick ' + (t.round + 1) + ' of ' + ROUNDS : 'Sudden death') + '</span>' +
-      (current ? '<span class="g-wind" style="--w:' + current.wind + '"><i></i>' + Math.abs(current.wind).toFixed(1) + ' m/s ' + (current.wind < 0 ? '←' : current.wind > 0 ? '→' : '') + '</span><span class="g-spot">' + current.dist + 'm · ' + (Math.abs(current.x) < 1 ? 'in front' : Math.abs(current.x).toFixed(0) + 'm ' + (current.x < 0 ? 'left' : 'right')) + '</span>' : '') + '</div>' +
+      '<div class="g-mid"><span class="g-round">' + (t.round < ROUNDS ? 'Kick ' + (t.round + 1) + ' of ' + ROUNDS : 'Sudden death') + (current ? ' · ' + (current.kind === 'penalty' ? 'Penalty' : 'Conversion') : '') + '</span>' +
+      (current ? '<span class="g-wind" style="--w:' + current.wind + '"><i></i>' + Math.abs(current.wind).toFixed(1) + ' m/s ' + (current.wind < 0 ? '←' : current.wind > 0 ? '→' : '') + '</span><span class="g-spot">' + current.dist + 'm out · ' + (current.kind === 'conversion' ? 'try ' : '') + (Math.abs(current.x) < 1 ? 'under the posts' : Math.abs(current.x).toFixed(0) + 'm ' + (current.x < 0 ? 'left' : 'right')) + '</span><span class="g-clock" data-g-clock></span>' : '') + '</div>' +
       '<div class="g-side right' + (t.player === 2 && phase !== 'over' ? ' on' : '') + '"><strong>' + scoreOf(2) + '</strong><span class="g-dots">' + dots(2) + '</span><b>' + esc(game.names[1]) + '</b>' + badge(2) + '</div>';
   }
+  var clockEnd = 0;
+  var placeBox = box.querySelector('[data-g-place]');
+  /** Closer / Further back: only for a conversion, only on your own kick. */
+  function placeUi(off) {
+    if (!placeBox) return;
+    var show = !off && game && current && current.kind === 'conversion' && phase !== 'over' && humanTurn(turn().player) && !flight;
+    placeBox.hidden = !show;
+    var lab = placeBox.querySelector('[data-g-dist]');
+    if (lab && current) lab.textContent = current.dist + 'm';
+  }
+  function moveBall(by) {
+    if (phase !== 'aim' || !current || current.kind !== 'conversion') return;
+    current = R.placed(current, current.dist + by);
+    placeUi();
+    hud();
+  }
+  // The shot clock, ticking on screen; when it runs out the kick is disallowed.
+  setInterval(function () {
+    var el = box.querySelector('[data-g-clock]');
+    if (!game || !current) return;
+    var left = Math.max(0, Math.ceil((clockEnd - performance.now()) / 1000));
+    if (el) {
+      el.textContent = phase === 'aim' || phase === 'wait' ? '⏱ ' + left + 's' : '';
+      el.classList.toggle('low', left <= 10);
+    }
+    if (phase === 'aim' && left <= 0 && humanTurn(turn().player)) {
+      drag = null;
+      if (game.mode === 'online') { phase = 'wait'; net.send({ type: 'kick', round: turn().round, aim: 0, power: 0, dist: current.dist, verdict: 'time', how: '' }); }
+      else kickNow(0, 0, turn().player, null, true);
+    }
+  }, 250);
+
   function say(title, sub, tone_) {
     ui.banner.innerHTML = (title ? '<b>' + esc(title) + '</b>' : '') + (sub ? '<span>' + esc(sub) + '</span>' : '');
     ui.banner.className = 'g-banner show' + (tone_ ? ' ' + tone_ : '');
@@ -268,7 +317,12 @@
   var camS = null, camLast = 0;
   function camTarget(now, ball) {
     var s = current || { x: 0, dist: 30 };
-    var base = { x: s.x * 0.72, y: 2.5, z: -11, lx: s.x * 0.3, ly: 2.6, lz: s.dist * 0.8 };
+    // Behind the ball, on the line from the posts through it, as television
+    // frames a goal kick; a little to the left, to see the kicker come in.
+    var ux = s.x, uz = -s.dist, un = Math.sqrt(ux * ux + uz * uz) || 1;
+    ux /= un; uz /= un;
+    var back = 10.5;
+    var base = { x: s.x + ux * back - uz * 1.4, y: 2.4, z: uz * back + ux * 1.4, lx: s.x * 0.25, ly: 2.4, lz: s.dist * 0.85 };
     if (flight && ball && now > flight.t0 && ball[2] > 1) {
       var k = Math.min(1, (now - flight.t0) / 700);
       return {
@@ -403,6 +457,19 @@
       ctx.fillStyle = ci % 3 === 0 ? '#c41414' : ci % 3 === 1 ? '#e9e2e2' : '#3a1d1f';
       ctx.beginPath(); ctx.arc(px, cr1[1] - cr1[2] * 1.1 - bob, Math.max(2, cr1[2] * 0.4), 0, 6.3); ctx.fill();
     }
+    // A conversion: where the try was scored, and the line it is kicked on.
+    if (s.kind === 'conversion') {
+      var tp = P(c, s.x, 0, s.dist + 0.6);
+      ctx.fillStyle = '#f2c14e';
+      ctx.beginPath(); ctx.moveTo(tp[0], tp[1] - tp[2] * 1.1); ctx.lineTo(tp[0] + tp[2] * 0.5, tp[1] - tp[2] * 0.85); ctx.lineTo(tp[0], tp[1] - tp[2] * 0.6); ctx.fill();
+      ctx.strokeStyle = '#f2c14e'; ctx.lineWidth = Math.max(1, tp[2] * 0.04);
+      ctx.beginPath(); ctx.moveTo(tp[0], tp[1]); ctx.lineTo(tp[0], tp[1] - tp[2] * 1.1); ctx.stroke();
+      if (phase === 'aim') {
+        ctx.setLineDash([6, 8]); ctx.strokeStyle = 'rgba(242,193,78,.55)'; ctx.lineWidth = 2;
+        var l0 = P(c, s.x, 0, Math.max(c.z + 1.5, -6)), l1 = P(c, s.x, 0, s.dist);
+        ctx.beginPath(); ctx.moveTo(l0[0], l0[1]); ctx.lineTo(l1[0], l1[1]); ctx.stroke(); ctx.setLineDash([]);
+      }
+    }
     // The touch judges, behind the posts
     var verdictNow = phase === 'result' && game && game.kicks.length ? game.kicks[game.kicks.length - 1].verdict : null;
     if (PL) PL.judges(s, kickT, verdictNow).forEach(function (j) { PL.draw(ctx, Pw, j, 'official'); PL.flag(ctx, Pw, j); });
@@ -426,7 +493,7 @@
     // The opposition on the try line, charging as the kicker sets off
     var otherKit = kitOf(kicking === 1 ? 2 : 1);
     if (PL) {
-      var line = PL.chargers(s, kickT, 7).sort(function (a, b) { return b.z - a.z; });
+      var line = PL.chargers(s, kickT, 7, { still: s.kind === 'penalty', front: R.chargeLine(s) }).sort(function (a, b) { return b.z - a.z; });
       line.forEach(function (pp) { PL.draw(ctx, Pw, pp, otherKit); });
     }
 
@@ -465,6 +532,12 @@
     ctx.strokeStyle = '#8f0000'; ctx.beginPath(); ctx.moveTo(0, -r * 0.55); ctx.lineTo(0, r * 0.55); ctx.stroke();
     ctx.restore();
 
+    // His team-mates, behind the ball as the law says (seen in the wide shot)
+    if (PL && game) {
+      [[-7, -7], [-11, -9], [8, -8], [12, -10]].forEach(function (tm, i) {
+        PL.draw(ctx, Pw, PL.idle(s.x + tm[0], tm[1], Math.atan2(-tm[0], 9), now / 1000 + i, { armL: 0.15, armR: -0.1 }), kitOf(kicking));
+      });
+    }
     // The kicker: lining up, running in, striking, following through
     if (PL && game) {
       var aimNow = flight ? flight.aim : (drag ? drag.aim : keyAim);
@@ -556,7 +629,9 @@
   cv.addEventListener('pointercancel', function () { drag = null; });
   d.addEventListener('keydown', function (e) {
     if (phase !== 'aim' || !box.classList.contains('playing')) return;
-    if (e.key === 'ArrowLeft') { keyAim = clamp(keyAim - 0.04, -1, 1); e.preventDefault(); }
+    if (e.key === 'ArrowDown') { moveBall(1); e.preventDefault(); }
+    else if (e.key === 'ArrowUp') { moveBall(-1); e.preventDefault(); }
+    else if (e.key === 'ArrowLeft') { keyAim = clamp(keyAim - 0.04, -1, 1); e.preventDefault(); }
     else if (e.key === 'ArrowRight') { keyAim = clamp(keyAim + 0.04, -1, 1); e.preventDefault(); }
     else if (e.key === ' ' && !keyCharging) {
       keyCharging = true; keyPower = 0; e.preventDefault();
@@ -694,6 +769,8 @@
   box.addEventListener('click', function (e) {
     var b = e.target.closest('button');
     if (!b) return;
+    if (b.hasAttribute('data-g-back')) { moveBall(1); return; }
+    if (b.hasAttribute('data-g-fwd')) { moveBall(-1); return; }
     if (b.hasAttribute('data-g-team')) {
       picked[b.getAttribute('data-g-team')] = b.getAttribute('data-key');
       try { localStorage.setItem('pk-teams', JSON.stringify(picked)); } catch (err) { /* private */ }
@@ -735,7 +812,6 @@
       muted = !muted;
       try { localStorage.setItem('pk-mute', muted ? '1' : '0'); } catch (err) { /* private */ }
       b.setAttribute('aria-pressed', String(muted));
-      b.textContent = muted ? '🔇' : '🔊';
     } else if (b.hasAttribute('data-g-full')) {
       var el = box;
       if (d.fullscreenElement) d.exitFullscreen();
@@ -748,7 +824,7 @@
   });
   d.addEventListener('fullscreenchange', function () { setTimeout(resize, 100); });
   var muteBtn = box.querySelector('[data-g-mute]');
-  if (muteBtn) { muteBtn.textContent = muted ? '🔇' : '🔊'; muteBtn.setAttribute('aria-pressed', String(muted)); }
+  if (muteBtn) muteBtn.setAttribute('aria-pressed', String(muted));
 
   function copy(text) {
     (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(function () { toast('Link copied'); }).catch(function () { toast(text); });

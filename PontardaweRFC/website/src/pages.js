@@ -257,10 +257,11 @@ ${playBand()}
       <p class="addr">${icon('pin', { size: 22 })}<span>${esc(club.address.name)}<br>${esc(club.address.street)}, ${esc(club.address.town)}, ${esc(club.address.postcode)}</span></p>
       <p class="addr">${icon('phone', { size: 22 })}<a href="tel:${club.phone_e164}">${esc(club.phone)}</a></p>
       <p class="muted">${esc(club.clubhouse.hours_note)}</p>
-      <div class="cta-row"><a class="btn btn-line" href="https://www.google.com/maps/dir/?api=1&destination=${club.address.lat},${club.address.lng}" rel="noopener" target="_blank">${icon('pin', { size: 20 })} Directions</a><a class="btn btn-line" href="${club.web.facebook}" rel="noopener" target="_blank">${icon('facebook', { size: 20 })} Facebook</a></div>
+      <div class="cta-row">${directions()}<a class="btn btn-line" href="${club.web.facebook}" rel="noopener" target="_blank">${icon('facebook', { size: 20 })} Facebook</a></div>
     </div>
-    <div class="map reveal">${mapCard()}</div>
+    <div class="map reveal">${satelliteMap()}</div>
   </div>
+  <div class="wrap"><h3 class="offers-head reveal">At the club</h3>${offers()}</div>
 </section>`;
   return page({
     title: club.name,
@@ -270,7 +271,46 @@ ${playBand()}
   }, body);
 }
 
-/** A map without a third-party embed: an OpenStreetMap link over a drawn card. */
+/**
+ * Directions for this device (the owner, 2026-10-15): Apple Maps on an
+ * iPhone, iPad or Mac, Google Maps on Android, and Apple Maps for everyone
+ * else; the other one is always a tap away. The head script marks the
+ * device (os-ios, os-mac, os-android) before anything is drawn.
+ */
+function directions({ primary = true } = {}) {
+  const a = club.address;
+  const q = encodeURIComponent(`${club.address.name}, ${a.street}, ${a.town} ${a.postcode}`);
+  const apple = `https://maps.apple.com/?daddr=${a.lat},${a.lng}&q=${encodeURIComponent('Pontardawe RFC')}&dirflg=d`;
+  const google = `https://www.google.com/maps/dir/?api=1&destination=${a.lat},${a.lng}&destination_place_id=&query=${q}`;
+  const cls = primary ? 'btn btn-glow' : 'btn btn-line';
+  return `<span class="dir-pick">
+  <a class="${cls} dir-apple" href="${esc(apple)}" rel="noopener" target="_blank">${icon('pin', { size: 20 })} Directions <small>Apple Maps</small></a>
+  <a class="${cls} dir-google" href="${esc(google)}" rel="noopener" target="_blank">${icon('pin', { size: 20 })} Directions <small>Google Maps</small></a>
+  <a class="dir-other dir-other-google" href="${esc(google)}" rel="noopener" target="_blank">or Google Maps</a>
+  <a class="dir-other dir-other-apple" href="${esc(apple)}" rel="noopener" target="_blank">or Apple Maps</a>
+</span>`;
+}
+
+/** What the club has, from its own posts and the clubhouse page. */
+const OFFERS = [
+  ['beer', "Members' bar", "A proper club bar, guest brewers on event days, and members' discount with the app."],
+  ['plate', 'Food', "The club kitchen, plus pop-ups: Wok Stix, Wokstix Pizza, Smokin Griddle, Nellie May's."],
+  ['screen', 'Live sport', 'Internationals and the big games on the screens.'],
+  ['music', 'Live music and events', "Oktoberfest, Ponty Fest, medium nights, fireworks and kids' discos."],
+  ['party', 'Functions', 'Birthdays, wakes, christenings and celebrations: call to book.'],
+  ['whistle', 'The Rec', 'The pitch for the First XV, juniors, Little Daffs and touch rugby.'],
+  ['pin', 'Car park', "Parking at the club on Ynysderw Road. Please don't leave cars overnight."],
+  ['child', 'Families welcome', 'Kidsfest, Halloween and family days through the year.'],
+];
+function offers() {
+  return `<ul class="offers">${OFFERS.map(([ic, h, t]) => `<li class="reveal"><span class="tile-ic">${icon(ic, { size: 20 })}</span><div><b>${esc(h)}</b><span>${esc(t)}</span></div></li>`).join('')}</ul>`;
+}
+
+/**
+ * The map: a drawn card first, then, when the visitor asks, Google's own
+ * satellite map of the ground (its embed: Google sets cookies, so it waits
+ * to be asked; see /cookies). No screenshot of anyone's imagery.
+ */
 function mapCard() {
   const a = club.address;
   return `<a class="map-card" href="https://www.openstreetmap.org/?mlat=${a.lat}&mlon=${a.lng}#map=17/${a.lat}/${a.lng}" rel="noopener" target="_blank" aria-label="Open the map of ${esc(a.street)}, ${esc(a.town)}">
@@ -285,6 +325,19 @@ function mapCard() {
   </svg>
   <span class="map-label">${icon('pin', { size: 18 })} ${esc(a.street)}, ${esc(a.town)} ${esc(a.postcode)} <em>Open map ${icon('external', { size: 14 })}</em></span>
 </a>`;
+}
+
+function satelliteMap() {
+  const a = club.address;
+  // Google's embed, in satellite view (!5e1), zoom 18, at the clubhouse.
+  const src = `https://www.google.com/maps/embed?origin=mfe&pb=!1m4!2m1!1s${a.lat},${a.lng}!5e1!6i18!3m1!1sen-GB!5m1!1sen-GB`;
+  return `<div class="sat-map" data-sat-map>
+  <div class="sat-frame" data-sat-frame data-src="${esc(src)}">${mapCard()}</div>
+  <div class="sat-bar">
+    <button type="button" class="btn btn-sm btn-glow" data-sat-show>${icon('sparkle', { size: 16 })} Show satellite view</button>
+    <span class="small muted">From Google Maps, which sets its own cookies.</span>
+  </div>
+</div>`;
 }
 
 function clubPage() {
@@ -585,10 +638,10 @@ function contactPage() {
       <h2>Find the clubhouse</h2>
       <p class="addr">${icon('pin', { size: 22 })}<span>${esc(a.name)}<br>${esc(a.street)}<br>${esc(a.town)}, ${esc(a.county)}<br>${esc(a.postcode)}</span></p>
       <p class="muted">Home matches are played at the ${esc(club.ground)}.</p>
-      <div class="cta-row"><a class="btn btn-glow" href="https://www.google.com/maps/dir/?api=1&destination=${a.lat},${a.lng}" rel="noopener" target="_blank">${icon('pin', { size: 20 })} Get directions</a></div>
+      <div class="cta-row">${directions()}</div>
       <p class="small muted">${esc(club.company.name)} · company ${esc(club.company.number)} · registered office ${esc(club.company.registered_office)}</p>
     </div>
-    <div class="map reveal">${mapCard()}</div>
+    <div class="map reveal">${satelliteMap()}</div>
   </div>
 </section>`;
   return page({
@@ -637,12 +690,13 @@ function cookiesPage() {
   return legal({
     path: '/cookies',
     title: 'Cookies',
-    lead: 'Short version: we don\'t use any.',
+    lead: 'Short version: we don\'t use any, unless you choose to open the satellite map.',
     description: `${club.name} uses no cookies, analytics or advertising trackers on pontardawerfc.com.`,
     sections: [
       ['none', 'No cookies', '<p>pontardawerfc.com sets no cookies and loads nothing from advertising or analytics companies. Our fonts, pictures and scripts all come from this site.</p>'],
       ['storage', 'What your browser keeps', '<p>To make the site work as you use it, your browser stores three things on your own device: whether you\'ve seen the opening animation this visit, your basket on the menu page, and your conversation with the club helper. These are strictly necessary for the features you choose to use, so the law does not ask us for consent; clearing your browser\'s site data removes them.</p>'],
       ['members', 'The members\' app', '<p>member.pontardawerfc.com keeps you signed in on your device with a token in its local storage. Signing out removes it.</p>'],
+      ['map', 'The satellite map', '<p>The map of the ground is our own drawing until you press <b>Show satellite view</b>. Then it loads Google Maps, which sets Google\'s own cookies under <a href="https://policies.google.com/technologies/cookies" rel="noopener">Google\'s cookie policy</a>. Nothing loads from Google unless you press it.</p>'],
     ],
   });
 }
@@ -1045,7 +1099,8 @@ function playPage() {
       <div class="g-hud" data-g-hud aria-live="polite"></div>
       <div class="g-banner" data-g-banner aria-live="polite"></div>
       <p class="g-toast" data-g-toast hidden role="status"></p>
-      <div class="g-tools"><button type="button" data-g-mute aria-label="Sound on or off" aria-pressed="false">🔊</button><button type="button" data-g-full aria-label="Full screen">⛶</button><button type="button" data-g-menu-open aria-label="Back to the menu">☰</button></div>
+      <div class="g-tools"><button type="button" data-g-mute aria-label="Sound" aria-pressed="false"><svg viewBox="0 0 24 24" class="i-on"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></svg><svg viewBox="0 0 24 24" class="i-off"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M17 9l5 6M22 9l-5 6"/></svg></button><button type="button" data-g-full aria-label="Full screen"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button><button type="button" data-g-menu-open aria-label="Back to the menu"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg></button></div>
+      <div class="g-place" data-g-place hidden><button type="button" data-g-fwd aria-label="Move the ball closer">▲ Closer</button><b data-g-dist></b><button type="button" data-g-back aria-label="Move the ball further back">▼ Further back</button></div>
       <p class="g-rotate" aria-hidden="true"><span>⟳</span> Turn your phone sideways for the best view</p>
 
       <div class="g-menu" data-g-menu>
@@ -1057,7 +1112,7 @@ function playPage() {
     return `<button type="button" class="g-team" data-g-team="${side}" data-key="${esc(k)}" aria-pressed="false" style="--a:${esc(t.shirt)};--b:${esc(t.hoop)}">${t.crest ? `<img src="${esc(t.crest)}" alt="" width="22" height="22">` : `<span class="g-shield">${esc(t.short)}</span>`}<span>${esc(t.name)}</span></button>`;
   }).join('')}</div>`).join('')}
           <div class="g-modes">
-            <div class="g-mode"><h3>${icon('star', { size: 18 })} vs the computer</h3><p>Five kicks each from further out and wider, with the wind getting up. Then sudden death.</p>
+            <div class="g-mode"><h3>${icon('star', { size: 18 })} vs the computer</h3><p>Conversions and penalty goals, five kicks each, the wind getting up. Then sudden death.</p>
               <div class="g-row"><button type="button" class="btn btn-sm btn-line" data-g-ai="easy">Easy</button><button type="button" class="btn btn-sm btn-glow" data-g-ai="normal">Normal</button><button type="button" class="btn btn-sm btn-line" data-g-ai="hard">Hard</button></div></div>
             <div class="g-mode"><h3>${icon('users', { size: 18 })} Two players</h3><p>Same screen, pass it over between kicks.</p>
               <div class="g-row"><button type="button" class="btn btn-sm btn-glow" data-g-local>Play</button></div></div>
@@ -1079,9 +1134,9 @@ function playPage() {
 </section>
 <section class="section">
   <div class="wrap grid-3">
-    <div class="card reveal"><span class="tile-ic">${icon('ball')}</span><h2>How to kick</h2><p>Put your finger (or the mouse) on the ball and swipe up. Further means more power; to the side means aiming left or right. On a keyboard: arrow keys to aim, hold the space bar for power.</p></div>
+    <div class="card reveal"><span class="tile-ic">${icon('ball')}</span><h2>How to kick</h2><p>For a conversion, first pick your spot on the line through the try (Closer / Further back, or the up and down keys): further back opens the angle, too close and the defence charges it down. Then swipe up from the ball: further for power, to the side to aim. Keyboard: left and right to aim, hold the space bar for power.</p></div>
     <div class="card reveal"><span class="tile-ic">${icon('leaf')}</span><h2>Mind the wind</h2><p>The flags on the posts and the arrow at the top show the wind. Aim into it: a strong wind can carry a good kick wide.</p></div>
-    <div class="card reveal"><span class="tile-ic">${icon('trophy')}</span><h2>Scoring</h2><p>Two points a conversion, five kicks each, the same spot and wind for both. Level after five? Sudden death until somebody misses.</p></div>
+    <div class="card reveal"><span class="tile-ic">${icon('trophy')}</span><h2>The laws</h2><p>As World Rugby's Law 8: a conversion is 2 points, kicked on a line through where the try was scored, with the defence charging from their goal line as you start your run-up; a penalty goal is 3 points from the mark, and the defence must stand still. 90 seconds for a conversion, 60 for a penalty. Five kicks each, the same for both sides, then sudden death.</p></div>
   </div>
   <p class="wrap muted small center reveal">Ponty Kicks is written for the club. Its lettering is Permanent Marker by Font Diner (Apache License 2.0): <a href="/licences">fonts and licences</a>.</p>
 </section>`;

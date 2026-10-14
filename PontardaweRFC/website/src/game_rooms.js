@@ -105,9 +105,9 @@ function state(c, t) {
 }
 
 /** One kick: player 1 kicks first in every round, then player 2. */
-const VERDICTS = ['over', 'left', 'right', 'under', 'short', 'post'];
+const VERDICTS = ['over', 'left', 'right', 'under', 'short', 'post', 'charged', 'time'];
 const HOWS = ['', 'in-off-post', 'off-bar-over'];
-function kick(c, t, { round, aim, power, verdict, how } = {}) {
+function kick(c, t, { round, aim, power, verdict, how, dist } = {}) {
   const room = find(c);
   const me = who(room, t);
   if (room.players.length < 2) throw new GameError(409, 'Waiting for your friend to join.');
@@ -123,7 +123,9 @@ function kick(c, t, { round, aim, power, verdict, how } = {}) {
   }
   if (!VERDICTS.includes(verdict) || !HOWS.includes(how || '')) throw new GameError(400, 'That kick does not add up.');
   // The kicker's phone decides whether it went over (see public/js/game-rules.js).
-  room.kicks.push({ player: me, round: Number(round), aim: Math.round(a * 1e4) / 1e4, power: Math.round(p * 1e4) / 1e4, verdict, how: how || '' });
+  const d = dist == null ? null : Number(dist);
+  if (d !== null && (!Number.isFinite(d) || d < 0 || d > 60)) throw new GameError(400, 'That kick does not add up.');
+  room.kicks.push({ player: me, round: Number(round), aim: Math.round(a * 1e4) / 1e4, power: Math.round(p * 1e4) / 1e4, dist: d, verdict, how: how || '' });
   room.rev += 1;
   room.touched = Date.now();
   push(room);

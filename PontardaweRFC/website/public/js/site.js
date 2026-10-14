@@ -107,6 +107,25 @@
     setInterval(tick, 60000);
   });
 
+  /* The satellite map: Google's embed, only when the visitor asks for it. */
+  d.querySelectorAll('[data-sat-map]').forEach(function (box) {
+    var btn = box.querySelector('[data-sat-show]');
+    var frame = box.querySelector('[data-sat-frame]');
+    if (!btn || !frame) return;
+    btn.addEventListener('click', function () {
+      var f = d.createElement('iframe');
+      f.src = frame.getAttribute('data-src');
+      f.title = 'Satellite map of Pontardawe RFC, Ynysderw Road';
+      f.loading = 'lazy';
+      f.referrerPolicy = 'no-referrer-when-downgrade';
+      f.allowFullscreen = true;
+      frame.innerHTML = '';
+      frame.appendChild(f);
+      frame.classList.add('live');
+      btn.parentNode.innerHTML = '<span class="small muted">Satellite imagery and map data © Google</span>';
+    });
+  });
+
   /* Kitchen hours, from the bar's own menu settings, once the menu is live. */
   var hoursBox = d.querySelector('[data-hours]');
   if (hoursBox && window.fetch) {

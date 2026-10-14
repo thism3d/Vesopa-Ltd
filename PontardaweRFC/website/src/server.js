@@ -45,6 +45,7 @@ app.use((req, res, next) => {
       "img-src 'self' data: https:",
       "font-src 'self'",
       `connect-src 'self' wss://pontardawerfc.com ws://127.0.0.1:* ws://localhost:* ${pages.MENU_API}`,
+      "frame-src https://www.google.com https://maps.google.com",
       "frame-ancestors 'self'",
       "base-uri 'self'",
       "form-action 'self' https://pay.dojo.tech",

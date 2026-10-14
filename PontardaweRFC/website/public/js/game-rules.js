@@ -12,7 +12,20 @@
        and rolls out, and turns end over end at a rate that follows the kick.
    Fixed steps of 1/240s, so a kick flies the same every time. Online, the
    kicker's phone decides the verdict and sends it with the kick, so two
-   phones never disagree over a ball that clipped a post. */
+   phones never disagree over a ball that clipped a post.
+
+   The laws (World Rugby Law 8, the owner 2026-10-15: "how rugby is played"):
+     * a CONVERSION (2 points) is kicked from anywhere on a line through
+       where the try was scored, parallel to the touchlines: the try sets
+       the angle and the kicker picks how far back to go;
+     * the defenders wait on their goal line and may charge, and jump to
+       block, from the moment the kicker starts his approach, so a
+       conversion taken too close can be charged down;
+     * a PENALTY GOAL (3 points) is kicked from the mark; the defenders
+       stand still and may not charge;
+     * a goal is over the bar and between the posts (a kick higher than
+       the posts counts if it would have gone between them); 90 seconds for
+       a conversion, 60 for a penalty, or the kick is disallowed. */
 (function (root) {
 'use strict';
 
@@ -31,7 +44,7 @@ var ROUNDS = 5;
 var MAX_ROUNDS = 20;
 var ELEV = 0.6;           // launch angle, radians (about 34 degrees)
 var VMIN = 15, VMAX = 34; // kick speed range, m/s
-var AIM_MAX = 0.42;       // widest aim either side, radians
+var AIM_MAX = 0.3;        // aim either side of the line to the posts, radians
 var DT = 1 / 240;
 var FRAME = 4;            // path points at 60 a second
 
@@ -46,13 +59,55 @@ function rng(seed) {
 }
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 
-/** Where round n is kicked from, and the wind: the same for both players. */
+var TOUCH = 35;            // the touchlines, either side of the posts, m
+var CHARGE = 7.4;          // how far a charger gets from the goal line by the kick, m
+var REACH = 2.75;          // how high a jumping charger can block, m
+var CLOCK = { conversion: 90, penalty: 60 };
+var POINTS = { conversion: 2, penalty: 3 };
+// Five kicks each: conversions and penalties, as a match would bring them.
+var KINDS = ['conversion', 'conversion', 'penalty', 'conversion', 'penalty'];
+
+/** The best distance back for a try this far across: where the posts look widest, outside the charge. */
+function suggest(x) {
+  return Math.round(clamp(Math.abs(x) * 0.85 + 9, 12, 38));
+}
+
+/**
+ * Round n, the same for both players: what kind of kick, where (x across
+ * the pitch, dist from the goal line) and the wind. A conversion's x is
+ * where the try was scored; its dist is the kicker's to choose (here the
+ * suggestion), between min and max.
+ */
 function spot(seed, n) {
   var r = rng((seed ^ Math.imul(n + 1, 2654435761)) >>> 0);
-  var dist = n < ROUNDS ? [22, 27, 31, 35, 39][n] : 26 + Math.floor(r() * 15);
-  var side = (r() * 2 - 1) * Math.min(18, 5 + n * 3);
+  var kind = n < ROUNDS ? KINDS[n] : (n % 2 ? 'penalty' : 'conversion');
+  var hard = Math.min(1, n / 6);
   var wind = Math.round((r() * 2 - 1) * Math.min(8, 1.5 + n * 1.3) * 10) / 10;
-  return { dist: dist, x: Math.round(side * 10) / 10, wind: wind, hop: (r() * 2 - 1) };
+  var hop = r() * 2 - 1;
+  if (kind === 'conversion') {
+    // Tries are scored all across the line: under the posts, or out wide.
+    var u = r();
+    var x = (u < 0.25 ? r() * 4 : u < 0.6 ? 4 + r() * 12 : 16 + r() * (TOUCH - 21 + 6 * hard)) * (r() < 0.5 ? -1 : 1);
+    x = Math.round(clamp(x, -(TOUCH - 3), TOUCH - 3) * 10) / 10;
+    return { kind: kind, x: x, dist: suggest(x), min: 5, max: 45, tryX: x, wind: wind, hop: hop, clock: CLOCK.conversion, points: POINTS.conversion };
+  }
+  var pd = Math.round(22 + r() * (10 + 12 * hard));
+  var px = Math.round((r() * 2 - 1) * (6 + 16 * hard) * 10) / 10;
+  return { kind: kind, x: px, dist: pd, min: pd, max: pd, wind: wind, hop: hop, clock: CLOCK.penalty, points: POINTS.penalty };
+}
+
+/** The spot with the kicker's chosen distance (a conversion only moves back or forward on its line). */
+function placed(s, dist) {
+  var o = {};
+  for (var k in s) o[k] = s[k];
+  if (dist != null && s.kind === 'conversion') o.dist = Math.round(clamp(Number(dist), s.min, s.max));
+  return o;
+}
+
+/** Where the front of the charge is when the ball is kicked: z, from the kicker's ball. */
+function chargeLine(s) {
+  if (s.kind !== 'conversion') return null;
+  return s.dist - Math.min(CHARGE, Math.max(0, s.dist - 0.9));
 }
 
 /**
@@ -63,7 +118,8 @@ function spot(seed, n) {
  */
 function fly(s, aim, power) {
   var v0 = VMIN + (VMAX - VMIN) * clamp(power, 0, 1);
-  var az = clamp(aim, -1, 1) * AIM_MAX;
+  // Aim is from the line to the middle of the posts: 0 is straight at them.
+  var az = Math.atan2(-s.x, s.dist) + clamp(aim, -1, 1) * AIM_MAX;
   var vx = v0 * Math.cos(ELEV) * Math.sin(az);
   var vy = v0 * Math.sin(ELEV);
   var vz = v0 * Math.cos(ELEV) * Math.cos(az);
@@ -73,6 +129,7 @@ function fly(s, aim, power) {
   var events = [];
   var verdict = null, how = null, cross = null;
   var landed = false, touched = null, bounces = 0, decided = 0;
+  var charge = chargeLine(s), charged = false;
 
   for (var i = 1; i < 240 * 7; i++) {
     // Air drag on the speed relative to the moving air.
@@ -84,6 +141,14 @@ function fly(s, aim, power) {
     var px = x, py = y, pz = z;
     x += vx * DT; y += vy * DT; z += vz * DT;
     spin += spinRate * DT;
+
+    // The charge: a conversion kicked low, near the defenders, is blocked.
+    if (charge !== null && !charged && !verdict && pz < charge && z >= charge && y < REACH && Math.abs(x - s.x) < 3.2) {
+      charged = true;
+      vz = -Math.abs(vz) * 0.22; vy = 2.5; vx *= 0.3;
+      verdict = 'charged'; decided = path.length;
+      events.push({ t: i * DT, kind: 'charged' });
+    }
 
     // The posts: two uprights and the crossbar, all solid.
     if (Math.abs(z - s.dist) < BALL + POST_R + 0.05) {
@@ -163,6 +228,8 @@ var SAY = {
   over: ['Over!', 'Right between the sticks!', 'Converted!', 'Straight over!'],
   'in-off-post': ['In off the post!'],
   'off-bar-over': ['Off the bar and over!'],
+  charged: ['Charged down!', 'Blocked!'],
+  time: ['Time! Kick disallowed', 'Out of time'],
   left: ['Wide left', 'Pulled it left'],
   right: ['Wide right', 'Pushed it right'],
   under: ['Under the bar', 'Not enough on it'],
@@ -171,21 +238,28 @@ var SAY = {
 };
 
 /* The computer finds the safest kick, then makes a human-sized mistake. */
-var SKILL = { easy: [0.30, 0.15], normal: [0.17, 0.085], hard: [0.12, 0.05] };
-function computerKick(s, level, r) {
+var SKILL = { easy: [0.36, 0.13], normal: [0.2, 0.07], hard: [0.11, 0.04] };
+function computerKick(s0, level, r) {
+  // A conversion: back to where the posts look widest, outside the charge.
+  var s = placed(s0, s0.kind === 'conversion' ? suggest(s0.x) : null);
   var best = null;
-  for (var p = 0.2; p <= 1.0001; p += 0.04) {
-    for (var a = -1; a <= 1.0001; a += 0.025) {
-      var f = fly(s, a, p);
-      if (f.verdict !== 'over' || f.how) continue;
-      var margin = Math.min(HALF - Math.abs(f.cross.x), (f.cross.y - BAR) / 2);
-      if (!best || margin > best.m) best = { a: a, p: p, m: margin };
-    }
+  var tryKick = function (a, p) {
+    if (a < -1 || a > 1 || p < 0 || p > 1) return;
+    var f = fly(s, a, p);
+    if (f.verdict !== 'over' || f.how) return;
+    var margin = Math.min(HALF - Math.abs(f.cross.x), (f.cross.y - BAR) / 2);
+    if (!best || margin > best.m) best = { a: a, p: p, m: margin };
+  };
+  // Coarse, then fine around the best: a goal-kicker's eye, not a search.
+  for (var p = 0.2; p <= 1.0001; p += 0.08) for (var a = -1; a <= 1.0001; a += 0.05) tryKick(a, p);
+  if (best) {
+    var c = best;
+    for (var dp = -0.06; dp <= 0.0601; dp += 0.02) for (var da = -0.04; da <= 0.0401; da += 0.01) tryKick(c.a + da, c.p + dp);
   }
-  if (!best) best = { a: clamp(-s.x / 25, -1, 1), p: 1 };
+  if (!best) best = { a: 0, p: 1 };
   var sk = SKILL[level] || SKILL.normal;
   var gauss = function () { return (r() + r() + r() - 1.5) * 1.15; };
-  return { aim: clamp(best.a + gauss() * sk[0] * 2, -1, 1), power: clamp(best.p + gauss() * sk[1], 0, 1) };
+  return { aim: clamp(best.a + gauss() * sk[0] * 2, -1, 1), power: clamp(best.p + gauss() * sk[1], 0, 1), dist: s.dist };
 }
 
 /* The teams: Pontardawe and the clubs on this season's posters, each in
@@ -207,7 +281,8 @@ function changeKit(t) { return { name: t.name, short: t.short, shirt: '#f4f1ec',
 
 var api = { spot: spot, fly: fly, computerKick: computerKick, rng: rng, clamp: clamp, SAY: SAY,
   HALF: HALF, BAR: BAR, POST_H: POST_H, ROUNDS: ROUNDS, MAX_ROUNDS: MAX_ROUNDS, SKILL: SKILL, K: K,
-  TEAMS: TEAMS, TEAM_KEYS: TEAM_KEYS, team: team, changeKit: changeKit };
+  TEAMS: TEAMS, TEAM_KEYS: TEAM_KEYS, team: team, changeKit: changeKit,
+  placed: placed, suggest: suggest, chargeLine: chargeLine, CLOCK: CLOCK, POINTS: POINTS, KINDS: KINDS, TOUCH: TOUCH, CHARGE: CHARGE, REACH: REACH };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 else root.PontyRules = api;
 })(typeof window !== 'undefined' ? window : globalThis);

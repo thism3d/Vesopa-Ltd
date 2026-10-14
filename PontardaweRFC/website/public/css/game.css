@@ -41,8 +41,15 @@
 .g-banner.bad b { color: #ff8a83; }
 .g-toast { position: absolute; left: 50%; bottom: 16px; translate: -50% 0; max-width: 90%; margin: 0; padding: 10px 16px; border-radius: 12px; background: rgba(0, 0, 0, .78); font-size: .9rem; font-weight: 600; text-align: center; z-index: 5; }
 .g-tools { position: absolute; right: 10px; bottom: 10px; display: flex; gap: 6px; z-index: 4; }
-.g-tools button { width: 40px; height: 40px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, .2); background: rgba(10, 2, 4, .6); color: #fff; font-size: 1.1rem; cursor: pointer; }
-.g-tools button:hover { background: rgba(255, 255, 255, .14); }
+.g-tools button { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, .22); background: rgba(10, 2, 4, .55); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); color: #fff; cursor: pointer; transition: transform .2s, background .2s, border-color .2s; }
+.g-tools button:hover { transform: translateY(-2px); background: rgba(196, 20, 20, .55); border-color: #f2c14e; }
+.g-tools button:active { transform: scale(.92); }
+.g-tools svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.g-tools svg path:first-child { fill: currentColor; fill-opacity: .2; }
+[data-g-mute] .i-off, [data-g-mute][aria-pressed="true"] .i-on { display: none; }
+[data-g-mute][aria-pressed="true"] .i-off { display: block; }
+[data-g-mute][aria-pressed="true"] { color: #ff8a83; }
+:fullscreen [data-g-full] svg path { d: path("M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"); }
 .game:not(.playing) .g-tools [data-g-menu-open] { display: none; }
 
 /* The menu and full time */
@@ -143,3 +150,12 @@
 .g-badge.g-shield { width: 26px; height: 30px; font-size: .58rem; }
 @media (max-width: 760px) { .g-teams-label { min-width: 0; flex-basis: 100%; text-align: center; } .g-team span:last-child { display: none; } .g-team { padding: 5px; } }
 @media (max-height: 520px) and (orientation: landscape) { .g-team span:last-child { display: none; } .g-team { padding: 4px; } .g-teams { margin-bottom: 6px; } }
+
+/* --- Placing a conversion, and the shot clock ------------------------------ */
+.g-place { position: absolute; left: 12px; bottom: 12px; z-index: 4; display: flex; flex-direction: column; align-items: stretch; gap: 6px; padding: 8px; border-radius: 16px; background: rgba(10, 2, 4, .66); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, .12); }
+.g-place button { font: 800 .78rem/1 "Montserrat", sans-serif; letter-spacing: .04em; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, .2); background: rgba(255, 255, 255, .08); color: #fff; cursor: pointer; }
+.g-place button:hover { background: rgba(242, 193, 78, .2); border-color: #f2c14e; }
+.g-place b { text-align: center; font: 700 italic 1.4rem/1 "Oswald", sans-serif; color: #f2c14e; }
+.g-clock { font: 700 italic .95rem/1 "Oswald", sans-serif; letter-spacing: .08em; color: #fff; }
+.g-clock:empty { display: none; }
+.g-clock.low { color: #ff6a5e; animation: g-pulse .5s ease-in-out infinite; }

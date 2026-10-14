@@ -243,3 +243,18 @@ test("the club's updates: What's On, a page for each, pictures that load lazily"
   assert.match(map, /\/news\/fireworks-night-5-november<\/loc>/);
   assert.strictEqual((await fetch(`${base}/events`, { redirect: 'manual' })).status, 301);
 });
+
+test('find us: an opt-in satellite map, directions for each device, what the club offers', async () => {
+  const r = await fetch(`${base}/`);
+  assert.match(r.headers.get('content-security-policy'), /frame-src https:\/\/www\.google\.com/);
+  const home = await r.text();
+  assert.match(home, /data-sat-map/);
+  assert.match(home, /data-src="https:\/\/www\.google\.com\/maps\/embed\?origin=mfe&amp;pb=[^"]*!5e1/, 'satellite, and only when asked');
+  assert.ok(!/<iframe/.test(home), 'nothing from Google until the visitor presses the button');
+  assert.match(home, /class="btn btn-glow dir-apple" href="https:\/\/maps\.apple\.com\/\?daddr=51\.717502,-3\.850214/);
+  assert.match(home, /class="btn btn-glow dir-google" href="https:\/\/www\.google\.com\/maps\/dir\/\?api=1&amp;destination=51\.717502,-3\.850214/);
+  assert.match(home, /class="offers"/);
+  assert.match(home, /Members&#39; bar/);
+  const cookies = await (await fetch(`${base}/cookies`)).text();
+  assert.match(cookies, /Show satellite view/);
+});

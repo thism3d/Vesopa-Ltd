@@ -128,6 +128,7 @@ sessionStorage.setItem('prfc-kick','1');d.classList.add('kick-on');setTimeout(fu
 /* Which phone, so each visitor is shown the one app store their phone uses. */
 (function(){var u=navigator.userAgent||'',d=document.documentElement;
 if(/iPhone|iPad|iPod/.test(u)||(/Macintosh/.test(u)&&navigator.maxTouchPoints>1))d.classList.add('os-ios');
+else if(/Macintosh/.test(u))d.classList.add('os-mac');
 else if(/Android/.test(u))d.classList.add('os-android');})();
 </script>
 <script type="speculationrules">{"prerender":[{"where":{"and":[{"href_matches":"/*"},{"not":{"href_matches":["/api/*","/tickets/buy*","/tickets/order*"]}}]},"eagerness":"moderate"}]}</script>
