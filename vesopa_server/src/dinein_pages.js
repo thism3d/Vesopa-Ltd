@@ -231,6 +231,12 @@ async function metaFor(pool, { table, slug }) {
       art: branded.look && branded.look.art ? branded.look.art : null,
       address: [row.address_line, row.postcode].filter(Boolean).join(', ') || null,
       payOnline: !!row.online_pay,
+      // What the venue wrote, as opposed to the default line above.
+      ownTagline: (row.tagline || '').trim() || null,
+      // Its colours and photograph, for the pages that are not the menu
+      // itself (the order tracker), which have no script to fetch them.
+      theme: branded.theme,
+      slug: row.slug || null,
       table: tableName || null,
       // Overrides, kept separate from the derived values above so the page can
       // still use the real venue name for the browser tab while showing the
@@ -270,9 +276,22 @@ function dineinPageRoutes({ pool } = {}) {
   });
 
   /** Where an order has got to. */
-  router.get('/o/:publicId', (req, res) => {
+  router.get('/o/:publicId', async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
-    res.type('html').send(statusPage(req.params.publicId));
+    // The venue the order belongs to, so the page is in its name and colours.
+    let meta = null;
+    try {
+      if (pool) {
+        const [[o]] = await pool.query(
+          'SELECT v.slug FROM dinein_orders o JOIN dinein_venue v ON v.office_id = o.office_id WHERE o.public_id = ?',
+          [req.params.publicId]
+        );
+        if (o && o.slug) meta = await metaFor(pool, { slug: o.slug });
+      }
+    } catch {
+      meta = null;
+    }
+    res.type('html').send(statusPage(req.params.publicId, meta));
   });
 
   /**
@@ -431,6 +450,39 @@ function absoluteUrl(url) {
  * A venue's own logo is still preferred when it has one, because it is theirs.
  * It is served relative so that it works on whichever host answered.
  */
+/**
+ * What a search result and a share card say about a venue's menu: what it
+ * wrote itself, else a sentence about it -- never Vesopa's "See the menu".
+ */
+function venueDescription(m) {
+  if (m.metaDescription) return m.metaDescription;
+  if (m.ownTagline) return m.ownTagline;
+  const name = m.name || 'us';
+  return `Order food and drinks to your table at ${name}${m.address ? ', ' + m.address : ''}. ` +
+    (m.payOnline ? 'Pay by card, Apple Pay or Google Pay, or at the bar.' : 'Pay at the bar.');
+}
+
+/** The venue's colours as CSS variables, for a page drawn without the menu script. */
+function themeStyle(t) {
+  if (!t) return '';
+  const hex = (v) => (/^#[0-9a-fA-F]{6}$/.test(String(v || '')) ? v : null);
+  const vars = [
+    ['--accent', hex(t.accent)], ['--on-accent', hex(t.onAccent)], ['--page', hex(t.page)],
+    ['--card', hex(t.card)], ['--ink', hex(t.ink)], ['--ink-soft', hex(t.inkSoft)],
+  ].filter(([, v]) => v).map(([k, v]) => `${k}:${v}`);
+  let css = vars.length ? `:root{${vars.join(';')}}` : '';
+  const page = hex(t.page);
+  if (page) css += `body{background-color:${page}}`;
+  if (page && t.bgImage && /^(https:\/\/[^\s"'()<>\\]+|\/[A-Za-z0-9._~\/-]+)$/.test(t.bgImage)) {
+    const n = parseInt(page.slice(1), 16);
+    const k = (t.bgDim == null ? 84 : t.bgDim) / 100;
+    const rgb = `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`;
+    css += `body{background-image:linear-gradient(rgba(${rgb},${k}),rgba(${rgb},${Math.min(1, k + 0.1)})),url("${t.bgImage}");` +
+      'background-size:cover;background-position:center top;background-attachment:fixed}';
+  }
+  return css;
+}
+
 function iconTags(m) {
   // A club with a look of its own: its crest, in the sizes each place asks for.
   if (m.art && /^\/assets\/venues\/[a-z0-9-]+\/$/.test(m.art)) {
@@ -2178,13 +2230,10 @@ function page({ table, slug, meta }) {
   // to write a title means it for the page, not only for the share card, so it
   // is used whole — a "· Vesopa" bolted onto the end would be us overruling
   // the thing they typed.
-  const headTitle = m.metaTitle ? m.metaTitle : m.ownBrand ? title : `${title} · Vesopa`;
-  // What a search result and a share card say under the title. A club with a
-  // look of its own gets a sentence about itself, not "See the menu".
-  const description = m.metaDescription || (m.ownBrand
-    ? `Order food and drinks to your table at ${name}${m.address ? ', ' + m.address : ''}. ` +
-      (m.payOnline ? 'Pay by card, Apple Pay or Google Pay, or at the bar.' : 'Pay at the bar.')
-    : (m.tagline || ''));
+  // The venue's menu is the venue's (the owner, 2026-10-15): no "· Vesopa"
+  // on any venue's tab, share card or search result.
+  const headTitle = m.metaTitle || title;
+  const description = venueDescription(m);
   const canonical = m.domain
     ? 'https://' + m.domain + (table ? '/t/' + table : '/')
     : canonicalFor({ table, slug });
@@ -2204,7 +2253,7 @@ function page({ table, slug, meta }) {
 ${iconTags(m)}
 
 <meta property="og:type" content="restaurant.menu">
-<meta property="og:site_name" content="${esc(m.ownBrand ? name : 'Vesopa')}">
+<meta property="og:site_name" content="${esc(name)}">
 <meta property="og:locale" content="en_GB">
 <meta property="og:title" content="${esc(m.metaTitle || title)}">
 <meta property="og:description" content="${esc(description)}">
@@ -5438,19 +5487,22 @@ ${shareImage ? `<meta name="twitter:image" content="${esc(shareImage)}">` : ''}
  * is more code than asking every few seconds, and nothing here is urgent to the
  * second.
  */
-function statusPage(publicId) {
+function statusPage(publicId, meta) {
+  const m = meta || {};
+  const name = m.name && m.name !== 'Vesopa' ? m.name : '';
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#A5C715">
+<meta name="theme-color" content="${esc(m.accent || '#A5C715')}">
 <meta name="color-scheme" content="light dark">
 <meta name="robots" content="noindex,nofollow">
-<title>Your order · Vesopa</title>
-<link rel="icon" type="image/png" href="/assets/favicon.png">
-<link rel="apple-touch-icon" href="/assets/favicon.png">
-<style>${STYLE}</style>
+<title>${esc(name ? 'Your order · ' + name : 'Your order')}</title>
+<meta name="description" content="${esc(name ? 'Where your order at ' + name + ' has got to.' : 'Where your order has got to.')}">
+${iconTags(m)}
+<meta name="apple-mobile-web-app-title" content="${esc(name || 'Your order')}">
+<style>${STYLE}${themeStyle(m.theme)}</style>
 </head>
 <body>
 <div class="track" id="track"><div class="state"><h2>Checking…</h2></div></div>

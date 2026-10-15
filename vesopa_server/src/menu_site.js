@@ -338,13 +338,38 @@ function menuSiteRoutes({ pool }) {
       next(e);
     }
   });
-  router.get('/sitemap.xml', (req, res, next) => {
+  router.get('/sitemap.xml', async (req, res, next) => {
     if (!onSite(req)) return next();
-    res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://${MENU_HOST}/</loc></url></urlset>\n`);
+    // The landing page, and every published venue's menu that lives here
+    // (2026-10-15). A venue on its own domain is listed in that domain's own
+    // sitemap instead (dinein_pages.js), since a sitemap may only name its
+    // own host; table and order pages are never listed.
+    let venues = [];
+    try {
+      const [rows] = await pool.query(
+        'SELECT slug, updated_at FROM dinein_venue WHERE is_published = 1 AND slug IS NOT NULL' +
+          " AND NOT (custom_domain IS NOT NULL AND custom_domain <> '' AND domain_verified = 1) ORDER BY slug"
+      );
+      venues = rows.filter((r) => /^[a-z0-9][a-z0-9-]{1,63}$/.test(String(r.slug)));
+    } catch {
+      venues = [];
+    }
+    const day = (d) => {
+      const t = new Date(d);
+      return Number.isNaN(t.getTime()) ? null : t.toISOString().slice(0, 10);
+    };
+    const urls = [
+      `  <url><loc>https://${MENU_HOST}/</loc></url>`,
+      ...venues.map((v) => `  <url><loc>https://${MENU_HOST}/${v.slug}</loc>` +
+        (day(v.updated_at) ? `<lastmod>${day(v.updated_at)}</lastmod>` : '') +
+        '<changefreq>daily</changefreq></url>'),
+    ];
+    res.set('Cache-Control', 'public, max-age=3600');
+    res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join('\n')}\n</urlset>\n`);
   });
   router.get('/robots.txt', (req, res, next) => {
     if (!onSite(req)) return next();
-    res.type('text/plain').send(`User-agent: *\nDisallow: /admin\nDisallow: /t/\nAllow: /\nSitemap: https://${MENU_HOST}/sitemap.xml\n`);
+    res.type('text/plain').send(`User-agent: *\nDisallow: /admin\nDisallow: /t/\nDisallow: /o/\nDisallow: /api/\nAllow: /\nSitemap: https://${MENU_HOST}/sitemap.xml\n`);
   });
 
   router.get('/admin', async (req, res, next) => {
