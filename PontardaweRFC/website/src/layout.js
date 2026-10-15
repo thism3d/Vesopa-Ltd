@@ -9,6 +9,10 @@ const { icon } = require('./icons');
 
 const SITE = (process.env.SITE_URL || club.web.site).replace(/\/+$/, '');
 const MEMBERS = (process.env.MEMBERS_URL || club.web.members).replace(/\/+$/, '');
+// The club's own menu and ordering, on its own address (the owner,
+// 2026-10-15: "I want directly menu.pontardawerfc.com"), in the club's
+// look from the back office (vesopa_server src/dinein.js menuLook).
+const MENU_URL = process.env.MENU_URL || 'https://menu.pontardawerfc.com/';
 const ASSET_VERSION = process.env.ASSET_VERSION || String(Date.now()).slice(-8);
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -22,7 +26,7 @@ const NAV = [
   ['/fixtures', 'Fixtures'],
   ['/news', 'News'],
   ['/clubhouse', 'Clubhouse'],
-  ['/menu', 'Menu'],
+  [MENU_URL, 'Menu'],
   ['/membership', 'Membership'],
   ['/contact', 'Contact'],
 ];
@@ -56,7 +60,7 @@ function clubLd() {
     hasMap: `https://www.openstreetmap.org/?mlat=${a.lat}&mlon=${a.lng}#map=17/${a.lat}/${a.lng}`,
     sameAs: [club.web.facebook, club.web.instagram, club.web.x, club.web.wikipedia],
     memberOf: { '@type': 'SportsOrganization', name: 'Welsh Rugby Union', url: 'https://www.wru.wales/' },
-    hasMenu: `${SITE}/menu`,
+    hasMenu: MENU_URL,
     servesCuisine: 'Pub food',
     legalName: club.company.name,
     identifier: { '@type': 'PropertyValue', propertyID: 'Companies House', value: club.company.number },
@@ -197,7 +201,7 @@ function footer() {
       <ul class="foot-links">
         <li><a href="/whats-on">What's on</a></li><li><a href="/play">Ponty Kicks (game)</a></li><li><a href="/club">History</a></li><li><a href="/archive">From the archive</a></li><li><a href="/teams">Teams</a></li><li><a href="/fixtures">Fixtures &amp; results</a></li><li><a href="/tickets">Match tickets</a></li>
         <li><a href="/news">News</a></li><li><a href="/clubhouse">Clubhouse & functions</a></li>
-        <li><a href="/menu">Menu & order</a></li><li><a href="${MEMBERS}/">Members' app</a></li>
+        <li><a href="${MENU_URL}">Menu & order</a></li><li><a href="${MEMBERS}/">Members' app</a></li>
       </ul>
     </div>
     <div>
@@ -310,4 +314,4 @@ function pageHero({ kicker, title, lead, art = '' }) {
 }
 
 module.exports = {
-  appBadges, IOS_APP, ANDROID_APP, page, pageHero, esc, icon, SITE, MEMBERS, NAV, clubLd, ASSET_VERSION };
+  appBadges, IOS_APP, ANDROID_APP, page, pageHero, esc, icon, SITE, MEMBERS, MENU_URL, NAV, clubLd, ASSET_VERSION };

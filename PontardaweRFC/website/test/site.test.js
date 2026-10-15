@@ -40,7 +40,7 @@ test.before(async () => {
 });
 test.after(() => server.close());
 
-const PAGES = ['/', '/whats-on', '/play', '/licences', '/club', '/teams', '/fixtures', '/tickets', '/news', '/clubhouse', '/menu', '/membership', '/contact',
+const PAGES = ['/', '/whats-on', '/play', '/licences', '/club', '/teams', '/fixtures', '/tickets', '/news', '/clubhouse', '/membership', '/contact',
   '/privacy', '/cookies', '/ordering-terms', '/accessibility', ...news.map((n) => `/news/${n.slug}`)];
 
 for (const p of PAGES) {
@@ -60,16 +60,18 @@ for (const p of PAGES) {
   });
 }
 
-test('menu page wires the ordering script', async () => {
-  const html = await (await fetch(`${base}/menu`)).text();
-  assert.match(html, /data-api="https:\/\/menu\.vesopa\.com"/);
-  assert.match(html, /data-slug="pontardawe-rfc"/);
-  assert.match(html, /\/js\/order\.js/);
+test('the menu is on menu.pontardawerfc.com, and /menu goes there', async () => {
+  const r = await fetch(`${base}/menu`, { redirect: 'manual' });
+  assert.equal(r.status, 301);
+  assert.equal(r.headers.get('location'), 'https://menu.pontardawerfc.com/');
+  const home = await (await fetch(`${base}/`)).text();
+  assert.match(home, /href="https:\/\/menu\.pontardawerfc\.com\/"/);
+  assert.ok(!/href="\/menu"/.test(home), 'no link to the old /menu page');
 });
 
 test('sitemap, robots, llms.txt, feed, manifest', async () => {
   const sm = await (await fetch(`${base}/sitemap.xml`)).text();
-  assert.match(sm, /<loc>https:\/\/pontardawerfc\.com\/menu<\/loc>/);
+  assert.ok(!/pontardawerfc\.com\/menu</.test(sm));
   assert.match(sm, /<loc>https:\/\/member\.pontardawerfc\.com\/<\/loc>/);
   const robots = await (await fetch(`${base}/robots.txt`)).text();
   assert.match(robots, /Sitemap: https:\/\/pontardawerfc\.com\/sitemap\.xml/);
@@ -160,12 +162,6 @@ test('the kick-off opening never hides the page; menu drawn in the page', async 
   assert.match(css, /--T: 5\.2s;/);
   assert.match(home, /data-kick-skip/);
   assert.match(home, /type="speculationrules"/);
-  venue.set('menu', { venue: { name: 'Pontardawe RFC' }, sections: [{ id: 7, name: 'Lunch', items: [{ id: 1, name: 'Chips </script><b>', price_minor: 350 }] }] });
-  const menu = await (await fetch(`${base}/menu`)).text();
-  assert.match(menu, /<script type="application\/json" id="menu-data">/);
-  assert.ok(!/class="skeleton"/.test(menu), 'no placeholder when the menu is there');
-  assert.ok(!/Chips <\/script>/.test(menu), 'the menu cannot close its script tag');
-  venue.set('menu', null);
 });
 
 test('tickets: events on sale with a form, buying goes to card payment, the order shows the tickets', async () => {

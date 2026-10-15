@@ -28,6 +28,13 @@
 const LOOKS = {
   'pontardawe-rfc': {
     club: '#8F0000', deep: '#3F0000', glow: '#C41414', font: 'montserrat',
+    // The online menu (src/dinein.js menuLook): club red on a dark page over
+    // the club's own lineout photograph, not The Vesopa Kitchen's lime.
+    menu: {
+      page: '#1A0606', card: '#2A0B0B', ink: '#FFF4F2', inkSoft: '#E3C2BE',
+      photo: '/assets/venues/pontardawe-rfc/menu-photo.jpg',
+      logo: '/assets/venues/pontardawe-rfc/crest.png',
+    },
     // The name on its cards (Wallet), unless the back office sets one.
     name: 'Pontardawe RFC',
     // The club's own website, which shares these colours and this typeface.

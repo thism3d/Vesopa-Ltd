@@ -131,7 +131,10 @@ app.get('/tickets/order', async (req, res) => {
 });
 app.get('/news', html(() => pages.newsPage()));
 app.get('/clubhouse', html(() => pages.clubhousePage()));
-app.get('/menu', html(() => pages.menuPage()));
+// The menu lives on its own address now; old links and printed QR codes
+// that say pontardawerfc.com/menu still land on it.
+const MENU_URL = process.env.MENU_URL || 'https://menu.pontardawerfc.com/';
+app.get(['/menu', '/menu/'], (req, res) => res.redirect(301, MENU_URL));
 app.get('/membership', html(() => pages.membershipPage()));
 app.get('/contact', html(() => pages.contactPage()));
 app.get('/privacy', html(() => pages.privacyPage()));
@@ -157,7 +160,7 @@ const OLD = {
   '/sample-page': '/',
   '/2024/09/11/tribute-to-brian-bones-williams': '/news/tribute-to-brian-bones-williams',
   '/2024/09/18/job-vacancy-club-facilities-manager': '/news/job-vacancy-club-facilities-manager',
-  '/order': '/menu',
+  '/order': '/menu', // and on to menu.pontardawerfc.com
   '/members': '/membership',
   '/history': '/club',
 };
@@ -166,13 +169,13 @@ app.get(['/feed', '/feed/'], (req, res) => res.redirect(301, '/news/feed.xml'));
 
 // --- For machines ------------------------------------------------------------
 
-const PATHS = ['/', '/whats-on', '/play', '/licences', '/club', '/archive', '/teams', '/fixtures', '/tickets', '/news', '/clubhouse', '/menu', '/membership', '/contact',
+const PATHS = ['/', '/whats-on', '/play', '/licences', '/club', '/archive', '/teams', '/fixtures', '/tickets', '/news', '/clubhouse', '/membership', '/contact',
   '/privacy', '/cookies', '/ordering-terms', '/accessibility'];
 
 app.get('/sitemap.xml', (req, res) => {
   const today = new Date().toISOString().slice(0, 10);
   const urls = [
-    ...PATHS.map((p) => ({ loc: `${SITE}${p}`, lastmod: today, pri: p === '/' ? '1.0' : ['/menu', '/membership'].includes(p) ? '0.9' : '0.7' })),
+    ...PATHS.map((p) => ({ loc: `${SITE}${p}`, lastmod: today, pri: p === '/' ? '1.0' : ['/membership'].includes(p) ? '0.9' : '0.7' })),
     ...news.map((n) => ({ loc: `${SITE}/news/${n.slug}`, lastmod: n.date, pri: '0.6' })),
     { loc: `${MEMBERS}/`, lastmod: today, pri: '0.8' },
   ];
@@ -227,7 +230,7 @@ app.get('/llms.txt', (req, res) => {
 - [Tickets](${SITE}/tickets): match tickets for home games
 - [News](${SITE}/news)
 - [The Clubhouse](${SITE}/clubhouse): bar, café, live sport, function hire, sponsorship
-- [Menu & Order](${SITE}/menu): live menu; order to your table or for collection, pay at the bar
+- [Menu & Order](https://menu.pontardawerfc.com/): live menu; order to your table or for collection, pay at the bar
 - [Membership](${SITE}/membership): members' discount, the members' card at ${MEMBERS}/
 - [Contact](${SITE}/contact)
 - [Privacy](${SITE}/privacy)
@@ -253,7 +256,7 @@ app.get('/site.webmanifest', (req, res) => {
       { src: '/img/maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
     ],
     shortcuts: [
-      { name: 'Menu & order', url: '/menu' },
+      { name: 'Menu & order', url: 'https://menu.pontardawerfc.com/' },
       { name: "Members' card", url: `${MEMBERS}/` },
     ],
   }));

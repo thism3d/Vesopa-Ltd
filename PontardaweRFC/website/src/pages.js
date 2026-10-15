@@ -8,7 +8,7 @@
 const { club, news, updates, images, xPosts, longDate, yearsOld, archive } = require('./content');
 const wru = require('./wru');
 const venue = require('./venue_api');
-const { page, pageHero, esc, icon, SITE, MEMBERS, ASSET_VERSION, appBadges } = require('./layout');
+const { page, pageHero, esc, icon, SITE, MEMBERS, MENU_URL, ASSET_VERSION, appBadges } = require('./layout');
 const GAME = require('../public/js/game-rules.js');
 
 const MENU_API = (process.env.MENU_API || 'https://menu.vesopa.com').replace(/\/+$/, '');
@@ -139,7 +139,7 @@ function home() {
       <p class="lead reveal">${esc(club.short)}</p>
       <div class="cta-row reveal">
         <a class="btn btn-glow" href="/whats-on">${icon('calendar', { size: 20 })} What's on</a>
-        <a class="btn btn-ghost" href="/menu">${icon('plate', { size: 20 })} Menu &amp; order</a>
+        <a class="btn btn-ghost" href="${MENU_URL}">${icon('plate', { size: 20 })} Menu &amp; order</a>
       </div>
       ${heroMatch()}
     </div>
@@ -172,7 +172,7 @@ ${playBand()}
 <section class="section" id="quick">
   <div class="wrap">
     <div class="tiles">
-      <a class="tile reveal" href="/menu"><span class="tile-ic">${icon('plate')}</span><h2>Menu &amp; order</h2><p>Order to your table, or for collection and pay at the bar.</p><span class="more">Order now ${icon('arrow', { size: 18 })}</span></a>
+      <a class="tile reveal" href="${MENU_URL}"><span class="tile-ic">${icon('plate')}</span><h2>Menu &amp; order</h2><p>Order to your table, or for collection and pay at the bar.</p><span class="more">Order now ${icon('arrow', { size: 18 })}</span></a>
       <a class="tile reveal" href="${MEMBERS}/"><span class="tile-ic">${icon('card')}</span><h2>Members' card</h2><p>Your card and members' discount at member.pontardawerfc.com.</p><span class="more">Open the app ${icon('arrow', { size: 18 })}</span></a>
       <a class="tile reveal" href="/fixtures"><span class="tile-ic">${icon('whistle')}</span><h2>Fixtures &amp; results</h2><p>The next match, every score and the league table, live from the WRU.</p><span class="more">See fixtures ${icon('arrow', { size: 18 })}</span></a>
       <a class="tile reveal" href="/clubhouse"><span class="tile-ic">${icon('beer')}</span><h2>The clubhouse</h2><p>Bar, café, live sport and functions on Ynysderw Road.</p><span class="more">Visit ${icon('arrow', { size: 18 })}</span></a>
@@ -211,7 +211,7 @@ ${playBand()}
       <p class="kicker">Food from the clubhouse</p>
       <h2>Order to your table, or ahead for collection</h2>
       <p>The menu comes straight from the bar's own till, so prices, allergens and what's sold out are always right. In the club? Order to your table. At home? Order for collection and pay at the bar when you pick it up.</p>
-      <div class="cta-row"><a class="btn btn-white" href="/menu">${icon('bag', { size: 20 })} See the menu</a></div>
+      <div class="cta-row"><a class="btn btn-white" href="${MENU_URL}">${icon('bag', { size: 20 })} See the menu</a></div>
     </div>
     <ul class="steps">
       <li class="reveal"><span>1</span><div><b>Choose</b><p>Pick from the live menu, with allergens on every dish.</p></div></li>
@@ -940,7 +940,7 @@ function menuTickets() {
   const menu = venue.menu();
   const sec = ((menu && menu.sections) || []).find((x) => /ticket/i.test(x.name || ''));
   if (!sec || !sec.items || !sec.items.length) return '';
-  return `<ul class="ticket-list">${sec.items.map((it) => `<li><span>${esc(it.name)}</span><b>${money(it.price_minor)}</b></li>`).join('')}</ul><a class="btn btn-glow btn-block" href="/menu#sec-${esc(sec.id)}">Buy tickets</a>`;
+  return `<ul class="ticket-list">${sec.items.map((it) => `<li><span>${esc(it.name)}</span><b>${money(it.price_minor)}</b></li>`).join('')}</ul><a class="btn btn-glow btn-block" href="${MENU_URL}">Buy tickets</a>`;
 }
 
 function ticketsPage({ error = '', eventId = null, form = {} } = {}) {
@@ -1259,7 +1259,7 @@ function archivePage() {
 
 function notFound() {
   const body = `${pageHero({ kicker: '404', title: 'Knock-on!', lead: 'That page isn\'t here. It may have moved when we built the new site.' })}
-<section class="section"><div class="wrap center"><div class="cta-row center"><a class="btn btn-glow" href="/">${icon('ball', { size: 20 })} Back to the home page</a><a class="btn btn-line" href="/menu">Menu &amp; order</a><a class="btn btn-line" href="${MEMBERS}/">Members' card</a></div></div></section>`;
+<section class="section"><div class="wrap center"><div class="cta-row center"><a class="btn btn-glow" href="/">${icon('ball', { size: 20 })} Back to the home page</a><a class="btn btn-line" href="${MENU_URL}">Menu &amp; order</a><a class="btn btn-line" href="${MEMBERS}/">Members' card</a></div></div></section>`;
   return page({ title: 'Page not found', description: 'This page could not be found.', path: '/404', og: 'home', noindex: true }, body);
 }
 

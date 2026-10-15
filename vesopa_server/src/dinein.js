@@ -11,6 +11,7 @@ const {
 // the two can never quote the same dish at different prices.
 const core = require('./menu_core');
 const { BasketError } = core;
+const venueLooks = require('./venue_looks');
 
 // ---------------------------------------------------------------------------
 // Branding, offers and promotions
@@ -59,7 +60,52 @@ function cleanTheme(raw) {
   const radius = Number(given.radius);
   if (Number.isFinite(radius)) out.radius = Math.max(0, Math.min(28, Math.round(radius)));
   if (FONTS.has(String(given.font))) out.font = String(given.font);
+  // A photograph behind the menu. It goes into a CSS url() on a public page,
+  // so only an https address or one of our own paths, with nothing in it that
+  // could close the url() or the declaration.
+  const bg = String(given.bgImage || '').trim();
+  if (bg && bg.length <= 500 && SAFE_URL.test(bg)) out.bgImage = bg;
+  const dim = Number(given.bgDim);
+  if (Number.isFinite(dim)) out.bgDim = Math.max(0, Math.min(95, Math.round(dim)));
+  if (typeof given.useLook === 'boolean') out.useLook = given.useLook;
   return out;
+}
+
+const SAFE_URL = /^(https:\/\/[^\s"'()<>\\]+|\/[A-Za-z0-9._~\/-]+)$/;
+
+/**
+ * A venue with a look of its own (src/venue_looks.js: Pontardawe RFC) gets its
+ * menu in its own colours, crest and photograph -- "a proper menu for
+ * PontardaweRFC ... not the Vesopa Kitchen branding" (the owner, 2026-10-15).
+ *
+ * On until the venue turns "Use the club's own look" off in the back office.
+ * Anything the venue has set for itself still wins: a colour that is not
+ * Vesopa's default, its own logo, banner or background.
+ *
+ * Returns { theme, logo_url, banner_url, look } with `look` null for a venue
+ * without one, which then gets exactly what it got before.
+ */
+function menuLook(venue) {
+  const theme = cleanTheme(venue && venue.theme_json);
+  const look = venueLooks.lookFor(venue && venue.slug);
+  const own = { theme, logo_url: venue ? venue.logo_url : null, banner_url: venue ? venue.banner_url : null, look: null };
+  if (!look || !look.menu || theme.useLook === false) return own;
+  const m = look.menu;
+  const club = {
+    accent: look.glow.toUpperCase(), onAccent: '#FFFFFF', page: m.page, card: m.card, ink: m.ink, inkSoft: m.inkSoft,
+  };
+  const out = { ...theme, useLook: true };
+  for (const [key, value] of Object.entries(club)) {
+    if (theme[key] === THEME_DEFAULT[key]) out[key] = value;
+  }
+  if (!out.bgImage && m.photo) out.bgImage = m.photo;
+  if (out.bgDim == null) out.bgDim = 84;
+  return {
+    theme: out,
+    logo_url: (venue.logo_url || '').trim() || m.logo || null,
+    banner_url: (venue.banner_url || '').trim() || m.photo || null,
+    look,
+  };
 }
 
 /** At most six, each with a title. A promotion with no title is a gap. */
@@ -491,11 +537,15 @@ function dineinRoutes({ pool, broadcast, secret }) {
         'SELECT name FROM offices WHERE id = ?',
         [officeId]
       );
+      const branded = menuLook(venue);
       res.json({
         ...venue,
         // Always in a known shape, so the editor never has to think about a
-        // venue that has set none of this yet.
-        theme: cleanTheme(venue.theme_json),
+        // venue that has set none of this yet. With the club's look filled in
+        // where the venue has not chosen, so the editor shows the live menu.
+        theme: branded.theme,
+        has_look: !!branded.look,
+        look_name: branded.look ? branded.look.name || null : null,
         promotions: cleanPromotions(venue.promotions),
         offer: offerOf(venue),
         draft: venue.draft_json ? safeJson(venue.draft_json) : null,
@@ -1614,6 +1664,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
     // The sections, their items priced from the live catalogue, and the
     // questions each item asks -- src/menu_core.js, shared with the kiosk.
     const sections = await core.menuSections(pool, officeId, email);
+    const branded = menuLook(venue);
 
     return {
       venue: {
@@ -1626,16 +1677,16 @@ function dineinRoutes({ pool, broadcast, secret }) {
         phone: venue.phone,
         address: [venue.address_line, venue.postcode].filter(Boolean).join(', '),
         map_url: venue.map_url,
-        logo_url: venue.logo_url,
-        banner_url: venue.banner_url,
-        accent: venue.accent_colour || '#A5C715',
+        logo_url: branded.logo_url,
+        banner_url: branded.banner_url,
+        accent: branded.theme.accent || venue.accent_colour || '#A5C715',
         notice: venue.notice,
         ordering_open: !!venue.ordering_open,
         require_name: !!venue.require_name,
         require_phone: !!venue.require_phone,
         // The venue's own colours, not Vesopa's. Cleaned server-side: these
         // end up in a <style> block on a public page.
-        theme: cleanTheme(venue.theme_json),
+        theme: branded.theme,
         offer: offerOf(venue),
         promotions: cleanPromotions(venue.promotions),
         // Two lists, and whether the venue wants either shown. A venue with
@@ -2459,6 +2510,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
 // alternative — asserting on them through an HTTP route — would mean standing
 // up a venue for every one of a dozen cases about midnight.
 module.exports = {
+  menuLook,
   dineinRoutes,
   openState, parseHours, cleanTime,
   // cleanTheme is interpolated into a <style> block on a public page and

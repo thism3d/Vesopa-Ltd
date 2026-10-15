@@ -50,7 +50,7 @@ CLUB EVENTS AND MATCHES (start time, UK; only those after today are still to com
 
 PAGES YOU MAY LINK TO, as Markdown links [label](url):
 - Home ${SITE}/ ; What's on (events, next match, lotto) ${SITE}/whats-on ; History ${SITE}/club ; Teams ${SITE}/teams ; Fixtures, results and league table ${SITE}/fixtures ; Match tickets ${SITE}/tickets ; News ${SITE}/news
-- Clubhouse, functions and sponsorship ${SITE}/clubhouse ; Menu and ordering ${SITE}/menu
+- Clubhouse, functions and sponsorship ${SITE}/clubhouse ; Menu and ordering https://menu.pontardawerfc.com/
 - Membership ${SITE}/membership ; Members' app in the browser ${MEMBERS}/ ; The club app for iPhone and Android ${SITE}/app (App Store via TestFlight, Google Play) ; Contact ${SITE}/contact
 - Privacy ${SITE}/privacy ; Ordering terms ${SITE}/ordering-terms
 - WRU fixtures and table ${club.web.wru_league} ; Facebook ${club.web.facebook} ; X ${club.web.x}

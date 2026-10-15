@@ -197,6 +197,9 @@ async function metaFor(pool, { table, slug }) {
       row = found;
     }
     if (!row || !row.is_published) return fallback;
+    // The club's own look (src/dinein.js menuLook) in the head too, so the tab,
+    // the address-bar colour and a shared link are the club's, not Vesopa's.
+    const branded = require('./dinein').menuLook(row);
 
     const tableName =
       (row.table_name || '').trim() ||
@@ -215,9 +218,11 @@ async function metaFor(pool, { table, slug }) {
     return {
       name: (row.display_name || row.office_name || 'Menu').trim(),
       tagline: (row.tagline || '').trim() || 'See the menu and order from your table',
-      accent: row.accent_colour || '#A5C715',
-      image: row.banner_url || row.logo_url || null,
-      icon: row.logo_url || null,
+      accent: (branded.look && branded.theme.accent) || row.accent_colour || '#A5C715',
+      image: branded.banner_url || branded.logo_url || null,
+      icon: branded.logo_url || null,
+      // A club's menu is the club's: no "· Vesopa" on its tab.
+      ownBrand: !!branded.look,
       table: tableName || null,
       // Overrides, kept separate from the derived values above so the page can
       // still use the real venue name for the browser tab while showing the
@@ -2119,7 +2124,7 @@ function page({ table, slug, meta }) {
   // to write a title means it for the page, not only for the share card, so it
   // is used whole — a "· Vesopa" bolted onto the end would be us overruling
   // the thing they typed.
-  const headTitle = m.metaTitle ? m.metaTitle : `${title} · Vesopa`;
+  const headTitle = m.metaTitle ? m.metaTitle : m.ownBrand ? title : `${title} · Vesopa`;
 
   return `<!doctype html>
 <html lang="en">
@@ -3808,6 +3813,19 @@ ${shareImage ? `<meta name="twitter:image" content="${esc(shareImage)}">` : ''}
     if (t.page) {
       root.setProperty('--sunken', mix(t.page, t.ink || '#14161A', 5));
       root.setProperty('--line', mix(t.page, t.ink || '#14161A', 12));
+    }
+    // The venue's photograph behind everything, under a wash of its page
+    // colour so the menu stays readable. Checked server-side (cleanTheme).
+    var body = document.body.style;
+    if (t.bgImage && /^#[0-9a-fA-F]{6}$/.test(t.page || '')) {
+      var p = parseInt(t.page.slice(1), 16), k = (t.bgDim == null ? 84 : t.bgDim) / 100;
+      var wash = 'rgba(' + ((p >> 16) & 255) + ',' + ((p >> 8) & 255) + ',' + (p & 255) + ',';
+      body.backgroundImage = 'linear-gradient(' + wash + k + '),' + wash + Math.min(1, k + 0.1) + ')),url("' + t.bgImage + '")';
+      body.backgroundSize = 'cover';
+      body.backgroundPosition = 'center top';
+      body.backgroundAttachment = 'fixed';
+    } else {
+      body.backgroundImage = '';
     }
   }
 

@@ -389,6 +389,18 @@ async function loadDineIn() {
               </select>
             </label>
           </div>
+          ${v.has_look ? `
+          <label class="row" style="gap:8px;margin-top:12px;align-items:center">
+            <input id="di-t-look" type="checkbox"${theme.useLook !== false ? ' checked' : ''}>
+            Use ${esc(v.look_name || "the club")}'s own look: its colours, crest and photograph
+          </label>` : ''}
+          <label style="display:block;margin-top:12px">Photograph behind the menu
+            ${imagePicker('di-t-bg', theme.bgImage || '', { crop: 'landscape', label: 'Choose a background photograph' })}
+          </label>
+          <label>How much the page colour covers it
+            <input id="di-t-bgdim" type="range" min="40" max="95"
+                   value="${Number(theme.bgDim == null ? 84 : theme.bgDim)}">
+          </label>
           <div class="row" style="gap:8px;margin-top:12px;flex-wrap:wrap">
             <button class="btn" id="di-t-reset" type="button">Back to Vesopa's colours</button>
             <button class="btn" id="di-draft-save" type="button">Save as a draft</button>
@@ -658,6 +670,11 @@ function diReadTheme() {
     inkSoft: val('di-t-inksoft', DI_THEME_DEFAULT.inkSoft),
     radius: Number(val('di-t-radius', DI_THEME_DEFAULT.radius)),
     font: val('di-t-font', DI_THEME_DEFAULT.font),
+    bgImage: val('di-t-bg', ''),
+    bgDim: Number(val('di-t-bgdim', 84)),
+    // Only a venue with a look of its own has the switch; for the rest this
+    // stays out of the saved theme.
+    ...($('di-t-look') ? { useLook: $('di-t-look').checked } : {}),
   };
 }
 
