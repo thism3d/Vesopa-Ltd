@@ -5,7 +5,7 @@
  */
 'use strict';
 
-const { club, news, updates, images, xPosts, longDate, yearsOld } = require('./content');
+const { club, news, updates, images, xPosts, longDate, yearsOld, archive } = require('./content');
 const wru = require('./wru');
 const venue = require('./venue_api');
 const { page, pageHero, esc, icon, SITE, MEMBERS, ASSET_VERSION, appBadges } = require('./layout');
@@ -348,6 +348,7 @@ function clubPage() {
       <h2 class="reveal">Our history</h2>
       ${club.history.map((p) => `<p class="reveal">${esc(p)}</p>`).join('')}
       <p class="reveal muted small">Sources: the club, <a href="${club.web.wikipedia}" rel="noopener">Wikipedia</a> and Companies House. Have a photo, a programme or a story from the club's past? Bring it to the clubhouse or call ${esc(club.phone)}: we'd love to add it here.</p>
+      <p class="reveal"><a class="btn btn-line" href="/archive">${icon('history', { size: 20 })} From the archive: the old website, 2012-13</a></p>
     </div>
     <aside class="side-card reveal">${photo('lineout')}<div><h3>${esc(club.full_name)}</h3><dl class="facts">
       <dt>Founded</dt><dd>${club.founded}</dd><dt>Ground</dt><dd>${esc(club.ground)}</dd>
@@ -1173,6 +1174,89 @@ function playBand() {
 </section>`;
 }
 
+// --- From the old website (content/archive.json, tool/import_archive.py) -----
+
+/** One result as a chip: W green, L red, the rest plain. */
+function archiveResult(r) {
+  if (!r) return '<span class="muted">–</span>';
+  const m = /^(\d+)–(\d+) ([WLD])$/.exec(r);
+  if (!m) return `<span class="tag">${esc(r)}</span>`;
+  return `<span class="score score-${m[3].toLowerCase()}"><b>${m[3]}</b> ${m[1]}–${m[2]}</span>`;
+}
+
+function archiveTeam(t, open) {
+  const played = t.months.flatMap((m) => m.games);
+  const won = played.filter((g) => / W$/.test(g.result)).length;
+  const lost = played.filter((g) => / L$/.test(g.result)).length;
+  const record = won + lost ? ` <small>${won} won, ${lost} lost of the results recorded</small>` : '';
+  return `<details class="arch-team reveal"${open ? ' open' : ''}>
+  <summary><span class="tile-ic">${icon(t.team === 'Seniors' ? 'trophy' : 'whistle', { size: 18 })}</span> ${esc(t.team)} <span class="muted">${played.length} fixtures</span>${record}</summary>
+  ${t.months.map((m) => `<div class="table-wrap"><table class="league arch-table"><caption>${esc(m.month)}</caption>
+  <thead><tr><th scope="col">Date</th><th scope="col">Kick-off</th><th scope="col">Opponents</th><th scope="col">Venue</th><th scope="col">Result</th></tr></thead>
+  <tbody>${m.games.map((g) => `<tr><td>${esc(g.date)}</td><td>${esc(g.time || 'TBC')}</td><th scope="row">${esc(g.opponent)}</th><td>${esc(g.where || '–')}</td><td>${archiveResult(g.result)}</td></tr>`).join('')}</tbody></table></div>`).join('')}
+</details>`;
+}
+
+function archivePage() {
+  const a = archive;
+  const body = `${pageHero({ kicker: `${esc(a.site)} · ${esc(a.season)}`, title: 'From the archive', lead: esc(`The club's old website, as it stood in 2012-13: "${a.welcome}"`) })}
+<section class="section">
+  <div class="wrap prose-grid">
+    <div class="prose">
+      <h2 class="reveal">The Cherry and Whites</h2>
+      <p class="reveal">Before this site, the club kept its news, teams and results on <b>${esc(a.site)}</b>. That site has gone, but the Internet Archive kept copies, and everything on it is gathered here: the 2012-13 committee, the First XV squad, every age group's coaches, ${a.fixtures.reduce((n, t) => n + t.months.reduce((k, m) => k + m.games.length, 0), 0)} fixtures and results, the club's news and events, its sponsors and its darts teams.</p>
+      <p class="reveal">${esc(a.training)}</p>
+      <p class="reveal muted small">From <a href="${esc(a.source)}" rel="noopener">the Internet Archive's copy of ${esc(a.site)}</a>. Spotted a mistake, or have a programme, a team photo or a result we're missing? Call ${esc(club.phone)} or bring it to the clubhouse.</p>
+    </div>
+    <aside class="side-card reveal"><div><h3>Club officials, 2012-13</h3><dl class="facts">
+      ${a.officials.map(([role, name]) => `<dt>${esc(role)}</dt><dd>${esc(name)}</dd>`).join('')}
+    </dl></div></aside>
+  </div>
+</section>
+<section class="section timeline-sec">
+  <div class="wrap">
+    <p class="kicker reveal">The 2012-13 squad</p>
+    <h2 class="reveal">First XV</h2>
+    <ul class="arch-squad">${a.first_xv.map(([n, pos]) => `<li class="reveal"><b>${esc(n)}</b><span>${esc(pos)}</span></li>`).join('')}</ul>
+    <h3 class="reveal arch-h3">Coaches</h3>
+    <ul class="arch-coaches">${a.coaches.map(([team, people]) => `<li class="reveal"><b>${esc(team)}</b><span>${people.map(esc).join(', ')}</span></li>`).join('')}</ul>
+  </div>
+</section>
+<section class="section">
+  <div class="wrap">
+    <p class="kicker reveal">Season 2012-13</p>
+    <h2 class="reveal">Fixtures and results</h2>
+    <p class="muted reveal">Pontardawe's score first. Blank results were never filled in on the old site.</p>
+    ${a.fixtures.filter((t) => t.months.length).map((t, i) => archiveTeam(t, i === 0)).join('')}
+  </div>
+</section>
+<section class="section timeline-sec">
+  <div class="wrap">
+    <p class="kicker reveal">From the clubhouse</p>
+    <h2 class="reveal">News and events, 2012-13</h2>
+    <ol class="timeline arch-news">${a.news.map(([when, h, t]) => `<li class="reveal"><b>${esc(when)}</b><p><strong>${esc(h)}.</strong> ${esc(t)}</p></li>`).join('')}</ol>
+  </div>
+</section>
+<section class="section">
+  <div class="wrap grid-2">
+    <div class="card reveal"><span class="tile-ic">${icon('party', { size: 22 })}</span><h2>The Lounge</h2><p>${esc(a.function_room)}</p><p><a href="/clubhouse">Functions today</a> · call ${esc(club.phone)}</p></div>
+    <div class="card reveal"><span class="tile-ic">${icon('darts', { size: 22 })}</span><h2>Darts teams</h2>${Object.entries(a.darts).map(([league, names]) => `<p><b>${esc(league)}:</b> ${names.map(esc).join(', ')}</p>`).join('')}</div>
+  </div>
+  <div class="wrap">
+    <h2 class="reveal arch-h3">Sponsors, 2012-13</h2>
+    <p class="muted reveal">With thanks to the businesses who backed the club then.</p>
+    ${a.sponsors.map(([section, list]) => `<h3 class="reveal">${esc(section)}</h3><ul class="arch-sponsors">${list.map(([n, t]) => `<li class="reveal"><b>${esc(n)}</b>${t ? `<span>${esc(t)}</span>` : ''}</li>`).join('')}</ul>`).join('')}
+  </div>
+</section>`;
+  return page({
+    title: 'From the archive',
+    description: `${club.name}'s old website, pontardawerfc.co.uk, in 2012-13: the committee, the First XV squad, coaches, every team's fixtures and results, news, sponsors and darts.`,
+    path: '/archive',
+    og: 'club',
+    ld: [crumbs([['Home', '/'], ['The Club', '/club'], ['From the archive', '/archive']])],
+  }, body);
+}
+
 function notFound() {
   const body = `${pageHero({ kicker: '404', title: 'Knock-on!', lead: 'That page isn\'t here. It may have moved when we built the new site.' })}
 <section class="section"><div class="wrap center"><div class="cta-row center"><a class="btn btn-glow" href="/">${icon('ball', { size: 20 })} Back to the home page</a><a class="btn btn-line" href="/menu">Menu &amp; order</a><a class="btn btn-line" href="${MEMBERS}/">Members' card</a></div></div></section>`;
@@ -1181,6 +1265,6 @@ function notFound() {
 
 module.exports = {
   home, clubPage, teamsPage, newsPage, articlePage, clubhousePage, menuPage, membershipPage,
-  contactPage, privacyPage, cookiesPage, termsPage, accessibilityPage, notFound, fixturesPage, ticketsPage, ticketOrderPage, whatsOnPage, playPage, licencesPage,
+  contactPage, privacyPage, cookiesPage, termsPage, accessibilityPage, notFound, fixturesPage, ticketsPage, ticketOrderPage, whatsOnPage, playPage, licencesPage, archivePage,
   MENU_API, MENU_SLUG,
 };

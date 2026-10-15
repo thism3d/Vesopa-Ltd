@@ -195,7 +195,7 @@ function footer() {
     <div>
       <h2>Club</h2>
       <ul class="foot-links">
-        <li><a href="/whats-on">What's on</a></li><li><a href="/play">Ponty Kicks (game)</a></li><li><a href="/club">History</a></li><li><a href="/teams">Teams</a></li><li><a href="/fixtures">Fixtures &amp; results</a></li><li><a href="/tickets">Match tickets</a></li>
+        <li><a href="/whats-on">What's on</a></li><li><a href="/play">Ponty Kicks (game)</a></li><li><a href="/club">History</a></li><li><a href="/archive">From the archive</a></li><li><a href="/teams">Teams</a></li><li><a href="/fixtures">Fixtures &amp; results</a></li><li><a href="/tickets">Match tickets</a></li>
         <li><a href="/news">News</a></li><li><a href="/clubhouse">Clubhouse & functions</a></li>
         <li><a href="/menu">Menu & order</a></li><li><a href="${MEMBERS}/">Members' app</a></li>
       </ul>

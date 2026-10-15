@@ -15,6 +15,8 @@ const read = (name) => JSON.parse(fs.readFileSync(path.join(ROOT, name), 'utf8')
 
 const club = read('club.json');
 const images = read('images.json');
+// The old pontardawerfc.co.uk, 2012-13 (tool/import_archive.py).
+const archive = read('archive.json');
 
 // The club's own updates from Instagram and Facebook (content/updates.json),
 // with their pictures (content/images-ig.json, from tool/make_update_images.py).
@@ -57,4 +59,4 @@ function longDate(iso) {
 
 const yearsOld = (now = new Date()) => now.getFullYear() - club.founded;
 
-module.exports = { club, news, updates, images, xPosts, longDate, yearsOld };
+module.exports = { club, news, updates, images, xPosts, longDate, yearsOld, archive };

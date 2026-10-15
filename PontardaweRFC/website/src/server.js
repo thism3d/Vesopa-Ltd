@@ -139,6 +139,8 @@ app.get('/cookies', html(() => pages.cookiesPage()));
 app.get('/ordering-terms', html(() => pages.termsPage()));
 app.get('/accessibility', html(() => pages.accessibilityPage()));
 app.get('/licences', html(() => pages.licencesPage()));
+app.get('/archive', html(() => pages.archivePage()));
+app.get(['/archives', '/archive/', '/old-site'], (req, res) => res.redirect(301, '/archive'));
 app.get(['/licenses', '/credits', '/licences/'], (req, res) => res.redirect(301, '/licences'));
 app.get('/news/:slug', (req, res, next) => {
   const post = news.find((p) => p.slug === req.params.slug);
@@ -164,7 +166,7 @@ app.get(['/feed', '/feed/'], (req, res) => res.redirect(301, '/news/feed.xml'));
 
 // --- For machines ------------------------------------------------------------
 
-const PATHS = ['/', '/whats-on', '/play', '/licences', '/club', '/teams', '/fixtures', '/tickets', '/news', '/clubhouse', '/menu', '/membership', '/contact',
+const PATHS = ['/', '/whats-on', '/play', '/licences', '/club', '/archive', '/teams', '/fixtures', '/tickets', '/news', '/clubhouse', '/menu', '/membership', '/contact',
   '/privacy', '/cookies', '/ordering-terms', '/accessibility'];
 
 app.get('/sitemap.xml', (req, res) => {
