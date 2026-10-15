@@ -72,7 +72,13 @@ test('the menu is on menu.pontardawerfc.com, and /menu goes there', async () => 
 test('sitemap, robots, llms.txt, feed, manifest', async () => {
   const sm = await (await fetch(`${base}/sitemap.xml`)).text();
   assert.ok(!/pontardawerfc\.com\/menu</.test(sm));
-  assert.match(sm, /<loc>https:\/\/member\.pontardawerfc\.com\/<\/loc>/);
+  // Only this host's pages; the other two sites are in the index.
+  assert.ok(!/member\.pontardawerfc\.com/.test(sm));
+  assert.match(sm, /<loc>https:\/\/pontardawerfc\.com\/fixtures<\/loc><lastmod>[\d-]+<\/lastmod><changefreq>daily<\/changefreq><priority>0\.9<\/priority>/);
+  const idx = await (await fetch(`${base}/sitemap-index.xml`)).text();
+  for (const host of ['pontardawerfc.com', 'menu.pontardawerfc.com', 'member.pontardawerfc.com']) {
+    assert.ok(idx.includes(`<loc>https://${host}/sitemap.xml</loc>`), host);
+  }
   const robots = await (await fetch(`${base}/robots.txt`)).text();
   assert.match(robots, /Sitemap: https:\/\/pontardawerfc\.com\/sitemap\.xml/);
   assert.match(await (await fetch(`${base}/llms.txt`)).text(), /Founded: 1881/);

@@ -293,6 +293,36 @@ function dineinPageRoutes({ pool } = {}) {
     res.type('html').send(page({ table: null, slug: owner.slug, meta }));
   });
 
+  /**
+   * A venue's own domain, for search engines: robots.txt and a sitemap of its
+   * one public page (menu.pontardawerfc.com answered both with a Vesopa 404,
+   * 2026-10-15). Table, order and API addresses are kept out: a table's menu
+   * is for the people sitting at it, and an order is somebody's receipt.
+   */
+  router.get('/robots.txt', async (req, res, next) => {
+    const owner = await venueForHost(pool, req);
+    if (!owner) return next();
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.type('text/plain').send(
+      'User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /o/\nDisallow: /t/\n\n' +
+      'Sitemap: https://' + hostOf(req) + '/sitemap.xml\n'
+    );
+  });
+
+  router.get('/sitemap.xml', async (req, res, next) => {
+    const owner = await venueForHost(pool, req);
+    if (!owner) return next();
+    const day = new Date().toISOString().slice(0, 10);
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.type('application/xml').send(
+      '<?xml version="1.0" encoding="UTF-8"?>\n' +
+      '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
+      '  <url><loc>https://' + esc(hostOf(req)) + '/</loc><lastmod>' + day + '</lastmod>' +
+      '<changefreq>daily</changefreq><priority>1.0</priority></url>\n' +
+      '</urlset>\n'
+    );
+  });
+
   router.get('/:slug', async (req, res, next) => {
     // The menu host, or a venue's own domain. On the latter a slug still works,
     // so a link already printed or sent keeps resolving after a venue moves to

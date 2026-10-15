@@ -172,17 +172,51 @@ app.get(['/feed', '/feed/'], (req, res) => res.redirect(301, '/news/feed.xml'));
 const PATHS = ['/', '/whats-on', '/play', '/licences', '/club', '/archive', '/teams', '/fixtures', '/tickets', '/news', '/clubhouse', '/membership', '/contact',
   '/privacy', '/cookies', '/ordering-terms', '/accessibility'];
 
+/*
+ * Sitemaps (2026-10-15). A sitemap may only list addresses on its own host,
+ * so each of the club's three sites has its own and this one indexes them:
+ *   pontardawerfc.com/sitemap.xml          this site's pages and news
+ *   menu.pontardawerfc.com/sitemap.xml     the menu (vesopa_server dinein_pages.js)
+ *   member.pontardawerfc.com/sitemap.xml   the members' app (loyalty_host.js)
+ *   pontardawerfc.com/sitemap-index.xml    all three
+ * How often each page changes and how much it matters, so a crawler spends
+ * its visits on fixtures and news rather than on the cookie policy.
+ */
+const SITEMAP_RANK = {
+  '/': ['daily', '1.0'], '/fixtures': ['daily', '0.9'], '/whats-on': ['daily', '0.9'], '/tickets': ['daily', '0.8'],
+  '/news': ['daily', '0.8'], '/membership': ['monthly', '0.9'], '/clubhouse': ['monthly', '0.7'], '/teams': ['weekly', '0.7'],
+  '/club': ['monthly', '0.7'], '/contact': ['monthly', '0.7'], '/play': ['monthly', '0.6'], '/archive': ['yearly', '0.5'],
+  '/licences': ['yearly', '0.2'], '/privacy': ['yearly', '0.2'], '/cookies': ['yearly', '0.2'], '/ordering-terms': ['yearly', '0.2'],
+  '/accessibility': ['yearly', '0.2'],
+};
+const SITEMAPS = [`${SITE}/sitemap.xml`, 'https://menu.pontardawerfc.com/sitemap.xml', `${MEMBERS}/sitemap.xml`];
+
 app.get('/sitemap.xml', (req, res) => {
   const today = new Date().toISOString().slice(0, 10);
+  const monthAgo = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
   const urls = [
-    ...PATHS.map((p) => ({ loc: `${SITE}${p}`, lastmod: today, pri: p === '/' ? '1.0' : ['/membership'].includes(p) ? '0.9' : '0.7' })),
-    ...news.map((n) => ({ loc: `${SITE}/news/${n.slug}`, lastmod: n.date, pri: '0.6' })),
-    { loc: `${MEMBERS}/`, lastmod: today, pri: '0.8' },
+    ...PATHS.map((p) => {
+      const [freq, pri] = SITEMAP_RANK[p] || ['monthly', '0.5'];
+      return { loc: `${SITE}${p}`, lastmod: today, freq, pri };
+    }),
+    // This month's news is still news; older posts are the record.
+    ...news.map((n) => ({ loc: `${SITE}/news/${n.slug}`, lastmod: n.date, freq: n.date >= monthAgo ? 'weekly' : 'yearly', pri: n.date >= monthAgo ? '0.7' : '0.4' })),
   ];
+  res.set('Cache-Control', 'public, max-age=3600');
   res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${urls.map((u) => `  <url><loc>${u.loc}</loc><lastmod>${u.lastmod}</lastmod><priority>${u.pri}</priority></url>`).join('\n')}
+${urls.map((u) => `  <url><loc>${u.loc}</loc><lastmod>${u.lastmod}</lastmod><changefreq>${u.freq}</changefreq><priority>${u.pri}</priority></url>`).join('\n')}
 </urlset>
+`);
+});
+
+app.get('/sitemap-index.xml', (req, res) => {
+  const today = new Date().toISOString().slice(0, 10);
+  res.set('Cache-Control', 'public, max-age=3600');
+  res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>
+<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${SITEMAPS.map((loc) => `  <sitemap><loc>${loc}</loc><lastmod>${today}</lastmod></sitemap>`).join('\n')}
+</sitemapindex>
 `);
 });
 
@@ -203,6 +237,7 @@ User-agent: PerplexityBot
 Allow: /
 
 Sitemap: ${SITE}/sitemap.xml
+Sitemap: ${SITE}/sitemap-index.xml
 `);
 });
 
