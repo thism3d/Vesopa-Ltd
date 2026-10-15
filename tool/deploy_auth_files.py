@@ -20,6 +20,11 @@ import tempfile
 import time
 import urllib.request
 
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+except AttributeError:
+    pass
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 AUTH = ROOT / "vesopa_auth"
 APP = "/home/vesopasoftware/web/auth.vesopa.com/private/nodeapp"
