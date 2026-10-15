@@ -74,7 +74,7 @@ class CardOverlay extends StatelessWidget {
                 ),
                 const SizedBox(height: 28),
                 Text(
-                  card.title,
+                  _title(card),
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: card.isResult ? colour : Brand.ink,
@@ -82,10 +82,10 @@ class CardOverlay extends StatelessWidget {
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                if (card.detail != null) ...[
+                if (_detail(card) != null) ...[
                   const SizedBox(height: 14),
                   Text(
-                    card.detail!,
+                    _detail(card)!,
                     textAlign: TextAlign.center,
                     style: const TextStyle(color: Brand.inkSoft, fontSize: 26),
                   ),
@@ -109,7 +109,27 @@ class CardOverlay extends StatelessWidget {
     return switch (c.outcome) {
       'cancelled' => (Icons.cancel_outlined, Brand.inkSoft),
       'busy' => (Icons.hourglass_empty_rounded, Colors.amber),
-      _ => (Icons.error_outline_rounded, const Color(0xFFE5484D)),
+      // A card that did not go through is not an alarm. No red warning in
+      // front of the queue (Nicki, Pontardawe RFC, 2026-10-15): a quiet card
+      // icon in the soft ink, and the till says the rest to the clerk.
+      _ => (Icons.credit_card_outlined, Brand.inkSoft),
     };
+  }
+
+  /// A payment that did not go through, in words that do not embarrass the
+  /// customer, whatever an older till sends.
+  static bool _notThrough(CardStatus c) =>
+      c.isResult && const {'declined', 'failed', 'signatureRejected'}.contains(c.outcome);
+
+  static String _title(CardStatus c) {
+    if (!_notThrough(c)) return c.title;
+    return (c.heading ?? '').toLowerCase().contains('refund') ? 'Refund not completed' : 'Payment not completed';
+  }
+
+  static String? _detail(CardStatus c) {
+    if (!_notThrough(c)) return c.detail;
+    return (c.heading ?? '').toLowerCase().contains('refund')
+        ? 'Nothing went back to your card. Please ask a member of staff.'
+        : 'Please try again, or pay another way. No money has been taken.';
   }
 }
