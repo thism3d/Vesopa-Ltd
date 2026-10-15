@@ -157,6 +157,11 @@ function createCheckoutIntent(key, { amountMinor, reference, description, redire
       reference: String(reference || 'vesopa-gift').slice(0, 40),
       description: description ? String(description).slice(0, 80) : undefined,
       captureMode: 'Auto',
+      // Without this Dojo makes no client session secret, and its checkout
+      // page sits on a grey skeleton logging "paymentToken must be provided"
+      // -- which is what Pontardawe RFC's live account did (2026-10-15);
+      // the sandbox happened to make one anyway. Top level, not in config.
+      generateRemoteToken: true,
       config: redirectUrl ? { redirectUrl } : undefined,
     },
   });
