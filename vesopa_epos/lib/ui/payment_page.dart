@@ -1559,6 +1559,18 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     });
   }
 
+  /// The Redeem points key: what is on it, so the clerk can say "you've 105
+  /// points, that's £1.05" without opening anything.
+  String _redeemLabel() {
+    String money(int minor) => '£${(minor / 100).toStringAsFixed(2)}';
+    if (_pointsRedeemed > 0) return 'Points −${money(_pointsMinor)}';
+    final c = _customer;
+    if (c != null && c.pointsBalance > 0) {
+      return 'Redeem ${c.pointsBalance} pts · ${money(c.valueOf(c.pointsBalance))}';
+    }
+    return 'Redeem points';
+  }
+
   /// Points also reduce the bill. They are only spent on the server once the
   /// sale settles, so an abandoned payment does not cost the customer points.
   Future<void> _takePoints() async {
@@ -2417,6 +2429,9 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
               onDiscount: _applyManualDiscount,
               onPrintBill: () =>
                   TillActions.printCurrentBill(context, ref, widget.orderId),
+              redeemLabel: _redeemLabel(),
+              redeemHighlighted: _pointsRedeemed > 0 ||
+                  (_customer?.pointsBalance ?? 0) > 0,
             );
 
             final keypad = PayKeypad(

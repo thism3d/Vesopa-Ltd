@@ -41,7 +41,16 @@ class TenderColumn extends StatelessWidget {
     this.onPrintBill,
     this.onCashback,
     this.amountMinor,
+    this.redeemLabel,
+    this.redeemHighlighted = false,
   });
+
+  /// The Redeem points key's words: the member's balance and what it is worth
+  /// when one is on the bill, what was taken once points are applied. On the
+  /// main row because the venue asked for it there (Pontardawe RFC,
+  /// 2026-10-15); the small Points key below stays for muscle memory.
+  final String? redeemLabel;
+  final bool redeemHighlighted;
 
   /// Card with cashback, shown only when the venue has the Cashback key on.
   final void Function(int amountMinor)? onCashback;
@@ -423,6 +432,16 @@ class TenderColumn extends StatelessWidget {
             ),
           ),
         ],
+        SizedBox(width: 16 * v),
+        Expanded(
+          child: _FlatKey(
+            label: redeemLabel ?? 'Redeem points',
+            scale: v,
+            fontSize: 20 * v,
+            highlighted: redeemHighlighted,
+            onTap: () => onTender(TenderKind.points, _amount),
+          ),
+        ),
         if (settings.allowSplitBill) ...[
           SizedBox(width: 16 * v),
           Expanded(
