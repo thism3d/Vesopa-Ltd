@@ -9,6 +9,7 @@
  *   node tool/invite/dojo/send-dojo-invite.js --send --only info@vesopa.com   # one copy only
  *   ... --final       # 11 Oct: accreditation fixes done, final testing Mon 12 Oct 10:30 (new invite)
  *   ... --confirm     # 12 Oct morning: please confirm today's final testing at 10:30
+ *   ... --remote      # 15 Oct: please enable Remote Payments for Pontardawe, call Fri 16 Oct 10am UK (Alex, cc Meirion), with .ics
  *   ... --hosted-invite  # 15 Oct: the same again with the calendar invite (Yes / No / Maybe)
  *   ... --hosted      # 15 Oct: hosted payments for EPOS, menu, Android and iOS, 1:30pm UK, Alex only (cc Meirion), no .ics
  *   ... --review      # 12 Oct: UAT round 2 fixes (EPOS 1.16.3) + accreditation review 4pm UK, Alex and Finn only
@@ -36,7 +37,8 @@ const RECIPIENTS = [
 ];
 
 async function main() {
-  const eml = path.join(__dirname, process.argv.includes('--hosted-invite') ? 'Vesopa-Dojo-hosted-invite.eml'
+  const eml = path.join(__dirname, process.argv.includes('--remote') ? 'Vesopa-Dojo-remote.eml'
+    : process.argv.includes('--hosted-invite') ? 'Vesopa-Dojo-hosted-invite.eml'
     : process.argv.includes('--hosted') ? 'Vesopa-Dojo-hosted.eml'
     : process.argv.includes('--review') ? 'Vesopa-Dojo-review.eml'
     : process.argv.includes('--confirm') ? 'Vesopa-Dojo-confirm.eml'
@@ -58,7 +60,7 @@ async function main() {
   const only = onlyAt > -1 ? process.argv[onlyAt + 1] : null;
   if (onlyAt > -1 && !/^[^@\s]+@[^@\s]+$/.test(only || '')) throw new Error('--only needs an address');
   // The 12 Oct review email goes to Alex and Finn only (cc Meirion), not Oliver.
-  const list = process.argv.includes('--hosted')
+  const list = process.argv.includes('--hosted') || process.argv.includes('--remote')
     ? ['alex.radzio@dojo.tech', 'info@vesopasoftware.com', 'info@vesopa.com']
     : process.argv.includes('--review') ? RECIPIENTS.filter((r) => r !== 'oliver.england@paymentsense.com') : RECIPIENTS;
   const to = only ? [only] : list;

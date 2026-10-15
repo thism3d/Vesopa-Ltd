@@ -1,0 +1,57 @@
+BEGIN:VCALENDAR
+PRODID:-//Vesopa Software Ltd//Vesopa Mail//EN
+VERSION:2.0
+CALSCALE:GREGORIAN
+METHOD:REQUEST
+BEGIN:VTIMEZONE
+TZID:Europe/London
+BEGIN:DAYLIGHT
+TZOFFSETFROM:+0000
+TZOFFSETTO:+0100
+TZNAME:BST
+DTSTART:19700329T010000
+RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU
+END:DAYLIGHT
+BEGIN:STANDARD
+TZOFFSETFROM:+0100
+TZOFFSETTO:+0000
+TZNAME:GMT
+DTSTART:19701025T020000
+RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU
+END:STANDARD
+END:VTIMEZONE
+BEGIN:VEVENT
+UID:335d0ec9-0325-4569-8b4d-34b81988588a@vesopa.com
+DTSTAMP:20261015T120344Z
+DTSTART;TZID=Europe/London:20261016T100000
+DTEND;TZID=Europe/London:20261016T103000
+SUMMARY:Vesopa × Dojo: Remote Payments for Pontardawe RFC
+DESCRIPTION:Enabling Remote Payments for Pontardawe RFC on Dojo, so guests
+  can pay at their table on menu.pontardawerfc.com.\n\nAccount: acc_oyRNdfH
+ Ou0ORmqQq_uV2lw\n\nWhat we would like enabled:\n1. Remote Payments (online
+  checkout on pay.dojo.tech, card not present) on the account\n2. Apple Pay
+  and Google Pay on that checkout\n3. Refunds through the API, so the till 
+ and kitchen screen can refund a cancelled order\n4. The same for the Vesop
+ a Software Ltd product, so every venue on Vesopa can switch it on\n\nIf th
+ is time does not suit\, reply to muzahid@vesopa.com with a time that does.
+LOCATION:Google Meet (link to follow) or phone
+ORGANIZER;CN="Vesopa Developer":mailto:muzahid@vesopa.com
+ATTENDEE;CN="Alex Radzio";ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=
+ TRUE:mailto:alex.radzio@dojo.tech
+ATTENDEE;CN="Meirion Davies";ROLE=OPT-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RS
+ VP=TRUE:mailto:info@vesopasoftware.com
+ATTENDEE;CN="Meirion Davies";ROLE=OPT-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RS
+ VP=TRUE:mailto:info@vesopa.com
+SEQUENCE:0
+STATUS:CONFIRMED
+TRANSP:OPAQUE
+CLASS:PUBLIC
+X-MICROSOFT-CDO-BUSYSTATUS:BUSY
+X-MICROSOFT-CDO-IMPORTANCE:1
+BEGIN:VALARM
+ACTION:DISPLAY
+DESCRIPTION:Vesopa × Dojo: Remote Payments for Pontardawe RFC
+TRIGGER:-PT15M
+END:VALARM
+END:VEVENT
+END:VCALENDAR
