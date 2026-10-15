@@ -32,6 +32,7 @@ const factors = require('../factors');
 const challenges = require('../challenges');
 const rateLimit = require('../ratelimit');
 const { verifyTotp, decrypt, verifyPassword } = require('../crypto');
+const { checkPasskey } = require('./mfa');
 
 const router = express.Router();
 
@@ -103,7 +104,7 @@ function clearPending(res) {
  * flows, so the sign-in path and the step-up path cannot drift apart — which
  * they would, and the weaker of the two would be the one nobody noticed.
  */
-async function checkSecondFactor(userId, body, { ip = '' } = {}) {
+async function checkSecondFactor(userId, body, { ip = '', first = [] } = {}) {
   // One limit across every kind of second factor. Separate counters would let
   // somebody spend five guesses on the authenticator and five more on the
   // recovery codes.
@@ -174,6 +175,39 @@ async function checkSecondFactor(userId, body, { ip = '' } = {}) {
     return { ok: true, method: 'sms2' };
   }
 
+  // --- a code we emailed (2026-10-15) ------------------------------------
+  // Only when the first step was not an emailed code: the same proof twice is
+  // one proof.
+  if (body.method === 'email') {
+    if (first.includes('otp')) return { ok: false, error: 'You signed in with an emailed code, so use another way.' };
+    const address = await emailOf(userId);
+    if (!address) return { ok: false, error: 'There is no confirmed email address on this account.' };
+    const live = await challenges.findLive(address.identifier_norm, 'step_up');
+    if (!live) return { ok: false, error: 'Ask for a new code — that one has expired.' };
+    const result = await challenges.verify({ challengeId: live.public_id, code, ip });
+    if (!result.ok) return { ok: false, error: 'That code is not right, or it has expired.' };
+    if (result.challenge.user_id !== userId) return { ok: false, error: 'That code was not for this.' };
+    await rateLimit.clear('second-factor', String(userId));
+    return { ok: true, method: 'email2' };
+  }
+
+  // --- the password (2026-10-15) ----------------------------------------
+  // Only when the first step was not the password.
+  if (body.method === 'password') {
+    if (first.includes('pwd')) return { ok: false, error: 'You signed in with your password, so use another way.' };
+    const stored = await db.one(
+      'SELECT password_hash FROM user_passwords WHERE user_id = ? AND retired_at IS NULL LIMIT 1',
+      [userId],
+    );
+    if (!stored) return { ok: false, error: 'There is no password on this account.' };
+    const given = String(body.password || '');
+    if (!given || !(await verifyPassword(stored.password_hash, given, config.secrets.passwordPepper))) {
+      return { ok: false, error: 'That password is not right.' };
+    }
+    await rateLimit.clear('second-factor', String(userId));
+    return { ok: true, method: 'pwd2' };
+  }
+
   // --- a recovery code -------------------------------------------------
   if (body.method === 'recovery') {
     const cleaned = code.toUpperCase().replace(/\s/g, '');
@@ -206,9 +240,44 @@ async function checkSecondFactor(userId, body, { ip = '' } = {}) {
 // Finishing a sign-in
 // ---------------------------------------------------------------------------
 
-async function renderChallenge(res, { userId, state, error = '', mode, returnTo = '' }) {
+/** The confirmed email address on an account, or null. */
+async function emailOf(userId) {
+  return db.one(
+    `SELECT identifier, identifier_norm FROM user_identities
+      WHERE user_id = ? AND type = 'email' AND revoked_at IS NULL AND verified_at IS NOT NULL
+      ORDER BY is_recovery, created_at LIMIT 1`,
+    [userId],
+  );
+}
+
+/** What a session's first step was: its amr, as a list. */
+function amrOf(session) {
+  if (!session) return [];
+  if (Array.isArray(session.amr)) return session.amr;
+  try { return JSON.parse(session.amr || '[]'); } catch { return []; }
+}
+
+/**
+ * The ways in beyond the enrolled factors (the owner, 2026-10-15: "options to
+ * verify using other steps like again OTP verify and maybe passwords"): an
+ * emailed code when the first step was not one, the password when the first
+ * step was not the password, and the passkey the account already has.
+ */
+async function otherWays(userId, first) {
+  const address = first.includes('otp') ? null : await emailOf(userId);
+  const password = first.includes('pwd')
+    ? null
+    : await db.one('SELECT id FROM user_passwords WHERE user_id = ? AND retired_at IS NULL LIMIT 1', [userId]);
+  return {
+    email: address ? `${String(address.identifier).slice(0, 2)}•••@${String(address.identifier).split('@')[1] || ''}` : '',
+    password: Boolean(password),
+  };
+}
+
+async function renderChallenge(res, { userId, state, error = '', mode, returnTo = '', first = null, sent = '' }) {
   const held = await factors.enrolled(userId, { firstFactorPhone: state && state.p });
   const person = await identity.getUser(userId);
+  const alt = await otherWays(userId, first || (state && state.a) || []);
 
   return res.render('second-factor', {
     title: 'One more step',
@@ -222,6 +291,8 @@ async function renderChallenge(res, { userId, state, error = '', mode, returnTo 
     // signed-in laptop should not be handed the owner's phone number.
     phoneHint: held.sms ? `•••${String(held.sms.identifier).slice(-3)}` : '',
     displayName: person ? person.display_name : '',
+    alt,
+    sent,
     noindex: true,
   });
 }
@@ -281,7 +352,7 @@ router.post('/login/second', csrf.verify, async (req, res, next) => {
     const state = readState(req.cookies ? req.cookies[PENDING_COOKIE] : null);
     if (!state) return res.redirect(303, '/login');
 
-    const result = await checkSecondFactor(state.u, req.body, { ip: req.clientIp });
+    const result = await checkSecondFactor(state.u, req.body, { ip: req.clientIp, first: state.a || [] });
     if (!result.ok) {
       await events.recordLogin({
         userId: state.u,
@@ -378,7 +449,7 @@ router.get('/step-up', async (req, res, next) => {
       return res.redirect(303, `/login?return_to=${encodeURIComponent(req.originalUrl)}`);
     }
     const returnTo = String(req.query.return_to || '').startsWith('/') ? req.query.return_to : '/account/profile';
-    return await renderChallenge(res, { userId: session.user_id, state: null, mode: 'step-up', returnTo });
+    return await renderChallenge(res, { userId: session.user_id, state: null, mode: 'step-up', returnTo, first: amrOf(session) });
   } catch (error) {
     return next(error);
   }
@@ -408,6 +479,7 @@ router.post('/step-up/sms', csrf.verify, async (req, res, next) => {
       mode: 'step-up',
       returnTo: String(req.body.return_to || '/account/profile'),
       error: held.sms ? '' : 'There is no number on this account we can text.',
+      first: amrOf(session),
     });
   } catch (error) {
     return next(error);
@@ -423,7 +495,7 @@ router.post('/step-up', csrf.verify, async (req, res, next) => {
       ? req.body.return_to
       : '/account/profile';
 
-    const result = await checkSecondFactor(session.user_id, req.body, { ip: req.clientIp });
+    const result = await checkSecondFactor(session.user_id, req.body, { ip: req.clientIp, first: amrOf(session) });
     if (!result.ok) {
       return await renderChallenge(res, {
         userId: session.user_id,
@@ -431,6 +503,7 @@ router.post('/step-up', csrf.verify, async (req, res, next) => {
         mode: 'step-up',
         returnTo,
         error: result.error,
+        first: amrOf(session),
       });
     }
 
@@ -457,6 +530,127 @@ router.post('/step-up', csrf.verify, async (req, res, next) => {
     });
 
     return res.redirect(303, returnTo);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// An emailed code, and a passkey, as the second step (2026-10-15)
+// ---------------------------------------------------------------------------
+
+async function sendEmailCode(req, userId) {
+  const address = await emailOf(userId);
+  if (!address) return false;
+  const sent = await challenges.create({
+    channel: 'email',
+    purpose: 'step_up',
+    destination: address.identifier,
+    destinationNorm: address.identifier_norm,
+    userId,
+    ip: req.clientIp,
+    userAgent: req.userAgent,
+    force: true,
+  });
+  return Boolean(sent && sent.ok !== false);
+}
+
+router.post('/login/second/email', csrf.verify, async (req, res, next) => {
+  try {
+    const state = readState(req.cookies ? req.cookies[PENDING_COOKIE] : null);
+    if (!state) return res.redirect(303, '/login');
+    const ok = !(state.a || []).includes('otp') && await sendEmailCode(req, state.u);
+    return await renderChallenge(res, {
+      userId: state.u, state, mode: 'sign-in', returnTo: state.r || '',
+      error: ok ? '' : 'We could not send that email. Try another way.', sent: ok ? 'email' : '',
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/step-up/email', csrf.verify, async (req, res, next) => {
+  try {
+    const session = await sessions.load(req);
+    if (!session) return res.redirect(303, '/login');
+    const first = amrOf(session);
+    const ok = !first.includes('otp') && await sendEmailCode(req, session.user_id);
+    return await renderChallenge(res, {
+      userId: session.user_id, state: null, mode: 'step-up',
+      returnTo: String(req.body.return_to || '/account/profile'),
+      error: ok ? '' : 'We could not send that email. Try another way.', sent: ok ? 'email' : '', first,
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+/**
+ * A passkey as the second step. The browser runs the same ceremony as
+ * passkey sign-in; this checks the passkey belongs to the person mid-sign-in
+ * (or signed in), then finishes the sign-in or raises the session, exactly as
+ * a correct code does. JSON in and out, for public/js/second-passkey.js.
+ */
+router.post('/second/passkey', async (req, res, next) => {
+  try {
+    const mode = req.body && req.body.mode === 'step-up' ? 'step-up' : 'sign-in';
+    let userId = null;
+    let state = null;
+    let session = null;
+    if (mode === 'sign-in') {
+      state = readState(req.cookies ? req.cookies[PENDING_COOKIE] : null);
+      if (!state) return res.status(401).json({ message: 'That sign-in has expired. Start again.', redirect: '/login' });
+      userId = state.u;
+    } else {
+      session = await sessions.load(req);
+      if (!session) return res.status(401).json({ message: 'Please sign in again.', redirect: '/login' });
+      userId = session.user_id;
+    }
+
+    const attempt = await rateLimit.hit('second-factor', String(userId), { limit: 8, windowSeconds: 900 });
+    if (!attempt.allowed) return res.status(429).json({ message: 'Too many attempts. Please wait fifteen minutes.' });
+
+    const checked = await checkPasskey(req, req.body || {});
+    if (checked.error) return res.status(checked.status || 400).json({ message: 'That passkey could not be used. Try again.' });
+    if (Number(checked.stored.user_id) !== Number(userId)) {
+      return res.status(403).json({ message: 'That passkey belongs to a different account.' });
+    }
+    await rateLimit.clear('second-factor', String(userId));
+
+    if (mode === 'step-up') {
+      const raised = amrOf(session).concat(['webauthn']);
+      await sessions.raiseAssurance(session.id, raised, factors.acrFor(raised));
+      await events.recordLogin({
+        userId, sessionId: session.id, method: 'passkey', outcome: 'success', failureReason: 'step_up',
+        ip: req.clientIp, userAgent: req.userAgent,
+      });
+      const back = String(req.body.return_to || '');
+      return res.json({ ok: true, redirect: back.startsWith('/') ? back : '/account/profile' });
+    }
+
+    // Finishing a sign-in: the same as the code path in POST /login/second.
+    const amr = (state.a || []).concat(['webauthn']);
+    const known = await sessions.recogniseDevice(req, res);
+    let deviceId = known && !known.reuseDetected ? known.id : null;
+    if (state.m && !deviceId) deviceId = await sessions.rememberDevice({ userId, req, res });
+    if (deviceId) {
+      await db.execute(
+        'UPDATE devices SET trusted_until = DATE_ADD(NOW(), INTERVAL ? DAY) WHERE id = ?',
+        [config.session.deviceTrustDays, deviceId],
+      );
+    }
+    const created = await sessions.create({
+      userId, amr, acr: factors.acrFor(amr), remembered: Boolean(state.m), deviceId,
+      ip: req.clientIp, userAgent: req.userAgent,
+    });
+    sessions.setCookie(res, created.token, Boolean(state.m));
+    await recent.rememberUser(req, res, userId);
+    clearPending(res);
+    await events.recordLogin({
+      userId, sessionId: created.id, method: 'passkey', outcome: 'success',
+      ip: req.clientIp, userAgent: req.userAgent, deviceId,
+    });
+    return res.json({ ok: true, redirect: state.r || '/account/profile' });
   } catch (error) {
     return next(error);
   }

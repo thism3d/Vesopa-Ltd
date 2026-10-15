@@ -83,6 +83,57 @@
     </p>
     <% } %>
 
+    <%
+      /*
+       * More ways through (2026-10-15): the passkey the account has, an
+       * emailed code when the first step was not one, the password when the
+       * first step was not the password. The server checks the same rule.
+       */
+      const emailAction = mode === 'step-up' ? '/step-up/email' : '/login/second/email';
+      const anyAbove = held.totp || held.sms;
+    %>
+    <% if (held.passkeys && held.passkeys.length) { %>
+    <% if (anyAbove) { %><div class="divider"><span>or</span></div><% } %>
+    <button class="btn btn-primary" type="button" id="second-passkey"
+            data-mode="<%= mode %>" data-return="<%= returnTo %>">Use your passkey</button>
+    <% } %>
+
+    <% if (alt && alt.email) { %>
+    <div class="divider"><span>or</span></div>
+    <% if (sent === 'email') { %>
+    <form class="auth-form" method="post" action="<%= action %>">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="method" value="email">
+      <input type="hidden" name="return_to" value="<%= returnTo %>">
+      <div class="field">
+        <label for="emailcode">The code we emailed to <%= alt.email %></label>
+        <input type="text" id="emailcode" name="code" inputmode="numeric"
+               autocomplete="one-time-code" maxlength="6" class="code-input" autofocus>
+      </div>
+      <button class="btn btn-quiet" type="submit">Continue</button>
+    </form>
+    <% } %>
+    <form method="post" action="<%= emailAction %>" class="resend">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="return_to" value="<%= returnTo %>">
+      <button type="submit" class="linklike"><%= sent === 'email' ? 'Email me a new code' : 'Email me a code' %></button>
+    </form>
+    <% } %>
+
+    <% if (alt && alt.password) { %>
+    <div class="divider"><span>or</span></div>
+    <form class="auth-form" method="post" action="<%= action %>">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="method" value="password">
+      <input type="hidden" name="return_to" value="<%= returnTo %>">
+      <div class="field">
+        <label for="pw2">Your password</label>
+        <input type="password" id="pw2" name="password" autocomplete="current-password">
+      </div>
+      <button class="btn btn-quiet" type="submit">Continue</button>
+    </form>
+    <% } %>
+
     <% if (held.recoveryCodesLeft > 0) { %>
     <div class="divider"><span>lost your phone?</span></div>
     <form class="auth-form" method="post" action="<%= action %>">
@@ -101,7 +152,7 @@
       </div>
       <button class="btn btn-quiet" type="submit">Use a recovery code</button>
     </form>
-    <% } else if (!held.totp && !held.sms) { %>
+    <% } else if (!held.totp && !held.sms && !(held.passkeys && held.passkeys.length) && !(alt && (alt.email || alt.password))) { %>
     <p class="hint">
       There is nothing left on this account to check against. Write to
       <a href="mailto:security@vesopa.com">security@vesopa.com</a> and we will
@@ -118,5 +169,6 @@
     </p>
   </div>
 </main>
+<script nonce="<%= nonce %>" src="/js/second-passkey.js?v=<%= config.version %>"></script>
 
 <%- include('partials/foot') %>

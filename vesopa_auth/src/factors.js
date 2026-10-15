@@ -75,8 +75,14 @@ async function enrolled(userId, { firstFactorPhone = null } = {}) {
     sms: smsUsable ? phone : null,
     smsWithheld: Boolean(phone) && !smsUsable,
     recoveryCodesLeft: codes ? Number(codes.remaining) : 0,
-    /** Is there any second factor at all? */
-    any: Boolean(totp) || passkeys.length > 0,
+    /**
+     * Has the person turned two-step verification on? That is the
+     * authenticator app. A passkey is a way to SIGN IN (and a passkey sign-in
+     * is strong by itself), not a second step bolted on: counting it here sent
+     * a passkey-only account to a second-step page that had nothing for it to
+     * do (the owner, 2026-10-15: "only if two step is added to the account").
+     */
+    any: Boolean(totp),
   };
 }
 
@@ -152,7 +158,9 @@ function acrFor(amr) {
   // gesture, so it stands on its own.
   if (used.has('webauthn')) return 'aal2';
   const first = ['pwd', 'otp', 'sms', 'google', 'apple', 'microsoft', 'github'].some((m) => used.has(m));
-  const second = ['totp', 'sms2', 'recovery_code'].some((m) => used.has(m));
+  // email2 and pwd2: an emailed code or the password as the SECOND step,
+  // only ever accepted when the first step was the other one (stepup.js).
+  const second = ['totp', 'sms2', 'recovery_code', 'email2', 'pwd2'].some((m) => used.has(m));
   return first && second ? 'aal2' : 'aal1';
 }
 
