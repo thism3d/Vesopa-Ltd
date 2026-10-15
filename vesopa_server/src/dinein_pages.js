@@ -517,6 +517,7 @@ const STYLE = `
 .paywhen button span{font-size:13px;color:var(--ink-soft)}
 .paywhen button[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent) inset}
 .paynote{margin:14px 0 4px;font-size:14px;color:var(--ink-soft)}
+.tk-pay{display:block;text-align:center;margin:0 0 10px;padding:15px;border-radius:var(--radius);background:var(--accent);color:var(--on-accent);font-weight:800;text-decoration:none}
 :root{
   --accent:#A5C715; --on-accent:#10130A;
   --ink:#14161A; --ink-soft:#63696F; --line:#E6E8E3;
@@ -5566,9 +5567,15 @@ function statusPage(publicId) {
 
   function headline(order, at){
     if (order.status === 'awaiting_payment') {
-      return { tone:'#3B82F6', icon:I.sent, cls:'busy',
-               title:'Waiting for your card payment',
-               line:'Your order goes to the kitchen as soon as the payment is through. This page updates by itself.' };
+      // Dojo's own state for the payment (src/dinein.js settleCardPayment).
+      if (order.pay && order.pay.state === 'authorized') {
+        return { tone:'#3B82F6', icon:I.sent, cls:'busy',
+                 title:'Your bank is confirming the payment',
+                 line:'This takes a few seconds. Your order goes to the kitchen as soon as it is through.' };
+      }
+      return { tone:'#F59E0B', icon:I.sent, cls:'busy',
+               title:'Payment not finished',
+               line:'Nothing has been charged and the kitchen does not have it yet. If your card was declined, try again or use another card.' };
     }
     if (order.status === 'rejected') {
       return { tone:'#B3261E', icon:I.cross, cls:'bad',
@@ -5695,7 +5702,13 @@ function statusPage(publicId) {
         '<span>' + esc(location.href) + '</span>' +
         '<b id="sharelabel" style="flex:0 0 auto;color:var(--accent)">Copy</b>' +
       '</button>';
-    if (order.status === 'placed') {
+    if (order.status === 'awaiting_payment' && order.pay) {
+      html += '<a class="tk-pay" id="paynow" href="' + esc(order.pay.url) + '">Pay ' + money(order.total_minor || 0) + ' now</a>';
+      if (order.pay.can_pay_at_bar) {
+        html += '<button class="tk-cancel" id="paybar" type="button">Pay at the bar instead</button>';
+      }
+    }
+    if (order.status === 'placed' || order.status === 'awaiting_payment') {
       html += '<button class="tk-cancel" id="cancel" type="button">Cancel this order</button>';
     }
     html += '</div>';
@@ -5729,6 +5742,14 @@ function statusPage(publicId) {
           if (label) { label.textContent = 'Copied'; setTimeout(function(){ label.textContent = 'Copy'; }, 1800); }
         }).catch(function(){});
       }
+    });
+
+    var bar = document.getElementById('paybar');
+    if (bar) bar.addEventListener('click', function(){
+      bar.disabled = true;
+      fetch('/api/public/dinein/order/' + ID + '/pay-at-bar', { method: 'POST' })
+        .then(poll)
+        .catch(function(){ bar.disabled = false; });
     });
 
     var btn = document.getElementById('cancel');

@@ -105,10 +105,19 @@ class DineInOrder {
     required this.lines,
     this.customerName,
     this.note,
+    this.payStatus,
+    this.paidMinor = 0,
   });
 
   final int id;
   final String publicId;
+
+  /// 'paid' when the customer paid on Dojo's checkout from the online menu.
+  final String? payStatus;
+  final int paidMinor;
+
+  /// Paid online: cancelling it means giving the money back.
+  bool get isPaidOnline => payStatus == 'paid' && paidMinor > 0;
 
   /// What the table was called when the order was placed. A string, because a
   /// venue may call its tables "Booth 3" or "The snug".
@@ -164,6 +173,8 @@ class DineInOrder {
       placedAt: _time(map['placed_at']) ?? DateTime.now(),
       customerName: _nullableStr(map['customer_name']),
       note: _nullableStr(map['note']),
+      payStatus: _nullableStr(map['pay_status']),
+      paidMinor: _int(map['paid_minor']),
       lines: [
         for (final l in (map['lines'] as List?) ?? const [])
           if (l is Map) DineInLine.fromJson(l.cast<String, Object?>()),

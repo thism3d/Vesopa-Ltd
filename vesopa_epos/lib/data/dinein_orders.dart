@@ -125,10 +125,29 @@ class DineInOrder {
     this.note,
     this.tableNumber,
     this.kioskNumber,
+    this.payStatus,
+    this.paidMinor = 0,
+    this.payReference,
+    this.saleId,
   });
 
   final int id;
   final String publicId;
+
+  /// 'paid' when the customer paid on Dojo's hosted checkout from the online
+  /// menu, 'refunded' once the venue gave it back; null for pay at the bar.
+  final String? payStatus;
+
+  /// What Dojo took, in pence, and Dojo's paymentIntentId for it.
+  final int paidMinor;
+  final String? payReference;
+
+  /// The bill it was rung onto, once a till has accepted it.
+  final String? saleId;
+
+  /// Paid on the online menu, so it is accepted on its own, rung up as
+  /// already paid, and can only be cancelled with a refund.
+  bool get isPaidOnline => payStatus == 'paid' && paidMinor > 0;
 
   /// What the table was called when the order was placed. A string rather than
   /// a number because a venue may call its tables "Booth 3" or "The snug".
@@ -214,6 +233,12 @@ class DineInOrder {
       kioskNumber: map['kiosk_number'] is num
           ? (map['kiosk_number']! as num).toInt()
           : null,
+      // Paying on the online menu (2026-10-15). Absent on an older server,
+      // which reads as pay at the bar, exactly as before.
+      payStatus: _nullableStr(map['pay_status']),
+      paidMinor: _int(map['paid_minor']),
+      payReference: _nullableStr(map['dojo_intent_id']),
+      saleId: _nullableStr(map['order_id']),
     );
   }
 }
@@ -346,6 +371,32 @@ class DineInService {
     }
   }
 
+  /// Give a paid online order's money back through Dojo, and take the order
+  /// away. Answers what Dojo did, in words a clerk can read out.
+  Future<DineInRefund> refund(int id, String reason) async {
+    if (!canAsk) {
+      return const DineInRefund(false, 'This till is offline, so the refund cannot be made. Try again when it is back.');
+    }
+    try {
+      final res = await _client
+          .post(
+            Uri.parse('$apiBase/till/dinein/orders/$id/refund'),
+            headers: _headers,
+            body: jsonEncode({'reason': reason}),
+          )
+          // Dojo is asked while the clerk waits; give it longer than a move.
+          .timeout(const Duration(seconds: 40));
+      final body = res.body.isEmpty ? null : jsonDecode(res.body);
+      final map = body is Map ? body : const {};
+      if (res.statusCode == 200) {
+        return DineInRefund(true, '', refundedMinor: _int(map['refunded_minor']), saleId: _nullableStr(map['sale_id']));
+      }
+      return DineInRefund(false, _str(map['error'], 'The refund did not go through. Try again.'));
+    } catch (_) {
+      return const DineInRefund(false, 'The refund could not be confirmed. Check the order before trying again.');
+    }
+  }
+
   /// Say which sale an already-accepted order became.
   ///
   /// Only needed by auto-accept, which claims before it rings up -- see
@@ -366,6 +417,17 @@ class DineInService {
       // Nothing to do about it, and nothing a clerk could act on.
     }
   }
+}
+
+/// What happened to a refund.
+@immutable
+class DineInRefund {
+  const DineInRefund(this.ok, this.message, {this.refundedMinor = 0, this.saleId});
+
+  final bool ok;
+  final String message;
+  final int refundedMinor;
+  final String? saleId;
 }
 
 /// The dine-in service for this terminal.

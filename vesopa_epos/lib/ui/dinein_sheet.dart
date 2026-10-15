@@ -145,6 +145,10 @@ class _DineInSheetState extends ConsumerState<DineInSheet> {
                     ? () => unawaited(_move(order, 'ready'))
                     : null,
                 onServed: () => unawaited(_move(order, 'served')),
+                // Paid online: can still be cancelled, with its money back.
+                onRefuse: order.isPaidOnline
+                    ? () => unawaited(_refuse(order))
+                    : null,
               ),
           ],
         ],
@@ -389,6 +393,14 @@ class _OrderCard extends StatelessWidget {
                     fontWeight: FontWeight.w800,
                   ),
                 ),
+                if (order.isPaidOnline) ...[
+                  const SizedBox(width: 8),
+                  const Chip(
+                    visualDensity: VisualDensity.compact,
+                    avatar: Icon(Icons.credit_card, size: 16, color: Color(0xFF1D7A46)),
+                    label: Text('Paid online', style: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF1D7A46))),
+                  ),
+                ],
                 const Spacer(),
                 if (busy)
                   const SizedBox(
@@ -400,7 +412,7 @@ class _OrderCard extends StatelessWidget {
                   if (onRefuse != null)
                     TextButton(
                       onPressed: onRefuse,
-                      child: const Text('Cannot take it'),
+                      child: Text(order.isPaidOnline ? 'Cancel & refund' : 'Cannot take it'),
                     ),
                   if (onAccept != null) ...[
                     const SizedBox(width: 8),

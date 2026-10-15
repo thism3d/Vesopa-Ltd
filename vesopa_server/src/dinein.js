@@ -2028,11 +2028,15 @@ function dineinRoutes({ pool, broadcast, secret }) {
         '  FROM dinein_orders WHERE id = ?',
       [orderId]
     );
-    if (!o || o.status !== 'awaiting_payment' || !o.dojo_intent_id) return;
+    if (!o || o.status !== 'awaiting_payment' || !o.dojo_intent_id) return null;
     const email = await emailOf(o.office_id);
     const key = await cardKeyFor(email);
-    if (!key) return;
+    if (!key) return null;
     const intent = await dojo.getIntent(key, o.dojo_intent_id);
+    // Dojo's own word for where the payment is: created (not paid yet, or a
+    // card declined and the customer may try again on the same page),
+    // authorized (the bank has approved it and it is being captured),
+    // captured (paid), or canceled / reversed / failed.
     const state = String((intent && intent.status) || '').toLowerCase();
     if (dojo.intentPaid(intent)) {
       const [r] = await pool.execute(
@@ -2050,9 +2054,12 @@ function dineinRoutes({ pool, broadcast, secret }) {
       await pool.execute(
         "UPDATE dinein_orders SET status = 'cancelled', pay_status = 'failed', status_note = ?" +
           " WHERE id = ? AND status = 'awaiting_payment'",
-        ['The card payment did not go through, so nothing went to the kitchen and nothing was charged.', o.id]
+        [Number(o.age) >= PAY_EXPIRES_MINUTES && !PAY_FAILED.has(state)
+          ? 'The card payment was not finished within an hour, so the order was cancelled. Nothing was charged.'
+          : 'The card payment did not go through, so nothing went to the kitchen and nothing was charged.', o.id]
       );
     }
+    return state;
   }
 
   // The sweep: every minute, the orders of the last three hours still waiting
@@ -2353,6 +2360,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
   });
 
   router.get('/api/public/dinein/order/:publicId', async (req, res, next) => {
+    let payState = null;
     try {
       // Back from Dojo, or waiting on it: ask Dojo now rather than make the
       // customer wait for the sweep.
@@ -2361,7 +2369,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
           "SELECT id FROM dinein_orders WHERE public_id = ? AND status = 'awaiting_payment'",
           [req.params.publicId]
         );
-        if (w) await settleCardPayment(w.id);
+        if (w) payState = await settleCardPayment(w.id);
       } catch (e) {
         if (e && e.code !== 'ER_BAD_FIELD_ERROR') console.error('[dinein] settle on view:', e.message);
       }
@@ -2375,7 +2383,8 @@ function dineinRoutes({ pool, broadcast, secret }) {
         'SELECT o.id, o.public_id, o.table_label, o.status, o.status_note,' +
           '       o.total_minor, o.eta_minutes, o.placed_at, o.accepted_at,' +
           '       o.ready_at, o.served_at,' +
-          '       v.slug AS venue_slug, v.display_name AS venue_name' +
+          '       v.slug AS venue_slug, v.display_name AS venue_name,' +
+          '       o.dojo_intent_id, o.pay_status, o.paid_minor, o.refunded_minor, v.online_pay_required' +
           '  FROM dinein_orders o' +
           '  LEFT JOIN dinein_venue v ON v.office_id = o.office_id' +
           ' WHERE o.public_id = ?',
@@ -2392,9 +2401,16 @@ function dineinRoutes({ pool, broadcast, secret }) {
       // characters because it has to be unguessable; that is the opposite of
       // what you want when a customer is trying to tell a member of staff which
       // order is theirs. The row id is already unique and already sequential.
-      const { id, venue_slug: slug, venue_name: name, ...rest } = order;
+      const {
+        id, venue_slug: slug, venue_name: name,
+        dojo_intent_id: intentId, online_pay_required: payRequired, ...rest
+      } = order;
       res.json({
         ...rest,
+        // Still being paid for: Dojo's state, and the way back to its page.
+        pay: rest.status === 'awaiting_payment' && intentId
+          ? { url: dojo.checkoutUrl(intentId), state: payState || 'created', can_pay_at_bar: !payRequired }
+          : null,
         number: id,
         lines,
         // Null on a venue that has since been unpublished or renamed away. The
@@ -2414,8 +2430,68 @@ function dineinRoutes({ pool, broadcast, secret }) {
    * have it, and a customer cancelling food that is under a grill is a decision
    * for the person standing next to the grill.
    */
+  /**
+   * The customer gives up on paying by card and pays at the bar instead, when
+   * the venue allows it. Dojo is asked first: a payment that went through in
+   * the meantime is honoured as paid, never cancelled under somebody's feet.
+   */
+  router.post('/api/public/dinein/order/:publicId/pay-at-bar', async (req, res, next) => {
+    try {
+      const [[o]] = await pool.query(
+        'SELECT o.id, o.office_id, o.status, o.dojo_intent_id, o.total_minor, o.table_label, v.online_pay_required' +
+          '  FROM dinein_orders o LEFT JOIN dinein_venue v ON v.office_id = o.office_id WHERE o.public_id = ?',
+        [req.params.publicId]
+      );
+      if (!o) return res.status(404).json({ error: 'No such order.' });
+      if (o.status !== 'awaiting_payment') return res.json({ ok: true, status: o.status });
+      if (o.online_pay_required) {
+        return res.status(409).json({ error: 'This venue takes payment by card when you order.' });
+      }
+      const state = await settleCardPayment(o.id);
+      const [[now]] = await pool.query('SELECT status FROM dinein_orders WHERE id = ?', [o.id]);
+      if (now.status !== 'awaiting_payment') return res.json({ ok: true, status: now.status, state });
+      const email = await emailOf(o.office_id);
+      const key = await cardKeyFor(email);
+      if (key && o.dojo_intent_id) await dojo.cancelIntent(key, o.dojo_intent_id);
+      const [r] = await pool.execute(
+        "UPDATE dinein_orders SET status = 'placed', pay_status = NULL, placed_at = NOW()" +
+          " WHERE id = ? AND status = 'awaiting_payment'",
+        [o.id]
+      );
+      if (r.affectedRows) {
+        const [[n]] = await pool.query('SELECT COUNT(*) AS c FROM dinein_order_lines WHERE dinein_order_id = ?', [o.id]);
+        tellTill(email, { orderId: o.id, publicId: req.params.publicId, label: o.table_label, total: Number(o.total_minor), lineCount: Number(n.c) });
+      }
+      res.json({ ok: true, status: 'placed' });
+    } catch (e) {
+      next(e);
+    }
+  });
+
   router.post('/api/public/dinein/order/:publicId/cancel', async (req, res, next) => {
     try {
+      // Not paid yet: Dojo is asked first, so money that has just moved is
+      // not left on an order the customer thinks they cancelled; then the
+      // payment is called off so it cannot be finished afterwards.
+      const [[w]] = await pool.query(
+        "SELECT id, office_id, dojo_intent_id FROM dinein_orders WHERE public_id = ? AND status = 'awaiting_payment'",
+        [req.params.publicId]
+      ).catch(() => [[null]]);
+      if (w) {
+        await settleCardPayment(w.id).catch(() => null);
+        const [[still]] = await pool.query('SELECT status FROM dinein_orders WHERE id = ?', [w.id]);
+        if (still.status === 'awaiting_payment') {
+          const key = await cardKeyFor(await emailOf(w.office_id));
+          if (key && w.dojo_intent_id) await dojo.cancelIntent(key, w.dojo_intent_id);
+          await pool.execute(
+            "UPDATE dinein_orders SET status = 'cancelled', pay_status = 'failed', status_note = ?" +
+              " WHERE id = ? AND status = 'awaiting_payment'",
+            ['Cancelled before paying. Nothing was charged.', w.id]
+          );
+          return res.json({ ok: true, status: 'cancelled' });
+        }
+        return res.status(409).json({ error: 'Your payment has just gone through, so the order is with the kitchen. Please speak to a member of staff.' });
+      }
       const [r] = await pool.execute(
         'UPDATE dinein_orders SET status = ?, status_note = ?' +
           ' WHERE public_id = ? AND status = ?',
@@ -2584,6 +2660,71 @@ function dineinRoutes({ pool, broadcast, secret }) {
     rejected: ['placed', 'accepted'],
   };
 
+  /**
+   * Give a paid order's money back, through Dojo, and take the order away.
+   *
+   * The owner, 2026-10-15: a paid order must not simply be refused, "once tap
+   * cancel, the till user must have to return the money". The whole amount
+   * goes back to the card it came from, with an idempotency key of the order's
+   * own so a second press, a retry or a second till cannot refund twice. The
+   * order is then 'rejected' with a note the customer's tracker shows, and the
+   * kitchen screens drop it. Registered before the general action route
+   * below, which would otherwise read "refund" as an unknown action.
+   */
+  router.post(
+    ['/till/dinein/orders/:id/refund', '/api/kitchen/dinein/orders/:id/refund'],
+    appAuth,
+    async (req, res, next) => {
+      try {
+        const officeId = await terminalOffice(req);
+        if (officeId == null) return res.status(400).json({ error: 'Unknown office.' });
+        const [[o]] = await pool.query(
+          'SELECT id, status, pay_status, paid_minor, dojo_intent_id, refunded_at, order_id' +
+            '  FROM dinein_orders WHERE id = ? AND office_id = ?',
+          [req.params.id, officeId]
+        );
+        if (!o) return res.status(404).json({ error: 'No such order.' });
+        if (o.refunded_at || o.pay_status === 'refunded') {
+          return res.status(409).json({ error: 'This order has already been refunded.' });
+        }
+        if (o.pay_status !== 'paid' || !o.dojo_intent_id || !(Number(o.paid_minor) > 0)) {
+          return res.status(409).json({ error: 'This order was not paid online, so there is nothing to refund.' });
+        }
+        const email = await emailOf(officeId);
+        const key = await cardKeyFor(email);
+        if (!key) return res.status(409).json({ error: 'Card payments are not set up for this venue, so the refund cannot be made from here.' });
+
+        const reason = String((req.body && req.body.reason) || '').trim().slice(0, 200) || 'Refunded by the venue';
+        const amount = Number(o.paid_minor);
+        let refund;
+        try {
+          refund = await dojo.refundIntent(key, o.dojo_intent_id, {
+            amountMinor: amount,
+            reason,
+            idempotencyKey: `menu-refund-${o.id}`,
+          });
+        } catch (e) {
+          console.error('[dinein] refund failed for order', o.id, e.message);
+          return res.status(502).json({ error: 'Dojo did not take the refund: ' + String(e.message || 'no answer').slice(0, 160) + '. Nothing has been changed; try again.' });
+        }
+        const pounds = (amount / 100).toFixed(2);
+        await pool.execute(
+          "UPDATE dinein_orders SET status = 'rejected', pay_status = 'refunded', refunded_minor = ?," +
+            ' refunded_at = NOW(), refund_ref = ?, status_note = ? WHERE id = ?',
+          [amount, String((refund && (refund.refundId || refund.id)) || '').slice(0, 80) || null,
+            `${reason}. £${pounds} has been refunded to your card; it can take a few days to show.`.slice(0, 300), o.id]
+        );
+        broadcast(
+          { type: 'dinein.changed', order_id: o.id, status: 'rejected' },
+          { office: email }
+        );
+        res.json({ ok: true, refunded_minor: amount, sale_id: o.order_id || null, status: 'rejected' });
+      } catch (e) {
+        next(e);
+      }
+    }
+  );
+
   router.post(
     ['/till/dinein/orders/:id/:action', '/api/kitchen/dinein/orders/:id/:action'],
     appAuth,
@@ -2596,6 +2737,22 @@ function dineinRoutes({ pool, broadcast, secret }) {
       const action = String(req.params.action);
       const from = ALLOWED[action];
       if (!from) return res.status(400).json({ error: 'Unknown action.' });
+
+      // A paid order is refunded, never just refused: refusing it would keep
+      // the customer's money for food that is not coming.
+      if (action === 'rejected') {
+        try {
+          const [[p]] = await pool.query(
+            'SELECT pay_status FROM dinein_orders WHERE id = ? AND office_id = ?',
+            [req.params.id, officeId]
+          );
+          if (p && p.pay_status === 'paid') {
+            return res.status(409).json({ error: 'This order was paid online. Use Cancel and refund, so the customer gets their money back.' });
+          }
+        } catch (e) {
+          if (e && e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+        }
+      }
 
       const stamp = {
         accepted: 'accepted_at',

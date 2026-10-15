@@ -45,9 +45,7 @@ class DineInStrip extends ConsumerWidget {
               const Icon(Icons.qr_code_2, size: 20, color: Kds.waiting),
               const SizedBox(width: 8),
               Text(
-                inbox.orders.length == 1
-                    ? '1 order from a phone, waiting'
-                    : '${inbox.orders.length} orders from phones, waiting',
+                _heading(inbox.orders),
                 style: const TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w800,
@@ -70,7 +68,7 @@ class DineInStrip extends ConsumerWidget {
                 order: inbox.orders[i],
                 busy: inbox.busy.contains(inbox.orders[i].id),
                 allergenLabels: labels,
-                onAccept: () => _move(context, ref, inbox.orders[i], 'accepted'),
+                onAccept: () => _move(context, ref, inbox.orders[i], _next(inbox.orders[i])),
                 onReject: () => _confirmReject(context, ref, inbox.orders[i]),
               ),
             ),
@@ -79,6 +77,21 @@ class DineInStrip extends ConsumerWidget {
       ),
     );
   }
+
+  /// What the strip says about what is on it.
+  static String _heading(List<DineInOrder> orders) {
+    final waiting = orders.where((o) => o.isWaiting).length;
+    final n = orders.length;
+    final all = n == 1 ? '1 order from a phone' : '$n orders from phones';
+    return waiting == 0 ? all : '$all, $waiting waiting';
+  }
+
+  /// The one step the main button takes: accept, then ready, then served.
+  static String _next(DineInOrder order) => switch (order.status) {
+    'accepted' => 'ready',
+    'ready' => 'served',
+    _ => 'accepted',
+  };
 
   Future<void> _move(
     BuildContext context,
@@ -108,6 +121,41 @@ class DineInStrip extends ConsumerWidget {
     WidgetRef ref,
     DineInOrder order,
   ) async {
+    // Paid online: the money goes back to the card through Dojo first.
+    if (order.isPaidOnline) {
+      final pounds = '£${(order.paidMinor / 100).toStringAsFixed(2)}';
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          icon: const Icon(Icons.credit_card_off, size: 30, color: Kds.modifier),
+          title: Text('Cancel and refund $pounds?'),
+          content: Text(
+            '${order.tableLabel} paid online. $pounds goes back to their card '
+            'through Dojo, the order is cancelled and their phone says so.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Keep it'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: Kds.modifier),
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text('Refund $pounds'),
+            ),
+          ],
+        ),
+      );
+      if (ok != true || !context.mounted) return;
+      final problem = await ref
+          .read(dineInInboxProvider.notifier)
+          .refund(order, 'Sorry, the kitchen could not make this order');
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(problem ?? 'Refunded $pounds to the customer\'s card.')),
+      );
+      return;
+    }
     final sure = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -199,7 +247,9 @@ class _OrderCard extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  '£${(order.totalMinor / 100).toStringAsFixed(2)}',
+                  order.isPaidOnline
+                      ? 'PAID £${(order.paidMinor / 100).toStringAsFixed(2)}'
+                      : '£${(order.totalMinor / 100).toStringAsFixed(2)}',
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w800,
@@ -334,7 +384,9 @@ class _OrderCard extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
             child: Row(
               children: [
-                Expanded(
+                // Once it is being made only a paid order can still be called
+                // off, and then only with its money back.
+                if (order.isWaiting || order.isPaidOnline) Expanded(
                   child: OutlinedButton(
                     onPressed: busy ? null : onReject,
                     style: OutlinedButton.styleFrom(
@@ -342,7 +394,7 @@ class _OrderCard extends StatelessWidget {
                       side: const BorderSide(color: Kds.modifier),
                       minimumSize: const Size.fromHeight(46),
                     ),
-                    child: const Text('Turn down'),
+                    child: Text(order.isPaidOnline ? 'Refund' : 'Turn down'),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -364,9 +416,13 @@ class _OrderCard extends StatelessWidget {
                             ),
                           )
                         : const Icon(Icons.check, size: 20),
-                    label: const Text(
-                      'Accept',
-                      style: TextStyle(fontWeight: FontWeight.w800),
+                    label: Text(
+                      switch (order.status) {
+                        'accepted' => 'Ready',
+                        'ready' => 'Served',
+                        _ => 'Accept',
+                      },
+                      style: const TextStyle(fontWeight: FontWeight.w800),
                     ),
                   ),
                 ),

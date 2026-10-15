@@ -150,6 +150,34 @@ class DineInInbox extends Notifier<DineInInboxState> {
     }
   }
 
+  /// Refund a paid online order and take it off the strip. Null when done.
+  Future<String?> refund(DineInOrder order, String reason) async {
+    if (state.busy.contains(order.id)) return null;
+    state = state.copyWith(busy: {...state.busy, order.id});
+    try {
+      await _api.refundDineInOrder(order.id, reason);
+      state = state.copyWith(
+        orders: [
+          for (final o in state.orders)
+            if (o.id != order.id) o,
+        ],
+      );
+      return null;
+    } on KitchenApiError catch (e) {
+      await refresh();
+      return e.message;
+    } catch (e) {
+      return 'The refund could not be confirmed. Check the order before trying again.';
+    } finally {
+      state = state.copyWith(
+        busy: {
+          for (final id in state.busy)
+            if (id != order.id) id,
+        },
+      );
+    }
+  }
+
   /// Accept or reject one. Returns null on success, or a sentence to show.
   ///
   /// Not optimistic, unlike a bump. A bump is this screen's own business and
@@ -162,12 +190,17 @@ class DineInInbox extends Notifier<DineInInboxState> {
     state = state.copyWith(busy: {...state.busy, order.id});
     try {
       await _api.moveDineInOrder(order.id, action);
-      state = state.copyWith(
-        orders: [
-          for (final o in state.orders)
-            if (o.id != order.id) o,
-        ],
-      );
+      // Accepted and ready stay on the strip with their next button; only an
+      // order that has left the kitchen goes.
+      if (action == 'rejected' || action == 'served') {
+        state = state.copyWith(
+          orders: [
+            for (final o in state.orders)
+              if (o.id != order.id) o,
+          ],
+        );
+      }
+      unawaited(refresh());
       return null;
     } on KitchenApiError catch (e) {
       await refresh();

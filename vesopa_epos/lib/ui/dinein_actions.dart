@@ -114,6 +114,12 @@ Future<DineInOutcome> acceptDineInOrder(WidgetRef ref, DineInOrder order) async 
   final where = order.isKioskCounter
       ? 'a counter bill (collection ${order.kioskNumber})'
       : order.tableLabel;
+  if (order.isPaidOnline) {
+    return DineInOutcome(
+      'Paid online ${_pounds(order.paidMinor)}: on its own bill for $where, already settled.',
+      ok: missing.isEmpty,
+    );
+  }
 
   return DineInOutcome(
     missing.isEmpty
@@ -139,7 +145,11 @@ Future<String> _ringUp(
   final orders = ref.read(orderRepositoryProvider);
 
   final String saleId;
-  if (tableNumber == null) {
+  if (order.isPaidOnline) {
+    // Paid on the online menu: a bill of its own, never merged into the
+    // table's open one, because it is already paid and the table's is not.
+    saleId = await orders.openOrder(tableNumber: tableNumber);
+  } else if (tableNumber == null) {
     // A kiosk order paying at the counter: a bill of its own, on no table,
     // exactly like a walk-in rung up at the till. Never merged onto anything
     // already open -- two customers' food on one bill is worse than two bills.
@@ -166,8 +176,27 @@ Future<String> _ringUp(
     );
   }
 
+  // Paid on Dojo's hosted checkout: the payment goes on as a card tender with
+  // Dojo's own reference, which closes the bill -- there is nothing left to
+  // pay at the till -- and puts it in the day's takings like any card sale.
+  if (order.isPaidOnline) {
+    final session = await ref.read(sessionRepositoryProvider).current();
+    await orders.settle(
+      saleId,
+      'card',
+      order.paidMinor,
+      sessionId: session.id,
+      staffId: ref.read(servedByIdProvider),
+      staffName: ref.read(servedByProvider) ?? 'Online menu',
+      reference: order.payReference,
+      entryMode: 'online',
+    );
+  }
+
   return saleId;
 }
+
+String _pounds(int minor) => '£${(minor / 100).toStringAsFixed(2)}';
 
 /// Ring up an order this till has ALREADY claimed, and tell the server which
 /// bill it landed on.
@@ -293,7 +322,9 @@ class _RefusalDialogState extends State<_RefusalDialog> {
         const Icon(Icons.do_not_disturb_on_outlined, color: Pos.red),
         const SizedBox(width: 12),
         Expanded(
-          child: Text('Cannot take ${widget.order.tableLabel}\'s order?'),
+          child: Text(widget.order.isPaidOnline
+              ? 'Cancel and refund ${_pounds(widget.order.paidMinor)}?'
+              : 'Cannot take ${widget.order.tableLabel}\'s order?'),
         ),
       ],
     ),
@@ -308,6 +339,7 @@ class _RefusalDialogState extends State<_RefusalDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
+              '${widget.order.isPaidOnline ? 'This was paid online. ${_pounds(widget.order.paidMinor)} goes back to the customer\'s card through Dojo, and the order is cancelled. ' : ''}'
               'This goes straight to the phone that ordered it, so write it the '
               'way you would say it across the counter.',
               style: Theme.of(context).textTheme.bodyMedium,
@@ -372,13 +404,19 @@ class _RefusalDialogState extends State<_RefusalDialog> {
           foregroundColor: Colors.white,
         ),
         onPressed: _canSend ? _send : null,
-        child: const Text('Tell them no'),
+        child: Text(widget.order.isPaidOnline
+            ? 'Refund ${_pounds(widget.order.paidMinor)}'
+            : 'Tell them no'),
       ),
     ],
   );
 }
 
 /// Refuse an order, asking why first. Shared by the sheet and the toast.
+///
+/// A paid online order is not refused, it is refunded: the money goes back
+/// to the customer's card through Dojo before the order is taken away (the
+/// owner, 2026-10-15).
 Future<void> refuseWithReason(
   BuildContext context,
   WidgetRef ref,
@@ -386,8 +424,46 @@ Future<void> refuseWithReason(
 ) async {
   final reason = await askWhyRefused(context, order);
   if (reason == null || !context.mounted) return;
-  final outcome = await refuseDineInOrder(ref, order, reason);
+  final outcome = order.isPaidOnline
+      ? await refundDineInOrder(ref, order, reason)
+      : await refuseDineInOrder(ref, order, reason);
   if (context.mounted) sayDineIn(context, outcome);
+}
+
+/// Give a paid online order's money back through Dojo, and record it on this
+/// till as a refund so the takings come down by the same amount.
+Future<DineInOutcome> refundDineInOrder(
+  WidgetRef ref,
+  DineInOrder order,
+  String reason,
+) async {
+  if (ref.read(trainingModeProvider)) {
+    return const DineInOutcome(
+      "Not in training mode. This is a real customer's money: sign off training to refund it.",
+      ok: false,
+    );
+  }
+  final result = await ref.read(dineInServiceProvider).refund(order.id, reason);
+  if (!result.ok) return DineInOutcome(result.message, ok: false);
+
+  // Only when the sale it came off is on this till; otherwise the till that
+  // took it records nothing extra and the back office has Dojo's refund.
+  final saleId = result.saleId ?? order.saleId;
+  final orders = ref.read(orderRepositoryProvider);
+  final onThisTill = saleId != null && await orders.orderOnce(saleId) != null;
+  final session = await ref.read(sessionRepositoryProvider).current();
+  await orders.logRefund(
+    sessionId: session.id,
+    amountMinor: result.refundedMinor,
+    note: 'Online menu order #${order.id} refunded to the card through Dojo',
+    reason: reason,
+    staffName: ref.read(servedByProvider),
+    orderId: onThisTill ? saleId : null,
+  );
+  await ref.read(dineInOrdersProvider.notifier).refresh();
+  return DineInOutcome(
+    'Refunded ${_pounds(result.refundedMinor)} to the customer\'s card. Their phone will say so.',
+  );
 }
 
 /// Accept an order and say what happened. Shared by the sheet and the toast.
@@ -454,11 +530,13 @@ Future<void> autoAcceptWaiting(WidgetRef ref) async {
   if (ref.read(trainingModeProvider)) return;
 
   final on = ref.read(dineInAutoAcceptProvider).value ?? false;
-  if (!on) return;
 
+  // Paid on the online menu: always taken straight away, whatever the venue's
+  // setting -- the customer has paid and is waiting for food, not for a clerk
+  // (the owner, 2026-10-15).
   final waiting = [
     for (final order in ref.read(dineInOrdersProvider).value ?? const [])
-      if (order.isWaiting) order,
+      if (order.isWaiting && (on || order.isPaidOnline)) order,
   ];
   if (waiting.isEmpty) return;
 

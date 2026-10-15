@@ -37,6 +37,11 @@ CALL vesopa_add_column('dinein_orders', 'pay_status', 'VARCHAR(16) NULL');
 CALL vesopa_add_column('dinein_orders', 'dojo_intent_id', 'VARCHAR(80) NULL');
 CALL vesopa_add_column('dinein_orders', 'paid_minor', 'INT NULL');
 CALL vesopa_add_column('dinein_orders', 'paid_at', 'DATETIME NULL');
+-- A paid order the venue cannot serve is refunded through Dojo, never just
+-- refused (the owner, 2026-10-15): how much went back, when, and Dojo's id.
+CALL vesopa_add_column('dinein_orders', 'refunded_minor', 'INT NULL');
+CALL vesopa_add_column('dinein_orders', 'refunded_at', 'DATETIME NULL');
+CALL vesopa_add_column('dinein_orders', 'refund_ref', 'VARCHAR(80) NULL');
 
 DROP PROCEDURE IF EXISTS vesopa_add_column;
 

@@ -549,7 +549,7 @@ class _ToastState extends State<_Toast> with SingleTickerProviderStateMixin {
                                       vertical: 12,
                                     ),
                                   ),
-                                  child: const Text('Cannot take it'),
+                                  child: Text(widget.order.isPaidOnline ? 'Cancel & refund' : 'Cannot take it'),
                                 ),
                               ),
                               const SizedBox(width: 8),

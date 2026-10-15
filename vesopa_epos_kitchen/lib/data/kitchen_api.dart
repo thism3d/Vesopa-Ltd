@@ -292,7 +292,10 @@ class KitchenApi {
   /// the note on `appAuth` in vesopa_server/src/dinein.js. A venue with no QR
   /// menu simply gets an empty list, which is why nothing here has to ask
   /// whether the feature is switched on.
-  Future<List<DineInOrder>> dineInOrders({String status = 'placed'}) async {
+  /// Waiting, being made and ready (2026-10-15), so the kitchen can move a
+  /// menu order along as well as take it -- paid orders are accepted by the
+  /// till on their own and would otherwise never be seen here at all.
+  Future<List<DineInOrder>> dineInOrders({String status = 'placed,accepted,ready'}) async {
     final rows = await _sendList(
       'GET',
       '/api/kitchen/dinein/orders?status=$status&limit=30',
@@ -310,6 +313,13 @@ class KitchenApi {
   /// red banner.
   Future<void> moveDineInOrder(int id, String action) =>
       _send('POST', '/api/kitchen/dinein/orders/$id/$action');
+
+  /// Give a paid online order's money back through Dojo and cancel it.
+  Future<void> refundDineInOrder(int id, String reason) => _send(
+    'POST',
+    '/api/kitchen/dinein/orders/$id/refund',
+    body: {'reason': reason},
+  );
 
   /// The venue's notification settings, from the same row the back office
   /// edits. Unauthenticated and scoped by office, exactly as the till reads it.
