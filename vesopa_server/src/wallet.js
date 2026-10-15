@@ -149,9 +149,10 @@ function walletCore({ pool, secret }) {
     if (!brand.hex_label) brand.hex_label = '#F4C7C7';
     if (!brand.homepage_url && look.website) brand.homepage_url = look.website;
     if (!brand.support_phone && look.phone) brand.support_phone = look.phone;
-    // The crest, unless the venue uploaded a Wallet logo of its own (a
-    // receipt logo is a black-and-white print mark and loses to it).
-    if (!(own && own.logo_url)) brand.look_art = String(slug).toLowerCase();
+    // The club's crest, strip and icon, always (the owner, 2026-10-15: the
+    // card still carried the Vesopa V and green band because a logo had been
+    // uploaded on the Wallet screen, which used to switch the look off).
+    brand.look_art = String(slug).toLowerCase();
   }
 
   // ---- The sign-up code ---------------------------------------------------
