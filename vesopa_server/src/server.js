@@ -1587,7 +1587,7 @@ app.post('/till/products', requireTerminal(JWT_SECRET), async (req, res, next) =
       `INSERT INTO bo_products
          (email, pluid, product_name, department_name, group_name,
           price, tax_percentage, stock_quantity, print_to_receipt, barcode)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 1, ?)`, // stock NULL: not counted until stock is put in
       [
         office,
         pluid,
@@ -1902,7 +1902,8 @@ app.post('/till/floor/tables', requireTerminal(JWT_SECRET), async (req, res, nex
     // A name has to be unique across the venue and not merely within the room:
     // a runner carrying food to "Window" is not helped by being told there are
     // two of them in different rooms.
-    const name = String(body.name || '').trim() || null;
+    const nm = body.name == null ? '' : String(body.name).trim();
+    const name = !nm || /^(null|undefined)$/i.test(nm) ? null : nm.slice(0, 60);
     if (name) {
       const [[clash]] = await pool.query(
         'SELECT id FROM floor_tables WHERE office_id = ? AND LOWER(name) = LOWER(?)',

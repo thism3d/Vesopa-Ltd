@@ -9,6 +9,20 @@ const receiptStatus = require('./receipt_status');
  * Anything a till caches locally broadcasts on change, so a terminal on the
  * floor picks it up without being restarted.
  */
+/**
+ * A table's name as it may be stored: trimmed, or null for none.
+ *
+ * Pontardawe RFC's menu listed every table as "null" (2026-10-15): the
+ * designer's Save sent `name: null` for tables without one, and
+ * String(null) wrote the word "null" onto all 57 of them. Blank, null,
+ * undefined and those words themselves all mean "no name", so the table is
+ * shown by its number instead.
+ */
+function cleanTableName(value) {
+  const s = value == null ? '' : String(value).trim();
+  return !s || /^(null|undefined)$/i.test(s) ? null : s.slice(0, 60);
+}
+
 function programmingRoutes({ pool, broadcast, secret }) {
   const router = express.Router();
   const auth = requireAuth(secret);
@@ -730,7 +744,7 @@ function programmingRoutes({ pool, broadcast, secret }) {
       }
 
       if (req.body.name !== undefined) {
-        const clash = await nameClash(table.office_id, req.body.name, table.id);
+        const clash = await nameClash(table.office_id, cleanTableName(req.body.name), table.id);
         if (clash) return res.status(409).json({ error: clash });
       }
 
@@ -739,7 +753,7 @@ function programmingRoutes({ pool, broadcast, secret }) {
       const changes = [
         ['name', req.body.name === undefined
           ? undefined
-          : (String(req.body.name).trim() || null)],
+          : cleanTableName(req.body.name)],
         ['label', req.body.label],
         ['table_number', req.body.table_number],
         ['seats', req.body.seats],
@@ -833,7 +847,7 @@ function programmingRoutes({ pool, broadcast, secret }) {
       // food to it; two tables answering to that name in one building is a
       // plate going to the wrong people, and the rooms they are in does not
       // help anybody holding it.
-      const clash = await nameClash(officeId, t.name, null);
+      const clash = await nameClash(officeId, cleanTableName(t.name), null);
       if (clash) return res.status(409).json({ error: clash });
 
       const [r] = await pool.execute(
@@ -846,7 +860,7 @@ function programmingRoutes({ pool, broadcast, secret }) {
           t.room_id,
           t.table_number,
           t.label ?? null,
-          (t.name ?? '').trim() || null,
+          cleanTableName(t.name),
           // Minted here and never again. See schema_dinein.sql: this is the
           // address printed on the card that sits on the table, so it must not
           // change when the table is renamed, renumbered or moved rooms.
@@ -895,7 +909,7 @@ function programmingRoutes({ pool, broadcast, secret }) {
     const seen = new Map();
     for (const t of tables) {
       if (t.name === undefined) continue;
-      const clean = String(t.name || '').trim();
+      const clean = cleanTableName(t.name);
       if (!clean) continue;
       const key = clean.toLowerCase();
       if (seen.has(key)) {
@@ -919,7 +933,7 @@ function programmingRoutes({ pool, broadcast, secret }) {
           `UPDATE floor_tables
            SET pos_x = ?, pos_y = ?, width = ?, height = ?,
                shape = ?, seats = ?, label = ?, room_id = ?,
-               name = COALESCE(?, name),
+               name = COALESCE(?, IF(LOWER(TRIM(name)) IN ('null', 'undefined'), NULL, name)),
                qr_enabled = COALESCE(?, qr_enabled),
                colour = ?
            WHERE id = ?${officeId == null ? '' : ' AND office_id = ?'}`,
@@ -929,7 +943,8 @@ function programmingRoutes({ pool, broadcast, secret }) {
             // COALESCE rather than a plain assignment: this route is the
             // designer's drag handler, and a drag that omitted the name must
             // not blank it. Only a payload that actually carries one changes it.
-            t.name === undefined ? null : (String(t.name).trim() || null),
+            // cleanTableName, never String(): String(null) is the word "null".
+            t.name === undefined ? null : cleanTableName(t.name),
             t.qr_enabled === undefined ? null : (t.qr_enabled ? 1 : 0),
             // Plainly assigned, not coalesced: null here means "no colour of
             // its own", which is a real choice somebody makes by clearing the

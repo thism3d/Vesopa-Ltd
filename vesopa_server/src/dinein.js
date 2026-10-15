@@ -1153,9 +1153,14 @@ function dineinRoutes({ pool, broadcast, secret }) {
    * is about to carry food towards.
    */
   function tableName(t) {
-    const name = (t.name || '').trim();
+    // "null" and "undefined" are junk a bad save once wrote, not names.
+    const real = (v) => {
+      const s = (v == null ? '' : String(v)).trim();
+      return /^(null|undefined)$/i.test(s) ? '' : s;
+    };
+    const name = real(t.name);
     if (name) return name;
-    const label = (t.label || '').trim();
+    const label = real(t.label);
     if (label) return label;
     return 'Table ' + t.table_number;
   }

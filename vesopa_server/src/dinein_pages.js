@@ -223,6 +223,14 @@ async function metaFor(pool, { table, slug }) {
       icon: branded.logo_url || null,
       // A club's menu is the club's: no "· Vesopa" on its tab.
       ownBrand: !!branded.look,
+      // Its own address once it has answered there, for canonical and og:url
+      // (menu.pontardawerfc.com, not menu.vesopa.com/pontardawe-rfc).
+      domain: row.custom_domain && row.domain_verified ? String(row.custom_domain).toLowerCase() : null,
+      // The club's icon set (public/assets/venues/<slug>/), for the tab, the
+      // home screen and Safari's pinned tab.
+      art: branded.look && branded.look.art ? branded.look.art : null,
+      address: [row.address_line, row.postcode].filter(Boolean).join(', ') || null,
+      payOnline: !!row.online_pay,
       table: tableName || null,
       // Overrides, kept separate from the derived values above so the page can
       // still use the real venue name for the browser tab while showing the
@@ -424,6 +432,15 @@ function absoluteUrl(url) {
  * It is served relative so that it works on whichever host answered.
  */
 function iconTags(m) {
+  // A club with a look of its own: its crest, in the sizes each place asks for.
+  if (m.art && /^\/assets\/venues\/[a-z0-9-]+\/$/.test(m.art)) {
+    return [
+      `<link rel="icon" type="image/png" sizes="32x32" href="${m.art}favicon-32.png">`,
+      `<link rel="icon" type="image/png" sizes="192x192" href="${m.art}icon-192.png">`,
+      `<link rel="apple-touch-icon" sizes="180x180" href="${m.art}apple-touch-icon.png">`,
+      `<link rel="mask-icon" href="${m.art}crest.png" color="${esc(m.accent || '#A5C715')}">`,
+    ].join('\n');
+  }
   const mark = '/assets/favicon.png';
   const icon = m.icon || mark;
   return [
@@ -2162,6 +2179,15 @@ function page({ table, slug, meta }) {
   // is used whole — a "· Vesopa" bolted onto the end would be us overruling
   // the thing they typed.
   const headTitle = m.metaTitle ? m.metaTitle : m.ownBrand ? title : `${title} · Vesopa`;
+  // What a search result and a share card say under the title. A club with a
+  // look of its own gets a sentence about itself, not "See the menu".
+  const description = m.metaDescription || (m.ownBrand
+    ? `Order food and drinks to your table at ${name}${m.address ? ', ' + m.address : ''}. ` +
+      (m.payOnline ? 'Pay by card, Apple Pay or Google Pay, or at the bar.' : 'Pay at the bar.')
+    : (m.tagline || ''));
+  const canonical = m.domain
+    ? 'https://' + m.domain + (table ? '/t/' + table : '/')
+    : canonicalFor({ table, slug });
 
   return `<!doctype html>
 <html lang="en">
@@ -2171,21 +2197,22 @@ function page({ table, slug, meta }) {
 <meta name="theme-color" content="${esc(m.accent || '#A5C715')}">
 <meta name="color-scheme" content="light dark">
 <title>${esc(headTitle)}</title>
-<meta name="description" content="${esc(m.metaDescription || m.tagline || '')}">
-<meta name="robots" content="index,follow">
-<link rel="canonical" href="${esc(canonicalFor({ table, slug }))}">
+<meta name="description" content="${esc(description)}">
+<meta name="robots" content="${table ? 'noindex,follow' : 'index,follow'}">
+<link rel="canonical" href="${esc(canonical)}">
 
 ${iconTags(m)}
 
 <meta property="og:type" content="restaurant.menu">
-<meta property="og:site_name" content="Vesopa">
+<meta property="og:site_name" content="${esc(m.ownBrand ? name : 'Vesopa')}">
+<meta property="og:locale" content="en_GB">
 <meta property="og:title" content="${esc(m.metaTitle || title)}">
-<meta property="og:description" content="${esc(m.metaDescription || m.tagline || '')}">
-<meta property="og:url" content="${esc(canonicalFor({ table, slug }))}">
+<meta property="og:description" content="${esc(description)}">
+<meta property="og:url" content="${esc(canonical)}">
 ${shareImage ? `<meta property="og:image" content="${esc(shareImage)}">` : ''}
 <meta name="twitter:card" content="${shareImage ? 'summary_large_image' : 'summary'}">
 <meta name="twitter:title" content="${esc(m.metaTitle || title)}">
-<meta name="twitter:description" content="${esc(m.metaDescription || m.tagline || '')}">
+<meta name="twitter:description" content="${esc(description)}">
 ${shareImage ? `<meta name="twitter:image" content="${esc(shareImage)}">` : ''}
 
 <meta name="apple-mobile-web-app-capable" content="yes">

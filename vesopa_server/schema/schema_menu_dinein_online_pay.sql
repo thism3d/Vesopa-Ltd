@@ -45,6 +45,11 @@ CALL vesopa_add_column('dinein_orders', 'refund_ref', 'VARCHAR(80) NULL');
 
 DROP PROCEDURE IF EXISTS vesopa_add_column;
 
+-- Table names a bad designer save wrote as the word "null" (2026-10-15):
+-- cleared, so the table shows by its number. Harmless to re-run.
+UPDATE floor_tables SET name = NULL WHERE LOWER(TRIM(name)) IN ('null', 'undefined');
+UPDATE floor_tables SET label = NULL WHERE LOWER(TRIM(label)) IN ('null', 'undefined');
+
 -- The new first state. Re-running is harmless: MODIFY to the same list.
 ALTER TABLE dinein_orders MODIFY status
   ENUM('awaiting_payment','placed','accepted','ready','served','rejected','cancelled')

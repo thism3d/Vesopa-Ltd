@@ -292,7 +292,11 @@ function backofficeRoutes({ pool, broadcast, secret }) {
           p.accounting_code ?? null,
           p.price ?? 0,
           p.tax_percentage ?? 0,
-          p.stock_quantity ?? 0,
+          // A new product is NOT counted until somebody puts stock in (Stock
+          // Levels, a delivery, a count). A 0 here made every product a tracked
+          // 0, and the online menu then showed all of them sold out (Pontardawe
+          // RFC, 2026-10-15).
+          p.stock_quantity === '' ? null : p.stock_quantity ?? null,
           p.button_position || null,
           p.button_color || null,
           // The legacy column keeps the first station, so a terminal on the
