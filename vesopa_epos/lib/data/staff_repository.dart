@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:drift/drift.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'local/database.dart';
 import 'till_permissions.dart';
@@ -103,6 +104,21 @@ class StaffRepository {
         // an empty entry on the pad.
         .where((r) => (r['pin'] as String?)?.trim().isNotEmpty ?? false)
         .toList();
+
+    // The screen each clerk starts on (Nicki, Pontardawe RFC, 2026-10-15),
+    // kept beside the staff table rather than in it, so no database migration
+    // stands between an older till and its staff list. See defaultScreenFor.
+    try {
+      final screens = <String, int>{
+        for (final r in rows)
+          if (r['default_screen_id'] is num)
+            '${(r['id'] as num).toInt()}': (r['default_screen_id'] as num).toInt(),
+      };
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_screensKey, jsonEncode(screens));
+    } catch (_) {
+      // A preference that will not save costs the starting screen, nothing else.
+    }
 
     await db.transaction(() async {
       await db.delete(db.staff).go();
@@ -333,5 +349,23 @@ class StaffRepository {
               ..limit(1))
             .get();
     return rows.isEmpty ? null : rows.first;
+  }
+}
+
+const _screensKey = 'staff_default_screens';
+
+/// The programmed screen [staffId] starts on when they sign on, or null to
+/// stay wherever the till is. Set per person in the back office (Staff,
+/// "Starts on"): Carys on Draughts, Abi on Food.
+Future<int?> defaultScreenFor(int staffId) async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_screensKey);
+    if (raw == null || raw.isEmpty) return null;
+    final map = jsonDecode(raw);
+    final v = map is Map ? map['$staffId'] : null;
+    return v is num ? v.toInt() : null;
+  } catch (_) {
+    return null;
   }
 }

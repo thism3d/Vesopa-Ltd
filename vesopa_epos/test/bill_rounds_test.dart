@@ -48,14 +48,30 @@ void main() {
       final rounds = roundsOf([
         line('a', by: 'Nicky', at: DateTime(2026, 9, 7, 19, 8)),
       ]);
-      expect(rounds.single.label, 'Nicky  ·  19:08');
+      expect(rounds.single.label, 'Nicky  ·  7:08pm');
     });
 
-    test('a single-digit hour and minute are padded', () {
+    test('the minute is padded, the hour is a clock hour', () {
       final rounds = roundsOf([
         line('a', by: 'Sam', at: DateTime(2026, 9, 7, 9, 5)),
       ]);
-      expect(rounds.single.label, 'Sam  ·  09:05');
+      expect(rounds.single.label, 'Sam  ·  9:05am');
+      expect(roundsOf([line('b', by: 'Sam', at: DateTime(2026, 9, 7, 12, 7))]).single.label, 'Sam  ·  12:07pm');
+      expect(roundsOf([line('c', by: 'Sam', at: DateTime(2026, 9, 7, 0, 30))]).single.label, 'Sam  ·  12:30am');
+    });
+
+    test('the same person back at the bill after a gap is a new round', () {
+      // Nicki, 2026-10-15: "--- NICKY 12.07pm --- each time stuff were added".
+      final rounds = roundsOf([
+        line('a', by: 'Nicky', at: DateTime(2026, 10, 15, 12, 7)),
+        line('b', by: 'Nicky', at: DateTime(2026, 10, 15, 12, 8)),
+        line('c', by: 'Nicky', at: DateTime(2026, 10, 15, 12, 40)),
+        line('d', by: 'Nicky', at: DateTime(2026, 10, 15, 12, 41), parent: 'c'),
+      ]);
+      expect(rounds, hasLength(2));
+      expect(rounds[0].lines.map((l) => l.id), ['a', 'b']);
+      expect(rounds[1].lines.map((l) => l.id), ['c', 'd']);
+      expect(rounds[1].label, 'Nicky  ·  12:40pm');
     });
 
     test('an unattributed bill has no heading to draw', () {

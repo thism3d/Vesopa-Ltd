@@ -2889,6 +2889,32 @@ async function staffGroupField(value) {
   };
 }
 
+/**
+ * The screen a member of staff starts on when they sign on at the till
+ * (Nicki, Pontardawe RFC: Carys on Draughts, Abi on Food).
+ */
+async function staffScreenField(value) {
+  let screens = [];
+  try {
+    const got = await api('/screens');
+    screens = (Array.isArray(got) ? got : (got && got.screens) || []).filter((s) => !s.surface || s.surface === 'sale');
+  } catch {
+    // No programmed screens yet, or an older server: the field still shows.
+  }
+  return {
+    label: screens.length
+      ? 'Starts on (the till screen they go to when they sign on)'
+      : 'Starts on (set screens up under Till Screens first)',
+    name: 'default_screen_id',
+    type: 'select',
+    value: value ?? '',
+    options: [
+      { value: '', label: 'Wherever the till already is' },
+      ...screens.map((s) => ({ value: s.id, label: s.name })),
+    ],
+  };
+}
+
 /** The role picker for the back-office user form. Same shape, same reasoning. */
 async function userRoleField(value) {
   let roles = [];
@@ -7638,6 +7664,7 @@ document.addEventListener('click', async (e) => {
       { label: 'Staff PIN (exactly 4 digits)', name: 'pin_code', required: true },
       { label: 'Staff ID', name: 'pluid', type: 'number', value: '0' },
       await staffGroupField(''),
+      await staffScreenField(''),
       { label: 'Hourly rate £ (for the wage reports; leave blank if not paid by the hour)', name: 'hourly_rate', type: 'money', value: '' },
       { label: 'Active (can sign on at the till)', name: 'active', type: 'checkbox', value: 1 },
     ], (d) => {
@@ -7656,6 +7683,7 @@ document.addEventListener('click', async (e) => {
       { label: 'Staff PIN (exactly 4 digits)', name: 'pin_code', value: c.pin_code ?? '' },
       { label: 'Staff ID', name: 'pluid', type: 'number', value: c.pluid },
       await staffGroupField(c.permission_group_id ?? ''),
+      await staffScreenField(c.default_screen_id ?? ''),
       { label: 'Hourly rate £ (for the wage reports; leave blank if not paid by the hour)', name: 'hourly_rate', type: 'money', value: c.hourly_rate ?? '' },
       { label: 'Active (can sign on at the till)', name: 'active', type: 'checkbox', value: c.active },
       { label: 'Training account (practice only: sales are not recorded or counted)', name: 'training', type: 'checkbox', value: c.training ?? 0 },

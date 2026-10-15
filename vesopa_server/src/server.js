@@ -1235,6 +1235,17 @@ app.get('/till/staff', requireTerminal(JWT_SECRET), async (req, res, next) => {
       // "not a trainee" is the truth about every one of them.
       return { ...clean, training: Number(row.training) === 1, permissions };
     });
+    // The screen each clerk starts on (schema_staff_default_screen.sql).
+    try {
+      const [found] = await pool.query(
+        'SELECT id, default_screen_id FROM bo_clarks WHERE email = ? AND default_screen_id IS NOT NULL',
+        [req.office]
+      );
+      const byId = new Map(found.map((r) => [Number(r.id), Number(r.default_screen_id)]));
+      rows = rows.map((r) => ({ ...r, default_screen_id: byId.get(Number(r.id)) ?? null }));
+    } catch (e) {
+      if (!isMissing(e)) throw e;
+    }
     res.json(rows);
   } catch (e) {
     next(e);

@@ -47,7 +47,7 @@ SCHEMAS = ["schema_venue_modules.sql", "schema_memberships.sql", "schema_till_ex
            "schema_app_updates.sql", "schema_till_back_strip.sql", "schema_print_options.sql",
            "schema_dojo_settings.sql", "schema_menu_dinein_collection.sql", "schema_events.sql",
            "schema_loyalty_passkey_devices.sql", "schema_refund_lines.sql", "schema_dojo_connect.sql", "schema_cashback.sql",
-           "schema_menu_dinein_online_pay.sql"]
+           "schema_menu_dinein_online_pay.sql", "schema_staff_default_screen.sql"]
 PM2 = f"su - {USER} -c 'PM2_HOME=/home/{USER}/.pm2 pm2 {{}}'"
 
 def load_env_claude():

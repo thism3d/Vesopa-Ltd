@@ -41,6 +41,25 @@ const upload = multer({
  * every till on the floor see the change immediately — that is what "live data"
  * means here, rather than the operator hitting refresh.
  */
+/**
+ * Each clerk's starting screen (schema_staff_default_screen.sql), merged onto
+ * a staff list by id. Its own query so a database without the column loses
+ * only this and the list still loads.
+ */
+async function withDefaultScreens(pool, email, rows) {
+  try {
+    const [found] = await pool.query(
+      'SELECT id, default_screen_id FROM bo_clarks WHERE email = ? AND default_screen_id IS NOT NULL',
+      [email]
+    );
+    const byId = new Map(found.map((r) => [Number(r.id), Number(r.default_screen_id)]));
+    return rows.map((r) => ({ ...r, default_screen_id: byId.get(Number(r.id)) ?? null }));
+  } catch (e) {
+    if (e.code === 'ER_BAD_FIELD_ERROR' || e.code === 'ER_NO_SUCH_TABLE') return rows;
+    throw e;
+  }
+}
+
 function backofficeRoutes({ pool, broadcast, secret }) {
   const router = express.Router();
   const auth = requireAuth(secret);
@@ -1116,6 +1135,7 @@ function backofficeRoutes({ pool, broadcast, secret }) {
           }
         }
       }
+      rows = await withDefaultScreens(pool, email, rows);
       res.json(rows.map((r) => ({ ...r, training: Number(r.training) === 1 })));
     } catch (e) {
       next(e);
@@ -1154,6 +1174,27 @@ function backofficeRoutes({ pool, broadcast, secret }) {
       await pool.execute('UPDATE bo_clarks SET hourly_rate = ? WHERE id = ? AND email = ?', [rate, id, email]);
     } catch (e) {
       if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+    }
+  }
+
+  /**
+   * The screen this clerk starts on, written after the row is saved, like the
+   * hourly rate. Only an epos_screens row of this venue's is accepted; blank
+   * means "wherever the till already is".
+   */
+  async function saveDefaultScreen(email, id, body) {
+    if (!body || !('default_screen_id' in body)) return;
+    const raw = body.default_screen_id;
+    let screen = raw === '' || raw === null || raw === undefined ? null : Number(raw);
+    if (screen !== null && !(Number.isInteger(screen) && screen > 0)) return;
+    try {
+      if (screen !== null) {
+        const [[ok]] = await pool.query('SELECT id FROM epos_screens WHERE id = ? AND office = ?', [screen, email]);
+        if (!ok) screen = null;
+      }
+      await pool.execute('UPDATE bo_clarks SET default_screen_id = ? WHERE id = ? AND email = ?', [screen, id, email]);
+    } catch (e) {
+      if (e.code !== 'ER_BAD_FIELD_ERROR' && e.code !== 'ER_NO_SUCH_TABLE') throw e;
     }
   }
 
@@ -1224,6 +1265,7 @@ function backofficeRoutes({ pool, broadcast, secret }) {
         }
       }
       await saveHourlyRate(email, result.insertId, req.body);
+      await saveDefaultScreen(email, result.insertId, req.body);
       broadcast({ type: 'staff.updated' });
       res.status(201).json({ id: result.insertId });
     } catch (e) {
@@ -1312,6 +1354,7 @@ function backofficeRoutes({ pool, broadcast, secret }) {
         return res.status(404).json({ error: 'No such staff member' });
       }
       await saveHourlyRate(email, req.params.id, req.body);
+      await saveDefaultScreen(email, req.params.id, req.body);
       broadcast({ type: 'staff.updated' });
       res.json({ ok: true });
     } catch (e) {

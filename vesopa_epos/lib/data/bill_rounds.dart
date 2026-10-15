@@ -25,6 +25,9 @@ library;
 import 'modifier_layout.dart';
 import 'pricing_engine.dart';
 
+/// How long a pause before the same person's next items start a new round.
+const _newRoundAfterMinutes = 5;
+
 /// A run of items rung by one person, in one go.
 class BillRound {
   BillRound({required this.who, required this.at, required this.lines});
@@ -47,9 +50,10 @@ class BillRound {
     if (name == null || name.isEmpty) return null;
     final when = at;
     if (when == null) return name;
-    final hh = when.hour.toString().padLeft(2, '0');
+    // 12:07pm, the way the venue reads a clock.
+    final h12 = when.hour % 12 == 0 ? 12 : when.hour % 12;
     final mm = when.minute.toString().padLeft(2, '0');
-    return '$name  ·  $hh:$mm';
+    return '$name  ·  $h12:$mm${when.hour < 12 ? 'am' : 'pm'}';
   }
 
   /// What this round is worth, after any per-line offers.
@@ -81,8 +85,14 @@ List<BillRound> roundsOf(List<PricedLine> lines) {
     // Its `addedBy` is normally the same person, but a manager amending
     // somebody else's line is exactly the case where it is not — and that must
     // not open a new round containing one word.
-    final continues =
-        open != null && (open.who == who || line.parentLineId != null);
+    // A new round when somebody else rang it, or when the same person came
+    // back to the bill after a gap: Nicky at 12:07 and Nicky again at 12:40 are
+    // two goes at the till, and the check heads each one (Nicki, 2026-10-15).
+    final last = open == null || open.lines.isEmpty ? null : open.lines.last.addedAt;
+    final gap = last != null && line.addedAt != null &&
+        line.addedAt!.difference(last).inMinutes >= _newRoundAfterMinutes;
+    final continues = open != null &&
+        (line.parentLineId != null || (open.who == who && !gap));
 
     if (continues) {
       open.lines.add(line);

@@ -177,7 +177,11 @@ class LiveReceipt extends StatelessWidget {
           final size = _bodySizeFor(listHeight, box.maxWidth);
 
           final rounds = _roundsOfBill();
-          final showHeadings = hasRounds(rounds);
+          // Every round is headed with who rang it and when -- also when one
+          // person rang the whole bill in several goes (Nicki: "--- NICKY
+          // 12.07pm --- each time stuff were added"). The payment screen keeps
+          // its own rule (hasRounds) for when headings are worth tapping.
+          final showHeadings = rounds.any((r) => r.label != null);
 
           final body = theme.textTheme.bodyMedium?.copyWith(
             fontFamily: 'monospace',

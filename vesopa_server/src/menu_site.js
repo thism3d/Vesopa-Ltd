@@ -347,7 +347,8 @@ function menuSiteRoutes({ pool }) {
     let venues = [];
     try {
       const [rows] = await pool.query(
-        'SELECT slug, updated_at FROM dinein_venue WHERE is_published = 1 AND slug IS NOT NULL' +
+        // demo-… venues are the sales demo's throwaway copies, not menus.
+        "SELECT slug, updated_at FROM dinein_venue WHERE is_published = 1 AND slug IS NOT NULL AND slug NOT LIKE 'demo-%'" +
           " AND NOT (custom_domain IS NOT NULL AND custom_domain <> '' AND domain_verified = 1) ORDER BY slug"
       );
       venues = rows.filter((r) => /^[a-z0-9][a-z0-9-]{1,63}$/.test(String(r.slug)));
