@@ -481,6 +481,12 @@ function esc(value) {
 }
 
 const STYLE = `
+.paywhen{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0 4px}
+.paywhen button{display:flex;flex-direction:column;gap:2px;text-align:left;padding:12px 14px;border-radius:var(--radius);
+  border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit;cursor:pointer}
+.paywhen button span{font-size:13px;color:var(--ink-soft)}
+.paywhen button[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent) inset}
+.paynote{margin:14px 0 4px;font-size:14px;color:var(--ink-soft)}
 :root{
   --accent:#A5C715; --on-accent:#10130A;
   --ink:#14161A; --ink-soft:#63696F; --line:#E6E8E3;
@@ -5009,6 +5015,18 @@ ${shareImage ? `<meta name="twitter:image" content="${esc(shareImage)}">` : ''}
       '<input id="cphone" type="tel" autocomplete="tel" enterkeyhint="next">' +
       '<label for="cnote">Anything the kitchen should know? (optional)</label>' +
       '<textarea id="cnote" rows="2" placeholder="Allergies, no onions…"></textarea>' +
+      // Paying by card now, on Dojo's secure page, when the venue offers it.
+      (v.online_pay
+        ? (v.online_pay_required
+            ? '<p class="paynote">You pay by card on the next page (Dojo secure checkout). ' +
+                'Your order goes to the kitchen as soon as the payment is through.</p>'
+            : '<div class="paywhen" role="radiogroup" aria-label="How to pay">' +
+                '<button type="button" data-pay="card" aria-pressed="true"><b>Pay now by card</b>' +
+                  '<span>Apple Pay, Google Pay or card</span></button>' +
+                '<button type="button" data-pay="bar" aria-pressed="false"><b>Pay at the bar</b>' +
+                  '<span>When you are ready</span></button>' +
+              '</div>')
+        : '') +
       // Guest is pressed. Somebody with a basket ready to go should never have
       // to make an account to send it, and should not have to notice that they
       // could.
@@ -5036,7 +5054,7 @@ ${shareImage ? `<meta name="twitter:image" content="${esc(shareImage)}">` : ''}
             '</div>' +
           '</div>') +
       '<div class="err" id="cerr" hidden></div>' +
-      '<button class="send" id="csend" type="button">Send to the kitchen</button>' +
+      '<button class="send" id="csend" type="button">' + sendLabel() + '</button>' +
       '<button class="shut" id="cshut" type="button">Keep looking</button>';
 
     document.getElementById('cshut').addEventListener('click', function(){ dlg.close(); });
@@ -5049,6 +5067,15 @@ ${shareImage ? `<meta name="twitter:image" content="${esc(shareImage)}">` : ''}
       setTimeout(function(){ askTable(openCheckout); }, 200);
     });
     document.getElementById('csend').addEventListener('click', send);
+    Array.prototype.forEach.call(document.querySelectorAll('[data-pay]'), function(b){
+      b.addEventListener('click', function(){
+        PAY = b.getAttribute('data-pay');
+        Array.prototype.forEach.call(document.querySelectorAll('[data-pay]'), function(x){
+          x.setAttribute('aria-pressed', x === b ? 'true' : 'false');
+        });
+        document.getElementById('csend').textContent = sendLabel();
+      });
+    });
 
     var signIn = document.querySelector('[data-as="in"]');
     if (signIn) signIn.addEventListener('click', function(){
@@ -5058,6 +5085,16 @@ ${shareImage ? `<meta name="twitter:image" content="${esc(shareImage)}">` : ''}
     });
 
     dlg.showModal();
+  }
+
+  // Card unless the customer picks the bar; only asked when the venue offers it.
+  var PAY = 'card';
+  function paying(){
+    var v = (data && data.venue) || {};
+    return !!v.online_pay && (v.online_pay_required || PAY === 'card');
+  }
+  function sendLabel(){
+    return paying() ? 'Pay ' + money(totals().sum) + ' by card' : 'Send to the kitchen';
   }
 
   function send(){
@@ -5098,7 +5135,8 @@ ${shareImage ? `<meta name="twitter:image" content="${esc(shareImage)}">` : ''}
         lines: lines,
         name: document.getElementById('cname').value,
         phone: document.getElementById('cphone').value,
-        note: document.getElementById('cnote').value
+        note: document.getElementById('cnote').value,
+        pay: paying() ? 'card' : 'bar'
       })
     })
       .then(function(r){ return r.json().then(function(j){ return { ok: r.ok, body: j }; }); })
@@ -5109,7 +5147,7 @@ ${shareImage ? `<meta name="twitter:image" content="${esc(shareImage)}">` : ''}
             : 'That did not go through. Please try again.';
           err.hidden = false;
           btn.disabled = false;
-          btn.textContent = 'Send to the kitchen';
+          btn.textContent = sendLabel();
           return;
         }
         // Kept on the phone before we leave the page: a guest who closes the
@@ -5119,15 +5157,16 @@ ${shareImage ? `<meta name="twitter:image" content="${esc(shareImage)}">` : ''}
           number: res.body.number || null,
           table_label: data.table ? data.table.name : null,
           total_minor: totals().sum,
-          status: 'placed'
+          status: res.body.status || 'placed'
         });
-        location.href = '/o/' + res.body.public_id;
+        // To Dojo's page to pay; it comes back to the order's tracker.
+        location.href = res.body.pay_url || ('/o/' + res.body.public_id);
       })
       .catch(function(){
         err.textContent = 'We could not reach the kitchen. Check your signal.';
         err.hidden = false;
         btn.disabled = false;
-        btn.textContent = 'Send to the kitchen';
+        btn.textContent = sendLabel();
       });
   }
 
@@ -5411,6 +5450,7 @@ function statusPage(publicId) {
   /** Which orders are still worth watching, and how each one reads. */
   var LIVE = { placed: 1, accepted: 1, ready: 1 };
   var WORD = {
+    awaiting_payment: 'Paying',
     placed: 'Sent', accepted: 'Being made', ready: 'Ready',
     served: 'Served', rejected: 'Not accepted', cancelled: 'Cancelled'
   };
@@ -5495,6 +5535,11 @@ function statusPage(publicId) {
   ];
 
   function headline(order, at){
+    if (order.status === 'awaiting_payment') {
+      return { tone:'#3B82F6', icon:I.sent, cls:'busy',
+               title:'Waiting for your card payment',
+               line:'Your order goes to the kitchen as soon as the payment is through. This page updates by itself.' };
+    }
     if (order.status === 'rejected') {
       return { tone:'#B3261E', icon:I.cross, cls:'bad',
                title:'The kitchen could not take this',

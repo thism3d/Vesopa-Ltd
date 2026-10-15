@@ -12,6 +12,7 @@ const {
 const core = require('./menu_core');
 const { BasketError } = core;
 const venueLooks = require('./venue_looks');
+const dojo = require('./dojo_client');
 
 // ---------------------------------------------------------------------------
 // Branding, offers and promotions
@@ -636,6 +637,9 @@ function dineinRoutes({ pool, broadcast, secret }) {
         // Orders for collection from the venue's own website, paid at the bar
         // (schema_menu_dinein_collection.sql).
         'collection_open',
+        // Paying by card on Dojo's hosted checkout, and whether that is the
+        // only way to order (schema_menu_dinein_online_pay.sql).
+        'online_pay', 'online_pay_required',
       ];
       for (const field of flags) {
         if (body[field] === undefined) continue;
@@ -1703,6 +1707,10 @@ function dineinRoutes({ pool, broadcast, secret }) {
         // Orders for collection from the venue's website (no table). Absent
         // column (schema not applied yet) reads as off.
         collection_open: !!venue.collection_open,
+        // Pay by card now, on Dojo's page. Off on a venue whose schema is not
+        // applied yet (the columns read as undefined).
+        online_pay: !!venue.online_pay,
+        online_pay_required: !!venue.online_pay && !!venue.online_pay_required,
         collection_minutes: Number(venue.collection_minutes) || Number(venue.eta_minutes) || 25,
         base: publicBase(req, venue),
       },
@@ -1813,6 +1821,17 @@ function dineinRoutes({ pool, broadcast, secret }) {
       const discount = discountFor(offer, subtotal);
       total = subtotal - discount;
 
+      // Paying by card first, when the venue offers it and the customer chose
+      // it (or the venue asks everybody to). Checked before anything is
+      // written: an order the venue cannot take payment for must not exist.
+      let payKey = null;
+      if (wantsCard(venue, body, total)) {
+        payKey = await cardKeyFor(email);
+        if (!payKey) {
+          return res.status(409).json({ error: 'Card payment is not set up here yet. Please order and pay at the bar.' });
+        }
+      }
+
       const label = tableName(table);
       const { orderId, publicId } = await writeOrder(conn, {
         officeId: table.office_id,
@@ -1825,7 +1844,19 @@ function dineinRoutes({ pool, broadcast, secret }) {
         dinerId,
         total,
         lines,
+        status: payKey ? 'awaiting_payment' : 'placed',
       });
+
+      let payUrl = null;
+      if (payKey) {
+        payUrl = await startCardPayment(payKey, {
+          orderId, publicId, total, venue,
+          redirectUrl: publicBase(req, venue) + '/o/' + publicId,
+        });
+        if (!payUrl) {
+          return res.status(502).json({ error: 'The card payment page could not be opened. Please try again, or pay at the bar.' });
+        }
+      }
 
       res.status(201).json({
         ok: true,
@@ -1835,7 +1866,10 @@ function dineinRoutes({ pool, broadcast, secret }) {
         subtotal_minor: subtotal,
         discount_minor: discount,
         total_minor: total,
-        status: 'placed',
+        status: payKey ? 'awaiting_payment' : 'placed',
+        // Where to send the customer to pay: Dojo's own page, which comes back
+        // to the order's tracker. Null when they pay at the bar.
+        pay_url: payUrl,
       });
     } catch (e) {
       await conn.rollback().catch(() => {});
@@ -1853,7 +1887,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
    * table, the shape a Vesopa Express "pay at the counter" order already has
    * (express_kiosk.js, sendToCounter), which every till accepts.
    */
-  async function writeOrder(conn, { officeId, email, tableId, label, name, phone, note, dinerId, total, lines }) {
+  async function writeOrder(conn, { officeId, email, tableId, label, name, phone, note, dinerId, total, lines, status = 'placed' }) {
     const publicId = newPublicId();
     await conn.beginTransaction();
     const [order] = await conn.execute(
@@ -1869,7 +1903,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
         name || null,
         phone || null,
         note || null,
-        'placed',
+        status,
         dinerId,
         total,
       ]
@@ -1904,19 +1938,141 @@ function dineinRoutes({ pool, broadcast, secret }) {
     await conn.commit();
 
     // The till is told immediately. Scoped to the office, so one venue's
-    // socket never sees another's order arrive.
+    // socket never sees another's order arrive. An order still being paid for
+    // is told when the payment lands (settleCardPayment), not now.
+    if (status === 'placed') {
+      tellTill(email, { orderId: order.insertId, publicId, label, total, lineCount: lines.length });
+    }
+    return { orderId: order.insertId, publicId };
+  }
+
+  function tellTill(email, { orderId, publicId, label, total, lineCount }) {
     broadcast(
       {
         type: 'dinein.order',
-        order_id: order.insertId,
+        order_id: orderId,
         public_id: publicId,
         table: label,
         total_minor: total,
-        lines: lines.length,
+        lines: lineCount,
       },
       { office: email }
     );
-    return { orderId: order.insertId, publicId };
+  }
+
+  // -------------------------------------------------------------------------
+  // Paying for an order by card, on Dojo's hosted checkout (2026-10-15)
+  // -------------------------------------------------------------------------
+  //
+  // "In the Vesopa kitchen menu add the hosted payment with public dojo api
+  // so that people can pay easily. Enabled from the back office." The order
+  // waits as 'awaiting_payment', which no till or kitchen screen asks for, and
+  // becomes 'placed' -- reaching the till like any other order, with "PAID
+  // ONLINE BY CARD" in its note -- only once Dojo's intent says captured. A
+  // redirect back from Dojo proves only that a browser arrived, so the answer
+  // is always read from the intent: when the tracker asks, and by a sweep for
+  // the customer who never comes back to the page.
+
+  /** Whether this order is to be paid by card now. */
+  function wantsCard(venue, body, total) {
+    if (!venue || !venue.online_pay || !(total > 0)) return false;
+    return !!venue.online_pay_required || (body && body.pay) === 'card';
+  }
+
+  /** The venue's online Dojo key: the one its tickets and memberships use. */
+  async function cardKeyFor(email) {
+    try {
+      return await require('./memberships').paymentKeyFor(pool, email);
+    } catch (e) {
+      console.error('[dinein] no payment key:', e.message);
+      return null;
+    }
+  }
+
+  /** Open Dojo's checkout for the order. Null (and the order cancelled) when it will not open. */
+  async function startCardPayment(key, { orderId, publicId, total, venue, redirectUrl }) {
+    try {
+      const intent = await dojo.createCheckoutIntent(key, {
+        amountMinor: total,
+        reference: `menu-${orderId}`,
+        description: `${String(venue.display_name || 'Menu').trim().slice(0, 50)} order #${orderId}`,
+        redirectUrl,
+      });
+      await pool.execute(
+        "UPDATE dinein_orders SET pay_status = 'pending', dojo_intent_id = ? WHERE id = ?",
+        [intent.id, orderId]
+      );
+      return dojo.checkoutUrl(intent.id);
+    } catch (e) {
+      console.error('[dinein] Dojo checkout failed for order', publicId, e.message);
+      await pool.execute(
+        "UPDATE dinein_orders SET status = 'cancelled', pay_status = 'failed', status_note = ? WHERE id = ?",
+        ['The card payment page could not be opened. Nothing was charged.', orderId]
+      ).catch(() => {});
+      return null;
+    }
+  }
+
+  const PAY_FAILED = new Set(['canceled', 'cancelled', 'declined', 'reversed', 'failed']);
+  const PAY_EXPIRES_MINUTES = 60;
+
+  /**
+   * Ask Dojo about an order still being paid for, and move it on: to the till
+   * when paid, to cancelled when the payment failed or was left for an hour.
+   * The conditional UPDATE is the claim, so two callers cannot both send it.
+   */
+  async function settleCardPayment(orderId) {
+    const [[o]] = await pool.query(
+      'SELECT id, public_id, office_id, status, dojo_intent_id, total_minor, table_label,' +
+        ' TIMESTAMPDIFF(MINUTE, placed_at, NOW()) AS age' +
+        '  FROM dinein_orders WHERE id = ?',
+      [orderId]
+    );
+    if (!o || o.status !== 'awaiting_payment' || !o.dojo_intent_id) return;
+    const email = await emailOf(o.office_id);
+    const key = await cardKeyFor(email);
+    if (!key) return;
+    const intent = await dojo.getIntent(key, o.dojo_intent_id);
+    const state = String((intent && intent.status) || '').toLowerCase();
+    if (dojo.intentPaid(intent)) {
+      const [r] = await pool.execute(
+        "UPDATE dinein_orders SET status = 'placed', pay_status = 'paid', paid_minor = total_minor," +
+          " paid_at = NOW(), note = LEFT(CONCAT('PAID ONLINE BY CARD. ', COALESCE(note, '')), 500)" +
+          " WHERE id = ? AND status = 'awaiting_payment'",
+        [o.id]
+      );
+      if (r.affectedRows) {
+        const [[n]] = await pool.query('SELECT COUNT(*) AS c FROM dinein_order_lines WHERE dinein_order_id = ?', [o.id]);
+        tellTill(email, { orderId: o.id, publicId: o.public_id, label: o.table_label, total: Number(o.total_minor), lineCount: Number(n.c) });
+      }
+    } else if (PAY_FAILED.has(state) || Number(o.age) >= PAY_EXPIRES_MINUTES) {
+      if (!PAY_FAILED.has(state)) await dojo.cancelIntent(key, o.dojo_intent_id);
+      await pool.execute(
+        "UPDATE dinein_orders SET status = 'cancelled', pay_status = 'failed', status_note = ?" +
+          " WHERE id = ? AND status = 'awaiting_payment'",
+        ['The card payment did not go through, so nothing went to the kitchen and nothing was charged.', o.id]
+      );
+    }
+  }
+
+  // The sweep: every minute, the orders of the last three hours still waiting
+  // on Dojo. Quiet when the columns are not there yet.
+  if (pool && process.env.NODE_ENV !== 'test' && !dineinRoutes.sweeping) {
+    dineinRoutes.sweeping = true;
+    const sweep = setInterval(async () => {
+      try {
+        const [rows] = await pool.query(
+          "SELECT id FROM dinein_orders WHERE status = 'awaiting_payment'" +
+            ' AND placed_at >= NOW() - INTERVAL 3 HOUR ORDER BY id LIMIT 50'
+        );
+        for (const row of rows) {
+          await settleCardPayment(row.id).catch((e) => console.error('[dinein] settle', row.id, e.message));
+        }
+      } catch {
+        // Missing column or a database blip: try again next minute.
+      }
+    }, 60 * 1000);
+    if (sweep.unref) sweep.unref();
   }
 
   /**
@@ -2198,6 +2354,17 @@ function dineinRoutes({ pool, broadcast, secret }) {
 
   router.get('/api/public/dinein/order/:publicId', async (req, res, next) => {
     try {
+      // Back from Dojo, or waiting on it: ask Dojo now rather than make the
+      // customer wait for the sweep.
+      try {
+        const [[w]] = await pool.query(
+          "SELECT id FROM dinein_orders WHERE public_id = ? AND status = 'awaiting_payment'",
+          [req.params.publicId]
+        );
+        if (w) await settleCardPayment(w.id);
+      } catch (e) {
+        if (e && e.code !== 'ER_BAD_FIELD_ERROR') console.error('[dinein] settle on view:', e.message);
+      }
       // The venue comes with it.
       //
       // Somebody who has just ordered is on a page with no way back to the menu

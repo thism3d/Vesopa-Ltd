@@ -249,6 +249,17 @@ async function loadDineIn() {
         they collect. These arrive on the till as "Collect" orders, like a kiosk's
         pay-at-the-counter order.</span>
       </label>
+      <label class="check">
+        <input type="checkbox" id="di-online-pay" ${v.online_pay ? 'checked' : ''}>
+        <span><b>Pay by card online.</b> Customers can pay for their order on Dojo's
+        secure checkout page (card, Apple Pay, Google Pay) before it is sent. The order
+        reaches the till and kitchen only once the payment is through, marked
+        "PAID ONLINE BY CARD". Uses the venue's online Dojo key in Settings, Dojo.</span>
+      </label>
+      <label class="check" style="margin-left:28px">
+        <input type="checkbox" id="di-online-pay-required" ${v.online_pay_required ? 'checked' : ''}>
+        <span>Everyone pays by card when they order (no "pay at the bar" choice).</span>
+      </label>
       <label style="margin:4px 0 0 28px">Ready for collection in
         <span class="row" style="align-items:center;gap:8px">
           <input id="di-collection-min" type="number" min="5" max="240" step="5"
@@ -855,6 +866,8 @@ async function diSaveVenue() {
     ordering_open: $('di-ordering').checked,
     auto_accept_orders: $('di-auto-accept').checked,
     collection_open: $('di-collection').checked,
+    online_pay: $('di-online-pay').checked,
+    online_pay_required: $('di-online-pay-required').checked,
     collection_minutes: $('di-collection-min').value,
     // A pair rather than a boolean: the server stores which source leads, and
     // a third one later is a new value here rather than a second checkbox.
