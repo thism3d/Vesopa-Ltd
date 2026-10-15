@@ -213,10 +213,16 @@ function dineinAuthRoutes({ pool, secret }) {
     const slug = String(req.query.venue || '').trim().slice(0, 120);
     if (slug) {
       const [[bySlug]] = await pool.query(
-        'SELECT office_id, slug FROM dinein_venue WHERE slug = ? AND is_published = 1 LIMIT 1',
+        'SELECT office_id, slug, custom_domain FROM dinein_venue WHERE slug = ? AND is_published = 1 LIMIT 1',
         [slug],
       );
-      if (bySlug) return bySlug;
+      if (bySlug) {
+        // Started on the venue's own domain: come back to it.
+        const own = String(bySlug.custom_domain || '').trim().toLowerCase();
+        const here = hostOf(req);
+        bySlug.home = own && (here === own || here === `www.${own}`) ? own : null;
+        return bySlug;
+      }
     }
 
     const host = hostOf(req);
@@ -224,10 +230,13 @@ function dineinAuthRoutes({ pool, secret }) {
 
     const names = host.startsWith('www.') ? [host, host.slice(4)] : [host, `www.${host}`];
     const [[byHost]] = await pool.query(
-      'SELECT office_id, slug FROM dinein_venue' +
+      'SELECT office_id, slug, custom_domain FROM dinein_venue' +
         ' WHERE custom_domain IN (?, ?) AND is_published = 1 LIMIT 1',
       names,
     );
+    // The venue's own domain as stored, to send the person home to after the
+    // round trip through the shared host (never the raw Host header).
+    if (byHost) byHost.home = String(byHost.custom_domain || '').trim().toLowerCase() || null;
     return byHost || null;
   }
 
@@ -277,6 +286,10 @@ function dineinAuthRoutes({ pool, secret }) {
         officeId: venue.office_id,
         slug: venue.slug,
         backTo,
+        // menu.pontardawerfc.com, when the sign-in started there. Without it
+        // the callback (on the shared host) sent people to the shared host's
+        // own home page instead of back to their venue (2026-10-15).
+        home: venue.home || null,
       });
 
       const url = new URL(`${ISSUER}/oauth/authorize`);
@@ -332,7 +345,7 @@ function dineinAuthRoutes({ pool, secret }) {
        * most people were going to do anyway.
        */
       if (req.query.error || !req.query.code) {
-        return res.redirect(302, held.backTo || '/');
+        return res.redirect(302, homeUrl(held));
       }
 
       const tokenResponse = await fetch(`${ISSUER}/oauth/token`, {
@@ -355,7 +368,7 @@ function dineinAuthRoutes({ pool, secret }) {
          * request back, and the request carried the client secret.
          */
         console.error('[dinein_auth] token exchange failed:', tokenResponse.status);
-        return res.status(502).send(page('We could not finish signing you in.', held.backTo));
+        return res.status(502).send(page('We could not finish signing you in.', homeUrl(held)));
       }
 
       const issued = await tokenResponse.json();
@@ -388,9 +401,9 @@ function dineinAuthRoutes({ pool, secret }) {
         },
       });
 
-      const home = new URL(held.backTo || '/', `https://${MENU_HOST}`);
+      const home = new URL(homeUrl(held));
       home.searchParams.set('signed_in', handle);
-      return res.redirect(302, home.pathname + home.search);
+      return res.redirect(302, home.toString());
     } catch (error) {
       console.error('[dinein_auth] callback failed:', error.message);
       return next(error);
@@ -414,6 +427,17 @@ function dineinAuthRoutes({ pool, secret }) {
   });
 
   return router;
+}
+
+/**
+ * Where to send somebody after the round trip: the path they came from, on
+ * the venue's own domain when the sign-in started there, else on the shared
+ * menu host. The domain comes from the venue's row, never from the request.
+ */
+function homeUrl(held) {
+  const path = (held && held.backTo) || '/';
+  const host = held && held.home && /^[a-z0-9.-]{3,190}$/.test(held.home) ? held.home : MENU_HOST;
+  return new URL(path, `https://${host}`).toString();
 }
 
 /**
