@@ -1105,6 +1105,7 @@ button{font:inherit;cursor:pointer}
 /* --sunken, not a literal grey: this sheet has a dark mode and a hard-coded
    hover would be invisible in it. */
 .vsso:hover{background:var(--sunken)}
+.vsso img{width:20px;height:20px;border-radius:5px;display:block;flex:0 0 auto}
 .vor{display:flex;align-items:center;gap:10px;margin:12px 0 10px;
   color:var(--ink-soft);font-size:13px}
 .vor::before,.vor::after{content:"";flex:1;height:1px;background:var(--line)}
@@ -3433,8 +3434,12 @@ ${shareImage ? `<meta name="twitter:image" content="${esc(shareImage)}">` : ''}
            separated by an "or" rather than replacing anything: the code still
            works, and ordering as a guest still needs none of this. */
         (g.vesopa_auth
+          // The Vesopa mark, the same as the checkout's button (2026-10-15).
           ? '<button type="button" class="vsso" id="vsso">' +
-              'Continue with your Vesopa account</button>' +
+              '<img src="/assets/vesopa_mark.svg" alt="" width="20" height="20">' +
+              '<span>Continue with Vesopa</span></button>' +
+            '<a class="asme-other" href="/api/public/dinein/auth/start?switch=1' +
+              (SLUG ? '&venue=' + encodeURIComponent(SLUG) : '') + '">Use another account</a>' +
             '<div class="vor"><span>or use a code</span></div>'
           : '') +
 
