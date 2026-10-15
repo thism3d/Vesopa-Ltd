@@ -103,8 +103,14 @@ def backoffice():
         (stage / "schema").mkdir()
         for name in SCHEMAS:
             shutil.copy(server / "schema" / name, stage / "schema" / name)
+        # The clubs' own Wallet artwork (crest, strip, icon) that
+        # wallet_apple.js artworkFor() reads; without it a club's card fell
+        # back to Vesopa's logo and band (2026-10-15).
+        stage_dir(server / "assets" / "wallet" / "looks", stage / "looks")
         for part in ["src", "public", "schema"]:
             ssh("put", str(stage / part), f"{BACKOFFICE}/{part}")
+        ssh("run", f"mkdir -p {BACKOFFICE}/assets/wallet")
+        ssh("put", str(stage / "looks"), f"{BACKOFFICE}/assets/wallet/looks")
     finally:
         shutil.rmtree(stage, ignore_errors=True)
 
@@ -112,7 +118,7 @@ def backoffice():
     apply = " && ".join(
         f"mariadb $(grep -E '^DB_NAME=' .env | cut -d= -f2) < schema/{name} && echo '  {name} ok'" for name in SCHEMAS)
     ssh("run",
-        f"cd {BACKOFFICE} && chown -R {USER}:{USER} src public schema && {apply} && "
+        f"cd {BACKOFFICE} && chown -R {USER}:{USER} src public schema assets/wallet/looks && {apply} && "
         + PM2.format("restart backoffice.vesopaepos.com --update-env") + " | tail -2")
 
 
