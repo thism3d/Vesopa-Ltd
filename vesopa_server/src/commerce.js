@@ -264,10 +264,14 @@ function commerceRoutes({ pool, broadcast, secret }) {
     // A Cashback key beside Card that asks how much and sends it to the card
     // machine with the sale. Off: Card alone (schema_cashback.sql).
     allow_cashback: 0,
+    // The card payment's progress and result on the customer display, in
+    // neutral words. Off: the display keeps showing the bill
+    // (schema_display_card_result.sql).
+    allow_display_card_result: 1,
   };
 
   /** Columns a database may not have yet, dropped from a save rather than failing it. */
-  const TENDER_LATER = ['allow_empty_pay', 'allow_manual_dojo', 'allow_cashback'];
+  const TENDER_LATER = ['allow_empty_pay', 'allow_manual_dojo', 'allow_cashback', 'allow_display_card_result'];
 
   const TENDER_FIELDS = Object.keys(TENDER_DEFAULTS);
 

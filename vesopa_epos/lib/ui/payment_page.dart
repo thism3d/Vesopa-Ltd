@@ -366,11 +366,16 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     );
 
     // The customer's screen says what the clerk's does, in fewer words.
+    // Whether the customer display shows the card at all (back office ›
+    // Tender settings). Off: it keeps showing the bill.
+    final showOnDisplay = ref.read(tenderSettingsProvider).displayCardResult;
     void mirror(CardPaymentState st) {
+      if (!showOnDisplay) return;
       final outcome = st.outcome;
       unawaited(display.showCard({
         'phase': outcome == null ? 'progress' : 'result',
-        'title': outcome?.title ?? st.step.label,
+        // The customer's own words, never "declined" (see customerTitle).
+        'title': outcome?.customerTitle ?? st.step.label,
         'detail': outcome == null
             ? (st.step == CardStep.signature
                   ? 'Please wait while your signature is checked'

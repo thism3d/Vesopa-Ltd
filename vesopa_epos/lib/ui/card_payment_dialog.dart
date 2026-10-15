@@ -54,16 +54,29 @@ extension CardStepCustomerText on CardStep {
 }
 
 extension CardOutcomeCustomerText on CardOutcome {
+  /// The headline on the screen facing the queue. Never "declined": that is
+  /// for the clerk's screen, and in big red letters in front of everybody it
+  /// embarrasses the customer (Nicki, Pontardawe RFC, 2026-10-15).
+  String get customerTitle => switch (this) {
+    CardOutcome.approved => 'Payment approved',
+    CardOutcome.declined ||
+    CardOutcome.failed ||
+    CardOutcome.cancelled ||
+    CardOutcome.signatureRejected => 'Payment not completed',
+    CardOutcome.busy => 'One moment',
+    CardOutcome.expired || CardOutcome.unknown => 'Checking your payment',
+  };
+
   String get customerDetail => switch (this) {
     CardOutcome.approved => 'Thank you. Your payment has been approved.',
-    CardOutcome.declined => 'Your card was declined. No money has been taken.',
+    CardOutcome.declined => 'Please try again, or pay another way. No money has been taken.',
     CardOutcome.cancelled => 'The payment was cancelled. No money has been taken.',
     CardOutcome.signatureRejected =>
       'The payment was cancelled. No money has been taken.',
     CardOutcome.busy => 'The card machine is busy. Please wait a moment.',
     CardOutcome.expired ||
     CardOutcome.unknown => 'Please wait while we check your payment.',
-    CardOutcome.failed => 'The payment did not go through. No money has been taken.',
+    CardOutcome.failed => 'Please try again, or pay another way. No money has been taken.',
   };
 }
 

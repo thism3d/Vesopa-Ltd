@@ -59,6 +59,7 @@ class TenderSettings {
     this.allowEmptyPay = false,
     this.manualViaDojo = false,
     this.allowCashback = false,
+    this.displayCardResult = true,
   });
 
   final bool gratuityEnabled;
@@ -92,6 +93,11 @@ class TenderSettings {
   /// default): it asks how much and sends it to the card machine with the
   /// sale. Card on its own still goes straight to the machine.
   final bool allowCashback;
+
+  /// Show the card payment on the customer display (back office › Tender
+  /// settings, on by default). Off: the display keeps showing the bill and a
+  /// decline stays between the clerk and the customer (Nicki, 2026-10-15).
+  final bool displayCardResult;
 
   bool get autoGratuity => gratuityEnabled && gratuityMode == 'auto';
   bool get promptGratuity => gratuityEnabled && gratuityMode == 'prompt';
@@ -146,6 +152,8 @@ class TenderSettings {
       allowEmptyPay: _flag(j['allow_empty_pay']),
       manualViaDojo: _flag(j['allow_manual_dojo']),
       allowCashback: _flag(j['allow_cashback']),
+      // Absent from an older server: shown, as before.
+      displayCardResult: j['allow_display_card_result'] == null || _flag(j['allow_display_card_result']),
     );
   }
 }

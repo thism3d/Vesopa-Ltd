@@ -389,7 +389,8 @@ Future<PaymentResult> runRefundOnMachine(
     final outcome = st.outcome;
     final title = outcome == null
         ? (st.step == CardStep.signature ? 'Signature' : 'Refund')
-        : outcome.title.replaceAll('Payment', 'Refund');
+        // Neutral words on the customer's screen, as for payments.
+        : outcome.customerTitle.replaceAll('Payment', 'Refund');
     unawaited(display?.showCard({
       'phase': outcome == null ? 'progress' : 'result',
       'heading': 'Card refund',
