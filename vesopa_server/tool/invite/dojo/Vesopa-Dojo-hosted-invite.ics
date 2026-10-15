@@ -1,0 +1,64 @@
+BEGIN:VCALENDAR
+PRODID:-//Vesopa Software Ltd//Vesopa Mail//EN
+VERSION:2.0
+CALSCALE:GREGORIAN
+METHOD:REQUEST
+BEGIN:VTIMEZONE
+TZID:Europe/London
+BEGIN:DAYLIGHT
+TZOFFSETFROM:+0000
+TZOFFSETTO:+0100
+TZNAME:BST
+DTSTART:19700329T010000
+RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU
+END:DAYLIGHT
+BEGIN:STANDARD
+TZOFFSETFROM:+0100
+TZOFFSETTO:+0000
+TZNAME:GMT
+DTSTART:19701025T020000
+RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU
+END:STANDARD
+END:VTIMEZONE
+BEGIN:VEVENT
+UID:8d0e2480-3079-46a7-a2a2-84f33fcba88d@vesopa.com
+DTSTAMP:20261015T045343Z
+DTSTART;TZID=Europe/London:20261015T133000
+DTEND;TZID=Europe/London:20261015T140000
+SUMMARY:Vesopa × Dojo: Hosted Payments for EPOS\, Online Menu\, Android &
+  iOS
+URL:https://meet.google.com/bfd-qjtp-xkt
+X-GOOGLE-CONFERENCE:https://meet.google.com/bfd-qjtp-xkt
+DESCRIPTION:Vesopa and Dojo: hosted payments for EPOS, the online menu, An
+ droid and iOS.\n\nJoin with Google Meet: https://meet.google.com/bfd-qjtp-
+ xkt\nOr dial: (US) +1 617-675-4444 PIN: 462 307 910 8918#\nMore phone numb
+ ers: https://tel.meet/bfd-qjtp-xkt?pin=4623079108918\n\nAgenda:\n1. A shor
+ t demo: an order on our online menu paid on Dojo's hosted checkout, reachi
+ ng the till only once it is paid\n2. Hosted payments in Vesopa EPOS: a pay
+  link or QR code from the till for table, phone and collection orders\n3. 
+ Paying in our Android and iOS apps: memberships, top-ups and orders, with 
+ Apple Pay and Google Pay on Dojo's page\n4. Webhooks for payment intents, 
+ refunds from the back office, reporting, and live keys for go-live\n\nIf t
+ his time does not suit, reply to muzahid@vesopa.com with a time that does.
+LOCATION:https://meet.google.com/bfd-qjtp-xkt
+ORGANIZER;CN="Muzahid Islam":mailto:muzahid@vesopa.com
+ATTENDEE;CN="Alex Radzio";ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=
+ TRUE:mailto:alex.radzio@dojo.tech
+ATTENDEE;CN="Meirion Davies";ROLE=OPT-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RS
+ VP=TRUE:mailto:info@vesopasoftware.com
+ATTENDEE;CN="Meirion Davies";ROLE=OPT-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RS
+ VP=TRUE:mailto:info@vesopa.com
+SEQUENCE:0
+STATUS:CONFIRMED
+TRANSP:OPAQUE
+CLASS:PUBLIC
+X-MICROSOFT-CDO-BUSYSTATUS:BUSY
+X-MICROSOFT-CDO-IMPORTANCE:1
+BEGIN:VALARM
+ACTION:DISPLAY
+DESCRIPTION:Vesopa × Dojo: Hosted Payments for EPOS\, Online Menu\, Andro
+ id & iOS
+TRIGGER:-PT15M
+END:VALARM
+END:VEVENT
+END:VCALENDAR

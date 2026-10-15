@@ -9,6 +9,7 @@
  *   node tool/invite/dojo/send-dojo-invite.js --send --only info@vesopa.com   # one copy only
  *   ... --final       # 11 Oct: accreditation fixes done, final testing Mon 12 Oct 10:30 (new invite)
  *   ... --confirm     # 12 Oct morning: please confirm today's final testing at 10:30
+ *   ... --hosted-invite  # 15 Oct: the same again with the calendar invite (Yes / No / Maybe)
  *   ... --hosted      # 15 Oct: hosted payments for EPOS, menu, Android and iOS, 1:30pm UK, Alex only (cc Meirion), no .ics
  *   ... --review      # 12 Oct: UAT round 2 fixes (EPOS 1.16.3) + accreditation review 4pm UK, Alex and Finn only
  *   ... --reminder2   # 9 Oct midday: reminder for 1:30pm with the new Meet link
@@ -35,7 +36,8 @@ const RECIPIENTS = [
 ];
 
 async function main() {
-  const eml = path.join(__dirname, process.argv.includes('--hosted') ? 'Vesopa-Dojo-hosted.eml'
+  const eml = path.join(__dirname, process.argv.includes('--hosted-invite') ? 'Vesopa-Dojo-hosted-invite.eml'
+    : process.argv.includes('--hosted') ? 'Vesopa-Dojo-hosted.eml'
     : process.argv.includes('--review') ? 'Vesopa-Dojo-review.eml'
     : process.argv.includes('--confirm') ? 'Vesopa-Dojo-confirm.eml'
     : process.argv.includes('--final') ? 'Vesopa-Dojo-final-testing.eml'
