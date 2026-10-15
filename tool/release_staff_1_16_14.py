@@ -23,13 +23,10 @@ STEPS = ["build", "store", "installers"]
 
 # The Store's "What's new", LF only (see the 1.16.3 script).
 NOTES = {
-    "notes-1.16.14.0-epos.txt": "Version 1.16.14.0 - Staff screens and the check
-
-"
+    "notes-1.16.14.0-epos.txt": "Version 1.16.14.0 - Staff screens and the check\n\n"
         "Each member of staff can start on their own screen when they sign on, set in the back office under Staff. "
         "Signing on over somebody never shows their sale: it is kept for them and comes back when they sign on again. "
-        "The check shows who rang each round and when, every time items are added. Also includes 1.16.13.
-",
+        "The check shows who rang each round and when, every time items are added. Also includes 1.16.13.\n",
 }
 
 
