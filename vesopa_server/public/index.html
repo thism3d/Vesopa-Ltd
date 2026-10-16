@@ -473,14 +473,24 @@
                  question really is about the trend. -->
             <div class="seg" id="dash-range">
               <button class="seg-btn active" data-days="1">Today</button>
+              <button class="seg-btn" data-range="yesterday">Yesterday</button>
               <button class="seg-btn" data-days="7"><span class="seg-long">Last 7 days</span><span class="seg-short">7 days</span></button>
               <button class="seg-btn" data-days="30"><span class="seg-long">Last 30 days</span><span class="seg-short">30 days</span></button>
               <button class="seg-btn" data-days="90"><span class="seg-long">Last 90 days</span><span class="seg-short">90 days</span></button>
               <button class="seg-btn" data-days="365">Year</button>
+              <button class="seg-btn" data-range="custom">Custom</button>
             </div>
             <span class="muted small" id="dash-window"></span>
             <button type="button" class="btn ghost small dash-customise" id="dash-customise" title="Move, resize or hide the cards on this page">Customise</button>
           </div>
+          <!-- Custom range (2026-10-16, Pontardawe's committee): any start and
+               end, to the minute, e.g. a match day from noon to closing. -->
+          <form class="dash-custom" id="dash-custom" hidden>
+            <label>From <input type="datetime-local" id="dash-custom-from" required /></label>
+            <label>To <input type="datetime-local" id="dash-custom-to" required /></label>
+            <button type="submit" class="btn primary small">Show</button>
+            <span class="muted small" id="dash-custom-msg"></span>
+          </form>
 
           <!-- Widgets (2026-09-24): "be able to move widgets around on the
                dashboard, so customers can choose what they see first".

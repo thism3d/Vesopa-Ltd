@@ -51,14 +51,70 @@ function analyticsRoutes({ pool, secret }) {
    * [windowDays], so it is an integer between 1 and 730 and nothing else.
    */
   function reportWindow(req, fallback = 30) {
+    // Yesterday (2026-10-16, Pontardawe's committee): the whole of yesterday,
+    // midnight to midnight, against the day before it.
+    if (req.query.range === 'yesterday') {
+      return windowOf(1, 'DATE_SUB(CURDATE(), INTERVAL 1 DAY)', 'CURDATE()',
+        'DATE_SUB(CURDATE(), INTERVAL 2 DAY)', 'yesterday');
+    }
+    // A custom range, to the minute: ?from=2026-10-10T18:00&to=2026-10-11T02:00.
+    // Wall-clock times, compared the way CURDATE() is, so a custom "today from
+    // midnight" agrees with the Today button. Checked against a strict shape
+    // and escaped, since INTERVAL arithmetic means they are interpolated.
+    const custom = customRange(req.query.from, req.query.to);
+    if (custom) {
+      const from = pool.escape(custom.from);
+      const to = pool.escape(custom.to);
+      return windowOf(custom.days, from, to,
+        `DATE_SUB(${from}, INTERVAL ${custom.seconds} SECOND)`, 'custom', custom);
+    }
     const days = windowDays(req, fallback);
-    return {
-      days,
+    // The open end is tomorrow's midnight, which is "now" for closed sales.
+    return windowOf(days,
       // Midnight at the start of the window.
-      from: `DATE_SUB(CURDATE(), INTERVAL ${days - 1} DAY)`,
+      `DATE_SUB(CURDATE(), INTERVAL ${days - 1} DAY)`,
+      null,
       // The same length again, immediately before it, so a trend compares like
       // with like.
-      previousFrom: `DATE_SUB(CURDATE(), INTERVAL ${days * 2 - 1} DAY)`,
+      `DATE_SUB(CURDATE(), INTERVAL ${days * 2 - 1} DAY)`,
+      'days');
+  }
+
+  function windowOf(days, from, to, previousFrom, kind, custom) {
+    return {
+      days,
+      kind,
+      from,
+      to,
+      previousFrom,
+      custom: custom ? { from: custom.from, to: custom.to } : null,
+      /** The window as a condition on one column: from inclusive, to exclusive. */
+      where: (col) => `${col} >= ${from}` + (to ? ` AND ${col} < ${to}` : ''),
+      /** The window of the same length immediately before. */
+      wherePrevious: (col) => `${col} >= ${previousFrom} AND ${col} < ${from}`,
+    };
+  }
+
+  const STAMP = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?$/;
+
+  /** A valid from/to pair as 'YYYY-MM-DD HH:MM:00' strings, or null. */
+  function customRange(fromText, toText) {
+    const a = STAMP.exec(String(fromText || ''));
+    const b = STAMP.exec(String(toText || ''));
+    if (!a || !b) return null;
+    // A date with no time: from its midnight; a "to" date runs to the end of it.
+    const ms = (m, end) => Date.UTC(+m[1], +m[2] - 1, +m[3] + (end && m[4] === undefined ? 1 : 0),
+      m[4] === undefined ? 0 : +m[4], m[5] === undefined ? 0 : +m[5]);
+    const start = ms(a, false);
+    const end = ms(b, true);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
+    if (end - start > 730 * 86400000) return null;
+    const text = (t) => new Date(t).toISOString().slice(0, 16).replace('T', ' ') + ':00';
+    return {
+      from: text(start),
+      to: text(end),
+      seconds: Math.round((end - start) / 1000),
+      days: Math.max(1, Math.ceil((end - start) / 86400000)),
     };
   }
 
@@ -87,7 +143,7 @@ function analyticsRoutes({ pool, secret }) {
            COALESCE(AVG(total_minor), 0)         AS average_minor
          FROM epos_orders
          WHERE email = ? AND closed_at IS NOT NULL
-           AND closed_at >= ${w.from}`,
+           AND ${w.where('closed_at')}`,
         [office]
       );
 
@@ -99,8 +155,7 @@ function analyticsRoutes({ pool, secret }) {
            COALESCE(SUM(total_minor), 0) AS gross_minor
          FROM epos_orders
          WHERE email = ? AND closed_at IS NOT NULL
-           AND closed_at >= ${w.previousFrom}
-           AND closed_at <  ${w.from}`,
+           AND ${w.wherePrevious('closed_at')}`,
         [office]
       );
 
@@ -111,7 +166,7 @@ function analyticsRoutes({ pool, secret }) {
                 COALESCE(SUM(gratuity_minor), 0) AS gratuity_minor
          FROM epos_orders
          WHERE email = ? AND closed_at IS NOT NULL
-           AND closed_at >= ${w.from}
+           AND ${w.where('closed_at')}
          GROUP BY DATE(closed_at)
          ORDER BY day`,
         [office]
@@ -124,7 +179,7 @@ function analyticsRoutes({ pool, secret }) {
                 COALESCE(SUM(total_minor), 0) AS gross_minor
          FROM epos_orders
          WHERE email = ? AND closed_at IS NOT NULL
-           AND closed_at >= ${w.from}
+           AND ${w.where('closed_at')}
          GROUP BY HOUR(closed_at)
          ORDER BY hour`,
         [office]
@@ -136,7 +191,7 @@ function analyticsRoutes({ pool, secret }) {
                 COALESCE(SUM(total_minor), 0) AS gross_minor
          FROM epos_orders
          WHERE email = ? AND closed_at IS NOT NULL
-           AND closed_at >= ${w.from}
+           AND ${w.where('closed_at')}
          GROUP BY DAYOFWEEK(closed_at)
          ORDER BY dow`,
         [office]
@@ -149,7 +204,7 @@ function analyticsRoutes({ pool, secret }) {
          FROM epos_payments p
          JOIN epos_orders o ON o.id = p.order_id
          WHERE o.email = ? AND o.closed_at IS NOT NULL
-           AND o.closed_at >= ${w.from}
+           AND ${w.where('o.closed_at')}
          GROUP BY p.method
          ORDER BY total_minor DESC`,
         [office]
@@ -162,7 +217,7 @@ function analyticsRoutes({ pool, secret }) {
          FROM epos_order_lines l
          JOIN epos_orders o ON o.id = l.order_id
          WHERE o.email = ? AND o.closed_at IS NOT NULL
-           AND o.closed_at >= ${w.from}
+           AND ${w.where('o.closed_at')}
          GROUP BY l.name
          ORDER BY gross_minor DESC
          LIMIT 12`,
@@ -177,7 +232,7 @@ function analyticsRoutes({ pool, secret }) {
          JOIN epos_orders o ON o.id = l.order_id
          LEFT JOIN bo_products p ON p.pluid = l.plu_id AND p.email = o.email
          WHERE o.email = ? AND o.closed_at IS NOT NULL
-           AND o.closed_at >= ${w.from}
+           AND ${w.where('o.closed_at')}
          GROUP BY department
          ORDER BY gross_minor DESC`,
         [office]
@@ -216,6 +271,8 @@ function analyticsRoutes({ pool, secret }) {
 
       res.json({
         window_days: w.days,
+        window_kind: w.kind,
+        window_custom: w.custom,
         totals,
         previous,
         daily,
@@ -245,7 +302,7 @@ function analyticsRoutes({ pool, secret }) {
                 COALESCE(SUM(o.discount_minor), 0)    AS discount_minor
          FROM epos_orders o
          WHERE o.email = ? AND o.closed_at IS NOT NULL
-           AND o.closed_at >= ${w.from}
+           AND ${w.where('o.closed_at')}
          GROUP BY clerk
          ORDER BY gross_minor DESC`,
         [office]
@@ -269,7 +326,7 @@ function analyticsRoutes({ pool, secret }) {
          JOIN epos_orders o ON o.id = l.order_id
          WHERE o.email = ? AND o.closed_at IS NOT NULL
            AND l.promotion_name IS NOT NULL
-           AND o.closed_at >= ${w.from}
+           AND ${w.where('o.closed_at')}
          GROUP BY l.promotion_name
          ORDER BY discount_minor DESC`,
         [office]
@@ -282,7 +339,7 @@ function analyticsRoutes({ pool, secret }) {
          FROM epos_orders
          WHERE email = ? AND closed_at IS NOT NULL
            AND voucher_code IS NOT NULL
-           AND closed_at >= ${w.from}
+           AND ${w.where('closed_at')}
          GROUP BY voucher_code
          ORDER BY discount_minor DESC`,
         [office]
@@ -303,7 +360,7 @@ function analyticsRoutes({ pool, secret }) {
                 kind,
                 SUM(ABS(points))  AS points
          FROM epos_loyalty_txns
-         WHERE office = ? AND created_at >= ${w.from}
+         WHERE office = ? AND ${w.where('created_at')}
          GROUP BY day, kind
          ORDER BY day`,
         [office]

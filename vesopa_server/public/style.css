@@ -1720,6 +1720,15 @@ tr.clickable:hover { background: var(--brand-soft); }
 .seg-btn:last-child { border-right: 0; }
 .seg-btn.active { background: var(--brand); color: var(--on-brand); font-weight: 600; }
 
+/* The dashboard's custom range: From, To and Show on one line, wrapping on a
+   phone. */
+.dash-custom {
+  display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap;
+  margin: -4px 0 14px;
+}
+.dash-custom label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.dash-custom[hidden] { display: none; }
+
 /* A label in one of these is a phrase, and a phrase must never break in the
    middle of itself.
  *

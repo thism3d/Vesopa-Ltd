@@ -8501,11 +8501,14 @@ function statCards(el, cards) {
 // Today, matching the button marked active in the markup. The two have to
 // agree or the dashboard opens showing one range with another highlighted.
 let dashDays = 1;
+// What the range buttons ask the server for: days=N, range=yesterday, or a
+// custom from/to (2026-10-16, Pontardawe's committee).
+let dashQuery = 'days=1';
 
 async function loadDashboardAnalytics() {
   let data;
   try {
-    data = await api(`/analytics/overview?days=${dashDays}`);
+    data = await api(`/analytics/overview?${dashQuery}`);
   } catch (err) {
     // The dashboard must still render its live-sales table if analytics fail —
     // but the failure has to be visible, not swallowed. A silent catch here
@@ -8548,9 +8551,13 @@ async function loadDashboardAnalytics() {
 
   // Named the way the range button is, so the figure on screen and the button
   // that produced it agree. "Last 1 days" was the giveaway that they did not.
-  $('dash-window').textContent = data.window_days === 1
-    ? 'Today'
-    : `Last ${data.window_days} days`;
+  $('dash-window').textContent = data.window_kind === 'yesterday'
+    ? 'Yesterday'
+    : data.window_kind === 'custom' && data.window_custom
+      ? `${dashStamp(data.window_custom.from)} to ${dashStamp(data.window_custom.to)}`
+      : data.window_days === 1
+        ? 'Today'
+        : `Last ${data.window_days} days`;
 
   Charts.line($('dash-line'), (data.daily || []).map((d) => ({
     label: shortDate(d.day),
@@ -8623,13 +8630,66 @@ function tenderLabel(method) {
   }[m] || (m ? m[0].toUpperCase() + m.slice(1) : 'Other');
 }
 
+/** '2026-10-16 18:30:00' as '16 Oct 18:30'. */
+function dashStamp(text) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(String(text || ''));
+  if (!m) return String(text || '');
+  const d = new Date(+m[1], +m[2] - 1, +m[3]);
+  const day = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  return `${day} ${m[4]}:${m[5]}`;
+}
+
+/** A Date as the value a datetime-local input takes, in local time. */
+function dashLocal(d) {
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 // Range switcher on the dashboard.
 document.addEventListener('click', (e) => {
   const btn = e.target.closest('#dash-range .seg-btn');
   if (!btn) return;
-  dashDays = Number(btn.dataset.days) || 1;
   document.querySelectorAll('#dash-range .seg-btn')
     .forEach((b) => b.classList.toggle('active', b === btn));
+  const form = $('dash-custom');
+  if (btn.dataset.range === 'custom') {
+    // Opens on today from midnight to now; the manager changes either end.
+    if (!$('dash-custom-from').value) {
+      const now = new Date();
+      const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      $('dash-custom-from').value = dashLocal(midnight);
+      $('dash-custom-to').value = dashLocal(now);
+    }
+    form.hidden = false;
+    $('dash-custom-from').focus();
+    return;
+  }
+  form.hidden = true;
+  if (btn.dataset.range === 'yesterday') {
+    dashQuery = 'range=yesterday';
+  } else {
+    dashDays = Number(btn.dataset.days) || 1;
+    dashQuery = `days=${dashDays}`;
+  }
+  loadDashboardAnalytics();
+});
+
+document.addEventListener('submit', (e) => {
+  if (e.target.id !== 'dash-custom') return;
+  e.preventDefault();
+  const from = $('dash-custom-from').value;
+  const to = $('dash-custom-to').value;
+  const msg = $('dash-custom-msg');
+  if (!from || !to || to <= from) {
+    msg.textContent = 'The end has to be after the start.';
+    return;
+  }
+  if (new Date(to) - new Date(from) > 730 * 86400000) {
+    msg.textContent = 'Up to two years at a time.';
+    return;
+  }
+  msg.textContent = '';
+  dashQuery = `from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
   loadDashboardAnalytics();
 });
 
