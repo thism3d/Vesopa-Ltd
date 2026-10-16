@@ -58,17 +58,25 @@ function counterKey(row) {
 async function onlineKeyFor(db, office) {
   const row = await readRow(db, office);
   if (!row || !MODES.has(row.online_mode)) return undefined;
-  if (row.online_mode === 'demo') return demoKey() || null;
+  if (row.online_mode === 'demo') {
+    // The venue's own sandbox key when it saved one ("PontardaweRFC Demo"),
+    // else the shared demo key. Never a live key in demo mode.
+    const own = row.online_key_enc ? unseal(row.online_key_enc) : null;
+    if (own && own.startsWith('sk_sandbox_')) return own;
+    return demoKey() || null;
+  }
   if (row.online_mode === 'counter') return counterKey(row);
   const k = row.online_key_enc ? unseal(row.online_key_enc) : null;
-  return k && KEY_SHAPE.test(k) ? k : null;
+  return k && k.startsWith('sk_prod_') ? k : null;
 }
 
 /** What the back office shows. Never a key, only its last four. */
 async function publicView(db, office) {
   const row = await readRow(db, office);
   const counter = counterKey(row);
+  const own = row && row.online_key_enc ? unseal(row.online_key_enc) : null;
   return {
+    own_sandbox: !!(own && own.startsWith('sk_sandbox_')),
     mode: row && MODES.has(row.online_mode) ? row.online_mode : 'demo',
     configured: !!(row && MODES.has(row.online_mode)),
     live_hint: row && row.online_key_hint ? row.online_key_hint : null,
@@ -104,8 +112,20 @@ async function save(db, office, body) {
   let sealed = null;
   let hint = null;
 
-  if (mode === 'demo' && !demoKey()) {
-    throw Object.assign(new Error('The demo (sandbox) key is not set up on this server yet.'), { status: 409 });
+  if (mode === 'demo') {
+    // Optionally the venue's own sandbox key; otherwise the shared one.
+    const typed = String((body && body.api_key) || '').trim();
+    if (typed) {
+      if (!typed.startsWith('sk_sandbox_') || !KEY_SHAPE.test(typed)) {
+        throw Object.assign(new Error('Demo takes a Dojo sandbox key (sk_sandbox_...).'), { status: 400 });
+      }
+      const checked = await checkKey(typed);
+      if (!checked.ok) throw Object.assign(new Error(checked.message), { status: 400 });
+      sealed = seal(typed);
+      hint = typed.slice(-4);
+    } else if (!demoKey() && !(row && row.online_key_enc && String(unseal(row.online_key_enc) || '').startsWith('sk_sandbox_'))) {
+      throw Object.assign(new Error('The demo (sandbox) key is not set up on this server yet.'), { status: 409 });
+    }
   }
   if (mode === 'counter' && !counterKey(row)) {
     throw Object.assign(new Error(row && row.platform === 'connect'
@@ -115,13 +135,13 @@ async function save(db, office, body) {
   if (mode === 'live') {
     const typed = String((body && body.api_key) || '').trim();
     if (typed) {
-      if (!KEY_SHAPE.test(typed)) throw Object.assign(new Error('That does not look like a Dojo secret key (sk_prod_... or sk_sandbox_...).'), { status: 400 });
+      if (!typed.startsWith('sk_prod_') || !KEY_SHAPE.test(typed)) throw Object.assign(new Error('A live key starts sk_prod_. For a sandbox key choose Demo.'), { status: 400 });
       const checked = await checkKey(typed);
       if (!checked.ok) throw Object.assign(new Error(checked.message), { status: 400 });
       sealed = seal(typed);
       if (!sealed) throw Object.assign(new Error('The server cannot seal keys (EXPRESS_SECRET_KEY is not set).'), { status: 500 });
       hint = typed.slice(-4);
-    } else if (!(row && row.online_key_enc)) {
+    } else if (!(row && row.online_key_enc && String(unseal(row.online_key_enc) || '').startsWith('sk_prod_'))) {
       throw Object.assign(new Error('Paste the live key to use.'), { status: 400 });
     }
   }

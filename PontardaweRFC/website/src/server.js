@@ -312,6 +312,32 @@ app.get('/.well-known/security.txt', (req, res) => {
 });
 
 app.post('/api/ask', express.json({ limit: '24kb' }), helperRoute());
+
+/*
+ * Dojo's webhook for Pontardawe's online checkout (sandbox, "PontardaweRFC
+ * Demo"), registered at https://pontardawerfc.com/dojo_test_webhook
+ * (2026-10-16). Passed through unchanged -- the exact bytes and the
+ * dojo-signature header -- to the back office, which verifies the signature
+ * and settles the menu order. Nothing is trusted or kept here.
+ */
+const BACKOFFICE = (process.env.BACKOFFICE_URL || 'https://backoffice.vesopaepos.com').replace(/\/+$/, '');
+app.post('/dojo_test_webhook', express.raw({ type: '*/*', limit: '256kb' }), async (req, res) => {
+  try {
+    const r = await fetch(`${BACKOFFICE}/api/webhooks/dojo/sandbox`, {
+      method: 'POST',
+      headers: {
+        'content-type': req.get('content-type') || 'application/json',
+        'dojo-signature': req.get('dojo-signature') || '',
+      },
+      body: Buffer.isBuffer(req.body) ? req.body : Buffer.from(''),
+      signal: AbortSignal.timeout(15000),
+    });
+    res.status(r.status).type('application/json').send(await r.text());
+  } catch {
+    // A 5xx makes Dojo retry later, which is right when the back office is away.
+    res.status(502).json({ error: 'Could not reach the back office.' });
+  }
+});
 // Ponty Kicks online (src/game_rooms.js): HTTP here, the socket on the server below.
 app.use('/api/play', game.gameRoutes(express));
 

@@ -14358,7 +14358,7 @@ async function loadOnlineCheckout() {
   let s;
   try { s = await api('/dojo-settings/online'); } catch (e) { say(e.message, false); return; }
   const describe = (v) => {
-    if (v.mode === 'demo') return 'Now: <b>Demo</b> <span class="pill on">sandbox</span>, test money only, test orders never reach the till.' + (v.configured ? '' : ' (not saved yet)');
+    if (v.mode === 'demo') return 'Now: <b>Demo</b> <span class="pill on">sandbox</span>' + (v.own_sandbox ? ' with your own sandbox key' + (v.live_hint ? ' ending <code>' + esc(v.live_hint) + '</code>' : '') : '') + ', test money only, test orders never reach the till.' + (v.configured ? '' : ' (not saved yet)');
     if (v.mode === 'counter') return 'Now: <b>the Pay at Counter key</b> ' + (v.counter_live ? '<span class="pill amber">live</span>' : '<span class="pill on">sandbox</span>');
     return 'Now: <b>another live key</b>' + (v.live_hint ? ' ending <code>' + esc(v.live_hint) + '</code>' : '') + ' <span class="pill amber">live</span>';
   };
@@ -14366,9 +14366,16 @@ async function loadOnlineCheckout() {
   document.querySelectorAll('input[name="dojo-online-mode"]').forEach((r) => {
     r.checked = r.value === s.mode;
     if (r.value === 'counter') r.disabled = !s.counter_usable;
-    r.onchange = () => { $('dojo-online-key-row').hidden = r.value !== 'live' || !r.checked; };
+    r.onchange = () => showKey(r.value);
   });
-  $('dojo-online-key-row').hidden = s.mode !== 'live';
+  // A key box for a live key, or for the venue's own sandbox key in Demo.
+  function showKey(mode) {
+    $('dojo-online-key-row').hidden = mode === 'counter';
+    $('dojo-online-key').placeholder = mode === 'demo'
+      ? (s.own_sandbox ? 'Your own sandbox key is saved (paste another to replace it)' : 'Optional: your own Dojo sandbox key (sk_sandbox_...)')
+      : 'sk_prod_... (leave blank to keep the saved key)';
+  }
+  showKey(s.mode);
   $('dojo-online-key').value = '';
   say(s.counter_platform === 'connect' ? 'Pay at Counter is a Paymentsense Connect account, so it cannot be used online.' : '', true);
   $('dojo-online-save').onclick = async () => {
