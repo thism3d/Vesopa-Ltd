@@ -91,6 +91,13 @@ transit, users can ask for deletion.
 
 Add **Wear OS** to ship the watch app on this listing. Then upload the Wear
 bundle as its own release on the Wear OS track (it has its own version code).
+
+The full description must name every watch feature: Play's Wear App Quality
+review rejected 1.2.0 because it did not mention the **Tile** ("My card") or
+the **complication** ("Points"), both in the watch app. `play.json` now has an
+"On your Wear OS watch" section for them; keep it if the words change, and add
+any new watch feature to it. `python tool/play_upload.py PontardaweRFC --listing`
+sends the words without a new build.
 Tablets need no separate form factor: the phone bundle covers them.
 
 ## Releases

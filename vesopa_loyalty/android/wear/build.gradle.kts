@@ -153,6 +153,22 @@ dependencies {
     implementation("androidx.wear.watchface:watchface-complications-data-source:1.3.0")
     implementation("androidx.concurrent:concurrent-futures:1.2.0")
 
+    /*
+     * NOT USED DIRECTLY: newer versions of what the two libraries above bring
+     * in old. Play's SDK index flagged androidx.fragment 1.1.0 as outdated on
+     * the 1.2.0 Wear bundle (versionCode 1000008), and it arrives twice:
+     *   watchface-complications-data-source 1.3.0 > preference 1.1.0 >
+     *     appcompat 1.1.0 > fragment 1.1.0
+     *   play-services-wearable 20.0.1 > play-services-basement > fragment 1.1.0
+     * Both are already their latest releases, so the newer versions are named
+     * here and Gradle takes the highest. Check with:
+     *   gradle :wear:dependencyInsight --configuration releaseRuntimeClasspath
+     *          --dependency androidx.fragment:fragment
+     */
+    implementation("androidx.fragment:fragment:1.9.1")
+    implementation("androidx.appcompat:appcompat:1.8.0")
+    implementation("androidx.preference:preference:1.2.1")
+
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.17")
     testImplementation("io.github.takahirom.roborazzi:roborazzi-compose:1.76.0")
