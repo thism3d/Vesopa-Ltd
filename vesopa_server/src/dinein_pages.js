@@ -233,6 +233,10 @@ async function metaFor(pool, { table, slug }) {
       payOnline: !!row.online_pay,
       // What the venue wrote, as opposed to the default line above.
       ownTagline: (row.tagline || '').trim() || null,
+      // Dojo's website checklist, at the foot of the menu: the legal entity,
+      // contact details and the three policies. The back office's fields
+      // win; a club look fills what is empty (venue_looks.js legal).
+      legal: legalFor(row, branded.look),
       // Its colours and photograph, for the pages that are not the menu
       // itself (the order tracker), which have no script to fetch them.
       theme: branded.theme,
@@ -450,6 +454,50 @@ function absoluteUrl(url) {
  * A venue's own logo is still preferred when it has one, because it is theirs.
  * It is served relative so that it works on whichever host answered.
  */
+/** The venue's legal details for the foot of its menu, or null when it has none. */
+function legalFor(row, look) {
+  const l = (look && look.legal) || {};
+  const pick = (a, b) => (String(a || '').trim() || String(b || '').trim() || null);
+  const url = (v) => (/^https:\/\/[^\s"'<>]+$/.test(String(v || '')) ? String(v) : null);
+  const out = {
+    name: pick(row.legal_name, l.name),
+    number: l.number || null,
+    address: pick([row.address_line, row.postcode].filter(Boolean).join(', '), l.office),
+    phone: pick(row.phone, look && look.phone),
+    email: pick(row.contact_email, look && look.email),
+    terms: url(pick(row.terms_url, l.terms)),
+    privacy: url(pick(row.privacy_url, l.privacy)),
+    refunds: url(pick(row.refund_url, l.refunds)),
+    contact: url(l.contact),
+  };
+  return out.name || out.terms || out.privacy || out.refunds ? out : null;
+}
+
+/** The foot of the menu: who sells, how to reach them, the policies, the cards. */
+function legalFooter(m) {
+  const l = m.legal;
+  const cards = ['visa', 'mastercard', 'apple-pay', 'google-pay'];
+  const names = { visa: 'Visa', mastercard: 'Mastercard', 'apple-pay': 'Apple Pay', 'google-pay': 'Google Pay' };
+  const logos = '<div class="lf-cards" aria-label="Cards we accept">' +
+    cards.map((c) => `<img src="/assets/cards/${c}.svg" alt="${names[c]}" width="48" height="30" loading="lazy">`).join('') +
+    '</div>';
+  if (!l) {
+    return `<footer class="legal-foot">${m.payOnline ? logos + '<p>Card payments are taken securely by Dojo.</p>' : ''}</footer>`;
+  }
+  const links = [
+    l.terms && `<a href="${esc(l.terms)}" rel="noopener">Terms and conditions</a>`,
+    l.refunds && `<a href="${esc(l.refunds)}" rel="noopener">Refund policy</a>`,
+    l.privacy && `<a href="${esc(l.privacy)}" rel="noopener">Privacy policy</a>`,
+    l.contact && `<a href="${esc(l.contact)}" rel="noopener">Contact us</a>`,
+  ].filter(Boolean).join('<span aria-hidden="true">·</span>');
+  return `<footer class="legal-foot">
+  ${m.payOnline ? logos : ''}
+  ${links ? `<nav class="lf-links" aria-label="Policies">${links}</nav>` : ''}
+  <p>${l.name ? `<b>${esc(l.name)}</b>` : ''}${l.number ? ` · Company no. ${esc(l.number)}` : ''}${l.address ? `<br>${esc(l.address)}` : ''}${l.phone ? `<br>Telephone <a href="tel:${esc(String(l.phone).replace(/\s+/g, ''))}">${esc(l.phone)}</a>` : ''}${l.email ? ` · <a href="mailto:${esc(l.email)}">${esc(l.email)}</a>` : ''}</p>
+  ${m.payOnline ? '<p class="lf-secure">&#128274; Card payments are taken securely by Dojo on its own checkout page. We never see your card details. Prices in pounds sterling (GBP).</p>' : ''}
+</footer>`;
+}
+
 /**
  * What a search result and a share card say about a venue's menu: what it
  * wrote itself, else a sentence about it -- never Vesopa's "See the menu".
@@ -586,6 +634,14 @@ const STYLE = `
 .paywhen button span{font-size:13px;color:var(--ink-soft)}
 .paywhen button[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent) inset}
 .paynote{margin:14px 0 4px;font-size:14px;color:var(--ink-soft)}
+.paynote.test{color:var(--ink);background:color-mix(in srgb, #F59E0B 18%, var(--card));border:1px solid #F59E0B;border-radius:10px;padding:10px 12px}
+.legal-foot{max-width:1100px;margin:24px auto 0;padding:22px 18px 130px;font-size:13px;line-height:1.6;color:var(--ink-soft);text-align:center;border-top:1px solid var(--line)}
+.legal-foot a{color:var(--ink);text-decoration:underline}
+.legal-foot b{color:var(--ink)}
+.lf-cards{display:flex;justify-content:center;flex-wrap:wrap;gap:8px;margin:0 0 12px}
+.lf-cards img{display:block;width:48px;height:30px}
+.lf-links{display:flex;justify-content:center;flex-wrap:wrap;gap:6px 10px;margin:0 0 10px;font-weight:600}
+.lf-secure{margin-top:8px}
 .tk-pay{display:block;text-align:center;margin:0 0 10px;padding:15px;border-radius:var(--radius);background:var(--accent);color:var(--on-accent);font-weight:800;text-decoration:none}
 :root{
   --accent:#A5C715; --on-accent:#10130A;
@@ -2272,6 +2328,7 @@ ${shareImage ? `<meta name="twitter:image" content="${esc(shareImage)}">` : ''}
 </head>
 <body>
 <div id="app"><div class="state"><h2>Loading the menu…</h2><p>One moment.</p></div></div>
+${legalFooter(m)}
 
 <div class="basket" id="basketBar">
   <!-- How far off the offer the basket is. Above the button rather than inside
@@ -5128,12 +5185,16 @@ ${shareImage ? `<meta name="twitter:image" content="${esc(shareImage)}">` : ''}
       '<label for="cnote">Anything the kitchen should know? (optional)</label>' +
       '<textarea id="cnote" rows="2" placeholder="Allergies, no onions…"></textarea>' +
       // Paying by card now, on Dojo's secure page, when the venue offers it.
+      (v.online_pay && v.online_demo
+        ? '<p class="paynote test"><b>Card payments are in test mode.</b> No real money is taken and a card-paid ' +
+            'order is not sent to the kitchen. To order food, choose Pay at the bar.</p>'
+        : '') +
       (v.online_pay
         ? (v.online_pay_required
             ? '<p class="paynote">You pay by card on the next page (Dojo secure checkout). ' +
                 'Your order goes to the kitchen as soon as the payment is through.</p>'
             : '<div class="paywhen" role="radiogroup" aria-label="How to pay">' +
-                '<button type="button" data-pay="card" aria-pressed="true"><b>Pay now by card</b>' +
+                '<button type="button" data-pay="card" aria-pressed="true"><b>Pay now by card' + (v.online_demo ? ' (test)' : '') + '</b>' +
                   '<span>Apple Pay, Google Pay or card</span></button>' +
                 '<button type="button" data-pay="bar" aria-pressed="false"><b>Pay at the bar</b>' +
                   '<span>When you are ready</span></button>' +
@@ -5650,6 +5711,11 @@ ${iconTags(m)}
   ];
 
   function headline(order, at){
+    if (order.is_demo && order.pay_status === 'paid' && order.status !== 'rejected' && order.status !== 'cancelled') {
+      return { tone:'#16A34A', icon:I.tick, cls:'done',
+               title:'Test payment complete',
+               line:'This was a Dojo test payment: no real money was taken. Test orders are not sent to the kitchen or the till.' };
+    }
     if (order.status === 'awaiting_payment') {
       // Dojo's own state for the payment (src/dinein.js settleCardPayment).
       if (order.pay && order.pay.state === 'authorized') {

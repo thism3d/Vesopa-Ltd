@@ -4344,7 +4344,31 @@
             <div><h2>Card Payments (Dojo)</h2><p class="muted small">Your Dojo connection for every till, and a log of every card payment, refund and check, approved or not.</p></div>
             <button class="btn primary" id="dojo-save">Check and save</button>
           </div>
-          <div class="rd-layout">
+          <!-- Two Dojo connections (2026-10-16): the tills' card machines, and
+               the key online payments use. -->
+          <div class="seg-tabs" role="tablist" aria-label="Dojo connection" style="display:flex;gap:6px;margin:0 0 14px">
+            <button class="btn" type="button" role="tab" id="dojo-tab-counter-btn" aria-selected="true">Pay at Counter</button>
+            <button class="btn" type="button" role="tab" id="dojo-tab-online-btn" aria-selected="false">Online checkout</button>
+          </div>
+          <div id="dojo-tab-online" hidden>
+            <div class="card rd-card" style="max-width:760px">
+              <h3>Online checkout</h3>
+              <p class="small">The Dojo key your online menu, match tickets and memberships take payments with, on Dojo's secure checkout page. Pay at Counter (the tills' card machines) is not changed by this.</p>
+              <p class="small" id="dojo-online-state"></p>
+              <label class="check"><input type="radio" name="dojo-online-mode" value="demo"> <span><b>Demo (Dojo sandbox).</b> Test cards only, no real money. A test order is <b>never</b> sent to the till, the kitchen or the takings. Use this for testing and for Dojo's go-live review.</span></label>
+              <label class="check"><input type="radio" name="dojo-online-mode" value="counter"> <span><b>Use the Pay at Counter key.</b> Only when that key is a Dojo key (sk_...). A Paymentsense Connect key cannot take online payments.</span></label>
+              <label class="check"><input type="radio" name="dojo-online-mode" value="live"> <span><b>Another live key.</b> A live Dojo key enabled for Remote Payments (online checkout). Paid orders go to the till and kitchen as normal.</span></label>
+              <label id="dojo-online-key-row" hidden>Live key for online checkout
+                <input type="password" id="dojo-online-key" autocomplete="off" placeholder="sk_prod_... (leave blank to keep the saved key)">
+              </label>
+              <div class="row" style="gap:8px;margin-top:10px">
+                <button class="btn primary" type="button" id="dojo-online-save">Check and save</button>
+                <span class="small" id="dojo-online-msg"></span>
+              </div>
+              <p class="muted small">Saving a live key checks it with Dojo first. Online payments also need the menu's "Pay by card online" switch (Online menu).</p>
+            </div>
+          </div>
+          <div class="rd-layout" id="dojo-tab-counter">
             <div class="rd-editor">
               <div class="card rd-card">
                 <h3>Dojo connection</h3>

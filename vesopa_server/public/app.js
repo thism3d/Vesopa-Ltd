@@ -14336,7 +14336,64 @@ function dojoSay(text, ok) {
   el.style.fontWeight = '600';
 }
 
+/** Pay at Counter | Online checkout on the Card Payments page. */
+function dojoTabs(which) {
+  const online = which === 'online';
+  $('dojo-tab-online').hidden = !online;
+  $('dojo-tab-counter').hidden = online;
+  $('dojo-save').hidden = online;
+  $('dojo-tab-online-btn').setAttribute('aria-selected', String(online));
+  $('dojo-tab-counter-btn').setAttribute('aria-selected', String(!online));
+  $('dojo-tab-online-btn').classList.toggle('primary', online);
+  $('dojo-tab-counter-btn').classList.toggle('primary', !online);
+}
+
+async function loadOnlineCheckout() {
+  const say = (t, ok) => {
+    const el = $('dojo-online-msg');
+    el.textContent = t || '';
+    el.style.color = ok ? '#06784f' : '#b42318';
+    el.style.fontWeight = '600';
+  };
+  let s;
+  try { s = await api('/dojo-settings/online'); } catch (e) { say(e.message, false); return; }
+  const describe = (v) => {
+    if (v.mode === 'demo') return 'Now: <b>Demo</b> <span class="pill on">sandbox</span>, test money only, test orders never reach the till.' + (v.configured ? '' : ' (not saved yet)');
+    if (v.mode === 'counter') return 'Now: <b>the Pay at Counter key</b> ' + (v.counter_live ? '<span class="pill amber">live</span>' : '<span class="pill on">sandbox</span>');
+    return 'Now: <b>another live key</b>' + (v.live_hint ? ' ending <code>' + esc(v.live_hint) + '</code>' : '') + ' <span class="pill amber">live</span>';
+  };
+  $('dojo-online-state').innerHTML = describe(s);
+  document.querySelectorAll('input[name="dojo-online-mode"]').forEach((r) => {
+    r.checked = r.value === s.mode;
+    if (r.value === 'counter') r.disabled = !s.counter_usable;
+    r.onchange = () => { $('dojo-online-key-row').hidden = r.value !== 'live' || !r.checked; };
+  });
+  $('dojo-online-key-row').hidden = s.mode !== 'live';
+  $('dojo-online-key').value = '';
+  say(s.counter_platform === 'connect' ? 'Pay at Counter is a Paymentsense Connect account, so it cannot be used online.' : '', true);
+  $('dojo-online-save').onclick = async () => {
+    const mode = (document.querySelector('input[name="dojo-online-mode"]:checked') || {}).value;
+    if (!mode) { say('Choose one.', false); return; }
+    say('Checking…', true);
+    try {
+      const r = await api('/dojo-settings/online', {
+        method: 'PUT',
+        body: JSON.stringify({ mode, api_key: $('dojo-online-key').value.trim() }),
+      });
+      $('dojo-online-state').innerHTML = describe(r);
+      $('dojo-online-key').value = '';
+      say('Saved. Online payments use this from now on.', true);
+      toast('Online checkout saved');
+    } catch (e) {
+      say(e.message + ' Nothing was saved.', false);
+    }
+  };
+}
+
 async function loadCardPayments() {
+  $('dojo-tab-counter-btn').onclick = () => dojoTabs('counter');
+  $('dojo-tab-online-btn').onclick = () => { dojoTabs('online'); loadOnlineCheckout(); };
+  dojoTabs('counter');
   dojoState = await api('/dojo-settings');
   $('dojo-key-state').innerHTML = dojoKeyState(dojoState);
   $('dojo-key').value = '';

@@ -167,6 +167,20 @@ function createCheckoutIntent(key, { amountMinor, reference, description, redire
   });
 }
 
+/**
+ * A fresh client session secret for an intent, so the checkout page works
+ * again after a failed attempt (Dojo's go-live checklist: "a successful
+ * payment after an unsuccessful one"). Best effort: false when Dojo refuses.
+ */
+async function refreshClientSecret(key, intentId, opts) {
+  try {
+    await call(key, 'POST', '/payment-intents/' + encodeURIComponent(intentId) + '/refresh-client-session-secret', { ...opts, body: {} });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function checkoutUrl(intentId) {
   return 'https://pay.dojo.tech/checkout/' + encodeURIComponent(intentId);
 }
@@ -308,6 +322,7 @@ module.exports = {
   getIntent,
   createCheckoutIntent,
   checkoutUrl,
+  refreshClientSecret,
   refundIntent,
   cancelIntent,
   startSession,

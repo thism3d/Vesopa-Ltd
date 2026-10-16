@@ -167,6 +167,22 @@ async function loadDineIn() {
         <label style="grid-column:1/-1">Address
           <input id="di-address" value="${esc(v.address_line || '')}">
         </label>
+        <label>Legal company name
+          <input id="di-legal" value="${esc(v.legal_name || '')}" placeholder="As on your Dojo contract">
+        </label>
+        <label>Contact email
+          <input id="di-email" type="email" value="${esc(v.contact_email || '')}">
+        </label>
+        <label style="grid-column:1/-1">Terms and conditions link
+          <input id="di-terms" value="${esc(v.terms_url || '')}" placeholder="https://…">
+        </label>
+        <label>Refund policy link
+          <input id="di-refunds" value="${esc(v.refund_url || '')}" placeholder="https://…">
+        </label>
+        <label>Privacy policy link
+          <input id="di-privacy" value="${esc(v.privacy_url || '')}" placeholder="https://…">
+          <span class="muted small">Shown at the foot of the menu with the card logos, as Dojo requires before online card payments go live.</span>
+        </label>
         <label style="grid-column:1/-1">Map link
           <input id="di-map" value="${esc(v.map_url || '')}"
                  placeholder="https://maps.google.com/…">
@@ -853,6 +869,11 @@ async function diSaveVenue() {
     tagline: $('di-tagline').value,
     phone: $('di-phone').value,
     address_line: $('di-address').value,
+    legal_name: $('di-legal').value,
+    contact_email: $('di-email').value,
+    terms_url: $('di-terms').value,
+    refund_url: $('di-refunds').value,
+    privacy_url: $('di-privacy').value,
     postcode: $('di-postcode').value,
     map_url: $('di-map').value,
     meta_title: $('di-meta-title').value,

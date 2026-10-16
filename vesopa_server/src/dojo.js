@@ -195,7 +195,10 @@ function dojoWebhookRoutes({ pool, broadcast, onEvent }) {
     }
 
     const signature = req.get('dojo-signature') || req.get('Dojo-Signature');
-    if (!verifySignature(req.rawBody, signature, secret)) {
+    // Comma-separated: one secret per Dojo account subscribed to this
+    // environment (the kiosk's sandbox and the online checkout's demo).
+    const secrets = String(secret).split(',').map((s) => s.trim()).filter(Boolean);
+    if (!secrets.some((one) => verifySignature(req.rawBody, signature, one))) {
       console.warn(`[dojo] rejected an unverified ${environment} webhook`);
       return res.status(401).json({ error: 'Invalid signature' });
     }

@@ -231,6 +231,22 @@ function dojoSettingsRoutes({ pool, broadcast, secret, fetchImpl }) {
 
   // ---- Back office ----------------------------------------------------------
 
+  // Online checkout (src/online_checkout.js): which key the online menu,
+  // tickets and memberships pay with. Pay at Counter is untouched by these.
+  router.get('/dojo-settings/online', guard('commerce.tender'), async (req, res, next) => {
+    try {
+      res.json(await require('./online_checkout').publicView(pool, await tenantEmail(req)));
+    } catch (e) { next(e); }
+  });
+  router.put('/dojo-settings/online', guard('commerce.edit'), async (req, res, next) => {
+    try {
+      res.json(await require('./online_checkout').save(pool, await tenantEmail(req), req.body || {}));
+    } catch (e) {
+      if (e.status) return res.status(e.status).json({ ok: false, message: e.message, error: e.message });
+      return next(e);
+    }
+  });
+
   router.get('/dojo-settings', guard('commerce.tender'), async (req, res, next) => {
     try {
       res.json(publicView(await rowFor(await tenantEmail(req))));

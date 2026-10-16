@@ -932,6 +932,11 @@ async function checkIn(db, office, sessionId, customerId, { via = 'till', dropIn
 // ---------------------------------------------------------------------------
 
 async function paymentKeyFor(db, office) {
+  // Back office Card Payments, Online checkout (src/online_checkout.js):
+  // demo, the Pay at Counter key, or another live key. Undefined when the
+  // venue never chose, and then everything below runs exactly as before.
+  const online = await require('./online_checkout').onlineKeyFor(db, office);
+  if (online !== undefined) return online;
   let settings = null;
   try {
     const [[row]] = await db.query('SELECT * FROM epos_express_settings WHERE office = ?', [office]);

@@ -30,6 +30,17 @@ const LOOKS = {
     club: '#8F0000', deep: '#3F0000', glow: '#C41414', font: 'montserrat',
     // The online menu (src/dinein.js menuLook): club red on a dark page over
     // the club's own lineout photograph, not The Vesopa Kitchen's lime.
+    // The club's legal details and policies, for the foot of its menu (Dojo's
+    // go-live checklist). The back office's own fields win when filled in.
+    legal: {
+      name: 'Pontardawe Rugby Football Club Limited',
+      number: '10056776',
+      office: 'Ynysderw Road, Pontardawe, Neath Port Talbot, SA8 4EG',
+      terms: 'https://pontardawerfc.com/ordering-terms',
+      privacy: 'https://pontardawerfc.com/privacy',
+      refunds: 'https://pontardawerfc.com/ordering-terms#refunds',
+      contact: 'https://pontardawerfc.com/contact',
+    },
     menu: {
       page: '#1A0606', card: '#2A0B0B', ink: '#FFF4F2', inkSoft: '#E3C2BE',
       photo: '/assets/venues/pontardawe-rfc/menu-photo.jpg',

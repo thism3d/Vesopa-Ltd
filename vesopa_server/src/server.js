@@ -315,7 +315,12 @@ app.use('/api', passwordRoutes({ pool }));
 // webhook needs its hook: a kiosk that was switched off mid-payment still
 // has its sale finished when Dojo reports the capture.
 const expressKiosk = expressKioskRoutes({ pool, broadcast, secret: JWT_SECRET });
-app.use(dojoWebhookRoutes({ pool, broadcast, onEvent: expressKiosk.onDojoEvent }));
+// Online menu orders paid on Dojo's checkout settle from the webhook too
+// (dinein.js settleIntent), as well as from the tracker and the sweep.
+const dojoEventHooks = [];
+app.use(dojoWebhookRoutes({ pool, broadcast, onEvent: async (e) => {
+  await Promise.allSettled([expressKiosk.onDojoEvent(e), ...dojoEventHooks.map((hook) => hook(e))]);
+} }));
 
 // The till's note keys. The authenticated half is office-scoped; the pull is
 // mounted at the root alongside /till/products.
@@ -465,7 +470,9 @@ app.use('/api', customerImportRoutes({ pool, broadcast, secret: JWT_SECRET }));
 // other route a till calls is at the root and one that was not simply 404ed.
 // The pages a customer actually opens are mounted further down, ahead of the
 // static middleware.
-app.use(dineinRoutes({ pool, broadcast, secret: JWT_SECRET }));
+const dineinRouter = dineinRoutes({ pool, broadcast, secret: JWT_SECRET });
+if (typeof dineinRouter.settleIntent === 'function') dojoEventHooks.push((e) => dineinRouter.settleIntent(e.paymentIntentId));
+app.use(dineinRouter);
 // Signing in to a menu with a code. Mounted at the root like the rest of
 // dine-in, and beside it rather than inside it because it is a self-contained
 // piece with its own outside dependency.
