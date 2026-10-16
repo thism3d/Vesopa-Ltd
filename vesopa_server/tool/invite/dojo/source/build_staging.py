@@ -1,4 +1,4 @@
-"""Builds the staging link email to Dojo (Alex + developer support), 16 Oct 2026: HTML, text, .eml.
+"""Builds the staging link email to Dojo (Alex, customer support and integration support), 16 Oct 2026: HTML, text, .eml.
 
 Alex: "Online checkout testing for a Partner product is not performed over a
 call, we just ask that you supply us with a link to a staging site where we can
@@ -17,7 +17,7 @@ OUT = sys.argv[1]
 os.makedirs(OUT, exist_ok=True)
 
 SUBJECT = "Staging link for review: Vesopa online checkout (Dojo hosted checkout) at menu.pontardawerfc.com"
-TO = [("Alex Radzio", "alex.radzio@dojo.tech"), ("Dojo Developer Support", "devsupport@dojo.tech")]
+TO = [("Alex Radzio", "alex.radzio@dojo.tech"), ("Dojo Customer Support", "support@dojo.tech"), ("Dojo Integration Support", "integrations@dojo.tech")]
 CC = [("Meirion Davies", "info@vesopasoftware.com"), ("Meirion Davies", "info@vesopa.com")]
 ORG = ("Vesopa Developer", "muzahid@vesopa.com")
 LINK = "https://menu.pontardawerfc.com/"
@@ -74,7 +74,7 @@ html = f'''<!doctype html>
   <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:#ffffff;border-radius:18px;overflow:hidden;">
     <tr><td style="background:#0b1a6b;"><img src="cid:hero@vesopa" width="600" alt="Vesopa and Dojo: staging ready for review. Pontardawe RFC's online menu on Dojo's sandbox at menu.pontardawerfc.com." style="display:block;width:100%;max-width:600px;height:auto;border:0;"></td></tr>
     <tr><td style="padding:34px 24px 6px;">
-      <p {P}>Hi Alex, and the Dojo Developer Support team,</p>
+      <p {P}>Hi Alex, and the Dojo Customer Support and Integration Support teams,</p>
       <p {P}>Thank you, Alex, for explaining the process. Here is our staging site for the online checkout review, built to your <a href="https://docs.dojo.tech/payments/accept-payments/online-payments/checkout-page/checklist" style="color:#0b1a6b;">go-live checklist</a>:</p>
     </td></tr>
     <tr><td style="padding:0 24px 18px;" align="center">
@@ -119,7 +119,7 @@ html = f'''<!doctype html>
 strip = lambda t: t.replace("&ldquo;", '"').replace("&rdquo;", '"').replace("&pound;", "£").replace("&rsaquo;", ">").replace("<strong>", "").replace("</strong>", "")
 import re
 untag = lambda t: re.sub(r"<[^>]+>", "", strip(t))
-text = (f"Hi Alex, and the Dojo Developer Support team,\n\nThank you, Alex, for explaining the process. Here is our staging site for the online checkout review, built to your go-live checklist:\n\n  {LINK}\n\n"
+text = (f"Hi Alex, and the Dojo Customer Support and Integration Support teams,\n\nThank you, Alex, for explaining the process. Here is our staging site for the online checkout review, built to your go-live checklist:\n\n  {LINK}\n\n"
         "Card payments on this site are on Dojo's sandbox (the \"PontardaweRFC Demo\" key) and marked Test mode on the menu. A test order is never sent to the club's till, kitchen or takings, so you can test freely.\n\nHOW TO TEST\n"
         + "\n".join(f"{i}. {untag(a)}" for i, a in enumerate(HOW, 1))
         + "\n\nWEBSITE CHECKLIST\n" + "\n".join(f"- {h}: {untag(t)}" for h, t in CHECKS)

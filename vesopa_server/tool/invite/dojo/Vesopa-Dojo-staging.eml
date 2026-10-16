@@ -1,21 +1,22 @@
 X-Unsent: 1
 From: Vesopa Developer <muzahid@vesopa.com>
 To: Alex Radzio <alex.radzio@dojo.tech>,
- Dojo Developer Support <devsupport@dojo.tech>
+ Dojo Customer Support <support@dojo.tech>,
+ Dojo Integration Support <integrations@dojo.tech>
 Cc: Meirion Davies <info@vesopasoftware.com>, Meirion Davies <info@vesopa.com>
 Subject: Staging link for review: Vesopa online checkout (Dojo hosted
  checkout) at menu.pontardawerfc.com
-Date: Fri, 16 Oct 2026 09:19:00 +0000
-Message-ID: <179214234032.14904.13985476597672975224@vesopa.com>
+Date: Fri, 16 Oct 2026 09:36:52 +0000
+Message-ID: <179214341218.9072.2943264515600779758@vesopa.com>
 MIME-Version: 1.0
 Content-Type: multipart/alternative;
- boundary="===============6486180137803808225=="
+ boundary="===============7755050386356612759=="
 
---===============6486180137803808225==
+--===============7755050386356612759==
 Content-Type: text/plain; charset="utf-8"
 Content-Transfer-Encoding: quoted-printable
 
-Hi Alex, and the Dojo Developer Support team,
+Hi Alex, and the Dojo Customer Support and Integration Support teams,
 
 Thank you, Alex, for explaining the process. Here is our staging site for the=
  online checkout review, built to your go-live checklist:
@@ -89,12 +90,12 @@ On behalf of Meirion Davies, Director
 Vesopa Software Ltd and Vesopa Ltd
 info@vesopasoftware.com | info@vesopa.com
 
---===============6486180137803808225==
+--===============7755050386356612759==
 MIME-Version: 1.0
 Content-Type: multipart/related;
- boundary="===============0607666795801415269=="
+ boundary="===============8687788097045008110=="
 
---===============0607666795801415269==
+--===============8687788097045008110==
 Content-Type: text/html; charset="utf-8"
 Content-Transfer-Encoding: quoted-printable
 
@@ -121,7 +122,8 @@ ck;width:100%;max-width:600px;height:auto;border:0;"></td></tr>
     <tr><td style=3D"padding:34px 24px 6px;">
       <p style=3D"margin:0 0 16px;font-family:'Plus Jakarta Sans', 'Segoe UI'=
 , Roboto, Helvetica, Arial, sans-serif;font-size:16px;line-height:1.6;color:#=
-17141c;">Hi Alex, and the Dojo Developer Support team,</p>
+17141c;">Hi Alex, and the Dojo Customer Support and Integration Support teams=
+,</p>
       <p style=3D"margin:0 0 16px;font-family:'Plus Jakarta Sans', 'Segoe UI'=
 , Roboto, Helvetica, Arial, sans-serif;font-size:16px;line-height:1.6;color:#=
 17141c;">Thank you, Alex, for explaining the process. Here is our staging sit=
@@ -374,7 +376,7 @@ to Meirion Davies, Director.</p>
 </body>
 </html>
 
---===============0607666795801415269==
+--===============8687788097045008110==
 Content-Type: image/jpeg
 Content-Transfer-Encoding: base64
 Content-Disposition: attachment; filename="vesopa-dojo-staging.jpg"
@@ -2339,6 +2341,6 @@ ooq0iSa4H+kt+H8qjFFFXHYBQKWiirRLHAUtFFUgJbn/AI+m/D+VR0UU0AUUUVQmFFFFNCJrn/j6
 b8P5VEKKKEtAFoooosAUUUUgJbn/AI+m/D+VRUUUkAUlFFMYUUUUCJbn/j6b8P5VFRRQhsUClooo
 BCUUUUDP/9k=
 
---===============0607666795801415269==--
+--===============8687788097045008110==--
 
---===============6486180137803808225==--
+--===============7755050386356612759==--
