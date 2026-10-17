@@ -6,6 +6,7 @@
     python tool/play_upload.py PontardaweRFC --builds DIR   # bundles from DIR, not the Desktop
     python tool/play_upload.py PontardaweRFC --next-build   # print the next build number Play has not seen
     python tool/play_upload.py PontardaweRFC --only wear    # one part: phone, wear or listing
+    python tool/play_upload.py PontardaweRFC --halt alpha,wear:beta   # pause what is out on these tracks
 
 Reads <venue>/store/play.json (package, words, track, release notes, which
 pictures) and venue.json (version and build), and takes the bundles that
@@ -182,13 +183,38 @@ def next_build(play, floor: int) -> int:
     return max([floor - 1, *builds]) + 1
 
 
+def halt(play, tracks) -> int:
+    """Pause what is out on each track: testers stop being offered it. Play
+    keeps the release, and a newer one on the track replaces it."""
+    failed = 0
+    for track in [t.strip() for t in tracks if t.strip()]:
+        edit = play.edit()
+        try:
+            t = play.call("GET", f"{API}/{play.package}/edits/{edit}/tracks/{track}")
+            releases = t.get("releases", [])
+            live = [r for r in releases if r.get("status") in ("completed", "inProgress")]
+            if not live:
+                print(f"{track}: nothing out to pause ({', '.join(r.get('status', '?') for r in releases) or 'empty'})")
+                play.call("DELETE", f"{API}/{play.package}/edits/{edit}")
+                continue
+            for r in live:
+                r["status"] = "halted"
+            play.call("PUT", f"{API}/{play.package}/edits/{edit}/tracks/{track}", {"track": track, "releases": releases})
+            play.commit(edit)
+            print(f"{track}: paused {', '.join(r.get('name', '') + ' ' + str(r.get('versionCodes')) for r in live)}")
+        except PlayError as e:
+            failed = 1
+            print(f"{track}: ! {e}")
+    return failed
+
+
 def option(name):
     return sys.argv[sys.argv.index(name) + 1] if name in sys.argv else None
 
 
 def main():
     # Words after --track and --builds are their values, not the venue.
-    skip = {i + 1 for i, a in enumerate(sys.argv) if a in ("--track", "--builds", "--only")}
+    skip = {i + 1 for i, a in enumerate(sys.argv) if a in ("--track", "--builds", "--only", "--halt")}
     args = [a for i, a in enumerate(sys.argv) if i and i not in skip and not a.startswith("--")]
     if len(args) != 1:
         raise SystemExit(__doc__)
@@ -203,6 +229,8 @@ def main():
     keyfile = key_file()
     token, who = access_token(keyfile)
     play = Play(token, p["package"])
+    if option("--halt"):
+        sys.exit(halt(play, option("--halt").split(",")))
     if "--next-build" in sys.argv:
         print(next_build(play, int(v["build"])))
         return

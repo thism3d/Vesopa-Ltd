@@ -37,12 +37,12 @@ on:
         required: true
         default: PontardaweRFC
       mode:
-        description: full = build and upload with the listing; listing = only the words and pictures; build = bundles only
+        description: full = build and upload with the listing; listing = only the words and pictures; build = bundles only; halt = pause what is out on the tracks named in track
         type: choice
-        options: [full, listing, build]
+        options: [full, listing, build, halt]
         default: full
       track:
-        description: Play track (empty = play.json's)
+        description: Play track (empty = play.json's); for halt, the tracks to pause, e.g. alpha,wear:beta
         required: false
         default: ''
       build:
@@ -82,7 +82,7 @@ jobs:
           test -f "$VENUE/venue.json" || { echo "::error::$VENUE/venue.json not found"; exit 1; }
           missing=""
           if [ "$MODE" != "build" ] && [ -z "$PLAY_SERVICE_ACCOUNT_JSON" ]; then missing="$missing PLAY_SERVICE_ACCOUNT_JSON"; fi
-          if [ "$MODE" != "listing" ]; then
+          if [ "$MODE" != "listing" ] && [ "$MODE" != "halt" ]; then
             [ -n "$KS" ] || missing="$missing ANDROID_UPLOAD_KEYSTORE_B64"
             [ -n "$KSP" ] || missing="$missing ANDROID_KEYSTORE_PASSWORD"
             [ -n "$KA" ] || missing="$missing ANDROID_KEY_ALIAS"
@@ -100,7 +100,7 @@ jobs:
 
       - name: Next build number Play has not seen
         id: num
-        if: inputs.mode != 'listing'
+        if: inputs.mode != 'listing' && inputs.mode != 'halt'
         env:
           BUILD_INPUT: ${{ inputs.build }}
         run: |
@@ -133,13 +133,13 @@ jobs:
           echo "Building $version ($n); the watch bundle is versionCode $((1000000 + n))."
 
       - uses: actions/setup-java@v4
-        if: inputs.mode != 'listing'
+        if: inputs.mode != 'listing' && inputs.mode != 'halt'
         with:
           distribution: temurin
           java-version: '17'
 
       - uses: subosito/flutter-action@v2
-        if: inputs.mode != 'listing'
+        if: inputs.mode != 'listing' && inputs.mode != 'halt'
         with:
           channel: stable
           flutter-version: 3.47.2
@@ -148,11 +148,11 @@ jobs:
       # The NDK the app's build.gradle.kts names, so the release can pack the
       # native libraries' debug symbols.
       - name: Android NDK
-        if: inputs.mode != 'listing'
+        if: inputs.mode != 'listing' && inputs.mode != 'halt'
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.2.13676358" > /dev/null
 
       - name: Upload key and Firebase file
-        if: inputs.mode != 'listing'
+        if: inputs.mode != 'listing' && inputs.mode != 'halt'
         env:
           KS: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_B64 }}
           KSP: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -177,23 +177,23 @@ jobs:
           printf '%s' "$GS" > "$VENUE/google-services.json"
 
       - name: Make the venue's project
-        if: inputs.mode != 'listing'
+        if: inputs.mode != 'listing' && inputs.mode != 'halt'
         run: python3 vesopa_loyalty/tool/make_venue_app.py "$VENUE"
 
       - name: Phone bundle
-        if: inputs.mode != 'listing'
+        if: inputs.mode != 'listing' && inputs.mode != 'halt'
         working-directory: ${{ inputs.venue }}/build/app
         run: |
           flutter pub get
           flutter build appbundle --release --dart-define-from-file=venue_defines.json
 
       - name: Wear OS bundle
-        if: inputs.mode != 'listing'
+        if: inputs.mode != 'listing' && inputs.mode != 'halt'
         working-directory: ${{ inputs.venue }}/build/app/android
         run: ./gradlew --no-daemon :wear:bundleRelease
 
       - name: Gather the bundles
-        if: inputs.mode != 'listing'
+        if: inputs.mode != 'listing' && inputs.mode != 'halt'
         run: |
           out="$RUNNER_TEMP/android-builds"
           mkdir -p "$out"
@@ -203,7 +203,7 @@ jobs:
           ls -la "$out"
 
       - uses: actions/upload-artifact@v4
-        if: inputs.mode != 'listing'
+        if: inputs.mode != 'listing' && inputs.mode != 'halt'
         with:
           name: ${{ inputs.venue }}-${{ steps.num.outputs.version }}-${{ steps.num.outputs.build }}
           path: ${{ runner.temp }}/android-builds/*.aab
@@ -215,6 +215,10 @@ jobs:
           TRACK: ${{ inputs.track }}
           PART: ${{ inputs.part }}
         run: |
+          if [ "$MODE" = "halt" ]; then
+            [ -n "$TRACK" ] || { echo "::error::halt needs the tracks to pause in 'track', e.g. alpha,wear:beta"; exit 1; }
+            exec "$RUNNER_TEMP/py/bin/python" tool/play_upload.py "$VENUE" --halt "$TRACK"
+          fi
           set -- "$VENUE" --builds "$RUNNER_TEMP/android-builds"
           [ "$MODE" = "listing" ] && set -- "$@" --listing
           [ -n "$TRACK" ] && set -- "$@" --track "$TRACK"
