@@ -1,0 +1,210 @@
+# A few back-office files to the server, from GitHub, safely.
+#
+# Not deploy.sh. That one copies the whole of vesopa_server with --delete from
+# the author's Mac, where files git ignores (loyalty_web/, the Apple Wallet
+# certificates, AuthKey_*.p8) also exist; from a clean checkout it would delete
+# them on the server. This copies only the files named, and only when the
+# server's copy is exactly the version in git just before the change, so a
+# file edited by hand on the server, or a server further behind, stops it
+# before anything is touched.
+#
+#   1. each file on the server is compared with git: it must be the version
+#      from before the last commit that changed it (or already the new one)
+#   2. each is backed up beside itself (<file>.bak-<time>), then replaced
+#   3. optional settings go into the server's .env (see "settings")
+#   4. the app must still load, pm2 restarts it, /health must answer;
+#      if any of that fails, the backups go back and pm2 restarts again
+#
+# Actions > "Back office - patch" > Run workflow. Staging first; live needs
+# "deploy" typed in the confirm box.
+#
+# Secrets, in the "App Store Connect API" environment with the others:
+#   VESOPA_SSH_PASSWORD        the server's SSH password (deploy.sh asks for it)
+#   GOOGLE_WALLET_ISSUER_ID    for settings google-wallet: the Issuer ID from
+#                              the Google Pay & Wallet Console
+#   PLAY_SERVICE_ACCOUNT_JSON  for settings google-wallet: the service account
+#                              that signs the cards (it must be added as a user
+#                              in the Wallet Console, and the Google Wallet API
+#                              switched on in its Google Cloud project)
+
+name: Back office - patch
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Which server app
+        type: choice
+        options: [staging, live]
+        default: staging
+      files:
+        description: Files under vesopa_server to copy, space-separated (empty = settings only)
+        required: false
+        default: src/loyalty_app.js
+      settings:
+        description: Also set in the server's .env
+        type: choice
+        options: [none, google-wallet, apns-pontardawe, both]
+        default: none
+      confirm:
+        description: Type deploy to change the live server
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backoffice-patch
+  cancel-in-progress: false
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: App Store Connect API
+    env:
+      SERVER: root@3.72.113.21
+      TARGET: ${{ inputs.target }}
+      FILES: ${{ inputs.files }}
+      SETTINGS: ${{ inputs.settings }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Target and SSH
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          SSHPW: ${{ secrets.VESOPA_SSH_PASSWORD }}
+        run: |
+          if [ "$TARGET" = live ] && [ "$CONFIRM" != deploy ]; then
+            echo "::error::The live server needs 'deploy' typed in the confirm box."; exit 1
+          fi
+          [ -n "$SSHPW" ] || { echo "::error::VESOPA_SSH_PASSWORD is not set in the 'App Store Connect API' environment."; exit 1; }
+          case "$TARGET" in
+            live)    domain=backoffice.vesopaepos.com;         pm2=vesopa_backoffice ;;
+            staging) domain=staging.backoffice.vesopaepos.com; pm2=vesopa_backoffice_staging ;;
+          esac
+          {
+            echo "DOMAIN=$domain"
+            echo "PM2_APP=$pm2"
+            echo "REMOTE_APP=/home/vesopa/web/$domain/private/nodeapp"
+          } >> "$GITHUB_ENV"
+          # The password through SSH_ASKPASS: never on a command line, never in a file in the repo.
+          mkdir -p ~/.ssh "$RUNNER_TEMP/ssh"
+          printf 'Host *\n  StrictHostKeyChecking accept-new\n  ConnectTimeout 20\n  ControlMaster auto\n  ControlPath %s/cm-%%r@%%h\n  ControlPersist 10m\n' "$RUNNER_TEMP/ssh" > ~/.ssh/config
+          printf '#!/bin/sh\nprintf "%%s\\n" "$VESOPA_SSH_PASSWORD"\n' > "$RUNNER_TEMP/ssh/askpass"
+          chmod 700 "$RUNNER_TEMP/ssh/askpass"
+          echo "SSH_ASKPASS=$RUNNER_TEMP/ssh/askpass" >> "$GITHUB_ENV"
+          echo "SSH_ASKPASS_REQUIRE=force" >> "$GITHUB_ENV"
+          echo "DISPLAY=:0" >> "$GITHUB_ENV"
+
+      - name: The server's files match git (nothing is changed if not)
+        env:
+          VESOPA_SSH_PASSWORD: ${{ secrets.VESOPA_SSH_PASSWORD }}
+        run: |
+          ssh -n "$SERVER" "test -d '$REMOTE_APP'" || { echo "::error::$REMOTE_APP not found on the server"; exit 1; }
+          : > "$RUNNER_TEMP/to-copy"
+          for f in $FILES; do
+            case "$f" in *..*|/*) echo "::error::Not a path inside vesopa_server: $f"; exit 1;; esac
+            local_path="vesopa_server/$f"
+            [ -f "$local_path" ] || { echo "::error::$local_path is not in the repository"; exit 1; }
+            new=$(git rev-parse "HEAD:$local_path")
+            last=$(git log -1 --format=%H -- "$local_path")
+            before=$(git rev-parse "$last^:$local_path" 2>/dev/null || echo none)
+            remote=$(ssh -n "$SERVER" "cat '$REMOTE_APP/$f' 2>/dev/null" | git hash-object --stdin)
+            if [ "$remote" = "$new" ]; then
+              echo "$f: already the new version, left as it is"
+            elif [ "$remote" = "$before" ]; then
+              echo "$f: the version before ${last:0:8}, will be replaced"
+              echo "$f" >> "$RUNNER_TEMP/to-copy"
+            else
+              known=$(git log --format=%H -- "$local_path" | while read c; do [ "$(git rev-parse "$c:$local_path" 2>/dev/null)" = "$remote" ] && { echo "${c:0:8}"; break; }; done)
+              echo "::error::$f on the server is not the version this change was made from (it matches ${known:-no version in git, so it was edited on the server}). Nothing was changed; deploy it with deploy.sh from the build PC instead."
+              exit 1
+            fi
+          done
+
+      - name: Back up, copy, settings, restart, check (restores on failure)
+        env:
+          VESOPA_SSH_PASSWORD: ${{ secrets.VESOPA_SSH_PASSWORD }}
+          ISSUER: ${{ secrets.GOOGLE_WALLET_ISSUER_ID }}
+          SA_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          set -u
+          ts=$(date -u +%Y%m%d%H%M%S)
+          app="$REMOTE_APP"
+          # -n: a command that reads nothing, so it cannot eat the file list
+          # a surrounding while-read loop is reading.
+          R() { ssh -n "$SERVER" "$@"; }
+
+          # What to restore if anything below fails.
+          R "cp -p '$app/.env' '$app/.env.bak-$ts'"
+          while read -r f; do
+            [ -n "$f" ] || continue
+            R "cp -p '$app/$f' '$app/$f.bak-$ts'"
+          done < "$RUNNER_TEMP/to-copy"
+          rollback() {
+            echo "::error::Restoring the backups ($ts)."
+            R "cp -p '$app/.env.bak-$ts' '$app/.env'" || true
+            while read -r f; do
+              [ -n "$f" ] || continue
+              R "cp -p '$app/$f.bak-$ts' '$app/$f'" || true
+            done < "$RUNNER_TEMP/to-copy"
+            R "pm2 restart '$PM2_APP' --update-env" || true
+            exit 1
+          }
+          trap rollback ERR
+
+          while read -r f; do
+            [ -n "$f" ] || continue
+            ssh "$SERVER" "cat > '$app/$f.new' && mv '$app/$f.new' '$app/$f'" < "vesopa_server/$f"
+            echo "copied $f"
+          done < "$RUNNER_TEMP/to-copy"
+
+          # KEY=VALUE into .env: replaced if there, added if not.
+          setenv() {
+            R "cd '$app' && if grep -q '^$1=' .env; then sed -i 's|^$1=.*|$1=$2|' .env; else printf '%s\n' '$1=$2' >> .env; fi"
+            echo ".env: $1 set"
+          }
+          case "$SETTINGS" in google-wallet|both)
+            [ -n "$ISSUER" ] || { echo "::error::GOOGLE_WALLET_ISSUER_ID is not set"; false; }
+            [ -n "$SA_JSON" ] || { echo "::error::PLAY_SERVICE_ACCOUNT_JSON is not set"; false; }
+            # Beside the app, not in it: deploy.sh's --delete never sees it.
+            sa="$(dirname "$app")/google-wallet-sa.json"
+            printf '%s' "$SA_JSON" | ssh "$SERVER" "umask 077 && cat > '$sa'"
+            setenv GOOGLE_WALLET_ISSUER_ID "$ISSUER"
+            setenv GOOGLE_WALLET_SA_FILE "$sa"
+            setenv GOOGLE_WALLET_ORIGINS "https://$DOMAIN,https://loyalty.vesopa.com"
+            ;;
+          esac
+          case "$SETTINGS" in apns-pontardawe|both)
+            topic='pontardawe-rfc=com.vesopaepos.pontardawerfc'
+            current=$(R "cd '$app' && sed -n 's/^APNS_TOPICS=//p' .env | tail -1")
+            case ",$current," in
+              *",$topic,"*) echo ".env: APNS_TOPICS already has Pontardawe RFC" ;;
+              *) setenv APNS_TOPICS "${current:+$current,}$topic" ;;
+            esac
+            ;;
+          esac
+
+          # Each copied script must at least parse; whether the app starts is
+          # what the health check below finds out.
+          while read -r f; do
+            case "$f" in *.js) R "cd '$app' && node --check '$f'" && echo "parses: $f" ;; esac
+          done < "$RUNNER_TEMP/to-copy"
+          R "pm2 restart '$PM2_APP' --update-env" > /dev/null
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            sleep 3
+            if curl -fsS --max-time 10 "https://$DOMAIN/health" > /dev/null; then ok=1; break; fi
+          done
+          [ "${ok:-}" = 1 ] || { echo "::error::https://$DOMAIN/health did not answer after the restart"; false; }
+          trap - ERR
+          echo "Healthy: https://$DOMAIN/health"
+          echo "### Back office patch ($TARGET)" >> "$GITHUB_STEP_SUMMARY"
+          echo "Backups on the server end in .bak-$ts" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$TARGET" = live ]; then
+            curl -fsS --max-time 15 https://loyalty.vesopa.com/loyalty/v1/app/pontardawe-rfc \
+              | python3 -c "import json,sys;print('Pontardawe RFC app sees wallet:', json.load(sys.stdin).get('wallet'))"
+          fi

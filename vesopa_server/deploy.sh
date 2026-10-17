@@ -66,7 +66,9 @@ esac
 REMOTE_APP="${REMOTE_APP:-/home/vesopa/web/$DOMAIN/private/nodeapp}"
 REMOTE_BACKUP="$REMOTE_APP/backup"
 
-LOCAL_APP="/Users/onzep/development/Vesopa/vesopa_server"
+# This folder on the author's Mac; anywhere else (the GitHub workflow,
+# .github/workflows/backoffice-deploy.yml) says where with LOCAL_APP.
+LOCAL_APP="${LOCAL_APP:-/Users/onzep/development/Vesopa/vesopa_server}"
 LOCAL_BACKUP="$LOCAL_APP/backup"
 
 HEALTH_URL="https://$DOMAIN/health"
