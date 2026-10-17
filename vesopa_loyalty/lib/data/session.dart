@@ -219,6 +219,32 @@ class SessionNotifier extends AsyncNotifier<String?> {
 
 final sessionProvider = AsyncNotifierProvider<SessionNotifier, String?>(SessionNotifier.new);
 
+/// Sign out on this device: notifications stopped, the server told, the token
+/// forgotten. [remove] takes the app off the membership instead (every device).
+///
+/// Never fails. A member who cannot reach the server, or whose account the
+/// server will no longer answer for, must still be able to leave: the token
+/// is forgotten here whatever the server says. Shared by Account, Settings
+/// and every "could not load" page, so there is always a way out.
+Future<void> signOutHere(WidgetRef ref, {bool remove = false}) async {
+  final api = ref.read(apiProvider);
+  try {
+    final choices = await Choices.of(ref.read(configProvider).slug);
+    await choices.setNotifications(false);
+    await choices.setNearby(false);
+  } catch (_) {
+    // Nothing to switch off.
+  }
+  try {
+    final endpoint = await pushUnsubscribe();
+    if (endpoint != null) await api.removePush(endpoint).timeout(const Duration(seconds: 8));
+    await (remove ? api.removeApp() : api.signOut()).timeout(const Duration(seconds: 8));
+  } catch (_) {
+    // Signed out here regardless, below.
+  }
+  await ref.read(sessionProvider.notifier).clear();
+}
+
 final meProvider = FutureProvider<Map<String, dynamic>>((ref) async {
   final token = await ref.watch(sessionProvider.future);
   if (token == null) throw ApiError('Please sign in.', status: 401);

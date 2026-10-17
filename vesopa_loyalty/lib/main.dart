@@ -48,7 +48,14 @@ Future<void> main() async {
   if (VenueIntro.enabled) VenueIntro.holdFirstFrame();
   // "iPad" rather than "iPhone or iPad" under Where you're signed in.
   await loadDeviceLabel();
-  runApp(const ProviderScope(child: VenueIntro.enabled ? _IntroHost() : LoyaltyApp()));
+  // No automatic retries. Riverpod 3 retries a failed provider up to ten
+  // times, showing the spinner all the while (a minute and more), so a
+  // signed-out member, a lapsed membership or a dead connection looked like a
+  // page that never loaded. Every page has its own "Try again" instead.
+  runApp(ProviderScope(
+    retry: (_, _) => null,
+    child: VenueIntro.enabled ? const _IntroHost() : const LoyaltyApp(),
+  ));
 }
 
 /// The app under a venue build's opening, which lifts away once the app has

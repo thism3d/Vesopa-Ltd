@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -85,7 +86,11 @@ class LoyaltyApi {
     try {
       final req = http.Request(method, _u(path, query))..headers.addAll(_headers);
       if (body != null) req.body = jsonEncode(body);
-      res = await http.Response.fromStream(await _http.send(req).timeout(_timeout));
+      // One limit for the whole answer, body included: a reply that starts
+      // and then stalls used to leave the page spinning for good.
+      res = await _http.send(req).then(http.Response.fromStream).timeout(_timeout);
+    } on TimeoutException {
+      throw ApiError('The club\'s server is taking too long to answer. Check your connection and try again.');
     } catch (_) {
       throw ApiError('No connection. Check you are online and try again.');
     }

@@ -68,6 +68,26 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     });
   }
 
+  Future<void> _signOut() async {
+    final sure = await showDialog<bool>(
+      context: context,
+      builder: (d) => AlertDialog.adaptive(
+        title: const Text('Sign out?'),
+        content: const Text('You can sign back in at any time. Your membership and points stay with the club.'),
+        actions: [
+          DialogAction(onPressed: () => Navigator.pop(d, false), child: const Text('Cancel')),
+          DialogAction(primary: true, onPressed: () => Navigator.pop(d, true), child: const Text('Sign out')),
+        ],
+      ),
+    );
+    if (sure != true || !mounted) return;
+    setState(() => _busy = true);
+    final nav = Navigator.of(context);
+    await signOutHere(ref);
+    // Back to the sign-in page underneath.
+    nav.popUntil((r) => r.isFirst);
+  }
+
   void _say(String text) {
     ScaffoldMessenger.maybeOf(context)
       ?..hideCurrentSnackBar()
@@ -341,6 +361,25 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     ),
                   ],
                 ),
+
+                // ---- Leaving ------------------------------------------------
+                // Here as well as on Account, which needs the server to load:
+                // Settings always opens, so signing out always works.
+                if (ref.watch(sessionProvider).value != null) ...[
+                  const SizedBox(height: 10),
+                  SettingsCard(
+                    title: 'This device',
+                    children: [
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.logout),
+                        title: const Text('Sign out'),
+                        subtitle: const Text('Your membership and points stay with the club.'),
+                        onTap: _busy ? null : _signOut,
+                      ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 22),
                 const PoweredBy(),
               ],

@@ -180,18 +180,32 @@ class LoadFailed extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (error is ApiError && (error as ApiError).signedOut) {
+    final api = error is ApiError ? error as ApiError : null;
+    if (api != null && api.signedOut) {
+      // The server has signed this device out: back to the sign-in page.
       WidgetsBinding.instance.addPostFrameCallback((_) => ref.read(sessionProvider.notifier).clear());
     }
+    final signedIn = ref.watch(sessionProvider).value != null;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(28),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(error is ApiError ? (error as ApiError).message : 'Something went wrong.', textAlign: TextAlign.center),
+            Text(api?.message ?? 'Something went wrong. Please try again.', textAlign: TextAlign.center),
             const SizedBox(height: 12),
             OutlinedButton(onPressed: onRetry, child: const Text('Try again')),
+            // Always a way out: a membership the server will not answer for
+            // (lapsed, paused, or an account changed elsewhere) can otherwise
+            // leave a member stuck on this page with no Account to sign out from.
+            if (signedIn) ...[
+              const SizedBox(height: 4),
+              TextButton.icon(
+                onPressed: () => signOutHere(ref),
+                icon: const Icon(Icons.logout),
+                label: const Text('Sign out'),
+              ),
+            ],
           ],
         ),
       ),

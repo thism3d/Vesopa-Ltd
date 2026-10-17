@@ -10,7 +10,6 @@ import '../data/membership.dart';
 import '../data/session.dart';
 import '../platform/native_auth.dart';
 import '../platform/passkey.dart';
-import '../platform/push.dart';
 import 'membership_section.dart';
 import 'photo_crop.dart';
 import 'settings_page.dart';
@@ -865,23 +864,7 @@ class _LeaveCardState extends ConsumerState<_LeaveCard> {
       if (sure != true) return;
     }
     setState(() => _busy = true);
-    final api = ref.read(apiProvider);
-    final choices = await Choices.of(ref.read(configProvider).slug);
-    try {
-      final endpoint = await pushUnsubscribe();
-      if (endpoint != null) await api.removePush(endpoint).catchError((_) {});
-      if (remove) {
-        await api.removeApp();
-      } else {
-        await api.signOut();
-      }
-    } catch (_) {
-      // Signed out here regardless: the token is forgotten below, and a
-      // member who cannot reach the server must still be able to leave.
-    }
-    await choices.setNotifications(false);
-    await choices.setNearby(false);
-    await ref.read(sessionProvider.notifier).clear();
+    await signOutHere(ref, remove: remove);
   }
 
   @override
