@@ -12,11 +12,10 @@ import 'widgets/on_screen_keyboard.dart';
 
 /// Signing a kitchen screen in.
 ///
-/// Three fields, and the on-screen keyboard the brief asks for. The venue is
-/// its contact email, which is the tenancy key everything else in this platform
-/// is scoped by; the username and password are created by the back office under
-/// **Kitchen screens**, and are not a member of staff's — they belong to the
-/// wall.
+/// Email and password, like the till (2026-10-17: "remove the field venue and
+/// verify using email and password like epos login"). The venue comes from the
+/// account: a back office login, or a kitchen login made under **Kitchen
+/// screens** whose username is an email.
 ///
 /// Done once. The token lasts ninety days, so the realistic frequency of this
 /// screen being seen is "when a machine is replaced".
@@ -27,10 +26,9 @@ class SignInPage extends ConsumerStatefulWidget {
   ConsumerState<SignInPage> createState() => _SignInPageState();
 }
 
-enum _Field { office, username, password }
+enum _Field { username, password }
 
 class _SignInPageState extends ConsumerState<SignInPage> {
-  final _office = TextEditingController();
   final _username = TextEditingController();
   final _password = TextEditingController();
 
@@ -40,7 +38,7 @@ class _SignInPageState extends ConsumerState<SignInPage> {
   /// a keyboard that moves as focus moves also moves when it does not — and on
   /// a touch screen the difference between "I tapped the field" and "I tapped
   /// past the field" is a few pixels.
-  _Field _active = _Field.office;
+  _Field _active = _Field.username;
 
   bool _busy = false;
   bool _revealed = false;
@@ -116,26 +114,20 @@ class _SignInPageState extends ConsumerState<SignInPage> {
 
   @override
   void dispose() {
-    _office.dispose();
     _username.dispose();
     _password.dispose();
     super.dispose();
   }
 
   TextEditingController get _controller => switch (_active) {
-    _Field.office => _office,
     _Field.username => _username,
     _Field.password => _password,
   };
 
   Future<void> _submit() async {
     // Move to the next empty field rather than failing. Somebody who has filled
-    // in the venue and pressed the green key means "next", not "sign in", and
+    // in the email and pressed the green key means "next", not "sign in", and
     // answering with a validation error would be pedantry.
-    if (_office.text.trim().isEmpty) {
-      setState(() => _active = _Field.office);
-      return;
-    }
     if (_username.text.trim().isEmpty) {
       setState(() => _active = _Field.username);
       return;
@@ -154,8 +146,7 @@ class _SignInPageState extends ConsumerState<SignInPage> {
       await ref
           .read(kitchenSessionProvider.notifier)
           .signIn(
-            office: _office.text,
-            username: _username.text,
+            email: _username.text,
             password: _password.text,
           );
       // Nothing to do on success: the app watches the session and swaps this
@@ -294,16 +285,8 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                   // supposed to have one way in.
                   if (_showsTyped) ...[
                   _FieldBox(
-                    label: 'Venue',
-                    hint: 'The office email your tills use',
-                    controller: _office,
-                    active: _active == _Field.office,
-                    onTap: () => setState(() => _active = _Field.office),
-                  ),
-                  const SizedBox(height: 10),
-                  _FieldBox(
-                    label: 'Kitchen login',
-                    hint: 'e.g. grill',
+                    label: 'Email',
+                    hint: 'The email you sign in to the till with',
                     controller: _username,
                     active: _active == _Field.username,
                     onTap: () => setState(() => _active = _Field.username),

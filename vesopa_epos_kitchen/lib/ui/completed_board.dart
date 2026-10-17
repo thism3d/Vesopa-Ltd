@@ -57,6 +57,7 @@ class CompletedBoard extends ConsumerWidget {
           now: board.now,
           allergenLabels: allergens,
           labelFor: session.labelFor,
+          touch: session.touch,
           onRecall: () => ref.read(ticketBoardProvider.notifier).recall(ticket),
           onDetails: () => showTicketDetail(context, ref, ticket),
         );

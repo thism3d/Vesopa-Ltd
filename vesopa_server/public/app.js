@@ -15409,21 +15409,87 @@ function renderKitchenUsers() {
   cardsOnPhone(box.querySelector('table'));
 }
 
+/**
+ * Screen sizes for kitchen screens on TVs (2026-10-17). The kitchen app turns
+ * a preset into a scale from the panel's resolution, so the same preset looks
+ * the same on an HD or a 4K TV of that size.
+ */
+const KDS_TV_SIZES = [
+  ['auto', 'Auto (fits the screen)'],
+  ['monitor', 'Monitor or tablet (up to 27")'],
+  ['tv32', '32" TV'],
+  ['tv43', '43" TV'],
+  ['tv55', '50–55" TV'],
+  ['tv65', '65" TV'],
+  ['tv75', '75" TV'],
+  ['tv100', '85–100" TV'],
+];
+const kdsSizeLabel = (v) => (KDS_TV_SIZES.find((x) => x[0] === v) || [v, v])[1];
+
+/** The venue's default size and touch, which every screen uses unless set. */
+function kdsDisplayDefaultHtml() {
+  const b = kdsBranding || {};
+  return '<div class="kds-display-default card" style="padding:12px 14px;margin-bottom:12px">' +
+    '<strong>Screen size and touch</strong>' +
+    '<p class="muted small" style="margin:4px 0 10px">For every kitchen screen ' +
+    'that has no size of its own, including the built-in all-stations board. ' +
+    'The till can change these too (Functions › Kitchen screen), for screens ' +
+    'that cannot be touched.</p>' +
+    '<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">' +
+      '<label class="small">Size<br><select id="kds-def-size">' +
+        KDS_TV_SIZES.map(([v, l]) => '<option value="' + v + '"' +
+          (v === (b.tvSize || 'auto') ? ' selected' : '') + '>' + esc(l) + '</option>').join('') +
+      '</select></label>' +
+      '<label class="small">Zoom %<br><input id="kds-def-zoom" type="number" min="50" max="300" step="5" style="width:90px" value="' +
+        (Number(b.zoom) || 100) + '"></label>' +
+      '<label class="small">Touch screen<br><select id="kds-def-touch">' +
+        '<option value="1"' + (b.touch !== false ? ' selected' : '') + '>Yes, staff tap it</option>' +
+        '<option value="0"' + (b.touch === false ? ' selected' : '') + '>No, run it from the till</option>' +
+      '</select></label>' +
+      '<button class="btn primary small" id="kds-def-save" type="button">Save</button>' +
+    '</div></div>';
+}
+
+document.addEventListener('click', async (e) => {
+  if (!e.target.closest('#kds-def-save')) return;
+  const button = e.target.closest('#kds-def-save');
+  button.disabled = true;
+  try {
+    const saved = await api('/kitchen/branding', {
+      method: 'PUT',
+      body: JSON.stringify({
+        tvSize: $('kds-def-size').value,
+        zoom: Number($('kds-def-zoom').value) || 100,
+        touch: $('kds-def-touch').value === '1',
+      }),
+    });
+    kdsBranding = { ...kdsBranding, tvSize: saved.tvSize, zoom: saved.zoom, touch: saved.touch };
+    kdsBrandingSaved = { ...kdsBrandingSaved, tvSize: saved.tvSize, zoom: saved.zoom, touch: saved.touch };
+    toast('Saved. The kitchen screens redraw now.');
+    renderKitchenScreens();
+  } catch (err) {
+    toast(err.message, 'error');
+  } finally {
+    button.disabled = false;
+  }
+});
+
 function renderKitchenScreens() {
   const box = $('kitchen-screens');
   if (!box) return;
 
   if (kdsScreens.length === 0) {
-    box.innerHTML = '<p class="muted small">No named screens. Every kitchen ' +
+    box.innerHTML = kdsDisplayDefaultHtml() +
+      '<p class="muted small">No named screens. Every kitchen ' +
       'screen shows all six stations until you add one — which is exactly ' +
       'right for a kitchen with a single screen.</p>';
     return;
   }
 
-  box.innerHTML =
+  box.innerHTML = kdsDisplayDefaultHtml() +
     '<table class="table"><thead><tr>' +
       '<th>Screen</th><th>Stations</th><th>Amber / red</th>' +
-      '<th>Recall</th><th></th>' +
+      '<th>Recall</th><th>Size</th><th></th>' +
     '</tr></thead><tbody>' +
     kdsScreens.map((s) =>
       '<tr>' +
@@ -15434,6 +15500,10 @@ function renderKitchenScreens() {
         '<td class="muted small">' + Math.round(s.warn_seconds / 60) + 'm / ' +
           Math.round(s.late_seconds / 60) + 'm</td>' +
         '<td class="muted small">' + s.recall_minutes + 'm</td>' +
+        '<td class="muted small">' + (s.tv_size
+          ? esc(kdsSizeLabel(s.tv_size)) + (s.zoom_percent ? ' · ' + s.zoom_percent + '%' : '')
+          : 'Venue default') +
+          (s.touch === 0 ? ' · no touch' : '') + '</td>' +
         '<td class="right">' +
           '<button class="btn ghost small" data-kds-screen-edit="' + s.id +
             '">Edit</button> ' +
@@ -15923,6 +15993,31 @@ function kdsEditScreen(screen) {
       type: 'checkbox',
       value: screen ? screen.sound : 1,
     },
+    {
+      name: 'tv_size',
+      label: 'Screen size — for a TV across the kitchen',
+      type: 'select',
+      options: [{ value: '', label: 'Venue default' }]
+        .concat(KDS_TV_SIZES.map(([v, l]) => ({ value: v, label: l }))),
+      value: screen && screen.tv_size ? screen.tv_size : '',
+    },
+    {
+      name: 'zoom_percent',
+      label: 'Zoom % on top of the size — blank for the venue default',
+      type: 'number',
+      value: screen && screen.zoom_percent ? screen.zoom_percent : '',
+    },
+    {
+      name: 'touch',
+      label: 'Touch screen',
+      type: 'select',
+      options: [
+        { value: '', label: 'Venue default' },
+        { value: '1', label: 'Yes, staff tap it' },
+        { value: '0', label: 'No, run it from the till' },
+      ],
+      value: screen && screen.touch != null ? String(screen.touch) : '',
+    },
   ], async (data) => {
     // A checkbox set of one submits a string, a set of several an array, and
     // a set of none does not submit at all — so all three are normalised here
@@ -15943,6 +16038,9 @@ function kdsEditScreen(screen) {
         // The server reads `false` and nothing else as off, so the hidden
         // field's "0" has to become a boolean before it is sent.
         sound: data.sound === '1',
+        tv_size: data.tv_size || null,
+        zoom_percent: data.zoom_percent ? Math.round(Number(data.zoom_percent)) : null,
+        touch: data.touch === '' || data.touch === undefined ? null : data.touch === '1',
       }),
     });
   });

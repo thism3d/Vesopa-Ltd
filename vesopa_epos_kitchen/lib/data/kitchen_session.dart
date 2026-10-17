@@ -32,6 +32,7 @@ class KitchenSession {
     this.soundOverride,
     this.notify = true,
     this.branding = KitchenBranding.standard,
+    this.zoomNudge = 100,
   });
 
   final String? token;
@@ -79,6 +80,20 @@ class KitchenSession {
   /// line is down.
   final KitchenBranding branding;
 
+  /// This machine's own nudge on the size, from its keyboard (Ctrl +, Ctrl -,
+  /// Ctrl 0), as a percentage. A fact about where this panel hangs, like
+  /// [soundOverride], so it stays on the machine.
+  final int zoomNudge;
+
+  /// The size preset this screen draws at: its own, or the venue's.
+  String get tvSize => screen.tvSize ?? branding.tvSize;
+
+  /// The zoom on top of [tvSize]: the screen's own, or the venue's.
+  int get zoom => screen.zoom ?? branding.zoom;
+
+  /// Whether this screen is tapped: its own setting, or the venue's.
+  bool get touch => screen.touch ?? branding.touch;
+
   bool get signedIn => token != null && office != null;
 
   /// Every profile this screen could be, the built-in one included.
@@ -122,6 +137,7 @@ class KitchenSession {
     bool clearSoundOverride = false,
     bool? notify,
     KitchenBranding? branding,
+    int? zoomNudge,
   }) => KitchenSession(
     token: token ?? this.token,
     office: office ?? this.office,
@@ -135,6 +151,7 @@ class KitchenSession {
         : (soundOverride ?? this.soundOverride),
     notify: notify ?? this.notify,
     branding: branding ?? this.branding,
+    zoomNudge: zoomNudge ?? this.zoomNudge,
   );
 
   Map<String, dynamic> toJson() => {
@@ -148,6 +165,7 @@ class KitchenSession {
     'soundOverride': soundOverride,
     'notify': notify,
     'branding': branding.toJson(),
+    'zoomNudge': zoomNudge,
   };
 
   factory KitchenSession.fromJson(Map<String, dynamic> j) => KitchenSession(
@@ -170,6 +188,7 @@ class KitchenSession {
     // not stay silent because it was signed in before the feature existed.
     notify: j['notify'] as bool? ?? true,
     branding: KitchenBranding.fromJson(j['branding'] as Map<String, dynamic>?),
+    zoomNudge: ((j['zoomNudge'] as num?)?.round() ?? 100).clamp(50, 250),
   );
 
   static const empty = KitchenSession();
@@ -212,20 +231,15 @@ class KitchenSessionController extends AsyncNotifier<KitchenSession> {
   }
 
   Future<void> signIn({
-    required String office,
-    required String username,
+    required String email,
     required String password,
   }) async {
-    final result = await _api.signIn(
-      office: office.trim(),
-      username: username.trim(),
-      password: password,
-    );
+    final result = await _api.signIn(email: email.trim(), password: password);
 
     final profile = result.profile;
     final session = KitchenSession(
       token: result.token,
-      office: profile.office.isEmpty ? office.trim() : profile.office,
+      office: profile.office,
       officeName: profile.officeName,
       userName: profile.userName,
       stationNames: profile.stationNames,
@@ -317,6 +331,17 @@ class KitchenSessionController extends AsyncNotifier<KitchenSession> {
           ? current.copyWith(clearScreenId: true)
           : current.copyWith(screenId: id),
     );
+  }
+
+  /// Nudge this machine's size: +1 bigger, -1 smaller, 0 back to as set.
+  Future<void> nudgeZoom(int direction) async {
+    final current = state.value;
+    if (current == null) return;
+    final next = direction == 0
+        ? 100
+        : (current.zoomNudge + direction * 10).clamp(50, 250);
+    if (next == current.zoomNudge) return;
+    await _persist(current.copyWith(zoomNudge: next));
   }
 
   Future<void> setSound(bool? on) async {

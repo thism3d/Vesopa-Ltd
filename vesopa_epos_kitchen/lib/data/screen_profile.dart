@@ -20,6 +20,9 @@ class ScreenProfile {
     this.late = BoardDefaults.late,
     this.recallWindow = BoardDefaults.recallWindow,
     this.sound = true,
+    this.tvSize,
+    this.zoom,
+    this.touch,
   });
 
   /// Negative for the built-in profile, which has no row in the database. Real
@@ -43,6 +46,12 @@ class ScreenProfile {
   /// Whether a new ticket makes a noise. Off for a screen at the pass, where
   /// somebody is already looking at it; on for one in a corner.
   final bool sound;
+
+  /// This screen's own size, zoom and touch. Null means the venue's (see
+  /// [KitchenBranding]).
+  final String? tvSize;
+  final int? zoom;
+  final bool? touch;
 
   /// The board every venue has before anybody configures one.
   ///
@@ -78,6 +87,11 @@ class ScreenProfile {
       minutes: ((j['recall_minutes'] as num?)?.toInt() ?? 60).clamp(5, 1440),
     ),
     sound: j['sound'] != 0 && j['sound'] != false,
+    tvSize: (j['tv_size'] as String?)?.trim().isEmpty ?? true
+        ? null
+        : (j['tv_size'] as String).trim(),
+    zoom: (j['zoom_percent'] as num?)?.round().clamp(50, 300),
+    touch: j['touch'] == null ? null : j['touch'] != 0 && j['touch'] != false,
   );
 
   Map<String, dynamic> toJson() => {
@@ -89,6 +103,9 @@ class ScreenProfile {
     'late_seconds': late.inSeconds,
     'recall_minutes': recallWindow.inMinutes,
     'sound': sound,
+    'tv_size': tvSize,
+    'zoom_percent': zoom,
+    'touch': touch,
   };
 
   /// [late] is never allowed to arrive before [warn], whatever was stored.
@@ -103,6 +120,9 @@ class ScreenProfile {
           late: warn + const Duration(minutes: 1),
           recallWindow: recallWindow,
           sound: sound,
+          tvSize: tvSize,
+          zoom: zoom,
+          touch: touch,
         );
 
   static Duration _seconds(Object? raw, Duration fallback, int min, int max) {

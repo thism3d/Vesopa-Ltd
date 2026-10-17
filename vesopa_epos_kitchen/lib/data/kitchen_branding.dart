@@ -23,6 +23,9 @@ class KitchenBranding {
     this.background,
     this.accent,
     this.showPoweredBy = true,
+    this.tvSize = 'auto',
+    this.zoom = 100,
+    this.touch = true,
   });
 
   /// Whether the start screen is shown at all.
@@ -50,6 +53,17 @@ class KitchenBranding {
   final Color? accent;
 
   final bool showPoweredBy;
+
+  /// The venue's screen size for kitchen screens on TVs: a preset name (see
+  /// `ui/board_scale.dart`). A named screen may have its own.
+  final String tvSize;
+
+  /// A percentage on top of [tvSize], 50 to 300.
+  final int zoom;
+
+  /// Whether the venue's screens are tapped. Off draws the board without
+  /// buttons; the till runs it.
+  final bool touch;
 
   /// The product's own name, used when a venue has not chosen one.
   static const fallbackName = 'Vesopa Kitchen';
@@ -96,6 +110,9 @@ class KitchenBranding {
     Color? accent,
     bool clearAccent = false,
     bool? showPoweredBy,
+    String? tvSize,
+    int? zoom,
+    bool? touch,
   }) => KitchenBranding(
     splashEnabled: splashEnabled ?? this.splashEnabled,
     splashHold: splashHold ?? this.splashHold,
@@ -105,6 +122,9 @@ class KitchenBranding {
     background: clearBackground ? null : (background ?? this.background),
     accent: clearAccent ? null : (accent ?? this.accent),
     showPoweredBy: showPoweredBy ?? this.showPoweredBy,
+    tvSize: tvSize ?? this.tvSize,
+    zoom: zoom ?? this.zoom,
+    touch: touch ?? this.touch,
   );
 
   /// `#RRGGBB` to a [Color]. Null for anything else, which is what makes a
@@ -141,6 +161,9 @@ class KitchenBranding {
       background: parseHex(j['splashBg']),
       accent: parseHex(j['accent']),
       showPoweredBy: j['showPoweredBy'] != false,
+      tvSize: '${j['tvSize'] ?? 'auto'}',
+      zoom: ((j['zoom'] as num?)?.round() ?? 100).clamp(50, 300),
+      touch: j['touch'] != false,
     );
   }
 
@@ -155,5 +178,8 @@ class KitchenBranding {
     'splashBg': toHex(background),
     'accent': toHex(accent),
     'showPoweredBy': showPoweredBy,
+    'tvSize': tvSize,
+    'zoom': zoom,
+    'touch': touch,
   };
 }

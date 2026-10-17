@@ -68,15 +68,20 @@ class OpenBoard extends ConsumerWidget {
           now: board.now,
           allergenLabels: allergens,
           labelFor: session!.labelFor,
+          touch: session.touch,
           onBump: () => ref.read(ticketBoardProvider.notifier).bump(ticket),
           // Tap an item to cross it off. Crossing off the last one finishes the
           // ticket, so a chef working down a long order never has to remember
           // to press the tick at the end of it.
-          onLineMade: (line, made) => ref
-              .read(ticketBoardProvider.notifier)
-              .setLineMade(ticket, line.id, made),
-          onRush: (rushed) =>
-              ref.read(ticketBoardProvider.notifier).rush(ticket, rushed),
+          onLineMade: !session.touch
+              ? null
+              : (line, made) => ref
+                    .read(ticketBoardProvider.notifier)
+                    .setLineMade(ticket, line.id, made),
+          onRush: !session.touch
+              ? null
+              : (rushed) =>
+                    ref.read(ticketBoardProvider.notifier).rush(ticket, rushed),
           onDetails: () => showTicketDetail(context, ref, ticket),
         );
       },

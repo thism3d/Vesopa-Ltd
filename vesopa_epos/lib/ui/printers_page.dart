@@ -153,6 +153,11 @@ class PrintersPage extends ConsumerWidget {
           const SizedBox(height: 20),
           const KitchenDeliveryCard(),
 
+          // The kitchen screen's size and touch (2026-10-17): for a TV nobody
+          // can tap, set from here. See kitchen_remote_page.dart.
+          const SizedBox(height: 20),
+          const KitchenScreenSettingsCard(),
+
           const SizedBox(height: 16),
           Text(
             'Products are routed to KP 1 to KP 6 — and to the receipt printer '

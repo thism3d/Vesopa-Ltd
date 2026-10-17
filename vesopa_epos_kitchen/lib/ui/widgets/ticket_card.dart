@@ -43,7 +43,12 @@ class TicketCard extends StatefulWidget {
     this.onRush,
     this.onLineMade,
     this.allergenLabels = const {},
+    this.touch = true,
   });
+
+  /// Whether this screen is tapped. Off (a TV run from the till) drops the
+  /// footer keys, which nobody can press and which take room the food needs.
+  final bool touch;
 
   final Ticket ticket;
   final ScreenProfile profile;
@@ -300,7 +305,8 @@ class _TicketCardState extends State<TicketCard>
             ),
 
             // ---- Footer ----------------------------------------------------
-            if (_isOpen) _openFooter(skin) else _completedFooter(skin),
+            if (widget.touch)
+              if (_isOpen) _openFooter(skin) else _completedFooter(skin),
           ],
         ),
       ),
