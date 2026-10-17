@@ -45,6 +45,10 @@ on:
         description: Play track (empty = play.json's)
         required: false
         default: ''
+      build:
+        description: Build number (empty = the next one Play has not seen)
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -92,12 +96,22 @@ jobs:
       - name: Next build number Play has not seen
         id: num
         if: inputs.mode != 'listing'
+        env:
+          BUILD_INPUT: ${{ inputs.build }}
         run: |
           floor=$(python3 -c "import json;print(json.load(open('$VENUE/venue.json'))['build'])")
-          if [ -n "$PLAY_SERVICE_ACCOUNT_JSON" ]; then
-            n=$("$RUNNER_TEMP/py/bin/python" tool/play_upload.py "$VENUE" --next-build)
-          else
+          if [ -n "$BUILD_INPUT" ]; then
+            n=$BUILD_INPUT
+          elif [ -n "$PLAY_SERVICE_ACCOUNT_JSON" ] && n=$("$RUNNER_TEMP/py/bin/python" tool/play_upload.py "$VENUE" --next-build 2> "$RUNNER_TEMP/next-build.err"); then
+            :
+          elif [ "$MODE" = "build" ]; then
+            # Bundles only: Play not answering is not a reason to stop.
+            echo "::warning::Play did not say which build numbers it has ($(tail -1 "$RUNNER_TEMP/next-build.err" 2>/dev/null)); using venue.json's $floor."
             n=$floor
+          else
+            cat "$RUNNER_TEMP/next-build.err" 2>/dev/null
+            echo "::error::Google Play refused the service account: invite its client_email in Play Console > Users and permissions with release rights for this app, or give the build number as an input."
+            exit 1
           fi
           case "$n" in ''|*[!0-9]*) echo "::error::Could not work out the build number ($n)"; exit 1;; esac
           python3 - "$VENUE/venue.json" "$n" <<'PY'
