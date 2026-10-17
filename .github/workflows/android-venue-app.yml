@@ -15,7 +15,9 @@
 #   ANDROID_UPLOAD_KEYSTORE_B64   vesopa-upload.jks in base64; certutil -encode's
 #                                 output is fine, header lines and all
 #   ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
-#                                 key.properties' storePassword, keyAlias, keyPassword
+#                                 key.properties' storePassword, keyAlias, keyPassword;
+#                                 without ANDROID_KEY_PASSWORD the store password is
+#                                 used, as it is the same in a PKCS12 keystore
 #   PONTARDAWE_GOOGLE_SERVICES_JSON   PontardaweRFC\google-services.json, as it is
 #   PLAY_SERVICE_ACCOUNT_JSON     a service account key with release rights in
 #                                 Play Console (the Firebase Admin one works when
@@ -75,7 +77,6 @@ jobs:
             [ -n "$KS" ] || missing="$missing ANDROID_UPLOAD_KEYSTORE_B64"
             [ -n "$KSP" ] || missing="$missing ANDROID_KEYSTORE_PASSWORD"
             [ -n "$KA" ] || missing="$missing ANDROID_KEY_ALIAS"
-            [ -n "$KP" ] || missing="$missing ANDROID_KEY_PASSWORD"
             [ -n "$GS" ] || missing="$missing PONTARDAWE_GOOGLE_SERVICES_JSON"
           fi
           if [ -n "$missing" ]; then
@@ -141,6 +142,8 @@ jobs:
           GS: ${{ secrets.PONTARDAWE_GOOGLE_SERVICES_JSON }}
         run: |
           mkdir -p "$RUNNER_TEMP/keys"
+          # A PKCS12 keystore (keytool's default since JDK 9) has one password.
+          KP="${KP:-$KSP}"
           # certutil wraps the base64 in BEGIN/END lines and Windows line ends.
           printf '%s\n' "$KS" | tr -d '\r' | grep -v '^-----' | tr -d ' \n' | base64 -d > "$RUNNER_TEMP/keys/upload.jks"
           keytool -list -keystore "$RUNNER_TEMP/keys/upload.jks" -storepass "$KSP" -alias "$KA" > /dev/null \
