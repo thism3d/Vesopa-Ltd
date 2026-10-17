@@ -1431,7 +1431,7 @@ class _BigScreen extends StatelessWidget {
           subtitle: Text(
             c.touch
                 ? 'The display responds to taps (status bars and its settings).'
-                : 'Taps do nothing on the display; everything is run from this till.',
+                : 'Fingers do nothing on the display; a mouse still works, and this till runs it.',
             style: const TextStyle(fontSize: 12.5),
           ),
           value: c.touch,

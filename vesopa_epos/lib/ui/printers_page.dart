@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/printer_settings.dart';
 import '../main.dart' show tillSettingsProvider;
 import 'kitchen_delivery_card.dart';
+import 'kitchen_remote_page.dart';
 // printer_transport re-exports print_targets.dart, where PrintTarget lives.
 import '../printing/printer_transport.dart';
 import '../printing/receipt_builder.dart';
@@ -152,6 +153,11 @@ class PrintersPage extends ConsumerWidget {
 
           const SizedBox(height: 20),
           const KitchenDeliveryCard(),
+
+          // The kitchen screen's size and touch (2026-10-17): for a TV nobody
+          // can tap, set from here. See kitchen_remote_page.dart.
+          const SizedBox(height: 20),
+          const KitchenScreenSettingsCard(),
 
           const SizedBox(height: 16),
           Text(

@@ -22,6 +22,7 @@ import 'till_actions.dart';
 import 'widgets/pos_message.dart';
 import 'price_level_sheet.dart';
 import 'dinein_sheet.dart';
+import 'kitchen_remote_page.dart';
 
 /// Till functions — the actions a clerk reaches for that are not part of ringing
 /// up a sale: park the current bill, reprint, open the drawer for a no-sale, and
@@ -93,6 +94,17 @@ class FunctionsPage extends ConsumerWidget {
           Pos.amber,
           'What customers have sent from the codes on their tables.',
           () => unawaited(showDineInOrders(context)),
+        ),
+      ]),
+      // The kitchen screen, run from the till (2026-10-17): for a kitchen TV
+      // nobody can touch. Size, touch, widgets, and bump, recall and rush.
+      _Group('Kitchen', [
+        _Function(
+          'Kitchen Screen',
+          Icons.soup_kitchen_outlined,
+          Pos.orange,
+          'Run the kitchen screen: orders, size, touch and widgets.',
+          () => unawaited(showKitchenRemote(context)),
         ),
       ]),
       _Group('Receipts', [

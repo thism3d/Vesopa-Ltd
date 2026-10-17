@@ -20,13 +20,14 @@ const tileNames = <String, String>{
 };
 
 /// The big-screen settings on this display (2026-10-17): screen size, zoom,
-/// touch, and the tiles. The till has the same controls; when it owns this
-/// screen's settings this panel shows what it set rather than competing.
+/// touch, and the tiles. The till has the same controls, and both work (the
+/// owner, 2026-10-17: "in touch enabled everything can be controlled by the
+/// apps itself"); whichever changes something last wins.
 class BigScreenSettings extends ConsumerStatefulWidget {
-  const BigScreenSettings({super.key, required this.readOnly});
+  const BigScreenSettings({super.key, required this.tillToo});
 
-  /// The till owns the settings: show them, do not offer to change them.
-  final bool readOnly;
+  /// A till is setting this screen up as well: say so.
+  final bool tillToo;
 
   @override
   ConsumerState<BigScreenSettings> createState() => _BigScreenSettingsState();
@@ -59,20 +60,22 @@ class _BigScreenSettingsState extends ConsumerState<BigScreenSettings> {
       _specialText.text = s.specialText;
       _filled = true;
     }
-    final off = widget.readOnly;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (off)
+        if (widget.tillToo)
           const Padding(
             padding: EdgeInsets.only(bottom: 12),
             child: Text(
-              'Set from the till (Customer display). Shown here for reference.',
+              'The till can change these too (Customer display); the last change wins.',
               style: TextStyle(color: Brand.inkSoft, fontSize: 13),
             ),
           ),
-        const Text('Screen size', style: TextStyle(fontWeight: FontWeight.w700, color: Brand.ink)),
+        const Text(
+          'Screen size',
+          style: TextStyle(fontWeight: FontWeight.w700, color: Brand.ink),
+        ),
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
@@ -82,27 +85,41 @@ class _BigScreenSettingsState extends ConsumerState<BigScreenSettings> {
               ChoiceChip(
                 label: Text(e.value),
                 selected: s.screenSize == e.key,
-                onSelected: off ? null : (_) => _save(s.copyWith(screenSize: e.key)),
+                onSelected: (_) => _save(s.copyWith(screenSize: e.key)),
               ),
           ],
         ),
         const SizedBox(height: 14),
         Row(
           children: [
-            const Text('Zoom', style: TextStyle(fontWeight: FontWeight.w700, color: Brand.ink)),
+            const Text(
+              'Zoom',
+              style: TextStyle(fontWeight: FontWeight.w700, color: Brand.ink),
+            ),
             const SizedBox(width: 12),
             IconButton.filledTonal(
               icon: const Icon(Icons.remove),
-              onPressed: off || s.zoom <= 50 ? null : () => _save(s.copyWith(zoom: (s.zoom - 10).clamp(50, 300))),
+              onPressed: s.zoom <= 50
+                  ? null
+                  : () => _save(s.copyWith(zoom: (s.zoom - 10).clamp(50, 300))),
             ),
             SizedBox(
               width: 64,
-              child: Text('${s.zoom}%', textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Brand.ink)),
+              child: Text(
+                '${s.zoom}%',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: Brand.ink,
+                ),
+              ),
             ),
             IconButton.filledTonal(
               icon: const Icon(Icons.add),
-              onPressed: off || s.zoom >= 300 ? null : () => _save(s.copyWith(zoom: (s.zoom + 10).clamp(50, 300))),
+              onPressed: s.zoom >= 300
+                  ? null
+                  : () => _save(s.copyWith(zoom: (s.zoom + 10).clamp(50, 300))),
             ),
           ],
         ),
@@ -110,14 +127,17 @@ class _BigScreenSettingsState extends ConsumerState<BigScreenSettings> {
           contentPadding: EdgeInsets.zero,
           title: const Text('Touch screen', style: TextStyle(color: Brand.ink)),
           subtitle: const Text(
-            'Off for a TV nobody can reach: taps do nothing, and the till runs it.',
+            'Off for a screen nobody should touch: fingers do nothing, a mouse and keyboard still work, and the till runs it.',
             style: TextStyle(color: Brand.inkSoft),
           ),
           value: s.touch,
-          onChanged: off ? null : (on) => _save(s.copyWith(touch: on)),
+          onChanged: (on) => _save(s.copyWith(touch: on)),
         ),
         const SizedBox(height: 8),
-        const Text('Tiles', style: TextStyle(fontWeight: FontWeight.w700, color: Brand.ink)),
+        const Text(
+          'Tiles',
+          style: TextStyle(fontWeight: FontWeight.w700, color: Brand.ink),
+        ),
         const SizedBox(height: 4),
         const Text(
           'Extra panels for a big screen. All off unless you turn them on.',
@@ -127,17 +147,18 @@ class _BigScreenSettingsState extends ConsumerState<BigScreenSettings> {
           CheckboxListTile(
             contentPadding: EdgeInsets.zero,
             dense: true,
-            title: Text(tileNames[id] ?? id, style: const TextStyle(color: Brand.ink)),
+            title: Text(
+              tileNames[id] ?? id,
+              style: const TextStyle(color: Brand.ink),
+            ),
             value: s.tiles.contains(id),
-            onChanged: off
-                ? null
-                : (on) {
-                    final next = [
-                      for (final t in supportedTiles)
-                        if (t == id ? on == true : s.tiles.contains(t)) t,
-                    ];
-                    _save(s.copyWith(tiles: next));
-                  },
+            onChanged: (on) {
+              final next = [
+                for (final t in supportedTiles)
+                  if (t == id ? on == true : s.tiles.contains(t)) t,
+              ];
+              _save(s.copyWith(tiles: next));
+            },
           ),
         Row(
           children: [
@@ -146,36 +167,42 @@ class _BigScreenSettingsState extends ConsumerState<BigScreenSettings> {
             ChoiceChip(
               label: const Text('Along the bottom'),
               selected: s.tilePlace != 'side',
-              onSelected: off ? null : (_) => _save(s.copyWith(tilePlace: 'bottom')),
+              onSelected: (_) => _save(s.copyWith(tilePlace: 'bottom')),
             ),
             const SizedBox(width: 8),
             ChoiceChip(
               label: const Text('Down the side'),
               selected: s.tilePlace == 'side',
-              onSelected: off ? null : (_) => _save(s.copyWith(tilePlace: 'side')),
+              onSelected: (_) => _save(s.copyWith(tilePlace: 'side')),
             ),
           ],
         ),
         const SizedBox(height: 12),
         TextField(
           controller: _welcome,
-          enabled: !off,
-          decoration: const InputDecoration(labelText: 'Welcome message', hintText: 'Welcome to the club'),
+          decoration: const InputDecoration(
+            labelText: 'Welcome message',
+            hintText: 'Welcome to the club',
+          ),
           onChanged: (v) => _save(s.copyWith(welcomeText: v)),
         ),
         const SizedBox(height: 10),
         TextField(
           controller: _specialTitle,
-          enabled: !off,
-          decoration: const InputDecoration(labelText: "Today's special: heading", hintText: 'Sunday roast'),
+          decoration: const InputDecoration(
+            labelText: "Today's special: heading",
+            hintText: 'Sunday roast',
+          ),
           onChanged: (v) => _save(s.copyWith(specialTitle: v)),
         ),
         const SizedBox(height: 10),
         TextField(
           controller: _specialText,
-          enabled: !off,
           maxLines: 2,
-          decoration: const InputDecoration(labelText: "Today's special: details", hintText: 'Beef or chicken, £14.95'),
+          decoration: const InputDecoration(
+            labelText: "Today's special: details",
+            hintText: 'Beef or chicken, £14.95',
+          ),
           onChanged: (v) => _save(s.copyWith(specialText: v)),
         ),
       ],

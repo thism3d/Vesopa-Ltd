@@ -541,7 +541,7 @@ const _keyRemote = 'display.remote_pairing';
 ///
 /// Kept in step with `version:` in pubspec.yaml by hand, the same way
 /// `data/control.dart` keeps its own copy.
-const pairingAppVersion = '1.7.0';
+const pairingAppVersion = '1.7.1';
 
 /// This screen's identity and its pairing, kept current.
 ///

@@ -16,6 +16,9 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 /// not a credential — so the most it is trusted to say is that the board may
 /// have moved. The board itself always comes back over a call carrying the
 /// kitchen token.
+/// The till's "show this tab" commands. See [LiveLink] and kitchen_shell.dart.
+final kitchenViews = StreamController<({String tab, int? screen})>.broadcast();
+
 class LiveLink {
   LiveLink({required this.wsUrl, required this.office});
 
@@ -97,6 +100,17 @@ class LiveLink {
       final msg = jsonDecode(raw as String) as Map<String, dynamic>;
       final type = msg['type'] as String?;
       if (type == null) return;
+
+      // The till switching this screen's tab (2026-10-17), for a screen
+      // nobody touches: {type:'kitchen.view', tab, screen}. No screen means
+      // every screen in the venue.
+      if (type == 'kitchen.view') {
+        final tab = msg['tab'];
+        if (tab is String && !kitchenViews.isClosed) {
+          kitchenViews.add((tab: tab, screen: (msg['screen'] as num?)?.toInt()));
+        }
+        return;
+      }
 
       final event = switch (type) {
         'kitchen.ticket' => LiveEvent.board,

@@ -433,7 +433,54 @@ const KITCHEN_BRANDING_DEFAULTS = {
   splashBg: '',
   accent: '',
   showPoweredBy: true,
+  tvSize: 'auto',
+  zoom: 100,
+  touch: true,
+  tiles: [],
+  note: '',
 };
+
+/** Kitchen widgets (2026-10-17), off by default. See the kitchen app's kitchen_tiles.dart. */
+const KITCHEN_TILES = ['clock', 'open', 'late', 'oldest', 'average', 'allday', 'note'];
+
+/** A list (or comma text) of tile ids, keeping only known ones, in order. */
+function cleanTiles(value) {
+  const list = Array.isArray(value) ? value : String(value || '').split(',');
+  const want = new Set(list.map((t) => String(t).trim().toLowerCase()));
+  return KITCHEN_TILES.filter((t) => want.has(t));
+}
+
+/**
+ * How big the board is drawn, for screens that are TVs (2026-10-17).
+ *
+ * Meirion: "Can we put the option of zooming in or the possibility of making
+ * the kitchen screen larger please" -- on a TV across the kitchen, and "the
+ * problem mate not touch screen", so it is chosen here and on the till rather
+ * than on the screen. The kitchen app turns a preset into a scale from the
+ * panel's resolution, so a 55" 4K TV and a 55" HD TV come out the same size.
+ */
+const TV_SIZES = ['auto', 'monitor', 'tv32', 'tv43', 'tv55', 'tv65', 'tv75', 'tv100'];
+const ZOOM_MIN = 50;
+const ZOOM_MAX = 300;
+
+/** A preset name, or [fallback] for anything else. */
+function cleanTvSize(value, fallback = 'auto') {
+  const v = String(value ?? '').trim().toLowerCase();
+  return TV_SIZES.includes(v) ? v : fallback;
+}
+
+/** A zoom percentage within bounds, or [fallback]. */
+function cleanZoom(value, fallback = 100) {
+  if (value === null || value === undefined || value === '') return fallback;
+  const n = Math.round(Number(value));
+  return Number.isFinite(n) ? Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, n)) : fallback;
+}
+
+/** Touch on (1), off (0), or [fallback] when not given. */
+function cleanTouch(value, fallback = 1) {
+  if (value === null || value === undefined || value === '') return fallback;
+  return value === false || value === 0 || value === '0' ? 0 : 1;
+}
 
 /**
  * How long the start screen may hold, in milliseconds.
@@ -475,7 +522,9 @@ async function kitchenBranding(pool, office) {
       `SELECT venue_name, logo_url,
               kitchen_splash_enabled, kitchen_splash_ms, kitchen_app_name,
               kitchen_tagline, kitchen_logo_url, kitchen_splash_bg,
-              kitchen_accent, kitchen_show_powered_by
+              kitchen_accent, kitchen_show_powered_by,
+              kitchen_tv_size, kitchen_zoom_percent, kitchen_touch,
+              kitchen_tiles, kitchen_note
          FROM epos_branding
         WHERE office = ?`,
       [office]
@@ -505,6 +554,11 @@ async function kitchenBranding(pool, office) {
     splashBg: cleanHex(row.kitchen_splash_bg),
     accent: cleanHex(row.kitchen_accent),
     showPoweredBy: row.kitchen_show_powered_by !== 0,
+    tvSize: cleanTvSize(row.kitchen_tv_size),
+    zoom: cleanZoom(row.kitchen_zoom_percent),
+    touch: row.kitchen_touch !== 0,
+    tiles: cleanTiles(row.kitchen_tiles),
+    note: String(row.kitchen_note || '').trim(),
   };
 }
 
@@ -546,6 +600,11 @@ function kitchenBrandingUpdate(body) {
   if (has('showPoweredBy')) {
     patch.kitchen_show_powered_by = body.showPoweredBy ? 1 : 0;
   }
+  if (has('tvSize')) patch.kitchen_tv_size = cleanTvSize(body.tvSize);
+  if (has('zoom')) patch.kitchen_zoom_percent = cleanZoom(body.zoom);
+  if (has('touch')) patch.kitchen_touch = cleanTouch(body.touch);
+  if (has('tiles')) patch.kitchen_tiles = cleanTiles(body.tiles).join(',');
+  if (has('note')) patch.kitchen_note = String(body.note || '').trim().slice(0, 160);
   return patch;
 }
 
@@ -770,7 +829,8 @@ function kitchenRoutes({ pool, broadcast, secret }) {
     try {
       const office = await tenantEmail(req);
       const [rows] = await pool.query(
-        `SELECT id, name, stations, columns_count, warn_seconds, late_seconds,
+        `SELECT id, name, stations, columns_count, tv_size, zoom_percent, touch,
+                warn_seconds, late_seconds,
                 recall_minutes, sound, sort_order
            FROM epos_kitchen_screens
           WHERE office = ?
@@ -804,6 +864,18 @@ function kitchenRoutes({ pool, broadcast, secret }) {
     }
 
     const { warn, late } = thresholds(req.body, current);
+    // The screen's own size and touch, or NULL for the venue's. Left as they
+    // were when the form that saved did not send them (an older page).
+    const sent = (key) => req.body && Object.prototype.hasOwnProperty.call(req.body, key);
+    const tvSize = sent('tv_size')
+      ? cleanTvSize(req.body.tv_size, null)
+      : (current ? current.tv_size : null);
+    const zoom = sent('zoom_percent')
+      ? cleanZoom(req.body.zoom_percent, null)
+      : (current ? current.zoom_percent : null);
+    const touch = sent('touch')
+      ? cleanTouch(req.body.touch, null)
+      : (current ? current.touch : null);
     const values = [
       name,
       formatStations(req.body?.stations),
@@ -813,13 +885,17 @@ function kitchenRoutes({ pool, broadcast, secret }) {
       Math.min(1440, Math.max(5, Number(req.body?.recall_minutes) || 60)),
       req.body?.sound === false ? 0 : 1,
       Number(req.body?.sort_order) || 0,
+      tvSize,
+      zoom,
+      touch,
     ];
 
     if (id) {
       await pool.execute(
         `UPDATE epos_kitchen_screens
             SET name = ?, stations = ?, columns_count = ?, warn_seconds = ?,
-                late_seconds = ?, recall_minutes = ?, sound = ?, sort_order = ?
+                late_seconds = ?, recall_minutes = ?, sound = ?, sort_order = ?,
+                tv_size = ?, zoom_percent = ?, touch = ?
           WHERE id = ? AND office = ?`,
         [...values, id, office]
       );
@@ -836,8 +912,8 @@ function kitchenRoutes({ pool, broadcast, secret }) {
       const [result] = await pool.execute(
         `INSERT INTO epos_kitchen_screens
            (office, name, stations, columns_count, warn_seconds, late_seconds,
-            recall_minutes, sound, sort_order)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            recall_minutes, sound, sort_order, tv_size, zoom_percent, touch)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [office, ...values]
       );
       id = result.insertId;
@@ -992,7 +1068,8 @@ function kitchenAppRoutes({ pool, broadcast, secret }) {
       [office]
     );
     const [screens] = await pool.query(
-      `SELECT id, name, stations, columns_count, warn_seconds, late_seconds,
+      `SELECT id, name, stations, columns_count, tv_size, zoom_percent, touch,
+                warn_seconds, late_seconds,
               recall_minutes, sound, sort_order
          FROM epos_kitchen_screens
         WHERE office = ?
@@ -1524,6 +1601,166 @@ function kitchenAppRoutes({ pool, broadcast, secret }) {
 
 function tillKitchenRoutes({ pool, broadcast, secret }) {
   const router = express.Router();
+  const terminal = requireTerminal(secret);
+
+  // ---- Running the kitchen screen from the till (2026-10-17) ---------------
+  //
+  // "The problem mate not touch screen": a kitchen screen on a TV cannot be
+  // tapped, so the till does what a chef's finger would -- size, touch on or
+  // off, and bump, recall and rush. The same settings and the same actions as
+  // the back office and the screen itself; every screen redraws on the push.
+
+  router.get('/till/kitchen/display', terminal, async (req, res, next) => {
+    try {
+      const office = req.office;
+      const branding = await kitchenBranding(pool, office);
+      const [screens] = await pool.query(
+        `SELECT id, name, stations, tv_size, zoom_percent, touch
+           FROM epos_kitchen_screens WHERE office = ?
+          ORDER BY sort_order, name`,
+        [office]
+      );
+      res.json({
+        sizes: TV_SIZES,
+        tilesSupported: KITCHEN_TILES,
+        venue: {
+          tvSize: branding.tvSize,
+          zoom: branding.zoom,
+          touch: branding.touch,
+          tiles: branding.tiles,
+          note: branding.note,
+        },
+        screens: screens.map((r) => ({
+          id: r.id,
+          name: r.name,
+          stations: parseStations(r.stations),
+          tvSize: r.tv_size || null,
+          zoom: r.zoom_percent == null ? null : cleanZoom(r.zoom_percent),
+          touch: r.touch == null ? null : r.touch !== 0,
+        })),
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /** The venue's default: every screen without its own setting. */
+  router.put('/till/kitchen/display', terminal, async (req, res, next) => {
+    try {
+      const office = req.office;
+      const body = req.body || {};
+      const patch = {};
+      if ('tvSize' in body) patch.kitchen_tv_size = cleanTvSize(body.tvSize);
+      if ('zoom' in body) patch.kitchen_zoom_percent = cleanZoom(body.zoom);
+      if ('touch' in body) patch.kitchen_touch = cleanTouch(body.touch);
+      if ('tiles' in body) patch.kitchen_tiles = cleanTiles(body.tiles).join(',');
+      if ('note' in body) patch.kitchen_note = String(body.note || '').trim().slice(0, 160);
+      await saveKitchenBranding(pool, office, patch);
+      const branding = await kitchenBranding(pool, office);
+      broadcast({ type: 'kitchen.branding', office, branding }, { office });
+      res.json({
+        tvSize: branding.tvSize,
+        zoom: branding.zoom,
+        touch: branding.touch,
+        tiles: branding.tiles,
+        note: branding.note,
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /** One named screen. A null hands that setting back to the venue's default. */
+  router.put('/till/kitchen/display/:id', terminal, async (req, res, next) => {
+    try {
+      const office = req.office;
+      const id = Number(req.params.id);
+      const body = req.body || {};
+      const [[row]] = await pool.query(
+        'SELECT id, tv_size, zoom_percent, touch FROM epos_kitchen_screens WHERE id = ? AND office = ?',
+        [id, office]
+      );
+      if (!row) return res.status(404).json({ error: 'No such kitchen screen.' });
+      const tvSize = 'tvSize' in body ? cleanTvSize(body.tvSize, null) : row.tv_size;
+      const zoom = 'zoom' in body ? cleanZoom(body.zoom, null) : row.zoom_percent;
+      const touch = 'touch' in body ? cleanTouch(body.touch, null) : row.touch;
+      await pool.execute(
+        'UPDATE epos_kitchen_screens SET tv_size = ?, zoom_percent = ?, touch = ? WHERE id = ? AND office = ?',
+        [tvSize, zoom, touch, id, office]
+      );
+      broadcast({ type: 'kitchen.screens', office }, { office });
+      res.json({ id, tvSize, zoom, touch: touch == null ? null : touch !== 0 });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /**
+   * Show a tab on the kitchen screens: open, counts, stock or completed. For a
+   * screen nobody touches. `screen` picks one named screen; none means all.
+   */
+  router.post('/till/kitchen/view', terminal, (req, res) => {
+    const tab = String(req.body?.tab || '');
+    if (!['open', 'counts', 'stock', 'completed'].includes(tab)) {
+      return res.status(400).json({ error: 'Choose open, counts, stock or completed.' });
+    }
+    const screen = Number(req.body?.screen) || null;
+    broadcast({ type: 'kitchen.view', office: req.office, tab, screen }, { office: req.office });
+    return res.json({ ok: true, tab, screen });
+  });
+
+  /** The board, as the kitchen screens see it. */
+  router.get('/till/kitchen/board', terminal, async (req, res, next) => {
+    try {
+      res.json({
+        serverTime: new Date().toISOString(),
+        stationNames: await stationNames(pool, req.office),
+        tickets: await loadBoard(pool, req.office, req.query.minutes || 60),
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /** Who pressed it, for the ticket's history: the till's signed-in clerk. */
+  const tillBy = (req) =>
+    String(req.body?.by || req.terminal?.name || req.terminal?.email || 'Till').slice(0, 120);
+
+  router.post('/till/kitchen/tickets/:id/bump', terminal, async (req, res, next) => {
+    try {
+      const done = await bumpTicket(pool, req.office, req.params.id, parseStations(req.body?.stations), tillBy(req));
+      if (!done) return res.status(404).json({ error: 'No such ticket' });
+      broadcast({ type: 'kitchen.ticket', id: req.params.id, office: req.office }, { office: req.office });
+      res.json({ ok: true });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.post('/till/kitchen/tickets/:id/recall', terminal, async (req, res, next) => {
+    try {
+      const done = await recallTicket(pool, req.office, req.params.id);
+      if (!done) return res.status(404).json({ error: 'No such ticket' });
+      broadcast({ type: 'kitchen.ticket', id: req.params.id, office: req.office }, { office: req.office });
+      res.json({ ok: true });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.post('/till/kitchen/tickets/:id/rush', terminal, async (req, res, next) => {
+    try {
+      const [result] = await pool.execute(
+        'UPDATE epos_kitchen_tickets SET rushed = ? WHERE id = ? AND office = ?',
+        [req.body?.rushed === false ? 0 : 1, req.params.id, req.office]
+      );
+      if (!result.affectedRows) return res.status(404).json({ error: 'No such ticket' });
+      broadcast({ type: 'kitchen.ticket', id: req.params.id, office: req.office }, { office: req.office });
+      res.json({ ok: true });
+    } catch (e) {
+      next(e);
+    }
+  });
 
   /**
    * Accept a fired ticket from a terminal.
@@ -1667,6 +1904,57 @@ function tillKitchenRoutes({ pool, broadcast, secret }) {
   );
 
   return router;
+}
+
+/**
+ * Mark a ticket's stations done (all of them when [stations] is empty), as the
+ * kitchen screen's tick does. False when the ticket is not this venue's.
+ */
+async function bumpTicket(pool, office, id, stations, by) {
+  const [[ticket]] = await pool.query(
+    'SELECT id FROM epos_kitchen_tickets WHERE id = ? AND office = ?',
+    [id, office]
+  );
+  if (!ticket) return false;
+  if (stations.length) {
+    const holes = stations.map(() => '?').join(', ');
+    await pool.execute(
+      `UPDATE epos_kitchen_ticket_stations
+          SET status = 'done', done_at = NOW(), done_by = ?
+        WHERE ticket_id = ? AND station IN (${holes}) AND status <> 'done'`,
+      [by, id, ...stations]
+    );
+  } else {
+    await pool.execute(
+      `UPDATE epos_kitchen_ticket_stations
+          SET status = 'done', done_at = NOW(), done_by = ?
+        WHERE ticket_id = ? AND status <> 'done'`,
+      [by, id]
+    );
+  }
+  return true;
+}
+
+/** Put a ticket back on the board with its items un-crossed, as recall does. */
+async function recallTicket(pool, office, id) {
+  const [[ticket]] = await pool.query(
+    'SELECT id FROM epos_kitchen_tickets WHERE id = ? AND office = ?',
+    [id, office]
+  );
+  if (!ticket) return false;
+  await pool.execute(
+    `UPDATE epos_kitchen_ticket_stations
+        SET status = 'open', done_at = NULL, done_by = NULL
+      WHERE ticket_id = ?`,
+    [id]
+  );
+  await pool.execute(
+    `UPDATE epos_kitchen_ticket_lines
+        SET made_at = NULL, made_by = NULL
+      WHERE ticket_id = ?`,
+    [id]
+  );
+  return true;
 }
 
 /** The six delivery modes for an office, defaulting anything unset. */

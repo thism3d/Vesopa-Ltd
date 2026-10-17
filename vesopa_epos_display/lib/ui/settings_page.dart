@@ -452,7 +452,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     'For a display on a TV. Choose the TV size so the bill reads '
                     'from across the room, turn touch off if nobody can reach it, '
                     'and add tiles if you like.',
-                child: BigScreenSettings(readOnly: _tillOwnsSettings),
+                child: BigScreenSettings(tillToo: _tillOwnsSettings),
               ),
 
               if (!_tillOwnsSettings)

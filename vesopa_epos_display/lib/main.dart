@@ -21,6 +21,8 @@ library;
 
 import 'data/startup_repair.dart';
 import 'package:flutter/material.dart';
+
+import 'touch_gate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -45,7 +47,9 @@ import 'data/trusted_roots.dart';
 /// See `data/deep_links.dart` for the scheme and why it is reverse DNS.
 
 Future<void> main(List<String> args) async {
-  WidgetsFlutterBinding.ensureInitialized();
+  // First: the binding that can ignore fingers when the till turns touch
+  // off (touch_gate.dart).
+  TouchGateBinding.ensureInitialized();
   // Before any request: see data/trusted_roots.dart.
   trustOurServerRoots();
 

@@ -23,6 +23,11 @@ class KitchenBranding {
     this.background,
     this.accent,
     this.showPoweredBy = true,
+    this.tvSize = 'auto',
+    this.zoom = 100,
+    this.touch = true,
+    this.tiles = const [],
+    this.note = '',
   });
 
   /// Whether the start screen is shown at all.
@@ -50,6 +55,24 @@ class KitchenBranding {
   final Color? accent;
 
   final bool showPoweredBy;
+
+  /// The venue's screen size for kitchen screens on TVs: a preset name (see
+  /// `ui/board_scale.dart`). A named screen may have its own.
+  final String tvSize;
+
+  /// A percentage on top of [tvSize], 50 to 300.
+  final int zoom;
+
+  /// Whether the venue's screens are tapped. Off draws the board without
+  /// buttons; the till runs it.
+  final bool touch;
+
+  /// Kitchen widgets along the top of the board (ui/kitchen_tiles.dart), in
+  /// order. Empty, the default, is none.
+  final List<String> tiles;
+
+  /// The "from the front" line, e.g. "86 salmon". Shown by the note tile.
+  final String note;
 
   /// The product's own name, used when a venue has not chosen one.
   static const fallbackName = 'Vesopa Kitchen';
@@ -96,6 +119,11 @@ class KitchenBranding {
     Color? accent,
     bool clearAccent = false,
     bool? showPoweredBy,
+    String? tvSize,
+    int? zoom,
+    bool? touch,
+    List<String>? tiles,
+    String? note,
   }) => KitchenBranding(
     splashEnabled: splashEnabled ?? this.splashEnabled,
     splashHold: splashHold ?? this.splashHold,
@@ -105,6 +133,11 @@ class KitchenBranding {
     background: clearBackground ? null : (background ?? this.background),
     accent: clearAccent ? null : (accent ?? this.accent),
     showPoweredBy: showPoweredBy ?? this.showPoweredBy,
+    tvSize: tvSize ?? this.tvSize,
+    zoom: zoom ?? this.zoom,
+    touch: touch ?? this.touch,
+    tiles: tiles ?? this.tiles,
+    note: note ?? this.note,
   );
 
   /// `#RRGGBB` to a [Color]. Null for anything else, which is what makes a
@@ -141,6 +174,14 @@ class KitchenBranding {
       background: parseHex(j['splashBg']),
       accent: parseHex(j['accent']),
       showPoweredBy: j['showPoweredBy'] != false,
+      tvSize: '${j['tvSize'] ?? 'auto'}',
+      zoom: ((j['zoom'] as num?)?.round() ?? 100).clamp(50, 300),
+      touch: j['touch'] != false,
+      tiles: [
+        for (final t in (j['tiles'] is List ? j['tiles'] as List : const []))
+          if (t is String && t.isNotEmpty) t,
+      ],
+      note: '${j['note'] ?? ''}',
     );
   }
 
@@ -155,5 +196,10 @@ class KitchenBranding {
     'splashBg': toHex(background),
     'accent': toHex(accent),
     'showPoweredBy': showPoweredBy,
+    'tvSize': tvSize,
+    'zoom': zoom,
+    'touch': touch,
+    'tiles': tiles,
+    'note': note,
   };
 }

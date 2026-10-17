@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/dinein_orders.dart';
+import '../data/live_link.dart' show kitchenViews;
 import '../data/notifications.dart';
 import '../data/providers.dart';
 import '../data/ticket.dart';
@@ -13,6 +14,7 @@ import 'completed_board.dart';
 import 'counts_board.dart';
 import 'stock_board.dart';
 import 'info_page.dart';
+import 'kitchen_tiles.dart';
 import 'open_board.dart';
 import 'settings_page.dart';
 import 'theme.dart';
@@ -53,6 +55,14 @@ class _KitchenShellState extends ConsumerState<KitchenShell> {
   /// the other side of the kitchen even with the sound off.
   bool _flash = false;
 
+  StreamSubscription<({String tab, int? screen})>? _views;
+
+  @override
+  void dispose() {
+    unawaited(_views?.cancel());
+    super.dispose();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -62,6 +72,21 @@ class _KitchenShellState extends ConsumerState<KitchenShell> {
     // the shell decides what that sounds and looks like.
     ref.read(ticketBoardProvider.notifier).onNewTicket = _announce;
     ref.read(dineInInboxProvider.notifier).onNewOrder = _announceOrder;
+
+    // The till can switch the tab, for a screen nobody touches (2026-10-17).
+    _views = kitchenViews.stream.listen((view) {
+      if (!mounted) return;
+      final mine = ref.read(kitchenSessionProvider).value?.screenId;
+      if (view.screen != null && view.screen != mine) return;
+      final tab = switch (view.tab) {
+        'open' => _Tab.open,
+        'counts' => _Tab.counts,
+        'stock' => _Tab.stock,
+        'completed' => _Tab.completed,
+        _ => null,
+      };
+      if (tab != null) setState(() => _tab = tab);
+    });
 
     // Started after the first frame: `start` reads the session, and a provider
     // read during the build that mounts this widget is a rebuild during a
@@ -213,6 +238,17 @@ class _KitchenShellState extends ConsumerState<KitchenShell> {
             // leaves them believing a board that has stopped moving. This
             // stays up for exactly as long as the problem does.
             if (!board.online) const _OfflineBar(),
+
+            // Kitchen widgets (2026-10-17): off unless the venue turns them
+            // on, from the till or the back office. See kitchen_tiles.dart.
+            KitchenTileStrip(
+              tiles: session.branding.tiles,
+              note: session.branding.note,
+              open: board.open(profile),
+              completed: board.completed(profile),
+              profile: profile,
+              now: board.now,
+            ),
 
             Expanded(
               child: AnimatedContainer(

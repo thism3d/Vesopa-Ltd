@@ -36,6 +36,7 @@ import 'advert_panel.dart';
 import 'board_scale.dart';
 import 'connect_page.dart' show displayApiBase;
 import 'tiles.dart';
+import '../touch_gate.dart';
 import 'bill_panel.dart';
 import 'card_overlay.dart';
 import 'settings_page.dart';
@@ -730,9 +731,9 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
         child: scaled,
       ),
     );
-    // A TV nobody can reach: no bars, no settings, nothing a tap could do.
-    // The till runs it, and Escape still leaves full screen.
-    if (!settings.touch) body = AbsorbPointer(child: body);
+    // Touch off: fingers do nothing (the binding drops them, touch_gate.dart);
+    // a mouse and keyboard still work, and the till runs everything anyway.
+    TouchGate.blocked = !settings.touch;
     return body;
   }
 

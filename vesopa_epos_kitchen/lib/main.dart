@@ -5,10 +5,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'config/constants.dart';
+import 'touch_gate.dart';
 import 'data/activity_log.dart';
 import 'data/app_update.dart';
 import 'data/kitchen_branding.dart';
 import 'data/providers.dart';
+import 'package:flutter/services.dart';
+
+import 'ui/board_scale.dart';
 import 'ui/kitchen_shell.dart';
 import 'ui/sign_in_page.dart';
 import 'ui/licence_panel.dart';
@@ -54,7 +58,9 @@ Future<void> _lockWindowToKiosk() async {
 }
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  // First: the binding that can ignore fingers when the till turns touch
+  // off (touch_gate.dart).
+  TouchGateBinding.ensureInitialized();
   // Before any request: see data/trusted_roots.dart.
   trustOurServerRoots();
   // The activity log: taps, screens and errors, to a local file and to the
@@ -99,6 +105,45 @@ class _VesopaKitchenAppState extends ConsumerState<VesopaKitchenApp> {
   bool _splashDone = false;
 
   @override
+  void initState() {
+    super.initState();
+    HardwareKeyboard.instance.addHandler(_onKey);
+  }
+
+  @override
+  void dispose() {
+    HardwareKeyboard.instance.removeHandler(_onKey);
+    super.dispose();
+  }
+
+  /// Ctrl + / Ctrl - / Ctrl 0 make this screen bigger, smaller, or as set,
+  /// for a TV with a keyboard and no touch (2026-10-17). Handled globally so
+  /// it works whatever has focus.
+  bool _onKey(KeyEvent event) {
+    if (event is! KeyDownEvent) return false;
+    final keys = HardwareKeyboard.instance;
+    if (!keys.isControlPressed) return false;
+    final key = event.logicalKey;
+    final int? direction;
+    if (key == LogicalKeyboardKey.equal ||
+        key == LogicalKeyboardKey.add ||
+        key == LogicalKeyboardKey.numpadAdd) {
+      direction = 1;
+    } else if (key == LogicalKeyboardKey.minus ||
+        key == LogicalKeyboardKey.numpadSubtract) {
+      direction = -1;
+    } else if (key == LogicalKeyboardKey.digit0 ||
+        key == LogicalKeyboardKey.numpad0) {
+      direction = 0;
+    } else {
+      direction = null;
+    }
+    if (direction == null) return false;
+    ref.read(kitchenSessionProvider.notifier).nudgeZoom(direction);
+    return true;
+  }
+
+  @override
   Widget build(BuildContext context) {
     final session = ref.watch(kitchenSessionProvider);
 
@@ -133,7 +178,29 @@ class _VesopaKitchenAppState extends ConsumerState<VesopaKitchenApp> {
         // operating system's.
         child: Stack(
           children: [
-            child ?? const SizedBox.shrink(),
+            // The screen's size, for a TV across the kitchen: the venue's or
+            // this screen's preset and zoom, and this machine's nudge. See
+            // ui/board_scale.dart.
+            LayoutBuilder(
+              builder: (context, box) {
+                final s = session.value;
+                // Touch off: fingers do nothing, a mouse and keyboard still
+                // work, and the till runs the screen (touch_gate.dart).
+                TouchGate.blocked = s != null && s.signedIn && !s.touch;
+                final scale = s == null || !s.signedIn
+                    ? 1.0
+                    : BoardScale.of(
+                        preset: s.tvSize,
+                        width: box.maxWidth,
+                        zoomPercent: s.zoom,
+                        nudgePercent: s.zoomNudge,
+                      );
+                return ScaledBoard(
+                  scale: scale,
+                  child: child ?? const SizedBox.shrink(),
+                );
+              },
+            ),
             if (!_splashDone && branding.splashEnabled)
               SplashScreen(
                 branding: branding,

@@ -50,7 +50,8 @@ SCHEMAS = ["schema_venue_modules.sql", "schema_memberships.sql", "schema_till_ex
            "schema_menu_dinein_online_pay.sql", "schema_staff_default_screen.sql",
            "schema_display_card_result.sql",
            "schema_dojo_online_checkout.sql",
-           "schema_display_pairs.sql"]
+           "schema_display_pairs.sql",
+           "schema_kitchen_tv_size.sql"]
 PM2 = f"su - {USER} -c 'PM2_HOME=/home/{USER}/.pm2 pm2 {{}}'"
 
 def load_env_claude():
