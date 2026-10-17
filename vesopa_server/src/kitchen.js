@@ -22,7 +22,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 
-const { requireAuth, requireTerminal } = require('./auth');
+const { requireAuth, requireTerminal, verifyPassword, AccessDeniedError } = require('./auth');
 const training = require('./training');
 const licences = require('./licences');
 const { cleanAllergens, readAllergens } = require('./allergens');
@@ -1014,6 +1014,11 @@ function kitchenAppRoutes({ pool, broadcast, secret }) {
 
   router.post('/kitchen/login', async (req, res, next) => {
     try {
+      // Email and password, like the till (2026-10-17): no venue to type. The
+      // venue comes from whichever account the email belongs to.
+      if (!String(req.body?.office || '').trim() && req.body?.email) {
+        return await loginByEmail(req, res);
+      }
       const username = String(req.body?.username || '').trim().toLowerCase();
       const password = String(req.body?.password || '');
       const office = String(req.body?.office || '').trim();
@@ -1110,6 +1115,94 @@ function kitchenAppRoutes({ pool, broadcast, secret }) {
       next(e);
     }
   });
+
+  /**
+   * Sign a screen in with an email and a password.
+   *
+   * The venue's back office account first (the same check the till makes),
+   * then a kitchen login whose username is that email. Either way the venue is
+   * the account's, so nobody has to know the office's contact address.
+   */
+  async function loginByEmail(req, res) {
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const password = String(req.body?.password || '');
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Your email and password are both required.' });
+    }
+    const wrong = { error: 'That email or password is not right.' };
+
+    let office = null;
+    let who = null;
+    try {
+      const account = await verifyPassword(pool, email, password);
+      if (account && account.officeEmail) {
+        office = account.officeEmail;
+        who = { username: account.email, name: account.name || account.email };
+      }
+    } catch (e) {
+      if (e instanceof AccessDeniedError) return res.status(403).json({ error: e.message });
+      throw e;
+    }
+
+    if (!office) {
+      const [users] = await pool.query(
+        `SELECT id, office, username, password, display_name, active
+           FROM epos_kitchen_users WHERE username = ?`,
+        [email]
+      );
+      const matches = [];
+      for (const u of users) {
+        if (await bcrypt.compare(password, u.password || '')) matches.push(u);
+      }
+      if (matches.length > 1) {
+        return res.status(409).json({ error: 'That login is used at more than one venue. Ask the office to give this screen its own.' });
+      }
+      const user = matches[0];
+      if (!user) return res.status(401).json(wrong);
+      if (!user.active) return res.status(403).json({ error: 'This kitchen login has been turned off.' });
+      office = user.office;
+      who = { username: user.username, name: user.display_name || user.username };
+      await pool.execute('UPDATE epos_kitchen_users SET last_seen_at = NOW() WHERE id = ?', [user.id]);
+    }
+
+    const [[venue]] = await pool.query('SELECT status FROM offices WHERE contact_email = ?', [office]);
+    if (venue && venue.status !== 'active') {
+      return res.status(402).json({ error: `This office is ${venue.status}. Contact Vesopa support.` });
+    }
+
+    const clampText = (v, n) => (v == null ? null : String(v).trim().slice(0, n) || null);
+    try {
+      await licences.signInDevice(pool, {
+        office,
+        kind: 'kitchen',
+        deviceId: clampText(req.body?.device_id, 64),
+        deviceName: clampText(req.body?.device_name, 120),
+        fingerprint: clampText(req.body?.device_fingerprint, 64),
+        licenceKey: clampText(req.body?.licence_key, 64),
+        by: who.username,
+      });
+    } catch (e) {
+      if (e.name === 'SeatLimitError') {
+        return res.status(409).json({
+          error: e.message,
+          licences: e.limit,
+          seats: (e.seats || []).map((x) => ({ name: x.device_name })),
+        });
+      }
+      if (e.licenceKey) return res.status(403).json({ error: e.message, licence_key: true });
+      throw e;
+    }
+
+    return res.json({
+      token: jwt.sign(
+        { scope: 'kitchen', office, user: who.username, name: who.name },
+        secret,
+        { expiresIn: KITCHEN_TOKEN_TTL }
+      ),
+      user: who,
+      ...(await profile(office)),
+    });
+  }
 
   /** Re-read the venue's screens and station names without signing in again. */
   router.get('/kitchen/profile', kitchen, async (req, res, next) => {

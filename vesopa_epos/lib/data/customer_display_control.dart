@@ -30,6 +30,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'customer_display.dart';
+import 'display_link.dart';
 
 /// The shape of both files. A reader seeing a higher one leaves the file alone
 /// rather than half-applying it.
@@ -72,7 +73,38 @@ class DisplayControl {
     this.customerQr = '',
     this.customerQrCaption = 'Scan to join',
     this.childLock = false,
+    this.screenSize = 'auto',
+    this.zoom = 100,
+    this.touch = true,
+    this.tiles = const [],
+    this.tilePlace = 'bottom',
+    this.welcomeText = '',
+    this.specialTitle = '',
+    this.specialText = '',
   });
+
+  /// BIG SCREENS (2026-10-17): "Customer Display we are using a big screen on
+  /// a pub". All off by default, so a counter display is what it was.
+  ///
+  /// A preset: auto, monitor, tv32, tv43, tv55, tv65, tv75, tv100.
+  final String screenSize;
+
+  /// A percentage on top of [screenSize], 50 to 300.
+  final int zoom;
+
+  /// Whether the display reacts to touch at all. Off for a TV nobody can
+  /// reach; this till runs it.
+  final bool touch;
+
+  /// The tiles that are on, in order (clock, date, welcome, special, qr,
+  /// cards, total), and where they go: 'bottom' or 'side'.
+  final List<String> tiles;
+  final String tilePlace;
+
+  /// What the welcome and special tiles say.
+  final String welcomeText;
+  final String specialTitle;
+  final String specialText;
 
   /// A folder of pictures and clips on the display's machine.
   final String advertFolder;
@@ -192,6 +224,14 @@ class DisplayControl {
     String? customerQr,
     String? customerQrCaption,
     bool? childLock,
+    String? screenSize,
+    int? zoom,
+    bool? touch,
+    List<String>? tiles,
+    String? tilePlace,
+    String? welcomeText,
+    String? specialTitle,
+    String? specialText,
   }) => DisplayControl(
     advertFolder: advertFolder ?? this.advertFolder,
     idleSeconds: idleSeconds ?? this.idleSeconds,
@@ -209,6 +249,14 @@ class DisplayControl {
     customerQr: customerQr ?? this.customerQr,
     customerQrCaption: customerQrCaption ?? this.customerQrCaption,
     childLock: childLock ?? this.childLock,
+    screenSize: screenSize ?? this.screenSize,
+    zoom: zoom ?? this.zoom,
+    touch: touch ?? this.touch,
+    tiles: tiles ?? this.tiles,
+    tilePlace: tilePlace ?? this.tilePlace,
+    welcomeText: welcomeText ?? this.welcomeText,
+    specialTitle: specialTitle ?? this.specialTitle,
+    specialText: specialText ?? this.specialText,
   );
 
   Map<String, Object?> toJson() => {
@@ -230,6 +278,14 @@ class DisplayControl {
     'customer_qr': customerQr,
     'customer_qr_caption': customerQrCaption,
     'child_lock': childLock,
+    'screen_size': screenSize,
+    'zoom': zoom,
+    'touch': touch,
+    'tiles': tiles,
+    'tile_place': tilePlace,
+    'welcome_text': welcomeText,
+    'special_title': specialTitle,
+    'special_text': specialText,
   };
 
   /// Null when the file is from a newer till than this build understands.
@@ -262,6 +318,17 @@ class DisplayControl {
       // never heard of this, and the wrong way to read its silence is as
       // "lock every screen in the building".
       childLock: _bool(raw['child_lock'], fallback: false),
+      screenSize: _str(raw['screen_size'], 'auto'),
+      zoom: _int(raw['zoom'], 100).clamp(50, 300),
+      touch: _bool(raw['touch'], fallback: true),
+      tiles: [
+        for (final t in (raw['tiles'] is List ? raw['tiles'] as List : const []))
+          if (t is String && t.isNotEmpty) t,
+      ],
+      tilePlace: _str(raw['tile_place'], 'bottom'),
+      welcomeText: _str(raw['welcome_text'], ''),
+      specialTitle: _str(raw['special_title'], ''),
+      specialText: _str(raw['special_text'], ''),
     );
   }
 }
@@ -300,7 +367,25 @@ class DisplayStatus {
     this.childLock = false,
     this.width = 0,
     this.height = 0,
+    this.screenSize = 'auto',
+    this.zoom = 100,
+    this.touch = true,
+    this.tiles = const [],
+    this.tilesSupported = const [],
+    this.link = 'file',
   });
+
+  /// What the big-screen settings actually are over there, and the tiles that
+  /// build can draw (empty on a display before 1.7.0, which has none).
+  final String screenSize;
+  final int zoom;
+  final bool touch;
+  final List<String> tiles;
+  final List<String> tilesSupported;
+
+  /// How this till is reaching it: 'local' (WebSocket on this PC), 'cloud'
+  /// (through the back office) or 'file'.
+  final String link;
 
   /// By the display's clock. Used only to decide whether it is still running.
   final DateTime updatedAt;
@@ -355,6 +440,12 @@ class DisplayStatus {
     'child_lock': childLock,
     'width': width,
     'height': height,
+    'screen_size': screenSize,
+    'zoom': zoom,
+    'touch': touch,
+    'tiles': tiles,
+    'tiles_supported': tilesSupported,
+    'link': link,
   };
 
   static DisplayStatus? fromJson(Object? raw) {
@@ -379,6 +470,18 @@ class DisplayStatus {
       childLock: _bool(raw['child_lock'], fallback: false),
       width: _int(raw['width'], 0),
       height: _int(raw['height'], 0),
+      screenSize: _str(raw['screen_size'], 'auto'),
+      zoom: _int(raw['zoom'], 100),
+      touch: _bool(raw['touch'], fallback: true),
+      tiles: [
+        for (final t in (raw['tiles'] is List ? raw['tiles'] as List : const []))
+          if (t is String) t,
+      ],
+      tilesSupported: [
+        for (final t in (raw['tiles_supported'] is List ? raw['tiles_supported'] as List : const []))
+          if (t is String) t,
+      ],
+      link: _str(raw['link'], 'file'),
     );
   }
 }
@@ -417,6 +520,9 @@ Future<bool> writeDisplayControl(
   try {
     final folder = await customerDisplayDirectory(override: override);
     if (folder == null) return false;
+
+    // Over the live link first: on screen the moment the manager changes it.
+    if (override == null) DisplayLinkHub.instance.sendControl(control.toJson());
 
     final file = File('${folder.path}/$displayControlFile');
     final temp = File('${file.path}.tmp');

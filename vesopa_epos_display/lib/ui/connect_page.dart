@@ -55,8 +55,16 @@ class ConnectPage extends ConsumerStatefulWidget {
 
 class _ConnectPageState extends ConsumerState<ConnectPage> {
   VesopaOption? _option;
+  bool _looked = false;
   bool _busy = false;
   String? _error;
+
+  final _email = TextEditingController();
+  final _password = TextEditingController();
+  bool _reveal = false;
+
+  /// Every licence in use, which "Try again" cannot fix: somebody has to free
+  /// one first.
   bool _full = false;
 
   /// The back office could not be reached at all, as opposed to refusing us.
@@ -71,28 +79,75 @@ class _ConnectPageState extends ConsumerState<ConnectPage> {
     _look();
   }
 
+  @override
+  void dispose() {
+    _email.dispose();
+    _password.dispose();
+    super.dispose();
+  }
+
   Future<void> _look() async {
     final option = await fetchOption(displayApiBase);
     if (!mounted) return;
-    // Nothing to sign in to. Straight on, as this screen behaved before there
-    // was a sign-in at all.
-    if (!option.enabled) {
-      _onward();
-      return;
-    }
-    setState(() => _option = option);
+    setState(() {
+      _option = option;
+      _looked = true;
+    });
   }
 
   void _onward() {
     if (!mounted) return;
+    // The token is read by the link to a till on another computer, so the
+    // provider is told it has changed.
+    ref.invalidate(commissionProvider);
     Navigator.of(context).pushReplacement(
       MaterialPageRoute<void>(builder: (_) => const DisplayPage()),
     );
   }
 
+  void _failed(Object e) {
+    if (!mounted) return;
+    final message = e is DisplayLicenceFull
+        ? e.message
+        : e is DisplaySetupFailed
+            ? e.message
+            : 'That did not work. Please try again.';
+    setState(() {
+      _error = message;
+      _full = e is DisplayLicenceFull;
+      _unreachable = message.contains('Could not reach');
+      _busy = false;
+    });
+  }
+
+  /// Email and password, like the till (2026-10-17).
+  Future<void> _signIn() async {
+    if (_busy) return;
+    if (_email.text.trim().isEmpty || _password.text.isEmpty) {
+      setState(() => _error = 'Enter the email and password you sign in to the till with.');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+      _full = false;
+      _unreachable = false;
+    });
+    try {
+      await signInWithPassword(
+        apiBase: displayApiBase,
+        email: _email.text,
+        password: _password.text,
+      );
+      _onward();
+    } catch (e) {
+      _failed(e);
+    }
+  }
+
   Future<void> _connect() async {
     final option = _option;
-    if (option == null || _busy) return;
+    if (option == null || !option.enabled || _busy) return;
     setState(() {
       _busy = true;
       _error = null;
@@ -109,121 +164,125 @@ class _ConnectPageState extends ConsumerState<ConnectPage> {
         onUrl: (url) => launchUrl(url, mode: LaunchMode.externalApplication),
       );
       _onward();
-    } on DisplayLicenceFull catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = e.message;
-          _full = true;
-          _busy = false;
-        });
-      }
     } catch (e) {
-      if (mounted) {
-        final message =
-            e is DisplaySetupFailed ? e.message : 'That did not work. Please try again.';
-        setState(() {
-          _error = message;
-          _unreachable = message.contains('Could not reach');
-          _busy = false;
-        });
-      }
+      _failed(e);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final option = _option;
     final theme = Theme.of(context);
 
     // Still asking the server. Deliberately bare: this is on screen for well
-    // under a second on a working network, and a spinner with a heading would
-    // flash a sentence nobody can read.
-    if (option == null) {
+    // under a second on a working network.
+    if (!_looked) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
+    final vesopa = _option?.enabled ?? false;
 
     return Scaffold(
       body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 520),
-          child: Padding(
-            padding: const EdgeInsets.all(32),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Connect this display', style: theme.textTheme.headlineMedium),
-                const SizedBox(height: 12),
-                Text(
-                  'Sign in with the Vesopa account for this venue. '
-                  'The display then pairs with a till as usual.',
-                  style: theme.textTheme.bodyLarge,
-                ),
-                if (_error != null) ...[
-                  const SizedBox(height: 20),
-                  Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.errorContainer,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      _error!,
-                      style: TextStyle(color: theme.colorScheme.onErrorContainer),
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 28),
-                Row(
+        child: SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: AutofillGroup(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    FilledButton(
-                      onPressed: _busy ? null : _connect,
-                      child: Text(
-                        _busy
-                            ? 'Waiting for the browser…'
-                            : (_error == null ? 'Continue with Vesopa' : 'Try again'),
+                    Text('Connect this display', style: theme.textTheme.headlineMedium),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Sign in with the email and password you use on the till. '
+                      'The display then connects to a till, on this computer or another one.',
+                      style: theme.textTheme.bodyLarge,
+                    ),
+                    const SizedBox(height: 24),
+                    TextField(
+                      controller: _email,
+                      enabled: !_busy,
+                      keyboardType: TextInputType.emailAddress,
+                      autofillHints: const [AutofillHints.email],
+                      textInputAction: TextInputAction.next,
+                      decoration: const InputDecoration(
+                        labelText: 'Email',
+                        border: OutlineInputBorder(),
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    /*
-                     * THERE IS NO WAY PAST THIS, deliberately, and the note is
-                     * here because the button that used to be was removed on
-                     * purpose rather than lost.
-                     *
-                     * A display that could be skipped past never gets counted,
-                     * and that is exactly how a venue ran customer screens for
-                     * months against a subscription that had expired.
-                     *
-                     * What stops this trapping a venue is that it is asked ONCE:
-                     * a screen that has connected before never reaches this page
-                     * again and works with the broadband down for ever after.
-                     * See DisplayEntry at the foot of this file.
-                     */
-                    /*
-                     * Two failures, two different next actions, and pressing
-                     * "Try again" only helps with one of them. A network that
-                     * is down is worth retrying; every licence being taken is
-                     * not -- somebody has to go and free one first.
-                     */
-                    if (_full)
-                      Flexible(
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _password,
+                      enabled: !_busy,
+                      obscureText: !_reveal,
+                      autofillHints: const [AutofillHints.password],
+                      onSubmitted: (_) => _signIn(),
+                      decoration: InputDecoration(
+                        labelText: 'Password',
+                        border: const OutlineInputBorder(),
+                        suffixIcon: IconButton(
+                          tooltip: _reveal ? 'Hide' : 'Show',
+                          icon: Icon(_reveal ? Icons.visibility_off : Icons.visibility),
+                          onPressed: () => setState(() => _reveal = !_reveal),
+                        ),
+                      ),
+                    ),
+                    if (_error != null) ...[
+                      const SizedBox(height: 16),
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.errorContainer,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
                         child: Text(
+                          _error!,
+                          style: TextStyle(color: theme.colorScheme.onErrorContainer),
+                        ),
+                      ),
+                      if (_full) ...[
+                        const SizedBox(height: 8),
+                        Text(
                           'Ask a manager to sign another display out in the back office, '
                           'under Devices, then try again.',
                           style: theme.textTheme.bodySmall,
                         ),
-                      )
-                    else if (_unreachable)
-                      Flexible(
-                        child: Text(
+                      ] else if (_unreachable) ...[
+                        const SizedBox(height: 8),
+                        Text(
                           'The back office cannot be reached. Check this machine is on '
                           'the network, then try again.',
                           style: theme.textTheme.bodySmall,
                         ),
+                      ],
+                    ],
+                    const SizedBox(height: 20),
+                    FilledButton(
+                      onPressed: _busy ? null : _signIn,
+                      style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
+                      child: Text(_busy ? 'Signing in…' : 'Sign in'),
+                    ),
+                    if (vesopa) ...[
+                      const SizedBox(height: 10),
+                      OutlinedButton(
+                        onPressed: _busy ? null : _connect,
+                        style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+                        child: const Text('Continue with Vesopa instead'),
                       ),
+                    ] else ...[
+                      // A back office that does not ask displays to sign in
+                      // (no Vesopa sign-in switched on) let them straight
+                      // through before; that stays possible here.
+                      const SizedBox(height: 10),
+                      TextButton(
+                        onPressed: _busy ? null : _onward,
+                        child: const Text('Not now: use this display on this computer only'),
+                      ),
+                    ],
                   ],
                 ),
-              ],
+              ),
             ),
           ),
         ),

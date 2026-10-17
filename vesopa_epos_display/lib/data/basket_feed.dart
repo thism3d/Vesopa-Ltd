@@ -313,6 +313,9 @@ class BasketFeed {
 
   void start() {
     _disposed = false;
+    // A till on another computer has no file here; its baskets arrive over
+    // the live link through [inject].
+    if (path.trim().isEmpty) return;
     unawaited(_read());
     _timer = Timer.periodic(pollEvery, (_) => unawaited(_read()));
     _startWatching();
@@ -362,6 +365,21 @@ class BasketFeed {
       // A read that lands mid-rename, a file being written, a folder that has
       // gone: all of them mean "try again in a second", and none of them mean
       // anything the customer should be told about.
+    }
+  }
+
+  /// A basket that arrived over the live link (data/till_link.dart): drawn at
+  /// once, without waiting for the file.
+  void inject(Object? raw) {
+    if (_disposed || raw is! Map) return;
+    try {
+      final basket = Basket.fromJson(raw.cast<String, Object?>());
+      if (basket == null) return;
+      _hasRead = true;
+      _current = basket;
+      if (!_baskets.isClosed) _baskets.add(basket);
+    } catch (_) {
+      // A message this build cannot read; the file still arrives.
     }
   }
 

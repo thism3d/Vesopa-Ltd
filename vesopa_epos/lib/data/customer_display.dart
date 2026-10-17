@@ -34,6 +34,7 @@ import 'dart:io';
 
 import 'package:path_provider/path_provider.dart';
 
+import 'display_link.dart';
 import 'local/database.dart';
 import 'terminal_identity.dart';
 
@@ -535,6 +536,10 @@ class CustomerDisplayFeed {
       // a real customer display pointed at a deleted temp folder would be a
       // memorable way to find that out.
       if (directoryOverride == null) unawaited(announceDisplayFile(_file!));
+      // The live link for a display on this PC (data/display_link.dart).
+      if (directoryOverride == null) {
+        unawaited(DisplayLinkHub.instance.startLocal(folder));
+      }
     } catch (_) {
       _file = null;
     }
@@ -600,6 +605,13 @@ class CustomerDisplayFeed {
     final previous = _last;
     if (previous != null && snapshot.sameAs(previous)) return;
     await _resolve();
+    // Over the live link first, the fastest route; the file follows for a
+    // display that is not on it. Not from a test, which overrides the folder.
+    if (directoryOverride == null) {
+      try {
+        DisplayLinkHub.instance.sendBasket(snapshot.toJson());
+      } catch (_) {}
+    }
     final file = _file;
     final temp = _temp;
     if (file == null || temp == null) return;

@@ -168,17 +168,17 @@ class KitchenApi {
   /// Sign a screen in. Returns the token *and* the venue's profile, because a
   /// wall-mounted machine on a venue's wifi is exactly where four sequential
   /// round trips become a visible pause.
+  /// Email and password, like the till: the server finds the venue from the
+  /// account (2026-10-17).
   Future<({String token, KitchenProfile profile})> signIn({
-    required String office,
-    required String username,
+    required String email,
     required String password,
   }) async {
     final body = await _send(
       'POST',
       '/api/kitchen/login',
       body: {
-        'office': office,
-        'username': username,
+        'email': email,
         'password': password,
         // Which app is asking, so this counts against the venue's kitchen
         // licences and not against its tills.

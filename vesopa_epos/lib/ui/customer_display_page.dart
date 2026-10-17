@@ -24,6 +24,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../config/constants.dart';
 import '../data/customer_display_control.dart';
+import '../data/display_link.dart';
 import '../data/deep_links.dart';
 import '../data/device_registry.dart';
 import '../data/display_pairing.dart';
@@ -90,9 +91,29 @@ class _CustomerDisplayPageState extends ConsumerState<CustomerDisplayPage> {
   /// rather than the other way round.
   Timer? _poll;
 
+  /// The live link (data/display_link.dart): displays on this PC over a local
+  /// WebSocket, and on other computers through the back office.
+  StreamSubscription<void>? _linkChanges;
+  DisplayLinkHub get _hub => DisplayLinkHub.instance;
+
+  final _welcome = TextEditingController();
+  final _specialTitle = TextEditingController();
+  final _specialText = TextEditingController();
+
+  /// The newer of the display's file and what it said over the link.
+  DisplayStatus? _freshest(DisplayStatus? file) {
+    final live = _hub.statuses['local'];
+    if (live == null) return file;
+    if (file == null) return live;
+    return live.updatedAt.isAfter(file.updatedAt) ? live : file;
+  }
+
   @override
   void initState() {
     super.initState();
+    _linkChanges = _hub.changes.listen((_) {
+      if (mounted) setState(() => _status = _freshest(_status));
+    });
     unawaited(_load());
     _poll = Timer.periodic(
       const Duration(seconds: 2),
@@ -103,6 +124,10 @@ class _CustomerDisplayPageState extends ConsumerState<CustomerDisplayPage> {
   @override
   void dispose() {
     _poll?.cancel();
+    unawaited(_linkChanges?.cancel());
+    _welcome.dispose();
+    _specialTitle.dispose();
+    _specialText.dispose();
     _adverts.dispose();
     _thanks.dispose();
     _standing.dispose();
@@ -141,6 +166,10 @@ class _CustomerDisplayPageState extends ConsumerState<CustomerDisplayPage> {
       _standing.text = control.standingMessage;
       _qr.text = control.customerQr;
       _qrCaption.text = control.customerQrCaption;
+      _welcome.text = control.welcomeText;
+      _specialTitle.text = control.specialTitle;
+      _specialText.text = control.specialText;
+      _status = _freshest(status);
       _loaded = true;
     });
   }
@@ -157,7 +186,7 @@ class _CustomerDisplayPageState extends ConsumerState<CustomerDisplayPage> {
     final declined = await pairing.declined();
     if (!mounted) return;
     setState(() {
-      _status = status;
+      _status = _freshest(status);
       _pending = pending;
       _paired = paired;
       _declined = declined;
@@ -405,6 +434,59 @@ class _CustomerDisplayPageState extends ConsumerState<CustomerDisplayPage> {
           ),
         ],
 
+        // How the till is reaching its displays right now.
+        const SizedBox(height: 14),
+        _LinkLine(
+          local: _hub.localConnected,
+          cloud: _hub.cloudConnected,
+          remotes: _hub.remotes.where((r) => r.online).length,
+        ),
+
+        // Displays on another computer (2026-10-17), through the back office.
+        if (_hub.requests.isNotEmpty || _hub.remotes.isNotEmpty) ...[
+          const SizedBox(height: 28),
+          const _SectionTitle('Displays on other computers'),
+          Card(
+            margin: EdgeInsets.zero,
+            child: Column(
+              children: [
+                for (final r in _hub.requests)
+                  ListTile(
+                    leading: const Icon(Icons.cast),
+                    title: Text(r.name),
+                    subtitle: Text(
+                      'Waiting to connect · code ${r.code}\nCheck the code matches the one on that screen.',
+                      style: const TextStyle(fontSize: 12.5),
+                    ),
+                    trailing: FilledButton(
+                      onPressed: () => _hub.accept(r.device),
+                      child: const Text('Connect'),
+                    ),
+                  ),
+                for (final d in _hub.remotes)
+                  ListTile(
+                    leading: Icon(Icons.tv, color: d.online ? Pos.brandDeep : Pos.graphite),
+                    title: Text(d.name),
+                    subtitle: Text(
+                      [
+                        d.online ? 'Online' : 'Offline',
+                        if (_hub.statuses[d.device]?.runningAt.isNotEmpty ?? false)
+                          _hub.statuses[d.device]!.runningAt,
+                        if (_hub.statuses[d.device]?.appVersion.isNotEmpty ?? false)
+                          'v${_hub.statuses[d.device]!.appVersion}',
+                      ].join('  ·  '),
+                      style: const TextStyle(fontSize: 12.5),
+                    ),
+                    trailing: TextButton(
+                      onPressed: () => _hub.unpair(d.device),
+                      child: const Text('Disconnect'),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+
         // Only once the lists have been read. See [_pairingRead].
         if (_pairingRead && _pending.isEmpty && _paired.isEmpty) ...[
           const SizedBox(height: 28),
@@ -431,7 +513,8 @@ class _CustomerDisplayPageState extends ConsumerState<CustomerDisplayPage> {
                             ),
                             SizedBox(height: 6),
                             Text(
-                              'Start Vesopa Customer Display on this PC. It '
+                              'Start Vesopa Customer Display on this PC, or on '
+                              'another computer signed in to this venue. It '
                               'puts itself on this page within a few seconds, '
                               'showing a four-digit code — check that code '
                               'against the screen and press Connect. There is '
@@ -502,6 +585,23 @@ class _CustomerDisplayPageState extends ConsumerState<CustomerDisplayPage> {
             fullScreen: _control.fullScreen,
             onChosen: (key) => _push(_control.copyWith(screenKey: key)),
             onFullScreen: (on) => _push(_control.copyWith(fullScreen: on)),
+          ),
+        ),
+
+        const SizedBox(height: 28),
+        const _SectionTitle('Big screen'),
+        Card(
+          margin: EdgeInsets.zero,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: _BigScreen(
+              control: _control,
+              supported: _status?.tilesSupported ?? const [],
+              welcome: _welcome,
+              specialTitle: _specialTitle,
+              specialText: _specialText,
+              onChanged: _push,
+            ),
           ),
         ),
 
@@ -1192,4 +1292,212 @@ class _Slider extends StatelessWidget {
       ),
     ],
   );
+}
+
+/// How the till is reaching its customer displays.
+class _LinkLine extends StatelessWidget {
+  const _LinkLine({required this.local, required this.cloud, required this.remotes});
+
+  final bool local;
+  final bool cloud;
+  final int remotes;
+
+  @override
+  Widget build(BuildContext context) {
+    final bits = <String>[
+      if (local) 'Live link on this PC',
+      if (remotes > 0) '$remotes on other computers',
+      if (!local && remotes == 0) 'No live link: updates go through the shared files',
+    ];
+    return Row(
+      children: [
+        Icon(
+          local || remotes > 0 ? Icons.bolt : Icons.bolt_outlined,
+          size: 18,
+          color: local || remotes > 0 ? Pos.brandDeep : Pos.graphite,
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            bits.join('  ·  ') + (cloud ? '' : '  ·  back office not connected'),
+            style: const TextStyle(fontSize: 12.5),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The big-screen settings (2026-10-17): "Customer Display we are using a big
+/// screen on a pub". Screen size, zoom, touch and tiles, all off by default.
+class _BigScreen extends StatelessWidget {
+  const _BigScreen({
+    required this.control,
+    required this.supported,
+    required this.welcome,
+    required this.specialTitle,
+    required this.specialText,
+    required this.onChanged,
+  });
+
+  final DisplayControl control;
+
+  /// The tiles the connected display can draw. Empty: an older display, or
+  /// none connected yet; every tile is offered, and an older one ignores them.
+  final List<String> supported;
+  final TextEditingController welcome;
+  final TextEditingController specialTitle;
+  final TextEditingController specialText;
+  final void Function(DisplayControl) onChanged;
+
+  static const sizes = <String, String>{
+    'auto': 'Auto',
+    'monitor': 'Monitor',
+    'tv32': '32" TV',
+    'tv43': '43" TV',
+    'tv55': '50-55" TV',
+    'tv65': '65" TV',
+    'tv75': '75" TV',
+    'tv100': '85-100" TV',
+  };
+
+  static const tiles = <String, String>{
+    'clock': 'Clock',
+    'date': 'Date',
+    'welcome': 'Welcome message',
+    'special': "Today's special",
+    'qr': 'QR code (from below)',
+    'cards': 'Cards we accept',
+    'total': 'Running total, large',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final c = control;
+    final offered = supported.isEmpty ? tiles.keys.toList() : supported;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'For a display on a TV. Pick the TV size so the bill reads from across '
+          'the room; it looks the same on an HD or a 4K set.',
+          style: TextStyle(fontSize: 12.5),
+        ),
+        const SizedBox(height: 12),
+        const Text('Screen size', style: TextStyle(fontWeight: FontWeight.w700)),
+        const SizedBox(height: 6),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final e in sizes.entries)
+              ChoiceChip(
+                label: Text(e.value),
+                selected: c.screenSize == e.key,
+                onSelected: (_) => onChanged(c.copyWith(screenSize: e.key)),
+              ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            const Text('Zoom', style: TextStyle(fontWeight: FontWeight.w700)),
+            const SizedBox(width: 12),
+            IconButton.filledTonal(
+              tooltip: 'Smaller',
+              icon: const Icon(Icons.remove),
+              onPressed: c.zoom <= 50 ? null : () => onChanged(c.copyWith(zoom: (c.zoom - 10).clamp(50, 300))),
+            ),
+            SizedBox(
+              width: 64,
+              child: Text('${c.zoom}%',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+            ),
+            IconButton.filledTonal(
+              tooltip: 'Bigger',
+              icon: const Icon(Icons.add),
+              onPressed: c.zoom >= 300 ? null : () => onChanged(c.copyWith(zoom: (c.zoom + 10).clamp(50, 300))),
+            ),
+            TextButton(
+              onPressed: c.zoom == 100 ? null : () => onChanged(c.copyWith(zoom: 100)),
+              child: const Text('Reset'),
+            ),
+          ],
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Touch screen'),
+          subtitle: Text(
+            c.touch
+                ? 'The display responds to taps (status bars and its settings).'
+                : 'Taps do nothing on the display; everything is run from this till.',
+            style: const TextStyle(fontSize: 12.5),
+          ),
+          value: c.touch,
+          onChanged: (on) => onChanged(c.copyWith(touch: on)),
+        ),
+        const Divider(height: 28),
+        const Text('Tiles', style: TextStyle(fontWeight: FontWeight.w700)),
+        const Text('Extra panels for a big screen. All off unless you turn them on.',
+            style: TextStyle(fontSize: 12.5)),
+        for (final id in offered)
+          CheckboxListTile(
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            title: Text(tiles[id] ?? id),
+            value: c.tiles.contains(id),
+            onChanged: (on) => onChanged(c.copyWith(tiles: [
+              for (final t in offered)
+                if (t == id ? on == true : c.tiles.contains(t)) t,
+            ])),
+          ),
+        Wrap(
+          spacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            const Text('Tiles go'),
+            ChoiceChip(
+              label: const Text('Along the bottom'),
+              selected: c.tilePlace != 'side',
+              onSelected: (_) => onChanged(c.copyWith(tilePlace: 'bottom')),
+            ),
+            ChoiceChip(
+              label: const Text('Down the side'),
+              selected: c.tilePlace == 'side',
+              onSelected: (_) => onChanged(c.copyWith(tilePlace: 'side')),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: welcome,
+          decoration: const InputDecoration(labelText: 'Welcome message', hintText: 'Welcome to the club'),
+          onSubmitted: (v) => onChanged(c.copyWith(welcomeText: v.trim())),
+          onTapOutside: (_) {
+            if (welcome.text.trim() != c.welcomeText) onChanged(c.copyWith(welcomeText: welcome.text.trim()));
+          },
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: specialTitle,
+          decoration: const InputDecoration(labelText: "Today's special: heading", hintText: 'Sunday roast'),
+          onSubmitted: (v) => onChanged(c.copyWith(specialTitle: v.trim())),
+          onTapOutside: (_) {
+            if (specialTitle.text.trim() != c.specialTitle) onChanged(c.copyWith(specialTitle: specialTitle.text.trim()));
+          },
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: specialText,
+          maxLines: 2,
+          decoration: const InputDecoration(labelText: "Today's special: details", hintText: 'Beef or chicken, £14.95'),
+          onSubmitted: (v) => onChanged(c.copyWith(specialText: v.trim())),
+          onTapOutside: (_) {
+            if (specialText.text.trim() != c.specialText) onChanged(c.copyWith(specialText: specialText.text.trim()));
+          },
+        ),
+      ],
+    );
+  }
 }

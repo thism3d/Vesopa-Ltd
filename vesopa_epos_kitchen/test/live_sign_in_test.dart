@@ -17,32 +17,28 @@ import 'package:vesopa_epos_kitchen/data/kitchen_api.dart';
 /// somebody wrote by hand to match what they assumed.
 ///
 ///     flutter test --tags live \
-///       --dart-define=LIVE_OFFICE=venue@example.com \
-///       --dart-define=LIVE_USER=grill \
+///       --dart-define=LIVE_EMAIL=you@example.com \
 ///       --dart-define=LIVE_PASSWORD=...
+///
+/// Email and password, like the till (2026-10-17): no venue to type.
 ///
 /// Skipped, not failed, when those are unset: a missing password is somebody
 /// running the whole suite, not a broken kitchen.
 void main() {
-  const office = String.fromEnvironment('LIVE_OFFICE');
-  const user = String.fromEnvironment('LIVE_USER');
+  const email = String.fromEnvironment('LIVE_EMAIL');
   const password = String.fromEnvironment('LIVE_PASSWORD');
-  final configured = office.isNotEmpty && user.isNotEmpty && password.isNotEmpty;
+  final configured = email.isNotEmpty && password.isNotEmpty;
 
   group('against ${Api.resolvedBase}', () {
     late KitchenApi api;
 
     setUp(() => api = KitchenApi(apiBase: Api.resolvedBase));
 
-    test('a kitchen login is accepted and returns the venue', () async {
-      final result = await api.signIn(
-        office: office,
-        username: user,
-        password: password,
-      );
+    test('an email login is accepted and returns the venue', () async {
+      final result = await api.signIn(email: email, password: password);
 
       expect(result.token, isNotEmpty);
-      expect(result.profile.office, office);
+      expect(result.profile.office, isNotEmpty);
       // The venue's name is what the header and the info panel show. A screen
       // that signs in and cannot say where it is has not really signed in.
       expect(result.profile.officeName, isNotNull);
@@ -55,7 +51,7 @@ void main() {
     });
 
     test('the board is readable, and the clock is close to ours', () async {
-      await api.signIn(office: office, username: user, password: password);
+      await api.signIn(email: email, password: password);
       final snapshot = await api.board(
         recallWindow: BoardDefaults.recallWindow,
       );
@@ -77,7 +73,7 @@ void main() {
 
     test('a wrong password is refused, and says so readably', () async {
       await expectLater(
-        api.signIn(office: office, username: user, password: 'not-the-one'),
+        api.signIn(email: email, password: 'not-the-one'),
         throwsA(
           isA<KitchenApiError>().having(
             (e) => e.message,
@@ -88,18 +84,14 @@ void main() {
       );
     });
 
-    test('an unknown venue is refused the same way', () async {
-      // The same message for a wrong venue as for a wrong password: telling
+    test('an unknown email is refused the same way', () async {
+      // The same message for a wrong email as for a wrong password: telling
       // somebody standing at the screen which half was wrong tells them which
       // logins exist.
       await expectLater(
-        api.signIn(
-          office: 'nobody@nowhere.invalid',
-          username: user,
-          password: password,
-        ),
+        api.signIn(email: 'nobody@nowhere.invalid', password: password),
         throwsA(isA<KitchenApiError>()),
       );
     });
-  }, skip: configured ? false : 'set LIVE_OFFICE, LIVE_USER and LIVE_PASSWORD');
+  }, skip: configured ? false : 'set LIVE_EMAIL and LIVE_PASSWORD');
 }

@@ -36,13 +36,17 @@ import 'dart:io';
 /// plugin and a platform channel for one string on one line of one settings
 /// screen. Kept in step with `version:` in pubspec.yaml by hand — the release
 /// checklist there mentions it.
-const appVersion = '1.6.4';
+const appVersion = '1.7.0';
 
 /// The shape of both files, matching the till's constant of the same name.
 const displayControlFormat = 1;
 
 const displayControlFile = 'settings.json';
 const displayStatusFile = 'status.json';
+
+/// The big-screen tiles this build can draw, in their default order. Sent to
+/// the till so it offers only what this screen can show.
+const supportedTiles = ['clock', 'date', 'welcome', 'special', 'qr', 'cards', 'total'];
 
 /// Whether a till is setting this screen up.
 ///
@@ -93,7 +97,25 @@ class TillControl {
     required this.customerQr,
     required this.customerQrCaption,
     required this.childLock,
+    this.screenSize = 'auto',
+    this.zoom = 100,
+    this.touch = true,
+    this.tiles = const [],
+    this.tilePlace = 'bottom',
+    this.welcomeText = '',
+    this.specialTitle = '',
+    this.specialText = '',
   });
+
+  /// Big screens (2026-10-17). See [DisplaySettings.screenSize].
+  final String screenSize;
+  final int zoom;
+  final bool touch;
+  final List<String> tiles;
+  final String tilePlace;
+  final String welcomeText;
+  final String specialTitle;
+  final String specialText;
 
   final String advertFolder;
   final int idleSeconds;
@@ -152,6 +174,18 @@ class TillControl {
       // Absent means unlocked. A till on an older build has never heard of
       // this, and the wrong way to read its silence is as "lock the screen".
       childLock: _bool(raw['child_lock'], fallback: false),
+      // Absent on a till before 1.16.16: the screen as it always was.
+      screenSize: _str(raw['screen_size'], 'auto'),
+      zoom: _int(raw['zoom'], 100).clamp(50, 300),
+      touch: _bool(raw['touch'], fallback: true),
+      tiles: [
+        for (final t in (raw['tiles'] is List ? raw['tiles'] as List : const []))
+          if (t is String && t.isNotEmpty) t,
+      ],
+      tilePlace: _str(raw['tile_place'], 'bottom'),
+      welcomeText: _str(raw['welcome_text'], ''),
+      specialTitle: _str(raw['special_title'], ''),
+      specialText: _str(raw['special_text'], ''),
     );
   }
 }
@@ -179,6 +213,15 @@ class TillControlChannel {
 
   final _controls = StreamController<TillControl>.broadcast();
 
+  /// Settings that arrived over the live link (data/till_link.dart) rather
+  /// than the file: applied the same way, at once.
+  void inject(Object? raw) {
+    final control = TillControl.fromJson(raw);
+    if (control == null || _controls.isClosed) return;
+    _isControlled = true;
+    _controls.add(control);
+  }
+
   /// Fires only when the till's settings have actually changed.
   Stream<TillControl> get controls => _controls.stream;
 
@@ -199,6 +242,8 @@ class TillControlChannel {
 
   Directory? get _folder {
     try {
+      // A till on another computer: no folder here at all (data/till_link.dart).
+      if (basketPath.trim().isEmpty) return null;
       final folder = File(basketPath).parent;
       return folder.existsSync() ? folder : null;
     } catch (_) {
@@ -304,7 +349,21 @@ class DisplayStatusReport {
     this.childLock = false,
     this.width = 0,
     this.height = 0,
+    this.screenSize = 'auto',
+    this.zoom = 100,
+    this.touch = true,
+    this.tiles = const [],
+    this.link = 'file',
   });
+
+  /// What the big-screen settings are here, and how the till is reaching this
+  /// screen: 'local' (WebSocket on this PC), 'cloud' (through the back
+  /// office, for a till on another computer) or 'file'.
+  final String screenSize;
+  final int zoom;
+  final bool touch;
+  final List<String> tiles;
+  final String link;
 
   final String appVersion;
   final String following;
@@ -345,5 +404,11 @@ class DisplayStatusReport {
     'child_lock': childLock,
     'width': width,
     'height': height,
+    'screen_size': screenSize,
+    'zoom': zoom,
+    'touch': touch,
+    'tiles': tiles,
+    'link': link,
+    'tiles_supported': supportedTiles,
   };
 }

@@ -19,6 +19,7 @@ import '../data/control.dart';
 import '../data/pairing.dart';
 import '../data/screens.dart';
 import '../data/settings.dart';
+import 'big_screen_settings.dart';
 import 'settings_controls.dart';
 import 'quit.dart';
 import 'theme.dart';
@@ -442,6 +443,17 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     ],
                   ),
                 ),
+
+              // A TV across a pub (2026-10-17): size, touch and tiles.
+              _Section(
+                title: 'Big screen',
+                icon: Icons.tv,
+                blurb:
+                    'For a display on a TV. Choose the TV size so the bill reads '
+                    'from across the room, turn touch off if nobody can reach it, '
+                    'and add tiles if you like.',
+                child: BigScreenSettings(readOnly: _tillOwnsSettings),
+              ),
 
               if (!_tillOwnsSettings)
                 _Section(

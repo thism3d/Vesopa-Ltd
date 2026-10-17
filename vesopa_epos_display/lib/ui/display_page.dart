@@ -30,7 +30,12 @@ import '../data/notifications.dart';
 import '../data/pairing.dart';
 import '../data/screens.dart';
 import '../data/settings.dart';
+import '../data/till_link.dart';
+import '../data/vesopa_setup.dart' show commissionProvider, displayAppVersion;
 import 'advert_panel.dart';
+import 'board_scale.dart';
+import 'connect_page.dart' show displayApiBase;
+import 'tiles.dart';
 import 'bill_panel.dart';
 import 'card_overlay.dart';
 import 'settings_page.dart';
@@ -174,6 +179,11 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
   List<Screen> _screens = const [];
   Timer? _screenSweep;
 
+  /// The live link to the till: a WebSocket on this PC, or through the back
+  /// office for a till on another computer. See `data/till_link.dart`.
+  TillLink? _link;
+  Timer? _statusPush;
+
   @override
   void initState() {
     super.initState();
@@ -208,11 +218,44 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
     // like it is working — while a customer at the counter is looking at
     // something that is no longer their bill. Checked on a slow timer because
     // the answer changes on the scale of minutes.
+    unawaited(_startLink());
+    // Status to the till over the link, on the same two-second beat the file
+    // is written on: the till's page shows what this screen is really doing.
+    _statusPush = Timer.periodic(const Duration(seconds: 2), (_) {
+      final control = _control;
+      final link = _link;
+      if (control == null || link == null) return;
+      link.sendStatus(control.report.toJson());
+    });
+
     unawaited(_notifications.init());
     _quietWatch = Timer.periodic(
       const Duration(seconds: 30),
       (_) => _checkTheTill(),
     );
+  }
+
+  Future<void> _startLink() async {
+    final link = TillLink(
+      deviceId: await displayDeviceId(),
+      deviceName: await displayDeviceName(),
+      appVersion: displayAppVersion,
+      cloudBase: displayApiBase,
+    );
+    if (!mounted) return;
+    link
+      ..onBasket = ((raw) => _feed?.inject(raw))
+      ..onControl = ((raw) => _control?.inject(raw))
+      ..onPaired = ((terminal, name) => unawaited(
+        ref.read(pairingProvider.notifier).setRemote(terminal, name),
+      ))
+      ..onUnpaired = (() => unawaited(ref.read(pairingProvider.notifier).clearRemote()))
+      ..onChange = (() {
+        if (mounted) setState(() {});
+      });
+    _link = link;
+    link.start();
+    if (mounted) setState(() {});
   }
 
   void _checkTheTill() {
@@ -260,6 +303,8 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
     _findTill?.cancel();
     _screenSweep?.cancel();
     _quietWatch?.cancel();
+    _statusPush?.cancel();
+    _link?.stop();
     unawaited(_controlChanges?.cancel());
     unawaited(_control?.dispose());
     unawaited(_baskets?.cancel());
@@ -362,6 +407,14 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
       screenKey: control.screenKey,
       fullScreen: control.fullScreen,
       childLock: control.childLock,
+      screenSize: control.screenSize,
+      zoom: control.zoom,
+      touch: control.touch,
+      tiles: control.tiles,
+      tilePlace: control.tilePlace,
+      welcomeText: control.welcomeText,
+      specialTitle: control.specialTitle,
+      specialText: control.specialText,
     );
 
     // Locking while the bars happen to be up has to take them down, or the
@@ -430,6 +483,15 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
+    // The live link follows what this screen knows: the basket file when it is
+    // paired on this PC, otherwise the back office (for a till on another
+    // computer), signed in with this display's token.
+    _link?.configure(
+      basketPath: pairing.isPaired ? pairing.basketPath : '',
+      token: ref.watch(commissionProvider).value?.token,
+      code: pairing.identity.code,
+    );
+
     // Until a till has handed this screen a file there is nothing to draw a
     // bill from, and — since this application stopped guessing — nothing to
     // guess at either. The pairing card takes the whole screen, because asking
@@ -465,6 +527,11 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
       // to see before they wonder why the bill looks small.
       width: size.width.round(),
       height: size.height.round(),
+      screenSize: settings.screenSize,
+      zoom: settings.zoom,
+      touch: settings.touch,
+      tiles: settings.tiles,
+      link: _link?.route ?? 'file',
     );
 
     _rewire(settings);
@@ -496,7 +563,7 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
           );
 
     return Scaffold(
-      body: Stack(
+      body: _bigScreen(settings, Stack(
         children: [
           Positioned.fill(
             child: _isIdle(settings)
@@ -624,8 +691,49 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
             ),
           ),
         ],
+      )),
+    );
+  }
+
+  /// The big-screen frame (2026-10-17): the venue's tiles beside the screen,
+  /// everything drawn at the TV's size, and no touch at all when the screen is
+  /// one nobody can reach. All of it a no-op with the defaults.
+  Widget _bigScreen(DisplaySettings settings, Widget content) {
+    Widget body = content;
+    if (TileStrip.anyVisible(settings, _basket)) {
+      final side = settings.tilePlace == 'side';
+      final strip = TileStrip(settings: settings, basket: _basket, vertical: side);
+      body = LayoutBuilder(
+        builder: (context, box) => side
+            ? Row(
+                children: [
+                  Expanded(child: content),
+                  SizedBox(width: box.maxWidth * 0.24, child: strip),
+                ],
+              )
+            : Column(
+                children: [
+                  Expanded(child: content),
+                  SizedBox(height: box.maxHeight * 0.2, child: strip),
+                ],
+              ),
+      );
+    }
+    final scaled = body;
+    body = LayoutBuilder(
+      builder: (context, box) => ScaledBoard(
+        scale: BoardScale.of(
+          preset: settings.screenSize,
+          width: box.maxWidth,
+          zoomPercent: settings.zoom,
+        ),
+        child: scaled,
       ),
     );
+    // A TV nobody can reach: no bars, no settings, nothing a tap could do.
+    // The till runs it, and Escape still leaves full screen.
+    if (!settings.touch) body = AbsorbPointer(child: body);
+    return body;
   }
 
   /// Take the bars down now.
@@ -1036,6 +1144,13 @@ class _PairingCard extends ConsumerWidget {
                   PairingStage.paired => const _ConnectedNow(name: ''),
                 },
 
+                // A till on another computer (2026-10-17): the same code,
+                // connected from that till through the back office.
+                if (state.stage != PairingStage.paired) ...[
+                  const SizedBox(height: 24),
+                  _OtherComputer(code: state.identity.code),
+                ],
+
                 const SizedBox(height: 24),
                 if (state.stage != PairingStage.unavailable)
                   TextButton.icon(
@@ -1059,6 +1174,59 @@ class _PairingCard extends ConsumerWidget {
       ),
     ),
   );
+}
+
+/// The till is on another computer: connect from there with this code.
+class _OtherComputer extends ConsumerWidget {
+  const _OtherComputer({required this.code});
+
+  final String code;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final signedIn = ref.watch(commissionProvider).value != null;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Brand.panelSoft,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Brand.line, width: 1.5),
+      ),
+      child: Column(
+        children: [
+          const Text(
+            'Till on another computer?',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Brand.ink),
+          ),
+          const SizedBox(height: 8),
+          if (signedIn) ...[
+            Text(
+              code,
+              style: const TextStyle(
+                fontSize: 34,
+                letterSpacing: 6,
+                fontWeight: FontWeight.w700,
+                color: Brand.lime,
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'On that till, open Customer display and press Connect beside this code.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13.5, height: 1.4, color: Brand.inkSoft),
+            ),
+          ] else
+            const Text(
+              'Sign this display in first (restart it and sign in with the till '
+              'email and password), then connect it from that till.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13.5, height: 1.4, color: Brand.inkSoft),
+            ),
+        ],
+      ),
+    );
+  }
 }
 
 /// Vesopa EPOS is not on this PC.

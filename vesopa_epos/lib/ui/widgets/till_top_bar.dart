@@ -1,3 +1,4 @@
+import 'customer_display_button.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -162,6 +163,10 @@ class TillTopBar extends ConsumerWidget {
               // suppressed when the venue *has* placed the key, so it can never
               // appear twice. See [_barCarriesDineIn].
               if (!_barCarriesDineIn(ref)) const DineInBadge(),
+
+              // The customer display, one press away (2026-10-17). Nothing on a
+              // till that has none. See customer_display_button.dart.
+              const CustomerDisplayButton(),
 
               if (trailing) ...[
                 StaffChip(onSignOn: onSignOn, onSignOff: onSignOff),

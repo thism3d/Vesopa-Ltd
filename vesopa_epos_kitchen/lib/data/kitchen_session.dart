@@ -212,20 +212,15 @@ class KitchenSessionController extends AsyncNotifier<KitchenSession> {
   }
 
   Future<void> signIn({
-    required String office,
-    required String username,
+    required String email,
     required String password,
   }) async {
-    final result = await _api.signIn(
-      office: office.trim(),
-      username: username.trim(),
-      password: password,
-    );
+    final result = await _api.signIn(email: email.trim(), password: password);
 
     final profile = result.profile;
     final session = KitchenSession(
       token: result.token,
-      office: profile.office.isEmpty ? office.trim() : profile.office,
+      office: profile.office,
       officeName: profile.officeName,
       userName: profile.userName,
       stationNames: profile.stationNames,

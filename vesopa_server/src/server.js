@@ -410,6 +410,10 @@ app.use('/api', tillModifierRoutes({ pool }));
 app.use('/api', fontsRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use('/api', tillFontRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use(tillKitchenRoutes({ pool, broadcast, secret: JWT_SECRET }));
+// Customer displays: email sign-in, and the relay to a till on another
+// computer (src/display_link.js).
+const { displayLinkRoutes, attachDisplayRelay } = require('./display_link');
+app.use(displayLinkRoutes({ pool, secret: JWT_SECRET }));
 
 // Terminals that know about each other: the shared open bills behind a table
 // plan two tills can both see, one clerk in one place at a time, and the time
@@ -2441,6 +2445,7 @@ setInterval(() => {
 // changes. Sales never travel this way; they go over HTTP so they can be
 // retried from the outbox when a terminal has been offline.
 const wss = new WebSocketServer({ server, path: '/ws' });
+attachDisplayRelay(wss, { pool, secret: JWT_SECRET });
 
 wss.on('connection', (ws) => {
   clients.add(ws);

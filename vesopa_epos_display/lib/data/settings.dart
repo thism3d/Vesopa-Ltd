@@ -50,6 +50,14 @@ class DisplaySettings {
     this.customerQrCaption = 'Scan to join',
     this.childLock = false,
     this.notifications = false,
+    this.screenSize = 'auto',
+    this.zoom = 100,
+    this.touch = true,
+    this.tiles = const [],
+    this.tilePlace = 'bottom',
+    this.welcomeText = '',
+    this.specialTitle = '',
+    this.specialText = '',
   });
 
   /// The folder of images and clips to play. Empty means none chosen.
@@ -179,6 +187,31 @@ class DisplaySettings {
   /// see `data/notifications.dart`.
   final bool notifications;
 
+  /// BIG SCREENS (2026-10-17). A customer display on a TV across a pub, set
+  /// from the till or here. Everything off by default, so a counter screen is
+  /// exactly what it was.
+  ///
+  /// [screenSize] is a preset (see `ui/board_scale.dart`) and [zoom] a
+  /// percentage on top of it.
+  final String screenSize;
+  final int zoom;
+
+  /// Whether the screen reacts to being touched at all. Off for a TV nobody
+  /// can reach: no bars, no settings, nothing. The till runs it.
+  final bool touch;
+
+  /// Which tiles are on, in order: clock, date, welcome, special, qr, cards,
+  /// total. Empty is none, which is the default.
+  final List<String> tiles;
+
+  /// Where the tiles sit: 'bottom' (a strip) or 'side' (a column).
+  final String tilePlace;
+
+  /// The welcome tile's line, the special tile's heading and text.
+  final String welcomeText;
+  final String specialTitle;
+  final String specialText;
+
   /// The bill's share of the screen, as a usable fraction.
   double get billFraction => (billShare.clamp(20, 80)) / 100;
 
@@ -230,6 +263,14 @@ class DisplaySettings {
     String? customerQrCaption,
     bool? childLock,
     bool? notifications,
+    String? screenSize,
+    int? zoom,
+    bool? touch,
+    List<String>? tiles,
+    String? tilePlace,
+    String? welcomeText,
+    String? specialTitle,
+    String? specialText,
   }) => DisplaySettings(
     advertFolder: advertFolder ?? this.advertFolder,
     screenKey: screenKey ?? this.screenKey,
@@ -252,6 +293,14 @@ class DisplaySettings {
     customerQrCaption: customerQrCaption ?? this.customerQrCaption,
     childLock: childLock ?? this.childLock,
     notifications: notifications ?? this.notifications,
+    screenSize: screenSize ?? this.screenSize,
+    zoom: zoom ?? this.zoom,
+    touch: touch ?? this.touch,
+    tiles: tiles ?? this.tiles,
+    tilePlace: tilePlace ?? this.tilePlace,
+    welcomeText: welcomeText ?? this.welcomeText,
+    specialTitle: specialTitle ?? this.specialTitle,
+    specialText: specialText ?? this.specialText,
   );
 }
 
@@ -287,6 +336,14 @@ const _keySaleSame = 'display.sale_adverts_same';
 const _keySaleFolder = 'display.sale_advert_folder';
 const _keyChildLock = 'display.child_lock';
 const _keyNotifications = 'display.notifications';
+const _keyScreenSize = 'display.screen_size';
+const _keyZoom = 'display.zoom';
+const _keyTouch = 'display.touch';
+const _keyTiles = 'display.tiles';
+const _keyTilePlace = 'display.tile_place';
+const _keyWelcome = 'display.welcome_text';
+const _keySpecialTitle = 'display.special_title';
+const _keySpecialText = 'display.special_text';
 
 class DisplaySettingsController extends AsyncNotifier<DisplaySettings> {
   @override
@@ -316,6 +373,14 @@ class DisplaySettingsController extends AsyncNotifier<DisplaySettings> {
       // every time the venue rebooted would be locked in name only.
       childLock: prefs.getBool(_keyChildLock) ?? false,
       notifications: prefs.getBool(_keyNotifications) ?? false,
+      screenSize: prefs.getString(_keyScreenSize) ?? 'auto',
+      zoom: prefs.getInt(_keyZoom) ?? 100,
+      touch: prefs.getBool(_keyTouch) ?? true,
+      tiles: prefs.getStringList(_keyTiles) ?? const [],
+      tilePlace: prefs.getString(_keyTilePlace) ?? 'bottom',
+      welcomeText: prefs.getString(_keyWelcome) ?? '',
+      specialTitle: prefs.getString(_keySpecialTitle) ?? '',
+      specialText: prefs.getString(_keySpecialText) ?? '',
     );
   }
 
@@ -347,6 +412,14 @@ class DisplaySettingsController extends AsyncNotifier<DisplaySettings> {
       await prefs.setString(_keySaleFolder, next.saleAdvertFolder);
       await prefs.setBool(_keyChildLock, next.childLock);
       await prefs.setBool(_keyNotifications, next.notifications);
+      await prefs.setString(_keyScreenSize, next.screenSize);
+      await prefs.setInt(_keyZoom, next.zoom);
+      await prefs.setBool(_keyTouch, next.touch);
+      await prefs.setStringList(_keyTiles, next.tiles);
+      await prefs.setString(_keyTilePlace, next.tilePlace);
+      await prefs.setString(_keyWelcome, next.welcomeText);
+      await prefs.setString(_keySpecialTitle, next.specialTitle);
+      await prefs.setString(_keySpecialText, next.specialText);
     } catch (_) {
       // Nothing to tell the customer standing in front of this.
     }

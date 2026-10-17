@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/constants.dart';
+import '../data/display_link.dart';
 import '../data/app_update.dart';
 import '../data/customer_display.dart';
 import '../data/dinein_orders.dart' show allergenLabelsProvider;
@@ -394,6 +395,15 @@ class _PosShellState extends ConsumerState<PosShell> {
     final office = session.office ?? '';
     final terminalName = ref.read(terminalNameProvider);
     final pairing = ref.read(displayPairingProvider);
+
+    // Customer displays on another computer reach this till through the back
+    // office's WebSocket (data/display_link.dart).
+    DisplayLinkHub.instance.configureCloud(
+      apiBase: ref.read(apiBaseProvider),
+      terminalToken: session.terminalToken,
+      terminalDevice: await terminalDeviceId(),
+      terminalName: terminalName,
+    );
 
     await pairing.refreshGrants(
       office: office,

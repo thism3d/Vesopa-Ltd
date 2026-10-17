@@ -203,6 +203,81 @@ Future<DisplayCommission> commission({
   );
 }
 
+/// Sign in with the venue's back office email and password, like the till
+/// (2026-10-17). The owner could not sign a display in with the manager login,
+/// because Continue with Vesopa wants an auth.vesopa.com account; this door
+/// checks the same login the till does and leaves the same token behind.
+Future<DisplayCommission> signInWithPassword({
+  required String apiBase,
+  required String email,
+  required String password,
+}) async {
+  String? fingerprint;
+  try {
+    fingerprint = await HardwareFingerprint.get();
+  } catch (_) {
+    // Never a reason to stop.
+  }
+
+  final http.Response res;
+  try {
+    res = await http
+        .post(
+          Uri.parse('$apiBase/api/display/login'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'email': email.trim(),
+            'password': password,
+            'device_id': await displayDeviceId(),
+            'device_name': await displayDeviceName(),
+            'device_fingerprint': ?fingerprint,
+          }),
+        )
+        .timeout(const Duration(seconds: 20));
+  } catch (_) {
+    throw DisplaySetupFailed('Could not reach the back office. Check the network and try again.');
+  }
+
+  Map<String, dynamic> body;
+  try {
+    body = jsonDecode(res.body) as Map<String, dynamic>;
+  } catch (_) {
+    body = const {};
+  }
+  if (res.statusCode == 404) {
+    throw DisplaySetupFailed('This back office does not offer email sign-in yet. Use Continue with Vesopa.');
+  }
+  if (res.statusCode == 409) {
+    throw DisplayLicenceFull(
+      (body['error'] as String?) ?? 'Every display licence for this venue is in use.',
+    );
+  }
+  if (res.statusCode != 200) {
+    throw DisplaySetupFailed((body['error'] as String?) ?? 'That email or password is not right.');
+  }
+
+  final token = body['token'] as String?;
+  final office = body['office'] as String?;
+  if (token == null || office == null) {
+    throw DisplaySetupFailed('The back office did not finish setting this screen up.');
+  }
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyToken, token);
+    await prefs.setString(_keyOffice, office);
+    final venue = body['venue'] as String?;
+    if (venue != null) await prefs.setString(_keyVenue, venue);
+  } catch (_) {
+    // Not fatal.
+  }
+  return DisplayCommission(
+    token: token,
+    office: office,
+    venue: body['venue'] as String?,
+    licensed: body['seat'] == true,
+  );
+}
+
 /// This venue's licence for the display, as the back office sees it.
 ///
 /// Depends on the commissioning, so a screen that has not connected yet asks
@@ -228,4 +303,4 @@ final commissionProvider = FutureProvider<DisplayCommission?>((ref) => readCommi
 
 /// This build's version, for the activity log and the version check
 /// (data/app_update.dart). Keep in step with pubspec.yaml.
-const displayAppVersion = '1.6.25.0';
+const displayAppVersion = '1.7.0.0';

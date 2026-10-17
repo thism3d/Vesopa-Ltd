@@ -264,7 +264,13 @@ class Pairing {
     required this.terminalName,
     required this.venueName,
     required this.pairedAt,
+    this.remote = false,
   });
+
+  /// Paired with a till on ANOTHER computer, through the back office
+  /// (data/till_link.dart), rather than through a folder on this one. Such a
+  /// pairing has no basket file: the bill arrives over the link.
+  final bool remote;
 
   /// The basket file, exactly as the till named it. Never adjusted and never
   /// re-derived: the point of the handshake is that this end computes nothing
@@ -370,7 +376,9 @@ class PairingState {
   /// The file to follow, or empty while there is nothing to follow.
   String get basketPath => pairing?.basketPath ?? '';
 
-  bool get isPaired => stage == PairingStage.paired && basketPath.isNotEmpty;
+  bool get isPaired =>
+      stage == PairingStage.paired &&
+      (basketPath.isNotEmpty || (pairing?.remote ?? false));
 
   PairingState copyWith({bool? justConnected}) => PairingState(
     stage: stage,
@@ -527,12 +535,13 @@ class PairingChannel {
 
 const _keyDeviceId = 'display.device_id';
 const _keyDeviceName = 'display.device_name';
+const _keyRemote = 'display.remote_pairing';
 
 /// This build's version, as it appears in the till's device list.
 ///
 /// Kept in step with `version:` in pubspec.yaml by hand, the same way
 /// `data/control.dart` keeps its own copy.
-const pairingAppVersion = '1.6.4';
+const pairingAppVersion = '1.7.0';
 
 /// This screen's identity and its pairing, kept current.
 ///
@@ -542,6 +551,10 @@ const pairingAppVersion = '1.6.4';
 /// die silently on a machine this application never sees.
 class PairingController extends AsyncNotifier<PairingState> {
   PairingChannel _channel = PairingChannel();
+
+  /// A pairing with a till on another computer, remembered on this machine so
+  /// it survives a restart. See [setRemote].
+  Pairing? _remote;
 
   /// What this screen calls itself in the till's list.
   ///
@@ -564,7 +577,66 @@ class PairingController extends AsyncNotifier<PairingState> {
   Future<PairingState> build() async {
     final prefs = await SharedPreferences.getInstance();
     final identity = PairingIdentity.forDevice(await _deviceId(prefs));
+    _remote = _readRemote(prefs);
     return _look(identity);
+  }
+
+  static Pairing? _readRemote(SharedPreferences prefs) {
+    try {
+      final raw = prefs.getString(_keyRemote);
+      if (raw == null || raw.isEmpty) return null;
+      final j = jsonDecode(raw);
+      if (j is! Map) return null;
+      return Pairing(
+        basketPath: '',
+        terminalName: '${j['terminal_name'] ?? 'the till'}',
+        venueName: '${j['venue'] ?? ''}',
+        pairedAt: DateTime.tryParse('${j['paired_at'] ?? ''}') ?? DateTime.now(),
+        remote: true,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Paired with a till on another computer (the back office said so).
+  Future<void> setRemote(String terminal, String terminalName) async {
+    final current = state.value;
+    if (current == null) return;
+    final already = _remote != null && _remote!.terminalName == terminalName;
+    _remote = Pairing(
+      basketPath: '',
+      terminalName: terminalName.isEmpty ? 'the till' : terminalName,
+      venueName: _remote?.venueName ?? '',
+      pairedAt: _remote?.pairedAt ?? DateTime.now(),
+      remote: true,
+    );
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _keyRemote,
+        jsonEncode({
+          'terminal': terminal,
+          'terminal_name': _remote!.terminalName,
+          'paired_at': _remote!.pairedAt.toIso8601String(),
+        }),
+      );
+    } catch (_) {
+      // Remembered for this session at least.
+    }
+    if (!already) await refresh();
+  }
+
+  /// The till on another computer disconnected this screen.
+  Future<void> clearRemote() async {
+    _remote = null;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_keyRemote);
+    } catch (_) {}
+    final current = state.value;
+    if (current == null) return;
+    state = AsyncData(_look(current.identity));
   }
 
   /// Read the grant and work out which of the three states this screen is in.
@@ -574,6 +646,9 @@ class PairingController extends AsyncNotifier<PairingState> {
   /// the timer fires again before the previous read has landed.
   PairingState _look(PairingIdentity identity) {
     if (_channel.folder == null) {
+      if (_remote != null) {
+        return PairingState(stage: PairingStage.paired, identity: identity, pairing: _remote);
+      }
       return PairingState(stage: PairingStage.unavailable, identity: identity);
     }
 
@@ -589,6 +664,16 @@ class PairingController extends AsyncNotifier<PairingState> {
         stage: PairingStage.paired,
         identity: identity,
         pairing: grant,
+        till: till,
+      );
+    }
+
+    // Paired with a till on another computer.
+    if (_remote != null) {
+      return PairingState(
+        stage: PairingStage.paired,
+        identity: identity,
+        pairing: _remote,
         till: till,
       );
     }
