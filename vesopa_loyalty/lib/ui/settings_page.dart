@@ -268,6 +268,13 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         title: Text('Apple Wallet'),
                         subtitle: Text('Add your card from the Card tab, and it is there even without the app.'),
                       ),
+                    if (GoogleWallet.available && brand.googleWallet)
+                      const ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(Icons.wallet_outlined),
+                        title: Text('Google Wallet'),
+                        subtitle: Text('Add your card from the Card tab, and it is there even without the app.'),
+                      ),
                     if (ios)
                       const ListTile(
                         contentPadding: EdgeInsets.zero,

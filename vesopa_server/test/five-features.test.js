@@ -559,6 +559,8 @@ async function main() {
       assert.strictEqual(r.body.push.web.vapid_public_key, vapidKeys.publicKey);
       assert.strictEqual(r.body.push.windows, true);
       assert.strictEqual(r.body.links.website, 'https://arms.example');
+      // No GOOGLE_WALLET_* here, so the app is told not to offer the button.
+      assert.strictEqual(r.body.wallet.google, false);
       assert.strictEqual((await call('GET', '/loyalty/v1/app/nobody-here')).status, 404);
     });
 

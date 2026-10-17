@@ -87,6 +87,8 @@ flutter:
     # on a bad line, and a provider button whose logo has not arrived yet
     # reads as a broken page.
     - assets/vesopa-mark.png
+    # Google's "Add to Google Wallet" button, from its brand kit (Android).
+    - assets/google_wallet/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

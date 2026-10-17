@@ -277,6 +277,19 @@ class LoyaltyApi {
   /// Two steps: the API hands out a ten-minute link, and the pass comes from
   /// that link -- the same address a printed QR code uses, so the pass is the
   /// same one and updates itself the same way.
+  /// The member's "Add to Google Wallet" link: the server's own page, which
+  /// signs the card at Google and sends the phone on to Google Wallet's save
+  /// page (vesopa_server/src/wallet.js, /wallet/s/). Lasts ten minutes.
+  Future<Uri> googleWalletLink() async {
+    final json = await _send('GET', '/loyalty/v1/me/wallet');
+    final link = (json['google'] as String?)?.trim() ?? '';
+    final uri = Uri.tryParse(link);
+    if (link.isEmpty || uri == null || !uri.hasScheme) {
+      throw ApiError('This club is not offering Google Wallet cards yet.');
+    }
+    return uri;
+  }
+
   Future<Uint8List> applePass() async {
     final json = await _send('GET', '/loyalty/v1/me/wallet');
     final link = json['apple'] as String?;

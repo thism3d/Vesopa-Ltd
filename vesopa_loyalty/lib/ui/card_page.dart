@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../data/brand.dart';
 import '../data/api.dart';
@@ -474,7 +475,8 @@ class _Back extends StatelessWidget {
   }
 }
 
-/// Add to Apple Wallet, under the card, on an iPhone that has Wallet.
+/// Add to Apple Wallet under the card on an iPhone that has Wallet, and Add
+/// to Google Wallet on Android.
 ///
 /// Nothing at all anywhere else: no gap, no disabled button. The pass carries
 /// the same code as the card above, and once added it is on the lock screen
@@ -490,8 +492,30 @@ class _AddToWallet extends ConsumerStatefulWidget {
 }
 
 class _AddToWalletState extends ConsumerState<_AddToWallet> {
-  late final Future<bool> _available = AppleWallet.available();
+  // Android: Google's button, when the club's server can issue the card.
+  late final bool _google = GoogleWallet.available && (ref.read(brandProvider).value?.googleWallet ?? false);
+  late final Future<bool> _available = GoogleWallet.available ? Future.value(_google) : AppleWallet.available();
   var _busy = false;
+
+  /// Android: the server signs the card at Google, Google Wallet saves it.
+  Future<void> _addGoogle() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final link = await ref.read(apiProvider).googleWalletLink();
+      final opened = await launchUrl(link, mode: LaunchMode.externalApplication);
+      if (!opened) {
+        messenger.showSnackBar(const SnackBar(content: Text('Google Wallet could not be opened on this phone.')));
+      }
+    } on ApiError catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (_) {
+      messenger.showSnackBar(const SnackBar(content: Text('Your card could not be added to Google Wallet.')));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
 
   Future<void> _add() async {
     if (_busy) return;
@@ -528,7 +552,10 @@ class _AddToWalletState extends ConsumerState<_AddToWallet> {
               child: Stack(
                 alignment: Alignment.center,
                 children: [
-                  AppleWalletButton(onPressed: _add, radius: 16),
+                  if (_google)
+                    GoogleWalletButton(onPressed: _busy ? null : _addGoogle)
+                  else
+                    AppleWalletButton(onPressed: _add, radius: 16),
                   if (_busy)
                     const IgnorePointer(
                       child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator.adaptive(strokeWidth: 2.5)),

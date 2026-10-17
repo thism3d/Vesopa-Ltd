@@ -39,6 +39,7 @@ class Brand {
     this.minRedeem = 0,
     this.vapidPublicKey,
     this.windowsPush = false,
+    this.googleWallet = false,
     this.signIn = SignInConfig.fallback,
   });
 
@@ -87,6 +88,10 @@ class Brand {
 
   /// Whether the venue's Windows app is set up for notifications.
   final bool windowsPush;
+
+  /// Whether the server can put this club's card in Google Wallet (its
+  /// issuer account is set up). The Android button shows only then.
+  final bool googleWallet;
 
   /// The ways in this venue offers. Arrives with the branding because the
   /// sign-in page has to be drawn before anybody has a token to ask with.
@@ -144,6 +149,7 @@ class Brand {
       minRedeem: (points['min_redeem'] as num?)?.toInt() ?? 0,
       vapidPublicKey: web?['vapid_public_key'] as String?,
       windowsPush: push['windows'] == true,
+      googleWallet: ((j['wallet'] as Map?)?['google']) == true,
       signIn: SignInConfig.fromJson(j['signin'] as Map<String, dynamic>?),
     );
   }
@@ -176,6 +182,7 @@ class Brand {
     minRedeem: minRedeem,
     vapidPublicKey: vapidPublicKey,
     windowsPush: windowsPush,
+    googleWallet: googleWallet,
     signIn: signIn,
   );
 

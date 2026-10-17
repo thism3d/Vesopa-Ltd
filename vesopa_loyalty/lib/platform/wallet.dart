@@ -1,15 +1,14 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 
 /// Add to Apple Wallet, on an iPhone.
 ///
 /// The pass is the server's (LoyaltyApi.applePass); the sheet that adds it and
-/// the button that opens it are Apple's (ios/Runner/WalletBridge.swift). Every
-/// other platform answers "not available" and draws nothing: Android members
-/// already have the app's own card, and a Google Wallet button is a separate
-/// piece of work with its own rules.
+/// the button that opens it are Apple's (ios/Runner/WalletBridge.swift).
+/// Android has Google Wallet instead (GoogleWalletButton, below); the web and
+/// Windows draw neither.
 const _wallet = MethodChannel('vesopa_loyalty/wallet');
 
 bool get _iPhone => !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
@@ -99,6 +98,54 @@ class _AppleWalletButtonState extends State<AppleWalletButton> {
             AppleWallet._listen();
             AppleWallet._taps[id] = () => widget.onPressed();
           },
+        ),
+      ),
+    );
+  }
+}
+
+
+/// Add to Google Wallet, on Android.
+///
+/// The card is the server's: LoyaltyApi.googleWalletLink is a page that signs
+/// the member's card at Google and forwards to Google Wallet's own save page,
+/// which Android hands to the Google Wallet app. Once saved, the card updates
+/// itself from the server, like the Apple one.
+class GoogleWallet {
+  GoogleWallet._();
+
+  static bool get available => !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+}
+
+/// Google's own "Add to Google Wallet" button, as its brand guidelines ask:
+/// the artwork from Google's kit (assets/google_wallet, drawn from the
+/// enGB SVG at 1x, 2x and 3x), unchanged, at least 48 high, never restyled.
+class GoogleWalletButton extends StatelessWidget {
+  const GoogleWalletButton({super.key, required this.onPressed});
+
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!GoogleWallet.available) return const SizedBox.shrink();
+    return Semantics(
+      button: true,
+      label: 'Add to Google Wallet',
+      child: Material(
+        color: Colors.transparent,
+        shape: const StadiumBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onPressed,
+          child: Image.asset(
+            'assets/google_wallet/add_to_google_wallet.png',
+            // The artwork's own proportions (283 x 50), so the button holds
+            // its place before the picture has decoded.
+            height: 48,
+            width: 48 * 283 / 50,
+            fit: BoxFit.contain,
+            excludeFromSemantics: true,
+          ),
         ),
       ),
     );

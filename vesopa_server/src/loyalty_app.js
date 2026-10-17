@@ -697,6 +697,20 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
     return ids.length;
   }
 
+  // Google Wallet's settings are read once: they come from .env, which only
+  // changes with a restart.
+  let googleWallet = null;
+  const googleWalletReady = () => {
+    if (googleWallet === null) {
+      try {
+        googleWallet = require('./wallet_google').readConfig().configured === true;
+      } catch {
+        googleWallet = false;
+      }
+    }
+    return googleWallet;
+  };
+
   // ---- Public: the app itself -------------------------------------------------
 
   /** Everything the app draws for this venue, and which notifications are possible. */
@@ -724,6 +738,11 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
         ...brand,
         signin,
         members_only: await gate.membersOnly(pool, app.office).catch(() => false),
+        // Which wallets can issue this member's card, so the app shows only
+        // a button that will work: Google's needs its issuer account set up
+        // here (GOOGLE_WALLET_* in .env), and a button that ends on "not
+        // configured" is worse than none.
+        wallet: { google: googleWalletReady() },
         push: {
           web: keys ? { vapid_public_key: keys.publicKey } : null,
           windows: !!(app.wns_package_sid && app.wns_secret_enc),
