@@ -49,6 +49,11 @@ on:
         description: Build number (empty = the next one Play has not seen)
         required: false
         default: ''
+      part:
+        description: What to upload (all, phone, wear)
+        type: choice
+        options: [all, phone, wear]
+        default: all
 
 permissions:
   contents: read
@@ -208,10 +213,12 @@ jobs:
         if: inputs.mode != 'build'
         env:
           TRACK: ${{ inputs.track }}
+          PART: ${{ inputs.part }}
         run: |
           set -- "$VENUE" --builds "$RUNNER_TEMP/android-builds"
           [ "$MODE" = "listing" ] && set -- "$@" --listing
           [ -n "$TRACK" ] && set -- "$@" --track "$TRACK"
+          [ "$PART" != "all" ] && set -- "$@" --only "$PART"
           "$RUNNER_TEMP/py/bin/python" tool/play_upload.py "$@"
 
       - name: Remove the keys

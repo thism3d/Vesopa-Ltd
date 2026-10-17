@@ -5,6 +5,7 @@
     python tool/play_upload.py PontardaweRFC --track beta   # another track than play.json's
     python tool/play_upload.py PontardaweRFC --builds DIR   # bundles from DIR, not the Desktop
     python tool/play_upload.py PontardaweRFC --next-build   # print the next build number Play has not seen
+    python tool/play_upload.py PontardaweRFC --only wear    # one part: phone, wear or listing
 
 Reads <venue>/store/play.json (package, words, track, release notes, which
 pictures) and venue.json (version and build), and takes the bundles that
@@ -187,7 +188,7 @@ def option(name):
 
 def main():
     # Words after --track and --builds are their values, not the venue.
-    skip = {i + 1 for i, a in enumerate(sys.argv) if a in ("--track", "--builds")}
+    skip = {i + 1 for i, a in enumerate(sys.argv) if a in ("--track", "--builds", "--only")}
     args = [a for i, a in enumerate(sys.argv) if i and i not in skip and not a.startswith("--")]
     if len(args) != 1:
         raise SystemExit(__doc__)
@@ -196,7 +197,8 @@ def main():
     p = json.loads((store / "play.json").read_text(encoding="utf-8"))
     v = json.loads((venue_dir / "venue.json").read_text(encoding="utf-8"))
     track = option("--track") or p.get("track", "internal")
-    only_listing = "--listing" in sys.argv
+    only = option("--only") or ("listing" if "--listing" in sys.argv else None)
+    only_listing = only == "listing"
 
     keyfile = key_file()
     token, who = access_token(keyfile)
@@ -211,8 +213,11 @@ def main():
         builds = pathlib.Path(option("--builds") or pathlib.Path.home() / "Desktop" / "Android-builds")
         stem = f"{venue_dir.name}-{v['version']}-{v['build']}"
         name = f"{v['version']} ({v['build']})"
-        for aab, t, label in [(builds / f"{stem}.aab", track, "Phone and tablet"),
-                              (builds / f"{stem}-wear.aab", f"wear:{track}", "Wear OS")]:
+        parts = [(builds / f"{stem}.aab", track, "Phone and tablet", "phone"),
+                 (builds / f"{stem}-wear.aab", f"wear:{track}", "Wear OS", "wear")]
+        for aab, t, label, part in parts:
+            if only and only != part:
+                continue
             print(f"{label}:")
             if not aab.is_file():
                 print(f"   ! {aab} is missing: run {venue_dir.name}\\build-android.cmd first")
@@ -225,10 +230,21 @@ def main():
             except PlayError as e:
                 failed = True
                 print(f"   ! {e}")
+                if "Track not found" in str(e):
+                    # Say which tracks Play does have, so the right name can be given.
+                    try:
+                        look = play.edit()
+                        names = sorted(x["track"] for x in play.call("GET", f"{API}/{play.package}/edits/{look}/tracks").get("tracks", []))
+                        play.call("DELETE", f"{API}/{play.package}/edits/{look}")
+                        print(f"     Tracks Play has for this app: {', '.join(names)}")
+                    except PlayError as e2:
+                        print(f"     (could not list the tracks: {e2})")
                 if label == "Wear OS":
-                    print("     If Play does not know the track: Play Console > Test and release > Advanced settings"
-                          " > Form factors > add Wear OS, then run this again.")
+                    print("     A Wear OS testing track is made in Play Console > Test and release > Testing >"
+                          " Closed testing > Create track, form factor Wear OS; or give --track one Play has.")
 
+    if only in ("phone", "wear"):
+        sys.exit(1 if failed else 0)
     print("Store listing:")
     try:
         edit = play.edit()
