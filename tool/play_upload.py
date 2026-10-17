@@ -3,6 +3,8 @@
     python tool/play_upload.py PontardaweRFC                # bundles, listing, pictures
     python tool/play_upload.py PontardaweRFC --listing      # only the listing and pictures
     python tool/play_upload.py PontardaweRFC --track beta   # another track than play.json's
+    python tool/play_upload.py PontardaweRFC --builds DIR   # bundles from DIR, not the Desktop
+    python tool/play_upload.py PontardaweRFC --next-build   # print the next build number Play has not seen
 
 Reads <venue>/store/play.json (package, words, track, release notes, which
 pictures) and venue.json (version and build), and takes the bundles that
@@ -13,7 +15,8 @@ the Wear OS track ("wear:<track>") of the same listing.
 Through the Google Play Developer API, as a service account the Play Console
 has been given release rights (Users and permissions > Invite, with "Release
 to testing tracks" and "Manage store presence"). Its key file is
-PLAY_SERVICE_ACCOUNT_JSON, else Documents\\Vesopa-Keys\\play-service-account.json,
+PLAY_SERVICE_ACCOUNT_JSON (a path, or the key file's contents themselves, as a
+GitHub secret holds it), else Documents\\Vesopa-Keys\\play-service-account.json,
 else the Firebase Admin SDK key beside it (the same Google project, so one
 account can do both). Never in the repo. The Google Play Android Developer
 API must be switched on in that Google Cloud project.
@@ -44,7 +47,14 @@ def b64(data: bytes) -> str:
 
 
 def key_file() -> pathlib.Path:
-    named = os.environ.get("PLAY_SERVICE_ACCOUNT_JSON")
+    named = os.environ.get("PLAY_SERVICE_ACCOUNT_JSON", "").strip()
+    if named.startswith("{"):
+        # The key itself (a CI secret), not a path to it: to a private file.
+        import tempfile
+        fd, tmp = tempfile.mkstemp(suffix=".json")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(named)
+        return pathlib.Path(tmp)
     for p in [named, KEYS / "play-service-account.json", KEYS / "firebase-adminsdk-vesopa.json"]:
         if p and pathlib.Path(p).is_file():
             return pathlib.Path(p)
@@ -156,25 +166,49 @@ def listing(play, edit, store: pathlib.Path, p):
             print(f"   ! {kind}: {e}")
 
 
+WEAR_OFFSET = 1_000_000  # the watch bundle's versionCode is the build number plus this
+
+
+def next_build(play, floor: int) -> int:
+    """One more than any build number Play has seen, phone or watch: Play refuses
+    a versionCode it already has, on any track, even a rejected one."""
+    edit = play.edit()
+    try:
+        seen = [int(b["versionCode"]) for b in play.call("GET", f"{API}/{play.package}/edits/{edit}/bundles").get("bundles", [])]
+    finally:
+        play.call("DELETE", f"{API}/{play.package}/edits/{edit}")
+    builds = [c - WEAR_OFFSET if c >= WEAR_OFFSET else c for c in seen]
+    return max([floor - 1, *builds]) + 1
+
+
+def option(name):
+    return sys.argv[sys.argv.index(name) + 1] if name in sys.argv else None
+
+
 def main():
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    # Words after --track and --builds are their values, not the venue.
+    skip = {i + 1 for i, a in enumerate(sys.argv) if a in ("--track", "--builds")}
+    args = [a for i, a in enumerate(sys.argv) if i and i not in skip and not a.startswith("--")]
     if len(args) != 1:
         raise SystemExit(__doc__)
     venue_dir = (ROOT / args[0]).resolve()
     store = venue_dir / "store"
     p = json.loads((store / "play.json").read_text(encoding="utf-8"))
     v = json.loads((venue_dir / "venue.json").read_text(encoding="utf-8"))
-    track = sys.argv[sys.argv.index("--track") + 1] if "--track" in sys.argv else p.get("track", "internal")
+    track = option("--track") or p.get("track", "internal")
     only_listing = "--listing" in sys.argv
 
     keyfile = key_file()
     token, who = access_token(keyfile)
     play = Play(token, p["package"])
+    if "--next-build" in sys.argv:
+        print(next_build(play, int(v["build"])))
+        return
     print(f"{p['title']} ({p['package']}) as {who}")
 
     failed = False
     if not only_listing:
-        builds = pathlib.Path.home() / "Desktop" / "Android-builds"
+        builds = pathlib.Path(option("--builds") or pathlib.Path.home() / "Desktop" / "Android-builds")
         stem = f"{venue_dir.name}-{v['version']}-{v['build']}"
         name = f"{v['version']} ({v['build']})"
         for aab, t, label in [(builds / f"{stem}.aab", track, "Phone and tablet"),

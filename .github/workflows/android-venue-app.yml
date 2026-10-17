@@ -1,0 +1,202 @@
+# A venue's own Android app and its Wear OS app, built on GitHub's machine and
+# uploaded to Google Play with the store listing. The Android twin of
+# ios-venue-app.yml: nothing needs the build PC.
+#
+# Actions > "Android - venue app" > Run workflow, venue PontardaweRFC.
+#
+#   full     builds the phone bundle and the watch bundle with the next build
+#            number Play has not seen, uploads both (the watch one to the Wear
+#            OS track) and the listing from <venue>/store/play.json
+#   listing  only the listing words and pictures, no build
+#   build    builds and keeps the bundles as the run's artifacts, uploads nothing
+#
+# The secrets are in the "App Store Connect API" environment (Settings >
+# Environments), beside the iOS ones:
+#   ANDROID_UPLOAD_KEYSTORE_B64   vesopa-upload.jks in base64; certutil -encode's
+#                                 output is fine, header lines and all
+#   ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
+#                                 key.properties' storePassword, keyAlias, keyPassword
+#   PONTARDAWE_GOOGLE_SERVICES_JSON   PontardaweRFC\google-services.json, as it is
+#   PLAY_SERVICE_ACCOUNT_JSON     a service account key with release rights in
+#                                 Play Console (the Firebase Admin one works when
+#                                 it has been invited there), as it is
+#
+# The build number in venue.json is a floor: the run takes the next number Play
+# has not seen and says which. Commit it to venue.json afterwards if you like;
+# the next run works it out again either way.
+
+name: Android - venue app
+
+on:
+  workflow_dispatch:
+    inputs:
+      venue:
+        description: The venue's folder
+        required: true
+        default: PontardaweRFC
+      mode:
+        description: full = build and upload with the listing; listing = only the words and pictures; build = bundles only
+        type: choice
+        options: [full, listing, build]
+        default: full
+      track:
+        description: Play track (empty = play.json's)
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment: App Store Connect API
+    env:
+      VENUE: ${{ inputs.venue }}
+      MODE: ${{ inputs.mode }}
+      PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Venue folder and secrets
+        env:
+          KS: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_B64 }}
+          KSP: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KA: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KP: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          GS: ${{ secrets.PONTARDAWE_GOOGLE_SERVICES_JSON }}
+        run: |
+          case "$VENUE" in *[!A-Za-z0-9_-]*|'') echo "::error::Not a venue folder: $VENUE"; exit 1;; esac
+          test -f "$VENUE/venue.json" || { echo "::error::$VENUE/venue.json not found"; exit 1; }
+          missing=""
+          if [ "$MODE" != "build" ] && [ -z "$PLAY_SERVICE_ACCOUNT_JSON" ]; then missing="$missing PLAY_SERVICE_ACCOUNT_JSON"; fi
+          if [ "$MODE" != "listing" ]; then
+            [ -n "$KS" ] || missing="$missing ANDROID_UPLOAD_KEYSTORE_B64"
+            [ -n "$KSP" ] || missing="$missing ANDROID_KEYSTORE_PASSWORD"
+            [ -n "$KA" ] || missing="$missing ANDROID_KEY_ALIAS"
+            [ -n "$KP" ] || missing="$missing ANDROID_KEY_PASSWORD"
+            [ -n "$GS" ] || missing="$missing PONTARDAWE_GOOGLE_SERVICES_JSON"
+          fi
+          if [ -n "$missing" ]; then
+            echo "::error::Not set in the 'App Store Connect API' environment:$missing (see the top of this file)."
+            exit 1
+          fi
+
+      - name: Python for the Play API
+        run: |
+          python3 -m venv "$RUNNER_TEMP/py"
+          "$RUNNER_TEMP/py/bin/pip" install --quiet cryptography
+
+      - name: Next build number Play has not seen
+        id: num
+        if: inputs.mode != 'listing'
+        run: |
+          floor=$(python3 -c "import json;print(json.load(open('$VENUE/venue.json'))['build'])")
+          if [ -n "$PLAY_SERVICE_ACCOUNT_JSON" ]; then
+            n=$("$RUNNER_TEMP/py/bin/python" tool/play_upload.py "$VENUE" --next-build)
+          else
+            n=$floor
+          fi
+          case "$n" in ''|*[!0-9]*) echo "::error::Could not work out the build number ($n)"; exit 1;; esac
+          python3 - "$VENUE/venue.json" "$n" <<'PY'
+          import json, sys
+          p, n = sys.argv[1], int(sys.argv[2])
+          v = json.load(open(p, encoding="utf-8"))
+          v["build"] = n
+          json.dump(v, open(p, "w", encoding="utf-8"), indent=2, ensure_ascii=False)
+          PY
+          version=$(python3 -c "import json;print(json.load(open('$VENUE/venue.json'))['version'])")
+          echo "build=$n" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "### $VENUE $version ($n)" >> "$GITHUB_STEP_SUMMARY"
+          echo "Building $version ($n); the watch bundle is versionCode $((1000000 + n))."
+
+      - uses: actions/setup-java@v4
+        if: inputs.mode != 'listing'
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        if: inputs.mode != 'listing'
+        with:
+          channel: stable
+          flutter-version: 3.47.2
+          cache: true
+
+      # The NDK the app's build.gradle.kts names, so the release can pack the
+      # native libraries' debug symbols.
+      - name: Android NDK
+        if: inputs.mode != 'listing'
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.2.13676358" > /dev/null
+
+      - name: Upload key and Firebase file
+        if: inputs.mode != 'listing'
+        env:
+          KS: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_B64 }}
+          KSP: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KA: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KP: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          GS: ${{ secrets.PONTARDAWE_GOOGLE_SERVICES_JSON }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/keys"
+          # certutil wraps the base64 in BEGIN/END lines and Windows line ends.
+          printf '%s\n' "$KS" | tr -d '\r' | grep -v '^-----' | tr -d ' \n' | base64 -d > "$RUNNER_TEMP/keys/upload.jks"
+          keytool -list -keystore "$RUNNER_TEMP/keys/upload.jks" -storepass "$KSP" -alias "$KA" > /dev/null \
+            || { echo "::error::The upload key did not open with ANDROID_KEYSTORE_PASSWORD and ANDROID_KEY_ALIAS."; exit 1; }
+          # make_venue_app.py copies this into the venue's project.
+          {
+            echo "storeFile=$RUNNER_TEMP/keys/upload.jks"
+            echo "storePassword=$KSP"
+            echo "keyAlias=$KA"
+            echo "keyPassword=$KP"
+          } > vesopa_loyalty/android/key.properties
+          printf '%s' "$GS" > "$VENUE/google-services.json"
+
+      - name: Make the venue's project
+        if: inputs.mode != 'listing'
+        run: python3 vesopa_loyalty/tool/make_venue_app.py "$VENUE"
+
+      - name: Phone bundle
+        if: inputs.mode != 'listing'
+        working-directory: ${{ inputs.venue }}/build/app
+        run: |
+          flutter pub get
+          flutter build appbundle --release --dart-define-from-file=venue_defines.json
+
+      - name: Wear OS bundle
+        if: inputs.mode != 'listing'
+        working-directory: ${{ inputs.venue }}/build/app/android
+        run: ./gradlew --no-daemon :wear:bundleRelease
+
+      - name: Gather the bundles
+        if: inputs.mode != 'listing'
+        run: |
+          out="$RUNNER_TEMP/android-builds"
+          mkdir -p "$out"
+          stem="$VENUE-${{ steps.num.outputs.version }}-${{ steps.num.outputs.build }}"
+          cp "$VENUE/build/app/build/app/outputs/bundle/release/app-release.aab" "$out/$stem.aab"
+          cp "$VENUE/build/app/build/wear/outputs/bundle/release/wear-release.aab" "$out/$stem-wear.aab"
+          ls -la "$out"
+
+      - uses: actions/upload-artifact@v4
+        if: inputs.mode != 'listing'
+        with:
+          name: ${{ inputs.venue }}-${{ steps.num.outputs.version }}-${{ steps.num.outputs.build }}
+          path: ${{ runner.temp }}/android-builds/*.aab
+          retention-days: 30
+
+      - name: Upload to Google Play
+        if: inputs.mode != 'build'
+        env:
+          TRACK: ${{ inputs.track }}
+        run: |
+          set -- "$VENUE" --builds "$RUNNER_TEMP/android-builds"
+          [ "$MODE" = "listing" ] && set -- "$@" --listing
+          [ -n "$TRACK" ] && set -- "$@" --track "$TRACK"
+          "$RUNNER_TEMP/py/bin/python" tool/play_upload.py "$@"
+
+      - name: Remove the keys
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/keys" vesopa_loyalty/android/key.properties "$VENUE/google-services.json"
