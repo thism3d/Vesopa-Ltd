@@ -12,8 +12,10 @@ import '../payments/dojo_config.dart';
 import '../payments/dojo_desktop.dart';
 import '../payments/dojo_native.dart';
 import '../payments/payment_provider.dart';
+import '../payments/teya_provider.dart';
 import 'card_payment_dialog.dart';
 import 'permission_gate.dart';
+import 'teya_refund.dart';
 import 'theme.dart';
 
 String _money(int minor) =>
@@ -98,6 +100,18 @@ Future<int> refundDojoPayment(
   String? orderId,
   String? reason,
 }) async {
+  // Taken on Teya: refunded through Teya.
+  if (isTeyaReference(intentId)) {
+    return refundTeyaPayment(
+      context,
+      ref,
+      reference: intentId,
+      capMinor: capMinor,
+      paidMinor: paidMinor,
+      alreadyRefundedMinor: alreadyRefundedMinor,
+      orderId: orderId,
+    );
+  }
   final dojo = tillDojo(ref);
   if (dojo == null) {
     _say(context, 'Card payments are not set up on this till.');

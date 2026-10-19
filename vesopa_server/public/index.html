@@ -4351,7 +4351,7 @@
              October 2026. -->
         <section id="view-card_payments" class="view" hidden>
           <div class="page-head">
-            <div><h2>Card Payments (Dojo)</h2><p class="muted small">Your Dojo connection for every till, and a log of every card payment, refund and check, approved or not.</p></div>
+            <div><h2>Card Payments</h2><p class="muted small">Dojo and Teya for every till and the online menu, and a log of every card payment, refund and check, approved or not.</p></div>
             <button class="btn primary" id="dojo-save">Check and save</button>
           </div>
           <!-- Two Dojo connections (2026-10-16): the tills' card machines, and
@@ -4359,6 +4359,7 @@
           <div class="seg-tabs" role="tablist" aria-label="Dojo connection" style="display:flex;gap:6px;margin:0 0 14px">
             <button class="btn" type="button" role="tab" id="dojo-tab-counter-btn" aria-selected="true">Pay at Counter</button>
             <button class="btn" type="button" role="tab" id="dojo-tab-online-btn" aria-selected="false">Online checkout</button>
+            <button class="btn" type="button" role="tab" id="dojo-tab-teya-btn" aria-selected="false">Teya</button>
           </div>
           <div id="dojo-tab-online" hidden>
             <div class="card rd-card" style="max-width:760px">
@@ -4376,6 +4377,114 @@
                 <span class="small" id="dojo-online-msg"></span>
               </div>
               <p class="muted small">Saving a live key checks it with Dojo first. Online payments also need the menu's "Pay by card online" switch (Online menu).</p>
+            </div>
+          </div>
+          <!-- Teya, the second card acquirer (2026-10-19). Off until a manager
+               turns it on; Dojo stays the default for the tills and the menu. -->
+          <div id="dojo-tab-teya" hidden>
+            <div class="teya-wrap">
+              <div class="card rd-card teya-hero">
+                <div class="teya-hero-head">
+                  <div class="teya-mark" aria-hidden="true">T</div>
+                  <div>
+                    <h3 style="margin:0">Teya</h3>
+                    <p class="small muted" style="margin:2px 0 0">Take card payments with Teya instead of Dojo: on the tills' Teya card machines, on the online menu, or both. Dojo stays as it is until you switch.</p>
+                  </div>
+                  <span class="pill" id="teya-env-pill">sandbox</span>
+                </div>
+                <label class="teya-switch"><input type="checkbox" id="teya-enabled"> <span><b>Use Teya at this venue</b><br><span class="small muted">Off: every till and the menu use Dojo, exactly as before.</span></span></label>
+                <div id="teya-options">
+                  <div class="teya-grid">
+                    <div>
+                      <div class="teya-label">Environment</div>
+                      <div class="teya-seg" role="radiogroup" aria-label="Teya environment">
+                        <label><input type="radio" name="teya-env" value="sandbox"> <span>Sandbox<small>test cards, no real money</small></span></label>
+                        <label><input type="radio" name="teya-env" value="live"> <span>Live<small>real payments</small></span></label>
+                      </div>
+                      <p class="small muted" id="teya-live-note"></p>
+                    </div>
+                    <div>
+                      <div class="teya-label">Tills' card machines</div>
+                      <div class="teya-seg" role="radiogroup" aria-label="Card machines">
+                        <label><input type="radio" name="teya-card" value="dojo"> <span>Dojo<small>as now</small></span></label>
+                        <label><input type="radio" name="teya-card" value="teya"> <span>Teya<small>each till picks its machine</small></span></label>
+                      </div>
+                    </div>
+                    <div>
+                      <div class="teya-label">Online menu checkout</div>
+                      <div class="teya-seg" role="radiogroup" aria-label="Online checkout">
+                        <label><input type="radio" name="teya-online" value="dojo"> <span>Dojo<small>as now</small></span></label>
+                        <label><input type="radio" name="teya-online" value="teya"> <span>Teya<small>Teya's secure page</small></span></label>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="row" style="gap:10px;margin-top:14px;align-items:center">
+                  <button class="btn primary" type="button" id="teya-save">Save</button>
+                  <span class="small" id="teya-msg" role="status"></span>
+                </div>
+              </div>
+
+              <div class="teya-cols">
+                <div class="card rd-card">
+                  <h3>Card machines</h3>
+                  <p class="small" id="teya-card-state"></p>
+                  <div id="teya-connect-box" class="teya-connect" hidden>
+                    <img id="teya-qr" alt="QR code to approve Vesopa on Teya" width="180" height="180">
+                    <div>
+                      <p style="margin:0 0 6px"><b>Scan with your phone</b>, or open <a id="teya-verify-link" target="_blank" rel="noopener"></a> and enter</p>
+                      <div class="teya-code" id="teya-user-code"></div>
+                      <p class="small muted" style="margin:8px 0 0">Sign in with the venue's Teya account and approve Vesopa. <span id="teya-countdown"></span></p>
+                      <button class="btn small" type="button" id="teya-connect-cancel">Cancel</button>
+                    </div>
+                  </div>
+                  <div id="teya-store-box" hidden>
+                    <label>Teya store this venue takes payments in
+                      <select id="teya-store"></select>
+                    </label>
+                    <button class="btn primary small" type="button" id="teya-store-save">Use this store</button>
+                  </div>
+                  <div id="teya-terminal-box" hidden>
+                    <div class="teya-label" style="margin-top:6px">Card machines in <span id="teya-store-name"></span></div>
+                    <ul class="teya-terminals" id="teya-terminals"></ul>
+                    <p class="small muted">Each till chooses its own Teya card machine in <b>Settings › Card payments</b>. The default is used by a till that has not chosen.</p>
+                    <div id="teya-test-box" class="teya-test" hidden>
+                      <b>Test payment</b> <span class="small muted">(sandbox)</span>
+                      <div class="row" style="gap:8px;align-items:center;margin-top:6px">
+                        <input id="teya-test-amount" type="number" min="0.01" step="0.01" value="1.00" style="width:100px" aria-label="Test amount in pounds">
+                        <button class="btn small" type="button" id="teya-test-send">Send to default machine</button>
+                        <button class="btn small" type="button" id="teya-test-cancel" hidden>Cancel</button>
+                      </div>
+                      <p class="small" id="teya-test-msg" role="status"></p>
+                    </div>
+                  </div>
+                  <div class="row" style="gap:8px;margin-top:10px">
+                    <button class="btn" type="button" id="teya-connect">Connect Teya card machines</button>
+                    <button class="btn small" type="button" id="teya-disconnect-card" hidden>Disconnect</button>
+                  </div>
+                  <p class="small" id="teya-card-msg" role="status"></p>
+                </div>
+
+                <div class="card rd-card">
+                  <h3>Online payments</h3>
+                  <p class="small" id="teya-online-state"></p>
+                  <p class="small muted">Opens Teya's business portal. Sign in, choose the store, and Teya sends this venue's online payment details straight to Vesopa. This page updates by itself when it is done.</p>
+                  <div class="row" style="gap:8px">
+                    <button class="btn" type="button" id="teya-online-connect">Connect Teya online payments</button>
+                    <button class="btn small" type="button" id="teya-disconnect-online" hidden>Disconnect</button>
+                  </div>
+                  <p class="small" id="teya-online-msg" role="status"></p>
+                  <p class="muted small">The menu also needs its "Pay by card online" switch (Online menu). On the sandbox, test orders never reach the till, the kitchen or the takings.</p>
+                </div>
+              </div>
+
+              <div class="card">
+                <div class="page-head" style="margin:0 0 8px"><h3 style="margin:0">Teya card machine payments</h3><button class="btn small" type="button" id="teya-log-refresh">Refresh</button></div>
+                <div class="table-scroll"><table>
+                  <thead><tr><th>When</th><th>Till</th><th>Type</th><th>Amount</th><th>Result</th><th>Card</th><th>Reference</th></tr></thead>
+                  <tbody id="teya-log"></tbody>
+                </table></div>
+              </div>
             </div>
           </div>
           <div class="rd-layout" id="dojo-tab-counter">

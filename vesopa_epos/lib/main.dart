@@ -48,6 +48,7 @@ import 'payments/connect_ws.dart';
 import 'payments/card_log.dart';
 import 'payments/dojo_config.dart';
 import 'payments/dojo_desktop.dart';
+import 'payments/teya_provider.dart';
 import 'payments/dojo_office_sync.dart';
 import 'payments/dojo_native.dart';
 import 'payments/payment_provider.dart';
@@ -419,6 +420,10 @@ final floorRepositoryProvider = FutureProvider<FloorRepository>((ref) async {
 /// leaving the Card button dead. Settings says plainly which of the two is
 /// live.
 final dojoProvider = Provider<PaymentProvider?>((ref) {
+  // Teya, when the back office has switched this venue's tills to it
+  // (payments/teya_provider.dart). Every other venue carries on with Dojo.
+  final teya = ref.watch(teyaProvider);
+  if (teya != null) return teya;
   final config = ref.watch(dojoConfigProvider).value;
   final clients = _cardClients(config, keyed: false);
   if (clients == null) return null;
@@ -447,6 +452,9 @@ final dojoProvider = Provider<PaymentProvider?>((ref) {
 ///     checkout, rendered inside the till by `CardCheckoutPage` rather than
 ///     handed to a browser.
 final manualCardProvider = Provider<PaymentProvider?>((ref) {
+  // Teya keys a card on the machine itself.
+  final teya = ref.watch(teyaProvider);
+  if (teya != null) return teya;
   final config = ref.watch(dojoConfigProvider).value;
   final clients = _cardClients(config, keyed: true);
   if (clients == null) return null;

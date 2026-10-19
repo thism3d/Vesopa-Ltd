@@ -14398,14 +14398,14 @@ function dojoSay(text, ok) {
 
 /** Pay at Counter | Online checkout on the Card Payments page. */
 function dojoTabs(which) {
-  const online = which === 'online';
-  $('dojo-tab-online').hidden = !online;
-  $('dojo-tab-counter').hidden = online;
-  $('dojo-save').hidden = online;
-  $('dojo-tab-online-btn').setAttribute('aria-selected', String(online));
-  $('dojo-tab-counter-btn').setAttribute('aria-selected', String(!online));
-  $('dojo-tab-online-btn').classList.toggle('primary', online);
-  $('dojo-tab-counter-btn').classList.toggle('primary', !online);
+  for (const tab of ['counter', 'online', 'teya']) {
+    const on = tab === which;
+    $('dojo-tab-' + tab).hidden = !on;
+    $('dojo-tab-' + tab + '-btn').setAttribute('aria-selected', String(on));
+    $('dojo-tab-' + tab + '-btn').classList.toggle('primary', on);
+  }
+  $('dojo-save').hidden = which !== 'counter';
+  if (which !== 'teya') teyaStopTimers();
 }
 
 async function loadOnlineCheckout() {
@@ -14457,9 +14457,277 @@ async function loadOnlineCheckout() {
   };
 }
 
+// ---- Teya (2026-10-19) ---------------------------------------------------------
+
+let teyaState = null;
+let teyaConnectTimer = null;
+let teyaOnlineTimer = null;
+
+function teyaSay(id, text, ok) {
+  const el = $(id);
+  if (!el) return;
+  el.textContent = text || '';
+  el.style.color = ok ? '#06784f' : '#b42318';
+  el.style.fontWeight = '600';
+}
+
+function teyaStopTimers() {
+  clearInterval(teyaConnectTimer); teyaConnectTimer = null;
+  clearInterval(teyaOnlineTimer); teyaOnlineTimer = null;
+}
+
+function teyaPicked(name) {
+  return (document.querySelector('input[name="' + name + '"]:checked') || {}).value;
+}
+
+/** Show the settings and the connection for the environment in view. */
+function teyaRender(s) {
+  teyaState = s;
+  const env = teyaPicked('teya-env') || s.environment;
+  const conn = s.connections[env] || { card: {}, online: {} };
+  $('teya-enabled').checked = s.enabled;
+  $('teya-options').style.opacity = s.enabled ? '' : '.55';
+  document.querySelectorAll('input[name="teya-env"]').forEach((r) => {
+    r.checked = r.value === env;
+    r.disabled = r.value === 'live' && !s.live_available;
+  });
+  document.querySelectorAll('input[name="teya-card"]').forEach((r) => { r.checked = r.value === s.card_provider; });
+  document.querySelectorAll('input[name="teya-online"]').forEach((r) => { r.checked = r.value === s.online_provider; });
+  $('teya-live-note').textContent = s.live_available ? 'Live takes real money. Connect the live store below before switching the tills or the menu over.' : s.live_note || '';
+  const pill = $('teya-env-pill');
+  pill.textContent = s.environment === 'live' ? 'live' : 'sandbox';
+  pill.className = 'pill ' + (s.environment === 'live' ? 'amber' : 'on');
+
+  const envName = env === 'live' ? 'Teya Live' : 'the Teya sandbox';
+  const c = conn.card;
+  $('teya-card-state').innerHTML = c.ready
+    ? 'Connected to <b>' + esc(c.store_name || c.store_id) + '</b> on ' + envName + (c.user ? ', approved by ' + esc(c.user) : '') + '.'
+      + (s.card_provider === 'teya' && s.environment === env && s.enabled ? ' <span class="pill on">tills use Teya</span>' : ' <span class="pill">tills use Dojo</span>')
+    : c.approved ? 'Approved on ' + envName + '. Choose the store below.' : 'Not connected on ' + envName + '.';
+  $('teya-connect').textContent = c.approved ? 'Connect again' : 'Connect Teya card machines';
+  $('teya-disconnect-card').hidden = !c.approved;
+  $('teya-terminal-box').hidden = !c.ready;
+  $('teya-store-name').textContent = c.store_name || '';
+  $('teya-test-box').hidden = !(c.ready && env === 'sandbox');
+
+  const o = conn.online;
+  $('teya-online-state').innerHTML = o.ready
+    ? 'Connected on ' + envName + ' (store <code>' + esc(String(o.store_id || '').slice(0, 8)) + '…</code>).'
+      + (s.online_provider === 'teya' && s.environment === env && s.enabled ? ' <span class="pill on">menu uses Teya</span>' : ' <span class="pill">menu uses Dojo</span>')
+    : 'Not connected on ' + envName + '.';
+  $('teya-online-connect').textContent = o.ready ? 'Connect again' : 'Connect Teya online payments';
+  $('teya-disconnect-online').hidden = !o.ready;
+  if (c.ready) teyaLoadTerminals(env);
+}
+
+async function teyaLoadTerminals(env) {
+  const list = $('teya-terminals');
+  list.innerHTML = '<li class="muted small">Asking Teya for the card machines…</li>';
+  try {
+    const terms = await api('/teya/terminals?environment=' + encodeURIComponent(env));
+    const def = (teyaState.connections[env] || { card: {} }).card.default_terminal_id;
+    if (!terms.length) { list.innerHTML = '<li class="muted small">No card machines in this store yet. Add one in Teya, then refresh.</li>'; return; }
+    list.innerHTML = terms.map((t) => '<li><span><b>' + esc(t.name || 'Card machine') + '</b><br><small>' + esc(t.serial ? 'Serial ' + t.serial : t.id) + '</small></span>'
+      + (t.id === def ? '<span class="pill on">default</span>' : '<button class="btn small" type="button" data-teya-default="' + esc(t.id) + '">Make default</button>') + '</li>').join('');
+    list.querySelectorAll('[data-teya-default]').forEach((b) => {
+      b.onclick = async () => {
+        try {
+          await api('/teya/default-terminal', { method: 'PUT', body: JSON.stringify({ environment: env, terminal_id: b.dataset.teyaDefault }) });
+          toast('Default card machine saved');
+          teyaRender(await api('/teya-settings'));
+        } catch (e) { teyaSay('teya-card-msg', e.message, false); }
+      };
+    });
+  } catch (e) {
+    list.innerHTML = '<li class="small" style="color:#b42318">' + esc(e.message) + '</li>';
+  }
+}
+
+async function teyaLoadLog() {
+  try {
+    const rows = await api('/teya/payments');
+    const label = { SUCCESSFUL: '<span class="pill on">Approved</span>', FAILED: '<span class="pill bad">Failed</span>', CANCELLED: '<span class="pill">Cancelled</span>' };
+    $('teya-log').innerHTML = rows.length ? rows.map((r) => '<tr><td>' + esc(new Date(r.created_at).toLocaleString('en-GB')) + '</td><td>' + esc(r.till || '') + '</td><td>'
+      + esc(r.kind === 'REFUND' ? 'Refund' : 'Sale') + (r.environment === 'sandbox' ? ' <span class="pill">test</span>' : '') + '</td><td>£' + (r.amount_minor / 100).toFixed(2)
+      + (r.refunded_minor ? '<br><small>refunded £' + (r.refunded_minor / 100).toFixed(2) + '</small>' : '') + '</td><td>' + (label[r.status] || esc(r.status))
+      + (r.status_reason ? '<br><small>' + esc(String(r.status_reason).toLowerCase().replace(/_/g, ' ')) + '</small>' : '') + '</td><td>'
+      + esc([r.card_brand, r.card_last4 ? '•••• ' + r.card_last4 : ''].filter(Boolean).join(' ')) + '</td><td><small>' + esc(r.reference) + '</small></td></tr>').join('')
+      : '<tr><td colspan="7" class="muted small">No Teya card machine payments yet.</td></tr>';
+  } catch (e) {
+    $('teya-log').innerHTML = '<tr><td colspan="7" class="small" style="color:#b42318">' + esc(e.message) + '</td></tr>';
+  }
+}
+
+async function loadTeya() {
+  teyaStopTimers();
+  let s;
+  try { s = await api('/teya-settings'); } catch (e) { teyaSay('teya-msg', e.message, false); return; }
+  document.querySelectorAll('input[name="teya-env"]').forEach((r) => { r.checked = r.value === s.environment; });
+  teyaRender(s);
+  teyaLoadLog();
+  teyaSay('teya-msg', '');
+  $('teya-connect-box').hidden = true;
+  $('teya-store-box').hidden = true;
+
+  $('teya-enabled').onchange = () => { $('teya-options').style.opacity = $('teya-enabled').checked ? '' : '.55'; };
+  document.querySelectorAll('input[name="teya-env"]').forEach((r) => { r.onchange = () => teyaRender(teyaState); });
+  $('teya-log-refresh').onclick = teyaLoadLog;
+
+  $('teya-save').onclick = async () => {
+    const body = {
+      enabled: $('teya-enabled').checked,
+      environment: teyaPicked('teya-env'),
+      card_provider: teyaPicked('teya-card'),
+      online_provider: teyaPicked('teya-online'),
+    };
+    if (body.environment === 'live' && teyaState.environment !== 'live'
+      && !confirm('Switch Teya to Live? Card payments through Teya will take real money.')) return;
+    teyaSay('teya-msg', 'Saving…', true);
+    try {
+      const r = await api('/teya-settings', { method: 'PUT', body: JSON.stringify(body) });
+      teyaRender(r);
+      teyaSay('teya-msg', r.message || 'Saved.', true);
+      toast('Teya settings saved');
+    } catch (e) { teyaSay('teya-msg', e.message + ' Nothing was changed.', false); }
+  };
+
+  $('teya-connect').onclick = async () => {
+    const env = teyaPicked('teya-env');
+    teyaSay('teya-card-msg', 'Asking Teya for a sign-in code…', true);
+    try {
+      const d = await api('/teya/connect/start', { method: 'POST', body: JSON.stringify({ environment: env }) });
+      $('teya-qr').hidden = !d.qr_code;
+      if (d.qr_code) $('teya-qr').src = d.qr_code;
+      $('teya-verify-link').href = d.verification_url_complete || d.verification_url;
+      $('teya-verify-link').textContent = String(d.verification_url || '').replace(/^https?:\/\//, '');
+      $('teya-user-code').textContent = d.user_code;
+      $('teya-connect-box').hidden = false;
+      $('teya-store-box').hidden = true;
+      teyaSay('teya-card-msg', 'Waiting for approval on Teya…', true);
+      const ends = Date.now() + d.expires_in * 1000;
+      let busy = false;
+      clearInterval(teyaConnectTimer);
+      teyaConnectTimer = setInterval(async () => {
+        const left = Math.max(0, Math.round((ends - Date.now()) / 1000));
+        $('teya-countdown').textContent = 'Code expires in ' + Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0') + '.';
+        if (busy || left % d.interval) return;
+        busy = true;
+        try {
+          const r = await api('/teya/connect/poll', { method: 'POST', body: JSON.stringify({ id: d.id }) });
+          if (r.done) {
+            clearInterval(teyaConnectTimer);
+            $('teya-connect-box').hidden = true;
+            teyaShowStores(r.stores || [], env);
+            teyaSay('teya-card-msg', 'Approved. Now choose the store.', true);
+          }
+        } catch (e) {
+          clearInterval(teyaConnectTimer);
+          $('teya-connect-box').hidden = true;
+          teyaSay('teya-card-msg', e.message, false);
+        } finally { busy = false; }
+      }, 1000);
+    } catch (e) { teyaSay('teya-card-msg', e.message, false); }
+  };
+  $('teya-connect-cancel').onclick = () => {
+    clearInterval(teyaConnectTimer);
+    $('teya-connect-box').hidden = true;
+    teyaSay('teya-card-msg', 'Cancelled.', false);
+  };
+
+  function teyaShowStores(stores, env) {
+    if (!stores.length) { teyaSay('teya-card-msg', 'This Teya account has no stores. Create one in Teya first.', false); return; }
+    $('teya-store').innerHTML = stores.map((st) => '<option value="' + esc(st.id) + '">' + esc(st.name + (st.address && st.address.city ? ' · ' + st.address.city : '')) + '</option>').join('');
+    $('teya-store-box').hidden = false;
+    $('teya-store-save').onclick = async () => {
+      teyaSay('teya-card-msg', 'Registering Vesopa with the store…', true);
+      try {
+        const r = await api('/teya/store', { method: 'POST', body: JSON.stringify({ environment: env, store_id: $('teya-store').value }) });
+        $('teya-store-box').hidden = true;
+        teyaSay('teya-card-msg', r.message, true);
+        toast('Teya store connected');
+        teyaRender(await api('/teya-settings'));
+      } catch (e) { teyaSay('teya-card-msg', e.message, false); }
+    };
+  }
+
+  $('teya-disconnect-card').onclick = async () => {
+    if (!confirm('Disconnect Teya card machines? Tills go back to Dojo.')) return;
+    try {
+      const r = await api('/teya/disconnect', { method: 'POST', body: JSON.stringify({ environment: teyaPicked('teya-env'), part: 'card' }) });
+      teyaRender(r); teyaSay('teya-card-msg', r.message, true);
+    } catch (e) { teyaSay('teya-card-msg', e.message, false); }
+  };
+  $('teya-disconnect-online').onclick = async () => {
+    if (!confirm('Disconnect Teya online payments? The menu goes back to Dojo.')) return;
+    try {
+      const r = await api('/teya/disconnect', { method: 'POST', body: JSON.stringify({ environment: teyaPicked('teya-env'), part: 'online' }) });
+      teyaRender(r); teyaSay('teya-online-msg', r.message, true);
+    } catch (e) { teyaSay('teya-online-msg', e.message, false); }
+  };
+
+  $('teya-online-connect').onclick = async () => {
+    const env = teyaPicked('teya-env');
+    const win = window.open('about:blank', '_blank');
+    try {
+      const r = await api('/teya/online/connect', { method: 'POST', body: JSON.stringify({ environment: env }) });
+      if (win) win.location = r.url; else window.location = r.url;
+      teyaSay('teya-online-msg', 'Finish on Teya\'s page. This updates by itself when Teya confirms.', true);
+      const was = ((teyaState.connections[env] || {}).online || {}).connected_at;
+      clearInterval(teyaOnlineTimer);
+      const until = Date.now() + 30 * 60 * 1000;
+      teyaOnlineTimer = setInterval(async () => {
+        if (Date.now() > until || currentView !== 'card_payments') { clearInterval(teyaOnlineTimer); return; }
+        try {
+          const s2 = await api('/teya-settings');
+          const now = ((s2.connections[env] || {}).online || {});
+          if (now.ready && now.connected_at !== was) {
+            clearInterval(teyaOnlineTimer);
+            teyaRender(s2);
+            teyaSay('teya-online-msg', 'Teya online payments connected. Choose Teya for the online menu above and Save.', true);
+            toast('Teya online payments connected');
+          }
+        } catch { /* try again */ }
+      }, 4000);
+    } catch (e) {
+      if (win) win.close();
+      teyaSay('teya-online-msg', e.message, false);
+    }
+  };
+
+  let testId = null;
+  $('teya-test-send').onclick = async () => {
+    const amount = Math.round(Number($('teya-test-amount').value) * 100);
+    if (!(amount > 0)) { teyaSay('teya-test-msg', 'Enter an amount.', false); return; }
+    teyaSay('teya-test-msg', 'Sending to the card machine…', true);
+    $('teya-test-send').disabled = true;
+    try {
+      const r = await api('/teya/test-payment', { method: 'POST', body: JSON.stringify({ amount_minor: amount }) });
+      testId = r.id;
+      $('teya-test-cancel').hidden = false;
+      for (let i = 0; i < 40 && testId === r.id; i += 1) {
+        const p = await api('/teya/test-payment/' + encodeURIComponent(r.id));
+        teyaSay('teya-test-msg', p.message + (p.card_last4 ? ' · ' + (p.card_brand || 'card') + ' •••• ' + p.card_last4 : ''), p.outcome !== 'declined' && p.outcome !== 'failed' && p.outcome !== 'cancelled');
+        if (p.final) break;
+      }
+    } catch (e) {
+      teyaSay('teya-test-msg', e.message, false);
+    } finally {
+      testId = null;
+      $('teya-test-send').disabled = false;
+      $('teya-test-cancel').hidden = true;
+      teyaLoadLog();
+    }
+  };
+  $('teya-test-cancel').onclick = async () => {
+    if (!testId) return;
+    try { const r = await api('/teya/test-payment/' + encodeURIComponent(testId) + '/cancel', { method: 'POST' }); teyaSay('teya-test-msg', r.message, true); } catch (e) { teyaSay('teya-test-msg', e.message, false); }
+  };
+}
+
 async function loadCardPayments() {
   $('dojo-tab-counter-btn').onclick = () => dojoTabs('counter');
   $('dojo-tab-online-btn').onclick = () => { dojoTabs('online'); loadOnlineCheckout(); };
+  $('dojo-tab-teya-btn').onclick = () => { dojoTabs('teya'); loadTeya(); };
   dojoTabs('counter');
   dojoState = await api('/dojo-settings');
   $('dojo-key-state').innerHTML = dojoKeyState(dojoState);

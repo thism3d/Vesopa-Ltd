@@ -25,6 +25,7 @@ import '../payments/connect_pac.dart';
 import '../payments/dojo_config.dart';
 import '../payments/dojo_desktop.dart';
 import '../payments/payment_provider.dart';
+import '../payments/teya_provider.dart';
 import '../data/kitchen_printing.dart';
 import '../printing/print_service.dart';
 import '../printing/print_targets.dart';
@@ -352,6 +353,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     final direct = provider is DojoProvider ? provider : null;
     final rest = direct ?? desktop?.intents;
     final connect = provider is ConnectPacProvider ? provider : null;
+    final teya = provider is TeyaProvider ? provider : null;
 
     // One notifier drives the whole screen: the stage the till knows about,
     // plus whatever the reader is telling the customer.
@@ -360,8 +362,9 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
         step: CardStep.starting,
         // Shown on every Dojo payment, as Dojo asked: the ids this payment is
         // identified by in their logs.
-        partnerLabel: rest?.partnerLabel,
-        terminalLabel: rest?.terminalId ?? connect?.terminalId,
+        partnerLabel: rest?.partnerLabel ??
+            (teya == null ? null : (teya.sandbox ? 'Teya sandbox' : 'Teya')),
+        terminalLabel: rest?.terminalId ?? connect?.terminalId ?? teya?.terminalName ?? teya?.terminalId,
       ),
     );
 
@@ -456,6 +459,14 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     };
     connect?.onSignatureRequested = askForSignature;
 
+    teya?.onProgress = (progress, message) {
+      if (payment.value.finished) return;
+      advance(cardStepForTeya(progress), prompt: message);
+    };
+    teya?.onCancelAnswered = (accepted, message) {
+      payment.value = payment.value.copyWith(cancelNote: message);
+    };
+
     // Render the hosted card page inside the till rather than handing it to the
     // system browser: on a Windows touch till there may be no browser to hand
     // it to, and on a tablet the customer ends up holding the whole device.
@@ -502,11 +513,67 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     PaymentResult? result;
     Timer? countdown;
 
+    String? lastCheck;
+
+    // The same for a Teya payment: asked through the Vesopa server.
+    Future<bool> checkTeya(TeyaProvider teya, {bool auto = false}) async {
+      final id = result?.sessionId;
+      if (id == null || id.isEmpty) {
+        if (!auto) {
+          payment.value = payment.value.copyWith(
+            checkNote: 'There is no Teya payment to look up. Check the card '
+                'machine\'s own screen.',
+          );
+        }
+        return false;
+      }
+      if (payment.value.checking) return false;
+      if (!auto) countdown?.cancel();
+      payment.value = payment.value.copyWith(checking: !auto, clearSeconds: !auto);
+      try {
+        final st = await teya.status(id, waitSeconds: 1);
+        if (auto && st.status == lastCheck && !st.paid) return false;
+        lastCheck = st.status;
+        unawaited(CardLog.instance.add(CardLogEntry(
+          at: DateTime.now(),
+          kind: 'check',
+          outcome: st.paid ? 'approved' : 'not_paid',
+          amountMinor: amountMinor,
+          intentId: st.gatewayPaymentId ?? st.id,
+          sessionId: st.id,
+          status: st.status,
+          message: st.message,
+          orderId: widget.orderId,
+          terminalId: teya.terminalId,
+          authCode: st.authCode,
+          cardLast4: st.cardLast4,
+          cardType: st.cardBrand,
+          staff: staff,
+        )));
+        payment.value = payment.value.copyWith(
+          checking: false,
+          checkSaysPaid: st.paid,
+          checkNote: st.paid
+              ? 'Teya confirms this payment was taken. Record it as paid.'
+              : st.finalState
+              ? 'Teya says this payment was not taken (${st.message}). It is safe to try again.'
+              : 'Teya has no result yet (${st.message}). The till keeps checking; check the card machine screen too.',
+        );
+        return st.paid;
+      } catch (e) {
+        payment.value = payment.value.copyWith(
+          checking: false,
+          checkNote: auto ? payment.value.checkNote : 'Could not check: $e',
+        );
+        return false;
+      }
+    }
+
     // Returns true once Dojo say the money was taken. [auto] is the till
     // checking by itself while a "not confirmed" result is on screen: quiet
     // while Dojo have no answer, and only one log row per change.
-    String? lastCheck;
     Future<bool> checkStatus({bool auto = false}) async {
+      if (teya != null) return checkTeya(teya, auto: auto);
       final ref0 = result?.reference;
       if (rest == null || ref0 == null || ref0.isEmpty) {
         if (!auto) {
@@ -597,11 +664,15 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
                   ),
             // Only providers that poll can abandon a wait; the Android drop-in
             // owns its own screen and its own cancel button.
-            onCancel: rest == null && connect == null
+            onCancel: rest == null && connect == null && teya == null
                 ? null
                 : () {
                     payment.value = payment.value.copyWith(cancelling: true);
-                    if (direct != null) {
+                    if (teya != null) {
+                      // Teya's cancel is a request too: the result still
+                      // comes back here.
+                      teya.requestCancel();
+                    } else if (direct != null) {
                       // Dojo's "Cancel transaction from POS": the machine is
                       // asked to cancel, and the screen keeps going until it
                       // answers — the result (cancelled, or approved if the
@@ -614,7 +685,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
                       connect?.abandon();
                     }
                   },
-            onStopWaiting: rest?.abandon ?? connect?.stopWaiting,
+            onStopWaiting: rest?.abandon ?? connect?.stopWaiting ?? teya?.stopWaiting,
             // Signature verification, when the reader asks for it. Answering
             // is what releases the sale, so it must be reachable here.
             onSignatureAccepted: state.step == CardStep.signature
@@ -626,7 +697,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
             onClose: () => end(state.checkSaysPaid
                 ? _CardEnding.recordPaid
                 : _CardEnding.close),
-            onCheckStatus: rest == null ? null : () => checkStatus(),
+            onCheckStatus: rest == null && teya == null ? null : () => checkStatus(),
             onRecordPaid: () => end(_CardEnding.recordPaid),
             onRetry: () => end(_CardEnding.retry),
           ),
@@ -652,6 +723,8 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     connect?.onProgress = null;
     connect?.onSignatureRequested = null;
     connect?.onCancelAnswered = null;
+    teya?.onProgress = null;
+    teya?.onCancelAnswered = null;
 
     // Logged whatever happened: Dojo's feedback was that failed payments left
     // no record. The back office's Card payments page lists these.
@@ -659,7 +732,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
       taken,
       kind: 'sale',
       orderId: widget.orderId,
-      terminalId: rest?.terminalId ?? connect?.terminalId,
+      terminalId: rest?.terminalId ?? connect?.terminalId ?? teya?.terminalId,
       softwareHouseId: rest?.softwareHouseId,
       resellerId: rest?.resellerId,
       staff: staff,
@@ -706,7 +779,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     // and the moment Dojo say the money was taken the screen turns to
     // approved and records the payment by itself.
     Timer? autoCheck;
-    if (outcome.uncertain && rest != null && (taken.reference ?? '').isNotEmpty) {
+    if (outcome.uncertain && (rest != null || teya != null) && (taken.reference ?? '').isNotEmpty) {
       final until = DateTime.now().add(const Duration(minutes: 5));
       Future<void> tick() async {
         if (ending.isCompleted || payment.value.checkSaysPaid) return;
@@ -719,7 +792,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
           setState2(payment.value.copyWith(
             outcome: CardOutcome.approved,
             step: CardStep.done,
-            resultMessage: 'Dojo confirmed the payment was taken. It is '
+            resultMessage: '${teya != null ? 'Teya' : 'Dojo'} confirmed the payment was taken. It is '
                 'recorded as paid.',
             secondsLeft: config.resultSeconds,
           ));

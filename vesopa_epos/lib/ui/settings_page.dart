@@ -11,6 +11,7 @@ import '../data/fonts.dart';
 import '../data/gym.dart';
 import '../data/terminal_identity.dart';
 import '../main.dart';
+import '../payments/teya_provider.dart';
 import '../payments/connect_pac.dart';
 import '../payments/dojo_config.dart';
 import '../payments/payment_provider.dart';
@@ -261,6 +262,7 @@ class SettingsPage extends ConsumerWidget {
 
         const SizedBox(height: 28),
         const _SectionTitle('Card payments'),
+        const _TeyaCard(),
         _DojoCard(),
         const SizedBox(height: 8),
         Card(
@@ -739,6 +741,108 @@ class _CustomerDisplaySummaryState extends State<_CustomerDisplaySummary> {
 
 /// Card payment configuration. Shows whether cards are set up on this terminal
 /// and lets the operator enter or change the credentials on the device.
+/// Teya on this till (2026-10-19): which Teya card machine it sends payments
+/// to. Shown only when the back office has switched the venue's tills to
+/// Teya; the venue's default machine is used until one is chosen.
+class _TeyaCard extends ConsumerWidget {
+  const _TeyaCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final config = ref.watch(teyaConfigProvider).value;
+    if (config == null || !config.enabled) return const SizedBox.shrink();
+    final chosen = ref.watch(teyaTerminalProvider).value ?? '';
+    final ids = {for (final t in config.terminals) t.id};
+    final value = ids.contains(chosen) ? chosen : '';
+    final def = config.terminals.where((t) => t.id == config.defaultTerminalId).toList();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Card(
+        margin: EdgeInsets.zero,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 34,
+                    height: 34,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(10),
+                      gradient: const LinearGradient(colors: [Color(0xFF6D5EFC), Color(0xFF22C3A6)]),
+                    ),
+                    child: const Text('T', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 18)),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Teya card machine', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+                        Text(
+                          'This venue takes cards with Teya${config.storeName == null ? '' : ' (${config.storeName})'}. '
+                          'Set in the back office, Card Payments.',
+                          style: const TextStyle(fontSize: 12.5),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: config.sandbox ? const Color(0x1F2E9E5B) : const Color(0x24F77F00),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(config.sandbox ? 'Sandbox' : 'Live',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: config.sandbox ? Pos.green : const Color(0xFFA35200))),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              if (config.terminalsError != null)
+                Text(config.terminalsError!, style: const TextStyle(color: Pos.red, fontSize: 12.5))
+              else
+                DropdownButtonFormField<String>(
+                  initialValue: value,
+                  isExpanded: true,
+                  decoration: const InputDecoration(labelText: 'This till\'s card machine', border: OutlineInputBorder()),
+                  items: [
+                    DropdownMenuItem(
+                      value: '',
+                      child: Text(def.isEmpty ? 'Venue default (none set)' : 'Venue default: ${def.first.label}'),
+                    ),
+                    for (final t in config.terminals)
+                      DropdownMenuItem(value: t.id, child: Text(t.serial.isEmpty ? t.label : '${t.label} · ${t.serial}')),
+                  ],
+                  onChanged: (v) async {
+                    await ref.read(teyaTerminalProvider.notifier).choose(v ?? '');
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Teya card machine saved for this till')),
+                      );
+                    }
+                  },
+                ),
+              const SizedBox(height: 6),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: () => ref.read(teyaConfigProvider.notifier).refresh(),
+                  icon: const Icon(Icons.refresh, size: 18),
+                  label: const Text('Refresh machines'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _DojoCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {

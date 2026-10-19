@@ -52,6 +52,7 @@ import 'widgets/on_screen_keyboard.dart';
 import 'widgets/pos_message.dart';
 import 'widgets/receipt_status_badge.dart';
 import 'dojo_refund.dart';
+import '../payments/teya_provider.dart';
 import 'void_dialog.dart';
 
 /// Start a refund. Opens on the receipt list, or straight on [receipt].
@@ -474,9 +475,9 @@ class _RefundPageState extends ConsumerState<RefundPage> {
     // The bank-card share, when the sale was paid on Dojo: that part can go
     // back to the card from here (full or part), rather than the clerk being
     // sent to the card machine.
-    final dojoTenders = detail.tenders.where((t) => t.isDojo).toList();
+    final dojoTenders = detail.tenders.where((t) => t.isDojo || t.isTeya).toList();
     final dojoPaid = dojoTenders.fold<int>(0, (s, t) => s + t.amountMinor);
-    final toDojo = tillDojo(ref) == null ? 0 : (dojoPaid < rest ? dojoPaid : rest);
+    final toDojo = tillDojo(ref) == null && ref.read(teyaProvider) == null ? 0 : (dojoPaid < rest ? dojoPaid : rest);
 
     final ok = await _confirm(
       title: 'Give back ${money(_refundMinor)}?',

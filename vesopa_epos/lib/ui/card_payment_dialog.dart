@@ -133,6 +133,16 @@ CardStep cardStepForConnect(ConnectProgress progress) =>
       _ => CardStep.starting,
     };
 
+/// The step a Teya card machine is on, from Teya's progress word.
+CardStep cardStepForTeya(String? progress) => switch (progress) {
+      'WAITING_FOR_CARD_ENTRY' || 'WAITING_FOR_CARD' || 'IN_PROGRESS' => CardStep.present,
+      'PIN_ENTRY' || 'WAITING_FOR_PIN' => CardStep.pin,
+      'WAITING_FOR_SIGNATURE' => CardStep.processing,
+      'CARD_ENTERED' || 'PROCESSING' || 'AUTHORISING' || 'CANCELLING' => CardStep.processing,
+      'PRINTING_RECEIPT' || 'SUCCESSFUL' => CardStep.done,
+      _ => CardStep.starting,
+    };
+
 /// Keep a card sale's progress moving forwards.
 ///
 /// Dojo's tester saw "Present card" flash back up after the card had gone in.

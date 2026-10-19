@@ -277,6 +277,9 @@ class ReceiptTender {
   /// A card payment Dojo can refund.
   bool get isDojo => reference?.startsWith('pi_') ?? false;
 
+  /// Taken on a Teya card machine (payments/teya_provider.dart).
+  bool get isTeya => reference?.startsWith('teya:') ?? false;
+
   /// The notes counted in on the cash keys, as `2000x2,500x1`. Printed under
   /// the tender so the customer can check the receipt against what they
   /// actually handed over. Null for card, and for cash keyed as an amount.

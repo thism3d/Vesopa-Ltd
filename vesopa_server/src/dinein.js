@@ -13,6 +13,8 @@ const core = require('./menu_core');
 const { BasketError } = core;
 const venueLooks = require('./venue_looks');
 const dojo = require('./dojo_client');
+const teyaClient = require('./teya_client');
+const teyaVenue = require('./teya');
 
 // ---------------------------------------------------------------------------
 // Branding, offers and promotions
@@ -1736,7 +1738,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
         online_pay_required: !!venue.online_pay && !!venue.online_pay_required,
         // Card payments in test mode (the demo key): said plainly on the menu,
         // because a real guest paying in test mode would get no food.
-        online_demo: !!venue.online_pay && String((await cardKeyFor(email)) || '').startsWith('sk_sandbox_'),
+        online_demo: !!venue.online_pay && isTestPay(await payMethodFor(email)),
         collection_minutes: Number(venue.collection_minutes) || Number(venue.eta_minutes) || 25,
         base: publicBase(req, venue),
       },
@@ -1852,7 +1854,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
       // written: an order the venue cannot take payment for must not exist.
       let payKey = null;
       if (wantsCard(venue, body, total)) {
-        payKey = await cardKeyFor(email);
+        payKey = await payMethodFor(email);
         if (!payKey) {
           return res.status(409).json({ error: 'Card payment is not set up here yet. Please order and pay at the bar.' });
         }
@@ -1876,7 +1878,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
       let payUrl = null;
       if (payKey) {
         payUrl = await startCardPayment(payKey, {
-          orderId, publicId, total, venue,
+          orderId, publicId, total, venue, lines,
           redirectUrl: publicBase(req, venue) + '/o/' + publicId,
         });
         if (!payUrl) {
@@ -2015,8 +2017,76 @@ function dineinRoutes({ pool, broadcast, secret }) {
     }
   }
 
-  /** Open Dojo's checkout for the order. Null (and the order cancelled) when it will not open. */
-  async function startCardPayment(key, { orderId, publicId, total, venue, redirectUrl }) {
+  /**
+   * How this venue's menu takes card payments: Teya's hosted checkout when
+   * the venue chose Teya for online payments (teya.js), else its Dojo key as
+   * before. Null when neither is set up.
+   */
+  async function payMethodFor(email) {
+    try {
+      const t = await teyaVenue.onlineFor(pool, email);
+      if (t) return { provider: 'teya', teya: t };
+    } catch (e) {
+      // Teya unreadable is not a reason to break the Dojo menu.
+      console.error('[dinein] Teya settings unreadable:', e.message);
+    }
+    const key = await cardKeyFor(email);
+    return key ? { provider: 'dojo', key } : null;
+  }
+
+  /** Test money: Dojo's sandbox key or Teya's sandbox. */
+  function isTestPay(m) {
+    if (!m) return false;
+    if (m.provider === 'teya') return m.teya.env === 'sandbox';
+    return String(m.key || '').startsWith('sk_sandbox_');
+  }
+
+  /** The Teya connection an order was started on, whatever the venue has since switched to. */
+  async function teyaFor(o) {
+    return teyaVenue.onlineForEnv(pool, await emailOf(o.office_id), o.pay_env || 'sandbox');
+  }
+
+  /** Open Teya's hosted checkout for the order. */
+  async function startTeyaPayment(t, { orderId, publicId, total, venue, lines, redirectUrl }) {
+    try {
+      const items = (lines || []).filter((l) => !l.isModifier).map((l) => ({
+        description: String(l.name || 'Item').slice(0, 100),
+        quantity: Math.max(1, Number(l.qty) || 1),
+        unit_price: Math.round(Number(l.unit) || 0),
+      }));
+      // The basket is shown on Teya's page only when it adds up to the amount
+      // (add-ons and offers change the sum); otherwise one line for the order.
+      const sum = items.reduce((a, l) => a + l.quantity * l.unit_price, 0);
+      const session = await teyaClient.createSession(t.env, await t.token(), {
+        amountMinor: total,
+        reference: `menu-${orderId}`,
+        storeId: t.storeId,
+        successUrl: redirectUrl,
+        cancelUrl: redirectUrl,
+        failureUrl: redirectUrl,
+        lines: sum === total ? items : [{ description: `${String(venue.display_name || 'Menu').trim().slice(0, 50)} order #${orderId}`, quantity: 1, unit_price: total }],
+      }, `menu-${orderId}`);
+      if (!session.session_id || !session.session_url) throw new Error('Teya returned no checkout page');
+      await pool.execute(
+        "UPDATE dinein_orders SET pay_status = 'pending', dojo_intent_id = ?, pay_provider = 'teya', pay_env = ?, pay_url = ?, is_demo = ? WHERE id = ?",
+        [session.session_id, t.env, String(session.session_url).slice(0, 512), t.env === 'sandbox' ? 1 : 0, orderId]
+      );
+      return session.session_url;
+    } catch (e) {
+      console.error('[dinein] Teya checkout failed for order', publicId, e.message);
+      await pool.execute(
+        "UPDATE dinein_orders SET status = 'cancelled', pay_status = 'failed', status_note = ? WHERE id = ?",
+        ['The card payment page could not be opened. Nothing was charged.', orderId]
+      ).catch(() => {});
+      return null;
+    }
+  }
+
+  /** Open the checkout for the order. Null (and the order cancelled) when it will not open. */
+  async function startCardPayment(method, args) {
+    if (method && method.provider === 'teya') return startTeyaPayment(method.teya, args);
+    const key = method && method.provider === 'dojo' ? method.key : method;
+    const { orderId, publicId, total, venue, redirectUrl } = args;
     try {
       const intent = await dojo.createCheckoutIntent(key, {
         amountMinor: total,
@@ -2052,11 +2122,12 @@ function dineinRoutes({ pool, broadcast, secret }) {
   async function settleCardPayment(orderId) {
     const [[o]] = await pool.query(
       'SELECT id, public_id, office_id, status, dojo_intent_id, total_minor, table_label, is_demo,' +
-        ' TIMESTAMPDIFF(MINUTE, placed_at, NOW()) AS age' +
+        ' pay_provider, pay_env, TIMESTAMPDIFF(MINUTE, placed_at, NOW()) AS age' +
         '  FROM dinein_orders WHERE id = ?',
       [orderId]
     );
     if (!o || o.status !== 'awaiting_payment' || !o.dojo_intent_id) return null;
+    if (o.pay_provider === 'teya') return settleTeyaPayment(o);
     const email = await emailOf(o.office_id);
     const key = await cardKeyFor(email);
     if (!key) return null;
@@ -2104,6 +2175,102 @@ function dineinRoutes({ pool, broadcast, secret }) {
     }
     return state;
   }
+
+  /**
+   * The same for an order on Teya's hosted checkout. Teya's session says
+   * ACTIVE (not paid yet; a declined card can try again on the same page),
+   * PROCESSING, COMPLETED or EXPIRED, and its payment_status NONE, SUCCESS
+   * or FAILED. Only SUCCESS is paid.
+   */
+  async function settleTeyaPayment(o) {
+    const t = await teyaFor(o);
+    if (!t) return null;
+    let session;
+    try {
+      session = await teyaClient.getSession(t.env, await t.token(), o.dojo_intent_id);
+    } catch (e) {
+      // As for Dojo: only "Teya has no such session" closes the order; a
+      // 5xx or a timeout is asked again next time.
+      if (!(e && e.status === 404)) throw e;
+      session = { session_status: 'EXPIRED', payment_status: 'NONE' };
+    }
+    const status = String(session.session_status || '').toUpperCase();
+    const payment = String(session.payment_status || '').toUpperCase();
+    if (payment === 'SUCCESS') {
+      const [r] = await pool.execute(
+        "UPDATE dinein_orders SET status = 'placed', pay_status = 'paid', paid_minor = total_minor, pay_txn = ?," +
+          " paid_at = NOW(), note = LEFT(CONCAT('PAID ONLINE BY CARD. ', COALESCE(note, '')), 500)" +
+          " WHERE id = ? AND status = 'awaiting_payment'",
+        [session.transaction_id ? String(session.transaction_id).slice(0, 64) : null, o.id]
+      );
+      // A test payment stops here: paid, but never sent to the till.
+      if (r.affectedRows && !Number(o.is_demo)) {
+        const [[n]] = await pool.query('SELECT COUNT(*) AS c FROM dinein_order_lines WHERE dinein_order_id = ?', [o.id]);
+        tellTill(await emailOf(o.office_id), { orderId: o.id, publicId: o.public_id, label: o.table_label, total: Number(o.total_minor), lineCount: Number(n.c) });
+      }
+      return 'captured';
+    }
+    const over = status === 'EXPIRED' || status === 'COMPLETED';
+    // Never given up on while Teya is processing a payment.
+    if (over || (Number(o.age) >= PAY_EXPIRES_MINUTES && status !== 'PROCESSING')) {
+      await pool.execute(
+        "UPDATE dinein_orders SET status = 'cancelled', pay_status = 'failed', status_note = ?" +
+          " WHERE id = ? AND status = 'awaiting_payment'",
+        [over
+          ? 'The card payment did not go through, so nothing went to the kitchen and nothing was charged.'
+          : 'The card payment was not finished within an hour, so the order was cancelled. Nothing was charged.', o.id]
+      );
+      return 'failed';
+    }
+    if (status === 'PROCESSING') return 'authorized';
+    return payment === 'FAILED' ? 'declined' : 'created';
+  }
+
+  /**
+   * Teya's payment webhook (teya.js, signature already checked). Settles the
+   * order from Teya's own session. Teya's checkout cannot be called off, so a
+   * payment can land on an order already cancelled (the customer cancelled or
+   * chose to pay at the bar, then paid on the tab they left open). That money
+   * is never kept: a cancelled order is refunded in full, and one being paid
+   * at the bar is marked paid so the bar does not charge twice.
+   */
+  router.settleTeya = async (orderId, data) => {
+    const [[o]] = await pool.query(
+      'SELECT id, public_id, office_id, status, pay_status, dojo_intent_id, total_minor, table_label, is_demo, pay_env, pay_txn' +
+        ' FROM dinein_orders WHERE id = ?',
+      [orderId]
+    );
+    if (!o) return;
+    if (o.status === 'awaiting_payment') {
+      await settleCardPayment(o.id);
+      return;
+    }
+    const txn = data && data.transaction_id ? String(data.transaction_id).slice(0, 64) : null;
+    if (!txn || o.pay_status === 'paid' || o.pay_status === 'refunded' || o.pay_txn === txn) return;
+    const t = await teyaFor(o);
+    if (!t) return;
+    // Teya's word, not the webhook's: is this session really paid?
+    const session = await teyaClient.getSession(t.env, await t.token(), o.dojo_intent_id);
+    if (String(session.payment_status || '').toUpperCase() !== 'SUCCESS') return;
+    const email = await emailOf(o.office_id);
+    if (o.status === 'cancelled' || o.status === 'rejected') {
+      const amount = Number((data.amount && data.amount.value) || o.total_minor);
+      await teyaClient.refundOnline(t.env, await t.token(), { transactionId: txn, amountMinor: amount, reference: `menu-${o.id}-late` }, `menu-late-refund-${o.id}`);
+      await pool.execute(
+        "UPDATE dinein_orders SET pay_status = 'refunded', pay_txn = ?, paid_minor = ?, refunded_minor = ?, refunded_at = NOW()," +
+          ' status_note = ? WHERE id = ?',
+        [txn, amount, amount, `A card payment arrived after this order was cancelled, so \u00a3${(amount / 100).toFixed(2)} has been refunded to your card.`, o.id]
+      );
+      console.warn('[dinein] late Teya payment on a cancelled order refunded:', o.public_id);
+      return;
+    }
+    await pool.execute(
+      "UPDATE dinein_orders SET pay_status = 'paid', pay_txn = ?, paid_minor = total_minor, paid_at = NOW()," +
+        " note = LEFT(CONCAT('PAID ONLINE BY CARD. ', COALESCE(note, '')), 500) WHERE id = ? AND pay_status IS NULL",
+      [txn, o.id]
+    );
+    broadcast({ type: 'dinein.changed', order_id: o.id, status: o.status }, { office: email });
+  };
 
   // The sweep: every minute, the orders of the last three hours still waiting
   // on Dojo. Quiet when the columns are not there yet.
@@ -2483,13 +2650,15 @@ function dineinRoutes({ pool, broadcast, secret }) {
   router.get('/api/public/dinein/order/:publicId/pay', async (req, res, next) => {
     try {
       const [[o]] = await pool.query(
-        "SELECT id, office_id, status, dojo_intent_id, public_id FROM dinein_orders WHERE public_id = ?",
+        "SELECT id, office_id, status, dojo_intent_id, public_id, pay_provider, pay_url FROM dinein_orders WHERE public_id = ?",
         [req.params.publicId]
       );
       // An address that is not an order goes to the order page, which says so
       // in the venue's own look, rather than a bare line of text (2026-10-19).
       if (!o) return res.redirect(303, '/o/' + encodeURIComponent(String(req.params.publicId).slice(0, 64)));
       if (o.status !== 'awaiting_payment' || !o.dojo_intent_id) return res.redirect(303, '/o/' + o.public_id);
+      // Teya's page takes another card on the same session while it is open.
+      if (o.pay_provider === 'teya') return res.redirect(303, o.pay_url || '/o/' + o.public_id);
       const key = await cardKeyFor(await emailOf(o.office_id));
       try {
         if (key) await dojo.refreshClientSecret(key, o.dojo_intent_id);
@@ -2514,7 +2683,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
   router.post('/api/public/dinein/order/:publicId/pay-at-bar', async (req, res, next) => {
     try {
       const [[o]] = await pool.query(
-        'SELECT o.id, o.office_id, o.status, o.dojo_intent_id, o.total_minor, o.table_label, v.online_pay_required' +
+        'SELECT o.id, o.office_id, o.status, o.dojo_intent_id, o.pay_provider, o.total_minor, o.table_label, v.online_pay_required' +
           '  FROM dinein_orders o LEFT JOIN dinein_venue v ON v.office_id = o.office_id WHERE o.public_id = ?',
         [req.params.publicId]
       );
@@ -2527,7 +2696,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
       const [[now]] = await pool.query('SELECT status FROM dinein_orders WHERE id = ?', [o.id]);
       if (now.status !== 'awaiting_payment') return res.json({ ok: true, status: now.status, state });
       const email = await emailOf(o.office_id);
-      const key = await cardKeyFor(email);
+      const key = o.pay_provider === 'teya' ? null : await cardKeyFor(email);
       if (key && o.dojo_intent_id) await dojo.cancelIntent(key, o.dojo_intent_id);
       const [r] = await pool.execute(
         "UPDATE dinein_orders SET status = 'placed', pay_status = NULL, placed_at = NOW()" +
@@ -2550,14 +2719,14 @@ function dineinRoutes({ pool, broadcast, secret }) {
       // not left on an order the customer thinks they cancelled; then the
       // payment is called off so it cannot be finished afterwards.
       const [[w]] = await pool.query(
-        "SELECT id, office_id, dojo_intent_id FROM dinein_orders WHERE public_id = ? AND status = 'awaiting_payment'",
+        "SELECT id, office_id, dojo_intent_id, pay_provider FROM dinein_orders WHERE public_id = ? AND status = 'awaiting_payment'",
         [req.params.publicId]
       ).catch(() => [[null]]);
       if (w) {
         await settleCardPayment(w.id).catch(() => null);
         const [[still]] = await pool.query('SELECT status FROM dinein_orders WHERE id = ?', [w.id]);
         if (still.status === 'awaiting_payment') {
-          const key = await cardKeyFor(await emailOf(w.office_id));
+          const key = w.pay_provider === 'teya' ? null : await cardKeyFor(await emailOf(w.office_id));
           if (key && w.dojo_intent_id) await dojo.cancelIntent(key, w.dojo_intent_id);
           await pool.execute(
             "UPDATE dinein_orders SET status = 'cancelled', pay_status = 'failed', status_note = ?" +
@@ -2758,7 +2927,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
         const officeId = await terminalOffice(req);
         if (officeId == null) return res.status(400).json({ error: 'Unknown office.' });
         const [[o]] = await pool.query(
-          'SELECT id, status, pay_status, paid_minor, dojo_intent_id, refunded_at, order_id' +
+          'SELECT id, office_id, status, pay_status, paid_minor, dojo_intent_id, refunded_at, order_id, pay_provider, pay_env, pay_txn' +
             '  FROM dinein_orders WHERE id = ? AND office_id = ?',
           [req.params.id, officeId]
         );
@@ -2770,21 +2939,34 @@ function dineinRoutes({ pool, broadcast, secret }) {
           return res.status(409).json({ error: 'This order was not paid online, so there is nothing to refund.' });
         }
         const email = await emailOf(officeId);
-        const key = await cardKeyFor(email);
-        if (!key) return res.status(409).json({ error: 'Card payments are not set up for this venue, so the refund cannot be made from here.' });
-
         const reason = String((req.body && req.body.reason) || '').trim().slice(0, 200) || 'Refunded by the venue';
         const amount = Number(o.paid_minor);
         let refund;
-        try {
-          refund = await dojo.refundIntent(key, o.dojo_intent_id, {
-            amountMinor: amount,
-            reason,
-            idempotencyKey: `menu-refund-${o.id}`,
-          });
-        } catch (e) {
-          console.error('[dinein] refund failed for order', o.id, e.message);
-          return res.status(502).json({ error: 'Dojo did not take the refund: ' + String(e.message || 'no answer').slice(0, 160) + '. Nothing has been changed; try again.' });
+        if (o.pay_provider === 'teya') {
+          // Paid on Teya's checkout: refunded through Teya, on the
+          // connection the order was paid on.
+          const t = await teyaFor(o);
+          if (!t || !o.pay_txn) return res.status(409).json({ error: 'Teya online payments are no longer connected for this venue, so the refund cannot be made from here.' });
+          try {
+            const r = await teyaClient.refundOnline(t.env, await t.token(), { transactionId: o.pay_txn, amountMinor: amount, reference: `menu-${o.id}-refund` }, `menu-refund-${o.id}`);
+            refund = { id: r.transaction_id || r.refund_id || r.id };
+          } catch (e) {
+            console.error('[dinein] Teya refund failed for order', o.id, e.message);
+            return res.status(502).json({ error: String(e.message || 'Teya did not answer').slice(0, 160) + ' Nothing has been changed; try again.' });
+          }
+        } else {
+          const key = await cardKeyFor(email);
+          if (!key) return res.status(409).json({ error: 'Card payments are not set up for this venue, so the refund cannot be made from here.' });
+          try {
+            refund = await dojo.refundIntent(key, o.dojo_intent_id, {
+              amountMinor: amount,
+              reason,
+              idempotencyKey: `menu-refund-${o.id}`,
+            });
+          } catch (e) {
+            console.error('[dinein] refund failed for order', o.id, e.message);
+            return res.status(502).json({ error: 'Dojo did not take the refund: ' + String(e.message || 'no answer').slice(0, 160) + '. Nothing has been changed; try again.' });
+          }
         }
         const pounds = (amount / 100).toFixed(2);
         await pool.execute(

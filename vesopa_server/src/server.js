@@ -50,6 +50,7 @@ const { assetVersions, staticCache } = require('./assets');
 const { modifierRoutes, tillModifierRoutes } = require('./modifiers');
 const { dojoWebhookRoutes, webhookStatus } = require('./dojo');
 const { dojoSettingsRoutes } = require('./dojo_settings');
+const { teyaRoutes } = require('./teya');
 const { terminalRoutes, timesheetRoutes } = require('./terminals');
 const { deviceRoutes } = require('./devices');
 const { cardRoutes } = require('./cards');
@@ -335,6 +336,13 @@ app.use('/api', permissionRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use('/api', backofficeRoutes({ pool, broadcast, secret: JWT_SECRET }));
 // Dojo card settings per venue, and the card log every till reports to.
 app.use('/api', dojoSettingsRoutes({ pool, broadcast, secret: JWT_SECRET }));
+// Teya, the second card acquirer (src/teya.js): off for every venue until a
+// manager turns it on. Its payment webhook settles menu orders through
+// dinein.js, which is mounted further down, hence the hook list.
+const teyaPaymentHooks = [];
+app.use('/api', teyaRoutes({ pool, broadcast, secret: JWT_SECRET, onOnlinePayment: async (orderId, data) => {
+  for (const hook of teyaPaymentHooks) await hook(orderId, data);
+} }));
 // More than one site under one login: the list and the switch. See src/sites.js.
 app.use('/api', siteRoutes({ pool, broadcast, secret: JWT_SECRET }));
 // Its own paths (/api/demo and /till/demo/token), so mounted at the root.
@@ -476,6 +484,7 @@ app.use('/api', customerImportRoutes({ pool, broadcast, secret: JWT_SECRET }));
 // static middleware.
 const dineinRouter = dineinRoutes({ pool, broadcast, secret: JWT_SECRET });
 if (typeof dineinRouter.settleIntent === 'function') dojoEventHooks.push((e) => dineinRouter.settleIntent(e.paymentIntentId));
+if (typeof dineinRouter.settleTeya === 'function') teyaPaymentHooks.push((orderId, data) => dineinRouter.settleTeya(orderId, data));
 app.use(dineinRouter);
 // Signing in to a menu with a code. Mounted at the root like the rest of
 // dine-in, and beside it rather than inside it because it is a self-contained
