@@ -1,0 +1,60 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+@font-face{font-family:J;src:url(PlusJakartaSans-Medium.ttf);font-weight:500}
+@font-face{font-family:J;src:url(PlusJakartaSans-Bold.ttf);font-weight:700}
+@font-face{font-family:J;src:url(PlusJakartaSans-ExtraBold.ttf);font-weight:800}
+*{box-sizing:border-box;margin:0}
+html,body{width:600px;height:300px;overflow:hidden}
+body{font-family:J}
+.h{position:relative;width:600px;height:300px;background:radial-gradient(circle at 82% 30%,#2a3fb8 0,#13248a 38%,#0b1a6b 70%,#070f45 100%);color:#fff;overflow:hidden}
+.grid{position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.05) 1px,transparent 1px);background-size:24px 24px;-webkit-mask-image:linear-gradient(90deg,transparent,#000 60%)}
+.logo{position:absolute;left:32px;top:30px;height:22px}
+.tag{position:absolute;left:32px;top:96px;font-size:11px;font-weight:800;letter-spacing:2px;color:#a5c715}
+.t{position:absolute;left:32px;top:116px;font-size:31px;line-height:1.12;font-weight:800;white-space:nowrap}
+.t span{color:#a5c715}
+.s{position:absolute;left:32px;top:162px;font-size:14px;line-height:1.5;color:#c9d0f5;width:290px;font-weight:500}
+.chip{position:absolute;left:32px;top:240px;display:flex;gap:8px}
+.chip div{font-size:11px;font-weight:700;padding:5px 10px;border-radius:20px;background:rgba(255,255,255,.12);color:#fff}
+.chip div.g{background:#a5c715;color:#0b1a6b}
+/* phone: the online menu */
+.ph{position:absolute;left:356px;top:28px;width:124px;height:250px;border-radius:22px;background:#1b1830;border:5px solid #26223f;box-shadow:0 18px 40px rgba(0,0,0,.5);transform:rotate(-6deg)}
+.ps{position:absolute;inset:5px;border-radius:15px;background:#fff;overflow:hidden;color:#17141c}
+.ban{height:46px;background:linear-gradient(135deg,#C41414,#8F0000);padding:8px;font-size:9px;font-weight:800;color:#fff}
+.ban small{display:block;font-size:6px;font-weight:700;opacity:.8}
+.it{display:flex;justify-content:space-between;font-size:7px;font-weight:700;padding:5px 8px;border-bottom:1px solid #eef0f7}
+.it em{font-style:normal;color:#5f5a68}
+.pt{display:flex;justify-content:space-between;font-size:9px;font-weight:800;padding:7px 8px;color:#0b1a6b}
+.pbtn{margin:2px 8px;height:22px;border-radius:7px;background:#0b1a6b;color:#fff;font-size:8px;font-weight:800;display:flex;align-items:center;justify-content:center;gap:4px}
+.pbtn b{color:#a5c715}
+.opts{display:flex;gap:4px;margin:6px 8px 0}
+.opts div{flex:1;height:14px;border-radius:4px;background:#f3f6ff;font-size:6px;font-weight:800;display:flex;align-items:center;justify-content:center;color:#0b1a6b}
+/* Dojo checkout card */
+.co{position:absolute;left:452px;top:96px;width:126px;height:150px;border-radius:14px;background:#fff;box-shadow:0 18px 36px rgba(0,0,0,.45);transform:rotate(5deg);color:#17141c;padding:10px}
+.co .d{font-size:8px;font-weight:800;letter-spacing:1.2px;color:#5f5a68}
+.co .a{font-size:20px;font-weight:800;color:#0b1a6b;margin:4px 0 8px}
+.co .f{height:14px;border-radius:4px;background:#f3f6ff;margin-bottom:5px}
+.co .ok{margin-top:8px;height:24px;border-radius:7px;background:#2f8f00;color:#fff;font-size:9px;font-weight:800;display:flex;align-items:center;justify-content:center;gap:5px}
+.co .lock{position:absolute;right:10px;top:9px;font-size:9px}
+.card{position:absolute;left:546px;top:20px;width:58px;height:38px;border-radius:6px;background:linear-gradient(135deg,#a5c715,#5a9e00);transform:rotate(-18deg);box-shadow:0 8px 16px rgba(0,0,0,.35)}
+.card:before{content:"";position:absolute;left:8px;top:12px;width:12px;height:9px;border-radius:2px;background:#f5e3a0}
+</style></head><body><div class="h"><div class="grid"></div>
+<img class="logo" src="logo-dark.svg">
+<div class="tag">STAGING ON AN ESTABLISHED DOMAIN</div>
+<div class="t">Vesopa <span>+</span> Dojo</div>
+<div class="s">Pontardawe RFC's menu on vesopa.com, built to your checklist.</div>
+<div class="chip"><div class="g">Sandbox</div><div>pontardawerfcmenu.vesopa.com</div></div>
+<div class="ph"><div class="ps">
+<div class="ban">Pontardawe RFC<small>Table 1 &middot; order from your table</small></div>
+<div class="it"><span>Flat white</span><em>£3.40</em></div>
+<div class="it"><span>Club sandwich</span><em>£7.95</em></div>
+<div class="it"><span>Orange juice</span><em>£2.80</em></div>
+<div class="opts"><div>Pay now by card</div><div>Pay at the bar</div></div>
+<div class="pt"><span>Total</span><span>£14.15</span></div>
+<div class="pbtn">Pay £14.15 by card <b>●</b></div>
+</div></div>
+<div class="co"><span class="lock">&#128274;</span>
+<div class="d">DOJO CHECKOUT</div>
+<div class="a">£14.15</div>
+<div class="f"></div><div class="f"></div><div class="f" style="width:60%"></div>
+<div class="ok">&#10003; Test paid</div></div>
+<div class="card"></div>
+</div></body></html>
