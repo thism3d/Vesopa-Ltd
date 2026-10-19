@@ -2060,7 +2060,19 @@ function dineinRoutes({ pool, broadcast, secret }) {
     const email = await emailOf(o.office_id);
     const key = await cardKeyFor(email);
     if (!key) return null;
-    const intent = await dojo.getIntent(key, o.dojo_intent_id);
+    let intent;
+    try {
+      intent = await dojo.getIntent(key, o.dojo_intent_id);
+    } catch (e) {
+      // 404: Dojo no longer has the payment (it deletes one that is cancelled,
+      // and may drop one left unpaid). Nothing can have been charged on a
+      // payment that does not exist, so the order is closed as not paid
+      // (2026-10-19) instead of waiting on it for ever. Any other failure --
+      // a 5xx, a timeout, Dojo unreachable -- is not an answer: ask again on
+      // the next pass and never cancel on it.
+      if (!(e && e.status === 404)) throw e;
+      intent = { status: 'failed' };
+    }
     // Dojo's own word for where the payment is: created (not paid yet, or a
     // card declined and the customer may try again on the same page),
     // authorized (the bank has approved it and it is being captured),
@@ -2078,7 +2090,9 @@ function dineinRoutes({ pool, broadcast, secret }) {
         const [[n]] = await pool.query('SELECT COUNT(*) AS c FROM dinein_order_lines WHERE dinein_order_id = ?', [o.id]);
         tellTill(email, { orderId: o.id, publicId: o.public_id, label: o.table_label, total: Number(o.total_minor), lineCount: Number(n.c) });
       }
-    } else if (PAY_FAILED.has(state) || Number(o.age) >= PAY_EXPIRES_MINUTES) {
+    } else if (PAY_FAILED.has(state) || (Number(o.age) >= PAY_EXPIRES_MINUTES && state !== 'authorized')) {
+      // Never expired while 'authorized': the bank has approved it and Dojo
+      // is capturing, so cancelling would void money the customer has paid.
       if (!PAY_FAILED.has(state)) await dojo.cancelIntent(key, o.dojo_intent_id);
       await pool.execute(
         "UPDATE dinein_orders SET status = 'cancelled', pay_status = 'failed', status_note = ?" +
