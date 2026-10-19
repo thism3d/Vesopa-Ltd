@@ -2472,10 +2472,20 @@ function dineinRoutes({ pool, broadcast, secret }) {
         "SELECT id, office_id, status, dojo_intent_id, public_id FROM dinein_orders WHERE public_id = ?",
         [req.params.publicId]
       );
-      if (!o) return res.status(404).send('No such order.');
+      // An address that is not an order goes to the order page, which says so
+      // in the venue's own look, rather than a bare line of text (2026-10-19).
+      if (!o) return res.redirect(303, '/o/' + encodeURIComponent(String(req.params.publicId).slice(0, 64)));
       if (o.status !== 'awaiting_payment' || !o.dojo_intent_id) return res.redirect(303, '/o/' + o.public_id);
       const key = await cardKeyFor(await emailOf(o.office_id));
-      if (key) await dojo.refreshClientSecret(key, o.dojo_intent_id);
+      try {
+        if (key) await dojo.refreshClientSecret(key, o.dojo_intent_id);
+      } catch (e) {
+        // Dojo answered with an error (a 4xx or 5xx). Back to the order page,
+        // which offers Pay now again, Pay at the bar and Cancel, rather than a
+        // server error in front of somebody halfway through paying.
+        console.error('[dinein] Dojo would not reopen checkout for', o.public_id, e.message);
+        return res.redirect(303, '/o/' + o.public_id);
+      }
       return res.redirect(303, dojo.checkoutUrl(o.dojo_intent_id));
     } catch (e) {
       return next(e);
