@@ -353,7 +353,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     final direct = provider is DojoProvider ? provider : null;
     final rest = direct ?? desktop?.intents;
     final connect = provider is ConnectPacProvider ? provider : null;
-    final teya = provider is TeyaProvider ? provider : null;
+    final teya = provider is TeyaCard ? provider : null;
 
     // One notifier drives the whole screen: the stage the till knows about,
     // plus whatever the reader is telling the customer.
@@ -516,7 +516,19 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     String? lastCheck;
 
     // The same for a Teya payment: asked through the Vesopa server.
-    Future<bool> checkTeya(TeyaProvider teya, {bool auto = false}) async {
+    Future<bool> checkTeya(TeyaCard card, {bool auto = false}) async {
+      // Teya's SDK app has no status lookup: the card machine's own screen
+      // is the answer there.
+      if (card is! TeyaProvider) {
+        if (!auto) {
+          payment.value = payment.value.copyWith(
+            checkNote: 'Look at the Teya card machine screen or its last '
+                'transaction. If it shows approved, record it as paid.',
+          );
+        }
+        return false;
+      }
+      final teya = card;
       final id = result?.sessionId;
       if (id == null || id.isEmpty) {
         if (!auto) {

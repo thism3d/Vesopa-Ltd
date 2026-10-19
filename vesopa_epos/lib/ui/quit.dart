@@ -16,6 +16,8 @@ import 'dart:io' show exit;
 
 import 'package:window_manager/window_manager.dart';
 
+import '../payments/teya_sdk.dart';
+
 Future<void> quitNow({Future<void> Function()? closeFirst}) async {
   try {
     await windowManager.hide().timeout(const Duration(seconds: 1));
@@ -30,5 +32,7 @@ Future<void> quitNow({Future<void> Function()? closeFirst}) async {
       // the local database commits each change as it is made.
     }
   }
+  // Teya's SDK app lives and dies with the till.
+  await TeyaSdk.instance.stop();
   exit(0);
 }

@@ -1238,6 +1238,7 @@ class _VesopaEposAppState extends ConsumerState<VesopaEposApp> {
 
     // The venue's card settings from the back office, kept in step.
     ref.watch(dojoOfficeSyncProvider);
+    ref.watch(teyaSdkWarmupProvider);
 
     // The activity log sends with the terminal's own token, read at send time.
     final activityToken = current?.terminalToken;

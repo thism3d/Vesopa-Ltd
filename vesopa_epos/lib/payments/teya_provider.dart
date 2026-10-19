@@ -1,13 +1,17 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show Platform;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../config/constants.dart';
 import '../data/terminal_identity.dart';
 import '../main.dart';
 import 'payment_provider.dart';
+import 'teya_sdk.dart';
+import 'teya_sdk_provider.dart';
 
 /// Teya card machines, the second acquirer beside Dojo (2026-10-19).
 ///
@@ -46,6 +50,7 @@ class TeyaConfig {
     this.assignedTerminalId,
     this.terminals = const [],
     this.terminalsError,
+    this.sdk,
   });
 
   /// The tills use Teya card machines.
@@ -60,10 +65,15 @@ class TeyaConfig {
   final List<TeyaTerminal> terminals;
   final String? terminalsError;
 
+  /// What a Windows till needs to run Teya's SDK app (teya_sdk.dart).
+  final TeyaSdkInfo? sdk;
+
   bool get sandbox => environment != 'live';
 
   factory TeyaConfig.fromJson(Map<String, dynamic> j) => TeyaConfig(
-    enabled: j['enabled'] == true,
+    // A Windows till runs Teya's SDK app, which needs no back office store
+    // link, so the SDK block alone switches it on.
+    enabled: j['enabled'] == true || (Platform.isWindows && TeyaSdkInfo.fromJson(j['sdk']) != null),
     environment: '${j['environment'] ?? 'sandbox'}',
     storeName: j['store_name'] as String?,
     defaultTerminalId: j['default_terminal_id'] as String?,
@@ -73,6 +83,7 @@ class TeyaConfig {
         if (t is Map<String, dynamic>) TeyaTerminal.fromJson(t),
     ],
     terminalsError: j['terminals_error'] as String?,
+    sdk: TeyaSdkInfo.fromJson(j['sdk']),
   );
 }
 
@@ -226,7 +237,20 @@ bool isTeyaReference(String? ref) =>
     ref != null && ref.startsWith(teyaRefPrefix);
 
 /// Card payments on a Teya card machine, through the Vesopa server.
-class TeyaProvider implements PaymentProvider {
+/// A Teya card route on this till: Teya's SDK app (Windows), or the Vesopa
+/// server's link to Teya (where there is no SDK route yet).
+abstract class TeyaCard implements PaymentProvider {
+  String get terminalId;
+  String? get terminalName;
+  bool get sandbox;
+  void Function(String? progress, String message)? onProgress;
+  void Function(bool accepted, String message)? onCancelAnswered;
+  void requestCancel();
+  void stopWaiting();
+  Future<({bool ok, String message, String? refundId})> refund(String reference, int amountMinor);
+}
+
+class TeyaProvider implements TeyaCard {
   TeyaProvider({
     required this.apiBase,
     required this.token,
@@ -493,9 +517,25 @@ class TeyaProvider implements PaymentProvider {
 }
 
 /// This till's Teya provider, or null when the venue's tills use Dojo.
-final teyaProvider = Provider<TeyaProvider?>((ref) {
+final teyaProvider = Provider<TeyaCard?>((ref) {
   final config = ref.watch(teyaConfigProvider).value;
   if (config == null || !config.enabled) return null;
+  // Windows: Teya's own SDK app, as Teya require where an SDK exists.
+  final sdk = config.sdk;
+  if (Platform.isWindows && sdk != null) {
+    final assigned = config.assignedTerminalId ?? '';
+    String? name;
+    for (final t in config.terminals) {
+      if (t.id == assigned) name = t.label;
+    }
+    return TeyaSdkProvider(
+      info: sdk,
+      appVersion: VesopaBrand.appVersion,
+      eposInstanceId: ref.watch(terminalNameProvider),
+      assignedTerminalId: assigned.isEmpty ? null : assigned,
+      terminalName: name,
+    );
+  }
   final session = ref.watch(sessionProvider);
   final token = session.terminalToken;
   if (token == null || token.isEmpty) return null;
@@ -519,4 +559,19 @@ final teyaProvider = Provider<TeyaProvider?>((ref) {
     environment: config.environment,
     tillName: ref.watch(terminalNameProvider),
   );
+});
+
+/// Start Teya's SDK app in the background on a Windows till at a Teya venue,
+/// so the first card payment does not wait for the download. No sign-in
+/// screens here: those come on the first payment, or from Settings.
+final teyaSdkWarmupProvider = Provider<void>((ref) {
+  if (!Platform.isWindows) return;
+  final sdk = ref.watch(teyaConfigProvider).value?.sdk;
+  if (sdk == null) {
+    unawaited(TeyaSdk.instance.stop());
+    return;
+  }
+  unawaited(TeyaSdk.instance
+      .start(sdk, version: VesopaBrand.appVersion, eposInstanceId: ref.read(terminalNameProvider))
+      .catchError((Object _) {}));
 });

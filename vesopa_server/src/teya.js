@@ -27,6 +27,17 @@ const { attachAccess, requirePermission } = require('./permissions');
 const { seal, unseal } = require('./express_kiosk');
 
 const PROVIDERS = new Set(['dojo', 'teya']);
+
+/**
+ * Teya's Windows SDK app, from docs.teya.com/downloads, and the thumbprint of
+ * Teya's signing certificate in the same zip (signing_cert.cer, CN=epos.teya.com,
+ * valid to 2029-04-08). A new version means a new zip: both change together.
+ */
+const SDK_WINDOWS = {
+  version: process.env.TEYA_SDK_WINDOWS_VERSION || '1.9.0',
+  url: process.env.TEYA_SDK_WINDOWS_URL || 'https://cdn.teya.com/static/2bbd9f0b/teya-integrations-app-1.9.0.zip',
+  thumbprint: process.env.TEYA_SDK_WINDOWS_THUMBPRINT || 'E6AB81F92407D2747FE621FD58A5DAF0F904330B',
+};
 const missing = (e) => e && (e.code === 'ER_NO_SUCH_TABLE' || e.code === 'ER_BAD_FIELD_ERROR');
 
 const DEFAULTS = { enabled: 0, environment: 'sandbox', card_provider: 'dojo', online_provider: 'dojo' };
@@ -384,9 +395,9 @@ function teyaRoutes({ pool, broadcast, secret, onOnlinePayment }) {
       if (!next_.enabled) { next_.card_provider = 'dojo'; next_.online_provider = 'dojo'; }
       const conn = await connectionFor(pool, office, next_.environment);
       const envName = next_.environment === 'live' ? 'Teya Live' : 'the Teya sandbox';
-      if (next_.card_provider === 'teya' && !(conn && conn.m2m_client_id)) {
-        return res.status(409).json({ error: `First connect a Teya store on ${envName} (Card machines, below). Then the tills can use Teya.` });
-      }
+      // Windows tills sign in to Teya themselves, in Teya's SDK app, so the
+      // back office store link is not needed for them (it is what lists the
+      // machines here, and what tills without the SDK use).
       if (next_.online_provider === 'teya' && !(conn && conn.online_client_id)) {
         return res.status(409).json({ error: `First connect Teya online payments on ${envName} (Online payments, below). Then the menu can use Teya.` });
       }
@@ -881,7 +892,22 @@ function teyaRoutes({ pool, broadcast, secret, onOnlinePayment }) {
         default_terminal_id: on ? (assigned || conn.default_terminal_id) : null,
         terminals: [],
         terminals_error: null,
+        // Teya's Windows SDK app (2026-10-19): Teya require it wherever an SDK
+        // exists. The till downloads it from Teya, checks Teya's signature,
+        // and signs the merchant in on the till.
+        sdk: null,
       };
+      if (Number(s.enabled) && s.card_provider === 'teya') {
+        const p = teya.partner(env, await ownApp(pool, req.office, env));
+        if (p.deviceId && p.deviceSecret) {
+          out.sdk = {
+            client_id: p.deviceId,
+            client_secret: p.deviceSecret,
+            production: env === 'live',
+            windows: { version: SDK_WINDOWS.version, url: SDK_WINDOWS.url, thumbprint: SDK_WINDOWS.thumbprint },
+          };
+        }
+      }
       if (on) {
         try {
           out.terminals = (await teya.listTerminals(env, await machineToken(pool, req.office, env, conn), conn.store_id)).map(terminalView);

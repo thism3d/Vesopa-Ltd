@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:io' show File, Platform;
+import 'dart:io' show File, Platform, Process, ProcessStartMode;
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
@@ -12,6 +12,8 @@ import '../data/gym.dart';
 import '../data/terminal_identity.dart';
 import '../main.dart';
 import '../payments/teya_provider.dart';
+import '../payments/teya_sdk.dart';
+import '../payments/teya_sdk_provider.dart';
 import '../payments/connect_pac.dart';
 import '../payments/dojo_config.dart';
 import '../payments/payment_provider.dart';
@@ -802,7 +804,9 @@ class _TeyaCard extends ConsumerWidget {
                 ],
               ),
               const SizedBox(height: 12),
-              if ((config.assignedTerminalId ?? '').isNotEmpty)
+              if (Platform.isWindows && config.sdk != null)
+                const _TeyaSdkPanel()
+              else if ((config.assignedTerminalId ?? '').isNotEmpty)
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.point_of_sale, color: Pos.brandDeep),
@@ -851,6 +855,139 @@ class _TeyaCard extends ConsumerWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Teya's SDK app on a Windows till: sign in, change machine, sign out, logs.
+class _TeyaSdkPanel extends ConsumerStatefulWidget {
+  const _TeyaSdkPanel();
+
+  @override
+  ConsumerState<_TeyaSdkPanel> createState() => _TeyaSdkPanelState();
+}
+
+class _TeyaSdkPanelState extends ConsumerState<_TeyaSdkPanel> {
+  String? _busy;
+  String? _note;
+  bool _bad = false;
+
+  Future<void> _run(String label, Future<String> Function() job) async {
+    setState(() {
+      _busy = label;
+      _note = null;
+    });
+    try {
+      final done = await job();
+      if (mounted) setState(() { _note = done; _bad = false; });
+    } catch (e) {
+      if (mounted) setState(() { _note = '$e'; _bad = true; });
+    } finally {
+      if (mounted) setState(() => _busy = null);
+    }
+  }
+
+  TeyaSdkProvider? get _provider {
+    final p = ref.read(teyaProvider);
+    return p is TeyaSdkProvider ? p : null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final sdk = TeyaSdk.instance;
+    final store = sdk.store;
+    final terminal = sdk.terminal;
+    final linked = terminal != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(linked ? Icons.check_circle : Icons.info_outline, color: linked ? Pos.green : Pos.brandDeep, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                linked
+                    ? 'Signed in to Teya: ${store?['name'] ?? 'store'}, card machine ${terminal['name'] ?? terminal['id']}'
+                        '${(terminal['serialNumber'] ?? '') == '' ? '' : ' (${terminal['serialNumber']})'}'
+                    : 'Teya signs in on this till the first time a card is taken, or now with Set up Teya. '
+                        'Teya\'s own window opens for the sign-in, the store and the card machine.',
+                style: const TextStyle(fontSize: 13),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            FilledButton.icon(
+              onPressed: _busy != null
+                  ? null
+                  : () => _run('Setting up Teya…', () async {
+                        final p = _provider;
+                        if (p == null) throw 'Teya is not switched on for this venue.';
+                        await p.ready(onStatus: (s) { if (mounted) setState(() => _busy = s); });
+                        return 'Teya is ready on this till.';
+                      }),
+              icon: const Icon(Icons.login, size: 18),
+              label: Text(linked ? 'Check Teya' : 'Set up Teya'),
+            ),
+            OutlinedButton.icon(
+              onPressed: _busy != null || !sdk.running
+                  ? null
+                  : () => _run('Choose the card machine in Teya\'s window…', () async {
+                        final r = await sdk.call('linkTerminal', {'terminalId': null}, const Duration(minutes: 10));
+                        if (r['terminal'] is Map<String, dynamic>) {
+                          sdk.terminal = r['terminal'] as Map<String, dynamic>;
+                          return 'Card machine changed.';
+                        }
+                        throw 'Card machine not changed (${r['failureReason'] ?? 'cancelled'}).';
+                      }),
+              icon: const Icon(Icons.point_of_sale, size: 18),
+              label: const Text('Change card machine'),
+            ),
+            OutlinedButton.icon(
+              onPressed: _busy != null || !sdk.running
+                  ? null
+                  : () => _run('Signing out of Teya…', () async {
+                        await sdk.call('clearUserAuth');
+                        sdk.terminal = null;
+                        sdk.store = null;
+                        return 'Signed out of Teya on this till. The next card payment asks to sign in again.';
+                      }),
+              icon: const Icon(Icons.logout, size: 18),
+              label: const Text('Sign out of Teya'),
+            ),
+            TextButton.icon(
+              onPressed: _busy != null || !sdk.running
+                  ? null
+                  : () => _run('Collecting Teya logs…', () async {
+                        final r = await sdk.call('zipLogs');
+                        final path = '${r['zipPath'] ?? ''}';
+                        if (path.isEmpty) throw 'Teya did not make a log file.';
+                        await Process.start('explorer.exe', ['/select,', path], mode: ProcessStartMode.detached);
+                        return 'Teya logs saved: $path';
+                      }),
+              icon: const Icon(Icons.description_outlined, size: 18),
+              label: const Text('Teya logs'),
+            ),
+          ],
+        ),
+        if (_busy != null) ...[
+          const SizedBox(height: 10),
+          Row(children: [
+            const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+            const SizedBox(width: 10),
+            Expanded(child: Text(_busy!, style: const TextStyle(fontSize: 12.5))),
+          ]),
+        ],
+        if (_note != null) ...[
+          const SizedBox(height: 8),
+          Text(_note!, style: TextStyle(fontSize: 12.5, color: _bad ? Pos.red : Pos.green)),
+        ],
+      ],
     );
   }
 }
