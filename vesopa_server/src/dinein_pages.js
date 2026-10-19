@@ -293,14 +293,14 @@ function dineinPageRoutes({ pool } = {}) {
   router.get('/t/:publicId', async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     const meta = await metaFor(pool, { table: req.params.publicId });
-    res.type('html').send(page({ table: req.params.publicId, slug: null, meta }));
+    res.type('html').send(page({ table: req.params.publicId, slug: null, meta: mirrorLegal(req, meta) }));
   });
 
   /** The same menu at the venue's own address, with nothing to order onto. */
   router.get('/m/:slug', async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     const meta = await metaFor(pool, { slug: req.params.slug });
-    res.type('html').send(page({ table: null, slug: req.params.slug, meta }));
+    res.type('html').send(page({ table: null, slug: req.params.slug, meta: mirrorLegal(req, meta) }));
   });
 
   /** Where an order has got to. */
@@ -345,7 +345,7 @@ function dineinPageRoutes({ pool } = {}) {
     if (!owner || !owner.slug) return next();
     res.setHeader('Cache-Control', 'no-store');
     const meta = await metaFor(pool, { slug: owner.slug });
-    res.type('html').send(page({ table: null, slug: owner.slug, meta }));
+    res.type('html').send(page({ table: null, slug: owner.slug, meta: mirrorLegal(req, meta) }));
   });
 
   /**
@@ -354,6 +354,25 @@ function dineinPageRoutes({ pool } = {}) {
    * 2026-10-15). Table, order and API addresses are kept out: a table's menu
    * is for the people sitting at it, and an order is somebody's receipt.
    */
+  // The venue's policy pages on the menu's own address, for a menu shown
+  // through another domain's reverse proxy. See mirrorLegal.
+  router.get('/legal/:kind', async (req, res, next) => {
+    const kind = String(req.params.kind || '');
+    if (!LEGAL_KINDS.includes(kind)) return next();
+    const owner = await venueForHost(pool, req);
+    if (!owner) return next();
+    try {
+      const meta = await metaFor(pool, { slug: owner.slug });
+      const url = meta && meta.legal && meta.legal[kind];
+      if (!url || !/^https:\/\//.test(url)) return next();
+      const html = await fetchLegal(String(url).split('#')[0]);
+      res.setHeader('Cache-Control', 'public, max-age=600');
+      return res.type('html').send(html);
+    } catch {
+      return next();
+    }
+  });
+
   router.get('/robots.txt', async (req, res, next) => {
     const owner = await venueForHost(pool, req);
     if (!owner) return next();
@@ -400,7 +419,7 @@ function dineinPageRoutes({ pool } = {}) {
     if (!known) return next();
 
     const meta = await metaFor(pool, { slug });
-    res.type('html').send(page({ table: null, slug, meta }));
+    res.type('html').send(page({ table: null, slug, meta: mirrorLegal(req, meta) }));
   });
 
   /**
@@ -495,6 +514,65 @@ function legalFor(row, look) {
     contact: url(l.contact),
   };
   return out.name || out.terms || out.privacy || out.refunds ? out : null;
+}
+
+/**
+ * Whether this request reached the menu through another domain's reverse
+ * proxy (cloud.vesopa.com, "Show another website here").
+ */
+function viaProxy(req) {
+  if (!req.headers['x-forwarded-host']) return false;
+  const visitor = hostOf(req);
+  const site = siteHostOf(req);
+  return !!visitor && !!site && visitor !== site;
+}
+
+const LEGAL_KINDS = ['terms', 'refunds', 'privacy', 'contact'];
+
+/**
+ * Behind a proxy, the policy links point at /legal/<kind> on the same address
+ * (2026-10-19). Dojo reviews Pontardawe's menu on pontardawerfcmenu.vesopa.com
+ * because its security filter will not open a newly registered domain, and
+ * the terms, refund policy and privacy policy live on pontardawerfc.com,
+ * which is just as new. The menu serves them from its own address instead.
+ */
+function mirrorLegal(req, meta) {
+  if (!meta || !meta.legal || !viaProxy(req)) return meta;
+  const l = { ...meta.legal };
+  const terms = l.terms ? String(l.terms).split('#')[0] : null;
+  for (const kind of LEGAL_KINDS) {
+    if (!l[kind]) continue;
+    const [base, hash] = String(l[kind]).split('#');
+    // A section of the terms (the refund policy is #refunds) stays a section.
+    const target = kind !== 'terms' && terms && base === terms ? 'terms' : kind;
+    l[kind] = '/legal/' + target + (hash ? '#' + hash : '');
+  }
+  return { ...meta, legal: l };
+}
+
+/** A venue's policy page, fetched from where it lives. Cached for ten minutes. */
+const legalCache = new Map();
+async function fetchLegal(url) {
+  const hit = legalCache.get(url);
+  if (hit && Date.now() - hit.at < 10 * 60 * 1000) return hit.html;
+  const parsed = new URL(url);
+  // Only a public address: never this machine or a private network.
+  const { lookup } = require('dns').promises;
+  const addrs = await lookup(parsed.hostname, { all: true });
+  if (!addrs.length || addrs.some((a) => /^(127\.|10\.|192\.168\.|169\.254\.|0\.|::1$|f[cd]|fe80:)/i.test(a.address)
+      || /^172\.(1[6-9]|2\d|3[01])\./.test(a.address))) {
+    throw new Error('not a public address');
+  }
+  const res = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(10000), headers: { 'User-Agent': 'Vesopa menu' } });
+  if (!res.ok || !String(res.headers.get('content-type') || '').includes('text/html')) {
+    throw new Error('not a page');
+  }
+  let html = (await res.text()).slice(0, 2_000_000);
+  // Its pictures and styles still come from where they live.
+  const base = `<base href="${parsed.origin}/">`;
+  html = /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, (h) => h + base) : base + html;
+  legalCache.set(url, { at: Date.now(), html });
+  return html;
 }
 
 /** The foot of the menu: who sells, how to reach them, the policies, the cards. */
