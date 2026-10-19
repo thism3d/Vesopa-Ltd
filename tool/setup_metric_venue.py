@@ -42,6 +42,11 @@ REPO = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(REPO, "MetricMembership", "server", "scripts"))
 from deploy import connect  # noqa: E402
 
+sys.path.insert(0, HERE)
+from deploy_memberships import load_env_claude  # noqa: E402  (also runs at import)
+
+load_env_claude()
+
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 except AttributeError:
