@@ -43,6 +43,7 @@ class TeyaConfig {
     this.environment = 'sandbox',
     this.storeName,
     this.defaultTerminalId,
+    this.assignedTerminalId,
     this.terminals = const [],
     this.terminalsError,
   });
@@ -52,6 +53,10 @@ class TeyaConfig {
   final String environment;
   final String? storeName;
   final String? defaultTerminalId;
+
+  /// The machine the back office gave this till. Wins over a choice made on
+  /// the till itself.
+  final String? assignedTerminalId;
   final List<TeyaTerminal> terminals;
   final String? terminalsError;
 
@@ -62,6 +67,7 @@ class TeyaConfig {
     environment: '${j['environment'] ?? 'sandbox'}',
     storeName: j['store_name'] as String?,
     defaultTerminalId: j['default_terminal_id'] as String?,
+    assignedTerminalId: j['assigned_terminal_id'] as String?,
     terminals: [
       for (final t in (j['terminals'] as List?) ?? const [])
         if (t is Map<String, dynamic>) TeyaTerminal.fromJson(t),
@@ -494,7 +500,10 @@ final teyaProvider = Provider<TeyaProvider?>((ref) {
   final token = session.terminalToken;
   if (token == null || token.isEmpty) return null;
   final chosen = ref.watch(teyaTerminalProvider).value ?? '';
-  final terminalId = chosen.isNotEmpty
+  final assigned = config.assignedTerminalId ?? '';
+  final terminalId = assigned.isNotEmpty
+      ? assigned
+      : chosen.isNotEmpty
       ? chosen
       : (config.defaultTerminalId ?? '');
   if (terminalId.isEmpty) return null;

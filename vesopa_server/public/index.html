@@ -375,7 +375,7 @@
           <button class="nav" data-view="wallet">Wallet Passes</button>
           <button class="nav" data-view="loyalty_app">Loyalty App</button>
           <button class="nav" data-view="tender">Tender &amp; Gratuity</button>
-          <button class="nav" data-view="card_payments">Card Payments (Dojo)</button>
+          <button class="nav" data-view="card_payments">Card Payments</button>
           <button class="nav" data-view="rules">Automation Rules</button>
 
           <div id="admin-group" hidden>
@@ -4438,6 +4438,11 @@
                       <button class="btn small" type="button" id="teya-connect-cancel">Cancel</button>
                     </div>
                   </div>
+                  <div id="teya-nostore-box" class="teya-note" hidden>
+                    <b>Your Teya account has no store on <span id="teya-nostore-env">the sandbox</span> yet.</b>
+                    <p class="small" style="margin:6px 0 8px">Vesopa is approved, but there is no store to take payments in. On the sandbox, Teya partner support (partnersupport@teya.com) adds a test company and store to your Teya login. On live, the store comes with your Teya merchant account. Then press Check again.</p>
+                    <button class="btn small" type="button" id="teya-store-recheck">Check again</button>
+                  </div>
                   <div id="teya-store-box" hidden>
                     <label>Teya store this venue takes payments in
                       <select id="teya-store"></select>
@@ -4475,6 +4480,37 @@
                   </div>
                   <p class="small" id="teya-online-msg" role="status"></p>
                   <p class="muted small">The menu also needs its "Pay by card online" switch (Online menu). On the sandbox, test orders never reach the till, the kitchen or the takings.</p>
+                </div>
+              </div>
+
+              <div class="teya-cols">
+                <div class="card rd-card" id="teya-tills-card">
+                  <h3>Tills and their card machines</h3>
+                  <p class="small muted">Choose which Teya card machine each till sends payments to. A till left on "Venue default" uses the default machine.</p>
+                  <div id="teya-tills"><p class="small muted">Connect a Teya store first.</p></div>
+                  <p class="small" id="teya-tills-msg" role="status"></p>
+                </div>
+                <div class="card rd-card">
+                  <h3>App credentials</h3>
+                  <p class="small muted">The Teya Device Code app the venue signs in with (partner.teya.com, Developer, Applications). The sandbox uses Vesopa's built-in app unless you enter your own. Enter the live ones when Teya gives them to you, and Live can be switched on.</p>
+                  <div class="teya-seg" role="radiogroup" aria-label="Credentials for" style="margin-bottom:10px">
+                    <label><input type="radio" name="teya-app-env" value="sandbox" checked> <span>Sandbox<small id="teya-app-sandbox-src"></small></span></label>
+                    <label><input type="radio" name="teya-app-env" value="live"> <span>Live<small id="teya-app-live-src"></small></span></label>
+                  </div>
+                  <label>Client ID
+                    <input id="teya-app-id" autocomplete="off" placeholder="from Teya, Developer, Applications">
+                  </label>
+                  <label>Client secret
+                    <input id="teya-app-secret" type="password" autocomplete="off" placeholder="Leave blank to keep the saved secret">
+                  </label>
+                  <label id="teya-app-plugin-row">Online plugin type <span class="small muted">(live only, given by Teya)</span>
+                    <input id="teya-app-plugin" autocomplete="off" placeholder="e.g. VESOPA">
+                  </label>
+                  <div class="row" style="gap:8px;margin-top:8px">
+                    <button class="btn primary small" type="button" id="teya-app-save">Check with Teya and save</button>
+                    <button class="btn small" type="button" id="teya-app-reset" hidden>Remove</button>
+                  </div>
+                  <p class="small" id="teya-app-msg" role="status"></p>
                 </div>
               </div>
 

@@ -35,6 +35,14 @@ async function check(name, fn) {
     assert.strictEqual(teya.cleanEnv('nonsense'), 'sandbox');
   });
 
+  await check("a venue's own live credentials make live available for that venue only", () => {
+    const own = { deviceId: 'venue-live-id', deviceSecret: 'venue-live-secret' };
+    assert.strictEqual(teya.available('live', own), true);
+    assert.strictEqual(teya.available('live'), false);
+    assert.strictEqual(teya.partner('live', own).source, 'venue');
+    assert.strictEqual(teya.partner('sandbox').source, 'vesopa');
+  });
+
   await check('a webhook signature is checked over the raw body', () => {
     const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
     const pem = publicKey.export({ type: 'spki', format: 'pem' });
@@ -58,7 +66,7 @@ async function check(name, fn) {
   });
 
   await check('live start refuses with a sentence when live is not set up', async () => {
-    await assert.rejects(teya.startDevice('live'), (e) => e.code === 'NOT_CONFIGURED' && /certified/.test(e.message));
+    await assert.rejects(teya.startDevice('live'), (e) => e.code === 'NOT_CONFIGURED' && /live app credentials/.test(e.message));
   });
 
   await check('the live stream is read until Teya gives its outcome', async () => {

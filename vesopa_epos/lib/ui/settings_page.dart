@@ -802,7 +802,19 @@ class _TeyaCard extends ConsumerWidget {
                 ],
               ),
               const SizedBox(height: 12),
-              if (config.terminalsError != null)
+              if ((config.assignedTerminalId ?? '').isNotEmpty)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.point_of_sale, color: Pos.brandDeep),
+                  title: Text(() {
+                    for (final t in config.terminals) {
+                      if (t.id == config.assignedTerminalId) return t.label;
+                    }
+                    return config.assignedTerminalId!;
+                  }()),
+                  subtitle: const Text('Chosen for this till in the back office (Card Payments, Teya).', style: TextStyle(fontSize: 12.5)),
+                )
+              else if (config.terminalsError != null)
                 Text(config.terminalsError!, style: const TextStyle(color: Pos.red, fontSize: 12.5))
               else
                 DropdownButtonFormField<String>(

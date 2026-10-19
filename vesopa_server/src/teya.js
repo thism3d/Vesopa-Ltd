@@ -71,6 +71,44 @@ function sealOrThrow(v) {
 
 const mysqlTime = (d) => new Date(d).toISOString().slice(0, 19).replace('T', ' ');
 
+// ---- A venue's own Teya app credentials -----------------------------------------
+
+/**
+ * The Device Code app credentials a venue saved in the back office for an
+ * environment, or null (then Vesopa's own from the server .env are used).
+ * This is how a venue goes live the day Teya gives it live credentials,
+ * without anybody editing the server.
+ */
+async function ownApp(db, office, env) {
+  try {
+    const [[row]] = await db.query('SELECT * FROM epos_teya_apps WHERE office = ? AND environment = ?', [office, teya.cleanEnv(env)]);
+    if (!row || !row.device_client_id || !row.device_secret_enc) return null;
+    const secret = unseal(row.device_secret_enc);
+    return secret ? { deviceId: row.device_client_id, deviceSecret: secret, pluginType: row.plugin_type || '' } : null;
+  } catch (e) {
+    if (missing(e)) return null;
+    throw e;
+  }
+}
+
+/** The Teya machine the back office gave a till (by its permanent device id). */
+async function assignedTerminal(db, office, env, terminal) {
+  try {
+    const jti = terminal && terminal.jti;
+    if (!jti) return null;
+    const [[row]] = await db.query(
+      `SELECT a.terminal_id FROM bo_till_seats s
+         JOIN epos_teya_till_terminals a ON a.office = s.office AND a.device_id = s.device_id AND a.environment = ?
+        WHERE s.id = ? AND s.office = ? LIMIT 1`,
+      [teya.cleanEnv(env), jti, office]
+    );
+    return row ? row.terminal_id : null;
+  } catch (e) {
+    if (missing(e)) return null;
+    throw e;
+  }
+}
+
 // ---- Tokens ------------------------------------------------------------------
 
 /**
@@ -102,7 +140,7 @@ async function userToken(db, office, env) {
       const rt = unseal(fresh.user_refresh_enc);
       let tok;
       try {
-        tok = await teya.refreshUser(env, rt);
+        tok = await teya.refreshUser(env, rt, await ownApp(db, office, env));
       } catch (e) {
         if (e.status === 400 || e.status === 401) {
           throw new teya.TeyaError(409, 'RECONNECT', 'Teya has signed this venue out. Use Connect Teya again to approve Vesopa.');
@@ -272,15 +310,23 @@ function teyaRoutes({ pool, broadcast, secret, onOnlinePayment }) {
   async function view(office) {
     const s = await settingsFor(pool, office);
     const env = teya.cleanEnv(s.environment);
+    const ownS = await ownApp(pool, office, 'sandbox');
+    const ownL = await ownApp(pool, office, 'live');
+    const appView = (own, e) => ({
+      source: own ? 'venue' : (teya.available(e) ? 'vesopa' : 'none'),
+      client_id_hint: own ? `…${own.deviceId.slice(-6)}` : null,
+      plugin_type: own ? own.pluginType || null : null,
+    });
     const out = {
+      apps: { sandbox: appView(ownS, 'sandbox'), live: appView(ownL, 'live') },
       enabled: !!Number(s.enabled),
       environment: env,
       card_provider: PROVIDERS.has(s.card_provider) ? s.card_provider : 'dojo',
       online_provider: PROVIDERS.has(s.online_provider) ? s.online_provider : 'dojo',
-      sandbox_available: teya.available('sandbox'),
-      live_available: teya.available('live'),
-      live_note: teya.available('live') ? null
-        : 'Teya issues Vesopa\'s live credentials once the integration is certified. Until then live cannot be switched on.',
+      sandbox_available: teya.available('sandbox', ownS),
+      live_available: teya.available('live', ownL),
+      live_note: teya.available('live', ownL) ? null
+        : 'Live needs Teya\'s live app credentials. Add them under App credentials below when Teya gives them to you.',
       updated_at: s.updated_at || null,
       updated_by: s.updated_by || null,
       connections: {},
@@ -331,18 +377,18 @@ function teyaRoutes({ pool, broadcast, secret, onOnlinePayment }) {
       if (!PROVIDERS.has(next_.card_provider) || !PROVIDERS.has(next_.online_provider)) {
         return res.status(400).json({ error: 'Choose Dojo or Teya.' });
       }
-      if (next_.environment === 'live' && !teya.available('live')) {
-        return res.status(409).json({ error: 'Teya Live is not available yet. Teya issues Vesopa\'s live credentials once the integration is certified; the venue stays on the sandbox until then.' });
+      if (next_.environment === 'live' && !teya.available('live', await ownApp(pool, office, 'live'))) {
+        return res.status(409).json({ error: 'Teya Live needs the live app credentials first. Add them under App credentials, then switch to Live.' });
       }
       // Teya off puts both back on Dojo, so nothing is left pointing at it.
       if (!next_.enabled) { next_.card_provider = 'dojo'; next_.online_provider = 'dojo'; }
       const conn = await connectionFor(pool, office, next_.environment);
       const envName = next_.environment === 'live' ? 'Teya Live' : 'the Teya sandbox';
       if (next_.card_provider === 'teya' && !(conn && conn.m2m_client_id)) {
-        return res.status(409).json({ error: `Connect a Teya store on ${envName} before the tills use Teya card machines.` });
+        return res.status(409).json({ error: `First connect a Teya store on ${envName} (Card machines, below). Then the tills can use Teya.` });
       }
       if (next_.online_provider === 'teya' && !(conn && conn.online_client_id)) {
-        return res.status(409).json({ error: `Connect Teya online payments on ${envName} before the menu uses Teya.` });
+        return res.status(409).json({ error: `First connect Teya online payments on ${envName} (Online payments, below). Then the menu can use Teya.` });
       }
       await pool.execute(
         `INSERT INTO epos_teya_settings (office, enabled, environment, card_provider, online_provider, updated_by)
@@ -365,10 +411,11 @@ function teyaRoutes({ pool, broadcast, secret, onOnlinePayment }) {
     try {
       const office = await tenantEmail(req);
       const env = teya.cleanEnv((req.body && req.body.environment) || (await settingsFor(pool, office)).environment);
-      const d = await teya.startDevice(env);
+      const own = await ownApp(pool, office, env);
+      const d = await teya.startDevice(env, own);
       const id = crypto.randomBytes(16).toString('hex');
       for (const [k, v] of pending) if (v.until < Date.now()) pending.delete(k);
-      pending.set(id, { office, env, device_code: d.device_code, until: Date.now() + (Number(d.expires_in) || 300) * 1000, by: req.user.email });
+      pending.set(id, { office, env, own, device_code: d.device_code, until: Date.now() + (Number(d.expires_in) || 300) * 1000, by: req.user.email });
       res.json({
         id,
         environment: env,
@@ -391,7 +438,7 @@ function teyaRoutes({ pool, broadcast, secret, onOnlinePayment }) {
         pending.delete(req.body.id);
         return res.status(410).json({ error: 'The QR code has expired. Start again for a new one.' });
       }
-      const r = await teya.pollDevice(p.env, p.device_code);
+      const r = await teya.pollDevice(p.env, p.device_code, p.own);
       if (r.pending) return res.json({ pending: true });
       pending.delete(req.body.id);
       let name = null;
@@ -516,14 +563,93 @@ function teyaRoutes({ pool, broadcast, secret, onOnlinePayment }) {
     } catch (e) { sendError(res, e, next); }
   });
 
+  // ---- Back office: app credentials ------------------------------------------------
+
+  /** Save this venue's own Teya Device Code app credentials for an environment. */
+  router.put('/teya/app', guard('commerce.edit'), async (req, res, next) => {
+    try {
+      const office = await tenantEmail(req);
+      const b = req.body || {};
+      const env = teya.cleanEnv(b.environment);
+      if (b.reset) {
+        await pool.execute('DELETE FROM epos_teya_apps WHERE office = ? AND environment = ?', [office, env]);
+        return res.json({ ...(await view(office)), message: env === 'live' ? 'Live app credentials removed.' : 'Back on Vesopa\'s built-in sandbox app.' });
+      }
+      const id = String(b.client_id || '').trim();
+      const typed = String(b.client_secret || '').trim();
+      const pluginType = String(b.plugin_type || '').trim().toUpperCase().replace(/[^A-Z0-9_]/g, '').slice(0, 40);
+      if (!/^[A-Za-z0-9_.:-]{8,128}$/.test(id)) return res.status(400).json({ error: 'Enter the Device Code app\'s client ID from Teya (Developer, Applications).' });
+      const prev = await ownApp(pool, office, env);
+      const secretV = typed || (prev && prev.deviceId === id ? prev.deviceSecret : '');
+      if (!secretV) return res.status(400).json({ error: 'Enter the client secret too.' });
+      if (secretV.length < 8 || secretV.length > 512) return res.status(400).json({ error: 'That does not look like a Teya client secret.' });
+      // Checked with Teya before anything is saved: a sign-in code is asked
+      // for (and simply left to expire).
+      try {
+        await teya.startDevice(env, { deviceId: id, deviceSecret: secretV, pluginType });
+      } catch (e) {
+        return res.status(400).json({ error: `Teya did not accept these credentials on ${env === 'live' ? 'live' : 'the sandbox'} (${e.message}) Nothing was saved.` });
+      }
+      await pool.execute(
+        `INSERT INTO epos_teya_apps (office, environment, device_client_id, device_secret_enc, plugin_type, updated_by)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE device_client_id = VALUES(device_client_id), device_secret_enc = VALUES(device_secret_enc),
+           plugin_type = VALUES(plugin_type), updated_by = VALUES(updated_by), updated_at = CURRENT_TIMESTAMP`,
+        [office, env, id, sealOrThrow(secretV), pluginType || null, req.user.email || null]
+      );
+      res.json({ ...(await view(office)), message: `Teya accepted the ${env === 'live' ? 'live' : 'sandbox'} credentials. Saved.` });
+    } catch (e) { sendError(res, e, next); }
+  });
+
+  // ---- Back office: which Teya machine each till uses -------------------------------
+
+  /** The venue's signed-in tills, and the Teya machine each one uses. */
+  router.get('/teya/tills', guard('commerce.tender'), async (req, res, next) => {
+    try {
+      const office = await tenantEmail(req);
+      const env = teya.cleanEnv(req.query.environment || (await settingsFor(pool, office)).environment);
+      const [rows] = await pool.query(
+        `SELECT s.device_id, MAX(s.device_name) AS device_name, MAX(s.last_seen_at) AS last_seen_at, MAX(a.terminal_id) AS terminal_id
+           FROM bo_till_seats s
+           LEFT JOIN epos_teya_till_terminals a ON a.office = s.office AND a.device_id = s.device_id AND a.environment = ?
+          WHERE s.office = ? AND s.released_at IS NULL AND s.device_id IS NOT NULL AND COALESCE(s.kind, 'till') = 'till'
+          GROUP BY s.device_id ORDER BY device_name`,
+        [env, office]
+      ).catch((e) => (missing(e) ? [[]] : Promise.reject(e)));
+      res.json(rows.map((r) => ({ device_id: r.device_id, name: r.device_name || 'Till', last_seen_at: r.last_seen_at, terminal_id: r.terminal_id || null })));
+    } catch (e) { sendError(res, e, next); }
+  });
+
+  router.put('/teya/tills/:deviceId', guard('commerce.edit'), async (req, res, next) => {
+    try {
+      const office = await tenantEmail(req);
+      const b = req.body || {};
+      const env = teya.cleanEnv(b.environment || (await settingsFor(pool, office)).environment);
+      const deviceId = String(req.params.deviceId).slice(0, 64);
+      const terminalId = String(b.terminal_id || '').trim().slice(0, 64);
+      if (!terminalId) {
+        await pool.execute('DELETE FROM epos_teya_till_terminals WHERE office = ? AND environment = ? AND device_id = ?', [office, env, deviceId]);
+      } else {
+        await pool.execute(
+          `INSERT INTO epos_teya_till_terminals (office, environment, device_id, terminal_id, updated_by) VALUES (?, ?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE terminal_id = VALUES(terminal_id), updated_by = VALUES(updated_by), updated_at = CURRENT_TIMESTAMP`,
+          [office, env, deviceId, terminalId, req.user.email || null]
+        );
+      }
+      tellTills(office);
+      res.json({ ok: true, terminal_id: terminalId || null, message: terminalId ? 'Saved. That till uses this card machine now.' : 'That till uses the venue default now.' });
+    } catch (e) { sendError(res, e, next); }
+  });
+
   // ---- Back office: online payments --------------------------------------------------
 
   router.post('/teya/online/connect', guard('commerce.edit'), async (req, res, next) => {
     try {
       const office = await tenantEmail(req);
       const env = teya.cleanEnv((req.body && req.body.environment) || (await settingsFor(pool, office)).environment);
-      if (!teya.available(env)) {
-        return res.status(409).json({ error: env === 'live' ? 'Teya Live is not available yet.' : 'Teya is not set up on this server.' });
+      const own = await ownApp(pool, office, env);
+      if (!teya.available(env, own)) {
+        return res.status(409).json({ error: env === 'live' ? 'Teya Live needs the live app credentials first (App credentials, below).' : 'Teya is not set up yet: add the app credentials under App credentials.' });
       }
       const state = crypto.randomBytes(24).toString('hex');
       await saveConnection(pool, office, env, { online_state: state, online_state_until: mysqlTime(Date.now() + 60 * 60 * 1000) });
@@ -534,7 +660,7 @@ function teyaRoutes({ pool, broadcast, secret, onOnlinePayment }) {
           paymentsWebhook: `${base}/api/teya/online/payments?env=${env}`,
           state,
           version: '1.0.0',
-        }),
+        }, own),
         environment: env,
       });
     } catch (e) { sendError(res, e, next); }
@@ -742,12 +868,17 @@ function teyaRoutes({ pool, broadcast, secret, onOnlinePayment }) {
       const env = teya.cleanEnv(s.environment);
       const conn = await connectionFor(pool, req.office, env);
       const on = !!Number(s.enabled) && s.card_provider === 'teya' && !!(conn && conn.m2m_client_id);
+      // The machine the back office gave this till wins; the venue default
+      // otherwise. Sent as default_terminal_id too, which is what tills before
+      // 1.16.20 read.
+      const assigned = on ? await assignedTerminal(pool, req.office, env, req.terminal) : null;
       const out = {
         enabled: on,
         environment: env,
         store_id: on ? conn.store_id : null,
         store_name: on ? conn.store_name : null,
-        default_terminal_id: on ? conn.default_terminal_id : null,
+        assigned_terminal_id: assigned,
+        default_terminal_id: on ? (assigned || conn.default_terminal_id) : null,
         terminals: [],
         terminals_error: null,
       };
@@ -766,8 +897,9 @@ function teyaRoutes({ pool, broadcast, secret, onOnlinePayment }) {
     try {
       const { env, conn } = await tillContext(req);
       const b = req.body || {};
-      const terminalId = String(b.terminal_id || conn.default_terminal_id || '').trim().slice(0, 64);
-      if (!terminalId) return res.status(400).json({ error: 'Choose this till\'s Teya card machine in Settings, Card payments.' });
+      const assigned = await assignedTerminal(pool, req.office, env, req.terminal);
+      const terminalId = String(assigned || b.terminal_id || conn.default_terminal_id || '').trim().slice(0, 64);
+      if (!terminalId) return res.status(400).json({ error: 'This till has no Teya card machine. Choose one in the back office, Card Payments, Teya.' });
       const amount = Math.round(Number(b.amount_minor));
       if (!(amount > 0) || amount > 10000000) return res.status(400).json({ error: 'That amount cannot be sent to the card machine.' });
       const tip = Math.max(0, Math.round(Number(b.tip_minor) || 0));

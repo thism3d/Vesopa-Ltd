@@ -49,6 +49,32 @@ CREATE TABLE IF NOT EXISTS epos_teya_connections (
   INDEX idx_teya_online_state (online_state)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- A venue's own Teya Device Code app credentials, per environment, entered in
+-- the back office (Card Payments, Teya, App credentials). None means Vesopa's
+-- own from the server .env. This is where a venue's live credentials go.
+CREATE TABLE IF NOT EXISTS epos_teya_apps (
+  office            VARCHAR(255) NOT NULL,
+  environment       VARCHAR(8)   NOT NULL,
+  device_client_id  VARCHAR(128) NOT NULL,
+  device_secret_enc TEXT         NOT NULL,
+  plugin_type       VARCHAR(40)  NULL,
+  updated_by        VARCHAR(255) NULL,
+  updated_at        TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (office, environment)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Which Teya card machine each till uses, chosen in the back office, keyed on
+-- the till's permanent device id so it survives the till signing in again.
+CREATE TABLE IF NOT EXISTS epos_teya_till_terminals (
+  office       VARCHAR(255) NOT NULL,
+  environment  VARCHAR(8)   NOT NULL,
+  device_id    VARCHAR(64)  NOT NULL,
+  terminal_id  VARCHAR(64)  NOT NULL,
+  updated_by   VARCHAR(255) NULL,
+  updated_at   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (office, environment, device_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- Every payment request a till sent to a Teya card machine, and where it got
 -- to. The till's own record goes to epos_card_transactions as for Dojo; this
 -- is the server's, so a till that crashed mid-payment can ask again.

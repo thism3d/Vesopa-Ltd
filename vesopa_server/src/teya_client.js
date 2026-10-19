@@ -46,11 +46,26 @@ const ENVS = new Set(['sandbox', 'live']);
 const cleanEnv = (env) => (ENVS.has(env) ? env : 'sandbox');
 const hosts = (env) => HOSTS[cleanEnv(env)];
 
-/** Vesopa's partner apps for an environment. */
-function partner(env) {
+/**
+ * The partner app for an environment: a venue's own credentials when it saved
+ * some in the back office ([own], see teya.js), else Vesopa's from the server
+ * .env (TEYA_* for the sandbox, TEYA_LIVE_* for live).
+ */
+function partner(env, own) {
   const live = cleanEnv(env) === 'live';
   const pick = (name) => String(process.env[(live ? 'TEYA_LIVE_' : 'TEYA_') + name] || '').trim();
+  if (own && own.deviceId && own.deviceSecret) {
+    return {
+      deviceId: own.deviceId,
+      deviceSecret: own.deviceSecret,
+      webId: '',
+      webSecret: '',
+      pluginType: own.pluginType || pick('PLUGIN_TYPE') || (live ? '' : 'TESTING'),
+      source: 'venue',
+    };
+  }
   return {
+    source: 'vesopa',
     deviceId: pick('DEVICE_CLIENT_ID'),
     deviceSecret: pick('DEVICE_CLIENT_SECRET'),
     webId: pick('WEB_CLIENT_ID'),
@@ -61,8 +76,8 @@ function partner(env) {
 }
 
 /** Whether an environment can be used at all on this server. */
-function available(env) {
-  const p = partner(env);
+function available(env, own) {
+  const p = partner(env, own);
   return !!(p.deviceId && p.deviceSecret);
 }
 
@@ -167,17 +182,17 @@ async function api(env, method, path, token, { body, idempotencyKey, timeoutMs =
 // ---- Signing a venue in (Device Code flow) --------------------------------
 
 /** Start: a code and a QR for the manager to approve on their phone. */
-async function startDevice(env) {
-  const p = partner(env);
+async function startDevice(env, own) {
+  const p = partner(env, own);
   if (!p.deviceId) throw new TeyaError(0, 'NOT_CONFIGURED', cleanEnv(env) === 'live'
-    ? 'Teya Live is not set up on Vesopa yet. Teya issues live credentials once the integration is certified.'
+    ? 'Teya Live is not set up yet. Add the live app credentials Teya gave you in Card Payments, Teya, App credentials.'
     : 'Teya is not set up on this server.');
   return form(env, '/oauth/v2/device', { client_id: p.deviceId, client_secret: p.deviceSecret });
 }
 
 /** Has the manager approved yet? `{ pending: true }` while they have not. */
-async function pollDevice(env, deviceCode) {
-  const p = partner(env);
+async function pollDevice(env, deviceCode, own) {
+  const p = partner(env, own);
   try {
     return await form(env, '/oauth/v2/oauth-token', {
       grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
@@ -195,8 +210,8 @@ async function pollDevice(env, deviceCode) {
 }
 
 /** A fresh user token. Refresh tokens are single use: store the new one. */
-function refreshUser(env, refreshToken) {
-  const p = partner(env);
+function refreshUser(env, refreshToken, own) {
+  const p = partner(env, own);
   return form(env, '/oauth/v2/oauth-token', { grant_type: 'refresh_token', refresh_token: refreshToken }, { basic: [p.deviceId, p.deviceSecret] });
 }
 
@@ -348,8 +363,8 @@ function refundCardPayment(env, token, { gatewayPaymentId, amountMinor, terminal
 const ONLINE_SCOPE = 'checkout/sessions/create checkout/sessions/id/get refunds/create ecommerce/registrations/current';
 
 /** Where to send a manager to connect their store's online payments. */
-function registrationUrl(env, { registrationWebhook, paymentsWebhook, state, version }) {
-  const p = partner(env);
+function registrationUrl(env, { registrationWebhook, paymentsWebhook, state, version }, own) {
+  const p = partner(env, own);
   const q = new URLSearchParams({
     registrationWebhook,
     paymentsWebhook,

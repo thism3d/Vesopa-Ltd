@@ -14509,6 +14509,16 @@ function teyaRender(s) {
   $('teya-terminal-box').hidden = !c.ready;
   $('teya-store-name').textContent = c.store_name || '';
   $('teya-test-box').hidden = !(c.ready && env === 'sandbox');
+  if (c.approved && !c.ready && $('teya-store-box').hidden) {
+    api('/teya/stores?environment=' + encodeURIComponent(env)).then((list) => teyaShowStoresRef && teyaShowStoresRef(list, env)).catch(() => {});
+  } else if (c.ready) {
+    $('teya-nostore-box').hidden = true;
+  }
+  const apps = s.apps || {};
+  const src = (a) => !a ? '' : a.source === 'venue' ? 'your own app ' + (a.client_id_hint || '') : a.source === 'vesopa' ? 'Vesopa\'s built-in app' : 'not set';
+  $('teya-app-sandbox-src').textContent = src(apps.sandbox);
+  $('teya-app-live-src').textContent = src(apps.live);
+  teyaAppShow();
 
   const o = conn.online;
   $('teya-online-state').innerHTML = o.ready
@@ -14520,12 +14530,47 @@ function teyaRender(s) {
   if (c.ready) teyaLoadTerminals(env);
 }
 
+let teyaShowStoresRef = null;
+
+function teyaAppShow() {
+  const env = teyaPicked('teya-app-env') || 'sandbox';
+  const a = ((teyaState && teyaState.apps) || {})[env] || {};
+  $('teya-app-plugin-row').hidden = env !== 'live';
+  $('teya-app-reset').hidden = a.source !== 'venue';
+  $('teya-app-id').placeholder = a.source === 'venue' ? 'Saved (' + (a.client_id_hint || '') + '). Enter again to replace' : 'from Teya, Developer, Applications';
+}
+
+/** Tills and the Teya machine each one uses. */
+async function teyaLoadTills(env, terms) {
+  const box = $('teya-tills');
+  try {
+    const tills = await api('/teya/tills?environment=' + encodeURIComponent(env));
+    if (!tills.length) { box.innerHTML = '<p class="small muted">No tills are signed in at this venue yet.</p>'; return; }
+    const opts = (sel) => '<option value="">Venue default</option>' + terms.map((t) => '<option value="' + esc(t.id) + '"' + (t.id === sel ? ' selected' : '') + '>' + esc(t.name || t.serial || t.id) + '</option>').join('');
+    box.innerHTML = tills.map((t) => '<div class="teya-till"><span><b>' + esc(t.name) + '</b>'
+      + (t.last_seen_at ? '<br><small class="muted">seen ' + esc(new Date(t.last_seen_at).toLocaleString('en-GB')) + '</small>' : '') + '</span>'
+      + '<select data-teya-till="' + esc(t.device_id) + '" aria-label="Card machine for ' + esc(t.name) + '">' + opts(t.terminal_id) + '</select></div>').join('');
+    box.querySelectorAll('[data-teya-till]').forEach((sel) => {
+      sel.onchange = async () => {
+        try {
+          const r = await api('/teya/tills/' + encodeURIComponent(sel.dataset.teyaTill), { method: 'PUT', body: JSON.stringify({ environment: env, terminal_id: sel.value }) });
+          teyaSay('teya-tills-msg', r.message, true);
+          toast('Card machine saved for the till');
+        } catch (e) { teyaSay('teya-tills-msg', e.message, false); }
+      };
+    });
+  } catch (e) {
+    box.innerHTML = '<p class="small" style="color:#b42318">' + esc(e.message) + '</p>';
+  }
+}
+
 async function teyaLoadTerminals(env) {
   const list = $('teya-terminals');
   list.innerHTML = '<li class="muted small">Asking Teya for the card machines…</li>';
   try {
     const terms = await api('/teya/terminals?environment=' + encodeURIComponent(env));
     const def = (teyaState.connections[env] || { card: {} }).card.default_terminal_id;
+    teyaLoadTills(env, terms);
     if (!terms.length) { list.innerHTML = '<li class="muted small">No card machines in this store yet. Add one in Teya, then refresh.</li>'; return; }
     list.innerHTML = terms.map((t) => '<li><span><b>' + esc(t.name || 'Card machine') + '</b><br><small>' + esc(t.serial ? 'Serial ' + t.serial : t.id) + '</small></span>'
       + (t.id === def ? '<span class="pill on">default</span>' : '<button class="btn small" type="button" data-teya-default="' + esc(t.id) + '">Make default</button>') + '</li>').join('');
@@ -14568,6 +14613,7 @@ async function loadTeya() {
   teyaSay('teya-msg', '');
   $('teya-connect-box').hidden = true;
   $('teya-store-box').hidden = true;
+  $('teya-nostore-box').hidden = true;
 
   $('teya-enabled').onchange = () => { $('teya-options').style.opacity = $('teya-enabled').checked ? '' : '.55'; };
   document.querySelectorAll('input[name="teya-env"]').forEach((r) => { r.onchange = () => teyaRender(teyaState); });
@@ -14617,8 +14663,8 @@ async function loadTeya() {
           if (r.done) {
             clearInterval(teyaConnectTimer);
             $('teya-connect-box').hidden = true;
+            teyaSay('teya-card-msg', 'Approved by Teya.', true);
             teyaShowStores(r.stores || [], env);
-            teyaSay('teya-card-msg', 'Approved. Now choose the store.', true);
           }
         } catch (e) {
           clearInterval(teyaConnectTimer);
@@ -14635,7 +14681,18 @@ async function loadTeya() {
   };
 
   function teyaShowStores(stores, env) {
-    if (!stores.length) { teyaSay('teya-card-msg', 'This Teya account has no stores. Create one in Teya first.', false); return; }
+    $('teya-nostore-box').hidden = stores.length > 0;
+    $('teya-nostore-env').textContent = env === 'live' ? 'Teya Live' : 'the Teya sandbox';
+    $('teya-store-recheck').onclick = async () => {
+      teyaSay('teya-card-msg', 'Asking Teya for the stores…', true);
+      try {
+        const list = await api('/teya/stores?environment=' + encodeURIComponent(env));
+        teyaShowStores(list, env);
+        teyaSay('teya-card-msg', list.length ? 'Found ' + list.length + ' store(s). Choose one.' : 'Still no store on this Teya account.', list.length > 0);
+      } catch (e) { teyaSay('teya-card-msg', e.message, false); }
+    };
+    if (!stores.length) { $('teya-store-box').hidden = true; return; }
+    teyaSay('teya-card-msg', 'Approved. Now choose the store this venue takes payments in.', true);
     $('teya-store').innerHTML = stores.map((st) => '<option value="' + esc(st.id) + '">' + esc(st.name + (st.address && st.address.city ? ' · ' + st.address.city : '')) + '</option>').join('');
     $('teya-store-box').hidden = false;
     $('teya-store-save').onclick = async () => {
@@ -14649,6 +14706,28 @@ async function loadTeya() {
       } catch (e) { teyaSay('teya-card-msg', e.message, false); }
     };
   }
+
+  teyaShowStoresRef = teyaShowStores;
+  document.querySelectorAll('input[name="teya-app-env"]').forEach((r) => { r.onchange = teyaAppShow; });
+  $('teya-app-save').onclick = async () => {
+    const env = teyaPicked('teya-app-env');
+    teyaSay('teya-app-msg', 'Checking with Teya…', true);
+    try {
+      const r = await api('/teya/app', { method: 'PUT', body: JSON.stringify({ environment: env, client_id: $('teya-app-id').value.trim(), client_secret: $('teya-app-secret').value.trim(), plugin_type: $('teya-app-plugin').value.trim() }) });
+      $('teya-app-secret').value = '';
+      teyaRender(r);
+      teyaSay('teya-app-msg', r.message, true);
+      toast('Teya credentials saved');
+    } catch (e) { teyaSay('teya-app-msg', e.message, false); }
+  };
+  $('teya-app-reset').onclick = async () => {
+    const env = teyaPicked('teya-app-env');
+    if (!confirm('Remove this venue\'s own ' + env + ' credentials?')) return;
+    try {
+      const r = await api('/teya/app', { method: 'PUT', body: JSON.stringify({ environment: env, reset: true }) });
+      teyaRender(r); teyaSay('teya-app-msg', r.message, true);
+    } catch (e) { teyaSay('teya-app-msg', e.message, false); }
+  };
 
   $('teya-disconnect-card').onclick = async () => {
     if (!confirm('Disconnect Teya card machines? Tills go back to Dojo.')) return;
