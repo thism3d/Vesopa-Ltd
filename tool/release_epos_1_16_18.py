@@ -3,12 +3,9 @@
     python tool/release_epos_1_16_18.py               # build, Store, installers
     python tool/release_epos_1_16_18.py --from store  # pick up at a step
 
-The customer display on a pub's big screen: TV sizes, touch off, tiles (all
-off by default), set from the till; sign in with the till's email and
-password; a display on another computer through the back office; a local
-WebSocket on the same PC. The EPOS opens once per Windows account and has a
-customer display button on its top bar. The kitchen screen signs in with an
-email and password, no venue field.
+Pontardawe RFC's Z reports counted the change given back as cash (payments
+over sales by the change); the X/Z now count cash net of change. And a roll
+setting for an 80mm printer with wide margins (42 characters a line).
 """
 import os
 import pathlib
