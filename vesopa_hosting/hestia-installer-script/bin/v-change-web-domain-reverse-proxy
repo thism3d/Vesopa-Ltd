@@ -1,0 +1,113 @@
+#!/bin/bash
+# info: show another website at a web domain (a reverse proxy), or stop
+# options: USER DOMAIN TARGET
+#
+# example: v-change-web-domain-reverse-proxy alice demo.example.com https://shop.example.org
+#          v-change-web-domain-reverse-proxy alice demo.example.com none
+#
+# The domain keeps its own name, certificate and address bar; every page,
+# picture and link comes from TARGET. Links and redirects that name the
+# target's host are rewritten to this domain, so a visitor never leaves it.
+# The target is told the visitor's host in X-Forwarded-Host, which lets an app
+# that reads it (the Vesopa menu does) build its own links on this domain.
+#
+# Added for cloud.vesopa.com (domain page > Show another website here),
+# 2026-10-19. Written and checked here, as root, so the panel never writes an
+# nginx file itself; the target is validated before it is written, and only
+# public http(s) addresses are accepted.
+set -o pipefail
+
+user="${1:-}"; domain="${2:-}"; target="${3:-}"
+
+source /etc/hestiacp/hestia.conf
+source "$HESTIA/func/main.sh"
+source_conf "$HESTIA/conf/hestia.conf"
+
+[[ -n "$user" && -n "$domain" && -n "$target" ]] || {
+	echo "usage: v-change-web-domain-reverse-proxy USER DOMAIN TARGET|none" >&2; exit 1; }
+
+id "$user" &>/dev/null || { echo "ERROR: no such user: $user" >&2; exit 3; }
+[[ "$user" != "root" ]] || { echo "ERROR: not for root" >&2; exit 3; }
+[[ "$domain" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]] || { echo "ERROR: bad domain" >&2; exit 2; }
+HOME_DIR=$(getent passwd "$user" | cut -d: -f6)
+CONF_DIR="$HOME_DIR/conf/web/$domain"
+[[ -d "$HOME_DIR/web/$domain" && -d "$CONF_DIR" ]] || {
+	echo "ERROR: $user does not own web domain $domain" >&2; exit 3; }
+CONF="$CONF_DIR/reverseproxy.conf"
+DEFAULT_EXT="css,htm,html,js,mjs,json,xml,apng,avif,bmp,cur,gif,ico,jfif,jpg,jpeg,pjp,pjpeg,png,svg,tif,tiff,webp,aac,caf,flac,m4a,midi,mp3,ogg,opus,wav,3gp,av1,avi,m4v,mkv,mov,mpg,mpeg,mp4,mp4v,webm,otf,ttf,woff,woff2,doc,docx,odf,odp,ods,odt,pdf,ppt,pptx,rtf,txt,xls,xlsx,7z,bz2,gz,rar,tar,tgz,zip,apk,appx,bin,dmg,exe,img,iso,jar,msi,webmanifest"
+
+# --- off ------------------------------------------------------------------
+if [[ "$target" == "none" ]]; then
+	rm -f "$CONF"
+	$HESTIA/bin/v-change-web-domain-proxy-tpl "$user" "$domain" default "$DEFAULT_EXT" yes || exit $?
+	echo "  $domain serves its own website again"
+	exit 0
+fi
+
+# --- check the target -----------------------------------------------------
+# scheme://host[:port][/path], nothing else: no quotes, spaces, semicolons or
+# braces can reach the nginx file below.
+re='^(https?)://([a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+)(:([0-9]{2,5}))?(/[A-Za-z0-9._~/-]*)?$'
+target_lc=$(echo "$target" | tr 'A-Z' 'a-z')
+[[ "$target_lc" =~ $re ]] || {
+	echo "ERROR: the address must look like https://example.com or https://example.com/page" >&2; exit 2; }
+scheme="${BASH_REMATCH[1]}"; host="${BASH_REMATCH[2]}"; port="${BASH_REMATCH[7]}"; path="${BASH_REMATCH[8]}"
+[[ "$host" != "$domain" ]] || { echo "ERROR: a domain cannot show itself" >&2; exit 2; }
+
+# Only public addresses: never this machine's services or a private network.
+addrs=$(getent ahosts "$host" | awk '{print $1}' | sort -u)
+[[ -n "$addrs" ]] || { echo "ERROR: $host does not resolve" >&2; exit 2; }
+for a in $addrs; do
+	case "$a" in
+		127.*|10.*|192.168.*|169.254.*|0.*|::1|fe80:*|fc*|fd*)
+			echo "ERROR: $host points at a private address" >&2; exit 2 ;;
+		172.*)
+			second=$(echo "$a" | cut -d. -f2)
+			if (( second >= 16 && second <= 31 )); then
+				echo "ERROR: $host points at a private address" >&2; exit 2
+			fi ;;
+	esac
+done
+
+upstream="$scheme://$host${port:+:$port}${path:-/}"
+hostport="$host${port:+:$port}"
+esc_host=$(echo "$host" | sed 's/\./\\./g')
+
+# --- write it -------------------------------------------------------------
+tmp=$(mktemp)
+cat > "$tmp" <<EOF
+# Reverse proxy to $upstream (v-change-web-domain-reverse-proxy, $(date -u +%Y-%m-%dT%H:%MZ)).
+location / {
+	proxy_pass $upstream;
+	proxy_http_version 1.1;
+	proxy_ssl_server_name on;
+	proxy_ssl_name $host;
+	proxy_set_header Host $hostport;
+	proxy_set_header X-Forwarded-Host \$host;
+	proxy_set_header X-Forwarded-Proto \$scheme;
+	proxy_set_header X-Real-IP \$remote_addr;
+	proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+	proxy_set_header Upgrade \$http_upgrade;
+	proxy_set_header Connection \$connection_upgrade;
+	# Uncompressed from the target, so links in pages can be rewritten.
+	proxy_set_header Accept-Encoding "";
+	proxy_redirect ~^https?://$esc_host(:[0-9]+)?(/.*)?\$ \$scheme://\$host\$2;
+	proxy_cookie_domain $host \$host;
+	sub_filter_once off;
+	sub_filter_types text/css text/javascript application/javascript application/json image/svg+xml;
+	sub_filter "https://$hostport" "https://\$host";
+	sub_filter "http://$hostport" "https://\$host";
+	sub_filter "//$hostport" "//\$host";
+	proxy_read_timeout 300s;
+}
+EOF
+install -m 0640 -o root -g "$user" "$tmp" "$CONF"
+rm -f "$tmp"
+
+$HESTIA/bin/v-change-web-domain-proxy-tpl "$user" "$domain" ReverseProxy "" yes || {
+	rm -f "$CONF"; echo "ERROR: could not switch the template" >&2; exit 4; }
+nginx -t >/dev/null 2>&1 || {
+	rm -f "$CONF"; $HESTIA/bin/v-change-web-domain-proxy-tpl "$user" "$domain" default "$DEFAULT_EXT" yes
+	echo "ERROR: the web server refused the config; nothing was changed" >&2; exit 4; }
+echo "  $domain now shows $upstream"
+exit 0

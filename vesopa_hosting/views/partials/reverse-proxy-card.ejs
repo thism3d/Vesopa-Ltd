@@ -1,0 +1,73 @@
+<%#
+  Show another website here: a reverse proxy (2026-10-19).
+
+  Shared by the domain page and the subdomain page, like the redirect card
+  beside it. The difference from Redirect is the whole point: a redirect sends
+  the visitor away, and this keeps them. The address bar stays on this name
+  and the pages come from somewhere else -- a demo or staging address on a
+  well-known domain, a shop on a marketplace under your own name, an app that
+  runs on another server. Links back to the other site are rewritten to stay
+  here.
+
+  The node does the work (v-change-web-domain-reverse-proxy); the domain's
+  reverse_proxy column is what this card shows.
+%>
+<% const proxying = site && (site.proxy_template === 'ReverseProxy' || domain.reverse_proxy); %>
+<div class="p-card">
+  <div class="row-between mb-2">
+    <h2 class="h3"><%= t('Show another website here') %></h2>
+    <% if (proxying) { %>
+      <span class="badge badge-green">On</span>
+    <% } %>
+  </div>
+
+  <% if (!site) { %>
+    <p class="small muted mb-0">
+      <% if (!hasHosting) { %>
+        There is no hosting on this account yet, so there is no website to set up.
+        <a href="/hosting">See the plans</a>.
+      <% } else { %>
+        This domain does not have a website on our server yet — point it at us first,
+        and this appears.
+      <% } %>
+    </p>
+  <% } else if (proxying) { %>
+    <p class="small mb-3">
+      <b><%= domain.domain %></b> is showing
+      <b class="mono"><%= domain.reverse_proxy || 'another website' %></b>.
+      Visitors stay on <b><%= domain.domain %></b>.
+    </p>
+    <form method="post" action="/panel/domains/<%= domain.id %>/reverse-proxy">
+      <input type="hidden" name="_csrf" value="<%= csrf %>">
+      <button class="btn btn-ghost btn-sm" name="action" value="clear" type="submit">
+        <%= t('Turn it off and serve this website again') %>
+      </button>
+    </form>
+  <% } else { %>
+    <p class="small muted mb-3">
+      Show the pages of another website at <b><%= domain.domain %></b>, without sending
+      visitors away: the address bar keeps this name. Useful for a demo or staging address,
+      a shop that lives somewhere else, or an app on another server.
+    </p>
+
+    <form method="post" action="/panel/domains/<%= domain.id %>/reverse-proxy">
+      <input type="hidden" name="_csrf" value="<%= csrf %>">
+      <div class="field mb-3">
+        <label class="label" for="rp-target"><%= t('Website to show') %></label>
+        <input class="input mono" id="rp-target" name="target" placeholder="<%= t('example.com') %>"
+               autocomplete="off" spellcheck="false" required>
+        <p class="hint">
+          <%- th('A public address — <code>example.com</code> or <code>example.com/shop</code>. The <code>https://</code> is optional.') %>
+        </p>
+      </div>
+      <div class="tip mb-3">
+        <span class="tip-ic"></span>
+        <div class="small">
+          This replaces the website on <b><%= domain.domain %></b> for as long as it is on. Your files
+          are kept and come back when you turn it off.
+        </div>
+      </div>
+      <button class="btn btn-primary btn-sm" type="submit"><%= t('Show it here') %></button>
+    </form>
+  <% } %>
+</div>

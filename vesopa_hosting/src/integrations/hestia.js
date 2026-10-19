@@ -595,6 +595,9 @@ async function webDomain({ username, domain }) {
     docroot: record.CUSTOM_DOCROOT || '',
     redirect: record.REDIRECT || '',
     redirect_code: Number(record.REDIRECT_CODE || 0) || null,
+    // Which proxy template serves it: 'ReverseProxy' when the domain shows
+    // another website (setReverseProxy below).
+    proxy_template: record.PROXY || '',
   };
 }
 
@@ -703,6 +706,24 @@ async function setRedirect({
 }) {
   await run('v-add-web-domain-redirect', [username, domain, target, String(code)]);
   await rebuildWebDomain({ username, domain });
+  return { ok: true };
+}
+
+/**
+ * Show another website at this domain: a reverse proxy (2026-10-19).
+ *
+ * `v-change-web-domain-reverse-proxy USER DOMAIN TARGET` is ours (the
+ * hestia-installer-script bin), not Hestia's: it validates the target as root,
+ * writes the domain's reverseproxy.conf and switches it to the ReverseProxy
+ * template, so this panel never writes an nginx file. `none` turns it off.
+ */
+async function setReverseProxy({ username, domain, target }) {
+  await run('v-change-web-domain-reverse-proxy', [username, domain, target]);
+  return { ok: true };
+}
+
+async function clearReverseProxy({ username, domain }) {
+  await run('v-change-web-domain-reverse-proxy', [username, domain, 'none']);
   return { ok: true };
 }
 
@@ -1404,6 +1425,8 @@ module.exports = {
   webDomain,
   enableSSL,
   setRedirect,
+  setReverseProxy,
+  clearReverseProxy,
   clearRedirect,
   rebuildWebDomain,
   webDomainSsl,

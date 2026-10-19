@@ -228,16 +228,34 @@ function dineinAuthRoutes({ pool, secret }) {
     const host = hostOf(req);
     if (!host || host === MENU_HOST || host === `www.${MENU_HOST}`) return null;
 
-    const names = host.startsWith('www.') ? [host, host.slice(4)] : [host, `www.${host}`];
-    const [[byHost]] = await pool.query(
-      'SELECT office_id, slug, custom_domain FROM dinein_venue' +
-        ' WHERE custom_domain IN (?, ?) AND is_published = 1 LIMIT 1',
-      names,
-    );
+    const lookup = async (name) => {
+      const names = name.startsWith('www.') ? [name, name.slice(4)] : [name, `www.${name}`];
+      const [[row]] = await pool.query(
+        'SELECT office_id, slug, custom_domain FROM dinein_venue' +
+          ' WHERE custom_domain IN (?, ?) AND is_published = 1 LIMIT 1',
+        names,
+      );
+      return row || null;
+    };
+    const byHost = await lookup(host);
     // The venue's own domain as stored, to send the person home to after the
     // round trip through the shared host (never the raw Host header).
-    if (byHost) byHost.home = String(byHost.custom_domain || '').trim().toLowerCase() || null;
-    return byHost || null;
+    if (byHost) {
+      byHost.home = String(byHost.custom_domain || '').trim().toLowerCase() || null;
+      return byHost;
+    }
+    // Shown through another domain's reverse proxy (2026-10-19): the venue is
+    // the site the proxy asked for, and home is the proxy's name, so the
+    // visitor never leaves it.
+    const site = String(req.headers.host || '').trim().toLowerCase().replace(/:\d+$/, '');
+    if (site && site !== host && site !== MENU_HOST && site !== `www.${MENU_HOST}`) {
+      const proxied = await lookup(site);
+      if (proxied) {
+        proxied.home = host;
+        return proxied;
+      }
+    }
+    return null;
   }
 
   /**

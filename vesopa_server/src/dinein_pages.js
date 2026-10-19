@@ -69,6 +69,18 @@ function hostOf(req) {
   return String(raw).split(',')[0].trim().toLowerCase().split(':')[0];
 }
 
+/**
+ * The host the request was addressed to, behind any proxy: the Host header,
+ * not X-Forwarded-Host. Different from [hostOf] only when another site shows
+ * this one through a reverse proxy (cloud.vesopa.com, "Show another website
+ * here", 2026-10-19): pontardawerfcmenu.vesopa.com showing
+ * menu.pontardawerfc.com arrives with Host menu.pontardawerfc.com and
+ * X-Forwarded-Host pontardawerfcmenu.vesopa.com.
+ */
+function siteHostOf(req) {
+  return String(req.headers.host || '').trim().toLowerCase().split(':')[0];
+}
+
 /** Whether this request came in on the menu host. */
 function onMenuHost(req) {
   const host = hostOf(req);
@@ -116,9 +128,21 @@ async function venueExists(pool, slug) {
 
 async function venueForHost(pool, req) {
   if (!pool) return null;
-  const host = hostOf(req);
-  if (!host || host === MENU_HOST || host === 'www.' + MENU_HOST) return null;
+  const visitor = hostOf(req);
+  if (!visitor || visitor === MENU_HOST || visitor === 'www.' + MENU_HOST) return null;
+  const row = await venueForName(pool, visitor);
+  if (row) return row;
+  // Shown through another domain's reverse proxy: the venue is the site the
+  // proxy asked for, and the visitor stays on the proxy's name.
+  const site = siteHostOf(req);
+  if (site && site !== visitor && site !== MENU_HOST && site !== 'www.' + MENU_HOST) {
+    const proxied = await venueForName(pool, site);
+    if (proxied) return { ...proxied, viaProxy: visitor };
+  }
+  return null;
+}
 
+async function venueForName(pool, host) {
   const names = host.startsWith('www.') ? [host, host.slice(4)] : [host, 'www.' + host];
   try {
     const [[row]] = await pool.query(
@@ -6005,4 +6029,4 @@ async function isMenuAddress(pool, req) {
   return !!(await venueForHost(pool, req));
 }
 
-module.exports = { dineinPageRoutes, isMenuAddress, onMenuHost };
+module.exports = { dineinPageRoutes, isMenuAddress, onMenuHost, siteHostOf };

@@ -1428,6 +1428,11 @@ CALL vesopa_add_column('domains', 'contacts_warning', "VARCHAR(300) CHARACTER SE
 CALL vesopa_add_column('domains', 'verification_checked_at', 'DATETIME NULL');
 CALL vesopa_add_column('domains', 'verification_sent_at', 'DATETIME NULL');
 
+-- "Show another website here" (2026-10-19): the address a domain shows through
+-- a reverse proxy, or empty. The node holds the real config
+-- (v-change-web-domain-reverse-proxy); this is what the panel says it is.
+CALL vesopa_add_column('domains', 'reverse_proxy', "VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT ''");
+
 -- ---------------------------------------------------------------------------
 -- Registrant verifications: tracked against the ADDRESS, not the domain.
 --

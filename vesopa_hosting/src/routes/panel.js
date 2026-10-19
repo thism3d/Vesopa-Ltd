@@ -2391,6 +2391,77 @@ router.post('/domains/:id/redirect', async (req, res, next) => {
   }
 });
 
+/**
+ * Show another website at this domain (2026-10-19).
+ *
+ * A reverse proxy: the address bar keeps this domain, and the pages, pictures
+ * and links come from the address given. For a demo or staging address on a
+ * well-known domain, a shop on a marketplace shown under your own name, or an
+ * app that runs elsewhere. Unlike Redirect, the visitor never leaves.
+ */
+router.post('/domains/:id/reverse-proxy', async (req, res, next) => {
+  try {
+    if (!auth.checkCsrf(req)) return res.redirect('/panel/domains');
+    const domain = await ownedDomain(req);
+    if (!domain) return next();
+    const back = domainPath(domain);
+
+    if (!req.customer.hestia_user) {
+      flash(res, req.t('There is no hosting on this account yet, so there is no website to set up.'), 'error');
+      return res.redirect(back);
+    }
+
+    if (req.body.action === 'clear') {
+      try {
+        await hestia.clearReverseProxy({ username: req.customer.hestia_user, domain: domain.domain });
+        await db.query("UPDATE domains SET reverse_proxy = '' WHERE id = ?", [domain.id]).catch(() => {});
+        flash(res, `${domain.domain} serves its own website again.`);
+      } catch (err) {
+        flash(res, `Could not turn it off: ${err.message}`, 'error');
+      }
+      return res.redirect(back);
+    }
+
+    let target = String(req.body.target || '').trim().replace(/\/+$/, '');
+    if (!target) {
+      flash(res, req.t('Type the address of the website to show.'), 'error');
+      return res.redirect(back);
+    }
+    if (!/^https?:\/\//i.test(target)) target = `https://${target}`;
+    let url;
+    try {
+      url = new URL(target);
+    } catch {
+      url = null;
+    }
+    if (!url || !/^[a-z0-9.-]+$/i.test(url.hostname) || url.search || url.hash || url.username
+        || !/^[A-Za-z0-9._~\/-]*$/.test(url.pathname)) {
+      flash(res, req.t('That does not look like a web address. Try something like example.com, or example.com/page.'), 'error');
+      return res.redirect(back);
+    }
+    if (url.hostname.toLowerCase() === domain.domain.toLowerCase()) {
+      flash(res, `${domain.domain} cannot show itself.`, 'error');
+      return res.redirect(back);
+    }
+    const clean = `${url.protocol}//${url.host.toLowerCase()}${url.pathname === '/' ? '' : url.pathname}`;
+
+    try {
+      await hestia.setReverseProxy({ username: req.customer.hestia_user, domain: domain.domain, target: clean });
+      await db.query('UPDATE domains SET reverse_proxy = ? WHERE id = ?', [clean, domain.id]).catch(() => {});
+      await db.logActivity({
+        actorType: 'customer', actorId: req.customer.id,
+        action: 'domain.reverse_proxy', target: `${domain.domain} -> ${clean}`, ip: req.ip,
+      }).catch(() => {});
+      flash(res, `${domain.domain} now shows ${clean}. Visitors stay on ${domain.domain}.`);
+    } catch (err) {
+      flash(res, `Could not set it up: ${err.message}`, 'error');
+    }
+    return res.redirect(back);
+  } catch (err) {
+    return next(err);
+  }
+});
+
 router.post('/domains/:id/auto-renew', async (req, res, next) => {
   try {
     if (!auth.checkCsrf(req)) return res.redirect(`/panel/domains/${req.params.id}`);

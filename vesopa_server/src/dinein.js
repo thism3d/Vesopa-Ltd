@@ -1176,6 +1176,20 @@ function dineinRoutes({ pool, broadcast, secret }) {
    * print `http://127.0.0.1:3000` onto a card.
    */
   function publicBase(req, venue) {
+    // Shown through another domain's reverse proxy (2026-10-19): the request
+    // is addressed to the venue's own domain and forwarded for another name.
+    // Links, sign-in and the card payment's return all stay on that name, so
+    // somebody testing on the proxy (Dojo, on a vesopa.com address) never
+    // lands on the venue's domain.
+    if (venue && venue.custom_domain && req.headers['x-forwarded-host']) {
+      const visitor = String(req.headers['x-forwarded-host']).split(',')[0].trim().toLowerCase().split(':')[0];
+      const site = String(req.headers.host || '').trim().toLowerCase().split(':')[0];
+      const own = String(venue.custom_domain).trim().toLowerCase();
+      if (visitor && visitor !== own && visitor !== 'www.' + own && (site === own || site === 'www.' + own)
+          && /^[a-z0-9.-]+$/.test(visitor)) {
+        return 'https://' + visitor;
+      }
+    }
     // A venue that owns a domain and has pointed it here gets its own address on
     // its own cards. Only once it has actually answered on that name: printing
     // a hundred cards against a DNS record that was never made is a hundred
