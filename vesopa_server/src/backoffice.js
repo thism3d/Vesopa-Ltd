@@ -1724,7 +1724,7 @@ function backofficeRoutes({ pool, broadcast, secret }) {
         [office]
       );
       const [byTender] = await pool.query(
-        `SELECT p.method AS label, SUM(p.amount_minor) AS amount_minor
+        `SELECT p.method AS label, SUM(COALESCE(p.applied_minor, p.amount_minor)) AS amount_minor
          FROM epos_payments p
          JOIN epos_orders o ON o.id = p.order_id
          WHERE o.email = ? AND DATE(o.closed_at) = CURDATE()

@@ -200,7 +200,7 @@ function analyticsRoutes({ pool, secret }) {
       const [tenders] = await pool.query(
         `SELECT p.method,
                 COUNT(*)                        AS count,
-                COALESCE(SUM(p.amount_minor), 0) AS total_minor
+                COALESCE(SUM(COALESCE(p.applied_minor, p.amount_minor)), 0) AS total_minor
          FROM epos_payments p
          JOIN epos_orders o ON o.id = p.order_id
          WHERE o.email = ? AND o.closed_at IS NOT NULL

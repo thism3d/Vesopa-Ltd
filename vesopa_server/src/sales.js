@@ -230,12 +230,28 @@ async function recordSale(conn, order) {
     }
   }
 
-  for (const payment of order.payments || []) {
+  // What each payment actually paid (2026-10-19, schema_payment_applied.sql).
+  // A cash row is what was handed over, so the change comes off the cash
+  // before reports add it up; amount_minor keeps the note for the receipt.
+  const payments = order.payments || [];
+  let change = payments.reduce((s, p) => s + (Number(p.amount_minor) || 0), 0) -
+    (Number(order.total_minor) || 0);
+  const applied = new Map();
+  for (const payment of [...payments].reverse()) {
+    if (change > 0 && payment.method === 'cash') {
+      const amount = Number(payment.amount_minor) || 0;
+      const off = Math.min(change, amount);
+      applied.set(payment, amount - off);
+      change -= off;
+    }
+  }
+
+  for (const payment of payments) {
     await conn.execute(
       `INSERT INTO epos_payments
          (id, order_id, method, amount_minor, cash_breakdown,
-          reference, gratuity_minor, entry_mode, cashback_minor)
-       VALUES (UUID(), ?, ?, ?, ?, ?, ?, ?, ?)`,
+          reference, gratuity_minor, entry_mode, cashback_minor, applied_minor)
+       VALUES (UUID(), ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         order.id,
         payment.method,
@@ -258,6 +274,8 @@ async function recordSale(conn, order) {
         // reported it and the till has always known it; until 1.8.0.0 nothing
         // kept it, so the Cashback report had nothing to read.
         payment.cashback_minor ?? 0,
+        // Null unless change was given: then the amount less the change.
+        applied.has(payment) ? applied.get(payment) : null,
       ]
     );
   }

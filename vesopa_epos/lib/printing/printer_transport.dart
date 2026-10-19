@@ -160,7 +160,15 @@ class PrinterConfig {
 
   /// Characters per line for ESC/POS at Font A, which is what the receipt
   /// builder lays columns out against.
-  int get columns => paperWidthMm == 58 ? 32 : 48;
+  ///
+  /// 72 is an 80mm roll on a printer with wider margins (2026-10-19): a
+  /// Pontardawe till printed every line of its Z report wrapped, because that
+  /// printer fits 42 characters on its 80mm roll, not 48.
+  int get columns => switch (paperWidthMm) {
+    58 => 32,
+    72 => 42,
+    _ => 48,
+  };
 
   /// Whether this printer avoids the Windows spooler.
   bool get isDirect => kind.isDirect;
@@ -237,7 +245,11 @@ class PrinterConfig {
     windowsQueueName: j['windows_queue'] as String?,
     usbDevicePath: j['usb_device_path'] as String?,
     usbLabel: j['usb_label'] as String?,
-    paperWidthMm: (j['paper_width_mm'] as num?)?.toInt() == 58 ? 58 : 80,
+    paperWidthMm: switch ((j['paper_width_mm'] as num?)?.toInt()) {
+      58 => 58,
+      72 => 72,
+      _ => 80,
+    },
     // Absent means [escPosGbp] — the setting that draws a pound on any printer
     // rather than on a well-behaved one.
     //

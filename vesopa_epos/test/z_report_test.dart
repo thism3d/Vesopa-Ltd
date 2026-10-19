@@ -380,4 +380,41 @@ void main() {
     final r = await sessions.xReport();
     expect(r.expectedCashMinor, r.openingFloatMinor + 1000);
   });
+
+  // Pontardawe's Saturday Z (2026-10-19): cash showed what was handed over,
+  // change included, so payments came to more than the sales.
+  test('change given back is not counted as cash taken', () async {
+    await stock([beer, pie]);
+    final session = await sessions.current();
+    final id = await orders.openOrder();
+    await (db.update(db.orders)..where((o) => o.id.equals(id)))
+        .write(OrdersCompanion(sessionId: Value(session.id)));
+    await orders.addLine(id, beer, qty: 1); // £5.00
+    // A £20 note: the row keeps £20 so the receipt can print the change.
+    await orders.settle(id, 'cash', 2000, sessionId: session.id);
+    await sell(pie, method: 'card'); // £8.00 exactly
+
+    final r = await sessions.xReport();
+    expect(r.byMethod['cash']!.amountMinor, 500);
+    expect(r.byMethod['card']!.amountMinor, 800);
+    expect(r.expectedCashMinor, r.openingFloatMinor + 500);
+    final departments = r.byDepartment.values.fold<int>(0, (s, t) => s + t.amountMinor);
+    final tenders = r.byMethod.values.fold<int>(0, (s, t) => s + t.amountMinor);
+    expect(tenders, departments, reason: 'payments now reconcile with sales');
+  });
+
+  test('cash and card on one bill: only the cash gives change', () async {
+    await stock([beer, pie]);
+    final session = await sessions.current();
+    final id = await orders.openOrder();
+    await (db.update(db.orders)..where((o) => o.id.equals(id)))
+        .write(OrdersCompanion(sessionId: Value(session.id)));
+    await orders.addLine(id, pie, qty: 2); // £16.00
+    await orders.settle(id, 'card', 1000, sessionId: session.id);
+    await orders.settle(id, 'cash', 1000, sessionId: session.id); // £4 change
+
+    final r = await sessions.xReport();
+    expect(r.byMethod['card']!.amountMinor, 1000);
+    expect(r.byMethod['cash']!.amountMinor, 600);
+  });
 }

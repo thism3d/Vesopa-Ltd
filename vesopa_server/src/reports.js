@@ -555,7 +555,7 @@ async function financialSummary({ pool, office, from, to, siteName, terminal }) 
   const [payments] = await pool.query(
     `SELECT pay.method                              AS method,
             COUNT(*)                                AS count,
-            COALESCE(SUM(pay.amount_minor), 0)      AS total_minor
+            COALESCE(SUM(COALESCE(pay.applied_minor, pay.amount_minor)), 0)      AS total_minor
        FROM epos_payments pay
        JOIN epos_orders o ON o.id = pay.order_id
       WHERE ${window}

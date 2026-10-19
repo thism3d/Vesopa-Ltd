@@ -313,7 +313,7 @@ class _PrinterCard extends StatelessWidget {
                   ),
                 ),
                 Chip(
-                  label: Text('${printer.paperWidthMm}mm'),
+                  label: Text(printer.paperWidthMm == 72 ? '80mm, wide margins' : '${printer.paperWidthMm}mm'),
                   visualDensity: VisualDensity.compact,
                 ),
               ],
@@ -676,6 +676,7 @@ class _PrinterDialogState extends State<_PrinterDialog> {
               SegmentedButton<int>(
                 segments: const [
                   ButtonSegment(value: 80, label: Text('80mm')),
+                  ButtonSegment(value: 72, label: Text('80mm, wide margins')),
                   ButtonSegment(value: 58, label: Text('58mm')),
                 ],
                 selected: {_width},
@@ -683,9 +684,13 @@ class _PrinterDialogState extends State<_PrinterDialog> {
               ),
               const SizedBox(height: 6),
               Text(
-                _width == 80
-                    ? 'Standard receipt roll — 48 characters per line.'
-                    : 'Narrow roll — 32 characters per line.',
+                switch (_width) {
+                  58 => 'Narrow roll — 32 characters per line.',
+                  72 => 'An 80mm roll on a printer with wider margins — 42 '
+                      'characters per line. Choose this if lines wrap onto a '
+                      'second line (print a test page to check).',
+                  _ => 'Standard receipt roll — 48 characters per line.',
+                },
                 style: theme.textTheme.bodySmall,
               ),
               const SizedBox(height: 18),

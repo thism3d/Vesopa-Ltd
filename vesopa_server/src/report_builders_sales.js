@@ -211,7 +211,7 @@ function salesBuilders({ col, section, money, grouped, sqlDateTime, UNKNOWN_TERM
     const { where, params } = windowOf(args);
     const [rows] = await args.pool.query(
       `SELECT pay.method, COUNT(*) AS count,
-              COALESCE(SUM(pay.amount_minor), 0)   AS total_minor,
+              COALESCE(SUM(COALESCE(pay.applied_minor, pay.amount_minor)), 0)   AS total_minor,
               COALESCE(SUM(pay.gratuity_minor), 0) AS gratuity_minor,
               COALESCE(SUM(pay.cashback_minor), 0) AS cashback_minor
          FROM epos_payments pay
@@ -384,7 +384,7 @@ function salesBuilders({ col, section, money, grouped, sqlDateTime, UNKNOWN_TERM
 
     const { where, params } = windowOf(args);
     const [payments] = await pool.query(
-      `SELECT pay.method AS name, o.closed_at AS at, pay.amount_minor AS minor
+      `SELECT pay.method AS name, o.closed_at AS at, COALESCE(pay.applied_minor, pay.amount_minor) AS minor
          FROM epos_payments pay JOIN epos_orders o ON o.id = pay.order_id
         WHERE o.email = ? AND ${where}`,
       [office, ...params]
@@ -698,7 +698,7 @@ function salesBuilders({ col, section, money, grouped, sqlDateTime, UNKNOWN_TERM
   async function transactionsByPaymentType(args) {
     const { where, params } = windowOf(args);
     const [rows] = await args.pool.query(
-      `SELECT pay.method, pay.amount_minor, pay.gratuity_minor, pay.cashback_minor, pay.reference,
+      `SELECT pay.method, COALESCE(pay.applied_minor, pay.amount_minor) AS amount_minor, pay.gratuity_minor, pay.cashback_minor, pay.reference,
               o.id AS order_id, o.closed_at, o.terminal, o.clerk_name, o.table_number
          FROM epos_payments pay
          JOIN epos_orders o ON o.id = pay.order_id

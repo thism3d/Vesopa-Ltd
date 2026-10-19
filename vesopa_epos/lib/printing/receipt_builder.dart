@@ -227,10 +227,15 @@ class ReceiptBuilder {
     PrintOptions options = PrintOptions.standard,
   }) async {
     final profile = await CapabilityProfile.load();
-    final narrow = paperWidthMm == 58;
+    // 72: an 80mm roll on a printer with wide margins, 42 characters a line.
+    final (paper, columns) = switch (paperWidthMm) {
+      58 => (PaperSize.mm58, 32),
+      72 => (PaperSize.mm72, 42),
+      _ => (PaperSize.mm80, 48),
+    };
     return ReceiptBuilder(
-      Generator(narrow ? PaperSize.mm58 : PaperSize.mm80, profile),
-      columns: narrow ? 32 : 48,
+      Generator(paper, profile),
+      columns: columns,
       codePage: codePage,
       finish: options.resolve(),
     );
@@ -1237,7 +1242,7 @@ class ReceiptBuilder {
     bytes.addAll(
       _row('Spooler', printer.isDirect ? 'Bypassed' : 'Windows queue'),
     );
-    bytes.addAll(_row('Roll', '${printer.paperWidthMm}mm'));
+    bytes.addAll(_row('Roll', printer.paperWidthMm == 72 ? '80mm, $columns per line' : '${printer.paperWidthMm}mm'));
     bytes.addAll(_row('Printed', _time.format(DateTime.now())));
     bytes.addAll(_generator.hr());
 

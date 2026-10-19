@@ -359,13 +359,39 @@ class SessionRepository {
       final payments = await (_db.select(_db.payments)
             ..where((p) => p.orderId.isIn(ids)))
           .get();
+      // CHANGE IS NOT TAKINGS (2026-10-19).
+      //
+      // A cash payment row holds what was handed over -- a £20 note for a
+      // £7.50 round is a £20 row, so the receipt can print "Change £12.50".
+      // Added up as it stood, every note's change counted as cash taken:
+      // Pontardawe's Saturday Z showed cash £527.20 and payments £1,235.49
+      // against £1,025.69 of sales, and "cash expected" asked for £209.80 the
+      // drawer had already given back. So each sale's overpayment comes off
+      // its cash before anything is added up. Card cannot overpay, and the
+      // departments were right all along.
+      final byOrder = <String, List<Payment>>{};
       for (final p in payments) {
-        // One tender taken is one count, whatever it settled — a bill split
-        // across two cards is two card payments, and that is what the drawer
-        // reconciliation is counting against.
-        byMethod[p.method] =
-            (byMethod[p.method] ?? const ReportTally()).plus(p.amountMinor);
-        gratuity += p.gratuityMinor;
+        (byOrder[p.orderId] ??= []).add(p);
+      }
+      final totalOf = {for (final o in orders) o.id: o.totalMinor};
+      for (final entry in byOrder.entries) {
+        final rows = entry.value;
+        var change = rows.fold<int>(0, (s, p) => s + p.amountMinor) -
+            (totalOf[entry.key] ?? 0);
+        for (final p in rows.reversed) {
+          var amount = p.amountMinor;
+          if (change > 0 && p.method == 'cash') {
+            final off = change < amount ? change : amount;
+            amount -= off;
+            change -= off;
+          }
+          // One tender taken is one count, whatever it settled — a bill split
+          // across two cards is two card payments, and that is what the drawer
+          // reconciliation is counting against.
+          byMethod[p.method] =
+              (byMethod[p.method] ?? const ReportTally()).plus(amount);
+          gratuity += p.gratuityMinor;
+        }
       }
     }
 

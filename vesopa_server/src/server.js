@@ -2337,7 +2337,7 @@ app.get('/reports/end-of-day', async (req, res, next) => {
       [office, date]
     );
     const [byMethod] = await pool.query(
-      `SELECT p.method, COALESCE(SUM(p.amount_minor), 0) AS amount_minor
+      `SELECT p.method, COALESCE(SUM(COALESCE(p.applied_minor, p.amount_minor)), 0) AS amount_minor
        FROM epos_payments p
        JOIN epos_orders o ON o.id = p.order_id
        WHERE o.email = ? AND DATE(o.closed_at) = ?
