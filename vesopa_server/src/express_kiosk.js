@@ -1413,7 +1413,7 @@ function expressKioskRoutes({ pool, broadcast, secret }) {
       broadcast({ type: 'express.print', order_id: order.id, stations: printing }, { office: order.office });
     }
     broadcast(
-      { type: 'order.created', id: sale.id, tableNumber: null, totalMinor: sale.total_minor, lines: sale.lines },
+      { type: 'order.created', id: sale.id, terminal: sale.terminal || null },
       { office: order.office }
     );
     // A till is told about food to make. A membership is not that.

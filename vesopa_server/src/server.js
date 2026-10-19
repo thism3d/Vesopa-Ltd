@@ -345,6 +345,8 @@ app.use('/api', teyaRoutes({ pool, broadcast, secret: JWT_SECRET, onOnlinePaymen
 } }));
 // More than one site under one login: the list and the switch. See src/sites.js.
 app.use('/api', siteRoutes({ pool, broadcast, secret: JWT_SECRET }));
+// Sites within a venue: tills grouped into sites, and the live takings board.
+app.use('/api', require('./till_sites').tillSitesRoutes({ pool, broadcast, secret: JWT_SECRET }));
 // Its own paths (/api/demo and /till/demo/token), so mounted at the root.
 app.use(demoRoutes({ pool, secret: JWT_SECRET }));
 app.use('/api', licenceRoutes({ pool, secret: JWT_SECRET }));
@@ -2306,13 +2308,14 @@ app.post(['/till/orders', '/orders'], async (req, res, next) => {
 
     // Tell the kitchen, the other terminals, and any open back-office
     // dashboard — but only once the sale is durable.
+    // Scoped to the sale's own venue (2026-10-19): it went to every
+    // connected screen of every venue, total and lines included. A nudge
+    // only: each dashboard re-reads its figures over its own session.
     broadcast({
       type: 'order.created',
       id: order.id,
-      tableNumber: order.table_number ?? null,
-      totalMinor: order.total_minor ?? 0,
-      lines: order.lines || [],
-    });
+      terminal: order.terminal ? String(order.terminal).slice(0, 128) : null,
+    }, { office: order.email });
 
     res.status(201).json({ status: 'accepted', id: order.id });
   } catch (err) {
@@ -2419,6 +2422,10 @@ startScheduler({ pool });
 // Loyalty-app notifications that are due, and the sweep that forgets old
 // locations and spent sign-in codes. Unref'd, like the report clock.
 startLoyaltyScheduler({ pool });
+
+// Every venue's data, backed up each night at 03:00, venue by venue, with a
+// full database dump beside it (src/venue_backup.js; admin Offices > Backups).
+require('./venue_backup').startBackupScheduler({ pool });
 
 // Membership renewal reminders: once an hour, each member is emailed once per
 // expiry date, a week before it. Unref'd like the others.

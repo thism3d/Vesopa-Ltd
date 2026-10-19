@@ -448,6 +448,82 @@ function adminRoutes({ pool, broadcast, secret }) {
     }
   });
 
+  // ---- Backups (src/venue_backup.js) ----------------------------------------
+  //
+  // Every venue's data, every night, kept venue by venue. Platform admin only
+  // (router.use above), and files are only ever named from the manifests.
+
+  const backups = require('./venue_backup');
+  let backupRunning = null;
+
+  async function officeOf(id) {
+    const [[o]] = await pool.query('SELECT id, name, contact_email AS email FROM offices WHERE id = ?', [Number(id)]);
+    return o || null;
+  }
+
+  router.get('/backups', async (_req, res, next) => {
+    try {
+      const venues = await backups.activeVenues(pool);
+      res.json({
+        running: !!backupRunning,
+        last_run: backups.lastRun(),
+        venues: venues.map((v) => {
+          const list = backups.listVenue(v);
+          return {
+            id: v.id, name: v.name, email: v.email, count: list.length,
+            latest: list[0] ? { file: list[0].file, taken_at: list[0].taken_at, rows: list[0].rows, bytes: list[0].bytes, reason: list[0].reason } : null,
+          };
+        }),
+        full: backups.listFull().slice(0, 30),
+      });
+    } catch (e) { next(e); }
+  });
+
+  /** Run the nightly backup now (full database and every venue). */
+  router.post('/backups/run', async (_req, res) => {
+    if (!backupRunning) {
+      backupRunning = backups.backupAll(pool).finally(() => { backupRunning = null; });
+    }
+    res.status(202).json({ ok: true, message: 'Backing up every venue now. This page updates when it is done.' });
+  });
+
+  router.get('/backups/full/:file', async (req, res, next) => {
+    try {
+      const file = backups.fullFile(req.params.file);
+      if (!file) return res.status(404).json({ error: 'No such backup.' });
+      res.download(file, req.params.file);
+    } catch (e) { next(e); }
+  });
+
+  router.get('/offices/:id/backups', async (req, res, next) => {
+    try {
+      const o = await officeOf(req.params.id);
+      if (!o) return res.status(404).json({ error: 'No such office.' });
+      res.json({ venue: o, backups: backups.listVenue(o) });
+    } catch (e) { next(e); }
+  });
+
+  router.post('/offices/:id/backups', async (req, res, next) => {
+    try {
+      const o = await officeOf(req.params.id);
+      if (!o) return res.status(404).json({ error: 'No such office.' });
+      const m = await backups.backupVenue(pool, o, { reason: 'manual', by: req.user.email || null });
+      res.json({ ok: true, backup: m, message: `Backed up ${m.rows} rows of ${o.name}.` });
+    } catch (e) {
+      console.error('[backup] manual backup failed:', e.message);
+      res.status(500).json({ error: 'The backup did not complete: ' + String(e.message).slice(0, 200) });
+    }
+  });
+
+  router.get('/offices/:id/backups/:file', async (req, res, next) => {
+    try {
+      const o = await officeOf(req.params.id);
+      const file = o && backups.venueFile(o, req.params.file);
+      if (!file) return res.status(404).json({ error: 'No such backup.' });
+      res.download(file, `${o.name.replace(/[^A-Za-z0-9]+/g, '-')}-${req.params.file}`);
+    } catch (e) { next(e); }
+  });
+
   return router;
 }
 

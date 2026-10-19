@@ -1,5 +1,6 @@
 const express = require('express');
 const { requireAuth } = require('./auth');
+const { siteScope } = require('./till_sites');
 
 /**
  * Analytics for the back office: the numbers behind the charts.
@@ -129,6 +130,8 @@ function analyticsRoutes({ pool, secret }) {
     try {
       const office = await tenantEmail(req);
       const w = reportWindow(req);
+      const sc = await siteScope(pool, office, req.query, '');
+      const so = await siteScope(pool, office, req.query, 'o.');
 
       const [[totals]] = await pool.query(
         `SELECT
@@ -142,9 +145,9 @@ function analyticsRoutes({ pool, secret }) {
            COALESCE(SUM(covers), 0)              AS covers,
            COALESCE(AVG(total_minor), 0)         AS average_minor
          FROM epos_orders
-         WHERE email = ? AND closed_at IS NOT NULL
+         WHERE email = ? AND closed_at IS NOT NULL${sc.sql}
            AND ${w.where('closed_at')}`,
-        [office]
+        [office, ...sc.params]
       );
 
       // The previous window of the same length, so the dashboard can show a
@@ -154,9 +157,9 @@ function analyticsRoutes({ pool, secret }) {
            COUNT(*)                      AS sales,
            COALESCE(SUM(total_minor), 0) AS gross_minor
          FROM epos_orders
-         WHERE email = ? AND closed_at IS NOT NULL
+         WHERE email = ? AND closed_at IS NOT NULL${sc.sql}
            AND ${w.wherePrevious('closed_at')}`,
-        [office]
+        [office, ...sc.params]
       );
 
       const [daily] = await pool.query(
@@ -165,11 +168,11 @@ function analyticsRoutes({ pool, secret }) {
                 COALESCE(SUM(total_minor), 0)    AS gross_minor,
                 COALESCE(SUM(gratuity_minor), 0) AS gratuity_minor
          FROM epos_orders
-         WHERE email = ? AND closed_at IS NOT NULL
+         WHERE email = ? AND closed_at IS NOT NULL${sc.sql}
            AND ${w.where('closed_at')}
          GROUP BY DATE(closed_at)
          ORDER BY day`,
-        [office]
+        [office, ...sc.params]
       );
 
       // Trade by hour: what a venue staffs to.
@@ -178,11 +181,11 @@ function analyticsRoutes({ pool, secret }) {
                 COUNT(*)                      AS sales,
                 COALESCE(SUM(total_minor), 0) AS gross_minor
          FROM epos_orders
-         WHERE email = ? AND closed_at IS NOT NULL
+         WHERE email = ? AND closed_at IS NOT NULL${sc.sql}
            AND ${w.where('closed_at')}
          GROUP BY HOUR(closed_at)
          ORDER BY hour`,
-        [office]
+        [office, ...sc.params]
       );
 
       const [weekday] = await pool.query(
@@ -190,11 +193,11 @@ function analyticsRoutes({ pool, secret }) {
                 COUNT(*)                      AS sales,
                 COALESCE(SUM(total_minor), 0) AS gross_minor
          FROM epos_orders
-         WHERE email = ? AND closed_at IS NOT NULL
+         WHERE email = ? AND closed_at IS NOT NULL${sc.sql}
            AND ${w.where('closed_at')}
          GROUP BY DAYOFWEEK(closed_at)
          ORDER BY dow`,
-        [office]
+        [office, ...sc.params]
       );
 
       const [tenders] = await pool.query(
@@ -203,11 +206,11 @@ function analyticsRoutes({ pool, secret }) {
                 COALESCE(SUM(COALESCE(p.applied_minor, p.amount_minor)), 0) AS total_minor
          FROM epos_payments p
          JOIN epos_orders o ON o.id = p.order_id
-         WHERE o.email = ? AND o.closed_at IS NOT NULL
+         WHERE o.email = ? AND o.closed_at IS NOT NULL${so.sql}
            AND ${w.where('o.closed_at')}
          GROUP BY p.method
          ORDER BY total_minor DESC`,
-        [office]
+        [office, ...so.params]
       );
 
       const [topProducts] = await pool.query(
@@ -216,12 +219,12 @@ function analyticsRoutes({ pool, secret }) {
                 COALESCE(SUM(l.unit_price_minor * l.quantity), 0) AS gross_minor
          FROM epos_order_lines l
          JOIN epos_orders o ON o.id = l.order_id
-         WHERE o.email = ? AND o.closed_at IS NOT NULL
+         WHERE o.email = ? AND o.closed_at IS NOT NULL${so.sql}
            AND ${w.where('o.closed_at')}
          GROUP BY l.name
          ORDER BY gross_minor DESC
          LIMIT 12`,
-        [office]
+        [office, ...so.params]
       );
 
       const [departments] = await pool.query(
@@ -231,11 +234,11 @@ function analyticsRoutes({ pool, secret }) {
          FROM epos_order_lines l
          JOIN epos_orders o ON o.id = l.order_id
          LEFT JOIN bo_products p ON p.pluid = l.plu_id AND p.email = o.email
-         WHERE o.email = ? AND o.closed_at IS NOT NULL
+         WHERE o.email = ? AND o.closed_at IS NOT NULL${so.sql}
            AND ${w.where('o.closed_at')}
          GROUP BY department
          ORDER BY gross_minor DESC`,
-        [office]
+        [office, ...so.params]
       );
 
       const [[stock]] = await pool.query(
@@ -293,6 +296,8 @@ function analyticsRoutes({ pool, secret }) {
     try {
       const office = await tenantEmail(req);
       const w = reportWindow(req);
+      const sc = await siteScope(pool, office, req.query, '');
+      const so = await siteScope(pool, office, req.query, 'o.');
       const [rows] = await pool.query(
         `SELECT COALESCE(o.clerk_name, o.clerk_pin, 'Unknown') AS clerk,
                 COUNT(*)                              AS sales,
@@ -301,11 +306,11 @@ function analyticsRoutes({ pool, secret }) {
                 COALESCE(SUM(o.gratuity_minor), 0)    AS gratuity_minor,
                 COALESCE(SUM(o.discount_minor), 0)    AS discount_minor
          FROM epos_orders o
-         WHERE o.email = ? AND o.closed_at IS NOT NULL
+         WHERE o.email = ? AND o.closed_at IS NOT NULL${so.sql}
            AND ${w.where('o.closed_at')}
          GROUP BY clerk
          ORDER BY gross_minor DESC`,
-        [office]
+        [office, ...so.params]
       );
       res.json(rows);
     } catch (e) { next(e); }
@@ -316,6 +321,8 @@ function analyticsRoutes({ pool, secret }) {
     try {
       const office = await tenantEmail(req);
       const w = reportWindow(req);
+      const sc = await siteScope(pool, office, req.query, '');
+      const so = await siteScope(pool, office, req.query, 'o.');
 
       const [promotions] = await pool.query(
         `SELECT l.promotion_name                      AS name,
@@ -324,12 +331,12 @@ function analyticsRoutes({ pool, secret }) {
                 SUM(l.quantity)                       AS qty
          FROM epos_order_lines l
          JOIN epos_orders o ON o.id = l.order_id
-         WHERE o.email = ? AND o.closed_at IS NOT NULL
+         WHERE o.email = ? AND o.closed_at IS NOT NULL${so.sql}
            AND l.promotion_name IS NOT NULL
            AND ${w.where('o.closed_at')}
          GROUP BY l.promotion_name
          ORDER BY discount_minor DESC`,
-        [office]
+        [office, ...so.params]
       );
 
       const [vouchers] = await pool.query(
@@ -337,12 +344,12 @@ function analyticsRoutes({ pool, secret }) {
                 COUNT(*)                              AS uses,
                 COALESCE(SUM(voucher_minor), 0)       AS discount_minor
          FROM epos_orders
-         WHERE email = ? AND closed_at IS NOT NULL
+         WHERE email = ? AND closed_at IS NOT NULL${sc.sql}
            AND voucher_code IS NOT NULL
            AND ${w.where('closed_at')}
          GROUP BY voucher_code
          ORDER BY discount_minor DESC`,
-        [office]
+        [office, ...sc.params]
       );
 
       res.json({ promotions, vouchers });

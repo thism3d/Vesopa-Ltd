@@ -191,6 +191,7 @@ function connectSocket() {
   socket.onmessage = (e) => {
     const msg = JSON.parse(e.data);
     if (msg.type === 'order.created') onNewSale(msg);
+    if (msg.type === 'till-sites.updated' && currentView === 'dashboard') sitesQueueRefresh();
     if (msg.type === 'memberships' && currentView === 'memberships') loadMemberships().catch(() => {});
     if (msg.type === 'events' && currentView === 'events') evRefresh().catch(() => {});
     if (msg.type === 'card-transactions' && currentView === 'card_payments') loadCardLog().catch(() => {});
@@ -266,13 +267,8 @@ function onNewSale(msg) {
   // tills can settle at once and a client-side counter would drift.
   loadDashboard();
 
-  const tr = document.createElement('tr');
-  tr.className = 'new';
-  tr.innerHTML = `<td>${time(new Date().toISOString())}</td>
-    <td>${msg.tableNumber ?? '—'}</td>
-    <td class="muted small">${esc(String(msg.id).slice(0, 8))}</td>
-    <td class="right">${money(msg.totalMinor)}</td>`;
-  $('recent').prepend(tr);
+  // The socket says only that a sale landed; loadDashboard has just read the
+  // new sale from the server along with everything else.
 }
 
 // ---- Bars -----------------------------------------------------------------
@@ -376,6 +372,7 @@ const ROUTES = {
   licences: '/licences',
   admin_modules: '/admin-modules',
   billing: '/billing',
+  backups: '/backups',
 };
 
 /*
@@ -1367,6 +1364,7 @@ const VIEW_LOADERS = {
     offices: loadOffices,
     licences: loadAdminLicences,
     billing: loadBilling,
+    backups: loadBackups,
     tables: loadFloor,
     dinein: loadDineIn,
     dinein_menu: loadDineInMenu,
@@ -3564,6 +3562,85 @@ async function loadOffices() {
       </tr>`
     )
     .join('') || '<tr><td colspan="8" class="empty">No offices.</td></tr>';
+}
+
+// ---- Backups (platform admin, 2026-10-19) ---------------------------------------
+
+const bkSize = (b) => (b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB');
+const bkWhen = (iso) => (iso ? new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—');
+let bkPoll = null;
+
+/** Download a backup behind the session token. */
+async function bkDownload(path, name) {
+  const res = await fetch('/api' + path, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) { toast((await res.json().catch(() => ({}))).error || 'Download failed'); return; }
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement('a');
+  a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
+}
+
+async function loadBackups() {
+  clearTimeout(bkPoll);
+  const d = await api('/admin/backups');
+  const last = d.last_run;
+  const stale = !last || (Date.now() - new Date(last.started_at)) > 36 * 3600 * 1000;
+  const failed = last && last.failed ? last.failed.length : 0;
+  $('bk-strip').innerHTML = [
+    `<div class="bk-tile ${stale || failed ? 'bad' : 'ok'}"><b>${last ? bkWhen(last.started_at) : 'Not yet'}</b><span>Last nightly run${last && last.seconds != null ? ` · ${last.seconds}s` : ''}</span></div>`,
+    `<div class="bk-tile"><b>${d.venues.filter((v) => v.latest).length} of ${d.venues.length}</b><span>Venues with a backup</span></div>`,
+    `<div class="bk-tile ${failed ? 'bad' : ''}"><b>${failed}</b><span>Failed last night</span></div>`,
+    `<div class="bk-tile"><b>${d.running ? 'Running…' : 'Idle'}</b><span>Backup job</span></div>`,
+  ].join('');
+  $('bk-venues').innerHTML = d.venues.map((v) => {
+    const old = v.latest && (Date.now() - new Date(v.latest.taken_at)) > 36 * 3600 * 1000;
+    return `<tr>
+      <td><strong>${esc(v.name)}</strong><br><span class="muted small">${esc(v.email)}</span></td>
+      <td class="${old || !v.latest ? 'bk-old' : ''}">${v.latest ? bkWhen(v.latest.taken_at) + (v.latest.reason === 'manual' ? ' <span class="pill">manual</span>' : '') : 'None yet'}</td>
+      <td class="right">${v.latest ? Number(v.latest.rows).toLocaleString('en-GB') : '—'}</td>
+      <td class="right">${v.latest ? bkSize(v.latest.bytes) : '—'}</td>
+      <td class="right">${v.count}</td>
+      <td class="right nowrap">
+        <button class="btn small ghost" data-bk-list="${v.id}" data-bk-name="${esc(v.name)}">Backups</button>
+        <button class="btn small" data-bk-now="${v.id}" data-bk-name="${esc(v.name)}">Back up now</button>
+      </td></tr>`;
+  }).join('') || '<tr><td colspan="6" class="empty">No venues.</td></tr>';
+  $('bk-full').innerHTML = d.full.map((f) => `<tr><td class="small">${esc(f.file)}</td><td>${f.kind === 'schema' ? 'Schema only' : 'Everything'}</td>
+    <td class="right">${bkSize(f.bytes)}</td><td class="right"><button class="btn small ghost" data-bk-full="${esc(f.file)}">Download</button></td></tr>`).join('')
+    || '<tr><td colspan="4" class="empty">The first full backup runs tonight, or press Back up every venue now.</td></tr>';
+
+  $('bk-run').disabled = d.running;
+  $('bk-run').onclick = async () => {
+    if (!confirm('Back up every venue and the whole database now? It runs in the background and takes a minute or two.')) return;
+    try { const r = await api('/admin/backups/run', { method: 'POST' }); toast(r.message); loadBackups(); } catch (e) { toast(e.message); }
+  };
+  document.querySelectorAll('[data-bk-now]').forEach((b) => {
+    b.onclick = async () => {
+      b.disabled = true; b.textContent = 'Backing up…';
+      try { const r = await api(`/admin/offices/${b.dataset.bkNow}/backups`, { method: 'POST' }); toast(r.message); await loadBackups(); }
+      catch (e) { toast(e.message); b.disabled = false; b.textContent = 'Back up now'; }
+    };
+  });
+  document.querySelectorAll('[data-bk-list]').forEach((b) => { b.onclick = () => bkShow(b.dataset.bkList, b.dataset.bkName); });
+  document.querySelectorAll('[data-bk-full]').forEach((b) => { b.onclick = () => bkDownload(`/admin/backups/full/${encodeURIComponent(b.dataset.bkFull)}`, b.dataset.bkFull); });
+  $('bk-detail-close').onclick = () => { $('bk-detail').hidden = true; };
+  if (d.running && currentView === 'backups') bkPoll = setTimeout(() => loadBackups().catch(() => {}), 5000);
+}
+
+async function bkShow(id, name) {
+  const d = await api(`/admin/offices/${id}/backups`);
+  $('bk-detail-title').textContent = `${name}: ${d.backups.length} backup(s)`;
+  $('bk-detail-rows').innerHTML = d.backups.map((b) => `<tr>
+    <td>${bkWhen(b.taken_at)}</td><td>${b.reason === 'manual' ? 'Manual' + (b.by ? `, ${esc(b.by)}` : '') : 'Nightly'}</td>
+    <td class="right">${Number(b.rows).toLocaleString('en-GB')}</td><td class="right">${bkSize(b.bytes)}</td>
+    <td class="small muted" title="${esc(b.sha256)}">${esc(b.sha256.slice(0, 16))}…</td>
+    <td class="right"><button class="btn small ghost" data-bk-file="${esc(b.file)}">Download</button></td></tr>`).join('')
+    || '<tr><td colspan="6" class="empty">No backups yet.</td></tr>';
+  $('bk-detail-rows').querySelectorAll('[data-bk-file]').forEach((x) => {
+    x.onclick = () => bkDownload(`/admin/offices/${id}/backups/${encodeURIComponent(x.dataset.bkFile)}`, `${name.replace(/[^A-Za-z0-9]+/g, '-')}-${x.dataset.bkFile}`);
+  });
+  $('bk-detail').hidden = false;
+  $('bk-detail').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 async function loadBilling() {
@@ -8503,12 +8580,165 @@ function statCards(el, cards) {
 let dashDays = 1;
 // What the range buttons ask the server for: days=N, range=yesterday, or a
 // custom from/to (2026-10-16, Pontardawe's committee).
+// ---- Sites within a venue (2026-10-19) ---------------------------------------
+//
+// The whole venue, one site or one till, and the live board. The socket only
+// says a sale landed (scoped to this venue); the figures are re-read here.
+
+let siteFilter = '';       // '', 'site=<id>', 'site=none' or 'till=<name>'
+let sitesData = null;
+let sitesTimer = null;
+const sitesLast = new Map();
+
+const siteAgo = (iso) => {
+  if (!iso) return 'no sales yet';
+  const m = Math.round((Date.now() - new Date(iso)) / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m} min ago`;
+  const h = Math.round(m / 60);
+  return h < 24 ? `${h} h ago` : new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+};
+const siteTillName = (t) => t.label || t.terminal;
+
+function sitesQueueRefresh() {
+  clearTimeout(sitesTimer);
+  sitesTimer = setTimeout(() => { if (currentView === 'dashboard') loadSitesBoard().catch(() => {}); }, 600);
+}
+
+async function loadSitesBoard() {
+  let d;
+  try {
+    d = await api(`/analytics/sites?${dashQuery}`);
+  } catch (e) {
+    $('sites-board').innerHTML = `<p class="small" style="color:#b42318">${esc(e.message)}</p>`;
+    return;
+  }
+  sitesData = d;
+  const tills = d.sites.flatMap((s) => s.tills);
+  // The site bar: only worth showing with more than one till.
+  const many = tills.length > 1 || d.has_sites;
+  $('site-bar').hidden = !many;
+  const chip = (q, label, colour) => `<button type="button" class="site-chip" role="tab" data-site-q="${esc(q)}" aria-selected="${siteFilter === q}">${colour ? `<i style="background:${esc(colour)}"></i>` : ''}${esc(label)}</button>`;
+  $('site-chips').innerHTML = chip('', 'All sites') + (d.has_sites ? d.sites.map((s) => chip(`site=${s.id}`, s.name, s.colour)).join('') : '');
+  $('site-till').innerHTML = '<option value="">One till…</option>' + tills
+    .map((t) => `<option value="${esc(t.terminal)}"${siteFilter === `till=${encodeURIComponent(t.terminal)}` ? ' selected' : ''}>${esc(siteTillName(t))}</option>`).join('');
+  document.querySelectorAll('[data-site-q]').forEach((b) => { b.onclick = () => setSiteFilter(b.dataset.siteQ); });
+  $('site-till').onchange = () => setSiteFilter($('site-till').value ? `till=${encodeURIComponent($('site-till').value)}` : '');
+  $('site-manage').onclick = openSitesManager;
+
+  $('sites-window').textContent = `${d.window} · £${pounds(d.total.gross_minor)} from ${d.total.sales} sale${d.total.sales === 1 ? '' : 's'}`;
+  $('sites-venues').innerHTML = d.venues && d.venues.length
+    ? `<div class="sites-venues">${d.venues.map((v) => `<div class="sites-venue${v.current ? ' current' : ''}" title="${v.current ? 'This venue' : 'Another venue you manage. Switch to it from the venue menu.'}"><span>${esc(v.name)}</span><b>£${pounds(v.gross_minor)}</b><small>${v.sales} sales · ${siteAgo(v.last_sale)}</small></div>`).join('')}
+        <div class="sites-venue"><span>All your venues</span><b>£${pounds(d.venues_total.gross_minor)}</b><small>${d.venues_total.sales} sales</small></div></div>`
+    : '';
+  $('sites-board').innerHTML = d.sites.length ? d.sites.map((s) => {
+    const avg = s.sales ? Math.round(s.gross_minor / s.sales) : 0;
+    return `<div class="site-card" style="--site:${esc(s.colour)}" data-site-card="${esc(String(s.id))}">
+      <div class="sn"><span>${esc(s.name)}</span><small class="muted">${s.tills.length} till${s.tills.length === 1 ? '' : 's'}</small></div>
+      <div class="sg">£${pounds(s.gross_minor)}</div>
+      <div class="ss">${s.sales} sale${s.sales === 1 ? '' : 's'}${s.sales ? ` · average £${pounds(avg)}` : ''}${s.covers ? ` · ${s.covers} covers` : ''}</div>
+      ${s.tills.map((t) => `<div class="site-till" data-site-till="${esc(t.terminal)}"><span>${esc(siteTillName(t))} <small>${siteAgo(t.last_sale)}</small></span><b>£${pounds(t.gross_minor)}</b></div>`).join('')}
+    </div>`;
+  }).join('') : '<p class="muted small">No sales in this period yet.</p>';
+  document.querySelectorAll('[data-site-card]').forEach((c) => {
+    c.onclick = (e) => {
+      const till = e.target.closest('[data-site-till]');
+      if (till) return setSiteFilter(`till=${encodeURIComponent(till.dataset.siteTill)}`);
+      const id = c.dataset.siteCard;
+      if (d.has_sites) setSiteFilter(id === 'none' ? 'site=none' : `site=${id}`);
+    };
+    // A sale just landed here: the card flashes.
+    const key = c.dataset.siteCard;
+    const site = d.sites.find((x) => String(x.id) === key);
+    if (site && sitesLast.has(key) && sitesLast.get(key) !== site.gross_minor) {
+      c.classList.remove('flash'); void c.offsetWidth; c.classList.add('flash');
+    }
+    if (site) sitesLast.set(key, site.gross_minor);
+  });
+  $('sites-live').classList.toggle('off', !(socket && socket.readyState === 1));
+}
+
+function setSiteFilter(q) {
+  siteFilter = q;
+  document.querySelectorAll('[data-site-q]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.siteQ === q)));
+  if (!q.startsWith('till=')) $('site-till').value = '';
+  loadDashboardAnalytics();
+}
+
+// ---- The manager ------------------------------------------------------------------
+
+async function openSitesManager() {
+  $('sm').hidden = false;
+  $('sm-close').onclick = () => { $('sm').hidden = true; sitesQueueRefresh(); };
+  $('sm').onclick = (e) => { if (e.target.id === 'sm') $('sm-close').click(); };
+  $('sm-add').onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      smRender(await api('/till-sites', { method: 'POST', body: JSON.stringify({ name: $('sm-add-name').value, address: $('sm-add-address').value }) }));
+      $('sm-add-name').value = ''; $('sm-add-address').value = '';
+      smSay('Site added. Now put its tills in it below.', true);
+    } catch (err) { smSay(err.message, false); }
+  };
+  try { smRender(await api('/till-sites')); } catch (err) { smSay(err.message, false); }
+}
+
+function smSay(t, ok) {
+  const el = $('sm-msg');
+  el.textContent = t || '';
+  el.style.color = ok ? '#06784f' : '#b42318';
+}
+
+function smRender(d) {
+  $('sm-sites').innerHTML = d.sites.length ? d.sites.map((s) => `<div class="sm-site" data-sm-site="${s.id}">
+      <input type="color" value="${esc(s.colour)}" aria-label="Colour">
+      <input type="text" value="${esc(s.name)}" maxlength="80" aria-label="Site name">
+      <input type="text" value="${esc(s.address || '')}" maxlength="160" placeholder="Where (optional)" aria-label="Where">
+      <button class="btn small" type="button" data-sm-save>Save</button>
+      <button class="btn small danger" type="button" data-sm-del>Remove</button></div>`).join('')
+    : '<p class="muted small">No sites yet. Add one below, such as Bar or Lounge.</p>';
+  const opts = (sel) => '<option value="">No site</option>' + d.sites.map((s) => `<option value="${s.id}"${s.id === sel ? ' selected' : ''}>${esc(s.name)}</option>`).join('');
+  $('sm-tills').innerHTML = d.tills.length ? d.tills.map((t) => `<tr data-sm-till="${esc(t.terminal)}">
+      <td class="small">${esc(t.terminal)}</td>
+      <td><input type="text" value="${esc(t.label || '')}" maxlength="80" placeholder="e.g. Bar till 1" aria-label="Name for ${esc(t.terminal)}"></td>
+      <td><select aria-label="Site for ${esc(t.terminal)}">${opts(t.site_id)}</select></td>
+      <td class="small">${t.last_sale ? siteAgo(t.last_sale) : '—'}</td>
+      <td class="right">${t.sales_30d || 0}</td></tr>`).join('')
+    : '<tr><td colspan="5" class="empty">No till has taken a sale yet.</td></tr>';
+  $('sm-sites').querySelectorAll('[data-sm-site]').forEach((row) => {
+    const id = row.dataset.smSite;
+    const [colour, name, address] = row.querySelectorAll('input');
+    row.querySelector('[data-sm-save]').onclick = async () => {
+      try { smRender(await api(`/till-sites/${id}`, { method: 'PUT', body: JSON.stringify({ name: name.value, address: address.value, colour: colour.value }) })); smSay('Saved.', true); }
+      catch (err) { smSay(err.message, false); }
+    };
+    row.querySelector('[data-sm-del]').onclick = async () => {
+      if (!confirm(`Remove the site "${name.value}"? Its tills and their sales are kept; they are just in no site.`)) return;
+      try { const r = await api(`/till-sites/${id}`, { method: 'DELETE' }); smRender(r); smSay(r.message, true); }
+      catch (err) { smSay(err.message, false); }
+    };
+  });
+  $('sm-tills').querySelectorAll('[data-sm-till]').forEach((row) => {
+    const input = row.querySelector('input');
+    const select = row.querySelector('select');
+    const save = async () => {
+      try {
+        await api('/till-names', { method: 'PUT', body: JSON.stringify({ terminal: row.dataset.smTill, label: input.value, site_id: select.value || null }) });
+        smSay(`Saved ${input.value || row.dataset.smTill}.`, true);
+      } catch (err) { smSay(err.message, false); }
+    };
+    input.onchange = save;
+    select.onchange = save;
+  });
+}
+
 let dashQuery = 'days=1';
 
 async function loadDashboardAnalytics() {
+  // The sites board follows the same period.
+  loadSitesBoard().catch(() => {});
   let data;
   try {
-    data = await api(`/analytics/overview?${dashQuery}`);
+    data = await api(`/analytics/overview?${dashQuery}${siteFilter ? `&${siteFilter}` : ''}`);
   } catch (err) {
     // The dashboard must still render its live-sales table if analytics fail —
     // but the failure has to be visible, not swallowed. A silent catch here
@@ -8558,6 +8788,14 @@ async function loadDashboardAnalytics() {
       : data.window_days === 1
         ? 'Today'
         : `Last ${data.window_days} days`;
+  // Which part of the venue the figures are for.
+  if (siteFilter && sitesData) {
+    const q = decodeURIComponent(siteFilter.split('=')[1] || '');
+    const site = siteFilter.startsWith('site=') ? sitesData.sites.find((x) => String(x.id) === q) : null;
+    const till = siteFilter.startsWith('till=') ? sitesData.sites.flatMap((x) => x.tills).find((t) => t.terminal === q) : null;
+    const name = site ? site.name : till ? siteTillName(till) : q === 'none' ? 'Not in a site' : q;
+    $('dash-window').textContent += ` · ${name}`;
+  }
 
   Charts.line($('dash-line'), (data.daily || []).map((d) => ({
     label: shortDate(d.day),

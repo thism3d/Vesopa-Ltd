@@ -384,6 +384,7 @@
             <button class="nav" data-view="licences">Licences &amp; pricing</button>
             <button class="nav" data-view="admin_modules">Modules</button>
             <button class="nav" data-view="billing">Billing</button>
+            <button class="nav" data-view="backups">Backups</button>
             <button class="nav" data-view="templates">Templates</button>
             <button class="nav" data-view="subscriptions">Subscriptions</button>
           </div>
@@ -483,6 +484,13 @@
             <span class="muted small" id="dash-window"></span>
             <button type="button" class="btn ghost small dash-customise" id="dash-customise" title="Move, resize or hide the cards on this page">Customise</button>
           </div>
+          <!-- Sites (2026-10-19): the whole venue, one site, or one till. Shown
+               once a venue has more than one till. -->
+          <div class="site-bar" id="site-bar" hidden>
+            <div class="site-chips" id="site-chips" role="tablist" aria-label="Show takings for"></div>
+            <select id="site-till" aria-label="One till"></select>
+            <button type="button" class="btn ghost small" id="site-manage">Sites &amp; tills</button>
+          </div>
           <!-- Custom range (2026-10-16, Pontardawe's committee): any start and
                end, to the minute, e.g. a match day from noon to closing. -->
           <form class="dash-custom" id="dash-custom" hidden>
@@ -506,6 +514,15 @@
           <div class="dash-hidden-tray" id="dash-hidden-tray" hidden></div>
 
           <div class="dash-widgets" id="dash-widgets">
+            <div class="dash-widget" data-widget="sites" data-size="full" data-title="Sites, live">
+              <div class="card panel sites-card">
+                <div class="panel-head"><h3>Sites <span class="sites-live" id="sites-live" title="Updates the moment a till takes a sale">LIVE</span></h3>
+                  <span class="muted small" id="sites-window"></span></div>
+                <div id="sites-venues"></div>
+                <div class="sites-grid" id="sites-board"><p class="muted small">Loading…</p></div>
+              </div>
+            </div>
+
             <div class="dash-widget" data-widget="stats" data-size="full" data-title="Headline figures">
               <div class="grid-cards" id="dash-stats"></div>
             </div>
@@ -4717,6 +4734,33 @@
           </table></div>
         </section>
 
+        <!-- Backups (2026-10-19): every venue's data every night, kept venue by
+             venue, with the whole database beside it (src/venue_backup.js). -->
+        <section id="view-backups" class="view" hidden>
+          <div class="page-head"><div><h2>Backups</h2><p class="muted small">Every venue's data is backed up each night at 3am, venue by venue, with a full copy of the whole database beside it. Nightly backups are kept for 30 days, and the first of each month for a year.</p></div>
+            <button class="btn primary" id="bk-run">Back up every venue now</button></div>
+          <div class="bk-strip" id="bk-strip"></div>
+          <div class="card"><table>
+            <thead><tr><th>Venue</th><th>Latest backup</th><th class="right">Rows</th><th class="right">Size</th><th class="right">Kept</th><th></th></tr></thead>
+            <tbody id="bk-venues"></tbody>
+          </table></div>
+          <div class="card" id="bk-detail" hidden>
+            <div class="page-head" style="margin:0 0 8px"><h3 style="margin:0" id="bk-detail-title"></h3><button class="btn small ghost" id="bk-detail-close">Close</button></div>
+            <div class="table-scroll"><table>
+              <thead><tr><th>Taken</th><th>Type</th><th class="right">Rows</th><th class="right">Size</th><th>Checksum (SHA-256)</th><th></th></tr></thead>
+              <tbody id="bk-detail-rows"></tbody>
+            </table></div>
+            <p class="muted small">Each file holds only this venue's rows, as INSERT IGNORE statements, so it can never drop or overwrite a table. To restore, load the night's schema file into an empty database first, then this file, and copy back what is needed.</p>
+          </div>
+          <div class="card">
+            <h3 style="margin-top:0">Whole database</h3>
+            <div class="table-scroll"><table>
+              <thead><tr><th>File</th><th>Type</th><th class="right">Size</th><th></th></tr></thead>
+              <tbody id="bk-full"></tbody>
+            </table></div>
+          </div>
+        </section>
+
         <section id="view-billing" class="view" hidden>
           <div class="page-head"><div><h2>Billing</h2><p class="muted small">Invoices raised against each office. Flag overdue marks anything still due after its date has passed.</p></div><button class="btn ghost" id="sweep">Flag overdue</button></div>
           <div class="card"><table>
@@ -4725,6 +4769,31 @@
           </table></div>
         </section>
       </main>
+    </div>
+
+    <!-- Sites & tills manager (2026-10-19). -->
+    <div class="sm-overlay" id="sm" hidden>
+      <div class="sm-panel" role="dialog" aria-modal="true" aria-labelledby="sm-title">
+        <div class="sm-head"><div><h2 id="sm-title">Sites &amp; tills</h2>
+          <p class="muted small">Group the venue's tills into sites, such as Bar and Lounge, or each park. The dashboard then shows the whole venue, one site, or one till. Sales already taken count straight away.</p></div>
+          <button type="button" class="btn ghost small" id="sm-close" aria-label="Close">Close</button></div>
+        <div class="sm-body">
+          <h3>Sites</h3>
+          <div id="sm-sites"></div>
+          <form class="sm-add" id="sm-add">
+            <input id="sm-add-name" maxlength="80" placeholder="New site, e.g. Lounge" required>
+            <input id="sm-add-address" maxlength="160" placeholder="Where (optional)">
+            <button class="btn primary small" type="submit">Add site</button>
+          </form>
+          <h3>Tills</h3>
+          <p class="muted small">Every till that has taken a sale, by the computer's name. Give each a name the team uses and put it in its site.</p>
+          <div class="table-scroll"><table>
+            <thead><tr><th>Computer</th><th>Name</th><th>Site</th><th>Last sale</th><th class="right">Sales, 30 days</th></tr></thead>
+            <tbody id="sm-tills"></tbody>
+          </table></div>
+          <p class="small" id="sm-msg" role="status"></p>
+        </div>
+      </div>
     </div>
 
     <div id="modal-root"></div>
