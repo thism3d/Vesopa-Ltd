@@ -162,7 +162,12 @@ function createCheckoutIntent(key, { amountMinor, reference, description, redire
       // -- which is what Pontardawe RFC's live account did (2026-10-15);
       // the sandbox happened to make one anyway. Top level, not in config.
       generateRemoteToken: true,
-      config: redirectUrl ? { redirectUrl } : undefined,
+      // cancelUrl too (2026-10-19): Dojo's checkout has a way back, and the
+      // go-live checklist tests it. Without it the intent had no cancel
+      // address at all. Both land on the same page, which reads the intent
+      // and says "Payment not finished" with Pay now, Pay at the bar and
+      // Cancel -- a cancel is never taken on the browser's word either.
+      config: redirectUrl ? { redirectUrl, cancelUrl: redirectUrl } : undefined,
     },
   });
 }
