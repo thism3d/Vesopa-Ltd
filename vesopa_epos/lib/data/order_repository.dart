@@ -94,6 +94,30 @@ class OrderRepository {
     return id;
   }
 
+  /// The bill this till had on screen when it last closed, to carry on with.
+  ///
+  /// An update that restarts the till (admin.vesopa.com Versions, Force) or a
+  /// crash leaves the bill being rung up as an open order on no table: this
+  /// finds it so the till opens on it again, exactly as it was, instead of on a
+  /// blank one with that bill lost in the database. Only this till's own
+  /// (not mirrored from another), with something on it, from the last day.
+  Future<String?> unfinishedOrder() async {
+    final since = DateTime.now().subtract(const Duration(hours: 24));
+    final rows = await (_db.select(_db.orders)
+          ..where((o) =>
+              o.status.equals('open') &
+              o.tableNumber.isNull() &
+              o.heldBy.isNull() &
+              o.createdAt.isBiggerOrEqualValue(since))
+          ..orderBy([(o) => OrderingTerm.desc(o.createdAt)])
+          ..limit(5))
+        .get();
+    for (final o in rows) {
+      if ((await linesOnce(o.id)).isNotEmpty) return o.id;
+    }
+    return null;
+  }
+
   /// Make an empty bill match who is signed on.
   ///
   /// Only an empty one: a bill with something on it keeps what it was opened

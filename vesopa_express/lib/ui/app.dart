@@ -148,7 +148,9 @@ class _KioskShellState extends ConsumerState<KioskShell> {
     // Customers use this screen, so nobody is asked: it is fetched quietly and
     // taken the next time the kiosk starts.
     ref.listen(kioskLicenceProvider, (_, next) {
-      unawaited(stageUpdate(next.value?.update, builtVersion: ExpressConfig.version));
+      // Install now / at a time (admin): only with nobody at the screen.
+      unawaited(stageUpdate(next.value?.update, builtVersion: ExpressConfig.version,
+          ready: () => ref.read(orderFlowProvider).step == FlowStep.attract, context: context, appName: 'Vesopa Express'));
     });
     if (licence != null && licence.locked) {
       return LicenceLockedPage(

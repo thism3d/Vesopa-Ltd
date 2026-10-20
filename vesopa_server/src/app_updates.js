@@ -109,7 +109,9 @@ async function pinFor(db, office, app) {
 /** When to install, for the device: ask, now, or at a time (UTC ISO). */
 function whenOf(pin) {
   const mode = pin && (pin.mode === 'now' || pin.mode === 'at') ? pin.mode : 'ask';
-  return mode === 'at' && pin.install_at ? { mode, install_at: pin.install_at } : { mode: mode === 'at' ? 'ask' : mode };
+  const out = mode === 'at' && pin.install_at ? { mode, install_at: pin.install_at } : { mode: mode === 'at' ? 'ask' : mode };
+  if (out.mode !== 'ask' && Number(pin.force_update)) out.force = true;
+  return out;
 }
 
 async function offerFor(db, { office, app, version, install, storeCheck = false }) {
@@ -208,7 +210,7 @@ function adminRoutes({ pool, broadcast, auth, admin }) {
         office_id: p.office === DEFAULT ? null : p.office_id, default: p.office === DEFAULT, app: p.app,
         version: p.version, url: p.url, sha256: p.sha256, size: p.size == null ? null : Number(p.size),
         store: !!Number(p.store_ok || 0), set_by: p.set_by, set_at: p.set_at,
-        mode: p.mode || 'ask', install_at: p.install_at || null,
+        mode: p.mode || 'ask', install_at: p.install_at || null, force: !!Number(p.force_update || 0),
       });
       res.json({
         enabled: await enabled(pool),
@@ -279,13 +281,14 @@ function adminRoutes({ pool, broadcast, auth, admin }) {
         }
         for (const office of offices) {
           await pool.execute(
-            `INSERT INTO bo_app_pins (office, app, version, url, sha256, size, store_ok, set_by, set_at, mode, install_at)
-             VALUES (?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP,?,?)
+            `INSERT INTO bo_app_pins (office, app, version, url, sha256, size, store_ok, set_by, set_at, mode, install_at, force_update)
+             VALUES (?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP,?,?,?)
              ON DUPLICATE KEY UPDATE version = VALUES(version), url = VALUES(url), sha256 = VALUES(sha256),
                size = VALUES(size), store_ok = VALUES(store_ok), set_by = VALUES(set_by), set_at = CURRENT_TIMESTAMP,
-               mode = VALUES(mode), install_at = VALUES(install_at)`,
+               mode = VALUES(mode), install_at = VALUES(install_at), force_update = VALUES(force_update)`,
             [office, app, version, hasFile ? String(b.url).slice(0, 500) : null, sha,
-              hasFile && b.size != null ? Number(b.size) || null : null, store ? 1 : 0, by, version ? mode : 'ask', version ? at : null]
+              hasFile && b.size != null ? Number(b.size) || null : null, store ? 1 : 0, by, version ? mode : 'ask', version ? at : null,
+              version && mode !== 'ask' && b.force === true ? 1 : 0]
           );
         }
       }

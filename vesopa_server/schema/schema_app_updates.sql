@@ -61,3 +61,5 @@ ALTER TABLE bo_app_pins ADD COLUMN IF NOT EXISTS store_ok TINYINT(1) NOT NULL DE
 -- can, a till between sales), or at (install_at, an ISO time in UTC).
 ALTER TABLE bo_app_pins ADD COLUMN IF NOT EXISTS mode VARCHAR(8) NOT NULL DEFAULT 'ask';
 ALTER TABLE bo_app_pins ADD COLUMN IF NOT EXISTS install_at VARCHAR(30) NULL;
+-- Force: install even with a bill open; the till opens on that bill again.
+ALTER TABLE bo_app_pins ADD COLUMN IF NOT EXISTS force_update TINYINT(1) NOT NULL DEFAULT 0;

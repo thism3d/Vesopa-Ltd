@@ -488,7 +488,8 @@ const VERSION_APPS = releases.APPS;
  */
 function whenFrom(b) {
   const mode = b.when === 'now' || b.when === 'at' ? b.when : 'ask';
-  if (mode !== 'at') return { mode };
+  const force = mode !== 'ask' && (b.force === '1' || b.force === 'on' || b.force === true);
+  if (mode !== 'at') return force ? { mode, force } : { mode };
   const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(String(b.when_at || ''));
   if (!m) throw new Error('Choose the date and time to install.');
   // The time was typed in UK time: find its UTC instant.
@@ -501,17 +502,18 @@ function whenFrom(b) {
   };
   const utc = guess - offset(guess - offset(guess));
   if (utc < Date.now() - 60000) throw new Error('That time has passed. Choose a time from now on, or Install now.');
-  return { mode, install_at: new Date(utc).toISOString() };
+  return force ? { mode, install_at: new Date(utc).toISOString(), force } : { mode, install_at: new Date(utc).toISOString() };
 }
 
 /** "at 20 Oct 22:00" in UK time, for the table. */
 function whenLabel(pin) {
   if (!pin || !pin.version) return '';
-  if (pin.mode === 'now') return 'Installs now (no question)';
+  const forced = pin.force ? ', forced: an open bill is kept and comes back' : '';
+  if (pin.mode === 'now') return `Installs now (no question${forced})`;
   if (pin.mode === 'at' && pin.install_at) {
     const t = new Date(pin.install_at);
     const s = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(t);
-    return t.getTime() > Date.now() ? `Installs at ${s} (no question)` : `Installing since ${s}`;
+    return t.getTime() > Date.now() ? `Installs at ${s} (no question${forced})` : `Installing since ${s}${forced ? ' (forced)' : ''}`;
   }
   return 'Asks on screen';
 }

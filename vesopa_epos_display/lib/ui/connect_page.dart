@@ -327,7 +327,7 @@ class _LicensedDisplay extends ConsumerWidget {
     // (Versions). Customers face this screen, so nobody is asked: it is
     // fetched quietly and taken the next time the display starts.
     ref.listen(displayLicenceProvider, (_, next) {
-      unawaited(stageUpdate(next.value?.update, builtVersion: displayAppVersion));
+      unawaited(stageUpdate(next.value?.update, builtVersion: displayAppVersion, context: context, appName: 'Customer Display'));
     });
     if (licence != null && licence.locked) {
       return LicenceLockedPage(

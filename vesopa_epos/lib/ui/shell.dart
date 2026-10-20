@@ -144,7 +144,9 @@ class _PosShellState extends ConsumerState<PosShell> {
           .sweepPracticeBills()
           .then<void>((_) {}, onError: (Object _) {}),
     );
-    _newOrder();
+    // Carry on with the bill that was open when the till last closed (an
+    // update restart, or a crash), else a new one.
+    unawaited(_resumeOrNew());
     _seatWatch = Timer.periodic(
       const Duration(minutes: 2),
       (_) => unawaited(_checkSeat()),
@@ -595,6 +597,23 @@ class _PosShellState extends ConsumerState<PosShell> {
     }
   }
 
+  Future<void> _resumeOrNew() async {
+    try {
+      final id = await ref.read(orderRepositoryProvider).unfinishedOrder();
+      if (id != null && mounted) {
+        setState(() {
+          _orderId = id;
+          _openFailure = null;
+        });
+        _followOnDisplay(id);
+        return;
+      }
+    } catch (_) {
+      // Fall through to a new bill.
+    }
+    await _newOrder();
+  }
+
   Future<void> _newOrder() async {
     try {
       final id = await ref.read(orderRepositoryProvider).openOrder();
@@ -819,6 +838,9 @@ class _PosShellState extends ConsumerState<PosShell> {
         appName: 'Vesopa EPOS',
         builtVersion: VesopaBrand.appVersion,
         ready: _betweenSales,
+        // Before an update restarts the till: every unsent sale goes to the
+        // server. Open orders are kept on this computer either way.
+        beforeRestart: () => ref.read(syncServiceProvider).flush(),
       ));
     });
 

@@ -1,3 +1,6 @@
+// Every use of a BuildContext after an await here is guarded by context.mounted
+// (or a fresh ready() check) before it is touched.
+// ignore_for_file: use_build_context_synchronously
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -50,7 +53,12 @@ class AppUpdate {
     this.switchToDirect = false,
     this.mode = 'ask',
     this.installAt,
+    this.force = false,
   });
+
+  /// Force (admin): install even with a bill open. The bill is kept: the till
+  /// opens on it again after the restart (OrderRepository.unfinishedOrder).
+  final bool force;
 
   /// When to install, as chosen on admin.vesopa.com Versions (2026-10-20):
   /// `ask` asks on screen (Update now / On next start), `now` installs as
@@ -97,7 +105,7 @@ class AppUpdate {
     if (raw['store'] == true) {
       final id = raw['store_id'];
       if (version is! String || id is! String || !RegExp(r'^[0-9A-Z]{12}$').hasMatch(id)) return null;
-      return AppUpdate(version: version, url: '', sha256: '', storeId: id, mode: mode, installAt: at);
+      return AppUpdate(version: version, url: '', sha256: '', storeId: id, mode: mode, installAt: at, force: raw['force'] == true);
     }
     final url = raw['url'];
     final sha = raw['sha256'];
@@ -112,6 +120,7 @@ class AppUpdate {
       switchToDirect: raw['switch'] == true,
       mode: mode,
       installAt: at,
+      force: raw['force'] == true,
     );
   }
 }
@@ -434,13 +443,16 @@ Future<void> offerUpdate(
   required String appName,
   required String builtVersion,
   bool Function()? ready,
+  Future<void> Function()? beforeRestart,
 }) async {
   if (update == null || kIsWeb || !Platform.isWindows) return;
   final me = await Installation.current(builtVersion);
   if (!await Updater._wanted(update, me)) return;
   if (ready != null && !ready()) return;
   // Install now, or at a set time, chosen in admin: no question.
-  if (update.permitted) return _installPermitted(update, ready: ready);
+  if (update.permitted) {
+    return _installPermitted(update, ready: ready, context: context, appName: appName, beforeRestart: beforeRestart);
+  }
   Updater._handled.add(update.version);
   if (update.switchToDirect) {
     final file = await Updater.fetch(update, into: Handover.folder());
@@ -500,7 +512,15 @@ Future<void> offerUpdate(
 /// next licence check (every five minutes) or a timer set for the moment
 /// installs it. A till waits until it is between sales. Any failure leaves
 /// things as they are and the next check tries again.
-Future<void> _installPermitted(AppUpdate update, {bool Function()? ready}) async {
+Future<void> _installPermitted(
+  AppUpdate update, {
+  bool Function()? ready,
+  BuildContext? context,
+  String appName = 'Vesopa',
+  Future<void> Function()? beforeRestart,
+}) async {
+  // Forced: nothing on screen holds it up; the open bill comes back after.
+  if (update.force) ready = null;
   if (!update.due) {
     await (update.switchToDirect
         ? Updater.fetch(update, into: Handover.folder())
@@ -513,7 +533,9 @@ Future<void> _installPermitted(AppUpdate update, {bool Function()? ready}) async
       final wait = at.difference(DateTime.now());
       Future<void>.delayed(wait.isNegative ? Duration.zero : wait, () {
         Updater._timers.remove(update.version);
-        if (ready == null || ready()) unawaited(_installPermitted(update, ready: ready));
+        if (ready == null || ready()) {
+          unawaited(_installPermitted(update, ready: ready, context: context, appName: appName, beforeRestart: beforeRestart));
+        }
       });
     }
     return;
@@ -527,11 +549,19 @@ Future<void> _installPermitted(AppUpdate update, {bool Function()? ready}) async
       Updater._handled.remove(update.version);
       return;
     }
+    if (!await _countdown(context, update, appName, ready, beforeRestart)) {
+      Updater._handled.remove(update.version);
+      return;
+    }
     await Handover.leave(update, file);
     return;
   }
   if (update.viaStore) {
     if (await StoreUpdate.available() == null) {
+      Updater._handled.remove(update.version);
+      return;
+    }
+    if (!await _countdown(context, update, appName, ready, beforeRestart)) {
       Updater._handled.remove(update.version);
       return;
     }
@@ -548,8 +578,109 @@ Future<void> _installPermitted(AppUpdate update, {bool Function()? ready}) async
     Updater._handled.remove(update.version);
     return;
   }
+  if (!await _countdown(context, update, appName, ready, beforeRestart)) {
+    Updater._handled.remove(update.version);
+    return;
+  }
   await Updater.install(update, file);
   Updater._handled.remove(update.version);
+}
+
+/// Like Windows: "Restarting to update in 30 seconds", with Restart now.
+/// Nobody has to press anything; at nought it goes. Then [beforeRestart]
+/// (the till sends its unsent sales) and the install. False only when the
+/// screen became busy meanwhile (a bill started), so it waits for the next
+/// check.
+Future<bool> _countdown(
+  BuildContext? context,
+  AppUpdate update,
+  String appName,
+  bool Function()? ready,
+  Future<void> Function()? beforeRestart,
+) async {
+  if (context != null && context.mounted) {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      useRootNavigator: true,
+      builder: (_) => _RestartCountdown(appName: appName, version: _short(update.version)),
+    );
+  }
+  if (ready != null && !ready()) return false;
+  if (beforeRestart != null) {
+    try {
+      await beforeRestart().timeout(const Duration(seconds: 15));
+    } catch (_) {
+      // Unsent sales stay queued on this computer and go after the restart.
+    }
+  }
+  return true;
+}
+
+class _RestartCountdown extends StatefulWidget {
+  const _RestartCountdown({required this.appName, required this.version});
+  final String appName;
+  final String version;
+
+  @override
+  State<_RestartCountdown> createState() => _RestartCountdownState();
+}
+
+class _RestartCountdownState extends State<_RestartCountdown> {
+  static const _seconds = 30;
+  int _left = _seconds;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) return;
+      if (_left <= 1) {
+        t.cancel();
+        Navigator.of(context).pop();
+      } else {
+        setState(() => _left -= 1);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      icon: const Icon(Icons.system_update_alt, size: 40),
+      title: Text('${widget.appName} is updating to ${widget.version}'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('Restarting in $_left second${_left == 1 ? '' : 's'}.', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 12),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: LinearProgressIndicator(value: _left / _seconds, minHeight: 8),
+          ),
+          const SizedBox(height: 12),
+          const Text('Everything is saved, including the bill on screen and open orders. '
+              'It comes back by itself in about a minute, on the same bill.'),
+        ],
+      ),
+      actions: [
+        FilledButton(
+          onPressed: () {
+            _timer?.cancel();
+            Navigator.of(context).pop();
+          },
+          child: const Text('Restart now'),
+        ),
+      ],
+    );
+  }
 }
 
 /// "Update now" (true) or "On next start", the same for every kind of copy.
@@ -599,11 +730,23 @@ String _short(String v) => Updater._norm(v);
 ///
 /// A Store copy does the same: once the Store has the update, it is taken
 /// at the next start.
-Future<void> stageUpdate(AppUpdate? update, {required String builtVersion}) async {
+///
+/// [ready], when given, says the screen is free (a kiosk with no customer at
+/// it): an update admin set to install now or at a time waits for it.
+Future<void> stageUpdate(
+  AppUpdate? update, {
+  required String builtVersion,
+  bool Function()? ready,
+  BuildContext? context,
+  String appName = 'Vesopa',
+  Future<void> Function()? beforeRestart,
+}) async {
   if (update == null || kIsWeb || !Platform.isWindows) return;
   final me = await Installation.current(builtVersion);
   if (!await Updater._wanted(update, me)) return;
-  if (update.permitted) return _installPermitted(update);
+  if (update.permitted) {
+    return _installPermitted(update, ready: ready, context: context, appName: appName, beforeRestart: beforeRestart);
+  }
   if (update.switchToDirect) {
     Updater._handled.add(update.version);
     final file = await Updater.fetch(update, into: Handover.folder());

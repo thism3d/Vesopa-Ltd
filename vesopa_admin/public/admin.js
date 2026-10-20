@@ -21,7 +21,12 @@ document.addEventListener('change', (e) => {
 document.querySelectorAll('[data-when]').forEach((s) => {
   const at = s.parentElement.querySelector('input[name=when_at]');
   if (!at) return;
-  const sync = () => { at.hidden = s.value !== 'at'; at.required = s.value === 'at'; };
+  const force = s.closest('form') && s.closest('form').querySelector('[data-force]');
+  const sync = () => {
+    at.hidden = s.value !== 'at';
+    at.required = s.value === 'at';
+    if (force) force.hidden = s.value === 'ask';
+  };
   s.addEventListener('change', sync);
   sync();
 });
