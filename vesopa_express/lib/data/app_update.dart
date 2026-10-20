@@ -215,15 +215,6 @@ class Updater {
   /// put back every five minutes.
   static final Set<String> _handled = {};
 
-  /// Overnight, on this computer's own clock: an update is taken without
-  /// asking (the owner, 2026-10-20: "Every night Nicky updates the software
-  /// of Pontardawe RFC ... do the updates automatically"). A till still only
-  /// takes it between sales; outside these hours it asks as before.
-  static bool quietHours([DateTime? now]) {
-    final h = (now ?? DateTime.now()).hour;
-    return h >= 2 && h < 6;
-  }
-
   static Directory _folder() {
     final base = Platform.environment['LOCALAPPDATA'] ?? Directory.systemTemp.path;
     return Directory('$base\\Vesopa\\Updates');
@@ -381,11 +372,10 @@ class Updater {
 
   /// Whether to offer [update] to this copy now. A Store update only to a
   /// Store copy, an installer only to one of ours.
-  static Future<bool> _wanted(AppUpdate update, Installation me, {bool night = false}) async {
+  static Future<bool> _wanted(AppUpdate update, Installation me) async {
     if (update.viaStore || update.switchToDirect ? me.kind != 'store' : !me.updatable) return false;
     if (_same(update.version, me.version)) return false;
-    // At night an update put off in the day ("On next start") is taken now.
-    if (!night && _handled.contains(update.version)) return false;
+    if (_handled.contains(update.version)) return false;
     try {
       // Installed once already and still not on it: the installer did not
       // take. Asking again would loop; the admin page shows the device behind.
@@ -421,8 +411,7 @@ Future<void> offerUpdate(
 }) async {
   if (update == null || kIsWeb || !Platform.isWindows) return;
   final me = await Installation.current(builtVersion);
-  final night = Updater.quietHours();
-  if (!await Updater._wanted(update, me, night: night)) return;
+  if (!await Updater._wanted(update, me)) return;
   if (ready != null && !ready()) return;
   Updater._handled.add(update.version);
   if (update.switchToDirect) {
@@ -431,7 +420,7 @@ Future<void> offerUpdate(
       Updater._handled.remove(update.version);
       return;
     }
-    final now = night ? true : await _ask(context, update, appName: appName, current: me.version, version: update.version);
+    final now = await _ask(context, update, appName: appName, current: me.version, version: update.version);
     if (now == true) {
       await Handover.leave(update, file);
     } else {
@@ -447,10 +436,8 @@ Future<void> offerUpdate(
       Updater._handled.remove(update.version);
       return;
     }
-    final now = night
-        ? true
-        : await _ask(context, update, appName: appName, current: me.version,
-            version: there.isEmpty ? update.version : _short(there));
+    final now = await _ask(context, update, appName: appName, current: me.version,
+        version: there.isEmpty ? update.version : _short(there));
     if (now == true) {
       try {
         final prefs = await SharedPreferences.getInstance();
@@ -471,8 +458,7 @@ Future<void> offerUpdate(
     Updater._handled.remove(update.version);
     return;
   }
-  // Overnight: no question, nobody to answer it.
-  final now = night ? true : await _ask(context, update, appName: appName, current: me.version, version: update.version);
+  final now = await _ask(context, update, appName: appName, current: me.version, version: update.version);
   if (now == true) {
     await Updater.install(update, file);
   } else {
@@ -530,8 +516,7 @@ String _short(String v) => Updater._norm(v);
 Future<void> stageUpdate(AppUpdate? update, {required String builtVersion}) async {
   if (update == null || kIsWeb || !Platform.isWindows) return;
   final me = await Installation.current(builtVersion);
-  final night = Updater.quietHours();
-  if (!await Updater._wanted(update, me, night: night)) return;
+  if (!await Updater._wanted(update, me)) return;
   if (update.switchToDirect) {
     Updater._handled.add(update.version);
     final file = await Updater.fetch(update, into: Handover.folder());
@@ -554,9 +539,6 @@ Future<void> stageUpdate(AppUpdate? update, {required String builtVersion}) asyn
     Updater._handled.remove(update.version);
     return;
   }
-  // Overnight a screen that runs all day and night takes it straight away
-  // instead of waiting for a restart that may never come.
-  if (night) return Updater.install(update, file);
   await Updater.later(update, file);
 }
 
