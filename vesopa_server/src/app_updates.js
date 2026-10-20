@@ -186,6 +186,61 @@ function publicRoutes({ pool }) {
 }
 
 /** Mounted under /api/admin behind requireAuth + admin, like the holds. */
+/**
+ * The venue's own view (back office Devices, 2026-10-20): every app on every
+ * machine, the version it runs, and what Vesopa has set for the venue, so a
+ * manager can see whether everything is up to date. Read only.
+ */
+function venueRoutes({ pool, auth }) {
+  const router = express.Router();
+  router.get('/app-installs', auth, async (req, res, next) => {
+    try {
+      let office = req.user.email;
+      if (req.user.officeId) {
+        const [[o]] = await pool.query('SELECT contact_email FROM offices WHERE id = ?', [req.user.officeId]);
+        if (o) office = o.contact_email;
+      }
+      let installs = [];
+      let pins = [];
+      try {
+        [installs] = await pool.query(
+          `SELECT app, device_id, device_name, version, install, last_seen_at FROM bo_app_installs
+            WHERE office = ? AND last_seen_at > DATE_SUB(NOW(), INTERVAL 60 DAY) ORDER BY app, last_seen_at DESC`, [office]);
+        [pins] = await pool.query('SELECT * FROM bo_app_pins WHERE office IN (?, ?)', [office, DEFAULT]);
+      } catch (e) {
+        if (!isMissing(e)) throw e;
+      }
+      const on = await enabled(pool);
+      const setFor = (app) => pins.find((p) => p.app === app && p.office === office) || pins.find((p) => p.app === app && p.office === DEFAULT) || null;
+      // One row per app per machine: its latest check-in (a reinstall gets a
+      // new device id, and the old row would read as a second machine).
+      const seenKey = new Set();
+      installs = installs.filter((d) => {
+        const k = `${d.app}|${d.device_name}|${d.install}`;
+        if (seenKey.has(k)) return false;
+        seenKey.add(k);
+        return true;
+      });
+      res.json({
+        updates_on: on,
+        devices: installs.map((d) => {
+          const pin = setFor(d.app);
+          const target = pin && pin.version ? normalise(pin.version) : null;
+          const current = normalise(d.version);
+          let status = 'no_version_set';
+          if (target) status = current === target ? 'up_to_date' : on ? 'update_pending' : 'updates_off';
+          return {
+            app: d.app, device_name: d.device_name, version: current || d.version, install: d.install,
+            last_seen_at: d.last_seen_at, target, status,
+            ...(pin && target && current !== target ? whenOf(pin) : {}),
+          };
+        }),
+      });
+    } catch (e) { next(e); }
+  });
+  return router;
+}
+
 function adminRoutes({ pool, broadcast, auth, admin }) {
   const router = express.Router();
 
@@ -318,4 +373,4 @@ function adminRoutes({ pool, broadcast, auth, admin }) {
   return router;
 }
 
-module.exports = { APPS, STORE_IDS, DEFAULT, normalise, compare, enabled, seen, pinFor, offerFor, fromHeaders, publicRoutes, adminRoutes };
+module.exports = { APPS, STORE_IDS, DEFAULT, normalise, compare, enabled, seen, pinFor, offerFor, fromHeaders, publicRoutes, adminRoutes, venueRoutes };

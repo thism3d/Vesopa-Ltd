@@ -13638,7 +13638,32 @@ document.addEventListener('click', async (e) => {
   }
 });
 
+const APP_NAMES = { till: 'Vesopa EPOS', kitchen: 'Kitchen screen', display: 'Customer display', express: 'Express kiosk', loyalty: 'Loyalty' };
+
+async function loadAppInstalls() {
+  const box = $('app-installs');
+  if (!box) return;
+  let d;
+  try { d = await api('/app-installs'); } catch (e) { box.innerHTML = '<p class="muted small">' + esc(e.message) + '</p>'; return; }
+  const when = (x) => {
+    if (x.status === 'up_to_date') return '<span class="pill on">Up to date</span>';
+    if (x.status === 'no_version_set') return '<span class="pill">No version set</span>';
+    if (x.status === 'updates_off') return '<span class="pill amber">Update to ' + esc(x.target) + ' waiting</span>';
+    const t = x.mode === 'at' && x.install_at ? ' at ' + new Date(x.install_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+      : x.mode === 'now' ? ' now' : ' (asks on screen)';
+    return '<span class="pill amber">Updating to ' + esc(x.target) + t + (x.force ? ', forced' : '') + '</span>';
+  };
+  box.innerHTML = d.devices.length
+    ? '<div class="table-scroll"><table class="table"><thead><tr><th>App</th><th>Machine</th><th>Version</th><th>Installed from</th><th>Last check-in</th><th>Status</th></tr></thead><tbody>'
+      + d.devices.map((x) => '<tr><td><b>' + esc(APP_NAMES[x.app] || x.app) + '</b></td><td>' + esc(x.device_name || '—') + '</td>'
+        + '<td>' + esc(x.version || '?') + '</td><td class="small muted">' + (x.install === 'store' ? 'Microsoft Store' : x.install === 'direct' ? 'Vesopa installer' : esc(x.install || '—')) + '</td>'
+        + '<td class="small muted">' + (x.last_seen_at ? esc(new Date(x.last_seen_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })) : '—') + '</td>'
+        + '<td>' + when(x) + '</td></tr>').join('') + '</tbody></table></div>'
+    : '<p class="muted small">No Vesopa app has checked in from this venue in the last 60 days.</p>';
+}
+
 async function loadDevices() {
+  loadAppInstalls().catch(() => {});
   let rows = [];
   try {
     rows = await api('/devices');

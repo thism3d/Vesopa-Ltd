@@ -379,6 +379,8 @@ app.use('/api/admin', adminHoldRoutes({
 }));
 // Which version of each Windows app a venue runs (admin.vesopa.com Versions,
 // 2026-10-05). See src/app_updates.js.
+// Each venue's installed app versions, for its own back office (Devices).
+app.use('/api', appUpdates.venueRoutes({ pool, auth: requireAuth(JWT_SECRET) }));
 app.use('/api/admin', appUpdates.adminRoutes({
   pool,
   broadcast,
