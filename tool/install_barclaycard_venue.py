@@ -24,7 +24,9 @@ const path = require('path');
 require('dotenv').config({ path: path.join(process.cwd(), '.env'), quiet: true });
 const fs = require('fs');
 const { seal } = require('./src/express_kiosk');
-const { pool } = require('./src/db');
+const mysql = require('mysql2/promise');
+const pool = mysql.createPool({ host: process.env.DB_HOST || '127.0.0.1', port: Number(process.env.DB_PORT) || 3306,
+  user: process.env.DB_USER, password: process.env.DB_PASSWORD, database: process.env.DB_NAME, charset: 'utf8mb4' });
 (async () => {
   const v = {};
   for (const l of fs.readFileSync(process.argv[2], 'utf8').split('\n')) { const i = l.indexOf('='); if (i > 0) v[l.slice(0, i)] = l.slice(i + 1); }
