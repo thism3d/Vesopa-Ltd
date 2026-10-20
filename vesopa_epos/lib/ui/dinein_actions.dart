@@ -34,15 +34,19 @@ class DineInOutcome {
   final bool ok;
 }
 
-/// Ring an order onto its table's bill, then tell the server it was taken.
+/// Claim an order on the server, then ring it onto its table's bill.
 ///
-/// IN THAT ORDER, AND IT MATTERS
+/// CLAIM FIRST (2026-10-20)
 ///
-/// Claiming it on the server first and then failing to ring it up would tell
-/// the customer their food was accepted while nothing existed on this till.
-/// Doing the local work first means the worst case is an order that is on a
-/// bill and still showing as waiting — visible, and fixable by pressing Accept
-/// again, which the server refuses without making a second bill.
+/// It used to ring up first and claim second. When the claim then failed -- a
+/// slow line, a second till, the kitchen screen -- the food was already on a
+/// bill (or a paid order already settled), the order still showed as waiting,
+/// and Accept again rang it up a second time. Pontardawe RFC saw exactly that.
+///
+/// Now the server's atomic claim decides which till takes it, and nothing is
+/// rung anywhere until that till has won. If the ring-up after it fails, the
+/// order shows "Not on a bill yet" with a Ring up button in the orders sheet,
+/// on every till, until somebody puts it on one.
 Future<DineInOutcome> acceptDineInOrder(WidgetRef ref, DineInOrder order) async {
   // A real customer's order is never taken in training: it would be rung onto
   // a practice bill, which is never sent to the kitchen or the back office, and
@@ -77,8 +81,7 @@ Future<DineInOutcome> acceptDineInOrder(WidgetRef ref, DineInOrder order) async 
     );
   }
 
-  final products = ref.read(productsProvider).value ?? const <Product>[];
-  final byPlu = {for (final p in products) p.pluId: p};
+  final byPlu = await _catalogue(ref);
 
   // Everything the till cannot ring, named. A meal arriving without its side
   // because a PLU was deleted last week is worse than being told.
@@ -94,19 +97,30 @@ Future<DineInOutcome> acceptDineInOrder(WidgetRef ref, DineInOrder order) async 
     );
   }
 
-  final saleId = await _ringUp(ref, order, byPlu, tableNumber);
-
-  final moved = await ref
-      .read(dineInOrdersProvider.notifier)
-      .move(order.id, 'accepted', saleId: saleId);
-
-  if (!moved) {
+  final claim = await ref.read(dineInServiceProvider).move(order.id, 'accepted');
+  if (!claim.ok) {
+    await ref.read(dineInOrdersProvider.notifier).refresh();
     return DineInOutcome(
-      'Another till accepted this one first. The items are on '
-      "${order.tableLabel}'s bill — check it before ringing them again.",
+      claim.conflict
+          ? 'Another till or the kitchen has already taken this order, so nothing was rung up here.'
+          : '${claim.message} Nothing was rung up.',
       ok: false,
     );
   }
+
+  final String saleId;
+  try {
+    saleId = await _ringUpOnce(ref, order, byPlu, tableNumber);
+  } catch (e) {
+    await ref.read(dineInOrdersProvider.notifier).refresh();
+    return DineInOutcome(
+      'Accepted, but it could not be put on a bill ($e). '
+      'Open Orders from tables and press Ring up on it.',
+      ok: false,
+    );
+  }
+  await ref.read(dineInServiceProvider).linkSale(order.id, saleId);
+  await ref.read(dineInOrdersProvider.notifier).refresh();
 
   // Where the clerk should go and look for it. A counter order is not on a
   // table, so naming one would send them to the wrong place; the collection
@@ -198,6 +212,40 @@ Future<String> _ringUp(
 
 String _pounds(int minor) => '£${(minor / 100).toStringAsFixed(2)}';
 
+/// The till's catalogue by PLU, read from the database rather than from the
+/// sale screen's stream, which is empty until that screen has drawn once: an
+/// order taken automatically as the till opened found no items and rang
+/// nothing (2026-10-20).
+Future<Map<int, Product>> _catalogue(WidgetRef ref) async {
+  var products = ref.read(productsProvider).value;
+  if (products == null || products.isEmpty) {
+    final db = ref.read(databaseProvider);
+    products = await db.select(db.products).get();
+  }
+  return {for (final p in products) p.pluId: p};
+}
+
+/// Orders this till has rung up, so a second press, a retry or the auto-accept
+/// pass cannot put the same order on a bill twice before the server knows the
+/// bill.
+final Map<int, String> _rungHere = {};
+
+Future<String> _ringUpOnce(
+  WidgetRef ref,
+  DineInOrder order,
+  Map<int, Product> byPlu,
+  int? tableNumber,
+) async {
+  final done = _rungHere[order.id];
+  if (done != null) return done;
+  final saleId = await _ringUp(ref, order, byPlu, tableNumber);
+  _rungHere[order.id] = saleId;
+  return saleId;
+}
+
+/// Whether this till has already put [order] on a bill.
+bool rungUpHere(DineInOrder order) => order.saleId != null || _rungHere.containsKey(order.id);
+
 /// Ring up an order this till has ALREADY claimed, and tell the server which
 /// bill it landed on.
 ///
@@ -206,18 +254,60 @@ String _pounds(int minor) => '£${(minor / 100).toStringAsFixed(2)}';
 /// nothing it could ring — a table deleted since the order was placed, or a
 /// catalogue with none of the items in it — so the caller can say so.
 Future<bool> ringUpAcceptedOrder(WidgetRef ref, DineInOrder order) async {
+  if (order.saleId != null) return true;
   final tableNumber = order.tableNumber;
   // No table is only a dead end when there is no counter to take it at: a
   // kiosk order is rung onto a counter bill, the same as pressing Accept.
   if (tableNumber == null && !order.isKioskCounter) return false;
 
-  final products = ref.read(productsProvider).value ?? const <Product>[];
-  final byPlu = {for (final p in products) p.pluId: p};
+  final byPlu = await _catalogue(ref);
   if (!order.lines.any((l) => byPlu.containsKey(l.pluId))) return false;
 
-  final saleId = await _ringUp(ref, order, byPlu, tableNumber);
-  await ref.read(dineInServiceProvider).linkSale(order.id, saleId);
-  return true;
+  try {
+    final saleId = await _ringUpOnce(ref, order, byPlu, tableNumber);
+    await ref.read(dineInServiceProvider).linkSale(order.id, saleId);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+/// Ring up an order that was accepted but is on no bill yet: the clerk's
+/// way back when a ring-up failed, or the till that claimed it closed first.
+Future<DineInOutcome> ringUpFromSheet(WidgetRef ref, DineInOrder order) async {
+  if (ref.read(trainingModeProvider)) {
+    return const DineInOutcome("Not in training mode. This is a real customer's order.", ok: false);
+  }
+  if (rungUpHere(order)) {
+    return const DineInOutcome('This order is already on a bill.', ok: false);
+  }
+  final ok = await ringUpAcceptedOrder(ref, order);
+  await ref.read(dineInOrdersProvider.notifier).refresh();
+  if (!ok) {
+    return const DineInOutcome(
+      'It could not be rung up here (its table has gone, or none of the items '
+      'are in this till). Ring it up by hand, then press Served.',
+      ok: false,
+    );
+  }
+  final where = order.isKioskCounter ? 'a counter bill' : order.tableLabel;
+  return DineInOutcome(order.isPaidOnline
+      ? 'On its own bill for $where, already paid online.'
+      : 'Rung up onto $where.');
+}
+
+/// Move an order on from the till (Ready, Served, Cancel), in plain words.
+Future<DineInOutcome> moveDineInOrder(WidgetRef ref, DineInOrder order, String action, {String? note}) async {
+  final r = await ref.read(dineInOrdersProvider.notifier).move(order.id, action, note: note);
+  if (r.ok) {
+    return DineInOutcome(switch (action) {
+      'ready' => '${order.tableLabel} is ready. The customer\'s phone says so.',
+      'served' => '${order.tableLabel} served.',
+      'rejected' => 'Cancelled. The customer\'s phone says so. Take the items off the bill if they are on one.',
+      _ => 'Done.',
+    });
+  }
+  return DineInOutcome(r.message, ok: false);
 }
 
 /// Refuse an order, with a reason the customer will read.
@@ -229,9 +319,10 @@ Future<DineInOutcome> refuseDineInOrder(
   final moved = await ref
       .read(dineInOrdersProvider.notifier)
       .move(order.id, 'rejected', note: reason);
-  return moved
+  if (!moved.ok) return DineInOutcome(moved.message, ok: false);
+  return order.isWaiting
       ? const DineInOutcome("Refused. The customer's phone will say so.")
-      : const DineInOutcome('That order has already moved on.', ok: false);
+      : const DineInOutcome("Cancelled. The customer's phone says so. Take the items off the bill if they are on one.");
 }
 
 /// Say what happened, wherever it happened from.
@@ -339,7 +430,7 @@ class _RefusalDialogState extends State<_RefusalDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '${widget.order.isPaidOnline ? 'This was paid online. ${_pounds(widget.order.paidMinor)} goes back to the customer\'s card through Dojo, and the order is cancelled. ' : ''}'
+              '${widget.order.isPaidOnline ? 'This was paid online. ${_pounds(widget.order.paidMinor)} goes back to the customer\'s card, and the order is cancelled. ' : widget.order.isWaiting ? '' : 'It is already in the kitchen: take the items off the bill yourself if they are on one. '}'
               'This goes straight to the phone that ordered it, so write it the '
               'way you would say it across the counter.',
               style: Theme.of(context).textTheme.bodyMedium,
@@ -455,7 +546,7 @@ Future<DineInOutcome> refundDineInOrder(
   await orders.logRefund(
     sessionId: session.id,
     amountMinor: result.refundedMinor,
-    note: 'Online menu order #${order.id} refunded to the card through Dojo',
+    note: 'Online menu order #${order.id} refunded to the card',
     reason: reason,
     staffName: ref.read(servedByProvider),
     orderId: onThisTill ? saleId : null,
@@ -550,7 +641,7 @@ Future<void> autoAcceptWaiting(WidgetRef ref) async {
           .move(order.id, 'accepted', by: 'auto');
       // Another terminal got there first, or the order was withdrawn. Either
       // way this till has nothing to do and must not ring anything up.
-      if (!claimed) continue;
+      if (!claimed.ok) continue;
 
       await ringUpAcceptedOrder(ref, order);
     }

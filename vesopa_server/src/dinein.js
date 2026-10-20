@@ -3072,8 +3072,29 @@ function dineinRoutes({ pool, broadcast, secret }) {
         ]
       );
       if (!r.affectedRows) {
+        // Already where it was asked to go (pressed twice, or the kitchen
+        // screen and the till both pressed Ready): that is a yes, not an
+        // error. Accepting is the exception: a second till must not ring
+        // up an order another has taken (2026-10-20).
+        const [[now]] = await pool.query(
+          'SELECT status FROM dinein_orders WHERE id = ? AND office_id = ?',
+          [req.params.id, officeId]
+        );
+        if (!now) return res.status(404).json({ error: 'That order is no longer there.' });
+        if (now.status === action && action !== 'accepted') {
+          return res.json({ ok: true, status: action, already: true });
+        }
+        const words = {
+          placed: 'still waiting to be accepted',
+          accepted: 'already accepted on another till',
+          ready: 'already marked ready',
+          served: 'already served',
+          rejected: 'cancelled',
+          cancelled: 'cancelled',
+        }[now.status] || now.status;
         return res.status(409).json({
-          error: 'That order has already moved on. Refresh to see where it is.',
+          error: `That order is ${words}, so it was not changed.`,
+          status: now.status,
         });
       }
       broadcast(

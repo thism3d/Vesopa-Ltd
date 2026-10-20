@@ -186,6 +186,23 @@ async function machineToken(db, office, env, conn) {
 }
 
 /**
+ * A card machine call (payment, follow, cancel, refund) with the store's own
+ * machine credentials, and the manager's Teya sign-in when Teya refuses those
+ * (401/403, as it does terminals for a sandbox store, 2026-10-20). The back
+ * office connection is all a till needs: nobody signs in on the till.
+ */
+async function posLink(db, office, env, fn, conn) {
+  const c = conn || await connectionFor(db, office, env);
+  try {
+    return await fn(await machineToken(db, office, env, c));
+  } catch (e) {
+    const refused = e instanceof teya.TeyaError && (e.status === 401 || e.status === 403);
+    if (!refused || !c || !c.user_refresh_enc) throw e;
+    return fn(await userToken(db, office, env));
+  }
+}
+
+/**
  * The card machines in the venue's Teya store.
  *
  * Read with the manager's own Teya sign-in first: Teya answers that with the
@@ -722,12 +739,11 @@ function teyaRoutes({ pool, broadcast, secret, onOnlinePayment }) {
       const env = teya.cleanEnv(s.environment);
       if (env !== 'sandbox') return res.status(409).json({ error: 'Test payments are for the sandbox. On live, take a real payment from a till.' });
       const conn = await connectionFor(pool, office, env);
-      const tok = await machineToken(pool, office, env, conn);
       const terminalId = String((req.body && req.body.terminal_id) || conn.default_terminal_id || '').trim();
       if (!terminalId) return res.status(400).json({ error: 'Choose a card machine.' });
       const amount = Math.max(1, Math.min(100000, Math.round(Number(req.body && req.body.amount_minor) || 100)));
       const reference = `vesopa-test-${Date.now().toString(36)}`;
-      const p = await teya.createPayment(env, tok, { storeId: conn.store_id, terminalId, amountMinor: amount, reference, eposInstanceId: 'backoffice' }, reference);
+      const p = await posLink(pool, office, env, (tok) => teya.createPayment(env, tok, { storeId: conn.store_id, terminalId, amountMinor: amount, reference, eposInstanceId: 'backoffice' }, reference), conn);
       await logPayment(office, env, 'Back office', { id: p.payment_request_id, terminalId, storeId: conn.store_id, amount, tip: 0, reference, kind: 'SALE' });
       res.json({ id: p.payment_request_id, status: p.status || 'NEW' });
     } catch (e) { sendError(res, e, next); }
@@ -745,7 +761,7 @@ function teyaRoutes({ pool, broadcast, secret, onOnlinePayment }) {
       const office = await tenantEmail(req);
       const row = await paymentRow(office, req.params.id);
       if (!row) return res.status(404).json({ error: 'No such payment.' });
-      await teya.cancelPayment(row.environment, await machineToken(pool, office, row.environment), row.id);
+      await posLink(pool, office, row.environment, (tok) => teya.cancelPayment(row.environment, tok, row.id));
       res.json({ ok: true, message: 'Asked the card machine to cancel.' });
     } catch (e) { sendError(res, e, next); }
   });
@@ -794,8 +810,7 @@ function teyaRoutes({ pool, broadcast, secret, onOnlinePayment }) {
         auth_code: row.auth_code, amount_minor: row.amount_minor, tip_minor: row.tip_minor,
       };
     }
-    const tok = await machineToken(pool, office, row.environment);
-    const p = await teya.followPayment(row.environment, tok, row.id, waitMs);
+    const p = await posLink(pool, office, row.environment, (tok) => teya.followPayment(row.environment, tok, row.id, waitMs));
     const v = paymentView(p);
     await pool.execute(
       `UPDATE epos_teya_payments SET status = ?, progress = ?, status_reason = ?, gateway_payment_id = COALESCE(?, gateway_payment_id),
@@ -934,7 +949,10 @@ function teyaRoutes({ pool, broadcast, secret, onOnlinePayment }) {
         // and signs the merchant in on the till.
         sdk: null,
       };
-      if (Number(s.enabled) && s.card_provider === 'teya') {
+      // Only when the back office has no Teya store connected: with one, the
+      // till takes payments through it and the machine chosen there, and
+      // nobody signs in to Teya on the till (the owner, 2026-10-20).
+      if (!on && Number(s.enabled) && s.card_provider === 'teya') {
         const p = teya.partner(env, await ownApp(pool, req.office, env));
         if (p.deviceId && p.deviceSecret) {
           out.sdk = {
@@ -956,6 +974,36 @@ function teyaRoutes({ pool, broadcast, secret, onOnlinePayment }) {
     } catch (e) { sendError(res, e, next); }
   });
 
+  /**
+   * The till choosing its own card machine. Saved in the same place as the
+   * back office's choice for this till (Card Payments, Teya, Tills), so the
+   * till and the back office always show and use the same machine.
+   */
+  router.put('/till/teya/terminal', requireTerminal(secret), async (req, res, next) => {
+    try {
+      const s = await settingsFor(pool, req.office);
+      const env = teya.cleanEnv(s.environment);
+      const jti = req.terminal && req.terminal.jti;
+      const [[seat]] = jti
+        ? await pool.query('SELECT device_id FROM bo_till_seats WHERE id = ? AND office = ? LIMIT 1', [jti, req.office])
+          .catch((e) => (missing(e) ? [[]] : Promise.reject(e)))
+        : [[]];
+      if (!seat || !seat.device_id) return res.status(409).json({ error: 'This till is not signed in to the back office as a till, so choose its card machine in the back office (Card Payments, Teya).' });
+      const terminalId = String((req.body && req.body.terminal_id) || '').trim().slice(0, 64);
+      if (!terminalId) {
+        await pool.execute('DELETE FROM epos_teya_till_terminals WHERE office = ? AND environment = ? AND device_id = ?', [req.office, env, seat.device_id]);
+      } else {
+        await pool.execute(
+          `INSERT INTO epos_teya_till_terminals (office, environment, device_id, terminal_id, updated_by) VALUES (?, ?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE terminal_id = VALUES(terminal_id), updated_by = VALUES(updated_by), updated_at = CURRENT_TIMESTAMP`,
+          [req.office, env, seat.device_id, terminalId, `till:${tillName(req) || 'till'}`.slice(0, 128)]
+        );
+      }
+      tellTills(req.office);
+      res.json({ ok: true, terminal_id: terminalId || null });
+    } catch (e) { sendError(res, e, next); }
+  });
+
   router.post('/till/teya/payments', requireTerminal(secret), async (req, res, next) => {
     try {
       const { env, conn } = await tillContext(req);
@@ -969,9 +1017,9 @@ function teyaRoutes({ pool, broadcast, secret, onOnlinePayment }) {
       const kind = b.type === 'REFUND' ? 'REFUND' : 'SALE';
       const reference = String(b.reference || `vesopa-${Date.now().toString(36)}`).replace(/[^A-Za-z0-9_.:-]/g, '').slice(0, 64);
       const idem = String(b.idempotency_key || reference).slice(0, 64);
-      const p = await teya.createPayment(env, await machineToken(pool, req.office, env, conn), {
+      const p = await posLink(pool, req.office, env, (tok) => teya.createPayment(env, tok, {
         storeId: conn.store_id, terminalId, amountMinor: amount, tipMinor: tip, reference, eposInstanceId: tillName(req), type: kind,
-      }, idem);
+      }, idem), conn);
       await logPayment(req.office, env, tillName(req), { id: p.payment_request_id, terminalId, storeId: conn.store_id, amount, tip, reference, orderId: b.order_id, kind });
       res.status(201).json({ id: p.payment_request_id, status: p.status || 'NEW', environment: env, message: messageFor(p.status || 'NEW') });
     } catch (e) { sendError(res, e, next); }
@@ -991,7 +1039,7 @@ function teyaRoutes({ pool, broadcast, secret, onOnlinePayment }) {
       if (!row) return res.status(404).json({ error: 'No such payment.' });
       if (teya.FINAL.has(row.status)) return res.json({ ok: true, status: row.status });
       try {
-        await teya.cancelPayment(row.environment, await machineToken(pool, req.office, row.environment), row.id);
+        await posLink(pool, req.office, row.environment, (tok) => teya.cancelPayment(row.environment, tok, row.id));
       } catch (e) {
         // Too late to cancel (the card is being read): keep following.
         if (!(e instanceof teya.TeyaError) || e.status >= 500 || e.status === 0) throw e;
@@ -1023,12 +1071,12 @@ function teyaRoutes({ pool, broadcast, secret, onOnlinePayment }) {
       const gatewayId = (orig && orig.gateway_payment_id) || gw;
       const env_ = orig ? orig.environment : env;
       const idem = String(b.idempotency_key || `refund-${gatewayId}-${amount}-${orig ? orig.refunded_minor : 0}`).slice(0, 64);
-      const r = await teya.refundCardPayment(env_, await machineToken(pool, req.office, env_), {
+      const r = await posLink(pool, req.office, env_, (tok) => teya.refundCardPayment(env_, tok, {
         gatewayPaymentId: gatewayId,
         amountMinor: amount,
         terminalId: String(b.terminal_id || (orig && orig.terminal_id) || conn.default_terminal_id || '').slice(0, 64) || undefined,
         reference: b.reference,
-      }, idem);
+      }, idem));
       const status = String((r && r.status) || 'PENDING').toUpperCase();
       if (status === 'SUCCESS' && orig) {
         await pool.execute('UPDATE epos_teya_payments SET refunded_minor = refunded_minor + ? WHERE id = ?', [amount, orig.id]);

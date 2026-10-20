@@ -336,11 +336,13 @@ class DineInService {
 
   /// Move an order along. [saleId] attaches the bill this became.
   ///
-  /// False means it did not move, which is a real answer and not only an error:
-  /// the server refuses a transition from the wrong state, so a clerk pressing
+  /// Answers what happened, in words: moved; refused because it had moved on
+  /// (the server refuses a transition from the wrong state, so a clerk pressing
   /// Accept on an order the till beside them has already taken gets a plain no
-  /// rather than a second kitchen ticket.
-  Future<bool> move(
+  /// rather than a second kitchen ticket); or not known, because the server
+  /// could not be reached. The last two used to be one "false", and a dropped
+  /// line read to the clerk as "another till took it" (2026-10-20).
+  Future<DineInMove> move(
     int id,
     String action, {
     String? saleId,
@@ -352,9 +354,12 @@ class DineInService {
     /// off. Anything but 'auto' is recorded as a clerk.
     String? by,
   }) async {
-    if (!canAsk) return false;
+    if (!canAsk) {
+      return const DineInMove(false, offline: true, message: 'This till is not signed in to the server, so orders from tables cannot be answered here.');
+    }
+    final http.Response res;
     try {
-      final res = await _client
+      res = await _client
           .post(
             Uri.parse('$apiBase/till/dinein/orders/$id/$action'),
             headers: _headers,
@@ -364,11 +369,27 @@ class DineInService {
               'by': ?by,
             }),
           )
-          .timeout(_quick);
-      return res.statusCode == 200;
+          .timeout(const Duration(seconds: 15));
     } catch (_) {
-      return false;
+      return const DineInMove(false, offline: true, message: 'Could not reach the server, so nothing changed. Check the internet and try again.');
     }
+    Map<Object?, Object?> body = const {};
+    try {
+      final decoded = jsonDecode(res.body);
+      if (decoded is Map) body = decoded;
+    } catch (_) {}
+    if (res.statusCode == 200) {
+      return DineInMove(true, status: _nullableStr(body['status']) ?? action, already: body['already'] == true);
+    }
+    return DineInMove(
+      false,
+      conflict: res.statusCode == 409,
+      status: _nullableStr(body['status']),
+      message: _nullableStr(body['error']) ??
+          (res.statusCode == 409
+              ? 'That order has already moved on.'
+              : 'The server did not take that (HTTP ${res.statusCode}). Try again.'),
+    );
   }
 
   /// Give a paid online order's money back through Dojo, and take the order
@@ -405,18 +426,55 @@ class DineInService {
   /// reporting, and costs the customer nothing.
   Future<void> linkSale(int id, String saleId) async {
     if (!canAsk) return;
-    try {
-      await _client
-          .post(
-            Uri.parse('$apiBase/till/dinein/orders/$id/link'),
-            headers: _headers,
-            body: jsonEncode({'order_id': saleId}),
-          )
-          .timeout(_quick);
-    } catch (_) {
-      // Nothing to do about it, and nothing a clerk could act on.
+    // Tried three times: the link is what stops the order showing "not on a
+    // bill yet" on every till, which would invite a second ring-up.
+    for (var attempt = 0; attempt < 3; attempt++) {
+      try {
+        final res = await _client
+            .post(
+              Uri.parse('$apiBase/till/dinein/orders/$id/link'),
+              headers: _headers,
+              body: jsonEncode({'order_id': saleId}),
+            )
+            .timeout(_quick);
+        if (res.statusCode == 200) return;
+      } catch (_) {
+        // Try again below.
+      }
+      await Future<void>.delayed(Duration(seconds: 2 * (attempt + 1)));
     }
   }
+}
+
+/// What became of asking the server to move an order along.
+@immutable
+class DineInMove {
+  const DineInMove(
+    this.ok, {
+    this.message = '',
+    this.status,
+    this.conflict = false,
+    this.offline = false,
+    this.already = false,
+  });
+
+  final bool ok;
+
+  /// A sentence for the clerk when it did not move.
+  final String message;
+
+  /// Where the order is now, when the server said.
+  final String? status;
+
+  /// The server refused: the order had moved on (another till, the kitchen
+  /// screen, or the customer's payment being refunded).
+  final bool conflict;
+
+  /// The server could not be reached: nothing is known to have changed.
+  final bool offline;
+
+  /// It was already there (pressed twice, or the kitchen got there first).
+  final bool already;
 }
 
 /// What happened to a refund.
@@ -492,18 +550,18 @@ class DineInOrdersController extends AsyncNotifier<List<DineInOrder>> {
   /// Refreshed straight afterwards anyway: the optimistic step is what makes
   /// the button feel like it worked, and the refresh is what makes the screen
   /// right when the terminal beside this one got there first.
-  Future<bool> move(
+  Future<DineInMove> move(
     int id,
     String action, {
     String? saleId,
     String? note,
     String? by,
   }) async {
-    final ok = await ref
+    final result = await ref
         .read(dineInServiceProvider)
         .move(id, action, saleId: saleId, note: note, by: by);
     await refresh();
-    return ok;
+    return result;
   }
 }
 

@@ -774,11 +774,7 @@ class _LoyaltyDialogState extends State<_LoyaltyDialog> {
                     )
                   else if (max <= 0)
                     _Banner(
-                      message: customer.pointsBalance <
-                              customer.minRedeemPoints
-                          ? '${customer.minRedeemPoints} points are needed to '
-                              'redeem — they have ${customer.pointsBalance}.'
-                          : 'Nothing left to redeem against this bill.',
+                      message: _whyNoRedeem(customer, widget.outstandingMinor),
                       isError: false,
                     )
                   else
@@ -849,6 +845,28 @@ class _LoyaltyDialogState extends State<_LoyaltyDialog> {
       ],
     );
   }
+}
+
+/// Why a member cannot spend points on this bill, said so the clerk can tell
+/// them. "Nothing left to redeem" covered a bill smaller than the smallest
+/// redemption, and Pontardawe RFC read it as redeeming being broken
+/// (2026-10-20, a Freddo against a 100-point minimum).
+String _whyNoRedeem(LoyaltyCustomer c, int outstandingMinor) {
+  if (c.pointValueMinor <= 0) {
+    return 'Points have no value set yet. Set "Value of 1 point" in the back office, Loyalty Settings.';
+  }
+  if (c.pointsBalance < c.minRedeemPoints) {
+    return '${c.minRedeemPoints} points are needed to redeem — they have ${c.pointsBalance}.';
+  }
+  if (outstandingMinor <= 0) return 'Nothing left to pay on this bill.';
+  final smallest = c.valueOf(c.minRedeemPoints);
+  if (outstandingMinor < smallest) {
+    return 'The smallest redemption is ${c.minRedeemPoints} points (${_money(smallest)}), '
+        'more than the ${_money(outstandingMinor)} left on this bill. '
+        'Lower "Minimum to redeem" in the back office, Loyalty Settings, to allow it.';
+  }
+  if (!c.redeemable) return 'Points cannot be spent on this membership right now.';
+  return 'Nothing left to redeem against this bill.';
 }
 
 /// Who the member is and where they stand — balance, tier, and what this sale

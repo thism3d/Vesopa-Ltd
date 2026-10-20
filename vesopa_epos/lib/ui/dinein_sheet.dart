@@ -141,14 +141,18 @@ class _DineInSheetState extends ConsumerState<DineInSheet> {
                 order: order,
                 busy: _busy == order.id,
                 allergenLabels: labels,
+                // Accepted, but no till has put it on a bill: the way back
+                // when a ring-up failed or the till that took it went off.
+                onRingUp: rungUpHere(order)
+                    ? null
+                    : () => unawaited(_ringUp(order)),
                 onReady: order.status == 'accepted'
                     ? () => unawaited(_move(order, 'ready'))
                     : null,
                 onServed: () => unawaited(_move(order, 'served')),
-                // Paid online: can still be cancelled, with its money back.
-                onRefuse: order.isPaidOnline
-                    ? () => unawaited(_refuse(order))
-                    : null,
+                // Cancelled from the till: a paid order with its money back,
+                // any other with the customer told.
+                onRefuse: () => unawaited(_refuse(order)),
               ),
           ],
         ],
@@ -182,9 +186,32 @@ class _DineInSheetState extends ConsumerState<DineInSheet> {
   Future<void> _move(DineInOrder order, String action) async {
     setState(() => _busy = order.id);
     try {
-      final moved =
-          await ref.read(dineInOrdersProvider.notifier).move(order.id, action);
-      if (!moved) _say('That order has already moved on.', error: true);
+      final outcome = await moveDineInOrder(ref, order, action);
+      _say(outcome.message, error: !outcome.ok);
+    } finally {
+      if (mounted) setState(() => _busy = null);
+    }
+  }
+
+  Future<void> _ringUp(DineInOrder order) async {
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Ring up ${order.tableLabel}\'s order here?'),
+        content: Text(order.isPaidOnline
+            ? 'It is accepted but not on a bill on any till. It goes on a bill of its own here, already paid online.'
+            : 'It is accepted but not on a bill on any till. It goes onto ${order.tableLabel}\'s bill here.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Not now')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Ring up')),
+        ],
+      ),
+    );
+    if (go != true || !mounted) return;
+    setState(() => _busy = order.id);
+    try {
+      final outcome = await ringUpFromSheet(ref, order);
+      _say(outcome.message, error: !outcome.ok);
     } finally {
       if (mounted) setState(() => _busy = null);
     }
@@ -209,6 +236,7 @@ class _OrderCard extends StatelessWidget {
     this.onRefuse,
     this.onReady,
     this.onServed,
+    this.onRingUp,
   });
 
   final DineInOrder order;
@@ -220,6 +248,7 @@ class _OrderCard extends StatelessWidget {
   final VoidCallback? onRefuse;
   final VoidCallback? onReady;
   final VoidCallback? onServed;
+  final VoidCallback? onRingUp;
 
   @override
   Widget build(BuildContext context) {
@@ -383,6 +412,38 @@ class _OrderCard extends StatelessWidget {
               ),
             ],
 
+            if (!order.isWaiting) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(
+                    onRingUp == null ? Icons.receipt_long : Icons.warning_amber_rounded,
+                    size: 16,
+                    color: onRingUp == null ? Pos.green : Pos.red,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      '${switch (order.status) {
+                        'ready' => 'Ready',
+                        _ => 'In the kitchen',
+                      }}  ·  ${onRingUp == null ? 'on a bill' : 'not on a bill yet'}',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: onRingUp == null ? null : Pos.red,
+                      ),
+                    ),
+                  ),
+                  if (onRingUp != null && !busy)
+                    OutlinedButton.icon(
+                      onPressed: onRingUp,
+                      icon: const Icon(Icons.add_shopping_cart, size: 16),
+                      label: const Text('Ring up'),
+                    ),
+                ],
+              ),
+            ],
             const Divider(height: 20),
             Row(
               children: [
@@ -412,7 +473,11 @@ class _OrderCard extends StatelessWidget {
                   if (onRefuse != null)
                     TextButton(
                       onPressed: onRefuse,
-                      child: Text(order.isPaidOnline ? 'Cancel & refund' : 'Cannot take it'),
+                      child: Text(order.isPaidOnline
+                          ? 'Cancel & refund'
+                          : order.isWaiting
+                          ? 'Cannot take it'
+                          : 'Cancel'),
                     ),
                   if (onAccept != null) ...[
                     const SizedBox(width: 8),

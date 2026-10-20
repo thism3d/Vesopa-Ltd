@@ -116,8 +116,27 @@ class TeyaSdk {
     return '${r.stdout}'.trim().toUpperCase();
   }
 
+  /// The install and the start in progress, so a second caller waits for
+  /// the first instead of running its own beside it. The till starts Teya in
+  /// the background as it opens and again when a card is taken or Set up Teya
+  /// is pressed; two installs at once deleted each other's download folder
+  /// ("being used by another process", 2026-10-20).
+  final _installing = <String, Future<String>>{};
+  Future<void>? _starting;
+
   /// Download and unpack the SDK app when this till does not have it yet.
   Future<String> install(
+    TeyaSdkInfo info, {
+    void Function(String)? onStatus,
+  }) {
+    final running = _installing[info.version];
+    if (running != null) return running;
+    final f = _install(info, onStatus: onStatus).whenComplete(() => _installing.remove(info.version));
+    _installing[info.version] = f;
+    return f;
+  }
+
+  Future<String> _install(
     TeyaSdkInfo info, {
     void Function(String)? onStatus,
   }) async {
@@ -134,8 +153,20 @@ class TeyaSdk {
     }
 
     say('Downloading Teya (about 75 MB, once)…');
-    final tmp = Directory('${dir.path}.download');
-    if (await tmp.exists()) await tmp.delete(recursive: true);
+    // Folders from a download that was interrupted (the till closed, or an
+    // older build's clash): cleared when they can be, skipped when a file in
+    // one is still held.
+    try {
+      await for (final e in dir.parent.list()) {
+        if (e is Directory && e.path.startsWith('${dir.path}.download')) {
+          try {
+            await e.delete(recursive: true);
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+    // A folder of its own for this download.
+    final tmp = Directory('${dir.path}.download-$pid-${DateTime.now().millisecondsSinceEpoch}');
     await tmp.create(recursive: true);
     final zip = File('${tmp.path}${Platform.pathSeparator}sdk.zip');
     final client = HttpClient();
@@ -211,6 +242,7 @@ class TeyaSdk {
   }
 
   /// Start the SDK app (installing it first if needed) and initialize it.
+  /// A start already under way is waited for, not run twice.
   Future<void> start(
     TeyaSdkInfo info, {
     required String version,
@@ -219,6 +251,30 @@ class TeyaSdk {
   }) async {
     final key = '${info.clientId}|${info.production}|${info.version}';
     if (_process != null && _initializedFor == key) return;
+    final running = _starting;
+    if (running != null) {
+      onStatus?.call(status);
+      try {
+        await running;
+      } catch (_) {}
+      if (_process != null && _initializedFor == key) return;
+    }
+    final f = _start(info, key: key, version: version, eposInstanceId: eposInstanceId, onStatus: onStatus);
+    _starting = f;
+    try {
+      await f;
+    } finally {
+      if (identical(_starting, f)) _starting = null;
+    }
+  }
+
+  Future<void> _start(
+    TeyaSdkInfo info, {
+    required String key,
+    required String version,
+    String? eposInstanceId,
+    void Function(String)? onStatus,
+  }) async {
     await stop();
     final exe = await install(info, onStatus: onStatus);
     // An SDK app left over from a till that did not close cleanly would

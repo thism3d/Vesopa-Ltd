@@ -44,6 +44,7 @@ class TeyaTerminal {
 class TeyaConfig {
   const TeyaConfig({
     this.enabled = false,
+    this.connected = false,
     this.environment = 'sandbox',
     this.storeName,
     this.defaultTerminalId,
@@ -55,6 +56,25 @@ class TeyaConfig {
 
   /// The tills use Teya card machines.
   final bool enabled;
+
+  /// The back office has the venue's Teya store connected. Then the till
+  /// takes payments through it, on the machine chosen there, and nobody signs
+  /// in to Teya on the till (the owner, 2026-10-20). Teya's SDK app is only
+  /// for a Windows till at a venue with no store connected.
+  final bool connected;
+
+  bool get useSdk => !connected && sdk != null && Platform.isWindows;
+
+  /// The machine this till sends payments to: the back office's choice for
+  /// it, or the venue default.
+  String get machineId => (assignedTerminalId ?? '').isNotEmpty ? assignedTerminalId! : (defaultTerminalId ?? '');
+
+  String? get machineName {
+    for (final t in terminals) {
+      if (t.id == machineId) return t.label;
+    }
+    return null;
+  }
   final String environment;
   final String? storeName;
   final String? defaultTerminalId;
@@ -74,6 +94,7 @@ class TeyaConfig {
     // A Windows till runs Teya's SDK app, which needs no back office store
     // link, so the SDK block alone switches it on.
     enabled: j['enabled'] == true || (Platform.isWindows && TeyaSdkInfo.fromJson(j['sdk']) != null),
+    connected: j['enabled'] == true,
     environment: '${j['environment'] ?? 'sandbox'}',
     storeName: j['store_name'] as String?,
     defaultTerminalId: j['default_terminal_id'] as String?,
@@ -154,10 +175,39 @@ class TeyaTerminalController extends AsyncNotifier<String> {
     return prefs.getString(_terminalKey) ?? '';
   }
 
+  /// Choose this till's machine. Saved on the server as this till's machine,
+  /// the same setting the back office shows and edits for it, so the two can
+  /// never disagree. Throws with a sentence for the clerk when it cannot.
   Future<void> choose(String id) async {
+    final session = ref.read(sessionProvider);
+    final token = session.terminalToken;
+    if (token == null || token.isEmpty) {
+      throw TeyaException('This till is not signed in, so its card machine is chosen in the back office.');
+    }
+    final http.Response res;
+    try {
+      res = await http
+          .put(
+            Uri.parse('${ref.read(apiBaseProvider)}/api/till/teya/terminal'),
+            headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
+            body: jsonEncode({'terminal_id': id}),
+          )
+          .timeout(const Duration(seconds: 15));
+    } catch (_) {
+      throw TeyaException('Could not reach the Vesopa server, so nothing changed. Try again when the internet is back.');
+    }
+    if (res.statusCode != 200) {
+      var msg = 'The back office did not save it (HTTP ${res.statusCode}).';
+      try {
+        final j = jsonDecode(res.body);
+        if (j is Map && j['error'] != null) msg = '${j['error']}';
+      } catch (_) {}
+      throw TeyaException(msg);
+    }
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_terminalKey, id);
     state = AsyncData(id);
+    await ref.read(teyaConfigProvider.notifier).refresh();
   }
 }
 
@@ -520,9 +570,10 @@ class TeyaProvider implements TeyaCard {
 final teyaProvider = Provider<TeyaCard?>((ref) {
   final config = ref.watch(teyaConfigProvider).value;
   if (config == null || !config.enabled) return null;
-  // Windows: Teya's own SDK app, as Teya require where an SDK exists.
+  // Teya's own SDK app only where the back office has no store connected:
+  // with one, the till uses the back office's connection and machine.
   final sdk = config.sdk;
-  if (Platform.isWindows && sdk != null) {
+  if (config.useSdk && sdk != null) {
     final assigned = config.assignedTerminalId ?? '';
     String? name;
     for (final t in config.terminals) {
@@ -539,13 +590,10 @@ final teyaProvider = Provider<TeyaCard?>((ref) {
   final session = ref.watch(sessionProvider);
   final token = session.terminalToken;
   if (token == null || token.isEmpty) return null;
+  // The back office's answer (this till's machine, or the venue default);
+  // the till's own last choice only when an old server sent neither.
   final chosen = ref.watch(teyaTerminalProvider).value ?? '';
-  final assigned = config.assignedTerminalId ?? '';
-  final terminalId = assigned.isNotEmpty
-      ? assigned
-      : chosen.isNotEmpty
-      ? chosen
-      : (config.defaultTerminalId ?? '');
+  final terminalId = config.machineId.isNotEmpty ? config.machineId : chosen;
   if (terminalId.isEmpty) return null;
   TeyaTerminal? machine;
   for (final t in config.terminals) {
@@ -561,12 +609,13 @@ final teyaProvider = Provider<TeyaCard?>((ref) {
   );
 });
 
-/// Start Teya's SDK app in the background on a Windows till at a Teya venue,
-/// so the first card payment does not wait for the download. No sign-in
-/// screens here: those come on the first payment, or from Settings.
+/// Start Teya's SDK app in the background on a Windows till that uses it (a
+/// Teya venue with no store connected in the back office), so the first card
+/// payment does not wait for the download.
 final teyaSdkWarmupProvider = Provider<void>((ref) {
   if (!Platform.isWindows) return;
-  final sdk = ref.watch(teyaConfigProvider).value?.sdk;
+  final config = ref.watch(teyaConfigProvider).value;
+  final sdk = config != null && config.useSdk ? config.sdk : null;
   if (sdk == null) {
     unawaited(TeyaSdk.instance.stop());
     return;

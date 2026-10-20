@@ -753,9 +753,11 @@ class _TeyaCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final config = ref.watch(teyaConfigProvider).value;
     if (config == null || !config.enabled) return const SizedBox.shrink();
-    final chosen = ref.watch(teyaTerminalProvider).value ?? '';
+    // What the back office has for this till: the same setting both screens
+    // show and change.
+    final assigned = config.assignedTerminalId ?? '';
     final ids = {for (final t in config.terminals) t.id};
-    final value = ids.contains(chosen) ? chosen : '';
+    final value = ids.contains(assigned) ? assigned : '';
     final def = config.terminals.where((t) => t.id == config.defaultTerminalId).toList();
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
@@ -804,27 +806,25 @@ class _TeyaCard extends ConsumerWidget {
                 ],
               ),
               const SizedBox(height: 12),
-              if (Platform.isWindows && config.sdk != null)
+              if (config.useSdk)
                 const _TeyaSdkPanel()
-              else if ((config.assignedTerminalId ?? '').isNotEmpty)
+              else if (config.terminalsError != null && config.terminals.isEmpty)
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.point_of_sale, color: Pos.brandDeep),
-                  title: Text(() {
-                    for (final t in config.terminals) {
-                      if (t.id == config.assignedTerminalId) return t.label;
-                    }
-                    return config.assignedTerminalId!;
-                  }()),
-                  subtitle: const Text('Chosen for this till in the back office (Card Payments, Teya).', style: TextStyle(fontSize: 12.5)),
+                  title: Text(config.machineName ?? (config.machineId.isEmpty ? 'No card machine chosen' : config.machineId)),
+                  subtitle: Text(config.terminalsError!, style: const TextStyle(color: Pos.red, fontSize: 12.5)),
                 )
-              else if (config.terminalsError != null)
-                Text(config.terminalsError!, style: const TextStyle(color: Pos.red, fontSize: 12.5))
               else
                 DropdownButtonFormField<String>(
+                  key: ValueKey('teya-machine-$value'),
                   initialValue: value,
                   isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'This till\'s card machine', border: OutlineInputBorder()),
+                  decoration: const InputDecoration(
+                    labelText: 'This till\'s card machine',
+                    helperText: 'The same setting as the back office, Card Payments, Teya: change it in either place.',
+                    border: OutlineInputBorder(),
+                  ),
                   items: [
                     DropdownMenuItem(
                       value: '',
@@ -834,11 +834,15 @@ class _TeyaCard extends ConsumerWidget {
                       DropdownMenuItem(value: t.id, child: Text(t.serial.isEmpty ? t.label : '${t.label} · ${t.serial}')),
                   ],
                   onChanged: (v) async {
-                    await ref.read(teyaTerminalProvider.notifier).choose(v ?? '');
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Teya card machine saved for this till')),
+                    final messenger = ScaffoldMessenger.of(context);
+                    try {
+                      await ref.read(teyaTerminalProvider.notifier).choose(v ?? '');
+                      messenger.showSnackBar(
+                        const SnackBar(content: Text('Saved for this till, and in the back office')),
                       );
+                    } catch (e) {
+                      messenger.showSnackBar(SnackBar(content: Text('$e')));
+                      ref.invalidate(teyaConfigProvider);
                     }
                   },
                 ),
