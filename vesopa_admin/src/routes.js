@@ -479,6 +479,43 @@ const VERSION_APPS = releases.APPS;
  * What a venue is set to and how its devices compare. `target` is the version
  * the devices should be on; null is "No auto updates".
  */
+/**
+ * When the devices install (2026-10-20): "If I say update and choose update
+ * and schedule then it updates on time" (the owner). ask = on screen as
+ * before; now = straight away; at = the date and time chosen, UK time.
+ * Now and at are the permission: nobody is asked. A till still waits until
+ * it is between sales.
+ */
+function whenFrom(b) {
+  const mode = b.when === 'now' || b.when === 'at' ? b.when : 'ask';
+  if (mode !== 'at') return { mode };
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(String(b.when_at || ''));
+  if (!m) throw new Error('Choose the date and time to install.');
+  // The time was typed in UK time: find its UTC instant.
+  const guess = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]);
+  const offset = (t) => {
+    const name = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', timeZoneName: 'shortOffset' })
+      .formatToParts(new Date(t)).find((p) => p.type === 'timeZoneName').value; // GMT or GMT+1
+    const h = /GMT([+-]\d+)/.exec(name);
+    return (h ? Number(h[1]) : 0) * 3600000;
+  };
+  const utc = guess - offset(guess - offset(guess));
+  if (utc < Date.now() - 60000) throw new Error('That time has passed. Choose a time from now on, or Install now.');
+  return { mode, install_at: new Date(utc).toISOString() };
+}
+
+/** "at 20 Oct 22:00" in UK time, for the table. */
+function whenLabel(pin) {
+  if (!pin || !pin.version) return '';
+  if (pin.mode === 'now') return 'Installs now (no question)';
+  if (pin.mode === 'at' && pin.install_at) {
+    const t = new Date(pin.install_at);
+    const s = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(t);
+    return t.getTime() > Date.now() ? `Installs at ${s} (no question)` : `Installing since ${s}`;
+  }
+  return 'Asks on screen';
+}
+
 function venueVersion(venue, pins, devices, byId) {
   const own = pins.find((p) => !p.default && Number(p.office_id) === Number(venue.id)) || null;
   const def = pins.find((p) => p.default) || null;
@@ -497,7 +534,7 @@ function venueVersion(venue, pins, devices, byId) {
   else if (onTarget) status = 'some';
   else status = 'behind';
   const releaseId = own && own.version ? (byId[`v:${releases.normalise(own.version)}`] || null) : null;
-  return { own, def, target, devices: mine, onTarget, direct: direct.length, status,
+  return { own, def, target, devices: mine, onTarget, direct: direct.length, status, when: whenLabel(rule),
     choice: !own ? 'follow' : own.version ? String(releaseId ? releaseId.id : 'unknown') : 'none' };
 }
 
@@ -563,15 +600,17 @@ router.post('/versions', signedIn, csrf, allow('versions.manage', 'epos'), async
       }
     }
     if (!groups.size) throw new Error('Nothing changed.');
+    const when = whenFrom(b);
     let n = 0;
     for (const [choice, ids] of groups) {
       const body = await pinBody(app.key, choice);
-      await epos.setAppVersion(app.key, { offices: ids, ...body }, req.me.email);
+      const send = body.version ? { ...body, ...when } : body;
+      await epos.setAppVersion(app.key, { offices: ids, ...send }, req.me.email);
       await audit.record({ actor: req.me.email, action: 'versions.set', app: 'epos', item: app.key,
-        detail: { venues: ids, version: body.version === undefined ? 'follow default' : body.version || 'no auto updates' } });
+        detail: { venues: ids, version: body.version === undefined ? 'follow default' : body.version || 'no auto updates', when: body.version ? when : undefined } });
       n += ids.length;
     }
-    flash(res, 'ok', `${app.short}: ${n} venue${n === 1 ? '' : 's'} changed.`);
+    flash(res, 'ok', `${app.short}: ${n} venue${n === 1 ? '' : 's'} changed. ${when.mode === 'now' ? 'They install it now, between sales.' : when.mode === 'at' ? `They install it at the time chosen.` : 'Each device asks on screen.'}`);
   } catch (e) {
     flash(res, 'bad', e.message);
   }

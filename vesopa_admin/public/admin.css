@@ -174,3 +174,5 @@ table.mini tr.off td b { color: var(--red); }
 details.help ol { margin: 10px 0 0; padding-left: 20px; }
 details.help summary { cursor: pointer; }
 code { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; font-size: 13px; }
+.bulk .when { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.bulk .when input[type=datetime-local] { min-width: 210px; }

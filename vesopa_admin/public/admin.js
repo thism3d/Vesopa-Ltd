@@ -16,3 +16,12 @@ document.addEventListener('change', (e) => {
     if (e.target.value !== '*' && e.target.checked) { const every = set.querySelector('input[value="*"]'); if (every) every.checked = false; }
   }
 });
+
+// Versions: the date and time box only for "Install at a time" (2026-10-20).
+document.querySelectorAll('[data-when]').forEach((s) => {
+  const at = s.parentElement.querySelector('input[name=when_at]');
+  if (!at) return;
+  const sync = () => { at.hidden = s.value !== 'at'; at.required = s.value === 'at'; };
+  s.addEventListener('change', sync);
+  sync();
+});

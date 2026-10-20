@@ -106,6 +106,12 @@ async function pinFor(db, office, app) {
  * `version` is what the device runs. Older AND newer pins are both offered:
  * moving a venue back is the point ("I can downgrade them").
  */
+/** When to install, for the device: ask, now, or at a time (UTC ISO). */
+function whenOf(pin) {
+  const mode = pin && (pin.mode === 'now' || pin.mode === 'at') ? pin.mode : 'ask';
+  return mode === 'at' && pin.install_at ? { mode, install_at: pin.install_at } : { mode: mode === 'at' ? 'ask' : mode };
+}
+
 async function offerFor(db, { office, app, version, install, storeCheck = false }) {
   if ((install !== 'direct' && install !== 'store') || !APPS.includes(app) || !normalise(version)) return null;
   try {
@@ -129,11 +135,11 @@ async function offerFor(db, { office, app, version, install, storeCheck = false 
         if (!storeCheck || !pin.url || !pin.sha256) return null;
         return {
           version: normalise(pin.version), url: pin.url, sha256: pin.sha256,
-          size: pin.size == null ? null : Number(pin.size), downgrade: true, switch: true,
+          size: pin.size == null ? null : Number(pin.size), downgrade: true, switch: true, ...whenOf(pin),
         };
       }
       if (!storeCheck && !Number(pin.store_ok)) return null;
-      return { version: normalise(pin.version), store: true, store_id: STORE_IDS[app], downgrade: false };
+      return { version: normalise(pin.version), store: true, store_id: STORE_IDS[app], downgrade: false, ...whenOf(pin) };
     }
     if (!pin.url || !pin.sha256) return null;
     return {
@@ -142,6 +148,7 @@ async function offerFor(db, { office, app, version, install, storeCheck = false 
       sha256: pin.sha256,
       size: pin.size == null ? null : Number(pin.size),
       downgrade: direction < 0,
+      ...whenOf(pin),
     };
   } catch (e) {
     if (!isMissing(e)) console.warn('[app_updates] offer:', e.message);
@@ -201,6 +208,7 @@ function adminRoutes({ pool, broadcast, auth, admin }) {
         office_id: p.office === DEFAULT ? null : p.office_id, default: p.office === DEFAULT, app: p.app,
         version: p.version, url: p.url, sha256: p.sha256, size: p.size == null ? null : Number(p.size),
         store: !!Number(p.store_ok || 0), set_by: p.set_by, set_at: p.set_at,
+        mode: p.mode || 'ask', install_at: p.install_at || null,
       });
       res.json({
         enabled: await enabled(pool),
@@ -260,14 +268,24 @@ function adminRoutes({ pool, broadcast, auth, admin }) {
         if (version && !hasFile && !store) {
           return res.status(400).json({ error: 'A version needs its download address and SHA-256, or to be on the Microsoft Store.' });
         }
+        // When: ask on screen (as before), now, or at a set time. Now and at
+        // are the permission to install without asking (2026-10-20).
+        const mode = b.mode === 'now' || b.mode === 'at' ? b.mode : 'ask';
+        let at = null;
+        if (mode === 'at') {
+          const t = new Date(String(b.install_at || ''));
+          if (Number.isNaN(t.getTime())) return res.status(400).json({ error: 'Choose the date and time to install.' });
+          at = t.toISOString();
+        }
         for (const office of offices) {
           await pool.execute(
-            `INSERT INTO bo_app_pins (office, app, version, url, sha256, size, store_ok, set_by, set_at)
-             VALUES (?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
+            `INSERT INTO bo_app_pins (office, app, version, url, sha256, size, store_ok, set_by, set_at, mode, install_at)
+             VALUES (?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP,?,?)
              ON DUPLICATE KEY UPDATE version = VALUES(version), url = VALUES(url), sha256 = VALUES(sha256),
-               size = VALUES(size), store_ok = VALUES(store_ok), set_by = VALUES(set_by), set_at = CURRENT_TIMESTAMP`,
+               size = VALUES(size), store_ok = VALUES(store_ok), set_by = VALUES(set_by), set_at = CURRENT_TIMESTAMP,
+               mode = VALUES(mode), install_at = VALUES(install_at)`,
             [office, app, version, hasFile ? String(b.url).slice(0, 500) : null, sha,
-              hasFile && b.size != null ? Number(b.size) || null : null, store ? 1 : 0, by]
+              hasFile && b.size != null ? Number(b.size) || null : null, store ? 1 : 0, by, version ? mode : 'ask', version ? at : null]
           );
         }
       }

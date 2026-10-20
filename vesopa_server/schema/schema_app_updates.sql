@@ -55,3 +55,9 @@ INSERT IGNORE INTO bo_app_update_settings (k, v) VALUES ('enabled', '0');
 -- before; with this off (the default) they still are. MariaDB (the live box)
 -- has ADD COLUMN IF NOT EXISTS, which keeps this file re-runnable.
 ALTER TABLE bo_app_pins ADD COLUMN IF NOT EXISTS store_ok TINYINT(1) NOT NULL DEFAULT 0;
+
+-- 2026-10-20: when a device installs its venue's version, chosen on
+-- admin.vesopa.com Versions: ask (on screen, as before), now (as soon as it
+-- can, a till between sales), or at (install_at, an ISO time in UTC).
+ALTER TABLE bo_app_pins ADD COLUMN IF NOT EXISTS mode VARCHAR(8) NOT NULL DEFAULT 'ask';
+ALTER TABLE bo_app_pins ADD COLUMN IF NOT EXISTS install_at VARCHAR(30) NULL;

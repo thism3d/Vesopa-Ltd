@@ -88,12 +88,21 @@
             none: '<span class="pill grey">No devices</span>',
           }[r.status] %>
           <% if (r.direct) { %><small class="muted block"><%= r.onTarget %> of <%= r.direct %> on <%= r.target || 'their own' %></small><% } %>
+          <% if (r.when && r.target) { %><small class="muted block"><%= r.when %></small><% } %>
         </td>
       </tr>
     <% } %>
     </tbody>
   </table>
   <div class="bulk">
+    <label class="when">When
+      <select name="when" aria-label="When the devices install" data-when>
+        <option value="ask">Ask on screen (Update now or On next start)</option>
+        <option value="now">Install now, no question</option>
+        <option value="at">Install at a time, no question</option>
+      </select>
+      <input type="datetime-local" name="when_at" aria-label="Date and time to install (UK time)" hidden>
+    </label>
     <button class="btn primary" type="submit" name="bulk" value="rows">Save changed rows</button>
     <span>or set</span>
     <select name="choice" aria-label="Version for many venues">

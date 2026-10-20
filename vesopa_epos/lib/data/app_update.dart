@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -47,7 +48,24 @@ class AppUpdate {
     this.downgrade = false,
     this.storeId,
     this.switchToDirect = false,
+    this.mode = 'ask',
+    this.installAt,
   });
+
+  /// When to install, as chosen on admin.vesopa.com Versions (2026-10-20):
+  /// `ask` asks on screen (Update now / On next start), `now` installs as
+  /// soon as it can, `at` installs at [installAt]. "If I say update and
+  /// choose update and schedule then it updates on time" (the owner): with
+  /// `now` or `at` the permission has been given, so nobody is asked. A till
+  /// still only installs between sales.
+  final String mode;
+  final DateTime? installAt;
+
+  /// Permission given in admin: no question on screen.
+  bool get permitted => mode == 'now' || mode == 'at';
+
+  /// Permitted and its time has come.
+  bool get due => mode == 'now' || (mode == 'at' && installAt != null && !DateTime.now().isBefore(installAt!));
 
   final String version;
   final String url;
@@ -73,10 +91,13 @@ class AppUpdate {
   static AppUpdate? fromJson(Object? raw) {
     if (raw is! Map) return null;
     final version = raw['version'];
+    final m = raw['mode'];
+    final mode = m == 'now' || m == 'at' ? m as String : 'ask';
+    final at = raw['install_at'] is String ? DateTime.tryParse(raw['install_at'] as String)?.toLocal() : null;
     if (raw['store'] == true) {
       final id = raw['store_id'];
       if (version is! String || id is! String || !RegExp(r'^[0-9A-Z]{12}$').hasMatch(id)) return null;
-      return AppUpdate(version: version, url: '', sha256: '', storeId: id);
+      return AppUpdate(version: version, url: '', sha256: '', storeId: id, mode: mode, installAt: at);
     }
     final url = raw['url'];
     final sha = raw['sha256'];
@@ -89,6 +110,8 @@ class AppUpdate {
       size: (raw['size'] as num?)?.toInt(),
       downgrade: raw['downgrade'] == true,
       switchToDirect: raw['switch'] == true,
+      mode: mode,
+      installAt: at,
     );
   }
 }
@@ -214,6 +237,9 @@ class Updater {
   /// Versions this run has already dealt with, so a prompt waved away is not
   /// put back every five minutes.
   static final Set<String> _handled = {};
+
+  /// Versions with a timer already set for their install time.
+  static final Set<String> _timers = {};
 
   static Directory _folder() {
     final base = Platform.environment['LOCALAPPDATA'] ?? Directory.systemTemp.path;
@@ -413,6 +439,8 @@ Future<void> offerUpdate(
   final me = await Installation.current(builtVersion);
   if (!await Updater._wanted(update, me)) return;
   if (ready != null && !ready()) return;
+  // Install now, or at a set time, chosen in admin: no question.
+  if (update.permitted) return _installPermitted(update, ready: ready);
   Updater._handled.add(update.version);
   if (update.switchToDirect) {
     final file = await Updater.fetch(update, into: Handover.folder());
@@ -466,6 +494,64 @@ Future<void> offerUpdate(
   }
 }
 
+/// An update admin gave permission for (Install now, or at a set time).
+///
+/// Before its time it is only downloaded and checked, so it is ready; the
+/// next licence check (every five minutes) or a timer set for the moment
+/// installs it. A till waits until it is between sales. Any failure leaves
+/// things as they are and the next check tries again.
+Future<void> _installPermitted(AppUpdate update, {bool Function()? ready}) async {
+  if (!update.due) {
+    await (update.switchToDirect
+        ? Updater.fetch(update, into: Handover.folder())
+        : update.viaStore
+            ? Future<void>.value()
+            : Updater.fetch(update));
+    final at = update.installAt;
+    if (at != null && !Updater._timers.contains(update.version)) {
+      Updater._timers.add(update.version);
+      final wait = at.difference(DateTime.now());
+      Future<void>.delayed(wait.isNegative ? Duration.zero : wait, () {
+        Updater._timers.remove(update.version);
+        if (ready == null || ready()) unawaited(_installPermitted(update, ready: ready));
+      });
+    }
+    return;
+  }
+  if (ready != null && !ready()) return;
+  if (Updater._handled.contains(update.version)) return;
+  Updater._handled.add(update.version);
+  if (update.switchToDirect) {
+    final file = await Updater.fetch(update, into: Handover.folder());
+    if (file == null || (ready != null && !ready())) {
+      Updater._handled.remove(update.version);
+      return;
+    }
+    await Handover.leave(update, file);
+    return;
+  }
+  if (update.viaStore) {
+    if (await StoreUpdate.available() == null) {
+      Updater._handled.remove(update.version);
+      return;
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(Updater._triedKey, update.version);
+    } catch (_) {}
+    await StoreUpdate.install();
+    Updater._handled.remove(update.version);
+    return;
+  }
+  final file = await Updater.fetch(update);
+  if (file == null || (ready != null && !ready())) {
+    Updater._handled.remove(update.version);
+    return;
+  }
+  await Updater.install(update, file);
+  Updater._handled.remove(update.version);
+}
+
 /// "Update now" (true) or "On next start", the same for every kind of copy.
 Future<bool?> _ask(
   BuildContext context,
@@ -517,6 +603,7 @@ Future<void> stageUpdate(AppUpdate? update, {required String builtVersion}) asyn
   if (update == null || kIsWeb || !Platform.isWindows) return;
   final me = await Installation.current(builtVersion);
   if (!await Updater._wanted(update, me)) return;
+  if (update.permitted) return _installPermitted(update);
   if (update.switchToDirect) {
     Updater._handled.add(update.version);
     final file = await Updater.fetch(update, into: Handover.folder());
