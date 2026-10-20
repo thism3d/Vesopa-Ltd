@@ -321,7 +321,7 @@ const REASONS = {
   DECLINED_OFFLINE: 'Card declined.',
   DECLINED: 'Card declined.',
   TIMEOUT: 'The card machine timed out. No money was taken.',
-  TERMINAL_UNREACHABLE: 'The card machine could not be reached. Check it is on, online and has the Teya app open.',
+  TERMINAL_UNREACHABLE: 'Teya could not reach the card machine. On the card machine open Settings, POS integrations, External ePOS integrations and turn on Cloud communication, then keep the Teya app open, online and signed in to this store. Nothing was charged.',
   TERMINAL_BUSY: 'The card machine is busy with another payment.',
   CARD_REMOVED: 'The card was removed too early.',
   INSUFFICIENT_FUNDS: 'Card declined: insufficient funds.',

@@ -99,7 +99,7 @@ const PLAIN = {
   NOT_FOUND: 'Teya could not find that. It may have been removed.',
   TRANSACTION_NOT_FOUND: 'Teya could not find the original card payment to refund.',
   TRANSACTION_ALREADY_IN_PROGRESS: 'The card machine is already taking another payment.',
-  TERMINAL_UNREACHABLE: 'The card machine could not be reached. Check it is on and online.',
+  TERMINAL_UNREACHABLE: 'Teya could not reach the card machine. On the card machine open Settings, POS integrations, External ePOS integrations and turn on Cloud communication, then keep the Teya app open, online and signed in to this store. Nothing was charged.',
   SERVICE_UNAVAILABLE: 'Teya is not available just now. Please try again in a moment.',
   TRANSACTION_CANNOT_BE_REVERSED: 'Teya cannot refund this payment.',
   AMOUNT_TOO_SMALL: 'That amount is too small for Teya.',
