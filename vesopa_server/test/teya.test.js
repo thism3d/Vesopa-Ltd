@@ -104,7 +104,7 @@ async function check(name, fn) {
     global.fetch = async () => new Response(JSON.stringify({ code: 'TERMINAL_UNREACHABLE', description: 'x' }), { status: 400 });
     try {
       await assert.rejects(teya.createPayment('sandbox', 't', { storeId: 's', terminalId: 'd', amountMinor: 100, reference: 'r' }, 'k'),
-        (e) => e instanceof teya.TeyaError && /could not be reached/.test(e.message));
+        (e) => e instanceof teya.TeyaError && /could not reach the card machine/.test(e.message));
     } finally {
       global.fetch = realFetch;
     }
