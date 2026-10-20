@@ -164,10 +164,11 @@ class PrinterConfig {
   /// 72 is an 80mm roll on a printer with wider margins (2026-10-19): a
   /// Pontardawe till printed every line of its Z report wrapped, because that
   /// printer fits 42 characters on its 80mm roll, not 48.
+  /// 42 on every 80mm roll (2026-10-20): it fits printers with wide margins
+  /// as well as full-width ones (see ReceiptBuilder.create).
   int get columns => switch (paperWidthMm) {
     58 => 32,
-    72 => 42,
-    _ => 48,
+    _ => 42,
   };
 
   /// Whether this printer avoids the Windows spooler.

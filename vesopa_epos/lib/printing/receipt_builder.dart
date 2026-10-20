@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
@@ -151,7 +152,7 @@ String escPosCodePageName(String page) =>
 class ReceiptBuilder {
   ReceiptBuilder(
     this._generator, {
-    this.columns = 48,
+    this.columns = 42,
     this.codePage = escPosGbp,
     ResolvedPrint? finish,
   }) : _finishing = finish ?? PrintOptions.standard.resolve() {
@@ -227,11 +228,13 @@ class ReceiptBuilder {
     PrintOptions options = PrintOptions.standard,
   }) async {
     final profile = await CapabilityProfile.load();
-    // 72: an 80mm roll on a printer with wide margins, 42 characters a line.
+    // 80mm rolls print 42 characters a line (2026-10-20). Some 80mm printers
+    // fit 48, but many have wide margins and fit 42 (Pontardawe RFC's Z report
+    // wrapped "Meirion D / avies" and printed "Transactions0"), and a line laid
+    // out for 48 breaks on those. 42 fits every 80mm printer.
     final (paper, columns) = switch (paperWidthMm) {
       58 => (PaperSize.mm58, 32),
-      72 => (PaperSize.mm72, 42),
-      _ => (PaperSize.mm80, 48),
+      _ => (PaperSize.mm72, 42),
     };
     return ReceiptBuilder(
       Generator(paper, profile),
@@ -354,7 +357,7 @@ class ReceiptBuilder {
     // torn-off half still says it.
     if (order.training) bytes.addAll(_trainingLine());
 
-    bytes.addAll(_generator.hr());
+    bytes.addAll(_hr());
     bytes.addAll(
       _text(
         _time.format(order.createdAt),
@@ -369,7 +372,7 @@ class ReceiptBuilder {
         ),
       );
     }
-    bytes.addAll(_generator.hr());
+    bytes.addAll(_hr());
 
     // Modifiers print under the item they were chosen for. See nestModifiers.
     for (final entry in nestModifiers(lines)) {
@@ -384,7 +387,7 @@ class ReceiptBuilder {
           ? ''
           : '${line.quantity.toStringAsFixed(0)}x ';
       bytes.addAll(
-        _generator.row([
+        _rowText([
           _col(
             text: '$indent$qty${line.name}',
             width: 8,
@@ -405,14 +408,14 @@ class ReceiptBuilder {
       }
     }
 
-    bytes.addAll(_generator.hr());
+    bytes.addAll(_hr());
     bytes.addAll(_row('Subtotal', _money(order.subtotalMinor)));
     if (order.discountMinor > 0) {
       bytes.addAll(_row('Discount', '-${_money(order.discountMinor)}'));
     }
     bytes.addAll(_row('VAT', _money(order.taxMinor)));
     bytes.addAll(
-      _generator.row([
+      _rowText([
         _col(
           text: 'TOTAL',
           width: 6,
@@ -430,7 +433,7 @@ class ReceiptBuilder {
       ]),
     );
 
-    bytes.addAll(_generator.hr());
+    bytes.addAll(_hr());
     for (final p in payments) {
       bytes.addAll(_row(p.method.toUpperCase(), _money(p.amountMinor)));
       // The notes actually handed over, when they were counted in on the cash
@@ -502,7 +505,7 @@ class ReceiptBuilder {
 
     if (summary.training) bytes.addAll(_trainingLine());
 
-    bytes.addAll(_generator.hr());
+    bytes.addAll(_hr());
     bytes.addAll(
       _text(
         _time.format(summary.closedAt),
@@ -526,11 +529,11 @@ class ReceiptBuilder {
         ),
       );
     }
-    bytes.addAll(_generator.hr());
+    bytes.addAll(_hr());
 
     for (final line in detail.lines) {
       bytes.addAll(
-        _generator.row([
+        _rowText([
           _col(
             text: '${line.quantity.toStringAsFixed(0)}x ${line.name}',
             width: 8,
@@ -547,7 +550,7 @@ class ReceiptBuilder {
       }
     }
 
-    bytes.addAll(_generator.hr());
+    bytes.addAll(_hr());
     bytes.addAll(_row('Subtotal', _money(summary.grossMinor)));
     if (summary.discountMinor > 0) {
       bytes.addAll(_row('Discount', '-${_money(summary.discountMinor)}'));
@@ -567,7 +570,7 @@ class ReceiptBuilder {
     }
     bytes.addAll(_row('VAT', _money(summary.taxMinor)));
     bytes.addAll(
-      _generator.row([
+      _rowText([
         _col(
           text: 'TOTAL',
           width: 6,
@@ -585,7 +588,7 @@ class ReceiptBuilder {
       ]),
     );
 
-    bytes.addAll(_generator.hr());
+    bytes.addAll(_hr());
     for (final tender in detail.tenders) {
       bytes.addAll(
         _row(tender.method.toUpperCase(), _money(tender.amountMinor)),
@@ -607,7 +610,7 @@ class ReceiptBuilder {
     if (summary.pointsEarned > 0 ||
         summary.pointsRedeemed > 0 ||
         summary.pointsBalance != null) {
-      bytes.addAll(_generator.hr());
+      bytes.addAll(_hr());
       if (summary.customerName?.isNotEmpty ?? false) {
         bytes.addAll(_text(summary.customerName!));
       }
@@ -718,7 +721,7 @@ class ReceiptBuilder {
         styles: const PosStyles(align: PosAlign.center),
       ),
     );
-    bytes.addAll(_generator.hr());
+    bytes.addAll(_hr());
 
     // Grouped into the venue's own courses, which is the whole of the printer
     // categories feature. `groupForKitchen` already nests the modifiers, so
@@ -760,14 +763,14 @@ class ReceiptBuilder {
     }
 
     if (order.notes != null && order.notes!.isNotEmpty) {
-      bytes.addAll(_generator.hr());
+      bytes.addAll(_hr());
       bytes.addAll(_text('NOTE: ${order.notes}'));
     }
 
     // Who rang it, so the kitchen has somebody to ask about a query rather
     // than having to work out which till the ticket came off.
     if (staffName != null && staffName.isNotEmpty) {
-      bytes.addAll(_generator.hr());
+      bytes.addAll(_hr());
       bytes.addAll(_text(staffName));
     }
 
@@ -809,13 +812,13 @@ class ReceiptBuilder {
         '[${t.count}] ${_money(t.amountMinor)}';
 
     void section(String title) {
-      bytes.addAll(_generator.hr());
+      bytes.addAll(_hr());
       bytes.addAll(_text(title, styles: const PosStyles(bold: true)));
     }
 
     void totalRow(ReportTally t) {
       bytes.addAll(
-        _generator.row([
+        _rowText([
           _col(text: 'TOTAL', width: 7, styles: const PosStyles(bold: true)),
           _col(
             text: tally(t),
@@ -826,7 +829,7 @@ class ReceiptBuilder {
       );
     }
 
-    bytes.addAll(_generator.hr());
+    bytes.addAll(_hr());
     if (report.terminalName != null && report.terminalName!.isNotEmpty) {
       bytes.addAll(_row('Terminal', report.terminalName!));
     }
@@ -907,7 +910,7 @@ class ReceiptBuilder {
     section('CASH DRAWER');
     bytes.addAll(_row('Float', _money(report.openingFloatMinor)));
     bytes.addAll(
-      _generator.row([
+      _rowText([
         _col(
           text: 'CASH EXPECTED',
           width: 7,
@@ -936,7 +939,7 @@ class ReceiptBuilder {
     if (counted != null && difference != null) {
       bytes.addAll(_row('Counted', _money(counted)));
       bytes.addAll(
-        _generator.row([
+        _rowText([
           _col(
             text: difference == 0
                 ? 'BALANCED'
@@ -1005,7 +1008,7 @@ class ReceiptBuilder {
         styles: const PosStyles(align: PosAlign.center, bold: true),
       ),
     );
-    bytes.addAll(_generator.hr());
+    bytes.addAll(_hr());
 
     if (holder != null && holder.trim().isNotEmpty) {
       bytes.addAll(
@@ -1062,7 +1065,7 @@ class ReceiptBuilder {
       // costs a convenience and not the job.
     }
 
-    bytes.addAll(_generator.hr());
+    bytes.addAll(_hr());
     if (issuedBy != null && issuedBy.trim().isNotEmpty) {
       bytes.addAll(_row('Issued by', issuedBy.trim()));
     }
@@ -1110,7 +1113,7 @@ class ReceiptBuilder {
         styles: const PosStyles(align: PosAlign.center, bold: true),
       ),
     );
-    bytes.addAll(_generator.hr());
+    bytes.addAll(_hr());
 
     // The name, at arm's length. This slip is found on a printer rather than
     // handed to anybody, so the first question it has to answer from across a
@@ -1147,7 +1150,7 @@ class ReceiptBuilder {
     }
     bytes.addAll(_row('Swiped at', _time.format(at ?? DateTime.now())));
 
-    bytes.addAll(_generator.hr());
+    bytes.addAll(_hr());
     // What actually happened, said plainly. A slip that did not distinguish
     // "they are inside" from "they were turned away" would leave whoever picks
     // it up unable to tell whether anything needs doing right now.
@@ -1193,13 +1196,13 @@ class ReceiptBuilder {
     }
     bytes.addAll(_text(_time.format(at ?? DateTime.now()), styles: const PosStyles(align: PosAlign.center)));
     for (final section in sections) {
-      bytes.addAll(_generator.hr());
+      bytes.addAll(_hr());
       bytes.addAll(_text(section.heading, styles: const PosStyles(bold: true)));
       for (final r in section.rows) {
         bytes.addAll(_row(r.label, r.value));
       }
     }
-    bytes.addAll(_generator.hr());
+    bytes.addAll(_hr());
     for (final line in footer) {
       bytes.addAll(_text(line));
     }
@@ -1235,7 +1238,7 @@ class ReceiptBuilder {
         ),
       ),
     );
-    bytes.addAll(_generator.hr());
+    bytes.addAll(_hr());
     bytes.addAll(_row('Printer', printer.name));
     bytes.addAll(_row('Connection', printer.kind.label));
     bytes.addAll(_row('Reached at', printer.connectionSummary));
@@ -1244,7 +1247,7 @@ class ReceiptBuilder {
     );
     bytes.addAll(_row('Roll', printer.paperWidthMm == 72 ? '80mm, $columns per line' : '${printer.paperWidthMm}mm'));
     bytes.addAll(_row('Printed', _time.format(DateTime.now())));
-    bytes.addAll(_generator.hr());
+    bytes.addAll(_hr());
 
     // The pound sign, checked on paper rather than on screen. It depends on the
     // printer being on the right character set, which is a property of the
@@ -1260,7 +1263,7 @@ class ReceiptBuilder {
     );
     bytes.addAll(_poundSampler());
 
-    bytes.addAll(_generator.hr());
+    bytes.addAll(_hr());
     bytes.addAll(
       _text(
         'The line below should fit on one line.',
@@ -1275,12 +1278,12 @@ class ReceiptBuilder {
     // whole slip arrived. A printer that drops data loses the END of a job
     // first -- the Z report that was only its heading -- so a slip that shows
     // this line and was cut has been sent in full.
-    bytes.addAll(_generator.hr());
+    bytes.addAll(_hr());
     bytes.addAll(_row('Print mode', printer.options.custom ? 'Custom' : 'Standard'));
     bytes.addAll(_row('Cut', _finishing.cut.label));
     bytes.addAll(_row('Feed before cut', '${_finishing.feedLines} lines'));
     bytes.addAll(_row('Sending', _finishing.gentle ? 'Gently' : 'Normal'));
-    bytes.addAll(_generator.hr());
+    bytes.addAll(_hr());
     bytes.addAll(
       _text(
         '*** END OF TEST ***',
@@ -1313,7 +1316,7 @@ class ReceiptBuilder {
   List<int> _poundSampler() {
     final bytes = <int>[];
 
-    bytes.addAll(_generator.hr());
+    bytes.addAll(_hr());
     bytes.addAll(
       _text(
         'If it does not, find the £ below and set '
@@ -1333,7 +1336,7 @@ class ReceiptBuilder {
       if (page == escPosGbp) {
         // ESC R 3 — the UK international set, in which 0x23 is a pound.
         bytes.addAll(const [0x1B, 0x52, 3]);
-        bytes.addAll(_generator.row([
+        bytes.addAll(_rowText([
           PosColumn(text: label, width: 7),
           PosColumn(
             text: '#12.34',
@@ -1353,7 +1356,7 @@ class ReceiptBuilder {
       } catch (_) {
         continue;
       }
-      bytes.addAll(_generator.row([
+      bytes.addAll(_rowText([
         PosColumn(text: label, width: 7),
         PosColumn(
           text: '£12.34',
@@ -1371,7 +1374,128 @@ class ReceiptBuilder {
     return bytes;
   }
 
-  List<int> _row(String label, String value) => _generator.row([
+  /// A dividing line exactly as wide as the roll prints.
+  List<int> _hr() => _generator.text('-' * columns);
+
+  /// Columns as plain text, padded to the roll's characters a line.
+  ///
+  /// The library's row() places each column at an absolute dot position worked
+  /// out for the nominal paper width. On a printer with wider margins than that
+  /// a right-hand value lands past the edge: it wraps to the next line or is
+  /// printed straight after the label (Pontardawe RFC's Z report, 2026-10-20).
+  /// Plain text cannot overflow: each column gets its share of [columns]
+  /// characters (out of 12, like PosColumn), longer text word-wraps inside its
+  /// own column, and the lines are put side by side.
+  List<int> _rowText(List<PosColumn> cols) {
+    final big = cols.any((c) => c.styles.width == PosTextSize.size2);
+    final total = big ? columns ~/ 2 : columns;
+    final shares = <int>[];
+    var used = 0;
+    for (var i = 0; i < cols.length; i++) {
+      final w = i == cols.length - 1 ? total - used : (total * cols[i].width / 12).floor();
+      shares.add(w < 1 ? 1 : w);
+      used += shares.last;
+    }
+    // A space between columns, taken from the left one.
+    final wrapped = <List<String>>[];
+    for (var i = 0; i < cols.length; i++) {
+      final room = i < cols.length - 1 ? (shares[i] - 1).clamp(1, 999) : shares[i];
+      wrapped.add(_wrap(cols[i].text, room));
+    }
+    final height = wrapped.fold<int>(1, (m, l) => l.length > m ? l.length : m);
+    final bold = cols.any((c) => c.styles.bold);
+    final out = <int>[];
+    for (final text in _lines(cols, shares, wrapped, height)) {
+      out.addAll(_generator.text(
+        text,
+        styles: PosStyles(
+          bold: bold,
+          width: big ? PosTextSize.size2 : PosTextSize.size1,
+          height: big ? PosTextSize.size2 : PosTextSize.size1,
+        ),
+      ));
+    }
+    return out;
+  }
+
+  /// The label/value rows as the text lines they print, for tests.
+  @visibleForTesting
+  List<String> debugRowLines(List<List<String>> pairs) => [
+        for (final p in pairs)
+          ..._layout([
+            _col(text: p[0], width: 7),
+            _col(text: p[1], width: 5, styles: const PosStyles(align: PosAlign.right)),
+          ]),
+      ];
+
+  List<String> _layout(List<PosColumn> cols) {
+    final big = cols.any((c) => c.styles.width == PosTextSize.size2);
+    final total = big ? columns ~/ 2 : columns;
+    final shares = <int>[];
+    var used = 0;
+    for (var i = 0; i < cols.length; i++) {
+      final w = i == cols.length - 1 ? total - used : (total * cols[i].width / 12).floor();
+      shares.add(w < 1 ? 1 : w);
+      used += shares.last;
+    }
+    final wrapped = <List<String>>[];
+    for (var i = 0; i < cols.length; i++) {
+      final room = i < cols.length - 1 ? (shares[i] - 1).clamp(1, 999) : shares[i];
+      wrapped.add(_wrap(cols[i].text, room));
+    }
+    final height = wrapped.fold<int>(1, (m, l) => l.length > m ? l.length : m);
+    return _lines(cols, shares, wrapped, height).toList();
+  }
+
+  Iterable<String> _lines(List<PosColumn> cols, List<int> shares, List<List<String>> wrapped, int height) sync* {
+    for (var line = 0; line < height; line++) {
+      final b = StringBuffer();
+      for (var i = 0; i < cols.length; i++) {
+        final text = line < wrapped[i].length ? wrapped[i][line] : '';
+        final width = shares[i];
+        final room = i < cols.length - 1 ? width - 1 : width;
+        final cell = switch (cols[i].styles.align) {
+          PosAlign.right => text.padLeft(room),
+          PosAlign.center => text.padLeft(room - ((room - text.length) ~/ 2)).padRight(room),
+          _ => text.padRight(room),
+        };
+        b.write(cell);
+        if (i < cols.length - 1) b.write(' ');
+      }
+      yield b.toString().trimRight();
+    }
+  }
+
+  /// Word-wrap [text] into lines of at most [width] characters.
+  static List<String> _wrap(String text, int width) {
+    final t = text.trim();
+    if (t.length <= width) return [t];
+    final lines = <String>[];
+    var current = '';
+    for (final word in t.split(RegExp(r'\s+'))) {
+      var w = word;
+      while (w.length > width) {
+        if (current.isNotEmpty) {
+          lines.add(current);
+          current = '';
+        }
+        lines.add(w.substring(0, width));
+        w = w.substring(width);
+      }
+      if (current.isEmpty) {
+        current = w;
+      } else if (current.length + 1 + w.length <= width) {
+        current = '$current $w';
+      } else {
+        lines.add(current);
+        current = w;
+      }
+    }
+    if (current.isNotEmpty) lines.add(current);
+    return lines;
+  }
+
+  List<int> _row(String label, String value) => _rowText([
         _col(text: label, width: 7),
         _col(
           text: value,

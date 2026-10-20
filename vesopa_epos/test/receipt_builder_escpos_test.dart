@@ -115,8 +115,8 @@ void main() {
       expect(narrow.columns, 32);
     });
 
-    test('an 80mm builder lays out to 48 columns', () {
-      expect(builder.columns, 48);
+    test('an 80mm builder lays out to 42 columns, which fits every 80mm printer', () {
+      expect(builder.columns, 42);
     });
 
     test('the test slip ruler is exactly one line for the roll', () async {

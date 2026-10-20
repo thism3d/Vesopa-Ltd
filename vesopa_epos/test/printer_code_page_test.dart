@@ -262,7 +262,7 @@ void main() {
       expect(narrow.columns, 32);
 
       final wide = await ReceiptBuilder.forPrinter(_printer());
-      expect(wide.columns, 48);
+      expect(wide.columns, 42);
     });
   });
 }

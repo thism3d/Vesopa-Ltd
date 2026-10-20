@@ -18,7 +18,7 @@ void main() {
   );
 
   test('each roll setting has its own line width', () {
-    expect(printer(80).columns, 48);
+    expect(printer(80).columns, 42);
     expect(printer(72).columns, 42);
     expect(printer(58).columns, 32);
   });
@@ -33,7 +33,7 @@ void main() {
 
   test('the receipt builder lays out at the printer\'s width', () async {
     expect((await ReceiptBuilder.forPrinter(printer(72))).columns, 42);
-    expect((await ReceiptBuilder.forPrinter(printer(80))).columns, 48);
+    expect((await ReceiptBuilder.forPrinter(printer(80))).columns, 42);
     expect((await ReceiptBuilder.create(paperWidthMm: 72)).columns, 42);
   });
 }
