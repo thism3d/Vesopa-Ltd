@@ -2738,33 +2738,37 @@ ${o.pay_env === 'live' ? '' : '<span class="test">TEST PAYMENT · no real money<
 <div class="muted">Order #${o.id}${o.table_label ? ' · ' + esc(o.table_label) : ''}</div>
 <div class="amt">£${pounds}</div>
 <div id="buttons"></div>
+<div id="form"></div>
 <div id="msg" class="muted">Choose how to pay. Card details go straight to Barclaycard.</div>
+<button id="again" type="button" hidden style="margin-top:12px;padding:10px 16px;border-radius:10px;border:0;background:#16181d;color:#fff;font-weight:700;cursor:pointer">Try again</button>
 <a class="back" href="/o/${esc(o.public_id)}">Back to the order</a>
 </main>
 <script>
 (async function () {
   var msg = document.getElementById('msg');
+  var again = document.getElementById('again');
   function say(t, cls) { msg.textContent = t; msg.className = cls || 'muted'; }
+  // A card form answers once; trying again loads a fresh one. Never a loop.
+  function stop(t) { say(t, 'err'); again.hidden = false; }
+  again.onclick = function () { location.reload(); };
+  var token;
   try {
     var accept = await Accept(${JSON.stringify(jwt)});
     var up = await accept.unifiedPayments(false);
-    while (true) {
-      var token;
-      try {
-        token = await up.show({ containers: { paymentSelection: '#buttons' } });
-      } catch (e) {
-        say('The card form closed. Choose a way to pay to try again.', 'err');
-        continue;
-      }
-      say('Taking the payment…');
-      var r = await fetch(location.pathname, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: token }) });
-      var j = await r.json().catch(function () { return {}; });
-      if (r.ok && j.redirect) { say('Paid. Thank you.', 'ok'); location.replace(j.redirect); return; }
-      if (j.redirect) { location.replace(j.redirect); return; }
-      say((j.error || 'The payment did not go through.') + ' Nothing was charged. Try again.', 'err');
-    }
+    token = await up.show({ containers: { paymentSelection: '#buttons', paymentScreen: '#form' } });
   } catch (e) {
-    say('The card form could not be shown. Go back to the order to try again or pay at the bar.', 'err');
+    stop('The card form could not be shown or was closed. Press Try again, or go back to the order to pay at the bar.');
+    return;
+  }
+  say('Taking the payment…');
+  try {
+    var r = await fetch(location.pathname, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: token }) });
+    var j = await r.json().catch(function () { return {}; });
+    if (r.ok && j.redirect) { say('Paid. Thank you.', 'ok'); location.replace(j.redirect); return; }
+    if (j.redirect && r.status !== 402) { location.replace(j.redirect); return; }
+    stop((j.error || 'The payment did not go through.') + ' Nothing was charged.');
+  } catch (e) {
+    stop('The payment could not be confirmed. Check the order before trying again.');
   }
 })();
 </script></body></html>`);
