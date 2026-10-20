@@ -180,7 +180,39 @@ async function machineToken(db, office, env, conn) {
   if (!c || !c.m2m_client_id || !c.m2m_secret_enc) {
     throw new teya.TeyaError(409, 'NO_STORE', 'Choose the Teya store this venue takes payments in first.');
   }
-  return teya.clientToken(env, c.m2m_client_id, unseal(c.m2m_secret_enc));
+  // The permissions Teya grants the store's ePOS registration, asked for by
+  // name: a token asked for with none carries only default_access.
+  return teya.clientToken(env, c.m2m_client_id, unseal(c.m2m_secret_enc), teya.POSLINK_SCOPE);
+}
+
+/**
+ * The card machines in the venue's Teya store.
+ *
+ * Read with the manager's own Teya sign-in first: Teya answers that with the
+ * store's machines, including none. The store's machine credentials are only
+ * the fallback, because Teya refuses those (403) for a store with no machine
+ * linked yet (sandbox, 2026-10-20), which read as "not allowed" when the truth
+ * was "no machines".
+ */
+async function storeTerminals(db, office, env, conn) {
+  const c = conn || await connectionFor(db, office, env);
+  if (!c || !c.store_id) throw new teya.TeyaError(409, 'NO_STORE', 'Choose the Teya store this venue takes payments in first.');
+  if (c.user_refresh_enc) {
+    try {
+      return await teya.listTerminals(env, await userToken(db, office, env), c.store_id);
+    } catch (e) {
+      if (!(e instanceof teya.TeyaError) || e.code === 'TEYA_UNREACHABLE' || e.code === 'TEYA_TIMEOUT') throw e;
+      // Signed out or refused: try the store's own credentials below.
+    }
+  }
+  try {
+    return await teya.listTerminals(env, await machineToken(db, office, env, c), c.store_id);
+  } catch (e) {
+    if (e instanceof teya.TeyaError && e.status === 403) {
+      throw new teya.TeyaError(409, 'NO_MACHINES', 'Teya has no card machine in this store yet. Add one in Teya Business (Devices), or sign the Teya test app into this store, then reload this page.');
+    }
+    throw e;
+  }
 }
 
 /** The store's online-payments token. */
@@ -511,10 +543,17 @@ function teyaRoutes({ pool, broadcast, secret, onOnlinePayment }) {
         m2m_secret_enc: sealOrThrow(reg.client_secret),
         default_terminal_id: prev && prev.store_id === storeId ? prev.default_terminal_id : null,
       });
-      const tok = await teya.clientToken(env, reg.client_id, reg.client_secret);
-      const terminals = (await teya.listTerminals(env, tok, storeId)).map(terminalView);
       tellTills(office);
-      res.json({ ok: true, store: { id: storeId, name: store.name }, terminals, message: `Connected to ${store.name || 'the store'} on ${env === 'live' ? 'Teya Live' : 'the Teya sandbox'}.` });
+      // The store is connected whatever the machine list says.
+      let terminals = [];
+      let note = '';
+      try {
+        terminals = (await storeTerminals(pool, office, env)).map(terminalView);
+        if (!terminals.length) note = ' Teya has no card machine in this store yet: add one in Teya Business (Devices), then reload this page.';
+      } catch (e) {
+        note = ` ${e.message}`;
+      }
+      res.json({ ok: true, store: { id: storeId, name: store.name }, terminals, message: `Connected to ${store.name || 'the store'} on ${env === 'live' ? 'Teya Live' : 'the Teya sandbox'}.${note}` });
     } catch (e) { sendError(res, e, next); }
   });
 
@@ -522,9 +561,7 @@ function teyaRoutes({ pool, broadcast, secret, onOnlinePayment }) {
     try {
       const office = await tenantEmail(req);
       const env = teya.cleanEnv(req.query.environment || (await settingsFor(pool, office)).environment);
-      const conn = await connectionFor(pool, office, env);
-      const tok = await machineToken(pool, office, env, conn);
-      res.json((await teya.listTerminals(env, tok, conn.store_id)).map(terminalView));
+      res.json((await storeTerminals(pool, office, env)).map(terminalView));
     } catch (e) { sendError(res, e, next); }
   });
 
@@ -910,7 +947,7 @@ function teyaRoutes({ pool, broadcast, secret, onOnlinePayment }) {
       }
       if (on) {
         try {
-          out.terminals = (await teya.listTerminals(env, await machineToken(pool, req.office, env, conn), conn.store_id)).map(terminalView);
+          out.terminals = (await storeTerminals(pool, req.office, env, conn)).map(terminalView);
         } catch (e) {
           out.terminals_error = e.message;
         }

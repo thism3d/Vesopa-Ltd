@@ -360,6 +360,9 @@ function refundCardPayment(env, token, { gatewayPaymentId, amountMinor, terminal
 
 // ---- Online payments (hosted checkout) --------------------------------------
 
+/** What Teya grants a registered ePOS for a store (EposRegisterResponse.scopes). */
+const POSLINK_SCOPE = 'payment_requests payment_requests/id stores/id/terminals refunds';
+
 const ONLINE_SCOPE = 'checkout/sessions/create checkout/sessions/id/get refunds/create ecommerce/registrations/current';
 
 /** Where to send a manager to connect their store's online payments. */
@@ -456,6 +459,7 @@ module.exports = {
   cancelPayment,
   refundCardPayment,
   ONLINE_SCOPE,
+  POSLINK_SCOPE,
   registrationUrl,
   createSession,
   getSession,
