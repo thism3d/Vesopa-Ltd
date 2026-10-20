@@ -200,7 +200,7 @@ async function metaFor(pool, { table, slug }) {
     let row = null;
     if (table) {
       const [[found]] = await pool.query(
-        'SELECT v.*, o.name AS office_name, t.name AS table_name,' +
+        'SELECT v.*, o.name AS office_name, o.contact_email AS office_email, t.name AS table_name,' +
           '       t.label AS table_label, t.table_number' +
           '  FROM floor_tables t' +
           '  JOIN dinein_venue v ON v.office_id = t.office_id' +
@@ -211,7 +211,7 @@ async function metaFor(pool, { table, slug }) {
       row = found;
     } else if (slug) {
       const [[found]] = await pool.query(
-        'SELECT v.*, o.name AS office_name, NULL AS table_name,' +
+        'SELECT v.*, o.name AS office_name, o.contact_email AS office_email, NULL AS table_name,' +
           '       NULL AS table_label, NULL AS table_number' +
           '  FROM dinein_venue v' +
           '  LEFT JOIN offices o ON o.id = v.office_id' +
@@ -224,6 +224,15 @@ async function metaFor(pool, { table, slug }) {
     // The club's own look (src/dinein.js menuLook) in the head too, so the tab,
     // the address-bar colour and a shared link are the club's, not Vesopa's.
     const branded = require('./dinein').menuLook(row);
+    // Who takes the menu's card payments, named in its footer: Barclaycard,
+    // Teya or Dojo, the same order the checkout itself uses.
+    let payBy = 'Dojo';
+    if (row.online_pay && row.office_email) {
+      try {
+        if (await require('./barclaycard').onlineFor(pool, row.office_email)) payBy = 'Barclaycard';
+        else if (await require('./teya').onlineFor(pool, row.office_email)) payBy = 'Teya';
+      } catch (_) { /* the footer keeps Dojo */ }
+    }
 
     const tableName =
       (row.table_name || '').trim() ||
@@ -255,6 +264,7 @@ async function metaFor(pool, { table, slug }) {
       art: branded.look && branded.look.art ? branded.look.art : null,
       address: [row.address_line, row.postcode].filter(Boolean).join(', ') || null,
       payOnline: !!row.online_pay,
+      payBy,
       // What the venue wrote, as opposed to the default line above.
       ownTagline: (row.tagline || '').trim() || null,
       // Dojo's website checklist, at the foot of the menu: the legal entity,
@@ -584,7 +594,7 @@ function legalFooter(m) {
     cards.map((c) => `<img src="/assets/cards/${c}.svg" alt="${names[c]}" width="48" height="30" loading="lazy">`).join('') +
     '</div>';
   if (!l) {
-    return `<footer class="legal-foot">${m.payOnline ? logos + '<p>Card payments are taken securely by Dojo.</p>' : ''}</footer>`;
+    return `<footer class="legal-foot">${m.payOnline ? logos + `<p>Card payments are taken securely by ${m.payBy || 'Dojo'}.</p>` : ''}</footer>`;
   }
   const links = [
     l.terms && `<a href="${esc(l.terms)}" rel="noopener">Terms and conditions</a>`,
@@ -596,7 +606,7 @@ function legalFooter(m) {
   ${m.payOnline ? logos : ''}
   ${links ? `<nav class="lf-links" aria-label="Policies">${links}</nav>` : ''}
   <p>${l.name ? `<b>${esc(l.name)}</b>` : ''}${l.number ? ` · Company no. ${esc(l.number)}` : ''}${l.address ? `<br>${esc(l.address)}` : ''}${l.phone ? `<br>Telephone <a href="tel:${esc(String(l.phone).replace(/\s+/g, ''))}">${esc(l.phone)}</a>` : ''}${l.email ? ` · <a href="mailto:${esc(l.email)}">${esc(l.email)}</a>` : ''}</p>
-  ${m.payOnline ? '<p class="lf-secure">&#128274; Card payments are taken securely by Dojo on its own checkout page. We never see your card details. Prices in pounds sterling (GBP).</p>' : ''}
+  ${m.payOnline ? `<p class="lf-secure">&#128274; Card payments are taken securely by ${m.payBy || 'Dojo'} on its own secure payment page. We never see your card details. Prices in pounds sterling (GBP).</p>` : ''}
 </footer>`;
 }
 
