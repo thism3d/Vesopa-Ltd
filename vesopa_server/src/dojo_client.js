@@ -157,6 +157,12 @@ function createCheckoutIntent(key, { amountMinor, reference, description, redire
       reference: String(reference || 'vesopa-gift').slice(0, 40),
       description: description ? String(description).slice(0, 80) : undefined,
       captureMode: 'Auto',
+      // Apple Pay and Google Pay on Dojo's checkout page (2026-10-20): "By
+      // default, the checkout page supports only card payments. To enable
+      // Apple Pay and Google Pay wallets, pass "Card","Wallet" in
+      // paymentMethods" (Dojo, checkout page configuration). Without it the
+      // page offered a card form only, on every venue.
+      paymentMethods: ['Card', 'Wallet'],
       // Without this Dojo makes no client session secret, and its checkout
       // page sits on a grey skeleton logging "paymentToken must be provided"
       // -- which is what Pontardawe RFC's live account did (2026-10-15);

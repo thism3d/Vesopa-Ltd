@@ -213,6 +213,25 @@ function broadcast(message, options = {}) {
 
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
+// Apple Pay domain verification (2026-10-20), on every address this server
+// answers for -- menu.pontardawerfc.com and every venue menu: Dojo's checkout
+// offers Apple Pay only on a verified domain, and this is Dojo's own file
+// (cdn.dojo.tech), fetched and kept for a day.
+let applePayFile = null;
+app.get('/.well-known/apple-developer-merchantid-domain-association', async (_req, res) => {
+  try {
+    if (!applePayFile || applePayFile.until < Date.now()) {
+      const r = await fetch('https://cdn.dojo.tech/payments/assets/ApplePay/apple-developer-merchantid-domain-association', { signal: AbortSignal.timeout(15000) });
+      if (!r.ok) throw new Error(`Dojo answered ${r.status}`);
+      applePayFile = { body: Buffer.from(await r.arrayBuffer()), until: Date.now() + 24 * 3600 * 1000 };
+    }
+    res.type('text/plain').set('Cache-Control', 'public, max-age=3600').send(applePayFile.body);
+  } catch (e) {
+    if (applePayFile) return res.type('text/plain').send(applePayFile.body);
+    res.status(503).type('text/plain').send('Apple Pay verification file not available just now.');
+  }
+});
+
 // ---- Back office ----------------------------------------------------------
 
 app.post('/api/login', async (req, res, next) => {
