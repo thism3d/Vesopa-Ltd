@@ -109,7 +109,7 @@ async function assignedTerminal(db, office, env, terminal) {
     if (!jti) return null;
     const [[row]] = await db.query(
       `SELECT a.terminal_id FROM bo_till_seats s
-         JOIN epos_teya_till_terminals a ON a.office = s.office AND a.device_id = s.device_id AND a.environment = ?
+         JOIN epos_teya_till_terminals a ON a.office = s.office COLLATE utf8mb4_general_ci AND a.device_id = s.device_id COLLATE utf8mb4_general_ci AND a.environment = ?
         WHERE s.id = ? AND s.office = ? LIMIT 1`,
       [teya.cleanEnv(env), jti, office]
     );
@@ -659,7 +659,7 @@ function teyaRoutes({ pool, broadcast, secret, onOnlinePayment }) {
       const [rows] = await pool.query(
         `SELECT s.device_id, MAX(s.device_name) AS device_name, MAX(s.last_seen_at) AS last_seen_at, MAX(a.terminal_id) AS terminal_id
            FROM bo_till_seats s
-           LEFT JOIN epos_teya_till_terminals a ON a.office = s.office AND a.device_id = s.device_id AND a.environment = ?
+           LEFT JOIN epos_teya_till_terminals a ON a.office = s.office COLLATE utf8mb4_general_ci AND a.device_id = s.device_id COLLATE utf8mb4_general_ci AND a.environment = ?
           WHERE s.office = ? AND s.released_at IS NULL AND s.device_id IS NOT NULL AND COALESCE(s.kind, 'till') = 'till'
           GROUP BY s.device_id ORDER BY device_name`,
         [env, office]
