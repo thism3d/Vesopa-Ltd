@@ -51,6 +51,7 @@ const { modifierRoutes, tillModifierRoutes } = require('./modifiers');
 const { dojoWebhookRoutes, webhookStatus } = require('./dojo');
 const { dojoSettingsRoutes } = require('./dojo_settings');
 const { teyaRoutes } = require('./teya');
+const { barclaycardRoutes } = require('./barclaycard');
 const { terminalRoutes, timesheetRoutes } = require('./terminals');
 const { deviceRoutes } = require('./devices');
 const { cardRoutes } = require('./cards');
@@ -362,6 +363,9 @@ const teyaPaymentHooks = [];
 app.use('/api', teyaRoutes({ pool, broadcast, secret: JWT_SECRET, onOnlinePayment: async (orderId, data) => {
   for (const hook of teyaPaymentHooks) await hook(orderId, data);
 } }));
+// Barclaycard Smartpay Fuse for the menu's online payments (src/barclaycard.js):
+// off for every venue until a manager saves keys and turns it on.
+app.use('/api', barclaycardRoutes({ pool, secret: JWT_SECRET }));
 // More than one site under one login: the list and the switch. See src/sites.js.
 app.use('/api', siteRoutes({ pool, broadcast, secret: JWT_SECRET }));
 // Sites within a venue: tills grouped into sites, and the live takings board.

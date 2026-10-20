@@ -14661,7 +14661,7 @@ function dojoSay(text, ok) {
 
 /** Pay at Counter | Online checkout on the Card Payments page. */
 function dojoTabs(which) {
-  for (const tab of ['counter', 'online', 'teya']) {
+  for (const tab of ['counter', 'online', 'teya', 'barclays']) {
     const on = tab === which;
     $('dojo-tab-' + tab).hidden = !on;
     $('dojo-tab-' + tab + '-btn').setAttribute('aria-selected', String(on));
@@ -14669,6 +14669,62 @@ function dojoTabs(which) {
   }
   $('dojo-save').hidden = which !== 'counter';
   if (which !== 'teya') teyaStopTimers();
+}
+
+/** Barclaycard Smartpay Fuse tab (2026-10-20): the online menu's card payments. */
+async function loadBarclays() {
+  const say = (id, t, ok) => { const el = $(id); el.textContent = t || ''; el.style.color = ok ? '#06784f' : '#b42318'; el.style.fontWeight = '600'; };
+  let s;
+  const render = (v) => {
+    s = v;
+    const k = v.keys[v.environment];
+    $('bc-state').innerHTML = (v.enabled
+      ? 'Now: <b>the online menu takes cards with Barclaycard</b> '
+      : 'Now: <b>off</b>, the menu pays as before ')
+      + (v.environment === 'live' ? '<span class="pill amber">live</span>' : '<span class="pill on">sandbox</span>')
+      + ['sandbox', 'live'].map((e) => v.keys[e]
+        ? `<br><span class="small">${e === 'live' ? 'Live' : 'Sandbox'} keys: <code>${esc(v.keys[e].merchant_id)}</code>, key <code>${esc(v.keys[e].key_id_hint)}</code>${v.keys[e].checked_at ? ', test payment ' + esc(new Date(v.keys[e].checked_at).toLocaleString('en-GB')) : ''}</span>`
+        : `<br><span class="small muted">No ${e} keys yet.</span>`).join('');
+    $('bc-enabled').checked = v.enabled;
+    document.querySelectorAll('input[name="bc-env"]').forEach((r) => { r.checked = r.value === v.environment; });
+    const keyEnv = document.querySelector('input[name="bc-key-env"]:checked').value;
+    $('bc-merchant').value = v.keys[keyEnv] ? v.keys[keyEnv].merchant_id : '';
+    $('bc-key').value = '';
+    $('bc-secret').value = '';
+    $('bc-test').hidden = !v.keys.sandbox;
+    $('bc-keys-remove').hidden = !v.keys[keyEnv];
+    void k;
+  };
+  try { render(await api('/barclaycard')); } catch (e) { say('bc-msg', e.message, false); return; }
+  document.querySelectorAll('input[name="bc-key-env"]').forEach((r) => { r.onchange = () => render(s); });
+  $('bc-save').onclick = async () => {
+    try {
+      const env = document.querySelector('input[name="bc-env"]:checked');
+      render(await api('/barclaycard', { method: 'PUT', body: JSON.stringify({ enabled: $('bc-enabled').checked, environment: env ? env.value : 'sandbox' }) }));
+      say('bc-msg', 'Saved.', true);
+    } catch (e) { say('bc-msg', e.message, false); }
+  };
+  $('bc-keys-save').onclick = async () => {
+    const env = document.querySelector('input[name="bc-key-env"]:checked').value;
+    say('bc-keys-msg', 'Checking with Barclaycard…', true);
+    try {
+      const r = await api('/barclaycard/keys/' + env, { method: 'PUT', body: JSON.stringify({ merchant_id: $('bc-merchant').value.trim(), key_id: $('bc-key').value.trim(), secret: $('bc-secret').value.trim() }) });
+      render(r); say('bc-keys-msg', r.message || 'Saved.', true);
+    } catch (e) { say('bc-keys-msg', e.message, false); }
+  };
+  $('bc-test').onclick = async () => {
+    say('bc-keys-msg', 'Taking a £1.00 test payment…', true);
+    try {
+      const r = await api('/barclaycard/test', { method: 'POST', body: '{}' });
+      say('bc-keys-msg', r.message, true);
+      render(await api('/barclaycard'));
+    } catch (e) { say('bc-keys-msg', e.message, false); }
+  };
+  $('bc-keys-remove').onclick = async () => {
+    const env = document.querySelector('input[name="bc-key-env"]:checked').value;
+    if (!confirm(`Remove the ${env} Barclaycard keys? The menu goes back to Teya or Dojo if it was using them.`)) return;
+    try { render(await api('/barclaycard/keys/' + env, { method: 'DELETE' })); say('bc-keys-msg', 'Removed.', true); } catch (e) { say('bc-keys-msg', e.message, false); }
+  };
 }
 
 async function loadOnlineCheckout() {
@@ -15070,6 +15126,7 @@ async function loadCardPayments() {
   $('dojo-tab-counter-btn').onclick = () => dojoTabs('counter');
   $('dojo-tab-online-btn').onclick = () => { dojoTabs('online'); loadOnlineCheckout(); };
   $('dojo-tab-teya-btn').onclick = () => { dojoTabs('teya'); loadTeya(); };
+  $('dojo-tab-barclays-btn').onclick = () => { dojoTabs('barclays'); loadBarclays(); };
   dojoTabs('counter');
   dojoState = await api('/dojo-settings');
   $('dojo-key-state').innerHTML = dojoKeyState(dojoState);

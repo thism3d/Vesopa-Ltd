@@ -4374,7 +4374,7 @@
              October 2026. -->
         <section id="view-card_payments" class="view" hidden>
           <div class="page-head">
-            <div><h2>Card Payments</h2><p class="muted small">Dojo and Teya for every till and the online menu, and a log of every card payment, refund and check, approved or not.</p></div>
+            <div><h2>Card Payments</h2><p class="muted small">Dojo, Teya and Barclaycard for the tills and the online menu, and a log of every card payment, refund and check, approved or not.</p></div>
             <button class="btn primary" id="dojo-save">Check and save</button>
           </div>
           <!-- Two Dojo connections (2026-10-16): the tills' card machines, and
@@ -4383,6 +4383,7 @@
             <button class="btn" type="button" role="tab" id="dojo-tab-counter-btn" aria-selected="true">Pay at Counter</button>
             <button class="btn" type="button" role="tab" id="dojo-tab-online-btn" aria-selected="false">Online checkout</button>
             <button class="btn" type="button" role="tab" id="dojo-tab-teya-btn" aria-selected="false">Teya</button>
+            <button class="btn" type="button" role="tab" id="dojo-tab-barclays-btn" aria-selected="false">Barclaycard</button>
           </div>
           <div id="dojo-tab-online" hidden>
             <div class="card rd-card" style="max-width:760px">
@@ -4545,6 +4546,45 @@
                   <tbody id="teya-log"></tbody>
                 </table></div>
               </div>
+            </div>
+          </div>
+          <!-- Barclaycard Smartpay Fuse for the online menu (2026-10-20). Off
+               until a manager saves keys and turns it on. -->
+          <div id="dojo-tab-barclays" hidden>
+            <div class="card rd-card" style="max-width:760px">
+              <div class="row" style="gap:12px;align-items:center">
+                <div aria-hidden="true" style="width:40px;height:40px;border-radius:10px;background:#00aeef;color:#fff;display:grid;place-items:center;font-weight:800;font-size:20px">B</div>
+                <div>
+                  <h3 style="margin:0">Barclaycard Smartpay Fuse</h3>
+                  <p class="small muted" style="margin:2px 0 0">Take the online menu's card payments with Barclaycard: card, Apple Pay and Google Pay on Barclaycard's own secure form. The tills' card machines are not changed.</p>
+                </div>
+              </div>
+              <p class="small" id="bc-state" style="margin-top:12px"></p>
+              <label class="check"><input type="checkbox" id="bc-enabled"> <span><b>Use Barclaycard for the online menu</b><br><span class="small muted">On: the menu takes cards with Barclaycard ahead of Teya and Dojo. Off: as before.</span></span></label>
+              <div class="row" style="gap:16px;margin:8px 0">
+                <label class="check"><input type="radio" name="bc-env" value="sandbox"> <span>Sandbox <small class="muted">test cards, no real money; test orders never reach the till</small></span></label>
+                <label class="check"><input type="radio" name="bc-env" value="live"> <span>Live</span></label>
+              </div>
+              <div class="row" style="gap:8px">
+                <button class="btn primary" type="button" id="bc-save">Save</button>
+                <span class="small" id="bc-msg"></span>
+              </div>
+              <h4 style="margin:18px 0 4px">Keys</h4>
+              <p class="small muted" style="margin:0 0 8px">From the Smartpay Fuse Business Center: Payment Configuration, Key Management, a REST shared secret key. Checked with Barclaycard before they are saved; the shared secret is stored encrypted and never shown again.</p>
+              <div class="row" style="gap:8px;margin-bottom:8px">
+                <label class="check"><input type="radio" name="bc-key-env" value="sandbox" checked> <span>Sandbox keys</span></label>
+                <label class="check"><input type="radio" name="bc-key-env" value="live"> <span>Live keys</span></label>
+              </div>
+              <label>Organization ID <input id="bc-merchant" autocomplete="off" placeholder="e.g. vesopa_uk_1234567890"></label>
+              <label>Key <input id="bc-key" autocomplete="off" placeholder="leave blank to keep the saved key"></label>
+              <label>Shared secret key <input id="bc-secret" type="password" autocomplete="off" placeholder="leave blank to keep the saved secret"></label>
+              <div class="row" style="gap:8px;margin-top:10px">
+                <button class="btn primary" type="button" id="bc-keys-save">Check and save keys</button>
+                <button class="btn" type="button" id="bc-test">Sandbox test payment (£1.00)</button>
+                <button class="btn" type="button" id="bc-keys-remove">Remove these keys</button>
+                <span class="small" id="bc-keys-msg"></span>
+              </div>
+              <p class="muted small">Online payments also need the menu's "Pay by card online" switch (Online menu). Refunds of paid menu orders from the till go back to the card through Barclaycard.</p>
             </div>
           </div>
           <div class="rd-layout" id="dojo-tab-counter">

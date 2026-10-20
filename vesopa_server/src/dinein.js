@@ -15,6 +15,8 @@ const venueLooks = require('./venue_looks');
 const dojo = require('./dojo_client');
 const teyaClient = require('./teya_client');
 const teyaVenue = require('./teya');
+const bcClient = require('./barclaycard_client');
+const bcVenue = require('./barclaycard');
 
 // ---------------------------------------------------------------------------
 // Branding, offers and promotions
@@ -2023,6 +2025,13 @@ function dineinRoutes({ pool, broadcast, secret }) {
    * before. Null when neither is set up.
    */
   async function payMethodFor(email) {
+    // Barclaycard Smartpay Fuse first, when the venue turned it on (2026-10-20).
+    try {
+      const b = await bcVenue.onlineFor(pool, email);
+      if (b) return { provider: 'barclays', barclays: b };
+    } catch (e) {
+      console.error('[dinein] Barclaycard settings unreadable:', e.message);
+    }
     try {
       const t = await teyaVenue.onlineFor(pool, email);
       if (t) return { provider: 'teya', teya: t };
@@ -2038,6 +2047,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
   function isTestPay(m) {
     if (!m) return false;
     if (m.provider === 'teya') return m.teya.env === 'sandbox';
+    if (m.provider === 'barclays') return m.barclays.env === 'sandbox';
     return String(m.key || '').startsWith('sk_sandbox_');
   }
 
@@ -2082,9 +2092,24 @@ function dineinRoutes({ pool, broadcast, secret }) {
     }
   }
 
+  /**
+   * Barclaycard: the card form is Barclaycard's own (Unified Checkout), shown
+   * on a page of ours at the order's address, so the order only needs marking
+   * as waiting for it. The payment itself is taken when the form answers.
+   */
+  async function startBarclaysPayment(b, { orderId, publicId, redirectUrl }) {
+    const url = new URL(redirectUrl).origin + '/api/public/dinein/order/' + encodeURIComponent(publicId) + '/card';
+    await pool.execute(
+      "UPDATE dinein_orders SET pay_status = 'pending', dojo_intent_id = ?, pay_provider = 'barclays', pay_env = ?, pay_url = ?, is_demo = ? WHERE id = ?",
+      [`bc-${publicId}`.slice(0, 80), b.env, url.slice(0, 512), b.env === 'sandbox' ? 1 : 0, orderId]
+    );
+    return url;
+  }
+
   /** Open the checkout for the order. Null (and the order cancelled) when it will not open. */
   async function startCardPayment(method, args) {
     if (method && method.provider === 'teya') return startTeyaPayment(method.teya, args);
+    if (method && method.provider === 'barclays') return startBarclaysPayment(method.barclays, args);
     const key = method && method.provider === 'dojo' ? method.key : method;
     const { orderId, publicId, total, venue, redirectUrl } = args;
     try {
@@ -2128,6 +2153,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
     );
     if (!o || o.status !== 'awaiting_payment' || !o.dojo_intent_id) return null;
     if (o.pay_provider === 'teya') return settleTeyaPayment(o);
+    if (o.pay_provider === 'barclays') return settleBarclaysPayment(o);
     const email = await emailOf(o.office_id);
     const key = await cardKeyFor(email);
     if (!key) return null;
@@ -2174,6 +2200,26 @@ function dineinRoutes({ pool, broadcast, secret }) {
       );
     }
     return state;
+  }
+
+  /**
+   * Barclaycard has no session to ask: a payment is taken while the customer
+   * waits on the card page (POST .../card), so an order still waiting has not
+   * been paid. It is only given up on after an hour, and never while a
+   * payment is being taken.
+   */
+  async function settleBarclaysPayment(o) {
+    const [[now]] = await pool.query('SELECT pay_status FROM dinein_orders WHERE id = ?', [o.id]);
+    if (now && now.pay_status === 'processing') return 'authorized';
+    if (Number(o.age) >= PAY_EXPIRES_MINUTES) {
+      await pool.execute(
+        "UPDATE dinein_orders SET status = 'cancelled', pay_status = 'failed', status_note = ?" +
+          " WHERE id = ? AND status = 'awaiting_payment' AND pay_status <> 'processing'",
+        ['The card payment was not finished within an hour, so the order was cancelled. Nothing was charged.', o.id]
+      );
+      return 'failed';
+    }
+    return 'created';
   }
 
   /**
@@ -2647,6 +2693,153 @@ function dineinRoutes({ pool, broadcast, secret }) {
    * client session secret (Dojo's go-live checklist: a successful payment
    * after an unsuccessful one). A plain link the tracker's "Pay now" uses.
    */
+  router.get('/api/public/dinein/order/:publicId/card', async (req, res, next) => {
+    try {
+      const [[o]] = await pool.query(
+        'SELECT o.id, o.office_id, o.status, o.public_id, o.pay_provider, o.pay_env, o.total_minor, o.table_label, v.display_name' +
+          '  FROM dinein_orders o LEFT JOIN dinein_venue v ON v.office_id = o.office_id WHERE o.public_id = ?',
+        [req.params.publicId]
+      );
+      if (!o || o.status !== 'awaiting_payment' || o.pay_provider !== 'barclays') {
+        return res.redirect(303, '/o/' + encodeURIComponent(String(req.params.publicId).slice(0, 64)));
+      }
+      const creds = await bcVenue.credsFor(pool, await emailOf(o.office_id), o.pay_env || 'sandbox');
+      if (!creds) return res.redirect(303, '/o/' + o.public_id);
+      const origin = `${req.headers['x-forwarded-proto'] ? String(req.headers['x-forwarded-proto']).split(',')[0] : req.protocol}://${String(req.headers['x-forwarded-host'] || req.get('host')).split(',')[0].trim()}`;
+      let jwt;
+      try {
+        jwt = await bcClient.captureContext(creds, { targetOrigins: [origin.replace(/^http:/, 'https:')], amountMinor: Number(o.total_minor) });
+      } catch (e) {
+        console.error('[dinein] Barclaycard card form failed for', o.public_id, e.message);
+        return res.redirect(303, '/o/' + o.public_id);
+      }
+      let lib = null;
+      try {
+        const payload = JSON.parse(Buffer.from(String(jwt).split('.')[1], 'base64url').toString('utf8'));
+        lib = payload.ctx && payload.ctx[0] && payload.ctx[0].data;
+      } catch (_) { lib = null; }
+      if (!lib || !lib.clientLibrary) return res.redirect(303, '/o/' + o.public_id);
+      const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+      const pounds = (Number(o.total_minor) / 100).toFixed(2);
+      const libOrigin = new URL(lib.clientLibrary).origin;
+      res.set('Cache-Control', 'no-store');
+      res.set('Content-Security-Policy', `default-src 'self' ${libOrigin} https://*.cybersource.com https://*.smartpayfuse.barclaycard https://*.smartpayfuse-test.barclaycard https://pay.google.com https://*.google.com https://*.gstatic.com https://applepay.cdn-apple.com; script-src 'self' 'unsafe-inline' ${libOrigin} https://pay.google.com https://*.gstatic.com https://applepay.cdn-apple.com; style-src 'self' 'unsafe-inline' ${libOrigin}; img-src * data:; frame-src *; connect-src *`);
+      res.type('html').send(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pay £${pounds} · ${esc(o.display_name || 'Order')}</title>
+<style>body{margin:0;min-height:100vh;background:#f4f5f7;color:#16181d;font:16px/1.5 system-ui,-apple-system,Segoe UI,sans-serif;display:flex;justify-content:center}
+.card{width:100%;max-width:440px;margin:16px;padding:24px;border-radius:18px;background:#fff;box-shadow:0 8px 30px rgba(0,0,0,.08);align-self:flex-start}
+h1{font-size:20px;margin:0 0 4px}.amt{font-size:32px;font-weight:800;margin:8px 0 18px}.muted{color:#6b7280;font-size:14px}
+#buttons{min-height:56px}#msg{margin-top:14px;font-size:14px}#msg.err{color:#b42318}#msg.ok{color:#1d7a46}
+a.back{display:inline-block;margin-top:18px;color:#374151;font-size:14px}.test{display:inline-block;background:#fff4d6;color:#8a5300;border-radius:8px;padding:2px 8px;font-size:12px;font-weight:700;margin-bottom:8px}</style>
+<script src="${esc(lib.clientLibrary)}"${lib.clientLibraryIntegrity ? ` integrity="${esc(lib.clientLibraryIntegrity)}" crossorigin="anonymous"` : ''}></script>
+</head><body><main class="card">
+${o.pay_env === 'live' ? '' : '<span class="test">TEST PAYMENT · no real money</span>'}
+<h1>${esc(o.display_name || 'Your order')}</h1>
+<div class="muted">Order #${o.id}${o.table_label ? ' · ' + esc(o.table_label) : ''}</div>
+<div class="amt">£${pounds}</div>
+<div id="buttons"></div>
+<div id="msg" class="muted">Choose how to pay. Card details go straight to Barclaycard.</div>
+<a class="back" href="/o/${esc(o.public_id)}">Back to the order</a>
+</main>
+<script>
+(async function () {
+  var msg = document.getElementById('msg');
+  function say(t, cls) { msg.textContent = t; msg.className = cls || 'muted'; }
+  try {
+    var accept = await Accept(${JSON.stringify(jwt)});
+    var up = await accept.unifiedPayments(false);
+    while (true) {
+      var token;
+      try {
+        token = await up.show({ containers: { paymentSelection: '#buttons' } });
+      } catch (e) {
+        say('The card form closed. Choose a way to pay to try again.', 'err');
+        continue;
+      }
+      say('Taking the payment…');
+      var r = await fetch(location.pathname, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: token }) });
+      var j = await r.json().catch(function () { return {}; });
+      if (r.ok && j.redirect) { say('Paid. Thank you.', 'ok'); location.replace(j.redirect); return; }
+      if (j.redirect) { location.replace(j.redirect); return; }
+      say((j.error || 'The payment did not go through.') + ' Nothing was charged. Try again.', 'err');
+    }
+  } catch (e) {
+    say('The card form could not be shown. Go back to the order to try again or pay at the bar.', 'err');
+  }
+})();
+</script></body></html>`);
+    } catch (e) {
+      return next(e);
+    }
+  });
+
+  /**
+   * The card form answered with a transient token: take the payment. The
+   * order is claimed first (pay_status 'processing'), so a double press or a
+   * second tab cannot charge twice.
+   */
+  router.post('/api/public/dinein/order/:publicId/card', express.json({ limit: '64kb' }), async (req, res, next) => {
+    try {
+      const token = String((req.body && req.body.token) || '');
+      const [[o]] = await pool.query(
+        'SELECT id, office_id, status, public_id, pay_provider, pay_env, total_minor, table_label, customer_name, is_demo' +
+          '  FROM dinein_orders WHERE public_id = ?',
+        [req.params.publicId]
+      );
+      if (!o) return res.status(404).json({ error: 'No such order.' });
+      const back = '/o/' + o.public_id;
+      if (o.status !== 'awaiting_payment' || o.pay_provider !== 'barclays') return res.json({ ok: true, redirect: back });
+      if (!token || token.length > 20000) return res.status(400).json({ error: 'The card form gave no payment.' });
+      const email = await emailOf(o.office_id);
+      const creds = await bcVenue.credsFor(pool, email, o.pay_env || 'sandbox');
+      if (!creds) return res.status(409).json({ error: 'Card payments are no longer set up here. Please pay at the bar.', redirect: back });
+      const [claim] = await pool.execute(
+        "UPDATE dinein_orders SET pay_status = 'processing' WHERE id = ? AND status = 'awaiting_payment' AND pay_status = 'pending'",
+        [o.id]
+      );
+      if (!claim.affectedRows) return res.status(409).json({ error: 'This order is already being paid. Wait a moment.', redirect: back });
+      let p;
+      try {
+        p = await bcClient.pay(creds, {
+          reference: `menu-${o.id}`,
+          amountMinor: Number(o.total_minor),
+          transientToken: token,
+          billTo: { name: o.customer_name || 'Guest' },
+        });
+      } catch (e) {
+        await pool.execute("UPDATE dinein_orders SET pay_status = 'pending' WHERE id = ? AND pay_status = 'processing'", [o.id]);
+        console.error('[dinein] Barclaycard payment failed for', o.public_id, e.message);
+        const declined = e instanceof bcClient.BarclaycardError && e.status >= 400 && e.status < 500;
+        return res.status(declined ? 402 : 502).json({ error: declined ? 'The card was declined.' : 'Barclaycard did not answer.' });
+      }
+      if (!bcClient.approved(p)) {
+        await pool.execute("UPDATE dinein_orders SET pay_status = 'pending' WHERE id = ? AND pay_status = 'processing'", [o.id]);
+        return res.status(402).json({ error: 'The card was declined.' });
+      }
+      const [r] = await pool.execute(
+        "UPDATE dinein_orders SET status = 'placed', pay_status = 'paid', paid_minor = total_minor, pay_txn = ?," +
+          " paid_at = NOW(), note = LEFT(CONCAT('PAID ONLINE BY CARD. ', COALESCE(note, '')), 500)" +
+          " WHERE id = ? AND status = 'awaiting_payment'",
+        [String(p.id).slice(0, 64), o.id]
+      );
+      if (!r.affectedRows) {
+        // Cancelled while the card was being read: the money goes straight back.
+        try { await bcClient.voidPayment(creds, p.id, { reference: `menu-${o.id}-void` }); } catch (e) {
+          console.error('[dinein] Barclaycard void after cancel failed for', o.public_id, e.message);
+        }
+        return res.status(409).json({ error: 'The order was cancelled before the payment finished, so it has been given back.', redirect: back });
+      }
+      // A test payment stops here: paid, but never sent to the till.
+      if (!Number(o.is_demo)) {
+        const [[n]] = await pool.query('SELECT COUNT(*) AS c FROM dinein_order_lines WHERE dinein_order_id = ?', [o.id]);
+        tellTill(email, { orderId: o.id, publicId: o.public_id, label: o.table_label, total: Number(o.total_minor), lineCount: Number(n.c) });
+      }
+      res.json({ ok: true, redirect: back });
+    } catch (e) {
+      return next(e);
+    }
+  });
+
   router.get('/api/public/dinein/order/:publicId/pay', async (req, res, next) => {
     try {
       const [[o]] = await pool.query(
@@ -2657,8 +2850,9 @@ function dineinRoutes({ pool, broadcast, secret }) {
       // in the venue's own look, rather than a bare line of text (2026-10-19).
       if (!o) return res.redirect(303, '/o/' + encodeURIComponent(String(req.params.publicId).slice(0, 64)));
       if (o.status !== 'awaiting_payment' || !o.dojo_intent_id) return res.redirect(303, '/o/' + o.public_id);
-      // Teya's page takes another card on the same session while it is open.
-      if (o.pay_provider === 'teya') return res.redirect(303, o.pay_url || '/o/' + o.public_id);
+      // Teya's page takes another card on the same session while it is open,
+      // and Barclaycard's card page can be opened again as often as needed.
+      if (o.pay_provider === 'teya' || o.pay_provider === 'barclays') return res.redirect(303, o.pay_url || '/o/' + o.public_id);
       const key = await cardKeyFor(await emailOf(o.office_id));
       try {
         if (key) await dojo.refreshClientSecret(key, o.dojo_intent_id);
@@ -2696,7 +2890,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
       const [[now]] = await pool.query('SELECT status FROM dinein_orders WHERE id = ?', [o.id]);
       if (now.status !== 'awaiting_payment') return res.json({ ok: true, status: now.status, state });
       const email = await emailOf(o.office_id);
-      const key = o.pay_provider === 'teya' ? null : await cardKeyFor(email);
+      const key = o.pay_provider === 'teya' || o.pay_provider === 'barclays' ? null : await cardKeyFor(email);
       if (key && o.dojo_intent_id) await dojo.cancelIntent(key, o.dojo_intent_id);
       const [r] = await pool.execute(
         "UPDATE dinein_orders SET status = 'placed', pay_status = NULL, placed_at = NOW()" +
@@ -2726,7 +2920,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
         await settleCardPayment(w.id).catch(() => null);
         const [[still]] = await pool.query('SELECT status FROM dinein_orders WHERE id = ?', [w.id]);
         if (still.status === 'awaiting_payment') {
-          const key = w.pay_provider === 'teya' ? null : await cardKeyFor(await emailOf(w.office_id));
+          const key = w.pay_provider === 'teya' || w.pay_provider === 'barclays' ? null : await cardKeyFor(await emailOf(w.office_id));
           if (key && w.dojo_intent_id) await dojo.cancelIntent(key, w.dojo_intent_id);
           await pool.execute(
             "UPDATE dinein_orders SET status = 'cancelled', pay_status = 'failed', status_note = ?" +
@@ -2942,7 +3136,19 @@ function dineinRoutes({ pool, broadcast, secret }) {
         const reason = String((req.body && req.body.reason) || '').trim().slice(0, 200) || 'Refunded by the venue';
         const amount = Number(o.paid_minor);
         let refund;
-        if (o.pay_provider === 'teya') {
+        if (o.pay_provider === 'barclays') {
+          // Paid on Barclaycard: refunded through Barclaycard, on the keys of
+          // the environment the order was paid in.
+          const creds = await bcVenue.credsFor(pool, email, o.pay_env || 'sandbox');
+          if (!creds || !o.pay_txn) return res.status(409).json({ error: 'Barclaycard is no longer set up for this venue, so the refund cannot be made from here.' });
+          try {
+            const r = await bcClient.refund(creds, o.pay_txn, { reference: `menu-${o.id}-refund`, amountMinor: amount });
+            refund = { id: r.id };
+          } catch (e) {
+            console.error('[dinein] Barclaycard refund failed for order', o.id, e.message);
+            return res.status(502).json({ error: String(e.message || 'Barclaycard did not answer').slice(0, 160) + ' Nothing has been changed; try again.' });
+          }
+        } else if (o.pay_provider === 'teya') {
           // Paid on Teya's checkout: refunded through Teya, on the
           // connection the order was paid on.
           const t = await teyaFor(o);
