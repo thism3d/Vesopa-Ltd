@@ -1,0 +1,68 @@
+BEGIN:VCALENDAR
+PRODID:-//Vesopa Software Ltd//Vesopa Mail//EN
+VERSION:2.0
+CALSCALE:GREGORIAN
+METHOD:REQUEST
+BEGIN:VTIMEZONE
+TZID:Europe/London
+BEGIN:DAYLIGHT
+TZOFFSETFROM:+0000
+TZOFFSETTO:+0100
+TZNAME:BST
+DTSTART:19700329T010000
+RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU
+END:DAYLIGHT
+BEGIN:STANDARD
+TZOFFSETFROM:+0100
+TZOFFSETTO:+0000
+TZNAME:GMT
+DTSTART:19701025T020000
+RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU
+END:STANDARD
+END:VTIMEZONE
+BEGIN:VEVENT
+UID:017c7350-c93c-48d6-849f-8c2bdf2a848c@vesopa.com
+DTSTAMP:20261021T083653Z
+DTSTART;TZID=Europe/London:20261021T110000
+DTEND;TZID=Europe/London:20261021T113000
+SUMMARY:Vesopa x Barclaycard Partner LIVE API meeting for Smartpay Fuse
+DESCRIPTION:Live Smartpay Fuse API access for Vesopa (Vesopa Software Ltd)
+ .\n\nJoin with Google Meet: https://meet.google.com/qum-eoec-wnf\nOr dial:
+  +44 20 3957 2080 PIN: 471279590\nMore phone numbers: https://tel.meet/qum
+ -eoec-wnf?pin=6261463474265\n\nWhat we would like to agree:\n1. Live (prod
+ uction) REST API keys for Smartpay Fuse, with the merchant (Organization) 
+ account for Vesopa Software Ltd\n2. Unified Checkout on live, with Apple P
+ ay, Google Pay and Click to Pay enabled, and Apple Pay domain registration
+  for our venues' menu domains\n3. Card payments and refunds through the RE
+ ST API (payments, refunds, voids), and Pay by Link\n4. Confirmation of the
+  go-live / certification steps for a partner taking payments for many hosp
+ itality venues (sub-merchants)\n5. Whether Barclaycard can offer an in-per
+ son card terminal API (cloud or local) for EPOS tills\n\nSandbox organisat
+ ion: vesopa_uk_1792070796\nLive demo: https://menu.vesopa.com/vesopakitche
+ n\n\nVesopa Developer: muzahid@vesopa.com\, +44 7848 494341
+LOCATION:https://meet.google.com/qum-eoec-wnf
+URL:https://meet.google.com/qum-eoec-wnf
+CONFERENCE;VALUE=URI;FEATURE=VIDEO;LABEL=Google Meet:https://meet.google.c
+ om/qum-eoec-wnf
+ORGANIZER;CN="Vesopa Developer":mailto:muzahid@vesopa.com
+ATTENDEE;CN="Barclaycard Smartpay Fuse Support";ROLE=REQ-PARTICIPANT;PARTS
+ TAT=NEEDS-ACTION;RSVP=TRUE:mailto:supportsmartpayfuse@barclays.com
+ATTENDEE;CN="Meirion Davies";ROLE=OPT-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RS
+ VP=TRUE:mailto:info@vesopasoftware.com
+ATTENDEE;CN="Meirion Davies";ROLE=OPT-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RS
+ VP=TRUE:mailto:info@vesopa.com
+SEQUENCE:0
+STATUS:CONFIRMED
+TRANSP:OPAQUE
+CLASS:PUBLIC
+X-MICROSOFT-CDO-BUSYSTATUS:BUSY
+X-MICROSOFT-CDO-IMPORTANCE:1
+X-GOOGLE-CONFERENCE:https://meet.google.com/qum-eoec-wnf
+BEGIN:VALARM
+ACTION:DISPLAY
+DESCRIPTION:Vesopa x Barclaycard Partner LIVE API meeting for Smartpay Fus
+ e
+TRIGGER:-PT15M
+END:VALARM
+END:VEVENT
+END:VCALENDAR

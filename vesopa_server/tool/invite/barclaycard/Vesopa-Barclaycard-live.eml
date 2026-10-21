@@ -1,0 +1,517 @@
+X-Unsent: 1
+From: Vesopa Developer <muzahid@vesopa.com>
+To: Barclaycard Smartpay Fuse Support <supportsmartpayfuse@barclays.com>
+Cc: Meirion Davies <info@vesopasoftware.com>, Meirion Davies <info@vesopa.com>
+Reply-To: Vesopa Developer <muzahid@vesopa.com>
+Subject: Vesopa x Barclaycard: live Smartpay Fuse API access, call today 11:00
+ UK (Google Meet)
+Date: Wed, 21 Oct 2026 08:36:53 +0000
+Message-ID: <179257181322.16576.6389869505132394420@vesopa.com>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="===============1599588558395363149=="
+
+--===============1599588558395363149==
+Content-Type: multipart/alternative;
+ boundary="===============4181569952067348582=="
+
+--===============4181569952067348582==
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+
+Hello Barclaycard team,
+
+I am the developer at Vesopa Software Ltd, which makes the Vesopa EPOS, back =
+office and online ordering used by hospitality venues and clubs in the UK. A =
+client asked us to offer Barclaycard, so we have built Smartpay Fuse into Ves=
+opa on our sandbox account (Organization ID vesopa_uk_1792070796), and we wou=
+ld now like to take it live.
+
+WHAT IS BUILT
+- Online menu: Barclaycard's Unified Checkout: Guests order at their table an=
+d pay on Barclaycard's secure card form, which opens straight away. Paid orde=
+rs reach the till and kitchen already paid. Live demo on our sandbox: https:/=
+/menu.vesopa.com/vesopakitchen.
+- EPOS till: pay on the customer's phone: Card on the till shows a QR code (o=
+n the till and the customer display). The customer pays by card, Apple Pay or=
+ Google Pay on Barclaycard's form, and the sale closes on the till by itself.=
+ Cancel, status check and refunds to the card from the till.
+- Back office: per venue, sandbox and live: Each venue saves its own Smartpay=
+ Fuse keys (checked with Barclaycard before saving, shared secret stored encr=
+ypted) and chooses Dojo, Teya or Barclaycard for its tills and its online men=
+u in one tap.
+- Tested on the sandbox: Payments, refunds, voids and capture contexts (HTTP =
+Signature, REST) against api.smartpayfuse-test.barclaycard, on our test venue=
+ The Vesopa Kitchen.
+
+Live demo (sandbox): https://menu.vesopa.com/vesopakitchen
+Choose a table, order, Pay by card, test card 4111 1111 1111 1111 (any future=
+ expiry, CVV 123). Test orders never reach a till or the takings.
+
+WHAT WE WOULD LIKE TO AGREE
+1. Live (production) REST API keys for Smartpay Fuse, with the merchant (Orga=
+nization) account for Vesopa Software Ltd
+2. Unified Checkout on live, with Apple Pay, Google Pay and Click to Pay enab=
+led, and Apple Pay domain registration for our venues' menu domains
+3. Card payments and refunds through the REST API (payments, refunds, voids),=
+ and Pay by Link
+4. Confirmation of the go-live / certification steps for a partner taking pay=
+ments for many hospitality venues (sub-merchants)
+5. Whether Barclaycard can offer an in-person card terminal API (cloud or loc=
+al) for EPOS tills
+
+OUR CALL TODAY
+Vesopa x Barclaycard Partner LIVE API meeting for Smartpay Fuse
+Wednesday 21 October 2026, 11:00 to 11:30 UK time (BST)
+Google Meet: https://meet.google.com/qum-eoec-wnf
+Or dial +44 20 3957 2080, PIN 471279590
+More phone numbers: https://tel.meet/qum-eoec-wnf?pin=3D6261463474265
+
+The calendar invite is attached: Accept, Decline or Maybe from your inbox. If=
+ 11:00 does not suit, reply with a better time, or call me on +44 7848 494341.
+
+Thank you, and we look forward to speaking with you.
+
+Kind regards,
+Muzahid Islam
+Vesopa Developer, Vesopa Software Ltd
+muzahid@vesopa.com | +44 7848 494341
+
+On behalf of Meirion Davies, Director
+Vesopa Software Ltd and Vesopa Ltd
+info@vesopasoftware.com | info@vesopa.com
+
+--===============4181569952067348582==
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+MIME-Version: 1.0
+
+<!doctype html>
+<html lang=3D"en">
+<head>
+<meta charset=3D"utf-8">
+<meta name=3D"viewport" content=3D"width=3Ddevice-width, initial-scale=3D1">
+<meta name=3D"color-scheme" content=3D"light">
+<title>Vesopa x Barclaycard: live Smartpay Fuse API access, call today 11:00 =
+UK (Google Meet)</title>
+</head>
+<body style=3D"margin:0;padding:0;background:#eef3f7;">
+<div style=3D"display:none;max-height:0;overflow:hidden;opacity:0;">Smartpay =
+Fuse is built into Vesopa's online menu and EPOS tills on the sandbox. We wou=
+ld like to go live. Call today 11:00 UK on Google Meet.</div>
+<table role=3D"presentation" width=3D"100%" cellpadding=3D"0" cellspacing=3D"=
+0" style=3D"background:#eef3f7;">
+<tr><td align=3D"center" style=3D"padding:28px 12px;">
+  <table role=3D"presentation" width=3D"600" cellpadding=3D"0" cellspacing=3D=
+"0" style=3D"width:100%;max-width:600px;background:#ffffff;border-radius:18px=
+;overflow:hidden;">
+    <tr><td style=3D"background:#00395d;background-image:linear-gradient(135d=
+eg,#00395d 0%,#00639e 60%,#00aeef 100%);padding:28px 28px 26px;">
+      <table role=3D"presentation" cellpadding=3D"0" cellspacing=3D"0"><tr>
+        <td style=3D"font-family:'Plus Jakarta Sans', 'Segoe UI', Roboto, Hel=
+vetica, Arial, sans-serif;font-size:24px;font-weight:800;color:#ffffff;letter=
+-spacing:-0.3px;">vesopa</td>
+        <td style=3D"padding:0 12px;font-family:'Plus Jakarta Sans', 'Segoe U=
+I', Roboto, Helvetica, Arial, sans-serif;font-size:20px;font-weight:700;color=
+:#a5c715;">&times;</td>
+        <td style=3D"font-family:'Plus Jakarta Sans', 'Segoe UI', Roboto, Hel=
+vetica, Arial, sans-serif;font-size:22px;font-weight:700;color:#ffffff;">barc=
+laycard</td>
+      </tr></table>
+      <div style=3D"margin-top:18px;font-family:'Plus Jakarta Sans', 'Segoe U=
+I', Roboto, Helvetica, Arial, sans-serif;font-size:11px;font-weight:800;lette=
+r-spacing:2px;color:#a5c715;">SMARTPAY FUSE &middot; PARTNER</div>
+      <div style=3D"margin-top:6px;font-family:'Plus Jakarta Sans', 'Segoe UI=
+', Roboto, Helvetica, Arial, sans-serif;font-size:28px;line-height:1.15;font-=
+weight:800;color:#ffffff;">Ready to go live with<br>Smartpay Fuse</div>
+      <div style=3D"margin-top:10px;font-family:'Plus Jakarta Sans', 'Segoe U=
+I', Roboto, Helvetica, Arial, sans-serif;font-size:14px;line-height:1.5;color=
+:#d4ecf8;">Online menu, EPOS tills and back office, built and tested on your =
+sandbox.</div>
+      <table role=3D"presentation" cellpadding=3D"0" cellspacing=3D"0" style=
+=3D"margin-top:16px;"><tr>
+        <td style=3D"background:#a5c715;border-radius:20px;padding:6px 12px;f=
+ont-family:'Plus Jakarta Sans', 'Segoe UI', Roboto, Helvetica, Arial, sans-se=
+rif;font-size:12px;font-weight:800;color:#00395d;">Today 11:00 UK</td>
+        <td width=3D"8"></td>
+        <td style=3D"background:rgba(255,255,255,0.16);border-radius:20px;pad=
+ding:6px 12px;font-family:'Plus Jakarta Sans', 'Segoe UI', Roboto, Helvetica,=
+ Arial, sans-serif;font-size:12px;font-weight:700;color:#ffffff;">Google Meet=
+</td>
+      </tr></table>
+    </td></tr>
+    <tr><td style=3D"padding:32px 24px 6px;">
+      <p style=3D"margin:0 0 16px;font-family:'Plus Jakarta Sans', 'Segoe UI'=
+, Roboto, Helvetica, Arial, sans-serif;font-size:16px;line-height:1.6;color:#=
+17141c;">Hello Barclaycard team,</p>
+      <p style=3D"margin:0 0 16px;font-family:'Plus Jakarta Sans', 'Segoe UI'=
+, Roboto, Helvetica, Arial, sans-serif;font-size:16px;line-height:1.6;color:#=
+17141c;">I am the developer at <strong>Vesopa Software Ltd</strong>, which ma=
+kes the Vesopa EPOS, back office and online ordering used by hospitality venu=
+es and clubs in the UK. A client asked us to offer Barclaycard, so we have bu=
+ilt <strong>Smartpay Fuse</strong> into Vesopa on our sandbox account (Organi=
+zation ID <strong>vesopa_uk_1792070796</strong>), and we would now like to ta=
+ke it live.</p>
+    </td></tr>
+    <tr><td style=3D"padding:0 24px 8px;">
+      <h2 style=3D"margin:8px 0 14px;font-family:'Plus Jakarta Sans', 'Segoe =
+UI', Roboto, Helvetica, Arial, sans-serif;font-size:20px;line-height:1.3;font=
+-weight:800;color:#00395d;">What is built</h2>
+      <table role=3D"presentation" width=3D"100%" cellpadding=3D"0" cellspaci=
+ng=3D"0">
+        <tr><td style=3D"padding:0 0 10px;">
+          <table role=3D"presentation" width=3D"100%" cellpadding=3D"0" cells=
+pacing=3D"0" style=3D"border:1px solid #dbe7ef;border-radius:12px;">
+            <tr><td style=3D"padding:12px 14px;font-family:'Plus Jakarta Sans=
+', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:14px;line-heigh=
+t:1.55;color:#17141c;">
+              <span style=3D"display:inline-block;width:18px;height:18px;bord=
+er-radius:9px;background:#a5c715;color:#0b1a00;text-align:center;font-weight:=
+800;font-size:12px;line-height:18px;">&#10003;</span>
+              &nbsp;<strong style=3D"color:#00395d;">Online menu: Barclaycard=
+'s Unified Checkout</strong><br><span style=3D"color:#4a5560;">Guests order a=
+t their table and pay on Barclaycard's secure card form, which opens straight=
+ away. Paid orders reach the till and kitchen already paid. Live demo on our =
+sandbox: <a href=3D"https://menu.vesopa.com/vesopakitchen" style=3D"color:#00=
+395d;font-weight:700;">menu.vesopa.com/vesopakitchen</a>.</span>
+            </td></tr>
+          </table>
+        </td></tr>
+        <tr><td style=3D"padding:0 0 10px;">
+          <table role=3D"presentation" width=3D"100%" cellpadding=3D"0" cells=
+pacing=3D"0" style=3D"border:1px solid #dbe7ef;border-radius:12px;">
+            <tr><td style=3D"padding:12px 14px;font-family:'Plus Jakarta Sans=
+', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:14px;line-heigh=
+t:1.55;color:#17141c;">
+              <span style=3D"display:inline-block;width:18px;height:18px;bord=
+er-radius:9px;background:#a5c715;color:#0b1a00;text-align:center;font-weight:=
+800;font-size:12px;line-height:18px;">&#10003;</span>
+              &nbsp;<strong style=3D"color:#00395d;">EPOS till: pay on the cu=
+stomer's phone</strong><br><span style=3D"color:#4a5560;">Card on the till sh=
+ows a QR code (on the till and the customer display). The customer pays by ca=
+rd, Apple Pay or Google Pay on Barclaycard's form, and the sale closes on the=
+ till by itself. Cancel, status check and refunds to the card from the till.<=
+/span>
+            </td></tr>
+          </table>
+        </td></tr>
+        <tr><td style=3D"padding:0 0 10px;">
+          <table role=3D"presentation" width=3D"100%" cellpadding=3D"0" cells=
+pacing=3D"0" style=3D"border:1px solid #dbe7ef;border-radius:12px;">
+            <tr><td style=3D"padding:12px 14px;font-family:'Plus Jakarta Sans=
+', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:14px;line-heigh=
+t:1.55;color:#17141c;">
+              <span style=3D"display:inline-block;width:18px;height:18px;bord=
+er-radius:9px;background:#a5c715;color:#0b1a00;text-align:center;font-weight:=
+800;font-size:12px;line-height:18px;">&#10003;</span>
+              &nbsp;<strong style=3D"color:#00395d;">Back office: per venue, =
+sandbox and live</strong><br><span style=3D"color:#4a5560;">Each venue saves =
+its own Smartpay Fuse keys (checked with Barclaycard before saving, shared se=
+cret stored encrypted) and chooses Dojo, Teya or Barclaycard for its tills an=
+d its online menu in one tap.</span>
+            </td></tr>
+          </table>
+        </td></tr>
+        <tr><td style=3D"padding:0 0 10px;">
+          <table role=3D"presentation" width=3D"100%" cellpadding=3D"0" cells=
+pacing=3D"0" style=3D"border:1px solid #dbe7ef;border-radius:12px;">
+            <tr><td style=3D"padding:12px 14px;font-family:'Plus Jakarta Sans=
+', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:14px;line-heigh=
+t:1.55;color:#17141c;">
+              <span style=3D"display:inline-block;width:18px;height:18px;bord=
+er-radius:9px;background:#a5c715;color:#0b1a00;text-align:center;font-weight:=
+800;font-size:12px;line-height:18px;">&#10003;</span>
+              &nbsp;<strong style=3D"color:#00395d;">Tested on the sandbox</s=
+trong><br><span style=3D"color:#4a5560;">Payments, refunds, voids and capture=
+ contexts (HTTP Signature, REST) against api.smartpayfuse-test.barclaycard, o=
+n our test venue The Vesopa Kitchen.</span>
+            </td></tr>
+          </table>
+        </td></tr>
+      </table>
+      <table role=3D"presentation" cellpadding=3D"0" cellspacing=3D"0" style=
+=3D"margin:6px 0 20px;"><tr>
+        <td style=3D"background:#00395d;border-radius:10px;"><a href=3D"https=
+://menu.vesopa.com/vesopakitchen" style=3D"display:inline-block;padding:12px =
+18px;font-family:'Plus Jakarta Sans', 'Segoe UI', Roboto, Helvetica, Arial, s=
+ans-serif;font-size:15px;font-weight:800;color:#ffffff;text-decoration:none;"=
+>Open The Vesopa Kitchen menu &rarr;</a></td>
+      </tr></table>
+      <p style=3D"margin:-8px 0 20px;font-family:'Plus Jakarta Sans', 'Segoe =
+UI', Roboto, Helvetica, Arial, sans-serif;font-size:13px;line-height:1.55;col=
+or:#5f5a68;">Sandbox: choose a table, order, Pay by card, and use test card 4=
+111 1111 1111 1111 (any future expiry, CVV 123). Test orders never reach a ti=
+ll or the takings.</p>
+    </td></tr>
+    <tr><td style=3D"padding:0 24px 6px;">
+      <h2 style=3D"margin:8px 0 14px;font-family:'Plus Jakarta Sans', 'Segoe =
+UI', Roboto, Helvetica, Arial, sans-serif;font-size:20px;line-height:1.3;font=
+-weight:800;color:#00395d;">What we would like to agree</h2>
+      <table role=3D"presentation" width=3D"100%" cellpadding=3D"0" cellspaci=
+ng=3D"0">
+    <tr>
+      <td valign=3D"top" width=3D"40" style=3D"padding:0 0 12px;">
+        <div style=3D"width:28px;height:28px;border-radius:14px;background:#0=
+0395d;color:#fff;font-family:'Plus Jakarta Sans', 'Segoe UI', Roboto, Helveti=
+ca, Arial, sans-serif;font-size:14px;font-weight:800;line-height:28px;text-al=
+ign:center;">1</div>
+      </td>
+      <td valign=3D"top" style=3D"padding:3px 0 12px;font-family:'Plus Jakart=
+a Sans', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:15px;line=
+-height:1.55;color:#17141c;"><strong>Live (production) REST API keys</strong>=
+ for Smartpay Fuse, with the merchant (Organization) account for Vesopa Softw=
+are Ltd</td>
+    </tr>
+    <tr>
+      <td valign=3D"top" width=3D"40" style=3D"padding:0 0 12px;">
+        <div style=3D"width:28px;height:28px;border-radius:14px;background:#0=
+0395d;color:#fff;font-family:'Plus Jakarta Sans', 'Segoe UI', Roboto, Helveti=
+ca, Arial, sans-serif;font-size:14px;font-weight:800;line-height:28px;text-al=
+ign:center;">2</div>
+      </td>
+      <td valign=3D"top" style=3D"padding:3px 0 12px;font-family:'Plus Jakart=
+a Sans', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:15px;line=
+-height:1.55;color:#17141c;"><strong>Unified Checkout</strong> on live, with =
+<strong>Apple Pay, Google Pay</strong> and Click to Pay enabled, and Apple Pa=
+y domain registration for our venues' menu domains</td>
+    </tr>
+    <tr>
+      <td valign=3D"top" width=3D"40" style=3D"padding:0 0 12px;">
+        <div style=3D"width:28px;height:28px;border-radius:14px;background:#0=
+0395d;color:#fff;font-family:'Plus Jakarta Sans', 'Segoe UI', Roboto, Helveti=
+ca, Arial, sans-serif;font-size:14px;font-weight:800;line-height:28px;text-al=
+ign:center;">3</div>
+      </td>
+      <td valign=3D"top" style=3D"padding:3px 0 12px;font-family:'Plus Jakart=
+a Sans', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:15px;line=
+-height:1.55;color:#17141c;"><strong>Card payments and refunds</strong> throu=
+gh the REST API (payments, refunds, voids), and Pay by Link</td>
+    </tr>
+    <tr>
+      <td valign=3D"top" width=3D"40" style=3D"padding:0 0 12px;">
+        <div style=3D"width:28px;height:28px;border-radius:14px;background:#0=
+0395d;color:#fff;font-family:'Plus Jakarta Sans', 'Segoe UI', Roboto, Helveti=
+ca, Arial, sans-serif;font-size:14px;font-weight:800;line-height:28px;text-al=
+ign:center;">4</div>
+      </td>
+      <td valign=3D"top" style=3D"padding:3px 0 12px;font-family:'Plus Jakart=
+a Sans', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:15px;line=
+-height:1.55;color:#17141c;">Confirmation of the <strong>go-live / certificat=
+ion steps</strong> for a partner taking payments for many hospitality venues =
+(sub-merchants)</td>
+    </tr>
+    <tr>
+      <td valign=3D"top" width=3D"40" style=3D"padding:0 0 12px;">
+        <div style=3D"width:28px;height:28px;border-radius:14px;background:#0=
+0395d;color:#fff;font-family:'Plus Jakarta Sans', 'Segoe UI', Roboto, Helveti=
+ca, Arial, sans-serif;font-size:14px;font-weight:800;line-height:28px;text-al=
+ign:center;">5</div>
+      </td>
+      <td valign=3D"top" style=3D"padding:3px 0 12px;font-family:'Plus Jakart=
+a Sans', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:15px;line=
+-height:1.55;color:#17141c;">Whether Barclaycard can offer an <strong>in-pers=
+on card terminal API</strong> (cloud or local) for EPOS tills</td>
+    </tr>
+      </table>
+    </td></tr>
+    <tr><td style=3D"padding:6px 24px 0;">
+      <h2 style=3D"margin:8px 0 14px;font-family:'Plus Jakarta Sans', 'Segoe =
+UI', Roboto, Helvetica, Arial, sans-serif;font-size:20px;line-height:1.3;font=
+-weight:800;color:#00395d;">Our call today</h2>
+      <table role=3D"presentation" width=3D"100%" cellpadding=3D"0" cellspaci=
+ng=3D"0" style=3D"border:1px solid #dbe7ef;border-radius:14px;">
+        <tr>
+          <td valign=3D"top" width=3D"96" style=3D"padding:18px 0 18px 18px;">
+            <table role=3D"presentation" cellpadding=3D"0" cellspacing=3D"0" =
+width=3D"78" style=3D"border-radius:12px;overflow:hidden;background:#ffffff;b=
+order:1px solid #cfe3ef;">
+              <tr><td align=3D"center" style=3D"background:#00395d;padding:5p=
+x 0;font-family:'Plus Jakarta Sans', 'Segoe UI', Roboto, Helvetica, Arial, sa=
+ns-serif;font-size:11px;font-weight:800;letter-spacing:1.5px;color:#a5c715;">=
+OCT</td></tr>
+              <tr><td align=3D"center" style=3D"padding:6px 0 0;font-family:'=
+Plus Jakarta Sans', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-siz=
+e:30px;font-weight:800;line-height:1;color:#00395d;">21</td></tr>
+              <tr><td align=3D"center" style=3D"padding:2px 0 8px;font-family=
+:'Plus Jakarta Sans', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-s=
+ize:11px;font-weight:700;color:#5f5a68;">WEDNESDAY</td></tr>
+            </table>
+          </td>
+          <td valign=3D"top" style=3D"padding:18px 18px 18px 6px;">
+            <div style=3D"font-family:'Plus Jakarta Sans', 'Segoe UI', Roboto=
+, Helvetica, Arial, sans-serif;font-size:16px;font-weight:800;color:#00395d;"=
+>Vesopa x Barclaycard Partner LIVE API meeting for Smartpay Fuse</div>
+            <div style=3D"margin-top:6px;font-family:'Plus Jakarta Sans', 'Se=
+goe UI', Roboto, Helvetica, Arial, sans-serif;font-size:14px;line-height:1.6;=
+color:#17141c;"><strong>Wednesday 21 October 2026</strong><br>11:00 to 11:30 =
+UK time (BST)</div>
+            <div style=3D"margin-top:10px;"><a href=3D"https://meet.google.co=
+m/qum-eoec-wnf" style=3D"display:inline-block;background:#00aeef;color:#fffff=
+f;border-radius:10px;padding:10px 16px;font-family:'Plus Jakarta Sans', 'Sego=
+e UI', Roboto, Helvetica, Arial, sans-serif;font-size:14px;font-weight:800;te=
+xt-decoration:none;">Join Google Meet</a></div>
+            <div style=3D"margin-top:10px;font-family:'Plus Jakarta Sans', 'S=
+egoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:13px;line-height:1.6=
+;color:#4a5560;">meet.google.com/qum-eoec-wnf<br>Or dial +44 20 3957 2080, PI=
+N 471279590<br><a href=3D"https://tel.meet/qum-eoec-wnf?pin=3D6261463474265" =
+style=3D"color:#00395d;">More phone numbers</a></div>
+            <div style=3D"margin-top:8px;font-family:'Plus Jakarta Sans', 'Se=
+goe UI', Roboto, Helvetica, Arial, sans-serif;font-size:13px;line-height:1.5;=
+color:#5f5a68;">With Meirion Davies, Director, and the Vesopa developer</div>
+          </td>
+        </tr>
+      </table>
+      <p style=3D"margin:12px 0 26px;font-family:'Plus Jakarta Sans', 'Segoe =
+UI', Roboto, Helvetica, Arial, sans-serif;font-size:14px;line-height:1.6;colo=
+r:#5f5a68;">The calendar invite is attached: <strong>Accept, Decline or Maybe=
+</strong> straight from your inbox and the answer comes back to us. If 11:00 =
+does not suit, reply with a better time, or call me on <a href=3D"tel:+447848=
+494341" style=3D"color:#00395d;font-weight:700;">+44 7848 494341</a>.</p>
+    </td></tr>
+    <tr><td style=3D"padding:0 24px 34px;">
+      <p style=3D"margin:0 0 16px;font-family:'Plus Jakarta Sans', 'Segoe UI'=
+, Roboto, Helvetica, Arial, sans-serif;font-size:16px;line-height:1.6;color:#=
+17141c;">Thank you, and we look forward to speaking with you.</p>
+      <p style=3D"margin:0 0 18px;font-family:'Plus Jakarta Sans', 'Segoe UI'=
+, Roboto, Helvetica, Arial, sans-serif;font-size:16px;line-height:1.6;color:#=
+17141c;">Kind regards,<br><strong>Muzahid Islam</strong><br><span style=3D"co=
+lor:#5f5a68;">Vesopa Developer, Vesopa Software Ltd</span><br><a href=3D"mail=
+to:muzahid@vesopa.com" style=3D"color:#00395d;">muzahid@vesopa.com</a> &middo=
+t; <a href=3D"tel:+447848494341" style=3D"color:#00395d;">+44 7848 494341</a>=
+</p>
+      <table role=3D"presentation" cellpadding=3D"0" cellspacing=3D"0" style=
+=3D"border-left:4px solid #a5c715;"><tr><td style=3D"padding:2px 0 2px 12px;f=
+ont-family:'Plus Jakarta Sans', 'Segoe UI', Roboto, Helvetica, Arial, sans-se=
+rif;font-size:14px;line-height:1.6;color:#5f5a68;">
+        On behalf of <strong style=3D"color:#17141c;">Meirion Davies</strong>=
+, Director<br>Vesopa Software Ltd and Vesopa Ltd<br>
+        <a href=3D"mailto:info@vesopasoftware.com" style=3D"color:#00395d;">i=
+nfo@vesopasoftware.com</a> &middot; <a href=3D"mailto:info@vesopa.com" style=
+=3D"color:#00395d;">info@vesopa.com</a>
+      </td></tr></table>
+    </td></tr>
+    <tr><td style=3D"background:#f4f8fb;padding:18px 24px;border-top:4px soli=
+d #00aeef;">
+      <p style=3D"margin:0;font-family:'Plus Jakarta Sans', 'Segoe UI', Robot=
+o, Helvetica, Arial, sans-serif;font-size:12px;line-height:1.6;color:#5f5a68;=
+">Vesopa Software Ltd &middot; <a href=3D"https://vesopa.com" style=3D"color:=
+#5f5a68;">vesopa.com</a> &middot; Copied to Meirion Davies, Director (info@ve=
+sopasoftware.com, info@vesopa.com).</p>
+    </td></tr>
+  </table>
+</td></tr>
+</table>
+</body>
+</html>
+
+--===============4181569952067348582==
+Content-Transfer-Encoding: base64
+Content-Type: text/calendar; method="REQUEST"; charset="utf-8"
+MIME-Version: 1.0
+
+QkVHSU46VkNBTEVOREFSDQpQUk9ESUQ6LS8vVmVzb3BhIFNvZnR3YXJlIEx0ZC8vVmVzb3BhIE1h
+aWwvL0VODQpWRVJTSU9OOjIuMA0KQ0FMU0NBTEU6R1JFR09SSUFODQpNRVRIT0Q6UkVRVUVTVA0K
+QkVHSU46VlRJTUVaT05FDQpUWklEOkV1cm9wZS9Mb25kb24NCkJFR0lOOkRBWUxJR0hUDQpUWk9G
+RlNFVEZST006KzAwMDANClRaT0ZGU0VUVE86KzAxMDANClRaTkFNRTpCU1QNCkRUU1RBUlQ6MTk3
+MDAzMjlUMDEwMDAwDQpSUlVMRTpGUkVRPVlFQVJMWTtCWU1PTlRIPTM7QllEQVk9LTFTVQ0KRU5E
+OkRBWUxJR0hUDQpCRUdJTjpTVEFOREFSRA0KVFpPRkZTRVRGUk9NOiswMTAwDQpUWk9GRlNFVFRP
+OiswMDAwDQpUWk5BTUU6R01UDQpEVFNUQVJUOjE5NzAxMDI1VDAyMDAwMA0KUlJVTEU6RlJFUT1Z
+RUFSTFk7QllNT05USD0xMDtCWURBWT0tMVNVDQpFTkQ6U1RBTkRBUkQNCkVORDpWVElNRVpPTkUN
+CkJFR0lOOlZFVkVOVA0KVUlEOjAxN2M3MzUwLWM5M2MtNDhkNi04NDlmLThjMmJkZjJhODQ4Y0B2
+ZXNvcGEuY29tDQpEVFNUQU1QOjIwMjYxMDIxVDA4MzY1M1oNCkRUU1RBUlQ7VFpJRD1FdXJvcGUv
+TG9uZG9uOjIwMjYxMDIxVDExMDAwMA0KRFRFTkQ7VFpJRD1FdXJvcGUvTG9uZG9uOjIwMjYxMDIx
+VDExMzAwMA0KU1VNTUFSWTpWZXNvcGEgeCBCYXJjbGF5Y2FyZCBQYXJ0bmVyIExJVkUgQVBJIG1l
+ZXRpbmcgZm9yIFNtYXJ0cGF5IEZ1c2UNCkRFU0NSSVBUSU9OOkxpdmUgU21hcnRwYXkgRnVzZSBB
+UEkgYWNjZXNzIGZvciBWZXNvcGEgKFZlc29wYSBTb2Z0d2FyZSBMdGQpDQogLlxuXG5Kb2luIHdp
+dGggR29vZ2xlIE1lZXQ6IGh0dHBzOi8vbWVldC5nb29nbGUuY29tL3F1bS1lb2VjLXduZlxuT3Ig
+ZGlhbDoNCiAgKzQ0IDIwIDM5NTcgMjA4MCBQSU46IDQ3MTI3OTU5MFxuTW9yZSBwaG9uZSBudW1i
+ZXJzOiBodHRwczovL3RlbC5tZWV0L3F1bQ0KIC1lb2VjLXduZj9waW49NjI2MTQ2MzQ3NDI2NVxu
+XG5XaGF0IHdlIHdvdWxkIGxpa2UgdG8gYWdyZWU6XG4xLiBMaXZlIChwcm9kDQogdWN0aW9uKSBS
+RVNUIEFQSSBrZXlzIGZvciBTbWFydHBheSBGdXNlLCB3aXRoIHRoZSBtZXJjaGFudCAoT3JnYW5p
+emF0aW9uKSANCiBhY2NvdW50IGZvciBWZXNvcGEgU29mdHdhcmUgTHRkXG4yLiBVbmlmaWVkIENo
+ZWNrb3V0IG9uIGxpdmUsIHdpdGggQXBwbGUgUA0KIGF5LCBHb29nbGUgUGF5IGFuZCBDbGljayB0
+byBQYXkgZW5hYmxlZCwgYW5kIEFwcGxlIFBheSBkb21haW4gcmVnaXN0cmF0aW9uDQogIGZvciBv
+dXIgdmVudWVzJyBtZW51IGRvbWFpbnNcbjMuIENhcmQgcGF5bWVudHMgYW5kIHJlZnVuZHMgdGhy
+b3VnaCB0aGUgUkUNCiBTVCBBUEkgKHBheW1lbnRzLCByZWZ1bmRzLCB2b2lkcyksIGFuZCBQYXkg
+YnkgTGlua1xuNC4gQ29uZmlybWF0aW9uIG9mIHRoZQ0KICBnby1saXZlIC8gY2VydGlmaWNhdGlv
+biBzdGVwcyBmb3IgYSBwYXJ0bmVyIHRha2luZyBwYXltZW50cyBmb3IgbWFueSBob3NwDQogaXRh
+bGl0eSB2ZW51ZXMgKHN1Yi1tZXJjaGFudHMpXG41LiBXaGV0aGVyIEJhcmNsYXljYXJkIGNhbiBv
+ZmZlciBhbiBpbi1wZXINCiBzb24gY2FyZCB0ZXJtaW5hbCBBUEkgKGNsb3VkIG9yIGxvY2FsKSBm
+b3IgRVBPUyB0aWxsc1xuXG5TYW5kYm94IG9yZ2FuaXNhdA0KIGlvbjogdmVzb3BhX3VrXzE3OTIw
+NzA3OTZcbkxpdmUgZGVtbzogaHR0cHM6Ly9tZW51LnZlc29wYS5jb20vdmVzb3Bha2l0Y2hlDQog
+blxuXG5WZXNvcGEgRGV2ZWxvcGVyOiBtdXphaGlkQHZlc29wYS5jb21cLCArNDQgNzg0OCA0OTQz
+NDENCkxPQ0FUSU9OOmh0dHBzOi8vbWVldC5nb29nbGUuY29tL3F1bS1lb2VjLXduZg0KVVJMOmh0
+dHBzOi8vbWVldC5nb29nbGUuY29tL3F1bS1lb2VjLXduZg0KQ09ORkVSRU5DRTtWQUxVRT1VUkk7
+RkVBVFVSRT1WSURFTztMQUJFTD1Hb29nbGUgTWVldDpodHRwczovL21lZXQuZ29vZ2xlLmMNCiBv
+bS9xdW0tZW9lYy13bmYNCk9SR0FOSVpFUjtDTj0iVmVzb3BhIERldmVsb3BlciI6bWFpbHRvOm11
+emFoaWRAdmVzb3BhLmNvbQ0KQVRURU5ERUU7Q049IkJhcmNsYXljYXJkIFNtYXJ0cGF5IEZ1c2Ug
+U3VwcG9ydCI7Uk9MRT1SRVEtUEFSVElDSVBBTlQ7UEFSVFMNCiBUQVQ9TkVFRFMtQUNUSU9OO1JT
+VlA9VFJVRTptYWlsdG86c3VwcG9ydHNtYXJ0cGF5ZnVzZUBiYXJjbGF5cy5jb20NCkFUVEVOREVF
+O0NOPSJNZWlyaW9uIERhdmllcyI7Uk9MRT1PUFQtUEFSVElDSVBBTlQ7UEFSVFNUQVQ9TkVFRFMt
+QUNUSU9OO1JTDQogVlA9VFJVRTptYWlsdG86aW5mb0B2ZXNvcGFzb2Z0d2FyZS5jb20NCkFUVEVO
+REVFO0NOPSJNZWlyaW9uIERhdmllcyI7Uk9MRT1PUFQtUEFSVElDSVBBTlQ7UEFSVFNUQVQ9TkVF
+RFMtQUNUSU9OO1JTDQogVlA9VFJVRTptYWlsdG86aW5mb0B2ZXNvcGEuY29tDQpTRVFVRU5DRTow
+DQpTVEFUVVM6Q09ORklSTUVEDQpUUkFOU1A6T1BBUVVFDQpDTEFTUzpQVUJMSUMNClgtTUlDUk9T
+T0ZULUNETy1CVVNZU1RBVFVTOkJVU1kNClgtTUlDUk9TT0ZULUNETy1JTVBPUlRBTkNFOjENClgt
+R09PR0xFLUNPTkZFUkVOQ0U6aHR0cHM6Ly9tZWV0Lmdvb2dsZS5jb20vcXVtLWVvZWMtd25mDQpC
+RUdJTjpWQUxBUk0NCkFDVElPTjpESVNQTEFZDQpERVNDUklQVElPTjpWZXNvcGEgeCBCYXJjbGF5
+Y2FyZCBQYXJ0bmVyIExJVkUgQVBJIG1lZXRpbmcgZm9yIFNtYXJ0cGF5IEZ1cw0KIGUNClRSSUdH
+RVI6LVBUMTVNDQpFTkQ6VkFMQVJNDQpFTkQ6VkVWRU5UDQpFTkQ6VkNBTEVOREFSDQo=
+
+--===============4181569952067348582==--
+
+--===============1599588558395363149==
+Content-Type: application/ics
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="Vesopa-Barclaycard-live-API.ics"
+MIME-Version: 1.0
+
+QkVHSU46VkNBTEVOREFSDQpQUk9ESUQ6LS8vVmVzb3BhIFNvZnR3YXJlIEx0ZC8vVmVzb3BhIE1h
+aWwvL0VODQpWRVJTSU9OOjIuMA0KQ0FMU0NBTEU6R1JFR09SSUFODQpNRVRIT0Q6UkVRVUVTVA0K
+QkVHSU46VlRJTUVaT05FDQpUWklEOkV1cm9wZS9Mb25kb24NCkJFR0lOOkRBWUxJR0hUDQpUWk9G
+RlNFVEZST006KzAwMDANClRaT0ZGU0VUVE86KzAxMDANClRaTkFNRTpCU1QNCkRUU1RBUlQ6MTk3
+MDAzMjlUMDEwMDAwDQpSUlVMRTpGUkVRPVlFQVJMWTtCWU1PTlRIPTM7QllEQVk9LTFTVQ0KRU5E
+OkRBWUxJR0hUDQpCRUdJTjpTVEFOREFSRA0KVFpPRkZTRVRGUk9NOiswMTAwDQpUWk9GRlNFVFRP
+OiswMDAwDQpUWk5BTUU6R01UDQpEVFNUQVJUOjE5NzAxMDI1VDAyMDAwMA0KUlJVTEU6RlJFUT1Z
+RUFSTFk7QllNT05USD0xMDtCWURBWT0tMVNVDQpFTkQ6U1RBTkRBUkQNCkVORDpWVElNRVpPTkUN
+CkJFR0lOOlZFVkVOVA0KVUlEOjAxN2M3MzUwLWM5M2MtNDhkNi04NDlmLThjMmJkZjJhODQ4Y0B2
+ZXNvcGEuY29tDQpEVFNUQU1QOjIwMjYxMDIxVDA4MzY1M1oNCkRUU1RBUlQ7VFpJRD1FdXJvcGUv
+TG9uZG9uOjIwMjYxMDIxVDExMDAwMA0KRFRFTkQ7VFpJRD1FdXJvcGUvTG9uZG9uOjIwMjYxMDIx
+VDExMzAwMA0KU1VNTUFSWTpWZXNvcGEgeCBCYXJjbGF5Y2FyZCBQYXJ0bmVyIExJVkUgQVBJIG1l
+ZXRpbmcgZm9yIFNtYXJ0cGF5IEZ1c2UNCkRFU0NSSVBUSU9OOkxpdmUgU21hcnRwYXkgRnVzZSBB
+UEkgYWNjZXNzIGZvciBWZXNvcGEgKFZlc29wYSBTb2Z0d2FyZSBMdGQpDQogLlxuXG5Kb2luIHdp
+dGggR29vZ2xlIE1lZXQ6IGh0dHBzOi8vbWVldC5nb29nbGUuY29tL3F1bS1lb2VjLXduZlxuT3Ig
+ZGlhbDoNCiAgKzQ0IDIwIDM5NTcgMjA4MCBQSU46IDQ3MTI3OTU5MFxuTW9yZSBwaG9uZSBudW1i
+ZXJzOiBodHRwczovL3RlbC5tZWV0L3F1bQ0KIC1lb2VjLXduZj9waW49NjI2MTQ2MzQ3NDI2NVxu
+XG5XaGF0IHdlIHdvdWxkIGxpa2UgdG8gYWdyZWU6XG4xLiBMaXZlIChwcm9kDQogdWN0aW9uKSBS
+RVNUIEFQSSBrZXlzIGZvciBTbWFydHBheSBGdXNlLCB3aXRoIHRoZSBtZXJjaGFudCAoT3JnYW5p
+emF0aW9uKSANCiBhY2NvdW50IGZvciBWZXNvcGEgU29mdHdhcmUgTHRkXG4yLiBVbmlmaWVkIENo
+ZWNrb3V0IG9uIGxpdmUsIHdpdGggQXBwbGUgUA0KIGF5LCBHb29nbGUgUGF5IGFuZCBDbGljayB0
+byBQYXkgZW5hYmxlZCwgYW5kIEFwcGxlIFBheSBkb21haW4gcmVnaXN0cmF0aW9uDQogIGZvciBv
+dXIgdmVudWVzJyBtZW51IGRvbWFpbnNcbjMuIENhcmQgcGF5bWVudHMgYW5kIHJlZnVuZHMgdGhy
+b3VnaCB0aGUgUkUNCiBTVCBBUEkgKHBheW1lbnRzLCByZWZ1bmRzLCB2b2lkcyksIGFuZCBQYXkg
+YnkgTGlua1xuNC4gQ29uZmlybWF0aW9uIG9mIHRoZQ0KICBnby1saXZlIC8gY2VydGlmaWNhdGlv
+biBzdGVwcyBmb3IgYSBwYXJ0bmVyIHRha2luZyBwYXltZW50cyBmb3IgbWFueSBob3NwDQogaXRh
+bGl0eSB2ZW51ZXMgKHN1Yi1tZXJjaGFudHMpXG41LiBXaGV0aGVyIEJhcmNsYXljYXJkIGNhbiBv
+ZmZlciBhbiBpbi1wZXINCiBzb24gY2FyZCB0ZXJtaW5hbCBBUEkgKGNsb3VkIG9yIGxvY2FsKSBm
+b3IgRVBPUyB0aWxsc1xuXG5TYW5kYm94IG9yZ2FuaXNhdA0KIGlvbjogdmVzb3BhX3VrXzE3OTIw
+NzA3OTZcbkxpdmUgZGVtbzogaHR0cHM6Ly9tZW51LnZlc29wYS5jb20vdmVzb3Bha2l0Y2hlDQog
+blxuXG5WZXNvcGEgRGV2ZWxvcGVyOiBtdXphaGlkQHZlc29wYS5jb21cLCArNDQgNzg0OCA0OTQz
+NDENCkxPQ0FUSU9OOmh0dHBzOi8vbWVldC5nb29nbGUuY29tL3F1bS1lb2VjLXduZg0KVVJMOmh0
+dHBzOi8vbWVldC5nb29nbGUuY29tL3F1bS1lb2VjLXduZg0KQ09ORkVSRU5DRTtWQUxVRT1VUkk7
+RkVBVFVSRT1WSURFTztMQUJFTD1Hb29nbGUgTWVldDpodHRwczovL21lZXQuZ29vZ2xlLmMNCiBv
+bS9xdW0tZW9lYy13bmYNCk9SR0FOSVpFUjtDTj0iVmVzb3BhIERldmVsb3BlciI6bWFpbHRvOm11
+emFoaWRAdmVzb3BhLmNvbQ0KQVRURU5ERUU7Q049IkJhcmNsYXljYXJkIFNtYXJ0cGF5IEZ1c2Ug
+U3VwcG9ydCI7Uk9MRT1SRVEtUEFSVElDSVBBTlQ7UEFSVFMNCiBUQVQ9TkVFRFMtQUNUSU9OO1JT
+VlA9VFJVRTptYWlsdG86c3VwcG9ydHNtYXJ0cGF5ZnVzZUBiYXJjbGF5cy5jb20NCkFUVEVOREVF
+O0NOPSJNZWlyaW9uIERhdmllcyI7Uk9MRT1PUFQtUEFSVElDSVBBTlQ7UEFSVFNUQVQ9TkVFRFMt
+QUNUSU9OO1JTDQogVlA9VFJVRTptYWlsdG86aW5mb0B2ZXNvcGFzb2Z0d2FyZS5jb20NCkFUVEVO
+REVFO0NOPSJNZWlyaW9uIERhdmllcyI7Uk9MRT1PUFQtUEFSVElDSVBBTlQ7UEFSVFNUQVQ9TkVF
+RFMtQUNUSU9OO1JTDQogVlA9VFJVRTptYWlsdG86aW5mb0B2ZXNvcGEuY29tDQpTRVFVRU5DRTow
+DQpTVEFUVVM6Q09ORklSTUVEDQpUUkFOU1A6T1BBUVVFDQpDTEFTUzpQVUJMSUMNClgtTUlDUk9T
+T0ZULUNETy1CVVNZU1RBVFVTOkJVU1kNClgtTUlDUk9TT0ZULUNETy1JTVBPUlRBTkNFOjENClgt
+R09PR0xFLUNPTkZFUkVOQ0U6aHR0cHM6Ly9tZWV0Lmdvb2dsZS5jb20vcXVtLWVvZWMtd25mDQpC
+RUdJTjpWQUxBUk0NCkFDVElPTjpESVNQTEFZDQpERVNDUklQVElPTjpWZXNvcGEgeCBCYXJjbGF5
+Y2FyZCBQYXJ0bmVyIExJVkUgQVBJIG1lZXRpbmcgZm9yIFNtYXJ0cGF5IEZ1cw0KIGUNClRSSUdH
+RVI6LVBUMTVNDQpFTkQ6VkFMQVJNDQpFTkQ6VkVWRU5UDQpFTkQ6VkNBTEVOREFSDQo=
+
+--===============1599588558395363149==--
