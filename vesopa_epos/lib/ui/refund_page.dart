@@ -791,7 +791,7 @@ class _NoReceiptDialogState extends State<_NoReceiptDialog> {
     return AlertDialog(
       title: const Text('Refund without a receipt'),
       content: SizedBox(
-        width: 420,
+        width: KeyboardSize.dialogWidth(context, 420),
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,

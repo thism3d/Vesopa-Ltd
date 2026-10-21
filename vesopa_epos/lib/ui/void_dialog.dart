@@ -352,7 +352,7 @@ class _VoidDialogState extends ConsumerState<_VoidDialog> {
         // out of whatever width it is given and will not overflow a narrow one
         // — it just makes the keys too small to hit, which on a list of
         // reasons somebody is typing under pressure is the same as broken.
-        width: isCustom ? 660 : 380,
+        width: KeyboardSize.dialogWidth(context, isCustom ? 660 : 380),
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,

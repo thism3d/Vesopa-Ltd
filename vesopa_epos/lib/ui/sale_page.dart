@@ -1978,7 +1978,7 @@ class _FieldDialogState extends State<_FieldDialog> {
       // Wide enough for the keyboard to lay out at a usable key size, and
       // scrollable so it survives the shortest till anybody runs this on.
       content: SizedBox(
-        width: widget.mode == PosKeyboardMode.text ? 660 : 380,
+        width: KeyboardSize.dialogWidth(context, widget.mode == PosKeyboardMode.text ? 660 : 380),
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,

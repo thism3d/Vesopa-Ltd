@@ -4,6 +4,7 @@
     python tool/update_venue_versions.py             # set VENUES to the newest versions (devices ask on screen)
     python tool/update_venue_versions.py --now       # ... and install now with a 30s countdown, between sales
     python tool/update_venue_versions.py --force     # ... install now even with a bill open (the bill is kept)
+    python tool/update_venue_versions.py --force --only till   # the tills only
 
 The owner: "No automatic update overnight. If I say update then it'll
 update. Like Nicky always does." Run only when asked. It sets each venue
@@ -24,6 +25,10 @@ import deploy_memberships  # noqa: E402,F401  (loads the server login)
 # The venues to update when this is run. 35 = Pontardawe RFC.
 AUTO_VENUES = [35]
 APPS = ["till", "kitchen", "display"]
+# --only till (or kitchen, display): update just that app, when the owner asks
+# for the tills only.
+if "--only" in sys.argv:
+    APPS = [a for a in sys.argv[sys.argv.index("--only") + 1].split(",") if a in APPS] or APPS
 USER = "vesopasoftware"
 ADMIN = f"/home/{USER}/web/admin.vesopa.com/private/nodeapp"
 BACKOFFICE = f"/home/{USER}/web/backoffice.vesopaepos.com/private/nodeapp"

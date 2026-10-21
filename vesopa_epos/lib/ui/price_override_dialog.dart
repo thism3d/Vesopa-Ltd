@@ -76,7 +76,7 @@ class _PriceOverrideDialogState extends State<_PriceOverrideDialog> {
       // its comment gives: a keyboard plus a field plus a total is taller than
       // a 768px panel has to spare once the dialog's own chrome is counted.
       content: SizedBox(
-        width: 420,
+        width: KeyboardSize.dialogWidth(context, 420),
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,

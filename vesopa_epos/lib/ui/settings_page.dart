@@ -13,6 +13,7 @@ import '../data/terminal_identity.dart';
 import '../main.dart';
 import '../payments/teya_provider.dart';
 import '../payments/barclaycard_provider.dart';
+import 'widgets/on_screen_keyboard.dart';
 import '../payments/teya_sdk.dart';
 import '../payments/teya_sdk_provider.dart';
 import '../payments/connect_pac.dart';
@@ -262,6 +263,10 @@ class SettingsPage extends ConsumerWidget {
             ),
           ),
         ),
+
+        const SizedBox(height: 28),
+        const _SectionTitle('On-screen keyboard'),
+        const _KeyboardSizeCard(),
 
         const SizedBox(height: 28),
         const _SectionTitle('Card payments'),
@@ -745,6 +750,46 @@ class _CustomerDisplaySummaryState extends State<_CustomerDisplaySummary> {
 
 /// Card payment configuration. Shows whether cards are set up on this terminal
 /// and lets the operator enter or change the credentials on the device.
+/// How big the till's on-screen keyboard is (also A- / A+ on the keyboard).
+class _KeyboardSizeCard extends StatelessWidget {
+  const _KeyboardSizeCard();
+
+  @override
+  Widget build(BuildContext context) {
+    KeyboardSize.load();
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+        child: ValueListenableBuilder<double>(
+          valueListenable: KeyboardSize.scale,
+          builder: (context, scale, _) => Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Keyboard size', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+              const SizedBox(height: 4),
+              const Text(
+                'For notes, messages, names and reasons typed on the till. Also A− / A+ on the keyboard itself.',
+                style: TextStyle(fontSize: 12.5),
+              ),
+              const SizedBox(height: 10),
+              SegmentedButton<double>(
+                segments: [
+                  for (final (label, value) in KeyboardSize.sizes)
+                    ButtonSegment(value: value, label: Text(label)),
+                ],
+                selected: {KeyboardSize.nearest},
+                showSelectedIcon: false,
+                onSelectionChanged: (v) => KeyboardSize.set(v.first),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Barclaycard on this till (2026-10-21): no card machine; the customer pays
 /// on their phone from a QR code. Switched per venue in the back office.
 class _BarclaycardCard extends ConsumerWidget {

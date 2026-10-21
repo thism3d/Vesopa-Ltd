@@ -268,7 +268,7 @@ class _NewProductDialogState extends ConsumerState<_NewProductDialog> {
     return AlertDialog(
       title: const Text('New product'),
       content: SizedBox(
-        width: 460,
+        width: KeyboardSize.dialogWidth(context, 460),
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,

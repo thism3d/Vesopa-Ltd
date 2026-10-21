@@ -113,7 +113,7 @@ class _PaidOutDialogState extends State<_PaidOutDialog> {
     return AlertDialog(
       title: const Text('Paid out of the drawer'),
       content: SizedBox(
-        width: 420,
+        width: KeyboardSize.dialogWidth(context, 420),
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,

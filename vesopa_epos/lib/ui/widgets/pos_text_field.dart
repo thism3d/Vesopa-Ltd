@@ -135,30 +135,18 @@ class _PosTextFieldState extends State<PosTextField> {
     if (overlay == null) return;
 
     _entry = OverlayEntry(
-      builder: (context) => Positioned(
-        left: 0,
-        right: 0,
-        bottom: 0,
-        child: Material(
-          elevation: 12,
-          child: SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-              child: OnScreenKeyboard(
-                controller: widget.controller,
-                mode: widget.mode,
-                submitLabel: widget.submitLabel,
-                onSubmit: () {
-                  widget.onSubmitted?.call(widget.controller.text);
-                  // Dismissed on Done, because Done is the word for "finished
-                  // with this box". Leaving it up after that is a board sitting
-                  // over the thing the clerk pressed Done to get back to.
-                  _focus.unfocus();
-                },
-              ),
-            ),
-          ),
+      builder: (context) => _FloatingKeyboard(
+        keyboard: OnScreenKeyboard(
+          controller: widget.controller,
+          mode: widget.mode,
+          submitLabel: widget.submitLabel,
+          onSubmit: () {
+            widget.onSubmitted?.call(widget.controller.text);
+            // Dismissed on Done, because Done is the word for "finished
+            // with this box". Leaving it up after that is a board sitting
+            // over the thing the clerk pressed Done to get back to.
+            _focus.unfocus();
+          },
         ),
       ),
     );
@@ -204,7 +192,9 @@ class _PosTextFieldState extends State<PosTextField> {
     return AnimatedPadding(
       duration: const Duration(milliseconds: 160),
       curve: Curves.easeOut,
-      padding: EdgeInsets.only(bottom: _entry == null ? 0 : _boardHeight),
+      // Only while it is docked along the bottom: a floating keyboard is
+      // wherever the clerk put it.
+      padding: EdgeInsets.only(bottom: _entry == null || KeyboardSize.place.value != null ? 0 : _boardHeight),
       child: field,
     );
   }
@@ -214,4 +204,147 @@ class _PosTextFieldState extends State<PosTextField> {
   /// the overlay before it could lay itself out would need a frame in between —
   /// which is a visible jump under a finger that is already moving.
   static const _boardHeight = 300.0;
+}
+
+/// The keyboard over the screen: docked along the bottom as it first opens,
+/// or dragged anywhere by its handle and resized by its corner grip
+/// (2026-10-21, Pontardawe RFC). Where it was left is kept on this till.
+/// Resizing changes the keys as well as the width.
+class _FloatingKeyboard extends StatefulWidget {
+  const _FloatingKeyboard({required this.keyboard});
+
+  final Widget keyboard;
+
+  @override
+  State<_FloatingKeyboard> createState() => _FloatingKeyboardState();
+}
+
+class _FloatingKeyboardState extends State<_FloatingKeyboard> {
+  /// The width a keyboard is drawn at for the standard size; the grip's
+  /// width over this is the scale.
+  static const _standardWidth = 820.0;
+  static const _minWidth = 420.0;
+
+  @override
+  void initState() {
+    super.initState();
+    KeyboardSize.load();
+  }
+
+  Rect _clamp(Rect r, Size screen) {
+    final w = r.width.clamp(_minWidth, screen.width);
+    final x = r.left.clamp(0.0, (screen.width - w).clamp(0.0, double.infinity));
+    final y = r.top.clamp(0.0, (screen.height - 120).clamp(0.0, double.infinity));
+    return Rect.fromLTWH(x, y, w, 0);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final screen = MediaQuery.sizeOf(context);
+    return ValueListenableBuilder<Rect?>(
+      valueListenable: KeyboardSize.place,
+      builder: (context, place, _) {
+        final docked = place == null;
+        final rect = docked ? null : _clamp(place, screen);
+        final board = Material(
+          elevation: 14,
+          borderRadius: docked ? null : BorderRadius.circular(16),
+          clipBehavior: Clip.antiAlias,
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _handle(context, place, screen),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+                  child: widget.keyboard,
+                ),
+              ],
+            ),
+          ),
+        );
+        if (docked) {
+          return Positioned(left: 0, right: 0, bottom: 0, child: board);
+        }
+        return Positioned(
+          left: rect!.left,
+          top: rect.top,
+          width: rect.width,
+          child: Stack(
+            children: [
+              board,
+              // The resize grip, bottom right.
+              Positioned(
+                right: 0,
+                bottom: 0,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onPanUpdate: (d) {
+                    final r = KeyboardSize.place.value ?? rect;
+                    final w = (r.width + d.delta.dx).clamp(_minWidth, screen.width - r.left);
+                    KeyboardSize.place.value = Rect.fromLTWH(r.left, r.top, w, 0);
+                    KeyboardSize.scale.value = (w / _standardWidth).clamp(KeyboardSize.minScale, KeyboardSize.maxScale);
+                  },
+                  onPanEnd: (_) {
+                    KeyboardSize.setPlace(KeyboardSize.place.value);
+                    KeyboardSize.set(KeyboardSize.scale.value);
+                  },
+                  child: const SizedBox(
+                    width: 36,
+                    height: 36,
+                    child: Icon(Icons.open_in_full, size: 18),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// The bar to drag the keyboard by, with Dock / Float.
+  Widget _handle(BuildContext context, Rect? place, Size screen) {
+    final docked = place == null;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onPanStart: (d) {
+        if (KeyboardSize.place.value == null) {
+          // Lifting it off the bottom: it floats where it was, at its size.
+          final w = (_standardWidth * KeyboardSize.scale.value).clamp(_minWidth, screen.width);
+          KeyboardSize.place.value = _clamp(Rect.fromLTWH((screen.width - w) / 2, screen.height - 380, w, 0), screen);
+        }
+      },
+      onPanUpdate: (d) {
+        final r = KeyboardSize.place.value;
+        if (r == null) return;
+        KeyboardSize.place.value = _clamp(r.translate(d.delta.dx, d.delta.dy), screen);
+      },
+      onPanEnd: (_) => KeyboardSize.setPlace(KeyboardSize.place.value),
+      child: SizedBox(
+        height: 34,
+        child: Row(
+          children: [
+            const SizedBox(width: 12),
+            const Icon(Icons.drag_indicator, size: 20),
+            const SizedBox(width: 6),
+            Text(docked ? 'Drag to move' : 'Drag to move · corner to resize',
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+            const Spacer(),
+            TextButton.icon(
+              onPressed: () => docked
+                  ? KeyboardSize.setPlace(_clamp(
+                      Rect.fromLTWH(screen.width * 0.15, screen.height * 0.35, (_standardWidth * KeyboardSize.scale.value).clamp(_minWidth, screen.width * 0.7), 0),
+                      screen))
+                  : KeyboardSize.setPlace(null),
+              icon: Icon(docked ? Icons.picture_in_picture_alt_outlined : Icons.vertical_align_bottom, size: 18),
+              label: Text(docked ? 'Float' : 'Dock'),
+            ),
+            const SizedBox(width: 6),
+          ],
+        ),
+      ),
+    );
+  }
 }

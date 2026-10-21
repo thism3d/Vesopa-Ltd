@@ -1,7 +1,109 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../theme.dart';
+
+/// How big the till's on-screen keyboard is, chosen on the till (2026-10-21,
+/// Pontardawe RFC: "make the keyboard on the message screen slightly
+/// bigger"). One setting for every keyboard on this till, kept on the till,
+/// changed with A- / A+ on the keyboard itself or in Settings.
+class KeyboardSize {
+  KeyboardSize._();
+
+  static const sizes = <(String, double)>[
+    ('Small', 0.85),
+    ('Standard', 1.0),
+    ('Large', 1.2),
+    ('Extra large', 1.4),
+  ];
+  static const _key = 'till.keyboard_scale';
+
+  /// The current scale. Listened to by every keyboard, so a change is seen
+  /// at once, on the keyboard the clerk is looking at.
+  static final scale = ValueNotifier<double>(1.0);
+  static bool _loaded = false;
+
+  /// Read the saved size once. Safe to call often.
+  static Future<void> load() async {
+    if (_loaded) return;
+    _loaded = true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getDouble(_key);
+      if (saved != null && saved >= minScale && saved <= maxScale) scale.value = saved;
+      final x = prefs.getDouble('$_key.x'), y = prefs.getDouble('$_key.y'), w = prefs.getDouble('$_key.w');
+      if (x != null && y != null && w != null) place.value = Rect.fromLTWH(x, y, w, 0);
+    } catch (_) {
+      // A till whose preferences will not open keeps the standard size.
+    }
+  }
+
+  static const minScale = 0.7;
+  static const maxScale = 1.8;
+
+  /// Where the floating keyboard sits (left, top, width), or null when it is
+  /// docked along the bottom, as it opens the first time.
+  static final place = ValueNotifier<Rect?>(null);
+
+  static Future<void> setPlace(Rect? r) async {
+    place.value = r;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (r == null) {
+        for (final k in const ['x', 'y', 'w']) {
+          await prefs.remove('$_key.$k');
+        }
+      } else {
+        await prefs.setDouble('$_key.x', r.left);
+        await prefs.setDouble('$_key.y', r.top);
+        await prefs.setDouble('$_key.w', r.width);
+      }
+    } catch (_) {}
+  }
+
+  static Future<void> set(double value) async {
+    value = value.clamp(minScale, maxScale);
+    scale.value = value;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble(_key, value);
+    } catch (_) {}
+  }
+
+  /// The named size nearest the current scale (the grip sets any scale).
+  static int get _index {
+    var best = 0;
+    for (var i = 1; i < sizes.length; i++) {
+      if ((sizes[i].$2 - scale.value).abs() < (sizes[best].$2 - scale.value).abs()) best = i;
+    }
+    return best;
+  }
+
+  static String get label => sizes[_index].$1;
+
+  /// The named size nearest the current scale.
+  static double get nearest => sizes[_index].$2;
+  static bool get canGrow => scale.value < sizes.last.$2 - 0.001;
+  static bool get canShrink => scale.value > sizes.first.$2 + 0.001;
+  static void grow() {
+    final next = sizes.firstWhere((s) => s.$2 > scale.value + 0.001, orElse: () => sizes.last);
+    set(next.$2);
+  }
+  static void shrink() {
+    final next = sizes.lastWhere((s) => s.$2 < scale.value - 0.001, orElse: () => sizes.first);
+    set(next.$2);
+  }
+
+  /// A dialog that holds a keyboard, at [base] width for the standard size:
+  /// wider with the keyboard, and never wider than the screen.
+  static double dialogWidth(BuildContext context, double base) {
+    final screen = MediaQuery.sizeOf(context).width;
+    final wanted = base * scale.value;
+    final most = screen - 96;
+    return wanted > most ? (most > base ? most : base) : wanted;
+  }
+}
 
 /// A keyboard drawn on the till.
 ///
@@ -71,6 +173,7 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
   void initState() {
     super.initState();
     if (widget._isNumeric) widget.controller.addListener(_onTextChanged);
+    KeyboardSize.load();
   }
 
   @override
@@ -216,7 +319,54 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
 
   @override
   Widget build(BuildContext context) {
+    return ValueListenableBuilder<double>(
+      valueListenable: KeyboardSize.scale,
+      builder: (context, scale, _) => _board(context, scale),
+    );
+  }
+
+  /// A- and A+, small and out of the way at the top of the board.
+  Widget _sizeBar(PayPalette pal) {
+    Widget button(String text, VoidCallback? onTap, String tip) => Tooltip(
+          message: tip,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: onTap == null
+                ? null
+                : () {
+                    HapticFeedback.selectionClick();
+                    onTap();
+                  },
+            child: Container(
+              width: 44,
+              height: 30,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: onTap == null ? pal.keyFill.withValues(alpha: 0.45) : pal.keyFill,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(text, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: onTap == null ? pal.ink.withValues(alpha: 0.4) : pal.ink)),
+            ),
+          ),
+        );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          Text('Keyboard: ${KeyboardSize.label}', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: pal.ink.withValues(alpha: 0.7))),
+          const SizedBox(width: 8),
+          button('A−', KeyboardSize.canShrink ? KeyboardSize.shrink : null, 'Smaller keyboard'),
+          const SizedBox(width: 6),
+          button('A+', KeyboardSize.canGrow ? KeyboardSize.grow : null, 'Bigger keyboard'),
+        ],
+      ),
+    );
+  }
+
+  Widget _board(BuildContext context, double scale) {
     final pal = PayPalette.of(context);
+    final maxUnit = _maxUnit * scale;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -225,17 +375,18 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
         // only sensible answer.
         final available = constraints.maxWidth.isFinite
             ? constraints.maxWidth - (_padding + _border) * 2
-            : _maxUnit * _bottomUnits + _keyGap * _bottomKeys;
+            : maxUnit * _bottomUnits + _keyGap * _bottomKeys;
 
         // The gap comes off the top: it is fixed per key and does not scale, so
         // dividing the whole width by the units alone hands back a unit that is
         // too big by exactly the gap.
         final forKeys = available - _keyGap * _bottomKeys;
-        final unit = (forKeys / _bottomUnits).clamp(1.0, _maxUnit);
+        final unit = (forKeys / _bottomUnits).clamp(1.0, maxUnit);
 
         // Roughly square, with a floor: a finger needs a target in the vertical
-        // axis too, and it is the axis that costs least to keep.
-        final keyHeight = (unit * 0.92).clamp(40.0, 64.0);
+        // axis too, and it is the axis that costs least to keep. The size
+        // setting makes keys taller even where the width is spoken for.
+        final keyHeight = (unit * 0.92 * scale).clamp(40.0 * scale, 64.0 * scale);
 
         return Container(
           padding: const EdgeInsets.all(_padding),
@@ -244,9 +395,16 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
             borderRadius: BorderRadius.circular(14),
             border: Border.all(color: pal.softLine),
           ),
-          child: widget._isNumeric
-              ? _numberPad(pal, unit, keyHeight)
-              : _letterPad(pal, unit, keyHeight),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _sizeBar(pal),
+              widget._isNumeric
+                  ? _numberPad(pal, unit, keyHeight)
+                  : _letterPad(pal, unit, keyHeight),
+            ],
+          ),
         );
       },
     );

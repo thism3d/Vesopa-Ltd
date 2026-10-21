@@ -1656,6 +1656,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
       _voucherMinor = result.amountMinor;
       _voucherCode = result.reference;
     });
+    _settleAfterReprice();
   }
 
   /// The Redeem points key: what is on it, so the clerk can say "you've 105
@@ -1719,6 +1720,16 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
         _pointsMinor = result.amountMinor;
         _pointsRedeemed = result.points;
       }
+    });
+    _settleAfterReprice();
+  }
+
+  /// Points or a voucher that leave nothing to pay finish the sale, as the
+  /// last tender would: there is no Cash or Card left to press. After the
+  /// frame, so the screen has re-priced with them first.
+  void _settleAfterReprice() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _settleIfPaid();
     });
   }
 
@@ -2065,6 +2076,37 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     // both show how the bill was actually paid.
     final servedBy = ref.read(servedByProvider);
     final servedById = ref.read(servedByIdProvider);
+
+    // Points and a voucher come off what is due on this screen, but the bill
+    // keeps its full price, and a bill closes only once what has been paid
+    // reaches it. So they are recorded as payments too, first, and the last
+    // tender closes the bill (or the points do, when they paid for all of
+    // it). Without this a points sale never closed: Pontardawe RFC,
+    // 2026-10-21, a Freddo with 35p of points left open.
+    final redeemedPoints = _tender.totals.pointsMinor;
+    if (redeemedPoints > 0) {
+      await repo.settle(
+        widget.orderId,
+        TenderKind.points.method,
+        redeemedPoints,
+        sessionId: session.id,
+        staffId: servedById,
+        staffName: servedBy,
+        reference: '$_pointsRedeemed points',
+      );
+    }
+    final voucherOff = _tender.totals.voucherMinor;
+    if (voucherOff > 0) {
+      await repo.settle(
+        widget.orderId,
+        TenderKind.voucher.method,
+        voucherOff,
+        sessionId: session.id,
+        staffId: servedById,
+        staffName: servedBy,
+        reference: _voucherCode,
+      );
+    }
 
     for (final entry in _tender.tenders) {
       await repo.settle(

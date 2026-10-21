@@ -158,7 +158,7 @@ class _CountSheetState extends ConsumerState<_CountSheet> {
     return AlertDialog(
       title: Text(widget.title),
       content: SizedBox(
-        width: _counting ? 620 : 400,
+        width: KeyboardSize.dialogWidth(context, _counting ? 620 : 400),
         // Scrollable for the reason _FieldDialog gives: a keyboard or a note
         // grid plus a running total is taller than a 768px panel has spare.
         child: SingleChildScrollView(
