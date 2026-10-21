@@ -2209,12 +2209,34 @@ function dineinRoutes({ pool, broadcast, secret }) {
    * payment is being taken.
    */
   async function settleBarclaysPayment(o) {
-    const [[now]] = await pool.query('SELECT pay_status FROM dinein_orders WHERE id = ?', [o.id]);
+    const [[now]] = await pool.query('SELECT pay_status, pay_txn, pay_env, customer_name FROM dinein_orders WHERE id = ?', [o.id]);
     if (now && now.pay_status === 'processing') return 'authorized';
+    if (now && now.pay_status === 'verifying' && now.pay_txn) {
+      // Paid in Barclaycard's form; confirm with Barclaycard's record.
+      const email = await emailOf(o.office_id);
+      const creds = await bcVenue.credsFor(pool, email, now.pay_env || 'sandbox');
+      if (!creds) return 'authorized';
+      const r = await bcClient.completedPayment(creds, now.pay_txn, { tries: 1 });
+      if (!r || r.pending) {
+        // Not confirmed within the hour: not taken. Open again, so the
+        // order can be paid at the bar or cancelled.
+        if (Number(o.age) >= PAY_EXPIRES_MINUTES) {
+          await pool.execute("UPDATE dinein_orders SET pay_status = 'pending', pay_txn = NULL WHERE id = ? AND pay_status = 'verifying'", [o.id]);
+        }
+        return 'authorized';
+      }
+      if (r.approved && r.amountMinor === Number(o.total_minor)) {
+        await bookBarclaysPaid({ ...o, customer_name: now.customer_name }, email, creds, { paymentId: r.id });
+        return 'captured';
+      }
+      if (r.soft) { try { await bcClient.undo(creds, r.id, { reference: `menu-${o.id}`, amountMinor: Number(o.total_minor) }); } catch (_) {} }
+      await pool.execute("UPDATE dinein_orders SET pay_status = 'pending', pay_txn = NULL WHERE id = ? AND pay_status = 'verifying'", [o.id]);
+      return 'declined';
+    }
     if (Number(o.age) >= PAY_EXPIRES_MINUTES) {
       await pool.execute(
         "UPDATE dinein_orders SET status = 'cancelled', pay_status = 'failed', status_note = ?" +
-          " WHERE id = ? AND status = 'awaiting_payment' AND pay_status <> 'processing'",
+          " WHERE id = ? AND status = 'awaiting_payment' AND pay_status NOT IN ('processing', 'verifying')",
         ['The card payment was not finished within an hour, so the order was cancelled. Nothing was charged.', o.id]
       );
       return 'failed';
@@ -2707,7 +2729,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
       if (!creds) return res.redirect(303, '/o/' + o.public_id);
       let session;
       try {
-        session = await bcVenue.cardSession(creds, req, Number(o.total_minor));
+        session = await bcVenue.cardSession(creds, req, Number(o.total_minor), `menu-${o.id}`);
       } catch (e) {
         console.error('[dinein] Barclaycard card form failed for', o.public_id, e.message);
         return res.redirect(303, '/o/' + o.public_id);
@@ -2735,7 +2757,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
    */
   router.post('/api/public/dinein/order/:publicId/card', express.json({ limit: '64kb' }), async (req, res, next) => {
     try {
-      const token = String((req.body && req.body.token) || '');
+      const body = req.body || {};
       const [[o]] = await pool.query(
         'SELECT id, office_id, status, public_id, pay_provider, pay_env, total_minor, table_label, customer_name, is_demo' +
           '  FROM dinein_orders WHERE public_id = ?',
@@ -2743,8 +2765,9 @@ function dineinRoutes({ pool, broadcast, secret }) {
       );
       if (!o) return res.status(404).json({ error: 'No such order.' });
       const back = '/o/' + o.public_id;
+      if (body.declined) return res.json({ ok: false });
       if (o.status !== 'awaiting_payment' || o.pay_provider !== 'barclays') return res.json({ ok: true, redirect: back });
-      if (!token || token.length > 20000) return res.status(400).json({ error: 'The card form gave no payment.' });
+      if (!body.token && !body.complete) return res.status(400).json({ error: 'The card form gave no payment.' });
       const email = await emailOf(o.office_id);
       const creds = await bcVenue.credsFor(pool, email, o.pay_env || 'sandbox');
       if (!creds) return res.status(409).json({ error: 'Card payments are no longer set up here. Please pay at the bar.', redirect: back });
@@ -2753,47 +2776,61 @@ function dineinRoutes({ pool, broadcast, secret }) {
         [o.id]
       );
       if (!claim.affectedRows) return res.status(409).json({ error: 'This order is already being paid. Wait a moment.', redirect: back });
-      let p;
+      let t;
       try {
-        p = await bcClient.pay(creds, {
+        // 3-D Secure and the payment happen in Barclaycard's form; Barclaycard's
+        // own record is checked here (amount and this order's reference).
+        t = await bcVenue.takeCard(creds, {
+          token: body.token ? String(body.token).slice(0, 20000) : null,
+          complete: body.complete || null,
           reference: `menu-${o.id}`,
           amountMinor: Number(o.total_minor),
-          transientToken: token,
           billTo: { name: o.customer_name || 'Guest' },
         });
       } catch (e) {
-        await pool.execute("UPDATE dinein_orders SET pay_status = 'pending' WHERE id = ? AND pay_status = 'processing'", [o.id]);
         console.error('[dinein] Barclaycard payment failed for', o.public_id, e.message);
-        const declined = e instanceof bcClient.BarclaycardError && e.status >= 400 && e.status < 500;
-        return res.status(declined ? 402 : 502).json({ error: declined ? 'The card was declined.' : 'Barclaycard did not answer.' });
+        t = { ok: false, message: 'Barclaycard did not answer. Please try again.' };
       }
-      if (!bcClient.approved(p)) {
+      if (t.pending) {
+        // Paid in the form; Barclaycard's record is a moment behind. The
+        // order page's next look (settleBarclaysPayment) confirms it.
+        await pool.execute("UPDATE dinein_orders SET pay_status = 'verifying', pay_txn = ? WHERE id = ?", [String(t.paymentId).slice(0, 64), o.id]);
+        return res.json({ ok: true, redirect: back });
+      }
+      if (!t.ok) {
         await pool.execute("UPDATE dinein_orders SET pay_status = 'pending' WHERE id = ? AND pay_status = 'processing'", [o.id]);
-        return res.status(402).json({ error: 'The card was declined.' });
+        return res.status(402).json({ error: t.message });
       }
-      const [r] = await pool.execute(
-        "UPDATE dinein_orders SET status = 'placed', pay_status = 'paid', paid_minor = total_minor, pay_txn = ?," +
-          " paid_at = NOW(), note = LEFT(CONCAT('PAID ONLINE BY CARD. ', COALESCE(note, '')), 500)" +
-          " WHERE id = ? AND status = 'awaiting_payment'",
-        [String(p.id).slice(0, 64), o.id]
-      );
-      if (!r.affectedRows) {
-        // Cancelled while the card was being read: the money goes straight back.
-        try { await bcClient.voidPayment(creds, p.id, { reference: `menu-${o.id}-void` }); } catch (e) {
-          console.error('[dinein] Barclaycard void after cancel failed for', o.public_id, e.message);
-        }
-        return res.status(409).json({ error: 'The order was cancelled before the payment finished, so it has been given back.', redirect: back });
-      }
-      // A test payment stops here: paid, but never sent to the till.
-      if (!Number(o.is_demo)) {
-        const [[n]] = await pool.query('SELECT COUNT(*) AS c FROM dinein_order_lines WHERE dinein_order_id = ?', [o.id]);
-        tellTill(email, { orderId: o.id, publicId: o.public_id, label: o.table_label, total: Number(o.total_minor), lineCount: Number(n.c) });
-      }
+      const paid = await bookBarclaysPaid(o, email, creds, t);
+      if (!paid) return res.status(409).json({ error: 'The order was cancelled before the payment finished, so it has been given back.', redirect: back });
       res.json({ ok: true, redirect: back });
     } catch (e) {
       return next(e);
     }
   });
+
+  /** A Barclaycard payment that went through: the order goes to the till. */
+  async function bookBarclaysPaid(o, email, creds, t) {
+    const [r] = await pool.execute(
+      "UPDATE dinein_orders SET status = 'placed', pay_status = 'paid', paid_minor = total_minor, pay_txn = ?," +
+        " paid_at = NOW(), note = LEFT(CONCAT('PAID ONLINE BY CARD. ', COALESCE(note, '')), 500)" +
+        " WHERE id = ? AND status = 'awaiting_payment'",
+      [String(t.paymentId).slice(0, 64), o.id]
+    );
+    if (!r.affectedRows) {
+      // Cancelled while the card was being read: the money goes straight back.
+      try { await bcClient.undo(creds, t.paymentId, { reference: `menu-${o.id}`, amountMinor: Number(o.total_minor) }); } catch (e) {
+        console.error('[dinein] Barclaycard give-back after cancel failed for', o.public_id, e.message);
+      }
+      return false;
+    }
+    // A test payment stops here: paid, but never sent to the till.
+    if (!Number(o.is_demo)) {
+      const [[n]] = await pool.query('SELECT COUNT(*) AS c FROM dinein_order_lines WHERE dinein_order_id = ?', [o.id]);
+      tellTill(email, { orderId: o.id, publicId: o.public_id, label: o.table_label, total: Number(o.total_minor), lineCount: Number(n.c) });
+    }
+    return true;
+  }
 
   router.get('/api/public/dinein/order/:publicId/pay', async (req, res, next) => {
     try {
@@ -2849,9 +2886,13 @@ function dineinRoutes({ pool, broadcast, secret }) {
       if (key && o.dojo_intent_id) await dojo.cancelIntent(key, o.dojo_intent_id);
       const [r] = await pool.execute(
         "UPDATE dinein_orders SET status = 'placed', pay_status = NULL, placed_at = NOW()" +
-          " WHERE id = ? AND status = 'awaiting_payment'",
+          " WHERE id = ? AND status = 'awaiting_payment' AND COALESCE(pay_status, '') NOT IN ('processing', 'verifying')",
         [o.id]
       );
+      if (!r.affectedRows) {
+        const [[st]] = await pool.query('SELECT status, pay_status FROM dinein_orders WHERE id = ?', [o.id]);
+        if (st && st.status === 'awaiting_payment') return res.status(409).json({ error: 'Your card payment is being confirmed right now. Wait a moment and look again.' });
+      }
       if (r.affectedRows) {
         const [[n]] = await pool.query('SELECT COUNT(*) AS c FROM dinein_order_lines WHERE dinein_order_id = ?', [o.id]);
         tellTill(email, { orderId: o.id, publicId: req.params.publicId, label: o.table_label, total: Number(o.total_minor), lineCount: Number(n.c) });
@@ -2877,11 +2918,14 @@ function dineinRoutes({ pool, broadcast, secret }) {
         if (still.status === 'awaiting_payment') {
           const key = w.pay_provider === 'teya' || w.pay_provider === 'barclays' ? null : await cardKeyFor(await emailOf(w.office_id));
           if (key && w.dojo_intent_id) await dojo.cancelIntent(key, w.dojo_intent_id);
-          await pool.execute(
+          const [gone] = await pool.execute(
             "UPDATE dinein_orders SET status = 'cancelled', pay_status = 'failed', status_note = ?" +
-              " WHERE id = ? AND status = 'awaiting_payment'",
+              " WHERE id = ? AND status = 'awaiting_payment' AND COALESCE(pay_status, '') NOT IN ('processing', 'verifying')",
             ['Cancelled before paying. Nothing was charged.', w.id]
           );
+          if (!gone.affectedRows) {
+            return res.status(409).json({ error: 'Your payment is being confirmed right now. Wait a moment and look again.' });
+          }
           return res.json({ ok: true, status: 'cancelled' });
         }
         return res.status(409).json({ error: 'Your payment has just gone through, so the order is with the kitchen. Please speak to a member of staff.' });

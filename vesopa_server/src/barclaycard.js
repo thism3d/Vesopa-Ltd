@@ -75,12 +75,56 @@ function originOf(req) {
  * A Barclaycard card form for [amountMinor], allowed on the page the visitor
  * is on: the signed session and what is in it. Throws BarclaycardError.
  */
-async function cardSession(creds, req, amountMinor) {
-  const jwt = await bc.captureContext(creds, { targetOrigins: [originOf(req)], amountMinor });
+async function cardSession(creds, req, amountMinor, reference) {
+  // complete: the form authenticates the cardholder (3-D Secure) and takes
+  // the payment itself; reference ties that payment to this order.
+  const jwt = await bc.captureContext(creds, { targetOrigins: [originOf(req)], amountMinor, reference, complete: true });
   const payload = JSON.parse(Buffer.from(String(jwt).split('.')[1], 'base64url').toString('utf8'));
   const data = (payload.ctx && payload.ctx[0] && payload.ctx[0].data) || {};
   if (!data.clientLibrary) throw new bc.BarclaycardError(502, 'NO_LIBRARY', 'Barclaycard sent no card form.');
-  return { jwt, lib: data.clientLibrary, integrity: data.clientLibraryIntegrity || '', allowed: data.allowedPaymentTypes || ['PANENTRY'] };
+  return { jwt, lib: data.clientLibrary, integrity: data.clientLibraryIntegrity || '', allowed: data.allowedPaymentTypes || ['PANENTRY'], complete: !!data.completeMandate };
+}
+
+/**
+ * Take a card from what the payment page sent: { complete } when the form
+ * authenticated and paid by itself (3-D Secure), { token } when it only
+ * tokenised the card (the server then pays). Barclaycard's record is the
+ * proof either way: the amount and our reference must match it.
+ *
+ * Answers { ok, paymentId, cardLast4, cardBrand, authCode } when paid,
+ * { ok: false, pending: true, paymentId } while Barclaycard's record is not
+ * there yet, or { ok: false, message } with a sentence for the customer.
+ * A payment that must not stand (soft decline, security code mismatch) is
+ * voided or reversed here before it answers.
+ */
+async function takeCard(creds, { token, complete, reference, amountMinor, billTo }) {
+  if (complete) {
+    const r = await bc.completedPayment(creds, complete);
+    if (!r) return { ok: false, message: 'The payment could not be confirmed. Nothing was charged; please try again.' };
+    if (r.pending) return { ok: false, pending: true, paymentId: r.id };
+    if (r.amountMinor !== amountMinor || (reference && r.reference && r.reference !== String(reference).slice(0, 50))) {
+      console.error('[barclaycard] completed payment does not match', r.id, r.amountMinor, amountMinor, r.reference, reference);
+      if (r.approved) { try { await bc.undo(creds, r.id, { reference: String(reference || r.id), amountMinor: r.amountMinor }); } catch (_) {} }
+      return { ok: false, message: 'That payment was for a different order, so it has been given back. Please try again.' };
+    }
+    if (r.soft) { try { await bc.undo(creds, r.id, { reference: String(reference), amountMinor }); } catch (_) {} }
+    if (!r.approved) return { ok: false, message: r.message };
+    return { ok: true, paymentId: r.id, cardLast4: r.cardLast4, cardBrand: r.cardBrand, authCode: r.approvalCode };
+  }
+  if (!token) return { ok: false, message: 'The card form gave no payment.' };
+  const p = await bc.pay(creds, { reference, amountMinor, transientToken: token, billTo });
+  const o = bc.outcomeOf(p);
+  if (o.soft && p.id) { try { await bc.undo(creds, p.id, { reference: String(reference), amountMinor }); } catch (_) {} }
+  if (!o.approved) return { ok: false, message: o.message };
+  const card = (p.paymentInformation && (p.paymentInformation.card || p.paymentInformation.tokenizedCard)) || {};
+  const acct = (p.paymentAccountInformation && p.paymentAccountInformation.card) || {};
+  return {
+    ok: true,
+    paymentId: String(p.id),
+    cardLast4: String(card.suffix || '').slice(-4) || null,
+    cardBrand: String(acct.brandName || acct.type || card.type || '').slice(0, 32) || null,
+    authCode: o.approvalCode,
+  };
 }
 
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -148,11 +192,11 @@ ${backUrl ? `<div class="foot"><a href="${esc(backUrl)}">${esc(backLabel)}</a></
   function done(text) {
     document.getElementById('card').innerHTML = '<div class="done"><div class="tick">&#10003;</div><div style="font-size:22px;font-weight:800">Paid</div><div style="color:#5c6470;margin-top:6px">' + text + '</div></div>';
   }
-  async function send(token) {
+  async function send(payload) {
     if (busy) return; busy = true;
-    say('Taking the payment…');
+    say('Confirming the payment…');
     try {
-      var r = await fetch(${JSON.stringify(postUrl)}, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: token }) });
+      var r = await fetch(${JSON.stringify(postUrl)}, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       var j = await r.json().catch(function () { return {}; });
       if (r.ok && j.ok) {
         if (j.redirect) { say('Paid. Thank you.', 'ok'); location.replace(j.redirect); return; }
@@ -163,15 +207,31 @@ ${backUrl ? `<div class="foot"><a href="${esc(backUrl)}">${esc(backLabel)}</a></
       stop((j.error || 'The payment did not go through.') + ' Nothing was charged.');
     } catch (e) { stop('The payment could not be confirmed. Ask a member of staff before trying again.'); }
   }
+  // The form checks the card with the bank (3-D Secure, the bank's own
+  // screen when it asks for one) and takes the payment; or, on an older
+  // session, hands back a token the server pays with.
+  async function pay(token) {
+    if (!${session.complete ? 'true' : 'false'}) return send({ token: token });
+    say('Checking the card with your bank…');
+    var result;
+    try { result = await up.complete(token); }
+    catch (e) {
+      fetch(${JSON.stringify(postUrl)}, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ declined: String((e && (e.reason || e.message)) || 'declined').slice(0, 80) }) }).catch(function () {});
+      stop('The card was declined, or the bank check was not finished. Nothing was charged.');
+      return;
+    }
+    send({ complete: result });
+  }
+  var up;
   (async function () {
-    var up;
     try {
       var accept = await Accept(${JSON.stringify(session.jwt)});
       up = await accept.unifiedPayments(false);
+      window.__up = up;
     } catch (e) { stop('The card form could not be loaded. Press Try again.'); return; }
     document.querySelectorAll('[data-w]').forEach(function (b) {
       b.onclick = async function () {
-        try { send(await up.createTrigger(b.getAttribute('data-w')).show()); }
+        try { pay(await up.createTrigger(b.getAttribute('data-w')).show()); }
         catch (e) { say('That wallet could not be used here. Pay by card below.', 'err'); }
       };
     });
@@ -179,7 +239,7 @@ ${backUrl ? `<div class="foot"><a href="${esc(backUrl)}">${esc(backLabel)}</a></
       // Straight to the card form: no button to press first.
       var shown = up.createTrigger('PANENTRY', { containers: { paymentScreen: '#form' } }).show();
       say('');
-      send(await shown);
+      pay(await shown);
     } catch (e) { stop('The card form was closed or could not be shown. Press Try again.'); }
   })();
 })();
@@ -196,6 +256,8 @@ function renderNotice(res, { venue, title, text, ok }) {
 h1{font-size:22px;margin:0 0 6px}p{margin:0;color:#5c6470}</style></head>
 <body><div class="c"><div class="i">${ok ? '&#10003;' : '!'}</div><div style="font-weight:700;color:#5c6470;font-size:14px">${esc(venue || '')}</div><h1>${esc(title)}</h1><p>${esc(text)}</p></div></body></html>`);
 }
+
+const settleVerifyingRef = { fn: null };
 
 function barclaycardRoutes({ pool, secret, broadcast = () => {} }) {
   const router = express.Router();
@@ -425,13 +487,14 @@ function barclaycardRoutes({ pool, secret, broadcast = () => {} }) {
     const final = paid || status === 'cancelled' || status === 'expired';
     return {
       id: row.id,
-      status: paid ? 'SUCCESSFUL' : status === 'processing' ? 'IN_PROGRESS' : final ? 'CANCELLED' : 'NEW',
-      progress: status === 'processing' ? 'CARD_PRESENTED' : row.opened_at ? 'WAITING_FOR_CARD_ENTRY' : null,
+      status: paid ? 'SUCCESSFUL' : status === 'processing' || status === 'verifying' ? 'IN_PROGRESS' : final ? 'CANCELLED' : 'NEW',
+      progress: status === 'processing' || status === 'verifying' ? 'CARD_PRESENTED' : row.opened_at ? 'WAITING_FOR_CARD_ENTRY' : null,
       reason: status === 'expired' ? 'EXPIRED' : null,
       final,
       outcome: paid ? 'approved' : final ? 'cancelled' : 'pending',
       message: paid ? 'Paid'
         : status === 'processing' ? 'Taking the payment…'
+        : status === 'verifying' ? 'Paid on the phone; confirming with Barclaycard…'
         : status === 'expired' ? 'The payment page timed out. No money was taken.'
         : status === 'cancelled' ? 'Cancelled. No money was taken.'
         : row.message || (row.opened_at ? 'The customer has the payment page open.' : 'Waiting for the customer to scan the code.'),
@@ -480,8 +543,9 @@ function barclaycardRoutes({ pool, secret, broadcast = () => {} }) {
       const until = Date.now() + wait;
       let row = await payRow(req.params.id);
       if (!row || row.office !== req.office) return res.status(404).json({ error: 'No such payment.' });
+      if (row.status === 'verifying' && settleVerifyingRef.fn) row = await settleVerifyingRef.fn(row);
       const seen = `${row.status}|${row.opened_at}|${row.message}`;
-      while (Date.now() < until && `${row.status}|${row.opened_at}|${row.message}` === seen && (row.status === 'pending' || row.status === 'processing')) {
+      while (Date.now() < until && `${row.status}|${row.opened_at}|${row.message}` === seen && (row.status === 'pending' || row.status === 'processing' || row.status === 'verifying')) {
         await new Promise((r) => setTimeout(r, 1000));
         row = await payRow(req.params.id);
       }
@@ -500,7 +564,9 @@ function barclaycardRoutes({ pool, secret, broadcast = () => {} }) {
       const [r] = await pool.execute("UPDATE epos_barclaycard_payments SET status = 'cancelled' WHERE id = ? AND status = 'pending'", [row.id]);
       if (r.affectedRows) return res.json({ ok: true, message: 'Cancelled. The payment page no longer takes payment.' });
       const now = await payRow(row.id);
-      res.json({ ok: false, status: now.status, message: now.status === 'processing' ? 'Too late to cancel: the customer is paying now. Wait for the result.' : 'This payment has already finished.' });
+      res.json({ ok: false, status: now.status, message: now.status === 'processing' ? 'Too late to cancel: the customer is paying now. Wait for the result.'
+        : now.status === 'verifying' ? 'The customer has paid on their phone; the till is confirming it with Barclaycard. Wait for the result.'
+        : 'This payment has already finished.' });
     } catch (e) { fail(res, e, next); }
   });
 
@@ -547,7 +613,7 @@ function barclaycardRoutes({ pool, secret, broadcast = () => {} }) {
       }
       const creds = await credsFor(pool, row.office, row.environment);
       if (!creds) return renderNotice(res, { venue, title: 'Card payments are not available', text: 'Please pay at the till.', ok: false });
-      const session = await cardSession(creds, req, row.amount_minor);
+      const session = await cardSession(creds, req, row.amount_minor, row.reference || `till-${row.id}`);
       await pool.execute('UPDATE epos_barclaycard_payments SET opened_at = COALESCE(opened_at, NOW()) WHERE id = ?', [row.id]);
       broadcast({ type: 'barclaycard-payment', id: row.id }, { office: row.office });
       renderCardPage(res, { session, venue, title: 'Pay at the till', amountMinor: row.amount_minor, env: row.environment, postUrl: `/api/public/barclaycard/pay/${row.id}` });
@@ -557,45 +623,85 @@ function barclaycardRoutes({ pool, secret, broadcast = () => {} }) {
     }
   });
 
+  /** Paid: record it and tell the till. */
+  async function markPaid(row, t) {
+    await pool.execute(
+      "UPDATE epos_barclaycard_payments SET status = 'paid', payment_id = ?, card_last4 = ?, card_brand = ?, auth_code = ?, message = NULL, paid_at = NOW() WHERE id = ?",
+      [String(t.paymentId).slice(0, 64), t.cardLast4 || null, t.cardBrand ? String(t.cardBrand).slice(0, 32) : null, t.authCode ? String(t.authCode).slice(0, 32) : null, row.id]
+    );
+    broadcast({ type: 'barclaycard-payment', id: row.id }, { office: row.office });
+  }
+
+  /** A payment the form took whose record had not appeared yet: look again. */
+  async function settleVerifying(row) {
+    if (row.status !== 'verifying' || !row.payment_id) return row;
+    const creds = await credsFor(pool, row.office, row.environment);
+    if (!creds) return row;
+    try {
+      const r = await bc.completedPayment(creds, row.payment_id, { tries: 1 });
+      if (!r || r.pending) {
+        // Barclaycard has no such payment after five minutes: it was not
+        // taken (or the answer was not genuine). Open again, and say so.
+        if (Date.now() - new Date(row.updated_at).getTime() > 5 * 60000) {
+          await pool.execute("UPDATE epos_barclaycard_payments SET status = 'pending', payment_id = NULL, message = ? WHERE id = ? AND status = 'verifying'",
+            ['Barclaycard could not confirm a payment. Ask the customer to check their banking app before paying again.', row.id]);
+          broadcast({ type: 'barclaycard-payment', id: row.id }, { office: row.office });
+        }
+        return payRow(row.id);
+      }
+      if (r && !r.pending) {
+        if (r.approved && r.amountMinor === row.amount_minor) {
+          await markPaid(row, { paymentId: r.id, cardLast4: r.cardLast4, cardBrand: r.cardBrand, authCode: r.approvalCode });
+        } else {
+          if (r.soft) { try { await bc.undo(creds, r.id, { reference: row.reference || row.id, amountMinor: row.amount_minor }); } catch (_) {} }
+          await pool.execute("UPDATE epos_barclaycard_payments SET status = 'pending', payment_id = NULL, message = ? WHERE id = ? AND status = 'verifying'", [r.message, row.id]);
+          broadcast({ type: 'barclaycard-payment', id: row.id }, { office: row.office });
+        }
+      }
+    } catch (e) { console.error('[barclaycard] verify', row.id, e.message); }
+    return payRow(row.id);
+  }
+  settleVerifyingRef.fn = settleVerifying;
+
   router.post('/public/barclaycard/pay/:id', express.json({ limit: '64kb' }), async (req, res, next) => {
     try {
-      const token = String((req.body && req.body.token) || '');
+      const b = req.body || {};
       const row = await payRow(req.params.id);
       if (!row) return res.status(404).json({ error: 'No such payment.' });
       if (row.status === 'paid') return res.json({ ok: true, message: 'Already paid. Thank you.' });
+      if (b.declined) {
+        // The form says the bank said no (or the check was not finished).
+        if (row.status === 'pending') {
+          await pool.execute('UPDATE epos_barclaycard_payments SET message = ? WHERE id = ?', ['The card was declined. The customer can try another card.', row.id]);
+          broadcast({ type: 'barclaycard-payment', id: row.id }, { office: row.office });
+        }
+        return res.json({ ok: false });
+      }
       if (row.status !== 'pending') return res.status(409).json({ error: 'This payment has closed. Ask a member of staff for a new code.' });
-      if (!token || token.length > 20000) return res.status(400).json({ error: 'The card form gave no payment.' });
       const creds = await credsFor(pool, row.office, row.environment);
       if (!creds) return res.status(409).json({ error: 'Card payments are not available. Please pay at the till.' });
       const [claim] = await pool.execute("UPDATE epos_barclaycard_payments SET status = 'processing', message = NULL WHERE id = ? AND status = 'pending'", [row.id]);
       if (!claim.affectedRows) return res.status(409).json({ error: 'This payment is already being taken. Wait a moment.' });
       broadcast({ type: 'barclaycard-payment', id: row.id }, { office: row.office });
-      let p;
+      let t;
       try {
-        p = await bc.pay(creds, { reference: row.reference || `till-${row.id}`, amountMinor: row.amount_minor, transientToken: token, billTo: { name: 'Till Customer' } });
+        t = await takeCard(creds, { token: b.token ? String(b.token).slice(0, 20000) : null, complete: b.complete || null, reference: row.reference || `till-${row.id}`, amountMinor: row.amount_minor, billTo: { name: 'Till Customer' } });
       } catch (e) {
-        const declined = e instanceof bc.BarclaycardError && e.status >= 400 && e.status < 500;
-        await pool.execute("UPDATE epos_barclaycard_payments SET status = 'pending', message = ? WHERE id = ? AND status = 'processing'",
-          [declined ? 'The card was declined. The customer can try another card.' : 'Barclaycard did not answer. The customer can try again.', row.id]);
-        broadcast({ type: 'barclaycard-payment', id: row.id }, { office: row.office });
-        return res.status(declined ? 402 : 502).json({ error: declined ? 'The card was declined.' : 'Barclaycard did not answer.' });
+        console.error('[barclaycard] till payment', row.id, e.message);
+        t = { ok: false, message: 'Barclaycard did not answer. Please try again.' };
       }
-      if (!bc.approved(p)) {
-        await pool.execute("UPDATE epos_barclaycard_payments SET status = 'pending', message = ? WHERE id = ? AND status = 'processing'",
-          ['The card was declined. The customer can try another card.', row.id]);
+      if (t.pending) {
+        await pool.execute("UPDATE epos_barclaycard_payments SET status = 'verifying', payment_id = ? WHERE id = ?", [String(t.paymentId).slice(0, 64), row.id]);
         broadcast({ type: 'barclaycard-payment', id: row.id }, { office: row.office });
-        return res.status(402).json({ error: 'The card was declined.' });
+        return res.json({ ok: true, message: 'Payment received. The till is confirming it with Barclaycard.' });
       }
-      const card = (p.paymentInformation && (p.paymentInformation.card || p.paymentInformation.tokenizedCard)) || {};
-      const acct = (p.paymentAccountInformation && p.paymentAccountInformation.card) || {};
-      const last4 = String(card.suffix || '').slice(-4) || null;
-      const brand = String(acct.brandName || acct.type || card.type || '').slice(0, 32) || null;
-      const auth = (p.processorInformation && p.processorInformation.approvalCode) || null;
-      await pool.execute(
-        "UPDATE epos_barclaycard_payments SET status = 'paid', payment_id = ?, card_last4 = ?, card_brand = ?, auth_code = ?, paid_at = NOW() WHERE id = ?",
-        [String(p.id).slice(0, 64), last4, brand, auth ? String(auth).slice(0, 32) : null, row.id]
-      );
-      broadcast({ type: 'barclaycard-payment', id: row.id }, { office: row.office });
+      if (!t.ok) {
+        await pool.execute("UPDATE epos_barclaycard_payments SET status = 'pending', message = ? WHERE id = ? AND status = 'processing'",
+          [`${t.message} The customer can try again.`.slice(0, 255), row.id]);
+        broadcast({ type: 'barclaycard-payment', id: row.id }, { office: row.office });
+        return res.status(402).json({ error: t.message });
+      }
+      await markPaid(row, t);
       res.json({ ok: true, message: `£${pounds(row.amount_minor)} paid. Thank you, you can close this page.` });
     } catch (e) { next(e); }
   });
@@ -603,4 +709,4 @@ function barclaycardRoutes({ pool, secret, broadcast = () => {} }) {
   return router;
 }
 
-module.exports = { barclaycardRoutes, settingsFor, credsFor, onlineFor, tillFor, cardSession, renderCardPage, renderNotice };
+module.exports = { barclaycardRoutes, settingsFor, credsFor, onlineFor, tillFor, cardSession, renderCardPage, renderNotice, takeCard };
