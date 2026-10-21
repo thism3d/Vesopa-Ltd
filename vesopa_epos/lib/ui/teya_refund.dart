@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../data/till_permissions.dart';
 import '../main.dart';
+import '../payments/barclaycard_provider.dart';
 import '../payments/card_log.dart';
 import '../payments/payment_provider.dart';
 import '../payments/teya_provider.dart';
@@ -29,11 +30,21 @@ Future<int> refundTeyaPayment(
   int alreadyRefundedMinor = 0,
   String? orderId,
 }) async {
-  final teya = ref.read(teyaProvider);
+  // A Barclaycard payment always goes back through Barclaycard, even after
+  // the venue has switched its tills to something else.
+  final token = ref.read(sessionProvider).terminalToken;
+  final TeyaCard? teya = isBarclaycardReference(reference)
+      ? (token == null || token.isEmpty
+            ? null
+            : BarclaycardProvider(apiBase: ref.read(apiBaseProvider), token: token))
+      : ref.read(teyaProvider);
   if (teya == null) {
-    _say(context, 'This till is not set up for Teya, so a Teya payment cannot be refunded here.');
+    _say(context, isBarclaycardReference(reference)
+        ? 'This till is not signed in, so a Barclaycard payment cannot be refunded here.'
+        : 'This till is not set up for Teya, so a Teya payment cannot be refunded here.');
     return 0;
   }
+  final brand = teya.brand;
   if (!await allowed(context, ref, TillPermission.refund)) return 0;
   if (!context.mounted) return 0;
 
@@ -53,7 +64,7 @@ Future<int> refundTeyaPayment(
 
   final amount = await showDialog<int>(
     context: context,
-    builder: (_) => _TeyaRefundDialog(refundableMinor: refundable, alreadyRefundedMinor: gone),
+    builder: (_) => _TeyaRefundDialog(refundableMinor: refundable, alreadyRefundedMinor: gone, brand: brand),
   );
   if (amount == null || amount <= 0 || !context.mounted) return 0;
 
@@ -63,11 +74,11 @@ Future<int> refundTeyaPayment(
     context: context,
     barrierDismissible: false,
     useRootNavigator: true,
-    builder: (_) => const AlertDialog(
+    builder: (_) => AlertDialog(
       content: Row(children: [
-        SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5)),
-        SizedBox(width: 16),
-        Expanded(child: Text('Sending the refund to Teya…')),
+        const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5)),
+        const SizedBox(width: 16),
+        Expanded(child: Text('Sending the refund to $brand…')),
       ]),
     ),
   );
@@ -111,7 +122,9 @@ void _say(BuildContext context, String text) {
 }
 
 class _TeyaRefundDialog extends StatefulWidget {
-  const _TeyaRefundDialog({required this.refundableMinor, this.alreadyRefundedMinor = 0});
+  const _TeyaRefundDialog({required this.refundableMinor, this.alreadyRefundedMinor = 0, this.brand = 'Teya'});
+
+  final String brand;
   final int refundableMinor;
   final int alreadyRefundedMinor;
 
@@ -135,7 +148,7 @@ class _TeyaRefundDialogState extends State<_TeyaRefundDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Refund with Teya'),
+      title: Text('Refund with ${widget.brand}'),
       content: SizedBox(
         width: 380,
         child: Column(

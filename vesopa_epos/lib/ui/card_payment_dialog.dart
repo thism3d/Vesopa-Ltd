@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../payments/connect_pac.dart';
 import '../payments/dojo_desktop.dart';
 import '../payments/payment_provider.dart';
+import 'widgets/wallet_qr.dart';
 
 /// The steps a card sale walks through, in the order a customer experiences
 /// them. This is the clerk's view of the reader, not Dojo's state machine —
@@ -178,9 +179,14 @@ class CardPaymentState {
     this.checking = false,
     this.checkNote,
     this.checkSaysPaid = false,
+    this.payUrl,
   });
 
   final CardStep step;
+
+  /// A page the customer pays on with their own phone (Barclaycard): drawn
+  /// as a QR code while the payment waits.
+  final String? payUrl;
 
   /// The reader's own words, when it has given any.
   final String? readerPrompt;
@@ -223,8 +229,10 @@ class CardPaymentState {
     bool? checking,
     String? checkNote,
     bool? checkSaysPaid,
+    String? payUrl,
   }) =>
       CardPaymentState(
+        payUrl: payUrl ?? this.payUrl,
         step: step ?? this.step,
         readerPrompt: readerPrompt ?? this.readerPrompt,
         terminalLabel: terminalLabel ?? this.terminalLabel,
@@ -349,11 +357,14 @@ class CardPaymentView extends StatelessWidget {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        _StageArt(
-                          step: outcome == CardOutcome.approved ? CardStep.done : step,
-                          failed: failed,
-                          outcome: outcome,
-                        ),
+                        if (state.payUrl != null && outcome == null)
+                          _PayQr(url: state.payUrl!)
+                        else
+                          _StageArt(
+                            step: outcome == CardOutcome.approved ? CardStep.done : step,
+                            failed: failed,
+                            outcome: outcome,
+                          ),
                         const SizedBox(height: 28),
 
                         // The instruction. Swapped with a fade+slide so a
@@ -871,6 +882,38 @@ class _SignatureActions extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// The code the customer scans to pay on their phone (Barclaycard).
+class _PayQr extends StatelessWidget {
+  const _PayQr({required this.url});
+
+  final String url;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: const [BoxShadow(color: Color(0x22000000), blurRadius: 18, offset: Offset(0, 6))],
+          ),
+          child: WalletQr(data: url, size: 240),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          'Scan to pay by card, Apple Pay or Google Pay',
+          textAlign: TextAlign.center,
+          style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+        ),
+      ],
     );
   }
 }

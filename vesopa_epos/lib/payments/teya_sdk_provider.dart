@@ -30,6 +30,12 @@ class TeyaSdkProvider implements TeyaCard {
   final TeyaSdk _sdk;
 
   @override
+  String get brand => 'Teya';
+
+  @override
+  void Function(String url)? onPayLink;
+
+  @override
   String get method => 'card';
 
   @override

@@ -9,10 +9,11 @@
  */
 'use strict';
 
+const crypto = require('crypto');
 const express = require('express');
 
 const bc = require('./barclaycard_client');
-const { requireAuth } = require('./auth');
+const { requireAuth, requireTerminal } = require('./auth');
 const { attachAccess, requirePermission } = require('./permissions');
 const { seal, unseal } = require('./express_kiosk');
 
@@ -56,7 +57,147 @@ async function onlineFor(db, office) {
   return creds ? { env: creds.env, creds } : null;
 }
 
-function barclaycardRoutes({ pool, secret }) {
+/** Whether the venue's tills take cards with Barclaycard (on the customer's phone), or null. */
+async function tillFor(db, office) {
+  const s = await settingsFor(db, office);
+  if (!Number(s.till_enabled)) return null;
+  const creds = await credsFor(db, office, s.environment);
+  return creds ? { env: creds.env, creds } : null;
+}
+
+/** The https origin the visitor is on, through a reverse proxy too. */
+function originOf(req) {
+  const host = String(req.headers['x-forwarded-host'] || req.get('host') || '').split(',')[0].trim();
+  return `https://${host}`;
+}
+
+/**
+ * A Barclaycard card form for [amountMinor], allowed on the page the visitor
+ * is on: the signed session and what is in it. Throws BarclaycardError.
+ */
+async function cardSession(creds, req, amountMinor) {
+  const jwt = await bc.captureContext(creds, { targetOrigins: [originOf(req)], amountMinor });
+  const payload = JSON.parse(Buffer.from(String(jwt).split('.')[1], 'base64url').toString('utf8'));
+  const data = (payload.ctx && payload.ctx[0] && payload.ctx[0].data) || {};
+  if (!data.clientLibrary) throw new bc.BarclaycardError(502, 'NO_LIBRARY', 'Barclaycard sent no card form.');
+  return { jwt, lib: data.clientLibrary, integrity: data.clientLibraryIntegrity || '', allowed: data.allowedPaymentTypes || ['PANENTRY'] };
+}
+
+const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const pounds = (minor) => (Number(minor) / 100).toFixed(2);
+
+/**
+ * The payment page (2026-10-21): the card form is open the moment the page
+ * is, with no "pay by card" button to press first, and Apple Pay / Google Pay
+ * buttons above it when the venue's Barclaycard account offers them. Used by
+ * the menu (dinein.js) and by a till's pay-on-your-phone QR code.
+ *
+ * The page POSTs Barclaycard's one-time token to [postUrl], which answers
+ * { ok, redirect? } or { error }. A token answers once: Try again loads a
+ * fresh form. Nothing here loops.
+ */
+function renderCardPage(res, { session, venue, title, detail, amountMinor, env, postUrl, backUrl, backLabel = 'Back' }) {
+  const libOrigin = new URL(session.lib).origin;
+  const wallets = session.allowed.filter((t) => t === 'APPLEPAY' || t === 'GOOGLEPAY');
+  res.set('Cache-Control', 'no-store');
+  res.set('Content-Security-Policy', `default-src 'self' ${libOrigin} https://*.cybersource.com https://pay.google.com https://*.google.com https://*.gstatic.com https://applepay.cdn-apple.com; script-src 'self' 'unsafe-inline' ${libOrigin} https://pay.google.com https://*.gstatic.com https://applepay.cdn-apple.com; style-src 'self' 'unsafe-inline' ${libOrigin}; img-src * data:; frame-src *; connect-src *`);
+  res.type('html').send(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#16181d">
+<title>Pay £${pounds(amountMinor)} · ${esc(venue || 'Vesopa')}</title>
+<style>
+:root{color-scheme:light}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:linear-gradient(180deg,#16181d 0,#16181d 210px,#f4f5f7 210px);color:#16181d;font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;display:flex;justify-content:center}
+.wrap{width:100%;max-width:460px;padding:20px 16px 32px}
+.top{color:#fff;padding:6px 4px 18px}
+.venue{font-weight:700;font-size:15px;opacity:.85}
+.amt{font-size:40px;font-weight:800;letter-spacing:-.5px;margin:6px 0 2px}
+.sub{font-size:14px;opacity:.75}
+.card{background:#fff;border-radius:20px;box-shadow:0 10px 34px rgba(16,19,26,.12);padding:18px}
+.test{display:inline-block;background:#fff4d6;color:#8a5300;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:700;margin-bottom:10px}
+.wallets{display:grid;gap:10px;margin-bottom:12px}
+.wallets button{height:52px;border:0;border-radius:12px;background:#000;color:#fff;font-size:17px;font-weight:600;cursor:pointer}
+.or{display:flex;align-items:center;gap:10px;color:#8b93a1;font-size:13px;margin:4px 0 12px}.or:before,.or:after{content:"";flex:1;height:1px;background:#e6e8ec}
+#form{min-height:330px}
+#msg{margin-top:12px;font-size:14px;color:#5c6470;min-height:20px}#msg.err{color:#b42318;font-weight:600}#msg.ok{color:#1d7a46;font-weight:700}
+#again{display:none;margin-top:12px;width:100%;height:48px;border:0;border-radius:12px;background:#16181d;color:#fff;font-weight:700;font-size:16px;cursor:pointer}
+.done{text-align:center;padding:28px 6px}.done .tick{width:72px;height:72px;border-radius:50%;background:#e8f6ee;color:#1d7a46;display:grid;place-items:center;font-size:40px;margin:0 auto 12px}
+.foot{margin-top:14px;text-align:center;font-size:13px;color:#6b7280}.foot a{color:#374151}
+.lock{display:flex;justify-content:center;gap:6px;align-items:center;margin-top:10px;font-size:12px;color:#8b93a1}
+</style>
+<script src="${esc(session.lib)}"${session.integrity ? ` integrity="${esc(session.integrity)}" crossorigin="anonymous"` : ''}></script>
+</head><body><div class="wrap">
+<div class="top"><div class="venue">${esc(venue || '')}</div><div class="amt">£${pounds(amountMinor)}</div><div class="sub">${esc(title || '')}${detail ? ' · ' + esc(detail) : ''}</div></div>
+<main class="card" id="card">
+${env === 'live' ? '' : '<span class="test">TEST PAYMENT · no real money</span>'}
+${wallets.length ? `<div class="wallets">${wallets.map((w) => `<button type="button" data-w="${w}">${w === 'APPLEPAY' ? 'Pay with Apple Pay' : 'Pay with Google Pay'}</button>`).join('')}</div><div class="or">or pay by card</div>` : ''}
+<div id="form"></div>
+<div id="msg">Loading the secure card form…</div>
+<button id="again" type="button">Try again</button>
+<div class="lock">&#128274; Card details go straight to Barclaycard</div>
+</main>
+${backUrl ? `<div class="foot"><a href="${esc(backUrl)}">${esc(backLabel)}</a></div>` : ''}
+</div>
+<script>
+(function () {
+  var msg = document.getElementById('msg'), again = document.getElementById('again');
+  var busy = false;
+  function say(t, cls) { msg.textContent = t || ''; msg.className = cls || ''; }
+  function stop(t) { say(t, 'err'); again.style.display = 'block'; busy = false; }
+  again.onclick = function () { location.reload(); };
+  function done(text) {
+    document.getElementById('card').innerHTML = '<div class="done"><div class="tick">&#10003;</div><div style="font-size:22px;font-weight:800">Paid</div><div style="color:#5c6470;margin-top:6px">' + text + '</div></div>';
+  }
+  async function send(token) {
+    if (busy) return; busy = true;
+    say('Taking the payment…');
+    try {
+      var r = await fetch(${JSON.stringify(postUrl)}, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: token }) });
+      var j = await r.json().catch(function () { return {}; });
+      if (r.ok && j.ok) {
+        if (j.redirect) { say('Paid. Thank you.', 'ok'); location.replace(j.redirect); return; }
+        done(j.message || 'Thank you. You can close this page.');
+        return;
+      }
+      if (j.redirect && r.status !== 402) { location.replace(j.redirect); return; }
+      stop((j.error || 'The payment did not go through.') + ' Nothing was charged.');
+    } catch (e) { stop('The payment could not be confirmed. Ask a member of staff before trying again.'); }
+  }
+  (async function () {
+    var up;
+    try {
+      var accept = await Accept(${JSON.stringify(session.jwt)});
+      up = await accept.unifiedPayments(false);
+    } catch (e) { stop('The card form could not be loaded. Press Try again.'); return; }
+    document.querySelectorAll('[data-w]').forEach(function (b) {
+      b.onclick = async function () {
+        try { send(await up.createTrigger(b.getAttribute('data-w')).show()); }
+        catch (e) { say('That wallet could not be used here. Pay by card below.', 'err'); }
+      };
+    });
+    try {
+      // Straight to the card form: no button to press first.
+      var shown = up.createTrigger('PANENTRY', { containers: { paymentScreen: '#form' } }).show();
+      say('');
+      send(await shown);
+    } catch (e) { stop('The card form was closed or could not be shown. Press Try again.'); }
+  })();
+})();
+</script></body></html>`);
+}
+
+/** A page with one sentence, in the same look, for a payment that is over. */
+function renderNotice(res, { venue, title, text, ok }) {
+  res.set('Cache-Control', 'no-store');
+  res.type('html').send(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${esc(title)}</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f4f5f7;color:#16181d;font:16px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}
+.c{max-width:420px;margin:16px;padding:28px;border-radius:20px;background:#fff;box-shadow:0 10px 34px rgba(16,19,26,.12);text-align:center}
+.i{width:68px;height:68px;border-radius:50%;margin:0 auto 12px;display:grid;place-items:center;font-size:36px;background:${ok ? '#e8f6ee;color:#1d7a46' : '#fdecea;color:#b42318'}}
+h1{font-size:22px;margin:0 0 6px}p{margin:0;color:#5c6470}</style></head>
+<body><div class="c"><div class="i">${ok ? '&#10003;' : '!'}</div><div style="font-weight:700;color:#5c6470;font-size:14px">${esc(venue || '')}</div><h1>${esc(title)}</h1><p>${esc(text)}</p></div></body></html>`);
+}
+
+function barclaycardRoutes({ pool, secret, broadcast = () => {} }) {
   const router = express.Router();
   const auth = requireAuth(secret);
   const attach = attachAccess({ pool });
@@ -84,6 +225,7 @@ function barclaycardRoutes({ pool, secret }) {
     };
     return {
       enabled: !!Number(s.enabled),
+      till_enabled: !!Number(s.till_enabled),
       environment: bc.cleanEnv(s.environment),
       keys: { sandbox: await keyView('sandbox'), live: await keyView('live') },
     };
@@ -101,14 +243,15 @@ function barclaycardRoutes({ pool, secret }) {
       const b = req.body || {};
       const enabled = b.enabled === undefined ? Number(cur.enabled) : (b.enabled ? 1 : 0);
       const environment = bc.cleanEnv(b.environment === undefined ? cur.environment : b.environment);
-      if (enabled && !(await credsFor(pool, office, environment))) {
-        return res.status(409).json({ error: `Save the ${environment} keys first, then turn Barclaycard on.` });
+      if ((enabled || Number(cur.till_enabled)) && !(await credsFor(pool, office, environment))) {
+        return res.status(409).json({ error: `Save the ${environment} keys first: Barclaycard is in use, and would stop working without them.` });
       }
       await pool.execute(
         `INSERT INTO epos_barclaycard_settings (office, enabled, environment, updated_by) VALUES (?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE enabled = VALUES(enabled), environment = VALUES(environment), updated_by = VALUES(updated_by)`,
         [office, enabled, environment, req.user.email || null]
       );
+      broadcast({ type: 'barclaycard-settings' }, { office });
       res.json(await view(office));
     } catch (e) { fail(res, e, next); }
   });
@@ -158,7 +301,8 @@ function barclaycardRoutes({ pool, secret }) {
       const env = bc.cleanEnv(req.params.env);
       await pool.execute('DELETE FROM epos_barclaycard_keys WHERE office = ? AND environment = ?', [office, env]);
       // Keys gone in the environment in use: the menu goes back to Teya or Dojo.
-      await pool.execute('UPDATE epos_barclaycard_settings SET enabled = 0 WHERE office = ? AND environment = ?', [office, env]);
+      await pool.execute('UPDATE epos_barclaycard_settings SET enabled = 0, till_enabled = 0 WHERE office = ? AND environment = ?', [office, env]);
+      broadcast({ type: 'barclaycard-settings' }, { office });
       res.json(await view(office));
     } catch (e) { fail(res, e, next); }
   });
@@ -187,7 +331,276 @@ function barclaycardRoutes({ pool, secret }) {
     } catch (e) { fail(res, e, next); }
   });
 
+  // ---- One switch per venue: who takes the tills' and the menu's cards ----------
+
+  const teyaVenue = () => require('./teya');
+
+  async function teyaRow(office) {
+    return teyaVenue().settingsFor(pool, office);
+  }
+
+  async function providersView(office) {
+    const b = await settingsFor(pool, office);
+    const t = await teyaRow(office);
+    const tEnv = String(t.environment || 'sandbox') === 'live' ? 'live' : 'sandbox';
+    const conn = await teyaVenue().connectionFor(pool, office, tEnv);
+    const bcReady = !!(await credsFor(pool, office, b.environment));
+    const tills = Number(b.till_enabled) && bcReady ? 'barclays'
+      : Number(t.enabled) && t.card_provider === 'teya' ? 'teya' : 'dojo';
+    const online = Number(b.enabled) && bcReady ? 'barclays'
+      : Number(t.enabled) && t.online_provider === 'teya' ? 'teya' : 'dojo';
+    return {
+      tills,
+      online,
+      environments: { teya: tEnv, barclays: bc.cleanEnv(b.environment) },
+      available: {
+        tills: { dojo: true, teya: !!(conn && conn.m2m_client_id), barclays: bcReady },
+        online: { dojo: true, teya: !!(conn && conn.online_client_id), barclays: bcReady },
+      },
+      why: {
+        teya_tills: conn && conn.m2m_client_id ? null : 'Connect Teya and choose its store first (Teya tab).',
+        teya_online: conn && conn.online_client_id ? null : 'Connect Teya online payments first (Teya tab).',
+        barclays: bcReady ? null : 'Save the Barclaycard keys first (Barclaycard tab).',
+      },
+    };
+  }
+
+  router.get('/payment-providers', guard('commerce.tender'), async (req, res, next) => {
+    try { res.json(await providersView(await tenantEmail(req))); } catch (e) { fail(res, e, next); }
+  });
+
+  /**
+   * Switch who takes the cards, in one tap: { tills: 'dojo'|'teya'|'barclays' }
+   * and/or { online: ... }. Written into each acquirer's own settings, so
+   * everything that already reads them (the tills, the menu) follows at once.
+   */
+  router.put('/payment-providers', guard('commerce.edit'), async (req, res, next) => {
+    try {
+      const office = await tenantEmail(req);
+      const b = req.body || {};
+      const ok = new Set(['dojo', 'teya', 'barclays']);
+      const view = await providersView(office);
+      for (const k of ['tills', 'online']) {
+        if (b[k] === undefined) continue;
+        if (!ok.has(b[k])) return res.status(400).json({ error: 'Choose Dojo, Teya or Barclaycard.' });
+        if (!view.available[k][b[k]]) {
+          return res.status(409).json({ error: b[k] === 'barclays' ? view.why.barclays : k === 'tills' ? view.why.teya_tills : view.why.teya_online });
+        }
+      }
+      const who = req.user.email || null;
+      const bset = async (col, v) => pool.execute(
+        `INSERT INTO epos_barclaycard_settings (office, ${col}, updated_by) VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE ${col} = VALUES(${col}), updated_by = VALUES(updated_by)`, [office, v, who]);
+      const tset = async (col, v) => pool.execute(
+        `INSERT INTO epos_teya_settings (office, enabled, ${col}, updated_by) VALUES (?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE ${v === 'teya' ? 'enabled = 1, ' : ''}${col} = VALUES(${col}), updated_by = VALUES(updated_by)`,
+        [office, v === 'teya' ? 1 : 0, v, who]);
+      if (b.tills !== undefined) {
+        await bset('till_enabled', b.tills === 'barclays' ? 1 : 0);
+        await tset('card_provider', b.tills === 'teya' ? 'teya' : 'dojo');
+      }
+      if (b.online !== undefined) {
+        await bset('enabled', b.online === 'barclays' ? 1 : 0);
+        await tset('online_provider', b.online === 'teya' ? 'teya' : 'dojo');
+      }
+      broadcast({ type: 'teya-settings' }, { office });
+      broadcast({ type: 'dojo-settings' }, { office });
+      broadcast({ type: 'barclaycard-settings' }, { office });
+      res.json(await providersView(office));
+    } catch (e) { fail(res, e, next); }
+  });
+
+  // ---- The tills: pay on the customer's phone ------------------------------------
+
+  const PAY_MINUTES = 15;
+
+  async function payRow(id) {
+    const [[row]] = await pool.query('SELECT * FROM epos_barclaycard_payments WHERE id = ?', [String(id).slice(0, 32)]);
+    return row || null;
+  }
+
+  function payView(row) {
+    const status = row.status;
+    const paid = status === 'paid';
+    const final = paid || status === 'cancelled' || status === 'expired';
+    return {
+      id: row.id,
+      status: paid ? 'SUCCESSFUL' : status === 'processing' ? 'IN_PROGRESS' : final ? 'CANCELLED' : 'NEW',
+      progress: status === 'processing' ? 'CARD_PRESENTED' : row.opened_at ? 'WAITING_FOR_CARD_ENTRY' : null,
+      reason: status === 'expired' ? 'EXPIRED' : null,
+      final,
+      outcome: paid ? 'approved' : final ? 'cancelled' : 'pending',
+      message: paid ? 'Paid'
+        : status === 'processing' ? 'Taking the payment…'
+        : status === 'expired' ? 'The payment page timed out. No money was taken.'
+        : status === 'cancelled' ? 'Cancelled. No money was taken.'
+        : row.message || (row.opened_at ? 'The customer has the payment page open.' : 'Waiting for the customer to scan the code.'),
+      gateway_payment_id: row.payment_id || null,
+      card_last4: row.card_last4 || null,
+      card_brand: row.card_brand || null,
+      auth_code: row.auth_code || null,
+      tip_minor: 0,
+      amount_minor: row.amount_minor,
+      environment: row.environment,
+    };
+  }
+
+  /** Whether this till takes cards with Barclaycard, and where. */
+  router.get('/till/barclaycard/config', requireTerminal(secret), async (req, res, next) => {
+    try {
+      const t = await tillFor(pool, req.office);
+      res.json({ enabled: !!t, environment: t ? t.env : bc.cleanEnv((await settingsFor(pool, req.office)).environment) });
+    } catch (e) { fail(res, e, next); }
+  });
+
+  /** Start a payment: answers the page the till shows as a QR code. */
+  router.post('/till/barclaycard/payments', requireTerminal(secret), async (req, res, next) => {
+    try {
+      const t = await tillFor(pool, req.office);
+      if (!t) return res.status(409).json({ error: 'This venue\'s tills do not take cards with Barclaycard. Choose it in the back office, Card Payments.' });
+      const b = req.body || {};
+      const amount = Math.round(Number(b.amount_minor));
+      if (!(amount > 0) || amount > 10000000) return res.status(400).json({ error: 'That amount cannot be taken.' });
+      const id = crypto.randomBytes(16).toString('hex');
+      const till = String(b.till_name || (req.terminal && req.terminal.jti) || '').slice(0, 128) || null;
+      await pool.execute(
+        `INSERT INTO epos_barclaycard_payments (id, office, environment, till, order_id, reference, amount_minor)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [id, req.office, t.env, till, b.order_id ? String(b.order_id).slice(0, 64) : null,
+          String(b.reference || `vesopa-${Date.now().toString(36)}`).replace(/[^A-Za-z0-9_.:-]/g, '').slice(0, 64), amount]
+      );
+      res.status(201).json({ id, url: `${originOf(req)}/api/public/barclaycard/pay/${id}`, environment: t.env, status: 'NEW' });
+    } catch (e) { fail(res, e, next); }
+  });
+
+  /** Where a payment is, waiting up to `wait` seconds (max 25) for it to move. */
+  router.get('/till/barclaycard/payments/:id', requireTerminal(secret), async (req, res, next) => {
+    try {
+      const wait = Math.max(0, Math.min(25, Number(req.query.wait) || 0)) * 1000;
+      const until = Date.now() + wait;
+      let row = await payRow(req.params.id);
+      if (!row || row.office !== req.office) return res.status(404).json({ error: 'No such payment.' });
+      const seen = `${row.status}|${row.opened_at}|${row.message}`;
+      while (Date.now() < until && `${row.status}|${row.opened_at}|${row.message}` === seen && (row.status === 'pending' || row.status === 'processing')) {
+        await new Promise((r) => setTimeout(r, 1000));
+        row = await payRow(req.params.id);
+      }
+      if (row.status === 'pending' && Date.now() - new Date(row.created_at).getTime() > PAY_MINUTES * 60000) {
+        await pool.execute("UPDATE epos_barclaycard_payments SET status = 'expired' WHERE id = ? AND status = 'pending'", [row.id]);
+        row = await payRow(row.id);
+      }
+      res.json(payView(row));
+    } catch (e) { fail(res, e, next); }
+  });
+
+  router.post('/till/barclaycard/payments/:id/cancel', requireTerminal(secret), async (req, res, next) => {
+    try {
+      const row = await payRow(req.params.id);
+      if (!row || row.office !== req.office) return res.status(404).json({ error: 'No such payment.' });
+      const [r] = await pool.execute("UPDATE epos_barclaycard_payments SET status = 'cancelled' WHERE id = ? AND status = 'pending'", [row.id]);
+      if (r.affectedRows) return res.json({ ok: true, message: 'Cancelled. The payment page no longer takes payment.' });
+      const now = await payRow(row.id);
+      res.json({ ok: false, status: now.status, message: now.status === 'processing' ? 'Too late to cancel: the customer is paying now. Wait for the result.' : 'This payment has already finished.' });
+    } catch (e) { fail(res, e, next); }
+  });
+
+  /** Refund a Barclaycard payment back to its card. */
+  router.post('/till/barclaycard/refunds', requireTerminal(secret), async (req, res, next) => {
+    try {
+      const b = req.body || {};
+      const pid = String(b.gateway_payment_id || '').trim().slice(0, 64);
+      const amount = Math.round(Number(b.amount_minor));
+      if (!pid) return res.status(400).json({ error: 'This sale has no Barclaycard payment to refund.' });
+      if (!(amount > 0)) return res.status(400).json({ error: 'Enter the amount to refund.' });
+      const [[orig]] = await pool.query('SELECT * FROM epos_barclaycard_payments WHERE office = ? AND (payment_id = ? OR id = ?) LIMIT 1', [req.office, pid, pid]);
+      if (orig && amount > orig.amount_minor - orig.refunded_minor) {
+        return res.status(400).json({ error: `Only £${pounds(orig.amount_minor - orig.refunded_minor)} of this payment is left to refund.` });
+      }
+      const env = orig ? orig.environment : bc.cleanEnv((await settingsFor(pool, req.office)).environment);
+      const creds = await credsFor(pool, req.office, env);
+      if (!creds) return res.status(409).json({ error: 'Barclaycard is no longer set up for this venue.' });
+      const r = await bc.refund(creds, (orig && orig.payment_id) || pid, { reference: `vesopa-refund-${Date.now().toString(36)}`, amountMinor: amount });
+      if (orig) await pool.execute('UPDATE epos_barclaycard_payments SET refunded_minor = refunded_minor + ? WHERE id = ?', [amount, orig.id]);
+      res.json({ ok: true, status: r.status, refund_id: r.id || null, message: 'Refunded to the card.' });
+    } catch (e) { fail(res, e, next); }
+  });
+
+  // ---- The customer's side of a till payment (public) ----------------------------
+
+  async function venueName(office) {
+    const [[v]] = await pool.query(
+      `SELECT COALESCE(NULLIF(d.display_name, ''), o.name) AS name FROM offices o
+         LEFT JOIN dinein_venue d ON d.office_id = o.id WHERE o.contact_email = ? LIMIT 1`, [office]
+    ).catch(() => [[null]]);
+    return (v && v.name) || '';
+  }
+
+  router.get('/public/barclaycard/pay/:id', async (req, res, next) => {
+    try {
+      const row = await payRow(req.params.id);
+      if (!row) return renderNotice(res, { title: 'Payment not found', text: 'This payment code is not valid. Ask a member of staff.', ok: false });
+      const venue = await venueName(row.office);
+      if (row.status === 'paid') return renderNotice(res, { venue, title: 'Paid', text: `£${pounds(row.amount_minor)} has been paid. Thank you.`, ok: true });
+      const old = Date.now() - new Date(row.created_at).getTime() > PAY_MINUTES * 60000;
+      if (row.status !== 'pending' || old) {
+        return renderNotice(res, { venue, title: 'This payment has closed', text: 'Nothing was charged. Ask a member of staff for a new code.', ok: false });
+      }
+      const creds = await credsFor(pool, row.office, row.environment);
+      if (!creds) return renderNotice(res, { venue, title: 'Card payments are not available', text: 'Please pay at the till.', ok: false });
+      const session = await cardSession(creds, req, row.amount_minor);
+      await pool.execute('UPDATE epos_barclaycard_payments SET opened_at = COALESCE(opened_at, NOW()) WHERE id = ?', [row.id]);
+      broadcast({ type: 'barclaycard-payment', id: row.id }, { office: row.office });
+      renderCardPage(res, { session, venue, title: 'Pay at the till', amountMinor: row.amount_minor, env: row.environment, postUrl: `/api/public/barclaycard/pay/${row.id}` });
+    } catch (e) {
+      if (e instanceof bc.BarclaycardError) return renderNotice(res, { title: 'Card payments are not available just now', text: 'Please pay at the till, or ask a member of staff.', ok: false });
+      next(e);
+    }
+  });
+
+  router.post('/public/barclaycard/pay/:id', express.json({ limit: '64kb' }), async (req, res, next) => {
+    try {
+      const token = String((req.body && req.body.token) || '');
+      const row = await payRow(req.params.id);
+      if (!row) return res.status(404).json({ error: 'No such payment.' });
+      if (row.status === 'paid') return res.json({ ok: true, message: 'Already paid. Thank you.' });
+      if (row.status !== 'pending') return res.status(409).json({ error: 'This payment has closed. Ask a member of staff for a new code.' });
+      if (!token || token.length > 20000) return res.status(400).json({ error: 'The card form gave no payment.' });
+      const creds = await credsFor(pool, row.office, row.environment);
+      if (!creds) return res.status(409).json({ error: 'Card payments are not available. Please pay at the till.' });
+      const [claim] = await pool.execute("UPDATE epos_barclaycard_payments SET status = 'processing', message = NULL WHERE id = ? AND status = 'pending'", [row.id]);
+      if (!claim.affectedRows) return res.status(409).json({ error: 'This payment is already being taken. Wait a moment.' });
+      broadcast({ type: 'barclaycard-payment', id: row.id }, { office: row.office });
+      let p;
+      try {
+        p = await bc.pay(creds, { reference: row.reference || `till-${row.id}`, amountMinor: row.amount_minor, transientToken: token, billTo: { name: 'Till Customer' } });
+      } catch (e) {
+        const declined = e instanceof bc.BarclaycardError && e.status >= 400 && e.status < 500;
+        await pool.execute("UPDATE epos_barclaycard_payments SET status = 'pending', message = ? WHERE id = ? AND status = 'processing'",
+          [declined ? 'The card was declined. The customer can try another card.' : 'Barclaycard did not answer. The customer can try again.', row.id]);
+        broadcast({ type: 'barclaycard-payment', id: row.id }, { office: row.office });
+        return res.status(declined ? 402 : 502).json({ error: declined ? 'The card was declined.' : 'Barclaycard did not answer.' });
+      }
+      if (!bc.approved(p)) {
+        await pool.execute("UPDATE epos_barclaycard_payments SET status = 'pending', message = ? WHERE id = ? AND status = 'processing'",
+          ['The card was declined. The customer can try another card.', row.id]);
+        broadcast({ type: 'barclaycard-payment', id: row.id }, { office: row.office });
+        return res.status(402).json({ error: 'The card was declined.' });
+      }
+      const card = (p.paymentInformation && (p.paymentInformation.card || p.paymentInformation.tokenizedCard)) || {};
+      const acct = (p.paymentAccountInformation && p.paymentAccountInformation.card) || {};
+      const last4 = String(card.suffix || '').slice(-4) || null;
+      const brand = String(acct.brandName || acct.type || card.type || '').slice(0, 32) || null;
+      const auth = (p.processorInformation && p.processorInformation.approvalCode) || null;
+      await pool.execute(
+        "UPDATE epos_barclaycard_payments SET status = 'paid', payment_id = ?, card_last4 = ?, card_brand = ?, auth_code = ?, paid_at = NOW() WHERE id = ?",
+        [String(p.id).slice(0, 64), last4, brand, auth ? String(auth).slice(0, 32) : null, row.id]
+      );
+      broadcast({ type: 'barclaycard-payment', id: row.id }, { office: row.office });
+      res.json({ ok: true, message: `£${pounds(row.amount_minor)} paid. Thank you, you can close this page.` });
+    } catch (e) { next(e); }
+  });
+
   return router;
 }
 
-module.exports = { barclaycardRoutes, settingsFor, credsFor, onlineFor };
+module.exports = { barclaycardRoutes, settingsFor, credsFor, onlineFor, tillFor, cardSession, renderCardPage, renderNotice };

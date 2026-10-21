@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config/constants.dart';
 import '../data/terminal_identity.dart';
 import '../main.dart';
+import 'barclaycard_provider.dart';
 import 'payment_provider.dart';
 import 'teya_sdk.dart';
 import 'teya_sdk_provider.dart';
@@ -290,6 +291,12 @@ bool isTeyaReference(String? ref) =>
 /// A Teya card route on this till: Teya's SDK app (Windows), or the Vesopa
 /// server's link to Teya (where there is no SDK route yet).
 abstract class TeyaCard implements PaymentProvider {
+  /// Whose card route this is, as the clerk reads it: Teya or Barclaycard.
+  String get brand;
+
+  /// A page the customer pays on, shown as a QR code (Barclaycard).
+  void Function(String url)? onPayLink;
+
   String get terminalId;
   String? get terminalName;
   bool get sandbox;
@@ -300,7 +307,12 @@ abstract class TeyaCard implements PaymentProvider {
   Future<({bool ok, String message, String? refundId})> refund(String reference, int amountMinor);
 }
 
-class TeyaProvider implements TeyaCard {
+/// A card route whose payments can be looked up on the Vesopa server.
+abstract class CloudStatusCard implements TeyaCard {
+  Future<TeyaPaymentState> status(String id, {int waitSeconds = 1});
+}
+
+class TeyaProvider implements CloudStatusCard {
   TeyaProvider({
     required this.apiBase,
     required this.token,
@@ -320,8 +332,15 @@ class TeyaProvider implements TeyaCard {
   final http.Client _http;
 
   @override
+  String get brand => 'Teya';
+
+  @override
+  void Function(String url)? onPayLink;
+
+  @override
   String get method => 'card';
 
+  @override
   bool get sandbox => environment != 'live';
 
   /// The machine's latest step, for the payment screen: Teya's progress word
@@ -392,6 +411,7 @@ class TeyaProvider implements TeyaCard {
   }
 
   /// Where a payment is now, waiting up to [waitSeconds] for it to move.
+  @override
   Future<TeyaPaymentState> status(
     String paymentRequestId, {
     int waitSeconds = 1,
@@ -568,6 +588,10 @@ class TeyaProvider implements TeyaCard {
 
 /// This till's Teya provider, or null when the venue's tills use Dojo.
 final teyaProvider = Provider<TeyaCard?>((ref) {
+  // Barclaycard first, when the back office gave this venue's tills to it:
+  // the customer pays on their phone from a QR code (barclaycard_provider.dart).
+  final barclays = ref.watch(barclaycardTillProvider);
+  if (barclays != null) return barclays;
   final config = ref.watch(teyaConfigProvider).value;
   if (config == null || !config.enabled) return null;
   // Teya's own SDK app only where the back office has no store connected:

@@ -363,7 +363,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
         // Shown on every Dojo payment, as Dojo asked: the ids this payment is
         // identified by in their logs.
         partnerLabel: rest?.partnerLabel ??
-            (teya == null ? null : (teya.sandbox ? 'Teya sandbox' : 'Teya')),
+            (teya == null ? null : (teya.sandbox ? '${teya.brand} sandbox' : teya.brand)),
         terminalLabel: rest?.terminalId ?? connect?.terminalId ?? teya?.terminalName ?? teya?.terminalId,
       ),
     );
@@ -386,6 +386,8 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
             : outcome.customerDetail,
         'outcome': outcome?.name,
         'amount_minor': amountMinor,
+        // Barclaycard: the code the customer scans to pay on their phone.
+        if (outcome == null && st.payUrl != null) 'qr': st.payUrl,
       }));
     }
 
@@ -466,6 +468,12 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     teya?.onCancelAnswered = (accepted, message) {
       payment.value = payment.value.copyWith(cancelNote: message);
     };
+    teya?.onPayLink = (url) {
+      if (payment.value.finished) return;
+      final next = payment.value.copyWith(payUrl: url, step: CardStep.present);
+      payment.value = next;
+      mirror(next);
+    };
 
     // Render the hosted card page inside the till rather than handing it to the
     // system browser: on a Windows touch till there may be no browser to hand
@@ -519,7 +527,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     Future<bool> checkTeya(TeyaCard card, {bool auto = false}) async {
       // Teya's SDK app has no status lookup: the card machine's own screen
       // is the answer there.
-      if (card is! TeyaProvider) {
+      if (card is! CloudStatusCard) {
         if (!auto) {
           payment.value = payment.value.copyWith(
             checkNote: 'Look at the Teya card machine screen or its last '
@@ -566,10 +574,10 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
           checking: false,
           checkSaysPaid: st.paid,
           checkNote: st.paid
-              ? 'Teya confirms this payment was taken. Record it as paid.'
+              ? '${teya.brand} confirms this payment was taken. Record it as paid.'
               : st.finalState
-              ? 'Teya says this payment was not taken (${st.message}). It is safe to try again.'
-              : 'Teya has no result yet (${st.message}). The till keeps checking; check the card machine screen too.',
+              ? '${teya.brand} says this payment was not taken (${st.message}). It is safe to try again.'
+              : '${teya.brand} has no result yet (${st.message}). The till keeps checking.',
         );
         return st.paid;
       } catch (e) {
@@ -737,6 +745,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     connect?.onCancelAnswered = null;
     teya?.onProgress = null;
     teya?.onCancelAnswered = null;
+    teya?.onPayLink = null;
 
     // Logged whatever happened: Dojo's feedback was that failed payments left
     // no record. The back office's Card payments page lists these.
@@ -804,7 +813,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
           setState2(payment.value.copyWith(
             outcome: CardOutcome.approved,
             step: CardStep.done,
-            resultMessage: '${teya != null ? 'Teya' : 'Dojo'} confirmed the payment was taken. It is '
+            resultMessage: '${teya?.brand ?? 'Dojo'} confirmed the payment was taken. It is '
                 'recorded as paid.',
             secondsLeft: config.resultSeconds,
           ));

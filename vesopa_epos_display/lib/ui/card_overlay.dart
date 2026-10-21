@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../data/basket_feed.dart';
+import 'customer_qr.dart';
 import 'theme.dart';
 
 /// What the card machine is doing, over the whole screen, while the till takes
@@ -52,7 +53,15 @@ class CardOverlay extends StatelessWidget {
                 const SizedBox(height: 28),
                 AnimatedSwitcher(
                   duration: const Duration(milliseconds: 250),
-                  child: card.isResult
+                  child: !card.isResult && card.qr != null
+                      ? CustomerQr(
+                          key: const ValueKey('qr'),
+                          data: card.qr!,
+                          size: 300,
+                          captionSize: 20,
+                          caption: 'Scan to pay by card, Apple Pay or Google Pay',
+                        )
+                      : card.isResult
                       ? Icon(icon, key: ValueKey(icon), size: 120, color: colour)
                       : SizedBox(
                           key: const ValueKey('progress'),

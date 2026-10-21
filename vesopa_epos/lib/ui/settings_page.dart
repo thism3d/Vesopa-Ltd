@@ -12,6 +12,7 @@ import '../data/gym.dart';
 import '../data/terminal_identity.dart';
 import '../main.dart';
 import '../payments/teya_provider.dart';
+import '../payments/barclaycard_provider.dart';
 import '../payments/teya_sdk.dart';
 import '../payments/teya_sdk_provider.dart';
 import '../payments/connect_pac.dart';
@@ -264,6 +265,7 @@ class SettingsPage extends ConsumerWidget {
 
         const SizedBox(height: 28),
         const _SectionTitle('Card payments'),
+        const _BarclaycardCard(),
         const _TeyaCard(),
         _DojoCard(),
         const SizedBox(height: 8),
@@ -743,6 +745,43 @@ class _CustomerDisplaySummaryState extends State<_CustomerDisplaySummary> {
 
 /// Card payment configuration. Shows whether cards are set up on this terminal
 /// and lets the operator enter or change the credentials on the device.
+/// Barclaycard on this till (2026-10-21): no card machine; the customer pays
+/// on their phone from a QR code. Switched per venue in the back office.
+class _BarclaycardCard extends ConsumerWidget {
+  const _BarclaycardCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final config = ref.watch(barclaycardConfigProvider).value;
+    if (config == null || !config.enabled) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Card(
+        margin: EdgeInsets.zero,
+        child: ListTile(
+          leading: Container(
+            width: 34,
+            height: 34,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(color: const Color(0xFF00AEEF), borderRadius: BorderRadius.circular(10)),
+            child: const Text('B', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 18)),
+          ),
+          title: const Text('Barclaycard', style: TextStyle(fontWeight: FontWeight.w700)),
+          subtitle: const Text(
+            "Cards are taken on the customer's phone: Card shows a QR code, the customer pays by card, "
+            'Apple Pay or Google Pay, and the sale closes by itself. Switched in the back office, Card Payments.',
+            style: TextStyle(fontSize: 12.5),
+          ),
+          trailing: Chip(
+            label: Text(config.sandbox ? 'Sandbox' : 'Live'),
+            visualDensity: VisualDensity.compact,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Teya on this till (2026-10-19): which Teya card machine it sends payments
 /// to. Shown only when the back office has switched the venue's tills to
 /// Teya; the venue's default machine is used until one is chosen.

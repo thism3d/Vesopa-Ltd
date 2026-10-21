@@ -14678,14 +14678,14 @@ async function loadBarclays() {
   const render = (v) => {
     s = v;
     const k = v.keys[v.environment];
-    $('bc-state').innerHTML = (v.enabled
-      ? 'Now: <b>the online menu takes cards with Barclaycard</b> '
-      : 'Now: <b>off</b>, the menu pays as before ')
+    const uses = [v.till_enabled ? 'the tills' : null, v.enabled ? 'the online menu' : null].filter(Boolean);
+    $('bc-state').innerHTML = (uses.length
+      ? 'Now: <b>' + uses.join(' and ') + ' take cards with Barclaycard</b> '
+      : 'Now: <b>not in use</b> ')
       + (v.environment === 'live' ? '<span class="pill amber">live</span>' : '<span class="pill on">sandbox</span>')
       + ['sandbox', 'live'].map((e) => v.keys[e]
         ? `<br><span class="small">${e === 'live' ? 'Live' : 'Sandbox'} keys: <code>${esc(v.keys[e].merchant_id)}</code>, key <code>${esc(v.keys[e].key_id_hint)}</code>${v.keys[e].checked_at ? ', test payment ' + esc(new Date(v.keys[e].checked_at).toLocaleString('en-GB')) : ''}</span>`
         : `<br><span class="small muted">No ${e} keys yet.</span>`).join('');
-    $('bc-enabled').checked = v.enabled;
     document.querySelectorAll('input[name="bc-env"]').forEach((r) => { r.checked = r.value === v.environment; });
     const keyEnv = document.querySelector('input[name="bc-key-env"]:checked').value;
     $('bc-merchant').value = v.keys[keyEnv] ? v.keys[keyEnv].merchant_id : '';
@@ -14700,8 +14700,9 @@ async function loadBarclays() {
   $('bc-save').onclick = async () => {
     try {
       const env = document.querySelector('input[name="bc-env"]:checked');
-      render(await api('/barclaycard', { method: 'PUT', body: JSON.stringify({ enabled: $('bc-enabled').checked, environment: env ? env.value : 'sandbox' }) }));
+      render(await api('/barclaycard', { method: 'PUT', body: JSON.stringify({ environment: env ? env.value : 'sandbox' }) }));
       say('bc-msg', 'Saved.', true);
+      loadProviders();
     } catch (e) { say('bc-msg', e.message, false); }
   };
   $('bc-keys-save').onclick = async () => {
@@ -15122,7 +15123,41 @@ async function loadTeya() {
   };
 }
 
+/** "Who takes the cards": one tap switches the tills or the menu (2026-10-21). */
+async function loadProviders() {
+  const say = (t, ok) => { const el = $('pp-msg'); el.textContent = t || ''; el.style.color = ok ? '#06784f' : '#b42318'; el.style.fontWeight = '600'; };
+  const names = { dojo: 'Dojo', teya: 'Teya', barclays: 'Barclaycard' };
+  const render = (v) => {
+    document.querySelectorAll('[data-pp]').forEach((seg) => {
+      const k = seg.getAttribute('data-pp');
+      seg.querySelectorAll('button').forEach((b) => {
+        const val = b.getAttribute('data-v');
+        b.setAttribute('role', 'radio');
+        b.setAttribute('aria-checked', String(v[k] === val));
+        b.disabled = !v.available[k][val];
+        b.title = b.disabled ? (val === 'barclays' ? v.why.barclays : k === 'tills' ? v.why.teya_tills : v.why.teya_online) || '' : '';
+        b.onclick = async () => {
+          if (v[k] === val) return;
+          say('Switching…', true);
+          try {
+            const next = await api('/payment-providers', { method: 'PUT', body: JSON.stringify({ [k]: val }) });
+            render(next);
+            say(`${k === 'tills' ? 'Tills' : 'Online menu'} now use ${names[val]}.`, true);
+          } catch (e) { say(e.message, false); }
+        };
+      });
+    });
+    const envs = [];
+    if (v.tills === 'teya' || v.online === 'teya') envs.push('Teya ' + v.environments.teya);
+    if (v.tills === 'barclays' || v.online === 'barclays') envs.push('Barclaycard ' + v.environments.barclays);
+    $('pp-note').textContent = (v.tills === 'barclays' ? 'Barclaycard has no card machine: the till shows a QR code and the customer pays on their phone (card, Apple Pay, Google Pay). ' : '')
+      + (envs.length ? 'Mode: ' + envs.join(', ') + '. ' : '') + 'Greyed out: not set up yet (hover for why). Tills switch within seconds.';
+  };
+  try { render(await api('/payment-providers')); } catch (e) { say(e.message, false); }
+}
+
 async function loadCardPayments() {
+  loadProviders();
   $('dojo-tab-counter-btn').onclick = () => dojoTabs('counter');
   $('dojo-tab-online-btn').onclick = () => { dojoTabs('online'); loadOnlineCheckout(); };
   $('dojo-tab-teya-btn').onclick = () => { dojoTabs('teya'); loadTeya(); };

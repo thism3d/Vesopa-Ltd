@@ -2705,73 +2705,24 @@ function dineinRoutes({ pool, broadcast, secret }) {
       }
       const creds = await bcVenue.credsFor(pool, await emailOf(o.office_id), o.pay_env || 'sandbox');
       if (!creds) return res.redirect(303, '/o/' + o.public_id);
-      const origin = `${req.headers['x-forwarded-proto'] ? String(req.headers['x-forwarded-proto']).split(',')[0] : req.protocol}://${String(req.headers['x-forwarded-host'] || req.get('host')).split(',')[0].trim()}`;
-      let jwt;
+      let session;
       try {
-        jwt = await bcClient.captureContext(creds, { targetOrigins: [origin.replace(/^http:/, 'https:')], amountMinor: Number(o.total_minor) });
+        session = await bcVenue.cardSession(creds, req, Number(o.total_minor));
       } catch (e) {
         console.error('[dinein] Barclaycard card form failed for', o.public_id, e.message);
         return res.redirect(303, '/o/' + o.public_id);
       }
-      let lib = null;
-      try {
-        const payload = JSON.parse(Buffer.from(String(jwt).split('.')[1], 'base64url').toString('utf8'));
-        lib = payload.ctx && payload.ctx[0] && payload.ctx[0].data;
-      } catch (_) { lib = null; }
-      if (!lib || !lib.clientLibrary) return res.redirect(303, '/o/' + o.public_id);
-      const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-      const pounds = (Number(o.total_minor) / 100).toFixed(2);
-      const libOrigin = new URL(lib.clientLibrary).origin;
-      res.set('Cache-Control', 'no-store');
-      res.set('Content-Security-Policy', `default-src 'self' ${libOrigin} https://*.cybersource.com https://*.smartpayfuse.barclaycard https://*.smartpayfuse-test.barclaycard https://pay.google.com https://*.google.com https://*.gstatic.com https://applepay.cdn-apple.com; script-src 'self' 'unsafe-inline' ${libOrigin} https://pay.google.com https://*.gstatic.com https://applepay.cdn-apple.com; style-src 'self' 'unsafe-inline' ${libOrigin}; img-src * data:; frame-src *; connect-src *`);
-      res.type('html').send(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Pay £${pounds} · ${esc(o.display_name || 'Order')}</title>
-<style>body{margin:0;min-height:100vh;background:#f4f5f7;color:#16181d;font:16px/1.5 system-ui,-apple-system,Segoe UI,sans-serif;display:flex;justify-content:center}
-.card{width:100%;max-width:440px;margin:16px;padding:24px;border-radius:18px;background:#fff;box-shadow:0 8px 30px rgba(0,0,0,.08);align-self:flex-start}
-h1{font-size:20px;margin:0 0 4px}.amt{font-size:32px;font-weight:800;margin:8px 0 18px}.muted{color:#6b7280;font-size:14px}
-#buttons{min-height:56px}#msg{margin-top:14px;font-size:14px}#msg.err{color:#b42318}#msg.ok{color:#1d7a46}
-a.back{display:inline-block;margin-top:18px;color:#374151;font-size:14px}.test{display:inline-block;background:#fff4d6;color:#8a5300;border-radius:8px;padding:2px 8px;font-size:12px;font-weight:700;margin-bottom:8px}</style>
-<script src="${esc(lib.clientLibrary)}"${lib.clientLibraryIntegrity ? ` integrity="${esc(lib.clientLibraryIntegrity)}" crossorigin="anonymous"` : ''}></script>
-</head><body><main class="card">
-${o.pay_env === 'live' ? '' : '<span class="test">TEST PAYMENT · no real money</span>'}
-<h1>${esc(o.display_name || 'Your order')}</h1>
-<div class="muted">Order #${o.id}${o.table_label ? ' · ' + esc(o.table_label) : ''}</div>
-<div class="amt">£${pounds}</div>
-<div id="buttons"></div>
-<div id="form"></div>
-<div id="msg" class="muted">Choose how to pay. Card details go straight to Barclaycard.</div>
-<button id="again" type="button" hidden style="margin-top:12px;padding:10px 16px;border-radius:10px;border:0;background:#16181d;color:#fff;font-weight:700;cursor:pointer">Try again</button>
-<a class="back" href="/o/${esc(o.public_id)}">Back to the order</a>
-</main>
-<script>
-(async function () {
-  var msg = document.getElementById('msg');
-  var again = document.getElementById('again');
-  function say(t, cls) { msg.textContent = t; msg.className = cls || 'muted'; }
-  // A card form answers once; trying again loads a fresh one. Never a loop.
-  function stop(t) { say(t, 'err'); again.hidden = false; }
-  again.onclick = function () { location.reload(); };
-  var token;
-  try {
-    var accept = await Accept(${JSON.stringify(jwt)});
-    var up = await accept.unifiedPayments(false);
-    token = await up.show({ containers: { paymentSelection: '#buttons', paymentScreen: '#form' } });
-  } catch (e) {
-    stop('The card form could not be shown or was closed. Press Try again, or go back to the order to pay at the bar.');
-    return;
-  }
-  say('Taking the payment…');
-  try {
-    var r = await fetch(location.pathname, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: token }) });
-    var j = await r.json().catch(function () { return {}; });
-    if (r.ok && j.redirect) { say('Paid. Thank you.', 'ok'); location.replace(j.redirect); return; }
-    if (j.redirect && r.status !== 402) { location.replace(j.redirect); return; }
-    stop((j.error || 'The payment did not go through.') + ' Nothing was charged.');
-  } catch (e) {
-    stop('The payment could not be confirmed. Check the order before trying again.');
-  }
-})();
-</script></body></html>`);
+      return bcVenue.renderCardPage(res, {
+        session,
+        venue: o.display_name || 'Your order',
+        title: `Order #${o.id}`,
+        detail: o.table_label || '',
+        amountMinor: Number(o.total_minor),
+        env: o.pay_env,
+        postUrl: `/api/public/dinein/order/${encodeURIComponent(o.public_id)}/card`,
+        backUrl: '/o/' + o.public_id,
+        backLabel: 'Back to the order',
+      });
     } catch (e) {
       return next(e);
     }

@@ -94,6 +94,7 @@ class CardStatus {
     this.outcome,
     this.amountMinor = 0,
     this.heading,
+    this.qr,
   });
 
   /// Above the amount, when the till names it: "Card refund" while a refund
@@ -109,6 +110,10 @@ class CardStatus {
   /// unknown | failed. Null while still in progress.
   final String? outcome;
   final int amountMinor;
+
+  /// A link to pay on the customer's own phone (Barclaycard, EPOS 1.16.25):
+  /// drawn as a QR code while the payment waits. Absent for a card machine.
+  final String? qr;
 
   bool get isResult => phase == 'result';
   bool get approved => outcome == 'approved';
@@ -129,6 +134,10 @@ class CardStatus {
       },
       outcome: raw['outcome'] as String?,
       amountMinor: (raw['amount_minor'] as num?)?.toInt() ?? 0,
+      qr: switch (raw['qr']) {
+        final String s when s.startsWith('https://') => s,
+        _ => null,
+      },
       heading: switch (raw['heading']) {
         final String s when s.trim().isNotEmpty => s.trim(),
         _ => null,

@@ -12,6 +12,7 @@ import '../payments/dojo_config.dart';
 import '../payments/dojo_desktop.dart';
 import '../payments/dojo_native.dart';
 import '../payments/payment_provider.dart';
+import '../payments/barclaycard_provider.dart';
 import '../payments/teya_provider.dart';
 import 'card_payment_dialog.dart';
 import 'permission_gate.dart';
@@ -101,7 +102,7 @@ Future<int> refundDojoPayment(
   String? reason,
 }) async {
   // Taken on Teya: refunded through Teya.
-  if (isTeyaReference(intentId)) {
+  if (isTeyaReference(intentId) || isBarclaycardReference(intentId)) {
     return refundTeyaPayment(
       context,
       ref,

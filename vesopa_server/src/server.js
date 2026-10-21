@@ -365,7 +365,7 @@ app.use('/api', teyaRoutes({ pool, broadcast, secret: JWT_SECRET, onOnlinePaymen
 } }));
 // Barclaycard Smartpay Fuse for the menu's online payments (src/barclaycard.js):
 // off for every venue until a manager saves keys and turns it on.
-app.use('/api', barclaycardRoutes({ pool, secret: JWT_SECRET }));
+app.use('/api', barclaycardRoutes({ pool, broadcast, secret: JWT_SECRET }));
 // More than one site under one login: the list and the switch. See src/sites.js.
 app.use('/api', siteRoutes({ pool, broadcast, secret: JWT_SECRET }));
 // Sites within a venue: tills grouped into sites, and the live takings board.
