@@ -902,7 +902,9 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
   int _voucherMinor = 0;
   String? _voucherCode;
   int _pointsMinor = 0;
-  int _pointsRedeemed = 0;
+  // Points redeemed on this bill, to five decimals (a fractional redemption
+  // clears an exact price). _pointsMinor is the money it took off.
+  double _pointsRedeemed = 0;
   int _gratuityBp = 0;
   bool _gratuityApplies = false;
   bool _gratuityTouched = false;
@@ -1659,6 +1661,11 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     _settleAfterReprice();
   }
 
+  /// Points, trimmed for showing: whole where whole, else up to two decimals.
+  String _fmtPoints(double p) => p == p.roundToDouble()
+      ? p.toStringAsFixed(0)
+      : p.toStringAsFixed(2);
+
   /// The Redeem points key: what is on it, so the clerk can say "you've 105
   /// points, that's £1.05" without opening anything.
   String _redeemLabel() {
@@ -1666,7 +1673,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     if (_pointsRedeemed > 0) return 'Points −${money(_pointsMinor)}';
     final c = _customer;
     if (c != null && c.pointsBalance > 0) {
-      return 'Redeem ${c.pointsBalance} pts · ${money(c.valueOf(c.pointsBalance))}';
+      return 'Redeem ${c.pointsLabel} pts · ${money(c.valueOf(c.pointsBalance))}';
     }
     return 'Redeem points';
   }
@@ -1676,7 +1683,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
   Future<void> _takePoints() async {
     if (_pointsRedeemed > 0) {
       final remove = await _confirmRemoval(
-        'Take back $_pointsRedeemed points?',
+        'Take back ${_fmtPoints(_pointsRedeemed)} points?',
         'They go back on the bill and stay in the customer\'s balance.',
       );
       if (remove && mounted) {
@@ -2092,7 +2099,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
         sessionId: session.id,
         staffId: servedById,
         staffName: servedBy,
-        reference: '$_pointsRedeemed points',
+        reference: '${_fmtPoints(_pointsRedeemed)} points',
       );
     }
     final voucherOff = _tender.totals.voucherMinor;
@@ -2170,6 +2177,9 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
             customerId: customerId,
             kind: 'redeem',
             points: _pointsRedeemed,
+            // The exact money taken off, so the ledger records what the
+            // customer actually got rather than points x value.
+            valueMinor: _pointsMinor,
             orderId: widget.orderId,
           );
         }
@@ -2519,7 +2529,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
             // one. Everywhere else the balance is absent rather than stale.
             final billCustomer = BillCustomer.of(
               order,
-              pointsBalance: _customer?.pointsBalance ?? 0,
+              pointsBalance: _customer?.pointsBalance.round() ?? 0,
             );
 
             final check = PayCheckPanel(
@@ -2866,7 +2876,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
           discountValue: picked.discountValue,
           phone: picked.phone,
           cardNumber: picked.cardNumber,
-          pointsBalance: picked.pointsBalance,
+          pointsBalance: picked.pointsBalance.round(),
           scheme: picked.scheme,
           memberNumber: picked.memberNumber,
           revertLevel: ref.read(currentPriceLevelProvider),

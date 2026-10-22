@@ -116,6 +116,54 @@ final orderChimeProvider = NotifierProvider<OrderChimeController, bool>(
   OrderChimeController.new,
 );
 
+const _keyRepeat = 'till.order_chime_repeat';
+const _keyArrivalPrint = 'till.order_arrival_print';
+
+/// A simple on/off terminal setting backed by shared preferences.
+class _TillFlag extends Notifier<bool> {
+  _TillFlag(this._prefKey, this._default);
+  final String _prefKey;
+  final bool _default;
+  SharedPreferences? _prefs;
+
+  @override
+  bool build() {
+    unawaited(_load());
+    return _default;
+  }
+
+  Future<void> _load() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _prefs = prefs;
+      state = prefs.getBool(_prefKey) ?? _default;
+    } catch (_) {}
+  }
+
+  Future<void> set({required bool on}) async {
+    state = on;
+    try {
+      final prefs = _prefs ?? await SharedPreferences.getInstance();
+      _prefs = prefs;
+      await prefs.setBool(_prefKey, on);
+    } catch (_) {}
+  }
+}
+
+/// Keep chiming until a table order is accepted — for a kitchen that cannot
+/// watch the till and once missed the single beep (Pontardawe RFC, 2026-10-22).
+/// Off by default, so a till that was quiet stays quiet.
+final orderChimeRepeatProvider = NotifierProvider<_TillFlag, bool>(
+  () => _TillFlag(_keyRepeat, false),
+);
+
+/// Print a short slip on the receipt printer the moment a table order arrives,
+/// as well as (or instead of) the chime. For a venue that wants paper by the
+/// pass before the order is even accepted.
+final orderArrivalPrintProvider = NotifierProvider<_TillFlag, bool>(
+  () => _TillFlag(_keyArrivalPrint, false),
+);
+
 /// Reads once at start, writes on change. Small enough that there is no reason
 /// for it to be asynchronous at every call site.
 class OrderAlertsController extends Notifier<OrderAlerts> {

@@ -1390,10 +1390,14 @@ function commerceRoutes({ pool, broadcast, secret }) {
     return rows.map((c) => {
       const scheme = all.find((s) => s.id === Number(c.scheme_id)) || null;
       const merged = schemes.applyScheme(settings, scheme);
+      // Points are DECIMAL(16,5) and arrive as a string; send a number so
+      // the till keeps the fractional balance (2026-10-22).
+      const bal = Math.round((Number(c.points_balance) || 0) * 1e5) / 1e5;
       return {
         ...c,
-        points_value_minor: c.points_balance * merged.point_value_minor,
-        redeemable: c.points_balance >= merged.min_redeem_points,
+        points_balance: bal,
+        points_value_minor: Math.round(bal * merged.point_value_minor),
+        redeemable: bal >= merged.min_redeem_points,
         settings: merged,
       };
     });
@@ -1910,8 +1914,12 @@ function commerceRoutes({ pool, broadcast, secret }) {
       const tier = settings.tiers.find((t) => t.name === customer.tier_name);
       const multiplier = Number(tier?.points_multiplier) || 1;
 
-      let points = Math.round(Number(req.body.points) || 0);
+      // Redeem and adjust may be fractional (5 dp), so a redemption can clear
+      // the exact price of a product. Earn stays whole below.
+      const round5 = (n) => Math.round((Number(n) || 0) * 1e5) / 1e5;
+      let points = round5(req.body.points);
       if (kind === 'earn') {
+        points = Math.round(Number(req.body.points) || 0);
         if (!points) {
           // Earned from the spend when the till does not compute it itself.
           points = Math.floor(earningSpend / 100) * settings.points_per_pound;
@@ -1928,6 +1936,8 @@ function commerceRoutes({ pool, broadcast, secret }) {
       }
 
       const delta = kind === 'redeem' ? -Math.abs(points) : points;
+      // The balance is DECIMAL and arrives as a string; add as a number.
+      const balance0 = round5(customer.points_balance);
 
       if (kind === 'redeem') {
         /*
@@ -1967,15 +1977,17 @@ function commerceRoutes({ pool, broadcast, secret }) {
             // dialog a swipe produces, and matching on English would break the
             // first time anybody reworded it.
             code: 'membership_expired',
-            points_balance: customer.points_balance,
+            points_balance: round5(customer.points_balance),
           });
         }
 
-        if (Math.abs(delta) > customer.points_balance) {
+        // A hair of tolerance, so clearing a bill with exactly the right
+        // fractional points is not refused by a 0.00001 rounding crumb.
+        if (Math.abs(delta) > balance0 + 0.00001) {
           await conn.rollback();
           return res.status(409).json({
             error: 'Not enough points',
-            points_balance: customer.points_balance,
+            points_balance: balance0,
           });
         }
         // The redemption floor is a scheme rule, so it is enforced where the
@@ -1984,12 +1996,12 @@ function commerceRoutes({ pool, broadcast, secret }) {
           await conn.rollback();
           return res.status(409).json({
             error: `At least ${settings.min_redeem_points} points are needed to redeem`,
-            points_balance: customer.points_balance,
+            points_balance: round5(customer.points_balance),
           });
         }
       }
 
-      const balanceAfter = customer.points_balance + delta;
+      const balanceAfter = round5(balance0 + delta);
       const lifetime = customer.lifetime_spend_minor + (kind === 'earn' ? spend : 0);
 
       // Tier is recomputed from lifetime spend on every earn, so a customer
@@ -2017,7 +2029,9 @@ function commerceRoutes({ pool, broadcast, secret }) {
         [
           crypto.randomUUID(), office, customerId, req.body.order_id || null,
           kind, delta, balanceAfter, spend,
-          Math.abs(delta) * settings.point_value_minor,
+          req.body.value_minor != null
+            ? Math.round(Number(req.body.value_minor))
+            : Math.round(Math.abs(delta) * settings.point_value_minor),
           req.body.note || null,
         ]
       );

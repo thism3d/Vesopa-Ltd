@@ -315,6 +315,63 @@ class ReceiptBuilder {
       );
 
   /// The customer's receipt.
+  /// A short slip for the moment a table QR order arrives, before anybody has
+  /// accepted it (2026-10-22, Meirion). Printed on the receipt/kitchen printer
+  /// so a venue that cannot hear the chime still sees the order on paper by
+  /// the pass. It is a heads-up, not the kitchen ticket: the kitchen ticket is
+  /// still printed on Accept.
+  List<int> dineInArrival({
+    required String where,
+    required List<({int qty, String name})> items,
+    required int totalMinor,
+    String? shopName,
+    String? note,
+    String? customer,
+    String? collection,
+    DateTime? at,
+  }) {
+    String money(int m) => '£${(m / 100).toStringAsFixed(2)}';
+    String two(int n) => n.toString().padLeft(2, '0');
+    final t = at ?? DateTime.now();
+    final bytes = _begin();
+    if (shopName != null && shopName.trim().isNotEmpty) {
+      bytes.addAll(_shopName(shopName));
+    }
+    bytes.addAll(_text('** NEW TABLE ORDER **',
+        styles: const PosStyles(align: PosAlign.center, bold: true)));
+    bytes.addAll(_text(where,
+        styles: const PosStyles(
+            align: PosAlign.center,
+            bold: true,
+            height: PosTextSize.size2,
+            width: PosTextSize.size2)));
+    if (collection != null && collection.trim().isNotEmpty) {
+      bytes.addAll(_text('Collection $collection',
+          styles: const PosStyles(align: PosAlign.center)));
+    }
+    bytes.addAll(_text('${two(t.hour)}:${two(t.minute)}',
+        styles: const PosStyles(align: PosAlign.center)));
+    if (customer != null && customer.trim().isNotEmpty) {
+      bytes.addAll(_text(customer,
+          styles: const PosStyles(align: PosAlign.center)));
+    }
+    bytes.addAll(_text('--------------------------------'));
+    for (final item in items) {
+      bytes.addAll(_text('${item.qty} x ${item.name}',
+          styles: const PosStyles(bold: true)));
+    }
+    bytes.addAll(_text('--------------------------------'));
+    bytes.addAll(_text('TOTAL  ${money(totalMinor)}',
+        styles: const PosStyles(align: PosAlign.right, bold: true)));
+    if (note != null && note.trim().isNotEmpty) {
+      bytes.addAll(_text('Note: ${note.trim()}'));
+    }
+    bytes.addAll(_text('Accept it on the till to send to the kitchen.',
+        styles: const PosStyles(align: PosAlign.center)));
+    bytes.addAll(_finish(kitchen: true));
+    return bytes;
+  }
+
   List<int> receipt({
     required Order order,
     required List<OrderLine> lines,

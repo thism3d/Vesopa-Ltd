@@ -242,6 +242,37 @@ class SettingsPage extends ConsumerWidget {
                     ref.read(orderChimeProvider.notifier).set(on: on),
                   ),
                 ),
+                if (ref.watch(orderChimeProvider))
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: ref.watch(orderChimeRepeatProvider),
+                    title: const Text('Keep sounding until it is accepted'),
+                    subtitle: const Text(
+                      'Beeps every few seconds while a table order is still '
+                      'waiting, so a busy kitchen cannot miss it. Stops the '
+                      'moment it is accepted or set aside.',
+                      style: TextStyle(fontSize: 12.5),
+                    ),
+                    secondary: const Icon(Icons.repeat),
+                    onChanged: (on) => unawaited(
+                      ref.read(orderChimeRepeatProvider.notifier).set(on: on),
+                    ),
+                  ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: ref.watch(orderArrivalPrintProvider),
+                  title: const Text('Print a slip when one arrives'),
+                  subtitle: const Text(
+                    'Prints a short slip on the receipt printer the moment a '
+                    'table order comes in, before it is accepted. The kitchen '
+                    'ticket still prints on Accept.',
+                    style: TextStyle(fontSize: 12.5),
+                  ),
+                  secondary: const Icon(Icons.print_outlined),
+                  onChanged: (on) => unawaited(
+                    ref.read(orderArrivalPrintProvider.notifier).set(on: on),
+                  ),
+                ),
                 const Divider(height: 24),
                 for (final option in OrderAlerts.values)
                   RadioListTile<OrderAlerts>(

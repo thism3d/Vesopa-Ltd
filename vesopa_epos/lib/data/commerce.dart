@@ -489,7 +489,9 @@ class LoyaltyCustomer {
 
   final String id;
   final String name;
-  final int pointsBalance;
+  /// Points to 5 decimal places (2026-10-22), so a redemption can clear the
+  /// exact price of a product and leave a fractional remainder on the card.
+  final double pointsBalance;
 
   /// The membership number: the card without its prefix, so card 999800001 is
   /// member 00001. "The 9998 should not form part of the customer's membership
@@ -588,39 +590,62 @@ class LoyaltyCustomer {
 
   bool get isMember => membershipExpiry != null;
 
-  int get _step => redeemStepPoints > 0 ? redeemStepPoints : 1;
-
-  /// The most this customer can take off a bill of [outstandingMinor].
+  /// REDEEMING IS BY MONEY, NOT BY WHOLE POINTS (2026-10-22, Meirion).
   ///
-  /// Rounded down to a whole redemption step: a scheme that redeems in
-  /// hundreds must not hand back 137 points' worth.
-  int maxRedeemableAgainst(int outstandingMinor) {
+  /// Whole points could only ever clear a multiple of the point value, so a
+  /// £4.10 item at 7p a point left 6p to find. Now the clerk redeems an
+  /// amount of money, and the points spent are that amount divided by the
+  /// value, to five decimals — so the bill clears to the penny and the
+  /// remainder sits on the card, exactly as Newbridge does.
+
+  /// The whole pence this customer's balance is worth.
+  int get balanceWorthMinor => (pointsBalance * pointValueMinor).floor();
+
+  /// The least money a redemption may be: the scheme's minimum points, priced.
+  int get minRedeemMinor => minRedeemPoints * pointValueMinor;
+
+  /// The most money this customer can take off a bill of [outstandingMinor]:
+  /// the smaller of the bill and what their balance is worth, or nothing when
+  /// that is below the scheme's minimum.
+  int maxRedeemMinor(int outstandingMinor) {
     if (!enabled || !redeemable || pointValueMinor <= 0) return 0;
-    final affordable = outstandingMinor ~/ pointValueMinor;
-    final usable = affordable < pointsBalance ? affordable : pointsBalance;
-    final stepped = (usable ~/ _step) * _step;
-    return stepped >= minRedeemPoints ? stepped : 0;
+    final worth = balanceWorthMinor;
+    final cap = outstandingMinor < worth ? outstandingMinor : worth;
+    return cap >= minRedeemMinor ? cap : 0;
   }
 
-  /// Every amount the clerk may redeem against a bill, smallest first.
-  ///
-  /// Redeeming is a conversation — "put £5 of your points against it" — not an
-  /// all-or-nothing button, which is how UK schemes are actually operated. The
-  /// steps come from the scheme so a till can never offer a redemption the back
-  /// office would refuse.
-  List<int> redemptionOptions(int outstandingMinor) {
-    final max = maxRedeemableAgainst(outstandingMinor);
-    if (max <= 0) return const [];
-    return [
-      for (var points = minRedeemPoints; points <= max; points += _step) points,
-      // The floor may not itself be a multiple of the step, so the top of the
-      // range is added explicitly rather than assumed to fall on one.
-      if ((max - minRedeemPoints) % _step != 0) max,
-    ];
+  /// The points spent to take [minor] off a bill, to five decimals and never
+  /// more than the balance.
+  double pointsForMinor(int minor) {
+    if (pointValueMinor <= 0) return 0;
+    final pts = ((minor / pointValueMinor) * 100000).round() / 100000;
+    return pts > pointsBalance ? pointsBalance : pts;
   }
+
+  /// A few money amounts the clerk may redeem, smallest first: the amount that
+  /// clears the bill, and round pounds below it. One tap clears the product.
+  List<int> redeemAmountOptions(int outstandingMinor) {
+    final max = maxRedeemMinor(outstandingMinor);
+    if (max <= 0) return const [];
+    final opts = <int>{max};
+    final step = max > 2000 ? 500 : 100;
+    for (var m = step; m < max; m += step) {
+      if (m >= minRedeemMinor) opts.add(m);
+    }
+    final list = opts.toList()..sort();
+    return list;
+  }
+
+  /// Deprecated name kept for callers: the most money redeemable.
+  int maxRedeemableAgainst(int outstandingMinor) => maxRedeemMinor(outstandingMinor);
 
   /// What [points] are worth as money.
-  int valueOf(int points) => points * pointValueMinor;
+  int valueOf(num points) => (points * pointValueMinor).round();
+
+  /// Points, trimmed for showing: whole where whole, else up to two decimals.
+  String get pointsLabel => pointsBalance == pointsBalance.roundToDouble()
+      ? pointsBalance.toStringAsFixed(0)
+      : pointsBalance.toStringAsFixed(2);
 
   /// Points a spend of [spendMinor] would earn, including this customer's tier
   /// multiplier — the same arithmetic the server does, so the receipt promises
@@ -650,7 +675,7 @@ class LoyaltyCustomer {
       name: j['name'] as String? ?? 'Guest',
       phone: j['phone'] as String?,
       cardNumber: j['card_number'] as String?,
-      pointsBalance: (j['points_balance'] as num?)?.toInt() ?? 0,
+      pointsBalance: (j['points_balance'] as num?)?.toDouble() ?? 0,
       pointsValueMinor: (j['points_value_minor'] as num?)?.toInt() ?? 0,
       redeemable: j['redeemable'] == true,
       tierName: tierName,
@@ -1202,12 +1227,16 @@ class CommerceRepository {
   }
 
   /// Award or spend points. Returns the new balance.
-  Future<int> movePoints({
+  Future<double> movePoints({
     required String customerId,
     required String kind,
-    int? points,
+    num? points,
     int spendMinor = 0,
     int? eligibleSpendMinor,
+    // The exact money a redemption takes off the bill, so the points ledger
+    // records what the customer actually got rather than points x value,
+    // which can differ by a rounding crumb once points are fractional.
+    int? valueMinor,
     String? orderId,
   }) async {
     final res = await _client
@@ -1219,6 +1248,7 @@ class CommerceRepository {
             'customer_id': customerId,
             'kind': kind,
             'points': ?points,
+            'value_minor': ?valueMinor,
             'spend_minor': spendMinor,
             // The part of the spend that earns, for a scheme that earns on
             // some departments only. Absent is the whole spend.
@@ -1231,7 +1261,7 @@ class CommerceRepository {
     if (res.statusCode != 200) {
       throw CommerceException(body['error'] as String? ?? 'Could not update points');
     }
-    return (body['points_balance'] as num?)?.toInt() ?? 0;
+    return (body['points_balance'] as num?)?.toDouble() ?? 0;
   }
 }
 

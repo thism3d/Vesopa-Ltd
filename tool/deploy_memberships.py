@@ -55,6 +55,7 @@ SCHEMAS = ["schema_venue_modules.sql", "schema_memberships.sql", "schema_till_ex
            "schema_payment_applied.sql",
            "schema_teya.sql",
            "schema_barclaycard.sql",
+           "schema_fractional_points.sql",
            "schema_till_sites.sql"]
 PM2 = f"su - {USER} -c 'PM2_HOME=/home/{USER}/.pm2 pm2 {{}}'"
 

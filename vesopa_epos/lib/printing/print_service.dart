@@ -312,6 +312,35 @@ class PrintService {
 
   /// A stock count sheet or a completed stock document, on the receipt
   /// printer -- the one beside the person holding the clipboard.
+  /// Print the arrival slip for a table QR order (2026-10-22). Best effort: a
+  /// venue that has no receipt printer simply does not print one, and nothing
+  /// about the order depends on it.
+  Future<void> printDineInArrival({
+    required String where,
+    required List<({int qty, String name})> items,
+    required int totalMinor,
+    String? note,
+    String? customer,
+    String? collection,
+    DateTime? at,
+  }) async {
+    final printer = setup.deviceFor(PrintTarget.customerReceipt);
+    if (printer == null) return;
+    final builder = await _for(printer);
+    await PrinterTransport.of(printer).send(
+      builder.dineInArrival(
+        where: where,
+        items: items,
+        totalMinor: totalMinor,
+        note: note,
+        customer: customer,
+        collection: collection,
+        at: at,
+        shopName: setup.shopName,
+      ),
+    );
+  }
+
   Future<void> printStockSheet({
     required String title,
     String? subtitle,

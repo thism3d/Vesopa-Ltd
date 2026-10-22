@@ -82,58 +82,78 @@ void main() {
     });
   });
 
-  group('redeeming', () {
-    test('rounds down to a whole redemption step', () {
+  group('redeeming (money, fractional points 2026-10-22)', () {
+    test('clears the exact bill, not a stepped amount', () {
       final c = LoyaltyCustomer.fromJson(_payload(balance: 1000, step: 100));
-      // £1.37 of the bill is affordable, but the scheme redeems in hundreds.
-      expect(c.maxRedeemableAgainst(137), 100);
+      // The whole point of the change: redeem clears the exact £1.37, not £1.
+      expect(c.maxRedeemMinor(137), 137);
     });
 
     test('never redeems more than the bill', () {
       final c = LoyaltyCustomer.fromJson(_payload(balance: 100000));
-      expect(c.maxRedeemableAgainst(500), 500);
+      expect(c.maxRedeemMinor(500), 500);
     });
 
-    test('never redeems more than the balance', () {
+    test('never redeems more than the balance is worth', () {
       final c = LoyaltyCustomer.fromJson(_payload(balance: 300));
-      expect(c.maxRedeemableAgainst(100000), 300);
+      expect(c.maxRedeemMinor(100000), 300);
     });
 
     test('refuses below the scheme floor', () {
       final c = LoyaltyCustomer.fromJson(_payload(balance: 99, minRedeem: 100));
-      expect(c.maxRedeemableAgainst(100000), 0);
+      expect(c.maxRedeemMinor(100000), 0);
     });
 
     test('refuses while the scheme is switched off', () {
       final c = LoyaltyCustomer.fromJson(_payload(enabled: false));
-      expect(c.maxRedeemableAgainst(100000), 0);
+      expect(c.maxRedeemMinor(100000), 0);
     });
 
-    test('offers every step up to the maximum, smallest first', () {
-      final c = LoyaltyCustomer.fromJson(_payload(balance: 450, step: 100));
-      // A clerk should be able to agree £1, £2, £3 or £4 of points, not just
-      // "all of it" — that is how these schemes are operated at a counter.
-      expect(c.redemptionOptions(100000), [100, 200, 300, 400]);
-    });
-
-    test('includes the maximum when it does not land on a step', () {
-      // A floor of 150 with a step of 100 puts the ceiling off-step.
+    test('clears any price point with fractional points (Newbridge)', () {
+      // Pontardawe: 7p a point. A £4.10 item used to leave 6p to find.
       final c = LoyaltyCustomer.fromJson(
-        _payload(balance: 480, minRedeem: 150, step: 100),
+        _payload(balance: 1000, pointValueMinor: 7, minRedeem: 1, step: 1),
       );
-      final options = c.redemptionOptions(100000);
-      expect(options.first, 150);
-      expect(options.last, c.maxRedeemableAgainst(100000));
+      // The bill clears to the penny...
+      expect(c.maxRedeemMinor(410), 410);
+      // ...and the points spent are fractional, to five decimals.
+      expect(c.pointsForMinor(410), closeTo(58.57143, 0.000005));
+      // The remainder stays on the card.
+      expect(c.pointsBalance - c.pointsForMinor(410), closeTo(941.42857, 0.00001));
+    });
+
+    test('points spent never exceed the balance', () {
+      final c = LoyaltyCustomer.fromJson(
+        _payload(balance: 10, pointValueMinor: 7, minRedeem: 1),
+      );
+      // 70p is all they have; asking for the £0.70 worth spends exactly 10.
+      expect(c.maxRedeemMinor(100000), 70);
+      expect(c.pointsForMinor(70), 10);
+    });
+
+    test('offers the clearing amount and round pounds below it', () {
+      final c = LoyaltyCustomer.fromJson(
+        _payload(balance: 1000, pointValueMinor: 1, minRedeem: 1, step: 1),
+      );
+      // Bill £4.50 -> options are round pounds up to, and including, £4.50.
+      final options = c.redeemAmountOptions(450);
+      expect(options.last, 450);
+      expect(options, containsAll([100, 200, 300, 400, 450]));
     });
 
     test('offers nothing when nothing can be redeemed', () {
       final c = LoyaltyCustomer.fromJson(_payload(balance: 50));
-      expect(c.redemptionOptions(100000), isEmpty);
+      expect(c.redeemAmountOptions(100000), isEmpty);
     });
 
     test('values points at the scheme rate', () {
       final c = LoyaltyCustomer.fromJson(_payload(pointValueMinor: 2));
       expect(c.valueOf(250), 500);
+    });
+
+    test('a fractional balance reads trimmed', () {
+      final c = LoyaltyCustomer.fromJson(_payload(balance: 1000, pointValueMinor: 7, minRedeem: 1));
+      expect(c.pointsLabel, '1000');
     });
   });
 }

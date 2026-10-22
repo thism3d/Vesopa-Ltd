@@ -464,7 +464,7 @@ Future<void> _loyaltyCard(
         // card is worth swiping before the round is rung rather than after.
         discountType: member.discountType,
         discountValue: member.discountValue,
-        pointsBalance: member.pointsBalance,
+        pointsBalance: member.pointsBalance.round(),
         // Their scheme's discount, hours and price level, and the number on
         // the card without its prefix.
         scheme: member.scheme,
@@ -513,7 +513,7 @@ Future<void> _loyaltyCard(
     '${member.memberNumber != null ? ' (member ${member.memberNumber})' : ''}'
     '${member.scheme != null ? ', ${member.scheme!.name},' : ''}'
     ' is on this bill — '
-    '${member.pointsBalance} point'
+    '${member.pointsLabel} point'
     '${member.pointsBalance == 1 ? '' : 's'}'
     '${member.discountType != 'none' && member.discountValue > 0
         ? ', ${_discount(member)}'
@@ -612,7 +612,7 @@ Future<void> _offerToEnrol(
             membershipExpiry: null,
             phone: member.phone,
             cardNumber: card.number,
-            pointsBalance: member.pointsBalance,
+            pointsBalance: member.pointsBalance.round(),
             scheme: member.scheme,
             memberNumber: member.memberNumber,
             revertLevel: ref.read(currentPriceLevelProvider),

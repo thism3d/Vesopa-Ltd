@@ -31,7 +31,10 @@ class RedemptionResult {
   final int amountMinor;
   final String reference;
   final LoyaltyCustomer? customer;
-  final int points;
+
+  /// Points spent, to five decimals (a fractional redemption clears an exact
+  /// price). Zero when the customer was only attached to earn.
+  final double points;
 }
 
 /// Redeem a gift card.
@@ -615,9 +618,7 @@ class _LoyaltyDialogState extends State<_LoyaltyDialog> {
     _customer = customer;
     _matches = const [];
     _error = null;
-    _points = widget.redeem
-        ? customer.maxRedeemableAgainst(widget.outstandingMinor)
-        : 0;
+    _points = widget.redeem ? customer.maxRedeemMinor(widget.outstandingMinor) : 0;
   }
 
   Future<void> _enrol() async {
@@ -650,9 +651,12 @@ class _LoyaltyDialogState extends State<_LoyaltyDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final customer = _customer;
-    final max = customer?.maxRedeemableAgainst(widget.outstandingMinor) ?? 0;
+    // _points now holds the MONEY to take off (minor). The points spent are
+    // that amount divided by the point value, to five decimals.
+    final max = customer?.maxRedeemMinor(widget.outstandingMinor) ?? 0;
     final chosen = (_points ?? max).clamp(0, max);
-    final worth = customer?.valueOf(chosen) ?? 0;
+    final worth = chosen;
+    final spentPoints = customer?.pointsForMinor(chosen) ?? 0;
 
     return AlertDialog(
       title: Text(widget.redeem ? 'Loyalty points' : 'Attach customer'),
@@ -708,7 +712,7 @@ class _LoyaltyDialogState extends State<_LoyaltyDialog> {
                                 'Member ${match.memberNumber}',
                               if (match.scheme != null) match.scheme!.name,
                               if (match.phone?.isNotEmpty ?? false) match.phone!,
-                              '${match.pointsBalance} pts',
+                              '${match.pointsLabel} pts',
                               if (match.tierName?.isNotEmpty ?? false)
                                 match.tierName!,
                             ].join(' · '),
@@ -780,11 +784,11 @@ class _LoyaltyDialogState extends State<_LoyaltyDialog> {
                   else
                     _PointsChooser(
                       customer: customer,
-                      options: customer.redemptionOptions(
+                      options: customer.redeemAmountOptions(
                         widget.outstandingMinor,
                       ),
-                      selected: chosen,
-                      onChanged: (points) => setState(() => _points = points),
+                      selectedMinor: chosen,
+                      onChanged: (minor) => setState(() => _points = minor),
                     ),
                 ],
               ],
@@ -830,7 +834,7 @@ class _LoyaltyDialogState extends State<_LoyaltyDialog> {
                               amountMinor: worth,
                               reference: customer.phone ?? '',
                               customer: customer,
-                              points: chosen,
+                              points: spentPoints,
                             ),
                           )
                       : null,
@@ -838,7 +842,7 @@ class _LoyaltyDialogState extends State<_LoyaltyDialog> {
             !widget.redeem
                 ? 'Attach'
                 : worth > 0
-                    ? 'Spend $chosen pts (${_money(worth)})'
+                    ? 'Take off ${_money(worth)}'
                     : 'Spend points',
           ),
         ),
@@ -856,12 +860,11 @@ String _whyNoRedeem(LoyaltyCustomer c, int outstandingMinor) {
     return 'Points have no value set yet. Set "Value of 1 point" in the back office, Loyalty Settings.';
   }
   if (c.pointsBalance < c.minRedeemPoints) {
-    return '${c.minRedeemPoints} points are needed to redeem — they have ${c.pointsBalance}.';
+    return '${c.minRedeemPoints} points are needed to redeem — they have ${c.pointsLabel}.';
   }
   if (outstandingMinor <= 0) return 'Nothing left to pay on this bill.';
-  final smallest = c.valueOf(c.minRedeemPoints);
-  if (outstandingMinor < smallest) {
-    return 'The smallest redemption is ${c.minRedeemPoints} points (${_money(smallest)}), '
+  if (outstandingMinor < c.minRedeemMinor) {
+    return 'The smallest redemption is ${_money(c.minRedeemMinor)}, '
         'more than the ${_money(outstandingMinor)} left on this bill. '
         'Lower "Minimum to redeem" in the back office, Loyalty Settings, to allow it.';
   }
@@ -947,7 +950,7 @@ class _MemberCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                '${customer.pointsBalance}',
+                customer.pointsLabel,
                 style: theme.textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.w800,
                   color: scheme.onPrimaryContainer,
@@ -988,40 +991,50 @@ class _PointsChooser extends StatelessWidget {
   const _PointsChooser({
     required this.customer,
     required this.options,
-    required this.selected,
+    required this.selectedMinor,
     required this.onChanged,
   });
 
   final LoyaltyCustomer customer;
+
+  /// Money amounts (minor) the clerk may take off: the amount that clears the
+  /// bill, and round pounds below it.
   final List<int> options;
-  final int selected;
-  final void Function(int points) onChanged;
+  final int selectedMinor;
+  final void Function(int minor) onChanged;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final max = options.isEmpty ? 0 : options.last;
+    final spent = customer.pointsForMinor(selectedMinor);
+    final left = customer.pointsBalance - spent;
+    String pts(double p) => p == p.roundToDouble()
+        ? p.toStringAsFixed(0)
+        : p.toStringAsFixed(2);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text('Spend how many points?', style: theme.textTheme.labelLarge),
+        Text('How much off the bill?', style: theme.textTheme.labelLarge),
         const SizedBox(height: 8),
 
-        // A long ladder of steps would be an unusable wall of chips on a till,
-        // so past a handful it becomes a slider with the steps as its
-        // divisions — same values, one gesture.
+        // The amount that clears the bill is first and preselected: one tap
+        // clears the product, whatever its price. Round pounds below it for a
+        // customer who wants to keep some.
         if (options.length <= 6)
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: [
-              for (final points in options)
+              for (final minor in options)
                 ChoiceChip(
-                  label: Text('$points · ${_money(customer.valueOf(points))}'),
-                  selected: selected == points,
-                  onSelected: (_) => onChanged(points),
+                  label: Text(minor == max
+                      ? 'Clear ${_money(minor)}'
+                      : _money(minor)),
+                  selected: selectedMinor == minor,
+                  onSelected: (_) => onChanged(minor),
                 ),
             ],
           )
@@ -1029,17 +1042,15 @@ class _PointsChooser extends StatelessWidget {
           Column(
             children: [
               Slider(
-                value: selected.toDouble().clamp(
+                value: selectedMinor.toDouble().clamp(
                       options.first.toDouble(),
                       max.toDouble(),
                     ),
                 min: options.first.toDouble(),
                 max: max.toDouble(),
                 divisions: options.length - 1,
-                label: '$selected pts',
+                label: _money(selectedMinor),
                 onChanged: (value) {
-                  // Snap to a real option: the slider is a way of picking one
-                  // of these, not a continuous amount.
                   final nearest = options.reduce(
                     (a, b) => (a - value).abs() < (b - value).abs() ? a : b,
                   );
@@ -1049,13 +1060,12 @@ class _PointsChooser extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('${options.first} pts',
-                      style: theme.textTheme.bodySmall),
+                  Text(_money(options.first), style: theme.textTheme.bodySmall),
                   TextButton(
                     onPressed: () => onChanged(max),
-                    child: const Text('Use all'),
+                    child: const Text('Clear the bill'),
                   ),
-                  Text('$max pts', style: theme.textTheme.bodySmall),
+                  Text(_money(max), style: theme.textTheme.bodySmall),
                 ],
               ),
             ],
@@ -1074,7 +1084,7 @@ class _PointsChooser extends StatelessWidget {
                 children: [
                   const Expanded(child: Text('Comes off the bill')),
                   Text(
-                    '-${_money(customer.valueOf(selected))}',
+                    '-${_money(selectedMinor)}',
                     style: const TextStyle(
                         fontWeight: FontWeight.bold, fontSize: 17),
                   ),
@@ -1084,10 +1094,10 @@ class _PointsChooser extends StatelessWidget {
               Row(
                 children: [
                   Expanded(
-                    child: Text('Points left afterwards',
+                    child: Text('Points spent / left',
                         style: theme.textTheme.bodySmall),
                   ),
-                  Text('${customer.pointsBalance - selected}',
+                  Text('${pts(spent)} / ${pts(left)}',
                       style: theme.textTheme.bodySmall),
                 ],
               ),

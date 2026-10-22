@@ -34,7 +34,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../main.dart' show notificationsProvider;
+import '../main.dart' show notificationsProvider, brandingProvider, sessionProvider;
+import '../printing/print_service.dart';
+import '../printing/receipt_builder.dart';
+import 'printers_page.dart' show printerSettingsProvider;
 import '../data/dinein_orders.dart';
 import '../data/express_orders.dart';
 import '../data/notifications.dart';
@@ -128,6 +131,9 @@ class _ToastStackState extends ConsumerState<_ToastStack> {
   /// of the shell, which is the life of the till.
   final _announced = <int>{};
 
+  /// Re-chimes while an order is still waiting, when "keep sounding" is on.
+  Timer? _insistent;
+
   /// The same three, for kiosk orders. Their ids are another table's, so they
   /// are kept apart from the dine-in ones rather than mixed into one set.
   final _expressSetAside = <int>{};
@@ -217,8 +223,81 @@ class _ToastStackState extends ConsumerState<_ToastStack> {
       ),
     );
 
+    // Print a slip for each genuinely new order, when the venue wants paper.
+    if (ref.read(orderArrivalPrintProvider)) {
+      for (final order in waiting) {
+        if (fresh.contains(order.id)) unawaited(_printArrival(order));
+      }
+    }
+
     if (!ref.read(orderChimeProvider)) return;
-    unawaited(SystemSound.play(SystemSoundType.alert));
+    _beep();
+
+    // Keep sounding every 18 seconds until nothing is waiting, when the venue
+    // asked for it — for a kitchen that cannot watch the till.
+    if (ref.read(orderChimeRepeatProvider)) {
+      _insistent?.cancel();
+      _insistent = Timer.periodic(const Duration(seconds: 18), (t) {
+        final stillWaiting = (ref.read(dineInOrdersProvider).value ?? const <DineInOrder>[])
+            .any((o) => o.isWaiting && !_setAside.contains(o.id));
+        if (!stillWaiting || !ref.read(orderChimeProvider) || !ref.read(orderChimeRepeatProvider)) {
+          t.cancel();
+          return;
+        }
+        _beep();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _insistent?.cancel();
+    super.dispose();
+  }
+
+  /// The alert noise: three quick beeps, which carries across a kitchen in a
+  /// way the single system beep did not (Pontardawe RFC, 2026-10-22).
+  void _beep() {
+    for (var i = 0; i < 3; i++) {
+      Future<void>.delayed(Duration(milliseconds: 220 * i), () {
+        unawaited(SystemSound.play(SystemSoundType.alert));
+      });
+    }
+  }
+
+  /// Print a short arrival slip for [order], best effort.
+  Future<void> _printArrival(DineInOrder order) async {
+    try {
+      final printers = await ref.read(printerSettingsProvider.future);
+      if (printers.receiptPrinter == null) return;
+      final branding = ref.read(brandingProvider);
+      final service = PrintService(
+        await ReceiptBuilder.create(paperWidthMm: printers.receiptWidthMm),
+        PrinterSetup(
+          printers: printers,
+          shopName: branding.venueName.isNotEmpty
+              ? branding.venueName
+              : ref.read(sessionProvider).venueName,
+          footer: branding.footerMessage,
+          logo: null,
+        ),
+      );
+      await service.printDineInArrival(
+        where: order.isKioskCounter
+            ? 'Counter order'
+            : (order.tableLabel.isEmpty ? 'A table' : order.tableLabel),
+        items: [
+          for (final line in order.dishes) (qty: line.qty, name: line.name),
+        ],
+        totalMinor: order.totalMinor,
+        note: order.note,
+        customer: order.customerName,
+        collection: order.kioskNumber?.toString(),
+        at: order.placedAt,
+      );
+    } catch (_) {
+      // A printer that will not print must never hold up the chime or the card.
+    }
   }
 
   @override
