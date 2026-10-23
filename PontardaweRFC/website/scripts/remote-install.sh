@@ -188,8 +188,31 @@ for k in DEEPSEEK_API_KEY GEMINI_API_KEY; do
   fi
 done
 grep -q '^DEEPSEEK_API_KEY=.' "$APP/.env" || warn "no DEEPSEEK_API_KEY: the helper will answer from the FAQ only"
+
+# The news admin (2026-10-23, src/admin.js): posts, photos and logins live in
+# $APP/data, which the copy above never replaces. SESSION_SECRET signs the
+# admin's sign-in cookie. ADMIN_SETUP_CODE makes the first login at
+# /admin/setup; it is the one value this script shows, and only while nobody
+# can sign in yet (the page closes after that).
+mkdir -p "$APP/data/uploads" "$APP/backups"
+grep -q '^DATA_DIR=' "$APP/.env" || echo "DATA_DIR=$APP/data" >> "$APP/.env"
+grep -q '^SESSION_SECRET=.' "$APP/.env" || setkey "$APP/.env" SESSION_SECRET "$(openssl rand -hex 32)"
+grep -q '^ADMIN_SETUP_CODE=.' "$APP/.env" || setkey "$APP/.env" ADMIN_SETUP_CODE "$(openssl rand -hex 4)-$(openssl rand -hex 4)"
+if [ ! -s "$APP/data/users.json" ]; then
+  ok "news admin: make the first login at https://$DOMAIN/admin/setup with the setup code $(grep '^ADMIN_SETUP_CODE=' "$APP/.env" | cut -d= -f2-)"
+else
+  ok "news admin: https://$DOMAIN/admin ($(grep -c '"email"' "$APP/data/users.json") login(s))"
+fi
+# Every night, a copy of the posts, photos and logins; the last 30 are kept.
+cat > /etc/cron.d/pontardawerfc-news-backup <<CRON
+# The news admin's posts and photos (scripts/remote-install.sh)
+17 3 * * * $APPUSER tar -czf $APP/backups/news-\$(date +\%F).tar.gz -C $APP data && find $APP/backups -name 'news-*.tar.gz' -mtime +30 -delete
+CRON
+chmod 644 /etc/cron.d/pontardawerfc-news-backup
+
 chown -R "$APPUSER:$APPUSER" "$APP"
 chmod 600 "$APP/.env"
+chmod 700 "$APP/data" "$APP/backups"
 
 cd "$APP"
 LOCK_NEW=$(sha256sum package-lock.json | cut -d' ' -f1)

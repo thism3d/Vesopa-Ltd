@@ -3,3 +3,6 @@ google-services.json
 GoogleService-Info.plist
 # Keys, .env files and console screenshots the owner keeps beside the app; never committed
 FirebaseAndAuthAndEnv/
+
+# The website's posts, photos and logins (written by /admin on the server; never in git)
+website/data/

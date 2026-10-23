@@ -67,10 +67,11 @@ function clubLd() {
   };
 }
 
-function head({ title, description, path, og = 'home', ld = [], noindex = false, icon: tabIcon = null }) {
+function head({ title, description, path, og = 'home', ld = [], noindex = false, icon: tabIcon = null, image: shareImage = null, type = 'website', extraHead = '' }) {
   const full = path === '/' ? `${club.name} | ${club.tagline}` : `${title} | ${club.name}`;
   const url = `${SITE}${path}`;
-  const image = `${SITE}/img/og-${og}.jpg`;
+  // A news post with its own photo shares that (its 1200x630 cut, src/uploads.js).
+  const image = shareImage ? `${SITE}${shareImage.src}` : `${SITE}/img/og-${og}.jpg`;
   const graph = [clubLd(), {
     '@context': 'https://schema.org',
     '@type': 'WebSite',
@@ -91,7 +92,7 @@ function head({ title, description, path, og = 'home', ld = [], noindex = false,
 ${noindex ? '<meta name="robots" content="noindex">' : '<meta name="robots" content="index, follow, max-image-preview:large">'}
 <meta name="theme-color" content="#8F0000">
 <meta name="color-scheme" content="light dark">
-<meta property="og:type" content="website">
+<meta property="og:type" content="${esc(type)}">
 <meta property="og:site_name" content="${esc(club.name)}">
 <meta property="og:locale" content="en_GB">
 <meta property="og:title" content="${esc(full)}">
@@ -100,7 +101,7 @@ ${noindex ? '<meta name="robots" content="noindex">' : '<meta name="robots" cont
 <meta property="og:image" content="${esc(image)}">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="${esc(`${club.name} crest on club red: ${title}`)}">
+<meta property="og:image:alt" content="${esc(shareImage ? shareImage.alt || title : `${club.name} crest on club red: ${title}`)}">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="${esc(full)}">
 <meta name="twitter:description" content="${esc(description)}">
@@ -118,6 +119,7 @@ ${tabIcon ? `<link rel="icon" type="image/svg+xml" href="${tabIcon}.svg">
 <link rel="stylesheet" href="/css/site.css?v=${ASSET_VERSION}">
 <link rel="stylesheet" href="/css/motion.css?v=${ASSET_VERSION}">
 <link rel="alternate" type="application/rss+xml" title="${esc(club.name)} news" href="/news/feed.xml">
+${extraHead}
 <script>
 /* Nothing is hidden while scripts load: content already on screen is shown
    as it is, and only what is further down rises in as it is scrolled to

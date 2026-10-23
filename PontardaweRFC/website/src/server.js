@@ -22,6 +22,8 @@ const { helperRoute } = require('./helper');
 const wru = require('./wru');
 const venue = require('./venue_api');
 const game = require('./game_rooms');
+const posts = require('./posts');
+const { adminRoutes } = require('./admin');
 
 const app = express();
 app.disable('x-powered-by');
@@ -66,9 +68,23 @@ app.use(express.static(PUBLIC, {
     if (/\.(woff2|webp|jpg|png|ico)$/.test(file)) res.set('Cache-Control', 'public, max-age=2592000, immutable');
   },
 }));
+// Photos uploaded in the admin (src/uploads.js): each name is new, so they never change.
+app.use('/img/u', express.static(posts.UPLOADS, { index: false, maxAge: '365d', immutable: true }));
+// Where the club writes its news (src/admin.js).
+app.use('/admin', adminRoutes());
+// Photos no post uses any more go after a day (src/posts.js sweepPhotos), checked every six hours.
+const sweep = () => {
+  try {
+    const gone = posts.sweepPhotos();
+    if (gone.length) console.log(`news admin: ${gone.length} unused photo(s) removed`);
+  } catch (e) { console.error('photo sweep:', e.message); }
+};
+setTimeout(sweep, 60 * 1000).unref();
+setInterval(sweep, 6 * 3600 * 1000).unref();
 
+// A minute, so a post published in the admin is on every page almost at once.
 const html = (render) => (req, res) => {
-  res.set('Cache-Control', 'public, max-age=300');
+  res.set('Cache-Control', 'public, max-age=60');
   res.type('html').send(render(req));
 };
 
@@ -129,7 +145,13 @@ app.get('/tickets/order', async (req, res) => {
   if (id) r = await venue.order(id).catch(() => null);
   res.set('Cache-Control', 'no-store').type('html').send(pages.ticketOrderPage(r));
 });
-app.get('/news', html(() => pages.newsPage()));
+app.get('/news', (req, res, next) => {
+  if (req.query.page === undefined) return html(() => pages.newsPage(1))(req, res);
+  const n = Number(req.query.page);
+  if (n === 1) return res.redirect(301, '/news');
+  if (!Number.isInteger(n) || n < 1 || n > pages.newsPages()) return next();
+  return html(() => pages.newsPage(n))(req, res);
+});
 app.get('/clubhouse', html(() => pages.clubhousePage()));
 // The menu lives on its own address now; old links and printed QR codes
 // that say pontardawerfc.com/menu still land on it.
@@ -147,8 +169,12 @@ app.get(['/archives', '/archive/', '/old-site'], (req, res) => res.redirect(301,
 app.get(['/licenses', '/credits', '/licences/'], (req, res) => res.redirect(301, '/licences'));
 app.get('/news/:slug', (req, res, next) => {
   const post = news.find((p) => p.slug === req.params.slug);
-  if (!post) return next();
-  res.set('Cache-Control', 'public, max-age=300');
+  if (!post) {
+    // A post renamed in the admin keeps its old address working.
+    const moved = posts.movedFrom(req.params.slug);
+    return moved ? res.redirect(301, `/news/${moved.slug}`) : next();
+  }
+  res.set('Cache-Control', 'public, max-age=60');
   res.type('html').send(pages.articlePage(post));
 });
 
@@ -200,7 +226,7 @@ app.get('/sitemap.xml', (req, res) => {
       return { loc: `${SITE}${p}`, lastmod: today, freq, pri };
     }),
     // This month's news is still news; older posts are the record.
-    ...news.map((n) => ({ loc: `${SITE}/news/${n.slug}`, lastmod: n.date, freq: n.date >= monthAgo ? 'weekly' : 'yearly', pri: n.date >= monthAgo ? '0.7' : '0.4' })),
+    ...news.map((n) => ({ loc: `${SITE}/news/${n.slug}`, lastmod: String(n.updated || n.date).slice(0, 10), freq: n.date >= monthAgo ? 'weekly' : 'yearly', pri: n.date >= monthAgo ? '0.7' : '0.4' })),
   ];
   res.set('Cache-Control', 'public, max-age=3600');
   res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>
@@ -225,6 +251,7 @@ app.get('/robots.txt', (req, res) => {
 User-agent: *
 Allow: /
 Disallow: /api/
+Disallow: /admin
 
 # AI assistants and search: welcome to read the public pages.
 User-agent: GPTBot
@@ -302,7 +329,7 @@ app.get('/news/feed.xml', (req, res) => {
   res.type('application/rss+xml').send(`<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0"><channel>
 <title>${esc(club.name)} news</title><link>${SITE}/news</link><description>${esc(club.tagline)}</description><language>en-gb</language>
-${news.map((n) => `<item><title>${esc(n.title)}</title><link>${SITE}/news/${n.slug}</link><guid>${SITE}/news/${n.slug}</guid><pubDate>${new Date(`${n.date}T12:00:00Z`).toUTCString()}</pubDate><description>${esc(n.summary)}</description></item>`).join('\n')}
+${news.map((n) => `<item><title>${esc(n.title)}</title><link>${SITE}/news/${n.slug}</link><guid>${SITE}/news/${n.slug}</guid><pubDate>${new Date(posts.zoned(n.publishAt) || `${n.date}T12:00:00Z`).toUTCString()}</pubDate><description>${esc(n.summary)}</description></item>`).join('\n')}
 </channel></rss>
 `);
 });

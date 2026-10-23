@@ -10,6 +10,7 @@ const wru = require('./wru');
 const venue = require('./venue_api');
 const { page, pageHero, esc, icon, SITE, MEMBERS, MENU_URL, ASSET_VERSION, appBadges } = require('./layout');
 const GAME = require('../public/js/game-rules.js');
+const { zoned } = require('./posts');
 
 const MENU_API = (process.env.MENU_API || 'https://menu.vesopa.com').replace(/\/+$/, '');
 const MENU_SLUG = process.env.MENU_SLUG || 'pontardawe-rfc';
@@ -20,7 +21,8 @@ function photo(name, { cls = '', sizes = '(max-width: 700px) 100vw, 640px', lazy
   // The club's update posters come in two sizes: a phone or a card in a grid
   // takes the 480px one, a big screen the 960px one. Everything but the
   // opening picture loads lazily, as it is scrolled to.
-  const set = name.startsWith('ig/') ? ` srcset="/img/${name}-480.webp 480w, /img/${name}.webp ${m.w}w"` : ` srcset="/img/${name}.webp"`;
+  // Photos uploaded in the admin (m.small) come in the same two sizes.
+  const set = name.startsWith('ig/') || m.small ? ` srcset="/img/${name}-480.webp 480w, /img/${name}.webp ${m.w}w"` : ` srcset="/img/${name}.webp"`;
   return `<picture class="${cls}"><source${set} type="image/webp" sizes="${sizes}"><img src="/img/${name}.jpg" alt="${esc(m.alt)}" width="${m.w}" height="${m.h}" sizes="${sizes}"${lazy ? ' loading="lazy" decoding="async"' : ' fetchpriority="high"'}></picture>`;
 }
 
@@ -85,7 +87,7 @@ function eventTile(u, { big = false } = {}) {
   const [label, ic] = kindOf(u.kind);
   return `<article class="ev-tile reveal${big ? ' ev-big' : ''}" data-tilt>
   <a href="/news/${esc(u.slug)}" class="ev-link">
-    <div class="ev-poster">${photo(u.image, { sizes: big ? '(max-width: 760px) 100vw, 560px' : '(max-width: 760px) 100vw, 380px' })}<span class="ev-date"><b>${esc(w.dd)}</b><span>${esc(w.mon)}</span></span>${soon ? `<span class="ev-soon">${esc(soon)}</span>` : ''}</div>
+    <div class="ev-poster">${photo(u.image, { sizes: big ? '(max-width: 760px) 100vw, 560px' : '(max-width: 760px) 100vw, 380px' }) || '<div class="ev-poster-art" aria-hidden="true"><img src="/img/crest-256.webp" alt="" width="128" height="128" loading="lazy"></div>'}<span class="ev-date"><b>${esc(w.dd)}</b><span>${esc(w.mon)}</span></span>${soon ? `<span class="ev-soon">${esc(soon)}</span>` : ''}</div>
     <div class="ev-body">
       <p class="ev-kind">${icon(ic, { size: 16 })} ${esc(label)}</p>
       <h3>${esc(u.title)}</h3>
@@ -412,23 +414,40 @@ function teamsPage() {
   }, body);
 }
 
-function newsPage() {
-  const body = `${pageHero({ kicker: 'Club news', title: 'News', lead: 'What\'s happening at the club.' })}
+/** Posts on each page of /news; /news?page=2 and on are the older ones. */
+const NEWS_PER_PAGE = 12;
+const newsPages = () => Math.max(1, Math.ceil(news.length / NEWS_PER_PAGE));
+
+function newsPage(n = 1) {
+  const last = newsPages();
+  const list = news.slice((n - 1) * NEWS_PER_PAGE, n * NEWS_PER_PAGE);
+  const at = (k) => (k === 1 ? '/news' : `/news?page=${k}`);
+  const nav = last > 1 ? `<nav class="pager reveal" aria-label="More news">
+    ${n > 1 ? `<a class="btn btn-line" href="${at(n - 1)}" rel="prev">Newer posts</a>` : '<span></span>'}
+    <span class="muted">Page ${n} of ${last}</span>
+    ${n < last ? `<a class="btn btn-line" href="${at(n + 1)}" rel="next">Older posts ${icon('arrow', { size: 18 })}</a>` : '<span></span>'}
+  </nav>` : '';
+  const body = `${pageHero({ kicker: 'Club news', title: n > 1 ? `News: page ${n}` : 'News', lead: 'What\'s happening at the club.' })}
 <section class="section">
-  <div class="wrap grid-3">${news.map((p, i) => newsCard(p, { big: i === 0 })).join('')}</div>
-  <div class="wrap"><p class="muted center reveal">More match news and photos on our <a href="${club.web.facebook}" rel="noopener">Facebook page</a> and <a href="${club.web.x}" rel="noopener">X</a>.</p></div>
+  <div class="wrap grid-3">${list.map((p, i) => newsCard(p, { big: i === 0 && n === 1 })).join('')}</div>
+  <div class="wrap">${nav}<p class="muted center reveal">More match news and photos on our <a href="${club.web.facebook}" rel="noopener">Facebook page</a> and <a href="${club.web.x}" rel="noopener">X</a>.</p></div>
 </section>
-${xArchive()}`;
+${n === 1 ? xArchive() : ''}`;
   return page({
-    title: 'News',
-    description: `News from ${club.name}: club announcements, tributes and the latest from the clubhouse on Ynysderw Road.`,
-    path: '/news',
+    title: n > 1 ? `News, page ${n}` : 'News',
+    description: `News from ${club.name}: club announcements, match days, events and the latest from the clubhouse on Ynysderw Road.${n > 1 ? ` Page ${n}.` : ''}`,
+    path: at(n),
     og: 'news',
-    ld: [crumbs([['Home', '/'], ['News', '/news']])],
+    extraHead: `${n > 1 ? `<link rel="prev" href="${SITE}${at(n - 1)}">\n` : ''}${n < last ? `<link rel="next" href="${SITE}${at(n + 1)}">\n` : ''}`,
+    ld: [crumbs([['Home', '/'], ['News', '/news']]), {
+      '@context': 'https://schema.org',
+      '@type': 'ItemList',
+      itemListElement: list.map((p, i) => ({ '@type': 'ListItem', position: (n - 1) * NEWS_PER_PAGE + i + 1, url: `${SITE}/news/${p.slug}`, name: p.title })),
+    }],
   }, body);
 }
 
-function articlePage(post) {
+function articlePage(post, { preview = false } = {}) {
   const img = post.image ? `<figure class="article-img reveal">${photo(post.image, { lazy: false, sizes: '(max-width: 820px) 100vw, 780px' })}</figure>` : '';
   const ev = post.event;
   const w = ev ? whenParts(ev.start) : null;
@@ -449,23 +468,30 @@ function articlePage(post) {
     ${post.closed ? `<p class="notice">${icon('info', { size: 20 })} This vacancy closed on 7 October 2024. It is kept here as part of the club's news.</p>` : ''}
     ${eventBox}
     ${img}
-    ${post.paragraphs.map((p) => (/^\d+\.\s|^\d+\.[A-Z]/.test(p) ? `<h2>${esc(p)}</h2>` : `<p>${esc(p)}</p>`)).join('\n    ')}
+    ${post.html != null ? `<div class="article-text">${post.html}</div>` : post.paragraphs.map((p) => (/^\d+\.\s|^\d+\.[A-Z]/.test(p) ? `<h2>${esc(p)}</h2>` : `<p>${esc(p)}</p>`)).join('\n    ')}
     ${cta}
     ${more}
     ${source}
     <p class="back"><a href="${ev ? '/whats-on' : '/news'}">${icon('arrow', { size: 18 })} ${ev ? "What's on" : 'All news'}</a></p>
   </article>
 </section>`;
+  // A photo uploaded in the admin has its own share picture (src/uploads.js).
+  const share = post.image && images[post.image] && images[post.image].og ? { src: `/img/${post.image}-og.jpg`, alt: images[post.image].alt } : null;
   return page({
-    title: post.title,
+    title: post.seoTitle || post.title,
     description: post.summary,
     path: `/news/${post.slug}`,
     og: 'news',
+    image: share,
+    type: 'article',
+    noindex: preview,
+    extraHead: `<meta property="article:published_time" content="${esc(zoned(post.publishAt) || post.date)}">\n${post.updated ? `<meta property="article:modified_time" content="${esc(zoned(post.updated))}">\n` : ''}`,
     ld: [crumbs([['Home', '/'], ['News', '/news'], [post.title, `/news/${post.slug}`]]), {
       '@context': 'https://schema.org',
       '@type': 'NewsArticle',
-      headline: post.title,
-      datePublished: post.date,
+      headline: post.title.slice(0, 110),
+      datePublished: zoned(post.publishAt) || post.date,
+      ...(post.updated ? { dateModified: zoned(post.updated) } : {}),
       description: post.summary,
       image: post.image ? `${SITE}/img/${post.image}.jpg` : `${SITE}/img/og-news.jpg`,
       author: { '@type': 'Organization', name: club.name, url: `${SITE}/` },
@@ -1266,7 +1292,7 @@ function notFound() {
 }
 
 module.exports = {
-  home, clubPage, teamsPage, newsPage, articlePage, clubhousePage, menuPage, membershipPage,
+  home, clubPage, teamsPage, newsPage, newsPages, articlePage, clubhousePage, menuPage, membershipPage,
   contactPage, privacyPage, cookiesPage, termsPage, accessibilityPage, notFound, fixturesPage, ticketsPage, ticketOrderPage, whatsOnPage, playPage, licencesPage, archivePage,
   MENU_API, MENU_SLUG,
 };

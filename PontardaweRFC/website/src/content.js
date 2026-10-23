@@ -9,6 +9,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const posts = require('./posts');
 
 const ROOT = path.join(__dirname, '..', 'content');
 const read = (name) => JSON.parse(fs.readFileSync(path.join(ROOT, name), 'utf8'));
@@ -20,13 +21,10 @@ const archive = read('archive.json');
 
 // The club's own updates from Instagram and Facebook (content/updates.json),
 // with their pictures (content/images-ig.json, from tool/make_update_images.py).
-// Each is a news post as well, so it has its own page, a card on the news
-// page and a place in the feed and the sitemap; one with an event also shows
-// on What's On until its day has passed.
 let saved = { updates: [] };
 try { saved = read('updates.json'); } catch { /* none shipped */ }
 try { Object.assign(images, read('images-ig.json')); } catch { /* pictures not made yet */ }
-const updates = (saved.updates || []).map((u) => {
+const shippedUpdates = (saved.updates || []).map((u) => {
   const gallery = (u.images || []).map((i) => `ig/${i.name}`).filter((n) => images[n]);
   return {
     slug: u.slug,
@@ -42,7 +40,28 @@ const updates = (saved.updates || []).map((u) => {
     source: 'instagram',
   };
 });
-const news = [...read('news.json'), ...updates].sort((a, b) => String(b.date).localeCompare(String(a.date)));
+
+/*
+ * The news (2026-10-23): every post now lives in the store the admin writes
+ * (src/posts.js, data/posts.json), which the shipped posts above are copied
+ * into. `news` is every published post whose time has come, newest first;
+ * `updates` is those with a kind (Match, Event, ...), which What's On shows,
+ * and with an event date, until its day has passed. Both are filled again in
+ * place after every save in the admin and each minute (scheduled posts), so
+ * the pages that hold them always read the current list.
+ */
+posts.init([...read('news.json'), ...shippedUpdates]);
+const news = [];
+const updates = [];
+function refresh() {
+  Object.assign(images, posts.images());
+  const live = posts.live();
+  news.splice(0, news.length, ...live);
+  updates.splice(0, updates.length, ...live.filter((p) => p.kind));
+}
+refresh();
+setInterval(refresh, 60 * 1000).unref();
+
 // The club's posts on X, as saved from x.com/PontardaweRFC (content/source/x-posts.json).
 // Missing file = no X archive, never a site that will not start.
 let xSaved = { posts: [] };
@@ -59,4 +78,4 @@ function longDate(iso) {
 
 const yearsOld = (now = new Date()) => now.getFullYear() - club.founded;
 
-module.exports = { club, news, updates, images, xPosts, longDate, yearsOld, archive };
+module.exports = { club, news, updates, images, xPosts, longDate, yearsOld, archive, refresh };

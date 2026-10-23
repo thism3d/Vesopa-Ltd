@@ -616,3 +616,15 @@ a.tile:hover, a.card:hover, .news-card:hover { transform: translateY(-6px); box-
 .callout > div { flex: 1 1 auto; overflow-wrap: anywhere; }
 @media (max-width: 860px) { .fixtures-grid, .tickets-grid { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 520px) { .callout { flex-direction: column; gap: 14px; padding: 20px; } }
+
+/* News written in the admin (2026-10-23): its headings, lists, quotes and photos, and the pages of /news. */
+.article-text h3 { font-size: 1.2rem; margin-top: 1.4em; }
+.article-text ul, .article-text ol { padding-left: 1.3em; font-size: 1.08rem; }
+.article-text li { margin: .3em 0; }
+.article-text blockquote { margin: 1.4em 0; padding: .4em 0 .4em 1.1em; border-left: 4px solid var(--red-2); font-style: italic; color: var(--ink-2); }
+.article-text figure { margin: 1.6em 0; }
+.article-text img { border-radius: 14px; box-shadow: var(--shadow); width: 100%; height: auto; }
+.article-text figcaption { font-size: .9rem; color: var(--muted); margin-top: .5em; }
+.pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 8px 0 28px; }
+.ev-poster-art { aspect-ratio: 4 / 5; display: grid; place-items: center; background: var(--grad-hero); }
+.ev-poster-art img { width: 128px; height: 128px; }
