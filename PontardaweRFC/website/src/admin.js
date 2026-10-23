@@ -23,11 +23,9 @@ const posts = require('./posts');
 const content = require('./content');
 const pages = require('./pages');
 const autonews = require('./autonews');
-const screens = require('./screen_import');
 
 const form = express.urlencoded({ extended: false, limit: '2mb', parameterLimit: 400 });
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024, files: 1 } });
-const shotsUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024, files: 20 } });
 
 const nextOf = (s) => (/^\/admin(\/|$|\?)/.test(String(s || '')) ? String(s) : '/admin');
 const list = (v) => (v == null ? [] : Array.isArray(v) ? v : [v]);
@@ -126,25 +124,7 @@ function adminRoutes() {
       return res.status(400).json({ error: /not a photo/.test(e.message) ? e.message : 'That photo could not be used. Try a JPG or PNG.' });
     }
   });
-  // Screenshots of the club's posts become drafts (src/screen_import.js).
-  r.post('/import', auth.required, shotsUpload.fields([{ name: 'shots', maxCount: 10 }, { name: 'photos', maxCount: 10 }]), async (req, res) => {
-    const f = req.files || {};
-    try {
-      const result = await screens.importScreens(f.shots || [], { author: req.admin.name, photos: f.photos || [] });
-      content.refresh();
-      return send(res, views.importPage({ user: req.admin, csrf: res.locals.csrf, result }));
-    } catch (e) {
-      console.error('admin import:', String(e.message || e).slice(0, 200));
-      const msg = /AI daily spending cap/.test(e.message) ? 'Today\'s limit for reading screenshots is used up. Try again tomorrow.' : e.message;
-      return send(res, views.importPage({ user: req.admin, csrf: res.locals.csrf, error: msg }), 400);
-    }
-  });
   r.use(form, auth.required);
-  r.get('/import', (req, res) => send(res, views.importPage({ user: req.admin, csrf: res.locals.csrf })));
-  r.get('/screens/:name', (req, res, next) => {
-    const f = screens.screenPath(req.params.name);
-    return f ? res.sendFile(f) : next();
-  });
 
   r.post('/logout', (req, res) => {
     auth.clear(res);

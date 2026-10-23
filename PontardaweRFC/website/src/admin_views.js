@@ -49,7 +49,6 @@ function shell({ title, user = null, csrf = '', body, wide = false }) {
   <a class="adm-brand" href="${user ? '/admin' : '/'}"><img src="/img/crest-128.webp" alt="" width="36" height="36"><span>${esc(club.short_name || 'Pontardawe RFC')} <b>News admin</b></span></a>
   ${user ? `<nav class="adm-nav" aria-label="Admin">
     <a href="/admin">Posts</a>
-    <a href="/admin/import">From screenshots</a>
     <a href="/admin/auto">Automatic news</a>
     <a href="/admin/posts/new" class="adm-new">${icon('star', { size: 16 })} New post</a>
     <details class="adm-me"><summary>${esc(user.name)}</summary><div>
@@ -203,11 +202,6 @@ ${post ? `<input type="hidden" name="id" value="${esc(post.id)}">` : ''}
 </div>
 
 <aside class="adm-side">
-  ${(post && post.screens && post.screens.length) ? `<section class="adm-card adm-check">
-    <h2>Check against the screenshots</h2>
-    <p class="muted small">Read from these by the computer. Check every word, date and number before you publish.</p>
-    <div class="adm-shots">${post.screens.map((n) => `<a href="/admin/screens/${esc(n)}" target="_blank" rel="noopener"><img src="/admin/screens/${esc(n)}" alt="Screenshot" loading="lazy"></a>`).join('')}</div>
-  </section>` : ''}
   <section class="adm-card">
     <h2>Publish</h2>
     <label>Date<input type="date" name="pub_day" value="${esc(pubDay)}" required></label>
@@ -362,41 +356,4 @@ ${note(flash)}${problem(error)}
   });
 }
 
-// ---- From screenshots ----------------------------------------------------------------
-
-function importPage({ user, csrf, result = null, error = '' }) {
-  const r = result;
-  return shell({
-    title: 'From screenshots',
-    user,
-    csrf,
-    body: `<div class="adm-head"><div><h1>From screenshots</h1>
-  <p class="muted">Screenshot the club's posts on Facebook, Instagram or X on your phone and upload them here. Each post becomes a <b>draft</b>: its words exactly as the club wrote them, its photo, and a credit to where it was first posted. Nothing is published until you check it and press Publish.</p></div></div>
-${problem(error)}
-${r ? `<section class="adm-card adm-result">
-  ${r.drafts.length ? `<p class="adm-flash" role="status">${r.drafts.length === 1 ? 'One draft' : `${r.drafts.length} drafts`} ready to check:</p>
-  <ul class="adm-posts">${r.drafts.map((p) => `<li><a href="/admin/posts/${esc(p.id)}">${p.image ? `<img src="/img/${esc(p.image)}-480.webp" alt="" width="72" height="72">` : '<span class="adm-noimg" aria-hidden="true"></span>'}<span class="adm-pt"><b>${esc(p.title)}</b><small><span class="adm-badge adm-draft">Draft</span> Check and publish</small></span></a></li>`).join('')}</ul>` : '<p class="adm-error">No new post of the club\'s was found in those screenshots.</p>'}
-  ${r.duplicates.length ? `<p class="muted small">Already on the site, so left out: ${r.duplicates.map((d) => `<a href="/admin/posts/${esc(d.id)}">${esc(d.title)}</a>`).join(', ')}.</p>` : ''}
-  ${r.others.length ? `<p class="muted small">Not the club's own posts, so left out: ${[...new Set(r.others)].map(esc).join(', ')}.</p>` : ''}
-  ${r.problems.length ? `<p class="adm-err-line small">${r.problems.map(esc).join(' · ')}</p>` : ''}
-</section>` : ''}
-<form method="post" action="/admin/import?_csrf=${encodeURIComponent(csrf)}" enctype="multipart/form-data" class="adm-card adm-form" data-import>
-  <label>Screenshots <small>(up to 10; one post or several; a long post over two screenshots is joined)</small>
-    <input type="file" name="shots" accept="image/*" multiple required></label>
-  <label>The post's own photos <small>(optional, better quality than the screenshot: save them from the post first)</small>
-    <input type="file" name="photos" accept="image/*" multiple></label>
-  <button class="btn btn-glow" type="submit">Read the screenshots</button>
-  <p class="muted small" data-import-wait hidden>Reading the screenshots… this can take up to a minute.</p>
-</form>
-<section class="adm-card">
-  <h2>Tips</h2>
-  <ul class="small">
-    <li>Open the post itself and tap “See more” first, so all its words are on the screen.</li>
-    <li>Only the club's own posts are used. Shares of other pages and comments are left out.</li>
-    <li>The computer reads the words; it does not write any. Still, check names, dates and scores against the screenshot shown beside the draft.</li>
-  </ul>
-</section>`,
-  });
-}
-
-module.exports = { importPage, autoPage, loginPage, setupPage, listPage, editorPage, editorsPage, accountPage, KINDS };
+module.exports = { autoPage, loginPage, setupPage, listPage, editorPage, editorsPage, accountPage, KINDS };

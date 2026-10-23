@@ -102,21 +102,3 @@ has a key kept in `data/autonews.json`, so nothing is written twice and a post
 deleted in the admin is never written again; a match the club has posted
 about itself is left to the club's post. `AUTONEWS_OFF=1` stops it. No social
 media account is connected or read (the owner's decision, 2026-10-23).
-
-## News from screenshots (2026-10-23)
-
-**/admin/import**: upload screenshots of the club's own Facebook, Instagram or
-X posts (up to 10). `src/screen_import.js` sends them to the AI
-(`src/vesopa_ai.js`, DeepSeek, Gemini as backup; `DEEPSEEK_API_KEY`) only to
-READ them: each club post's words exactly as written, which network, where
-its photo is, and an event date only if the words give one (and the day is
-in the words). Each becomes a **draft**: the club's words untouched, a title
-from the first sentence (emoji out), the photo cut from the screenshot (or
-the post's own photos if added), tags made of its own words, and "First
-posted on the club's ...". Other accounts' posts and posts already on the
-site are left out; text cut off by "... more" is flagged. The screenshots
-are kept in `data/screens/` (admin only), shown beside the draft to check
-against, and go when the draft is deleted. Tested on the live server with a
-real club screenshot (2026-10-23): words, cut-off warning, duplicate check
-and photo crop all right; the AI swapped two emoji, which is why it is
-drafts only.

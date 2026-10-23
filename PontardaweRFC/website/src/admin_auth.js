@@ -169,8 +169,7 @@ function required(req, res, next) {
   req.admin = s.user;
   res.locals.csrf = s.token;
   if (req.method !== 'GET') {
-    // A form with files carries its token in its address (it is read before the files are).
-    const t = String((req.body && req.body._csrf) || req.get('x-csrf-token') || req.query._csrf || '');
+    const t = String((req.body && req.body._csrf) || req.get('x-csrf-token') || '');
     if (!sameSite(req) || !same(t, s.token)) return res.status(403).type('text/plain').send('This form has expired. Go back, reload the page and try again.');
   }
   return next();

@@ -77,7 +77,6 @@ const sweep = () => {
   try {
     const gone = posts.sweepPhotos();
     if (gone.length) console.log(`news admin: ${gone.length} unused photo(s) removed`);
-    require('./screen_import').sweepScreens(); // screenshots of drafts since deleted
   } catch (e) { console.error('photo sweep:', e.message); }
 };
 setTimeout(sweep, 60 * 1000).unref();
