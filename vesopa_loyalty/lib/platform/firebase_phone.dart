@@ -6,12 +6,31 @@
 /// Windows keep the texted code the server sends itself.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../data/api.dart';
 
 const _channel = MethodChannel('vesopa_loyalty/phone');
+
+final _proved = StreamController<String>.broadcast();
+var _listening = false;
+
+/// Proofs that come by themselves after the code was sent: Android reads the
+/// text and proves the number without the member typing anything. Each event
+/// is a Firebase ID token, for the same call [firebasePhoneConfirm]'s is.
+Stream<String> get firebasePhoneProved {
+  if (!_listening && firebasePhoneOnDevice) {
+    _listening = true;
+    _channel.setMethodCallHandler((call) async {
+      final token = (call.arguments as Map?)?['token'] as String?;
+      if (call.method == 'proved' && token != null && token.isNotEmpty) _proved.add(token);
+    });
+  }
+  return _proved.stream;
+}
 
 /// Whether this device can prove a number with Firebase: the phone apps.
 bool get firebasePhoneOnDevice =>

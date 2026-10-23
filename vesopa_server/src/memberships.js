@@ -995,7 +995,9 @@ async function startCheckout(db, office, customerId, { kind, scheme_id: schemeId
      VALUES (?,?,?,?,?,?,?)`,
     [publicId, office, customerId, plan.id, kind, amount, intent.id]
   );
-  return { url: dojo.checkoutUrl(intent.id), payment_id: publicId, amount_minor: amount };
+  // intent_id: the iPhone app pays it in Dojo's own checkout (DojoBridge.swift)
+  // rather than opening `url` in a browser.
+  return { url: dojo.checkoutUrl(intent.id), intent_id: intent.id, payment_id: publicId, amount_minor: amount };
 }
 
 /**

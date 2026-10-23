@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -464,6 +465,9 @@ class _PhoneRow extends ConsumerWidget {
     final brand = ref.read(brandProvider).value;
     var useFirebase = firebasePhoneOnDevice && (brand?.signIn.firebasePhone ?? false);
     final api = ref.read(apiProvider);
+    // Android read the text itself: the number is proved without typing.
+    Future<void> Function(String)? onProved;
+    final late = firebasePhoneOnDevice ? firebasePhoneProved.listen((t) => onProved?.call(t)) : null;
 
     final added = await showDialog<String>(
       context: context,
@@ -474,6 +478,18 @@ class _PhoneRow extends ConsumerWidget {
             ref.invalidate(accountProvider);
             if (dialog.mounted) Navigator.pop(dialog, stored);
           }
+
+          onProved = (token) async {
+            if (!sent || busy || verification == null) return;
+            setLocal(() => busy = true);
+            try {
+              await proved(token);
+            } on ApiError catch (e) {
+              setLocal(() => error = e.message);
+            } finally {
+              if (dialog.mounted) setLocal(() => busy = false);
+            }
+          };
 
           Future<void> go() async {
             setLocal(() {
@@ -540,7 +556,12 @@ class _PhoneRow extends ConsumerWidget {
                       enabled: !busy,
                       keyboardType: TextInputType.number,
                       autofillHints: const [AutofillHints.oneTimeCode],
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(6)],
                       decoration: const InputDecoration(labelText: 'Code from the text'),
+                      // The keyboard's suggested code confirms by itself.
+                      onChanged: (v) {
+                        if (v.length == 6 && !busy) go();
+                      },
                       onSubmitted: (_) => go(),
                     ),
                   ],
@@ -572,6 +593,7 @@ class _PhoneRow extends ConsumerWidget {
         },
       ),
     );
+    await late?.cancel();
     phone.dispose();
     code.dispose();
     if (added != null && context.mounted) {

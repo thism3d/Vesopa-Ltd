@@ -227,9 +227,10 @@ class _VenuePageState extends ConsumerState<VenuePage> {
          * and a button claiming to change it would either lie or navigate
          * somewhere the person did not ask to go. On Windows and the phones
          * it was typed in once, and a wrong code typed once must not mean
-         * uninstalling.
+         * uninstalling. A venue's own app (LOYALTY_SLUG) is that venue's and
+         * nothing else's, so it has no venue to change to (owner, 2026-10-23).
          */
-        if (!kIsWeb)
+        if (!kIsWeb && AppConfig.buildSlug.isEmpty)
           ListTile(
             leading: const Icon(Icons.swap_horiz),
             title: const Text('Change venue'),

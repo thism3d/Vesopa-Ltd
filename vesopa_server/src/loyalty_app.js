@@ -970,7 +970,16 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
           ORDER BY created_at DESC LIMIT ?`,
         params
       );
-      res.json({ items: rows, more: rows.length === limit });
+      // Points are DECIMAL since fractional points, which MySQL returns as
+      // strings; the apps read numbers.
+      const items = rows.map((r) => ({
+        ...r,
+        points: Number(r.points) || 0,
+        balance_after: r.balance_after == null ? null : Number(r.balance_after) || 0,
+        spend_minor: r.spend_minor == null ? null : Number(r.spend_minor) || 0,
+        value_minor: r.value_minor == null ? null : Number(r.value_minor) || 0,
+      }));
+      res.json({ items, more: rows.length === limit });
     } catch (e) {
       next(e);
     }

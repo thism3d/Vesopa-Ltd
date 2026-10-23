@@ -45,6 +45,7 @@ import UserNotifications
   private var watch: WatchBridge?
   private var auth: AuthBridge?
   private var phone: PhoneBridge?
+  private var dojo: DojoBridge?
 
   override func application(
     _ application: UIApplication,
@@ -52,7 +53,32 @@ import UserNotifications
   ) -> Bool {
     // Before launch finishes, or the tap that launched the app is not delivered.
     UNUserNotificationCenter.current().delegate = self
+    // Firebase phone sign-in: set up now and given an APNs token, which needs
+    // no permission (it is only for silent pushes). PhoneBridge.swift says why.
+    if PhoneBridge.configured() { application.registerForRemoteNotifications() }
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+  /// Firebase's silent push proving the app for a phone sign-in code; any
+  /// other goes on as before.
+  override func application(
+    _ application: UIApplication,
+    didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+    fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
+  ) {
+    if PhoneBridge.handles(notification: userInfo) {
+      completionHandler(.noData)
+      return
+    }
+    super.application(application, didReceiveRemoteNotification: userInfo, fetchCompletionHandler: completionHandler)
+  }
+
+  /// Firebase's check page coming back when there is no scene to take it.
+  override func application(
+    _ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]
+  ) -> Bool {
+    if PhoneBridge.handles(url: url) { return true }
+    return super.application(app, open: url, options: options)
   }
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
@@ -102,6 +128,10 @@ import UserNotifications
       let bridge = PhoneBridge(messenger: registrar.messenger())
       registrar.addSceneDelegate(bridge)
       phone = bridge
+    }
+    // Paying for a membership in Dojo's own checkout, not a browser (DojoBridge.swift).
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "VesopaLoyaltyDojo") {
+      dojo = DojoBridge(messenger: registrar.messenger())
     }
   }
 
@@ -187,6 +217,7 @@ import UserNotifications
     didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
   ) {
     super.application(application, didRegisterForRemoteNotificationsWithDeviceToken: deviceToken)
+    PhoneBridge.apnsToken(deviceToken)
     let hex = deviceToken.map { String(format: "%02x", $0) }.joined()
     settle(["kind": "apns", "token": hex])
   }

@@ -65,13 +65,21 @@ API = "https://api.appstoreconnect.apple.com"
 # Apple's names for the screenshot sizes this uploads. The folder names are
 # ours; the sizes are the ones each display type takes.
 SCREENSHOT_SETS = {
-    "iphone-6.9": ("APP_IPHONE_67", {(1290, 2796), (1320, 2868)}),
+    "iphone-6.9": ("APP_IPHONE_67", {(1290, 2796), (1320, 2868)}),  # also APP_IPHONE_67's
     "ipad-13": ("APP_IPAD_PRO_3GEN_129", {(2048, 2732), (2064, 2752)}),
     # The Apple Watch app's own (tool/make_watch_screenshots.py): the listing
     # shows them under Apple Watch.
     "watch-ultra": ("APP_WATCH_ULTRA", {(410, 502), (422, 514)}),
     "watch-series-10": ("APP_WATCH_SERIES_10", {(416, 496)}),
+    # iPhone Duo (2026): its own slot in App Store Connect, which takes the
+    # closed or the open display's size. Apple's published API names no case
+    # for it yet, so the name is found at upload time (duo_display_type).
+    "iphone-duo": (None, {(1398, 2034), (2034, 1398), (2007, 2853), (2853, 2007)}),
 }
+
+# Names App Store Connect may know the iPhone Duo slot by, tried in turn when
+# no set of that kind exists yet; Apple's refusal lists the names it takes.
+DUO_GUESSES = ("APP_IPHONE_DUO", "APP_IPHONE_DUO_OUTER", "APP_IPHONE_DUO_INNER", "APP_IPHONE_FOLD")
 
 # Left for the end of the run: what still needs a person in App Store Connect.
 TODO = []
@@ -736,10 +744,239 @@ def png_size(path):
     return struct.unpack(">II", head[16:24])
 
 
-def set_screenshots(c, version_loc, venue_dir):
+def duo_display_type(c, version_loc, sets):
+    """The iPhone Duo slot's display type, and its set, made if need be.
+
+    An existing set says it (one the owner made by hand counts too). Failing
+    that each guess is tried; a refusal that names the allowed values is
+    searched for one with DUO or FOLD in it. (None, None) when App Store
+    Connect's API does not take Duo screenshots yet."""
+    for name, s in sets.items():
+        if "DUO" in name or "FOLD" in name:
+            return name, s
+    import re
+    guesses, tried = list(DUO_GUESSES), set()
+    while guesses:
+        name = guesses.pop(0)
+        if name in tried:
+            continue
+        tried.add(name)
+        try:
+            made = c.post("/v1/appScreenshotSets", {"data": {
+                "type": "appScreenshotSets",
+                "attributes": {"screenshotDisplayType": name},
+                "relationships": {"appStoreVersionLocalization": {"data": {"type": "appStoreVersionLocalizations", "id": version_loc["id"]}}},
+            }})["data"]
+            return name, made
+        except AppleError as e:
+            named = [n for n in re.findall(r"APP_[A-Z0-9_]+", e.body) if ("DUO" in n or "FOLD" in n) and n not in tried]
+            guesses = named + guesses
+    return None, None
+
+
+# ---- The App Asset Library (App Store Connect, October 2026) ---------------
+#
+# Screenshots, the product page header and the search results picture, placed
+# on the version from one library of the app's pictures. It replaces the
+# screenshot sets (still used below when the library cannot be reached), and
+# it is the only way to the iPhone Duo slot and the creative assets. Where a
+# picture goes is read from Apple's reference data at run time, never kept
+# here: Apple adds devices there without a new API version.
+
+# What to place: folder (or file) under <venue>/store, its placement type, the
+# category its pictures are uploaded as, and the display classes it is meant
+# for, best first (None: every group whose sizes the picture fits).
+LIBRARY_TARGETS = [
+    ("screenshots/iphone-6.9", "APP_SCREENSHOT", "APP_SCREENSHOTS_AND_PREVIEWS",
+     ["IPHONE_DYNAMIC_ISLAND_LARGE_DISPLAY", "IPHONE_DYNAMIC_ISLAND_MEDIUM_DISPLAY"]),
+    ("screenshots/iphone-duo", "APP_SCREENSHOT", "APP_SCREENSHOTS_AND_PREVIEWS", ["IPHONE_DUO"]),
+    ("screenshots/ipad-13", "APP_SCREENSHOT", "APP_SCREENSHOTS_AND_PREVIEWS", ["IPAD_13_DISPLAY", "IPAD_129_DISPLAY"]),
+    ("screenshots/watch-ultra", "APP_SCREENSHOT", "APP_SCREENSHOTS_AND_PREVIEWS", ["WATCH_ULTRA"]),
+    ("screenshots/watch-series-10", "APP_SCREENSHOT", "APP_SCREENSHOTS_AND_PREVIEWS", ["WATCH_SERIES_10"]),
+    ("creative/header.png", "PRODUCT_PAGE_HEADER_ASSET", "CREATIVE_ASSETS", None),
+    ("creative/search.png", "APP_STORE_SEARCH_RESULTS_ASSET", "CREATIVE_ASSETS", None),
+]
+
+
+class RefData:
+    """Apple's catalogue of picture sizes and the groups that take them."""
+
+    def __init__(self, c):
+        rows = c.get("/v1/appAssetLibraryRefData").get("data") or []
+        a = (rows[0] if rows else {}).get("attributes") or {}
+        self.specs = {s["specId"]: s for s in a.get("imageSpecs") or []}
+        self.groups = {g["placementProfileGroupId"]: g for g in a.get("placementProfileGroups") or []}
+        self.types = {t["placementTypeId"]: t for t in a.get("placementTypes") or []}
+        # What an App Store version allows: group -> most pictures, per type.
+        self.limits = {}
+        for f in a.get("features") or []:
+            if f.get("featureId") != "APP_STORE_VERSIONS":
+                continue
+            for pol in f.get("placementPolicies") or []:
+                for lim in pol.get("groupLimits") or []:
+                    for gid in lim.get("groupIds") or []:
+                        self.limits[(pol.get("placementType"), gid)] = lim.get("maxCount")
+
+    def fits(self, spec_id, size):
+        d = (self.specs.get(spec_id) or {}).get("dimensions") or {}
+        w, h = size
+        return d.get("minWidth", 0) <= w <= d.get("maxWidth", 0) and d.get("minHeight", 0) <= h <= d.get("maxHeight", 0)
+
+    def groups_for(self, ptype, size, wanted):
+        """The groups of [ptype] on an App Store version that take a picture of
+        [size]: of the first wanted display class that has one, or all."""
+        mappings = (self.types.get(ptype) or {}).get("specMappings") or []
+        fit = []
+        for m in mappings:
+            gid = m.get("placementGroupId")
+            platform = str((self.groups.get(gid) or {}).get("platform", ""))
+            if any(x in platform for x in ("MAC", "TV", "VISION")):
+                continue
+            if self.limits and (ptype, gid) not in self.limits:
+                continue
+            if any(self.fits(sid, size) for sid in m.get("specs") or []):
+                fit.append(gid)
+        if wanted is None:
+            return fit
+        for cls in wanted:
+            mine = [g for g in fit if (self.groups.get(g) or {}).get("displayClassId") == cls]
+            if mine:
+                return mine[:1]
+        return []
+
+    def describe(self, ptype):
+        """For a run's log when nothing fits: what Apple does take."""
+        out = []
+        for m in (self.types.get(ptype) or {}).get("specMappings") or []:
+            gid = m.get("placementGroupId")
+            sizes = sorted({f"{d.get('minWidth')}x{d.get('minHeight')}" for d in
+                            ((self.specs.get(sid) or {}).get("dimensions") or {} for sid in m.get("specs") or [])})
+            out.append(f"{gid} ({(self.groups.get(gid) or {}).get('displayClassId')}: {', '.join(sizes[:6])})")
+        return "; ".join(out[:30])
+
+
+def library_image(c, library_id, path, category, label):
+    """The library's copy of [path], uploaded once: a picture already there
+    under the same name and contents is used again."""
+    data = path.read_bytes()
+    ref = f"{label} {path.stem} {hashlib.md5(data).hexdigest()[:12]}"
+    for img in c.all(f"/v1/appAssetLibraries/{library_id}/images", **{"filter[referenceName]": ref}):
+        if img["attributes"].get("state") not in ("FAILED", "AWAITING_UPLOAD"):
+            return img["id"], False
+    made = c.post("/v1/appAssetLibraryImages", {"data": {
+        "type": "appAssetLibraryImages",
+        "attributes": {"fileName": path.name, "fileSize": len(data), "category": category, "referenceName": ref},
+        "relationships": {"assetLibrary": {"data": {"type": "appAssetLibraries", "id": library_id}}},
+    }})["data"]
+    for op in made["attributes"].get("uploadOperations") or []:
+        part = data[op["offset"]: op["offset"] + op["length"]]
+        req = urllib.request.Request(op["url"], data=part, method=op["method"])
+        for h in op.get("requestHeaders", []):
+            req.add_header(h["name"], h["value"])
+        with urllib.request.urlopen(req, timeout=300):
+            pass
+    c.patch(f"/v1/appAssetLibraryImages/{made['id']}", {"data": {
+        "type": "appAssetLibraryImages", "id": made["id"], "attributes": {"uploaded": True}}})
+    return made["id"], True
+
+
+def place_group(c, loc_id, ptype, group, image_ids):
+    """Make the group show exactly [image_ids], in that order. Placements
+    cannot be changed, so a different set means new ones."""
+    have = c.all(f"/v1/appStoreVersionLocalizations/{loc_id}/placements", **{
+        "filter[placementType]": ptype, "filter[placementGroup]": group, "sort": "placementGroupPosition"})
+    shown = [((p.get("relationships") or {}).get("image") or {}).get("data", {}) or {} for p in have]
+    if [x.get("id") for x in shown] == image_ids:
+        return False
+    for p in have:
+        c.delete(f"/v1/appAssetLibraryPlacements/{p['id']}")
+    made = []
+    for image_id in image_ids:
+        made.append(c.post("/v1/appAssetLibraryPlacements", {"data": {
+            "type": "appAssetLibraryPlacements",
+            "attributes": {"placementType": ptype, "placementGroup": group},
+            "relationships": {
+                "image": {"data": {"type": "appAssetLibraryImages", "id": image_id}},
+                "appStoreVersionLocalization": {"data": {"type": "appStoreVersionLocalizations", "id": loc_id}},
+            },
+        }})["data"]["id"])
+    if len(made) > 1:
+        c.post("/v1/appAssetLibraryPlacementOrderingRequests", {"data": {
+            "type": "appAssetLibraryPlacementOrderingRequests",
+            "attributes": {"placementGroup": group},
+            "relationships": {
+                "orderedPlacements": {"data": [{"type": "appAssetLibraryPlacements", "id": i} for i in made]},
+                "appStoreVersionLocalization": {"data": {"type": "appStoreVersionLocalizations", "id": loc_id}},
+            },
+        }})
+    return True
+
+
+def set_library_pictures(c, app, version_loc, venue_dir):
+    """Every picture in LIBRARY_TARGETS onto the version, from the library.
+    Answers the screenshot folders it placed, so the old screenshot sets are
+    used only for the rest; None when the library cannot be reached at all."""
+    try:
+        library_id = c.get(f"/v1/apps/{app['id']}/assetLibrary")["data"]["id"]
+        ref = RefData(c)
+    except (AppleError, KeyError, TypeError, IndexError) as e:
+        note(f"  App Asset Library: not reachable ({e.detail() if isinstance(e, AppleError) else e}); screenshot sets instead")
+        return None
+    root = venue_dir / "store"
+    placed, fresh = set(), []
+    for target, ptype, category, wanted in LIBRARY_TARGETS:
+        where = root / target
+        files = [where] if where.suffix == ".png" else sorted(where.glob("*.png")) if where.exists() else []
+        files = [f for f in files if f.exists()]
+        if not files:
+            continue
+        label = target.split("/")[-1].removesuffix(".png")
+        try:
+            sizes = {png_size(f) for f in files}
+            if len(sizes) != 1:
+                todo(f"{target}: pictures of different sizes ({sizes}), not placed")
+                continue
+            groups = ref.groups_for(ptype, sizes.pop(), wanted)
+            if not groups:
+                todo(f"{target}: App Store Connect has no {ptype} slot for {png_size(files[0])}; it takes {ref.describe(ptype)}")
+                continue
+            ids = []
+            for f in files:
+                image_id, new = library_image(c, library_id, f, category, label)
+                ids.append(image_id)
+                if new:
+                    fresh.append((image_id, f"{target}/{f.name}" if len(files) > 1 else target))
+            for group in groups:
+                most = ref.limits.get((ptype, group)) or len(ids)
+                changed = place_group(c, version_loc["id"], ptype, group, ids[:most])
+                note(f"  {target}: {'placed' if changed else 'already placed'} in {group} ({min(len(ids), most)})")
+            placed.add(target.removeprefix("screenshots/"))
+        except AppleError as e:
+            todo(f"{target}: {e.detail()}")
+    # Apple processes uploads after the fact; say so if one is refused.
+    deadline = time.time() + 300
+    while fresh and time.time() < deadline:
+        waiting = []
+        for image_id, name in fresh:
+            a = c.get(f"/v1/appAssetLibraryImages/{image_id}")["data"]["attributes"]
+            if a.get("state") == "FAILED":
+                todo(f"{name}: Apple could not use it: {a.get('stateDetails')}")
+            elif a.get("state") in ("AWAITING_UPLOAD", "UPLOAD_COMPLETE"):
+                waiting.append((image_id, name))
+        fresh = waiting
+        if fresh:
+            time.sleep(10)
+    if fresh:
+        note(f"  App Asset Library: {len(fresh)} still processing at Apple; they show once done")
+    return placed
+
+
+def set_screenshots(c, version_loc, venue_dir, skip=()):
     root = venue_dir / "store" / "screenshots"
     sets = {s["attributes"]["screenshotDisplayType"]: s for s in c.all(f"/v1/appStoreVersionLocalizations/{version_loc['id']}/appScreenshotSets")}
     for folder, (display, sizes) in SCREENSHOT_SETS.items():
+        if folder in skip:
+            continue
         files = sorted((root / folder).glob("*.png")) if (root / folder).exists() else []
         if not files:
             continue
@@ -748,7 +985,14 @@ def set_screenshots(c, version_loc, venue_dir):
             todo(f"Screenshots {folder}: wrong size, not uploaded: {', '.join(bad)}")
             continue
         try:
-            shot_set = sets.get(display)
+            if display is None:
+                display, shot_set = duo_display_type(c, version_loc, sets)
+                if not display:
+                    todo(f"Screenshots {folder}: App Store Connect's API takes no iPhone Duo screenshots yet; "
+                         f"drag {root / folder} into the iPhone Duo slot by hand once (later runs then keep it up to date)")
+                    continue
+                note(f"  screenshots {folder}: App Store Connect calls it {display}")
+            shot_set = sets.get(display) or (shot_set if folder == "iphone-duo" else None)
             if not shot_set:
                 shot_set = c.post("/v1/appScreenshotSets", {"data": {
                     "type": "appScreenshotSets",
@@ -840,7 +1084,8 @@ def cmd_store(venue_name):
     }, "description, keywords, promotional text, URLs")
     set_review_details(c, version, store)
     set_beta_review_details(c, app, store)
-    set_screenshots(c, vloc, venue_dir)
+    placed = set_library_pictures(c, app, vloc, venue_dir)
+    set_screenshots(c, vloc, venue_dir, skip=placed or ())
 
     todo("App Privacy (App Store Connect > the app > App Privacy): Apple's API cannot answer it. "
          f"The answers are in {venue_name}/store/listing.md under \"App Privacy\".")

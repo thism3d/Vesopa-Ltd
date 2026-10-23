@@ -39,7 +39,10 @@ final _logoUrl = '$_base/uploads/app/$_slug-crest.png';
 /// The devices, as App Store Connect and Google Play size them: logical size,
 /// pixel ratio, and which phone's look the pages take.
 const _devices = {
-  'iphone-6.9': (Size(430, 932), 3.0, TargetPlatform.iOS),
+  // iPhone 17 Pro Max: 1320x2868, the size App Store Connect asks for first.
+  'iphone-6.9': (Size(440, 956), 3.0, TargetPlatform.iOS),
+  // iPhone Duo, opened out: 2007x2853, its own slot since October 2026.
+  'iphone-duo': (Size(669, 951), 3.0, TargetPlatform.iOS),
   'ipad-13': (Size(1024, 1366), 2.0, TargetPlatform.iOS),
   'android-phone': (Size(412, 915), 2.625, TargetPlatform.android),
   'android-tablet-7': (Size(600, 960), 2.0, TargetPlatform.android),

@@ -32,13 +32,27 @@ class AppleWallet {
 
   /// Show Apple's Add sheet for a signed pass. Throws a [PlatformException]
   /// whose message can be shown as it is.
-  static Future<WalletOutcome> add(Uint8List pass) async {
-    final answer = await _wallet.invokeMethod<String>('add', pass);
+  ///
+  /// [key] (the member number) keeps the card on this device, so [contains]
+  /// can later ask Wallet whether it is still there.
+  static Future<WalletOutcome> add(Uint8List pass, {String? key}) async {
+    final answer = await _wallet.invokeMethod<String>('add', key == null ? pass : {'pass': pass, 'key': key});
     return switch (answer) {
       'added' => WalletOutcome.added,
       'already' => WalletOutcome.already,
       _ => WalletOutcome.cancelled,
     };
+  }
+
+  /// Whether the card added under [key] is still in Wallet. False when it
+  /// was never added on this device, or was taken out of Wallet since.
+  static Future<bool> contains(String key) async {
+    if (!_iPhone || key.isEmpty) return false;
+    try {
+      return await _wallet.invokeMethod<bool>('contains', key) ?? false;
+    } catch (_) {
+      return false;
+    }
   }
 
   static final _taps = <int, VoidCallback>{};

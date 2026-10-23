@@ -313,11 +313,26 @@ class LoyaltyApi {
     throw ApiError(heading ?? 'Your card could not be added to Apple Wallet.', status: res.statusCode);
   }
 
-  Future<Map<String, dynamic>> history({DateTime? before}) => _send(
-    'GET',
-    '/loyalty/v1/me/history',
-    query: {if (before != null) 'before': before.toUtc().toIso8601String()},
-  );
+  /// Points earned and spent. Points are DECIMAL on the server since
+  /// fractional points (EPOS 1.16.27), and MySQL hands a DECIMAL over as a
+  /// string ("120.00000"): read as a number, or every row failed to draw and
+  /// Activity showed nothing (owner, 2026-10-23).
+  Future<Map<String, dynamic>> history({DateTime? before}) async {
+    final page = await _send(
+      'GET',
+      '/loyalty/v1/me/history',
+      query: {if (before != null) 'before': before.toUtc().toIso8601String()},
+    );
+    final items = [
+      for (final t in (page['items'] as List? ?? const []).whereType<Map>())
+        {
+          ...t.cast<String, dynamic>(),
+          for (final k in const ['points', 'balance_after', 'spend_minor', 'value_minor'])
+            if (t[k] != null) k: asNumber(t[k]),
+        },
+    ];
+    return {...page, 'items': items};
+  }
 
   /// The news. [before] pages back when the venue keeps everything; the
   /// answer says `more` when there is another page to ask for.
@@ -503,3 +518,6 @@ class VesopaWayIn {
         .toList(),
   );
 }
+
+/// A number from the server, whether it came as one or as a DECIMAL's string.
+num asNumber(Object? v) => v is num ? v : num.tryParse('${v ?? ''}'.trim()) ?? 0;

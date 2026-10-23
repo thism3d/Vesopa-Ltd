@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -54,15 +56,26 @@ class _SignInPageState extends ConsumerState<SignInPage> {
   String? _error;
   String? _note;
 
+  StreamSubscription<String>? _proved;
+
   @override
   void initState() {
     super.initState();
     // Coming back from Continue with Vesopa: the code is in the address.
     WidgetsBinding.instance.addPostFrameCallback((_) => _finishVesopa());
+    // Android read the text itself: in at once, nothing to type.
+    if (firebasePhoneOnDevice) {
+      _proved = firebasePhoneProved.listen((token) {
+        if (mounted && _verification != null && _stage == _Stage.code && !_busy) {
+          _run(() => _signInProved(token));
+        }
+      });
+    }
   }
 
   @override
   void dispose() {
+    _proved?.cancel();
     for (final c in [_email, _password, _phone, _code, _name]) {
       c.dispose();
     }
@@ -564,6 +577,11 @@ class _SignInPageState extends ConsumerState<SignInPage> {
             style: theme.textTheme.titleLarge?.copyWith(letterSpacing: 8),
             textAlign: TextAlign.center,
             decoration: const InputDecoration(labelText: 'Six-digit code'),
+            // The code the keyboard offers from the text or email goes in
+            // with one tap and signs in by itself: no second tap on Sign in.
+            onChanged: (v) {
+              if (v.length == 6 && !_busy) _primary!.action();
+            },
             onSubmitted: (_) => _primary!.action(),
           ),
         if (_stage == _Stage.name) ...[

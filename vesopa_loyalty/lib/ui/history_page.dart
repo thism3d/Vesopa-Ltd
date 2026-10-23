@@ -66,10 +66,10 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
   /// what it cost, what the balance became -- and that is what this is.
   Future<void> _detail(Map<String, dynamic> t) async {
     final theme = Theme.of(context);
-    final points = (t['points'] as num?)?.toInt() ?? 0;
+    final points = (t['points'] as num?) ?? 0;
     final spend = (t['spend_minor'] as num?)?.toInt() ?? 0;
     final value = (t['value_minor'] as num?)?.toInt() ?? 0;
-    final balance = (t['balance_after'] as num?)?.toInt();
+    final balance = t['balance_after'] as num?;
     final kind = t['kind'] as String?;
     final note = (t['note'] as String?)?.trim();
     final negative = points < 0 || kind == 'redeem' || kind == 'expire';
@@ -80,8 +80,8 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
       if (spend > 0) ('You spent', money(spend)),
       if (kind == 'redeem' && value > 0) ('You saved', money(value)),
       if (kind == 'earn' && spend > 0 && points > 0)
-        ('Rate', '${(points / (spend / 100)).toStringAsFixed(points % spend == 0 ? 0 : 1)} points per £'),
-      if (balance != null) ('Balance after', '$balance points'),
+        ('Rate', '${(points / (spend / 100)).toStringAsFixed(1).replaceAll(RegExp(r'\.0$'), '')} points per £'),
+      if (balance != null) ('Balance after', '${pointsText(balance)} points'),
       if (note != null && note.isNotEmpty) ('Where', note),
     ];
 
@@ -109,7 +109,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                     ),
                   ),
                   Text(
-                    '${negative ? '-' : '+'}${points.abs()}',
+                    '${negative ? '-' : '+'}${pointsText(points.abs())}',
                     style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900, color: tone),
                   ),
                 ],
@@ -180,7 +180,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
             );
           }
           final t = _items[i];
-          final points = (t['points'] as num?)?.toInt() ?? 0;
+          final points = (t['points'] as num?) ?? 0;
           final spend = (t['spend_minor'] as num?)?.toInt() ?? 0;
           final value = (t['value_minor'] as num?)?.toInt() ?? 0;
           final kind = t['kind'] as String?;
@@ -206,7 +206,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  '${negative ? '-' : '+'}${points.abs()}',
+                  '${negative ? '-' : '+'}${pointsText(points.abs())}',
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w800,
                     color: tone,
@@ -221,4 +221,11 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
       ),
     );
   }
+}
+
+/// Points as a member reads them: whole points plainly, a fraction to at
+/// most two places without trailing noughts (12, 1.5, 0.07).
+String pointsText(num p) {
+  if (p == p.roundToDouble()) return p.round().toString();
+  return p.toStringAsFixed(2).replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
 }

@@ -12,11 +12,18 @@ import UIKit
 ///
 /// `vesopa_loyalty/wallet`:
 ///   available      -> Bool
-///   add(bytes)     -> "added" | "cancelled" | "already" (Wallet is opened at the card)
+///   add(bytes) or add({pass, key}) -> "added" | "cancelled" | "already"
+///                  (Wallet is opened at the card)
+///   contains(key)  -> Bool: the card added under [key] is still in Wallet
 ///   tapped(viewId) <- from the button below, to Dart
+///
+/// A card added here is kept (Application Support, one file per member key)
+/// so the app can ask Wallet whether it is still there and say "In Apple
+/// Wallet" instead of offering the button again (owner, 2026-10-23). Wallet
+/// answers that for a pass the app holds, with no pass-type entitlement.
 final class WalletBridge: NSObject, PKAddPassesViewControllerDelegate {
   let channel: FlutterMethodChannel
-  private var pending: (result: FlutterResult, pass: PKPass)?
+  private var pending: (result: FlutterResult, pass: PKPass, data: Data, key: String?)?
 
   init(messenger: FlutterBinaryMessenger) {
     channel = FlutterMethodChannel(name: "vesopa_loyalty/wallet", binaryMessenger: messenger)
@@ -31,17 +38,42 @@ final class WalletBridge: NSObject, PKAddPassesViewControllerDelegate {
     case "available":
       result(PKPassLibrary.isPassLibraryAvailable() && PKAddPassesViewController.canAddPasses())
     case "add":
-      guard let bytes = call.arguments as? FlutterStandardTypedData else {
+      let args = call.arguments as? [String: Any]
+      guard let bytes = (args?["pass"] ?? call.arguments) as? FlutterStandardTypedData else {
         result(FlutterError(code: "no_pass", message: "Your card could not be downloaded.", details: nil))
         return
       }
-      add(bytes.data, result)
+      add(bytes.data, key: args?["key"] as? String, result)
+    case "contains":
+      guard
+        let key = call.arguments as? String,
+        let data = try? Data(contentsOf: Self.kept(key)),
+        let pass = try? PKPass(data: data)
+      else {
+        result(false)
+        return
+      }
+      result(PKPassLibrary().containsPass(pass))
     default:
       result(FlutterMethodNotImplemented)
     }
   }
 
-  private func add(_ data: Data, _ result: @escaping FlutterResult) {
+  /// Where the card added under [key] is kept.
+  static func kept(_ key: String) -> URL {
+    let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+      .appendingPathComponent("wallet", isDirectory: true)
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    let safe = key.unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }
+    return dir.appendingPathComponent("card-\(String(String.UnicodeScalarView(safe))).pkpass")
+  }
+
+  private static func keep(_ data: Data, _ key: String?) {
+    guard let key, !key.isEmpty else { return }
+    try? data.write(to: kept(key), options: .atomic)
+  }
+
+  private func add(_ data: Data, key: String?, _ result: @escaping FlutterResult) {
     guard pending == nil else {
       result(FlutterError(code: "busy", message: "Apple Wallet is already open.", details: nil))
       return
@@ -55,6 +87,7 @@ final class WalletBridge: NSObject, PKAddPassesViewControllerDelegate {
     }
     // Already there: show it rather than an Add sheet that can only say so.
     if PKPassLibrary().containsPass(pass) {
+      Self.keep(data, key)
       if let url = pass.passURL { UIApplication.shared.open(url) }
       result("already")
       return
@@ -64,7 +97,7 @@ final class WalletBridge: NSObject, PKAddPassesViewControllerDelegate {
       return
     }
     sheet.delegate = self
-    pending = (result, pass)
+    pending = (result, pass, data, key)
     top.present(sheet, animated: true)
   }
 
@@ -72,7 +105,9 @@ final class WalletBridge: NSObject, PKAddPassesViewControllerDelegate {
     controller.dismiss(animated: true) {
       guard let waiting = self.pending else { return }
       self.pending = nil
-      waiting.result(PKPassLibrary().containsPass(waiting.pass) ? "added" : "cancelled")
+      let added = PKPassLibrary().containsPass(waiting.pass)
+      if added { Self.keep(waiting.data, waiting.key) }
+      waiting.result(added ? "added" : "cancelled")
     }
   }
 

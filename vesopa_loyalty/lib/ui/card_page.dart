@@ -497,6 +497,23 @@ class _AddToWalletState extends ConsumerState<_AddToWallet> {
   late final Future<bool> _available = GoogleWallet.available ? Future.value(_google) : AppleWallet.available();
   var _busy = false;
 
+  /// The card is in Apple Wallet already: "Wallet added", and no button to
+  /// add it again (owner, 2026-10-23). Asked of Wallet itself, so a card taken
+  /// out of Wallet brings the button back.
+  var _inWallet = false;
+
+  String get _key => '${ref.read(meProvider).value?['member_number'] ?? ''}';
+
+  @override
+  void initState() {
+    super.initState();
+    if (!_google) {
+      AppleWallet.contains(_key).then((there) {
+        if (mounted && there) setState(() => _inWallet = true);
+      });
+    }
+  }
+
   /// Android: the server signs the card at Google, Google Wallet saves it.
   Future<void> _addGoogle() async {
     if (_busy) return;
@@ -523,10 +540,11 @@ class _AddToWalletState extends ConsumerState<_AddToWallet> {
     final messenger = ScaffoldMessenger.of(context);
     try {
       final pass = await ref.read(apiProvider).applePass();
-      final outcome = await AppleWallet.add(pass);
+      final outcome = await AppleWallet.add(pass, key: _key.isEmpty ? null : _key);
       if (outcome == WalletOutcome.added) {
         messenger.showSnackBar(const SnackBar(content: Text('Your card is in Apple Wallet.')));
       }
+      if (outcome != WalletOutcome.cancelled && mounted) setState(() => _inWallet = true);
     } on ApiError catch (e) {
       messenger.showSnackBar(SnackBar(content: Text(e.message)));
     } on PlatformException catch (e) {
@@ -544,6 +562,27 @@ class _AddToWalletState extends ConsumerState<_AddToWallet> {
       future: _available,
       builder: (context, snap) {
         if (snap.data != true) return const SizedBox.shrink();
+        if (_inWallet) {
+          final on = Theme.of(context).colorScheme.onSurface;
+          return Padding(
+            padding: const EdgeInsets.only(top: 18),
+            child: Semantics(
+              label: 'Wallet added. Your card is in Apple Wallet.',
+              excludeSemantics: true,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.check_circle_rounded, size: 20, color: on.withValues(alpha: 0.85)),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Wallet added',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700, color: on.withValues(alpha: 0.85)),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
         return Padding(
           padding: const EdgeInsets.only(top: 18),
           child: Center(

@@ -9,10 +9,16 @@ A venue app's App Store screenshots, from the app itself.
 3. frames each one: the venue colour behind, its caption above, the screen
    below with rounded corners,
 
-and writes them to <venue>/store/screenshots/iphone-6.9/ (1290x2796) and
-ipad-13/ (2048x2732), where tool/app_store_connect.py `store` uploads them
+and writes them to <venue>/store/screenshots/iphone-6.9/ (1320x2868),
+iphone-duo/ (2007x2853, iPhone Duo opened out) and ipad-13/ (2048x2732),
+where tool/app_store_connect.py `store` uploads them
 from, and to android-phone/ (1080x1920), android-tablet-7/ (1200x1920) and
 android-tablet-10/ (1600x2560) for Google Play, uploaded by hand. Captions and their order are "screenshots" in <venue>/store/app_store.json.
+
+4. draws the App Store's creative assets (iOS 27, October 2026) from the
+   crest and the card: <venue>/store/creative/header.png (the product page
+   header, 21:9, 3840x1646) and search.png (search results, 3:2, 3840x2560),
+   no transparency, as App Store Connect's creative assets specification asks.
 
 Needs Flutter on the PATH and Pillow.
 """
@@ -34,7 +40,7 @@ LIVE = "https://loyalty.vesopa.com"
 # App Store sizes, then Google Play's: a phone and 7- and 10-inch tablets, each
 # no longer than twice its width, as Play requires.
 SIZES = {
-    "iphone-6.9": (1290, 2796), "ipad-13": (2048, 2732),
+    "iphone-6.9": (1320, 2868), "iphone-duo": (2007, 2853), "ipad-13": (2048, 2732),
     "android-phone": (1080, 1920), "android-tablet-7": (1200, 1920), "android-tablet-10": (1600, 2560),
 }
 FONT_BOLD = REPO / "vesopa_server" / "public" / "assets" / "fonts" / "oswald" / "oswald-700.ttf"
@@ -113,6 +119,101 @@ def frame(raw: Path, out: Path, size, colours, title, subtitle):
     bg.save(out, optimize=True)
 
 
+def phone(raw: Path, height):
+    """A screen as a phone: rounded, in a thin dark bezel, on a soft shadow.
+    Answers (image, mask) for pasting."""
+    shot = Image.open(raw).convert("RGB")
+    scale = height / shot.height
+    sw, sh = int(shot.width * scale), height
+    shot = shot.resize((sw, sh), Image.LANCZOS)
+    radius, bezel = int(sw * 0.1), max(10, sw // 40)
+    w, h = sw + 2 * bezel, sh + 2 * bezel
+    body = Image.new("RGB", (w, h), (18, 12, 12))
+    screen_mask = Image.new("L", (sw, sh), 0)
+    ImageDraw.Draw(screen_mask).rounded_rectangle((0, 0, sw - 1, sh - 1), radius=radius, fill=255)
+    body.paste(shot, (bezel, bezel), screen_mask)
+    mask = Image.new("L", (w, h), 0)
+    ImageDraw.Draw(mask).rounded_rectangle((0, 0, w - 1, h - 1), radius=radius + bezel, fill=255)
+    return body, mask
+
+
+def paste_with_shadow(bg, img, mask, xy, blur=40, drop=28):
+    x, y = xy
+    shadow = Image.new("L", bg.size, 0)
+    shadow.paste(mask.point(lambda a: int(a * 0.6)), (x, y + drop))
+    shadow = shadow.filter(ImageFilter.GaussianBlur(blur))
+    bg.paste(Image.new("RGB", bg.size, (15, 0, 0)), (0, 0), shadow)
+    bg.paste(img, (x, y), mask)
+
+
+def creative(venue_dir: Path, raw: Path, v, store):
+    """The product page header and the search results picture.
+
+    Apple lays the app's name and icon over the header and crops it to fit
+    each device, so the crest and the card sit in the middle and no words are
+    drawn on it. The search picture is seen small next to the app's name, so
+    it has the club's name and one line, large."""
+    colours = v["colours"]
+    crest_path = venue_dir / "brand" / "crest.png"
+    out_dir = venue_dir / "store" / "creative"
+    shutil.rmtree(out_dir, ignore_errors=True)
+    out_dir.mkdir(parents=True)
+    card = raw / "iphone-6.9-1-card.png"
+    news = raw / "iphone-6.9-3-news.png"
+
+    def background(size):
+        w, h = size
+        bg = gradient(size, rgb(colours["glow"] if "glow" in colours else colours["background"]), rgb(colours["deep"]))
+        # A soft light behind the middle, where the eye goes.
+        glow = Image.new("L", size, 0)
+        ImageDraw.Draw(glow).ellipse((w * 0.2, -h * 0.3, w * 0.8, h * 0.9), fill=110)
+        glow = glow.filter(ImageFilter.GaussianBlur(h // 5))
+        bg.paste(Image.new("RGB", size, rgb(colours["background"])), (0, 0), glow)
+        return bg
+
+    def crest(height):
+        c = Image.open(crest_path).convert("RGBA")
+        return c.resize((int(c.width * height / c.height), height), Image.LANCZOS)
+
+    # Header, 21:9.
+    size = (3840, 1646)
+    bg = background(size)
+    c = crest(int(size[1] * 0.62))
+    cx = int(size[0] * 0.40) - c.width // 2
+    cy = (size[1] - c.height) // 2
+    halo = Image.new("L", size, 0)
+    halo.paste(c.getchannel("A"), (cx, cy + 30))
+    halo = halo.filter(ImageFilter.GaussianBlur(36))
+    bg.paste(Image.new("RGB", size, (25, 0, 0)), (0, 0), halo.point(lambda a: int(a * 0.55)))
+    bg.paste(c, (cx, cy), c)
+    for path, scale, dx in ((news, 0.70, 0.66), (card, 0.84, 0.58)):
+        body, mask = phone(path, int(size[1] * scale))
+        paste_with_shadow(bg, body, mask, (int(size[0] * dx) - body.width // 2 + (0 if path == card else 120), (size[1] - body.height) // 2 + (0 if path == card else 40)))
+    bg.save(out_dir / "header.png", optimize=True)
+
+    # Search results, 3:2.
+    size = (3840, 2560)
+    bg = background(size)
+    draw = ImageDraw.Draw(bg)
+    c = crest(int(size[1] * 0.36))
+    left = int(size[0] * 0.08)
+    bg.paste(c, (left, int(size[1] * 0.14)), c)
+    title_font = ImageFont.truetype(str(FONT_BOLD), int(size[1] * 0.105))
+    sub_font = ImageFont.truetype(str(FONT_TEXT), int(size[1] * 0.045))
+    y = int(size[1] * 0.56)
+    for line in wrap(draw, v["name"].upper(), title_font, size[0] * 0.46):
+        draw.text((left, y), line, font=title_font, fill=(255, 255, 255))
+        y += int(title_font.size * 1.1)
+    y += int(sub_font.size * 0.5)
+    for line in wrap(draw, store.get("subtitle", v.get("tagline", "")), sub_font, size[0] * 0.44):
+        draw.text((left, y), line, font=sub_font, fill=(255, 232, 232))
+        y += int(sub_font.size * 1.35)
+    body, mask = phone(card, int(size[1] * 0.86))
+    paste_with_shadow(bg, body, mask, (int(size[0] * 0.75) - body.width // 2, (size[1] - body.height) // 2))
+    bg.save(out_dir / "search.png", optimize=True)
+    print(f"creative assets: header.png (3840x1646) and search.png (3840x2560) in {out_dir.relative_to(REPO)}")
+
+
 def main():
     if len(sys.argv) != 2:
         raise SystemExit("usage: python vesopa_loyalty/tool/make_store_screenshots.py <venue folder>")
@@ -154,6 +255,7 @@ def main():
                 raise SystemExit(f"{src.name} was not drawn: is '{s['screen']}' in store_screenshots_test.dart?")
             frame(src, out_dir / f"{n}-{s['screen'].split('-', 1)[-1]}.png", size, v["colours"], s["title"], s["subtitle"])
         print(f"{device}: {len(shots)} screenshots in {out_dir.relative_to(REPO)}")
+    creative(venue_dir, raw, v, store)
 
 
 if __name__ == "__main__":

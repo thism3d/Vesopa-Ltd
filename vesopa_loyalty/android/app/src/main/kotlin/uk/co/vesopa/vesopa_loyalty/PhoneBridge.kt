@@ -30,9 +30,10 @@ import java.util.concurrent.TimeUnit
 class PhoneBridge(private val activity: Activity, messenger: BinaryMessenger) {
     private val auth: FirebaseAuth by lazy { FirebaseAuth.getInstance() }
     private var resend: PhoneAuthProvider.ForceResendingToken? = null
+    private val channel = MethodChannel(messenger, "vesopa_loyalty/phone")
 
     init {
-        MethodChannel(messenger, "vesopa_loyalty/phone").setMethodCallHandler { call, result ->
+        channel.setMethodCallHandler { call, result ->
             when (call.method) {
                 "start" -> start(call.argument<String>("phone").orEmpty(), result)
                 "confirm" -> confirm(
@@ -55,7 +56,15 @@ class PhoneBridge(private val activity: Activity, messenger: BinaryMessenger) {
         }
         val callbacks = object : PhoneAuthProvider.OnVerificationStateChangedCallbacks() {
             override fun onVerificationCompleted(credential: PhoneAuthCredential) {
+                // Read from the text after "code sent" was already answered:
+                // Dart is told, so the member never has to type it (owner,
+                // 2026-10-23: the code came but was not filled in).
+                val late = answered
                 tokenFor(credential) { token, error ->
+                    if (late) {
+                        if (token != null) channel.invokeMethod("proved", mapOf("token" to token, "code" to credential.smsCode))
+                        return@tokenFor
+                    }
                     once {
                         if (token != null) result.success(mapOf("token" to token))
                         else result.error("failed", error ?: "That number could not be checked.", null)

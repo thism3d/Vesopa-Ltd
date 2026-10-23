@@ -47,8 +47,40 @@ final class PhoneBridge: NSObject, FlutterSceneLifeCycleDelegate {
     return URLContexts.contains { Auth.auth().canHandle($0.url) }
   }
 
-  /// Firebase, configured once from the venue's keys. Nil when the build has none.
-  private static func configured() -> Bool {
+  /*
+   * FIREBASE'S SILENT PUSH, HANDED OVER BY HAND.
+   *
+   * Firebase proves the app is genuine with a silent push to it, or with a
+   * web check page when that does not come. It finds the push by swizzling the
+   * app delegate, which misses when Firebase is configured after launch and
+   * the delegate is Flutter's: the check then failed or hung, and no code was
+   * texted (owner, 2026-10-23: "phone OTP not working"). So the token and the
+   * push are passed to it here, as Firebase's own guide does with swizzling off.
+   */
+
+  /// The APNs token, for Firebase as well as for the venue's notifications.
+  static func apnsToken(_ token: Data) {
+    guard FirebaseApp.app() != nil else { return }
+    Auth.auth().setAPNSToken(token, type: .unknown)
+  }
+
+  /// True when the push was Firebase's own check, which is then finished with.
+  static func handles(notification: [AnyHashable: Any]) -> Bool {
+    guard FirebaseApp.app() != nil else { return false }
+    return Auth.auth().canHandleNotification(notification)
+  }
+
+  /// The check page coming back, for a launch without scenes.
+  static func handles(url: URL) -> Bool {
+    guard FirebaseApp.app() != nil else { return false }
+    return Auth.auth().canHandle(url)
+  }
+
+  /// Firebase, configured once from the venue's keys. False when the build has
+  /// none. Called at launch too (AppDelegate), so Firebase has the APNs token
+  /// and sees its silent push before the first code is asked for.
+  @discardableResult
+  static func configured() -> Bool {
     if FirebaseApp.app() != nil { return true }
     let info = Bundle.main.infoDictionary ?? [:]
     guard
