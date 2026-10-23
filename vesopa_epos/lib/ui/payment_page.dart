@@ -1392,10 +1392,25 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
   }
 
   void _record(TenderEntry entry) {
+    final before = _tender;
     setState(() {
       _entry = '';
       _tender = _tender.addTender(entry);
     });
+    // Split bill: open the cash drawer after each share is paid in cash, while
+    // the split stays on screen (Meirion, 2026-10-23). A share is paid when it
+    // settles and addTender moves on to the next person. The final share runs
+    // through the whole-bill settle below, which opens the drawer itself, so
+    // this handles every share but the last.
+    if (before.isSplit &&
+        !_tender.settled &&
+        entry.kind == TenderKind.cash) {
+      final settledBefore = before.shares.where((s) => s.settled).length;
+      final settledNow = _tender.shares.where((s) => s.settled).length;
+      if (settledNow > settledBefore) {
+        unawaited(TillActions.openCashDrawerQuietly(ref));
+      }
+    }
     _settleIfPaid();
   }
 

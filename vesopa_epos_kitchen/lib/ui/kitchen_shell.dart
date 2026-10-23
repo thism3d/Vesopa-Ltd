@@ -167,24 +167,29 @@ class _KitchenShellState extends ConsumerState<KitchenShell> {
           ),
     );
 
-    if (ref.read(kitchenSessionProvider).value?.sound ?? true) {
-      // The system alert, not a bundled sound file.
-      //
-      // A kitchen is loud, and the noise that actually gets heard is the one
-      // the venue has already set the volume for. Shipping a chime would mean
-      // shipping a volume control for it, and then explaining to a chef why
-      // the Windows volume slider does not affect it.
-      SystemSound.play(SystemSoundType.alert);
-    }
+    // The system alert, not a bundled sound file: a kitchen is loud and the
+    // noise that gets heard is the one the venue has already set the volume
+    // for. Three quick beeps rather than one, so a busy kitchen hears an order
+    // come through (Meirion, 2026-10-23).
+    if (ref.read(kitchenSessionProvider).value?.sound ?? true) _beep();
 
     _flashAndChime(chime: false);
   }
 
   /// The flash on the board, and optionally the venue's own alert sound.
+  /// Three quick beeps, which carries across a kitchen in a way one does not.
+  void _beep() {
+    for (var i = 0; i < 3; i++) {
+      Future<void>.delayed(Duration(milliseconds: 230 * i), () {
+        if (mounted) unawaited(SystemSound.play(SystemSoundType.alert));
+      });
+    }
+  }
+
   void _flashAndChime({bool chime = true}) {
     if (!mounted) return;
     if (chime && (ref.read(kitchenSessionProvider).value?.sound ?? true)) {
-      SystemSound.play(SystemSoundType.alert);
+      _beep();
     }
     setState(() => _flash = true);
     Future.delayed(const Duration(milliseconds: 700), () {
