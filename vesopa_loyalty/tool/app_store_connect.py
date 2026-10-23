@@ -164,7 +164,8 @@ class Client:
                     time.sleep(5 * (attempt + 1))
                     continue
                 raise AppleError(e.code, raw) from None
-            except urllib.error.URLError:
+            except (urllib.error.URLError, TimeoutError, ConnectionError):
+                # A read that times out is a TimeoutError, not a URLError.
                 if attempt < 4:
                     time.sleep(5 * (attempt + 1))
                     continue
@@ -892,8 +893,11 @@ def library_image(c, library_id, path, category, label):
 def place_group(c, loc_id, ptype, group, image_ids):
     """Make the group show exactly [image_ids], in that order. Placements
     cannot be changed, so a different set means new ones."""
+    # include=image: without it Apple leaves the placement's image link out,
+    # every group looked changed, and each run re-made them all.
     have = c.all(f"/v1/appStoreVersionLocalizations/{loc_id}/placements", **{
-        "filter[placementType]": ptype, "filter[placementGroup]": group, "sort": "placementGroupPosition"})
+        "filter[placementType]": ptype, "filter[placementGroup]": group, "sort": "placementGroupPosition",
+        "include": "image"})
     shown = [((p.get("relationships") or {}).get("image") or {}).get("data", {}) or {} for p in have]
     if [x.get("id") for x in shown] == image_ids:
         return False
