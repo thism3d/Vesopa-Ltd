@@ -105,7 +105,16 @@ class AppleError(Exception):
         super().__init__(f"{status}: {body[:1500]}")
 
     def detail(self):
-        return "; ".join(f"{e.get('title', '')} {e.get('detail', '')}".strip() for e in self.errors) or self.body[:500]
+        parts = []
+        for e in self.errors:
+            parts.append(f"{e.get('title', '')} {e.get('detail', '')}".strip())
+            # Apple's "please check associated errors": the real reasons (a
+            # missing screenshot, an unanswered question) are in meta, keyed
+            # by the resource they belong to.
+            for where, errs in ((e.get("meta") or {}).get("associatedErrors") or {}).items():
+                for a in errs or []:
+                    parts.append(f"  [{where.rsplit('/', 1)[-1]}] {a.get('code', '')}: {a.get('detail') or a.get('title', '')}")
+        return "\n".join(parts) or self.body[:500]
 
 
 class Client:
