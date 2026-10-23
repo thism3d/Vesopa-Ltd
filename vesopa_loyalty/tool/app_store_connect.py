@@ -880,6 +880,20 @@ def attach_build(c, version_id, build_id):
     note("  build attached to the version")
 
 
+def privacy_published(c, app_id):
+    """Whether App Privacy has been filled in and published for the app.
+    Apple will not take a version for review until it is. True / False, or
+    None when it cannot be read (then the submission attempt speaks instead)."""
+    for path in (f"/v1/apps/{app_id}/appDataUsagesPublishState",
+                 f"/v1/apps/{app_id}/appDataUsagePublishState"):
+        try:
+            data = c.get(path).get("data") or {}
+            return bool(data.get("attributes", {}).get("published"))
+        except AppleError:
+            continue
+    return None
+
+
 def open_review_submission(c, app_id):
     """An in-progress review submission for this app on iOS, or None.
 
@@ -921,6 +935,16 @@ def cmd_submit(venue_name, release=None, build_number=None):
     if not build:
         raise SystemExit(f"No processed build for {v['version']} yet. Run the TestFlight step first.")
     attach_build(c, version["id"], build["id"])
+
+    # App Privacy is the one gate Apple's API cannot pass: a version with it
+    # unpublished is refused with a bare "not in valid state". Say so plainly.
+    if privacy_published(c, app["id"]) is False:
+        todo("App Privacy is not published, so Apple will not take the app for review. "
+             "App Store Connect > the app > App Privacy > Get Started (or Edit): answer the data "
+             f"questions as set out in {venue_name}/store/listing.md (every item \"App Functionality\", "
+             "no tracking), then press Publish. After that, run this `publish` step again.")
+        summary()
+        raise SystemExit("Publish App Privacy by hand first (see above), then run `publish` again.")
 
     state, sub = open_review_submission(c, app["id"])
     if state == "busy":
