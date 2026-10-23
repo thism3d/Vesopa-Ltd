@@ -330,7 +330,6 @@ ${note(flash)}${problem(error)}
   <h2>Sources</h2>
   <label>Match results from the WRU <small>A report of each First XV result: the score, tries, the league table and the next match. For ten days after the match.</small>${modeSelect('results', s.results)}</label>
   <label>Match previews from the WRU <small>The next match, from a week before: when, where, recent results, the table. Shows on What's On until the day.</small>${modeSelect('previews', s.previews)}</label>
-  <label>The club's Facebook and Instagram posts <small>The club's own words and photo, credited, for fourteen days. ${st.meta ? `Connected to <b>${esc(st.meta.pageName)}</b>${st.meta.instagram ? ' and its Instagram' : ' (no Instagram account linked to the Page)'}.` : '<b>Not connected yet</b> (below).'}</small>${modeSelect('social', s.social)}</label>
   <label>Stories that name the club <small>Found in Google News and listed below to read. Never posted by themselves.</small><select name="mentions"><option value="on"${s.mentions === 'on' ? ' selected' : ''}>On</option><option value="off"${s.mentions === 'off' ? ' selected' : ''}>Off</option></select></label>
   ${owner ? '<button class="btn btn-line" type="submit">Save</button>' : '<p class="muted small">Only an owner login can change these.</p>'}
 </form>
@@ -345,19 +344,6 @@ ${note(flash)}${problem(error)}
       <form method="post" action="/admin/auto/mentions/${esc(m.id)}/dismiss">${hidden(csrf)}<button class="btn btn-line" type="submit">Not for us</button></form>
     </span></li>`).join('')}</ul>` : '<p class="muted">No stories naming the club in the last 30 days.</p>'}
 </section>
-
-${owner ? `<section class="adm-card">
-  <h2>Facebook and Instagram</h2>
-  ${st.meta ? `<p>Connected to <b>${esc(st.meta.pageName)}</b>${st.meta.instagram ? ' and its Instagram account' : ''} since ${esc(stamp(st.meta.connectedAt))}.</p>
-  <form method="post" action="/admin/auto/meta/disconnect">${hidden(csrf)}<button class="btn btn-line" type="submit" data-confirm="Disconnect the Facebook Page?">Disconnect</button></form>`
-    : `<p class="muted">Connect the club's Facebook Page (and the Instagram account linked to it) so its new posts become articles. You need the Page's ID and a Page access token from Meta for Developers that can read the Page's posts.</p>
-  <form method="post" action="/admin/auto/meta" class="adm-form">
-    ${hidden(csrf)}
-    <label>Facebook Page ID<input name="pageId" inputmode="numeric" autocomplete="off" required></label>
-    <label>Page access token<input name="token" type="password" autocomplete="off" required></label>
-    <button class="btn btn-glow" type="submit">Connect</button>
-  </form>`}
-</section>` : ''}
 
 <section class="adm-card">
   <h2>Recent checks</h2>

@@ -7,21 +7,20 @@
  *                   table, what is next), for ten days after the match
  *   WRU previews    the next match, from a week before: when, where, the
  *                   competition, recent results and both sides in the table
- *   Facebook and    the club's own posts (its words and photo), once the
- *   Instagram       club connects its Page at /admin/auto (Meta Graph API)
  *   In the news     stories that name the club (Google News), listed in the
  *                   admin to read; never turned into posts by themselves
  *
  * NOTHING IS MADE UP. Every sentence is a fixed sentence filled with figures
  * straight from the source, which each post credits; no player names, no
  * quotes, nothing about how a game went beyond what the score says. No AI
- * writes a word. Each source can publish, save drafts for approval, or be off
- * (the WRU's figures publish by default; the club's own posts are drafts).
+ * writes a word. Each source can publish, save drafts for approval, or be off.
+ * No social media account is connected or read (the owner's decision,
+ * 2026-10-23).
  *
  * Never twice: each item has a key (wru-result-568140, fb-123_456, ...) kept
  * in data/autonews.json once written, so a post deleted in the admin is never
  * written again. Nothing too old: results ten days, previews a week ahead,
- * social posts fourteen days, news thirty. A match the club has already
+ * news thirty days. A match the club has already
  * posted about itself is left to the club's own post.
  */
 'use strict';
@@ -37,9 +36,7 @@ const FILE = path.join(posts.DATA, 'autonews.json');
 const EVERY = 3 * 3600 * 1000;
 const RESULT_DAYS = 10;
 const PREVIEW_DAYS = 7;
-const SOCIAL_DAYS = 14;
 const MENTION_DAYS = 30;
-const GRAPH = 'https://graph.facebook.com/v21.0';
 const NEWS_RSS = 'https://news.google.com/rss/search?q=%22Pontardawe+RFC%22&hl=en-GB&gl=GB&ceid=GB:en';
 const MODES = ['publish', 'draft', 'off'];
 
@@ -59,12 +56,12 @@ function load() {
     state = {};
   }
   state = {
-    settings: { results: 'publish', previews: 'publish', social: 'draft', mentions: 'on', ...(state.settings || {}) },
-    meta: state.meta || null,
+    settings: { results: 'publish', previews: 'publish', mentions: 'on', ...(state.settings || {}) },
     done: state.done || {},
     mentions: state.mentions || [],
     runs: state.runs || [],
   };
+  delete state.settings.social; // social media is not read (2026-10-23)
   return state;
 }
 function save() {
@@ -233,66 +230,6 @@ function wruItems(log) {
   return out;
 }
 
-async function graph(pathname, token) {
-  const r = await fetch(`${GRAPH}${pathname}${pathname.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(token)}`, { signal: AbortSignal.timeout(20000) });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok || j.error) throw new Error((j.error && j.error.message) || `${r.status} from Meta`);
-  return j;
-}
-
-/** The club's own words as paragraphs, and a title from its first sentence. */
-function fromCaption(text) {
-  const clean = String(text || '').replace(/\r/g, '').trim();
-  const first = clean.split('\n').find((l) => l.trim()) || '';
-  const sentence = (first.match(/^.{20,}?[.!?](?=\s|$)/) || [first])[0].replace(/[#@]\w+/g, '').replace(/\s+/g, ' ').trim();
-  const title = sentence.length > 90 ? `${sentence.slice(0, 88).replace(/\s+\S*$/, '')}…` : sentence;
-  const html = clean.split(/\n{2,}|\n/).map((p) => p.trim()).filter(Boolean).map((p) => `<p>${esc(p)}</p>`).join('\n');
-  return { title, html };
-}
-
-async function socialItems(log) {
-  const s = load().settings;
-  const m = state.meta;
-  if (s.social === 'off' || !m || !m.token) return [];
-  const cutoff = Date.now() - SOCIAL_DAYS * 864e5;
-  const out = [];
-  const seenText = new Set();
-  const add = (key, text, when, picture, link, from) => {
-    if (Date.parse(when) < cutoff || String(text || '').trim().length < 40) return;
-    // The same words on Facebook and Instagram are one post, whichever was written first.
-    const sig = String(text).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 80);
-    if (state.done[key]) { seenText.add(sig); return; }
-    if (seenText.has(sig) || Object.values(state.done).some((d) => d.sig === sig)) {
-      state.done[key] = { at: new Date().toISOString(), note: 'the same post on the other network', sig };
-      return;
-    }
-    seenText.add(sig);
-    const { title, html } = fromCaption(text);
-    out.push({
-      key, sig, mode: s.social, kind: 'club', source: from, picture, title,
-      html: `${html}\n<p><em>First posted on the club's <a href="${esc(link)}">${from === 'instagram' ? 'Instagram' : 'Facebook page'}</a>.</em></p>`,
-      tags: ['Club news', from === 'instagram' ? 'Instagram' : 'Facebook'],
-      alt: `Photo from Pontardawe RFC's ${from === 'instagram' ? 'Instagram' : 'Facebook page'}`,
-      publishAt: posts.nowUK(),
-    });
-  };
-  try {
-    const fb = await graph(`/${encodeURIComponent(m.pageId)}/posts?fields=id,message,created_time,permalink_url,full_picture&limit=15`, m.token);
-    for (const p of fb.data || []) add(`fb-${p.id}`, p.message, p.created_time, p.full_picture, p.permalink_url, 'facebook');
-  } catch (e) {
-    log.errors.push(`Facebook: ${e.message}`);
-  }
-  if (m.igId) {
-    try {
-      const ig = await graph(`/${encodeURIComponent(m.igId)}/media?fields=id,caption,media_type,media_url,thumbnail_url,permalink,timestamp&limit=15`, m.token);
-      for (const p of ig.data || []) add(`ig-${p.id}`, p.caption, p.timestamp, p.media_type === 'VIDEO' ? p.thumbnail_url : p.media_url, p.permalink, 'instagram');
-    } catch (e) {
-      log.errors.push(`Instagram: ${e.message}`);
-    }
-  }
-  return out;
-}
-
 /** Stories that name the club, to read in the admin (never posted by themselves). */
 async function checkMentions(log) {
   if (load().settings.mentions === 'off') return;
@@ -330,11 +267,6 @@ async function picture(item) {
     const { card } = require('./match_card');
     return savePhoto(await card(item.card), item.alt);
   }
-  if (item.picture && /^https:\/\//.test(item.picture)) {
-    const r = await fetch(item.picture, { signal: AbortSignal.timeout(30000) });
-    if (!r.ok) throw new Error(`photo ${r.status}`);
-    return savePhoto(Buffer.from(await r.arrayBuffer()), item.alt);
-  }
   return null;
 }
 
@@ -353,7 +285,7 @@ async function write(item, log) {
     publishAt: item.publishAt || posts.nowUK(),
     status: item.mode === 'publish' ? 'published' : 'draft',
   }, { author: 'Automatic news', extra: { origin: 'auto', source: item.source, autoKey: item.key } });
-  state.done[item.key] = { at: new Date().toISOString(), postId: post.id, ...(item.sig ? { sig: item.sig } : {}) };
+  state.done[item.key] = { at: new Date().toISOString(), postId: post.id };
   log.made.push({ key: item.key, id: post.id, title: post.title, slug: post.slug, status: post.status });
   return post;
 }
@@ -367,7 +299,7 @@ async function run({ why = 'schedule' } = {}) {
     const log = { at: new Date().toISOString(), why, made: [], skipped: [], notes: [], errors: [] };
     try {
       if (!wru.fixtures().updated || Date.now() - Date.parse(wru.fixtures().updated) > 3600e3) await wru.refresh();
-      const items = [...wruItems(log), ...(await socialItems(log))];
+      const items = wruItems(log);
       for (const item of items) await write(item, log);
       await checkMentions(log);
     } catch (e) {
@@ -397,38 +329,17 @@ function start(refresh) {
 function settings(next) {
   load();
   if (next) {
-    for (const k of ['results', 'previews', 'social']) if (MODES.includes(next[k])) state.settings[k] = next[k];
+    for (const k of ['results', 'previews']) if (MODES.includes(next[k])) state.settings[k] = next[k];
     if (['on', 'off'].includes(next.mentions)) state.settings.mentions = next.mentions;
     save();
   }
   return state.settings;
 }
 
-/** Check a Page token with Meta and keep it (with the Page's Instagram account, if any). */
-async function connectMeta(pageId, token) {
-  load();
-  pageId = String(pageId || '').trim();
-  token = String(token || '').trim();
-  if (!/^\d{5,25}$/.test(pageId)) throw new Error('The Page ID is a number, found in the Page’s About section (Page transparency).');
-  if (token.length < 50) throw new Error('That does not look like a Page access token.');
-  const page = await graph(`/${pageId}?fields=name,instagram_business_account`, token);
-  await graph(`/${pageId}/posts?fields=id&limit=1`, token); // can read its posts
-  state.meta = { pageId, token, pageName: page.name, igId: page.instagram_business_account ? page.instagram_business_account.id : null, connectedAt: new Date().toISOString() };
-  save();
-  return { pageName: page.name, instagram: Boolean(state.meta.igId) };
-}
-function disconnectMeta() {
-  load();
-  state.meta = null;
-  save();
-}
-
 function status() {
   load();
-  const m = state.meta;
   return {
     settings: state.settings,
-    meta: m ? { pageName: m.pageName, instagram: Boolean(m.igId), connectedAt: m.connectedAt } : null,
     runs: state.runs,
     mentions: state.mentions.filter((x) => !x.dismissed),
     nextRun: state.runs[0] ? new Date(Date.parse(state.runs[0].at) + EVERY).toISOString() : null,
@@ -461,5 +372,5 @@ function draftFromMention(id, author) {
 function reset() { state = null; }
 
 module.exports = {
-  run, start, settings, connectMeta, disconnectMeta, status, dismissMention, draftFromMention, resultArticle, previewArticle, fromCaption, reset, FILE,
+  run, start, settings, status, dismissMention, draftFromMention, resultArticle, previewArticle, reset, FILE,
 };

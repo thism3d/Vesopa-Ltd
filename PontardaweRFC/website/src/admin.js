@@ -192,7 +192,7 @@ function adminRoutes() {
 
   // ---- The automatic news (src/autonews.js) -----------------------------------------
   const auto = (req, res, extra = {}, status = 200) => send(res, views.autoPage({ user: req.admin, csrf: res.locals.csrf, st: autonews.status(), ...extra }), status);
-  const AUTO_FLASH = { saved: 'Saved.', disconnected: 'Disconnected.', dismissed: 'Taken off the list.' };
+  const AUTO_FLASH = { saved: 'Saved.', dismissed: 'Taken off the list.' };
   const ownerOnly = (req, res, next) => (req.admin.role === 'owner' ? next() : res.status(403).type('text/plain').send('Only an owner login can change this.'));
   r.get('/auto', (req, res) => auto(req, res, { flash: AUTO_FLASH[req.query.flash] || '' }));
   r.post('/auto/run', async (req, res) => {
@@ -205,18 +205,6 @@ function adminRoutes() {
   r.post('/auto/settings', ownerOnly, (req, res) => {
     autonews.settings(req.body || {});
     res.redirect(303, '/admin/auto?flash=saved');
-  });
-  r.post('/auto/meta', ownerOnly, async (req, res) => {
-    try {
-      const c = await autonews.connectMeta(req.body.pageId, req.body.token);
-      return auto(req, res, { flash: `Connected to ${c.pageName}${c.instagram ? ' and its Instagram' : ''}. Its new posts are checked every three hours.` });
-    } catch (e) {
-      return auto(req, res, { error: `Not connected: ${e.message}` }, 400);
-    }
-  });
-  r.post('/auto/meta/disconnect', ownerOnly, (req, res) => {
-    autonews.disconnectMeta();
-    res.redirect(303, '/admin/auto?flash=disconnected');
   });
   r.post('/auto/mentions/:id/dismiss', (req, res) => {
     autonews.dismissMention(req.params.id);

@@ -1,9 +1,9 @@
 'use strict';
 
 // The automatic news: posts from the WRU's figures only, never twice, never
-// stale, the club's own posts left alone, Facebook and Instagram as drafts,
-// news stories listed and never posted. The WRU, Meta and Google News are
-// stood in for, so nothing here leaves the machine.
+// stale, the club's own posts left alone, news stories listed and never
+// posted. The WRU and Google News are stood in for, so nothing here leaves
+// the machine.
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -43,24 +43,12 @@ function season() {
   });
 }
 
-// Meta and Google News, stood in for; everything else (the site itself) goes through.
+// Google News, stood in for; everything else (the site itself) goes through.
 const realFetch = global.fetch;
-let meta = null;
 let rss = '';
 global.fetch = async (url, opts) => {
   const u = String(url);
-  if (u.startsWith('https://graph.facebook.com/')) {
-    if (!meta) return new Response(JSON.stringify({ error: { message: 'Invalid OAuth access token.' } }), { status: 400 });
-    const p = new URL(u).pathname;
-    if (/\/v21\.0\/\d+$/.test(p)) return Response.json({ name: 'Pontardawe RFC', instagram_business_account: { id: '1784' } });
-    if (p.endsWith('/posts')) return Response.json({ data: meta.fb });
-    if (p.endsWith('/media')) return Response.json({ data: meta.ig });
-  }
   if (u.startsWith('https://news.google.com/')) return new Response(rss, { status: 200 });
-  if (u === 'https://scontent.example/photo.jpg') {
-    const sharp = require('sharp');
-    return new Response(await sharp({ create: { width: 900, height: 900, channels: 3, background: '#2a6' } }).jpeg().toBuffer());
-  }
   return realFetch(url, opts);
 };
 
@@ -139,30 +127,6 @@ test('set to drafts, a result waits for approval and is not on the site', async 
   autonews.settings({ results: 'publish' });
 });
 
-test('Facebook and Instagram: connected with a token, the club\'s own posts become drafts with their photo, credited', async () => {
-  await assert.rejects(autonews.connectMeta('123456789', 'x'.repeat(60)), /Invalid OAuth/);
-  const recent = new Date(Date.now() - 2 * 864e5).toISOString();
-  const words = 'Huge thanks to everyone who came to the quiz night on Friday! Over £600 raised for the juniors.\n\nNext quiz in December.';
-  meta = {
-    fb: [
-      { id: '1_2', message: words, created_time: recent, permalink_url: 'https://www.facebook.com/PontardaweRFC/posts/2', full_picture: 'https://scontent.example/photo.jpg' },
-      { id: '1_3', message: 'Old news from last season, more than two weeks ago now.', created_time: '2026-01-01T10:00:00+0000', permalink_url: 'https://www.facebook.com/x' },
-      { id: '1_4', message: 'Short one', created_time: recent },
-    ],
-    ig: [{ id: '9', caption: words, media_type: 'IMAGE', media_url: 'https://scontent.example/photo.jpg', permalink: 'https://www.instagram.com/p/x/', timestamp: recent }],
-  };
-  const c = await autonews.connectMeta('123456789', 'x'.repeat(60));
-  assert.deepStrictEqual(c, { pageName: 'Pontardawe RFC', instagram: true });
-  const log = await autonews.run();
-  assert.deepStrictEqual(log.made.map((m) => [m.key, m.status]), [['fb-1_2', 'draft']], 'one draft: old, short and the Instagram copy left out');
-  const p = posts.get(log.made[0].id);
-  assert.strictEqual(p.title, 'Huge thanks to everyone who came to the quiz night on Friday!');
-  assert.match(p.html, /<p>Next quiz in December\.<\/p>/);
-  assert.match(p.html, /First posted on the club's <a href="https:\/\/www.facebook.com\/PontardaweRFC\/posts\/2"/);
-  assert.match(p.image, /^u\//, 'the club\'s photo, kept here');
-  assert.ok(!JSON.stringify(autonews.status()).includes('x'.repeat(60)), 'the token is never shown');
-});
-
 test('stories naming the club are listed to read, never posted; a draft can be started from one', async () => {
   const when = new Date(Date.now() - 3 * 864e5).toUTCString();
   rss = `<rss><channel>
@@ -192,11 +156,11 @@ test('the admin page: status, sources and the run log; Check now', async () => {
   await go('/admin/setup', { code: 'code-123456', name: 'Chair', email: 'c@p.test', password: 'long-password-1' });
   const page = await (await go('/admin/auto')).text();
   assert.match(page, /Automatic news/);
-  assert.match(page, /Connected to <b>Pontardawe RFC<\/b>/);
+  assert.ok(!/Facebook Page ID|access token/i.test(page), 'no social media connection');
   assert.match(page, /Published: <a href="\/admin\/posts\//);
   const csrf = page.match(/data-csrf="([^"]+)"/)[1];
   const ran = await (await go('/admin/auto/run', { _csrf: csrf })).text();
   assert.match(ran, /Checked: nothing new to write\./);
-  assert.strictEqual((await go('/admin/auto/settings', { _csrf: csrf, previews: 'off', results: 'draft', social: 'publish', mentions: 'off' })).status, 303);
-  assert.deepStrictEqual(autonews.settings(), { results: 'draft', previews: 'off', social: 'publish', mentions: 'off' });
+  assert.strictEqual((await go('/admin/auto/settings', { _csrf: csrf, previews: 'off', results: 'draft', mentions: 'off' })).status, 303);
+  assert.deepStrictEqual(autonews.settings(), { results: 'draft', previews: 'off', mentions: 'off' });
 });
