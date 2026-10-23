@@ -109,7 +109,6 @@ jobs:
         env:
           VESOPA_SSH_PASSWORD: ${{ secrets.VESOPA_SSH_PASSWORD }}
         run: |
-          set -x
           ssh -n "$SERVER" true || { echo "::error::Could not sign in to $SERVER over SSH (password, or port 22 closed to GitHub's runners)."; exit 1; }
           ssh -n "$SERVER" "test -d '$REMOTE_APP'" || { echo "::error::$REMOTE_APP not found on the server"; exit 1; }
           : > "$RUNNER_TEMP/to-copy"
