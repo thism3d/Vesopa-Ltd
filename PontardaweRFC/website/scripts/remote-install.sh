@@ -167,6 +167,12 @@ mkdir -p "$APP" "$APP/logs"
 LOCK_OLD=$(sha256sum "$APP/package-lock.json" 2>/dev/null | cut -d' ' -f1 || true)
 rm -rf "$APP/src.new" "$APP/public.new" "$APP/content.new"
 cp -a "$HERE/site/src" "$APP/src.new"; cp -a "$HERE/site/public" "$APP/public.new"; cp -a "$HERE/site/content" "$APP/content.new"
+# The app downloads (public/downloads/*.apk) travel only when the PC has a
+# build; a deploy without one keeps the ones already on the site.
+if [ -d "$APP/public/downloads" ]; then
+  mkdir -p "$APP/public.new/downloads"
+  cp -an "$APP/public/downloads/." "$APP/public.new/downloads/"
+fi
 for d in src public content; do rm -rf "$APP/$d"; mv "$APP/$d.new" "$APP/$d"; done
 cp -a "$HERE/site/package.json" "$HERE/site/package-lock.json" "$APP/"
 
