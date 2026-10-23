@@ -26,6 +26,13 @@
     show();
   });
 
+  // Reading screenshots takes a while: say so, and stop a second press.
+  var imp = document.querySelector('[data-import]');
+  if (imp) imp.addEventListener('submit', function () {
+    imp.querySelector('button[type=submit]').disabled = true;
+    imp.querySelector('[data-import-wait]').hidden = false;
+  });
+
   var form = document.querySelector('[data-editor]');
   if (!form) return;
 
