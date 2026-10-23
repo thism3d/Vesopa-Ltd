@@ -847,6 +847,134 @@ def cmd_store(venue_name):
     summary()
 
 
+# ---- submit for App Review --------------------------------------------------------
+
+
+def latest_valid_build(c, app_id, version, number=None):
+    """The build to submit: the one the testflight step uploaded, by number,
+    else the newest VALID build on this version string."""
+    builds = c.all("/v1/builds", **{
+        "filter[app]": app_id,
+        "filter[preReleaseVersion.version]": version,
+        "sort": "-uploadedDate", "limit": "20",
+    })
+    for b in builds:
+        if number is not None and str(b["attributes"].get("version")) != str(number):
+            continue
+        if b["attributes"].get("processingState") == "VALID":
+            return b
+    return builds[0] if builds else None
+
+
+def attach_build(c, version_id, build_id):
+    """Make sure the App Store version carries the build Apple will review."""
+    try:
+        cur = c.get(f"/v1/appStoreVersions/{version_id}/build").get("data")
+        if cur and cur["id"] == build_id:
+            note("  build already attached")
+            return
+    except AppleError:
+        pass
+    c.patch(f"/v1/appStoreVersions/{version_id}/relationships/build",
+            {"data": {"type": "builds", "id": build_id}})
+    note("  build attached to the version")
+
+
+def open_review_submission(c, app_id):
+    """An in-progress review submission for this app on iOS, or None.
+
+    READY_FOR_REVIEW is one we created but have not submitted yet, so it can be
+    reused. Anything further along (WAITING_FOR_REVIEW, IN_REVIEW, ...) means it
+    is already with Apple and must not be touched."""
+    subs = c.all("/v1/reviewSubmissions", **{
+        "filter[app]": app_id, "filter[platform]": "IOS"})
+    live = None
+    for sub in subs:
+        state = sub["attributes"].get("state")
+        if state == "READY_FOR_REVIEW":
+            live = sub
+        elif state in ("WAITING_FOR_REVIEW", "IN_REVIEW", "UNRESOLVED_ISSUES", "CANCELING"):
+            return ("busy", sub)
+    return ("ready", live) if live else ("none", None)
+
+
+def cmd_submit(venue_name, release=None, build_number=None):
+    """Create (or reuse) the App Review submission, attach the build and the
+    version, set how it releases, and submit it to Apple."""
+    venue_dir, v, store = load_venue(venue_name)
+    c = Client()
+    app = find_app(c, v["app_id"])
+    if not app:
+        raise SystemExit(f"No app record for {v['app_id']}: run `prepare`/`store` first.")
+
+    # Honour the release choice on the version before it goes in.
+    want = (release or store.get("release_type") or "manual").lower()
+    release_type = {"auto": "AFTER_APPROVAL", "automatic": "AFTER_APPROVAL",
+                    "manual": "MANUAL"}.get(want, "MANUAL")
+
+    version = editable_version(c, app["id"], v["version"])
+    patch_attributes(c, "appStoreVersions", version["id"],
+                     {"releaseType": release_type},
+                     f"release {'automatically after approval' if release_type == 'AFTER_APPROVAL' else 'by hand'}")
+
+    build = latest_valid_build(c, app["id"], v["version"], build_number)
+    if not build:
+        raise SystemExit(f"No processed build for {v['version']} yet. Run the TestFlight step first.")
+    attach_build(c, version["id"], build["id"])
+
+    state, sub = open_review_submission(c, app["id"])
+    if state == "busy":
+        note(f"{v['name']}: already with Apple for review "
+             f"(state {sub['attributes'].get('state')}). Nothing to do.")
+        summary()
+        return
+    if state == "none":
+        sub = c.post("/v1/reviewSubmissions", {"data": {
+            "type": "reviewSubmissions",
+            "attributes": {"platform": "IOS"},
+            "relationships": {"app": {"data": {"type": "apps", "id": app["id"]}}},
+        }})["data"]
+        note("  review submission: created")
+    else:
+        note("  review submission: reusing the one prepared earlier")
+
+    # The version must be an item on the submission. Add it if it is not.
+    items = c.all(f"/v1/reviewSubmissions/{sub['id']}/items")
+    has_version = any(
+        (it.get("relationships", {}).get("appStoreVersion", {}).get("data") or {}).get("id") == version["id"]
+        for it in items)
+    if not has_version:
+        try:
+            c.post("/v1/reviewSubmissionItems", {"data": {
+                "type": "reviewSubmissionItems",
+                "relationships": {
+                    "reviewSubmission": {"data": {"type": "reviewSubmissions", "id": sub["id"]}},
+                    "appStoreVersion": {"data": {"type": "appStoreVersions", "id": version["id"]}},
+                },
+            }})
+            note("  version added to the submission")
+        except AppleError as e:
+            # Apple lists exactly what is still missing (a screenshot size, the
+            # build, App Privacy): surface it rather than a bare 409.
+            todo(f"Could not add the version: {e.detail()}")
+            summary()
+            raise SystemExit("Fix the above in App Store Connect, then run `submit` again.")
+
+    try:
+        c.patch(f"/v1/reviewSubmissions/{sub['id']}",
+                {"data": {"type": "reviewSubmissions", "id": sub["id"],
+                          "attributes": {"submitted": True}}})
+    except AppleError as e:
+        todo(f"Apple would not accept the submission: {e.detail()}")
+        summary()
+        raise SystemExit("Fix the above in App Store Connect, then run `submit` again.")
+
+    note(f"{v['name']} {v['version']} submitted for App Review "
+         f"({'auto-release' if release_type == 'AFTER_APPROVAL' else 'release by hand'}).")
+    note("  Apple review usually takes a day or two; watch App Store Connect.")
+    summary()
+
+
 # ---- testflight -------------------------------------------------------------------
 
 
@@ -1032,7 +1160,7 @@ def summary():
 
 
 def main():
-    if len(sys.argv) < 3 or sys.argv[1] not in ("status", "prepare", "signing", "sign-project", "store", "testflight"):
+    if len(sys.argv) < 3 or sys.argv[1] not in ("status", "prepare", "signing", "sign-project", "store", "testflight", "submit"):
         raise SystemExit(__doc__)
     cmd, venue = sys.argv[1], sys.argv[2]
     if cmd == "status":
@@ -1045,6 +1173,11 @@ def main():
         cmd_prepare(venue)
     elif cmd == "store":
         cmd_store(venue)
+    elif cmd == "submit":
+        # submit <venue> [manual|auto] [build_number]
+        release = next((a for a in sys.argv[3:] if a in ("manual", "auto", "automatic")), None)
+        num = next((int(a) for a in sys.argv[3:] if a.isdigit()), None)
+        cmd_submit(venue, release=release, build_number=num)
     else:
         if len(sys.argv) < 4:
             raise SystemExit("testflight needs the build number")

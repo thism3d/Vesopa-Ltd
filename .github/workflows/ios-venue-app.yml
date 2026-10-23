@@ -47,8 +47,13 @@ on:
       mode:
         description: check = only report what App Store Connect has; full = build, upload, listing and TestFlight; listing = only the listing and screenshots
         type: choice
-        options: [full, check, listing]
+        options: [full, check, listing, publish]
         default: full
+      release:
+        description: how a published app releases once Apple approves it (publish mode only)
+        type: choice
+        options: [manual, auto]
+        default: manual
 
 permissions:
   contents: read
@@ -192,6 +197,16 @@ jobs:
           ASC_REVIEW_PHONE: ${{ secrets.ASC_REVIEW_PHONE }}
         run: |
           "$RUNNER_TEMP/asc/bin/python" vesopa_loyalty/tool/app_store_connect.py testflight "$VENUE" "${{ steps.asc.outputs.build }}"
+
+      - name: Submit for App Review
+        if: steps.key.outputs.upload == 'true' && inputs.mode == 'publish'
+        env:
+          ASC_KEY_PATH: ${{ runner.temp }}/keys/AuthKey_${{ secrets.ASC_KEY_ID }}.p8
+          ASC_REVIEW_USER: ${{ secrets.ASC_REVIEW_USER }}
+          ASC_REVIEW_PASSWORD: ${{ secrets.ASC_REVIEW_PASSWORD }}
+          ASC_REVIEW_PHONE: ${{ secrets.ASC_REVIEW_PHONE }}
+        run: |
+          "$RUNNER_TEMP/asc/bin/python" vesopa_loyalty/tool/app_store_connect.py submit "$VENUE" "${{ inputs.release }}"
 
       - name: Remove the key and the signing keychain
         if: always()

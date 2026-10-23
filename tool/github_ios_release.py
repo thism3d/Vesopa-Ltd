@@ -2,7 +2,8 @@
 
     python tool/github_ios_release.py                 # secret, then run the workflow (full)
     python tool/github_ios_release.py --secret-only
-    python tool/github_ios_release.py --run-only [--mode check|full|listing] [--venue PontardaweRFC]
+    python tool/github_ios_release.py --run-only [--mode check|full|listing|publish] [--release manual|auto] [--venue PontardaweRFC]
+      publish = refresh the listing and SUBMIT the existing TestFlight build for App Review
     python tool/github_ios_release.py --status        # the latest run, its steps, and the log of a failed one
     python tool/github_ios_release.py --wait          # --status until the run finishes
 
@@ -74,9 +75,12 @@ def set_secret(tok, venue):
     print(f"FIREBASE_IOS_API_KEY saved in the '{ENVIRONMENT}' environment")
 
 
-def run(tok, venue, mode):
+def run(tok, venue, mode, release="manual"):
+    inputs = {"venue": venue, "mode": mode}
+    if mode == "publish":
+        inputs["release"] = release
     st, out = api(tok, "POST", f"/repos/{OWNER}/{REPO}/actions/workflows/{WORKFLOW}/dispatches",
-                  {"ref": "main", "inputs": {"venue": venue, "mode": mode}})
+                  {"ref": "main", "inputs": inputs})
     if st != 204:
         raise SystemExit(f"! workflow not started ({st}): {out.get('message')}")
     print(f"started 'iOS - venue app' for {venue} ({mode}): https://github.com/{OWNER}/{REPO}/actions/workflows/{WORKFLOW}")
@@ -120,7 +124,7 @@ def main():
     if "--run-only" not in sys.argv:
         set_secret(tok, venue)
     if "--secret-only" not in sys.argv:
-        run(tok, venue, arg("--mode", "full"))
+        run(tok, venue, arg("--mode", "full"), arg("--release", "manual"))
 
 
 if __name__ == "__main__":
