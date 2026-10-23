@@ -90,16 +90,22 @@ async function cutPhoto(shot, box) {
   return sharp(shot.file).extract({ left, top, width: Math.min(width, shot.w - left), height: Math.min(height, shot.h - top) }).jpeg({ quality: 90 }).toBuffer();
 }
 
+/** Emoji, hashtags and mentions out: a title and a Google summary read better as words. */
+const plain = (t) => String(t).replace(/[\p{Extended_Pictographic}\p{Regional_Indicator}‍️⃣]/gu, ' ')
+  .replace(/(^|\s)[#@][\w]+/g, ' ').replace(/\s+/g, ' ').replace(/^[\s|:·•-]+|[\s|:·•-]+$/g, '').trim();
+
 /** First sentence of the club's words as the title; the words, as they are, for the story. */
 function fromText(text, network) {
   const clean = String(text || '').replace(/\r/g, '').trim();
-  const first = clean.split('\n').find((l) => l.trim()) || '';
-  const sentence = (first.match(/^.{20,}?[.!?](?=\s|$)/) || [first])[0].replace(/(^|\s)[#@][\w]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const first = plain(clean.split('\n').find((l) => plain(l)) || '');
+  const sentence = (first.match(/^.{20,}?[.!?](?=\s|$)/) || [first])[0];
   const title = sentence.length > 90 ? `${sentence.slice(0, 88).replace(/\s+\S*$/, '')}…` : sentence;
   const link = network === 'instagram' ? club.web.instagram : network === 'x' ? club.web.x : club.web.facebook;
   const html = `${clean.split(/\n+/).map((p) => p.trim()).filter(Boolean).map((p) => `<p>${esc(p)}</p>`).join('\n')}
 <p><em>First posted on the club's <a href="${esc(link)}">${esc(NETWORK[network] || 'social media')}</a>.</em></p>`;
-  return { title: title || 'From the club', html };
+  const words = plain(clean.replace(/\n+/g, ' ').replace(/\[unreadable\]/g, ''));
+  const summary = words.length > 157 ? `${words.slice(0, 157).replace(/\s+\S*$/, '')}…` : words;
+  return { title: title || 'From the club', html, summary };
 }
 
 /** An event's date is kept only if its day of the month is written in the post. */
@@ -147,7 +153,7 @@ async function importScreens(files, { author = '', photos = [] } = {}) {
     const same = sig.length >= 20 && posts.all().find((q) => q.sig === sig || signature(posts.textOf(q.html)).startsWith(sig.slice(0, 60)));
     if (same) { out.duplicates.push({ title: same.title, id: same.id }); continue; }
     const network = ['facebook', 'instagram', 'x'].includes(p.network) ? p.network : 'unknown';
-    const { title, html } = fromText(text, network);
+    const { title, html, summary } = fromText(text, network);
     const screens = (Array.isArray(p.screens) ? p.screens : []).filter((n) => Number.isInteger(n) && shots[n]).map((n) => shots[n].name);
     screens.forEach((n) => used.add(n));
     // The post's own photos if the editor added them; else its photo cut from the screenshot.
@@ -165,6 +171,7 @@ async function importScreens(files, { author = '', photos = [] } = {}) {
     const post = posts.save({
       title,
       html,
+      summary,
       kind: KINDS.includes(p.category) ? p.category : 'club',
       tags: [...(Array.isArray(p.tags) ? p.tags.filter((t) => typeof t === 'string' && text.toLowerCase().includes(t.toLowerCase())) : []), NETWORK[network] ? network[0].toUpperCase() + network.slice(1) : null].filter(Boolean),
       gallery,
