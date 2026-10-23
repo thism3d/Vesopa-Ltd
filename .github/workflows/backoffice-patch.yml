@@ -64,7 +64,12 @@ jobs:
     timeout-minutes: 20
     environment: App Store Connect API
     env:
-      SERVER: root@3.72.113.21
+      # The Hestia box (cloud.vesopa.com, auth.vesopa.com and the back office
+      # since the move off 3.72.113.21; tool/migrate_old_box.py). Each app runs
+      # as the Hestia user vesopasoftware under that user's own pm2, named by
+      # its domain (tool/deploy_memberships.py).
+      SERVER: root@34.63.118.67
+      APP_USER: vesopasoftware
       TARGET: ${{ inputs.target }}
       FILES: ${{ inputs.files }}
       SETTINGS: ${{ inputs.settings }}
@@ -83,13 +88,13 @@ jobs:
           fi
           [ -n "$SSHPW" ] || { echo "::error::VESOPA_SSH_PASSWORD is not set in the 'App Store Connect API' environment."; exit 1; }
           case "$TARGET" in
-            live)    domain=backoffice.vesopaepos.com;         pm2=vesopa_backoffice ;;
-            staging) domain=staging.backoffice.vesopaepos.com; pm2=vesopa_backoffice_staging ;;
+            live)    domain=backoffice.vesopaepos.com ;;
+            staging) domain=staging.backoffice.vesopaepos.com ;;
           esac
           {
             echo "DOMAIN=$domain"
-            echo "PM2_APP=$pm2"
-            echo "REMOTE_APP=/home/vesopa/web/$domain/private/nodeapp"
+            echo "PM2_APP=$domain"
+            echo "REMOTE_APP=/home/$APP_USER/web/$domain/private/nodeapp"
           } >> "$GITHUB_ENV"
           # The password through SSH_ASKPASS: never on a command line, never in a file in the repo.
           mkdir -p ~/.ssh "$RUNNER_TEMP/ssh"
@@ -104,6 +109,7 @@ jobs:
         env:
           VESOPA_SSH_PASSWORD: ${{ secrets.VESOPA_SSH_PASSWORD }}
         run: |
+          ssh -n "$SERVER" true || { echo "::error::Could not sign in to $SERVER over SSH (password, or port 22 closed to GitHub's runners)."; exit 1; }
           ssh -n "$SERVER" "test -d '$REMOTE_APP'" || { echo "::error::$REMOTE_APP not found on the server"; exit 1; }
           : > "$RUNNER_TEMP/to-copy"
           for f in $FILES; do
@@ -138,6 +144,9 @@ jobs:
           # -n: a command that reads nothing, so it cannot eat the file list
           # a surrounding while-read loop is reading.
           R() { ssh -n "$SERVER" "$@"; }
+          # As root, pm2 would start a second daemon that fights the app's own
+          # over the port: always the app user's pm2.
+          restart() { R "su - $APP_USER -c 'PM2_HOME=/home/$APP_USER/.pm2 pm2 restart $PM2_APP --update-env'"; }
 
           # What to restore if anything below fails.
           R "cp -p '$app/.env' '$app/.env.bak-$ts'"
@@ -152,14 +161,14 @@ jobs:
               [ -n "$f" ] || continue
               R "cp -p '$app/$f.bak-$ts' '$app/$f'" || true
             done < "$RUNNER_TEMP/to-copy"
-            R "pm2 restart '$PM2_APP' --update-env" || true
+            restart || true
             exit 1
           }
           trap rollback ERR
 
           while read -r f; do
             [ -n "$f" ] || continue
-            ssh "$SERVER" "cat > '$app/$f.new' && mv '$app/$f.new' '$app/$f'" < "vesopa_server/$f"
+            ssh "$SERVER" "cat > '$app/$f.new' && chown $APP_USER:$APP_USER '$app/$f.new' && mv '$app/$f.new' '$app/$f'" < "vesopa_server/$f"
             echo "copied $f"
           done < "$RUNNER_TEMP/to-copy"
 
@@ -194,7 +203,7 @@ jobs:
           while read -r f; do
             case "$f" in *.js) R "cd '$app' && node --check '$f'" && echo "parses: $f" ;; esac
           done < "$RUNNER_TEMP/to-copy"
-          R "pm2 restart '$PM2_APP' --update-env" > /dev/null
+          restart > /dev/null
           for i in 1 2 3 4 5 6 7 8 9 10; do
             sleep 3
             if curl -fsS --max-time 10 "https://$DOMAIN/health" > /dev/null; then ok=1; break; fi
