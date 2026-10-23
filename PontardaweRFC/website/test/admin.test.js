@@ -11,6 +11,7 @@ process.env.DEEPSEEK_API_KEY = '';
 process.env.GEMINI_API_KEY = '';
 process.env.WRU_OFF = '1';
 process.env.VENUE_API_OFF = '1';
+process.env.AUTONEWS_OFF = '1';
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'prfc-admin-'));
 process.env.ADMIN_SETUP_CODE = 'test-setup-code-123';
 

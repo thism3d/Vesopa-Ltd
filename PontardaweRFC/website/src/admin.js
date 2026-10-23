@@ -22,6 +22,7 @@ const views = require('./admin_views');
 const posts = require('./posts');
 const content = require('./content');
 const pages = require('./pages');
+const autonews = require('./autonews');
 
 const form = express.urlencoded({ extended: false, limit: '2mb', parameterLimit: 400 });
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024, files: 1 } });
@@ -46,6 +47,7 @@ function fromForm(b, action) {
     status: action === 'publish' ? 'published' : 'draft',
     event: b.ev_day ? { day: b.ev_day, time: /^\d{2}:\d{2}/.test(b.ev_time || '') ? b.ev_time.slice(0, 5) : '', place: b.ev_place, price: b.ev_price, note: b.ev_note } : null,
     cta: b.cta_label && b.cta_href ? { label: b.cta_label, href: b.cta_href } : null,
+    tags: b.tags,
   };
 }
 
@@ -185,6 +187,48 @@ function adminRoutes() {
       return send(res, pages.articlePage(post, { preview: true }).replace('<main id="main">', '<main id="main"><p style="position:sticky;top:0;z-index:60;margin:0;padding:10px 16px;text-align:center;font:700 15px Montserrat,sans-serif;background:#f2c14e;color:#3a2a00">Preview: not saved yet. Close this tab to go back to the editor.</p>'));
     } catch (e) {
       return send(res, `<!doctype html><meta name="viewport" content="width=device-width"><p style="font:16px system-ui;padding:24px">${String(e.message).replace(/</g, '&lt;')}</p>`, 400);
+    }
+  });
+
+  // ---- The automatic news (src/autonews.js) -----------------------------------------
+  const auto = (req, res, extra = {}, status = 200) => send(res, views.autoPage({ user: req.admin, csrf: res.locals.csrf, st: autonews.status(), ...extra }), status);
+  const AUTO_FLASH = { saved: 'Saved.', disconnected: 'Disconnected.', dismissed: 'Taken off the list.' };
+  const ownerOnly = (req, res, next) => (req.admin.role === 'owner' ? next() : res.status(403).type('text/plain').send('Only an owner login can change this.'));
+  r.get('/auto', (req, res) => auto(req, res, { flash: AUTO_FLASH[req.query.flash] || '' }));
+  r.post('/auto/run', async (req, res) => {
+    const log = await autonews.run({ why: 'button' });
+    const made = log.made.length
+      ? `${log.made.length} written: ${log.made.map((m) => `“${m.title}” (${m.status === 'published' ? 'published' : 'draft'})`).join(', ')}.`
+      : 'Checked: nothing new to write.';
+    auto(req, res, { flash: made, error: log.errors.join(' · ') });
+  });
+  r.post('/auto/settings', ownerOnly, (req, res) => {
+    autonews.settings(req.body || {});
+    res.redirect(303, '/admin/auto?flash=saved');
+  });
+  r.post('/auto/meta', ownerOnly, async (req, res) => {
+    try {
+      const c = await autonews.connectMeta(req.body.pageId, req.body.token);
+      return auto(req, res, { flash: `Connected to ${c.pageName}${c.instagram ? ' and its Instagram' : ''}. Its new posts are checked every three hours.` });
+    } catch (e) {
+      return auto(req, res, { error: `Not connected: ${e.message}` }, 400);
+    }
+  });
+  r.post('/auto/meta/disconnect', ownerOnly, (req, res) => {
+    autonews.disconnectMeta();
+    res.redirect(303, '/admin/auto?flash=disconnected');
+  });
+  r.post('/auto/mentions/:id/dismiss', (req, res) => {
+    autonews.dismissMention(req.params.id);
+    res.redirect(303, '/admin/auto?flash=dismissed');
+  });
+  r.post('/auto/mentions/:id/draft', (req, res) => {
+    try {
+      const post = autonews.draftFromMention(req.params.id, req.admin.name);
+      content.refresh();
+      return res.redirect(303, `/admin/posts/${post.id}?flash=draft`);
+    } catch (e) {
+      return auto(req, res, { error: e.message }, 400);
     }
   });
 

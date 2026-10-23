@@ -81,6 +81,8 @@ const sweep = () => {
 };
 setTimeout(sweep, 60 * 1000).unref();
 setInterval(sweep, 6 * 3600 * 1000).unref();
+// The automatic news (src/autonews.js): every three hours, from the WRU, the club's own posts and the news.
+require('./autonews').start(require('./content').refresh);
 
 // A minute, so a post published in the admin is on every page almost at once.
 const html = (render) => (req, res) => {

@@ -126,3 +126,12 @@
   .adm-photo { grid-template-columns: 1fr; }
   .adm-photo img { width: 100%; height: 180px; }
 }
+/* The automatic news */
+.adm-auto { background: color-mix(in srgb, var(--red-2) 12%, transparent); color: var(--red-2); }
+.adm-auto-set label small { display: block; }
+.adm-card + .adm-card, form.adm-card + .adm-card { margin-top: 16px; }
+.adm-mentions, .adm-runs { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 12px; }
+.adm-mentions li, .adm-runs > li { display: grid; gap: 4px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); }
+.adm-mentions small { color: var(--muted); }
+.adm-runs ul { margin: 6px 0 0; padding-left: 1.1em; }
+.adm-err-line { color: var(--red-2); margin: 4px 0 0; }

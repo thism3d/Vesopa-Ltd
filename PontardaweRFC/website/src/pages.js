@@ -471,6 +471,7 @@ function articlePage(post, { preview = false } = {}) {
     ${post.html != null ? `<div class="article-text">${post.html}</div>` : post.paragraphs.map((p) => (/^\d+\.\s|^\d+\.[A-Z]/.test(p) ? `<h2>${esc(p)}</h2>` : `<p>${esc(p)}</p>`)).join('\n    ')}
     ${cta}
     ${more}
+    ${(post.tags || []).length ? `<p class="post-tags">${post.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join(' ')}</p>` : ''}
     ${source}
     <p class="back"><a href="${ev ? '/whats-on' : '/news'}">${icon('arrow', { size: 18 })} ${ev ? "What's on" : 'All news'}</a></p>
   </article>
@@ -485,7 +486,7 @@ function articlePage(post, { preview = false } = {}) {
     image: share,
     type: 'article',
     noindex: preview,
-    extraHead: `<meta property="article:published_time" content="${esc(zoned(post.publishAt) || post.date)}">\n${post.updated ? `<meta property="article:modified_time" content="${esc(zoned(post.updated))}">\n` : ''}`,
+    extraHead: `<meta property="article:published_time" content="${esc(zoned(post.publishAt) || post.date)}">\n${(post.tags || []).map((t) => `<meta property="article:tag" content="${esc(t)}">\n`).join('')}${post.updated ? `<meta property="article:modified_time" content="${esc(zoned(post.updated))}">\n` : ''}`,
     ld: [crumbs([['Home', '/'], ['News', '/news'], [post.title, `/news/${post.slug}`]]), {
       '@context': 'https://schema.org',
       '@type': 'NewsArticle',
@@ -493,6 +494,7 @@ function articlePage(post, { preview = false } = {}) {
       datePublished: zoned(post.publishAt) || post.date,
       ...(post.updated ? { dateModified: zoned(post.updated) } : {}),
       description: post.summary,
+      ...((post.tags || []).length ? { keywords: post.tags.join(', ') } : {}),
       image: post.image ? `${SITE}/img/${post.image}.jpg` : `${SITE}/img/og-news.jpg`,
       author: { '@type': 'Organization', name: club.name, url: `${SITE}/` },
       publisher: { '@id': `${SITE}/#club` },

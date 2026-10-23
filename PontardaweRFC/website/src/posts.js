@@ -167,7 +167,7 @@ function uniqueSlug(want, id) {
  * A post from the admin's form, checked and cleaned (so what is kept is
  * always safe to show), not yet saved: the editor's preview shows this.
  */
-function build(input, { id = null, author = '' } = {}) {
+function build(input, { id = null, author = '', extra = {} } = {}) {
   const now = nowUK();
   const old = id ? get(id) : null;
   if (id && !old) throw new Error('That post no longer exists.');
@@ -196,8 +196,12 @@ function build(input, { id = null, author = '' } = {}) {
   if (ev) for (const k of ['place', 'price', 'note']) if (!ev[k]) delete ev[k];
   const cta = input.cta && input.cta.label && /^(https?:\/\/|\/(?!\/))/.test(input.cta.href || '')
     ? { label: String(input.cta.label).trim().slice(0, 60), href: String(input.cta.href).trim().slice(0, 300) } : null;
+  // Up to eight short tags ("Match report, National League"), shown on the post and given to search engines.
+  const tags = [...new Set((Array.isArray(input.tags) ? input.tags : String(input.tags || '').split(','))
+    .map((t) => String(t).replace(/\s+/g, ' ').trim().slice(0, 32)).filter(Boolean))].slice(0, 8);
   const post = {
-    ...(old || { id: crypto.randomBytes(6).toString('hex'), created: now, origin: 'admin', source: null, closed: false, oldSlugs: [] }),
+    // A new post from the automatic news (src/autonews.js) also carries where it came from (extra).
+    ...(old || { id: crypto.randomBytes(6).toString('hex'), created: now, origin: 'admin', source: null, closed: false, oldSlugs: [], ...extra }),
     slug,
     title,
     summary,
@@ -208,6 +212,7 @@ function build(input, { id = null, author = '' } = {}) {
     event: ev,
     cta,
     seoTitle: String(input.seoTitle || '').trim().slice(0, 70),
+    tags,
     status: input.status === 'published' ? 'published' : 'draft',
     publishAt,
     updated: now,

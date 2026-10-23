@@ -61,6 +61,8 @@ function shape(f) {
     us: played ? Number(us.score) : null,
     them: played ? Number(them.score) : null,
     result: played ? (us.score > them.score ? 'W' : us.score < them.score ? 'L' : 'D') : null,
+    usTries: played && Number.isFinite(us.tryCount) ? us.tryCount : null,
+    themTries: played && Number.isFinite(them.tryCount) ? them.tryCount : null,
   };
 }
 

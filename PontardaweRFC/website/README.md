@@ -83,3 +83,22 @@ sets a new one under Editors.
 
 Locally: `npm run dev` with `ADMIN_SETUP_CODE=anything` in `.env`; posts go to
 `website/data/` (gitignored). The tests use a temporary data folder.
+
+## The automatic news (2026-10-23)
+
+`src/autonews.js` checks every three hours (and a few minutes after each
+restart) and writes posts from genuine sources only, set up at **/admin/auto**:
+
+| Source | What it writes | Default |
+|---|---|---|
+| WRU fixtures and results (`src/wru.js`) | a report of each First XV result for ten days after it (score, tries, the league table, the next match); a preview of the next match from a week before (an event, so it is on What's On) | publish |
+| The club's Facebook Page and its Instagram (Meta Graph API) | the club's own words and photo, credited, for fourteen days; needs a Page ID and Page access token entered at /admin/auto | draft |
+| Google News search for "Pontardawe RFC" | nothing: stories from the last 30 days are listed at /admin/auto to read, with "Start a draft" | listed |
+
+Every sentence is fixed text filled with the source's own figures or words,
+and each post credits its source; no player names, quotes or descriptions
+of play, and no AI. Match posts get a picture drawn by `src/match_card.js`
+(club crest, Oswald from `src/fonts/`, never another club's badge). Each item
+has a key kept in `data/autonews.json`, so nothing is written twice and a post
+deleted in the admin is never written again; a match the club has posted
+about itself is left to the club's post. `AUTONEWS_OFF=1` stops it.

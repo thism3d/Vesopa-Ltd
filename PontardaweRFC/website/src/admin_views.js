@@ -49,6 +49,7 @@ function shell({ title, user = null, csrf = '', body, wide = false }) {
   <a class="adm-brand" href="${user ? '/admin' : '/'}"><img src="/img/crest-128.webp" alt="" width="36" height="36"><span>${esc(club.short_name || 'Pontardawe RFC')} <b>News admin</b></span></a>
   ${user ? `<nav class="adm-nav" aria-label="Admin">
     <a href="/admin">Posts</a>
+    <a href="/admin/auto">Automatic news</a>
     <a href="/admin/posts/new" class="adm-new">${icon('star', { size: 16 })} New post</a>
     <details class="adm-me"><summary>${esc(user.name)}</summary><div>
       <a href="/admin/account">Change password</a>
@@ -131,7 +132,7 @@ ${note(flash)}
 ${list.length ? `<ul class="adm-posts">${list.map((p) => {
       const [state, cls] = stateOf(p, now);
       const thumb = p.image ? `<img src="/img/${esc(p.image)}${p.image.startsWith('u/') || p.image.startsWith('ig/') ? '-480' : ''}.webp" alt="" width="72" height="72" loading="lazy">` : '<span class="adm-noimg" aria-hidden="true"></span>';
-      return `<li><a href="/admin/posts/${esc(p.id)}">${thumb}<span class="adm-pt"><b>${esc(p.title)}</b><small><span class="adm-badge adm-${cls}">${state}</span> ${esc(when(p.publishAt))}${p.kind ? ` · ${esc((KINDS.find((k) => k[0] === p.kind) || KINDS[0])[1])}` : ''}</small></span></a></li>`;
+      return `<li><a href="/admin/posts/${esc(p.id)}">${thumb}<span class="adm-pt"><b>${esc(p.title)}</b><small><span class="adm-badge adm-${cls}">${state}</span>${p.origin === 'auto' ? ' <span class="adm-badge adm-auto">Automatic</span>' : ''} ${esc(when(p.publishAt))}${p.kind ? ` · ${esc((KINDS.find((k) => k[0] === p.kind) || KINDS[0])[1])}` : ''}</small></span></a></li>`;
     }).join('')}</ul>` : `<p class="adm-empty">${needle ? 'No posts match that search.' : 'No posts here yet.'} <a href="/admin/posts/new">Write one</a>.</p>`}`,
   });
 }
@@ -218,6 +219,7 @@ ${post ? `<input type="hidden" name="id" value="${esc(post.id)}">` : ''}
     <h2>Category</h2>
     <label class="adm-sr" for="kind">Category</label>
     <select id="kind" name="kind">${KINDS.map(([k, label]) => `<option value="${k}"${(p.kind ?? 'club') === k ? ' selected' : ''}>${esc(label)}</option>`).join('')}</select>
+    <label>Tags <small>(comma between each, e.g. Juniors, Cup final)</small><input name="tags" value="${esc((p.tags || []).join(', '))}" maxlength="260"></label>
   </section>
 
   <details class="adm-card"${ev.start ? ' open' : ''}>
@@ -304,4 +306,68 @@ function accountPage({ user, csrf, error = '', flash = '' }) {
   });
 }
 
-module.exports = { loginPage, setupPage, listPage, editorPage, editorsPage, accountPage, KINDS };
+// ---- The automatic news --------------------------------------------------------------
+
+const MODE = { publish: 'Publish by itself', draft: 'Save as a draft for approval', off: 'Off' };
+const modeSelect = (name, value) => `<select name="${name}">${Object.entries(MODE).map(([k, l]) => `<option value="${k}"${value === k ? ' selected' : ''}>${l}</option>`).join('')}</select>`;
+const stamp = (iso) => new Date(iso).toLocaleString('en-GB', { timeZone: 'Europe/London', weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+const hidden = (csrf) => `<input type="hidden" name="_csrf" value="${esc(csrf)}">`;
+
+function autoPage({ user, csrf, st, flash = '', error = '' }) {
+  const s = st.settings;
+  const owner = user.role === 'owner';
+  const runs = st.runs.slice(0, 12);
+  const why = { button: 'Check now', start: 'after a restart', schedule: 'scheduled' };
+  return shell({
+    title: 'Automatic news',
+    user,
+    csrf,
+    body: `<div class="adm-head"><div><h1>Automatic news</h1><p class="muted">Checked every three hours. Posts are written only from the sources below, with their figures and words as published, and credited. Nothing is made up, and no AI writes them.</p></div>
+  <form method="post" action="/admin/auto/run">${hidden(csrf)}<button class="btn btn-glow" type="submit">Check now</button></form></div>
+${note(flash)}${problem(error)}
+<form method="post" action="/admin/auto/settings" class="adm-card adm-form adm-auto-set">
+  ${hidden(csrf)}
+  <h2>Sources</h2>
+  <label>Match results from the WRU <small>A report of each First XV result: the score, tries, the league table and the next match. For ten days after the match.</small>${modeSelect('results', s.results)}</label>
+  <label>Match previews from the WRU <small>The next match, from a week before: when, where, recent results, the table. Shows on What's On until the day.</small>${modeSelect('previews', s.previews)}</label>
+  <label>The club's Facebook and Instagram posts <small>The club's own words and photo, credited, for fourteen days. ${st.meta ? `Connected to <b>${esc(st.meta.pageName)}</b>${st.meta.instagram ? ' and its Instagram' : ' (no Instagram account linked to the Page)'}.` : '<b>Not connected yet</b> (below).'}</small>${modeSelect('social', s.social)}</label>
+  <label>Stories that name the club <small>Found in Google News and listed below to read. Never posted by themselves.</small><select name="mentions"><option value="on"${s.mentions === 'on' ? ' selected' : ''}>On</option><option value="off"${s.mentions === 'off' ? ' selected' : ''}>Off</option></select></label>
+  ${owner ? '<button class="btn btn-line" type="submit">Save</button>' : '<p class="muted small">Only an owner login can change these.</p>'}
+</form>
+
+<section class="adm-card">
+  <h2>In the news</h2>
+  ${st.mentions.length ? `<ul class="adm-mentions">${st.mentions.map((m) => `<li>
+    <a href="${esc(m.link)}" target="_blank" rel="noopener noreferrer"><b>${esc(m.title)}</b></a>
+    <small>${esc(m.source)} · ${esc(stamp(m.date))}</small>
+    <span class="adm-user-tools">
+      <form method="post" action="/admin/auto/mentions/${esc(m.id)}/draft">${hidden(csrf)}<button class="btn btn-line" type="submit">Start a draft</button></form>
+      <form method="post" action="/admin/auto/mentions/${esc(m.id)}/dismiss">${hidden(csrf)}<button class="btn btn-line" type="submit">Not for us</button></form>
+    </span></li>`).join('')}</ul>` : '<p class="muted">No stories naming the club in the last 30 days.</p>'}
+</section>
+
+${owner ? `<section class="adm-card">
+  <h2>Facebook and Instagram</h2>
+  ${st.meta ? `<p>Connected to <b>${esc(st.meta.pageName)}</b>${st.meta.instagram ? ' and its Instagram account' : ''} since ${esc(stamp(st.meta.connectedAt))}.</p>
+  <form method="post" action="/admin/auto/meta/disconnect">${hidden(csrf)}<button class="btn btn-line" type="submit" data-confirm="Disconnect the Facebook Page?">Disconnect</button></form>`
+    : `<p class="muted">Connect the club's Facebook Page (and the Instagram account linked to it) so its new posts become articles. You need the Page's ID and a Page access token from Meta for Developers that can read the Page's posts.</p>
+  <form method="post" action="/admin/auto/meta" class="adm-form">
+    ${hidden(csrf)}
+    <label>Facebook Page ID<input name="pageId" inputmode="numeric" autocomplete="off" required></label>
+    <label>Page access token<input name="token" type="password" autocomplete="off" required></label>
+    <button class="btn btn-glow" type="submit">Connect</button>
+  </form>`}
+</section>` : ''}
+
+<section class="adm-card">
+  <h2>Recent checks</h2>
+  ${runs.length ? `<ul class="adm-runs">${runs.map((r) => `<li><b>${esc(stamp(r.at))}</b> <small>(${why[r.why] || r.why})</small>
+    ${r.made.length ? `<ul>${r.made.map((m) => `<li>${m.status === 'published' ? 'Published' : 'Draft'}: <a href="/admin/posts/${esc(m.id)}">${esc(m.title)}</a></li>`).join('')}</ul>` : '<span class="muted small"> nothing new</span>'}
+    ${r.skipped.length ? `<p class="muted small">${r.skipped.map(esc).join(' · ')}</p>` : ''}
+    ${r.notes && r.notes.length ? `<p class="small">${r.notes.map(esc).join(' · ')}</p>` : ''}
+    ${r.errors.length ? `<p class="adm-err-line small">${r.errors.map(esc).join(' · ')}</p>` : ''}</li>`).join('')}</ul>` : '<p class="muted">No checks yet: the first runs a few minutes after the site starts.</p>'}
+</section>`,
+  });
+}
+
+module.exports = { autoPage, loginPage, setupPage, listPage, editorPage, editorsPage, accountPage, KINDS };

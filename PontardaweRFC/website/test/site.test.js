@@ -7,6 +7,7 @@ process.env.DEEPSEEK_API_KEY = '';
 process.env.GEMINI_API_KEY = '';
 process.env.WRU_OFF = '1';
 process.env.VENUE_API_OFF = '1';
+process.env.AUTONEWS_OFF = '1';
 // Posts are copied into a store of their own for each run (src/posts.js).
 process.env.DATA_DIR = require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'prfc-site-'));
 

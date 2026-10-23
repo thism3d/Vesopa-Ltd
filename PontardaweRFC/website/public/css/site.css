@@ -628,3 +628,4 @@ a.tile:hover, a.card:hover, .news-card:hover { transform: translateY(-6px); box-
 .pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 8px 0 28px; }
 .ev-poster-art { aspect-ratio: 4 / 5; display: grid; place-items: center; background: var(--grad-hero); }
 .ev-poster-art img { width: 128px; height: 128px; }
+.post-tags { display: flex; flex-wrap: wrap; gap: 8px; margin: 24px 0 8px; }
