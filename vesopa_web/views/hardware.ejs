@@ -26,10 +26,10 @@
 
         <div class="hw-layout">
             <div class="v2-kit">
-                <% hardware.PRODUCTS.forEach(function (p) { %>
+                <% hardware.PRODUCTS.forEach(function (p, idx) { %>
                 <article class="v2-item" id="<%= p.sku %>" data-hw-item data-sku="<%= p.sku %>" data-cat="<%= p.cat %>">
                     <a class="ph" href="#<%= p.sku %>" data-hw-open aria-label="Details for <%= p.name %>">
-                        <% if (p.img) { %><img src="<%= p.img %>" loading="lazy" decoding="async" alt="<%= p.name %>"><% } else { %><span class="none">Photo coming soon</span><% } %>
+                        <% if (p.img) { %><img src="<%= hardware.small(p.img) %>" data-full="<%= p.img %>" width="760" height="760" <%= idx < 4 ? 'fetchpriority="high"' : 'loading="lazy"' %> decoding="async" alt="<%= p.name %>"><% } else { %><span class="none">Photo coming soon</span><% } %>
                     </a>
                     <div class="bd">
                         <span class="v2-stock <%= p.stock === 'in' ? 'in' : 'lead' %>"><%= p.stock === 'in' ? 'In stock' : 'Ships in 7-10 days' %></span>

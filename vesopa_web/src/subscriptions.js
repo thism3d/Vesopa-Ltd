@@ -264,6 +264,10 @@ async function chargeInvoice(inv) {
 
 /** A Dojo notification or a customer back from checkout: re-read the payment. */
 async function refreshPayment(paymentIntentId) {
+  // The £1 card check: the trial switches on the moment Dojo has the money,
+  // whether or not the customer ever comes back to our page.
+  const pending = await one("SELECT public_id FROM web_subscriptions WHERE verify_intent_id = ? AND status = 'pending_card'", [paymentIntentId]);
+  if (pending) { await confirmCard(pending.public_id); return null; }
   const inv = await one('SELECT * FROM web_sub_invoices WHERE payment_intent_id = ?', [paymentIntentId]);
   if (!inv || inv.status === 'paid') return inv;
   const pi = await dojo.getPaymentIntent(paymentIntentId);
@@ -277,10 +281,13 @@ async function refreshByNumber(number) {
   return inv;
 }
 
-// ---- the sweep (every 15 minutes) ---------------------------------------------------
+// ---- the sweep (every 5 minutes) ----------------------------------------------------
 
 async function sweep() {
   if (!dojo.configured()) return;
+  // 0. card checks paid but not yet seen (customer closed the page, webhook missed): start those trials
+  const [waiting] = await pool.query("SELECT public_id FROM web_subscriptions WHERE status = 'pending_card' AND verify_intent_id IS NOT NULL AND created_at > UTC_TIMESTAMP() - INTERVAL 2 DAY");
+  for (const w of waiting) { try { await confirmCard(w.public_id); } catch (e) { console.error('[subscriptions] confirm', e.message); } }
   // 1. trial ending in 3 days: one reminder
   const [ending] = await pool.query(`SELECT s.* FROM web_subscriptions s WHERE s.status = 'trial' AND s.trial_ends_at <= UTC_TIMESTAMP() + INTERVAL 3 DAY
      AND NOT EXISTS (SELECT 1 FROM web_sub_events e WHERE e.subscription_id = s.id AND e.kind = 'mail.trial_ending')`);
@@ -318,7 +325,7 @@ function start() {
   if (timer) return;
   const run = () => sweep().catch((e) => console.error('[subscriptions] sweep:', e.message));
   setTimeout(run, 20000);
-  timer = setInterval(run, 15 * 60 * 1000);
+  timer = setInterval(run, 5 * 60 * 1000);
   timer.unref();
 }
 

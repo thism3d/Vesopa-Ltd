@@ -39,8 +39,8 @@
 <section class="v2-sec alt" id="online-ordering" aria-labelledby="v2-order-title">
     <div class="v2-wrap v2-row rev">
         <div class="v2-phones">
-            <div class="v2-phone"><img src="/assets/v2/menu-home.jpg" width="375" height="812" loading="lazy" decoding="async" alt="menu.pontardawerfc.com: the club's own branded menu on a phone"></div>
-            <div class="v2-phone"><img src="/assets/v2/menu-tables.jpg" width="375" height="812" loading="lazy" decoding="async" alt="Choosing a table from the live table plan, B1 to B15"></div>
+            <div class="v2-phone"><img src="/assets/v2/sm/menu-home.webp" data-full="/assets/v2/menu-home.jpg" width="375" height="812" loading="lazy" decoding="async" alt="menu.pontardawerfc.com: the club's own branded menu on a phone"></div>
+            <div class="v2-phone"><img src="/assets/v2/sm/menu-tables.webp" data-full="/assets/v2/menu-tables.jpg" width="375" height="812" loading="lazy" decoding="async" alt="Choosing a table from the live table plan, B1 to B15"></div>
         </div>
         <div>
             <p class="vh-eyebrow">Live at Pontardawe RFC</p>
@@ -74,8 +74,8 @@
             </div>
         </div>
         <div class="v2-phones">
-            <div class="v2-phone"><img src="/assets/v2/app-card.jpg" width="1000" height="2173" loading="lazy" decoding="async" alt="Pontardawe RFC member card in the club's own app"></div>
-            <div class="v2-phone"><img src="/assets/v2/app-news.jpg" width="1000" height="2173" loading="lazy" decoding="async" alt="Club news in the Pontardawe RFC app"></div>
+            <div class="v2-phone app"><img src="/assets/v2/sm/app-card.webp" data-full="/assets/v2/app-card.jpg" width="520" height="1130" loading="lazy" decoding="async" alt="Pontardawe RFC member card in the club's own app"></div>
+            <div class="v2-phone app"><img src="/assets/v2/sm/app-news.webp" data-full="/assets/v2/app-news.jpg" width="520" height="1130" loading="lazy" decoding="async" alt="Club news in the Pontardawe RFC app"></div>
         </div>
     </div>
 </section>
@@ -92,7 +92,7 @@
         <div class="v2-kit">
             <% hardware.TEASER.forEach(function (sku) { const p = hardware.PRODUCTS.find(function (x) { return x.sku === sku; }); if (!p) return; %>
             <a class="v2-item" href="/hardware#<%= p.sku %>">
-                <div class="ph"><img src="<%= p.img %>" loading="lazy" decoding="async" alt="<%= p.name %>"></div>
+                <div class="ph"><img src="<%= hardware.small(p.img) %>" data-full="<%= p.img %>" loading="lazy" decoding="async" alt="<%= p.name %>"></div>
                 <div class="bd">
                     <span class="v2-stock <%= p.stock === 'in' ? 'in' : 'lead' %>"><%= p.stock === 'in' ? 'In stock' : 'Ships in 7-10 days' %></span>
                     <h3><%= p.name %></h3>

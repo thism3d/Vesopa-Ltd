@@ -124,8 +124,19 @@ def main():
         sftp = client.open_sftp()
         sftp.put(str(ROOT / "vesopa_web" / "schema_subscriptions.sql"), f"{WEB}/schema_subscriptions.sql")
         sftp.close()
-        st, _ = base.sh(client, f"cd {WEB} && set -a && . ./.env && set +a && "
-                                "MYSQL_PWD=\"$DB_PASSWORD\" mysql -h \"${DB_HOST:-127.0.0.1}\" -u \"$DB_USER\" \"${DB_NAME:-vesopa_eposdb}\" < schema_subscriptions.sql && echo schema applied")
+        # Through the app's own mysql2 + dotenv: the .env has values with spaces
+        # that a shell `. ./.env` mangles (that broke the first try).
+        js = ("require('dotenv').config({path:'.env',quiet:true});const m=require('mysql2/promise');(async()=>{"
+              "const c=await m.createConnection({host:process.env.DB_HOST||'127.0.0.1',port:+process.env.DB_PORT||3306,"
+              "user:process.env.DB_USER,password:process.env.DB_PASSWORD,database:process.env.DB_NAME||'vesopa_eposdb',multipleStatements:true});"
+              "await c.query(require('fs').readFileSync('schema_subscriptions.sql','utf8'));"
+              "const [t]=await c.query(\"SHOW TABLES LIKE 'web_sub%'\");console.log('schema applied:',t.map(r=>Object.values(r)[0]).join(', '));await c.end();})()"
+              ".catch(e=>{console.error(e.message);process.exit(1)})")
+        sftp = client.open_sftp()
+        with sftp.file(f"{WEB}/zz-apply-subs-schema.js", "w") as fh:
+            fh.write(js)
+        sftp.close()
+        st, _ = base.sh(client, f"cd {WEB} && PATH=/opt/nodejs/24/bin:$PATH node zz-apply-subs-schema.js; s=$?; rm -f zz-apply-subs-schema.js; exit $s")
         if st != 0:
             sys.exit("! schema failed; files not changed (backups kept)")
 

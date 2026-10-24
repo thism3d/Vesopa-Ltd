@@ -326,7 +326,7 @@ app.use((err, req, res, _next) => {
   });
 });
 
-// Trial reminders, first charges, renewals and retries, every 15 minutes.
+// Trial activations, reminders, first charges, renewals and retries, every 5 minutes.
 subscriptions.start();
 
 app.listen(PORT, () => {

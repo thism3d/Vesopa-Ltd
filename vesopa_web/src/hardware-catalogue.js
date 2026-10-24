@@ -138,4 +138,7 @@ const CATEGORIES = [
 
 const gbp = (n) => '£' + Number(n).toLocaleString('en-GB', { maximumFractionDigits: 2 });
 
-module.exports = { PRODUCTS, CATEGORIES, gbp, TEASER: ['POS-1566', 'KDS-181', 'OCPP-80A', 'POS-K01'] };
+/** The small WebP made for cards (public/assets/v2/sm/); the full JPEG stays for zoom. */
+const small = (src) => (src ? src.replace(/\/assets\/v2\/([^/]+)\.jpg$/, '/assets/v2/sm/$1.webp') : src);
+
+module.exports = { small, PRODUCTS, CATEGORIES, gbp, TEASER: ['POS-1566', 'KDS-181', 'OCPP-80A', 'POS-K01'] };
