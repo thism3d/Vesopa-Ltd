@@ -111,6 +111,23 @@
             <label class="wide">Notes for delivery or set-up (optional)<textarea name="notes" maxlength="500"><%= form.notes || '' %></textarea></label>
           </div>
         </div>
+
+        <div class="co-card">
+          <h2>Invoice details</h2>
+          <p class="v2-note" style="margin:-6px 0 14px">Your paid invoice comes from Vesopa Software Ltd as soon as Dojo confirms the payment, by email and in your account.</p>
+          <div class="co-fields">
+            <label>Company name on the invoice<input name="invoice_company" autocomplete="organization" placeholder="Same as business name" value="<%= form.invoice_company || '' %>"></label>
+            <label>VAT number (optional)<input name="invoice_vat" placeholder="GB123456789" value="<%= form.invoice_vat || '' %>"></label>
+            <label class="wide">Send the invoice to another email too (optional)<input name="invoice_email" type="email" placeholder="accounts@yourvenue.co.uk" value="<%= form.invoice_email || '' %>"></label>
+            <label class="wide" style="display:flex;flex-direction:row;gap:10px;align-items:center;cursor:pointer"><input type="checkbox" name="bill_same" value="1" data-co-billsame <%= form.bill_address1 && form.bill_same !== '1' ? '' : 'checked' %> style="width:18px;height:18px;min-height:0;accent-color:#a5c715"> Billing address is the same as the delivery address</label>
+          </div>
+          <div class="co-fields" data-co-bill style="margin-top:14px" <%= form.bill_address1 && form.bill_same !== '1' ? '' : 'hidden' %>>
+            <label class="wide">Billing address<input name="bill_address1" autocomplete="billing address-line1" value="<%= form.bill_address1 || '' %>"></label>
+            <label class="wide">Billing address line 2 (optional)<input name="bill_address2" autocomplete="billing address-line2" value="<%= form.bill_address2 || '' %>"></label>
+            <label>Town or city<input name="bill_town" autocomplete="billing address-level2" value="<%= form.bill_town || '' %>"></label>
+            <label>Postcode<input name="bill_postcode" autocomplete="billing postal-code" value="<%= form.bill_postcode || '' %>" style="text-transform:uppercase"></label>
+          </div>
+        </div>
       </div>
 
       <aside class="co-side">
@@ -168,9 +185,11 @@
           Object.keys(kept).forEach(function (k) { var f = form.elements[k]; if (f && f.type !== 'radio' && f.type !== 'hidden' && !f.value) f.value = kept[k]; });
         } catch (x) { /* private window */ }
         form.addEventListener('input', function () {
-          var o = {}; ['name','business','email','phone','address1','address2','town','postcode','notes'].forEach(function (k) { if (form.elements[k]) o[k] = form.elements[k].value; });
+          var o = {}; ['name','business','email','phone','address1','address2','town','postcode','notes','invoice_company','invoice_vat','invoice_email','bill_address1','bill_address2','bill_town','bill_postcode'].forEach(function (k) { if (form.elements[k]) o[k] = form.elements[k].value; });
           try { sessionStorage.setItem(KEY, JSON.stringify(o)); } catch (x) { /* private window */ }
         });
+        var bs = document.querySelector('[data-co-billsame]');
+        if (bs) bs.addEventListener('change', function () { document.querySelector('[data-co-bill]').hidden = bs.checked; });
         var tr = document.querySelector('[data-co-trial]');
         if (tr) tr.addEventListener('change', function () { document.querySelector('[data-co-plans]').hidden = !tr.checked; });
         form.addEventListener('submit', function (e) {

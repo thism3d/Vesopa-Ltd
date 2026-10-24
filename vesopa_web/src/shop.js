@@ -167,6 +167,15 @@ async function createOrder(body) {
   if (trialPeriod && await subs.trialUsed(f.email)) {
     throw new Error('This email address has already had a Vesopa EPOS free trial, so untick the trial to order the hardware, or sign in to your account.');
   }
+  // Invoice details: the company, VAT number and billing address the paid
+  // invoice is made out to. Blank means the delivery name and address.
+  const inv = { company: clean(body.invoice_company, 160), vat: clean(body.invoice_vat, 40).toUpperCase(), email: clean(body.invoice_email, 190).toLowerCase() };
+  if (inv.email && !looksLikeEmail(inv.email)) throw new Error('Please check the invoice email address.');
+  const billDifferent = body.bill_same !== '1' && clean(body.bill_address1, 160);
+  const bill = billDifferent
+    ? { a1: clean(body.bill_address1, 160), a2: clean(body.bill_address2, 160), town: clean(body.bill_town, 80), pc: clean(body.bill_postcode, 16).toUpperCase() }
+    : null;
+  if (bill && (!bill.town || !bill.pc)) throw new Error('Please complete the billing address, or tick "same as delivery".');
   const publicId = crypto.randomBytes(12).toString('hex');
   const number = await nextNumber();
   const [r] = await pool.query(
@@ -183,6 +192,8 @@ async function createOrder(body) {
     redirectUrl: `${siteUrl()}/hardware/order/${publicId}`,
   });
   await pool.query('UPDATE web_hw_orders SET payment_intent_id = ? WHERE id = ?', [pi.id, r.insertId]);
+  await pool.query('UPDATE web_hw_orders SET invoice_company = ?, invoice_vat = ?, invoice_email = ?, bill_address1 = ?, bill_address2 = ?, bill_town = ?, bill_postcode = ? WHERE id = ?',
+    [inv.company || f.business || null, inv.vat || null, inv.email || null, bill ? bill.a1 : null, bill ? bill.a2 || null : null, bill ? bill.town : null, bill ? bill.pc : null, r.insertId]);
   return { publicId, url: dojo.checkoutUrl(pi.id) };
 }
 
@@ -209,13 +220,14 @@ async function markOrderPaid(o, pi) {
     } catch (e) { console.error('[shop] trial from order', fresh.number, e.message); }
   }
   const acct = `${siteUrl()}/account`;
+  const invoiceUrl = `${siteUrl()}/hardware/order/${fresh.public_id}/invoice`;
   const trialLine = trial ? `<p style="margin:0 0 16px;">Your <strong>Vesopa EPOS free trial</strong> (${esc(trial.plan_name)}) has started too; it runs for 14 days. Open your back office at <a href="${esc(backofficeUrl())}" style="color:#5f7d0a;">backoffice.vesopaepos.com</a> with Continue with Vesopa using this email address.</p>` : '';
   sendMail({
-    to: fresh.email,
+    to: fresh.invoice_email && fresh.invoice_email !== fresh.email ? `${fresh.email}, ${fresh.invoice_email}` : fresh.email,
     subject: `Order ${fresh.number} confirmed: thank you`,
     html: mailShell(`Order ${fresh.number}`, `<h1 style="margin:0 0 16px;font-size:21px;color:#000;">Thank you, your order is confirmed</h1>
       <p style="margin:0 0 16px;">We have received ${esc(gbp(fresh.total_minor))} for order <strong>${esc(fresh.number)}</strong>. We will be in touch to arrange delivery and set-up${fresh.delivery_name ? ` (${esc(fresh.delivery_name)})` : ''}.</p>
-      ${trialLine}${orderTable(fresh)}${button(acct, 'View my account')}`),
+      ${trialLine}${orderTable(fresh)}${button(invoiceUrl, 'View your paid invoice')}<p style="margin:0;"><a href="${esc(acct)}" style="color:#5f7d0a;">Your account</a>: orders, invoices and your back office.</p>`),
   }).catch(() => {});
   sendMail({
     to: DEFAULT_TO,

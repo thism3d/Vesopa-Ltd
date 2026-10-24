@@ -45,7 +45,8 @@
       <form method="post" action="/hardware/order/<%= pid %>/cancel"><button class="vc-btn ghost" type="submit">Cancel order</button></form>
       <% } %>
       <% if (state === 'paid') { %>
-      <a class="vc-btn" href="/account">View my account</a>
+      <a class="vc-btn" href="/hardware/order/<%= pid %>/invoice">View paid invoice</a>
+      <a class="vc-btn ghost" href="/account">My account</a>
       <a class="vc-btn ghost" href="/hardware">Keep shopping</a>
       <% } else if (state === 'cancelled' || state === 'missing') { %>
       <a class="vc-btn" href="/hardware/checkout" data-cart-link>Back to my basket</a>

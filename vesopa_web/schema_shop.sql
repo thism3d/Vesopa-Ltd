@@ -55,3 +55,13 @@ CREATE TABLE IF NOT EXISTS web_account_tokens (
 
 -- Databases made before trial_period existed.
 ALTER TABLE web_hw_orders ADD COLUMN IF NOT EXISTS trial_period VARCHAR(8) NULL AFTER notes;
+
+-- Invoice details (2026-10-24): who the paid invoice from Vesopa Software Ltd
+-- is made out to, when that is not simply the delivery name and address.
+ALTER TABLE web_hw_orders ADD COLUMN IF NOT EXISTS invoice_company VARCHAR(160) NULL AFTER trial_period;
+ALTER TABLE web_hw_orders ADD COLUMN IF NOT EXISTS invoice_vat VARCHAR(40) NULL AFTER invoice_company;
+ALTER TABLE web_hw_orders ADD COLUMN IF NOT EXISTS invoice_email VARCHAR(190) NULL AFTER invoice_vat;
+ALTER TABLE web_hw_orders ADD COLUMN IF NOT EXISTS bill_address1 VARCHAR(160) NULL AFTER invoice_email;
+ALTER TABLE web_hw_orders ADD COLUMN IF NOT EXISTS bill_address2 VARCHAR(160) NULL AFTER bill_address1;
+ALTER TABLE web_hw_orders ADD COLUMN IF NOT EXISTS bill_town VARCHAR(80) NULL AFTER bill_address2;
+ALTER TABLE web_hw_orders ADD COLUMN IF NOT EXISTS bill_postcode VARCHAR(16) NULL AFTER bill_town;

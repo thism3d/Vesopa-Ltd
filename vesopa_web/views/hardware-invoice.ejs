@@ -1,0 +1,123 @@
+<!doctype html>
+<%#
+  The paid invoice for a hardware order (2026-10-24), from Vesopa Software
+  Ltd. A standalone white page made for printing or "Save as PDF". Only shown
+  once Dojo reports the order Captured (src/routes/shop.js). The VAT
+  registration line appears only when VAT_NUMBER is set in .env.
+%>
+<%
+  var d = function (v) { return v ? new Date(typeof v === 'string' ? v.replace(' ', 'T') + 'Z' : v).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/London' }) : ''; };
+  var billTo = [order.invoice_company || order.business, order.contact_name].filter(function (v, i, a) { return v && a.indexOf(v) === i; });
+  var addr = order.bill_address1
+    ? [order.bill_address1, order.bill_address2, order.bill_town, order.bill_postcode]
+    : [order.address1, order.address2, order.town, order.postcode];
+%>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Invoice <%= order.number %> | Vesopa Software Ltd</title>
+<style>
+  :root { --ink: #12150c; --dim: #5d6655; --line: #e3e7da; --lime: #a5c715; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #eef1e8; color: var(--ink); font: 15px/1.5 Roboto, 'Segoe UI', Arial, sans-serif; }
+  .bar { max-width: 820px; margin: 18px auto 0; padding: 0 16px; display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
+  .bar a, .bar button { display: inline-flex; align-items: center; min-height: 42px; padding: 0 18px; border-radius: 10px; border: 0; background: #000; color: #fff; font: 700 14px Roboto, Arial, sans-serif; text-decoration: none; cursor: pointer; }
+  .bar button { background: var(--lime); color: #0c1004; }
+  .sheet { max-width: 820px; margin: 14px auto 40px; background: #fff; border-radius: 14px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,.08); }
+  .top { background: #000; color: #fff; padding: 26px 32px; display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .top img { height: 34px; width: auto; }
+  .top .ttl { text-align: right; }
+  .top h1 { margin: 0; font: 800 26px Orbitron, Arial, sans-serif; letter-spacing: .04em; }
+  .top .no { color: var(--lime); font-weight: 700; }
+  .body { padding: 28px 32px 32px; }
+  .cols { display: flex; gap: 28px; flex-wrap: wrap; justify-content: space-between; }
+  .cols > div { flex: 1 1 220px; min-width: 0; }
+  h2 { margin: 0 0 6px; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--dim); }
+  .meta { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; }
+  .meta span:nth-child(odd) { color: var(--dim); }
+  .paid { display: inline-block; margin-top: 10px; padding: 6px 14px; border: 2px solid #4f7a00; color: #4f7a00; border-radius: 8px; font-weight: 800; letter-spacing: .12em; transform: rotate(-3deg); }
+  table { width: 100%; border-collapse: collapse; margin-top: 26px; }
+  th { text-align: left; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); padding: 10px 8px; border-bottom: 2px solid var(--ink); }
+  td { padding: 12px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .r { text-align: right; white-space: nowrap; }
+  .tot { margin-left: auto; width: min(340px, 100%); margin-top: 14px; }
+  .tot div { display: flex; justify-content: space-between; padding: 6px 8px; }
+  .tot .big { border-top: 2px solid var(--ink); margin-top: 6px; padding-top: 10px; font-weight: 800; font-size: 18px; }
+  .foot { margin-top: 30px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--dim); font-size: 13px; }
+  @media (max-width: 520px) {
+    .top, .body { padding-left: 18px; padding-right: 18px; }
+    .top .ttl { text-align: left; }
+    th:nth-child(2), td:nth-child(2) { display: none; }
+  }
+  @media print {
+    body { background: #fff; }
+    .bar { display: none; }
+    .sheet { box-shadow: none; margin: 0; border-radius: 0; max-width: none; }
+    .top { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+<div class="bar">
+  <a href="/account">My account</a>
+  <button type="button" onclick="window.print()">Print or save as PDF</button>
+</div>
+<main class="sheet">
+  <div class="top">
+    <img src="/assets/logo/vesopa_logo_on_dark.png" alt="Vesopa">
+    <div class="ttl"><h1>INVOICE</h1><div class="no"><%= order.number %></div></div>
+  </div>
+  <div class="body">
+    <div class="cols">
+      <div>
+        <h2>From</h2>
+        <strong><%= CONTACT.company %></strong><br>
+        <%= CONTACT.address_line1 %><br><%= CONTACT.address_line2 %><br>
+        Company number <%= CONTACT.company_number %>, registered in England and Wales<br>
+        <% if (vatNumber) { %>VAT number <%= vatNumber %><br><% } %>
+        <%= CONTACT.email %> · <%= CONTACT.emergency_phone %>
+      </div>
+      <div>
+        <h2>Invoice to</h2>
+        <% billTo.forEach(function (l, i) { %><%- i === 0 ? '<strong>' : '' %><%= l %><%- i === 0 ? '</strong>' : '' %><br><% }); %>
+        <% addr.filter(Boolean).forEach(function (l) { %><%= l %><br><% }); %>
+        <% if (order.invoice_vat) { %>VAT number <%= order.invoice_vat %><br><% } %>
+        <%= order.invoice_email || order.email %>
+      </div>
+      <div>
+        <h2>Details</h2>
+        <div class="meta">
+          <span>Invoice</span><span><%= order.number %></span>
+          <span>Date</span><span><%= d(order.paid_at || order.created_at) %></span>
+          <span>Paid</span><span><%= d(order.paid_at) %></span>
+          <span>Method</span><span>Card via Dojo<%= order.card_label ? ' (' + order.card_label + ')' : '' %></span>
+        </div>
+        <span class="paid">PAID</span>
+      </div>
+    </div>
+
+    <table>
+      <thead><tr><th>Item</th><th>Code</th><th class="r">Qty</th><th class="r">Unit (ex VAT)</th><th class="r">Amount</th></tr></thead>
+      <tbody>
+        <% order.lines.forEach(function (l) { %>
+        <tr><td><%= l.name %></td><td><%= l.sku %></td><td class="r"><%= l.qty %></td><td class="r"><%= gbp(l.unit_minor) %></td><td class="r"><%= gbp(l.total_minor) %></td></tr>
+        <% }); %>
+        <tr><td>Delivery<%= order.delivery_name ? ': ' + order.delivery_name : '' %></td><td></td><td class="r">1</td><td class="r"><%= gbp(order.delivery_minor) %></td><td class="r"><%= gbp(order.delivery_minor) %></td></tr>
+      </tbody>
+    </table>
+    <div class="tot">
+      <div><span>Subtotal (ex VAT)</span><span><%= gbp(order.goods_minor + order.delivery_minor) %></span></div>
+      <div><span>VAT at 20%</span><span><%= gbp(order.vat_minor) %></span></div>
+      <div class="big"><span>Total paid</span><span><%= gbp(order.total_minor) %></span></div>
+    </div>
+
+    <div class="foot">
+      Delivered to <%= order.contact_name %>, <%= [order.address1, order.address2, order.town, order.postcode].filter(Boolean).join(', ') %>.
+      Hardware carries a 12-month warranty, supported by Vesopa. Thank you for your order.
+    </div>
+  </div>
+</main>
+</body>
+</html>

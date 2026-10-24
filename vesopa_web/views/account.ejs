@@ -97,7 +97,7 @@
             <span><strong style="color:#fff"><%= o.number %></strong> · <%= longDate(o.created_at) %><br>
               <small><%= o.lines.map(function (l) { return l.qty + ' × ' + l.name; }).join(', ') %><%= o.delivery_name ? ' · ' + o.delivery_name : '' %></small></span>
             <span style="text-align:right;white-space:nowrap"><%= gbp(o.total_minor) %><br>
-              <% if (o.status === 'paid') { %><span class="acct-pill ok">Paid</span><% } else { %><a class="vc-btn sm" href="/hardware/order/<%= o.public_id %>" style="margin-top:6px">Finish paying</a><% } %>
+              <% if (o.status === 'paid') { %><span class="acct-pill ok">Paid</span> <a href="/hardware/order/<%= o.public_id %>/invoice" style="color:#a5c715;font-size:13px;font-weight:700">Invoice</a><% } else { %><a class="vc-btn sm" href="/hardware/order/<%= o.public_id %>" style="margin-top:6px">Finish paying</a><% } %>
             </span>
           </div>
         <% }); %>

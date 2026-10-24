@@ -88,6 +88,15 @@ router.get('/hardware/order/:pid', async (req, res) => {
   res.render('hardware-order', { title: 'Your order | Vesopa EPOS', extraFiles: [], bytes, order: r.order, state: r.state, pid: req.params.pid, gbp: shop.gbp });
 });
 
+/** The paid invoice from Vesopa Software Ltd: printable, and saved as PDF from the browser. */
+router.get('/hardware/order/:pid/invoice', async (req, res, next) => {
+  try {
+    const { order, state } = await shop.orderState(req.params.pid);
+    if (!order || state !== 'paid') return res.redirect(303, `/hardware/order/${encodeURIComponent(req.params.pid)}`);
+    res.render('hardware-invoice', { order, gbp: shop.gbp, CONTACT: require('../config').CONTACT, vatNumber: process.env.VAT_NUMBER || '' });
+  } catch (e) { next(e); }
+});
+
 router.post('/hardware/order/:pid/retry', async (req, res) => {
   try {
     const url = await shop.retryOrder(req.params.pid);
