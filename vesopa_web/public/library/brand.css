@@ -35,7 +35,7 @@
 
 /* Orbitron only. Roboto and Montserrat already arrive with main0.1.0.css, and
    Blinker is no longer used. */
-@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700;800&family=Sora:wght@500;600;700;800&display=swap');
 
 :root {
   /* Brand */
@@ -67,7 +67,9 @@
 
   /* Two families, one job each. Display is for headlines and figures; body is
      for everything a person actually reads a sentence of. */
-  --font-display: 'Orbitron', 'Roboto', system-ui, sans-serif;
+  /* Headings in Sora (owner, 2026-10-24: readable, not the brand display face).
+     Orbitron stays only in the logo artwork. */
+  --font-display: 'Sora', 'Roboto', system-ui, sans-serif;
   --font-body: 'Roboto', system-ui, -apple-system, 'Segoe UI', sans-serif;
 
   --radius: 14px;
@@ -1368,7 +1370,7 @@ main a:not([class]), .privacy_item_sub_heading a, p a:not([class]) { color: var(
 .bl-head { text-align: center; margin-bottom: 46px; }
 
 .bl-title {
-  font-family: var(--font-display, 'Orbitron'), sans-serif;
+  font-family: var(--font-display, 'Sora'), sans-serif;
   font-size: clamp(30px, 5vw, 46px);
   color: #fff;
   margin: 0 0 14px;
