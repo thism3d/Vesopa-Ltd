@@ -15,7 +15,17 @@ const KINDS = {
     body: (d) => [
       `Thank you for choosing Vesopa EPOS. The £1 card check has been refunded to you, so nothing has been taken.`,
       `Your trial runs until ${d.date}. Three days before, we will email you a secure Dojo link to pay the first ${d.amount}, by card, Apple Pay or Google Pay. If you would rather not carry on, simply do not pay; nothing is taken automatically.`,
+      `Your back office is at backoffice.vesopaepos.com: sign in with Continue with Vesopa using this email address. Your subscription and invoices are at vesopaepos.com/account.`,
       `We will be in touch to set up your till, your menu and your card machine with you.`,
+    ],
+  },
+  trial_started_order: {
+    subject: (d) => `Your Vesopa EPOS trial has started: ${d.venue}`,
+    headline: 'Your 14-day free trial has started',
+    body: (d) => [
+      `Thank you for your hardware order ${d.order}. Your Vesopa EPOS free trial started with it, so there was no separate card check.`,
+      `Your trial runs until ${d.date}. Three days before, we will email you a secure Dojo link to pay the first ${d.amount}, by card, Apple Pay or Google Pay. If you would rather not carry on, simply do not pay; nothing is taken automatically.`,
+      `Your back office is at backoffice.vesopaepos.com: sign in with Continue with Vesopa using this email address. Your subscription, invoices and orders are at vesopaepos.com/account.`,
     ],
   },
   trial_ending: {

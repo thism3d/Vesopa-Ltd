@@ -1,0 +1,114 @@
+<%- include('partials/header') %>
+<%#
+  One product (2026-10-24): gallery (the brochure photo with the Vesopa
+  wordmark first, then the supplier's photos), the supplier's specification,
+  frequently bought together and the basket. src/routes/shop.js.
+%>
+<% var photos = [p.img].concat(p.gallery || []).filter(function (v, i, a) { return v && a.indexOf(v) === i; }); %>
+<section class="pp">
+  <div class="pp-wrap">
+    <nav class="pp-crumbs" aria-label="Breadcrumb"><a href="/">Home</a> / <a href="/hardware">Hardware</a> / <span><%= p.name %></span></nav>
+    <div class="pp-top">
+      <div class="pp-gal" data-pp-gal>
+        <div class="pp-main"><img data-pp-main src="<%= photos[0] %>" width="900" height="900" fetchpriority="high" decoding="async" alt="<%= p.name %>"></div>
+        <% if (photos.length > 1) { %>
+        <div class="pp-thumbs" role="group" aria-label="More photos">
+          <% photos.forEach(function (src, i) { %>
+          <button type="button" data-pp-thumb="<%= src %>" aria-current="<%= i === 0 ? 'true' : 'false' %>" aria-label="Photo <%= i + 1 %> of <%= photos.length %>"><img src="<%= src %>" loading="lazy" decoding="async" alt=""></button>
+          <% }); %>
+        </div>
+        <% } %>
+      </div>
+
+      <div class="pp-info">
+        <span class="v2-stock <%= p.stock === 'in' ? 'in' : 'lead' %>"><%= p.stock === 'in' ? 'In stock in the UK' : 'Ships from our supplier' %></span>
+        <h1><%= p.name %></h1>
+        <div class="pp-sku"><%= p.sku %> · runs <%= p.runs %></div>
+        <p class="pp-lede"><%= p.headline %></p>
+        <div class="pp-price"><b><%= gbp(p.price) %></b><span>ex VAT · £<%= (p.price * 1.2).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %> inc VAT</span></div>
+        <div class="pp-buy">
+          <span class="pp-qty"><button type="button" data-pp-q="-1" aria-label="One fewer">−</button><output data-pp-n aria-live="polite">1</output><button type="button" data-pp-q="1" aria-label="One more">+</button></span>
+          <button type="button" class="vc-btn" data-add-to-cart="<%= p.sku %>" data-qty="1" data-name="<%= p.name %>"><i class="fa fa-shopping-basket" aria-hidden="true"></i> Add to basket</button>
+          <button type="button" class="vc-btn ghost" data-add-to-cart="<%= p.sku %>" data-qty="1" data-go-checkout>Buy now</button>
+        </div>
+        <p class="vc-in" data-in-cart="<%= p.sku %>" hidden></p>
+        <ul class="pp-list">
+          <% (p.highlights || []).forEach(function (h) { %><li><%= h %></li><% }); %>
+        </ul>
+        <div class="pp-note">
+          <% if (p.stock === 'in') { %><strong>Free UK delivery.</strong> Already in the UK, delivered and set up by Vesopa.<% } else { %><strong>Delivery from our supplier:</strong> choose DHL Express (about 3 working days, <%= gbp(hardware.DELIVERY.express.minor / 100) %>) or standard (about 15 working days, <%= gbp(hardware.DELIVERY.standard.minor / 100) %>) at checkout, once per order.<% } %>
+          Pay securely by card, Apple Pay or Google Pay with Dojo. 12-month warranty, supported by Vesopa.
+        </div>
+      </div>
+    </div>
+
+    <% if (goes.length) { %>
+    <section class="pp-sec" aria-labelledby="fbt-h">
+      <h2 id="fbt-h">Frequently bought together</h2>
+      <div class="fbt">
+        <% goes.forEach(function (g) { %>
+        <div class="fbt-card">
+          <a class="ph" href="/hardware/<%= g.slug %>"><img src="<%= hardware.small(g.img) %>" loading="lazy" decoding="async" alt="<%= g.name %>"></a>
+          <div class="tx">
+            <a class="nm" href="/hardware/<%= g.slug %>"><%= g.name %></a>
+            <span class="pr"><%= gbp(g.price) %> ex VAT</span>
+            <button type="button" class="vc-btn sm" data-add-to-cart="<%= g.sku %>" data-name="<%= g.name %>">+ Add</button>
+          </div>
+        </div>
+        <% }); %>
+      </div>
+      <p style="margin:16px 0 0"><button type="button" class="vc-btn ghost" data-pp-all='<%= JSON.stringify([p.sku].concat(goes.map(function (g) { return g.sku; }))) %>'>Add all <%= goes.length + 1 %> to basket</button></p>
+    </section>
+    <% } %>
+
+    <section class="pp-sec" aria-labelledby="spec-h">
+      <h2 id="spec-h">Specification</h2>
+      <table class="pp-specs"><tbody>
+        <% p.specs.forEach(function (row) { %><tr><th scope="row"><%= row[0] %></th><td><%= row[1] %></td></tr><% }); %>
+      </tbody></table>
+    </section>
+
+    <% if (p.inBox && p.inBox.length) { %>
+    <section class="pp-sec" aria-labelledby="box-h">
+      <h2 id="box-h">What you get</h2>
+      <ul class="pp-list"><% p.inBox.forEach(function (b) { %><li><%= b %></li><% }); %></ul>
+    </section>
+    <% } %>
+
+    <div class="pp-sec" style="display:flex;flex-wrap:wrap;gap:12px">
+      <a class="vc-btn ghost" href="/hardware">All hardware</a>
+      <a class="vc-btn ghost" href="/assets/v2/Vesopa-EPOS-Hardware-Brochure.pdf" download>Brochure (PDF)</a>
+    </div>
+  </div>
+</section>
+<script type="application/ld+json"><%- JSON.stringify({
+  '@context': 'https://schema.org', '@type': 'Product', name: p.name, sku: p.sku, image: photos.map(function (s) { return SITE_URL + s; }),
+  description: p.headline, brand: { '@type': 'Brand', name: 'Vesopa' },
+  offers: { '@type': 'Offer', priceCurrency: 'GBP', price: (p.price * 1.2).toFixed(2), availability: 'https://schema.org/' + (p.stock === 'in' ? 'InStock' : 'PreOrder'), url: SITE_URL + '/hardware/' + p.slug },
+}).replace(/</g, '\\u003c') %></script>
+<script>
+(function () {
+  var gal = document.querySelector('[data-pp-gal]');
+  if (gal) gal.addEventListener('click', function (e) {
+    var t = e.target.closest('[data-pp-thumb]');
+    if (!t) return;
+    gal.querySelector('[data-pp-main]').src = t.getAttribute('data-pp-thumb');
+    gal.querySelectorAll('[data-pp-thumb]').forEach(function (b) { b.setAttribute('aria-current', b === t ? 'true' : 'false'); });
+  });
+  var n = 1, out = document.querySelector('[data-pp-n]');
+  document.addEventListener('click', function (e) {
+    var q = e.target.closest('[data-pp-q]');
+    if (q) {
+      n = Math.max(1, Math.min(50, n + Number(q.getAttribute('data-pp-q'))));
+      out.textContent = n;
+      document.querySelectorAll('.pp-buy [data-add-to-cart]').forEach(function (b) { b.setAttribute('data-qty', n); });
+    }
+    var all = e.target.closest('[data-pp-all]');
+    if (all && window.VesopaCart) {
+      JSON.parse(all.getAttribute('data-pp-all')).forEach(function (s) { window.VesopaCart.add(s, 1); });
+      location.href = window.VesopaCart.checkoutUrl();
+    }
+  });
+})();
+</script>
+<%- include('partials/footer') %>

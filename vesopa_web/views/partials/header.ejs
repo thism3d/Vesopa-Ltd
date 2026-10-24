@@ -106,6 +106,8 @@
 		<link rel="stylesheet" href="/library/brand.css">
 		<link rel="stylesheet" href="/library/v2.css">
 		<link rel="stylesheet" href="/library/v2-motion.css">
+		<link rel="stylesheet" href="/library/shop.css">
+		<script src="/library/cart.js" defer></script>
 
 
 
@@ -142,6 +144,8 @@
                 </div>
             </div>
             <div class="header_mobile_menu_bottom">
+                <a class="hdr-cart" data-cart-link href="/hardware/checkout" aria-label="Basket"><i class="fa fa-shopping-basket" aria-hidden="true"></i> Basket <span class="vc-badge" data-cart-count hidden>0</span></a>
+                <a class="menu_get_button mobile_login_button" href="/account"><%= locals.accountEmail ? 'My account' : 'Sign in' %></a>
                 <a class="menu_get_button mobile_login_button" href="<%= accountUrl %>"><%= accountLabel %></a>
                 <a class="menu_get_button" onclick="toogle_mobile_menu()" href="/trial">Try VesopaEPOS</a>
             </div>
@@ -166,6 +170,8 @@
                 </div>
 
                 <div class="header_right">
+                    <a class="hdr-cart" data-cart-link href="/hardware/checkout" aria-label="Basket"><i class="fa fa-shopping-basket" aria-hidden="true"></i><span class="vc-badge" data-cart-count hidden>0</span></a>
+                    <a class="menu_item_desktop login_button hdr-account" href="/account"><%= locals.accountEmail ? 'My account' : 'Sign in' %></a>
                     <a class="menu_item_desktop login_button" href="<%= accountUrl %>"><%= accountLabel %></a>
                     <a class="menu_get_button" href="/trial">Try VesopaEPOS</a>
                     <a onclick="toogle_mobile_menu()" class="menu_mobile_button"><i class="fa fa-bars"></i></a>

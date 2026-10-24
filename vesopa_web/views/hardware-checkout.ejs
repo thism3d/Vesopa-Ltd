@@ -1,0 +1,185 @@
+<%- include('partials/header') %>
+<%#
+  Hardware checkout (2026-10-24). The basket comes in the URL (?c=SKU:n,...)
+  and is priced on the server (priced); public/library/cart.js keeps the
+  visitor's stored basket in step with it. Paying opens Dojo's checkout.
+%>
+<section class="co">
+  <div class="v2-wrap" style="max-width:1200px">
+    <p class="vh-eyebrow">Vesopa hardware</p>
+    <h1>Checkout</h1>
+    <% if (error) { %><p class="co-alert" role="alert" style="margin-top:14px"><%= error %></p><% } %>
+
+    <% if (!cart.length) { %>
+    <div class="co-card co-empty" data-co-empty>
+      <h2>Your basket is empty</h2>
+      <p class="v2-note" style="margin:8px 0 22px">Add a till, a printer or a kitchen screen and it appears here.</p>
+      <a class="vc-btn" href="/hardware">Shop hardware</a>
+    </div>
+    <script>
+      // Arrived without a basket in the address: use the one stored in this browser.
+      (function () { var c = window.VesopaCart; function go() { c = window.VesopaCart; if (c && c.count()) location.replace(c.checkoutUrl()); }
+        if (c) go(); else document.addEventListener('DOMContentLoaded', go); })();
+    </script>
+    <% } else { %>
+    <form method="post" action="/hardware/checkout" class="co-grid" data-co-form novalidate>
+      <input type="hidden" name="cart" value="<%= cartString %>">
+      <div style="position:absolute;left:-9999px" aria-hidden="true"><label>Website <input name="website" tabindex="-1" autocomplete="off"></label></div>
+
+      <div class="co-main">
+        <div class="co-card">
+          <h2>Your basket</h2>
+          <% priced.lines.forEach(function (l) { var p = hardware.bySku(l.sku); %>
+          <div class="co-line">
+            <a class="ph" href="/hardware/<%= p.slug %>"><img src="<%= hardware.small(p.img) %>" alt="" loading="lazy"></a>
+            <div class="nm">
+              <a href="/hardware/<%= p.slug %>"><%= l.name %></a>
+              <small><%= gbp(l.unit_minor) %> each ex VAT · <%= l.stock === 'in' ? 'In stock in the UK' : 'Ships from our supplier' %></small>
+              <span class="co-qty" style="margin-top:8px">
+                <button type="button" data-co-set="<%= l.sku %>" data-n="<%= l.qty - 1 %>" aria-label="One fewer">−</button>
+                <span><%= l.qty %></span>
+                <button type="button" data-co-set="<%= l.sku %>" data-n="<%= l.qty + 1 %>" aria-label="One more">+</button>
+                <button type="button" class="co-remove" data-co-set="<%= l.sku %>" data-n="0" style="margin-left:10px">Remove</button>
+              </span>
+            </div>
+            <span class="am"><%= gbp(l.total_minor) %></span>
+          </div>
+          <% }); %>
+        </div>
+
+        <% if (suggest.length) { %>
+        <div class="co-card">
+          <h2>Frequently bought together</h2>
+          <div class="fbt">
+            <% suggest.forEach(function (g) { %>
+            <div class="fbt-card" style="background:#050604">
+              <a class="ph" href="/hardware/<%= g.slug %>"><img src="<%= hardware.small(g.img) %>" loading="lazy" alt="<%= g.name %>"></a>
+              <div class="tx">
+                <a class="nm" href="/hardware/<%= g.slug %>"><%= g.name %></a>
+                <span class="pr"><%= hardware.gbp(g.price) %> ex VAT</span>
+                <button type="button" class="vc-btn sm" data-co-set="<%= g.sku %>" data-n="1">+ Add</button>
+              </div>
+            </div>
+            <% }); %>
+          </div>
+        </div>
+        <% } %>
+
+        <% if (priced.needsDelivery) { %>
+        <fieldset class="co-card" style="border:1px solid rgba(255,255,255,.12)">
+          <legend class="sr-only" style="position:absolute;left:-9999px">Delivery</legend>
+          <h2>Delivery</h2>
+          <p class="v2-note" style="margin:-6px 0 14px">Some of your kit ships from our supplier. Choose one delivery for the whole order.</p>
+          <div class="co-del">
+            <% Object.keys(hardware.DELIVERY).forEach(function (k) { var d = hardware.DELIVERY[k]; %>
+            <label><input type="radio" name="delivery" value="<%= k %>" data-co-del <%= delivery === k ? 'checked' : '' %>><span><b><%= d.name %></b><small><%= k === 'express' ? 'Fastest, by DHL Express' : 'The lower price, if you can wait' %></small></span><span class="am"><%= gbp(d.minor) %></span></label>
+            <% }); %>
+          </div>
+        </fieldset>
+        <% } else { %>
+        <div class="co-card"><h2>Delivery</h2><p class="co-ok" style="margin:0">Everything in your basket is in stock in the UK: <strong>free delivery</strong>, set up by Vesopa.</p></div>
+        <% } %>
+
+        <% if (plans && plans.length) { %>
+        <div class="co-card">
+          <h2>Vesopa EPOS software</h2>
+          <label style="display:flex;gap:12px;align-items:flex-start;cursor:pointer">
+            <input type="checkbox" name="trial" value="1" data-co-trial <%= form.trial === '1' ? 'checked' : '' %> style="margin-top:4px;width:18px;height:18px;accent-color:#a5c715">
+            <span><b>Start my <%= trialDays %>-day free trial with this order</b><br><small class="v2-note">It starts the moment your order is paid, with no separate card check. Nothing more is taken now: we email a Dojo pay link before the trial ends. One free trial per email address.</small></span>
+          </label>
+          <div data-co-plans style="margin-top:14px" <%= form.trial === '1' ? '' : 'hidden' %>>
+            <div class="co-del">
+              <% plans.forEach(function (pl, i) { var months = Number(pl.period_months || pl.period); var on = form.trial_period ? String(form.trial_period) === String(pl.period) : pl.is_popular || (i === 0 && !plans.some(function (x) { return x.is_popular; })); %>
+              <label><input type="radio" name="trial_period" value="<%= pl.period %>" <%= on ? 'checked' : '' %>><span><b><%= String(pl.name).replace(/\s*plan$/i, '') %><% if (pl.is_popular) { %> · most popular<% } %></b><small>£<%= pl.price_per_month %>/month after the trial · <%= gbp(Math.round(pl.discounted_price * 100)) %> for <%= months === 1 ? 'the first month' : 'the first ' + months + ' months' %></small></span></label>
+              <% }); %>
+            </div>
+          </div>
+        </div>
+        <% } %>
+
+        <div class="co-card">
+          <h2>Your details</h2>
+          <div class="co-fields">
+            <label>Full name<input name="name" required autocomplete="name" value="<%= form.name || '' %>"></label>
+            <label>Business name<input name="business" autocomplete="organization" value="<%= form.business || '' %>"></label>
+            <label>Email<input name="email" type="email" required autocomplete="email" value="<%= form.email || '' %>"></label>
+            <label>Phone<input name="phone" type="tel" required autocomplete="tel" value="<%= form.phone || '' %>"></label>
+            <label class="wide">Address<input name="address1" required autocomplete="address-line1" value="<%= form.address1 || '' %>"></label>
+            <label class="wide">Address line 2 (optional)<input name="address2" autocomplete="address-line2" value="<%= form.address2 || '' %>"></label>
+            <label>Town or city<input name="town" required autocomplete="address-level2" value="<%= form.town || '' %>"></label>
+            <label>Postcode<input name="postcode" required autocomplete="postal-code" value="<%= form.postcode || '' %>" style="text-transform:uppercase"></label>
+            <label class="wide">Notes for delivery or set-up (optional)<textarea name="notes" maxlength="500"><%= form.notes || '' %></textarea></label>
+          </div>
+        </div>
+      </div>
+
+      <aside class="co-side">
+        <div class="co-card">
+          <h2>Order total</h2>
+          <div class="co-tot">
+            <div><span>Hardware</span><span><%= gbp(priced.goods) %></span></div>
+            <div><span>Delivery</span><span data-t-del><%= priced.needsDelivery ? (priced.delivery ? gbp(priced.deliveryMinor) : 'Choose an option') : 'Free' %></span></div>
+            <div><span>VAT (20%)</span><span data-t-vat><%= gbp(priced.vat) %></span></div>
+            <div class="big"><span>Total</span><b data-t-total><%= gbp(priced.total) %></b></div>
+          </div>
+          <div class="co-pay">
+            <button class="vc-btn block" type="submit" <%= ready ? '' : 'disabled' %>><i class="fa fa-lock" aria-hidden="true"></i> Pay <span data-t-total><%= gbp(priced.total) %></span> securely</button>
+            <div class="co-cards" aria-label="Accepted">
+              <img src="/assets/v2/logos/visa.svg" alt="Visa"><img src="/assets/v2/logos/mastercard.svg" alt="Mastercard"><img src="/assets/v2/logos/apple-pay.svg" alt="Apple Pay"><img src="/assets/v2/logos/google-pay.svg" alt="Google Pay">
+            </div>
+            <p class="v2-note" style="margin:12px 0 0;font-size:13px;line-height:1.5;text-align:center">You pay on Dojo's secure checkout; Vesopa never sees your card number. By paying you agree to our <a href="/terms" style="color:#c9d39f">terms</a> and <a href="/refund" style="color:#c9d39f">refund policy</a>.</p>
+          </div>
+        </div>
+        <p class="v2-note" style="margin:14px 4px 0;font-size:13px;line-height:1.5">Card machines come from Dojo, Teya or Barclaycard on your own merchant account. <a href="/hardware" style="color:#c9d39f">Keep shopping</a></p>
+      </aside>
+    </form>
+    <script>
+      (function () {
+        var server = <%- JSON.stringify(Object.fromEntries(cart.map(function (l) { return [l.sku, l.qty]; }))) %>;
+        function sync() { if (window.VesopaCart) window.VesopaCart.replace(server); }
+        if (window.VesopaCart) sync(); else document.addEventListener('DOMContentLoaded', sync);
+        function reload(next, del) {
+          var p = []; for (var k in next) if (next[k] > 0) p.push(k + ':' + next[k]);
+          location.href = '/hardware/checkout?c=' + encodeURIComponent(p.join(',')) + (del ? '&d=' + del : '');
+        }
+        var chosen = function () { var r = document.querySelector('[data-co-del]:checked'); return r ? r.value : ''; };
+        document.addEventListener('click', function (e) {
+          var b = e.target.closest('[data-co-set]');
+          if (!b) return;
+          var next = {}; for (var k in server) next[k] = server[k];
+          next[b.getAttribute('data-co-set')] = Math.max(0, Math.min(50, Number(b.getAttribute('data-n'))));
+          if (window.VesopaCart) window.VesopaCart.replace(next);
+          reload(next, chosen());
+        });
+        // Delivery changes the totals here, without a reload, so nothing typed is lost.
+        var goods = <%= priced.goods %>, fees = <%- JSON.stringify(Object.fromEntries(Object.entries(hardware.DELIVERY).map(function (e) { return [e[0], e[1].minor]; }))) %>;
+        var money = function (m) { return '£' + (m / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+        document.addEventListener('change', function (e) {
+          if (!e.target.matches('[data-co-del]')) return;
+          var del = fees[e.target.value] || 0, sub = goods + del, vat = Math.round(sub * <%= hardware.VAT_RATE %>);
+          document.querySelector('[data-t-del]').textContent = money(del);
+          document.querySelector('[data-t-vat]').textContent = money(vat);
+          document.querySelectorAll('[data-t-total]').forEach(function (n) { n.textContent = money(sub + vat); });
+        });
+        // Details typed before a basket change come back after the reload.
+        var form = document.querySelector('[data-co-form]'), KEY = 'vesopa-co-form';
+        try {
+          var kept = JSON.parse(sessionStorage.getItem(KEY) || '{}');
+          Object.keys(kept).forEach(function (k) { var f = form.elements[k]; if (f && f.type !== 'radio' && f.type !== 'hidden' && !f.value) f.value = kept[k]; });
+        } catch (x) { /* private window */ }
+        form.addEventListener('input', function () {
+          var o = {}; ['name','business','email','phone','address1','address2','town','postcode','notes'].forEach(function (k) { if (form.elements[k]) o[k] = form.elements[k].value; });
+          try { sessionStorage.setItem(KEY, JSON.stringify(o)); } catch (x) { /* private window */ }
+        });
+        var tr = document.querySelector('[data-co-trial]');
+        if (tr) tr.addEventListener('change', function () { document.querySelector('[data-co-plans]').hidden = !tr.checked; });
+        form.addEventListener('submit', function (e) {
+          if (form.querySelector('[data-co-del]') && !chosen()) { e.preventDefault(); alert('Please choose a delivery option.'); return; }
+          var btn = form.querySelector('button[type=submit]'); btn.disabled = true; btn.lastChild && (btn.innerHTML = 'Opening secure payment…');
+        });
+      })();
+    </script>
+    <% } %>
+  </div>
+</section>
+<%- include('partials/footer') %>

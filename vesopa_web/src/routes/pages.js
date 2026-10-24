@@ -213,6 +213,9 @@ router.get('/sitemap.xml', async (_req, res, next) => {
   // Checkout URLs come from the live plans, so a term added or retired in the
   // admin panel cannot leave the sitemap advertising a page that 404s or
   // omitting one that exists.
+  for (const p of hardware.PRODUCTS) pages.push([`/hardware/${p.slug}`, '0.8']);
+  pages.push(['/account', '0.3']);
+
   for (const plan of planList()) {
     pages.push([`/checkout?period=${plan.period}`, '0.5']);
   }

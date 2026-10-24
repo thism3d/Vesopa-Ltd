@@ -8,6 +8,7 @@
  *
  *   --store   19 Oct 2026: please add a test company and store to our sandbox
  *             account (partnersupport@teya.com, cc Meirion)
+ *   --country  24 Oct 2026: UK shows "No data available", no live data for info@; OCOM invoice attached
  *   --ecommerce  24 Oct 2026: enable Vesopa Software Ltd for the eCommerce API, The Vesopa
  *             Kitchen demo, 12-month device rental (partner@, globalpartner@; sent as
  *             info@vesopasoftware.com through the vesopasoftware.com app's SMTP)
@@ -21,6 +22,12 @@ const MAILS = {
     eml: 'Vesopa-Teya-store.eml',
     to: ['partnersupport@teya.com', 'info@vesopasoftware.com', 'info@vesopa.com'],
   },
+  '--country': {
+    eml: 'Vesopa-Teya-country.eml',
+    from: 'info@vesopasoftware.com',
+    env: '/home/vesopasoftware/web/vesopasoftware.com/private/nodeapp/.env',
+    to: ['partner@teya.com', 'globalpartner@teya.com', 'partnersupport@teya.com', 'info@vesopa.com', 'muzahid@vesopa.com', 'info@vesopasoftware.com'],
+  },
   '--ecommerce': {
     eml: 'Vesopa-Teya-ecommerce.eml',
     from: 'info@vesopasoftware.com',
@@ -33,10 +40,20 @@ async function main() {
   const flag = Object.keys(MAILS).find((f) => process.argv.includes(f));
   if (!flag) throw new Error(`choose one of ${Object.keys(MAILS).join(', ')}`);
   const mail = MAILS[flag];
-  const from = mail.from || FROM;
+  // --as-muzahid: from muzahid@vesopa.com through Auth's mail server, cc Meirion (owner,
+  // 24 Oct 2026: the copies sent as info@vesopasoftware.com did not reach Teya).
+  const asMuzahid = process.argv.includes('--as-muzahid');
+  if (asMuzahid) mail.env = null;
+  const from = asMuzahid ? FROM : mail.from || FROM;
   let raw = fs.readFileSync(path.join(__dirname, mail.eml), 'utf8').replace(/\r?\n/g, '\r\n');
   const split = raw.indexOf('\r\n\r\n');
   let head = raw.slice(0, split);
+  if (asMuzahid) {
+    head = head.replace(/^From:.*$/m, 'From: "Muzahid Islam, Vesopa Developer" <muzahid@vesopa.com>')
+      .replace(/^Reply-To:.*$/m, 'Reply-To: Muzahid Islam <muzahid@vesopa.com>')
+      .replace(/^Cc:.*(\r\n[ \t].*)*$/m, 'Cc: Meirion Davies <info@vesopasoftware.com>, Meirion Davies <info@vesopa.com>')
+      .replace(/^(In-Reply-To|References):.*\r\n/gm, '');
+  }
   head = head.replace(/^X-Unsent:.*\r\n/m, '').replace(/^Date:.*$/m, `Date: ${new Date().toUTCString().replace('GMT', '+0000')}`);
   raw = head + raw.slice(split);
   const subject = ((head + '\r\n').match(/^Subject:\s*([\s\S]*?)\r\n(?![ \t])/m) || [])[1]?.replace(/\r\n[ \t]+/g, ' ');

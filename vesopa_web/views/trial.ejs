@@ -17,7 +17,7 @@
 
 <section class="v2-sec" style="padding-top:40px">
     <form class="v2-wrap tr-flow" method="post" action="/trial" data-trial novalidate>
-        <% if (error) { %><p role="alert" class="tr-alert bad"><%= error %></p><% } %>
+        <% if (error) { %><p role="alert" class="tr-alert bad"><%= error %><% if (locals.trialUsed) { %> <a href="/account" style="color:inherit;font-weight:700;text-decoration:underline">Go to my account</a><% } %></p><% } %>
         <% if (!ready) { %><p class="tr-alert warn">Online sign-up opens very soon. In the meantime, <a href="/#try-vesopa">ask for a demo</a> and we will set you up.</p><% } %>
 
         <ol class="tr-progress" aria-label="Steps">

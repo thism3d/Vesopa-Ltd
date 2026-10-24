@@ -28,13 +28,14 @@
             <div class="v2-kit">
                 <% hardware.PRODUCTS.forEach(function (p, idx) { %>
                 <article class="v2-item" id="<%= p.sku %>" data-hw-item data-sku="<%= p.sku %>" data-cat="<%= p.cat %>">
-                    <a class="ph" href="#<%= p.sku %>" data-hw-open aria-label="Details for <%= p.name %>">
+                    <a class="ph" href="/hardware/<%= p.slug %>" aria-label="<%= p.name %>: photos and full specification">
                         <% if (p.img) { %><img src="<%= hardware.small(p.img) %>" data-full="<%= p.img %>" width="760" height="760" <%= idx < 4 ? 'fetchpriority="high"' : 'loading="lazy"' %> decoding="async" alt="<%= p.name %>"><% } else { %><span class="none">Photo coming soon</span><% } %>
                     </a>
                     <div class="bd">
-                        <span class="v2-stock <%= p.stock === 'in' ? 'in' : 'lead' %>"><%= p.stock === 'in' ? 'In stock' : 'Ships in 7-10 days' %></span>
-                        <h2 style="margin:0;font:700 17px/1.3 var(--font-display);text-transform:uppercase"><%= p.name %></h2>
+                        <span class="v2-stock <%= p.stock === 'in' ? 'in' : 'lead' %>"><%= p.stock === 'in' ? 'In stock in the UK' : 'Ships from our supplier' %></span>
+                        <h2 style="margin:0;font:700 17px/1.3 var(--font-display);text-transform:uppercase"><a href="/hardware/<%= p.slug %>" style="color:inherit;text-decoration:none"><%= p.name %></a></h2>
                         <span class="sku"><%= p.sku %> · runs <%= p.runs %></span>
+                        <span class="sku" style="color:#c9d39f"><%= p.short %> · <a href="/hardware/<%= p.slug %>" style="color:#a5c715;font-weight:700">Full specification</a></span>
                         <div style="margin-top:auto;padding-top:10px;display:flex;align-items:center;justify-content:space-between;gap:10px">
                             <span class="pr" style="margin:0;padding:0"><%= hardware.gbp(p.price) %> <small>ex VAT</small></span>
                             <span class="hw-qty">
@@ -56,13 +57,14 @@
                 <div class="hw-tot">
                     <div class="big"><span>Hardware</span><b data-hw-total>£0.00</b></div>
                     <div><span>VAT (20%)</span><span data-hw-vat>£0.00</span></div>
+                    <div><span>Delivery</span><span data-hw-del>Free from UK stock</span></div>
                     <div><span>Software</span><span>from £60/month</span></div>
                 </div>
                 <div class="v2-actions" style="margin-top:20px">
-                    <a class="v2-btn" href="/#try-vesopa" style="width:100%;justify-content:center">Ask for a quote</a>
+                    <a class="vc-btn block" data-cart-link data-hw-checkout href="/hardware/checkout"><i class="fa fa-lock" aria-hidden="true"></i> Checkout</a>
                     <a class="v2-btn ghost" href="/pricing" style="width:100%;justify-content:center">See software plans</a>
                 </div>
-                <p class="v2-note" style="margin:14px 0 0;line-height:1.5">Delivered and set up by Vesopa. Card machines come from Dojo, Teya or Barclaycard on your own merchant account.</p>
+                <p class="v2-note" style="margin:14px 0 0;line-height:1.5">Pay by card, Apple Pay or Google Pay, secured by Dojo. Kit in UK stock is delivered free; kit from our supplier ships by DHL Express (about 3 working days) or standard (about 15 working days), chosen at checkout. Card machines come from Dojo, Teya or Barclaycard on your own merchant account.</p>
             </aside>
         </div>
 
@@ -74,6 +76,11 @@
                 <p class="v2-lede" data-d-headline style="font-size:17px"></p>
                 <p style="margin:16px 0 0;display:flex;align-items:baseline;gap:10px"><span data-d-price style="font:800 32px var(--font-display)"></span><span class="v2-note">ex VAT · <span data-d-stock></span></span></p>
                 <table><caption class="v2-note" style="text-align:left;padding-bottom:6px">Specification</caption><tbody></tbody></table>
+                <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:18px">
+                    <button type="button" class="vc-btn" data-d-add><i class="fa fa-shopping-basket" aria-hidden="true"></i> Add to basket</button>
+                    <a class="vc-btn ghost" data-d-link href="/hardware">Photos and full page</a>
+                </div>
+                <div data-d-goes style="margin-top:22px"></div>
             </div>
         </section>
     </div>

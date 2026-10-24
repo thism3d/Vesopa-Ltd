@@ -17,7 +17,7 @@
     if (inv.status === 'paid') { st = 'paid'; eyebrow = 'All done'; title = 'Payment received'; text = 'Thank you. ' + gbp(inv.total_minor) + ' has been paid for invoice ' + inv.number + '. A receipt is on its way by email.'; }
     else if (locals.invState === 'waiting') { st = 'waiting'; eyebrow = 'One moment'; title = 'Confirming your payment'; text = 'Dojo is confirming the payment for invoice ' + inv.number + '. This page updates by itself.'; }
     else { st = 'inv-unpaid'; eyebrow = 'Not paid yet'; title = 'Payment not finished'; text = 'Invoice ' + inv.number + ' (' + gbp(inv.total_minor) + ') has not been paid. Nothing was taken. You can try again with any card, Apple Pay or Google Pay.'; }
-  } else if (st === 'paid') { eyebrow = 'All done'; title = 'Your trial has started'; text = 'Thank you. Your £1 card check has been refunded, so nothing has been taken. Your free trial runs until ' + longDate(sub.trial_ends_at) + '. We have emailed you the details and will be in touch to set up your till.'; }
+  } else if (st === 'paid') { eyebrow = 'All done'; title = 'Your trial has started'; text = 'Thank you. Your £1 card check has been refunded, so nothing has been taken. Your free trial runs until ' + longDate(sub.trial_ends_at) + '. We have emailed you the details. Your back office is ready: sign in with Continue with Vesopa using ' + sub.email + '. Your subscription and invoices are in My account.'; }
   else if (st === 'waiting') { eyebrow = 'One moment'; title = 'Confirming your card'; text = 'Dojo is confirming your £1 card check. This page updates by itself.'; }
   else if (st === 'unpaid') { eyebrow = 'Not finished'; title = 'Payment not finished'; text = 'Your £1 card check did not go through, or was cancelled, so nothing was taken. You can try again with any card, Apple Pay or Google Pay.'; }
   else if (st === 'cancelled') { eyebrow = 'Cancelled'; title = 'Sign-up cancelled'; text = 'Nothing was charged. You can start a free trial again whenever you like.'; }
@@ -39,7 +39,7 @@
             <% } else if (st === 'cancelled' || st === 'missing' || !st) { %>
             <a class="v2-btn" href="/trial">Start a free trial</a>
             <% } %>
-            <% if (st === 'paid') { %><a class="v2-btn" href="/download">Download Vesopa</a><% } %>
+            <% if (st === 'paid') { %><a class="v2-btn" href="https://backoffice.vesopaepos.com" target="_blank" rel="noopener">Open my back office</a><a class="v2-btn ghost" href="/account">My account</a><a class="v2-btn ghost" href="/download">Download Vesopa</a><% } %>
             <a class="v2-btn ghost" href="/">Home page</a>
         </div>
         <p class="v2-note" style="margin-top:22px">Questions? Call <a href="tel:+441792316282">+44 1792 316282</a> or email <a href="mailto:support@vesopa.com">support@vesopa.com</a>.</p>

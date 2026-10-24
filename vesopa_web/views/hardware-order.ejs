@@ -1,0 +1,63 @@
+<%- include('partials/header') %>
+<%#
+  Back from Dojo's checkout for a hardware order (2026-10-24):
+    paid       thank you; basket emptied; the customer is signed in to /account
+    waiting    Dojo is finishing; looks again every 4 seconds
+    unpaid     declined, failed or cancelled on Dojo's page: Try again or Cancel
+    cancelled  the customer cancelled; nothing was taken
+    error      Dojo did not answer; try again
+    missing    unknown link
+%>
+<%
+  var eyebrow, title, text;
+  if (state === 'paid') { eyebrow = 'Order confirmed'; title = 'Thank you for your order'; text = 'We have received ' + gbp(order.total_minor) + ' for order ' + order.number + '. A confirmation is on its way to ' + order.email + ', and we will be in touch to arrange delivery and set-up.'; }
+  else if (state === 'waiting') { eyebrow = 'One moment'; title = 'Confirming your payment'; text = 'Dojo is confirming the payment for order ' + order.number + '. This page updates by itself.'; }
+  else if (state === 'unpaid') { eyebrow = 'Not paid yet'; title = 'Payment not finished'; text = 'Order ' + order.number + ' (' + gbp(order.total_minor) + ') has not been paid, so nothing was taken. You can try again with any card, Apple Pay or Google Pay.'; }
+  else if (state === 'cancelled') { eyebrow = 'Cancelled'; title = 'Order cancelled'; text = 'Nothing was taken. Your basket is still here if you want it.'; }
+  else if (state === 'error') { eyebrow = 'Please try again'; title = 'We could not reach the payment service'; text = 'Nothing has been lost. If your payment went through, your order confirms itself within a few minutes and we email you.'; }
+  else { eyebrow = 'Not found'; title = 'Link not recognised'; text = 'We could not find that order. If you were charged, reply to any of our emails and we will sort it out.'; }
+%>
+<% if (state === 'waiting') { %><meta http-equiv="refresh" content="4"><% } %>
+<section class="co">
+  <div class="v2-wrap" style="max-width:820px">
+    <div style="text-align:center">
+      <p class="vh-eyebrow"><%= eyebrow %></p>
+      <h1><%= title %></h1>
+      <p class="v2-lede" style="margin:12px auto 0"><%= text %></p>
+    </div>
+
+    <% if (order && (state === 'paid' || state === 'unpaid' || state === 'waiting')) { %>
+    <div class="co-card" style="margin-top:28px">
+      <h2>Order <%= order.number %></h2>
+      <% order.lines.forEach(function (l) { %>
+      <div class="acct-row"><span><%= l.qty %> × <%= l.name %></span><span><%= gbp(l.total_minor) %></span></div>
+      <% }); %>
+      <div class="acct-row"><span>Delivery<%= order.delivery_name ? ': ' + order.delivery_name : '' %></span><span><%= order.delivery_minor ? gbp(order.delivery_minor) : 'Free' %></span></div>
+      <div class="acct-row"><span>VAT (20%)</span><span><%= gbp(order.vat_minor) %></span></div>
+      <div class="acct-row" style="font-weight:800"><span style="color:#fff">Total</span><span><%= gbp(order.total_minor) %></span></div>
+      <p class="v2-note" style="margin:14px 0 0;line-height:1.55">Deliver to <%= order.contact_name %><%= order.business ? ', ' + order.business : '' %>, <%= order.address1 %><%= order.address2 ? ', ' + order.address2 : '' %>, <%= order.town %> <%= order.postcode %></p>
+    </div>
+    <% } %>
+
+    <div style="display:flex;flex-wrap:wrap;gap:12px;justify-content:center;margin-top:26px">
+      <% if (state === 'unpaid' || state === 'error') { %>
+      <form method="post" action="/hardware/order/<%= pid %>/retry"><button class="vc-btn" type="submit">Try again</button></form>
+      <form method="post" action="/hardware/order/<%= pid %>/cancel"><button class="vc-btn ghost" type="submit">Cancel order</button></form>
+      <% } %>
+      <% if (state === 'paid') { %>
+      <a class="vc-btn" href="/account">View my account</a>
+      <a class="vc-btn ghost" href="/hardware">Keep shopping</a>
+      <% } else if (state === 'cancelled' || state === 'missing') { %>
+      <a class="vc-btn" href="/hardware/checkout" data-cart-link>Back to my basket</a>
+      <% } %>
+      <a class="vc-btn ghost" href="/">Home page</a>
+    </div>
+  </div>
+</section>
+<% if (state === 'paid') { %>
+<script>
+  (function () { function clear() { if (window.VesopaCart) window.VesopaCart.clear(); try { sessionStorage.removeItem('vesopa-co-form'); } catch (e) {} }
+    if (window.VesopaCart) clear(); else document.addEventListener('DOMContentLoaded', clear); })();
+</script>
+<% } %>
+<%- include('partials/footer') %>

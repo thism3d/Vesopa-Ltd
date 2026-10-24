@@ -1,0 +1,110 @@
+<%- include('partials/header') %>
+<%#
+  The customer account (2026-10-24). Signed out: Continue with Vesopa (when
+  configured) or an emailed one-time link. Signed in: the way into the back
+  office, the subscription and its invoices, and hardware orders.
+  src/routes/shop.js, src/shop.js.
+%>
+<%
+  var STATUS = {
+    pending_card: ['Card check not finished', 'warn'], trial: ['Free trial', 'ok'], active: ['Active', 'ok'],
+    past_due: ['Payment due', 'warn'], suspended: ['Suspended: payment needed', 'bad'], cancelled: ['Cancelled', ''], ended: ['Ended', ''],
+  };
+%>
+<section class="acct">
+  <div class="v2-wrap" style="max-width:1100px">
+  <% if (!email) { %>
+    <p class="vh-eyebrow">Vesopa EPOS</p>
+    <h1>Sign in to your account</h1>
+    <p class="v2-lede" style="max-width:640px">See your subscription, invoices and hardware orders, and open your back office. No password needed.</p>
+    <% if (sent) { %><p class="co-ok" role="status" style="max-width:460px;margin-top:18px">Check your inbox: if that address is one we know, a sign-in link is on its way. It works once, for 30 minutes.</p><% } %>
+    <% if (bad) { %><p class="co-alert" role="alert" style="max-width:460px;margin-top:18px">That link has expired or was already used, or the address was not valid. Ask for a new one below.</p><% } %>
+    <% if (locals.failed) { %><p class="co-alert" role="alert" style="max-width:460px;margin-top:18px">Signing in with Vesopa did not finish. Please try again, or use the email link below.</p><% } %>
+
+    <% if (locals.vesopaSignIn) { %>
+    <p style="margin-top:22px"><a class="vc-vesopa" href="/account/auth/vesopa/start"><img src="/assets/logo/logo.png" alt="" width="22" height="22"> Continue with Vesopa</a></p>
+    <div class="acct-or">or get a sign-in link by email</div>
+    <% } %>
+    <form class="acct-form" method="post" action="/account/login">
+      <div style="position:absolute;left:-9999px" aria-hidden="true"><label>Website <input name="website" tabindex="-1" autocomplete="off"></label></div>
+      <label for="acct-email" class="v2-note" style="font-weight:600">The email address you signed up or ordered with</label>
+      <input id="acct-email" name="email" type="email" required autocomplete="email" inputmode="email" placeholder="you@yourvenue.co.uk">
+      <button class="vc-btn" type="submit">Email me a sign-in link</button>
+    </form>
+    <p class="v2-note" style="margin-top:26px">New to Vesopa EPOS? <a href="/trial" style="color:#a5c715;font-weight:700">Start your 14-day free trial</a> or <a href="/hardware" style="color:#a5c715;font-weight:700">shop hardware</a>.</p>
+  <% } else { %>
+    <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;justify-content:space-between">
+      <div>
+        <p class="vh-eyebrow">My account</p>
+        <h1>Welcome back</h1>
+        <p class="v2-note" style="margin:0">Signed in as <strong style="color:#fff"><%= email %></strong></p>
+      </div>
+      <form method="post" action="/account/logout"><button class="vc-btn ghost sm" type="submit">Sign out</button></form>
+    </div>
+
+    <div class="acct-hero">
+      <div style="flex:1 1 380px;min-width:0">
+        <h2>Your back office</h2>
+        <p>Products, prices, staff, tills and reports. Sign in with <strong style="color:#fff">Continue with Vesopa</strong> using <strong style="color:#fff"><%= email %></strong>: the same Vesopa account opens the back office and the till.</p>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px">
+        <a class="vc-btn" href="<%= backoffice %>" target="_blank" rel="noopener">Open my back office</a>
+        <a class="vc-btn ghost" href="/download">Get the apps</a>
+      </div>
+    </div>
+
+    <div class="acct-grid">
+      <div class="co-card">
+        <h2>Subscription</h2>
+        <% var live = data.subs.filter(function (s) { return s.status !== 'ended' && s.status !== 'pending_card'; }); %>
+        <% if (!live.length) { %>
+          <p class="v2-note" style="margin:0 0 16px">No subscription on this address yet.</p>
+          <a class="vc-btn sm" href="/trial">Start your free trial</a>
+        <% } %>
+        <% live.forEach(function (s) { var st = STATUS[s.status] || [s.status, '']; %>
+          <div class="acct-row"><span>Venue</span><span><strong><%= s.venue_name %></strong></span></div>
+          <div class="acct-row"><span>Plan</span><span><%= s.plan_name %></span></div>
+          <div class="acct-row"><span>Status</span><span class="acct-pill <%= st[1] %>"><%= st[0] %></span></div>
+          <% if (s.status === 'trial' && s.trial_ends_at) { %><div class="acct-row"><span>Trial ends</span><span><%= longDate(s.trial_ends_at) %></span></div><% } %>
+          <% if (s.period_end) { %><div class="acct-row"><span>Paid until</span><span><%= longDate(s.period_end) %></span></div><% } %>
+          <% if (s.card_label) { %><div class="acct-row"><span>Card</span><span><%= s.card_label %></span></div><% } %>
+          <div style="height:14px"></div>
+        <% }); %>
+      </div>
+
+      <div class="co-card">
+        <h2>Invoices</h2>
+        <% if (!data.invoices.length) { %><p class="v2-note" style="margin:0">No invoices yet.</p><% } %>
+        <% data.invoices.forEach(function (i) { var paid = i.status === 'paid'; %>
+          <div class="acct-row" style="align-items:center">
+            <span><strong style="color:#fff"><%= i.number %></strong><br><small><%= paid ? 'Paid ' + longDate(i.paid_at) : 'Due ' + longDate(i.due_at) %></small></span>
+            <span style="text-align:right"><%= gbp(i.total_minor) %><br>
+              <% if (paid) { %><span class="acct-pill ok">Paid</span><% } else if (i.status === 'void' || i.status === 'refunded') { %><span class="acct-pill"><%= i.status === 'void' ? 'Void' : 'Refunded' %></span><% } else { %>
+              <form method="post" action="/subscribe/retry" style="display:inline"><input type="hidden" name="i" value="<%= i.number %>"><button class="vc-btn sm" type="submit" style="margin-top:6px">Pay now</button></form><% } %>
+            </span>
+          </div>
+        <% }); %>
+      </div>
+
+      <div class="co-card" style="grid-column:1 / -1">
+        <h2>Hardware orders</h2>
+        <% if (!data.orders.length) { %>
+          <p class="v2-note" style="margin:0 0 16px">No hardware orders yet.</p>
+          <a class="vc-btn sm" href="/hardware">Shop hardware</a>
+        <% } %>
+        <% data.orders.forEach(function (o) { %>
+          <div class="acct-row" style="align-items:flex-start">
+            <span><strong style="color:#fff"><%= o.number %></strong> · <%= longDate(o.created_at) %><br>
+              <small><%= o.lines.map(function (l) { return l.qty + ' × ' + l.name; }).join(', ') %><%= o.delivery_name ? ' · ' + o.delivery_name : '' %></small></span>
+            <span style="text-align:right;white-space:nowrap"><%= gbp(o.total_minor) %><br>
+              <% if (o.status === 'paid') { %><span class="acct-pill ok">Paid</span><% } else { %><a class="vc-btn sm" href="/hardware/order/<%= o.public_id %>" style="margin-top:6px">Finish paying</a><% } %>
+            </span>
+          </div>
+        <% }); %>
+      </div>
+    </div>
+    <p class="v2-note" style="margin-top:22px">Something not right? Call <a href="tel:+441792316282" style="color:#a5c715">+44 1792 316282</a> or email <a href="mailto:info@vesopa.com" style="color:#a5c715">info@vesopa.com</a>.</p>
+  <% } %>
+  </div>
+</section>
+<%- include('partials/footer') %>

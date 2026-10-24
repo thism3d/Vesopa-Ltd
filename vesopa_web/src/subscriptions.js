@@ -126,6 +126,15 @@ async function startTrial({ period, addons, venue, name, email, phone }) {
   email = String(email || '').trim().toLowerCase().slice(0, 190);
   if (!venue) throw new Error('Please give the name of your venue.');
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) throw new Error('Please give a valid email address.');
+  // One free trial per email address (owner, 2026-10-24). A sign-up that never
+  // finished its £1 card check does not count; one that did, ever, does.
+  if (await trialUsed(email)) {
+    const err = new Error('This email address has already had a Vesopa EPOS free trial. Sign in to your account to see your subscription, or call us to talk about another venue.');
+    err.code = 'TRIAL_USED';
+    throw err;
+  }
+  // An earlier unfinished sign-up for the same address is replaced by this one.
+  await pool.query("UPDATE web_subscriptions SET status = 'ended' WHERE email = ? AND status = 'pending_card'", [email]);
   const q = quote(period, addons);
   const publicId = crypto.randomBytes(12).toString('hex');
   const [r] = await pool.query(
@@ -147,6 +156,42 @@ async function startTrial({ period, addons, venue, name, email, phone }) {
   await pool.query('UPDATE web_subscriptions SET verify_intent_id = ? WHERE id = ?', [pi.id, sub.id]);
   await event(sub.id, 'signup', `${q.plan.name}; first charge ${gbp(q.first.total)} after the trial; Dojo ${dojo.mode()}`, 'customer');
   return { publicId, url: dojo.checkoutUrl(pi.id) };
+}
+
+/** Has this email address ever had a free trial (one that got past the card check)? */
+async function trialUsed(email) {
+  return Boolean(await one("SELECT id FROM web_subscriptions WHERE email = ? AND (trial_ends_at IS NOT NULL OR status NOT IN ('pending_card','ended')) LIMIT 1",
+    [String(email || '').trim().toLowerCase()]));
+}
+
+/**
+ * A trial added to a hardware order (owner, 2026-10-24: "no verification
+ * needed for trial if other products are added, direct checkout ... paid and
+ * trial started instantly"). The order's Dojo payment, read back from Dojo as
+ * Captured, has already proven the card, so there is no £1 check: the trial
+ * starts the moment the order is paid. Still one trial per email address; a
+ * second one is recorded as an event and skipped. Returns the subscription or null.
+ */
+async function startTrialFromOrder({ period, venue, name, email, phone, cardLabel, orderNumber }) {
+  email = String(email || '').trim().toLowerCase();
+  if (await trialUsed(email)) return null;
+  const q = quote(period, {});
+  const publicId = crypto.randomBytes(12).toString('hex');
+  const trialEnd = new Date(Date.now() + TRIAL_DAYS * DAY);
+  const [r] = await pool.query(
+    `INSERT INTO web_subscriptions (public_id, venue_name, contact_name, email, phone, plan_slug, plan_name, period_months,
+       first_term_minor, renewal_minor, addons_json, addons_minor, setup_fee_minor, status, dojo_mode, trial_ends_at, card_label)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?, 'trial', ?, ?, ?)`,
+    [publicId, String(venue || name || email).slice(0, 160), String(name || '').slice(0, 120) || null, email, String(phone || '').slice(0, 40) || null,
+      q.plan.slug, q.plan.name, q.plan.period_months, q.firstTerm, q.renewal, '[]', 0, q.setup, dojo.mode(), sql(trialEnd), cardLabel || null]);
+  const sub = await subById(r.insertId);
+  const bill = lines(sub, sub.first_term_minor, [], sub.setup_fee_minor);
+  const inv = await newInvoice(sub, 'first', trialEnd, addMonths(trialEnd, sub.period_months), bill, trialEnd);
+  await event(sub.id, 'signup', `${q.plan.name} with hardware order ${orderNumber}; card proven by that payment; Dojo ${dojo.mode()}`, 'customer');
+  await event(sub.id, 'trial.started', `first charge ${gbp(bill.total)} on ${longDate(trialEnd)}`, 'customer');
+  const fresh = await subById(sub.id);
+  await notify(fresh, 'trial_started_order', { amount: gbp(bill.total), date: longDate(trialEnd), invoice: inv.number, order: orderNumber });
+  return fresh;
 }
 
 /**
@@ -503,6 +548,6 @@ async function act(id, action, body, actor) {
 }
 
 module.exports = {
-  ADDONS, TRIAL_DAYS, SETUP_FEE_MINOR, quote, startTrial, confirmCard, cardCheckState, retryCardCheck, cancelSignup, invoiceState, retryInvoice, refreshPayment, refreshByNumber,
+  ADDONS, TRIAL_DAYS, SETUP_FEE_MINOR, quote, startTrial, startTrialFromOrder, trialUsed, confirmCard, cardCheckState, retryCardCheck, cancelSignup, invoiceState, retryInvoice, refreshPayment, refreshByNumber,
   sweep, start, list, detail, act, gbp, longDate, _lines: lines, _addMonths: addMonths,
 };

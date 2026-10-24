@@ -13,6 +13,8 @@ const { formsRouter } = require('./routes/forms');
 const { checkoutApiRouter } = require('./routes/checkout-api');
 const { blogPagesRouter } = require('./routes/blog-pages');
 const { subscriptionsRouter } = require('./routes/subscriptions');
+const { shopRouter } = require('./routes/shop');
+const shop = require('./shop');
 const subscriptions = require('./subscriptions');
 const { adminRouter } = require('./admin');
 const { verifyMail } = require('./mailer');
@@ -199,6 +201,9 @@ app.use((req, res, next) => {
   // exists — the back office is its own app on its own subdomain now.
   res.locals.accountUrl = config.BACKOFFICE_URL;
   res.locals.accountLabel = 'BackOffice';
+  // The customer account on this site (2026-10-24): /account, signed in by an
+  // emailed link or by paying on Dojo. The header shows "My account" either way.
+  res.locals.accountEmail = shop.accountEmail(req);
   next();
 });
 
@@ -287,6 +292,7 @@ app.use(
 // each route names its own provider. The PayPal paths it serves are unchanged.
 // Subscriptions first: it owns /api/subs, which the checkout API would otherwise see.
 app.use('/', subscriptionsRouter);
+app.use('/', shopRouter);
 app.use('/api', checkoutApiRouter);
 app.use('/admin', adminRouter);
 app.use('/', formsRouter);
@@ -328,6 +334,8 @@ app.use((err, req, res, _next) => {
 
 // Trial activations, reminders, first charges, renewals and retries, every 5 minutes.
 subscriptions.start();
+// Hardware orders paid on Dojo whose customer never came back, every 5 minutes.
+shop.start();
 
 app.listen(PORT, () => {
   console.log(`vesopaepos.com listening on http://localhost:${PORT}`);

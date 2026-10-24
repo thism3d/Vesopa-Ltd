@@ -20,6 +20,7 @@ const subs = require('../subscriptions');
 const { list: planList, resolvePeriod } = require('../plans-store');
 const dojo = require('../dojo-billing');
 const { sendMail } = require('../mailer');
+const shop = require('../shop');
 
 const router = express.Router();
 
@@ -68,13 +69,15 @@ router.post('/trial', async (req, res) => {
       html: `<p>${String(req.body.venue || '').replace(/[<>&]/g, '')} started a ${String(req.body.period)}-month plan trial (card check on Dojo).</p>` });
     res.redirect(303, url);
   } catch (e) {
-    trialView(res.status(400), req, { error: e.message });
+    trialView(res.status(400), req, { error: e.message, trialUsed: e.code === 'TRIAL_USED' });
   }
 });
 
 router.get('/trial/done', async (req, res, next) => {
   try {
     const { sub, state } = await subs.cardCheckState(String(req.query.s || ''));
+    // The link is private to the customer and the card is proven: sign them in to /account.
+    if (state === 'paid' && sub) shop.signIn(res, sub.email);
     res.render('trial-done', { title: 'Your Vesopa EPOS trial', extraFiles: [], sub, state, gbp: subs.gbp, longDate: subs.longDate });
   } catch (e) {
     // A Dojo 4xx/5xx: say so plainly and let the customer try again; the
@@ -126,6 +129,7 @@ router.post('/webhooks/dojo-subscriptions', async (req, res) => {
   res.json({ ok: true });
   if (typeof id === 'string' && /^pi_[A-Za-z0-9_]+$/.test(id)) {
     subs.refreshPayment(id).catch((e) => console.error('[subs webhook]', e.message));
+    shop.refreshPayment(id).catch((e) => console.error('[shop webhook]', e.message));
   }
 });
 
