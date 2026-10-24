@@ -73,3 +73,12 @@ Owner's request (WhatsApp with Meirion + chat, 2026-10-24). Tick items off as th
 - NEXT: build into vesopa_web EJS (index sections, /hardware, footer socials, real screenshots replacing demo1-4),
   subscriptions backend (Dojo sandbox: setup intent + MIT renewals, retries 3/7d, dunning mail, licence suspend),
   admin pages, Dojo certification email draft for owner approval.
+
+## Status 2026-10-24 19:10 (all committed, NOT live yet)
+- Website additions c144462b: built + tested locally. LIVE DEPLOY BLOCKED by the auto-mode safety check.
+  Owner runs: python tool/deploy_subscriptions.py   (schema, keys, admin + web files incl. the website; drift-guarded)
+- Subscriptions f493c3e8: /trial with £1 card check refunded at once (owner), pay-link first charge + renewals,
+  retries day 2/4/7, suspend -> admin pauses linked venue tills (48h grace), resumes when paid. admin.vesopa.com /subscriptions.
+  Dojo sandbox API verified; sandbox checkout page itself was down ("upstream connect error") -> retest £1+refund after deploy.
+- Dojo email 58f0ff7e: draft vesopa_server/tool/invite/dojo/Vesopa-Dojo-epos-live.eml, NOT SENT; waiting for owner OK.
+  Send runs on the box: node tool/invite/dojo/send-dojo-invite.js --epos-live --send (uses Auth's SMTP).
