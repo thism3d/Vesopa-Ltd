@@ -1,5 +1,6 @@
 /*
- * The hardware basket, on every page (2026-10-24).
+ * The hardware basket, on every page (2026-10-24). No floating button (owner):
+ * the header badge is the way to the basket.
  *
  * Kept in localStorage as { SKU: qty } so it follows the visitor from the home
  * page to /hardware, a product page and the checkout. The header badge, the
@@ -42,8 +43,6 @@
   function cartParam() { var p = []; for (var k in cart) p.push(k + ':' + cart[k]); return p.join(','); }
   function checkoutUrl() { var c = cartParam(); return '/hardware/checkout' + (c ? '?c=' + encodeURIComponent(c) : ''); }
 
-  var onCheckout = /^\/hardware\/checkout/.test(location.pathname);
-  var fab = null;
 
   function paint() {
     var n = count();
@@ -57,18 +56,18 @@
       el.textContent = q ? q + ' in basket' : '';
       el.hidden = !q;
     });
-    if (!onCheckout) {
-      if (!fab && n) {
-        fab = document.createElement('a');
-        fab.className = 'vc-fab';
-        fab.setAttribute('data-cart-link', '');
-        fab.innerHTML = '<span class="vc-fab-ic" aria-hidden="true"><i class="fa fa-shopping-basket"></i></span><span class="vc-fab-tx">Checkout</span><span class="vc-badge" data-cart-count></span>';
-        document.body.appendChild(fab);
-        paint();
-        return;
+    // Add / − n + / Checkout, in place of the Add button once something is in.
+    document.querySelectorAll('[data-cart-control]').forEach(function (box) {
+      var q = cart[box.getAttribute('data-cart-control')] || 0;
+      box.classList.toggle('in', q > 0);
+      var out = box.querySelector('[data-cart-qty]');
+      if (out) out.textContent = q;
+      var less = box.querySelector('[data-cart-step="-1"]');
+      if (less) {
+        less.innerHTML = q === 1 ? '<i class="fa fa-trash-o" aria-hidden="true"></i>' : '−';
+        less.setAttribute('aria-label', q === 1 ? 'Remove from basket' : 'One fewer');
       }
-      if (fab) fab.hidden = n === 0;
-    }
+    });
   }
 
   var toastTimer = null;
@@ -94,6 +93,14 @@
   }
 
   document.addEventListener('click', function (e) {
+    var st = e.target.closest('[data-cart-step]');
+    if (st) {
+      e.preventDefault();
+      var box = st.closest('[data-cart-control]');
+      var sku0 = box.getAttribute('data-cart-control');
+      set(sku0, (cart[sku0] || 0) + Number(st.getAttribute('data-cart-step')));
+      return;
+    }
     var b = e.target.closest('[data-add-to-cart]');
     if (!b) return;
     e.preventDefault();

@@ -163,15 +163,19 @@ async function createOrder(body) {
   if (!f.address1 || !f.town) throw new Error('Please give the delivery address.');
   if (!/^[A-Z]{1,2}[0-9][A-Z0-9]? ?[0-9][A-Z]{2}$/.test(f.postcode)) throw new Error('Please give a UK postcode.');
   // A software trial added to the order starts when the order is paid, with no £1 check.
-  const trialPeriod = body.trial === '1' ? String(resolvePeriod(body.trial_period)) : null;
-  if (trialPeriod && await subs.trialUsed(f.email)) {
-    throw new Error('This email address has already had a Vesopa EPOS free trial, so untick the trial to order the hardware, or sign in to your account.');
-  }
+  // One trial per email: an address that has had one still orders the hardware,
+  // just without a second trial (never blocks the purchase).
+  let trialPeriod = body.trial === '1' ? String(resolvePeriod(body.trial_period)) : null;
+  if (trialPeriod && await subs.trialUsed(f.email)) trialPeriod = null;
   // Invoice details: the company, VAT number and billing address the paid
   // invoice is made out to. Blank means the delivery name and address.
-  const inv = { company: clean(body.invoice_company, 160), vat: clean(body.invoice_vat, 40).toUpperCase(), email: clean(body.invoice_email, 190).toLowerCase() };
+  // Ticked "invoice to the name and delivery address above" (the default): none of it.
+  const own = body.bill_same !== '1';
+  const inv = own
+    ? { company: clean(body.invoice_company, 160), vat: clean(body.invoice_vat, 40).toUpperCase(), email: clean(body.invoice_email, 190).toLowerCase() }
+    : { company: '', vat: '', email: '' };
   if (inv.email && !looksLikeEmail(inv.email)) throw new Error('Please check the invoice email address.');
-  const billDifferent = body.bill_same !== '1' && clean(body.bill_address1, 160);
+  const billDifferent = own && clean(body.bill_address1, 160);
   const bill = billDifferent
     ? { a1: clean(body.bill_address1, 160), a2: clean(body.bill_address2, 160), town: clean(body.bill_town, 80), pc: clean(body.bill_postcode, 16).toUpperCase() }
     : null;

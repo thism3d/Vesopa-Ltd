@@ -231,3 +231,18 @@
 /* Arrows at the middle of the picture, never over the caption; phones swipe. */
 .epos-demo-carousel .owl-nav { top: calc(18px + min(100vw - 36px, 1300px) * 9 / 32) !important; }
 @media (max-width: 700px) { .epos-demo-carousel .owl-nav { display: none !important; } }
+
+/* ---- Add -> − n + and Checkout, in place (home page cards) --------------------------- */
+.vc-ctl { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+.vc-ctl .vc-ctl-in { display: none; }
+.vc-ctl.in .vc-ctl-add { display: none; }
+.vc-ctl.in .vc-ctl-in { display: inline-flex; }
+.vc-step { align-items: center; border: 1px solid rgba(165,199,21,.6); border-radius: 12px; overflow: hidden; background: rgba(165,199,21,.08); }
+.vc-step button { width: 44px; height: 44px; border: 0; background: transparent; color: #fff; font: 700 19px Roboto, sans-serif; cursor: pointer; touch-action: manipulation; }
+.vc-step button:active { background: rgba(165,199,21,.25); }
+.vc-step output { min-width: 30px; text-align: center; font: 800 17px Roboto, sans-serif; color: #a5c715; }
+.vc-ctl .vc-btn.sm { min-height: 44px; }
+/* The checkout's Remove is a text link, not a box. */
+.co-qty .co-remove { width: auto; height: auto; border: 0; background: none; padding: 0 4px; font-size: 14px; color: #a9b296; text-decoration: underline; }
+.co-check { display: flex; gap: 12px; align-items: center; cursor: pointer; font-weight: 600; line-height: 1.4; }
+.co-check input { width: 22px; height: 22px; flex: 0 0 22px; accent-color: #a5c715; }
