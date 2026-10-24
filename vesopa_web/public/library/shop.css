@@ -181,3 +181,53 @@
   .hw-filter button { padding: 0 12px; font-size: 14px; }
   .co h1, .acct h1, .pp-info h1 { font-size: 24px; }
 }
+
+/* ---- header and menu at every width (2026-10-24) ----------------------------------
+ * The desktop row (five links, basket, Sign in, BackOffice, Try VesopaEPOS) needs
+ * about 1180px; below that it wrapped onto two lines on a tablet. Below 1180px the
+ * links move into the menu, the button never breaks, and the menu is a scrolling
+ * panel whose buttons stay on screen on short phones. */
+.menu_get_button, .menu_item_desktop, .hdr-account { white-space: nowrap; }
+.header_mobile_menus .menu_item_desktop { display: flex; align-items: center; gap: 14px; }
+.header_mobile_menus .menu_item_desktop i { width: 22px; text-align: center; color: var(--lime, #a5c715); font-size: 18px; }
+@media only screen and (max-width: 1180px) {
+  .header_right_menu { display: none; }
+  .header_right .menu_item_desktop { display: none; }
+  .menu_mobile_button { display: inline-flex; }
+  .header_mobile_menu_show { display: flex !important; }
+}
+.header_mobile_menu { flex-direction: column; height: 100%; height: 100dvh; }
+.header_mobile_menu_top { flex: 1 1 auto; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.header_mobile_menus .menu_item_desktop { padding: 18px 14px; font-size: 17px; color: #fff; }
+.header_mobile_menu_bottom { position: static; flex: 0 0 auto; padding: 10px 10px calc(10px + env(safe-area-inset-bottom)); gap: 8px; }
+.header_mobile_menu_bottom .menu_get_button, .header_mobile_menu_bottom .hdr-cart { margin: 0; width: 100%; box-sizing: border-box; justify-content: center; min-height: 50px; }
+@media (max-width: 380px) {
+  .header_right .menu_get_button { padding: 9px 11px; font-size: 13px; }
+  .header_mobile_menus .menu_item_desktop { padding: 14px 12px; font-size: 16px; }
+}
+@media (max-height: 560px) {
+  .header_mobile_menus .menu_item_desktop { padding: 11px 14px; }
+}
+.header_mobile_menu.header_mobile_menu_show { z-index: 1000; }
+
+/* ---- home carousel (2026-10-24) -----------------------------------------------------
+ * The screenshots carried width/height attributes and width:100%, so on anything
+ * narrower than 1200px they were squashed to a fixed 675px height. Now they keep
+ * 16:9 at every width, phones get the 1200px WebP and big screens the 1600px JPEG,
+ * and each slide has its caption and buttons below the picture, never over it. */
+.epos_demo_item_img { height: auto !important; aspect-ratio: 16 / 9; object-fit: contain; background: #0b0e08; }
+.epos_demo_item_txt_keeper { position: relative !important; z-index: 2; }
+.v2-slide-cta { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 16px; }
+.v2-slide-cta .vc-btn { min-height: 44px; }
+.owl-item.active .v2-slide-cta { animation: v2rise .8s .25s cubic-bezier(.2,.7,.2,1) both; }
+.epos-demo-carousel .owl-stage-outer { padding-bottom: 6px; }
+@media (max-width: 700px) {
+  .epos_demo_item { padding: 8px 8px 4px !important; }
+  .epos_demo_item_img { border-radius: 10px; }
+  .epos_demo_item_heading { font-size: 18px !important; }
+  .v2-slide-cta .vc-btn { flex: 1 1 140px; }
+}
+@media (prefers-reduced-motion: reduce) { .owl-item.active .v2-slide-cta { animation: none; } }
+/* Arrows at the middle of the picture, never over the caption; phones swipe. */
+.epos-demo-carousel .owl-nav { top: calc(18px + min(100vw - 36px, 1300px) * 9 / 32) !important; }
+@media (max-width: 700px) { .epos-demo-carousel .owl-nav { display: none !important; } }

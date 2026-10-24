@@ -135,18 +135,19 @@
                     <a onclick="toogle_mobile_menu()" class="menu_mobile_button"><i class="fa fa-remove"></i></a>
                 </div>
 
-                <div class="header_mobile_menus">
-                    <a class="menu_item_desktop" href="/hardware">Hardware</a>
-                    <a class="menu_item_desktop" href="/pricing">Pricing</a>
-                    <a class="menu_item_desktop" href="/download">Download</a>
-                    <a class="menu_item_desktop" href="/blog">Blog</a>
-                    <a class="menu_item_desktop" href="/help">Help</a>
-                </div>
+                <nav class="header_mobile_menus" aria-label="Menu">
+                    <a class="menu_item_desktop" href="/hardware"><i class="fa fa-desktop" aria-hidden="true"></i>Hardware</a>
+                    <a class="menu_item_desktop" href="/pricing"><i class="fa fa-tag" aria-hidden="true"></i>Pricing</a>
+                    <a class="menu_item_desktop" href="/trial"><i class="fa fa-rocket" aria-hidden="true"></i>Free trial</a>
+                    <a class="menu_item_desktop" href="/download"><i class="fa fa-download" aria-hidden="true"></i>Download</a>
+                    <a class="menu_item_desktop" href="/blog"><i class="fa fa-newspaper-o" aria-hidden="true"></i>Blog</a>
+                    <a class="menu_item_desktop" href="/help"><i class="fa fa-life-ring" aria-hidden="true"></i>Help</a>
+                    <a class="menu_item_desktop" href="/account"><i class="fa fa-user-circle-o" aria-hidden="true"></i><%= locals.accountEmail ? 'My account' : 'Sign in' %></a>
+                    <a class="menu_item_desktop" href="<%= accountUrl %>"><i class="fa fa-th-large" aria-hidden="true"></i><%= accountLabel %></a>
+                </nav>
             </div>
             <div class="header_mobile_menu_bottom">
                 <a class="hdr-cart" data-cart-link href="/hardware/checkout" aria-label="Basket"><i class="fa fa-shopping-basket" aria-hidden="true"></i> Basket <span class="vc-badge" data-cart-count hidden>0</span></a>
-                <a class="menu_get_button mobile_login_button" href="/account"><%= locals.accountEmail ? 'My account' : 'Sign in' %></a>
-                <a class="menu_get_button mobile_login_button" href="<%= accountUrl %>"><%= accountLabel %></a>
                 <a class="menu_get_button" onclick="toogle_mobile_menu()" href="/trial">Try VesopaEPOS</a>
             </div>
 
