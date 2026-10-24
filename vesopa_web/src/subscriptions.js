@@ -141,12 +141,60 @@ async function startTrial({ period, addons, venue, name, email, phone }) {
   const pi = await dojo.createPaymentIntent({
     amountMinor: VERIFY_MINOR,
     reference: `Card check ${venue}`.slice(0, 80),
-    description: `Vesopa EPOS trial: £1 card check, refunded straight away`,
+    description: 'Vesopa EPOS free trial: £1 card check, refunded straight away',
     redirectUrl: `${siteUrl()}/trial/done?s=${publicId}`,
   });
   await pool.query('UPDATE web_subscriptions SET verify_intent_id = ? WHERE id = ?', [pi.id, sub.id]);
   await event(sub.id, 'signup', `${q.plan.name}; first charge ${gbp(q.first.total)} after the trial; Dojo ${dojo.mode()}`, 'customer');
   return { publicId, url: dojo.checkoutUrl(pi.id) };
+}
+
+/**
+ * Where a sign-up's £1 card check stands, for the return page:
+ *   'paid'     the trial has started
+ *   'waiting'  Dojo is still finishing (Authorized, being captured)
+ *   'unpaid'   back without paying: declined, failed or cancelled on Dojo's page
+ */
+async function cardCheckState(publicId) {
+  const sub = await confirmCard(publicId);
+  if (!sub) return { sub: null, state: 'missing' };
+  if (sub.status !== 'pending_card') return { sub, state: ['trial', 'active'].includes(sub.status) ? 'paid' : 'gone' };
+  try {
+    const pi = await dojo.getPaymentIntent(sub.verify_intent_id);
+    const st = String(pi.status || '').toLowerCase();
+    if (st === 'authorized') return { sub, state: 'waiting' };
+    return { sub, state: 'unpaid' };
+  } catch (e) {
+    return { sub, state: 'waiting', error: e.message };
+  }
+}
+
+/** Try again after a failed or cancelled card check: same intent, fresh client session (Dojo checklist). */
+async function retryCardCheck(publicId) {
+  const sub = await subByPublic(publicId);
+  if (!sub || sub.status !== 'pending_card' || !sub.verify_intent_id) return null;
+  try { await dojo.refreshClientSecret(sub.verify_intent_id); } catch (e) {
+    // The intent can no longer be paid (expired or cancelled): start a fresh one.
+    const pi = await dojo.createPaymentIntent({
+      amountMinor: VERIFY_MINOR, reference: `Card check ${sub.venue_name}`.slice(0, 80),
+      description: 'Vesopa EPOS free trial: £1 card check, refunded straight away',
+      redirectUrl: `${siteUrl()}/trial/done?s=${publicId}`,
+    });
+    await pool.query('UPDATE web_subscriptions SET verify_intent_id = ? WHERE id = ?', [pi.id, sub.id]);
+    await event(sub.id, 'verify.new_intent', e.message, 'customer');
+    return dojo.checkoutUrl(pi.id);
+  }
+  await event(sub.id, 'verify.retry', null, 'customer');
+  return dojo.checkoutUrl(sub.verify_intent_id);
+}
+
+/** The customer gave up on the card check: close the sign-up, nothing was charged. */
+async function cancelSignup(publicId) {
+  const sub = await subByPublic(publicId);
+  if (!sub || sub.status !== 'pending_card') return sub;
+  await pool.query("UPDATE web_subscriptions SET status = 'ended' WHERE id = ? AND status = 'pending_card'", [sub.id]);
+  await event(sub.id, 'signup.cancelled', 'cancelled before the card check', 'customer');
+  return subById(sub.id);
 }
 
 /** After Dojo's checkout: was the £1 paid? Refund it and start the trial, once. */
@@ -273,6 +321,28 @@ async function refreshPayment(paymentIntentId) {
   const pi = await dojo.getPaymentIntent(paymentIntentId);
   if (dojo.isPaid(pi)) await markPaid(inv, pi);
   return one('SELECT * FROM web_sub_invoices WHERE id = ?', [inv.id]);
+}
+
+/** For the pay-link return page: 'paid', 'waiting' or 'unpaid'. */
+async function invoiceState(number) {
+  const inv = await refreshByNumber(number);
+  if (!inv) return { inv: null, state: 'missing' };
+  if (inv.status === 'paid') return { inv, state: 'paid' };
+  try {
+    const pi = inv.payment_intent_id ? await dojo.getPaymentIntent(inv.payment_intent_id) : null;
+    return { inv, state: pi && String(pi.status || '').toLowerCase() === 'authorized' ? 'waiting' : 'unpaid' };
+  } catch { return { inv, state: 'waiting' }; }
+}
+
+/** Try a pay link again: fresh client session, or a new link if Dojo no longer takes the old one. */
+async function retryInvoice(number) {
+  const inv = await one("SELECT * FROM web_sub_invoices WHERE number = ? AND status IN ('open','failed')", [number]);
+  if (!inv) return null;
+  const sub = await subById(inv.subscription_id);
+  if (inv.payment_intent_id) {
+    try { await dojo.refreshClientSecret(inv.payment_intent_id); return dojo.checkoutUrl(inv.payment_intent_id); } catch { /* make a new one */ }
+  }
+  return payLink(inv, sub);
 }
 
 async function refreshByNumber(number) {
@@ -433,6 +503,6 @@ async function act(id, action, body, actor) {
 }
 
 module.exports = {
-  ADDONS, TRIAL_DAYS, SETUP_FEE_MINOR, quote, startTrial, confirmCard, refreshPayment, refreshByNumber,
+  ADDONS, TRIAL_DAYS, SETUP_FEE_MINOR, quote, startTrial, confirmCard, cardCheckState, retryCardCheck, cancelSignup, invoiceState, retryInvoice, refreshPayment, refreshByNumber,
   sweep, start, list, detail, act, gbp, longDate, _lines: lines, _addMonths: addMonths,
 };

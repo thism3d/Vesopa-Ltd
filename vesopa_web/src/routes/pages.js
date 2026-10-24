@@ -72,7 +72,7 @@ router.get('/', async (_req, res) => {
   }
 
   res.render('index', {
-    title: 'VESOPA | Epos Wales | 1 High Street, Pontarddulais, Swansea, UK',
+    title: 'Vesopa EPOS | EPOS for Hospitality & Retail in Wales | Tills, Kitchen Screens, Online Ordering',
     extraFiles: [],
     latestPosts,
     bytes,
@@ -196,6 +196,8 @@ router.get('/sitemap.xml', async (_req, res, next) => {
     ['/', '1.0'],
     ['/pricing', '0.9'],
     ['/hardware', '0.9'],
+    ['/trial', '0.9'],
+    ['/assets/v2/Vesopa-EPOS-Hardware-Brochure.pdf', '0.5'],
     ['/help', '0.9'],
     ['/blog', '0.8'],
     ['/about', '0.7'],

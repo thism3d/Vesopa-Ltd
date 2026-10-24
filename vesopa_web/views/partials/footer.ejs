@@ -53,6 +53,8 @@
                         <a class="footer_link" href="<%= BACKOFFICE_URL %>">Back Office</a>
                         <a class="footer_link" href="/about">About Us</a>
                         <a class="footer_link" href="/hardware">Hardware</a>
+                        <a class="footer_link" href="/trial">Free trial</a>
+                        <a class="footer_link" href="/assets/v2/Vesopa-EPOS-Hardware-Brochure.pdf" download>Brochure (PDF)</a>
                         <a class="footer_link" href="/pricing">Pricing</a>
                         <a class="footer_link" href="/blog">News &amp; Updates</a>
                         <a class="footer_link" href="/help">Contact Support</a>
@@ -85,13 +87,28 @@
                 </div>
             </div>
 
+            <%# Dojo checkout checklist (2026-10-24): legal entity, business address,
+                email and telephone, accredited partners and the card schemes accepted. %>
+            <div class="v2-foot-trust">
+                <div class="v2-foot-partners" aria-label="Accredited payment partner">
+                    <span class="lbl">Accredited payment partner</span>
+                    <span class="badge"><img src="/assets/v2/logos/dojo.png" alt="Dojo" width="72" height="24"></span>
+                    <span class="badge"><img src="/assets/v2/logos/teya.svg" alt="Teya" width="62" height="23"></span>
+                    <span class="badge word">Barclaycard</span>
+                </div>
+                <div class="v2-foot-cards" aria-label="Cards and wallets accepted">
+                    <img src="/assets/v2/logos/visa.svg" alt="Visa" width="52" height="32">
+                    <img src="/assets/v2/logos/mastercard.svg" alt="Mastercard" width="52" height="32">
+                    <img src="/assets/v2/logos/apple-pay.svg" alt="Apple Pay" width="52" height="32">
+                    <img src="/assets/v2/logos/google-pay.svg" alt="Google Pay" width="52" height="32">
+                </div>
+            </div>
             <div class="footer_bottom">
                 <div class="footer_bottom_left">
-                    <p>&copy; <%= new Date().getFullYear() %> <%= CONTACT.company %> | All rights reserved</p>
+                    <p>&copy; <%= new Date().getFullYear() %> <%= CONTACT.company %>, registered in England and Wales, company number <%= CONTACT.company_number %>. <%= CONTACT.address_line1 %>, <%= CONTACT.address_line2 %>. <a href="mailto:<%= CONTACT.email %>"><%= CONTACT.email %></a> · <a href="tel:<%= CONTACT.emergency_phone_e164 %>"><%= CONTACT.emergency_phone %></a></p>
                 </div>
-
                 <div class="footer_bottom_right">
-                    <img class="payment_methods_img" src="/assets/icons/payment_methods.png" alt="Payment Methods">
+                    <p class="v2-secure">Card payments are processed securely by Dojo. We never see your card number.</p>
                 </div>
             </div>
         </div>

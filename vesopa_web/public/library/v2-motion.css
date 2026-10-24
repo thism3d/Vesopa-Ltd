@@ -152,3 +152,28 @@
   .user_review_text.v2-swap, .v2-stars span, .tr-flow.js .tr-step.on, .tr-pay, .v2-item .ph, .hw-detail .pic { animation: none !important; }
   [data-tr-rotate]::after { display: none; }
 }
+
+/* Footer trust row (Dojo checklist, 2026-10-24) */
+.v2-foot-trust { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 18px; padding: 22px 0; margin-top: 10px; border-top: 1px solid var(--line, #262c1b); }
+.v2-foot-partners, .v2-foot-cards { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.v2-foot-partners .lbl { font: 700 11.5px var(--font-body); letter-spacing: .13em; text-transform: uppercase; color: var(--text-mute, #8b9280); margin-right: 4px; }
+.v2-foot-partners .badge { display: inline-flex; align-items: center; justify-content: center; height: 40px; padding: 0 14px; border-radius: 10px; background: #fff; }
+.v2-foot-partners .badge img { height: 22px; width: auto; display: block; }
+.v2-foot-partners .badge.word { font: 800 15px Arial, Helvetica, sans-serif; color: #00395d; letter-spacing: -.01em; }
+.v2-foot-cards img { height: 32px; width: auto; border-radius: 6px; background: #fff; padding: 3px 6px; box-sizing: content-box; }
+.footer_bottom_left p { line-height: 1.6; }
+.footer_bottom_left a { color: inherit; }
+.v2-secure { margin: 0; font-size: 13px; color: var(--text-mute, #8b9280); }
+
+/* Trial headline: words swap inside a fixed one-line box, so nothing below ever moves */
+.tr-swap { display: block; height: 1.12em; line-height: 1.12em; white-space: nowrap; overflow: hidden; color: var(--lime); transition: opacity .35s ease, transform .35s ease; }
+.tr-swap.out { opacity: 0; transform: translateY(-.25em); }
+@media (max-width: 520px) { .tr-swap { font-size: .8em; } }
+
+/* Accreditation band logos */
+.v2-logo-badge { display: inline-flex; align-items: center; justify-content: center; height: 44px; padding: 0 16px; border-radius: 12px; background: #fff; transition: transform .25s cubic-bezier(.2,.7,.2,1), box-shadow .25s; }
+.v2-logo-badge:hover { transform: translateY(-3px); box-shadow: 0 10px 26px rgba(165,199,21,.25); }
+.v2-logo-badge img { height: 24px; width: auto; display: block; }
+.v2-logo-badge.word { font: 800 16px Arial, Helvetica, sans-serif; color: #00395d; }
+.v2-accredit-cards { display: inline-flex; gap: 8px; align-items: center; }
+.v2-accredit-cards img { height: 28px; width: auto; border-radius: 5px; background: #fff; padding: 3px 5px; box-sizing: content-box; }

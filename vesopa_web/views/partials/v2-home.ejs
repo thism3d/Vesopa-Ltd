@@ -87,7 +87,10 @@
                 <p class="vh-eyebrow">Hardware</p>
                 <h2 id="v2-hw-title" class="v2-title">The kit behind the counter, <span>ready to trade.</span></h2>
             </div>
-            <a class="v2-btn" href="/hardware">Shop all hardware</a>
+            <div class="v2-actions" style="margin-top:0">
+                <a class="v2-btn" href="/hardware">Shop all hardware</a>
+                <a class="v2-btn ghost" href="/assets/v2/Vesopa-EPOS-Hardware-Brochure.pdf" download>Brochure (PDF)</a>
+            </div>
         </div>
         <div class="v2-kit">
             <% hardware.TEASER.forEach(function (sku) { const p = hardware.PRODUCTS.find(function (x) { return x.sku === sku; }); if (!p) return; %>

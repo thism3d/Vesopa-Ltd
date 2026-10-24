@@ -10,7 +10,7 @@
 <section class="hw-hero tr-hero">
     <div class="v2-wrap" style="text-align:center">
         <p class="vh-eyebrow">14 days free</p>
-        <h1 class="v2-title" style="font-size:clamp(32px,5vw,56px)">Try Vesopa EPOS <span data-tr-rotate data-words='["free for 14 days.","on your own till.","with Dojo payments.","in three taps."]'>free for 14 days.</span></h1>
+        <h1 class="v2-title" style="font-size:clamp(28px,5vw,56px)">Try Vesopa EPOS <span class="tr-swap" data-tr-swap data-words='["free for 14 days.","on your own till.","with card payments.","in three taps."]'>free for 14 days.</span></h1>
         <p class="v2-lede" style="margin-left:auto;margin-right:auto">A £1 card check that comes straight back, then nothing to pay until your trial ends. 30-day money-back guarantee.</p>
     </div>
 </section>
@@ -19,7 +19,6 @@
     <form class="v2-wrap tr-flow" method="post" action="/trial" data-trial novalidate>
         <% if (error) { %><p role="alert" class="tr-alert bad"><%= error %></p><% } %>
         <% if (!ready) { %><p class="tr-alert warn">Online sign-up opens very soon. In the meantime, <a href="/#try-vesopa">ask for a demo</a> and we will set you up.</p><% } %>
-        <% if (sandbox && ready) { %><p class="tr-alert info">Dojo sandbox: test cards only, no real money moves.</p><% } %>
 
         <ol class="tr-progress" aria-label="Steps">
             <li data-tr-dot="1" class="on"><span>1</span>Plan</li>
@@ -91,6 +90,7 @@
                     <div><span>Refunded straight away</span><span>−£1.00</span></div>
                     <div class="after"><span>After <%= trialDays %> days</span><span data-t-total><%= q ? gbp(q.first.total) : '' %></span></div>
                 </div>
+                <p class="v2-accredit-cards" style="margin-top:16px" aria-label="Cards and wallets accepted"><img src="/assets/v2/logos/visa.svg" alt="Visa" width="46" height="28"><img src="/assets/v2/logos/mastercard.svg" alt="Mastercard" width="46" height="28"><img src="/assets/v2/logos/apple-pay.svg" alt="Apple Pay" width="46" height="28"><img src="/assets/v2/logos/google-pay.svg" alt="Google Pay" width="46" height="28"></p>
                 <p class="tr-safe">Paid on Dojo's secure page: card, Apple Pay or Google Pay. We never see your card number. Your trial starts the moment the £1 goes through.</p>
             </aside>
         </div>
@@ -102,16 +102,18 @@
   var SETUP = <%= setupFee %>, step = 1, MAX = 3;
   f.classList.add('js');
   var gbp = function (m) { return '£' + (m / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+  var lastKey = '';
   function update() {
     var p = f.querySelector('input[name=period]:checked'); if (!p) return;
     var months = +p.dataset.months, lines = [[p.dataset.name + ' plan, ' + months + ' month' + (months === 1 ? '' : 's'), +p.dataset.price]];
     f.querySelectorAll('[data-addon]').forEach(function (i) { var n = Math.max(0, Math.min(20, parseInt(i.value, 10) || 0)); i.value = n; if (n) lines.push([n + ' × ' + i.dataset.label + ' (' + months + ' mo)', n * +i.dataset.addon * months]); });
     if (months < 12) lines.push(['Setup and installation (once)', SETUP]);
     var net = lines.reduce(function (t, l) { return t + l[1]; }, 0), vat = Math.round(net * 0.2);
+    var key = JSON.stringify(lines); if (key === lastKey) return; var first = !lastKey; lastKey = key;
     var ul = f.querySelector('[data-t-lines]'); ul.innerHTML = '';
-    lines.forEach(function (l) { var li = document.createElement('li'); li.className = 'v2-pop'; var a = document.createElement('span'); a.textContent = l[0]; var b = document.createElement('b'); b.textContent = gbp(l[1]); li.appendChild(a); li.appendChild(b); ul.appendChild(li); });
+    lines.forEach(function (l) { var li = document.createElement('li'); if (!first) li.className = 'v2-pop'; var a = document.createElement('span'); a.textContent = l[0]; var b = document.createElement('b'); b.textContent = gbp(l[1]); li.appendChild(a); li.appendChild(b); ul.appendChild(li); });
     f.querySelector('[data-t-vat]').textContent = gbp(vat);
-    var t = f.querySelector('[data-t-total]'); t.textContent = gbp(net + vat); t.classList.remove('v2-pop'); void t.offsetWidth; t.classList.add('v2-pop');
+    var t = f.querySelector('[data-t-total]'); t.textContent = gbp(net + vat); if (!first) { t.classList.remove('v2-pop'); void t.offsetWidth; t.classList.add('v2-pop'); }
   }
   function go(n) {
     step = Math.max(1, Math.min(MAX, n));
@@ -133,13 +135,19 @@
   });
   // Picking a plan moves straight on: that is the whole of step 1.
   f.querySelectorAll('input[name=period]').forEach(function (r) { r.addEventListener('change', function () { update(); setTimeout(function () { if (step === 1) go(2); }, 320); }); });
-  f.addEventListener('input', update);
+  // Only the extras' number boxes change the price; typing the venue or email does not touch the summary.
+  f.querySelectorAll('[data-addon]').forEach(function (i) { i.addEventListener('input', update); });
   f.addEventListener('submit', function (e) {
     var v = f.querySelector('[name=venue]'), m = f.querySelector('[name=email]');
     if (!v.value.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(m.value.trim())) { e.preventDefault(); go(3); (v.value.trim() ? m : v).focus(); (v.value.trim() ? m : v).classList.add('tr-err'); return; }
     var b = f.querySelector('[data-tr-submit]'); b.disabled = true; b.textContent = 'Opening Dojo’s secure page…';
   });
   update(); go(<%= error ? 3 : 1 %>);
+  var sw = document.querySelector('[data-tr-swap]');
+  if (sw && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    var words = JSON.parse(sw.getAttribute('data-words')), wi = 0;
+    setInterval(function () { sw.classList.add('out'); setTimeout(function () { wi = (wi + 1) % words.length; sw.textContent = words[wi]; sw.classList.remove('out'); }, 350); }, 2600);
+  }
 })();
 </script>
 <%- include('partials/footer') %>

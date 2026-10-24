@@ -49,7 +49,7 @@ function trialView(res, req, extra = {}) {
     setupFee: subs.SETUP_FEE_MINOR,
     sandbox: dojo.mode() !== 'live',
     ready: dojo.configured(),
-    error: null,
+    error: req.query && req.query.error ? 'We could not open the payment page just then. Please try again.' : null,
     ...extra,
   });
 }
@@ -74,16 +74,49 @@ router.post('/trial', async (req, res) => {
 
 router.get('/trial/done', async (req, res, next) => {
   try {
-    const sub = await subs.confirmCard(String(req.query.s || ''));
-    res.render('trial-done', { title: 'Your Vesopa EPOS trial', extraFiles: [], sub, gbp: subs.gbp, longDate: subs.longDate });
-  } catch (e) { next(e); }
+    const { sub, state } = await subs.cardCheckState(String(req.query.s || ''));
+    res.render('trial-done', { title: 'Your Vesopa EPOS trial', extraFiles: [], sub, state, gbp: subs.gbp, longDate: subs.longDate });
+  } catch (e) {
+    // A Dojo 4xx/5xx: say so plainly and let the customer try again; the
+    // 5-minute sweep still starts the trial if the £1 did go through.
+    console.error('[trial] return page:', e.message);
+    res.status(502).render('trial-done', { title: 'Your Vesopa EPOS trial', extraFiles: [], sub: { public_id: String(req.query.s || '') }, state: 'error', gbp: subs.gbp, longDate: subs.longDate });
+  }
 });
 
-router.get('/subscribe/return', async (req, res, next) => {
+router.post('/trial/retry', async (req, res) => {
   try {
-    const inv = await subs.refreshByNumber(String(req.query.i || ''));
-    res.render('trial-done', { title: 'Your Vesopa EPOS payment', extraFiles: [], sub: null, inv, gbp: subs.gbp, longDate: subs.longDate });
-  } catch (e) { next(e); }
+    const url = await subs.retryCardCheck(String(req.body.s || ''));
+    return url ? res.redirect(303, url) : res.redirect(303, `/trial/done?s=${encodeURIComponent(String(req.body.s || ''))}`);
+  } catch (e) {
+    console.error('[trial] retry:', e.message);
+    res.redirect(303, '/trial?error=retry');
+  }
+});
+
+router.post('/trial/cancel', async (req, res) => {
+  try { await subs.cancelSignup(String(req.body.s || '')); } catch (e) { console.error('[trial] cancel:', e.message); }
+  res.render('trial-done', { title: 'Your Vesopa EPOS trial', extraFiles: [], sub: null, state: 'cancelled', gbp: subs.gbp, longDate: subs.longDate });
+});
+
+router.get('/subscribe/return', async (req, res) => {
+  try {
+    const { inv, state } = await subs.invoiceState(String(req.query.i || ''));
+    res.render('trial-done', { title: 'Your Vesopa EPOS payment', extraFiles: [], sub: null, inv, invState: state, state: inv ? '' : 'missing', gbp: subs.gbp, longDate: subs.longDate });
+  } catch (e) {
+    console.error('[subscribe] return page:', e.message);
+    res.status(502).render('trial-done', { title: 'Your Vesopa EPOS payment', extraFiles: [], sub: null, state: 'error', gbp: subs.gbp, longDate: subs.longDate });
+  }
+});
+
+router.post('/subscribe/retry', async (req, res) => {
+  try {
+    const url = await subs.retryInvoice(String(req.body.i || ''));
+    res.redirect(303, url || `/subscribe/return?i=${encodeURIComponent(String(req.body.i || ''))}`);
+  } catch (e) {
+    console.error('[subscribe] retry:', e.message);
+    res.redirect(303, `/subscribe/return?i=${encodeURIComponent(String(req.body.i || ''))}`);
+  }
 });
 
 router.post('/webhooks/dojo-subscriptions', async (req, res) => {

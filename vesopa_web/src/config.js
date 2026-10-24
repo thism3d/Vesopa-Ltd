@@ -116,9 +116,12 @@ function money(value) {
 // page does not offer. The originals are in the PHP if Stripe is ever wanted.
 
 const CONTACT = {
-  company: 'VESOPA EPOS LTD',
-  address_line1: '1 High Street, Pontardawe',
-  address_line2: 'Swansea, SA8 4HU',
+  // The legal entity Dojo contracts with (checkout checklist: show the legal
+  // name and business address). Owner, 2026-10-24: accredited as Vesopa Software Ltd.
+  company: 'Vesopa Software Ltd',
+  company_number: '17362206',
+  address_line1: 'Baglan Innovation Centre, Central Avenue',
+  address_line2: 'Baglan, Port Talbot, SA12 7AX',
   phone: '+44 7501 928043',
   phone_e164: '+447501928043',
   emergency_phone: '+44 1792 316282',

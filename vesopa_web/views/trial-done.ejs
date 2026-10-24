@@ -1,30 +1,48 @@
 <%- include('partials/header') %>
 <%#
-  Back from Dojo: the trial card check (sub) or a pay link (inv). While Dojo
-  is still confirming, the page looks again every few seconds.
+  Back from Dojo's hosted checkout (Dojo checklist, 2026-10-24). The result is
+  read from Dojo with our key, never from the redirect:
+    paid       trial started (the £1 has been refunded)
+    waiting    Dojo is still finishing; this page looks again every 4 seconds
+    unpaid     declined, failed or cancelled on Dojo's page: Try again (same
+               payment, fresh client session) or Cancel (nothing charged)
+    cancelled  the customer cancelled; nothing was charged
+    error      Dojo answered with an error; try again
+  For a renewal pay link (inv) the same three outcomes apply.
 %>
 <%
-  var state, title, text;
-  if (sub) {
-    if (sub.status === 'trial' || sub.status === 'active') { state = 'ok'; title = 'Your trial has started'; text = 'Your £1 card check has been refunded. Your free trial runs until ' + longDate(sub.trial_ends_at) + '. We have emailed you the details and will be in touch to set up your till.'; }
-    else if (sub.status === 'pending_card') { state = 'wait'; title = 'Checking your card'; text = 'Dojo is confirming the £1 card check. This page updates by itself.'; }
-    else { state = 'bad'; title = 'That did not finish'; text = 'The card check did not go through, so nothing was set up. You can try again.'; }
-  } else if (inv) {
-    if (inv.status === 'paid') { state = 'ok'; title = 'Payment received'; text = 'Thank you. ' + gbp(inv.total_minor) + ' has been paid for invoice ' + inv.number + '. A receipt is on its way by email.'; }
-    else { state = 'wait'; title = 'Confirming your payment'; text = 'Dojo is confirming the payment for invoice ' + inv.number + '. This page updates by itself.'; }
-  } else { state = 'bad'; title = 'Link not recognised'; text = 'We could not find that sign-up or invoice. If you were charged, reply to any of our emails and we will sort it out.'; }
+  var st = locals.state || '', title, text, eyebrow;
+  var pid = sub && sub.public_id ? sub.public_id : '';
+  if (locals.inv) {
+    if (inv.status === 'paid') { st = 'paid'; eyebrow = 'All done'; title = 'Payment received'; text = 'Thank you. ' + gbp(inv.total_minor) + ' has been paid for invoice ' + inv.number + '. A receipt is on its way by email.'; }
+    else if (locals.invState === 'waiting') { st = 'waiting'; eyebrow = 'One moment'; title = 'Confirming your payment'; text = 'Dojo is confirming the payment for invoice ' + inv.number + '. This page updates by itself.'; }
+    else { st = 'inv-unpaid'; eyebrow = 'Not paid yet'; title = 'Payment not finished'; text = 'Invoice ' + inv.number + ' (' + gbp(inv.total_minor) + ') has not been paid. Nothing was taken. You can try again with any card, Apple Pay or Google Pay.'; }
+  } else if (st === 'paid') { eyebrow = 'All done'; title = 'Your trial has started'; text = 'Thank you. Your £1 card check has been refunded, so nothing has been taken. Your free trial runs until ' + longDate(sub.trial_ends_at) + '. We have emailed you the details and will be in touch to set up your till.'; }
+  else if (st === 'waiting') { eyebrow = 'One moment'; title = 'Confirming your card'; text = 'Dojo is confirming your £1 card check. This page updates by itself.'; }
+  else if (st === 'unpaid') { eyebrow = 'Not finished'; title = 'Payment not finished'; text = 'Your £1 card check did not go through, or was cancelled, so nothing was taken. You can try again with any card, Apple Pay or Google Pay.'; }
+  else if (st === 'cancelled') { eyebrow = 'Cancelled'; title = 'Sign-up cancelled'; text = 'Nothing was charged. You can start a free trial again whenever you like.'; }
+  else if (st === 'error') { eyebrow = 'Please try again'; title = 'We could not reach the payment service'; text = 'Nothing has been lost. If your £1 card check went through, your trial starts by itself within a few minutes and we email you. Otherwise, try again.'; }
+  else { eyebrow = 'Not found'; title = 'Link not recognised'; text = 'We could not find that sign-up or invoice. If you were charged, reply to any of our emails and we will sort it out.'; }
 %>
-<% if (state === 'wait') { %><meta http-equiv="refresh" content="4"><% } %>
+<% if (st === 'waiting') { %><meta http-equiv="refresh" content="4"><% } %>
 <section class="v2-sec" style="min-height:52vh;display:flex;align-items:center">
     <div class="v2-wrap" style="max-width:720px;text-align:center">
-        <p class="vh-eyebrow"><%= state === 'ok' ? 'All done' : state === 'wait' ? 'One moment' : 'Not finished' %></p>
+        <p class="vh-eyebrow"><%= eyebrow %></p>
         <h1 class="v2-title" style="font-size:clamp(30px,4vw,48px)"><%= title %></h1>
         <p class="v2-lede" style="margin-left:auto;margin-right:auto"><%= text %></p>
         <div class="v2-actions" style="justify-content:center">
-            <% if (state === 'bad') { %><a class="v2-btn" href="/trial">Try again</a><% } %>
-            <a class="v2-btn ghost" href="/download">Download Vesopa</a>
-            <a class="v2-btn ghost" href="/">Back to the home page</a>
+            <% if ((st === 'unpaid' || st === 'error') && pid) { %>
+            <form method="post" action="/trial/retry" style="display:inline"><input type="hidden" name="s" value="<%= pid %>"><button class="v2-btn" type="submit" style="border:0;cursor:pointer">Try again</button></form>
+            <form method="post" action="/trial/cancel" style="display:inline"><input type="hidden" name="s" value="<%= pid %>"><button class="v2-btn ghost" type="submit" style="cursor:pointer">Cancel</button></form>
+            <% } else if (st === 'inv-unpaid') { %>
+            <form method="post" action="/subscribe/retry" style="display:inline"><input type="hidden" name="i" value="<%= inv.number %>"><button class="v2-btn" type="submit" style="border:0;cursor:pointer">Try again</button></form>
+            <% } else if (st === 'cancelled' || st === 'missing' || !st) { %>
+            <a class="v2-btn" href="/trial">Start a free trial</a>
+            <% } %>
+            <% if (st === 'paid') { %><a class="v2-btn" href="/download">Download Vesopa</a><% } %>
+            <a class="v2-btn ghost" href="/">Home page</a>
         </div>
+        <p class="v2-note" style="margin-top:22px">Questions? Call <a href="tel:+441792316282">+44 1792 316282</a> or email <a href="mailto:support@vesopa.com">support@vesopa.com</a>.</p>
     </div>
 </section>
 <%- include('partials/footer') %>

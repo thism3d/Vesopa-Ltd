@@ -92,6 +92,9 @@ function createPaymentIntent({ amountMinor, reference, description, redirectUrl,
   });
 }
 
+/** Before sending a customer back to the same checkout after a failed try (Dojo checklist). */
+const refreshClientSecret = (id) => call('POST', '/payment-intents/' + encodeURIComponent(id) + '/refresh-client-session-secret', {});
+
 const chargePaymentIntent = (id) => call('POST', '/payment-intents/' + encodeURIComponent(id) + '/charge');
 const getPaymentIntent = (id) => call('GET', '/payment-intents/' + encodeURIComponent(id));
 
@@ -115,7 +118,7 @@ function cardLabel(obj) {
 }
 
 module.exports = {
-  configured, mode, checkoutUrl, DojoError,
+  configured, mode, checkoutUrl, DojoError, refreshClientSecret,
   createSetupIntent, getSetupIntent, createPaymentIntent, chargePaymentIntent, getPaymentIntent, refund,
   isPaid, isFailed, cardLabel,
 };

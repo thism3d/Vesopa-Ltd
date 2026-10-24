@@ -339,6 +339,21 @@ const expressKiosk = expressKioskRoutes({ pool, broadcast, secret: JWT_SECRET })
 // Online menu orders paid on Dojo's checkout settle from the webhook too
 // (dinein.js settleIntent), as well as from the tracker and the sweep.
 const dojoEventHooks = [];
+// Vesopa's own subscriptions (vesopaepos.com, the "Vesopa" Dojo account) share
+// this webhook address (2026-10-24). A verified event naming a payment intent
+// is passed on to vesopaepos.com on the same box, which only uses the id to
+// re-read the payment from Dojo with its own key, so nothing here is trusted
+// beyond the signature this route already checked.
+const SUBS_WEBHOOK = process.env.VESOPA_SUBS_WEBHOOK_URL || 'http://127.0.0.1:20006/webhooks/dojo-subscriptions';
+dojoEventHooks.push(async (e) => {
+  if (!e.paymentIntentId) return;
+  await fetch(SUBS_WEBHOOK, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ paymentIntentId: e.paymentIntentId, event: e.event, environment: e.environment }),
+    signal: AbortSignal.timeout(8000),
+  }).catch((err) => console.warn('[dojo] subscriptions forward:', err.message));
+});
 app.use(dojoWebhookRoutes({ pool, broadcast, onEvent: async (e) => {
   await Promise.allSettled([expressKiosk.onDojoEvent(e), ...dojoEventHooks.map((hook) => hook(e))]);
 } }));
