@@ -136,7 +136,13 @@
             rewind:true,
             lazyLoad: true,
             autoplay: true,
-            autoplayTimeout: 4000,
+            autoplayTimeout: 6500,
+            autoplayHoverPause: true,
+            smartSpeed: 750,
+            dragEndSpeed: 450,
+            touchDrag: true,
+            mouseDrag: true,
+            pullDrag: true,
             responsive:{
                 0:{
                     items:1
@@ -246,8 +252,8 @@
 
 <div class="free_offer_container">
     <div class="free_offer_left">
-        <img class="free_offer_img" src="/assets/icons/gift_icon.png" alt="Vesopa EPOS Free Offer">
-        <img class="free_offer_img free_offer_mobile_show" src="/assets/icons/Payment-by-card-processed-on-POS-terminal.png" alt="Vesopa EPOS Free Offer">
+        <img class="free_offer_img v2-photo" src="/assets/v2/sm/brand-table.webp" loading="lazy" decoding="async" alt="A manager taking an order on a Vesopa tablet at the table">
+        <img class="free_offer_img free_offer_mobile_show v2-photo" src="/assets/v2/sm/brand-counter.webp" loading="lazy" decoding="async" alt="A card payment at a Vesopa till">
     </div>
     <div class="free_offer_middle">
         <h2 class="hour_free_headline">Get Exclusive Access to Vesopa EPOS</h2>
@@ -258,44 +264,20 @@
         <a href="/trial" class="menu_get_button menu_get_button_middle">Try Vesopa EPOS</a>
     </div>
     <div class="free_offer_right">
-        <img class="free_offer_img" src="/assets/icons/Payment-by-card-processed-on-POS-terminal.png" alt="Vesopa EPOS Free Offer">
+        <img class="free_offer_img v2-photo" src="/assets/v2/sm/brand-counter.webp" loading="lazy" decoding="async" alt="A card payment at a Vesopa till">
     </div>
 </div>
 
 
 
 <div class="fast_servers_container">
-    <h2 class="fast_server_headline">Vending <span>Software Payment</span></h2>
-    <div>
-        
-        <div class="flag-carosel owl-carousel">
-            <div class="flag_item">
-                <div class="flag_item_inside">
-                    <img class="flat_item_image" src="/assets/with_us/newbridge.png" alt="Newbridge">
-                </div>
-            </div>
-            <div class="flag_item">
-                <div class="flag_item_inside">
-                    <img class="flat_item_image" src="/assets/with_us/icrtouch.png" alt="ICRTouch">
-                </div>
-            </div>
-            <div class="flag_item">
-                <div class="flag_item_inside">
-                    <img class="flat_item_image" src="/assets/with_us/dojo.png" alt="Dojo">
-                </div>
-            </div>
-            <div class="flag_item">
-                <div class="flag_item_inside">
-                    <img class="flat_item_image" src="/assets/with_us/sam4s.png" alt="Sam4s">
-                </div>
-            </div>
-            <div class="flag_item">
-                <div class="flag_item_inside">
-                    <img class="flat_item_image" src="/assets/with_us/oxhoo.png" alt="Oxhoo">
-                </div>
-            </div>
-        </div>
-        
+    <h2 class="fast_server_headline">Payment <span>Partners</span></h2>
+    <div class="v2-partners" role="list">
+        <span class="v2-partner" role="listitem"><img src="/assets/v2/logos/dojo.png" alt="Dojo" height="34"></span>
+        <span class="v2-partner" role="listitem"><img src="/assets/v2/logos/teya.svg" alt="Teya" height="30"></span>
+        <span class="v2-partner word" role="listitem">Barclaycard</span>
+        <span class="v2-partner" role="listitem"><img src="/assets/v2/logos/apple-pay.svg" alt="Apple Pay" height="34"></span>
+        <span class="v2-partner" role="listitem"><img src="/assets/v2/logos/google-pay.svg" alt="Google Pay" height="34"></span>
     </div>
     <p class="fast_server_description">The Smarter Way <span>to Manage Sales, Payments, and Growth!</span></p>
     
@@ -328,7 +310,7 @@
 <div class="container_2">
     <div class="continaer_2_left">
         <div class="protect_data_icon_keeper">
-            <img class="protect_data_icon" src="/assets/icons/Cybersecurity-for-computer-data.png" alt="Vesopa EPOS Security">
+            <img class="protect_data_icon v2-art" src="/assets/v2/art/shield.svg" alt="Vesopa EPOS security">
         </div>
         <h2 class="protect_data_h2">Data Protection</h2>
         <p class="protect_data_p">Safeguard your business with <span>enterprise-grade security</span> built into Vesopa EPOS. Our system ensures that your sales, transactions, and customer data remain <span>fully encrypted and protected</span> from unauthorized access.</p>
@@ -349,7 +331,7 @@
         <p class="money_back_description">Experience Vesopa EPOS with confidence. If it doesn’t meet your business needs, contact us within 30 days, and we’ll work to make it right or offer a refund. Your success is our priority!</p>
     </div>
     <div class="money_back_right">
-        <img class="money_back_img" src="/assets/icons/filling-out-customer-satisfaction-survey.png" alt="Vesopa Satisfaction Guarantee">
+        <img class="money_back_img v2-art" src="/assets/v2/art/guarantee.svg" alt="30-day satisfaction guarantee">
     </div>
 </div>
 
@@ -372,33 +354,33 @@
     </div>
     <div class="short_feature_middle">
         <div class="short_fm_item short_fm_item1">
-            <img class="short_fm_img" src="/assets/icons/Payment-terminal-with-credit-card-and-coin.png" alt="Secure Payment Terminal">
+            <img class="short_fm_img v2-photo" src="/assets/v2/sm/brand-counter.webp" loading="lazy" decoding="async" alt="Paying by card at the Vesopa till">
             <p class="short_fm_description">Process transactions swiftly and securely with our <b>fast, reliable, and intuitive POS interface</b></p>
         </div>
         <div class="short_fm_item">
             <p class="short_fm_description">Manage your entire <b>product catalog</b> effortlessly with real-time pricing and inventory updates.</p>
-            <img class="short_fm_img" src="/assets/icons/Taking-Orders-by-Customer-Service.png" alt="Order Management">
+            <img class="short_fm_img v2-photo" src="/assets/v2/sm/backoffice.webp" loading="lazy" decoding="async" alt="The Vesopa back office">
         </div>
     </div>
     
     
     <div class="short_feature_bottom">
         <div class="short_fb_item short_fb_item1">
-            <img class="short_fb_img" src="/assets/icons/business-analytics-with-growing-profits.png" alt="Business Analytics">  
+            <img class="short_fb_img v2-photo" src="/assets/v2/sm/brand-backoffice.webp" loading="lazy" decoding="async" alt="Live reports in the Vesopa back office">  
             <p class="short_fb_desc">
                 Gain valuable business insights with <b>real-time reports</b> on sales, stock levels, and staff performance.
             </p>
         </div>
         <div class="short_fb_item short_fb_item2">
-            <img class="short_fb_img" src="/assets/icons/TND_M395_08.png" alt="Loyalty Program">
+            <img class="short_fb_img v2-portrait v2-photo" src="/assets/v2/sm/app-card.webp" loading="lazy" decoding="async" alt="A Vesopa members&#39; card in the club app">
             <p class="short_fb_desc">
                 Reward your customers with an integrated <b>loyalty and membership program</b> for repeat business.
             </p>
         </div>
         <div class="short_fb_item short_fb_item3">
-            <img class="short_fb_img" src="/assets/icons/online-money-transfer.png" alt="Payment Integration">
+            <img class="short_fb_img v2-photo" src="/assets/v2/sm/counter-card.webp" loading="lazy" decoding="async" alt="A card machine beside the Vesopa till">
             <p class="short_fb_desc">
-                Accept <b>cash, card, and contactless payments</b> seamlessly with Dojo integration support.
+                Accept <b>cash, card, Apple Pay and Google Pay</b>, with card machines from Dojo, Teya or Barclaycard.
             </p>
         </div>
     </div>
@@ -416,7 +398,7 @@
 
 <div class="customer_support_center">
     <div>
-        <img class="customer_support_img" src="/assets/icons/customer_support_2.png" alt="Customer Care">
+        <img class="customer_support_img v2-art" src="/assets/v2/art/support.svg" alt="Support from the Vesopa team">
     </div>
     <div class="customer_support_right">
         <h2 class="customer_support_text">24/7 Customer Support<b>: </b><span>Here for You</span></h2>
@@ -737,7 +719,7 @@
 
 <div class="try_vesopa_container">
     <div class="try_vesopa_left">
-        <img class="try_vesopa_img" src="/assets/icons/contact_left.png" alt="Vesopa EPOS Contact">
+        <img class="try_vesopa_img v2-photo" src="/assets/v2/sm/brand-hero.webp" loading="lazy" decoding="async" alt="Ordering on a Vesopa screen at the bar">
     </div>
     <div class="try_vesopa_right" id="try-vesopa">
         <h2 class="try_vesopa_heading">Ready to Try Vesopa EPOS?</h2>

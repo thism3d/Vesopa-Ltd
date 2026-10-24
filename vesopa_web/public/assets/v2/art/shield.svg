@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" role="img" aria-label="Data protection">
+  <style>
+    .ring{fill:none;stroke:#a5c715;stroke-width:2;opacity:.35;transform-origin:120px 120px;animation:spin 18s linear infinite}
+    .glow{fill:#a5c715;opacity:.12;transform-origin:120px 120px;animation:pulse 3.2s ease-in-out infinite}
+    .line{fill:none;stroke:#a5c715;stroke-width:6;stroke-linecap:round;stroke-linejoin:round}
+    .tick{fill:none;stroke:#0c1004;stroke-width:9;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:80;stroke-dashoffset:80;animation:draw 3.2s ease-in-out infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    @keyframes pulse{0%,100%{transform:scale(.92)}50%{transform:scale(1.04)}}
+    @keyframes draw{0%,15%{stroke-dashoffset:80}45%,85%{stroke-dashoffset:0}100%{stroke-dashoffset:80}}
+    @media (prefers-reduced-motion: reduce){.ring,.glow,.tick{animation:none}.tick{stroke-dashoffset:0}}
+  </style>
+  <circle class="glow" cx="120" cy="120" r="96"/>
+  <circle class="ring" cx="120" cy="120" r="108" stroke-dasharray="6 10"/>
+  <path class="line" d="M120 38 L184 62 V114 C184 156 156 186 120 202 C84 186 56 156 56 114 V62 Z" fill="#0b0e08"/>
+  <path d="M120 58 L166 76 V114 C166 146 146 168 120 181 C94 168 74 146 74 114 V76 Z" fill="#a5c715"/>
+  <path class="tick" d="M96 118 L113 135 L146 100"/>
+</svg>

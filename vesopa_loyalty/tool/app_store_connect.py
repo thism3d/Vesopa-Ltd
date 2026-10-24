@@ -1177,6 +1177,35 @@ def open_review_submission(c, app_id):
     return ("ready", live) if live else ("none", None)
 
 
+def cmd_withdraw(venue_name):
+    """Take the version that is with Apple out of review ("Remove from review"),
+    so a newer build can replace it (owner, 2026-10-24: 1.3.1 was waiting for
+    review and 1.3.2 could not be made). The version goes back to
+    DEVELOPER_REJECTED, which `prepare`/`store` then rename to venue.json's
+    version and fill again. Nothing is deleted."""
+    venue_dir, v, store = load_venue(venue_name)
+    c = Client()
+    app = find_app(c, v["app_id"])
+    if not app:
+        raise SystemExit(f"No app record for {v['app_id']}.")
+    state, sub = open_review_submission(c, app["id"])
+    if state != "busy":
+        note("  nothing is with Apple for review: nothing to withdraw")
+        return
+    now = sub["attributes"].get("state")
+    if now != "CANCELING":
+        c.patch(f"/v1/reviewSubmissions/{sub['id']}",
+                {"data": {"type": "reviewSubmissions", "id": sub["id"], "attributes": {"canceled": True}}})
+        note(f"  review submission ({now}): withdrawn")
+    for _ in range(40):
+        got = c.get(f"/v1/reviewSubmissions/{sub['id']}")["data"]["attributes"].get("state")
+        if got not in ("CANCELING", "WAITING_FOR_REVIEW", "IN_REVIEW"):
+            note(f"  review submission now {got}")
+            return
+        time.sleep(15)
+    note("  Apple is still cancelling the submission; run again in a few minutes")
+
+
 def cmd_submit(venue_name, release=None, build_number=None):
     """Create (or reuse) the App Review submission, attach the build and the
     version, set how it releases, and submit it to Apple."""
@@ -1449,7 +1478,7 @@ def summary():
 
 
 def main():
-    if len(sys.argv) < 3 or sys.argv[1] not in ("status", "prepare", "signing", "sign-project", "store", "testflight", "submit"):
+    if len(sys.argv) < 3 or sys.argv[1] not in ("status", "prepare", "signing", "sign-project", "store", "testflight", "submit", "withdraw"):
         raise SystemExit(__doc__)
     cmd, venue = sys.argv[1], sys.argv[2]
     if cmd == "status":
@@ -1462,6 +1491,8 @@ def main():
         cmd_prepare(venue)
     elif cmd == "store":
         cmd_store(venue)
+    elif cmd == "withdraw":
+        cmd_withdraw(venue)
     elif cmd == "submit":
         # submit <venue> [manual|auto] [build_number]
         release = next((a for a in sys.argv[3:] if a in ("manual", "auto", "automatic")), None)

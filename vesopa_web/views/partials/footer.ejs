@@ -105,7 +105,8 @@
             </div>
             <div class="footer_bottom">
                 <div class="footer_bottom_left">
-                    <p>&copy; <%= new Date().getFullYear() %> <%= CONTACT.company %>, registered in England and Wales, company number <%= CONTACT.company_number %>. <%= CONTACT.address_line1 %>, <%= CONTACT.address_line2 %>. <a href="mailto:<%= CONTACT.email %>"><%= CONTACT.email %></a> · <a href="tel:<%= CONTACT.emergency_phone_e164 %>"><%= CONTACT.emergency_phone %></a></p>
+                    <p class="v2-maker">Vesopa EPOS is made by <a href="https://vesopasoftware.com" target="_blank" rel="noopener"><strong>Vesopa Software Ltd</strong></a>, the software company behind it: tills, kitchen screens, kiosks, online ordering and member apps, built in Wales.</p>
+                    <p>&copy; <%= new Date().getFullYear() %> <a href="https://vesopasoftware.com" target="_blank" rel="noopener"><%= CONTACT.company %></a>, registered in England and Wales, company number <%= CONTACT.company_number %>. <%= CONTACT.address_line1 %>, <%= CONTACT.address_line2 %>. <a href="mailto:<%= CONTACT.email %>"><%= CONTACT.email %></a> · <a href="tel:<%= CONTACT.emergency_phone_e164 %>"><%= CONTACT.emergency_phone %></a></p>
                 </div>
                 <div class="footer_bottom_right">
                     <p class="v2-secure">Card payments are processed securely by Dojo. We never see your card number.</p>

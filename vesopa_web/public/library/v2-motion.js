@@ -54,6 +54,24 @@
     bar.innerHTML = '<i class="run"></i>';
     keeper.appendChild(bar);
     var restart = function (el, cls) { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); };
+    // The section kept changing height as quotes of different lengths came
+    // round (owner, 2026-10-24). Hold it at the tallest quote, measured at the
+    // current width, and again whenever the width changes.
+    var lockHeight = function () {
+      var all = typeof user_reviews === 'object' && user_reviews ? user_reviews : null; // eslint-disable-line no-undef
+      if (!all) return;
+      var probe = review.cloneNode(false);
+      probe.removeAttribute('id');
+      probe.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;left:0;top:0;min-height:0;width:' + review.getBoundingClientRect().width + 'px';
+      review.parentNode.style.position = review.parentNode.style.position || 'relative';
+      review.parentNode.appendChild(probe);
+      var max = 0;
+      Object.keys(all).forEach(function (k) { if (all[k] && all[k].review) { probe.textContent = all[k].review; max = Math.max(max, probe.offsetHeight); } });
+      probe.remove();
+      if (max) review.style.minHeight = max + 'px';
+    };
+    lockHeight();
+    var lockT; window.addEventListener('resize', function () { clearTimeout(lockT); lockT = setTimeout(lockHeight, 150); });
     var who = [document.getElementById('user_name_dom'), document.getElementById('user_extra_data_dom')].filter(Boolean);
     new MutationObserver(function () {
       if (reduce) return;

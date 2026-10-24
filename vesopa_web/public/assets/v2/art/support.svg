@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" role="img" aria-label="Support from the Vesopa team">
+  <style>
+    .wave{fill:none;stroke:#a5c715;stroke-width:5;stroke-linecap:round;opacity:0;animation:wave 2.4s ease-out infinite}
+    .w2{animation-delay:.4s}.w3{animation-delay:.8s}
+    .dot{fill:#0c1004;animation:dot 1.4s ease-in-out infinite}
+    .d2{animation-delay:.2s}.d3{animation-delay:.4s}
+    @keyframes wave{0%{opacity:0}30%{opacity:1}100%{opacity:0}}
+    @keyframes dot{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+    @media (prefers-reduced-motion: reduce){.wave,.dot{animation:none;opacity:1}}
+  </style>
+  <circle cx="120" cy="120" r="100" fill="#a5c715" opacity=".1"/>
+  <path d="M62 128 V112 C62 78 88 52 120 52 C152 52 178 78 178 112 V128" fill="none" stroke="#a5c715" stroke-width="10" stroke-linecap="round"/>
+  <rect x="48" y="112" width="30" height="54" rx="12" fill="#a5c715"/>
+  <rect x="162" y="112" width="30" height="54" rx="12" fill="#a5c715"/>
+  <path d="M177 160 C177 186 160 196 134 196" fill="none" stroke="#a5c715" stroke-width="7" stroke-linecap="round"/>
+  <rect x="112" y="186" width="26" height="18" rx="9" fill="#a5c715"/>
+  <rect x="88" y="96" width="64" height="40" rx="14" fill="#a5c715"/>
+  <path d="M106 136 L102 150 L118 136 Z" fill="#a5c715"/>
+  <circle class="dot" cx="106" cy="116" r="5"/><circle class="dot d2" cx="120" cy="116" r="5"/><circle class="dot d3" cx="134" cy="116" r="5"/>
+  <path class="wave" d="M200 92 C210 104 210 132 200 144"/>
+  <path class="wave w2" d="M212 80 C228 100 228 136 212 156"/>
+  <path class="wave w3" d="M40 92 C30 104 30 132 40 144"/>
+</svg>
