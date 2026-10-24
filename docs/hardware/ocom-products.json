@@ -1,0 +1,81 @@
+{
+  "_about": "Supplier data from ocominc.com (OCOM Technologies, Shenzhen) collected 2026-10-24 for the Vesopa hardware shop. Retail prices are the owner's (ex VAT). Supplier cost prices are NEVER published. Meirion: the supplier brand is covered with Vesopa's.",
+  "supplier": {"name": "OCOM Technologies Limited", "site": "https://www.ocominc.com/", "warranty_months": 12, "lead_time": "5-7 working days by courier"},
+  "products": [
+    {
+      "sku": "POS-1562", "name": "Vesopa Till 15.6\" Super-Slim", "category": "till", "price_gbp": 599,
+      "runs": "Vesopa EPOS", "source": "https://www.ocominc.com/products/POS-1562-156-inch-WindowsAndroid-Super-Slim-Die-cast-Aluminum-Touch-POS-Terminal.html",
+      "headline": "Super-slim die-cast aluminium till that keeps trading offline",
+      "specs": {"Screen": "15.6\" 1366x768, 220 cd/m2, multi-point projected capacitive (G+G)", "Second screen": "11.6\" customer display (touch optional)",
+        "Processor": "Intel Celeron J6412 2.0GHz (Core i3 optional)", "Memory": "DDR4 4GB (8/16GB optional)", "Storage": "64GB M.2 SSD (up to 512GB)",
+        "System": "Windows 10/11", "Network": "Gigabit LAN, Wi-Fi module", "Ports": "USB x6, COM x2, HDMI, RJ-45, audio", "Body": "Aluminium alloy housing and base",
+        "Weight": "3.6 kg", "Power": "100-240V in, 12V/5A adapter (UK plug)", "Operating": "0-50 C"},
+      "images": ["https://cdn.cloudbf.com/webp-jpg/files/75/img/2024/06/19/202406191102020110224.webp","https://cdn.cloudbf.com/webp-jpg/files/75/img/2024/06/19/202406191102060100639.webp","https://cdn.cloudbf.com/webp-jpg/files/75/img/2024/06/19/202406191102100162368.webp","https://cdn.cloudbf.com/webp-jpg/files/75/img/2024/06/19/202406191102160148008.webp","https://cdn.cloudbf.com/webp-png/files/75/img/2024/06/19/202406191102430114964.webp"],
+      "detail_images": ["https://cdn.cloudbf.com/webp-jpg/files/75/img/2024/06/19/202406191054110181132.webp","https://cdn.cloudbf.com/webp-jpg/files/75/img/2024/06/19/202406191058490188263.webp","https://cdn.cloudbf.com/webp-jpg/files/75/img/2024/06/19/202406191058540138387.webp","https://cdn.cloudbf.com/webp-jpg/files/75/img/2024/06/19/202406191058590112855.webp","https://cdn.cloudbf.com/webp-jpg/files/75/img/2024/06/19/202406191059070163278.webp"]
+    },
+    {
+      "sku": "POS-1566", "name": "Vesopa Till 15.6\" Pro", "category": "till", "price_gbp": 599,
+      "runs": "Vesopa EPOS", "source": "https://www.ocominc.com/products/POS-1566-156-inch-WindowsAndroid-Touch-POS-Terminal.html",
+      "headline": "Splash-resistant till with a tilting screen and optional customer display",
+      "specs": {"Screen": "15.6\" BOE 1366x768 (1920x1080 optional), 250 cd/m2, projected capacitive (G+G)", "Second screen": "11.6\" 1366x768 or 2x20 VFD (optional)",
+        "Processor": "Intel Core i5", "Memory": "8GB DDR3L (up to 16GB)", "Storage": "128GB SSD (up to 512GB)", "System": "Windows 10/11",
+        "Network": "Gigabit LAN, Wi-Fi 2.4/5G + BT 5.0 optional", "Ports": "USB 3.0 x2, USB 2.0 x4, COM, HDMI, RJ-45, audio", "Body": "Borderless splash-proof front, aluminium base, cable channels",
+        "Weight": "3.5 kg", "Power": "100-240V in, 12V/5A adapter (UK plug)", "Operating": "0-40 C"},
+      "images": ["https://cdn.cloudbf.com/webp-jpg/files/75/img/2025/05/23/202505231415030117540.webp","https://cdn.cloudbf.com/webp-jpg/files/75/img/2025/05/23/202505231415070134281.webp","https://cdn.cloudbf.com/webp-jpg/files/75/img/2025/05/23/202505231415150117217.webp","https://cdn.cloudbf.com/webp-jpg/files/75/img/2025/05/23/202505231415230105567.webp"],
+      "detail_images": ["https://cdn.cloudbf.com/webp-jpg/files/75/img/2025/05/23/202505231406190100581.webp","https://cdn.cloudbf.com/webp-jpg/files/75/img/2025/06/16/202506161729490170197.webp","https://cdn.cloudbf.com/webp-jpg/files/75/img/2025/06/16/202506161730040123950.webp","https://cdn.cloudbf.com/webp-jpg/files/75/img/2025/06/16/202506161730150154493.webp","https://cdn.cloudbf.com/webp-jpg/files/75/img/2025/06/16/202506161730330143939.webp"]
+    },
+    {
+      "sku": "KDS-181", "name": "Vesopa Kitchen Screen 18.5\"", "category": "kitchen", "price_gbp": 449,
+      "runs": "Vesopa Kitchen", "source": "https://www.ocominc.com/products/KDS-181-185-inch-Windows-Android-POS-Machine.html",
+      "headline": "The pass without the paper: tickets straight from the till",
+      "specs": {"Screen": "18.5\" 1366x768, 250 cd/m2, 178 deg viewing, projected capacitive", "Processor": "Intel Celeron J4125 quad-core 2.0GHz", "Memory": "4GB DDR4", "Storage": "128GB SSD",
+        "System": "Windows 10 Pro", "Network": "Gigabit LAN, Wi-Fi (dual band optional), BT 4.0", "Ports": "USB x4, RJ-45", "Speaker": "8 ohm 3W (new-order beep)", "Body": "Aluminium and metal",
+        "Size": "456 x 277 x 57 mm", "Weight": "4.5 kg", "Power": "100-240V in, 12V/5A adapter (UK plug)"},
+      "images": ["https://cdn.cloudbf.com/webp-jpg/files/75/img/2024/10/24/202410241147210116091.webp","https://cdn.cloudbf.com/webp-jpg/files/75/img/2024/10/24/202410241147240168308.webp","https://cdn.cloudbf.com/webp-jpg/files/75/img/2024/10/24/202410241147280145384.webp","https://cdn.cloudbf.com/webp-jpg/files/75/img/2024/10/24/202410241147330151063.webp","https://cdn.cloudbf.com/webp-jpg/files/75/img/2024/10/24/202410241147380149636.webp","https://cdn.cloudbf.com/webp-jpg/files/75/img/2024/10/24/202410241147520165986.webp"],
+      "detail_images": ["https://cdn.cloudbf.com/webp-jpg/files/75/img/2024/10/24/202410241143010108547.webp","https://cdn.cloudbf.com/webp-jpg/files/75/img/2024/10/24/202410241143060170422.webp","https://cdn.cloudbf.com/webp-jpg/files/75/img/2024/10/24/202410241143110101440.webp","https://cdn.cloudbf.com/webp-jpg/files/75/img/2024/10/24/202410241143150163726.webp"],
+      "spec_pdf": "KDS-181 SPEC new .pdf (from Meirion)"
+    },
+    {
+      "sku": "KDS-151", "name": "Vesopa Kitchen Screen 15\"", "category": "kitchen", "price_gbp": 379,
+      "runs": "Vesopa Kitchen", "source": "not on ocominc.com; Meirion's order list + brochure page 05",
+      "headline": "The compact screen for smaller kitchens, bars and prep stations",
+      "specs": {"Screen": "15\" touch", "Pairing": "Finds the till on the network and pairs itself", "System": "Windows (same family as KDS-181)"},
+      "images_from": "brochure page 05"
+    },
+    {
+      "sku": "OCPP-80A", "name": "Vesopa Receipt Printer 80mm", "category": "printer", "price_gbp": 129,
+      "runs": "Vesopa EPOS", "source": "https://www.ocominc.com/products/OCPP-80A-80MM-Thermal-Receipt-Printer-with-Auto-Cutter.html",
+      "headline": "Receipts with your logo, sharp and fast",
+      "specs": {"Method": "Direct thermal, 203 dpi", "Speed": "Up to 260 mm/s", "Paper": "80 mm roll (72 mm print), up to 80 mm diameter", "Cutter": "Auto cutter, 1 million cuts", "Head life": "100 km",
+        "Interfaces": "USB + LAN (+ serial / Wi-Fi / Bluetooth options)", "Barcodes": "1D + QR, PDF417", "Commands": "ESC/POS", "Size": "160 x 135 x 125 mm", "Weight": "0.8 kg", "Power": "24V/1.5A adapter"},
+      "images": ["https://cdn.cloudbf.com/webp-jpg/files/75/img/2026/05/29/202605291910330103317.webp","https://cdn.cloudbf.com/webp-jpg/files/75/img/2026/05/29/202605291910370176798.webp","https://cdn.cloudbf.com/webp-jpg/files/75/img/2026/05/29/202605291910460125013.webp","https://cdn.cloudbf.com/webp-jpg/files/75/img/2026/05/29/202605291910530101559.webp"],
+      "detail_images": ["https://cdn.cloudbf.com/webp-jpg/files/75/img/2026/05/29/202605291906040108760.webp","https://cdn.cloudbf.com/webp-jpg/files/75/img/2026/05/29/202605291909190168457.webp","https://cdn.cloudbf.com/webp-jpg/files/75/img/2026/05/29/202605291909230177517.webp"]
+    },
+    {
+      "sku": "OCPP-80D", "name": "Vesopa Kitchen Printer 80mm", "category": "printer", "price_gbp": 149,
+      "runs": "Vesopa EPOS", "source": "https://www.ocominc.com/products/OCPP-80D-80MM-Thermal-Receipt-Printer-with-Auto-Cutter.html",
+      "headline": "A professional kitchen printer with flashing light and loud beeper",
+      "specs": {"Method": "Direct thermal, 203 dpi", "Speed": "300 mm/s", "Alert": "Flash LED + loud beeper for the kitchen", "Cutter": "Japanese mechanism, 1.5 million cuts", "Head life": "150 km",
+        "Interfaces": "Serial + USB + LAN (Wi-Fi / Bluetooth options)", "Mounting": "Wall mount built in", "Cash drawer": "24V kick-out", "Size": "186 x 143 x 140 mm", "Weight": "1.0 kg", "Power": "24V/2.5A adapter"},
+      "images": ["https://cdn.cloudbf.com/webp-jpg/files/75/img/2024/05/30/202405301654410186620.webp","https://cdn.cloudbf.com/webp-jpg/files/75/img/2024/05/30/202405301654480161923.webp","https://cdn.cloudbf.com/webp-jpg/files/75/img/2024/05/30/202405301654550138568.webp","https://cdn.cloudbf.com/webp-jpg/files/75/img/2024/05/30/202405301655050115052.webp","https://cdn.cloudbf.com/webp-jpg/files/75/img/2024/05/30/202405301655120131216.webp","https://cdn.cloudbf.com/webp-jpg/files/75/img/2024/05/30/202405301655180149809.webp"],
+      "detail_images": ["https://cdn.cloudbf.com/webp-jpg/files/75/img/2024/05/30/202405301639040100796.webp","https://cdn.cloudbf.com/webp-jpg/files/75/img/2024/05/30/202405301653250125415.webp","https://cdn.cloudbf.com/webp-jpg/files/75/img/2024/05/30/202405301653280106837.webp"]
+    },
+    {
+      "sku": "OCBS-T2182D", "name": "Vesopa Barcode Scanner", "category": "scanner", "price_gbp": 69,
+      "runs": "Vesopa EPOS", "source": "not on ocominc.com; Meirion's order list",
+      "headline": "Scan products and vouchers straight onto the bill",
+      "specs": {"Reads": "1D and 2D (QR) codes", "Connection": "USB, plug and play"}
+    },
+    {
+      "sku": "POS-K01", "name": "Vesopa Self-Service Kiosk", "category": "kiosk", "price_gbp": 1499,
+      "runs": "Vesopa Express", "source": "https://www.ocominc.com/products/POS-K01-Series-K01-Self-Service-Series-POS-Machine.html",
+      "headline": "Order here, skip the queue: pictures, meal deals and card payment",
+      "specs": {"Screen": "21.5\" / 27\" / 32\" Full HD IPS, 10-point capacitive", "Processor": "Intel Celeron N5095 (Core i3/i5 optional)", "Memory": "8GB DDR4", "Storage": "128GB SSD",
+        "System": "Windows 10/11", "Printer": "80mm thermal with auto cutter", "Scanner": "1D/2D scanning window", "Card payments": "Card reader bracket, NFC option", "Mounting": "Floor stand, wall or desktop", "Speaker": "Built-in"},
+      "images": ["https://cdn.cloudbf.com/webp-png/files/75/img/2026/02/27/202602271141400112993.webp","https://cdn.cloudbf.com/webp-png/files/75/img/2026/02/27/202602271141460119042.webp","https://cdn.cloudbf.com/webp-png/files/75/img/2026/02/27/202602271142080147704.webp","https://cdn.cloudbf.com/webp-png/files/75/img/2026/02/27/202602271142270156565.webp"],
+      "detail_images": ["https://cdn.cloudbf.com/webp-png/files/75/img/2026/02/27/202602271133500194039.webp","https://cdn.cloudbf.com/webp-jpg/files/75/img/2026/02/27/202602271143470192857.webp"],
+      "video": "VID-20261024-WA0004.mp4 (from Meirion, 2:04, floor kiosk with card reader)"
+    }
+  ],
+  "videos": {"supplier_category_pages": ["https://www.ocominc.com/video/Product-Video-POS-System.htm","https://www.ocominc.com/video/Product-Video-Printer.htm","https://www.ocominc.com/video/OCOM-Product-Video-Barcode-Scanner.htm"]}
+}

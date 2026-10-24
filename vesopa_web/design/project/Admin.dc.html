@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Subscriptions — Vesopa administration</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;800&amp;family=Roboto:wght@400;500;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F4F5F0}
+a{color:#3F5A00}a:hover{color:#2A3D00}
+.a-row{transition:background .15s ease;cursor:pointer}
+.a-row:hover{background:#F7F9EE}
+.a-btn{transition:transform .15s ease,background .15s ease}
+.a-btn:hover{transform:translateY(-1px)}
+.a-in{animation:ain .35s ease both}
+@keyframes ain{from{opacity:0;transform:translateX(12px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.a-in{animation:none}.a-btn{transition:none}}
+</style>
+</helmet>
+<div style="font-family: Roboto, system-ui, sans-serif; color: #11150D; background: #F4F5F0; display: flex; flex-wrap: wrap; min-height: 1300px">
+<nav aria-label="Administration" style="flex: 1 1 220px; max-width: 260px; background: #000000; color: #E8ECE2; padding: 22px 16px; display: flex; flex-direction: column; gap: 4px">
+<img src="/_blob/8a6b6fbf088fd38e697c118e5772cf41" alt="Vesopa" style="height: 20px; width: auto; align-self: flex-start; margin: 0 8px 22px">
+<sc-for list="{{menu}}" as="m" hint-placeholder-count="8"><a href="#" style="display: flex; align-items: center; min-height: 44px; padding: 0 12px; border-radius: 10px; color: {{m.fg}}; background: {{m.bg}}; text-decoration: none; font: 500 15px Roboto, sans-serif">{{m.label}}</a></sc-for>
+</nav>
+<main style="flex: 999 1 640px; min-width: 0; padding: 28px 32px">
+<div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 16px">
+<div><h1 style="margin: 0; font: 800 28px Orbitron, sans-serif">Subscriptions</h1><p style="margin: 4px 0 0; color: #4A5244; font-size: 15px">Vesopa EPOS plans billed through Dojo · <span style="padding: 2px 8px; border-radius: 6px; background: #FFF3D6; color: #7A4B00; font-weight: 700; font-size: 12px">EXAMPLE DATA</span></p></div>
+<div style="display: flex; gap: 10px; flex-wrap: wrap"><a href="#" class="a-btn" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px; border-radius: 10px; border: 1px solid #D5D9CC; background: #FFFFFF; color: #11150D; text-decoration: none; font-weight: 600">Plans and prices</a><a href="#" class="a-btn" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px; border-radius: 10px; background: #000000; color: #FFFFFF; text-decoration: none; font-weight: 600">New subscription</a></div>
+</div>
+
+<div style="margin-top: 24px; display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 16px">
+<sc-for list="{{kpis}}" as="k" hint-placeholder-count="5"><div style="background: #FFFFFF; border: 1px solid #E3E6DC; border-radius: 16px; padding: 18px"><div style="font-size: 13px; color: #4A5244; font-weight: 600; text-transform: uppercase; letter-spacing: .06em">{{k.label}}</div><div style="margin-top: 6px; font: 800 28px Orbitron, sans-serif; color: {{k.color}}">{{k.value}}</div><div style="margin-top: 2px; font-size: 13px; color: #4A5244">{{k.sub}}</div></div></sc-for>
+</div>
+
+<div style="margin-top: 24px; display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start">
+<section style="flex: 999 1 560px; min-width: 0; background: #FFFFFF; border: 1px solid #E3E6DC; border-radius: 18px; overflow: hidden">
+<div style="padding: 14px 18px; display: flex; flex-wrap: wrap; gap: 8px; border-bottom: 1px solid #EEF0E8" role="group" aria-label="Filter">
+<sc-for list="{{tabs}}" as="t" hint-placeholder-count="5"><button type="button" onClick="{{t.pick}}" aria-pressed="{{t.pressed}}" style="min-height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid {{t.border}}; background: {{t.bg}}; color: {{t.fg}}; font: 600 14px Roboto, sans-serif; cursor: pointer">{{t.label}} · {{t.count}}</button></sc-for>
+</div>
+<div style="overflow-x: auto">
+<table style="width: 100%; border-collapse: collapse; font-size: 14px; min-width: 720px">
+<thead><tr style="text-align: left; color: #4A5244"><th scope="col" style="padding: 12px 18px">Venue</th><th scope="col" style="padding: 12px">Plan</th><th scope="col" style="padding: 12px">Status</th><th scope="col" style="padding: 12px">Next charge</th><th scope="col" style="padding: 12px">Amount</th><th scope="col" style="padding: 12px">Card</th></tr></thead>
+<tbody>
+<sc-for list="{{rows}}" as="r" hint-placeholder-count="8">
+<tr class="a-row" onClick="{{r.open}}" style="border-top: 1px solid #EEF0E8; background: {{r.rowBg}}">
+<td style="padding: 12px 18px"><div style="font-weight: 700">{{r.venue}}</div><div style="color: #4A5244; font-size: 13px">{{r.email}}</div></td>
+<td style="padding: 12px">{{r.plan}}</td>
+<td style="padding: 12px"><span style="padding: 4px 10px; border-radius: 999px; background: {{r.sBg}}; color: {{r.sFg}}; font-weight: 700; font-size: 12px; white-space: nowrap">{{r.status}}</span></td>
+<td style="padding: 12px; white-space: nowrap">{{r.next}}</td>
+<td style="padding: 12px; font-weight: 700">{{r.amount}}</td>
+<td style="padding: 12px; color: #4A5244; white-space: nowrap">{{r.card}}</td>
+</tr>
+</sc-for>
+</tbody>
+</table>
+</div>
+</section>
+
+<aside class="a-in" aria-label="Subscription detail" style="flex: 1 1 320px; min-width: 0; background: #FFFFFF; border: 1px solid #E3E6DC; border-radius: 18px; padding: 22px">
+<div style="display: flex; justify-content: space-between; gap: 10px; align-items: flex-start"><div><h2 style="margin: 0; font: 800 20px Orbitron, sans-serif">{{sel.venue}}</h2><div style="color: #4A5244; font-size: 14px">{{sel.email}}</div></div><span style="padding: 4px 10px; border-radius: 999px; background: {{sel.sBg}}; color: {{sel.sFg}}; font-weight: 700; font-size: 12px">{{sel.status}}</span></div>
+<dl style="margin: 18px 0 0; display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; font-size: 14px">
+<dt style="color: #4A5244">Plan</dt><dd style="margin: 0; font-weight: 600">{{sel.plan}}</dd>
+<dt style="color: #4A5244">Next charge</dt><dd style="margin: 0; font-weight: 600">{{sel.next}} · {{sel.amount}}</dd>
+<dt style="color: #4A5244">Card</dt><dd style="margin: 0; font-weight: 600">{{sel.card}} (saved by Dojo)</dd>
+<dt style="color: #4A5244">Licences</dt><dd style="margin: 0; font-weight: 600">{{sel.licences}}</dd>
+</dl>
+<sc-if value="{{sel.failed}}" hint-placeholder-val="{{false}}">
+<div style="margin-top: 18px; padding: 14px; border-radius: 12px; background: #FDECEA; color: #8A1C12; font-size: 14px; line-height: 1.5"><strong>Payment failed: {{sel.reason}}</strong><br>Retry {{sel.retry}} of 3 · emailed the customer each time. Tills stay on until the grace period ends on {{sel.grace}}.</div>
+</sc-if>
+<div style="margin-top: 18px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px">
+<button type="button" class="a-btn" style="min-height: 44px; border-radius: 10px; border: 0; background: #A5C715; color: #000000; font: 700 14px Roboto, sans-serif; cursor: pointer">Retry payment now</button>
+<button type="button" class="a-btn" style="min-height: 44px; border-radius: 10px; border: 1px solid #D5D9CC; background: #FFFFFF; font: 600 14px Roboto, sans-serif; cursor: pointer">Send card update link</button>
+<button type="button" class="a-btn" style="min-height: 44px; border-radius: 10px; border: 1px solid #D5D9CC; background: #FFFFFF; font: 600 14px Roboto, sans-serif; cursor: pointer">Change plan</button>
+<button type="button" class="a-btn" style="min-height: 44px; border-radius: 10px; border: 1px solid #D5D9CC; background: #FFFFFF; font: 600 14px Roboto, sans-serif; cursor: pointer">Pause or extend trial</button>
+<button type="button" class="a-btn" style="min-height: 44px; border-radius: 10px; border: 1px solid #D5D9CC; background: #FFFFFF; font: 600 14px Roboto, sans-serif; cursor: pointer">Refund last payment</button>
+<button type="button" class="a-btn" style="min-height: 44px; border-radius: 10px; border: 1px solid #F1B8B0; background: #FFFFFF; color: #8A1C12; font: 600 14px Roboto, sans-serif; cursor: pointer">Cancel subscription</button>
+</div>
+<h3 style="margin: 22px 0 8px; font: 700 15px Roboto, sans-serif">History</h3>
+<ol style="margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; font-size: 13px">
+<sc-for list="{{sel.history}}" as="h" hint-placeholder-count="4"><li style="display: flex; gap: 10px"><span style="flex: none; width: 8px; height: 8px; margin-top: 5px; border-radius: 50%; background: {{h.dot}}"></span><span><strong>{{h.what}}</strong> · <span style="color: #4A5244">{{h.when}}</span></span></li></sc-for>
+</ol>
+</aside>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1300}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { tab: 'all', sel: 2 }; }
+  renderVals() {
+    const S = {
+      active: { t: 'Active', bg: '#E8F4D0', fg: '#2F4A00' }, trial: { t: 'Trial', bg: '#E3EEFB', fg: '#123E73' },
+      past_due: { t: 'Past due', bg: '#FDECEA', fg: '#8A1C12' }, suspended: { t: 'Suspended', bg: '#2A2A2A', fg: '#FFFFFF' },
+      cancelled: { t: 'Cancelled', bg: '#EEF0E8', fg: '#4A5244' },
+    };
+    const R = [
+      { venue: 'Example Arms', email: 'owner@example-arms.co.uk', plan: 'Quarterly + Kitchen', s: 'active', next: '14 Jan 2027', amount: '£270.00', card: 'Visa •• 4242', licences: '1 till, 1 display, 1 kitchen' },
+      { venue: 'Sample Café', email: 'hello@samplecafe.co.uk', plan: 'Starter', s: 'trial', next: '7 Nov 2026', amount: '£85.00', card: 'Mastercard •• 4444', licences: '1 till, 1 display' },
+      { venue: 'Demo Rugby Club', email: 'office@demorfc.co.uk', plan: 'Business + 2 tills', s: 'past_due', next: 'Retrying 26 Oct', amount: '£1,140.00', card: 'Visa •• 0002', licences: '3 tills, 1 display, 1 kitchen', failed: true, reason: 'card declined (insufficient funds)', retry: 2, grace: '31 Oct 2026' },
+      { venue: 'Test Takeaway', email: 'shop@testtakeaway.co.uk', plan: 'Starter', s: 'suspended', next: '—', amount: '£85.00', card: 'Visa •• 1881', licences: 'Suspended 20 Oct, tills read-only' },
+      { venue: 'Placeholder Bar', email: 'bar@placeholder.co.uk', plan: 'Enterprise', s: 'active', next: '3 Mar 2028', amount: '£1,300.00', card: 'Amex •• 0005', licences: '1 till, 2 displays' },
+      { venue: 'Mock Bistro', email: 'chef@mockbistro.co.uk', plan: 'Quarterly', s: 'cancelled', next: 'Ends 30 Nov', amount: '—', card: 'Visa •• 5556', licences: 'Until 30 Nov 2026' },
+    ];
+    const tabs = [['all', 'All'], ['trial', 'Trials'], ['past_due', 'Failed payments'], ['suspended', 'Suspended'], ['active', 'Active']];
+    const pick = (i) => () => this.setState({ sel: i });
+    const sel = R[this.state.sel];
+    const view = (r, i) => ({ ...r, status: S[r.s].t, sBg: S[r.s].bg, sFg: S[r.s].fg, open: pick(i), rowBg: i === this.state.sel ? '#F2F7E1' : 'transparent' });
+    return {
+      menu: ['Overview', 'Venues', 'Subscriptions', 'Plans and prices', 'Failed payments', 'Invoices', 'Licences', 'Versions', 'Backups'].map((l) => ({ label: l, bg: l === 'Subscriptions' ? '#A5C715' : 'transparent', fg: l === 'Subscriptions' ? '#000000' : '#E8ECE2' })),
+      kpis: [
+        { label: 'Monthly recurring', value: '£[MRR]', sub: 'from live Dojo charges', color: '#11150D' },
+        { label: 'Active', value: '[n]', sub: 'paying venues', color: '#2F4A00' },
+        { label: 'On trial', value: '[n]', sub: 'first charge within 14 days', color: '#123E73' },
+        { label: 'Failed payments', value: '[n]', sub: 'retrying, inside grace', color: '#8A1C12' },
+        { label: 'Suspended', value: '[n]', sub: 'tills read-only', color: '#11150D' },
+      ],
+      tabs: tabs.map(([id, label]) => { const on = this.state.tab === id; return { label, count: id === 'all' ? R.length : R.filter((r) => r.s === id).length, pressed: on ? 'true' : 'false', pick: () => this.setState({ tab: id }), bg: on ? '#000000' : '#FFFFFF', fg: on ? '#FFFFFF' : '#11150D', border: on ? '#000000' : '#D5D9CC' }; }),
+      rows: R.map(view).filter((r) => this.state.tab === 'all' || r.s === this.state.tab),
+      sel: { ...view(sel, this.state.sel), failed: !!sel.failed, history: sel.failed ? [
+        { what: 'Retry 2 failed, emailed the customer', when: '24 Oct 09:00', dot: '#C0392B' },
+        { what: 'Retry 1 failed, emailed the customer', when: '22 Oct 09:00', dot: '#C0392B' },
+        { what: 'Renewal charge declined', when: '19 Oct 09:00', dot: '#C0392B' },
+        { what: 'Renewed, paid £1,140.00', when: '19 Oct 2025', dot: '#6E9C0A' },
+      ] : [
+        { what: 'Paid, invoice emailed', when: 'last renewal', dot: '#6E9C0A' },
+        { what: 'Trial started, card saved by Dojo', when: 'sign-up', dot: '#2F6FB5' },
+      ] },
+    };
+  }
+}
+</script>
+</body>
+</html>

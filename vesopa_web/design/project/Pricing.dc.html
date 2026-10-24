@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Vesopa EPOS pricing and trial checkout</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700;800&amp;family=Roboto:wght@400;500;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#000000}
+a{color:#A5C715}a:hover{color:#C8EE45}
+.p-card{transition:transform .25s ease,border-color .25s ease,box-shadow .25s ease;cursor:pointer}
+.p-card:hover{transform:translateY(-6px);box-shadow:0 24px 48px rgba(0,0,0,.5)}
+.p-btn{transition:transform .15s ease,background .15s ease}
+.p-btn:hover{transform:translateY(-2px)}
+.p-btn:active{transform:scale(.97)}
+.p-in{animation:pin .45s cubic-bezier(.2,.7,.2,1) both}
+@keyframes pin{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.p-in{animation:none}.p-card,.p-btn{transition:none}}
+</style>
+</helmet>
+<div style="font-family: Roboto, system-ui, sans-serif; color: #FFFFFF; background: #000000">
+<header style="max-width: 1280px; margin: 0 auto; padding: 14px 24px; display: flex; flex-wrap: wrap; gap: 24px; align-items: center">
+<a href="Main.dc.html" aria-label="Vesopa EPOS home"><img src="/_blob/8a6b6fbf088fd38e697c118e5772cf41" alt="Vesopa" style="height: 22px; display: block"></a>
+<span style="flex: 1"></span>
+<a href="Hardware.dc.html" style="color: #E8ECE2; text-decoration: none">Hardware</a>
+<a href="https://vesopaepos.com/download" style="color: #E8ECE2; text-decoration: none">Download</a>
+</header>
+
+<section style="max-width: 1280px; margin: 0 auto; padding: 48px 24px 24px; text-align: center">
+<p style="margin: 0; display: inline-block; padding: 8px 14px; border-radius: 999px; background: rgba(165,199,21,.07); color: #A5C715; font: 700 12.5px Roboto, sans-serif; letter-spacing: .13em; text-transform: uppercase">Pricing</p>
+<h1 style="margin: 16px 0 0; text-transform: uppercase; font: 800 clamp(36px, 5vw, 60px)/1.05 Orbitron, sans-serif">Pick a plan. <span style="color: #A5C715">Try it free.</span></h1>
+<p style="margin: 16px auto 0; max-width: 680px; font-size: 19px; line-height: 1.55; color: #B9C0AE">Every plan includes one Vesopa EPOS till, one customer display, the back office, reports and programming, updates and support. 30-day money-back guarantee.</p>
+</section>
+
+<section style="max-width: 1280px; margin: 0 auto; padding: 24px 24px 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px">
+<sc-for list="{{plans}}" as="p" hint-placeholder-count="4">
+<button type="button" class="p-card" onClick="{{p.pick}}" aria-pressed="{{p.pressed}}" style="text-align: left; border-radius: 24px; padding: 26px; background: {{p.bg}}; color: {{p.fg}}; border: 2px solid {{p.border}}; font-family: Roboto, sans-serif; display: flex; flex-direction: column; gap: 10px">
+<span style="display: flex; justify-content: space-between; align-items: center; gap: 8px"><span style="font: 800 22px Orbitron, sans-serif; text-transform: uppercase">{{p.name}}</span><sc-if value="{{p.popular}}" hint-placeholder-val="{{false}}"><span style="padding: 5px 10px; border-radius: 999px; background: #000000; color: #A5C715; font: 700 11px Roboto, sans-serif; letter-spacing: .08em; text-transform: uppercase">Most popular</span></sc-if></span>
+<span><span style="font: 800 40px Orbitron, sans-serif">{{p.monthly}}</span><span style="font-size: 15px">/mo</span></span>
+<span style="font-size: 15px; opacity: .85">{{p.term}}</span>
+<span style="font-size: 14px; font-weight: 700">{{p.save}}</span>
+</button>
+</sc-for>
+</section>
+
+<!-- CHECKOUT -->
+<section class="p-in" aria-label="Checkout" style="max-width: 1280px; margin: 0 auto; padding: 56px 24px 96px; display: flex; flex-wrap: wrap; gap: 32px; align-items: flex-start">
+<div style="flex: 999 1 560px; min-width: 0; display: grid; gap: 24px">
+<div style="background: #0B0E08; border: 1px solid rgba(255,255,255,.1); border-radius: 24px; padding: 28px">
+<h2 style="margin: 0; text-transform: uppercase; font: 800 22px Orbitron, sans-serif">Add-ons</h2>
+<div style="margin-top: 16px; display: grid; gap: 14px">
+<sc-for list="{{addons}}" as="a" hint-placeholder-count="3">
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 0; border-top: 1px solid rgba(255,255,255,.08)">
+<div><div style="font-weight: 700; font-size: 16px">{{a.name}}</div><div style="font-size: 14px; color: #B9C0AE">{{a.note}}</div></div>
+<div style="display: inline-flex; align-items: center; gap: 8px">
+<button type="button" class="p-btn" onClick="{{a.dec}}" aria-label="Fewer {{a.name}}" style="width: 44px; height: 44px; border-radius: 12px; border: 1px solid rgba(255,255,255,.22); background: transparent; color: #FFFFFF; font: 700 20px Roboto, sans-serif; cursor: pointer">−</button>
+<span aria-live="polite" style="min-width: 22px; text-align: center; font-weight: 700">{{a.qty}}</span>
+<button type="button" class="p-btn" onClick="{{a.inc}}" aria-label="More {{a.name}}" style="width: 44px; height: 44px; border-radius: 12px; border: 0; background: #A5C715; color: #000000; font: 700 20px Roboto, sans-serif; cursor: pointer">+</button>
+</div>
+</div>
+</sc-for>
+</div>
+</div>
+
+<form style="background: #0B0E08; border: 1px solid rgba(255,255,255,.1); border-radius: 24px; padding: 28px; display: grid; gap: 16px">
+<h2 style="margin: 0; text-transform: uppercase; font: 800 22px Orbitron, sans-serif">Your details</h2>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px">
+<label style="display: grid; gap: 6px; font-size: 14px; color: #B9C0AE">Venue name<input type="text" placeholder="The Red Lion" style="min-height: 48px; padding: 0 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,.2); background: #000000; color: #FFFFFF; font: 16px Roboto, sans-serif"></label>
+<label style="display: grid; gap: 6px; font-size: 14px; color: #B9C0AE">Email<input type="email" placeholder="owner@venue.co.uk" style="min-height: 48px; padding: 0 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,.2); background: #000000; color: #FFFFFF; font: 16px Roboto, sans-serif"></label>
+</div>
+<h3 style="margin: 8px 0 0; font: 700 16px Roboto, sans-serif">Card for after the trial</h3>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px">
+<button type="button" class="p-btn" style="min-height: 52px; border-radius: 12px; border: 0; background: #FFFFFF; color: #000000; font: 700 17px Roboto, sans-serif; cursor: pointer">Apple Pay</button>
+<button type="button" class="p-btn" style="min-height: 52px; border-radius: 12px; border: 1px solid rgba(255,255,255,.3); background: #000000; color: #FFFFFF; font: 700 17px Roboto, sans-serif; cursor: pointer">Google Pay</button>
+</div>
+<div style="min-height: 120px; border: 2px dashed rgba(255,255,255,.2); border-radius: 14px; display: flex; align-items: center; justify-content: center; text-align: center; color: #B9C0AE; font-size: 14px; padding: 16px">[Dojo secure card fields: card number, expiry, CVC. The card is saved by Dojo, never by Vesopa]</div>
+<p style="margin: 0; font-size: 13px; line-height: 1.5; color: #9AA58D">Nothing is taken today. Dojo saves the card and we charge it on {{firstDate}}, then every {{period}}. Cancel any time before then from the back office, or reply to any of our emails.</p>
+</form>
+</div>
+
+<aside aria-label="Order summary" style="flex: 1 1 340px; min-width: 0; background: #A5C715; color: #000000; border-radius: 28px; padding: 28px; position: sticky; top: 24px">
+<h2 style="margin: 0; text-transform: uppercase; font: 800 22px Orbitron, sans-serif">Summary</h2>
+<div style="margin-top: 18px; display: grid; gap: 10px; font-size: 15px">
+<div style="display: flex; justify-content: space-between; gap: 12px"><span>{{planName}} plan</span><strong>{{planCharge}}</strong></div>
+<sc-for list="{{addonLines}}" as="l" hint-placeholder-count="1"><div class="p-in" style="display: flex; justify-content: space-between; gap: 12px"><span>{{l.label}}</span><strong>{{l.total}}</strong></div></sc-for>
+<div style="display: flex; justify-content: space-between; gap: 12px"><span>Setup and installation (once)</span><strong>{{setup}}</strong></div>
+<div style="height: 1px; background: rgba(0,0,0,.2)"></div>
+<div style="display: flex; justify-content: space-between; gap: 12px; font: 800 24px Orbitron, sans-serif"><span>Today</span><span>£0.00</span></div>
+<div style="display: flex; justify-content: space-between; gap: 12px; font-weight: 700"><span>On {{firstDate}}</span><span>{{firstCharge}}</span></div>
+<div style="font-size: 13px">Prices ex VAT. VAT added on the invoice.</div>
+</div>
+<a href="Main.dc.html" class="p-btn" style="margin-top: 22px; display: flex; align-items: center; justify-content: center; min-height: 54px; border-radius: 999px; background: #000000; color: #FFFFFF; text-decoration: none; font: 700 16px Roboto, sans-serif">Start my 14-day free trial</a>
+<p style="margin: 14px 0 0; font-size: 13px; line-height: 1.5">Payments by Dojo. Vesopa is an accredited Dojo, Teya and Barclaycard partner.</p>
+</aside>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":2900}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { plan: 'quarterly', add: { display: 0, kitchen: 1, till: 0 } }; }
+  renderVals() {
+    const lime = '#A5C715';
+    const gbp = (n) => '£' + n.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    // The live vesopaepos.com plans, unchanged.
+    const P = [
+      { id: 'starter', name: 'Starter', monthly: 85, months: 1, upfront: 85, term: '£85 for the first month', save: 'Pay monthly' },
+      { id: 'quarterly', name: 'Quarterly', monthly: 75, months: 3, upfront: 210, term: '£210 for the first three months', save: 'Save 6%', popular: true },
+      { id: 'business', name: 'Business', monthly: 70, months: 12, upfront: 780, term: '£780 for the first year', save: 'Save 7%' },
+      { id: 'enterprise', name: 'Enterprise', monthly: 60, months: 24, upfront: 1300, term: '£1,300 for the first two years', save: 'Save 10%' },
+    ];
+    const A = [
+      { id: 'display', name: 'Extra customer display', note: 'Your first is included', price: 15 },
+      { id: 'kitchen', name: 'Vesopa Kitchen', note: 'Kitchen screen instead of the kitchen printer, per venue', price: 15 },
+      { id: 'till', name: 'Extra till', note: 'Another Vesopa EPOS till on the same venue', price: 15 },
+    ];
+    const plan = P.find((p) => p.id === this.state.plan);
+    const add = this.state.add;
+    const setA = (id, d) => this.setState({ add: { ...add, [id]: Math.max(0, (add[id] || 0) + d) } });
+    const addMonthly = A.reduce((t, a) => t + a.price * (add[a.id] || 0), 0);
+    const setupFee = plan.months >= 12 ? 0 : 149;
+    const first = new Date(Date.now() + 14 * 864e5).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+    return {
+      plans: P.map((p) => { const on = p.id === this.state.plan; return { ...p, monthly: '£' + p.monthly, pressed: on ? 'true' : 'false', pick: () => this.setState({ plan: p.id }),
+        bg: on ? lime : '#0B0E08', fg: on ? '#000000' : '#FFFFFF', border: on ? lime : 'rgba(255,255,255,.12)', popular: !!p.popular }; }),
+      addons: A.map((a) => ({ ...a, qty: add[a.id] || 0, inc: () => setA(a.id, 1), dec: () => setA(a.id, -1) })),
+      addonLines: A.filter((a) => add[a.id] > 0).map((a) => ({ label: add[a.id] + ' × ' + a.name + ' (' + plan.months + ' mo)', total: gbp(a.price * add[a.id] * plan.months) })),
+      planName: plan.name, planCharge: gbp(plan.upfront), setup: setupFee ? gbp(setupFee) : 'Free',
+      firstDate: first, period: plan.months === 1 ? 'month' : plan.months + ' months',
+      firstCharge: gbp(plan.upfront + addMonthly * plan.months + setupFee),
+    };
+  }
+}
+</script>
+</body>
+</html>

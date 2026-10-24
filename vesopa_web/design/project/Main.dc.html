@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>New home page sections</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700;800&amp;family=Roboto:wght@400;500;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#000000}
+a{color:#A5C715}a:hover{color:#C8EE45}
+.v-btn{display:inline-flex;align-items:center;gap:10px;min-height:48px;padding:0 24px;border-radius:999px;font:600 16px/1 Roboto,system-ui,sans-serif;text-decoration:none;transition:transform .18s ease,box-shadow .18s ease,background .18s ease}
+.v-btn:hover{transform:translateY(-2px)}
+.v-btn:active{transform:translateY(0) scale(.98)}
+.v-lime{background:#A5C715;color:#000000;box-shadow:0 8px 24px rgba(165,199,21,.25)}
+.v-lime:hover{background:#B8E02A;color:#000000;box-shadow:0 12px 32px rgba(165,199,21,.38)}
+.v-ghost{border:1px solid rgba(255,255,255,.28);color:#FFFFFF}
+.v-ghost:hover{border-color:#A5C715;color:#FFFFFF}
+.v-dark{background:#000000;color:#FFFFFF}
+.v-dark:hover{background:#26301C;color:#FFFFFF}
+.v-card{transition:transform .25s ease,box-shadow .25s ease}
+.v-card:hover{transform:translateY(-6px);box-shadow:0 24px 48px rgba(13,17,10,.16)}
+.v-img{transition:transform .5s ease}
+.v-card:hover .v-img{transform:scale(1.04)}
+.v-rise{animation:vrise .8s cubic-bezier(.2,.7,.2,1) both}
+.v-rise2{animation:vrise .8s .15s cubic-bezier(.2,.7,.2,1) both}
+.v-rise3{animation:vrise .8s .3s cubic-bezier(.2,.7,.2,1) both}
+.v-float{animation:vfloat 6s ease-in-out infinite}
+.v-pulse{animation:vpulse 1.8s ease-in-out infinite}
+.v-marquee{display:flex;gap:64px;width:max-content;animation:vmarq 28s linear infinite}
+.v-chip{transition:background .15s ease,color .15s ease,border-color .15s ease}
+.v-chip:hover{border-color:#A5C715}
+.v-nav a{color:#E8ECE2;text-decoration:none;font:500 15px Roboto,system-ui,sans-serif}
+.v-nav a:hover{color:#A5C715}
+.v-foot a{color:#B9C2AE;text-decoration:none}
+.v-foot a:hover{color:#A5C715}
+.v-soc{display:inline-flex;width:44px;height:44px;border-radius:12px;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,.14);transition:background .18s,border-color .18s,transform .18s}
+.v-soc:hover{background:#A5C715;border-color:#A5C715;transform:translateY(-2px)}
+.v-soc:hover svg{stroke:#000000}
+@keyframes vrise{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:none}}
+@keyframes vfloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
+@keyframes vpulse{0%,100%{opacity:1}50%{opacity:.35}}
+@keyframes vmarq{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+@media (prefers-reduced-motion:reduce){.v-rise,.v-rise2,.v-rise3,.v-float,.v-pulse,.v-marquee{animation:none}.v-card,.v-btn,.v-img{transition:none}}
+</style>
+</helmet>
+<div style="font-family: Roboto, system-ui, sans-serif; color: #000000; background: #000000; min-width: 0">
+<p style="margin: 0; padding: 14px 24px; background: #A5C715; color: #000000; font: 700 14px Roboto, sans-serif; text-align: center">New sections, slotted into the existing vesopaepos.com home page. Its hero, features, pricing, testimonials, FAQ and footer stay as they are.</p>
+
+<!-- NEW 1: ACCREDITED (goes under the existing hero) -->
+<section style="background: #000000; color: #FFFFFF; border-top: 1px solid rgba(255,255,255,.08); border-bottom: 1px solid rgba(255,255,255,.08); padding: 28px 24px">
+<div style="max-width: 1280px; margin: 0 auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 18px 44px">
+<span style="font: 600 13px Roboto, sans-serif; letter-spacing: .08em; text-transform: uppercase; color: #9AA58D">Accredited payment partner</span>
+<span style="font: 800 26px Orbitron, sans-serif; color: #FFFFFF">dojo</span>
+<span style="font: 800 26px Orbitron, sans-serif; color: #FFFFFF">teya</span>
+<span style="font: 700 22px Orbitron, sans-serif; color: #FFFFFF">Barclaycard</span>
+<span style="display: inline-flex; gap: 10px; align-items: center; color: #C9D1BF; font-size: 14px">
+<span style="padding: 6px 12px; border: 1px solid rgba(255,255,255,.2); border-radius: 8px; font-weight: 600">Apple Pay</span>
+<span style="padding: 6px 12px; border: 1px solid rgba(255,255,255,.2); border-radius: 8px; font-weight: 600">Google Pay</span>
+online</span>
+</div>
+</section>
+
+<!-- SOFTWARE SUITE -->
+<section id="software" style="padding: 104px 24px; background: #000000; color: #FFFFFF">
+<div style="max-width: 1280px; margin: 0 auto">
+<p style="margin: 0; font: 700 14px Roboto, sans-serif; letter-spacing: .08em; text-transform: uppercase; color: #A5C715">New on Vesopa</p>
+<h2 style="margin: 12px 0 0; max-width: 760px; text-transform: uppercase; font: 800 clamp(34px, 4vw, 52px)/1.08 Orbitron, sans-serif; letter-spacing: -.01em">The whole Vesopa family, on one set of data.</h2>
+<div style="margin-top: 56px; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px">
+<sc-for list="{{suite}}" as="s" hint-placeholder-count="6">
+<article class="v-card" style="background: #0B0E08; border-radius: 24px; overflow: hidden; border: 1px solid rgba(255,255,255,.1); display: flex; flex-direction: column">
+<div style="aspect-ratio: 16 / 10; background: #FFFFFF; overflow: hidden; display: flex; align-items: center; justify-content: center">
+<img class="v-img" src="{{s.img}}" alt="{{s.alt}}" style="width: 100%; height: 100%; object-fit: {{s.fit}}; display: block">
+</div>
+<div style="padding: 24px 24px 28px">
+<p style="margin: 0; font: 700 12px Roboto, sans-serif; letter-spacing: .08em; text-transform: uppercase; color: #A5C715">{{s.app}}</p>
+<h3 style="margin: 8px 0 0; font: 700 22px/1.25 Orbitron, sans-serif">{{s.title}}</h3>
+<p style="margin: 10px 0 0; font-size: 16px; line-height: 1.55; color: #B9C0AE">{{s.body}}</p>
+</div>
+</article>
+</sc-for>
+</div>
+</div>
+</section>
+
+<!-- PAYMENTS + CASHBACK -->
+<section id="payments" style="background: #000000; color: #FFFFFF; padding: 104px 24px">
+<div style="max-width: 1280px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 64px; align-items: center">
+<div style="flex: 1 1 480px; min-width: 0">
+<p style="margin: 0; font: 700 14px Roboto, sans-serif; letter-spacing: .08em; text-transform: uppercase; color: #A5C715">Card payments</p>
+<h2 style="margin: 12px 0 0; text-transform: uppercase; font: 800 clamp(34px, 4vw, 52px)/1.08 Orbitron, sans-serif">The till sends the amount. The bill closes itself.</h2>
+<p style="margin: 20px 0 0; font-size: 18px; line-height: 1.6; color: #C9D1BF">No typing the total into the card machine twice. Vesopa EPOS drives Dojo, Teya and Barclaycard machines from the pay screen, takes tips, splits bills and refunds to the card.</p>
+<ul style="margin: 28px 0 0; padding: 0; list-style: none; display: grid; gap: 14px">
+<sc-for list="{{payPoints}}" as="p" hint-placeholder-count="4">
+<li style="display: flex; gap: 14px; align-items: flex-start; font-size: 17px; line-height: 1.5; color: #E8ECE2">
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#A5C715" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none; margin-top: 2px"><path d="M4 12l5 5L20 6"/></svg>{{p}}</li>
+</sc-for>
+</ul>
+</div>
+<div style="flex: 1 1 460px; min-width: 0">
+<div style="background: #0B0E08; border: 1px solid rgba(255,255,255,.1); border-radius: 28px; padding: 32px">
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap">
+<h3 style="margin: 0; font: 700 22px Orbitron, sans-serif">Cashback at the till</h3>
+<span style="padding: 6px 12px; border-radius: 999px; background: rgba(165,199,21,.14); color: #C8EE45; font: 600 13px Roboto, sans-serif">Try it</span>
+</div>
+<p style="margin: 8px 0 0; color: #B9C2AE; font-size: 15px">Bill £8.60. How much cashback?</p>
+<div role="group" aria-label="Cashback amount" style="margin-top: 18px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px">
+<sc-for list="{{cashOptions}}" as="c" hint-placeholder-count="4">
+<button type="button" class="v-chip" onClick="{{c.pick}}" aria-pressed="{{c.pressed}}" style="min-height: 52px; border-radius: 14px; border: 1px solid {{c.border}}; background: {{c.bg}}; color: {{c.fg}}; font: 700 18px Orbitron, sans-serif; cursor: pointer">{{c.label}}</button>
+</sc-for>
+</div>
+<div style="margin-top: 22px; display: grid; gap: 10px">
+<div style="display: flex; justify-content: space-between; color: #B9C2AE; font-size: 15px"><span>Sale</span><span>£8.60</span></div>
+<div style="display: flex; justify-content: space-between; color: #B9C2AE; font-size: 15px"><span>Cashback</span><span>{{cashLabel}}</span></div>
+<div style="height: 1px; background: rgba(255,255,255,.12)"></div>
+<div style="display: flex; justify-content: space-between; font: 700 20px Orbitron, sans-serif"><span>Customer approves on the Dojo machine</span><span style="color: #A5C715">{{cashTotal}}</span></div>
+</div>
+<div style="margin-top: 22px; padding: 16px; border-radius: 16px; background: #A5C715; color: #000000; display: flex; gap: 12px; align-items: center">
+<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 10h18"/></svg>
+<div><strong>Hand over {{cashLabel}}</strong><div style="font-size: 14px">The drawer opens by itself and the Z report counts it.</div></div>
+</div>
+</div>
+</div>
+</div>
+</section>
+
+<!-- ONLINE ORDERING SHOWCASE -->
+<section id="ordering" style="padding: 104px 24px; background: #000000; color: #FFFFFF">
+<div style="max-width: 1280px; margin: 0 auto; display: flex; flex-wrap: wrap-reverse; gap: 64px; align-items: center">
+<div style="flex: 1 1 520px; min-width: 0; display: flex; gap: 24px; justify-content: center; align-items: flex-end">
+<div class="v-float" style="width: 260px; border-radius: 40px; padding: 10px; background: #000000; box-shadow: 0 32px 64px rgba(13,17,10,.28)">
+<img src="/_blob/e970d9333d6f758493a0d4774a95e4a9" alt="menu.pontardawerfc.com: the club's own branded menu" style="width: 100%; border-radius: 32px; display: block">
+</div>
+<div class="v-float" style="width: 230px; border-radius: 36px; padding: 9px; background: #000000; box-shadow: 0 32px 64px rgba(13,17,10,.28); animation-delay: 1.5s">
+<img src="/_blob/43a42fb2afefacf4a62221cb7ea626ac" alt="Choosing table B2 from the live table plan" style="width: 100%; border-radius: 28px; display: block">
+</div>
+</div>
+<div style="flex: 1 1 480px; min-width: 0">
+<p style="margin: 0; font: 700 14px Roboto, sans-serif; letter-spacing: .08em; text-transform: uppercase; color: #A5C715">Live at Pontardawe RFC</p>
+<h2 style="margin: 12px 0 0; text-transform: uppercase; font: 800 clamp(34px, 4vw, 52px)/1.08 Orbitron, sans-serif">Order and pay from the table. In the club's own colours.</h2>
+<p style="margin: 20px 0 0; font-size: 18px; line-height: 1.6; color: #B9C0AE">Customers scan the QR on the table, pick from the menu and pay on their phone. The order lands on the till and the kitchen screen before they put the phone down.</p>
+<div style="margin-top: 28px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px">
+<sc-for list="{{orderPoints}}" as="o" hint-placeholder-count="4">
+<div style="background: #0B0E08; border: 1px solid rgba(255,255,255,.1); border-radius: 18px; padding: 18px">
+<div style="font: 700 17px Orbitron, sans-serif">{{o.t}}</div>
+<div style="margin-top: 6px; font-size: 15px; line-height: 1.5; color: #B9C0AE">{{o.b}}</div>
+</div>
+</sc-for>
+</div>
+<div style="margin-top: 28px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center">
+<a class="v-btn v-lime" href="https://menu.pontardawerfc.com">See menu.pontardawerfc.com</a>
+<span style="font-size: 14px; color: #B9C0AE">Card, Apple Pay and Google Pay through Dojo, Teya or Barclaycard</span>
+</div>
+</div>
+</div>
+</section>
+
+<!-- REWARDS + WHITE LABEL APPS -->
+<section id="apps" style="padding: 104px 24px; background: #0B0E08; color: #FFFFFF">
+<div style="max-width: 1280px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 64px; align-items: center">
+<div style="flex: 1 1 480px; min-width: 0">
+<p style="margin: 0; font: 700 14px Roboto, sans-serif; letter-spacing: .08em; text-transform: uppercase; color: #A5C715">Rewards and white-label apps</p>
+<h2 style="margin: 12px 0 0; text-transform: uppercase; font: 800 clamp(34px, 4vw, 52px)/1.08 Orbitron, sans-serif">Your name on the App Store. Your members in their pockets.</h2>
+<p style="margin: 20px 0 0; font-size: 18px; line-height: 1.6; color: #B9C0AE">We build and publish your own app for iPhone, Android and Apple Watch, with a member card in Apple and Google Wallet. Points land on the bill at the till and pay off the exact price of anything on the menu.</p>
+<div style="margin-top: 28px; display: grid; gap: 14px">
+<sc-for list="{{appPoints}}" as="a" hint-placeholder-count="4">
+<div style="display: flex; gap: 16px; align-items: flex-start">
+<span style="flex: none; width: 44px; height: 44px; border-radius: 12px; background: rgba(165,199,21,.12); display: inline-flex; align-items: center; justify-content: center">
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#A5C715" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.4 6.8 19.1l1-5.8L3.5 9.2l5.9-.9z"/></svg></span>
+<div><div style="font: 700 17px Orbitron, sans-serif">{{a.t}}</div><div style="margin-top: 4px; font-size: 15px; line-height: 1.5; color: #B9C0AE">{{a.b}}</div></div>
+</div>
+</sc-for>
+</div>
+</div>
+<div style="flex: 1 1 520px; min-width: 0; display: flex; gap: 24px; justify-content: center">
+<img class="v-float" src="/_blob/a90499598152c43ec9eb052d7654ca46" alt="Pontardawe RFC member card in the club's own app" style="width: 250px; border-radius: 36px; box-shadow: 0 32px 64px rgba(13,17,10,.22); display: block">
+<img class="v-float" src="/_blob/118c61b3ef16a472c9dc0dba9263dab8" alt="Club news in the member app" style="width: 250px; border-radius: 36px; box-shadow: 0 32px 64px rgba(13,17,10,.22); display: block; margin-top: 64px; animation-delay: 1.8s">
+</div>
+</div>
+</section>
+
+<!-- HARDWARE TEASER -->
+<section style="padding: 104px 24px; background: #000000; color: #FFFFFF">
+<div style="max-width: 1280px; margin: 0 auto">
+<div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 20px">
+<div>
+<p style="margin: 0; font: 700 14px Roboto, sans-serif; letter-spacing: .08em; text-transform: uppercase; color: #A5C715">Hardware</p>
+<h2 style="margin: 12px 0 0; text-transform: uppercase; font: 800 clamp(34px, 4vw, 52px)/1.08 Orbitron, sans-serif">The kit behind the counter.</h2>
+</div>
+<a class="v-btn v-lime" href="Hardware.dc.html">Shop all hardware</a>
+</div>
+<div style="margin-top: 48px; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 24px">
+<sc-for list="{{kit}}" as="k" hint-placeholder-count="4">
+<a class="v-card" href="Hardware.dc.html" style="text-decoration: none; color: #FFFFFF; background: #0B0E08; border: 1px solid rgba(255,255,255,.1); border-radius: 24px; overflow: hidden; display: flex; flex-direction: column">
+<div style="aspect-ratio: 1 / 1; background: #FFFFFF; padding: 20px; box-sizing: border-box; overflow: hidden"><img class="v-img" src="{{k.img}}" alt="{{k.name}}" style="width: 100%; height: 100%; object-fit: contain; display: block"></div>
+<div style="padding: 20px 22px 24px; border-top: 1px solid rgba(255,255,255,.08)">
+<div style="display: flex; align-items: center; gap: 8px; font: 600 13px Roboto, sans-serif; color: {{k.stockColor}}"><span class="v-pulse" style="width: 8px; height: 8px; border-radius: 50%; background: {{k.stockColor}}"></span>{{k.stock}}</div>
+<div style="margin-top: 8px; font: 700 18px Orbitron, sans-serif">{{k.name}}</div>
+<div style="margin-top: 4px; font-size: 14px; color: #B9C0AE">{{k.sku}}</div>
+<div style="margin-top: 14px; font: 800 24px Orbitron, sans-serif">{{k.price}} <span style="font: 500 14px Roboto, sans-serif; color: #B9C0AE">ex VAT</span></div>
+</div>
+</a>
+</sc-for>
+</div>
+</div>
+</section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":5600}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { cash: 2000, annual: false }; }
+  renderVals() {
+    const money = (m) => '£' + (m / 100).toFixed(2);
+    const cash = this.state.cash;
+    const annual = this.state.annual;
+    const lime = '#A5C715', ink = '#000000';
+    const plan = (name, m, who, features, popular) => ({
+      name, who, features, popular,
+      price: annual ? '£' + (m * 10).toLocaleString('en-GB') : '£' + m,
+      per: annual ? '/year' : '/month',
+      note: annual ? 'Two months free · setup included' : '14 days free, then monthly · cancel any time',
+      bg: popular ? lime : '#0B0E08', fg: popular ? ink : '#FFFFFF',
+      border: popular ? lime : 'rgba(255,255,255,.12)',
+      btnBg: popular ? ink : lime, btnFg: popular ? '#FFFFFF' : ink,
+    });
+    return {
+      suite: [
+        { app: 'Vesopa EPOS', title: 'A till that keeps trading offline', body: 'Tables, tabs, split bills, cashback, gift cards and points on one screen. Lose the line and it carries on, then syncs.', img: '/_blob/96a51433d33ee1df25effbf99271673a', alt: 'Vesopa EPOS on a 15.6 inch till', fit: 'contain' },
+        { app: 'Vesopa Kitchen', title: 'The pass, without the paper', body: 'Orders arrive as tickets with the table and the wait time, with a triple beep the kitchen hears.', img: '/_blob/e608c1752c6a440b2205cc010a3c4a1b', alt: 'Vesopa Kitchen on an 18.5 inch screen', fit: 'contain' },
+        { app: 'Vesopa Express', title: 'Self-service kiosk', body: 'The menu in pictures, meal deals in one tap and card payment at the kiosk. Sold-out items come from the till stock.', img: '/_blob/8c573ece2b12e858f96cb6fac3b38c3a', alt: 'Two Vesopa Express kiosks', fit: 'contain' },
+        { app: 'Online ordering', title: 'Your menu on your own address', body: 'QR table ordering and collection with Apple Pay and Google Pay, straight to the till and the kitchen.', img: '/_blob/e970d9333d6f758493a0d4774a95e4a9', alt: 'The Pontardawe RFC menu on a phone', fit: 'cover' },
+        { app: 'Member app', title: 'White-label app and Wallet card', body: 'Your club on the App Store and Google Play, with points, news, memberships and an Apple Watch card.', img: '/_blob/a90499598152c43ec9eb052d7654ca46', alt: 'Pontardawe RFC member card', fit: 'cover' },
+        { app: 'Back office', title: 'Run it from anywhere', body: 'Products, prices, staff, stock, memberships and reports in the browser, with a nightly backup of every venue.', img: '/_blob/ebf35c258566d39baaa9d665b11d2489', alt: 'Vesopa back office memberships page', fit: 'cover' },
+      ],
+      payPoints: [
+        'Dojo, Teya and Barclaycard card machines, chosen per till in the back office',
+        'Cashback on the card machine, with the drawer opening for the cash',
+        'Split bills by item or by share; the drawer opens after each cash share',
+        'Refunds back to the card from the receipt, tips kept per member of staff',
+      ],
+      cashOptions: [1000, 2000, 3000, 5000].map((v) => {
+        const on = v === cash;
+        return { label: '£' + v / 100, pressed: on ? 'true' : 'false', pick: () => this.setState({ cash: v }),
+          bg: on ? lime : 'transparent', fg: on ? ink : '#FFFFFF', border: on ? lime : 'rgba(255,255,255,.22)' };
+      }),
+      cashLabel: money(cash), cashTotal: money(860 + cash),
+      orderPoints: [
+        { t: 'Table QR codes', b: 'Each table has its own code; the order joins that table’s bill.' },
+        { t: 'Live table plan', b: 'Customers see which tables are free, B1 to B15, Lounge, Outside, Rugby Club.' },
+        { t: 'Apple Pay and Google Pay', b: 'Paid on the phone through Dojo, Teya or Barclaycard. No card numbers stored.' },
+        { t: 'Straight to the kitchen', b: 'Tickets print or appear on the kitchen screen the moment it is paid.' },
+      ],
+      appPoints: [
+        { t: 'Points that pay to the penny', b: 'Points are kept to five decimal places, so a redemption clears the exact price and leaves the rest on the card.' },
+        { t: 'Apple and Google Wallet cards', b: 'The member card in the Wallet, scanned at the till, with the club’s crest and colours.' },
+        { t: 'Memberships and renewals', b: 'Vice President, Senior, Social and Youth tiers, paid online and shown on the card.' },
+        { t: 'News and offers by push', b: 'Club news and match-day offers straight to members’ phones.' },
+      ],
+      kit: [
+        { name: 'Vesopa Till 15.6″', sku: 'POS-1566 · Intel i5, 8GB, 128GB SSD', price: '£599', img: '/_blob/96a51433d33ee1df25effbf99271673a', stock: 'In stock', stockColor: '#A5C715' },
+        { name: 'Kitchen Screen 18.5″', sku: 'KDS-181 · runs Vesopa Kitchen', price: '£449', img: '/_blob/e608c1752c6a440b2205cc010a3c4a1b', stock: 'Ships in 7–10 days', stockColor: '#F2B33D' },
+        { name: 'Receipt Printer 80mm', sku: 'OCPP-80A · USB + LAN, auto cutter', price: '£129', img: '/_blob/a06e70fcf91a2e46a9d1d3cba7e18655', stock: 'In stock', stockColor: '#A5C715' },
+        { name: 'Self-service Kiosk', sku: 'Floor standing · card reader · printer', price: '£1,499', img: '/_blob/8c573ece2b12e858f96cb6fac3b38c3a', stock: 'Ships in 7–10 days', stockColor: '#F2B33D' },
+      ],
+      setMonthly: () => this.setState({ annual: false }), setAnnual: () => this.setState({ annual: true }),
+      monthlyPressed: annual ? 'false' : 'true', annualPressed: annual ? 'true' : 'false',
+      monthlyBg: annual ? 'transparent' : lime, monthlyFg: annual ? '#FFFFFF' : ink,
+      annualBg: annual ? lime : 'transparent', annualFg: annual ? ink : '#FFFFFF',
+      plans: [
+        plan('Starter', 49, 'One till for a café, bar or takeaway.', ['1 till and customer display', 'Back office, reports and stock', 'Dojo, Teya or Barclaycard card payments', 'Cashback, tips and split bills', 'Updates and UK support'], false),
+        plan('Pro', 89, 'Busy pubs and restaurants with a kitchen.', ['Up to 3 tills', 'Vesopa Kitchen screen', 'Rewards, gift cards and vouchers', 'Online menu, QR table ordering', 'Apple Pay and Google Pay online'], true),
+        plan('Club', 169, 'Clubs and groups with members.', ['Unlimited tills on the site', 'Your own white-label member app', 'Apple and Google Wallet cards', 'Memberships and tickets online', 'Self-service kiosk software'], false),
+      ],
+      venues: ['Pontardawe RFC', 'The Bridge', 'Bar 98', 'Rossellis', 'The Dyffryn Arms', 'Newbridge', 'Pontardawe RFC', 'The Bridge', 'Bar 98', 'Rossellis', 'The Dyffryn Arms', 'Newbridge'],
+      socials: [
+        { name: 'Instagram', url: 'https://www.instagram.com/vesopasoftware', icon: 'M7 3h10a4 4 0 0 1 4 4v10a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V7a4 4 0 0 1 4-4zM12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7zM17.5 6.5h.01' },
+        { name: 'X (Twitter)', url: 'https://x.com/VesopaSoftware', icon: 'M4 4l16 16M20 4L4 20' },
+        { name: 'Facebook', url: 'https://www.facebook.com/vesopasoftware', icon: 'M15 3h-2.5A3.5 3.5 0 0 0 9 6.5V9H7v3.5h2V21h3.5v-8.5H15l.5-3.5h-3V7a1 1 0 0 1 1-1H15z' },
+        { name: 'Reddit', url: 'https://www.reddit.com/u/Vesopasoftware', icon: 'M12 8c4.4 0 8 2.5 8 5.5S16.4 19 12 19s-8-2.5-8-5.5S7.6 8 12 8zM9 13h.01M15 13h.01M9.5 16c1.5 1 3.5 1 5 0M12 8l1-4 4 1M18 5.5a1 1 0 1 0 0-.01' },
+        { name: 'Quora', url: 'https://www.quora.com/profile/Vesopa-Software', icon: 'M12 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM14 16l3 4' },
+        { name: 'WhatsApp', url: 'https://wa.me/447501928043', icon: 'M4 20l1.4-4.2A8 8 0 1 1 8.4 19zM9 9.5c0 3 2.5 5.5 5.5 5.5l1-1.5-2-1-1 1c-1-.4-1.6-1-2-2l1-1-1-2z' },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

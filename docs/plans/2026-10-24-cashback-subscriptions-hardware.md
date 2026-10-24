@@ -34,7 +34,7 @@ Owner's request (WhatsApp with Meirion + chat, 2026-10-24). Tick items off as th
 - Dojo contacts: alex.radzio@dojo.tech, partnertech@dojo.tech, integrations@dojo.tech. Meirion cc.
 
 ## Work
-1. [ ] Cashback at Pontardawe: read till logs / Dojo Connect responses, find failure, fix, release EPOS,
+1. [x] Cashback at Pontardawe: root cause "Terminal is busy" (cashback went over REST while the socket held the reader). Fixed in 1.16.29 (a0484f3d): cashback over the socket.
        force-update Pontardawe (backup first).
 2. [ ] Subscriptions on Dojo (sandbox = Vesopa Kitchen's shared sandbox key):
        - plans table (tiers, monthly/annual, setup fee, trial days, add-ons) editable in admin.vesopa.com
@@ -51,4 +51,25 @@ Owner's request (WhatsApp with Meirion + chat, 2026-10-24). Tick items off as th
 5. [ ] Socials on every site footer + schema.org sameAs.
 6. [ ] Dojo certification email for Vesopa EPOS online payments / subscriptions (live API), branded,
        from muzahid@vesopa.com to Alex + Dojo partner, cc Meirion. Show draft to the owner before sending.
-7. [ ] Pontardawe force update to the new EPOS after cashback fix (owner asked).
+8. [ ] Website (vesopaepos.com, vesopasoftware.com) refresh, owner 2026-10-24:
+       - "We are Dojo, Teya and Barclaycard accredited" badges/section
+       - showcase menu.pontardawerfc.com: online ordering + payments incl. Apple Pay / Google Pay
+       - feature sections: Cashback, Rewards/loyalty, white-label member apps (iOS/Android/Watch), Wallet
+       - replace old/irrelevant screenshots with real current ones (till 1.16.x, kitchen, display, kiosk,
+         back office, member app, menu)
+       - motion graphics / short videos / animations and micro-interactions
+7. [x] Pontardawe force update: till pinned to 1.16.29 with --force (2026-10-24 18:05). Store submission in certification.
+
+## Progress 2026-10-24 evening
+- Owner: KEEP the old vesopaepos.com (look + content), ADD features, never remove. "You choose the best", launching now.
+- Claude Design canvas (private): https://claude.ai/artifact/MRJLHyigdaswdDaKVwXB59 , source in vesopa_web/design/project/
+  - Main: NEW home sections only (accreditation band, product family, cashback demo, menu.pontardawerfc.com showcase,
+    rewards + white-label apps, hardware teaser), in the live site's style: black, Orbitron uppercase, Roboto, #A5C715.
+  - Hardware: new /hardware page with filter, specs, stock, setup basket. Pricing: existing plans UNCHANGED + trial checkout.
+  - Admin: admin.vesopa.com Subscriptions (failed payments, retry, card link, change plan, refund, cancel).
+- Pricing decision: keep the live plans (Starter 85, Quarterly 75, Business 70, Enterprise 60) + add-ons 15. Added: 14-day trial with
+  card saved by Dojo, setup GBP149 waived on 12/24-month plans. (Earlier tier proposal dropped: owner wants nothing removed.)
+- Real assets in vesopa_web/public/assets/v2/ (supplier logos painted out, Vesopa wordmark on bezels; menu screenshots live).
+- NEXT: build into vesopa_web EJS (index sections, /hardware, footer socials, real screenshots replacing demo1-4),
+  subscriptions backend (Dojo sandbox: setup intent + MIT renewals, retries 3/7d, dunning mail, licence suspend),
+  admin pages, Dojo certification email draft for owner approval.
