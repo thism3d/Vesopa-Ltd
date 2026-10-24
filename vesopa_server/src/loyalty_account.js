@@ -218,6 +218,16 @@ module.exports = function loyaltyAccountRoutes(deps) {
    * Answers the same whether or not the number is known, for the same reason
    * the emailed code does.
    */
+  /** True when a code was texted to this number at this venue in the last minute. */
+  async function textedWithinMinute(office, phone) {
+    const [[row]] = await pool.query(
+      `SELECT COUNT(*) AS n FROM epos_loyalty_app_codes
+        WHERE office = ? AND channel = 'sms' AND phone = ? AND created_at > NOW() - INTERVAL 1 MINUTE`,
+      [office, phone]
+    );
+    return Number(row.n) > 0;
+  }
+
   router.post('/loyalty/v1/app/:slug/sms', json, async (req, res, next) => {
     try {
       const app = await venue(req, res, 'code_sms');
@@ -234,6 +244,9 @@ module.exports = function loyaltyAccountRoutes(deps) {
       if (Number(recent.n) >= SMS_PER_HOUR) {
         return res.status(429).json({ error: 'Too many codes asked for. Please try again in an hour.' });
       }
+      // One text per number per minute (owner, 2026-10-24). Answered exactly
+      // as a sent one, so it cannot tell a stranger the number is a member's.
+      if (await textedWithinMinute(app.office, phone)) return res.json({ ok: true, minutes: SMS_MINUTES });
 
       const [[customer]] = await pool.query(
         `SELECT id FROM epos_customers
@@ -644,6 +657,18 @@ module.exports = function loyaltyAccountRoutes(deps) {
       }
       const phone = cleanPhone(String((req.body || {}).phone || ''));
       if (!phone) return res.status(400).json({ error: 'Please enter a mobile number.' });
+      // One text per number per minute, and the same hourly cap as sign-in.
+      if (await textedWithinMinute(req.office, phone)) {
+        return res.status(429).json({ error: 'A code was sent less than a minute ago. Please wait a moment, then ask for a new one.' });
+      }
+      const [[hour]] = await pool.query(
+        `SELECT COUNT(*) AS n FROM epos_loyalty_app_codes
+          WHERE office = ? AND channel = 'sms' AND phone = ? AND created_at > NOW() - INTERVAL 1 HOUR`,
+        [req.office, phone]
+      );
+      if (Number(hour.n) >= SMS_PER_HOUR) {
+        return res.status(429).json({ error: 'Too many codes asked for. Please try again in an hour.' });
+      }
       const [[settings]] = await pool.query('SELECT app_name FROM epos_loyalty_app WHERE office = ?', [req.office]);
       const brand = await brandFor(pool, req.office, settings);
       const reference = await postcoderSend(phone, brand.name);

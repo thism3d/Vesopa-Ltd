@@ -56,5 +56,6 @@
       "title": "Welcome to the club",
       "subtitle": "A quick tour, then your card, news and match-day notices in one place."
     }
-  ]
+  ],
+  "whats_new": "Phone numbers: if the phone check cannot run on your device, the app now texts you the code itself instead of saying the number cannot be verified, and you can ask for a new code after a minute. Codes from the text fill in by themselves."
 }

@@ -47,6 +47,8 @@ class _SignInPageState extends ConsumerState<SignInPage> {
   /// Firebase check the code is typed against (lib/platform/firebase_phone.dart).
   Country _country = countries.first;
   String? _verification;
+  /// When the last text was asked for: a new one is offered a minute later.
+  DateTime? _textSentAt;
 
   /// Which way in is on screen. Set from the venue's policy on first build.
   String? _method;
@@ -172,6 +174,7 @@ class _SignInPageState extends ConsumerState<SignInPage> {
         if (check.token != null) return await _signInProved(check.token!);
         setState(() {
           _verification = check.verification;
+          _textSentAt = DateTime.now();
           _stage = _Stage.code;
           _note = 'We sent a code to $phone.';
         });
@@ -183,6 +186,7 @@ class _SignInPageState extends ConsumerState<SignInPage> {
     _verification = null;
     await ref.read(apiProvider).requestSmsCode(phone);
     setState(() {
+      _textSentAt = DateTime.now();
       _stage = _Stage.code;
       // Deliberately not "we texted you": the server only texts a number it
       // already holds for a member, and saying it did would tell a stranger
@@ -583,6 +587,26 @@ class _SignInPageState extends ConsumerState<SignInPage> {
               if (v.length == 6 && !_busy) _primary!.action();
             },
             onSubmitted: (_) => _primary!.action(),
+          ),
+        // A new text to the same number, a minute after the last (the
+        // server holds the same rule, so tapping early can never spam it).
+        if (_stage == _Stage.code && method == 'code_sms' && _textSentAt != null)
+          StreamBuilder<int>(
+            stream: Stream<int>.periodic(const Duration(seconds: 1), (i) => i),
+            builder: (context, _) {
+              final left = 60 - DateTime.now().difference(_textSentAt!).inSeconds;
+              return Align(
+                child: TextButton(
+                  onPressed: left > 0 || _busy
+                      ? null
+                      : () {
+                          _code.clear();
+                          _sendTextCode();
+                        },
+                  child: Text(left > 0 ? 'Send a new code in ${left}s' : 'Send a new code'),
+                ),
+              );
+            },
           ),
         if (_stage == _Stage.name) ...[
           TextField(

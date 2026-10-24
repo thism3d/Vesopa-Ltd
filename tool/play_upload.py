@@ -7,6 +7,7 @@
     python tool/play_upload.py PontardaweRFC --next-build   # print the next build number Play has not seen
     python tool/play_upload.py PontardaweRFC --only wear    # one part: phone, wear or listing
     python tool/play_upload.py PontardaweRFC --halt alpha,wear:beta   # pause what is out on these tracks
+    python tool/play_upload.py PontardaweRFC --track production --only phone --draft   # a draft to roll out by hand
 
 Reads <venue>/store/play.json (package, words, track, release notes, which
 pictures) and venue.json (version and build), and takes the bundles that
@@ -126,7 +127,9 @@ def release(play, edit, aab: pathlib.Path, track, name, notes, lang):
     bundle = play.call("POST", f"{UPLOAD}/{play.package}/edits/{edit}/bundles?uploadType=media",
                        data=aab.read_bytes(), ctype="application/octet-stream")
     code = bundle["versionCode"]
-    rel = {"name": name, "versionCodes": [str(code)], "status": "completed",
+    # --draft: the release waits in Play Console for the owner to roll it out
+    # (owner, 2026-10-24: "I'll press the production release myself").
+    rel = {"name": name, "versionCodes": [str(code)], "status": "draft" if "--draft" in sys.argv else "completed",
            "releaseNotes": [{"language": lang, "text": notes}]}
     try:
         play.call("PUT", f"{API}/{play.package}/edits/{edit}/tracks/{track}", {"track": track, "releases": [rel]})

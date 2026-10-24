@@ -54,6 +54,10 @@ on:
         type: choice
         options: [all, phone, wear]
         default: all
+      draft:
+        description: Leave the release as a draft to roll out by hand in Play Console
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -214,6 +218,7 @@ jobs:
         env:
           TRACK: ${{ inputs.track }}
           PART: ${{ inputs.part }}
+          DRAFT: ${{ inputs.draft }}
         run: |
           if [ "$MODE" = "halt" ]; then
             [ -n "$TRACK" ] || { echo "::error::halt needs the tracks to pause in 'track', e.g. alpha,wear:beta"; exit 1; }
@@ -223,6 +228,7 @@ jobs:
           [ "$MODE" = "listing" ] && set -- "$@" --listing
           [ -n "$TRACK" ] && set -- "$@" --track "$TRACK"
           [ "$PART" != "all" ] && set -- "$@" --only "$PART"
+          [ "$DRAFT" = "true" ] && set -- "$@" --draft
           "$RUNNER_TEMP/py/bin/python" tool/play_upload.py "$@"
 
       - name: Remove the keys

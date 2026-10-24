@@ -7,7 +7,7 @@
   "contact_email": "info@vesopasoftware.com",
   "contact_website": "https://pontardawerfc.com/",
   "track": "beta",
-  "release_notes": "Fixes the card and account pages loading for ever after an update. If the app cannot load your card it now says why straight away, with Try again and Sign out. Sign out is also in Settings (the gear at the top), so you can always sign out and back in. Wear OS: your card, the \"My card\" Tile and the \"Points\" complication, now with up-to-date Android libraries.",
+  "release_notes": "Phone numbers: if the phone check cannot run on your device, the app now texts you the code itself instead of saying the number cannot be verified, and you can ask for a new code after a minute. Codes from the text fill in by themselves.",
   "images": {
     "icon": [
       "play-icon-512.png"

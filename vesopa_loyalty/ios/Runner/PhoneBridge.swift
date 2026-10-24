@@ -104,7 +104,19 @@ final class PhoneBridge: NSObject, FlutterSceneLifeCycleDelegate {
     }
     PhoneAuthProvider.provider().verifyPhoneNumber(phone, uiDelegate: nil) { id, error in
       if let error {
-        result(FlutterError(code: "failed", message: PhoneBridge.friendly(error), details: nil))
+        // A wrong number or too many tries is the member's to fix. Anything
+        // else is Firebase failing to check this app (APNs, the check page,
+        // the project's settings): answer "unavailable" so the app texts the
+        // code itself instead of saying the number cannot be verified (owner,
+        // 2026-10-24: "+44 7848494341 number cannot be verified").
+        let code = AuthErrorCode(rawValue: (error as NSError).code)
+        NSLog("[PhoneBridge] verifyPhoneNumber failed: %@", (error as NSError).description)
+        switch code {
+        case .invalidPhoneNumber, .missingPhoneNumber, .quotaExceeded, .tooManyRequests:
+          result(FlutterError(code: "failed", message: PhoneBridge.friendly(error), details: nil))
+        default:
+          result(FlutterError(code: "unavailable", message: PhoneBridge.friendly(error), details: nil))
+        }
       } else if let id {
         result(["verification": id])
       } else {

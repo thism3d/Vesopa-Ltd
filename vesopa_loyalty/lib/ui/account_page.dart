@@ -462,6 +462,7 @@ class _PhoneRow extends ConsumerWidget {
     String? error;
     String? verification;
     String? e164;
+    DateTime? sentAt;
     final brand = ref.read(brandProvider).value;
     var useFirebase = firebasePhoneOnDevice && (brand?.signIn.firebasePhone ?? false);
     final api = ref.read(apiProvider);
@@ -512,7 +513,10 @@ class _PhoneRow extends ConsumerWidget {
                 } else {
                   await api.addPhone(e164!);
                 }
-                setLocal(() => sent = true);
+                setLocal(() {
+                  sent = true;
+                  sentAt = DateTime.now();
+                });
                 return;
               }
               if (code.text.trim().isEmpty) throw ApiError('Enter the code from the text message.');
@@ -563,6 +567,23 @@ class _PhoneRow extends ConsumerWidget {
                         if (v.length == 6 && !busy) go();
                       },
                       onSubmitted: (_) => go(),
+                    ),
+                    // Another text to the same number a minute after the last.
+                    StreamBuilder<int>(
+                      stream: Stream<int>.periodic(const Duration(seconds: 1), (i) => i),
+                      builder: (context, _) {
+                        final left = sentAt == null ? 0 : 60 - DateTime.now().difference(sentAt!).inSeconds;
+                        return TextButton(
+                          onPressed: left > 0 || busy
+                              ? null
+                              : () {
+                                  code.clear();
+                                  sent = false;
+                                  go();
+                                },
+                          child: Text(left > 0 ? 'Send a new code in ${left}s' : 'Send a new code'),
+                        );
+                      },
                     ),
                   ],
                   if (error != null) ...[

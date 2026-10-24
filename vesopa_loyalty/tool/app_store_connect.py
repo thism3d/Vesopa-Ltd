@@ -1095,6 +1095,13 @@ def cmd_store(venue_name):
         "supportUrl": store.get("support_url"),
         "marketingUrl": store.get("marketing_url"),
     }, "description, keywords, promotional text, URLs")
+    # What's New: Apple refuses it on an app's first version, so only sent
+    # when store/app_store.json has one (owner, 2026-10-24: release notes).
+    if store.get("whats_new"):
+        try:
+            patch_attributes(c, "appStoreVersionLocalizations", vloc["id"], {"whatsNew": store["whats_new"]}, "what's new")
+        except Exception as e:  # noqa: BLE001
+            print(f"   ! what's new not set: {e}")
     set_review_details(c, version, store)
     set_beta_review_details(c, app, store)
     placed = set_library_pictures(c, app, vloc, venue_dir)
