@@ -32,9 +32,14 @@ Stream<String> get firebasePhoneProved {
   return _proved.stream;
 }
 
-/// Whether this device can prove a number with Firebase: the phone apps.
-bool get firebasePhoneOnDevice =>
-    !kIsWeb && (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS);
+/// Whether this device proves a number with Firebase: Android only.
+///
+/// Not the iPhone (owner, 2026-10-24: "in app do not open browser for
+/// anything"): when Apple's silent push does not arrive, Firebase checks the
+/// app with a reCAPTCHA web page, which is a browser sheet over the app. The
+/// iPhone uses the code the venue's server texts instead, all inside the app.
+/// Android checks the app with Play Integrity and reads the text by itself.
+bool get firebasePhoneOnDevice => !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
 /// What starting a check gave: a [verification] to type the code against, or
 /// a [token] when the phone proved the number by itself (Android can).
