@@ -40,7 +40,8 @@ const RECIPIENTS = [
 ];
 
 async function main() {
-  const eml = path.join(__dirname, process.argv.includes('--epos-live') ? 'Vesopa-Dojo-epos-live.eml'
+  const eml = path.join(__dirname, process.argv.includes('--vesopa-verify') ? 'Vesopa-Dojo-vesopa-verify.eml'
+    : process.argv.includes('--epos-live') ? 'Vesopa-Dojo-epos-live.eml'
     : process.argv.includes('--staging2') ? 'Vesopa-Dojo-staging2.eml'
     : process.argv.includes('--staging') ? 'Vesopa-Dojo-staging.eml'
     : process.argv.includes('--remote') ? 'Vesopa-Dojo-remote.eml'
@@ -66,7 +67,7 @@ async function main() {
   const only = onlyAt > -1 ? process.argv[onlyAt + 1] : null;
   if (onlyAt > -1 && !/^[^@\s]+@[^@\s]+$/.test(only || '')) throw new Error('--only needs an address');
   // The 12 Oct review email goes to Alex and Finn only (cc Meirion), not Oliver.
-  const list = process.argv.includes('--epos-live')
+  const list = process.argv.includes('--epos-live') || process.argv.includes('--vesopa-verify')
     ? ['alex.radzio@dojo.tech', 'partnertech@dojo.tech', 'info@vesopasoftware.com', 'info@vesopa.com']
     : process.argv.includes('--staging2')
     ? ['alex.radzio@dojo.tech', 'partnertech@dojo.tech', 'support@dojo.tech', 'integrations@dojo.tech', 'info@vesopasoftware.com', 'info@vesopa.com']
