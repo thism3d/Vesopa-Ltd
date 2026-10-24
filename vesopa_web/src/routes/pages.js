@@ -15,8 +15,17 @@ const { plans: pricingPlans, list: planList, resolvePeriod } = require('../plans
 const { clientId: paypalClientId, IS_LIVE: paypalIsLive } = require('../paypal');
 const { isConfigured: stripeConfigured } = require('../stripe');
 const { findPaymentByReference } = require('../payments');
+const hardware = require('../hardware-catalogue');
 
 const router = express.Router();
+
+/** The hardware shop (2026-10-24): every device Vesopa sells, with specs and prices. */
+router.get('/hardware', (_req, res) => res.render('hardware', {
+  title: 'Vesopa EPOS Hardware | Tills, Kitchen Screens, Kiosks and Printers',
+  extraFiles: [],
+  bytes,
+  hardware,
+}));
 
 /** Simple content pages: one route, one template, one <title>. */
 const STATIC_PAGES = [
@@ -69,6 +78,7 @@ router.get('/', async (_req, res) => {
     bytes,
     formatDate,
     isoDateTime,
+    hardware,
   });
 });
 
@@ -185,6 +195,7 @@ router.get('/sitemap.xml', async (_req, res, next) => {
   const pages = [
     ['/', '1.0'],
     ['/pricing', '0.9'],
+    ['/hardware', '0.9'],
     ['/help', '0.9'],
     ['/blog', '0.8'],
     ['/about', '0.7'],

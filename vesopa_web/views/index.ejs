@@ -46,16 +46,18 @@
     <div class="vh-proof">
         <div><b>Offline</b><span>Keeps trading</span></div>
         <div><b>Real&nbsp;time</b><span>Sales &amp; stock</span></div>
-        <div><b>Dojo</b><span>Card payments</span></div>
+        <div><b>Card</b><span>Dojo · Teya · Barclaycard</span></div>
         <div><b>24/7</b><span>UK support</span></div>
     </div>
 </div>
+
+<%- include('partials/v2-accredit') %>
 
 <div class="epos_demo_container">
     <div class="epos-demo-carousel owl-carousel">
         <div class="epos_demo_carousel_item">
             <div class="epos_demo_item">
-                <img class="epos_demo_item_img" src="/assets/demo_screenshots/demo2.jpg" alt="Vesopa EPOS Demo">
+                <img class="epos_demo_item_img" src="/assets/v2/screens/epos-home.jpg" alt="Vesopa EPOS home screen: products, the bill and the pay button">
                 <div class="epos_demo_item_txt_keeper">
                     <h2 class="epos_demo_item_brief">Beautifully Designed</h2>
                     <h2 class="epos_demo_item_heading">A Modern Home Screen for an Advanced EPOS Experience</h2>
@@ -64,7 +66,7 @@
         </div>
         <div class="epos_demo_carousel_item">
             <div class="epos_demo_item">
-                <img class="epos_demo_item_img" src="/assets/demo_screenshots/demo1.jpg" alt="Vesopa EPOS Demo">
+                <img class="epos_demo_item_img" src="/assets/v2/screens/kitchen-home.jpg" alt="Vesopa Kitchen in its light theme beside the dark till">
                 <div class="epos_demo_item_txt_keeper">
                     <h2 class="epos_demo_item_brief">Seamless User Experience</h2>
                     <h2 class="epos_demo_item_heading">Switch Effortlessly Between Light and Dark Modes</h2>
@@ -73,7 +75,7 @@
         </div>
         <div class="epos_demo_carousel_item">
             <div class="epos_demo_item">
-                <img class="epos_demo_item_img" src="/assets/demo_screenshots/demo3.jpg" alt="Vesopa EPOS Demo">
+                <img class="epos_demo_item_img" src="/assets/v2/screens/epos-payment.jpg" alt="Vesopa EPOS payment screen: cash, card, split bill, gift card, voucher and points">
                 <div class="epos_demo_item_txt_keeper">
                     <h2 class="epos_demo_item_brief">Flexible & Interactive</h2>
                     <h2 class="epos_demo_item_heading">A Customizable Payment Solution for Every Business</h2>
@@ -82,10 +84,37 @@
         </div>
         <div class="epos_demo_carousel_item">
             <div class="epos_demo_item">
-                <img class="epos_demo_item_img" src="/assets/demo_screenshots/demo4.jpg" alt="Vesopa EPOS Demo">
+                <img class="epos_demo_item_img" src="/assets/v2/screens/table-plan.jpg" alt="The live table plan customers pick from on their phone">
                 <div class="epos_demo_item_txt_keeper">
                     <h2 class="epos_demo_item_brief">Smart Table Management</h2>
                     <h2 class="epos_demo_item_heading">Vesopa EPOS Brings an Intuitive Seating Solution</h2>
+                </div>
+            </div>
+        </div>
+        <div class="epos_demo_carousel_item">
+            <div class="epos_demo_item">
+                <img class="epos_demo_item_img" src="/assets/v2/screens/display-home.jpg" alt="Vesopa customer display showing the bill as it is rung up">
+                <div class="epos_demo_item_txt_keeper">
+                    <h2 class="epos_demo_item_brief">Customer Display</h2>
+                    <h2 class="epos_demo_item_heading">The Bill on the Customer's Side, Line by Line</h2>
+                </div>
+            </div>
+        </div>
+        <div class="epos_demo_carousel_item">
+            <div class="epos_demo_item">
+                <img class="epos_demo_item_img" src="/assets/v2/screens/express-menu.jpg" alt="Vesopa Express self-service kiosk menu with photos">
+                <div class="epos_demo_item_txt_keeper">
+                    <h2 class="epos_demo_item_brief">Self-Service Kiosk</h2>
+                    <h2 class="epos_demo_item_heading">Order Here, Skip the Queue, Pay by Card</h2>
+                </div>
+            </div>
+        </div>
+        <div class="epos_demo_carousel_item">
+            <div class="epos_demo_item">
+                <img class="epos_demo_item_img" src="/assets/v2/screens/loyalty-card.jpg" alt="Vesopa loyalty member card with points and a QR code">
+                <div class="epos_demo_item_txt_keeper">
+                    <h2 class="epos_demo_item_brief">Rewards</h2>
+                    <h2 class="epos_demo_item_heading">Points That Pay Off the Exact Price</h2>
                 </div>
             </div>
         </div>
@@ -205,6 +234,8 @@
         </div>
     </div>
 </section>
+
+<%- include('partials/v2-home') %>
 
 <div class="free_offer_container">
     <div class="free_offer_left">

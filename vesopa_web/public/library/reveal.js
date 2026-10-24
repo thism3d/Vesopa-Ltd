@@ -23,6 +23,7 @@
   var GROUPS = [
     // [container selector, child selector or null for the container itself]
     ['.epos_demo_container', null],
+    ['.v2-sec', '.v2-row > div, .v2-head, .v2-mini, .v2-item'],
     ['.free_offer_container', '.free_offer_left, .free_offer_middle, .free_offer_right'],
     ['.fast_servers_container', '.fast_server_headline, .flag-carosel, .fast_server_description'],
     ['.container_2', '.continaer_2_left, .container_2_right'],
