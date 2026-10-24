@@ -474,11 +474,15 @@ class ConnectPacProvider implements PaymentProvider {
     _stopWaiting = Completer<void>();
     String? requestId;
     try {
-      // Cashback goes over REST, where the request carries amountCashback.
-      if (_preferSocket && cashbackMinor == 0) {
+      // Cashback rides the socket like any sale. It used to go over REST, but
+      // while the till's socket holds the reader Connect refuses REST with
+      // "Unavailable terminal: Terminal is busy" -- every cashback at
+      // Pontardawe on 2026-10-24 failed that way (2026-10-24).
+      if (_preferSocket) {
         final overSocket = await _takeOverSocket(
           amountMinor,
           manual: manual,
+          cashbackMinor: manual ? 0 : cashbackMinor,
         );
         if (overSocket != null) return overSocket;
         // Null means the socket could not be used at all. It never means the
@@ -522,6 +526,7 @@ class ConnectPacProvider implements PaymentProvider {
   Future<PaymentResult?> _takeOverSocket(
     int amountMinor, {
     required bool manual,
+    int cashbackMinor = 0,
   }) async {
     final tid = terminalId?.trim();
     final live = socket;
@@ -557,6 +562,7 @@ class ConnectPacProvider implements PaymentProvider {
         method: 'sale',
         currency: currency,
         cardholderNotPresent: manual,
+        amountCashback: cashbackMinor > 0 ? cashbackMinor : null,
       );
       final stop = _stopWaiting?.future;
       final result = stop == null

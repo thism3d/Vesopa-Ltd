@@ -1,0 +1,54 @@
+# Plan — 2026-10-24: cashback, EPOS subscriptions on Dojo, hardware shop, Dojo live certification
+
+Owner's request (WhatsApp with Meirion + chat, 2026-10-24). Tick items off as they land.
+
+## Decisions from the owner (interactive questions)
+- Cashback: "not sure, check logs". Investigate and fix whatever is failing.
+- Software sold as **monthly tiers**: "check the current prices on vesopaepos.com and choose the best options".
+- Subscription admin lives in **admin.vesopa.com** (Vesopa administration).
+- Hardware on the website: **retail prices + photos**, branded Vesopa (supplier brand covered, per Meirion).
+- Terms: **14-day free trial** (card saved), **annual = 2 months free**, **grace on failed payment**
+  (retry 3x over 7 days, email each time, then suspend licences), **one-off setup fee**.
+- Hardware retail (ex VAT), the suggested set: POS-1566/1562 till £599, KDS-181 £449, KDS-151 £379,
+  OCPP-80A receipt printer £129, OCPP-80D kitchen printer £149, OCBS-T2182D scanner £69, kiosk £1,499.
+  Supplier cost prices (proforma PI2606112) are NEVER shown publicly.
+
+## Facts found
+- Pontardawe tills pay through Paymentsense **Connect** (PAC REST): cashback sent as `amountCashback`
+  (vesopa_epos/lib/payments/connect_pac.dart startTransaction). Cloud/terminal path sends
+  `cashbackAmount` on the payment intent (payment_provider.dart createIntent).
+- `epos_tender_settings.allow_cashback = 1` for info@vesopa.com. 6 payments with cashback recorded
+  16–22 Oct, none since. So it worked; something since 22 Oct (or a particular case) fails.
+- vesopaepos.com = `vesopa_web/` (Stripe + PayPal checkout today). Live prices: Starter £85/mo (monthly),
+  Quarterly £75/mo (£225 / 3 mo), Business £70/mo (£840 / yr), Enterprise £60/mo (£1,440 / 2 yrs);
+  every plan = 1 till + 1 customer display + back office + support; add-ons: extra display £15/mo,
+  Vesopa Kitchen £15/mo per venue. Site says 30-day trial.
+- vesopasoftware.com = `vesopasoftware/` (site + server with its own subscriptions/invoices admin).
+- Licences / device limits: vesopa_server/src/licences.js + entitlements.js (auth.vesopa.com holds subs).
+- Socials (owner, 2026-10-24): instagram.com/vesopasoftware, x.com/VesopaSoftware,
+  reddit.com/u/Vesopasoftware, quora.com/profile/Vesopa-Software, facebook.com/vesopasoftware.
+- Brochure: Vesopa-EPOS-Hardware-Brochure.pdf (11 pages; POS-1562, POS-1566, KDS-181, KDS-151, kiosk,
+  OCPP-80A, OCPP-80D, card payments). KDS-181 spec PDF from OCOM.
+- Supplier: OCOM Technologies (ocominc.com). Product pages on site for POS-1566, OCPP-80A, K01 kiosk;
+  others from spec PDF / brochure. Images on cdn.cloudbf.com.
+- Dojo contacts: alex.radzio@dojo.tech, partnertech@dojo.tech, integrations@dojo.tech. Meirion cc.
+
+## Work
+1. [ ] Cashback at Pontardawe: read till logs / Dojo Connect responses, find failure, fix, release EPOS,
+       force-update Pontardawe (backup first).
+2. [ ] Subscriptions on Dojo (sandbox = Vesopa Kitchen's shared sandbox key):
+       - plans table (tiers, monthly/annual, setup fee, trial days, add-ons) editable in admin.vesopa.com
+       - checkout: Dojo payment intent with card saved for merchant-initiated charges (or Dojo's
+         recurring/subscription feature if the account has it), trial = £0 save-card then charge on day 14
+       - billing sweep: renewals, retries (3 over 7 days), dunning emails, suspend licences after grace,
+         restore on payment
+       - admin pages: subscriptions list, customer detail, failed payments, retry now, cancel, refund,
+         change plan, invoices
+3. [ ] Pricing "best options": keep the live term structure, tidy tiers, annual = 10x monthly, setup fee,
+       14-day trial; show on vesopaepos.com and vesopasoftware.com.
+4. [ ] Hardware shop: every product with supplier photos/videos/specs, retail price, brochure download,
+       on vesopaepos.com (+ vesopasoftware.com).
+5. [ ] Socials on every site footer + schema.org sameAs.
+6. [ ] Dojo certification email for Vesopa EPOS online payments / subscriptions (live API), branded,
+       from muzahid@vesopa.com to Alex + Dojo partner, cc Meirion. Show draft to the owner before sending.
+7. [ ] Pontardawe force update to the new EPOS after cashback fix (owner asked).

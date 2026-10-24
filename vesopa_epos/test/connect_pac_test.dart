@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:vesopa_epos/payments/connect_pac.dart';
+import 'package:vesopa_epos/payments/connect_ws.dart';
 import 'package:vesopa_epos/payments/payment_provider.dart';
 
 /// Every request the provider made, so the headers and payload shape can be
@@ -48,6 +49,30 @@ http.Client _sequence(List<Map<String, dynamic>> polls) {
   });
 }
 
+/// A socket that answers one sale and remembers the cashback it was asked for.
+class _FakeSocket extends ConnectSocket {
+  _FakeSocket(this.answer) : super(baseUrl: 'https://acct.connect.paymentsense.cloud', apiKey: 'test-key');
+
+  final Map<String, dynamic> answer;
+  int? cashbackSent;
+
+  @override
+  Future<void> connect() async {}
+
+  @override
+  Future<Map<String, dynamic>> performTransaction({
+    required String tid,
+    required int amountMinor,
+    String method = 'sale',
+    String currency = 'GBP',
+    bool cardholderNotPresent = false,
+    int? amountCashback,
+  }) async {
+    cashbackSent = amountCashback;
+    return answer;
+  }
+}
+
 void main() {
   setUp(_sent.clear);
 
@@ -61,6 +86,21 @@ void main() {
       final body = jsonDecode(post.body) as Map<String, dynamic>;
       expect(body['amount'], 1000);
       expect(body['amountCashback'], 2000);
+      expect(result.approved, isTrue);
+      expect(result.cashbackMinor, 2000);
+    });
+
+    test('with a live socket, cashback goes over the socket, not REST (2026-10-24)', () async {
+      // Pontardawe: REST answered "Unavailable terminal: Terminal is busy"
+      // every time while the socket held the reader.
+      final socket = _FakeSocket({
+        'transactionResult': 'SUCCESSFUL', 'amountBase': 860, 'amountCashback': 2000, 'amountTotal': 2860,
+      });
+      final provider = _provider(_client((r) async => http.Response('{"message":"Terminal is busy"}', 409)))
+        ..socket = socket;
+      final result = await provider.take(860, cashbackMinor: 2000);
+      expect(socket.cashbackSent, 2000);
+      expect(_sent.where((r) => r.method == 'POST'), isEmpty);
       expect(result.approved, isTrue);
       expect(result.cashbackMinor, 2000);
     });
