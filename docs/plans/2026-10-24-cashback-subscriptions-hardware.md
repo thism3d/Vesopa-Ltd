@@ -82,3 +82,13 @@ Owner's request (WhatsApp with Meirion + chat, 2026-10-24). Tick items off as th
   Dojo sandbox API verified; sandbox checkout page itself was down ("upstream connect error") -> retest £1+refund after deploy.
 - Dojo email 58f0ff7e: draft vesopa_server/tool/invite/dojo/Vesopa-Dojo-epos-live.eml, NOT SENT; waiting for owner OK.
   Send runs on the box: node tool/invite/dojo/send-dojo-invite.js --epos-live --send (uses Auth's SMTP).
+
+## LIVE 2026-10-24 ~20:35
+- Deployed: website additions + round 2 (747a9794): Try Vesopa EPOS -> /trial (3 interactive steps, £1 Dojo check,
+  auto-activates via webhook + 5-min sweep), WebP photos + shimmer, zoom lightbox, carousel captions below with animation,
+  testimonial motion. Subscriptions live in SANDBOX (tables + keys in place), admin.vesopa.com /subscriptions live.
+- Dojo certification email SENT 24 Oct (250 OK) to alex.radzio@dojo.tech + partnertech@dojo.tech, cc Meirion.
+- Test sign-up id 1 "TEST Vesopa QA (delete me)" pending_card: pay £1 on its sandbox checkout with Dojo test card
+  5200 0000 0000 1005, 12/29, CVV 020, "Test Cardholder" -> should auto-start the trial and refund the £1.
+  (Hidden browser pane could not type into Dojo's card iframe.) Cancel it in admin afterwards.
+- Deploy next time: python tool/deploy_vesopaepos_site.py --base 747a9794
