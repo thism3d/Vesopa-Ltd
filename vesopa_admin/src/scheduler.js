@@ -63,14 +63,58 @@ async function dailySummary(now = new Date()) {
   return true;
 }
 
+/**
+ * Subscriptions and tills (2026-10-24). vesopaepos.com suspends a subscription
+ * once a payment is still unpaid after 3 tries over 7 days; when it is linked
+ * to a back office venue, that venue's tills are paused here with a 48-hour
+ * grace period, through the same licences.act an admin would press. When the
+ * subscription is paid again they are resumed. adm_state remembers which
+ * pauses billing made, so a pause an admin made by hand is never undone.
+ */
+const BILLING_ACTOR = 'billing@admin.vesopa.com';
+function billingPrincipal() {
+  const roles = require('./roles');
+  const role = Object.keys(roles.ROLES).find((k) => roles.ROLES[k].can.includes('licences.run'));
+  return { email: BILLING_ACTOR, name: 'Automatic billing', active: true, role, roleLabel: 'Automatic billing', apps: '*' };
+}
+
+async function syncSubscriptionHolds() {
+  const { connected } = require('./upstream');
+  if (!connected('web')) return 0;
+  const web = require('./apps/web');
+  const licences = require('./licences');
+  const { rows } = await web.list(undefined, BILLING_ACTOR);
+  let changed = 0;
+  for (const s of rows || []) {
+    const key = `subhold:${s.id}`;
+    const held = await db.one('SELECT v FROM adm_state WHERE k = ?', [key]);
+    try {
+      if (s.status === 'suspended' && s.venue_id && !held) {
+        await licences.act(billingPrincipal(), s.venue_id, 'till', 'pause', { graceHours: 48, reason: `Subscription unpaid: ${s.plan_name}`, notify: true });
+        await db.run('INSERT INTO adm_state (k, v) VALUES (?, ?) ON DUPLICATE KEY UPDATE v = VALUES(v)', [key, String(s.venue_id)]);
+        changed += 1;
+      } else if (held && ['active', 'trial'].includes(s.status)) {
+        await licences.act(billingPrincipal(), Number(held.v), 'till', 'resume', {});
+        await db.run('DELETE FROM adm_state WHERE k = ?', [key]);
+        changed += 1;
+      }
+    } catch (e) {
+      console.warn(`[scheduler] subscription ${s.id}:`, e.message);
+    }
+  }
+  return changed;
+}
+
 function start() {
+  let n = 0;
   const tick = async () => {
     try { await runDue(); } catch (e) { console.warn('[scheduler] due:', e.message); }
     try { await dailySummary(); } catch (e) { console.warn('[scheduler] summary:', e.message); }
+    if (n++ % 10 === 0) { try { await syncSubscriptionHolds(); } catch (e) { console.warn('[scheduler] subscriptions:', e.message); } }
   };
   const t = setInterval(tick, 60 * 1000);
   t.unref();
   setTimeout(tick, 5000).unref();
 }
 
-module.exports = { start, runDue, dailySummary, summaryMail };
+module.exports = { start, runDue, dailySummary, summaryMail, syncSubscriptionHolds };

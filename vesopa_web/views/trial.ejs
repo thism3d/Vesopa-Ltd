@@ -1,0 +1,97 @@
+<%- include('partials/header') %>
+<%#
+  Start a subscription with a 14-day free trial (2026-10-24). A £1 card
+  check on Dojo's checkout, refunded straight away, starts the trial. The
+  live plans and prices come from web_plans; add-ons and the setup fee from
+  src/subscriptions.js. The summary updates in the browser; the server works
+  the price out again on submit and that is the one that counts.
+%>
+<section class="hw-hero">
+    <div class="v2-wrap" style="text-align:center">
+        <p class="vh-eyebrow">14 days free</p>
+        <h1 class="v2-title" style="font-size:clamp(34px,5vw,58px)">Start your trial. <span>Pay nothing for 14 days.</span></h1>
+        <p class="v2-lede" style="margin-left:auto;margin-right:auto">Pick a plan, check your card with a £1 payment that comes straight back, and we set up your till with you. 30-day money-back guarantee on every plan.</p>
+    </div>
+</section>
+
+<section class="v2-sec">
+    <form class="v2-wrap" method="post" action="/trial" data-trial>
+        <% if (error) { %><p role="alert" style="margin:0 0 20px;padding:14px 18px;border-radius:12px;background:#3a1210;color:#ffd7d2;border:1px solid #7a2a22"><%= error %></p><% } %>
+        <% if (!ready) { %><p style="margin:0 0 20px;padding:14px 18px;border-radius:12px;background:#2b2408;color:#f5e3a1;border:1px solid #6b5a14">Online sign-up opens very soon. In the meantime, <a href="/#try-vesopa">ask for a demo</a> and we will set you up.</p><% } %>
+        <% if (sandbox && ready) { %><p style="margin:0 0 20px;padding:10px 16px;border-radius:12px;background:#0f1c2e;color:#cfe2ff;border:1px solid #23466f;font-size:14px">Dojo sandbox: test cards only, no real money moves.</p><% } %>
+
+        <fieldset style="border:0;padding:0;margin:0">
+            <legend class="v2-title" style="font-size:22px;margin-bottom:16px">1. Your plan</legend>
+            <div class="v2-kit" style="margin-top:0;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))">
+                <% plans.forEach(function (p) { %>
+                <label class="v2-item" style="cursor:pointer;padding:22px;gap:8px;<%= String(p.period) === String(period) ? 'border-color:var(--lime)' : '' %>">
+                    <input type="radio" name="period" value="<%= p.period %>" <%= String(p.period) === String(period) ? 'checked' : '' %> data-price="<%= Math.round(p.discounted_price * 100) %>" data-months="<%= p.period_months || p.period %>" data-name="<%= String(p.name).replace(/\s*plan$/i, '') %>" style="accent-color:#a5c715;width:20px;height:20px">
+                    <span style="font:800 20px var(--font-display);text-transform:uppercase"><%= p.name %><% if (p.is_popular) { %> <small style="color:var(--lime);font-size:11px;letter-spacing:.08em">MOST POPULAR</small><% } %></span>
+                    <span style="font:800 32px var(--font-display)">£<%= p.price_per_month %><small style="font:500 14px var(--font-body)">/mo</small></span>
+                    <span class="sku"><%= gbp(Math.round(p.discounted_price * 100)) %> for <%= Number(p.period_months || p.period) === 1 ? 'the first month' : 'the first ' + (p.period_months || p.period) + ' months' %><% if (p.save_percentage) { %> · save <%= p.save_percentage %>%<% } %></span>
+                </label>
+                <% }); %>
+            </div>
+        </fieldset>
+
+        <div class="hw-layout" style="margin-top:36px">
+            <div style="flex:999 1 560px;min-width:0;display:grid;gap:24px">
+                <fieldset class="v2-panel" style="margin:0">
+                    <legend class="v2-title" style="font-size:20px;float:left;width:100%;margin-bottom:10px">2. Add-ons <small class="v2-note" style="text-transform:none;font-family:var(--font-body)">£15/month each</small></legend>
+                    <% Object.keys(addons).forEach(function (k) { const a = addons[k]; %>
+                    <label style="clear:both;display:flex;justify-content:space-between;align-items:center;gap:14px;padding:12px 0;border-top:1px solid rgba(255,255,255,.08)">
+                        <span><b style="display:block"><%= a.name %></b><span class="v2-note"><%= k === 'display' ? 'Your first customer display is included' : k === 'kitchen' ? 'A kitchen screen instead of the kitchen printer' : 'Another till on the same venue' %></span></span>
+                        <input type="number" min="0" max="20" name="addons[<%= k %>]" value="<%= (form.addons && form.addons[k]) || 0 %>" data-addon="<%= a.monthly_minor %>" data-label="<%= a.name %>" style="width:84px;min-height:46px;padding:0 10px;border-radius:12px;border:1px solid rgba(255,255,255,.25);background:#000;color:#fff;font:700 16px var(--font-body)">
+                    </label>
+                    <% }); %>
+                </fieldset>
+
+                <fieldset class="v2-panel" style="margin:0;display:grid;gap:14px">
+                    <legend class="v2-title" style="font-size:20px;margin-bottom:6px">3. Your details</legend>
+                    <% [['venue','Venue name','text','The Red Lion',true],['name','Your name','text','',false],['email','Email','email','owner@venue.co.uk',true],['phone','Phone','tel','',false]].forEach(function (f) { %>
+                    <label style="display:grid;gap:6px;font-size:14px;color:var(--text-dim)"><%= f[1] %><%= f[4] ? '' : ' (optional)' %>
+                        <input type="<%= f[2] %>" name="<%= f[0] %>" value="<%= form[f[0]] || '' %>" placeholder="<%= f[3] %>" <%= f[4] ? 'required' : '' %> autocomplete="<%= f[0] === 'venue' ? 'organization' : f[0] === 'name' ? 'name' : f[0] %>" style="min-height:48px;padding:0 14px;border-radius:12px;border:1px solid rgba(255,255,255,.22);background:#000;color:#fff;font:16px var(--font-body)">
+                    </label>
+                    <% }); %>
+                    <input type="text" name="website" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px">
+                </fieldset>
+            </div>
+
+            <aside class="hw-cart" aria-label="Summary" style="background:var(--lime);color:var(--on-lime);border:0">
+                <h2 style="color:var(--on-lime)">Summary</h2>
+                <ul class="hw-lines" data-t-lines style="color:var(--on-lime)">
+                    <% if (q) q.first.lines.forEach(function (l) { %><li><span><%= l.label %></span><b><%= gbp(l.minor) %></b></li><% }); %>
+                </ul>
+                <div class="hw-tot" style="color:var(--on-lime);border-color:rgba(0,0,0,.2)">
+                    <div><span>VAT (20%)</span><span data-t-vat><%= q ? gbp(q.first.vat) : '' %></span></div>
+                    <div class="big" style="color:var(--on-lime)"><span>Today</span><b style="color:var(--on-lime)">£1.00</b></div>
+                    <div style="color:var(--on-lime)"><span>Refunded straight away</span><span>−£1.00</span></div>
+                    <div style="color:var(--on-lime);font-weight:700"><span>After <%= trialDays %> days</span><span data-t-total><%= q ? gbp(q.first.total) : '' %></span></div>
+                </div>
+                <button type="submit" class="v2-btn" <%= ready ? '' : 'disabled' %> style="margin-top:20px;width:100%;justify-content:center;background:#000;color:#fff !important;border:0;cursor:pointer;box-shadow:none">Check my card and start</button>
+                <p style="margin:14px 0 0;font-size:13px;line-height:1.5">You go to Dojo's secure page: card, Apple Pay or Google Pay. We never see your card number. At the end of the trial we email you a link to pay; nothing is taken automatically.</p>
+            </aside>
+        </div>
+    </form>
+</section>
+<script>
+(function () {
+  var f = document.querySelector('[data-trial]'); if (!f) return;
+  var SETUP = <%= setupFee %>;
+  var gbp = function (m) { return '£' + (m / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+  function update() {
+    var p = f.querySelector('input[name=period]:checked'); if (!p) return;
+    var months = +p.dataset.months, lines = [[p.dataset.name + ' plan, ' + months + ' month' + (months === 1 ? '' : 's'), +p.dataset.price]];
+    f.querySelectorAll('[data-addon]').forEach(function (i) { var n = Math.max(0, Math.min(20, parseInt(i.value, 10) || 0)); if (n) lines.push([n + ' × ' + i.dataset.label + ' (' + months + ' mo)', n * +i.dataset.addon * months]); });
+    if (months < 12) lines.push(['Setup and installation (once)', SETUP]);
+    var net = lines.reduce(function (t, l) { return t + l[1]; }, 0), vat = Math.round(net * 0.2);
+    var ul = f.querySelector('[data-t-lines]'); ul.innerHTML = '';
+    lines.forEach(function (l) { var li = document.createElement('li'); var a = document.createElement('span'); a.textContent = l[0]; var b = document.createElement('b'); b.textContent = gbp(l[1]); li.appendChild(a); li.appendChild(b); ul.appendChild(li); });
+    f.querySelector('[data-t-vat]').textContent = gbp(vat);
+    f.querySelector('[data-t-total]').textContent = gbp(net + vat);
+    f.querySelectorAll('input[name=period]').forEach(function (r) { r.closest('label').style.borderColor = r.checked ? 'var(--lime)' : ''; });
+  }
+  f.addEventListener('change', update); f.addEventListener('input', update); update();
+})();
+</script>
+<%- include('partials/footer') %>

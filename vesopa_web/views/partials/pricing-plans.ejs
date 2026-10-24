@@ -79,6 +79,19 @@
 
     </div>
 
+    <%# 2026-10-24: every plan can also start with a 14-day free trial (a £1 card check, refunded at once). %>
+    <div class="v2-panel" style="max-width:1100px;margin:28px auto 0;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px">
+        <div style="flex:1 1 360px;min-width:0">
+            <h3 style="margin:0">Try any plan free for 14 days</h3>
+            <p class="v2-note" style="margin:6px 0 0">A £1 card check that comes straight back, then nothing to pay until the trial ends. Card, Apple Pay or Google Pay through Dojo.</p>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:10px">
+<% cards.forEach(function (plan) { %>
+            <a class="v2-btn<%= plan.is_popular ? '' : ' ghost' %>" href="/trial?period=<%= plan.period %>"><%= plan.name %> trial</a>
+<% }); %>
+        </div>
+    </div>
+
 <%#
   What a plan includes, and what is charged on top.
 

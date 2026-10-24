@@ -1,0 +1,30 @@
+<%- include('partials/header') %>
+<%#
+  Back from Dojo: the trial card check (sub) or a pay link (inv). While Dojo
+  is still confirming, the page looks again every few seconds.
+%>
+<%
+  var state, title, text;
+  if (sub) {
+    if (sub.status === 'trial' || sub.status === 'active') { state = 'ok'; title = 'Your trial has started'; text = 'Your £1 card check has been refunded. Your free trial runs until ' + longDate(sub.trial_ends_at) + '. We have emailed you the details and will be in touch to set up your till.'; }
+    else if (sub.status === 'pending_card') { state = 'wait'; title = 'Checking your card'; text = 'Dojo is confirming the £1 card check. This page updates by itself.'; }
+    else { state = 'bad'; title = 'That did not finish'; text = 'The card check did not go through, so nothing was set up. You can try again.'; }
+  } else if (inv) {
+    if (inv.status === 'paid') { state = 'ok'; title = 'Payment received'; text = 'Thank you. ' + gbp(inv.total_minor) + ' has been paid for invoice ' + inv.number + '. A receipt is on its way by email.'; }
+    else { state = 'wait'; title = 'Confirming your payment'; text = 'Dojo is confirming the payment for invoice ' + inv.number + '. This page updates by itself.'; }
+  } else { state = 'bad'; title = 'Link not recognised'; text = 'We could not find that sign-up or invoice. If you were charged, reply to any of our emails and we will sort it out.'; }
+%>
+<% if (state === 'wait') { %><meta http-equiv="refresh" content="4"><% } %>
+<section class="v2-sec" style="min-height:52vh;display:flex;align-items:center">
+    <div class="v2-wrap" style="max-width:720px;text-align:center">
+        <p class="vh-eyebrow"><%= state === 'ok' ? 'All done' : state === 'wait' ? 'One moment' : 'Not finished' %></p>
+        <h1 class="v2-title" style="font-size:clamp(30px,4vw,48px)"><%= title %></h1>
+        <p class="v2-lede" style="margin-left:auto;margin-right:auto"><%= text %></p>
+        <div class="v2-actions" style="justify-content:center">
+            <% if (state === 'bad') { %><a class="v2-btn" href="/trial">Try again</a><% } %>
+            <a class="v2-btn ghost" href="/download">Download Vesopa</a>
+            <a class="v2-btn ghost" href="/">Back to the home page</a>
+        </div>
+    </div>
+</section>
+<%- include('partials/footer') %>

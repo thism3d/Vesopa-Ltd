@@ -21,6 +21,7 @@ const licences = require('./licences');
 const releases = require('./releases');
 const epos = require('./apps/epos');
 const hosting = require('./apps/hosting');
+const web = require('./apps/web');
 const { connected } = require('./upstream');
 const { createClient } = require('./oidc');
 
@@ -68,6 +69,7 @@ function describe(action) {
   if (parts[0] === 'admin') return `Admin ${parts[1] || ''}`.trim();
   if (parts[0] === 'catalogue') return 'Catalogue price or switch changed';
   if (parts[0] === 'hosting') return `Hosting service ${DID[parts[1]] || parts[1]}`;
+  if (parts[0] === 'subscription') return `Subscription: ${String(parts[1] || '').replace(/_/g, ' ')}`;
   if (parts[0] === 'release') return `Installer ${{ download: 'downloaded', withdraw: 'withdrawn', restore: 'put back' }[parts[1]] || parts[1]}`;
   if (parts[0] === 'versions') return { set: 'Venue versions set', default: 'Default version set', updates: 'Update prompts switched' }[parts[1]] || 'Versions changed';
   const item = catalogue.BY_KEY[parts[0]];
@@ -308,6 +310,61 @@ router.post('/hosting/:id', signedIn, csrf, allow('licences.run', 'hosting'), as
     flash(res, 'bad', e.message);
   }
   res.redirect(303, '/hosting');
+});
+
+// ---- Subscriptions (vesopaepos.com, billed through Dojo) --------------------
+
+// Who may do what: chasing a payment is an operational call (licences.run);
+// anything that changes what is charged or refunds money is licences.sell.
+const SUB_ACTIONS = {
+  retry: 'licences.run', card_link: 'licences.run', extend_trial: 'licences.run', link_venue: 'licences.run', note: 'licences.run',
+  change_plan: 'licences.sell', refund: 'licences.sell', cancel: 'licences.sell', reactivate: 'licences.sell',
+};
+
+router.get('/subscriptions', signedIn, allow('licences.view'), async (req, res, next) => {
+  try {
+    const show = String(req.query.show || '');
+    let data = null;
+    let error = null;
+    try { data = await web.list(show || undefined, req.me.email); } catch (e) { error = e.message; }
+    const q = String(req.query.q || '').trim().toLowerCase();
+    let rows = data ? data.rows : [];
+    if (q) rows = rows.filter((r) => `${r.venue_name} ${r.email} ${r.plan_name}`.toLowerCase().includes(q));
+    page(req, res, 'subscriptions', { title: 'Subscriptions', data, rows, error, show, q });
+  } catch (e) { next(e); }
+});
+
+router.get('/subscriptions/:id', signedIn, allow('licences.view'), async (req, res, next) => {
+  try {
+    let d = null;
+    let plans = null;
+    let error = null;
+    try { [d, plans] = await Promise.all([web.detail(req.params.id, req.me.email), web.plans(req.me.email)]); } catch (e) { if (e.status === 404) return next(); error = e.message; }
+    page(req, res, 'subscription', { title: 'Subscriptions', d, plans, error, actions: SUB_ACTIONS });
+  } catch (e) { next(e); }
+});
+
+router.post('/subscriptions/:id/:action', signedIn, csrf, async (req, res) => {
+  const back = `/subscriptions/${Number(req.params.id)}`;
+  const action = String(req.params.action);
+  const perm = SUB_ACTIONS[action];
+  if (!perm || !roles.can(req.me, perm)) {
+    flash(res, 'bad', `Your role (${req.me.roleLabel}) cannot do that.`);
+    return res.redirect(303, back);
+  }
+  const b = req.body || {};
+  try {
+    const r = await web.act(req.params.id, action, {
+      days: b.days, period: b.period, amount: b.amount, when: b.when, venue_id: b.venue_id, notes: b.notes,
+      addons: b.display !== undefined ? { display: b.display, kitchen: b.kitchen, till: b.till } : undefined,
+    }, req.me.email);
+    await audit.record({ actor: req.me.email, action: `subscription.${action}`, app: 'web', item: `subscription:${Number(req.params.id)}`, detail: r.message });
+    flash(res, 'ok', r.message || 'Done.');
+  } catch (e) {
+    await audit.record({ actor: req.me.email, action: `subscription.${action}`, app: 'web', item: `subscription:${Number(req.params.id)}`, detail: e.message, ok: false });
+    flash(res, 'bad', e.message);
+  }
+  res.redirect(303, back);
 });
 
 // ---- Audit ------------------------------------------------------------------

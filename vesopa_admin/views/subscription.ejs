@@ -1,0 +1,91 @@
+<%- include('_top') %>
+<%
+  const PILL = { active: 'green', trial: 'grey', pending_card: 'grey', past_due: 'amber', suspended: 'red', cancelled: 'grey', ended: 'grey' };
+  const WORD = { active: 'Active', trial: 'Trial', pending_card: 'Card check not done', past_due: 'Payment failed', suspended: 'Suspended', cancelled: 'Cancelled', ended: 'Ended' };
+  const d8 = (v) => (v ? new Date(v).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' }) : '-');
+  const may = (a) => can(actions[a]);
+%>
+<p><a href="/subscriptions">← All subscriptions</a></p>
+<% if (error) { %><div class="flash bad"><%= error %></div><% } %>
+<% if (d) { const s = d.sub; const open = d.invoices.find((i) => i.status === 'open' || i.status === 'failed'); const addons = JSON.parse(s.addons_json || '[]'); %>
+<section class="card">
+  <div class="head">
+    <div><h2><%= s.venue_name %></h2><p class="muted"><%= s.contact_name || '' %> <%= s.email %> <%= s.phone || '' %></p></div>
+    <span class="pill <%= PILL[s.status] || 'grey' %>"><%= WORD[s.status] || s.status %></span>
+  </div>
+  <dl class="facts">
+    <dt>Plan</dt><dd><%= s.plan_name %>, <%= s.period_months %> month term · renews at <%= money(s.renewal_minor + s.addons_minor) %> + VAT</dd>
+    <dt>Add-ons</dt><dd><%= addons.length ? addons.map((a) => a.qty + ' × ' + a.name).join(', ') : 'none' %></dd>
+    <dt>Trial</dt><dd><%= s.trial_ends_at ? 'ends ' + d8(s.trial_ends_at) : '-' %></dd>
+    <dt>Paid until</dt><dd><%= s.period_end ? d8(s.period_end) : '-' %><%= s.cancel_at_period_end ? ' · cancels then' : '' %></dd>
+    <dt>Card</dt><dd><%= s.card_label || '-' %> (held by Dojo, <%= s.dojo_mode %>)</dd>
+    <dt>Back office venue</dt><dd><%= s.venue_id ? 'venue ' + s.venue_id : 'not linked: link it so a suspension pauses the right tills' %></dd>
+  </dl>
+  <% if (open) { %>
+  <p class="flash <%= open.status === 'failed' ? 'bad' : 'ok' %>">
+    <b><%= open.number %></b> · <%= money(open.total_minor) %> incl. VAT · due <%= d8(open.due_at) %>
+    <%= open.status === 'failed' ? ` · failed ${open.attempts} time${open.attempts === 1 ? '' : 's'}${open.last_error ? ' (' + open.last_error + ')' : ''}${open.next_attempt_at ? ' · next try ' + d8(open.next_attempt_at) : ' · no more tries'}` : '' %>
+    <% if (open.pay_url) { %> · <a href="<%= open.pay_url %>" target="_blank" rel="noopener">pay link</a><% } %>
+  </p>
+  <% } %>
+</section>
+
+<div class="cols">
+  <section class="card">
+    <h2>Actions</h2>
+    <div class="stack">
+      <% if (open && may('retry')) { %>
+      <form method="post" action="/subscriptions/<%= s.id %>/retry" class="inline"><input type="hidden" name="_csrf" value="<%= me.csrf %>"><button class="btn primary" type="submit">Retry payment now</button></form>
+      <% } %>
+      <% if (open && may('card_link')) { %>
+      <form method="post" action="/subscriptions/<%= s.id %>/card_link" class="inline"><input type="hidden" name="_csrf" value="<%= me.csrf %>"><button class="btn" type="submit">Email a new payment link</button></form>
+      <% } %>
+      <% if (s.status === 'trial' && may('extend_trial')) { %>
+      <form method="post" action="/subscriptions/<%= s.id %>/extend_trial" class="inline"><input type="hidden" name="_csrf" value="<%= me.csrf %>"><input name="days" type="number" min="1" max="60" value="7" aria-label="Days" style="width:70px"> <button class="btn" type="submit">Extend trial (days)</button></form>
+      <% } %>
+      <% if (may('link_venue')) { %>
+      <form method="post" action="/subscriptions/<%= s.id %>/link_venue" class="inline"><input type="hidden" name="_csrf" value="<%= me.csrf %>"><input name="venue_id" type="number" min="1" value="<%= s.venue_id || '' %>" placeholder="Venue id" aria-label="Back office venue id" style="width:110px"> <button class="btn" type="submit">Link to venue</button></form>
+      <% } %>
+      <% if (plans && may('change_plan') && !['cancelled','ended'].includes(s.status)) { const q = (k) => (addons.find((a) => a.key === k) || {}).qty || 0; %>
+      <form method="post" action="/subscriptions/<%= s.id %>/change_plan" class="inline"><input type="hidden" name="_csrf" value="<%= me.csrf %>">
+        <select name="period" aria-label="Plan"><% for (const p of plans.plans) { %><option value="<%= p.period %>" <%= Number(p.period_months || p.period) === s.period_months ? 'selected' : '' %>><%= p.name %></option><% } %></select>
+        displays <input name="display" type="number" min="0" max="20" value="<%= q('display') %>" style="width:56px" aria-label="Extra displays">
+        kitchen <input name="kitchen" type="number" min="0" max="20" value="<%= q('kitchen') %>" style="width:56px" aria-label="Kitchen screens">
+        tills <input name="till" type="number" min="0" max="20" value="<%= q('till') %>" style="width:56px" aria-label="Extra tills">
+        <button class="btn" type="submit" data-confirm="Change the plan from the next renewal?">Change plan</button></form>
+      <% } %>
+      <% if (may('refund') && d.invoices.some((i) => i.status === 'paid')) { %>
+      <form method="post" action="/subscriptions/<%= s.id %>/refund" class="inline"><input type="hidden" name="_csrf" value="<%= me.csrf %>"><input name="amount" placeholder="£ (blank = all of the last payment)" aria-label="Refund amount" style="width:220px"> <button class="btn amber" type="submit" data-confirm="Refund this to the customer's card through Dojo?">Refund last payment</button></form>
+      <% } %>
+      <% if (may('cancel') && !['cancelled','ended'].includes(s.status)) { %>
+      <form method="post" action="/subscriptions/<%= s.id %>/cancel" class="inline"><input type="hidden" name="_csrf" value="<%= me.csrf %>">
+        <button class="btn red" name="when" value="end" type="submit" data-confirm="Cancel at the end of the paid term?">Cancel at term end</button>
+        <button class="btn red" name="when" value="now" type="submit" data-confirm="Cancel NOW? Open invoices are voided.">Cancel now</button></form>
+      <% } %>
+      <% if (may('reactivate') && (s.cancel_at_period_end || s.status === 'cancelled')) { %>
+      <form method="post" action="/subscriptions/<%= s.id %>/reactivate" class="inline"><input type="hidden" name="_csrf" value="<%= me.csrf %>"><button class="btn" type="submit">Undo cancel</button></form>
+      <% } %>
+      <% if (may('note')) { %>
+      <form method="post" action="/subscriptions/<%= s.id %>/note"><input type="hidden" name="_csrf" value="<%= me.csrf %>"><textarea name="notes" rows="3" style="width:100%" aria-label="Notes" placeholder="Notes for the team"><%= s.notes || '' %></textarea><button class="btn" type="submit">Save notes</button></form>
+      <% } %>
+    </div>
+  </section>
+  <section class="card">
+    <h2>History</h2>
+    <ul class="alerts">
+      <% for (const e of d.events) { %><li class="<%= /failed|suspend|refund_failed/.test(e.kind) ? 'red' : /refund|cancel/.test(e.kind) ? 'amber' : '' %>"><b><%= e.kind.replace(/[._]/g, ' ') %></b> <span class="muted"><%= d8(e.at) %> · <%= e.actor %></span><% if (e.detail) { %><small class="block muted"><%= e.detail %></small><% } %></li><% } %>
+    </ul>
+  </section>
+</div>
+
+<section class="card flush">
+  <table class="list">
+    <thead><tr><th>Invoice</th><th>Kind</th><th>Period</th><th>Total</th><th>Status</th><th>Paid</th></tr></thead>
+    <% for (const i of d.invoices) { %>
+    <tr><td><b><%= i.number %></b></td><td><%= i.kind %></td><td class="nowrap"><%= d8(i.period_start).slice(0, 11) %> – <%= d8(i.period_end).slice(0, 11) %></td><td><%= money(i.total_minor) %><% if (i.refunded_minor) { %><small class="muted block">refunded <%= money(i.refunded_minor) %></small><% } %></td>
+    <td><span class="pill <%= i.status === 'paid' ? 'green' : i.status === 'failed' ? 'red' : 'grey' %>"><%= i.status %></span></td><td class="muted"><%= i.paid_at ? d8(i.paid_at) : '' %></td></tr>
+    <% } %>
+  </table>
+</section>
+<% } %>
+<%- include('_bottom') %>

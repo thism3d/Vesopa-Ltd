@@ -12,6 +12,8 @@ const { pagesRouter } = require('./routes/pages');
 const { formsRouter } = require('./routes/forms');
 const { checkoutApiRouter } = require('./routes/checkout-api');
 const { blogPagesRouter } = require('./routes/blog-pages');
+const { subscriptionsRouter } = require('./routes/subscriptions');
+const subscriptions = require('./subscriptions');
 const { adminRouter } = require('./admin');
 const { verifyMail } = require('./mailer');
 const plansStore = require('./plans-store');
@@ -283,6 +285,8 @@ app.use(
 
 // Mounted at /api, not /api/paypal: the router now carries Stripe as well, and
 // each route names its own provider. The PayPal paths it serves are unchanged.
+// Subscriptions first: it owns /api/subs, which the checkout API would otherwise see.
+app.use('/', subscriptionsRouter);
 app.use('/api', checkoutApiRouter);
 app.use('/admin', adminRouter);
 app.use('/', formsRouter);
@@ -321,6 +325,9 @@ app.use((err, req, res, _next) => {
       'Sorry — we hit a problem handling that. Please try again in a moment, or <a href="/help">contact support</a> if it keeps happening.',
   });
 });
+
+// Trial reminders, first charges, renewals and retries, every 15 minutes.
+subscriptions.start();
 
 app.listen(PORT, () => {
   console.log(`vesopaepos.com listening on http://localhost:${PORT}`);

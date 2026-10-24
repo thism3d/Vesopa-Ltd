@@ -1,0 +1,43 @@
+<%- include('_top') %>
+<%
+  const PILL = { active: 'green', trial: 'grey', pending_card: 'grey', past_due: 'amber', suspended: 'red', cancelled: 'grey', ended: 'grey' };
+  const WORD = { active: 'Active', trial: 'Trial', pending_card: 'Card check not done', past_due: 'Payment failed', suspended: 'Suspended', cancelled: 'Cancelled', ended: 'Ended' };
+  const d8 = (v) => (v ? new Date(v).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Europe/London' }) : '-');
+%>
+<% if (error) { %><div class="flash bad"><%= error %></div><% } %>
+<% if (data) { const k = data.kpi || {}; %>
+<% if (!data.dojo.configured) { %><div class="flash bad">Dojo is not set up on vesopaepos.com yet (DOJO_SUBS_KEY). Sign-ups are closed until it is.</div><% } else if (data.dojo.mode !== 'live') { %><div class="flash ok">Dojo SANDBOX: test payments only, no real money moves.</div><% } %>
+<section class="tiles">
+  <div class="tile"><span>Monthly recurring</span><b><%= money(k.mrr_minor) %></b><small>ex VAT, active and retrying</small></div>
+  <a class="tile" href="/subscriptions?show=active"><span>Active</span><b><%= k.active || 0 %></b><small>paying venues</small></a>
+  <a class="tile" href="/subscriptions?show=trial"><span>On trial</span><b><%= k.trial || 0 %></b><small>14 days free</small></a>
+  <a class="tile <%= k.past_due ? 'warn' : '' %>" href="/subscriptions?show=past_due"><span>Failed payments</span><b><%= k.past_due || 0 %></b><small>retried 3 times over 7 days</small></a>
+  <a class="tile <%= k.suspended ? 'warn' : '' %>" href="/subscriptions?show=suspended"><span>Suspended</span><b><%= k.suspended || 0 %></b><small>tills pause after a 48-hour grace</small></a>
+</section>
+<% } %>
+<form class="bar" method="get" action="/subscriptions">
+  <input name="q" value="<%= q %>" placeholder="Find a venue, email or plan…" aria-label="Find">
+  <div class="chips">
+    <% for (const [v, t] of [['', 'All'], ['trial', 'Trials'], ['past_due', 'Failed payments'], ['suspended', 'Suspended'], ['active', 'Active'], ['cancelled', 'Cancelled']]) { %>
+      <a class="chip <%= show === v ? 'on' : '' %>" href="/subscriptions<%= v ? '?show=' + v : '' %>"><%= t %></a>
+    <% } %>
+  </div>
+  <span class="muted"><%= rows.length %> subscription<%= rows.length === 1 ? '' : 's' %></span>
+</form>
+<section class="card flush">
+  <table class="list">
+    <thead><tr><th>Venue</th><th>Plan</th><th>Status</th><th>Next charge</th><th>Card</th><th>Venue link</th></tr></thead>
+    <% for (const s of rows) { %>
+    <tr>
+      <td><a href="/subscriptions/<%= s.id %>"><b><%= s.venue_name %></b></a><small class="muted block"><%= s.email %></small></td>
+      <td><%= s.plan_name %><small class="muted block"><%= s.period_months %> month term<%= s.addons_minor ? ' + add-ons' : '' %></small></td>
+      <td><span class="pill <%= PILL[s.status] || 'grey' %>"><%= WORD[s.status] || s.status %></span><% if (s.cancel_at_period_end) { %><small class="muted block">cancels at term end</small><% } %></td>
+      <td class="nowrap"><%= s.next_charge_minor ? money(s.next_charge_minor) : '-' %><small class="muted block"><%= s.status === 'trial' ? 'trial ends ' + d8(s.trial_ends_at) : d8(s.next_charge_at) %></small></td>
+      <td class="muted"><%= s.card_label || '-' %></td>
+      <td><%= s.venue_id ? 'venue ' + s.venue_id : '' %><% if (!s.venue_id && ['trial','active','past_due'].includes(s.status)) { %><span class="pill amber">link it</span><% } %></td>
+    </tr>
+    <% } %>
+    <% if (!rows.length) { %><tr><td colspan="6" class="muted">No subscriptions here yet. They appear when venues start a trial on vesopaepos.com/trial.</td></tr><% } %>
+  </table>
+</section>
+<%- include('_bottom') %>

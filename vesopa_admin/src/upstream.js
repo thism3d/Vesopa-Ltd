@@ -23,7 +23,7 @@ class UpstreamError extends Error {
   }
 }
 
-const NAMES = { epos: 'the back office', gift: 'Vesopa Gift', hosting: 'Vesopa Cloud' };
+const NAMES = { epos: 'the back office', gift: 'Vesopa Gift', hosting: 'Vesopa Cloud', web: 'vesopaepos.com billing' };
 
 function request(method, url, headers, payload, timeout) {
   return new Promise((resolve, reject) => {

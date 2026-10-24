@@ -30,6 +30,8 @@ const config = {
     epos: { base: trimSlash(process.env.EPOS_API || 'http://127.0.0.1:5060'), key: process.env.EPOS_SERVICE_KEY || '' },
     gift: { base: trimSlash(process.env.GIFT_API || 'http://127.0.0.1:5070'), key: process.env.GIFT_SERVICE_KEY || '' },
     hosting: { base: trimSlash(process.env.HOSTING_API || 'http://127.0.0.1:5075'), key: process.env.HOSTING_SERVICE_KEY || '' },
+    // vesopaepos.com subscriptions (Dojo billing): vesopa_web/src/routes/subscriptions.js
+    web: { base: trimSlash(process.env.WEB_API || 'http://127.0.0.1:5065'), key: process.env.SUBS_SERVICE_KEY || '' },
   },
 
   // Our own Windows installers (src/releases.js). Outside the app directory,
