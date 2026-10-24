@@ -43,8 +43,9 @@ async function call(method, path, body) {
       version: VERSION,
       Accept: 'application/json',
       ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
-      // A retried request must not charge twice.
-      ...(method === 'POST' ? { 'Idempotency-Key': crypto.randomUUID() } : {}),
+      // Dojo's refund endpoint requires an `idempotencyKey` header, spelt exactly
+      // so ("Idempotency-Key" is refused as a validation error, 2026-10-24).
+      ...(method === 'POST' && /\/refunds$/.test(path) ? { idempotencyKey: crypto.randomUUID() } : {}),
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,
     signal: AbortSignal.timeout(30000),
@@ -54,7 +55,10 @@ async function call(method, path, body) {
   try { json = text ? JSON.parse(text) : null; } catch { /* not JSON */ }
   if (!res.ok) {
     const said = (json && (json.detail || json.title || json.message || (json.errors && JSON.stringify(json.errors)))) || `HTTP ${res.status}`;
-    throw new DojoError(res.status, `Dojo: ${String(said).slice(0, 220)}`, json);
+    // Dojo's error body carries a traceId naming the failed request (checklist: handle 4xx/5xx).
+    const trace = json && (json.traceId || json.TraceId);
+    console.error(`[dojo] ${method} ${path} -> ${res.status}${trace ? ` traceId ${trace}` : ''}`);
+    throw new DojoError(res.status, `Dojo: ${String(said).slice(0, 220)}${trace ? ` (trace ${trace})` : ''}`, json);
   }
   return json;
 }
