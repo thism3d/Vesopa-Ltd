@@ -43,6 +43,17 @@ const _tagline = String.fromEnvironment('VENUE_TAGLINE');
 /// no "privacy" link yet. Its store listings already name these.
 const _venuePrivacy = {'pontardawe-rfc': 'https://pontardawerfc.com/privacy'};
 
+/// A venue's own pages for this app, on its own website, in place of
+/// Vesopa's (the owner, 2026-10-25: "All the privacy URLs should be in the
+/// pontardawerfc official website"). The store listings name the same ones.
+const _venueAppPages = {
+  'pontardawe-rfc': (
+    privacy: 'https://pontardawerfc.com/app/privacy',
+    choices: 'https://pontardawerfc.com/app/privacy-choices',
+    terms: 'https://pontardawerfc.com/app/terms',
+  ),
+};
+
 /// Vesopa's own pages, which every venue's app shares.
 const vesopaPrivacy = 'https://loyalty.vesopa.com/privacy';
 const vesopaTerms = 'https://auth.vesopa.com/terms';
@@ -143,6 +154,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final ios = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
     final phone = !kIsWeb && (ios || defaultTargetPlatform == TargetPlatform.android);
     final privacy = brand.links['privacy'] ?? _venuePrivacy[brand.slug];
+    final appPages = _venueAppPages[brand.slug];
     final venueName = brand.venue.isNotEmpty ? brand.venue : brand.name;
     final passkeys = (account?['passkeys'] as List?)?.length ?? 0;
     final devices = (account?['devices'] as List?)?.length ?? 0;
@@ -305,13 +317,20 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                       icon: Icons.shield_outlined,
                       title: privacy == null ? 'Privacy policy' : 'App privacy policy',
                       subtitle: 'What this app keeps, why, and for how long.',
-                      onTap: () => _open(vesopaPrivacy),
+                      onTap: () => _open(appPages?.privacy ?? vesopaPrivacy),
                     ),
+                    if (appPages != null)
+                      _LinkRow(
+                        icon: Icons.tune,
+                        title: 'Your privacy choices',
+                        subtitle: 'What is optional, and how to switch it off.',
+                        onTap: () => _open(appPages.choices),
+                      ),
                     _LinkRow(
                       icon: Icons.gavel_outlined,
-                      title: 'Terms of use',
+                      title: appPages == null ? 'Terms of use' : 'Terms and licences',
                       subtitle: 'The agreement for using this app.',
-                      onTap: () => _open(vesopaTerms),
+                      onTap: () => _open(appPages?.terms ?? vesopaTerms),
                     ),
                     ListTile(
                       contentPadding: EdgeInsets.zero,

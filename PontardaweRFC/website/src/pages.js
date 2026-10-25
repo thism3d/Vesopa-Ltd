@@ -702,13 +702,19 @@ function privacyPage() {
     lead: 'What we collect, why, and what you can ask us to do with it.',
     description: `How ${c.name} uses personal information on pontardawerfc.com, the Pontardawe RFC app, food orders, tickets and the club helper.`,
     sections: [
+      ['app', 'Using the Pontardawe RFC app?', `<div class="app-privacy-box"><p>The app for iPhone, iPad, Apple Watch, Android and Wear OS, and member.pontardawerfc.com, have their own pages:</p><ul>
+<li><a href="/app/privacy"><b>App privacy policy</b></a>: what the app keeps, why, and for how long.</li>
+<li><a href="/app/privacy-choices"><b>Your privacy choices</b></a>: switch off notifications, remove your number or photo.</li>
+<li><a href="/app/terms"><b>Terms and licences</b></a>: the app's terms of use and open-source licences.</li>
+<li><a href="https://auth.vesopa.com/delete-account/pontardawe-rfc"><b>Delete your account</b></a>, without the app.</li>
+</ul></div>`],
       ['who', 'Who we are', `<p>This website, the members' app at member.pontardawerfc.com and the Pontardawe RFC app for iPhone, iPad and Android are run by ${contact} ("the club", "we"). The club is the controller of your personal information. Our software provider, Vesopa EPOS (Vesopa Software Ltd, Wales), runs the website, the ordering system, the till and the members' app for us as our processor.</p>`],
       ['browse', 'Visiting the website', `<p>We do not use analytics, advertising or tracking of any kind, and we set no cookies. Like every web server, ours keeps short technical logs (IP address, the page asked for, the time and your browser's description) to keep the site secure and working. These are kept only as long as needed for that, normally a few weeks.</p><p>Your browser keeps your basket and your helper conversation on your own device (local storage) so they survive a reload. That never leaves your device unless you place an order or ask a question, and you can clear it at any time in your browser.</p>`],
       ['orders', 'Ordering food', `<p>When you order, we receive the dishes you chose, your table (for orders in the clubhouse), and the name, phone number and note you give us. We use them to make your order, to call your name when it's ready, and to ring you if there is a problem with it. The order goes onto the club's till and kitchen screen, and is kept with our sales records for as long as the law requires us to keep accounts (six years). Our lawful basis is to take the steps you asked for (contract).</p><p>You can pay at the bar, or pay online by card when you order. Online card payments (cards, Apple Pay and Google Pay) are taken on the secure checkout page of our payment provider, Dojo (Paymentsense Limited), who process your card details under their own security standards (PCI DSS). We never see or store your card number; we receive only whether the payment went through, its amount and Dojo's reference for it, so we can refund it if needed.</p>`],
       ['tickets', 'Buying tickets', `<p>When you buy tickets online we receive your name, email address and, if you give it, your mobile number, with the tickets you chose. We use them to send your tickets and their QR codes, to check them at the gate, and to contact you if the event changes. Card payments are taken by our payment provider, Dojo (Paymentsense Ltd); we never see or store your card number. Ticket sales are kept with our sales records for six years. Our lawful basis is to take the steps you asked for (contract).</p>`],
-      ['members', 'The members\' app', `<p>To give you a members' card we hold your name, email address, membership number, your membership status, and the visits and purchases made with your card, so that the members' discount is applied and you can see what you've spent and saved. Optional: your phone number, a profile photo, and your location while the app is open (to show you are at the club). If you allow notifications, we send club news and offers; you can turn them off at any time. Our lawful bases are your membership (contract), and your consent for notifications and anything optional.</p><p><b>Signing in.</b> You can sign in with an emailed or texted code, a password, a passkey, or Sign in with Apple or Google. With Apple or Google we receive only your name and email address (or Apple's private relay address if you choose to hide it), never your Apple or Google password. A passkey stays on your device; we hold only its public key. We keep a list of the devices signed in to your account (for example "iPhone"), so you can see them and sign them out.</p><p><b>Photos and notifications.</b> The app asks for your camera or photo library only when you choose a profile photo, and uploads only the photo you pick. If you allow notifications, we keep your device's notification token to send them, and delete it when you turn notifications off or sign out.</p><p>The app has no advertising and no tracking, and we do not share your information with other companies for their own use.</p><p>You can see and correct your details in the app, and delete your account from <b>Account</b> in the app.</p>`],
+      ['members', 'The members\' app', `<p>To give you a members' card we hold your name, email address, membership number, your membership status, and the visits and purchases made with your card, so that the members' discount is applied and you can see what you've spent and saved. Optional: your phone number and a profile photo. The app does not use your location. If you allow notifications, we send club news and offers; you can turn them off at any time. Our lawful bases are your membership (contract), and your consent for notifications and anything optional.</p><p><b>Signing in.</b> You can sign in with an emailed code, a code texted by Google Firebase, a password, a passkey, or Sign in with Apple or Google. With Apple or Google we receive only your name and email address (or Apple's private relay address if you choose to hide it), never your Apple or Google password. A passkey stays on your device; we hold only its public key. We keep a list of the devices signed in to your account (for example "iPhone"), so you can see them and sign them out.</p><p><b>Photos and notifications.</b> The app asks for your camera or photo library only when you choose a profile photo, and uploads only the photo you pick. If you allow notifications, we keep your device's notification token to send them, and delete it when you turn notifications off or sign out.</p><p>The app has no advertising and no tracking, and we do not share your information with other companies for their own use.</p><p>You can see and correct your details in the app, and delete your account from <b>Account</b> in the app. The full details are in the <a href="/app/privacy">app privacy policy</a>.</p>`],
       ['helper', 'The club helper (AI)', `<p>The "Ask the club" helper answers questions from the club's own published information. What you type is sent to an AI service (DeepSeek, with Google Gemini as a back-up) to write the answer. Before it leaves our server we remove email addresses, phone numbers and card numbers from it. We do not send your name, account or location, and we keep no copy of the conversation on our server beyond a count of how many questions were asked. Please don't type personal details into the helper. The AI services may process what you type outside the UK, under their own terms; if you would rather not, call or message the club instead. Our lawful basis is our legitimate interest in answering visitors' questions quickly.</p>`],
-      ['share', 'Who we share it with', `<p>Only our processors (Vesopa EPOS; Dojo for card payments; Apple, Google or our SMS provider only when you sign in or receive a code through them; and the AI services described above for helper questions), and anyone the law requires us to share with. We never sell personal information or use it for advertising.</p>`],
+      ['share', 'Who we share it with', `<p>Only our processors (Vesopa EPOS; Dojo for card payments; Apple or Google only when you sign in with them; Google Firebase when you sign in with a texted code; and the AI services described above for helper questions), and anyone the law requires us to share with. We never sell personal information or use it for advertising.</p>`],
       ['rights', 'Your rights', `<p>You can ask for a copy of your information, ask us to correct or delete it, object to how we use it, or withdraw consent at any time. Ask at the bar, call ${esc(c.phone)}${c.email ? ` or email <a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : ''}. We will answer within one month. If you're unhappy with how we've handled your information, you can complain to the Information Commissioner's Office at <a href="https://ico.org.uk/make-a-complaint/" rel="noopener">ico.org.uk</a> or on 0303 123 1113.</p>`],
       ['children', 'Children', `<p>The members' app and online ordering are for adults. Junior rugby has its own consent forms, held by the club and not on this website.</p>`],
     ],
@@ -781,6 +787,141 @@ ${font('Permanent Marker', 'Font Diner', 'Apache License 2.0', 'LICENSE-Permanen
       ['software', 'Software', `<p>The site runs on <a href="https://nodejs.org/" rel="noopener">Node.js</a> with <a href="https://expressjs.com/" rel="noopener">Express</a>, <a href="https://github.com/motdotla/dotenv" rel="noopener">dotenv</a> and, for playing <a href="/play">Ponty Kicks</a> with a friend online, <a href="https://github.com/websockets/ws" rel="noopener">ws</a>, all under the MIT License. The animations, the game and its physics are written for the club and use no outside libraries.</p>`],
       ['club', 'The club\'s own', `<p>The club crest, the club's photographs and posters, and the text of this site belong to ${esc(club.company.name)}. Please ask before using them: call ${esc(club.phone)}${club.email ? ` or email <a href="mailto:${esc(club.email)}">${esc(club.email)}</a>` : ''}.</p>
 <p>The App Store and Google Play badges are trademarks of Apple Inc. and Google LLC, used as their makers ask.</p>`],
+    ],
+  });
+}
+
+// --- The Pontardawe RFC app's own small print (the owner, 2026-10-25: "All
+// the privacy URLs should be in the pontardawerfc official website"). The App
+// Store and Google Play listings and the app's Settings link here.
+
+const APP_DELETE = 'https://auth.vesopa.com/delete-account/pontardawe-rfc';
+const APP_UPDATED = '25 October 2026';
+
+/** The quick links at the top of every app page, so each is one tap from the others. */
+function appLinks(here) {
+  const links = [['/app/privacy', 'App privacy policy'], ['/app/privacy-choices', 'Your privacy choices'], ['/app/terms', 'Terms and licences'], [APP_DELETE, 'Delete your account']];
+  return `<nav class="app-legal-links" aria-label="The app's small print"><ul>${links.map(([href, label]) => `<li>${href === here ? `<b aria-current="page">${label}</b>` : `<a href="${href}">${label}</a>`}</li>`).join('')}</ul></nav>`;
+}
+
+function appLegal({ path, title, lead, description, sections }) {
+  const body = `${pageHero({ kicker: 'The Pontardawe RFC app', title, lead })}
+<section class="section"><div class="wrap article legal">
+${appLinks(path)}
+${sections.map(([id, h, html]) => `<h2 id="${id}">${esc(h)}</h2>\n${html}`).join('\n')}
+<p class="muted small">Last updated ${APP_UPDATED}.</p>
+</div></section>`;
+  return page({ title, description, path, og: 'home', ld: [crumbs([['Home', '/'], ['Privacy policy', '/privacy'], [title, path]])] }, body);
+}
+
+const askClub = () => `call ${esc(club.phone)}${club.email ? ` or email <a href="mailto:${esc(club.email)}">${esc(club.email)}</a>` : ''}`;
+
+function appPrivacyPage() {
+  const c = club;
+  const row = (what, why, need) => `<tr><td>${what}</td><td>${why}</td><td>${need}</td></tr>`;
+  return appLegal({
+    path: '/app/privacy',
+    title: 'App privacy policy',
+    lead: 'What the Pontardawe RFC app (iPhone, iPad, Apple Watch, Android and Wear OS) and member.pontardawerfc.com keep about you, why, and for how long.',
+    description: `The privacy policy of the ${c.name} members' app for iPhone, Android, Apple Watch and Wear OS, and of member.pontardawerfc.com.`,
+    sections: [
+      ['short', 'In short', `<ul>
+<li>The app holds your members' card: your name, email address, membership and the visits and purchases made with your card.</li>
+<li>Your mobile number, photo and notifications are optional, and you can remove them in the app at any time.</li>
+<li>The app does not use your location, show advertising, or contain analytics or tracking.</li>
+<li>We never sell your information.</li>
+<li>You can delete your account in the app (<b>Account › Delete my account and data</b>) or <a href="${APP_DELETE}">on the web</a>.</li>
+</ul>`],
+      ['who', 'Who we are', `<p>The app and member.pontardawerfc.com belong to ${esc(c.company.name)} (company ${esc(c.company.number)}), ${esc(c.company.registered_office)} ("the club", "we"). The club is the controller of your information. Our software provider, <b>Vesopa Software Limited</b> (company 17362206, Baglan, Port Talbot, SA12 7AX), makes and hosts the app for us and processes your information only on our instructions.</p><p>For anything about your privacy, ${askClub()}.</p>`],
+      ['collect', 'What we keep and why', `<div class="table-wrap"><table class="league"><thead><tr><th scope="col">What</th><th scope="col">Why</th><th scope="col">Needed?</th></tr></thead><tbody>
+${row('Name and email address', 'To make your members\' card, sign you in and show your name on the card.', 'Yes')}
+${row('Membership: card and member number, status, dates, visits, what you spent and saved', 'To give you the members\' discount at the bar and show you your membership.', 'Yes')}
+${row('Mobile number', 'To sign in with a texted code, if you add one. Google Firebase sends the code and checks it.', 'Optional')}
+${row('Photo', 'Shown on your card so bar staff can recognise you, if you add one. The app asks for your camera or photos only when you choose one.', 'Optional')}
+${row('Membership payments: amount, date and result', 'To renew your membership in the app. Dojo takes the card payment; we never see your card number.', 'Only if you pay in the app')}
+${row('Sign-in details: a password (stored only as a secure hash), passkeys, and the devices you are signed in on (for example "iPhone, iOS 26")', 'To keep your account safe and let you sign devices out.', 'Only the ones you set up')}
+${row('Notification token for your phone, watch or browser', 'To send club news and offers as notifications.', 'Optional')}
+${row('News you have received and read', 'To show the club\'s messages in the app and mark new ones.', 'Yes')}
+</tbody></table></div>
+<p>We do not collect your location, contacts, files, advertising identifiers or browsing activity.</p>`],
+      ['choices', 'Your choices', '<p>Everything optional can be switched off in the app without affecting your membership. Each one, and where to find it, is on <a href="/app/privacy-choices">Your privacy choices</a>.</p>'],
+      ['bases', 'Our lawful bases', `<ul>
+<li><b>Contract:</b> your membership, card, discount and sign-in.</li>
+<li><b>Consent:</b> notifications, your mobile number and your photo. You can withdraw it at any time in the app or your device's settings.</li>
+<li><b>Legitimate interests:</b> keeping accounts secure and preventing misuse.</li>
+<li><b>Legal obligation:</b> sales records the club must keep for tax.</li>
+</ul>`],
+      ['share', 'Who else receives it', `<p>Only the services that make the app work:</p><ul>
+<li><b>Vesopa Software Limited</b>, who host the app and the club's till system for us.</li>
+<li><b>Google Firebase Authentication</b>, which receives your mobile number to send and check a sign-in code, if you use one.</li>
+<li><b>Apple Push Notification service</b>, <b>Google Firebase Cloud Messaging</b> and your browser's push service, which receive a notification token and the message, to deliver notifications.</li>
+<li><b>Apple and Google</b>, only if you choose Sign in with Apple or Continue with Google: they tell us your name and email address, never your password.</li>
+<li><b>Dojo</b> (Paymentsense Limited), only if you pay for your membership in the app. Dojo takes the card payment under its own security standards (PCI DSS).</li>
+<li><b>Apple Wallet and Google Wallet</b>, only if you add your card to them.</li>
+</ul><p>Where one of these processes information outside the UK, it does so under the safeguards UK data protection law requires.</p>`],
+      ['keep', 'How long we keep it', `<ul>
+<li><b>Your account</b>, while your membership is active or until you delete it.</li>
+<li><b>Sign-in codes</b> expire after 10 minutes and are deleted within a day.</li>
+<li><b>Sales records</b> for six years, as the law requires; once you delete your account they no longer carry your name or contact details.</li>
+</ul>`],
+      ['delete', 'Deleting your account', `<p>In the app: <b>Account › Delete my account and data</b>. Without the app: <a href="${APP_DELETE}">${APP_DELETE.replace('https://', '')}</a>. You can choose deletion after 7, 15 or 30 days (which you can cancel), or as soon as possible. We email you when it is done.</p>`],
+      ['rights', 'Your rights', `<p>You can ask for a copy of your information, correct it, delete it, object to how it is used, or ask for it in a portable form: ${askClub()}. We answer within one month. You can also complain to the Information Commissioner's Office at <a href="https://ico.org.uk/make-a-complaint/" rel="noopener">ico.org.uk</a> or on 0303 123 1113.</p>`],
+      ['security', 'Security', '<p>Everything travels over HTTPS. Passwords are stored only as secure hashes, sign-in codes are single-use and short-lived, and you can see and sign out every device on your account.</p>'],
+      ['children', 'Children', '<p>The app is for adult members and is not directed at children under 13.</p>'],
+      ['club-site', 'The club\'s website, tickets and food orders', '<p>The club\'s main <a href="/privacy">privacy policy</a> covers this website, buying tickets and ordering food.</p>'],
+    ],
+  });
+}
+
+function appChoicesPage() {
+  const row = (what, need, how) => `<tr><td>${what}</td><td>${need}</td><td>${how}</td></tr>`;
+  return appLegal({
+    path: '/app/privacy-choices',
+    title: 'Your privacy choices',
+    lead: 'What is optional in the Pontardawe RFC app, and how to switch it off. None of it affects your membership.',
+    description: `How to switch off notifications, remove your number or photo, and delete your account in the ${club.name} app.`,
+    sections: [
+      ['choices', 'What you can change', `<div class="table-wrap"><table class="league"><thead><tr><th scope="col">What</th><th scope="col">Needed?</th><th scope="col">How to change it</th></tr></thead><tbody>
+${row('Notifications', 'Optional', 'Settings › Notifications in the app, or your phone\'s settings for the app. On member.pontardawerfc.com: Account › Notifications.')}
+${row('Mobile number', 'Optional', 'Account › Mobile number › Remove.')}
+${row('Photo on your card', 'Optional', 'Account › Your photo › the bin.')}
+${row('Passkeys', 'Optional', 'Account › Signing in › remove a passkey.')}
+${row('Signed-in devices', 'Your choice', 'Account › Signing in › sign a device out.')}
+${row('Name, email and membership', 'Needed for a card', `Delete your account: Account › Delete my account and data, or <a href="${APP_DELETE}">on the web</a>.`)}
+</tbody></table></div>`],
+      ['never', 'What the app never does', '<p>It does not use your location, show advertising, track you across other apps or websites, or sell your information.</p>'],
+      ['ask', 'Questions or a copy of your data', `<p>Please ${askClub()}. The full details are in the <a href="/app/privacy">app privacy policy</a>.</p>`],
+    ],
+  });
+}
+
+function appTermsPage() {
+  const lib = (name, licence) => `<tr><th scope="row">${esc(name)}</th><td>${esc(licence)}</td></tr>`;
+  return appLegal({
+    path: '/app/terms',
+    title: 'Terms and licences',
+    lead: 'The agreement for using the Pontardawe RFC app, and the software it is built with.',
+    description: `The terms of use of the ${club.name} members' app, and the open-source software and licences it uses.`,
+    sections: [
+      ['terms', 'Using the app', `<p>The app is provided by ${esc(club.company.name)} for its members, to carry the members' card, receive club news and manage your membership. Please keep your sign-in to yourself and use only your own card; the club may suspend a card that is misused. Membership, prices and the members' discount are set by the club and may change. The app is provided as it is, and may sometimes be unavailable. Nothing here affects your legal rights.</p><p>If you downloaded the app from the App Store, Apple's <a href="https://www.apple.com/legal/internet-services/itunes/dev/stdeula/" rel="noopener">standard licence agreement</a> also applies; from Google Play, Google Play's terms of service also apply. Apple and Google are not responsible for the app or its support.</p>`],
+      ['own', 'Who owns what', `<p>The club crest, name and news belong to ${esc(club.company.name)}. The app's software belongs to Vesopa Software Limited and is licensed to the club. Apple, Apple Watch, iPhone, Apple Wallet and the App Store are trademarks of Apple Inc.; Android, Wear OS, Google Wallet and Google Play are trademarks of Google LLC.</p>`],
+      ['licences', 'Open-source licences', `<p>The app is built with these open-source components, used under their licences. The full licence texts are in the app under <b>Settings › Open-source software</b>.</p>
+<div class="table-wrap"><table class="league licences"><thead><tr><th scope="col">Software</th><th scope="col">Licence</th></tr></thead><tbody>
+${lib('Flutter and the Dart SDK (Google)', 'BSD 3-Clause')}
+${lib('http, http_parser, crypto, web (Dart)', 'BSD 3-Clause')}
+${lib('shared_preferences, url_launcher, image_picker (Flutter)', 'BSD 3-Clause')}
+${lib('package_info_plus (Flutter Community)', 'BSD 3-Clause')}
+${lib('qr_flutter and qr', 'BSD 3-Clause')}
+${lib('flutter_riverpod and riverpod', 'MIT')}
+${lib('image (Brendan Duncan)', 'MIT')}
+${lib('screen_brightness', 'MIT')}
+${lib('cupertino_icons', 'MIT')}
+${lib('Firebase Authentication and Cloud Messaging SDKs (Google)', 'Apache 2.0')}
+${lib('AndroidX, Jetpack Compose and Wear OS libraries (Google)', 'Apache 2.0')}
+${lib('Kotlin standard library (JetBrains)', 'Apache 2.0')}
+${lib('Dojo payments SDK (iPhone; Paymentsense Limited)', 'Dojo\'s licence')}
+</tbody></table></div>`],
+      ['help', 'Help', `<p>For help with the app, ${askClub()}.</p>`],
     ],
   });
 }
@@ -1295,6 +1436,6 @@ function notFound() {
 
 module.exports = {
   home, clubPage, teamsPage, newsPage, newsPages, articlePage, clubhousePage, menuPage, membershipPage,
-  contactPage, privacyPage, cookiesPage, termsPage, accessibilityPage, notFound, fixturesPage, ticketsPage, ticketOrderPage, whatsOnPage, playPage, licencesPage, archivePage,
+  contactPage, privacyPage, appPrivacyPage, appChoicesPage, appTermsPage, cookiesPage, termsPage, accessibilityPage, notFound, fixturesPage, ticketsPage, ticketOrderPage, whatsOnPage, playPage, licencesPage, archivePage,
   MENU_API, MENU_SLUG,
 };

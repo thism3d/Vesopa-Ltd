@@ -45,7 +45,7 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 
 const { accessGuard } = require('./permissions');
-const { sendMail, venueAccount } = require('./mailer');
+const { sendMail, venueAccount, venueFrom } = require('./mailer');
 const { ensureMemberNumber } = require('./member_numbers');
 const loyaltySchemes = require('./loyalty_schemes');
 const { seal, unseal } = require('./express_kiosk');
@@ -797,7 +797,8 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
             text: note.text,
             html: note.html,
             account: venueAccount(app.slug),
-        fromName: brand.name,
+            fromName: brand.name,
+            fromAddress: venueFrom(app.slug),
           }).catch(() => {});
           return res.json({ ok: true, minutes: CODE_MINUTES });
         }
@@ -812,6 +813,7 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
         html: mail.html,
         account: venueAccount(app.slug),
         fromName: brand.name,
+        fromAddress: venueFrom(app.slug),
       }).catch(() => {});
       res.json({ ok: true, minutes: CODE_MINUTES });
     } catch (e) {

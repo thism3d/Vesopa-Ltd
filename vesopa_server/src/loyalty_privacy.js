@@ -114,7 +114,7 @@ footer{border-top:1px solid var(--line);color:var(--muted);font-size:14px;paddin
 <ul>
 <li><strong>The venue</strong> whose app it is, in its Vesopa back office.</li>
 <li><strong>Apple Push Notification service</strong> (iPhone and iPad), <strong>Google Firebase Cloud Messaging</strong> (Android), <strong>Microsoft Windows Push Notification Services</strong> (Windows) and your browser's push service (web), which receive a notification token and the message to deliver it.</li>
-<li><strong>Google Firebase Authentication</strong>, which receives your mobile number to send and check a text-message code on the iPhone, iPad and Android apps, and <strong>Postcoder</strong>, a UK provider, which does the same on the web.</li>
+<li><strong>Google Firebase Authentication</strong>, which receives your mobile number to send and check a text-message code, in the iPhone, iPad and Android apps and on the web.</li>
 <li><strong>Vesopa Auth</strong> (auth.vesopa.com), if you choose Continue with Vesopa or ask for your data to be deleted.</li>
 <li><strong>Apple and Google</strong>, only if you choose Sign in with Apple or Continue with Google: they tell us your name and email address.</li>
 <li><strong>Dojo</strong> (Paymentsense Limited), if you pay for or renew a membership in the app: Dojo takes the card payment, and we never see your card number. We keep the amount, the date and the result.</li>

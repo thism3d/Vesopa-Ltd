@@ -294,7 +294,12 @@ function memberWebRoutes({ secret, flutterPage }) {
       'Referrer-Policy': 'same-origin',
       'Content-Security-Policy': [
         "default-src 'self'", "img-src 'self' https: data:", "style-src 'self' 'unsafe-inline'",
-        `script-src 'nonce-${req.member.nonce}'`, "connect-src 'self'", "font-src 'self' https:",
+        // 'strict-dynamic' lets the nonce'd page script load Firebase and
+        // Google's invisible check for phone codes (owner, 2026-10-25).
+        `script-src 'nonce-${req.member.nonce}' 'strict-dynamic'`,
+        "connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.google.com https://www.gstatic.com",
+        "frame-src https://www.google.com https://recaptcha.google.com https://vesopa.firebaseapp.com",
+        "font-src 'self' https:",
         // The notifications worker (push-sw.js). Without this a service
         // worker falls under script-src, which only allows the nonce, and
         // Chrome refused it: "violates the Content Security Policy".
@@ -467,6 +472,13 @@ function memberWebRoutes({ secret, flutterPage }) {
       // Deliberately not "we texted you": the server only texts a number it
       // already holds, and saying so would tell a stranger who is a member.
       return signInPage(req, res, { method: 'code_sms', stage: 'code', phone, note: 'If that number is on your membership, a code is on its way.' });
+    },
+    // A number Firebase proved in this browser (member_web_views.js
+    // firebasePhone): the API checks Firebase's token itself.
+    async 'sms-firebase'(req, res, b) {
+      const answer = await callApi(req, 'POST', `${req.member.api}/phone/firebase`, { body: { id_token: String(b.id_token || ''), platform: 'web' } });
+      if (!ok(answer)) return signInPage(req, res, { method: 'code_sms', error: said(answer) }, answer.status);
+      return signedInAs(req, res, answer.body.token);
     },
     async 'sms-verify'(req, res, b) {
       const phone = String(b.phone || '').trim();
@@ -702,6 +714,7 @@ function memberWebRoutes({ secret, flutterPage }) {
     name: (b) => ['PUT', '/loyalty/v1/me/account', { name: String(b.name || '').trim() }],
     phone: (b) => ['POST', '/loyalty/v1/me/phone', { phone: String(b.phone || '').trim() }],
     'phone-verify': (b) => ['POST', '/loyalty/v1/me/phone/verify', { phone: String(b.phone || '').trim(), code: String(b.code || '').trim() }],
+    'phone-firebase': (b) => ['POST', '/loyalty/v1/me/phone/firebase', { id_token: String(b.id_token || '') }],
     'phone-remove': () => ['DELETE', '/loyalty/v1/me/phone'],
     password: (b) => ['POST', '/loyalty/v1/me/password', { ...(b.current ? { current: String(b.current) } : {}), password: String(b.password || '') }],
     'passkey-remove': (b) => ['DELETE', `/loyalty/v1/me/passkeys/${encodeURIComponent(String(b.id || ''))}`],
@@ -715,7 +728,7 @@ function memberWebRoutes({ secret, flutterPage }) {
 
   /** Where each one lands, said. */
   const ACCOUNT_DONE = {
-    name: 'name', 'phone-verify': 'phone', 'phone-remove': 'phone-removed', password: 'password',
+    name: 'name', 'phone-verify': 'phone', 'phone-firebase': 'phone', 'phone-remove': 'phone-removed', password: 'password',
     'passkey-remove': 'passkey-removed', others: 'others', 'photo-remove': 'photo-removed', deletion: 'deletion',
   };
 
@@ -803,8 +816,6 @@ function memberWebRoutes({ secret, flutterPage }) {
     const ask = {
       push: () => ['POST', '/loyalty/v1/me/push', { kind: 'webpush', subscription: b.subscription }],
       'push-off': () => ['DELETE', '/loyalty/v1/me/push', { endpoint: String(b.endpoint || '') }],
-      nearby: () => ['POST', '/loyalty/v1/me/location', { latitude: b.latitude, longitude: b.longitude }],
-      'nearby-off': () => ['DELETE', '/loyalty/v1/me/location'],
     }[req.params.what];
     if (!ask) return next();
     const [method, url, body] = ask();

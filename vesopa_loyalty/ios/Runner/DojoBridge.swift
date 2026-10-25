@@ -18,10 +18,9 @@ import dojo_ios_sdk_drop_in_ui
 /// Whatever the code says, the membership changes only when the server reads
 /// the intent from Dojo (POST .../checkout/<id>/check), as for the web.
 ///
-/// Apple Pay inside Dojo's checkout needs a Merchant ID and Dojo's payment
-/// processing certificate. When the build carries one (VesopaApplePayMerchantID
-/// in Info.plist, with the in-app payments entitlement) it is offered;
-/// otherwise the checkout takes cards only.
+/// Cards only: Apple Pay is not offered (owner, 2026-10-25: removed for now,
+/// perhaps in a later release, which would need a Merchant ID, Dojo's payment
+/// processing certificate and the in-app payments entitlement).
 final class DojoBridge: NSObject {
   private let channel: FlutterMethodChannel
   private let dojo = DojoSDKDropInUI()
@@ -55,13 +54,11 @@ final class DojoBridge: NSObject {
       result(FlutterError(code: "unavailable", message: "The payment could not be shown.", details: nil))
       return
     }
-    let merchant = (Bundle.main.object(forInfoDictionaryKey: "VesopaApplePayMerchantID") as? String) ?? ""
-    let applePay = merchant.isEmpty ? nil : DojoUIApplePayConfig(merchantIdentifier: merchant)
     paying = true
     dojo.startPaymentFlow(
       paymentIntentId: intent,
       controller: top,
-      applePayConfig: applePay,
+      applePayConfig: nil,
       themeSettings: dark ? DojoThemeSettings.getDarkTheme() : DojoThemeSettings.getLightTheme()
     ) { [weak self] code in
       DispatchQueue.main.async {

@@ -209,7 +209,7 @@ function footer() {
     <div>
       <h2>Small print</h2>
       <ul class="foot-links">
-        <li><a href="/privacy">Privacy policy</a></li><li><a href="/cookies">Cookies</a></li>
+        <li><a href="/privacy">Privacy policy</a></li><li><a href="/app/privacy">App privacy</a></li><li><a href="/cookies">Cookies</a></li>
         <li><a href="/ordering-terms">Ordering terms</a></li><li><a href="/accessibility">Accessibility</a></li>
         <li><a href="/licences">Licences</a></li><li><a href="/sitemap.xml">Sitemap</a></li>
       </ul>

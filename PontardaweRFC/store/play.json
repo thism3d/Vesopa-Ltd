@@ -7,7 +7,7 @@
   "contact_email": "info@vesopasoftware.com",
   "contact_website": "https://pontardawerfc.com/",
   "track": "beta",
-  "release_notes": "Sign in and add your mobile number with a texted code, on any network. Notifications now live in Settings. Your devices are named properly, passkeys show the club's name, and the watch shows Pontardawe RFC in full. The app no longer asks for your location.",
+  "release_notes": "Pay for your membership by card in the app. Codes by text work on any network, on the website too. The app no longer asks for your location, and your devices and passkeys are named properly.",
   "images": {
     "icon": [
       "play-icon-512.png"

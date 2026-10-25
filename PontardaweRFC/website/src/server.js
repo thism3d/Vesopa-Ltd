@@ -166,6 +166,12 @@ app.get('/cookies', html(() => pages.cookiesPage()));
 app.get('/ordering-terms', html(() => pages.termsPage()));
 app.get('/accessibility', html(() => pages.accessibilityPage()));
 app.get('/licences', html(() => pages.licencesPage()));
+// The app's own small print, named by its store listings and Settings.
+app.get('/app/privacy', html(() => pages.appPrivacyPage()));
+app.get('/app/privacy-choices', html(() => pages.appChoicesPage()));
+app.get('/app/terms', html(() => pages.appTermsPage()));
+app.get(['/app/licences', '/app/licenses'], (req, res) => res.redirect(301, '/app/terms#licences'));
+app.get(['/app-privacy', '/privacy-choices', '/app/privacy/'], (req, res) => res.redirect(301, req.path === '/privacy-choices' ? '/app/privacy-choices' : '/app/privacy'));
 app.get('/archive', html(() => pages.archivePage()));
 app.get(['/archives', '/archive/', '/old-site'], (req, res) => res.redirect(301, '/archive'));
 app.get(['/licenses', '/credits', '/licences/'], (req, res) => res.redirect(301, '/licences'));
@@ -198,7 +204,7 @@ app.get(['/feed', '/feed/'], (req, res) => res.redirect(301, '/news/feed.xml'));
 // --- For machines ------------------------------------------------------------
 
 const PATHS = ['/', '/whats-on', '/play', '/licences', '/club', '/archive', '/teams', '/fixtures', '/tickets', '/news', '/clubhouse', '/membership', '/contact',
-  '/privacy', '/cookies', '/ordering-terms', '/accessibility'];
+  '/privacy', '/app/privacy', '/app/privacy-choices', '/app/terms', '/cookies', '/ordering-terms', '/accessibility'];
 
 /*
  * Sitemaps (2026-10-15). A sitemap may only list addresses on its own host,
@@ -215,7 +221,7 @@ const SITEMAP_RANK = {
   '/news': ['daily', '0.8'], '/membership': ['monthly', '0.9'], '/clubhouse': ['monthly', '0.7'], '/teams': ['weekly', '0.7'],
   '/club': ['monthly', '0.7'], '/contact': ['monthly', '0.7'], '/play': ['monthly', '0.6'], '/archive': ['yearly', '0.5'],
   '/licences': ['yearly', '0.2'], '/privacy': ['yearly', '0.2'], '/cookies': ['yearly', '0.2'], '/ordering-terms': ['yearly', '0.2'],
-  '/accessibility': ['yearly', '0.2'],
+  '/accessibility': ['yearly', '0.2'], '/app/privacy': ['yearly', '0.3'], '/app/privacy-choices': ['yearly', '0.2'], '/app/terms': ['yearly', '0.2'],
 };
 const SITEMAPS = [`${SITE}/sitemap.xml`, 'https://menu.pontardawerfc.com/sitemap.xml', `${MEMBERS}/sitemap.xml`];
 

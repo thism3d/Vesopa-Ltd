@@ -404,9 +404,12 @@ function signIn({ m, brand, ua, state }) {
       + `<button class="btn">${stage === 'name' ? 'Join' : 'Sign in'}</button></form>`
       + `<a class="link" href="${esc(`${m.base}?with=${method}`)}">Start again</a>`;
   } else if (method === 'code_sms') {
-    form = `<form method="post" action="${action('sms')}">${hidden(m)}`
+    // Firebase texts the code where this browser runs script (firebasePhone);
+    // without script the form posts as before.
+    form = `<form method="post" action="${action('sms')}" data-fb-phone>${hidden(m)}`
       + field('phone', 'Mobile number', `type="tel" autocomplete="tel" placeholder="07…" required autofocus value="${esc(state.phone)}"`)
-      + '<button class="btn">Text me a code</button></form>';
+      + '<button class="btn">Text me a code</button></form>'
+      + `<form method="post" action="${action('sms-firebase')}" data-fb-done hidden>${hidden(m)}<input type="hidden" name="id_token"></form>`;
   } else if (method === 'vesopa') {
     form = '<p>Sign in with the Vesopa account this venue gave you.</p>'
       + `<a class="btn" href="${esc(m.base)}vesopa">Continue with Vesopa</a>`;
@@ -466,7 +469,7 @@ function signIn({ m, brand, ua, state }) {
     + '</div></main>';
   return document({
     m, brand, title: 'Sign in', bodyClass: 'signin', body,
-    script: OPENED_FROM_NOTIFICATION + (usesPasskey ? passkeySignInScript(m) : ''),
+    script: OPENED_FROM_NOTIFICATION + (usesPasskey ? passkeySignInScript(m) : '') + (/data-fb-phone/.test(form) ? firebasePhoneScript() : ''),
   });
 }
 
@@ -558,18 +561,9 @@ function card({ m, brand, unread, classes, me, ua }) {
   return signedIn({
     m, brand, unread, classes, tab: 'card', title: 'Card',
     body: `<div class="home">${turn}${wallet.length ? `<div class="wallet">${wallet.join('')}</div>` : ''}${side}</div>`,
-    script: nearbyRefreshScript(brand),
   });
 }
 
-/** Nearby offers, when this browser said yes: where the member is, on opening the card. */
-function nearbyRefreshScript(brand) {
-  if (!brand.location) return '';
-  return "try{var k='nearby:'+document.body.dataset.base,t=Number(localStorage.getItem(k)||0);"
-    + 'if(t&&Date.now()-t>36e5&&navigator.geolocation)navigator.geolocation.getCurrentPosition(function(p){'
-    + "fetch(document.body.dataset.base+'venue/nearby',{method:'POST',headers:{'content-type':'application/json','x-csrf-token':document.body.dataset.csrf},"
-    + 'body:JSON.stringify({latitude:p.coords.latitude,longitude:p.coords.longitude})}).then(function(){localStorage.setItem(k,String(Date.now()))})},function(){},{maximumAge:6e5,timeout:1e4})}catch(e){}';
-}
 
 // ---------------------------------------------------------------------------
 // Activity (history_page.dart)
@@ -870,12 +864,12 @@ function account({ m, brand, unread, classes: hasClasses, member, account: a, me
     const inner = sent
       ? `<form method="post" action="${esc(m.base)}account/phone-verify">${hidden(m)}<input type="hidden" name="phone" value="${esc(state.phone)}">`
         + `<p class="hint">Enter the code we texted to ${esc(state.phone)}.</p><label class="field"><span>Code from the text</span><input class="code" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" required autofocus></label><button class="btn small">Confirm</button></form>`
-      : `<form method="post" action="${esc(m.base)}account/phone">${hidden(m)}<label class="field"><span>Mobile number</span><input type="tel" name="phone" autocomplete="tel" placeholder="07…" required></label><button class="btn small">Text me a code</button></form>`;
+      : `<form method="post" action="${esc(m.base)}account/phone" data-fb-phone>${hidden(m)}<label class="field"><span>Mobile number</span><input type="tel" name="phone" autocomplete="tel" placeholder="07…" required></label><button class="btn small">Text me a code</button></form>`
+        + `<form method="post" action="${esc(m.base)}account/phone-firebase" data-fb-done hidden>${hidden(m)}<input type="hidden" name="id_token"></form>`;
     you += opener('mobile', 'Mobile number', esc(phoneText), inner, { open: sent, id: 'phone' });
   } else {
     you += row('mobile', 'Mobile number', esc(phoneText));
   }
-  if (a.vesopa_linked) you += row('verified', 'Vesopa account', 'Connected');
 
   // ---- Signing in
   const offersPassword = methods.includes('password');
@@ -907,14 +901,14 @@ function account({ m, brand, unread, classes: hasClasses, member, account: a, me
 
   // ---- Where you are signed in
   const devices = a.devices || [];
-  const devicesHtml = devices.map((d) => row(d.current ? 'check' : 'devices', esc(PLATFORM[d.platform] || 'Device'),
+  const devicesHtml = devices.map((d) => row(d.current ? 'check' : 'devices', esc(d.label || PLATFORM[d.platform] || 'Device'),
     esc(d.current ? 'This device' : `Last used ${when(d.last_seen_at, { time: false })}`))).join('')
     + (devices.length > 1 ? `<div class="actions">${button(m, 'account/others', `${icon('logout')}Sign out everywhere else`, { cls: 'btn line small' })}</div>` : '');
 
   // ---- This device
   const leave = `<form method="post" action="${esc(m.base)}signout">${hidden(m)}<button class="row link" style="width:100%;text-decoration:none;color:inherit;text-align:left">${icon('logout')}<span class="t"><b>Sign out</b></span></button></form>`
     + opener('trash', 'Remove the app from my membership', '',
-      '<p>Every device you signed in on is signed out, notifications stop and nearby offers are switched off. Your membership and points stay with the venue.</p>'
+      '<p>Every device you signed in on is signed out and notifications stop. Your membership and points stay with the venue.</p>'
       + button(m, 'leave', 'Remove', { cls: 'btn bad small' }), { cls: 'bad' });
 
   // ---- Your data
@@ -927,7 +921,7 @@ function account({ m, brand, unread, classes: hasClasses, member, account: a, me
       : `Your account and data will be deleted on ${when(request.due_at, { time: false })}. You can cancel until then from the email we sent you.`)}</small></div>${icon('external')}</a>`
     : opener('trash', 'Delete my account and data', 'Your membership details, photo, card and sign-in.',
       `<form method="post" action="${esc(m.base)}account/deletion">${hidden(m)}`
-      + '<p>We delete your name, email address, phone number and photo, your card and member number, your password and passkeys, the devices you signed in on, your notifications, nearby offers and inbox.</p>'
+      + '<p>We delete your name, email address, phone number and photo, your card and member number, your password and passkeys, the devices you signed in on, your notifications and inbox.</p>'
       + '<p class="hint">The venue keeps its sales and points records for tax, with your name removed, and gift card balances so they can still be used. Your points and membership cannot be brought back.</p>'
       + '<fieldset><legend><b>When</b></legend>'
       + `<label class="choice"><input type="radio" name="mode" value="scheduled" checked><span>Automatically after <select name="days" aria-label="Days">${choices.map((d) => `<option value="${Number(d)}"${Number(d) === 30 ? ' selected' : ''}>${Number(d)} days</option>`).join('')}</select><small>Nothing is deleted until then, and you can cancel.</small></span></label>`
@@ -942,12 +936,14 @@ function account({ m, brand, unread, classes: hasClasses, member, account: a, me
     + membershipPanel(m, member, me, payment)
     + (security ? `<section class="panel"><h2>Signing in</h2>${security}</section>` : '')
     + (devices.length ? `<section class="panel"><h2>Where you are signed in</h2>${devicesHtml}</section>` : '')
+    + `<section class="panel"><h2>Notifications</h2>${notificationsSwitch(brand)}</section>`
     + `<section class="panel"><h2>This device</h2>${leave}</section>`
     + `<section class="panel"><h2>Your data</h2>${data}</section>`
     + `${powered}</div>`;
   return signedIn({
     m, brand, unread, classes: hasClasses, tab: 'account', title: 'Account', body,
-    script: offersPasskey && canEdit ? addPasskeyScript() : '',
+    script: (offersPasskey && canEdit ? addPasskeyScript() : '') + notificationsScript(pushKey(brand))
+      + (canEdit && !a.phone_verified && !state.phone ? firebasePhoneScript() : ''),
   });
 }
 
@@ -991,25 +987,27 @@ function venue({ m, brand, unread, classes: hasClasses }) {
     if (!LINKS[key] || !value) continue;
     body += `<a class="row" href="${esc(href(key, value))}"${key === 'phone' || key === 'email' ? '' : ' target="_blank" rel="noopener"'}>${icon(LINKS[key][0])}<div class="t"><b>${LINKS[key][1]}</b><small>${esc(value)}</small></div></a>`;
   }
-  body += '</div><section class="panel"><h2>Your settings</h2>';
-  const canPush = !!(brand.push && brand.push.web && brand.push.web.vapid_public_key);
-  body += `<div class="switch">${icon('bell')}<div class="t"><b>Notifications</b><small data-push-note>${canPush ? 'Offers and news as they happen.' : 'Not available on this device. Our news is always in News.'}</small></div>`
-    + `<button type="button" class="toggle" aria-pressed="false" aria-label="Notifications" data-push disabled></button></div>`;
-  if (loc) {
-    body += `<div class="switch">${icon('near')}<div class="t"><b>Offers when I'm nearby</b><small data-near-note>Uses your location only while the app is open, and forgets it after a day.</small></div>`
-      + '<button type="button" class="toggle" aria-pressed="false" aria-label="Offers when I\'m nearby" data-near disabled></button></div>';
-  }
-  body += `<noscript><p class="hint">Switch on JavaScript in this browser to change these.</p></noscript></section>${powered}</div>`;
-  return signedIn({
-    m, brand, unread, classes: hasClasses, tab: 'venue', title: 'Venue', body,
-    script: venueScript(canPush ? brand.push.web.vapid_public_key : null),
-  });
+  body += `</div>${powered}</div>`;
+  return signedIn({ m, brand, unread, classes: hasClasses, tab: 'venue', title: 'Venue', body });
 }
 
-/** This browser's own two switches: notifications and nearby offers. */
-function venueScript(vapid) {
+/** The venue's web push key, when it has one. */
+function pushKey(brand) {
+  return brand.push && brand.push.web && brand.push.web.vapid_public_key ? brand.push.web.vapid_public_key : null;
+}
+
+/** This browser's notifications switch (Account page, as Settings in the app). */
+function notificationsSwitch(brand) {
+  const canPush = !!pushKey(brand);
+  return `<div class="switch">${icon('bell')}<div class="t"><b>Notifications</b><small data-push-note>${canPush ? 'Offers and news as they happen.' : 'Not available on this device. Our news is always in News.'}</small></div>`
+    + '<button type="button" class="toggle" aria-pressed="false" aria-label="Notifications" data-push disabled></button></div>'
+    + '<noscript><p class="hint">Switch on JavaScript in this browser to change this.</p></noscript>';
+}
+
+/** This browser's notifications switch, worked by script. */
+function notificationsScript(vapid) {
   return B64
-    + "var d=document.body.dataset,ps=document.querySelector('[data-push]'),ns=document.querySelector('[data-near]');"
+    + "var d=document.body.dataset,ps=document.querySelector('[data-push]');"
     + "function post(w,b){return fetch(d.base+'venue/'+w,{method:'POST',headers:{'content-type':'application/json','x-csrf-token':d.csrf},body:JSON.stringify(b||{})}).then(function(r){if(!r.ok)throw new Error('That did not work. Please try again.')})}"
     + "function set(b,on){b.setAttribute('aria-pressed',on?'true':'false')}"
     + (vapid
@@ -1032,11 +1030,99 @@ function venueScript(vapid) {
         + "await navigator.serviceWorker.ready;if(!s)s=await g.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b2u(key)});await post('push',{subscription:s.toJSON()});set(ps,true);note.textContent='Notifications are on.'"
         + "}catch(x){note.textContent=x.message}finally{ps.disabled=false}})()})}"
       : '')
-    + "if(ns&&navigator.geolocation){var k='nearby:'+d.base,on=false;try{on=!!localStorage.getItem(k)}catch(e){}set(ns,on);ns.disabled=false;"
-    + "ns.addEventListener('click',function(){ns.disabled=true;var note=document.querySelector('[data-near-note]');"
-    + "if(ns.getAttribute('aria-pressed')==='true'){post('nearby-off').then(function(){try{localStorage.removeItem(k)}catch(e){}set(ns,false)}).catch(function(x){note.textContent=x.message}).finally(function(){ns.disabled=false});return}"
-    + "navigator.geolocation.getCurrentPosition(function(p){post('nearby',{latitude:p.coords.latitude,longitude:p.coords.longitude}).then(function(){try{localStorage.setItem(k,String(Date.now()))}catch(e){}set(ns,true)})"
-    + ".catch(function(x){note.textContent=x.message}).finally(function(){ns.disabled=false})},function(){note.textContent='Location was not allowed, so nearby offers stay off.';ns.disabled=false},{timeout:15e3})})}";
+    ;
+}
+
+/*
+ * PHONE CODES BY FIREBASE (owner, 2026-10-25). The browser asks Firebase to
+ * text the code (Google's invisible check runs on the page), the member types
+ * it, and Firebase's ID token is posted to [data-fb-done], whose action the API
+ * checks against Google's certificates. The web config is public by design.
+ */
+const FIREBASE_WEB = {
+  apiKey: process.env.FIREBASE_WEB_API_KEY || 'AIzaSyCVwAtKvCC5aN1iKUVAHmoIH0O0xP-i8Us',
+  authDomain: process.env.FIREBASE_WEB_AUTH_DOMAIN || 'vesopa.firebaseapp.com',
+  projectId: process.env.FIREBASE_PROJECT_ID || 'vesopa',
+  messagingSenderId: process.env.FIREBASE_SENDER_ID || '561180189171',
+  appId: process.env.FIREBASE_WEB_APP_ID || '1:561180189171:web:8485d4dbb67cf029267286',
+};
+
+/* Runs in the browser: stringified into the page by firebasePhoneScript. */
+/* eslint-disable */
+function firebasePhoneBrowser(cfg) {
+  var f = document.querySelector('[data-fb-phone]');
+  var done = document.querySelector('[data-fb-done]');
+  if (!f || !done) return;
+  var base = 'https://www.gstatic.com/firebasejs/10.14.1/';
+  function load(s) { return new Promise(function (ok, no) { var e = document.createElement('script'); e.src = base + s; e.onload = ok; e.onerror = no; document.head.appendChild(e); }); }
+  var ready = load('firebase-app-compat.js').then(function () { return load('firebase-auth-compat.js'); })
+    .then(function () { if (!firebase.apps.length) firebase.initializeApp(cfg); return firebase.auth(); });
+  var input = f.querySelector('input[name=phone]');
+  var btn = f.querySelector('button');
+  var err = document.createElement('p'); err.className = 'err'; err.setAttribute('role', 'alert'); err.hidden = true; f.after(err);
+  function say(t) { err.textContent = t || ''; err.hidden = !t; }
+  function e164(v) {
+    v = String(v || '').replace(/[^\d+]/g, '');
+    if (v.indexOf('+') === 0) return v;
+    if (v.indexOf('00') === 0) return '+' + v.slice(2);
+    if (v.indexOf('0') === 0) v = v.slice(1);
+    return '+44' + v;
+  }
+  var verifier = null, result = null, sentAt = 0, number = '';
+  function message(x, sending) {
+    var c = (x && x.code) || '';
+    if (/invalid-phone|missing-phone/.test(c)) return 'That does not look like a mobile number. Check it and try again.';
+    if (/too-many|quota/.test(c)) return 'Too many codes asked for. Please try again later.';
+    if (/invalid-verification-code|code-expired/.test(c)) return 'That code is not right. Please try again.';
+    return sending ? 'That number could not be checked just now. Please try again.' : 'That did not work. Please try again.';
+  }
+  function send() {
+    number = e164(input ? input.value : number);
+    if (number.length < 10) { say('Please enter your mobile number.'); return Promise.resolve(); }
+    say(''); btn.disabled = true;
+    return ready.then(function (auth) {
+      if (!verifier) verifier = new firebase.auth.RecaptchaVerifier(btn, { size: 'invisible' });
+      return auth.signInWithPhoneNumber(number, verifier);
+    }).then(function (r) { result = r; sentAt = Date.now(); showCode(); })
+      .catch(function (x) { say(message(x, true)); try { verifier && verifier.clear(); } catch (e) {} verifier = null; })
+      .finally(function () { btn.disabled = false; });
+  }
+  f.addEventListener('submit', function (ev) { ev.preventDefault(); send(); });
+  function showCode() {
+    f.innerHTML = '';
+    var p = document.createElement('p'); p.className = 'hint'; p.textContent = 'We sent a code to ' + number + '.';
+    var label = document.createElement('label'); label.className = 'field';
+    var span = document.createElement('span'); span.textContent = 'Code from the text'; label.appendChild(span);
+    var code = document.createElement('input'); code.className = 'code'; code.type = 'text'; code.inputMode = 'numeric';
+    code.autocomplete = 'one-time-code'; code.maxLength = 6; code.required = true; label.appendChild(code);
+    var go = document.createElement('button'); go.className = 'btn'; go.type = 'button'; go.textContent = 'Confirm';
+    var again = document.createElement('button'); again.className = 'link'; again.type = 'button';
+    btn = go; input = null;
+    f.appendChild(p); f.appendChild(label); f.appendChild(go); f.appendChild(again); code.focus();
+    (function tick() {
+      var left = 60 - Math.floor((Date.now() - sentAt) / 1000);
+      again.disabled = left > 0; again.textContent = left > 0 ? 'Send a new code in ' + left + 's' : 'Send a new code';
+      if (left > 0) setTimeout(tick, 1000);
+    })();
+    again.addEventListener('click', function () { if (!again.disabled) send(); });
+    function confirmCode() {
+      var c = code.value.trim();
+      if (c.length < 6) { say('Enter the code from the text message.'); return; }
+      go.disabled = true; say('');
+      result.confirm(c).then(function (u) { return u.user.getIdToken(true); }).then(function (t) {
+        done.elements.id_token.value = t;
+        try { firebase.auth().signOut(); } catch (e) {}
+        done.submit();
+      }).catch(function (x) { say(message(x, false)); go.disabled = false; });
+    }
+    go.addEventListener('click', confirmCode);
+    code.addEventListener('input', function () { if (code.value.length === 6 && !go.disabled) confirmCode(); });
+  }
+}
+/* eslint-enable */
+
+function firebasePhoneScript() {
+  return `(${firebasePhoneBrowser.toString()})(${JSON.stringify(FIREBASE_WEB)});`;
 }
 
 // ---------------------------------------------------------------------------

@@ -73,13 +73,9 @@ class PhoneBridge(private val activity: Activity, messenger: BinaryMessenger) {
             }
 
             override fun onVerificationFailed(e: FirebaseException) {
-                // A wrong number or too many tries is the member's to fix;
-                // anything else is Firebase failing to check the app, and the
-                // app then texts the code itself ("unavailable"), as on iPhone.
-                val m = e.message.orEmpty()
-                val theirs = m.contains("format", true) || m.contains("phone number", true) ||
-                    m.contains("quota", true) || m.contains("too many", true)
-                once { result.error(if (theirs) "failed" else "unavailable", friendly(e), null) }
+                // Firebase's own reason, said: there is no other texting
+                // service to fall back on (owner, 2026-10-25).
+                once { result.error("failed", friendly(e), null) }
             }
 
             override fun onCodeSent(id: String, token: PhoneAuthProvider.ForceResendingToken) {
@@ -133,7 +129,7 @@ class PhoneBridge(private val activity: Activity, messenger: BinaryMessenger) {
             m.contains("format", true) || m.contains("phone number", true) -> "That does not look like a mobile number. Check the country and the number."
             m.contains("quota", true) || m.contains("too many", true) -> "Too many codes asked for. Please try again later."
             m.contains("not enabled", true) || m.contains("OPERATION_NOT_ALLOWED", true) -> "Phone sign-in is not switched on for this app yet."
-            else -> "That number could not be checked. Please try again."
+            else -> "That number could not be checked just now (${e.javaClass.simpleName}). Please try again."
         }
     }
 }

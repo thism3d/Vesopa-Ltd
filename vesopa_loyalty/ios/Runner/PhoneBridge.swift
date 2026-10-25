@@ -104,19 +104,10 @@ final class PhoneBridge: NSObject, FlutterSceneLifeCycleDelegate {
     }
     PhoneAuthProvider.provider().verifyPhoneNumber(phone, uiDelegate: nil) { id, error in
       if let error {
-        // A wrong number or too many tries is the member's to fix. Anything
-        // else is Firebase failing to check this app (APNs, the check page,
-        // the project's settings): answer "unavailable" so the app texts the
-        // code itself instead of saying the number cannot be verified (owner,
-        // 2026-10-24: "+44 7848494341 number cannot be verified").
-        let code = AuthErrorCode(rawValue: (error as NSError).code)
+        // Firebase's own reason, said: there is no other texting service to
+        // fall back on (owner, 2026-10-25: codes by Firebase only).
         NSLog("[PhoneBridge] verifyPhoneNumber failed: %@", (error as NSError).description)
-        switch code {
-        case .invalidPhoneNumber, .missingPhoneNumber, .quotaExceeded, .tooManyRequests:
-          result(FlutterError(code: "failed", message: PhoneBridge.friendly(error), details: nil))
-        default:
-          result(FlutterError(code: "unavailable", message: PhoneBridge.friendly(error), details: nil))
-        }
+        result(FlutterError(code: "failed", message: PhoneBridge.friendly(error), details: nil))
       } else if let id {
         result(["verification": id])
       } else {
@@ -156,7 +147,7 @@ final class PhoneBridge: NSObject, FlutterSceneLifeCycleDelegate {
     case .quotaExceeded, .tooManyRequests: return "Too many codes asked for. Please try again later."
     case .operationNotAllowed: return "Phone sign-in is not switched on for this app yet."
     case .webContextCancelled: return "The check was cancelled."
-    default: return "That number could not be checked. Please try again."
+    default: return "That number could not be checked just now (error \((error as NSError).code)). Please try again."
     }
   }
 }

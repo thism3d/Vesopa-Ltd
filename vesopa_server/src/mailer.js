@@ -105,7 +105,7 @@ function mailEnabled() {
  * `cc` and `replyTo` are optional, for the odd letter that is not a
  * notification: a venue's invitation copied to Vesopa's own mailboxes.
  */
-async function sendMail({ to, cc, replyTo, subject, html, text, attachments, account, fromName: shownAs }) {
+async function sendMail({ to, cc, replyTo, subject, html, text, attachments, account, fromName: shownAs, fromAddress: venueFromAddress }) {
   // A named mailbox where one is asked for and configured, the default
   // otherwise — see the note on `transports` above.
   const named = account ? accountTransport(account) : null;
@@ -116,9 +116,11 @@ async function sendMail({ to, cc, replyTo, subject, html, text, attachments, acc
   }
 
   const prefix = account ? account.toUpperCase() : '';
-  const fromAddress = named
+  // A venue's own address on a domain the relay has verified (venueFrom):
+  // "Pontardawe RFC" <no-reply@pontardawerfc.com>.
+  const fromAddress = venueFromAddress || (named
     ? (process.env[`${prefix}_MAIL_FROM`] || process.env[`${prefix}_SMTP_USER`])
-    : FROM;
+    : FROM);
   // `fromName` lets a venue's own email carry the venue's name ("Pontardawe
   // RFC") whichever mailbox sends it. Only the name: the address stays the
   // authenticated mailbox, for SPF and DMARC. Quotes are stripped so a name
@@ -185,4 +187,15 @@ function venueAccount(slug) {
   return process.env.MENU_SMTP_USER ? 'menu' : undefined;
 }
 
-module.exports = { sendMail, verifyMail, mailEnabled, venueAccount };
+/**
+ * A venue's own From address, sent through the default mailbox: for the slug
+ * pontardawe-rfc, LOYALTY_PONTARDAWE_RFC_MAIL_FROM=no-reply@pontardawerfc.com
+ * (owner, 2026-10-25: the domain is verified in SMTP2GO). Unset, null.
+ */
+function venueFrom(slug) {
+  const key = `LOYALTY_${String(slug || '').toUpperCase().replace(/[^A-Z0-9]+/g, '_')}_MAIL_FROM`;
+  const v = String(process.env[key] || '').trim();
+  return /^[^\s@<>"]+@[^\s@<>"]+\.[a-z]{2,}$/i.test(v) ? v : null;
+}
+
+module.exports = { sendMail, verifyMail, mailEnabled, venueAccount, venueFrom };

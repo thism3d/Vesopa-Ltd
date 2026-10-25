@@ -301,6 +301,14 @@ a.tile:hover, a.card:hover, .news-card:hover { transform: translateY(-6px); box-
 .back a { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; }
 .back .ic { transform: rotate(180deg); }
 .legal h2 { font-size: 1.4rem; }
+/* The app pages and the app box on /privacy: the links one tap apart. */
+.app-legal-links ul, .app-privacy-box ul { list-style: none; padding: 0; margin: 0; }
+.app-legal-links ul { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 8px; }
+.app-legal-links li a, .app-legal-links li b { display: inline-block; padding: 8px 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); font-size: .92rem; text-decoration: none; }
+.app-legal-links li b { background: var(--red); border-color: var(--red); color: #fff; }
+.app-privacy-box { border: 1px solid var(--line); border-left: 4px solid var(--red-2); border-radius: 12px; background: var(--card); padding: 14px 18px; }
+.app-privacy-box li { padding: 6px 0; border-top: 1px solid var(--line); }
+.app-privacy-box li:first-child { border-top: 0; }
 .hours table { border-collapse: collapse; width: 100%; max-width: 380px; margin: 6px 0 4px; }
 .hours td { padding: 6px 0; border-bottom: 1px dashed var(--line); }
 .hours td:last-child { text-align: right; font-weight: 600; }
