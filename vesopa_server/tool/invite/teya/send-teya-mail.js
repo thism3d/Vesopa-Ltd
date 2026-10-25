@@ -34,7 +34,23 @@ const MAILS = {
     env: '/home/vesopasoftware/web/vesopasoftware.com/private/nodeapp/.env',
     to: ['partner@teya.com', 'globalpartner@teya.com', 'info@vesopa.com', 'muzahid@vesopa.com', 'info@vesopasoftware.com'],
   },
+  '--certify': {
+    eml: 'Vesopa-Teya-certify.eml',
+    to: ['partnersupport@teya.com', 'info@vesopasoftware.com', 'info@vesopa.com'],
+  },
 };
+
+/*
+ * --resend: every email again to the Teya people the owner named (25 Oct 2026),
+ * cc Meirion, from Muzahid, high importance with a read receipt, each with a
+ * new Message-ID so no server drops it as a copy of the first.
+ */
+const RESEND_TO = [
+  ['Jay, Teya', 'help@teya.com'], // Jay uses help@ (owner, 25 Oct 2026)
+  ['Teya Partner Support', 'partnersupport@teya.com'],
+  ['Teya UK Partner Manager', 'global.partnerships@teya.com'],
+];
+const MEIRION = ['info@vesopasoftware.com', 'info@vesopa.com'];
 
 async function main() {
   const flag = Object.keys(MAILS).find((f) => process.argv.includes(f));
@@ -42,6 +58,8 @@ async function main() {
   const mail = MAILS[flag];
   // --as-muzahid: from muzahid@vesopa.com through Auth's mail server, cc Meirion (owner,
   // 24 Oct 2026: the copies sent as info@vesopasoftware.com did not reach Teya).
+  const resend = process.argv.includes('--resend');
+  if (resend) process.argv.push('--as-muzahid', '--important');
   const asMuzahid = process.argv.includes('--as-muzahid');
   if (asMuzahid) mail.env = null;
   const from = asMuzahid ? FROM : mail.from || FROM;
@@ -60,6 +78,12 @@ async function main() {
       + '\r\nImportance: High\r\nX-Priority: 1 (Highest)\r\nX-MSMail-Priority: High\r\nPriority: urgent'
       + `\r\nDisposition-Notification-To: ${from}\r\nReturn-Receipt-To: ${from}`;
   }
+  if (resend) {
+    head = head.replace(/^To:.*(\r\n[ \t].*)*$/m, `To: ${RESEND_TO.map(([n, a]) => `"${n}" <${a}>`).join(', ')}`)
+      .replace(/^Message-ID:.*(\r\n[ \t].*)*(\r\n|$)/im, '').replace(/\r\n$/, '')
+      + `\r\nMessage-ID: <${require('crypto').randomUUID()}@vesopa.com>`;
+    mail.to = [...RESEND_TO.map(([, a]) => a), ...MEIRION];
+  }
   head = head.replace(/^X-Unsent:.*\r\n/m, '').replace(/^Date:.*$/m, `Date: ${new Date().toUTCString().replace('GMT', '+0000')}`);
   raw = head + raw.slice(split);
   const subject = ((head + '\r\n').match(/^Subject:\s*([\s\S]*?)\r\n(?![ \t])/m) || [])[1]?.replace(/\r\n[ \t]+/g, ' ');
@@ -69,6 +93,7 @@ async function main() {
   if (onlyAt > -1 && !/^[^@\s]+@[^@\s]+$/.test(only || '')) throw new Error('--only needs an address');
   const to = only ? [only] : mail.to;
   if (!process.argv.includes('--send')) {
+    if (process.argv.includes('--show-head')) console.log(head.split('\r\n').filter((l) => /^(From|To|Cc|Reply-To|Subject|Message-ID|Importance|X-Priority|Disposition-Notification-To|Date):/i.test(l)).join('\n'));
     console.log(`would send "${subject}" from ${from} to ${to.join(', ')} (${Math.round(raw.length / 1024)} KB). Add --send.`);
     return;
   }
