@@ -7,7 +7,7 @@
   "contact_email": "info@vesopasoftware.com",
   "contact_website": "https://pontardawerfc.com/",
   "track": "beta",
-  "release_notes": "One passkey for the app and member.pontardawerfc.com. Pick your country for your mobile number, and see a spinner while your code is on its way. Club privacy pages now live on pontardawerfc.com.",
+  "release_notes": "Codes by text are checked on pontardawerfc.com. One passkey for the app and member.pontardawerfc.com, a country picker for your number, and a spinner while your code is on its way.",
   "images": {
     "icon": [
       "play-icon-512.png"

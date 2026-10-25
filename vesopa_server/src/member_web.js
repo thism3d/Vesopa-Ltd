@@ -298,7 +298,7 @@ function memberWebRoutes({ secret, flutterPage }) {
         // Google's invisible check for phone codes (owner, 2026-10-25).
         `script-src 'nonce-${req.member.nonce}' 'strict-dynamic'`,
         "connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.google.com https://www.gstatic.com",
-        "frame-src https://www.google.com https://recaptcha.google.com https://vesopa.firebaseapp.com",
+        "frame-src 'self' https://www.google.com https://recaptcha.google.com https://vesopa.firebaseapp.com",
         "font-src 'self' https:",
         // The notifications worker (push-sw.js). Without this a service
         // worker falls under script-src, which only allows the nonce, and

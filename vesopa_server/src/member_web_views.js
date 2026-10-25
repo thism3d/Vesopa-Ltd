@@ -1130,6 +1130,9 @@ function firebasePhoneBrowser(cfg) {
   var f = document.querySelector('[data-fb-phone]');
   var done = document.querySelector('[data-fb-done]');
   if (!f || !done) return;
+  // Firebase's own pages on this address (loyalty_host.js firebasePages),
+  // never vesopa.firebaseapp.com (owner, 2026-10-25).
+  if (/(^|\.)(pontardawerfc\.com|vesopa\.com)$/.test(location.hostname)) cfg.authDomain = location.hostname;
   var base = 'https://www.gstatic.com/firebasejs/10.14.1/';
   function load(s) { return new Promise(function (ok, no) { var e = document.createElement('script'); e.src = base + s; e.onload = ok; e.onerror = no; document.head.appendChild(e); }); }
   var ready = load('firebase-app-compat.js').then(function () { return load('firebase-auth-compat.js'); })

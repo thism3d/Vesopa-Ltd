@@ -77,9 +77,19 @@
 	     customer who taps one is not looking at yesterday's news. The Push
 	     Notifications capability itself is Runner.entitlements; the App ID
 	     com.vesopaepos.thevesopakitchen needs Push Notifications ticked too. -->
+	<!-- Background modes. remote-notification: Firebase's silent push that
+	     proves the app for a phone sign-in code, and silent card updates.
+	     fetch and processing, as Firebase's phone sign-in guide asks
+	     (owner, 2026-10-25). processing needs its task ids listed below. -->
 	<key>UIBackgroundModes</key>
 	<array>
+		<string>fetch</string>
+		<string>processing</string>
 		<string>remote-notification</string>
+	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER).refresh</string>
 	</array>
 <!-- HTTPS only, through the system's own encryption: exempt from export
 	     paperwork, and saying so here saves the question on every upload. -->

@@ -169,9 +169,42 @@ function wellKnown(req, res) {
   return false;
 }
 
+/*
+ * FIREBASE'S PAGES ON THE VENUE'S OWN ADDRESS (owner, 2026-10-25: "never falls
+ * back to vesopa.firebaseapp.com"). When a phone cannot prove the app with
+ * Firebase's silent push, Firebase opens its check page at the auth domain,
+ * /__/auth/handler. The apps and the members' site name the venue's host as
+ * that domain (FIREBASE_AUTH_DOMAIN; member_web_views.js), and this passes
+ * those paths through to Firebase unchanged, as Firebase's own guide does with
+ * a proxy. The host must be in Firebase's authorised domains (it is).
+ *   FIREBASE_AUTH_ORIGIN  default https://vesopa.firebaseapp.com
+ */
+const https = require('https');
+const FIREBASE_AUTH_ORIGIN = new URL(process.env.FIREBASE_AUTH_ORIGIN || 'https://vesopa.firebaseapp.com');
+
+function firebasePages(req, res) {
+  if (!/^\/__\/(auth|firebase)\//.test(req.url)) return false;
+  if (!VENUE_HOSTS.has(hostOf(req)) && hostOf(req) !== LOYALTY_HOST) return false;
+  const headers = { ...req.headers, host: FIREBASE_AUTH_ORIGIN.host };
+  delete headers.cookie; delete headers['x-forwarded-for']; delete headers.connection;
+  const upstream = https.request({
+    host: FIREBASE_AUTH_ORIGIN.hostname, port: 443, method: req.method, path: req.url, headers, timeout: 15000,
+  }, (up) => {
+    const h = { ...up.headers };
+    delete h['set-cookie'];
+    res.writeHead(up.statusCode || 502, h);
+    up.pipe(res);
+  });
+  upstream.on('timeout', () => upstream.destroy(new Error('timeout')));
+  upstream.on('error', () => { if (!res.headersSent) res.status(502).type('text/plain').send('Sign-in check unavailable. Please try again.'); else res.end(); });
+  req.pipe(upstream);
+  return true;
+}
+
 function loyaltyHostGate() {
   return (req, res, next) => {
     if (wellKnown(req, res)) return;
+    if (firebasePages(req, res)) return;
     const own = VENUE_HOSTS.get(hostOf(req));
     if (own) return venueHostGate(req, res, next, own);
     if (!LOYALTY_HOST) return next();

@@ -343,6 +343,8 @@ def dart(app: Path, v):
         # The host whose passkeys belong to the venue's own domain, shared with
         # its members' website (lib/data/api.dart _passkeyBase).
         "VENUE_PASSKEY_API": v.get("passkey_api", ""),
+        # Firebase's phone check page on the venue's own address (lib/platform/firebase_phone.dart).
+        "FIREBASE_AUTH_DOMAIN": v.get("firebase_auth_domain", ""),
         "GOOGLE_IOS_CLIENT_ID": v.get("google_ios_client_id", ""),
         # Android's Credential Manager mints Google's id token for this web client.
         "GOOGLE_SERVER_CLIENT_ID": v.get("google_server_client_id", ""),

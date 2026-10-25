@@ -35,7 +35,12 @@ class PhoneBridge(private val activity: Activity, messenger: BinaryMessenger) {
     init {
         channel.setMethodCallHandler { call, result ->
             when (call.method) {
-                "start" -> start(call.argument<String>("phone").orEmpty(), result)
+                "start" -> {
+                    // The check page, when it is needed, on the venue's own
+                    // address rather than vesopa.firebaseapp.com.
+                    call.argument<String>("authDomain")?.takeIf { it.isNotBlank() }?.let { auth.setCustomAuthDomain(it) }
+                    start(call.argument<String>("phone").orEmpty(), result)
+                }
                 "confirm" -> confirm(
                     call.argument<String>("verification").orEmpty(),
                     call.argument<String>("code").orEmpty(),

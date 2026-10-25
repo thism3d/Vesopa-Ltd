@@ -53,10 +53,16 @@ class PhoneCheck {
 /// falls back to the texted code.
 class FirebasePhoneUnavailable implements Exception {}
 
+/// Where Firebase's check page opens when the silent push cannot prove the
+/// app: the venue's own address (member.pontardawerfc.com, which passes
+/// /__/auth/ through to Firebase: vesopa_server loyalty_host.js), never
+/// vesopa.firebaseapp.com (owner, 2026-10-25). Empty: Firebase's own.
+const _authDomain = String.fromEnvironment('FIREBASE_AUTH_DOMAIN');
+
 /// Text a code to [e164] (+447700900123).
 Future<PhoneCheck> firebasePhoneStart(String e164) async {
   try {
-    final answer = await _channel.invokeMapMethod<String, dynamic>('start', {'phone': e164});
+    final answer = await _channel.invokeMapMethod<String, dynamic>('start', {'phone': e164, 'authDomain': _authDomain});
     return PhoneCheck(
       verification: answer?['verification'] as String?,
       token: answer?['token'] as String?,

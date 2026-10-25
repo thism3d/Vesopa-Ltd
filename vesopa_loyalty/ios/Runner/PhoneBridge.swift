@@ -29,7 +29,8 @@ final class PhoneBridge: NSObject, FlutterSceneLifeCycleDelegate {
       guard let self else { return }
       let args = call.arguments as? [String: Any] ?? [:]
       switch call.method {
-      case "start": self.start(phone: args["phone"] as? String ?? "", result: result)
+      case "start":
+        self.start(phone: args["phone"] as? String ?? "", authDomain: args["authDomain"] as? String ?? "", result: result)
       case "confirm":
         self.confirm(
           verification: args["verification"] as? String ?? "",
@@ -97,11 +98,14 @@ final class PhoneBridge: NSObject, FlutterSceneLifeCycleDelegate {
     return true
   }
 
-  private func start(phone: String, result: @escaping FlutterResult) {
+  private func start(phone: String, authDomain: String, result: @escaping FlutterResult) {
     guard PhoneBridge.configured() else {
       result(FlutterError(code: "unavailable", message: "Phone sign-in is not set up in this build.", details: nil))
       return
     }
+    // The check page, when it is needed, on the venue's own address rather
+    // than vesopa.firebaseapp.com (lib/platform/firebase_phone.dart).
+    if !authDomain.isEmpty { Auth.auth().customAuthDomain = authDomain }
     PhoneAuthProvider.provider().verifyPhoneNumber(phone, uiDelegate: nil) { id, error in
       if let error {
         // Firebase's own reason, said: there is no other texting service to

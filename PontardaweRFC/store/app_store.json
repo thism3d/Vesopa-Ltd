@@ -23,7 +23,7 @@
     "internal_group": "Vesopa team",
     "feedback_email": "info@vesopasoftware.com",
     "description": "The Pontardawe RFC members' app: the membership card with its QR code for the till, Add to Apple Wallet, club news and notifications, and the card on Apple Watch.",
-    "what_to_test": "1.3.5: Add your mobile number (Account) or sign in with Text me a code: the code arrives by text from Firebase (the earlier error 17054 is fixed). The test numbers +44 7848 494341 and +880 1714 526039 get no text: type 123456. Add a passkey in Account, then sign in with it here and on member.pontardawerfc.com: it is the same pontardawerfc.com passkey. Renewing shows How to renew (no payment in the iPhone app)."
+    "what_to_test": "1.3.6: Text me a code and Account > Add your mobile number: the code arrives by text (no Firebase page should open; if a check page ever opens it is on member.pontardawerfc.com). Test numbers +44 7848 494341 and +880 1714 526039 get no text: type 123456. On iPad, the Card page says Apple Wallet is not available. Passkeys: add one in Account, sign in with it here and on member.pontardawerfc.com."
   },
   "screenshots": [
     {
@@ -57,6 +57,6 @@
       "subtitle": "A quick tour, then your card, news and match-day notices in one place."
     }
   ],
-  "whats_new": "Codes by text now arrive on iPhone and iPad. One passkey for the app and member.pontardawerfc.com. A spinner while your code is on its way. Membership renewals are at the club. Privacy pages now live on pontardawerfc.com.",
+  "whats_new": "Codes by text arrive reliably on iPhone and iPad, checked on pontardawerfc.com. On iPad the app now says that Apple Wallet is not available there. One passkey for the app and member.pontardawerfc.com.",
   "privacy_choices_url": "https://pontardawerfc.com/app/privacy-choices"
 }
