@@ -128,6 +128,10 @@ class PhoneField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    // The code and the number in the ordinary text colour (white on the dark
+    // look), not the club's red, which did not read on the dark dialog.
+    final ink = scheme.onSurface;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -138,6 +142,9 @@ class PhoneField extends StatelessWidget {
             style: OutlinedButton.styleFrom(
               padding: const EdgeInsets.symmetric(horizontal: 10),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              foregroundColor: ink,
+              disabledForegroundColor: ink.withValues(alpha: 0.75),
+              side: BorderSide(color: scheme.outline),
             ),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
               Text(country.flag, style: const TextStyle(fontSize: 20)),
@@ -156,6 +163,7 @@ class PhoneField extends StatelessWidget {
             keyboardType: TextInputType.phone,
             autofillHints: const [AutofillHints.telephoneNumberNational],
             inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[\d+ ()-]'))],
+            style: TextStyle(color: ink),
             decoration: InputDecoration(
               labelText: label,
               hintText: country.iso == 'GB' ? '7700 900123' : null,

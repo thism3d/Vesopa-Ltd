@@ -70,7 +70,6 @@ Data collected, all **linked to the user**, none used for tracking:
 | Contact info: Email Address | App Functionality |
 | Contact info: Phone Number (optional) | App Functionality |
 | User Content: Photos (optional profile photo) | App Functionality |
-| Location: Coarse and Precise (optional, only while the app is open; compared with the club's and not stored) | App Functionality |
 | Identifiers: Device ID (the notification token) | App Functionality |
 | Purchases: Purchase History (what was spent at the club) | App Functionality |
 

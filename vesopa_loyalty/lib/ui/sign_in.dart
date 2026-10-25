@@ -554,6 +554,7 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                         child: const Text('Start again'),
                       ),
                     ..._otherWays(config, method, theme),
+                    GetTheApp(brand: brand),
                     const SizedBox(height: 24),
                     const PoweredBy(),
                   ],

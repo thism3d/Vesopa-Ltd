@@ -1,17 +1,14 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../data/brand.dart';
 import '../data/session.dart';
 import '../data/venue_style.dart';
-import '../platform/location.dart';
-import '../platform/push.dart';
 import 'widgets.dart';
 
-/// The venue -- where, when, how to reach it -- and the customer's own
-/// choices: notifications, nearby offers, signing out.
+/// The venue: where, when and how to reach it. The member's own choices
+/// (notifications) live in Settings (owner, 2026-10-25), and location is not
+/// used at all.
 class VenuePage extends ConsumerStatefulWidget {
   const VenuePage({super.key});
 
@@ -20,100 +17,11 @@ class VenuePage extends ConsumerStatefulWidget {
 }
 
 class _VenuePageState extends ConsumerState<VenuePage> {
-  Choices? _choices;
-  var _busy = false;
-
-  @override
-  void initState() {
-    super.initState();
-    Choices.of(ref.read(configProvider).slug).then((c) {
-      if (mounted) setState(() => _choices = c);
-    });
-  }
 
   void _say(String text) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(text)));
-  }
-
-  Future<void> _setNotifications(Brand brand, bool on) async {
-    final choices = _choices;
-    if (choices == null) return;
-    setState(() => _busy = true);
-    final api = ref.read(apiProvider);
-    try {
-      if (on) {
-        final channel = await pushSubscribe(brand);
-        if (channel == null) {
-          _say('Notifications were not allowed. You can still read all our news in the News tab.');
-          return;
-        }
-        if (channel.isDeviceToken) {
-          await api.addDeviceToken(channel.kind, channel.channelUri!);
-        } else if (channel.kind == 'wns') {
-          await api.addWindowsChannel(channel.channelUri!);
-        } else {
-          await api.addWebPush(channel.subscription!);
-        }
-        await choices.setNotifications(true);
-        _say('Notifications are on.');
-      } else {
-        final endpoint = await pushUnsubscribe();
-        if (endpoint != null) await api.removePush(endpoint);
-        await choices.setNotifications(false);
-      }
-    } catch (e) {
-      _say('$e');
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Future<void> _setNearby(bool on) async {
-    final choices = _choices;
-    if (choices == null) return;
-    setState(() => _busy = true);
-    final api = ref.read(apiProvider);
-    try {
-      if (on) {
-        final p = await currentPosition();
-        if (p == null) {
-          _say('Location was not allowed, so nearby offers stay off.');
-          return;
-        }
-        await api.reportLocation(latitude: p.latitude, longitude: p.longitude, accuracy: p.accuracy);
-        await choices.setNearby(true);
-      } else {
-        await api.forgetLocation();
-        await choices.setNearby(false);
-      }
-    } catch (e) {
-      _say('$e');
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  /// Forget this venue and ask again. The membership is untouched: it is the
-  /// venue's record, and signing back in brings the same card back.
-  Future<void> _changeVenue() async {
-    final sure = await showDialog<bool>(
-      context: context,
-      builder: (d) => AlertDialog.adaptive(
-        title: const Text('Change venue?'),
-        content: const Text(
-          'You will continue with Vesopa again and can choose another venue your '
-          'account has a card at. Your points stay with this venue.',
-        ),
-        actions: [
-          DialogAction(onPressed: () => Navigator.pop(d, false), child: const Text('Cancel')),
-          DialogAction(primary: true, onPressed: () => Navigator.pop(d, true), child: const Text('Change')),
-        ],
-      ),
-    );
-    if (sure != true) return;
-    await ref.read(venueProvider.notifier).forget();
   }
 
   Future<void> _open(String url) async {
@@ -146,8 +54,6 @@ class _VenuePageState extends ConsumerState<VenuePage> {
   Widget build(BuildContext context) {
     final brand = ref.watch(brandProvider).requireValue;
     final theme = Theme.of(context);
-    final choices = _choices;
-    final canPush = pushAvailable(brand);
     return ListView(
       padding: const EdgeInsets.only(bottom: 24),
       children: [
@@ -200,47 +106,6 @@ class _VenuePageState extends ConsumerState<VenuePage> {
               subtitle: Text(e.value, overflow: TextOverflow.ellipsis),
               onTap: () => _open(_href(e.key, e.value)),
             ),
-        const Divider(height: 32),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Text('Your settings', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-        ),
-        SwitchListTile.adaptive(
-          secondary: const Icon(Icons.notifications_active_outlined),
-          title: const Text('Notifications'),
-          subtitle: Text(canPush ? 'Offers and news as they happen.' : 'Not available on this device. Our news is always in the News tab.'),
-          value: choices?.notifications ?? false,
-          onChanged: (choices == null || _busy || !canPush) ? null : (v) => _setNotifications(brand, v),
-        ),
-        if (brand.location != null)
-          SwitchListTile.adaptive(
-            secondary: const Icon(Icons.near_me_outlined),
-            title: const Text("Offers when I'm nearby"),
-            subtitle: const Text('Uses your location only while the app is open, and forgets it after a day.'),
-            value: choices?.nearby ?? false,
-            onChanged: (choices == null || _busy) ? null : _setNearby,
-          ),
-        /*
-         * CHANGING VENUE, and only where there is anything to change.
-         *
-         * In a browser the venue IS the address: this app is at loyalty.vesopa.com/<slug>/
-         * and a button claiming to change it would either lie or navigate
-         * somewhere the person did not ask to go. On Windows and the phones
-         * it was typed in once, and a wrong code typed once must not mean
-         * uninstalling. A venue's own app (LOYALTY_SLUG) is that venue's and
-         * nothing else's, so it has no venue to change to (owner, 2026-10-23).
-         */
-        if (!kIsWeb && AppConfig.buildSlug.isEmpty)
-          ListTile(
-            leading: const Icon(Icons.swap_horiz),
-            title: const Text('Change venue'),
-            subtitle: Text(brand.name),
-            onTap: _busy ? null : () => _changeVenue(),
-          ),
-        // Signing out lives under Account, where somebody looks for it. These
-        // two switches stay here because they are this DEVICE's choices, not
-        // the membership's: turning notifications off on a phone should not
-        // turn them off on the tablet behind the bar.
         const SizedBox(height: 16),
         const PoweredBy(),
       ],

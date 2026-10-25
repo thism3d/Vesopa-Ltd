@@ -45,6 +45,15 @@ class AuthBridge(private val activity: Activity, messenger: BinaryMessenger) {
         MethodChannel(messenger, "vesopa_loyalty/auth").setMethodCallHandler { call, result ->
             when (call.method) {
                 "available" -> result.success(mapOf("apple" to false, "passkeys" to true))
+                // What this phone is, for "Where you are signed in": maker and
+                // model ("Samsung SM-S918B") and the Android version.
+                "device" -> result.success(mapOf(
+                    "model" to listOf(android.os.Build.MANUFACTURER, android.os.Build.MODEL)
+                        .filter { it.isNotBlank() }
+                        .let { p -> if (p.size == 2 && p[1].startsWith(p[0], ignoreCase = true)) listOf(p[1]) else p }
+                        .joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } },
+                    "system" to android.os.Build.VERSION.RELEASE,
+                ))
                 "google" -> google(call.argument<String>("serverClientId"), result)
                 "passkeyGet" -> passkeyGet(call.arguments as? String, result)
                 "passkeyCreate" -> passkeyCreate(call.arguments as? String, result)

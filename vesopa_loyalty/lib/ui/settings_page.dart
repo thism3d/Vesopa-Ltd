@@ -13,6 +13,7 @@ import '../platform/push.dart';
 import '../platform/wallet.dart';
 import 'account_page.dart';
 import 'venue_intro.dart';
+import 'licenses_page.dart';
 import 'widgets.dart';
 
 /// The app's own settings: how it looks, what it does with the screen and
@@ -53,6 +54,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   PackageInfo? _package;
   var _busy = false;
   var _wallet = false;
+  // Whether the phone lets this app notify; the "Notification settings" row
+  // shows only when it does not (owner, 2026-10-25).
+  var _osAllowed = true;
 
   @override
   void initState() {
@@ -66,6 +70,12 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     AppleWallet.available().then((ok) {
       if (mounted) setState(() => _wallet = ok);
     });
+    _checkAllowed();
+  }
+
+  Future<void> _checkAllowed() async {
+    final ok = await pushAllowed();
+    if (mounted) setState(() => _osAllowed = ok);
   }
 
   Future<void> _signOut() async {
@@ -110,6 +120,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final said = await switchNotifications(ref.read(apiProvider), brand, choices, on);
     if (!mounted) return;
     setState(() => _busy = false);
+    _checkAllowed();
     if (said != null) _say(said);
   }
 
@@ -213,16 +224,21 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                       value: choices?.notifications ?? false,
                       onChanged: (choices == null || _busy || !canPush) ? null : (v) => _setNotifications(brand, v),
                     ),
-                    // An iPhone that was asked once and said no will not ask
-                    // again; only its own Settings can change that.
-                    if (ios)
+                    // A phone that was asked once and said no will not ask
+                    // again; only its own settings can change that. Shown only
+                    // while notifications are blocked there.
+                    if (phone && !_osAllowed)
                       ListTile(
                         contentPadding: EdgeInsets.zero,
                         leading: const Icon(Icons.settings_outlined),
-                        title: const Text('Notification settings on your iPhone'),
-                        subtitle: const Text('If you said no before, allow them here.'),
+                        title: const Text('Notification settings'),
+                        subtitle: const Text('Notifications are blocked for this app. Allow them here.'),
                         trailing: const Icon(Icons.open_in_new, size: 18),
-                        onTap: () => _open('app-settings:'),
+                        onTap: () async {
+                          await pushOpenSettings();
+                          // Back from the phone's settings: look again.
+                          Future.delayed(const Duration(seconds: 2), _checkAllowed);
+                        },
                       ),
                   ],
                 ),
@@ -232,18 +248,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 SettingsCard(
                   title: 'Connections',
                   children: [
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.verified_user_outlined),
-                      title: const Text('Vesopa account'),
-                      subtitle: Text(
-                        account == null
-                            ? '…'
-                            : account['vesopa_linked'] == true
-                                ? 'Connected. Sign in with Apple, Google, a passkey or your phone, at any Vesopa venue.'
-                                : 'Not connected. Signing in with Apple, Google or a passkey connects it.',
-                      ),
-                    ),
                     ListTile(
                       contentPadding: EdgeInsets.zero,
                       leading: const Icon(Icons.fingerprint),
@@ -282,13 +286,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         title: Text('Apple Watch'),
                         subtitle: Text('Your card is on your watch once its app is installed, kept up to date by this one.'),
                       ),
-                    if (brand.location != null && phone)
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: const Icon(Icons.near_me_outlined),
-                        title: const Text('Offers when you are nearby'),
-                        subtitle: Text('${(choices?.nearby ?? false) ? 'On' : 'Off'}. Change it on the Venue tab.'),
-                      ),
                   ],
                 ),
                 const SizedBox(height: 10),
@@ -322,19 +319,16 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                       title: const Text('Open-source software'),
                       subtitle: const Text('The free software this app is built with, and its licences.'),
                       trailing: const Icon(Icons.chevron_right),
-                      onTap: () => showLicensePage(
-                        context: context,
-                        applicationName: brand.name,
-                        applicationVersion: _version.isEmpty ? null : 'Version $_version',
-                        applicationIcon: Padding(padding: const EdgeInsets.all(12), child: _Crest(brand: brand, size: 64)),
-                        applicationLegalese: '© ${DateTime.now().year} Vesopa Software Ltd',
-                      ),
+                      onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                        builder: (_) => LicensesPage(appName: brand.name, version: _version),
+                      )),
                     ),
                   ],
                 ),
                 const SizedBox(height: 10),
 
                 _AboutVenue(brand: brand, onOpen: _open),
+                GetTheApp(brand: brand),
                 const SizedBox(height: 10),
 
                 // ---- Who makes it -------------------------------------------

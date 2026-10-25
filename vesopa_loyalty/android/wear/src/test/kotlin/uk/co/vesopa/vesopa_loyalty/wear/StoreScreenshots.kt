@@ -34,7 +34,7 @@ class StoreScreenshots {
 
     private val member = WatchCard(
         signedIn = true,
-        title = "Pontardawe",
+        title = "Pontardawe RFC",
         qr = "VSPL:PRFC:1881-0042-7316",
         number = "1881 0042 7316",
         points = 1240,

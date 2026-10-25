@@ -102,6 +102,27 @@ Future<bool> pushAskPermission() async {
   }
 }
 
+/// Open this app's notification settings on the phone.
+Future<void> pushOpenSettings() async {
+  if (!_isPhone) return;
+  try {
+    await _mobile.invokeMethod<bool>('settings');
+  } catch (_) {
+    // An older native half: nothing to open.
+  }
+}
+
+/// Whether the phone lets this app notify, asked without a prompt. True off the
+/// phones, where there is no such switch to send anyone to.
+Future<bool> pushAllowed() async {
+  if (!_isPhone) return true;
+  try {
+    return await _mobile.invokeMethod<bool>('allowed') ?? true;
+  } catch (_) {
+    return true;
+  }
+}
+
 /// A WNS channel lasts thirty days and a phone token can be replaced by the
 /// platform at any time, so both are asked for again on every start.
 Future<PushChannel?> pushCurrent(Brand brand) => pushSubscribe(brand);

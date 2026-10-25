@@ -7,11 +7,7 @@
     <!-- Android 13+ asks the customer before any notification is shown;
          MainActivity asks the moment the app wants a push token. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
-    <!-- Only for "near the venue" messages, and only while the app is open:
-         lib/platform/location.dart asks, and a customer who says no still has
-         a working card. Nothing runs in the background. -->
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <!-- No location permission: the app does not use location (owner, 2026-10-25). -->
 
     <application
         android:label="The Vesopa Kitchen"

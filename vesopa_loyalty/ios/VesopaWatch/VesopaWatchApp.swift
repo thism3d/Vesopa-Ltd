@@ -56,7 +56,7 @@ struct SignedOutView: View {
       }
       .padding(.top, 8)
     }
-    .navigationTitle("Kitchen")
+    .venueTitle(watchVenueName)
   }
 }
 

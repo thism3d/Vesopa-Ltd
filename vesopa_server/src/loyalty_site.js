@@ -27,7 +27,19 @@ const jwt = require('jsonwebtoken');
 const idtoken = require('./vesopa_idtoken');
 const { LOYALTY_HOST } = require('./loyalty_host');
 const { privacyPage } = require('./loyalty_privacy');
-const { supportPage } = require('./loyalty_support');
+const { supportPage, privacyChoicesPage } = require('./loyalty_support');
+const { sendMail } = require('./mailer');
+
+// The support form (2026-10-25): a few messages per address per hour.
+const supportHits = new Map();
+function supportLimited(ip) {
+  const now = Date.now();
+  const h = (supportHits.get(ip) || []).filter((t) => now - t < 3600e3);
+  h.push(now);
+  supportHits.set(ip, h);
+  return h.length > 5;
+}
+const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const ADMINS = String(process.env.LOYALTY_SITE_ADMINS || 'info@vesopasoftware.com')
   .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
@@ -491,7 +503,50 @@ function loyaltySiteRoutes({ pool }) {
     try {
       const content = await readContent(pool);
       res.set('Cache-Control', 'public, max-age=300');
-      res.type('html').send(supportPage({ host: LOYALTY_HOST, demoSlug: content.demo_slug, contact: content.contact_email }));
+      res.type('html').send(supportPage({ host: LOYALTY_HOST, demoSlug: content.demo_slug, contact: content.contact_email, sent: req.query.sent === '1' }));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /** The support form: emails the message to info@vesopasoftware.com, reply-to the member. */
+  router.post('/support', form, async (req, res, next) => {
+    if (!onSite(req)) return next();
+    try {
+      const content = await readContent(pool);
+      const b = req.body || {};
+      const f = {
+        name: String(b.name || '').trim().slice(0, 120), email: String(b.email || '').trim().slice(0, 190),
+        venue: String(b.venue || '').trim().slice(0, 120), message: String(b.message || '').trim().slice(0, 4000),
+      };
+      const again = (error) => res.status(400).type('html').send(supportPage({ host: LOYALTY_HOST, demoSlug: content.demo_slug, contact: content.contact_email, error, form: f }));
+      if (b.website) return res.redirect(303, '/support?sent=1'); // honeypot
+      if (!f.name || !f.message) return again('Please give your name and your message.');
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(f.email)) return again('Please give an email address we can reply to.');
+      if (supportLimited(req.ip)) return again('Too many messages from here. Please try again in an hour, or email us.');
+      const to = process.env.SUPPORT_MAIL_TO || 'info@vesopasoftware.com';
+      const ok = await sendMail({
+        to,
+        replyTo: f.email,
+        subject: `Support: ${f.venue || 'loyalty app'} - ${f.name}`.slice(0, 150),
+        html: `<p><strong>${escHtml(f.name)}</strong> &lt;${escHtml(f.email)}&gt;${f.venue ? ` · ${escHtml(f.venue)}` : ''}</p><p style="white-space:pre-wrap">${escHtml(f.message)}</p><p style="color:#777">Sent from ${LOYALTY_HOST}/support</p>`,
+        text: `${f.name} <${f.email}>${f.venue ? ' - ' + f.venue : ''}
+
+${f.message}`,
+      }).catch((e) => { console.error('[support] mail:', e.message); return false; });
+      if (!ok) return again('We could not send that just now. Please email us or call +44 7848 494341.');
+      res.redirect(303, '/support?sent=1');
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.get('/privacy-choices', async (req, res, next) => {
+    if (!onSite(req)) return next();
+    try {
+      const content = await readContent(pool);
+      res.set('Cache-Control', 'public, max-age=300');
+      res.type('html').send(privacyChoicesPage({ host: LOYALTY_HOST, demoSlug: content.demo_slug, contact: content.contact_email }));
     } catch (e) {
       next(e);
     }

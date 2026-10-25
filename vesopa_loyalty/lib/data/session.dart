@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../platform/location.dart';
 import '../platform/page_venue.dart';
 import '../platform/push.dart';
 import '../platform/watch.dart';
@@ -231,7 +230,6 @@ Future<void> signOutHere(WidgetRef ref, {bool remove = false}) async {
   try {
     final choices = await Choices.of(ref.read(configProvider).slug);
     await choices.setNotifications(false);
-    await choices.setNearby(false);
   } catch (_) {
     // Nothing to switch off.
   }
@@ -275,13 +273,11 @@ class Choices {
       _prefs.getBool('push_asked_$_slug') ?? _prefs.containsKey('push_on_$_slug');
   Future<void> setNotificationsAsked() => _prefs.setBool('push_asked_$_slug', true);
 
-  bool get nearby => _prefs.getBool('near_on_$_slug') ?? false;
-  Future<void> setNearby(bool on) => _prefs.setBool('near_on_$_slug', on);
 }
 
 /// On every start, signed in: hand the server this device's notification
 /// channel again (a browser can rotate it; a Windows channel lasts thirty
-/// days), and the position if the customer asked for nearby offers.
+/// days).
 /// Returns whether they are at the venue now.
 Future<bool> refreshChannels(LoyaltyApi api, Brand brand, String slug) async {
   final choices = await Choices.of(slug);
@@ -309,16 +305,7 @@ Future<bool> refreshChannels(LoyaltyApi api, Brand brand, String slug) async {
       }
     }
   }
-  if (choices.nearby) {
-    final p = await currentPosition();
-    if (p != null) {
-      try {
-        return await api.reportLocation(latitude: p.latitude, longitude: p.longitude, accuracy: p.accuracy);
-      } catch (_) {
-        return false;
-      }
-    }
-  }
+  // Location is not used (owner, 2026-10-25): no "nearby" check any more.
   return false;
 }
 

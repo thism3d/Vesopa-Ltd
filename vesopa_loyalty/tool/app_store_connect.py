@@ -1068,7 +1068,9 @@ def cmd_store(venue_name):
             "name": store.get("name"),
             "subtitle": store.get("subtitle"),
             "privacyPolicyUrl": store.get("privacy_url"),
-        }, "name, subtitle, privacy policy")
+            # The App Store's "User Privacy Choices URL" (owner, 2026-10-25).
+            "privacyChoicesUrl": store.get("privacy_choices_url"),
+        }, "name, subtitle, privacy policy, privacy choices")
         set_category(c, info, store)
         set_age_rating(c, info)
     else:

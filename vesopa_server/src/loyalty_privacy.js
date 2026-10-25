@@ -10,15 +10,16 @@
  * EVERY STATEMENT HERE IS A FACT ABOUT THE CODE. Change the code, change this
  * page, the same day:
  *
- *   location     used on the spot, never stored; only a yes/no "was near the
- *                venue" mark for NEAR_HOURS (3) -- src/loyalty_app.js,
- *                POST /loyalty/v1/me/location, schema_loyalty_near.sql
+ *   location     not collected: the apps no longer ask for it (owner,
+ *                2026-10-25: the "nearby offers" switch was removed)
+ *   phone codes  sent by Firebase Authentication (Google) on the phone apps,
+ *                Postcoder on the web -- vesopa_loyalty/lib/platform/firebase_phone.dart
  *   codes        10 minutes (CODE_MINUTES), swept after a day
  *   deletion     auth.vesopa.com/delete-account/<venue> and in the app
  *   no analytics, no advertising SDKs, no selling (vesopa_loyalty/pubspec.yaml)
  */
 
-const UPDATED = '17 September 2026';
+const UPDATED = '25 October 2026';
 
 function privacyPage({ host, demoSlug = 'thevesopakitchen', contact = 'info@vesopasoftware.com' }) {
   const deleteUrl = `https://auth.vesopa.com/delete-account/${demoSlug}`;
@@ -64,7 +65,8 @@ footer{border-top:1px solid var(--line);color:var(--muted);font-size:14px;paddin
 <div class="summary">
 <ul>
 <li>We collect what the app needs to run your loyalty card: who you are, your membership and points, and how you sign in.</li>
-<li><strong>Your location is never stored.</strong> If you turn on nearby offers, your position is used in the moment to check whether you are at the venue, then discarded.</li>
+<li><strong>The app does not use your location.</strong></li>
+<li>Only your name, email address and membership are required. A mobile number, photo, notifications and passkeys are <strong>optional</strong>, and you can remove them at any time.</li>
 <li>We do not sell your data, show advertising, or use analytics or tracking tools in the app.</li>
 <li>You can delete your account and data in the app (Account › Delete my account and data) or at <a href="${deleteUrl}">${deleteUrl.replace('https://', '')}</a>.</li>
 </ul>
@@ -79,24 +81,30 @@ footer{border-top:1px solid var(--line);color:var(--muted);font-size:14px;paddin
 <div class="wrap-table"><table>
 <tr><th>Data</th><th>Why</th><th>Required?</th></tr>
 <tr><td>Name and email address</td><td>To create your membership, sign you in with a code and show your name on your card.</td><td>Yes</td></tr>
-<tr><td>Mobile number</td><td>To sign in with a text-message code, if you add one.</td><td>Optional</td></tr>
+<tr><td>Mobile number</td><td>To sign in with a text-message code, if you add one. The number is proved with a code sent by Google Firebase.</td><td>Optional</td></tr>
 <tr><td>Photo</td><td>Shown on your card so venue staff can recognise you, if you add one.</td><td>Optional</td></tr>
 <tr><td>Membership: card and member number, points, tier, visits, what you spent and earned, membership dates</td><td>To run the loyalty scheme. Points are added and spent by the venue's till.</td><td>Yes</td></tr>
+<tr><td>Membership payments: the amount, date and result of a payment you make in the app</td><td>To renew your membership. The card itself is handled by Dojo; we never see the card number.</td><td>Only if you pay in the app</td></tr>
 <tr><td>Sign-in details: a password (stored only as a secure hash), passkeys, your Vesopa account link, and the devices you are signed in on</td><td>To keep your account secure and let you sign other devices out.</td><td>Only the ones you set up</td></tr>
 <tr><td>Notification token for your phone, computer or browser</td><td>To deliver the venue's news and offers as notifications.</td><td>Optional</td></tr>
 <tr><td>News you have received and read</td><td>To show the venue's messages in the app and mark new ones.</td><td>Yes</td></tr>
-<tr><td>Approximate or precise location</td><td>Only if you turn on “Offers when I'm nearby”. See section 3.</td><td>Optional</td></tr>
 </table></div>
-<p>We do not collect your contacts, files, advertising identifiers or browsing activity, and the app contains no analytics or advertising software.</p>
+<p>We do not collect your location, contacts, files, advertising identifiers or browsing activity, and the app contains no analytics or advertising software.</p>
 
-<h2>3. Location</h2>
-<p>The app asks for location permission only when you switch on “Offers when I'm nearby”, which is offered only by venues that have set their own location, and only while the app is open. It never asks for background location.</p>
-<p>When you use it, your position is sent to our server, checked straight away against the venue's area, and discarded. <strong>Your location is never saved</strong>, not in our database and not in our logs. The only thing kept is whether you were near that venue, and when, for up to three hours so the venue can send you an offer while you are close. Turning the setting off removes that too.</p>
+<h2>3. Your privacy choices</h2>
+<p>Everything optional can be switched off or removed in the app, at any time, without affecting your membership:</p>
+<ul>
+<li><strong>Notifications:</strong> Settings › Notifications, or your device's own settings.</li>
+<li><strong>Mobile number and photo:</strong> Account › remove them.</li>
+<li><strong>Passkeys and signed-in devices:</strong> Account › Signing in.</li>
+<li><strong>Your whole account:</strong> Account › Delete my account and data.</li>
+</ul>
+<p>All of these are listed on our <a href="/privacy-choices">privacy choices page</a>.</p>
 
 <h2>4. Our legal bases</h2>
 <ul>
 <li><strong>Contract:</strong> running your membership, card, points and sign-in.</li>
-<li><strong>Consent:</strong> notifications, nearby offers and your photo. You can withdraw it at any time in the app or in your device settings.</li>
+<li><strong>Consent:</strong> notifications, your mobile number and your photo. You can withdraw it at any time in the app or in your device settings.</li>
 <li><strong>Legitimate interests:</strong> keeping accounts secure and preventing misuse.</li>
 <li><strong>Legal obligation:</strong> sales records the venue must keep for tax.</li>
 </ul>
@@ -106,8 +114,11 @@ footer{border-top:1px solid var(--line);color:var(--muted);font-size:14px;paddin
 <ul>
 <li><strong>The venue</strong> whose app it is, in its Vesopa back office.</li>
 <li><strong>Apple Push Notification service</strong> (iPhone and iPad), <strong>Google Firebase Cloud Messaging</strong> (Android), <strong>Microsoft Windows Push Notification Services</strong> (Windows) and your browser's push service (web), which receive a notification token and the message to deliver it.</li>
-<li><strong>Postcoder</strong>, a UK provider, which receives your mobile number to send text-message sign-in codes.</li>
+<li><strong>Google Firebase Authentication</strong>, which receives your mobile number to send and check a text-message code on the iPhone, iPad and Android apps, and <strong>Postcoder</strong>, a UK provider, which does the same on the web.</li>
 <li><strong>Vesopa Auth</strong> (auth.vesopa.com), if you choose Continue with Vesopa or ask for your data to be deleted.</li>
+<li><strong>Apple and Google</strong>, only if you choose Sign in with Apple or Continue with Google: they tell us your name and email address.</li>
+<li><strong>Dojo</strong> (Paymentsense Limited), if you pay for or renew a membership in the app: Dojo takes the card payment, and we never see your card number. We keep the amount, the date and the result.</li>
+<li><strong>Apple Wallet and Google Wallet</strong>, only if you add your card to them: they receive your card's name, number and points to show it.</li>
 </ul>
 <p>The apps and data are hosted on Vesopa's servers. Where a provider above processes data outside the UK, it does so under the safeguards UK data protection law requires.</p>
 
@@ -115,7 +126,6 @@ footer{border-top:1px solid var(--line);color:var(--muted);font-size:14px;paddin
 <ul>
 <li><strong>Your membership</strong>, for as long as it is active, or until you ask for it to be deleted.</li>
 <li><strong>Sign-in codes</strong> expire after 10 minutes and are deleted within a day.</li>
-<li><strong>The “near the venue” mark</strong> for up to 3 hours. Location itself is never kept.</li>
 <li><strong>Sales and points records</strong> for six years, as the venue must keep them for tax. They stay without your name or contact details once you delete your account.</li>
 <li><strong>A record that a deletion request was carried out</strong>, with your email address shortened so it no longer identifies you.</li>
 </ul>

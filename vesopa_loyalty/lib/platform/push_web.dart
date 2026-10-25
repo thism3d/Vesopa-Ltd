@@ -58,6 +58,12 @@ Future<PushChannel?> pushCurrent(Brand brand) async {
 /// before sign-in is only in a venue's own phone build, never here.
 Future<bool> pushAskPermission() async => false;
 
+/// Nothing to open in a browser.
+Future<void> pushOpenSettings() async {}
+
+/// A browser has no phone-level switch to send anyone to.
+Future<bool> pushAllowed() async => true;
+
 /// Drop it. Returns the endpoint that went, for the server to forget.
 Future<String?> pushUnsubscribe() async {
   try {

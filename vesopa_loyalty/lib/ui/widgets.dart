@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../data/api.dart';
 import '../data/brand.dart';
@@ -331,5 +332,35 @@ class DialogAction extends StatelessWidget {
     final apple = defaultTargetPlatform == TargetPlatform.iOS || defaultTargetPlatform == TargetPlatform.macOS;
     if (apple) return CupertinoDialogAction(onPressed: onPressed, isDefaultAction: primary, child: child);
     return primary ? FilledButton(onPressed: onPressed, child: child) : TextButton(onPressed: onPressed, child: child);
+  }
+}
+
+/// Where a venue's own app is in the stores, for a venue whose back office has
+/// no "play" link yet (owner, 2026-10-25: link the Play app from
+/// member.pontardawerfc.com).
+const _venuePlay = {'pontardawe-rfc': 'https://play.google.com/store/apps/details?id=com.vesopaepos.pontardawerfc'};
+
+/// "Get it on Google Play" on the web page of a venue that has its own app.
+/// Nothing in the apps themselves, or for a venue without one.
+class GetTheApp extends StatelessWidget {
+  const GetTheApp({super.key, required this.brand});
+
+  final Brand brand;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!kIsWeb) return const SizedBox.shrink();
+    final play = brand.links['play'] ?? _venuePlay[brand.slug];
+    if (play == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: Center(
+        child: OutlinedButton.icon(
+          icon: const Icon(Icons.shop_outlined),
+          label: Text('Get the ${brand.name} app on Google Play'),
+          onPressed: () => launchUrl(Uri.parse(play), webOnlyWindowName: '_blank'),
+        ),
+      ),
+    );
   }
 }

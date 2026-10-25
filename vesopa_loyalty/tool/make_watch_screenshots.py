@@ -50,7 +50,7 @@ def watch_title(name):
     n = name.strip()
     if n.lower().startswith("the "):
         n = n[4:].strip()
-    if len(n) <= 10:
+    if len(n) <= 16:
         return n
     best = None
     for word in n.split():

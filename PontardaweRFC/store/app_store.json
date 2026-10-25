@@ -5,9 +5,9 @@
   "promotional_text": "Your Pontardawe RFC membership card on your phone and in Apple Wallet, with club news and match-day notices the moment they go out.",
   "description": "The official members' app of Pontardawe RFC, est. 1881.\n\nYour membership card lives on your phone. Show the code at the bar and your members' discount is applied, every time, with no card to carry or lose.\n\n• Your members' card: one tap to show the code at the till, with the screen turned up so it scans first time\n• Members' discount on every visit\n• See what you have spent, earned and saved\n• Club news, fixtures and offers, sent straight to your phone as notifications\n• Add your card to Apple Wallet\n• Your card on your Apple Watch\n\nSign in with Apple, Google, your phone, a passkey, or your email address with a one-time code or a password. The app is for club members: if you are not a member yet, ask at the club.",
   "keywords": "pontardawe,rfc,rugby,club,members,membership,card,discount,wales,swansea valley",
-  "support_url": "https://member.pontardawerfc.com/",
+  "support_url": "https://loyalty.vesopa.com/support",
   "marketing_url": "https://pontardawerfc.com/",
-  "privacy_url": "https://pontardawerfc.com/privacy",
+  "privacy_url": "https://loyalty.vesopa.com/privacy",
   "copyright": "2026 Vesopa Software Limited",
   "category": "LIFESTYLE",
   "secondary_category": "SPORTS",
@@ -57,5 +57,6 @@
       "subtitle": "A quick tour, then your card, news and match-day notices in one place."
     }
   ],
-  "whats_new": "Phone numbers: if the phone check cannot run on your device, the app now texts you the code itself instead of saying the number cannot be verified, and you can ask for a new code after a minute. Codes from the text fill in by themselves."
+  "whats_new": "Phone numbers: if the phone check cannot run on your device, the app now texts you the code itself instead of saying the number cannot be verified, and you can ask for a new code after a minute. Codes from the text fill in by themselves.",
+  "privacy_choices_url": "https://loyalty.vesopa.com/privacy-choices"
 }

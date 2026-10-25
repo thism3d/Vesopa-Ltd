@@ -102,6 +102,19 @@ import UserNotifications
         self?.deviceToken(result)
       case "permission":
         self?.askPermission(result)
+      case "settings":
+        // This app's notification page in Settings where iOS has one (16+).
+        var url = URL(string: UIApplication.openSettingsURLString)
+        if #available(iOS 16.0, *) { url = URL(string: UIApplication.openNotificationSettingsURLString) }
+        if let url { UIApplication.shared.open(url) }
+        result(true)
+      case "allowed":
+        // Whether iOS lets this app notify, without asking: Settings shows
+        // "Notification settings" only when the answer is no.
+        UNUserNotificationCenter.current().getNotificationSettings { s in
+          let ok = s.authorizationStatus == .authorized || s.authorizationStatus == .provisional || s.authorizationStatus == .ephemeral
+          DispatchQueue.main.async { result(ok) }
+        }
       case "opened":
         self?.dartListening = true
         result(self?.opened)

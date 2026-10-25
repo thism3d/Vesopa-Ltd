@@ -874,7 +874,7 @@ class _PasskeyTile extends StatelessWidget {
 ///
 /// The two are deliberately not the same button and not the same weight.
 /// Signing out is ordinary and reversible. Removing the app signs out every
-/// device, stops notifications and switches nearby offers off — so it asks
+/// device, stops notifications — so it asks
 /// first, and says plainly that the membership and the points are the
 /// venue's record and stay exactly where they are. Somebody tidying up their
 /// phone must not be able to delete their points by accident.
@@ -895,8 +895,8 @@ class _LeaveCardState extends ConsumerState<_LeaveCard> {
         builder: (d) => AlertDialog.adaptive(
           title: const Text('Remove the app from your membership?'),
           content: const Text(
-            'Every device you signed in on is signed out, notifications stop and nearby offers '
-            'are switched off. Your membership and points stay with the venue.',
+            'Every device you signed in on is signed out and notifications stop. '
+            'Your membership and points stay with the venue.',
           ),
           actions: [
             DialogAction(onPressed: () => Navigator.pop(d, false), child: const Text('Cancel')),
@@ -1048,7 +1048,7 @@ class _DeleteSheetState extends ConsumerState<_DeleteSheet> {
             const SizedBox(height: 10),
             const Text(
               'We delete your name, email address, phone number and photo, your card and member number, '
-              'your password and passkeys, the devices you signed in on, your notifications, nearby offers and inbox.',
+              'your password and passkeys, the devices you signed in on, your notifications and inbox.',
             ),
             const SizedBox(height: 8),
             Text(

@@ -1,0 +1,13 @@
+Google Play developer page: promotional text (max 140 characters)
+
+Recommended:
+Tills, kitchen screens, kiosks, online ordering and club-branded loyalty apps for clubs, pubs and venues. Made in Wales by Vesopa Software.
+(139 characters)
+
+Alternatives:
+Software for clubs, pubs and venues: tills, kitchen screens, online ordering and loyalty apps in your club's own name. Made in Wales. (133 characters)
+Vesopa Software Ltd builds the tills, kitchen screens and branded member apps that clubs and pubs across Wales run on. (118 characters)
+
+Files:
+- vesopa-developer-icon-512.png: Developer icon, 512 x 512, 24-bit PNG, no transparency
+- vesopa-developer-header-4096x2304.jpg: Header image, 4096 x 2304, JPEG, under 1 MB

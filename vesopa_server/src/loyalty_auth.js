@@ -250,20 +250,24 @@ async function sweepChallenges(db) {
 }
 
 /** The options a browser needs to make a passkey for this member. */
-async function registrationOptions(db, { office, customer, env = process.env }) {
+async function registrationOptions(db, { office, customer, env = process.env, venueName = '' }) {
   const [existing] = await db.query(
     `SELECT credential_id, transports FROM epos_loyalty_passkeys
       WHERE office = ? AND customer_id = ? AND revoked_at IS NULL`,
     [office, customer.id]
   );
   const party = rp(env);
+  const venue = String(venueName || '').trim().slice(0, 60);
+  const who = customer.email || `member-${customer.member_no || customer.id}`;
   const options = await generateRegistrationOptions({
-    rpName: party.name,
+    rpName: venue || party.name,
     rpID: party.id,
     // The membership id, not the email: an email can change and the handle the
     // browser stores against the passkey cannot.
     userID: Buffer.from(String(customer.id)),
-    userName: customer.email || `member-${customer.member_no || customer.id}`,
+    // "you@example.com · Pontardawe RFC": the phone shows this name on its
+    // passkey sheet and in its password list, and never the app's name.
+    userName: venue ? `${who} · ${venue}` : who,
     userDisplayName: customer.name || 'Member',
     attestationType: 'none',
     excludeCredentials: existing.map((c) => ({

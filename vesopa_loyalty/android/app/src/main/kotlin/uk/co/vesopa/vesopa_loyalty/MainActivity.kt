@@ -66,6 +66,17 @@ class MainActivity : FlutterActivity() {
                 when (call.method) {
                     "token" -> deviceToken(result)
                     "permission" -> askPermission(result)
+                    // Whether the app may notify, without asking (Settings
+                    // shows "Notification settings" only when it may not).
+                    "settings" -> {
+                        // This app's notification settings page.
+                        val intent = android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                            .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, packageName)
+                            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                        runCatching { startActivity(intent) }
+                        result.success(true)
+                    }
+                    "allowed" -> result.success(getSystemService(NotificationManager::class.java).areNotificationsEnabled())
                     "opened" -> {
                         dartListening = true
                         result.success(opened)

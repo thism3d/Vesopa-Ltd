@@ -53,6 +53,15 @@ const SMS_PER_HOUR = 5;
  */
 function deviceLabel(platform, userAgent) {
   const ua = String(userAgent || '');
+  // The app's own: "VesopaLoyalty (iPad; iOS 26.0)" or
+  // "VesopaLoyalty (Android; Samsung SM-S918B; Android 15)" -> "iPad · iOS 26.0",
+  // "Samsung SM-S918B · Android 15" (owner, 2026-10-25: name the device properly).
+  const own = ua.match(/VesopaLoyalty \(([^)]*)\)/);
+  if (own && platform !== 'web') {
+    const parts = own[1].split(';').map((s) => s.trim()).filter(Boolean);
+    if (parts[0] === 'Android') parts.shift();
+    if (parts.length >= 2) return parts.slice(0, 2).join(' · ').slice(0, 80);
+  }
   const app = ua.match(/\((iPad|iPhone|iPod|Android[^;)]*|Windows)[;)]/);
   if (app && platform !== 'web') return app[1].startsWith('Android') ? 'Android phone or tablet' : app[1];
   if (platform !== 'web') return null;
@@ -775,7 +784,11 @@ module.exports = function loyaltyAccountRoutes(deps) {
         [req.customerId, req.office]
       );
       if (!c) return res.status(404).json({ error: 'Your membership could not be found.' });
-      res.json(await auth.registrationOptions(pool, { office: req.office, customer: c, env: passkeyEnv(req) }));
+      // The club's name goes with the email, so the phone's passkey sheet and
+      // its password list say whose passkey it is (owner, 2026-10-25).
+      const [[settings]] = await pool.query('SELECT app_name FROM epos_loyalty_app WHERE office = ?', [req.office]);
+      const brand = await brandFor(pool, req.office, settings);
+      res.json(await auth.registrationOptions(pool, { office: req.office, customer: c, env: passkeyEnv(req), venueName: brand && brand.name }));
     } catch (e) {
       next(e);
     }

@@ -427,7 +427,7 @@ class _Back extends StatelessWidget {
             _BackRow(
               on: on,
               label: 'Spend from',
-              value: '$minRedeem points',
+              value: '$minRedeem point${minRedeem == 1 ? '' : 's'}',
             ),
           if (short > 0) ...[
             const SizedBox(height: 14),
@@ -437,6 +437,7 @@ class _Back extends StatelessWidget {
              * them" is the thing that brings somebody back on a Tuesday.
              */
             Container(
+              width: double.infinity,
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: on.withValues(alpha: 0.14),
@@ -444,12 +445,14 @@ class _Back extends StatelessWidget {
               ),
               child: Text(
                 '$short more point${short == 1 ? '' : 's'} and you can start spending them.',
+                textAlign: TextAlign.center,
                 style: theme.textTheme.bodyMedium?.copyWith(color: on),
               ),
             ),
           ] else if (minRedeem > 0) ...[
             const SizedBox(height: 14),
             Container(
+              width: double.infinity,
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: on.withValues(alpha: 0.14),
@@ -457,15 +460,19 @@ class _Back extends StatelessWidget {
               ),
               child: Text(
                 'You have enough to spend. Just say so at the till.',
+                textAlign: TextAlign.center,
                 style: theme.textTheme.bodyMedium?.copyWith(color: on),
               ),
             ),
           ],
           const Spacer(),
           if (me['member_since'] != null)
-            Text(
-              'Member since ${when(me['member_since'], time: false)}',
-              style: theme.textTheme.bodySmall?.copyWith(color: on.withValues(alpha: 0.75)),
+            Center(
+              child: Text(
+                'Member since ${when(me['member_since'], time: false)}',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(color: on.withValues(alpha: 0.75)),
+              ),
             ),
           const SizedBox(height: 10),
           _Hint(on: on, icon: Icons.flip_camera_android, text: 'Tap to go back to your code'),
@@ -681,7 +688,7 @@ class _Facts extends StatelessWidget {
       if (me['member_since'] != null) (Icons.card_membership, 'Member since', when(me['member_since'], time: false)),
       if (expiry != null)
         (expired ? Icons.event_busy : Icons.event_available, expired ? 'Membership ran out' : 'Membership until', when(expiry, time: false)),
-      if (brand.minRedeem > 0) (Icons.redeem, 'Spend points from', '${brand.minRedeem} points'),
+      if (brand.minRedeem > 0) (Icons.redeem, 'Spend points from', '${brand.minRedeem} point${brand.minRedeem == 1 ? '' : 's'}'),
     ];
     final theme = Theme.of(context);
     final text = theme.textTheme;

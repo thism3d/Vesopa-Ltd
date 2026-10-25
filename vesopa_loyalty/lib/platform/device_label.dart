@@ -20,14 +20,20 @@ String _platformName() => kIsWeb
       };
 
 Future<void> loadDeviceLabel() async {
-  if (kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) return;
+  final ios = defaultTargetPlatform == TargetPlatform.iOS;
+  if (kIsWeb || !(ios || defaultTargetPlatform == TargetPlatform.android)) return;
   try {
-    // ios/Runner/AuthBridge.swift: UIDevice's model ("iPad") and iOS version.
+    // AuthBridge (Swift and Kotlin): the model ("iPad", "Samsung SM-S918B")
+    // and the system version.
     final d = await const MethodChannel('vesopa_loyalty/auth').invokeMapMethod<String, String>('device');
     final model = d?['model'];
     if (model == null || model.isEmpty) return;
     final system = d?['system'];
-    deviceUserAgent = 'VesopaLoyalty ($model${system == null ? '' : '; iOS $system'})';
+    final os = ios ? 'iOS' : 'Android';
+    // "Android" leads on the phones so the server can tell the platform.
+    deviceUserAgent = ios
+        ? 'VesopaLoyalty ($model${system == null ? '' : '; $os $system'})'
+        : 'VesopaLoyalty (Android; $model${system == null ? '' : '; $os $system'})';
   } catch (_) {
     // An older build without the method: the plain platform, as before.
   }
