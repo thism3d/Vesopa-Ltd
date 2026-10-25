@@ -23,7 +23,7 @@
     "internal_group": "Vesopa team",
     "feedback_email": "info@vesopasoftware.com",
     "description": "The Pontardawe RFC members' app: the membership card with its QR code for the till, Add to Apple Wallet, club news and notifications, and the card on Apple Watch.",
-    "what_to_test": "Sign in with a member's email and password (the screen opens on it), or tap Email me a code / Text me a code. Check the card and its QR code at the till, Add to Apple Wallet on the Card page (then \"Wallet added\"), Activity, adding a mobile number under Account (the code from the text fills in by itself from the keyboard), turning notifications on (Venue) and receiving one sent from the back office, and the card on a paired Apple Watch."
+    "what_to_test": "1.3.3: Account > add your mobile number: the code arrives by text (Firebase) and fills in by itself; Send a new code after a minute. Settings: Notifications switch; Notification settings shows only if notifications are blocked. No Vesopa account row, no location question anywhere. Account > Signing in: add a passkey (the sheet shows your email and Pontardawe RFC); Where you are signed in names the device and iOS version. Settings > Open-source software opens the new licences list. Apple Watch: the title reads Pontardawe RFC."
   },
   "screenshots": [
     {
@@ -57,6 +57,6 @@
       "subtitle": "A quick tour, then your card, news and match-day notices in one place."
     }
   ],
-  "whats_new": "Phone numbers: if the phone check cannot run on your device, the app now texts you the code itself instead of saying the number cannot be verified, and you can ask for a new code after a minute. Codes from the text fill in by themselves.",
+  "whats_new": "Sign in and add your mobile number with a texted code, on any network. Notifications now live in Settings. Your devices are named properly, passkeys show the club's name, and the watch shows Pontardawe RFC in full. The app no longer asks for your location.",
   "privacy_choices_url": "https://loyalty.vesopa.com/privacy-choices"
 }

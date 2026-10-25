@@ -7,7 +7,7 @@
   "contact_email": "info@vesopasoftware.com",
   "contact_website": "https://pontardawerfc.com/",
   "track": "beta",
-  "release_notes": "Phone numbers: if the phone check cannot run on your device, the app now texts you the code itself instead of saying the number cannot be verified, and you can ask for a new code after a minute. Codes from the text fill in by themselves. Wear OS: the watch now shows Pontardawe RFC in full, and the app is smaller and faster.",
+  "release_notes": "Sign in and add your mobile number with a texted code, on any network. Notifications now live in Settings. Your devices are named properly, passkeys show the club's name, and the watch shows Pontardawe RFC in full. The app no longer asks for your location.",
   "images": {
     "icon": [
       "play-icon-512.png"
