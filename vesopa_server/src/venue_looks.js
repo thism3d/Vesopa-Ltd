@@ -1,3 +1,5 @@
+const fs = require('fs');
+const path = require('path');
 /**
  * A venue's own look in the browser (2026-10-11).
  *
@@ -89,13 +91,19 @@ function nodeWeb(slug) {
 /**
  * The venue's own icons, as paths on this server, or null.
  *
- * `apple` is on white: an iPhone fills a transparent home-screen icon with
- * black. Everything else is the crest on nothing.
+ * All are the crest on nothing, `apple` too: iPad Safari shows it in the tab,
+ * where a white square looked wrong (owner, 2026-10-25); a home-screen
+ * bookmark of the site then shows it on black. Each carries its file's date,
+ * so Safari, which keeps tab icons long after a reload, fetches a new one.
  */
 function artFor(slug) {
   const look = lookFor(slug);
   if (!look || !/^\/assets\/[a-z0-9/_-]+\/$/.test(look.art || '')) return null;
-  const at = (file) => `${look.art}${file}`;
+  const at = (file) => {
+    let v = '';
+    try { v = `?v=${Math.floor(fs.statSync(path.join(__dirname, '..', 'public', look.art, file)).mtimeMs / 1000).toString(36)}`; } catch { /* not on disk */ }
+    return `${look.art}${file}${v}`;
+  };
   return {
     crest: at('crest.png'),
     favicon: at('favicon-32.png'),
