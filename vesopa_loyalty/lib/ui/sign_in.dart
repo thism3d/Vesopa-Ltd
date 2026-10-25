@@ -543,10 +543,10 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                     ],
                     const SizedBox(height: 18),
                     FilledButton(
-                      onPressed: _busy ? null : primary.action,
-                      child: _busy
-                          ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator.adaptive(strokeWidth: 2.5))
-                          : Text(primary.label),
+                      // Pressed, it stays the club's white with the spinner in
+                      // it, rather than fading to a disabled grey.
+                      onPressed: _busy ? () {} : primary.action,
+                      child: _busy ? const ButtonSpinner() : Text(primary.label),
                     ),
                     if (_stage != _Stage.start)
                       TextButton(

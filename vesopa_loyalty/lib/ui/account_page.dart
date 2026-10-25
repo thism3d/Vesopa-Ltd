@@ -604,10 +604,8 @@ class _PhoneRow extends ConsumerWidget {
             actions: [
               TextButton(onPressed: busy ? null : () => Navigator.pop(dialog), child: const Text('Cancel')),
               FilledButton(
-                onPressed: busy ? null : go,
-                child: busy
-                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                    : Text(sent ? 'Confirm' : 'Text me a code'),
+                onPressed: busy ? () {} : go,
+                child: busy ? const ButtonSpinner(size: 18) : Text(sent ? 'Confirm' : 'Text me a code'),
               ),
             ],
           );

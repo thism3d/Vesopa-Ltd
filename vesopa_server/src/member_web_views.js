@@ -281,6 +281,14 @@ const hidden = (m) => `<input type="hidden" name="_csrf" value="${esc(m.csrf)}">
 const button = (m, action, label, { cls = 'btn', fields = '' } = {}) =>
   `<form method="post" action="${esc(m.base + action)}">${hidden(m)}${fields}<button class="${cls}">${label}</button></form>`;
 
+/**
+ * Every form's button shows a spinner once pressed, until the next page (or,
+ * back to this one, at once): a form that sends a code or signs in takes a
+ * moment, and a button that does nothing visible gets pressed again.
+ */
+const BUSY = "document.addEventListener('submit',function(e){if(e.defaultPrevented)return;var b=e.submitter||e.target.querySelector('button:not([type=button])');if(b&&b.classList.contains('btn'))b.classList.add('busy')});"
+  + "addEventListener('pageshow',function(){[].forEach.call(document.querySelectorAll('.btn.busy'),function(b){b.classList.remove('busy')})});";
+
 function document({ m, brand, title, body, bodyClass = '', script = '' }) {
   const t = theme(brand);
   const icon = brand.icon || brand.logo || `${m.base}icons/Icon-192.png`;
@@ -302,7 +310,7 @@ function document({ m, brand, title, body, bodyClass = '', script = '' }) {
     + t.preload.map((u) => `<link rel="preload" href="${esc(u)}" as="font" type="font/woff2" crossorigin>`).join('')
     + `<style>${t.css}${CSS}</style></head>`
     + `<body class="${bodyClass}" data-base="${esc(m.base)}" data-csrf="${esc(m.csrf)}">${body}`
-    + (script ? `<script nonce="${esc(m.nonce)}">${script}</script>` : '')
+    + `<script nonce="${esc(m.nonce)}">${BUSY}${script}</script>`
     + '</body></html>';
 }
 
@@ -364,6 +372,63 @@ function storeBadges(m, brand) {
   return `<section class="get-app" aria-label="Get the app"><p>Get the ${esc(brand.name)} app</p><div>${badges.join('')}</div></section>`;
 }
 
+/**
+ * The countries a mobile number can belong to: the app's list
+ * (vesopa_loyalty/lib/ui/phone_field.dart), the UK first, then where members
+ * most often come from, then the rest alphabetically.
+ */
+const COUNTRIES = [
+  ['GB', 'United Kingdom', '44', '🇬🇧'], ['IE', 'Ireland', '353', '🇮🇪'], ['BD', 'Bangladesh', '880', '🇧🇩'],
+  ['IN', 'India', '91', '🇮🇳'], ['PK', 'Pakistan', '92', '🇵🇰'], ['PL', 'Poland', '48', '🇵🇱'],
+  ['US', 'United States', '1', '🇺🇸'], ['AU', 'Australia', '61', '🇦🇺'], ['AT', 'Austria', '43', '🇦🇹'],
+  ['BE', 'Belgium', '32', '🇧🇪'], ['BG', 'Bulgaria', '359', '🇧🇬'], ['CA', 'Canada', '1', '🇨🇦'],
+  ['CN', 'China', '86', '🇨🇳'], ['HR', 'Croatia', '385', '🇭🇷'], ['CY', 'Cyprus', '357', '🇨🇾'],
+  ['CZ', 'Czechia', '420', '🇨🇿'], ['DK', 'Denmark', '45', '🇩🇰'], ['EG', 'Egypt', '20', '🇪🇬'],
+  ['EE', 'Estonia', '372', '🇪🇪'], ['FI', 'Finland', '358', '🇫🇮'], ['FR', 'France', '33', '🇫🇷'],
+  ['DE', 'Germany', '49', '🇩🇪'], ['GH', 'Ghana', '233', '🇬🇭'], ['GI', 'Gibraltar', '350', '🇬🇮'],
+  ['GR', 'Greece', '30', '🇬🇷'], ['HK', 'Hong Kong', '852', '🇭🇰'], ['HU', 'Hungary', '36', '🇭🇺'],
+  ['IS', 'Iceland', '354', '🇮🇸'], ['IT', 'Italy', '39', '🇮🇹'], ['JM', 'Jamaica', '1', '🇯🇲'],
+  ['JP', 'Japan', '81', '🇯🇵'], ['KE', 'Kenya', '254', '🇰🇪'], ['LV', 'Latvia', '371', '🇱🇻'],
+  ['LT', 'Lithuania', '370', '🇱🇹'], ['LU', 'Luxembourg', '352', '🇱🇺'], ['MY', 'Malaysia', '60', '🇲🇾'],
+  ['MT', 'Malta', '356', '🇲🇹'], ['NL', 'Netherlands', '31', '🇳🇱'], ['NZ', 'New Zealand', '64', '🇳🇿'],
+  ['NG', 'Nigeria', '234', '🇳🇬'], ['NO', 'Norway', '47', '🇳🇴'], ['PH', 'Philippines', '63', '🇵🇭'],
+  ['PT', 'Portugal', '351', '🇵🇹'], ['RO', 'Romania', '40', '🇷🇴'], ['SA', 'Saudi Arabia', '966', '🇸🇦'],
+  ['SG', 'Singapore', '65', '🇸🇬'], ['SK', 'Slovakia', '421', '🇸🇰'], ['SI', 'Slovenia', '386', '🇸🇮'],
+  ['ZA', 'South Africa', '27', '🇿🇦'], ['ES', 'Spain', '34', '🇪🇸'], ['LK', 'Sri Lanka', '94', '🇱🇰'],
+  ['SE', 'Sweden', '46', '🇸🇪'], ['CH', 'Switzerland', '41', '🇨🇭'], ['TR', 'Türkiye', '90', '🇹🇷'],
+  ['UA', 'Ukraine', '380', '🇺🇦'], ['AE', 'United Arab Emirates', '971', '🇦🇪'], ['ZW', 'Zimbabwe', '263', '🇿🇼'],
+];
+const countryOf = (iso) => COUNTRIES.find((c) => c[0] === iso) || COUNTRIES[0];
+
+/**
+ * The number in international form, as the app's toInternational: the
+ * national 0 dropped, and a number typed with its own +code or 00 keeps that
+ * country whatever is picked. Null when it is too short or long.
+ */
+function toInternational(iso, typed) {
+  let d = String(typed || '').replace(/[^\d+]/g, '');
+  if (!d) return null;
+  let full;
+  if (d.startsWith('+')) full = d.slice(1).replace(/\+/g, '');
+  else if (d.startsWith('00')) full = d.slice(2);
+  else { if (d.startsWith('0')) d = d.slice(1); full = countryOf(iso)[2] + d; }
+  return full.length < 8 || full.length > 15 ? null : `+${full}`;
+}
+
+/**
+ * The app's PhoneField: a country button beside the number. The button is the
+ * browser's own list (a wheel on an iPhone or iPad), shown as the flag and
+ * code the app shows.
+ */
+function phoneField({ iso, phone, autofocus }) {
+  const c = countryOf(iso);
+  const options = COUNTRIES.map(([code, name, dial, flag]) => `<option value="${code}" data-dial="${dial}" data-flag="${flag}"${code === c[0] ? ' selected' : ''}>${flag} ${esc(name)} (+${dial})</option>`).join('');
+  return `<div class="phone-row"><label class="country"><span class="cc" aria-hidden="true"><span class="flag">${c[3]}</span> +${c[2]}</span>${CHEVRON}`
+    + `<select name="country" aria-label="Country">${options}</select></label>`
+    + `<label class="field"><span>Mobile number</span><input type="tel" name="phone" autocomplete="tel-national" inputmode="tel" placeholder="${c[0] === 'GB' ? '7700 900123' : ''}" required${autofocus ? ' autofocus' : ''} value="${esc(phone || '')}"></label></div>`;
+}
+const CHEVRON = '<svg class="dd" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5z" fill="currentColor"/></svg>';
+
 // ---------------------------------------------------------------------------
 // Signing in (sign_in.dart)
 // ---------------------------------------------------------------------------
@@ -374,18 +439,23 @@ const LABEL = {
 };
 
 /** What the venue offers, which leads and which are underneath (SignInConfig). */
-function config(signin) {
+function config(signin, ownSite = false) {
   const offered = new Set((signin && signin.methods && signin.methods.length) ? signin.methods : ['code_email']);
   const has = (x) => offered.has(x);
   const policy = (signin && signin.policy) || 'code_first';
+  // As the app (SignInConfig.leads): a venue's own app, and so the venue's
+  // own members' site, opens on the email and password whenever the venue
+  // offers one, with the other ways underneath (owner, 2026-10-25: "follow
+  // the app convention and rules in the web as well").
   const leads = policy === 'password_first' && has('password') ? 'password'
+    : ownSite && has('password') ? 'password'
     : policy === 'vesopa_first' && has('vesopa') ? 'vesopa' : 'code_email';
   const order = ['vesopa', 'passkey', 'password', 'code_sms', 'code_email'];
   return { offered, has, leads, order };
 }
 
 function signIn({ m, brand, ua, state }) {
-  const c = config(brand.signin);
+  const c = config(brand.signin, !!venueLooks.lookFor(brand.slug));
   const method = state.method && (c.has(state.method) || state.method === c.leads) ? state.method : c.leads;
   const stage = state.stage || 'start';
   const action = (step) => esc(`${m.base}signin/${step}`);
@@ -405,7 +475,7 @@ function signIn({ m, brand, ua, state }) {
     // Firebase texts the code where this browser runs script (firebasePhone);
     // without script the form posts as before.
     form = `<form method="post" action="${action('sms')}" data-fb-phone>${hidden(m)}`
-      + field('phone', 'Mobile number', `type="tel" autocomplete="tel" placeholder="07…" required autofocus value="${esc(state.phone)}"`)
+      + phoneField({ iso: state.country, phone: state.phone, autofocus: true })
       + '<button class="btn">Text me a code</button></form>'
       + `<form method="post" action="${action('sms-firebase')}" data-fb-done hidden>${hidden(m)}<input type="hidden" name="id_token"></form>`;
   } else if (method === 'vesopa') {
@@ -862,7 +932,7 @@ function account({ m, brand, unread, classes: hasClasses, member, account: a, me
     const inner = sent
       ? `<form method="post" action="${esc(m.base)}account/phone-verify">${hidden(m)}<input type="hidden" name="phone" value="${esc(state.phone)}">`
         + `<p class="hint">Enter the code we texted to ${esc(state.phone)}.</p><label class="field"><span>Code from the text</span><input class="code" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" required autofocus></label><button class="btn small">Confirm</button></form>`
-      : `<form method="post" action="${esc(m.base)}account/phone" data-fb-phone>${hidden(m)}<label class="field"><span>Mobile number</span><input type="tel" name="phone" autocomplete="tel" placeholder="07…" required></label><button class="btn small">Text me a code</button></form>`
+      : `<form method="post" action="${esc(m.base)}account/phone" data-fb-phone>${hidden(m)}${phoneField({ iso: state.country })}<button class="btn small">Text me a code</button></form>`
         + `<form method="post" action="${esc(m.base)}account/phone-firebase" data-fb-done hidden>${hidden(m)}<input type="hidden" name="id_token"></form>`;
     you += opener('mobile', 'Mobile number', esc(phoneText), inner, { open: sent, id: 'phone' });
   } else {
@@ -1056,7 +1126,14 @@ function firebasePhoneBrowser(cfg) {
   var ready = load('firebase-app-compat.js').then(function () { return load('firebase-auth-compat.js'); })
     .then(function () { if (!firebase.apps.length) firebase.initializeApp(cfg); return firebase.auth(); });
   var input = f.querySelector('input[name=phone]');
-  var btn = f.querySelector('button');
+  var sel = f.querySelector('select[name=country]');
+  var btn = f.querySelector('button:not([type=button])') || f.querySelector('button');
+  function dial() { var o = sel && sel.options[sel.selectedIndex]; return o ? o.getAttribute('data-dial') : '44'; }
+  if (sel) sel.addEventListener('change', function () {
+    var o = sel.options[sel.selectedIndex], cc = f.querySelector('.cc');
+    if (cc) cc.innerHTML = '<span class="flag">' + o.getAttribute('data-flag') + '</span> +' + o.getAttribute('data-dial');
+    if (input) input.placeholder = o.value === 'GB' ? '7700 900123' : '';
+  });
   var err = document.createElement('p'); err.className = 'err'; err.setAttribute('role', 'alert'); err.hidden = true; f.after(err);
   function say(t) { err.textContent = t || ''; err.hidden = !t; }
   function e164(v) {
@@ -1064,7 +1141,7 @@ function firebasePhoneBrowser(cfg) {
     if (v.indexOf('+') === 0) return v;
     if (v.indexOf('00') === 0) return '+' + v.slice(2);
     if (v.indexOf('0') === 0) v = v.slice(1);
-    return '+44' + v;
+    return '+' + dial() + v;
   }
   var verifier = null, result = null, sentAt = 0, number = '';
   function message(x, sending) {
@@ -1076,27 +1153,36 @@ function firebasePhoneBrowser(cfg) {
   }
   function send() {
     number = e164(input ? input.value : number);
-    if (number.length < 10) { say('Please enter your mobile number.'); return Promise.resolve(); }
-    say(''); btn.disabled = true;
+    if (number.length < 9 || number.length > 16) { say('Please enter your mobile number.'); return Promise.resolve(); }
+    say(''); btn.disabled = true; btn.classList.add('busy');
     return ready.then(function (auth) {
       if (!verifier) verifier = new firebase.auth.RecaptchaVerifier(btn, { size: 'invisible' });
       return auth.signInWithPhoneNumber(number, verifier);
     }).then(function (r) { result = r; sentAt = Date.now(); showCode(); })
       .catch(function (x) { say(message(x, true)); try { verifier && verifier.clear(); } catch (e) {} verifier = null; })
-      .finally(function () { btn.disabled = false; });
+      .finally(function () { btn.disabled = false; btn.classList.remove('busy'); });
   }
   f.addEventListener('submit', function (ev) { ev.preventDefault(); send(); });
   function showCode() {
     f.innerHTML = '';
-    var p = document.createElement('p'); p.className = 'hint'; p.textContent = 'We sent a code to ' + number + '.';
+    var p = document.createElement('p'); p.className = 'note'; p.setAttribute('role', 'status'); p.textContent = 'We sent a code to ' + number + '.';
     var label = document.createElement('label'); label.className = 'field';
-    var span = document.createElement('span'); span.textContent = 'Code from the text'; label.appendChild(span);
+    var span = document.createElement('span'); span.textContent = 'Six-digit code'; label.appendChild(span);
     var code = document.createElement('input'); code.className = 'code'; code.type = 'text'; code.inputMode = 'numeric';
     code.autocomplete = 'one-time-code'; code.maxLength = 6; code.required = true; label.appendChild(code);
-    var go = document.createElement('button'); go.className = 'btn'; go.type = 'button'; go.textContent = 'Confirm';
+    var go = document.createElement('button'); go.className = f.querySelector('.small') ? 'btn small' : 'btn'; go.type = 'button';
+    go.textContent = done.action.indexOf('signin/') >= 0 ? 'Sign in' : 'Confirm';
     var again = document.createElement('button'); again.className = 'link'; again.type = 'button';
     btn = go; input = null;
-    f.appendChild(p); f.appendChild(label); f.appendChild(go); f.appendChild(again); code.focus();
+    f.appendChild(p); f.appendChild(label); f.appendChild(again); f.appendChild(go);
+    // The app's "Start again" under the sign-in button: back to the number.
+    if (done.action.indexOf('signin/') >= 0) {
+      var restart = document.createElement('a'); restart.className = 'link'; restart.href = location.pathname + '?with=code_sms'; restart.textContent = 'Start again';
+      f.appendChild(restart);
+      // As the app: once the code is on its way, only the code and Start again.
+      [].forEach.call(document.querySelectorAll('.gate .or, .gate .way, .gate .ways'), function (e) { e.style.display = 'none'; });
+    }
+    code.focus();
     (function tick() {
       var left = 60 - Math.floor((Date.now() - sentAt) / 1000);
       again.disabled = left > 0; again.textContent = left > 0 ? 'Send a new code in ' + left + 's' : 'Send a new code';
@@ -1106,12 +1192,12 @@ function firebasePhoneBrowser(cfg) {
     function confirmCode() {
       var c = code.value.trim();
       if (c.length < 6) { say('Enter the code from the text message.'); return; }
-      go.disabled = true; say('');
+      go.disabled = true; go.classList.add('busy'); say('');
       result.confirm(c).then(function (u) { return u.user.getIdToken(true); }).then(function (t) {
         done.elements.id_token.value = t;
         try { firebase.auth().signOut(); } catch (e) {}
         done.submit();
-      }).catch(function (x) { say(message(x, false)); go.disabled = false; });
+      }).catch(function (x) { say(message(x, false)); go.disabled = false; go.classList.remove('busy'); });
     }
     go.addEventListener('click', confirmCode);
     code.addEventListener('input', function () { if (code.value.length === 6 && !go.disabled) confirmCode(); });
@@ -1144,6 +1230,7 @@ function expired(m) {
 }
 
 module.exports = {
+  toInternational,
   signIn, card, activity, news, message, classes, account, venue, notice, expired,
   offersClasses, theme, config, when, money, mix, esc,
 };

@@ -364,3 +364,23 @@ class GetTheApp extends StatelessWidget {
     );
   }
 }
+
+/// The spinner inside a button while its press is on its way (sending a code,
+/// signing in): a ring in the button's own text colour, so it shows on the
+/// club's white button and on an ordinary one alike. Not the adaptive one: on
+/// an iPhone that is Apple's small grey wheel, which hardly showed (owner,
+/// 2026-10-25: "Add loading on the button press while sending the Otp").
+class ButtonSpinner extends StatelessWidget {
+  const ButtonSpinner({super.key, this.size = 22});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = DefaultTextStyle.of(context).style.color ?? Theme.of(context).colorScheme.primary;
+    return Semantics(
+      label: 'Please wait',
+      child: SizedBox(width: size, height: size, child: CircularProgressIndicator(strokeWidth: 2.6, color: color)),
+    );
+  }
+}

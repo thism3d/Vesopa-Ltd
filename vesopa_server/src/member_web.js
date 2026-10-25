@@ -465,6 +465,7 @@ function memberWebRoutes({ secret, flutterPage }) {
       return signedInAs(req, res, answer.body.token);
     },
     async sms(req, res, b) {
+      if (b.country && b.phone) b = { ...b, phone: views.toInternational(String(b.country), String(b.phone)) || String(b.phone) };
       const phone = String(b.phone || '').trim();
       if (phone.length < 7) return signInPage(req, res, { method: 'code_sms', phone, error: 'Please enter your mobile number.' }, 400);
       const answer = await callApi(req, 'POST', `${req.member.api}/sms`, { body: { phone } });
@@ -712,7 +713,7 @@ function memberWebRoutes({ secret, flutterPage }) {
   /** What each form on the account page asks the API. */
   const ACCOUNT = {
     name: (b) => ['PUT', '/loyalty/v1/me/account', { name: String(b.name || '').trim() }],
-    phone: (b) => ['POST', '/loyalty/v1/me/phone', { phone: String(b.phone || '').trim() }],
+    phone: (b) => ['POST', '/loyalty/v1/me/phone', { phone: (b.country && views.toInternational(String(b.country), String(b.phone || ''))) || String(b.phone || '').trim() }],
     'phone-verify': (b) => ['POST', '/loyalty/v1/me/phone/verify', { phone: String(b.phone || '').trim(), code: String(b.code || '').trim() }],
     'phone-firebase': (b) => ['POST', '/loyalty/v1/me/phone/firebase', { id_token: String(b.id_token || '') }],
     'phone-remove': () => ['DELETE', '/loyalty/v1/me/phone'],
