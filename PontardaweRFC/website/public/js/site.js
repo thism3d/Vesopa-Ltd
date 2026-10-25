@@ -119,17 +119,32 @@
     if (!btn) return;
     btn.addEventListener('click', function () {
       var id = box.getAttribute('data-yt');
+      // An iPhone or iPad (Safari on an iPad says it is a Mac). Making the page
+      // full screen there while YouTube opens its own full-screen player left
+      // the video stuck on pause (owner, 2026-10-25). So there it plays in the
+      // page, muted (which iOS always allows), and the player's own buttons
+      // give sound and full screen.
+      var ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+      var q = 'autoplay=1&rel=0&modestbranding=1&fs=1&vq=hd1080&origin=' + encodeURIComponent(location.origin)
+        + (ios ? '&playsinline=1&mute=1' : '&playsinline=0');
       var f = d.createElement('iframe');
-      f.src = 'https://www.youtube-nocookie.com/embed/' + id + '?autoplay=1&rel=0&modestbranding=1&playsinline=0&fs=1&vq=hd1080&hd=1';
+      f.src = 'https://www.youtube-nocookie.com/embed/' + id + '?' + q;
       f.title = box.getAttribute('data-yt-title') || 'Video';
-      f.allow = 'autoplay; encrypted-media; fullscreen; picture-in-picture';
-      f.allowFullscreen = true;
+      f.setAttribute('allow', 'autoplay; encrypted-media; fullscreen; picture-in-picture');
       f.referrerPolicy = 'strict-origin-when-cross-origin';
       var frame = d.createElement('div');
       frame.className = 'app-video-frame';
       frame.appendChild(f);
       btn.replaceWith(frame);
       box.classList.add('playing');
+      // Always a way out: the YouTube app (or youtube.com) plays it for sure.
+      var open = d.createElement('a');
+      open.className = 'btn btn-sm app-video-open';
+      open.href = 'https://www.youtube.com/watch?v=' + id;
+      open.rel = 'noopener';
+      open.textContent = ios ? 'Tap the speaker for sound, or open in the YouTube app' : 'Open in the YouTube app';
+      frame.after(open);
+      if (ios) return;
       var full = frame.requestFullscreen || frame.webkitRequestFullscreen;
       if (full) {
         try {

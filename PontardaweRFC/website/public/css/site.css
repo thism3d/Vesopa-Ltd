@@ -663,3 +663,4 @@ a.tile:hover, a.card:hover, .news-card:hover { transform: translateY(-6px); box-
 .app-video figcaption{margin-top:10px;text-align:center}
 @media (max-width:700px){.app-video-play,.app-video-frame{border-radius:14px}.app-video-hint{bottom:10px;font-size:.85rem;padding:8px 14px}}
 @media (prefers-reduced-motion:reduce){.app-video-play img{transition:none}}
+.app-video-open{display:table;margin:12px auto 0}
