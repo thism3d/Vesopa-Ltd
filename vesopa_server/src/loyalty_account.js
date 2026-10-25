@@ -23,10 +23,26 @@ const { callbackHost, venueHostOf } = require('./loyalty_host');
  * A passkey belongs to the host the page was served from. A venue with its
  * own app host (member.pontardawerfc.com, loyalty_host.js) is its own relying
  * party there; everywhere else the shared one in loyalty_auth.js applies.
+ *
+ * ONE PASSKEY FOR THE CLUB'S WEBSITE AND ITS APPS (owner, 2026-10-25: "Web and
+ * app both should use the same passkey ... register the passkey then in
+ * pontardawerfc.com"). The relying party is the club's own domain, which the
+ * members' site (a subdomain of it) may use, and so may the iPhone and Android
+ * apps, named in pontardawerfc.com/.well-known/apple-app-site-association and
+ * assetlinks.json (PontardaweRFC/website). The apps ask for their passkeys at
+ * the members' host (VENUE_PASSKEY_API), so they get this party too.
+ *   LOYALTY_RP_PARENTS  host=domain,...  (default the one below)
  */
+const RP_PARENTS = Object.fromEntries(String(process.env.LOYALTY_RP_PARENTS || 'member.pontardawerfc.com=pontardawerfc.com')
+  .split(',').map((p) => p.split('=').map((x) => x.trim())).filter(([h, d]) => h && d && h.endsWith(`.${d}`)));
+
 function passkeyEnv(req) {
   const own = venueHostOf(req);
-  return own ? { ...process.env, LOYALTY_RP_ID: own, LOYALTY_WEBAUTHN_ORIGINS: '' } : process.env;
+  if (!own) return process.env;
+  const parent = RP_PARENTS[own];
+  return parent
+    ? { ...process.env, LOYALTY_RP_ID: parent, LOYALTY_WEBAUTHN_ORIGINS: `https://${own}` }
+    : { ...process.env, LOYALTY_RP_ID: own, LOYALTY_WEBAUTHN_ORIGINS: '' };
 }
 const idtoken = require('./vesopa_idtoken');
 const crypto = require('crypto');

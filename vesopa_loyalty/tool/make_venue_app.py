@@ -340,6 +340,9 @@ def dart(app: Path, v):
         "VENUE_FONT": font,
         # Sign in with Apple, passkeys and Google on the device (lib/platform/native_auth.dart).
         "VENUE_NATIVE_AUTH": "true",
+        # The host whose passkeys belong to the venue's own domain, shared with
+        # its members' website (lib/data/api.dart _passkeyBase).
+        "VENUE_PASSKEY_API": v.get("passkey_api", ""),
         "GOOGLE_IOS_CLIENT_ID": v.get("google_ios_client_id", ""),
         # Android's Credential Manager mints Google's id token for this web client.
         "GOOGLE_SERVER_CLIENT_ID": v.get("google_server_client_id", ""),

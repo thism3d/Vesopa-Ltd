@@ -425,7 +425,7 @@ function phoneField({ iso, phone, autofocus }) {
   const options = COUNTRIES.map(([code, name, dial, flag]) => `<option value="${code}" data-dial="${dial}" data-flag="${flag}"${code === c[0] ? ' selected' : ''}>${flag} ${esc(name)} (+${dial})</option>`).join('');
   return `<div class="phone-row"><label class="country"><span class="cc" aria-hidden="true"><span class="flag">${c[3]}</span> +${c[2]}</span>${CHEVRON}`
     + `<select name="country" aria-label="Country">${options}</select></label>`
-    + `<label class="field"><span>Mobile number</span><input type="tel" name="phone" autocomplete="tel-national" inputmode="tel" placeholder="${c[0] === 'GB' ? '7700 900123' : ''}" required${autofocus ? ' autofocus' : ''} value="${esc(phone || '')}"></label></div>`;
+    + `<label class="field"><span>Mobile number</span><input type="tel" name="phone" autocomplete="tel-national" inputmode="tel" placeholder="${c[0] === 'GB' ? '7700 900123' : ' '}" required${autofocus ? ' autofocus' : ''} value="${esc(phone || '')}"></label></div>`;
 }
 const CHEVRON = '<svg class="dd" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5z" fill="currentColor"/></svg>';
 
@@ -459,7 +459,9 @@ function signIn({ m, brand, ua, state }) {
   const method = state.method && (c.has(state.method) || state.method === c.leads) ? state.method : c.leads;
   const stage = state.stage || 'start';
   const action = (step) => esc(`${m.base}signin/${step}`);
-  const field = (name, label, attrs) => `<label class="field"><span>${label}</span><input name="${name}" ${attrs}></label>`;
+  // A placeholder of one space, so the label can tell an empty box from a
+  // filled one (member_web.css: the app's floating label).
+  const field = (name, label, attrs) => `<label class="field"><span>${label}</span><input name="${name}" ${/placeholder=/.test(attrs) ? '' : 'placeholder=" " '}${attrs}></label>`;
   let form = '';
 
   if (stage === 'code' || stage === 'name') {
@@ -1132,7 +1134,7 @@ function firebasePhoneBrowser(cfg) {
   if (sel) sel.addEventListener('change', function () {
     var o = sel.options[sel.selectedIndex], cc = f.querySelector('.cc');
     if (cc) cc.innerHTML = '<span class="flag">' + o.getAttribute('data-flag') + '</span> +' + o.getAttribute('data-dial');
-    if (input) input.placeholder = o.value === 'GB' ? '7700 900123' : '';
+    if (input) input.placeholder = o.value === 'GB' ? '7700 900123' : ' ';
   });
   var err = document.createElement('p'); err.className = 'err'; err.setAttribute('role', 'alert'); err.hidden = true; f.after(err);
   function say(t) { err.textContent = t || ''; err.hidden = !t; }

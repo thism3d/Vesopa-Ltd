@@ -1,14 +1,13 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../data/api.dart';
 import '../data/membership.dart';
 import '../data/session.dart';
-import '../platform/dojo.dart';
 import 'widgets.dart';
 
 /// The Membership card on the account page, for a venue that runs
@@ -34,7 +33,11 @@ class MembershipSection extends ConsumerWidget {
     final state = '${m['state'] ?? 'none'}';
     final plan = m['plan'] is Map ? Map<String, dynamic>.from(m['plan'] as Map) : null;
     final payer = m['payer'] != false;
-    final online = m['can_pay_online'] == true;
+    // No paying in the iPhone and iPad app (owner, 2026-10-25: "Remove dojo
+    // payments completely from the ios"): there it is renewing at the club,
+    // as for a venue not taking money online. Android and the web still pay
+    // on Dojo's page.
+    final online = m['can_pay_online'] == true && !_applePhone;
     final renewMinor = (m['renew_minor'] as num?)?.toInt();
     final family = ((m['family'] as List?) ?? const []).whereType<Map>().toList();
     final forSale = ((m['plans_for_sale'] as List?) ?? const []).whereType<Map>().map(Map<String, dynamic>.from).toList();
@@ -153,11 +156,11 @@ class MembershipSection extends ConsumerWidget {
     );
   }
 
-  /// Confirm the price, start a Dojo checkout and pay it: in Dojo's own
-  /// checkout over the app on an iPhone or iPad (lib/platform/dojo.dart),
-  /// on Dojo's checkout page in the browser elsewhere. The Dojo account is the
-  /// venue's own, chosen in the back office (Card Payments); the server makes
-  /// the payment with it, and the app only ever holds the payment's id.
+  /// Confirm the price, start a Dojo checkout and pay it on Dojo's checkout
+  /// page in the browser (Android and the web; never on an iPhone or iPad).
+  /// The Dojo account is the venue's own, chosen in the back office (Card
+  /// Payments); the server makes the payment with it, and the app only ever
+  /// holds the payment's id.
   Future<void> _pay(
     BuildContext context,
     WidgetRef ref, {
@@ -176,11 +179,8 @@ class MembershipSection extends ConsumerWidget {
       builder: (dialog) => AlertDialog.adaptive(
         title: Text(kind == 'join' ? 'Join $planName' : 'Renew $planName'),
         content: Text(
-          DojoCheckout.native
-              ? '$breakdown.\n\nYou pay by card on Dojo\'s secure checkout, here in the app. '
-                  'Your membership updates as soon as the payment goes through.'
-              : '$breakdown.\n\nYou pay on Dojo\'s secure payment page, which opens in your browser. '
-                  'Come back to the app when you have paid and your membership will update.',
+          '$breakdown.\n\nYou pay on Dojo\'s secure payment page, which opens in your browser. '
+          'Come back to the app when you have paid and your membership will update.',
         ),
         actions: [
           DialogAction(onPressed: () => Navigator.pop(dialog, false), child: const Text('Cancel')),
@@ -189,7 +189,6 @@ class MembershipSection extends ConsumerWidget {
       ),
     );
     if (go != true || !context.mounted) return;
-    if (DojoCheckout.native) return _payInApp(context, ref, kind: kind, schemeId: schemeId);
     await runWithFeedback(context, ref, () async {
       final r = await ref.read(apiProvider).membershipCheckout(kind: kind, schemeId: schemeId);
       final url = r['url'] as String?;
@@ -200,40 +199,10 @@ class MembershipSection extends ConsumerWidget {
       if (!opened) throw ApiError('The payment page could not be opened.');
     }, done: 'Finish paying in your browser, then come back here.');
   }
-
-  /// Dojo's checkout over the app. Whatever it answers, the membership moves
-  /// only when the server has read the payment from Dojo (checkPendingPayment).
-  Future<void> _payInApp(BuildContext context, WidgetRef ref, {required String kind, int? schemeId}) async {
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    void say(String text) => messenger?.showSnackBar(SnackBar(content: Text(text), behavior: SnackBarBehavior.floating));
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    try {
-      final r = await ref.read(apiProvider).membershipCheckout(kind: kind, schemeId: schemeId);
-      final id = r['payment_id'] as String?;
-      final intent = DojoCheckout.intentOf(r);
-      if (id == null || intent == null) throw ApiError('The payment could not be started. Please try again.');
-      await ref.read(pendingPaymentProvider.notifier).set(id);
-      final outcome = await DojoCheckout.pay(intent, dark: dark);
-      if (!context.mounted) return;
-      switch (outcome) {
-        case DojoOutcome.paid:
-          await checkPendingPayment(context, ref);
-        case DojoOutcome.closed:
-          // Closed without paying: nothing was taken, nothing to say.
-          await checkPendingPayment(context, ref, quiet: true);
-        case DojoOutcome.failed:
-          await checkPendingPayment(context, ref, quiet: true);
-          if (ref.read(pendingPaymentProvider) != null) say('That payment did not go through. Nothing was taken.');
-      }
-    } on ApiError catch (e) {
-      say(e.message);
-    } on PlatformException catch (e) {
-      say(e.message ?? 'The payment could not be shown. Please try again.');
-    } catch (_) {
-      say('That did not work. Please try again.');
-    }
-  }
 }
+
+/// An iPhone or iPad app, which takes no payments.
+bool get _applePhone => !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 
 /// Whether to nudge the member to renew: active, an end date within a month.
 bool renewalDue(Map<String, dynamic> m) {

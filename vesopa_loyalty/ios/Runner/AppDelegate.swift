@@ -45,7 +45,6 @@ import UserNotifications
   private var watch: WatchBridge?
   private var auth: AuthBridge?
   private var phone: PhoneBridge?
-  private var dojo: DojoBridge?
 
   override func application(
     _ application: UIApplication,
@@ -59,6 +58,21 @@ import UserNotifications
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
+  /*
+   * SAY THAT WE TAKE BACKGROUND PUSHES. FlutterAppDelegate answers
+   * respondsToSelector for this one with "only if a plugin asked for it", and
+   * none does, so iOS never delivered Firebase's silent push and Firebase's own
+   * check (it calls this with a test push and waits) found nothing forwarded:
+   * error 17054, notificationNotForwarded, on every code (owner, 2026-10-25,
+   * 1.3.4 build 14). The method below is ours, so the answer is yes.
+   */
+  override func responds(to aSelector: Selector!) -> Bool {
+    if aSelector == #selector(UIApplicationDelegate.application(_:didReceiveRemoteNotification:fetchCompletionHandler:)) {
+      return true
+    }
+    return super.responds(to: aSelector)
+  }
+
   /// Firebase's silent push proving the app for a phone sign-in code; any
   /// other goes on as before.
   override func application(
@@ -70,7 +84,13 @@ import UserNotifications
       completionHandler(.noData)
       return
     }
-    super.application(application, didReceiveRemoteNotification: userInfo, fetchCompletionHandler: completionHandler)
+    // Flutter's own dispatch, which hands it to any plugin that asked; with
+    // none, nothing would ever answer iOS, so answer it here.
+    if super.responds(to: #selector(UIApplicationDelegate.application(_:didReceiveRemoteNotification:fetchCompletionHandler:))) {
+      super.application(application, didReceiveRemoteNotification: userInfo, fetchCompletionHandler: completionHandler)
+    } else {
+      completionHandler(.noData)
+    }
   }
 
   /// Firebase's check page coming back when there is no scene to take it.
@@ -141,10 +161,6 @@ import UserNotifications
       let bridge = PhoneBridge(messenger: registrar.messenger())
       registrar.addSceneDelegate(bridge)
       phone = bridge
-    }
-    // Paying for a membership in Dojo's own checkout, not a browser (DojoBridge.swift).
-    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "VesopaLoyaltyDojo") {
-      dojo = DojoBridge(messenger: registrar.messenger())
     }
   }
 

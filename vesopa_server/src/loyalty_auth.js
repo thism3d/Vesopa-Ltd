@@ -265,9 +265,11 @@ async function registrationOptions(db, { office, customer, env = process.env, ve
     // The membership id, not the email: an email can change and the handle the
     // browser stores against the passkey cannot.
     userID: Buffer.from(String(customer.id)),
-    // "you@example.com · Pontardawe RFC": the phone shows this name on its
-    // passkey sheet and in its password list, and never the app's name.
-    userName: venue ? `${who} · ${venue}` : who,
+    // On the shared domain "you@example.com · Pontardawe RFC", so a member
+    // can tell one venue's passkey from another's. On the venue's own domain
+    // (pontardawerfc.com) the phone already titles it with the club's
+    // address, so just the email (owner, 2026-10-25).
+    userName: venue && party.id === rp().id ? `${who} · ${venue}` : who,
     userDisplayName: customer.name || 'Member',
     attestationType: 'none',
     excludeCredentials: existing.map((c) => ({

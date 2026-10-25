@@ -238,3 +238,14 @@ fieldset{border:0;padding:0;margin:0 0 10px}
 .gate .link:disabled,.gate .link[disabled]{color:#fff;opacity:.85;cursor:default}
 .gate .err{color:#fff;background:rgba(0,0,0,.28);border-radius:10px;padding:8px 12px}
 .gate .country select option{color:#141413;background:#fff}
+/* The app's text boxes (Flutter's filled field): the label sits inside the box
+   and rises to its top edge once the box is tapped or holds something; a
+   hint shows only while typing (owner, 2026-10-25). */
+.field:has(> input){position:relative}
+.field:has(> input) > span{position:absolute;left:17px;top:15px;margin:0;font-size:1.02rem;font-weight:400;opacity:.78;pointer-events:none;transform-origin:left top;transition:top .15s ease,font-size .15s ease,opacity .15s ease}
+.field > input{padding-top:22px;padding-bottom:6px}
+.field:has(> input:focus) > span,.field:has(> input:not(:placeholder-shown)) > span,.field:has(> input:autofill) > span{top:6px;font-size:.74rem;font-weight:600;opacity:1}
+.field > input::placeholder{opacity:0;transition:opacity .15s}
+.field > input:focus::placeholder{opacity:.6}
+.field > input.code{padding-top:24px}
+@media (prefers-reduced-motion:reduce){.field:has(> input) > span{transition:none}}

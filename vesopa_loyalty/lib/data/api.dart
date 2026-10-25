@@ -44,8 +44,16 @@ class LoyaltyApi {
 
   static const _timeout = Duration(seconds: 20);
 
-  Uri _u(String path, [Map<String, String>? query]) =>
-      Uri.parse('$base$path').replace(queryParameters: query);
+  /// Where a venue's own app asks for its passkeys: the club's members' host
+  /// (member.pontardawerfc.com), whose passkeys belong to the club's domain,
+  /// so the app and the members' website share one passkey (owner,
+  /// 2026-10-25). Empty for the shared app, which keeps [base].
+  static const _passkeyBase = String.fromEnvironment('VENUE_PASSKEY_API');
+
+  Uri _u(String path, [Map<String, String>? query]) {
+    final passkey = !kIsWeb && _passkeyBase.isNotEmpty && (path.contains('/passkey/') || path.startsWith('/loyalty/v1/me/passkeys'));
+    return Uri.parse('${passkey ? _passkeyBase : base}$path').replace(queryParameters: query);
+  }
 
   /// A path from the server made absolute: logos, fonts and images can come
   /// back relative to it.

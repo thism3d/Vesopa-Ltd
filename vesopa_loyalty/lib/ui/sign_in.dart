@@ -269,7 +269,10 @@ class _SignInPageState extends ConsumerState<SignInPage> {
 
     // A passkey added on this device from Account > Signing in is the venue's
     // own: ask for that one first (lib/platform/passkey.dart says why).
-    if (_config.usable.contains('passkey') && await venuePasskeyHere()) {
+    // The club's own passkey (pontardawerfc.com, shared with its members'
+    // website) first; Vesopa's when there is none on the device.
+    const clubPasskeys = String.fromEnvironment('VENUE_PASSKEY_API') != '';
+    if (_config.usable.contains('passkey') && (clubPasskeys || await venuePasskeyHere())) {
       try {
         return await venuePasskey();
       } on NativeAuthError catch (e) {

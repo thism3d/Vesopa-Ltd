@@ -856,7 +856,7 @@ ${row('News you have received and read', 'To show the club\'s messages in the ap
 <li><b>Google Firebase Authentication</b>, which receives your mobile number to send and check a sign-in code, if you use one.</li>
 <li><b>Apple Push Notification service</b>, <b>Google Firebase Cloud Messaging</b> and your browser's push service, which receive a notification token and the message, to deliver notifications.</li>
 <li><b>Apple and Google</b>, only if you choose Sign in with Apple or Continue with Google: they tell us your name and email address, never your password.</li>
-<li><b>Dojo</b> (Paymentsense Limited), only if you pay for your membership in the app. Dojo takes the card payment under its own security standards (PCI DSS).</li>
+<li><b>Dojo</b> (Paymentsense Limited), only if you pay for your membership in the Android app or on member.pontardawerfc.com, on Dojo's secure payment page. Dojo takes the card payment under its own security standards (PCI DSS). The iPhone and iPad app takes no payments.</li>
 <li><b>Apple Wallet and Google Wallet</b>, only if you add your card to them.</li>
 </ul><p>Where one of these processes information outside the UK, it does so under the safeguards UK data protection law requires.</p>`],
       ['keep', 'How long we keep it', `<ul>
@@ -919,7 +919,6 @@ ${lib('cupertino_icons', 'MIT')}
 ${lib('Firebase Authentication and Cloud Messaging SDKs (Google)', 'Apache 2.0')}
 ${lib('AndroidX, Jetpack Compose and Wear OS libraries (Google)', 'Apache 2.0')}
 ${lib('Kotlin standard library (JetBrains)', 'Apache 2.0')}
-${lib('Dojo payments SDK (iPhone; Paymentsense Limited)', 'Dojo\'s licence')}
 </tbody></table></div>`],
       ['help', 'Help', `<p>For help with the app, ${askClub()}.</p>`],
     ],

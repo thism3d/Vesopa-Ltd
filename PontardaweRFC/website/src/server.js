@@ -342,6 +342,30 @@ ${news.map((n) => `<item><title>${esc(n.title)}</title><link>${SITE}/news/${n.sl
 `);
 });
 
+/*
+ * THE CLUB'S PASSKEY IS FOR pontardawerfc.com (owner, 2026-10-25: one passkey
+ * for the members' site and the apps). A phone lets an app use a site's
+ * passkeys only when the site names the app here: Apple's
+ * apple-app-site-association and Android's assetlinks.json. The members' site
+ * (vesopa_server loyalty_account.js passkeyEnv) makes them for this domain.
+ *   APP_IOS_IDS        TEAM.bundle,...
+ *   APP_ANDROID_LINKS  package=SHA256,SHA256;...  (upload key and Play's key)
+ */
+const IOS_APPS = String(process.env.APP_IOS_IDS || 'G238FR2ZC9.com.vesopaepos.pontardawerfc').split(',').map((s) => s.trim()).filter(Boolean);
+const ANDROID_APPS = String(process.env.APP_ANDROID_LINKS
+  || 'com.vesopaepos.pontardawerfc=A3:03:9D:73:74:E8:1B:10:4D:85:9F:7B:A4:4A:AD:7D:74:31:C3:BB:C6:E4:CE:51:43:FF:47:B3:59:10:C3:82,5C:EC:AE:76:20:51:1B:62:94:4C:90:B4:97:C5:C5:58:04:8B:93:3B:77:9F:1A:44:DF:DF:50:E4:35:74:6B:70')
+  .split(';').map((s) => s.split('=')).filter(([pkg, prints]) => pkg && prints)
+  .map(([pkg, prints]) => ({
+    relation: ['delegate_permission/common.get_login_creds', 'delegate_permission/common.handle_all_urls'],
+    target: { namespace: 'android_app', package_name: pkg.trim(), sha256_cert_fingerprints: prints.split(',').map((x) => x.trim()) },
+  }));
+app.get(['/.well-known/apple-app-site-association', '/apple-app-site-association'], (req, res) => {
+  res.type('application/json').set('Cache-Control', 'public, max-age=3600').send(JSON.stringify({ webcredentials: { apps: IOS_APPS } }));
+});
+app.get('/.well-known/assetlinks.json', (req, res) => {
+  res.type('application/json').set('Cache-Control', 'public, max-age=3600').send(JSON.stringify(ANDROID_APPS));
+});
+
 app.get('/.well-known/security.txt', (req, res) => {
   res.type('text/plain').send(`Contact: mailto:info@vesopa.com\nExpires: ${new Date(Date.now() + 365 * 864e5).toISOString()}\nPreferred-Languages: en\n`);
 });

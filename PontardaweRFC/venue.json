@@ -4,7 +4,7 @@
   "short_name": "Pontardawe",
   "tagline": "Members' Club · Est. 1881",
   "app_id": "com.vesopaepos.pontardawerfc",
-  "version": "1.3.4",
+  "version": "1.3.5",
   "build": 14,
   "colours": {
     "background": "#8F0000",
@@ -24,5 +24,10 @@
   "firebase_ios_app_id": "1:561180189171:ios:0a16076c66d8869c267286",
   "firebase_project_id": "vesopa",
   "firebase_sender_id": "561180189171",
-  "firebase_tester_groups": ""
+  "firebase_tester_groups": "",
+  "passkey_api": "https://member.pontardawerfc.com",
+  "passkey_domains": [
+    "vesopa.com",
+    "pontardawerfc.com"
+  ]
 }

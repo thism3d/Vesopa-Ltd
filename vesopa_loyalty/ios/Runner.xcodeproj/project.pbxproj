@@ -28,8 +28,6 @@
 		7E5A00000000000000000042 /* AuthBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E5A00000000000000000041 /* AuthBridge.swift */; };
 		7E5A00000000000000000062 /* PhoneBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E5A00000000000000000061 /* PhoneBridge.swift */; };
 		7E5A00000000000000000063 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 7E5A00000000000000000064 /* FirebaseAuth */; };
-		7E5A00000000000000000072 /* DojoBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E5A00000000000000000071 /* DojoBridge.swift */; };
-		7E5A00000000000000000073 /* dojo-ios-sdk-drop-in-ui in Frameworks */ = {isa = PBXBuildFile; productRef = 7E5A00000000000000000074 /* dojo-ios-sdk-drop-in-ui */; };
 		7E5A00000000000000000034 /* WatchBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E5A00000000000000000033 /* WatchBridge.swift */; };
 		7E5A00000000000000000052 /* SiriShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E5A00000000000000000051 /* SiriShortcuts.swift */; };
 /* End PBXBuildFile section */
@@ -106,7 +104,6 @@
 		7E5A00000000000000000031 /* WalletBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalletBridge.swift; sourceTree = "<group>"; };
 		7E5A00000000000000000041 /* AuthBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthBridge.swift; sourceTree = "<group>"; };
 		7E5A00000000000000000061 /* PhoneBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneBridge.swift; sourceTree = "<group>"; };
-		7E5A00000000000000000071 /* DojoBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DojoBridge.swift; sourceTree = "<group>"; };
 		7E5A00000000000000000033 /* WatchBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchBridge.swift; sourceTree = "<group>"; };
 		7E5A00000000000000000051 /* SiriShortcuts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiriShortcuts.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -118,7 +115,6 @@
 			files = (
 				78A318202AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage in Frameworks */,
 				7E5A00000000000000000063 /* FirebaseAuth in Frameworks */,
-				7E5A00000000000000000073 /* dojo-ios-sdk-drop-in-ui in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -188,7 +184,6 @@
 				7E5A00000000000000000031 /* WalletBridge.swift */,
 				7E5A00000000000000000041 /* AuthBridge.swift */,
 				7E5A00000000000000000061 /* PhoneBridge.swift */,
-				7E5A00000000000000000071 /* DojoBridge.swift */,
 				7E5A00000000000000000033 /* WatchBridge.swift */,
 				7E5A00000000000000000051 /* SiriShortcuts.swift */,
 				7E5A00000000000000000030 /* Runner.entitlements */,
@@ -252,7 +247,6 @@
 			packageProductDependencies = (
 				78A3181F2AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage */,
 				7E5A00000000000000000064 /* FirebaseAuth */,
-				7E5A00000000000000000074 /* dojo-ios-sdk-drop-in-ui */,
 			);
 			productName = Runner;
 			productReference = 97C146EE1CF9000F007C117D /* Runner.app */;
@@ -310,7 +304,6 @@
 			packageReferences = (
 				781AD8BC2B33823900A9FFBB /* XCLocalSwiftPackageReference "Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage" */,
 				7E5A00000000000000000065 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
-				7E5A00000000000000000075 /* XCRemoteSwiftPackageReference "dojo-ios-sdk-drop-in-ui" */,
 			);
 			productRefGroup = 97C146EF1CF9000F007C117D /* Products */;
 			projectDirPath = "";
@@ -405,7 +398,6 @@
 				7E5A00000000000000000032 /* WalletBridge.swift in Sources */,
 				7E5A00000000000000000042 /* AuthBridge.swift in Sources */,
 				7E5A00000000000000000062 /* PhoneBridge.swift in Sources */,
-				7E5A00000000000000000072 /* DojoBridge.swift in Sources */,
 				7E5A00000000000000000034 /* WatchBridge.swift in Sources */,
 				7E5A00000000000000000052 /* SiriShortcuts.swift in Sources */,
 			);
@@ -928,14 +920,6 @@
 				minimumVersion = 12.0.0;
 			};
 		};
-		7E5A00000000000000000075 /* XCRemoteSwiftPackageReference "dojo-ios-sdk-drop-in-ui" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/dojo-engineering/dojo-ios-sdk-drop-in-ui";
-			requirement = {
-				kind = upToNextMinorVersion;
-				minimumVersion = 1.4.7;
-			};
-		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -947,11 +931,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 7E5A00000000000000000065 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseAuth;
-		};
-		7E5A00000000000000000074 /* dojo-ios-sdk-drop-in-ui */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 7E5A00000000000000000075 /* XCRemoteSwiftPackageReference "dojo-ios-sdk-drop-in-ui" */;
-			productName = "dojo-ios-sdk-drop-in-ui";
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
