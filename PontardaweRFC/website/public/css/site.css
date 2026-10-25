@@ -639,7 +639,7 @@ a.tile:hover, a.card:hover, .news-card:hover { transform: translateY(-6px); box-
 .post-tags { display: flex; flex-wrap: wrap; gap: 8px; margin: 24px 0 8px; }
 /* The app news after the hero (2026-10-25): the words and a phone playing the tour. */
 .app-news{background:linear-gradient(180deg,var(--card),transparent);border-bottom:1px solid var(--line)}
-.app-news-in{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,.75fr);gap:clamp(24px,5vw,64px);align-items:center}
+.app-news-in{max-width:880px}
 .app-news-new{display:inline-block;margin-right:8px;padding:2px 10px;border-radius:999px;background:var(--red-2);color:#fff;font-size:.75rem;letter-spacing:.06em;text-transform:uppercase;vertical-align:middle}
 .app-news-ways{list-style:none;padding:0;margin:18px 0}
 .app-news-ways li{display:flex;gap:10px;align-items:flex-start;margin:0 0 10px}
@@ -649,5 +649,17 @@ a.tile:hover, a.card:hover, .news-card:hover { transform: translateY(-6px); box-
 .app-news-video{margin:0;text-align:center}
 .phone-frame{position:relative;width:min(100%,300px);margin:0 auto 10px;aspect-ratio:9/16;padding:10px;border-radius:34px;background:#111;box-shadow:0 24px 60px rgba(0,0,0,.35),inset 0 0 0 2px #2a2a2a}
 .phone-frame video{display:block;width:100%;height:100%;object-fit:cover;border-radius:26px;background:#000}
-@media (max-width:820px){.app-news-in{grid-template-columns:1fr}.phone-frame{width:min(70vw,260px)}}
 @media (prefers-reduced-motion:reduce){.phone-frame video{animation:none}}
+/* The app video: a wide slide, our own picture until it is tapped. */
+.app-video{position:relative;margin:28px auto 0;max-width:1180px}
+.app-video-play{display:block;position:relative;width:100%;padding:0;border:0;background:none;cursor:pointer;border-radius:22px;overflow:hidden;box-shadow:0 30px 70px rgba(0,0,0,.4);aspect-ratio:16/9}
+.app-video-play img{display:block;width:100%;height:100%;object-fit:cover;transition:transform .6s ease}
+.app-video-play:hover img,.app-video-play:focus-visible img{transform:scale(1.03)}
+.app-video-play:focus-visible{outline:3px solid #fff;outline-offset:4px}
+.app-video-hint{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border-radius:999px;background:rgba(0,0,0,.55);color:#fff;font-weight:700;font-size:.95rem;backdrop-filter:blur(6px);white-space:nowrap}
+.app-video-frame{position:relative;aspect-ratio:16/9;border-radius:22px;overflow:hidden;background:#000;box-shadow:0 30px 70px rgba(0,0,0,.4)}
+.app-video-frame iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+.app-video-frame:fullscreen{border-radius:0;aspect-ratio:auto;width:100vw;height:100vh}
+.app-video figcaption{margin-top:10px;text-align:center}
+@media (max-width:700px){.app-video-play,.app-video-frame{border-radius:14px}.app-video-hint{bottom:10px;font-size:.85rem;padding:8px 14px}}
+@media (prefers-reduced-motion:reduce){.app-video-play img{transition:none}}

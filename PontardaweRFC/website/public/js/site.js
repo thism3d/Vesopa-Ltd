@@ -107,6 +107,43 @@
     setInterval(tick, 60000);
   });
 
+  /*
+   * The app video (2026-10-25): our own picture until it is tapped, then
+   * YouTube's privacy-enhanced player, playing, full screen and turned to
+   * landscape where the phone allows it (Android; an iPhone plays it in its
+   * own full-screen player, which turns with the phone). Full HD is asked for;
+   * YouTube still drops it on a slow connection.
+   */
+  d.querySelectorAll('[data-yt]').forEach(function (box) {
+    var btn = box.querySelector('.app-video-play');
+    if (!btn) return;
+    btn.addEventListener('click', function () {
+      var id = box.getAttribute('data-yt');
+      var f = d.createElement('iframe');
+      f.src = 'https://www.youtube-nocookie.com/embed/' + id + '?autoplay=1&rel=0&modestbranding=1&playsinline=0&fs=1&vq=hd1080&hd=1';
+      f.title = box.getAttribute('data-yt-title') || 'Video';
+      f.allow = 'autoplay; encrypted-media; fullscreen; picture-in-picture';
+      f.allowFullscreen = true;
+      f.referrerPolicy = 'strict-origin-when-cross-origin';
+      var frame = d.createElement('div');
+      frame.className = 'app-video-frame';
+      frame.appendChild(f);
+      btn.replaceWith(frame);
+      box.classList.add('playing');
+      var full = frame.requestFullscreen || frame.webkitRequestFullscreen;
+      if (full) {
+        try {
+          var p = full.call(frame);
+          var turn = function () { try { if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(function () {}); } catch (e) {} };
+          if (p && p.then) p.then(turn).catch(function () {}); else turn();
+        } catch (e) {}
+      }
+      d.addEventListener('fullscreenchange', function () {
+        if (!d.fullscreenElement && screen.orientation && screen.orientation.unlock) { try { screen.orientation.unlock(); } catch (e) {} }
+      });
+    });
+  });
+
   /* The satellite map: Google's embed, only when the visitor asks for it. */
   d.querySelectorAll('[data-sat-map]').forEach(function (box) {
     var btn = box.querySelector('[data-sat-show]');

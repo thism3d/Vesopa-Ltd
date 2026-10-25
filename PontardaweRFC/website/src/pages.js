@@ -172,11 +172,14 @@ function home() {
       </div>
       <p class="muted small">iPhone and iPad: coming soon to the App Store. Members can sign in at <a href="${esc(MEMBERS)}/">member.pontardawerfc.com</a> today. <a href="/news/the-pontardawe-rfc-app-is-now-on-google-play">Read the news</a> &middot; <a href="/app/help">Help with the app</a></p>
     </div>
-    <figure class="app-news-video reveal">
-      <div class="phone-frame">
-        <video src="/media/app-tour.mp4?v=${ASSET_VERSION}" poster="/media/app-tour-poster.jpg" muted loop playsinline autoplay preload="metadata" aria-label="A short tour of the Pontardawe RFC app: the welcome, signing in, the members' card, news, activity and the venue"></video>
-      </div>
-      <figcaption class="muted small">The app on Android: welcome, sign in, your card, news, activity and the clubhouse.</figcaption>
+  </div>
+  <div class="wrap">
+    <figure class="app-video reveal" data-yt="rOrT24s9flc" data-yt-title="Pontardawe RFC Members App: showcase">
+      <button class="app-video-play" type="button" aria-label="Play the Pontardawe RFC app showcase video (opens full screen)">
+        <picture><source media="(max-width: 700px)" srcset="/media/app-showcase-960.jpg?v=${ASSET_VERSION}"><img src="/media/app-showcase.jpg?v=${ASSET_VERSION}" alt="The members' app is here: the Pontardawe RFC app showcase" width="1920" height="1080" loading="lazy" decoding="async"></picture>
+        <span class="app-video-hint">${icon('arrow', { size: 18 })} Tap to watch full screen</span>
+      </button>
+      <figcaption class="muted small">The Pontardawe RFC members' app showcase, by Vesopa Software. Playing it loads YouTube (privacy-enhanced mode). <a href="https://www.youtube.com/watch?v=rOrT24s9flc" rel="noopener">Watch on YouTube</a></figcaption>
     </figure>
   </div>
 </section>
@@ -758,6 +761,7 @@ function cookiesPage() {
       ['none', 'No cookies', '<p>pontardawerfc.com sets no cookies and loads nothing from advertising or analytics companies. Our fonts, pictures and scripts all come from this site.</p>'],
       ['storage', 'What your browser keeps', '<p>To make the site work as you use it, your browser stores three things on your own device: whether you\'ve seen the opening animation this visit, your basket on the menu page, and your conversation with the club helper. These are strictly necessary for the features you choose to use, so the law does not ask us for consent; clearing your browser\'s site data removes them.</p>'],
       ['members', 'The members\' app', '<p>member.pontardawerfc.com keeps you signed in on your device with a token in its local storage. Signing out removes it.</p>'],
+      ['video', 'The app video', '<p>The app showcase on the home page is our own picture until you press play. Then it loads YouTube in its privacy-enhanced mode (youtube-nocookie.com), which stores nothing about you until the video plays, under <a href="https://policies.google.com/technologies/cookies" rel="noopener">Google\'s cookie policy</a>.</p>'],
       ['map', 'The satellite map', '<p>The map of the ground is our own drawing until you press <b>Show satellite view</b>. Then it loads Google Maps, which sets Google\'s own cookies under <a href="https://policies.google.com/technologies/cookies" rel="noopener">Google\'s cookie policy</a>. Nothing loads from Google unless you press it.</p>'],
     ],
   });
