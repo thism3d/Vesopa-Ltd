@@ -50,9 +50,9 @@ on:
         required: false
         default: ''
       part:
-        description: What to upload (all, phone, wear)
+        description: What to upload (all = both bundles and the listing; apps = both bundles only; phone; wear)
         type: choice
-        options: [all, phone, wear]
+        options: [all, apps, phone, wear]
         default: all
       draft:
         description: Leave the release as a draft to roll out by hand in Play Console

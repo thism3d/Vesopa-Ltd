@@ -5,7 +5,7 @@
     python tool/play_upload.py PontardaweRFC --track beta   # another track than play.json's
     python tool/play_upload.py PontardaweRFC --builds DIR   # bundles from DIR, not the Desktop
     python tool/play_upload.py PontardaweRFC --next-build   # print the next build number Play has not seen
-    python tool/play_upload.py PontardaweRFC --only wear    # one part: phone, wear or listing
+    python tool/play_upload.py PontardaweRFC --only wear    # one part: phone, wear or listing; apps = phone and wear, no listing
     python tool/play_upload.py PontardaweRFC --halt alpha,wear:beta   # pause what is out on these tracks
     python tool/play_upload.py PontardaweRFC --track production --only phone --draft   # a draft to roll out by hand
 
@@ -247,7 +247,8 @@ def main():
         parts = [(builds / f"{stem}.aab", track, "Phone and tablet", "phone"),
                  (builds / f"{stem}-wear.aab", f"wear:{track}", "Wear OS", "wear")]
         for aab, t, label, part in parts:
-            if only and only != part:
+            # --only apps: the phone and the watch bundles, without the listing.
+            if only and only != part and only != "apps":
                 continue
             print(f"{label}:")
             if not aab.is_file():
@@ -274,7 +275,7 @@ def main():
                     print("     A Wear OS testing track is made in Play Console > Test and release > Testing >"
                           " Closed testing > Create track, form factor Wear OS; or give --track one Play has.")
 
-    if only in ("phone", "wear"):
+    if only in ("phone", "wear", "apps"):
         sys.exit(1 if failed else 0)
     print("Store listing:")
     try:

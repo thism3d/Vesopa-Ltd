@@ -61,9 +61,10 @@ void main() {
     expect(card['spendNote'], '40 more to spend');
   });
 
-  test('watch titles fit about ten letters', () {
-    expect(watchTitle('The Vesopa Kitchen'), 'Kitchen');
-    expect(watchTitle('Pontardawe RFC'), 'Pontardawe');
+  test('watch titles: the full name up to 16 letters, else the longest word', () {
+    expect(watchTitle('The Vesopa Kitchen'), 'Vesopa Kitchen');
+    expect(watchTitle('Pontardawe RFC'), 'Pontardawe RFC');
     expect(watchTitle('The Anchor'), 'Anchor');
+    expect(watchTitle('Llangennech Rugby Football Club'), 'Llangennech');
   });
 }

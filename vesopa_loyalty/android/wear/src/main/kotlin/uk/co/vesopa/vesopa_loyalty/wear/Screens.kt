@@ -106,7 +106,8 @@ private fun Page(title: String, centred: Boolean = false, content: @Composable C
                     color = colorResource(R.color.wear_accent),
                     fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
+                    maxLines = 2,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Spacer(Modifier.height(4.dp))
@@ -136,7 +137,7 @@ fun CardPage(card: WatchCard) {
                     modifier = Modifier.size(18.dp),
                 )
                 Spacer(Modifier.width(5.dp))
-                Text(card.title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                Text(card.title, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
             Spacer(Modifier.height(5.dp))
             Box(

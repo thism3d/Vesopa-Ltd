@@ -7,7 +7,7 @@
   "contact_email": "info@vesopasoftware.com",
   "contact_website": "https://pontardawerfc.com/",
   "track": "beta",
-  "release_notes": "Phone numbers: if the phone check cannot run on your device, the app now texts you the code itself instead of saying the number cannot be verified, and you can ask for a new code after a minute. Codes from the text fill in by themselves.",
+  "release_notes": "Phone numbers: if the phone check cannot run on your device, the app now texts you the code itself instead of saying the number cannot be verified, and you can ask for a new code after a minute. Codes from the text fill in by themselves. Wear OS: the watch now shows Pontardawe RFC in full, and the app is smaller and faster.",
   "images": {
     "icon": [
       "play-icon-512.png"

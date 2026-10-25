@@ -55,14 +55,14 @@ Map<String, Object?> watchCard({
 /// Signed out on the phone: the watch forgets the card too.
 const Map<String, Object?> watchSignedOut = {'signedIn': false};
 
-/// A watch title has room for about ten letters: "The Vesopa Kitchen" is
-/// "Kitchen", the way the screenshots show it.
+/// The venue's name for the watch: in full up to 16 letters ("Pontardawe RFC",
+/// owner 2026-10-25: "Pontardawe is a place name"), the watch wrapping it onto
+/// a second line if it must. Only a longer name is cut to its longest word.
 String watchTitle(String name) {
   var n = name.trim();
   if (n.toLowerCase().startsWith('the ')) n = n.substring(4).trim();
-  if (n.length <= 10) return n;
-  // The longest word that fits, the later one on a tie: "Kitchen" from
-  // "Vesopa Kitchen", "Pontardawe" from "Pontardawe RFC".
+  if (n.length <= 16) return n;
+  // The longest word that fits, the later one on a tie.
   String? best;
   for (final word in n.split(RegExp(r'\s+'))) {
     if (word.length <= 12 && (best == null || word.length >= best.length)) best = word;

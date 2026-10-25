@@ -85,6 +85,13 @@ android {
             // reports have symbols. Flutter's release already shrinks with R8
             // and packs the mapping file.
             ndk { debugSymbolLevel = "SYMBOL_TABLE" }
+            // R8 in full: optimise, obfuscate and shrink code and resources (Play,
+            // 2026-10-25: "low optimization, obfuscation and shrinking rate (42%)").
+            // Flutter's own default is proguard-android.txt, which turns
+            // optimisation off; the optimize file is what the Wear app already uses.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
 }
