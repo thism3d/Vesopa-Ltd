@@ -137,9 +137,20 @@ function init(shipped) {
   }
 }
 
-/** The post as the pages read it: published date, and the text either way. */
+/** The first uploaded photo placed in a story's text ("u/<id>"), or null. */
+function storyPhoto(html) {
+  for (const m of String(html || '').matchAll(/\/img\/(u\/[a-z0-9-]+)\.(?:jpg|webp)/g)) if (store.images[m[1]]) return m[1];
+  return null;
+}
+
+/**
+ * The post as the pages read it: published date, and the text either way.
+ * `cover` is the picture its card and shared link show: its own photo, or
+ * else the first photo in its story (a post whose only photo was put in the
+ * text); null when it has none (src/news_card.js then draws one).
+ */
 function view(p) {
-  return { ...p, date: p.publishAt.slice(0, 10), paragraphs: [] };
+  return { ...p, date: p.publishAt.slice(0, 10), paragraphs: [], cover: p.image || storyPhoto(p.html) };
 }
 
 /** Published posts whose time has come, newest first. */

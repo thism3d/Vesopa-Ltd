@@ -10,6 +10,7 @@
 const fs = require('fs');
 const path = require('path');
 const posts = require('./posts');
+const newsCard = require('./news_card');
 
 const ROOT = path.join(__dirname, '..', 'content');
 const read = (name) => JSON.parse(fs.readFileSync(path.join(ROOT, name), 'utf8'));
@@ -56,6 +57,9 @@ const updates = [];
 function refresh() {
   Object.assign(images, posts.images());
   const live = posts.live();
+  // A post with no photo at all gets a drawn club card (src/news_card.js);
+  // one not drawn yet is shown as soon as it is.
+  newsCard.fill(live, images, refresh);
   news.splice(0, news.length, ...live);
   updates.splice(0, updates.length, ...live.filter((p) => p.kind));
 }

@@ -33,7 +33,7 @@ async function line(text, { size, weight = 'Bold', color = '#ffffff', width = 76
   return { input: await img.png().toBuffer(), meta: await img.metadata() };
 }
 
-async function card({ label, lines, foot }) {
+async function card({ label, lines, foot, size = null }) {
   const bg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
   <defs>
     <linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8f0000"/><stop offset=".55" stop-color="#5a0000"/><stop offset="1" stop-color="#1e0202"/></linearGradient>
@@ -51,7 +51,7 @@ async function card({ label, lines, foot }) {
   parts.push({ input: head.input, left: 64, top: 70 });
   let y = 70 + head.meta.height + 26;
   for (const t of lines) {
-    const l = await line(t.toUpperCase(), { size: lines.length > 2 ? 52 : 64 });
+    const l = await line(t.toUpperCase(), { size: size || (lines.length > 2 ? 52 : 64) });
     parts.push({ input: l.input, left: 64, top: y });
     y += l.meta.height + 10;
   }

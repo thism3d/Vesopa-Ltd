@@ -73,6 +73,12 @@ writes `SESSION_SECRET` and `ADMIN_SETUP_CODE`, prints the setup code while
 nobody can sign in yet, and installs a nightly copy of `data/` to `backups/`
 (30 kept, `/etc/cron.d/pontardawerfc-news-backup`).
 
+Every news card has a picture (2026-10-25): the post's photo, or else the
+first photo in its story, or else a club card drawn for it by `src/news_card.js`
+(the match card's look: crest, title, date; `data/cards/`, served at `/img/c/`).
+The drawn card is never saved on the post, so a photo added in the admin
+replaces it at once. It is also the post's picture when the link is shared.
+
 Photos no post uses any more (taken off a post, from a deleted post, or added
 to a post that was never saved) are deleted a day after they were uploaded,
 checked every six hours (`posts.sweepPhotos`).

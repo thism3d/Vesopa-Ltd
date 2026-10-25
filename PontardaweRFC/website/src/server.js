@@ -70,6 +70,8 @@ app.use(express.static(PUBLIC, {
 }));
 // Photos uploaded in the admin (src/uploads.js): each name is new, so they never change.
 app.use('/img/u', express.static(posts.UPLOADS, { index: false, maxAge: '365d', immutable: true }));
+// Cards drawn for posts with no photo (src/news_card.js): named by what they say, so they never change either.
+app.use('/img/c', express.static(require('./news_card').DIR, { index: false, maxAge: '365d', immutable: true }));
 // Where the club writes its news (src/admin.js).
 app.use('/admin', adminRoutes());
 // Photos no post uses any more go after a day (src/posts.js sweepPhotos), checked every six hours.

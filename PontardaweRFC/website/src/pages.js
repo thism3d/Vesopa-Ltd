@@ -89,7 +89,7 @@ function eventTile(u, { big = false } = {}) {
   const [label, ic] = kindOf(u.kind);
   return `<article class="ev-tile reveal${big ? ' ev-big' : ''}" data-tilt>
   <a href="/news/${esc(u.slug)}" class="ev-link">
-    <div class="ev-poster">${photo(u.image, { sizes: big ? '(max-width: 760px) 100vw, 560px' : '(max-width: 760px) 100vw, 380px' }) || '<div class="ev-poster-art" aria-hidden="true"><img src="/img/crest-256.webp" alt="" width="128" height="128" loading="lazy"></div>'}<span class="ev-date"><b>${esc(w.dd)}</b><span>${esc(w.mon)}</span></span>${soon ? `<span class="ev-soon">${esc(soon)}</span>` : ''}</div>
+    <div class="ev-poster">${photo(u.cover || u.image, { sizes: big ? '(max-width: 760px) 100vw, 560px' : '(max-width: 760px) 100vw, 380px' }) || '<div class="ev-poster-art" aria-hidden="true"><img src="/img/crest-256.webp" alt="" width="128" height="128" loading="lazy"></div>'}<span class="ev-date"><b>${esc(w.dd)}</b><span>${esc(w.mon)}</span></span>${soon ? `<span class="ev-soon">${esc(soon)}</span>` : ''}</div>
     <div class="ev-body">
       <p class="ev-kind">${icon(ic, { size: 16 })} ${esc(label)}</p>
       <h3>${esc(u.title)}</h3>
@@ -110,7 +110,9 @@ function crumbs(items) {
 }
 
 function newsCard(post, { big = false } = {}) {
-  const img = post.image ? photo(post.image, { cls: 'card-img', sizes: '(max-width: 640px) 100vw, (max-width: 980px) 50vw, 380px' }) : `<div class="card-img card-img-art" aria-hidden="true"><img src="/img/crest-128.webp" alt="" width="96" height="96" loading="lazy"></div>`;
+  // Its own photo, a photo from its story, or the card drawn for it (src/news_card.js); the crest only until that is drawn.
+  const cover = post.cover || post.image;
+  const img = cover && images[cover] ? photo(cover, { cls: 'card-img', sizes: '(max-width: 640px) 100vw, (max-width: 980px) 50vw, 380px' }) : `<div class="card-img card-img-art" aria-hidden="true"><img src="/img/crest-128.webp" alt="" width="96" height="96" loading="lazy"></div>`;
   return `<article class="card news-card reveal${big ? ' news-big' : ''}">
   <a href="/news/${esc(post.slug)}" class="card-link">
     ${img}
@@ -175,9 +177,9 @@ function home() {
   </div>
   <div class="wrap">
     <figure class="app-video reveal" data-yt="rOrT24s9flc" data-yt-title="Pontardawe RFC Members App: showcase">
-      <button class="app-video-play" type="button" aria-label="Play the Pontardawe RFC app showcase video (opens full screen)">
+      <button class="app-video-play" type="button" aria-label="Play the Pontardawe RFC app showcase video">
         <picture><source media="(max-width: 700px)" srcset="/media/app-showcase-960.jpg?v=${ASSET_VERSION}"><img src="/media/app-showcase.jpg?v=${ASSET_VERSION}" alt="The members' app is here: the Pontardawe RFC app showcase" width="1920" height="1080" loading="lazy" decoding="async"></picture>
-        <span class="app-video-hint">${icon('arrow', { size: 18 })} Tap to watch full screen</span>
+        <span class="app-video-hint">${icon('arrow', { size: 18 })} Tap to watch</span>
       </button>
       <figcaption class="muted small">The Pontardawe RFC members' app showcase, by Vesopa Software. Playing it loads YouTube (privacy-enhanced mode). <a href="https://www.youtube.com/watch?v=rOrT24s9flc" rel="noopener">Watch on YouTube</a></figcaption>
     </figure>
@@ -506,8 +508,10 @@ function articlePage(post, { preview = false } = {}) {
     <p class="back"><a href="${ev ? '/whats-on' : '/news'}">${icon('arrow', { size: 18 })} ${ev ? "What's on" : 'All news'}</a></p>
   </article>
 </section>`;
-  // A photo uploaded in the admin has its own share picture (src/uploads.js).
-  const share = post.image && images[post.image] && images[post.image].og ? { src: `/img/${post.image}-og.jpg`, alt: images[post.image].alt } : null;
+  // A photo uploaded in the admin has its own share picture (src/uploads.js); a drawn card is already that shape.
+  const cover = post.cover || post.image;
+  const cm = cover && images[cover];
+  const share = cm && cm.og ? { src: `/img/${cover}-og.jpg`, alt: cm.alt } : cm && cm.drawn && post.cover ? { src: `/img/${cover}.jpg`, alt: post.title } : null;
   return page({
     title: post.seoTitle || post.title,
     description: post.summary,
@@ -525,7 +529,7 @@ function articlePage(post, { preview = false } = {}) {
       ...(post.updated ? { dateModified: zoned(post.updated) } : {}),
       description: post.summary,
       ...((post.tags || []).length ? { keywords: post.tags.join(', ') } : {}),
-      image: post.image ? `${SITE}/img/${post.image}.jpg` : `${SITE}/img/og-news.jpg`,
+      image: post.cover ? `${SITE}/img/${post.cover}.jpg` : post.image ? `${SITE}/img/${post.image}.jpg` : `${SITE}/img/og-news.jpg`,
       author: { '@type': 'Organization', name: club.name, url: `${SITE}/` },
       publisher: { '@id': `${SITE}/#club` },
       mainEntityOfPage: `${SITE}/news/${post.slug}`,
@@ -1302,7 +1306,7 @@ ${nextMatch({ heading: 'Next match' })}
     <ol class="season" data-season>${updates.slice().sort((a, b) => b.date.localeCompare(a.date)).map((u) => `<li class="season-item reveal" data-kind="${esc(u.kind)}">
       <span class="season-dot" aria-hidden="true">${icon(kindOf(u.kind)[1], { size: 18 })}</span>
       <a class="season-card" href="/news/${esc(u.slug)}">
-        ${u.image ? photo(u.image, { cls: 'season-img', sizes: '(max-width: 640px) 40vw, 220px' }) : ''}
+        ${u.cover || u.image ? photo(u.cover || u.image, { cls: 'season-img', sizes: '(max-width: 640px) 40vw, 220px' }) : ''}
         <div><p class="meta"><time datetime="${esc(u.date)}">${esc(longDate(u.date))}</time> · <span class="tag tag-${esc(u.kind)}">${esc(kindOf(u.kind)[0])}</span></p><h3>${esc(u.title)}</h3><p>${esc(u.summary)}</p></div>
       </a>
     </li>`).join('')}</ol>
@@ -1317,7 +1321,7 @@ ${nextMatch({ heading: 'Next match' })}
     eventStatus: 'https://schema.org/EventScheduled',
     eventAttendanceMode: 'https://schema.org/OfflineEventAttendanceMode',
     location: { '@type': 'Place', name: u.event.place || club.address.name, address: `${club.address.street}, ${club.address.town} ${club.address.postcode}` },
-    image: u.image ? `${SITE}/img/${u.image}.jpg` : `${SITE}/img/og-home.jpg`,
+    image: u.cover ? `${SITE}/img/${u.cover}.jpg` : u.image ? `${SITE}/img/${u.image}.jpg` : `${SITE}/img/og-home.jpg`,
     description: u.summary,
     organizer: { '@id': `${SITE}/#club` },
     url: `${SITE}/news/${u.slug}`,

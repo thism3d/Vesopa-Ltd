@@ -233,3 +233,28 @@ test('photos no post uses are removed after a day; used ones stay', async () => 
   assert.strictEqual((await fetch(`${base}/img/${inStory.name}.jpg`)).status, 200);
   assert.ok(!posts.images()[spare.name]);
 });
+
+test('every news card has a picture: a photo in the story, or a card drawn for the post', async () => {
+  const content = require('../src/content');
+  const newsCard = require('../src/news_card');
+  const jpg = await sharp({ create: { width: 900, height: 600, channels: 3, background: '#2050a0' } }).jpeg().toBuffer();
+  const fd = new FormData();
+  fd.append('photo', new Blob([jpg], { type: 'image/jpeg' }), 'p.jpg');
+  const inStory = await (await owner.go('/admin/upload', { method: 'POST', body: fd, headers: { 'x-csrf-token': await owner.csrf() } })).json();
+  let csrf = await owner.csrf();
+  await owner.go('/admin/posts', { method: 'POST', form: { _csrf: csrf, ...story({ title: 'Only a photo in the text', kind: 'club', pub_day: '2026-10-24', html: `<p>Hi</p><figure><img src="/img/${inStory.name}.jpg" alt="x"></figure>` }) } });
+  csrf = await owner.csrf();
+  await owner.go('/admin/posts', { method: 'POST', form: { _csrf: csrf, ...story({ title: 'No photo anywhere', kind: 'club', pub_day: '2026-10-24', html: '<p>Just words.</p>' }) } });
+  content.refresh();
+  await newsCard.settled();
+  const home = await (await fetch(`${base}/news`)).text();
+  const card = (slug) => (home.match(new RegExp(`<article class="card news-card[^"]*">\\s*<a href="/news/${slug}"[\\s\\S]*?</article>`)) || [''])[0];
+  assert.match(card('only-a-photo-in-the-text'), new RegExp(`/img/${inStory.name}-480\\.webp`), 'the story\'s photo is the card');
+  const drawn = card('no-photo-anywhere').match(/\/img\/(c\/[0-9a-f]{12})-480\.webp/);
+  assert.ok(drawn, 'a drawn card, not the crest');
+  for (const s of ['.jpg', '.webp', '-480.webp']) assert.strictEqual((await fetch(`${base}/img/${drawn[1]}${s}`)).status, 200);
+  const page = await (await fetch(`${base}/news/no-photo-anywhere`)).text();
+  assert.match(page, new RegExp(`og:image" content="https://pontardawerfc.com/img/${drawn[1]}.jpg"`));
+  assert.ok(!/class="article-img/.test(page), 'the drawn card is for cards and links, not the top of the story');
+  assert.ok(!posts.all().find((p) => p.slug === 'no-photo-anywhere').image, 'nothing is saved on the post');
+});

@@ -52,7 +52,8 @@ for (const p of PAGES) {
     assert.strictEqual(r.status, 200);
     const html = await r.text();
     assert.match(html, /<title>[^<]*Pontardawe RFC[^<]*<\/title>/);
-    assert.match(html, /<meta property="og:image" content="https:\/\/pontardawerfc\.com\/img\/og-[a-z]+\.jpg/);
+    // The page's own share picture, or (a post with no photo) the card drawn for it (src/news_card.js).
+    assert.match(html, /<meta property="og:image" content="https:\/\/pontardawerfc\.com\/img\/(og-[a-z]+|c\/[0-9a-f]{12})\.jpg/);
     assert.match(html, /<link rel="canonical"/);
     assert.match(html, /\/js\/site\.js/);
     assert.ok(!/undefined|\[object Object\]|NaN/.test(html.replace(/<script[\s\S]*?<\/script>/g, '')), 'no leaked undefined');
