@@ -356,7 +356,7 @@ ${news.map((n) => `<item><title>${esc(n.title)}</title><link>${SITE}/news/${n.sl
  */
 const IOS_APPS = String(process.env.APP_IOS_IDS || 'G238FR2ZC9.com.vesopaepos.pontardawerfc').split(',').map((s) => s.trim()).filter(Boolean);
 const ANDROID_APPS = String(process.env.APP_ANDROID_LINKS
-  || 'com.vesopaepos.pontardawerfc=A3:03:9D:73:74:E8:1B:10:4D:85:9F:7B:A4:4A:AD:7D:74:31:C3:BB:C6:E4:CE:51:43:FF:47:B3:59:10:C3:82,5C:EC:AE:76:20:51:1B:62:94:4C:90:B4:97:C5:C5:58:04:8B:93:3B:77:9F:1A:44:DF:DF:50:E4:35:74:6B:70')
+  || 'com.vesopaepos.pontardawerfc=A3:03:9D:73:74:E8:1B:10:4D:85:9F:7B:A4:4A:AD:7D:74:31:C3:BB:C6:E4:CE:51:43:FF:47:B3:59:10:C3:82,5C:EC:AE:76:20:51:1B:62:94:4C:90:B4:97:C5:C5:58:04:8B:93:3B:77:9F:1A:44:DF:DF:50:E4:35:74:6B:70,62:1C:0C:07:ED:FA:54:CC:22:DD:B8:44:55:A6:E6:74:99:F5:6C:31:A0:4B:E4:FE:AA:9D:F6:4A:9C:65:46:39,6B:3B:C0:9A:7D:D4:1F:62:D1:9F:C0:F9:2B:7E:52:8B:A0:92:05:42:6F:21:21:49:0F:0A:60:B8:F9:54:43:74')
   .split(';').map((s) => s.split('=')).filter(([pkg, prints]) => pkg && prints)
   .map(([pkg, prints]) => ({
     relation: ['delegate_permission/common.get_login_creds', 'delegate_permission/common.handle_all_urls'],
