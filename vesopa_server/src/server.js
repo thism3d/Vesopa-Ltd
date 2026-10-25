@@ -336,9 +336,18 @@ app.use('/api', passwordRoutes({ pool }));
 // webhook needs its hook: a kiosk that was switched off mid-payment still
 // has its sale finished when Dojo reports the capture.
 const expressKiosk = expressKioskRoutes({ pool, broadcast, secret: JWT_SECRET });
+// Vesopa Tap, card payments on a clerk's phone (src/tap.js): built here so
+// the webhook below can finish a payment whose phone went away mid-tap.
+const tapPhones = require('./tap').tapRoutes({
+  pool,
+  secret: JWT_SECRET,
+  verifyIdToken: require('./terminal_vesopa').verifyTillToken,
+  signInDevice: licences.signInDevice,
+});
 // Online menu orders paid on Dojo's checkout settle from the webhook too
 // (dinein.js settleIntent), as well as from the tracker and the sweep.
 const dojoEventHooks = [];
+dojoEventHooks.push((e) => tapPhones.onDojoEvent(e));
 // Vesopa's own subscriptions (vesopaepos.com, the "Vesopa" Dojo account) share
 // this webhook address (2026-10-24). A verified event naming a payment intent
 // is passed on to vesopaepos.com on the same box, which only uses the id to
@@ -509,6 +518,9 @@ app.use(eventRoutes({ pool, broadcast, secret: JWT_SECRET }));
 // Vesopa Express, the self-service kiosk. Off for every venue until a manager
 // turns it on; see src/express_kiosk.js and schema_till_express.sql.
 app.use(expressKiosk);
+// Vesopa Tap: phones that are tills. Its phone routes take a terminal token,
+// its back-office routes a session, and /api/tap/register a Vesopa ID token.
+app.use(tapPhones);
 // Bringing a catalogue in from a spreadsheet. Mounted after the CRUD routes
 // it writes through, so nothing here can shadow /api/products.
 app.use('/api', importRoutes({ pool, broadcast, secret: JWT_SECRET }));

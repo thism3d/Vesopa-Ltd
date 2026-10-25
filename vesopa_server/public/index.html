@@ -352,6 +352,7 @@
           <button class="nav" data-view="dinein_qr">Table Codes</button>
           <button class="nav" data-view="dinein_orders">Online Orders</button>
           <button class="nav" data-view="express">Vesopa Express</button>
+          <button class="nav" data-view="tap">Vesopa Tap</button>
 
           <button class="nav-group" data-group="people">People<span class="caret">▼</span></button>
           <button class="nav" data-view="users">Back Office Users</button>
@@ -3631,6 +3632,57 @@
                 </div>
               </div>
             </div>
+          </div>
+        </section>
+
+        <!-- Vesopa Tap: orders and card payments on the staff's own phones.
+             Each phone is a till (it takes a till seat); see src/tap.js. -->
+        <section id="view-tap" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Vesopa Tap</h2>
+              <p class="muted small">
+                Take orders at the table and card payments on a phone: the customer
+                taps their card, Apple Pay or Google Pay on the clerk's phone. Each
+                phone signed in here counts as one of your tills.
+              </p>
+            </div>
+            <button class="btn primary" id="tap-save">Save</button>
+          </div>
+
+          <div class="grid-cards" id="tap-stats"></div>
+
+          <div class="card rd-card">
+            <h3>Settings</h3>
+            <label class="check"><input type="checkbox" data-tap="enabled"> Vesopa Tap is on for this venue</label>
+            <label class="check"><input type="checkbox" data-tap="tips_enabled"> Offer a tip on card payments</label>
+            <label>Tip choices (%)
+              <input type="text" data-tap="tip_percents" placeholder="10, 12.5, 15">
+            </label>
+            <label>Service charge choices (%)
+              <input type="text" data-tap="service_percents" placeholder="0, 10, 12.5">
+            </label>
+            <label class="check"><input type="checkbox" data-tap="allow_cash"> Phones may take cash</label>
+            <label class="check"><input type="checkbox" data-tap="receipt_email"> Offer an emailed receipt</label>
+            <p class="muted small" id="tap-env"></p>
+          </div>
+
+          <div class="card rd-card">
+            <h3>Phones</h3>
+            <p class="muted small">
+              To add a phone, install <b>Vesopa Tap</b> from the App Store or Google Play and
+              press <b>Continue with Vesopa</b>. Staff sign on with their till PIN or their
+              staff card (set under <b>Staff</b>).
+            </p>
+            <div id="tap-phones"></div>
+          </div>
+
+          <div class="card rd-card">
+            <div class="gym-board-head">
+              <h3>Card payments on phones</h3>
+              <label class="gym-date">On <input type="date" id="tap-date"></label>
+            </div>
+            <div id="tap-payments"></div>
           </div>
         </section>
 

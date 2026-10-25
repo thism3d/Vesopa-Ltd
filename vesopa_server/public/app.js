@@ -336,6 +336,7 @@ const ROUTES = {
   dinein_qr: '/dine-in/table-codes',
   dinein_orders: '/dine-in/orders',
   express: '/vesopa-express',
+  tap: '/vesopa-tap',
   users: '/users',
   user_roles: '/user-roles',
   staff: '/staff',
@@ -1371,6 +1372,7 @@ const VIEW_LOADERS = {
     dinein_qr: loadDineInQr,
     dinein_orders: loadDineInOrders,
     express: loadExpress,
+    tap: loadTap,
     program_departments: () => loadCrud('departments'),
     program_groups: () => loadCrud('groups'),
     printer_categories: () => loadCrud('print-categories'),
@@ -11633,6 +11635,79 @@ const expOn = () => !!Number(expState && expState.enabled);
  * switched on, and a venue that has not should see one sentence rather than
  * three empty tables.
  */
+// ---- Vesopa Tap -------------------------------------------------------------
+//
+// Phones that are tills (src/tap.js): the venue's switch, tips and service
+// charge choices, the phones signed in, and the card payments taken on them.
+
+async function loadTap() {
+  let s;
+  try {
+    s = await api('/tap/settings');
+  } catch (e) {
+    $('tap-stats').innerHTML = '';
+    $('tap-phones').innerHTML = '<p class="muted small">Vesopa Tap is not available on this server yet.</p>';
+    return;
+  }
+  for (const el of document.querySelectorAll('[data-tap]')) {
+    const v = s[el.dataset.tap];
+    if (el.type === 'checkbox') el.checked = !!Number(v);
+    else el.value = String(v ?? '').split(',').join(', ');
+  }
+  $('tap-env').innerHTML = s.environment === 'live'
+    ? '<span class="pill green">Live</span> Card payments go to your own Dojo account.'
+    : '<span class="pill amber">Sandbox</span> Card payments go to the Dojo sandbox: no real money moves. '
+      + 'Save your live Dojo key under <b>Card payments</b> to take real money.';
+  if (!$('tap-date').value) $('tap-date').value = new Date().toISOString().slice(0, 10);
+
+  const [phones, pays] = await Promise.all([
+    api('/tap/phones').catch(() => ({ phones: [] })),
+    api(`/tap/payments?date=${encodeURIComponent($('tap-date').value)}`).catch(() => ({ payments: [], totals: {} })),
+  ]);
+  const live = phones.phones.filter((p) => !p.released_at);
+  statCards($('tap-stats'), [
+    { label: 'Vesopa Tap', value: Number(s.enabled) ? 'On' : 'Off', tone: Number(s.enabled) ? 'green' : 'red' },
+    { label: 'Phones', value: String(live.length), hint: 'Each one is a till' },
+    { label: 'Taken on phones', value: money(pays.totals.amount_minor || 0), hint: `${pays.totals.count || 0} payments` },
+    { label: 'Tips', value: money(pays.totals.tip_minor || 0), hint: 'On card payments' },
+  ]);
+  $('tap-phones').innerHTML = phones.phones.length
+    ? `<table class="data"><thead><tr><th>Phone</th><th>Signed in by</th><th>Last seen</th><th></th></tr></thead><tbody>${
+      phones.phones.map((p) => `<tr>
+        <td>${esc(p.device_name)}</td><td>${esc(p.signed_in_by || '')}</td>
+        <td>${p.last_seen_at ? esc(new Date(p.last_seen_at).toLocaleString('en-GB')) : ''}</td>
+        <td>${p.released_at ? '<span class="pill">Signed out</span>' : '<span class="pill green">In use</span>'}</td>
+      </tr>`).join('')}</tbody></table>`
+    : '<p class="muted small">No phones yet.</p>';
+  const states = { paid: 'green', waiting: 'amber', failed: 'danger', cancelled: '', refunded: '' };
+  $('tap-payments').innerHTML = pays.payments.length
+    ? `<table class="data"><thead><tr><th>Time</th><th>Bill</th><th>Clerk</th><th>Amount</th><th>Tip</th><th></th></tr></thead><tbody>${
+      pays.payments.map((p) => `<tr>
+        <td>${esc(new Date(p.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }))}</td>
+        <td>${esc(p.bill_ref || '')}</td><td>${esc(p.clerk || '')}</td>
+        <td>${money(p.amount_minor)}</td><td>${p.tip_minor ? money(p.tip_minor) : ''}</td>
+        <td><span class="pill ${states[p.state] || ''}">${esc(p.state)}</span>${p.environment === 'sandbox' ? ' <span class="pill amber">sandbox</span>' : ''}</td>
+      </tr>`).join('')}</tbody></table>`
+    : '<p class="muted small">No card payments on phones on this day.</p>';
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  $('tap-date')?.addEventListener('change', () => loadTap());
+  $('tap-save')?.addEventListener('click', async () => {
+    const body = {};
+    for (const el of document.querySelectorAll('[data-tap]')) {
+      body[el.dataset.tap] = el.type === 'checkbox' ? el.checked : el.value;
+    }
+    try {
+      await api('/tap/settings', { method: 'PUT', body: JSON.stringify(body) });
+      toast('Vesopa Tap settings saved');
+      loadTap();
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  });
+});
+
 async function loadExpress() {
   try {
     expState = await api('/express/settings');
