@@ -44,6 +44,36 @@ void main() {
     });
   });
 
+  group('members and vouchers', () {
+    const jo = Member(id: 9, name: 'Jo', discountType: 'percent', discountValue: 10, earns: true, pointsPerPound: 2, minSpendMinor: 500);
+
+    test('the discount comes off first, the service charge is on what is left', () {
+      final b = _bill().copyWith(member: jo, voucherCode: 'SAVE5', voucherMinor: 500, serviceChargePercent: 12.5);
+      expect(b.subtotalMinor, 3175);
+      expect(b.memberDiscountMinor, 318);
+      expect(b.discountMinor, 818);
+      expect(b.serviceMinor, ((3175 - 818) * 0.125).round());
+      expect(b.totalMinor, 3175 - 818 + b.serviceMinor);
+    });
+
+    test('splits still add up to the penny with a discount on', () {
+      final b = _bill().copyWith(member: jo, voucherMinor: 500, serviceChargePercent: 10);
+      expect(splitBySeat(b, 3).values.reduce((a, c) => a + c), b.totalMinor);
+      expect(splitEqually(b.dueMinor, 4).reduce((a, c) => a + c), b.dueMinor);
+    });
+
+    test('a discount never makes a bill negative', () {
+      final b = _bill().copyWith(voucherMinor: 999999);
+      expect(b.totalMinor, 0);
+    });
+
+    test('points by the till\'s rule: whole pounds, a minimum spend', () {
+      expect(jo.pointsFor(2499), 48);
+      expect(jo.pointsFor(499), 0);
+      expect(Member.fromJson({'id': 1, 'first_name': 'Al', 'last_name': 'B', 'points_balance': '12.50000', 'settings': {'earn_points': 1, 'points_per_pound': '1.5'}}).pointsFor(1000), 15);
+    });
+  });
+
   group('clerks', () {
     test('a PIN finds one person', () {
       expect(ClerkAuth.byPin(demoClerks, '2222')?.name, 'Alex');

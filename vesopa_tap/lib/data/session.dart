@@ -4,28 +4,86 @@
 ///
 ///   booting   reading its terminal token from the phone's secure storage
 ///   welcome   not set up: Sign in with Vesopa, Register a venue, or the demo
-///   setup     signed in: choose the site and how this phone is used
+///   setup     signed in: choose how this phone is used
 ///   locked    set up, nobody signed on: PIN, staff card or Face ID
 ///   ready     a clerk is signed on and serving
 ///
 /// The terminal token is in the Keychain / Keystore (flutter_secure_storage),
 /// never in plain preferences: it is what makes this phone a till.
+///
+/// With Vesopa EPOS, the phone is one terminal among the tills: it pulls the
+/// venue's shared open bills every few seconds (a bill another terminal holds
+/// shows here as held by it, and must be claimed before it is changed), pushes
+/// its own, sends kitchen tickets to the venue's stations, and records the
+/// sale when a bill is paid -- the same rows a till writes.
 library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
 import '../payments/payment_service.dart';
 import 'api.dart';
 import 'demo_venue.dart';
 import 'models.dart';
+import 'outbox.dart';
+import 'payloads.dart';
+import 'venue_data.dart';
 
 enum Phase { booting, welcome, setup, locked, ready }
+
+/// The venue's Vesopa Tap settings from the back office (tips on by default).
+@immutable
+class TapConfig {
+  const TapConfig({
+    this.environment = 'sandbox',
+    this.tips = true,
+    this.tipPercents = const [10, 12.5, 15],
+    this.servicePercents = const [0, 10, 12.5],
+    this.allowCash = true,
+    this.receiptEmail = true,
+  });
+  final String environment;
+  final bool tips;
+  final List<double> tipPercents;
+  final List<double> servicePercents;
+  final bool allowCash;
+  final bool receiptEmail;
+
+  factory TapConfig.fromJson(Map<String, dynamic> j) {
+    List<double> nums(Object? v, List<double> d) =>
+        v is List ? [for (final n in v) (n as num).toDouble()] : d;
+    return TapConfig(
+      environment: j['environment'] as String? ?? 'sandbox',
+      tips: j['tips'] as bool? ?? true,
+      tipPercents: nums(j['tip_percents'], const [10, 12.5, 15]),
+      servicePercents: nums(j['service_percents'], const [0, 10, 12.5]),
+      allowCash: j['allow_cash'] as bool? ?? true,
+      receiptEmail: j['receipt_email'] as bool? ?? true,
+    );
+  }
+}
+
+/// A card payment taken here today, for a receipt or a refund.
+@immutable
+class RecentPayment {
+  const RecentPayment({required this.paymentId, required this.billId, required this.billName, required this.amountMinor, required this.tipMinor, required this.at, required this.clerk, this.refundedMinor = 0});
+  final String paymentId;
+  final String billId;
+  final String billName;
+  final int amountMinor;
+  final int tipMinor;
+  final DateTime at;
+  final String clerk;
+  final int refundedMinor;
+  int get totalMinor => amountMinor + tipMinor;
+}
 
 @immutable
 class TapState {
@@ -40,7 +98,12 @@ class TapState {
     this.products = const [],
     this.tables = const [],
     this.bills = const {},
+    this.config = const TapConfig(),
+    this.recent = const [],
+    this.alerts = const [],
     this.online = true,
+    this.sharing = false,
+    this.pendingSync = 0,
     this.message,
   });
 
@@ -58,7 +121,18 @@ class TapState {
 
   /// Open bills by id: this phone's and (connected) every other terminal's.
   final Map<String, Bill> bills;
+  final TapConfig config;
+  final List<RecentPayment> recent;
+
+  /// "Table 4: food ready", newest first, until the clerk clears them.
+  final List<String> alerts;
   final bool online;
+
+  /// True once the venue's shared bills have been read: the floor is the whole room.
+  final bool sharing;
+
+  /// Sales and tickets waiting to reach the back office.
+  final int pendingSync;
   final String? message;
 
   Bill? billForTable(String tableId) {
@@ -73,6 +147,7 @@ class TapState {
     if (b == null) return TableState.free;
     if (b.lines.isEmpty) return TableState.seated;
     if (b.dueMinor <= 0) return TableState.paid;
+    if (b.paidMinor > 0) return TableState.bill;
     if (b.lines.any((l) => l.sent && l.product.course >= 2)) return TableState.mains;
     return TableState.ordered;
   }
@@ -89,7 +164,12 @@ class TapState {
     List<Product>? products,
     List<TableInfo>? tables,
     Map<String, Bill>? bills,
+    TapConfig? config,
+    List<RecentPayment>? recent,
+    List<String>? alerts,
     bool? online,
+    bool? sharing,
+    int? pendingSync,
     String? message,
   }) =>
       TapState(
@@ -103,7 +183,12 @@ class TapState {
         products: products ?? this.products,
         tables: tables ?? this.tables,
         bills: bills ?? this.bills,
+        config: config ?? this.config,
+        recent: recent ?? this.recent,
+        alerts: alerts ?? this.alerts,
         online: online ?? this.online,
+        sharing: sharing ?? this.sharing,
+        pendingSync: pendingSync ?? this.pendingSync,
         message: message,
       );
 }
@@ -117,14 +202,40 @@ final paymentsProvider = Provider<PaymentService>((ref) {
 
 final tapProvider = NotifierProvider<TapSession, TapState>(TapSession.new);
 
+/// What Continue with Vesopa answered when the login runs several sites.
+class SiteChoice {
+  const SiteChoice({required this.pickToken, required this.sites});
+  final String pickToken;
+  final List<Map<String, dynamic>> sites;
+}
+
 class TapSession extends Notifier<TapState> {
   static const _store = FlutterSecureStorage();
   static const _tokenKey = 'vesopa_tap_token';
   static const _venueKey = 'vesopa_tap_venue';
+  static const _deviceKey = 'vesopa_tap_device';
+  static const _cacheKey = 'vesopa_tap_venue_cache';
   final _uuid = const Uuid();
+
+  Timer? _billTimer;
+  Timer? _kitchenTimer;
+  int _cursor = 0;
+  String _deviceId = '';
+  final _readyTickets = <String>{};
+  late final Outbox _outbox = Outbox(ref.read(apiProvider));
+
+  /// This phone as the other terminals see it: "iPhone (Vesopa Tap) 3F2A".
+  String get terminalName {
+    final kind = kIsWeb ? 'Phone' : (Platform.isIOS ? 'iPhone' : 'Android');
+    final tag = _deviceId.isEmpty ? '' : ' ${_deviceId.substring(0, 4).toUpperCase()}';
+    return '$kind (Vesopa Tap)$tag';
+  }
+
+  String get deviceId => _deviceId;
 
   @override
   TapState build() {
+    ref.onDispose(_stopTimers);
     unawaited(_boot());
     return const TapState(phase: Phase.booting);
   }
@@ -135,20 +246,32 @@ class TapSession extends Notifier<TapState> {
     try {
       token = await _store.read(key: _tokenKey);
       venue = await _store.read(key: _venueKey);
+      _deviceId = await _store.read(key: _deviceKey) ?? '';
+      if (_deviceId.isEmpty) {
+        _deviceId = _uuid.v4().replaceAll('-', '');
+        await _store.write(key: _deviceKey, value: _deviceId);
+      }
     } catch (_) {
       // a phone restored from a backup can lose its Keychain items: set up again
     }
+    if (_deviceId.isEmpty) _deviceId = _uuid.v4().replaceAll('-', '');
     if (token == null || venue == null) {
       state = state.copyWith(phase: Phase.welcome);
       return;
     }
-    ref.read(apiProvider).token = token;
-    state = state.copyWith(phase: Phase.locked, venue: Venue.fromJson(jsonDecode(venue) as Map<String, dynamic>));
+    final v = Venue.fromJson(jsonDecode(venue) as Map<String, dynamic>);
+    final api = ref.read(apiProvider)
+      ..token = token
+      ..office = v.office;
+    api.office = v.office;
+    state = state.copyWith(phase: Phase.locked, venue: v);
+    await _loadCache();
     await refresh();
   }
 
   /// Try everything with the demo venue: no back office, pretend payments.
   void startDemo() {
+    _stopTimers();
     state = TapState(
       phase: Phase.locked,
       venue: demoVenue,
@@ -160,51 +283,262 @@ class TapSession extends Notifier<TapState> {
     );
   }
 
-  /// After Continue with Vesopa: keep the terminal token, then choose how the phone is used.
-  Future<void> commissioned(Map<String, dynamic> answer) async {
-    final token = answer['token'] as String?;
-    if (token == null) throw const TapApiError(0, 'Vesopa did not sign this phone in.');
-    ref.read(apiProvider).token = token;
+  /// After Continue with Vesopa or Register: keep only the terminal token.
+  /// Returns a [SiteChoice] when the login runs several sites.
+  Future<SiteChoice?> commissioned(Map<String, dynamic> answer) async {
+    if (answer['choose_site'] == true) {
+      return SiteChoice(
+        pickToken: answer['pick_token'] as String,
+        sites: [for (final s in answer['sites'] as List? ?? const []) Map<String, dynamic>.from(s as Map)],
+      );
+    }
+    final token = (answer['terminalToken'] ?? answer['token']) as String?;
+    final user = Map<String, dynamic>.from(answer['user'] as Map? ?? const {});
+    final office = (user['officeEmail'] ?? user['office_email'] ?? '') as String;
+    if (token == null || office.isEmpty) throw const TapApiError(0, 'Vesopa did not sign this phone in.');
+    final api = ref.read(apiProvider)
+      ..token = token
+      ..office = office;
+    api.office = office;
     await _store.write(key: _tokenKey, value: token);
     state = state.copyWith(
       phase: Phase.setup,
-      venue: Venue(
-        name: (answer['venue_name'] ?? answer['office_name'] ?? 'Your venue') as String,
-        office: (answer['office'] ?? '') as String,
-        mode: VenueMode.connected,
-      ),
+      venue: Venue(name: (user['officeName'] ?? user['office_name'] ?? 'Your venue') as String, office: office, mode: VenueMode.connected),
     );
+    return null;
   }
 
   Future<void> chooseMode(VenueMode mode) async {
     final v = state.venue!;
     final venue = Venue(name: v.name, office: v.office, mode: mode, site: v.site);
-    await _store.write(key: _venueKey, value: jsonEncode(venue.toJson()));
+    try {
+      await _store.write(key: _venueKey, value: jsonEncode(venue.toJson()));
+    } catch (_) {}
     state = state.copyWith(phase: Phase.locked, venue: venue);
     await refresh();
   }
 
-  /// Staff, menu and open bills from the back office.
+  // ---- The venue's data ------------------------------------------------------------
+
+  /// Staff, menu, floor and settings from the back office; the last good copy
+  /// is kept so a phone that starts with no signal still knows its venue.
   Future<void> refresh() async {
     if (state.demo) return;
     final api = ref.read(apiProvider);
     try {
-      final staff = await api.staff();
-      state = state.copyWith(staff: staff, online: true);
+      final results = await Future.wait([
+        api.staff(),
+        api.products(),
+        api.modifiers().catchError((Object _) => <String, dynamic>{}),
+        api.screens().catchError((Object _) => <dynamic>[]),
+        api.floor().catchError((Object _) => <dynamic>[]),
+        api.tapConfig().catchError((Object _) => <String, dynamic>{}),
+      ]);
+      final raw = {
+        'staff': [for (final c in results[0] as List<Clerk>) {'id': c.id, 'name': c.name, 'pin': c.pin, 'swipe_card': c.card, 'permission_group': c.group}],
+        'products': results[1],
+        'modifiers': results[2],
+        'screens': results[3],
+        'floor': results[4],
+        'config': results[5],
+      };
+      _apply(raw);
+      state = state.copyWith(online: true);
+      try {
+        await (await SharedPreferences.getInstance()).setString(_cacheKey, jsonEncode(raw));
+      } catch (_) {}
     } on TapApiError catch (e) {
       state = state.copyWith(online: e.status != 0, message: e.message);
     }
+    await _flushOutbox();
+  }
+
+  Future<void> _loadCache() async {
+    try {
+      final raw = (await SharedPreferences.getInstance()).getString(_cacheKey);
+      if (raw != null) _apply(jsonDecode(raw) as Map<String, dynamic>);
+    } catch (_) {}
+  }
+
+  void _apply(Map<String, dynamic> raw) {
+    final menu = menuFrom(
+      products: raw['products'] as List? ?? const [],
+      modifiers: raw['modifiers'] as Map<String, dynamic>?,
+      screens: raw['screens'] as List?,
+    );
+    state = state.copyWith(
+      staff: [for (final s in raw['staff'] as List? ?? const []) Clerk.fromJson(Map<String, dynamic>.from(s as Map))],
+      categories: menu.categories,
+      products: menu.products,
+      tables: tablesFrom(raw['floor'] as List? ?? const []),
+      config: TapConfig.fromJson(Map<String, dynamic>.from(raw['config'] as Map? ?? const {})),
+    );
   }
 
   // ---- Clerks --------------------------------------------------------------------
 
-  void signOn(Clerk clerk) => state = state.copyWith(phase: Phase.ready, clerk: clerk, lastClerk: clerk);
-  void lock() => state = state.copyWith(phase: Phase.locked, clearClerk: true);
+  void signOn(Clerk clerk) {
+    state = state.copyWith(phase: Phase.ready, clerk: clerk, lastClerk: clerk);
+    _startTimers();
+  }
+
+  void lock() {
+    _stopTimers();
+    state = state.copyWith(phase: Phase.locked, clearClerk: true);
+  }
+
+  /// A manager's PIN, for a void or a refund: someone in a manager,
+  /// supervisor or owner group on the back office's staff list.
+  Clerk? managerByPin(String pin) {
+    for (final c in state.staff) {
+      final g = (c.group ?? '').toLowerCase();
+      if (c.pin == pin && pin.length >= 4 && RegExp('manager|supervisor|owner|admin').hasMatch(g)) return c;
+    }
+    return null;
+  }
 
   Future<void> forgetPhone() async {
-    await _store.deleteAll();
-    ref.read(apiProvider).token = null;
+    _stopTimers();
+    try {
+      await _store.delete(key: _tokenKey);
+      await _store.delete(key: _venueKey);
+    } catch (_) {}
+    ref.read(apiProvider)
+      ..token = null
+      ..office = null;
     state = const TapState(phase: Phase.welcome);
+  }
+
+  // ---- Live with the tills ---------------------------------------------------------
+
+  bool get _connected => !state.demo && state.venue?.mode == VenueMode.connected;
+
+  void _startTimers() {
+    _stopTimers();
+    if (state.demo) return;
+    if (_connected) {
+      unawaited(pullBills());
+      _billTimer = Timer.periodic(const Duration(seconds: 5), (_) => unawaited(pullBills()));
+    }
+    _kitchenTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      unawaited(_checkKitchen());
+      unawaited(_flushOutbox());
+    });
+  }
+
+  void _stopTimers() {
+    _billTimer?.cancel();
+    _kitchenTimer?.cancel();
+    _billTimer = null;
+    _kitchenTimer = null;
+  }
+
+  /// The venue's shared bills: every other terminal's, mirrored here as held by it.
+  Future<void> pullBills() async {
+    if (!_connected) return;
+    try {
+      final feed = await ref.read(apiProvider).openBills(since: _cursor);
+      final bills = Map.of(state.bills);
+      for (final b in feed['bills'] as List? ?? const []) {
+        final row = Map<String, dynamic>.from(b as Map);
+        if (row['terminal'] == terminalName) continue;
+        final mirrored = _billFromFeed(row);
+        if (mirrored != null) bills[mirrored.id] = mirrored;
+      }
+      for (final g in feed['removed'] as List? ?? const []) {
+        final id = (g as Map)['id'] as String?;
+        if (id != null && bills[id]?.heldBy != null) bills.remove(id);
+      }
+      _cursor = (feed['rev'] as num?)?.toInt() ?? _cursor;
+      state = state.copyWith(bills: bills, sharing: true, online: true);
+    } on TapApiError catch (e) {
+      state = state.copyWith(online: e.status != 0);
+    }
+  }
+
+  Bill? _billFromFeed(Map<String, dynamic> row) {
+    final p = row['payload'];
+    if (p is! Map) return null;
+    final payload = Map<String, dynamic>.from(p);
+    final number = (row['table_number'] as num?)?.toInt();
+    final table = number == null ? null : state.tables.where((t) => t.number == number).firstOrNull;
+    final lines = <BillLine>[];
+    for (final l in payload['lines'] as List? ?? const []) {
+      final m = Map<String, dynamic>.from(l as Map);
+      if (m['is_modifier'] == true) continue;
+      final plu = (m['plu_id'] as num?)?.toInt();
+      final known = plu == null ? null : state.products.where((x) => x.plu == plu).firstOrNull;
+      lines.add(BillLine(
+        id: '${m['id']}',
+        product: known ??
+            Product(id: 'plu$plu', plu: plu, name: '${m['name']}', priceMinor: (m['unit_price_minor'] as num?)?.toInt() ?? 0, category: ''),
+        quantity: (m['quantity'] as num?)?.toInt() ?? 1,
+        note: '${m['notes'] ?? m['note'] ?? ''}',
+        sent: m['kitchen_printed_at'] != null,
+        addedBy: '${m['added_by'] ?? ''}',
+      ));
+    }
+    return Bill(
+      id: '${row['id']}',
+      name: table?.name ?? (payload['name'] as String? ?? (number == null ? 'Tab' : 'Table $number')),
+      tableId: table?.id,
+      tableNumber: number,
+      roomId: (row['room_id'] as num?)?.toInt(),
+      covers: (row['covers'] as num?)?.toInt() ?? 0,
+      lines: lines,
+      heldBy: '${row['terminal'] ?? 'another till'}',
+      clerk: '${row['clerk_name'] ?? ''}',
+      staffId: (row['staff_id'] as num?)?.toInt(),
+    );
+  }
+
+  /// Take over a bill another terminal is holding.
+  Future<bool> claim(String billId) async {
+    final bill = state.bills[billId];
+    if (bill == null || bill.heldBy == null) return true;
+    if (state.demo) {
+      _put(bill.copyWith(clearHeldBy: true));
+      return true;
+    }
+    try {
+      await ref.read(apiProvider).claimBill(billId, terminalName);
+      _put(bill.copyWith(clearHeldBy: true));
+      return true;
+    } on TapApiError catch (e) {
+      state = state.copyWith(message: e.message);
+      return false;
+    }
+  }
+
+  /// Tickets this phone sent that every station has finished: "food ready".
+  Future<void> _checkKitchen() async {
+    final mine = {for (final b in state.bills.values) for (final t in b.tickets) t: b.name};
+    if (mine.isEmpty) return;
+    try {
+      final board = await ref.read(apiProvider).kitchenBoard();
+      final alerts = <String>[];
+      for (final t in board['tickets'] as List? ?? const []) {
+        final ticket = Map<String, dynamic>.from(t as Map);
+        final id = '${ticket['id']}';
+        if (!mine.containsKey(id) || _readyTickets.contains(id)) continue;
+        final stations = ticket['stations'] as List? ?? const [];
+        if (stations.isNotEmpty && stations.every((s) => (s as Map)['status'] == 'done')) {
+          _readyTickets.add(id);
+          alerts.add('${mine[id]}: food ready to take out');
+        }
+      }
+      if (alerts.isNotEmpty) state = state.copyWith(alerts: [...alerts, ...state.alerts].take(10).toList());
+    } on TapApiError {
+      // the next check will see it
+    }
+  }
+
+  void clearAlerts() => state = state.copyWith(alerts: const []);
+
+  Future<void> _flushOutbox() async {
+    if (state.demo) return;
+    await _outbox.flush();
+    state = state.copyWith(pendingSync: await _outbox.pending());
   }
 
   // ---- Bills -------------------------------------------------------------------------
@@ -212,22 +546,41 @@ class TapSession extends Notifier<TapState> {
   Bill openTable(TableInfo table, {int covers = 0}) {
     final had = state.billForTable(table.id);
     if (had != null) return had;
-    final bill = Bill(id: _uuid.v4(), name: table.name, tableId: table.id, covers: covers, clerk: state.clerk?.name ?? '');
+    final bill = Bill(
+      id: _uuid.v4(),
+      name: table.name,
+      tableId: table.id,
+      tableNumber: table.number,
+      roomId: table.roomId,
+      covers: covers,
+      clerk: state.clerk?.name ?? '',
+      staffId: state.clerk?.id,
+      openedAt: DateTime.now(),
+    );
     _put(bill);
     return bill;
   }
 
   Bill openTab(String name) {
-    final bill = Bill(id: _uuid.v4(), name: name, clerk: state.clerk?.name ?? '');
-    _put(bill);
+    final bill = Bill(id: _uuid.v4(), name: name, clerk: state.clerk?.name ?? '', staffId: state.clerk?.id, openedAt: DateTime.now());
+    _put(bill, share: false);
     return bill;
   }
 
-  void addLine(String billId, Product product, {List<Choice> choices = const [], String note = '', int seat = 0}) {
+  void addLine(String billId, Product product, {List<Choice> choices = const [], String note = '', int seat = 0, bool hold = false}) {
     final bill = state.bills[billId]!;
     _put(bill.copyWith(lines: [
       ...bill.lines,
-      BillLine(id: _uuid.v4(), product: product, choices: choices, note: note, seat: seat),
+      BillLine(
+        id: _uuid.v4(),
+        product: product,
+        choices: choices,
+        note: note,
+        seat: seat,
+        held: hold,
+        addedBy: state.clerk?.name ?? '',
+        addedAt: DateTime.now(),
+      ),
     ]));
   }
 
@@ -250,18 +603,64 @@ class TapSession extends Notifier<TapState> {
     _put(bill.copyWith(lines: lines));
   }
 
-  /// Send what is new to the kitchen and bar. Returns how many lines went.
-  int send(String billId) {
+  /// Take [quantity] of a SENT line off, with a reason and a manager's approval.
+  void voidLine(String billId, String lineId, {required int quantity, required String reason, required Clerk approvedBy}) {
     final bill = state.bills[billId]!;
-    final count = bill.lines.where((l) => !l.sent).length;
-    _put(bill.copyWith(lines: [for (final l in bill.lines) l.sent ? l : l.copyWith(sent: true)]));
-    return count;
+    final line = bill.lines.firstWhere((l) => l.id == lineId);
+    final q = quantity.clamp(1, line.unpaidQuantity);
+    final record = VoidRecord(
+      name: line.product.name,
+      quantity: q,
+      amountMinor: line.unitMinor * q,
+      reason: reason,
+      by: state.clerk?.name ?? '',
+      approvedBy: approvedBy.name,
+    );
+    final lines = [
+      for (final l in bill.lines)
+        if (l.id != lineId) l else if (l.quantity - q > 0) l.copyWith(quantity: l.quantity - q),
+    ];
+    _put(bill.copyWith(lines: lines, voids: [...bill.voids, record]));
+    final ticket = kitchenTicket(bill, [line.copyWith(quantity: q, note: 'VOID: $reason')],
+        id: _uuid.v4(), office: state.venue?.office ?? '', kind: 'void');
+    if (ticket != null && !state.demo) unawaited(_outbox.add('/till/kitchen/tickets', ticket).then((_) => _flushOutbox()));
+  }
+
+  /// Send what is new (not held) to the kitchen and bar. Returns how many lines went.
+  int send(String billId) => _sendWhere(billId, (l) => !l.sent && !l.held);
+
+  /// Fire the held course: mains away.
+  int fire(String billId) => _sendWhere(billId, (l) => !l.sent && l.held);
+
+  int _sendWhere(String billId, bool Function(BillLine) which) {
+    final bill = state.bills[billId]!;
+    final going = bill.lines.where(which).toList();
+    if (going.isEmpty) return 0;
+    final ticketId = _uuid.v4();
+    final ticket = kitchenTicket(bill, going, id: ticketId, office: state.venue?.office ?? '',
+        roomName: bill.tableId == null ? null : state.tables.where((t) => t.id == bill.tableId).firstOrNull?.area);
+    final ids = {for (final l in going) l.id};
+    _put(bill.copyWith(
+      lines: [for (final l in bill.lines) ids.contains(l.id) ? l.copyWith(sent: true, held: false) : l],
+      tickets: ticket == null ? bill.tickets : [...bill.tickets, ticketId],
+    ));
+    if (ticket != null && !state.demo) unawaited(_outbox.add('/till/kitchen/tickets', ticket).then((_) => _flushOutbox()));
+    return going.length;
   }
 
   void setServiceCharge(String billId, double percent) =>
       _put(state.bills[billId]!.copyWith(serviceChargePercent: percent));
 
-  /// A payment the server confirmed. A bill paid in full is closed.
+  /// A Loyalty member on the bill (their discount applies at once), or off it.
+  void setMember(String billId, Member? member) =>
+      _put(member == null ? state.bills[billId]!.copyWith(clearMember: true) : state.bills[billId]!.copyWith(member: member));
+
+  /// A voucher the back office accepted, for [minor] off.
+  void setVoucher(String billId, String code, int minor) =>
+      _put(state.bills[billId]!.copyWith(voucherCode: code, voucherMinor: minor));
+
+  /// A payment the server confirmed. A bill paid in full is closed: the sale
+  /// goes to the back office (through the outbox) and off the shared plan.
   void addTender(String billId, Tender tender, {Map<String, int> items = const {}}) {
     final bill = state.bills[billId]!;
     final lines = [
@@ -269,20 +668,46 @@ class TapSession extends Notifier<TapState> {
         items.containsKey(l.id) ? l.copyWith(paidQuantity: l.paidQuantity + items[l.id]!) : l,
     ];
     final next = bill.copyWith(lines: lines, tenders: [...bill.tenders, tender]);
+    if (tender.kind != 'cash') {
+      state = state.copyWith(recent: [
+        RecentPayment(paymentId: tender.id, billId: bill.id, billName: bill.name, amountMinor: tender.amountMinor,
+            tipMinor: tender.tipMinor, at: tender.at, clerk: tender.clerk),
+        ...state.recent,
+      ].take(50).toList());
+    }
     if (next.dueMinor <= 0) {
       final bills = Map.of(state.bills)..remove(billId);
       state = state.copyWith(bills: bills);
+      if (!state.demo) {
+        final sale = salePayload(next, office: state.venue?.office ?? '', terminal: terminalName, clerkPin: null);
+        unawaited(_outbox.add('/till/orders', sale).then((_) => _flushOutbox()));
+        // The voucher is used up only now that the bill is paid, as on the till.
+        if (next.voucherCode != null) {
+          unawaited(_outbox.add('/api/vouchers/redeem', {'id': next.voucherCode, 'office': state.venue?.office, 'code': next.voucherCode}));
+        }
+        if (_connected) unawaited(ref.read(apiProvider).retireBill(billId).then((_) {}, onError: (Object _) {}));
+      }
     } else {
       _put(next);
     }
   }
 
-  void _put(Bill bill) {
+  /// A refund the server made, recorded against today's payment.
+  void refunded(String paymentId, int refundedMinor) {
+    state = state.copyWith(recent: [
+      for (final r in state.recent)
+        r.paymentId == paymentId
+            ? RecentPayment(paymentId: r.paymentId, billId: r.billId, billName: r.billName, amountMinor: r.amountMinor,
+                tipMinor: r.tipMinor, at: r.at, clerk: r.clerk, refundedMinor: refundedMinor)
+            : r,
+    ]);
+  }
+
+  void _put(Bill bill, {bool share = true}) {
     state = state.copyWith(bills: {...state.bills, bill.id: bill});
-    if (!state.demo && state.venue?.mode == VenueMode.connected) {
-      // Shared with the tills (docs/PLAN.md phase 3: the full open-bills shape).
-      unawaited(ref.read(apiProvider).saveBill({'id': bill.id, 'name': bill.name, 'total_minor': bill.totalMinor})
-          .then((_) {}, onError: (Object _) {}));
+    if (share && _connected && bill.heldBy == null) {
+      // On the venue's shared plan at once: the tills see this table now.
+      unawaited(ref.read(apiProvider).saveBill(openBillPayload(bill, terminal: terminalName)).then((_) {}, onError: (Object _) {}));
     }
   }
 }

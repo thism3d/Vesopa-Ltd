@@ -70,5 +70,7 @@
 	<string>Vesopa Tap reads staff cards and fobs to sign you in.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Sign in to Vesopa Tap with Face ID instead of your PIN.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Vesopa Tap scans a member's card in the Vesopa Loyalty app.</string>
 </dict>
 </plist>

@@ -52,7 +52,17 @@ class _HomePageState extends ConsumerState<HomePage> {
           ),
         ],
       ),
-      body: tabs[i].$3,
+      body: Column(children: [
+        // "Table 4: food ready" from the kitchen screens, until the clerk clears it.
+        if (s.alerts.isNotEmpty)
+          MaterialBanner(
+            backgroundColor: Tp.lime.withValues(alpha: 0.18),
+            leading: const Icon(Icons.room_service_rounded, color: Tp.lime),
+            content: Text(s.alerts.join('\n'), style: const TextStyle(fontWeight: FontWeight.w700)),
+            actions: [TextButton(onPressed: () => ref.read(tapProvider.notifier).clearAlerts(), child: const Text('Got it'))],
+          ),
+        Expanded(child: tabs[i].$3),
+      ]),
       bottomNavigationBar: NavigationBar(
         selectedIndex: i,
         onDestinationSelected: (v) => setState(() => _tab = v),

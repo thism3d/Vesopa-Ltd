@@ -41,7 +41,7 @@ class PaymentOutcome {
 }
 
 /// Where a step of the payment has got to, for the screen.
-enum PayStep { preparing, activating, linking, waitingForCard, confirming, done }
+enum PayStep { preparing, activating, linking, waitingForCard, onMachine, confirming, done }
 
 abstract class PaymentService {
   /// Whether this phone can take a tap at all, and why not if not.
@@ -52,6 +52,7 @@ abstract class PaymentService {
     int tipMinor = 0,
     String? billRef,
     String? clerk,
+    String via = 'tap',
     void Function(PayStep step)? onStep,
   });
 }
@@ -107,9 +108,11 @@ class DojoTapToPay implements PaymentService {
     int tipMinor = 0,
     String? billRef,
     String? clerk,
+    String via = 'tap',
     void Function(PayStep step)? onStep,
   }) async {
     final paymentId = const Uuid().v4();
+    if (via == 'machine') return _onMachine(paymentId, amountMinor, tipMinor, billRef, clerk, onStep);
     try {
       onStep?.call(PayStep.preparing);
       final secret = await _freshSecret();
@@ -154,9 +157,25 @@ class DojoTapToPay implements PaymentService {
     }
   }
 
-  /// Ask the server until Dojo has a verdict, for up to ~30 seconds.
-  Future<PaymentOutcome> _confirm(String paymentId, {bool quick = false}) async {
-    final until = DateTime.now().add(Duration(seconds: quick ? 6 : 30));
+  /// The venue's Dojo card machine: the server starts it, the customer uses
+  /// the machine, and the phone asks how it is going -- the kiosk's way.
+  Future<PaymentOutcome> _onMachine(String paymentId, int amountMinor, int tipMinor, String? billRef, String? clerk,
+      void Function(PayStep step)? onStep) async {
+    try {
+      onStep?.call(PayStep.preparing);
+      await api.createPayment(id: paymentId, amountMinor: amountMinor, tipMinor: tipMinor, billRef: billRef, clerk: clerk, via: 'machine');
+      onStep?.call(PayStep.onMachine);
+      final outcome = await _confirm(paymentId, seconds: 120);
+      onStep?.call(PayStep.done);
+      return outcome;
+    } on TapApiError catch (e) {
+      return PaymentOutcome(PayResult.unavailable, paymentId: paymentId, message: e.message);
+    }
+  }
+
+  /// Ask the server until Dojo has a verdict (~30 seconds; longer on a card machine).
+  Future<PaymentOutcome> _confirm(String paymentId, {bool quick = false, int seconds = 30}) async {
+    final until = DateTime.now().add(Duration(seconds: quick ? 6 : seconds));
     while (DateTime.now().isBefore(until)) {
       try {
         final p = await api.payment(paymentId);
@@ -190,11 +209,12 @@ class DemoPayments implements PaymentService {
     int tipMinor = 0,
     String? billRef,
     String? clerk,
+    String via = 'tap',
     void Function(PayStep step)? onStep,
   }) async {
     onStep?.call(PayStep.preparing);
     await Future<void>.delayed(const Duration(milliseconds: 400));
-    onStep?.call(PayStep.waitingForCard);
+    onStep?.call(via == 'machine' ? PayStep.onMachine : PayStep.waitingForCard);
     await Future<void>.delayed(const Duration(milliseconds: 1600));
     onStep?.call(PayStep.confirming);
     await Future<void>.delayed(const Duration(milliseconds: 500));

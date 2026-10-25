@@ -29,14 +29,14 @@ Map<int, int> splitBySeat(Bill bill, int seats) {
   }
   final sharedParts = splitEqually(shared, seats);
   final shares = {for (var s = 1; s <= seats; s++) s: own[s]! + sharedParts[s - 1]};
-  // Service charge in proportion to what each seat had, the last seat taking
-  // the remainder so the total is exact.
-  final service = bill.serviceMinor;
-  if (service > 0) {
+  // Service charge less any discount, in proportion to what each seat had,
+  // the last seat taking the remainder so the total is exact.
+  final adjust = bill.totalMinor - bill.subtotalMinor;
+  if (adjust != 0) {
     final sub = bill.subtotalMinor;
     var given = 0;
     for (var s = 1; s <= seats; s++) {
-      final part = s == seats ? service - given : (sub == 0 ? 0 : (service * shares[s]! / sub).round());
+      final part = s == seats ? adjust - given : (sub == 0 ? 0 : (adjust * shares[s]! / sub).round());
       shares[s] = shares[s]! + part;
       given += part;
     }
@@ -54,7 +54,9 @@ int priceOfItems(Bill bill, Map<String, int> quantities) {
     if (q > l.unpaidQuantity) throw ArgumentError('Only ${l.unpaidQuantity} of ${l.product.name} left to pay');
     sum += l.unitMinor * q;
   }
-  return sum + (sum * bill.serviceChargePercent / 100).round();
+  // At the bill's own rate after discount and service: what these items cost on this bill.
+  final sub = bill.subtotalMinor;
+  return sub == 0 ? sum : (sum * bill.totalMinor / sub).round();
 }
 
 /// A percentage tip on [amountMinor], rounded to the penny.

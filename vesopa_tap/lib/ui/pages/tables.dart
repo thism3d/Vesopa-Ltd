@@ -38,6 +38,13 @@ class _TablesPageState extends ConsumerState<TablesPage> {
         ),
       );
       if (ok != true || !mounted) return;
+      if (!await ref.read(tapProvider.notifier).claim(bill.id)) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(ref.read(tapProvider).message ?? 'Could not take the table over.')));
+        }
+        return;
+      }
+      if (!mounted) return;
     }
     await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => OrderPage(billId: bill!.id)));
   }

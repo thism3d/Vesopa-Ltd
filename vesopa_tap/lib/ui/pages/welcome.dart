@@ -2,8 +2,6 @@
 /// register a new one, or try the demo.
 library;
 
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -30,12 +28,23 @@ class _WelcomePageState extends ConsumerState<WelcomePage> {
     });
     try {
       final idToken = await VesopaSso(issuer: authIssuer, clientId: authClientId).authorize();
-      final answer = await ref.read(apiProvider).commission(
-            idToken,
-            device: '${Platform.isIOS ? 'iPhone' : 'Android'} (Vesopa Tap)',
-            platform: Platform.isIOS ? 'ios' : 'android',
-          );
-      await ref.read(tapProvider.notifier).commissioned(answer);
+      final session = ref.read(tapProvider.notifier);
+      final api = ref.read(apiProvider);
+      final answer = await api.commission(idToken, device: session.terminalName, deviceId: session.deviceId);
+      final choice = await session.commissioned(answer);
+      if (choice != null && mounted) {
+        // A login that runs several venues: which one is this phone for?
+        final site = await showDialog<Map<String, dynamic>>(
+          context: context,
+          builder: (c) => SimpleDialog(title: const Text('Which venue is this phone for?'), children: [
+            for (final s in choice.sites)
+              SimpleDialogOption(onPressed: () => Navigator.pop(c, s), child: Text('${s['name'] ?? s['office_name'] ?? s['id']}')),
+          ]),
+        );
+        if (site == null) return;
+        final picked = await api.commissionSite(choice.pickToken, site['id'] as Object, device: session.terminalName, deviceId: session.deviceId);
+        await session.commissioned(picked);
+      }
     } on SsoFailed catch (e) {
       setState(() => _error = e.message);
     } on TapApiError catch (e) {
@@ -121,11 +130,14 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
     });
     try {
       final idToken = await VesopaSso(issuer: authIssuer, clientId: authClientId).authorize(signUp: true);
+      final session = ref.read(tapProvider.notifier);
       final answer = await ref.read(apiProvider).registerVenue(
             idToken: idToken,
             venueName: _name.text.trim(),
             businessType: _type,
             postcode: _postcode.text.trim().toUpperCase(),
+            device: session.terminalName,
+            deviceId: session.deviceId,
           );
       await ref.read(tapProvider.notifier).commissioned(answer);
       if (mounted) Navigator.of(context).pop();

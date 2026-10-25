@@ -59,23 +59,30 @@ Learned from ICRTouch TouchPoint and PocketTouch (the UK standard for handheld o
 10. Show allergens on every dish and on the bill line, and add a note to any line.
 11. Grey out out-of-stock dishes, which can't be rung up (the back office stock flag).
 12. Send what's new to the kitchen and bar in one press ("Send 3"). A sent line can only come off with a void, as on the till.
-13. *(phase 3)* Hold and fire courses: send mains when the starters are cleared.
-14. *(phase 3)* Get a buzz when the kitchen marks the food ready to collect.
+13. Hold and fire courses: mains go on held, then **Fire mains** when the starters are cleared.
+14. See a "food ready" banner when every kitchen station has finished the table's ticket.
+15. Void a line that has gone to the kitchen, with a reason and a manager's PIN. The kitchen is told, and the void is kept on the sale.
 
 **Paying**
-15. Take the whole bill by tap.
-16. Split equally (2–8 ways). Shares always add up to the penny.
-17. Split by item ("my two pints and the burger"), never paying for more than is left.
-18. Split by seat: each seat's own lines plus a fair share of the table's.
-19. Add a service charge (none, 10%, 12.5%) and a tip (10%, 12.5%, 15%), taken as one payment, with the tip kept separate in the records.
-20. Over £100, the card asks for its PIN on the phone's screen.
-21. On a decline, say so plainly. On a timeout, "No answer from Dojo yet. Check the payment before taking it again", never a guess.
-22. Take cash as an alternative.
-23. *(phase 4)* Send a receipt by email or text, and offer a loyalty card scan from Vesopa Loyalty.
+16. Take the whole bill by tap on the phone, or on the venue's Dojo card machine.
+17. Split equally (2–8 ways). Shares always add up to the penny.
+18. Split by item ("my two pints and the burger"), never paying for more than is left.
+19. Split by seat: each seat's own lines plus a fair share of the table's.
+20. Add a service charge and a tip, both chosen by the venue in the back office (tips on by default at 10, 12.5 and 15%). They're taken as one payment, with the tip kept separate in the records.
+21. Over £100, the card asks for its PIN on the phone's screen.
+22. On a decline, say so plainly. On a timeout, "No answer from Dojo yet. Check the payment before taking it again", never a guess.
+23. Take cash, if the venue allows it.
+24. Email the receipt: the same PDF as the back office's.
+25. Put a Vesopa Loyalty member on the bill by scanning their app or typing their number. Their standing discount applies, and the sale earns them points.
+26. Take a voucher off the bill, checked by the back office and used up when the bill is paid.
+27. Refund to the card, all or part, with a manager's PIN.
 
 **Selling on its own**
-24. Type an amount and charge it (a market stall, a raffle, a deposit).
-25. Ring up a new sale from a small menu.
+28. Type an amount and charge it (a market stall, a raffle, a deposit).
+29. Ring up a new sale from a small menu.
+
+**When the signal drops**
+30. Orders, kitchen tickets and sales wait on the phone and go when it's back. A card payment needs a connection, and the app says so plainly.
 
 ## Why it beats PocketTouch
 

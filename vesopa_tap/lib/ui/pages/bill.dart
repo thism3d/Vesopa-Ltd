@@ -9,6 +9,7 @@ import '../../data/models.dart';
 import '../../data/session.dart';
 import '../theme.dart';
 import 'order.dart';
+import 'member_sheet.dart';
 import 'pay_sheet.dart';
 
 class BillsPage extends ConsumerWidget {
@@ -118,9 +119,20 @@ class BillPage extends ConsumerWidget {
           ),
         const Divider(height: 28),
         row('Subtotal', bill.subtotalMinor),
+        if (bill.member != null)
+          Row(children: [
+            Expanded(child: Text('${bill.member!.name}${bill.memberDiscountMinor > 0 ? ' (member discount)' : ''}')),
+            if (bill.memberDiscountMinor > 0) Money(-bill.memberDiscountMinor),
+            IconButton(
+              tooltip: 'Take the member off',
+              icon: const Icon(Icons.close_rounded, size: 18),
+              onPressed: () => ref.read(tapProvider.notifier).setMember(bill.id, null),
+            ),
+          ]),
+        if (bill.voucherMinor > 0) row('Voucher ${bill.voucherCode}', -bill.voucherMinor),
         row('Service charge', bill.serviceMinor),
         Wrap(spacing: 6, children: [
-          for (final p in const [0.0, 10.0, 12.5])
+          for (final p in ref.watch(tapProvider.select((s) => s.config.servicePercents)))
             ChoiceChip(
               label: Text(p == 0 ? 'None' : '${p.toStringAsFixed(p % 1 == 0 ? 0 : 1)}%'),
               selected: bill.serviceChargePercent == p,
@@ -137,6 +149,29 @@ class BillPage extends ConsumerWidget {
           onPressed: bill.dueMinor <= 0 ? null : () => _pay(context, ref, bill, bill.dueMinor),
         ),
         const SizedBox(height: 12),
+        Row(children: [
+          Expanded(
+            child: OutlinedButton.icon(
+              icon: const Icon(Icons.card_membership_rounded),
+              label: Text(bill.member == null ? 'Member' : 'Change member'),
+              onPressed: () => showModalBottomSheet<bool>(
+                context: context,
+                isScrollControlled: true,
+                showDragHandle: true,
+                builder: (_) => MemberSheet(billId: bill.id),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: OutlinedButton.icon(
+              icon: const Icon(Icons.confirmation_number_rounded),
+              label: const Text('Voucher'),
+              onPressed: bill.voucherCode != null ? null : () => askVoucher(context, ref, bill),
+            ),
+          ),
+        ]),
+        const SizedBox(height: 10),
         Row(children: [
           Expanded(child: OutlinedButton(onPressed: () => _splitEqually(context, ref, bill), child: const Text('Split equally'))),
           const SizedBox(width: 10),
