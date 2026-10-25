@@ -287,7 +287,8 @@ const button = (m, action, label, { cls = 'btn', fields = '' } = {}) =>
  * moment, and a button that does nothing visible gets pressed again.
  */
 const BUSY = "document.addEventListener('submit',function(e){if(e.defaultPrevented)return;var b=e.submitter||e.target.querySelector('button:not([type=button])');if(b&&b.classList.contains('btn'))b.classList.add('busy')});"
-  + "addEventListener('pageshow',function(){[].forEach.call(document.querySelectorAll('.btn.busy'),function(b){b.classList.remove('busy')})});";
+  + "addEventListener('pageshow',function(){[].forEach.call(document.querySelectorAll('.btn.busy'),function(b){b.classList.remove('busy')})});"
+  + "if(/Macintosh/.test(navigator.userAgent)&&navigator.maxTouchPoints>1)[].forEach.call(document.querySelectorAll('[data-ipad-note]'),function(e){e.hidden=false});";
 
 function document({ m, brand, title, body, bodyClass = '', script = '' }) {
   const t = theme(brand);
@@ -607,7 +608,13 @@ function card({ m, brand, unread, classes, me, ua }) {
   const turn = `<div class="cardbox"><input type="checkbox" id="turn" class="sr" aria-label="Turn the card over"><label for="turn" class="turn" style="color:${on}">${front}${back}</label></div>`;
 
   const wallet = [];
-  if (/iPhone|iPad|iPod/.test(ua)) wallet.push(`<a href="${esc(m.base)}wallet/apple">${APPLE.replace('<svg ', '<svg width="20" height="20" ')}Add to Apple Wallet</a>`);
+  // An iPad has no Wallet and cannot take a pass (only an iPhone or an Apple
+  // Watch can): say so instead of a button that downloads a file it cannot
+  // open (owner, 2026-10-25). Safari on an iPad says it is a Mac, so that note
+  // waits hidden and the page's script shows it on a touch screen (BUSY).
+  const IPAD_NOTE = `<p class="wallet-note"${/iPad/.test(ua) ? '' : ' data-ipad-note hidden'}>${icon('info')}Apple Wallet is not available on iPad. Open this page or the app on your iPhone to add your card.</p>`;
+  if (/iPhone|iPod/.test(ua)) wallet.push(`<a href="${esc(m.base)}wallet/apple">${APPLE.replace('<svg ', '<svg width="20" height="20" ')}Add to Apple Wallet</a>`);
+  else if (/iPad|Macintosh/.test(ua)) wallet.push(IPAD_NOTE);
   if (/Android/.test(ua)) wallet.push(`<a href="${esc(m.base)}wallet/google">${GOOGLE.replace('<svg ', '<svg width="18" height="18" ')}Add to Google Wallet</a>`);
 
   const membership = me.membership || {};

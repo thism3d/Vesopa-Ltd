@@ -249,3 +249,11 @@ fieldset{border:0;padding:0;margin:0 0 10px}
 .field > input:focus::placeholder{opacity:.6}
 .field > input.code{padding-top:24px}
 @media (prefers-reduced-motion:reduce){.field:has(> input) > span{transition:none}}
+/* The side rail never over the bar (owner, 2026-10-25, iPad): Safari's
+   bounce at the top moved the sticky bar down under the fixed rail. No
+   bounce on the signed-in pages, the bar always above the rail, and the rail
+   starts below the bar's real height (with the iPad's top inset). */
+html:has(body .tabs),body:has(.tabs){overscroll-behavior-y:none}
+.bar{z-index:7}
+@media (min-width:700px){.tabs{top:calc(56px + env(safe-area-inset-top));z-index:4}}
+.wallet-note{display:flex;align-items:flex-start;gap:8px;max-width:440px;margin:0 auto;padding:10px 14px;border-radius:12px;background:var(--tonal);color:var(--text);font-size:.9rem;line-height:1.45;text-align:left}.wallet-note[hidden]{display:none}.wallet-note svg{flex:none;width:20px;height:20px;margin-top:1px}

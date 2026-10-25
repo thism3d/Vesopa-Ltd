@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -568,6 +569,34 @@ class _AddToWalletState extends ConsumerState<_AddToWallet> {
     return FutureBuilder<bool>(
       future: _available,
       builder: (context, snap) {
+        // An iPad (or an iPhone where Wallet is switched off) cannot take a
+        // pass: say so where the button would be, rather than nothing (owner,
+        // 2026-10-25: "if cannot be added show warning properly").
+        if (snap.data == false && defaultTargetPlatform == TargetPlatform.iOS && !kIsWeb) {
+          final iPad = MediaQuery.sizeOf(context).shortestSide >= 600;
+          final theme = Theme.of(context);
+          return Padding(
+            padding: const EdgeInsets.only(top: 18),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: widget.maxWidth),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.info_outline, size: 20, color: theme.colorScheme.onSurfaceVariant),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      iPad
+                          ? 'Apple Wallet is not available on iPad. Open this app on your iPhone to add your card.'
+                          : 'Apple Wallet is not available on this iPhone, so your card cannot be added to it.',
+                      style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
         if (snap.data != true) return const SizedBox.shrink();
         if (_inWallet) {
           final on = Theme.of(context).colorScheme.onSurface;
