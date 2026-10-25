@@ -246,3 +246,7 @@ firebase-adminsdk*.json
 
 # The owner's saved copy of the club's X page (2026-10-11); what the site uses is in PontardaweRFC/website/content.
 pontardawe_rfc_x_com_posts/
+
+# Keys and console screenshots the owner keeps beside the venue (2026-10-25): never in git.
+PontardaweRFC/FirebaseAndKeys/
+*.p8
