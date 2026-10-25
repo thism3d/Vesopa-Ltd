@@ -54,6 +54,12 @@ async function main() {
       .replace(/^Cc:.*(\r\n[ \t].*)*$/m, 'Cc: Meirion Davies <info@vesopasoftware.com>, Meirion Davies <info@vesopa.com>')
       .replace(/^(In-Reply-To|References):.*\r\n/gm, '');
   }
+  // --important: high importance and a read receipt to the sender (owner, 2026-10-25).
+  if (process.argv.includes('--important')) {
+    head = head.replace(/^(Importance|X-Priority|Priority|X-MSMail-Priority|Disposition-Notification-To|Return-Receipt-To):.*\r\n/gim, '')
+      + '\r\nImportance: High\r\nX-Priority: 1 (Highest)\r\nX-MSMail-Priority: High\r\nPriority: urgent'
+      + `\r\nDisposition-Notification-To: ${from}\r\nReturn-Receipt-To: ${from}`;
+  }
   head = head.replace(/^X-Unsent:.*\r\n/m, '').replace(/^Date:.*$/m, `Date: ${new Date().toUTCString().replace('GMT', '+0000')}`);
   raw = head + raw.slice(split);
   const subject = ((head + '\r\n').match(/^Subject:\s*([\s\S]*?)\r\n(?![ \t])/m) || [])[1]?.replace(/\r\n[ \t]+/g, ' ');

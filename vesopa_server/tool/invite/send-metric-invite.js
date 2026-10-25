@@ -252,6 +252,11 @@ async function main() {
       html: html(cids, MUZAHID),
       text: text(MUZAHID),
       attachments,
+      // --important: high importance and a read receipt to Muzahid (owner, 2026-10-25).
+      ...(process.argv.includes('--important') ? {
+        priority: 'high',
+        headers: { 'Disposition-Notification-To': MUZAHID.email, 'Return-Receipt-To': MUZAHID.email },
+      } : {}),
     });
     console.log(only
       ? `sent "${SUBJECT}" from ${MUZAHID.email} to ${only} only (${info.messageId})`
