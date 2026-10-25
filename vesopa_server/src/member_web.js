@@ -291,7 +291,10 @@ function memberWebRoutes({ secret, flutterPage }) {
     };
     res.set({
       'X-Content-Type-Options': 'nosniff',
-      'Referrer-Policy': 'same-origin',
+      // The site's address (never the page's path) to other sites: reCAPTCHA
+      // checks it, and with 'same-origin' its picture check drew a blank box
+      // and the phone code never came on the web (owner, 2026-10-25).
+      'Referrer-Policy': 'strict-origin-when-cross-origin',
       'Content-Security-Policy': [
         "default-src 'self'", "img-src 'self' https: data:", "style-src 'self' 'unsafe-inline'",
         // 'strict-dynamic' lets the nonce'd page script load Firebase and

@@ -14,6 +14,8 @@ const { zoned } = require('./posts');
 
 const MENU_API = (process.env.MENU_API || 'https://menu.vesopa.com').replace(/\/+$/, '');
 const MENU_SLUG = process.env.MENU_SLUG || 'pontardawe-rfc';
+/** The app on Google Play: on an Android phone this opens the Play Store app itself. */
+const ANDROID_STORE = club.web.android_app || 'https://play.google.com/store/apps/details?id=com.vesopaepos.pontardawerfc';
 
 function photo(name, { cls = '', sizes = '(max-width: 700px) 100vw, 640px', lazy = true } = {}) {
   const m = images[name];
@@ -152,6 +154,31 @@ function home() {
     </div>
   </div>
   <a class="scroll-cue" href="#quick" aria-label="Scroll down"><span></span></a>
+</section>
+
+<section class="section app-news" aria-labelledby="app-news-h">
+  <div class="wrap app-news-in">
+    <div class="app-news-copy reveal">
+      <p class="kicker"><span class="app-news-new">New</span> Now on Google Play</p>
+      <h2 id="app-news-h">The Pontardawe RFC app is here</h2>
+      <p class="lead">Your members' card on your phone: show the code at the bar and the members' discount is applied, every time. Club news, fixtures and offers arrive as notifications, and on Wear OS your card is on your wrist.</p>
+      <ul class="app-news-ways">
+        <li>${icon('phone', { size: 20 })}<span><b>Sign in your way:</b> your mobile number, an emailed code, a password, a passkey, or Google and Apple.</span></li>
+        <li>${icon('shield', { size: 20 })}<span><b>Private by design:</b> no advertising, no tracking, no location. <a href="/app/privacy">App privacy</a></span></li>
+      </ul>
+      <div class="app-news-actions">
+        <a class="store-badge" href="${esc(ANDROID_STORE)}" rel="noopener" data-store="android"><img src="/img/badges/google-play.png" alt="Get it on Google Play" width="162" height="48"></a>
+        <a class="btn btn-ghost" href="${esc(MEMBERS)}/">Use it on the web</a>
+      </div>
+      <p class="muted small">iPhone and iPad: coming soon to the App Store. Members can sign in at <a href="${esc(MEMBERS)}/">member.pontardawerfc.com</a> today. <a href="/news/the-pontardawe-rfc-app-is-now-on-google-play">Read the news</a> &middot; <a href="/app/help">Help with the app</a></p>
+    </div>
+    <figure class="app-news-video reveal">
+      <div class="phone-frame">
+        <video src="/media/app-tour.mp4?v=${ASSET_VERSION}" poster="/media/app-tour-poster.jpg" muted loop playsinline autoplay preload="metadata" aria-label="A short tour of the Pontardawe RFC app: the welcome, signing in, the members' card, news, activity and the venue"></video>
+      </div>
+      <figcaption class="muted small">The app on Android: welcome, sign in, your card, news, activity and the clubhouse.</figcaption>
+    </figure>
+  </div>
 </section>
 
 <section class="stats" aria-label="The club in numbers">
@@ -800,7 +827,7 @@ const APP_UPDATED = '25 October 2026';
 
 /** The quick links at the top of every app page, so each is one tap from the others. */
 function appLinks(here) {
-  const links = [['/app/privacy', 'App privacy policy'], ['/app/privacy-choices', 'Your privacy choices'], ['/app/terms', 'Terms and licences'], [APP_DELETE, 'Delete your account']];
+  const links = [['/app/help', 'Help'], ['/app/privacy', 'App privacy policy'], ['/app/privacy-choices', 'Your privacy choices'], ['/app/terms', 'Terms and licences'], [APP_DELETE, 'Delete your account']];
   return `<nav class="app-legal-links" aria-label="The app's small print"><ul>${links.map(([href, label]) => `<li>${href === here ? `<b aria-current="page">${label}</b>` : `<a href="${href}">${label}</a>`}</li>`).join('')}</ul></nav>`;
 }
 
@@ -891,6 +918,47 @@ ${row('Name, email and membership', 'Needed for a card', `Delete your account: A
 </tbody></table></div>`],
       ['never', 'What the app never does', '<p>It does not use your location, show advertising, track you across other apps or websites, or sell your information.</p>'],
       ['ask', 'Questions or a copy of your data', `<p>Please ${askClub()}. The full details are in the <a href="/app/privacy">app privacy policy</a>.</p>`],
+    ],
+  });
+}
+
+/**
+ * Help with the app, and who does what (owner, 2026-10-25: "Vesopa Software
+ * Development help and relationships page ... data protection and other
+ * rights"). The club owns the app and its members' details; Vesopa makes it.
+ */
+function appHelpPage() {
+  const c = club;
+  return appLegal({
+    path: '/app/help',
+    title: 'Help with the app',
+    lead: 'Getting the app, signing in, and who to ask about what.',
+    description: `Help with the ${c.name} members' app: getting it, signing in, your rights, and the club's relationship with Vesopa Software.`,
+    sections: [
+      ['get', 'Getting the app', `<ul>
+<li><b>Android phones and Wear OS watches:</b> <a href="${esc(ANDROID_STORE)}" rel="noopener">Pontardawe RFC on Google Play</a>.</li>
+<li><b>iPhone and iPad:</b> coming soon to the App Store.</li>
+<li><b>Any phone or computer:</b> <a href="${esc(MEMBERS)}/">member.pontardawerfc.com</a>, the same card and account in your browser.</li>
+</ul>`],
+      ['signin', 'Signing in', `<p>The app is for club members. Sign in with the email address or mobile number the club has for you:</p><ul>
+<li><b>Mobile number:</b> choose your country, type your number and we text you a six-digit code.</li>
+<li><b>Email:</b> an emailed code, or a password if you have set one.</li>
+<li><b>Passkey:</b> your face, fingerprint or phone PIN. One passkey works in the app and on member.pontardawerfc.com.</li>
+<li><b>Google or Apple:</b> one tap, with the address on your membership.</li>
+</ul><p>Not a member yet, or your details have changed? Ask behind the bar or ${askClub()}.</p>`],
+      ['who', 'Who does what', `<div class="table-wrap"><table class="league"><thead><tr><th scope="col">Ask</th><th scope="col">About</th><th scope="col">How</th></tr></thead><tbody>
+<tr><td><b>${esc(c.name)}</b></td><td>Your membership, renewals, the members' discount, your details, news and offers</td><td>At the bar, ${esc(c.phone)}${c.email ? `, <a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : ''}</td></tr>
+<tr><td><b>Vesopa Software</b></td><td>The app not working: signing in, codes not arriving, the card or notifications</td><td><a href="https://loyalty.vesopa.com/support" rel="noopener">App support form</a>, <a href="mailto:info@vesopasoftware.com">info@vesopasoftware.com</a>, +44 7848 494341</td></tr>
+</tbody></table></div>`],
+      ['relationship', 'The club and Vesopa', `<p>The app, its name and the members' details belong to ${esc(c.company.name)}, which decides how they are used (the controller). <b>Vesopa Software Limited</b> (company 17362206, Baglan, Port Talbot) designs, builds and hosts the app, the club's website, online ordering and its till for the club, and uses members' details only on the club's instructions (the processor), under a written agreement as UK data protection law requires.</p><p>Vesopa makes software for clubs, pubs, restaurants and shops across the UK: <a href="https://vesopaepos.com" rel="noopener">vesopaepos.com</a>.</p>`],
+      ['rights', 'Your data and your rights', `<ul>
+<li><a href="/app/privacy">App privacy policy</a>: what the app keeps, why, and for how long.</li>
+<li><a href="/app/privacy-choices">Your privacy choices</a>: switch off notifications, remove your number or photo.</li>
+<li><a href="https://auth.vesopa.com/delete-account/pontardawe-rfc">Delete your account</a>, with or without the app.</li>
+<li>Ask for a copy of your data, a correction or deletion: ${askClub()}. We answer within one month.</li>
+<li>Not happy with how your data is handled? The <a href="https://ico.org.uk/make-a-complaint/" rel="noopener">Information Commissioner's Office</a>, 0303 123 1113.</li>
+<li><a href="/app/terms">Terms and licences</a> for the app.</li>
+</ul>`],
     ],
   });
 }
@@ -1435,6 +1503,6 @@ function notFound() {
 
 module.exports = {
   home, clubPage, teamsPage, newsPage, newsPages, articlePage, clubhousePage, menuPage, membershipPage,
-  contactPage, privacyPage, appPrivacyPage, appChoicesPage, appTermsPage, cookiesPage, termsPage, accessibilityPage, notFound, fixturesPage, ticketsPage, ticketOrderPage, whatsOnPage, playPage, licencesPage, archivePage,
+  contactPage, privacyPage, appPrivacyPage, appChoicesPage, appTermsPage, appHelpPage, cookiesPage, termsPage, accessibilityPage, notFound, fixturesPage, ticketsPage, ticketOrderPage, whatsOnPage, playPage, licencesPage, archivePage,
   MENU_API, MENU_SLUG,
 };
