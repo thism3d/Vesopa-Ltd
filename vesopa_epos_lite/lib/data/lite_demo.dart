@@ -1,86 +1,103 @@
-/// A pretend bar and kitchen, so Vesopa EPOS Lite can be tried and shown with
-/// no back office: "Try the demo". It is the kind of venue Lite is for -- a
-/// festival bar, a pop-up, a beer garden -- with portions, a set menu and
-/// allergens, so every part of the sale screen has something to show.
-/// Payments in the demo are pretend (vesopa_tap's DemoPayments).
+/// The demo venue: The Vesopa Kitchen, the same menu customers see at
+/// menu.vesopa.com/vesopakitchen -- its sections, items, prices, add-ons and
+/// what is off today, copied from the venue's public menu on 26 Oct 2026. So the
+/// demo till and the demo QR menu sell the same things at the same prices.
+///
+/// Only two choices are added, both ones the menu's own words promise: the
+/// wings' sauce ("Buffalo or barbecue, tell us which") and how a steak is
+/// cooked. Payments in the demo are pretend (vesopa_tap's DemoPayments).
 library;
 
 import 'package:vesopa_tap/data/models.dart';
 
-const liteDemoVenue = Venue(name: 'The Vesopa Bar (demo)', office: 'demo', mode: VenueMode.standalone);
+const liteDemoVenue = Venue(name: 'The Vesopa Kitchen (demo)', office: 'demo', mode: VenueMode.standalone);
 
 const liteDemoClerks = [
   Clerk(id: 1, name: 'Sam', pin: '1111', group: 'Manager'),
   Clerk(id: 2, name: 'Alex', pin: '2222', group: 'Bar'),
-  Clerk(id: 3, name: 'Priya', pin: '3333', group: 'Bar'),
+  Clerk(id: 3, name: 'Priya', pin: '3333', group: 'Floor'),
 ];
 
 const liteDemoCategories = [
-  MenuCategory(id: 'draught', name: 'Draught', colour: 0xFFA5C715),
-  MenuCategory(id: 'bottles', name: 'Bottles', colour: 0xFF3E8CF0),
-  MenuCategory(id: 'spirits', name: 'Spirits', colour: 0xFFBB6BD9),
-  MenuCategory(id: 'soft', name: 'Soft drinks', colour: 0xFF2BB673),
   MenuCategory(id: 'starters', name: 'Starters', colour: 0xFFF2994A),
   MenuCategory(id: 'mains', name: 'Mains', colour: 0xFFE5484D),
-  MenuCategory(id: 'specials', name: 'Specials', colour: 0xFFF5B301),
+  MenuCategory(id: 'sides', name: 'Sides', colour: 0xFFF5B301),
+  MenuCategory(id: 'puddings', name: 'Puddings', colour: 0xFFBB6BD9),
+  MenuCategory(id: 'beers-cider', name: 'Beers & cider', colour: 0xFFA5C715),
+  MenuCategory(id: 'wine-fizz', name: 'Wine & fizz', colour: 0xFFD6467A),
+  MenuCategory(id: 'cocktails', name: 'Cocktails', colour: 0xFFE06BD0),
+  MenuCategory(id: 'spirits', name: 'Spirits', colour: 0xFF8E7CF0),
+  MenuCategory(id: 'soft-drinks', name: 'Soft drinks', colour: 0xFF2BB673),
+  MenuCategory(id: 'coffee', name: 'Coffee', colour: 0xFFB07A4A),
+  MenuCategory(id: 'tea', name: 'Tea', colour: 0xFF1E9184),
 ];
 
-/// A pint is the price; a half takes some off, as a portion on the till does.
-const _pint = OptionGroup(name: 'Portion', choices: [Choice('Pint'), Choice('Half', -230)]);
-const _soft = OptionGroup(name: 'Size', choices: [Choice('Standard'), Choice('Small', -106)]);
-const _single = OptionGroup(name: 'Measure', choices: [Choice('Single'), Choice('Double', 250)]);
-const _mixer = OptionGroup(name: 'Mixer', required: false, choices: [Choice('Coke', 80), Choice('Lemonade', 80), Choice('Tonic', 90), Choice('Neat')]);
-const _cook = OptionGroup(name: 'Cooked', choices: [Choice('Rare'), Choice('Medium'), Choice('Well done')]);
+const _wingSauce = OptionGroup(name: 'Sauce', choices: [Choice('Buffalo'), Choice('Barbecue')]);
+const _steakCooked = OptionGroup(name: 'Cooked', choices: [Choice('Rare'), Choice('Medium rare'), Choice('Medium'), Choice('Well done')]);
+const _mixers = OptionGroup(name: 'Mixers', required: false, choices: [Choice('Lemonade', 80, 165), Choice('Coke', 80, 166), Choice('Fanta', 80, 167), Choice('Tonic', 80, 168)]);
 
-const _setStarter = OptionGroup(name: 'Starter', choices: [
-  Choice('Soup of the Day'),
-  Choice('Potted Shrimps'),
-  Choice('Terrine of Chicken'),
-  Choice('Tempura Tiger Prawns'),
-  Choice('Garlic Mushrooms'),
-  Choice('Chicken Goujons'),
-]);
-const _setMain = OptionGroup(name: 'Main', choices: [Choice('Sirloin', 400), Choice('Halibut'), Choice('Gammon'), Choice('Lamb'), Choice('Ratatouille')]);
-const _setDessert = OptionGroup(name: 'Dessert', choices: [Choice('Sticky Toffee Pudding'), Choice('Ice Cream'), Choice('Cheeseboard', 200)]);
-
-Product _p(String id, String name, int price, String cat, {List<OptionGroup> options = const [], List<String> allergens = const [], bool out = false}) =>
-    Product(id: id, name: name, priceMinor: price, category: cat, options: options, allergens: allergens, outOfStock: out);
-
-final liteDemoProducts = [
-  _p('d1', 'Fortyniner', 480, 'draught', options: [_pint], allergens: ['gluten']),
-  _p('d2', 'Ringwood Best', 460, 'draught', options: [_pint], allergens: ['gluten']),
-  _p('d3', 'Foggie Dew', 490, 'draught', options: [_pint], allergens: ['gluten']),
-  _p('d4', 'Ale of Wight', 470, 'draught', options: [_pint], allergens: ['gluten']),
-  _p('d5', 'Fosters', 420, 'draught', options: [_pint], allergens: ['gluten']),
-  _p('d6', 'Guinness', 520, 'draught', options: [_pint], allergens: ['gluten']),
-  _p('d7', 'Cider', 450, 'draught', options: [_pint], allergens: ['sulphites']),
-  _p('b1', 'Becks', 380, 'bottles', allergens: ['gluten']),
-  _p('b2', 'Budweiser', 360, 'bottles', allergens: ['gluten']),
-  _p('b3', 'Corona', 400, 'bottles', allergens: ['gluten']),
-  _p('b4', 'Sol', 360, 'bottles', allergens: ['gluten']),
-  _p('b5', 'Red Stripe', 380, 'bottles', allergens: ['gluten']),
-  _p('b6', 'Alcohol-free Lager', 340, 'bottles', allergens: ['gluten'], out: true),
-  _p('s1', 'Whisky', 380, 'spirits', options: [_single, _mixer]),
-  _p('s2', 'Vodka', 360, 'spirits', options: [_single, _mixer]),
-  _p('s3', 'Gin', 380, 'spirits', options: [_single, _mixer]),
-  _p('s4', 'White Rum', 360, 'spirits', options: [_single, _mixer]),
-  _p('s5', 'Dark Rum', 370, 'spirits', options: [_single, _mixer]),
-  _p('c1', 'Coke', 220, 'soft', options: [_soft]),
-  _p('c2', 'Diet Coke', 220, 'soft', options: [_soft]),
-  _p('c3', 'Lemonade', 200, 'soft', options: [_soft]),
-  _p('c4', 'J2O', 280, 'soft'),
-  _p('c5', 'Fruit Shoot', 180, 'soft'),
-  _p('c6', 'Pint of Cola', 340, 'soft'),
-  _p('f1', 'Soup of the Day', 650, 'starters', allergens: ['celery', 'gluten']),
-  _p('f2', 'Potted Shrimps', 795, 'starters', allergens: ['crustaceans', 'milk']),
-  _p('f3', 'Garlic Mushrooms', 695, 'starters', allergens: ['gluten', 'milk']),
-  _p('f4', 'Chicken Goujons', 725, 'starters', allergens: ['gluten', 'eggs']),
-  _p('m1', 'Sirloin', 2450, 'mains', options: [_cook]),
-  _p('m2', 'Halibut', 1895, 'mains', allergens: ['fish', 'milk']),
-  _p('m3', 'Gammon', 1495, 'mains', allergens: ['eggs']),
-  _p('m4', 'Lamb', 1995, 'mains', allergens: ['celery']),
-  _p('m5', 'Ratatouille', 1295, 'mains'),
-  _p('m6', 'Puff Pastry Tart', 1395, 'mains', allergens: ['gluten', 'milk', 'eggs']),
-  _p('x1', 'Three Course Meal', 2500, 'specials', options: [_setStarter, _setMain, _setDessert], allergens: ['varies: check the dishes']),
-  _p('x2', 'Burger & a Pint', 1500, 'specials', options: [_cook], allergens: ['gluten', 'milk', 'sesame']),
+const liteDemoProducts = [
+  Product(id: 'p144', plu: 144, name: 'Soup of the Day', priceMinor: 650, category: 'starters'),
+  Product(id: 'p145', plu: 145, name: 'Garlic Bread', priceMinor: 450, category: 'starters', outOfStock: true),
+  Product(id: 'p146', plu: 146, name: 'Halloumi Fries', priceMinor: 700, category: 'starters'),
+  Product(id: 'p147', plu: 147, name: 'Chicken Wings', priceMinor: 750, category: 'starters', options: [_wingSauce]),
+  Product(id: 'p148', plu: 148, name: 'Bruschetta', priceMinor: 600, category: 'starters'),
+  Product(id: 'p122', plu: 122, name: 'Cheeseburger', priceMinor: 1350, category: 'mains'),
+  Product(id: 'p150', plu: 150, name: 'Chicken Burger', priceMinor: 1300, category: 'mains'),
+  Product(id: 'p151', plu: 151, name: 'Veggie Burger', priceMinor: 1250, category: 'mains'),
+  Product(id: 'p152', plu: 152, name: 'Fish & Chips', priceMinor: 1450, category: 'mains'),
+  Product(id: 'p153', plu: 153, name: 'Steak & Chips', priceMinor: 2200, category: 'mains', options: [_steakCooked]),
+  Product(id: 'p154', plu: 154, name: 'Margherita Pizza', priceMinor: 1150, category: 'mains'),
+  Product(id: 'p155', plu: 155, name: 'Pepperoni Pizza', priceMinor: 1300, category: 'mains'),
+  Product(id: 'p156', plu: 156, name: 'Caesar Salad', priceMinor: 1050, category: 'mains'),
+  Product(id: 'p157', plu: 157, name: 'Chips', priceMinor: 400, category: 'sides'),
+  Product(id: 'p158', plu: 158, name: 'Sweet Potato Fries', priceMinor: 480, category: 'sides'),
+  Product(id: 'p159', plu: 159, name: 'Onion Rings', priceMinor: 450, category: 'sides'),
+  Product(id: 'p160', plu: 160, name: 'Side Salad', priceMinor: 380, category: 'sides'),
+  Product(id: 'p161', plu: 161, name: 'Sticky Toffee Pudding', priceMinor: 700, category: 'puddings'),
+  Product(id: 'p162', plu: 162, name: 'Cheesecake', priceMinor: 680, category: 'puddings'),
+  Product(id: 'p163', plu: 163, name: 'Chocolate Brownie', priceMinor: 650, category: 'puddings'),
+  Product(id: 'p164', plu: 164, name: 'Ice Cream', priceMinor: 500, category: 'puddings'),
+  Product(id: 'p123', plu: 123, name: 'Carling Half', priceMinor: 605, category: 'beers-cider', allergens: ['celery']),
+  Product(id: 'p124', plu: 124, name: 'IPA Pint', priceMinor: 300, category: 'beers-cider', options: [_mixers]),
+  Product(id: 'p125', plu: 125, name: 'Guinness Pint', priceMinor: 300, category: 'beers-cider'),
+  Product(id: 'p126', plu: 126, name: 'Cider Pint', priceMinor: 300, category: 'beers-cider'),
+  Product(id: 'p127', plu: 127, name: 'Peroni Bottle', priceMinor: 500, category: 'beers-cider'),
+  Product(id: 'p128', plu: 128, name: 'House Red 175ml', priceMinor: 550, category: 'wine-fizz'),
+  Product(id: 'p129', plu: 129, name: 'House White 175ml', priceMinor: 550, category: 'wine-fizz'),
+  Product(id: 'p130', plu: 130, name: 'Rosé 175ml', priceMinor: 550, category: 'wine-fizz'),
+  Product(id: 'p131', plu: 131, name: 'Prosecco Glass', priceMinor: 650, category: 'wine-fizz'),
+  Product(id: 'p132', plu: 132, name: 'House Red Bottle', priceMinor: 2100, category: 'wine-fizz'),
+  Product(id: 'p133', plu: 133, name: 'House White Bottle', priceMinor: 2100, category: 'wine-fizz'),
+  Product(id: 'p139', plu: 139, name: 'Mojito', priceMinor: 950, category: 'cocktails'),
+  Product(id: 'p140', plu: 140, name: 'Espresso Martini', priceMinor: 1050, category: 'cocktails'),
+  Product(id: 'p141', plu: 141, name: 'Negroni', priceMinor: 1000, category: 'cocktails'),
+  Product(id: 'p142', plu: 142, name: 'Aperol Spritz', priceMinor: 900, category: 'cocktails'),
+  Product(id: 'p143', plu: 143, name: 'Old Fashioned', priceMinor: 1050, category: 'cocktails'),
+  Product(id: 'p134', plu: 134, name: 'Gin & Tonic', priceMinor: 750, category: 'spirits'),
+  Product(id: 'p135', plu: 135, name: 'Vodka & Coke', priceMinor: 750, category: 'spirits'),
+  Product(id: 'p136', plu: 136, name: 'Whisky', priceMinor: 680, category: 'spirits'),
+  Product(id: 'p137', plu: 137, name: 'Rum & Coke', priceMinor: 720, category: 'spirits'),
+  Product(id: 'p138', plu: 138, name: 'Tequila Shot', priceMinor: 450, category: 'spirits'),
+  Product(id: 'p100', plu: 100, name: 'Coca-Cola', priceMinor: 250, category: 'soft-drinks'),
+  Product(id: 'p101', plu: 101, name: 'Diet Coke', priceMinor: 250, category: 'soft-drinks'),
+  Product(id: 'p103', plu: 103, name: 'Orange Juice', priceMinor: 280, category: 'soft-drinks'),
+  Product(id: 'p104', plu: 104, name: 'Apple Juice', priceMinor: 280, category: 'soft-drinks'),
+  Product(id: 'p105', plu: 105, name: 'Sparkling Water', priceMinor: 190, category: 'soft-drinks'),
+  Product(id: 'p106', plu: 106, name: 'Still Water', priceMinor: 170, category: 'soft-drinks'),
+  Product(id: 'p107', plu: 107, name: 'Ginger Beer', priceMinor: 290, category: 'soft-drinks'),
+  Product(id: 'p108', plu: 108, name: 'Espresso', priceMinor: 220, category: 'coffee'),
+  Product(id: 'p109', plu: 109, name: 'Double Espresso', priceMinor: 280, category: 'coffee'),
+  Product(id: 'p110', plu: 110, name: 'Americano', priceMinor: 270, category: 'coffee'),
+  Product(id: 'p111', plu: 111, name: 'Latte', priceMinor: 320, category: 'coffee'),
+  Product(id: 'p112', plu: 112, name: 'Cappuccino', priceMinor: 320, category: 'coffee'),
+  Product(id: 'p113', plu: 113, name: 'Flat White', priceMinor: 330, category: 'coffee'),
+  Product(id: 'p114', plu: 114, name: 'Mocha', priceMinor: 360, category: 'coffee'),
+  Product(id: 'p115', plu: 115, name: 'Hot Chocolate', priceMinor: 340, category: 'coffee'),
+  Product(id: 'p116', plu: 116, name: 'English Breakfast', priceMinor: 240, category: 'tea'),
+  Product(id: 'p117', plu: 117, name: 'Earl Grey', priceMinor: 240, category: 'tea'),
+  Product(id: 'p118', plu: 118, name: 'Green Tea', priceMinor: 260, category: 'tea'),
+  Product(id: 'p119', plu: 119, name: 'Peppermint', priceMinor: 260, category: 'tea'),
+  Product(id: 'p120', plu: 120, name: 'Chamomile', priceMinor: 260, category: 'tea'),
+  Product(id: 'p121', plu: 121, name: 'Chai Latte', priceMinor: 340, category: 'tea'),
 ];

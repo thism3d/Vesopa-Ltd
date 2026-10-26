@@ -64,13 +64,18 @@ class LiteWordmark extends StatelessWidget {
 IconData categoryIcon(String name) {
   final n = name.toLowerCase();
   bool has(List<String> words) => words.any(n.contains);
-  if (has(['coffee', 'tea', 'hot drink'])) return Icons.coffee_rounded;
+  // Most specific first: "Soft drinks" is not a drink with alcohol, "Sides" not a starter.
+  if (has(['tea', 'infusion'])) return Icons.emoji_food_beverage_rounded;
+  if (has(['coffee', 'hot drink'])) return Icons.coffee_rounded;
+  if (has(['cocktail'])) return Icons.local_bar_rounded;
+  if (has(['spirit', 'gin', 'vodka', 'whisky', 'rum', 'shot'])) return Icons.liquor_rounded;
   if (has(['wine', 'fizz', 'prosecco', 'champagne'])) return Icons.wine_bar_rounded;
   if (has(['beer', 'ale', 'lager', 'draught', 'cider', 'pint', 'bottle'])) return Icons.sports_bar_rounded;
-  if (has(['spirit', 'cocktail', 'shot', 'gin', 'vodka', 'whisky'])) return Icons.local_bar_rounded;
   if (has(['soft', 'mixer', 'minerals', 'juice', 'drink'])) return Icons.local_drink_rounded;
-  if (has(['starter', 'small plate', 'snack', 'side'])) return Icons.tapas_rounded;
-  if (has(['dessert', 'pudding', 'sweet', 'ice cream'])) return Icons.icecream_rounded;
+  if (has(['side'])) return Icons.fastfood_rounded;
+  if (has(['starter', 'small plate', 'snack', 'tapas'])) return Icons.tapas_rounded;
+  if (has(['dessert', 'pudding', 'sweet', 'cake'])) return Icons.cake_rounded;
+  if (has(['ice cream'])) return Icons.icecream_rounded;
   if (has(['special', 'offer', 'deal', 'set', 'meal'])) return Icons.star_rounded;
   if (has(['burger', 'main', 'food', 'grill', 'kitchen', 'hot food'])) return Icons.restaurant_rounded;
   if (has(['crisp', 'nut', 'confection'])) return Icons.cookie_rounded;

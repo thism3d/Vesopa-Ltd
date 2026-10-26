@@ -6,9 +6,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vesopa_epos_lite/data/journal.dart';
 import 'package:vesopa_epos_lite/main.dart';
 
-/// A bar service in the demo: sign on, a half of Fosters (portion sheet), a
-/// Budweiser (allergen alert), a 10% discount, £20 cash with change, then a
-/// card sale, a refund, the reports and End of day.
+/// A service in the demo (The Vesopa Kitchen's menu): sign on, wings with a
+/// sauce (choice sheet), a Carling Half (allergen alert), an IPA with an
+/// optional mixer, a 10% discount, £20 cash with change, then a card sale, a
+/// refund, the reports and End of day.
 void main() {
   Future<void> tapKey(WidgetTester tester, String key) async {
     await tester.tap(find.byKey(ValueKey(key)));
@@ -34,48 +35,47 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Sam'), findsOneWidget);
 
-      // Draught opens first: Fosters asks for its portion; take a half.
-      await tapKey(tester, 'item-d5');
-      expect(find.text('Add  £4.20'), findsOneWidget, reason: 'a pint is chosen to start with');
-      await tester.tap(find.text('Half'));
+      // Starters open first. Garlic Bread is off today; the wings ask for a sauce.
+      await tapKey(tester, 'item-p145');
+      expect(find.text('Garlic Bread is sold out'), findsOneWidget);
+      await tapKey(tester, 'item-p147');
+      expect(find.text('Choose sauce'), findsOneWidget, reason: 'a real choice is never made for you');
+      await tester.tap(find.text('Buffalo'));
       await tester.pumpAndSettle();
       await tapKey(tester, 'add');
 
-      // Bottles: a Budweiser rings straight up, with its allergen alert.
-      await tapKey(tester, 'cat-bottles');
-      await tapKey(tester, 'item-b2');
-      expect(find.textContaining('Budweiser contains gluten'), findsOneWidget);
-      await tapKey(tester, 'item-b6');
-      expect(find.text('Alcohol-free Lager is sold out'), findsOneWidget);
-
-      // Spirits need a measure (preselected) but the mixer is optional.
-      await tapKey(tester, 'cat-spirits');
-      await tapKey(tester, 'item-s3');
+      // Beers & cider: a Carling Half rings straight up, with its allergen alert;
+      // the IPA's mixer is optional.
+      await tapKey(tester, 'cat-beers-cider');
+      await tapKey(tester, 'item-p123');
+      expect(find.textContaining('Carling Half contains celery'), findsOneWidget);
+      await tapKey(tester, 'item-p124');
+      expect(find.text('Add  £3.00'), findsOneWidget);
       await tester.tap(find.text('Tonic'));
       await tester.pumpAndSettle();
       await tapKey(tester, 'add');
 
-      // 1.90 + 3.60 + 4.70 = 10.20; then 10% off on the sale.
+      // 7.50 + 6.05 + 3.80 = 17.35; then 10% off on the sale.
       if (name == 'phone') {
-        expect(find.text('Pay £10.20'), findsOneWidget);
+        expect(find.text('Pay £17.35'), findsOneWidget);
         await tapKey(tester, 'view-sale');
       }
       await tester.tap(find.text('Discount'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('10%'));
       await tester.pumpAndSettle();
-      expect(find.text('Pay £9.18'), findsWidgets);
+      expect(find.text('Pay £15.61'), findsWidgets);
       await tapKey(tester, 'panel-pay');
 
-      // £20 note: change £10.82.
+      // £20 note: change £4.39.
       expect(find.text('To pay'), findsOneWidget);
       await tapKey(tester, 'cash-2000');
-      expect(find.text('£10.82'), findsOneWidget);
+      expect(find.text('£4.39'), findsOneWidget);
       await tapKey(tester, 'new-sale');
 
-      // A card sale: Gin, single, no mixer, by tap (the demo's pretend card).
-      await tapKey(tester, 'cat-spirits');
-      await tapKey(tester, 'item-s3');
+      // A card sale: an IPA, no mixer, by tap (the demo's pretend card).
+      await tapKey(tester, 'cat-beers-cider');
+      await tapKey(tester, 'item-p124');
       await tapKey(tester, 'add');
       if (name == 'phone') {
         await tapKey(tester, 'pay');
@@ -96,24 +96,24 @@ void main() {
       await tester.tap(find.textContaining('Receipt 2'));
       await tester.pumpAndSettle();
       await tapKey(tester, 'refund');
-      await tester.tap(find.text('Refund £3.80'));
+      await tester.tap(find.text('Refund £3.00'));
       await tester.pumpAndSettle();
-      expect(find.text('£3.80 refunded to the card'), findsOneWidget);
+      expect(find.text('£3.00 refunded to the card'), findsOneWidget);
       expect(find.text('Refunded in full'), findsOneWidget);
       await tester.pageBack();
       await tester.pump(const Duration(seconds: 5)); // the refund notice goes
       await tester.pumpAndSettle();
 
-      // Reports: net £12.98 (9.18 + 3.80), cash 9.18 in the drawer.
+      // Reports: net £18.61 (15.61 + 3.00), cash 15.61 in the drawer.
       await tester.tap(find.byTooltip('Open navigation menu'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Reports').last);
       await tester.pumpAndSettle();
-      expect(find.text('£12.98'), findsWidgets);
-      expect(find.text('Spirits'), findsOneWidget);
+      expect(find.text('£18.61'), findsWidgets);
+      expect(find.text('Beers & cider'), findsOneWidget);
       await tester.scrollUntilVisible(find.byKey(const ValueKey('end-of-day')), 300, scrollable: find.byType(Scrollable).last);
       await tapKey(tester, 'end-of-day');
-      expect(find.textContaining('Count £9.18 in the drawer'), findsOneWidget);
+      expect(find.textContaining('Count £15.61 in the drawer'), findsOneWidget);
       await tester.tap(find.text('End the day'));
       await tester.pumpAndSettle();
       expect(find.textContaining('Z 1'), findsOneWidget);
