@@ -8,8 +8,8 @@ The real app built with LITE_DEMO_ONLY: straight into the demo venue (PIN 1111),
 pretend card payments. Built in a scratch copy of vesopa_epos_lite, so the
 checkout is not touched (Flutter's web/ folder is made there, not committed).
 Without --base-href every path in the page is relative, so the same files work
-wherever they are served (share-lite-demo.yml, through githack); with it, they
-expect that one path (web-lite-demo.yml, GitHub Pages).
+wherever they are served (web-lite-demo.yml puts them in app/ under the share
+page on GitHub Pages); with it, they expect that one path.
 
 The output is only what the page loads: one renderer (CanvasKit, both builds),
 no source maps, no Flutter service worker.

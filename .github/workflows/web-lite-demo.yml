@@ -1,11 +1,16 @@
-# The Vesopa EPOS Lite demo as a web page on GitHub Pages, for iPhone users (and
-# any browser) with no app store and no sign-in:
+# One link for everyone who should try Vesopa EPOS Lite, on GitHub Pages, with
+# no app store and no sign-in:
 #
 #   https://thism3d.github.io/Vesopa-Ltd/
 #
-# On an iPhone, Share > Add to Home Screen makes it an app: full screen, the V
-# icon. Built by vesopa_epos_lite/tool/web_demo.py; the real app with
+# The page (vesopa_epos_lite/tool/share_index.html) offers "Open the demo" (the
+# web app in app/, from vesopa_epos_lite/tool/web_demo.py, which an iPhone can
+# add to its home screen as an app) and "Download the Android app" (the APK
+# android-lite-demo.yml keeps on lite-demo-apk). The demo is the real app with
 # LITE_DEMO_ONLY (PIN 1111, pretend card payments).
+#
+# Not githack, jsDelivr or Statically: the first puts its own warning page with
+# adverts in front of the page, the other two serve HTML as plain text.
 #
 # Runs on every push to main that changes Lite or Tap, and by hand from
 # Actions > "Web - Lite demo" > Run workflow. Needs GitHub Pages switched on
@@ -23,6 +28,7 @@ on:
       - 'vesopa_epos_lite/assets/**'
       - 'vesopa_epos_lite/pubspec.*'
       - 'vesopa_epos_lite/tool/web_demo.py'
+      - 'vesopa_epos_lite/tool/share_index.html'
       - 'vesopa_tap/lib/**'
       - 'vesopa_tap/pubspec.*'
       - '.github/workflows/web-lite-demo.yml'
@@ -53,10 +59,12 @@ jobs:
           flutter-version: 3.47.8
           cache: true
 
-      - name: Build the web demo
+      - name: Build the page and the web demo
         run: |
           pip install --quiet pillow
-          python3 vesopa_epos_lite/tool/web_demo.py "$RUNNER_TEMP/site" --base-href "/${GITHUB_REPOSITORY#*/}/"
+          python3 vesopa_epos_lite/tool/web_demo.py "$RUNNER_TEMP/site/app"
+          cp vesopa_epos_lite/tool/share_index.html "$RUNNER_TEMP/site/index.html"
+          touch "$RUNNER_TEMP/site/.nojekyll"
 
       - uses: actions/upload-pages-artifact@v3
         with:
