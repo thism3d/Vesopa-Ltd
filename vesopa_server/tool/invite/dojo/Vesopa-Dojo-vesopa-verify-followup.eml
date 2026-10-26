@@ -1,0 +1,288 @@
+From: Vesopa Developer <muzahid@vesopa.com>
+To: Alex Radzio <alex.radzio@dojo.tech>,
+ Dojo Partner Technology <partnertech@dojo.tech>
+Cc: Meirion Davies <info@vesopasoftware.com>, Meirion Davies <info@vesopa.com>
+Reply-To: Muzahid Islam <muzahid@vesopa.com>
+Subject: Re: Vesopa Software Ltd: online checkout ready for your review,
+ please verify and enable our live API
+Date: Mon, 26 Oct 2026 09:02:52 +0000
+Message-ID: <179300537282.4664.4751709253901764762.a353fa9b@vesopa.com>
+In-Reply-To: <179287746004.18096.16322835610552211296@vesopa.com>
+References: <179287746004.18096.16322835610552211296@vesopa.com>
+Importance: High
+X-Priority: 1 (Highest)
+X-MSMail-Priority: High
+Priority: urgent
+Disposition-Notification-To: muzahid@vesopa.com
+Return-Receipt-To: muzahid@vesopa.com
+MIME-Version: 1.0
+Content-Type: multipart/alternative;
+ boundary="===============7232470012830982844=="
+
+--===============7232470012830982844==
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+
+Hi Alex, and the Partner Technology team,
+
+I hope you're well. I'm following up on my email of Saturday 24 October (belo=
+w) about the online checkout for Vesopa Software Ltd.
+
+Our hosted checkout is ready and waiting for your review at https://vesopaepo=
+s.com/trial. It still runs on our Dojo sandbox account (key name "Vesopa"), s=
+o no real money moves until you are happy.
+
+Could you please:
+1. Review vesopaepos.com against your online checkout checklist and let us kn=
+ow if anything needs changing.
+2. Verify Vesopa Software Ltd for online checkout and issue our live (sk_prod=
+_) key, so we can start taking live payments on Dojo's hosted checkout.
+
+As soon as we have the key we will set the live webhook to https://backoffice=
+.vesopaepos.com/api/webhooks/dojo/live, exactly as the sandbox one, and make =
+our first live call.
+
+If it would help, I'm happy to walk you through it on a short call at any tim=
+e: just reply with a time, or ring +44 7848 494341.
+
+Many thanks for your help.
+
+Kind regards,
+Muzahid Islam
+Vesopa Developer, Vesopa Software Ltd
+muzahid@vesopa.com | +44 7848 494341
+
+On behalf of Meirion Davies, Director
+Vesopa Software Ltd and Vesopa Ltd
+info@vesopasoftware.com | info@vesopa.com
+
+On Sat, 24 Oct 2026 21:31:00 +0000, Muzahid Islam <muzahid@vesopa.com> wrote:
+
+> Hi Alex, and the Partner Technology team,
+>=20
+> Thank you for your help with Pontardawe RFC. We have now built the same onl=
+ine checkout for Vesopa Software Ltd itself: venues start a free trial of Ves=
+opa EPOS on our website with a =C2=A31 card check on Dojo's hosted checkout, =
+refunded straight away. We have followed your online checkout checklist, and =
+it is ready for your review:
+>=20
+>   https://vesopaepos.com/trial
+>=20
+> Everything stays on vesopaepos.com: the sign-up, the terms, refund and priv=
+acy pages, and the page Dojo's checkout returns to. Card payments currently r=
+un on our Dojo sandbox account (key name Vesopa), so no real money moves unti=
+l you issue our live key.
+>=20
+> HOW TO TEST
+> 1. Open vesopaepos.com/trial and pick a plan.
+> 2. Add an extra if you like, then give a venue name and an email address an=
+d press Pay =C2=A31 & start my trial.
+> 3. Pay on Dojo's checkout with your sandbox test cards (including the 3-D S=
+ecure and decline cards), or use its Back option to cancel.
+> 4. You come back to vesopaepos.com: Your trial has started (and the =C2=A31=
+ is refunded), or Payment not finished with the options to try again or cance=
+l.
+>=20
+> WEBSITE CHECKLIST
+> - Contact details: Business address, email and telephone in the footer of e=
+very page.
+> - Legal entity name: Vesopa Software Ltd, registered in England and Wales, =
+company number 17362206, Baglan Innovation Centre, Central Avenue, Baglan, Po=
+rt Talbot SA12 7AX, in every footer and in the terms.
+> - Refund policy: A clearly labelled Refund policy at vesopaepos.com/refund,=
+ with a section on refunds of online card payments.
+> - Privacy policy: vesopaepos.com/privacy, which names Dojo (Paymentsense Li=
+mited) for online card payments.
+> - Terms and conditions: vesopaepos.com/terms, naming the legal entity, with=
+ Paying online by card and Free trial and subscriptions sections, and links t=
+o the refund and privacy policies.
+> - Card scheme logos: Visa, Mastercard, Apple Pay and Google Pay in every fo=
+oter and beside the pay button.
+> - Secure checkout page: HTTPS throughout; card details are entered only on =
+Dojo's hosted checkout (pay.dojo.tech).
+> - API keys: Our secret key is held only on our server, never in a web page =
+or an app.
+>=20
+> PAYMENT HANDLING, READY FOR YOUR TESTING
+> 1. Successful payment: Dojo's checkout returns to vesopaepos.com/trial/done=
+, which reads the result from the payment intent with our key (never from the=
+ redirect), starts the trial and refunds the =C2=A31 through the API.
+> 2. Unsuccessful payment: the page shows Payment not finished, with Try agai=
+n and Cancel. Nothing is started.
+> 3. Successful payment after an unsuccessful one: Try again refreshes the cl=
+ient session secret before returning to the same checkout.
+> 4. 3-D Secure, successful and unsuccessful: handled on Dojo's checkout page=
+; the result comes back through the payment intent.
+> 5. Cancel on Dojo's checkout: the intent carries a cancelUrl as well as a r=
+edirectUrl; the page says nothing was charged.
+> 6. Paid, then the browser closed before the redirect: the payment_intent.st=
+atus_updated webhook starts the trial within seconds, and a check every 5 min=
+utes asks Dojo about any card check still waiting.
+> 7. Webhooks: https://backoffice.vesopaepos.com/api/webhooks/dojo/sandbox ve=
+rifies the dojo-signature (a forged or missing one is refused with 401), hand=
+les duplicate deliveries by event id, and always confirms the status with Doj=
+o before acting.
+> 8. Errors (4xx and 5xx): handled as exceptions and logged with Dojo's trace=
+Id; the customer is told plainly and can try again.
+> 9. Refunds: through the API with an idempotency key, automatically for the =
+=C2=A31 trial card check and from our admin console.
+>=20
+> OUR REQUEST
+> 1. Please review vesopaepos.com against the online checkout checklist and l=
+et us know if anything needs changing.
+> 2. Once you are happy, please verify Vesopa Software Ltd for online checkou=
+t and issue our live (sk_prod_) key, so we can switch from the sandbox.
+> 3. We will set the live webhook to https://backoffice.vesopaepos.com/api/we=
+bhooks/dojo/live, configured exactly as the sandbox one, and make our first l=
+ive call straight away.
+>=20
+> We are happy to walk through it on a call at any time; just reply with a ti=
+me, or ring +44 7848 494341.
+>=20
+> Many thanks for your help.
+>=20
+> Kind regards,
+> Muzahid Islam
+> Vesopa Developer, Vesopa Software Ltd
+> muzahid@vesopa.com | +44 7848 494341
+>=20
+> On behalf of Meirion Davies, Director
+> Vesopa Software Ltd and Vesopa Ltd
+> info@vesopasoftware.com | info@vesopa.com
+
+--===============7232470012830982844==
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+MIME-Version: 1.0
+
+<!doctype html><html><body style=3D"margin:0;padding:0;background:#ffffff;"><=
+div style=3D"max-width:640px;margin:0 auto;padding:24px 20px;"><p style=3D"ma=
+rgin:0 0 14px;font:15px/1.6 Arial,Helvetica,sans-serif;color:#0E1B2C;">Hi Ale=
+x, and the Partner Technology team,</p><p style=3D"margin:0 0 14px;font:15px/=
+1.6 Arial,Helvetica,sans-serif;color:#0E1B2C;">I hope you're well. I'm follow=
+ing up on my email of Saturday 24 October (below) about the online checkout f=
+or <strong>Vesopa Software Ltd</strong>.</p><p style=3D"margin:0 0 14px;font:=
+15px/1.6 Arial,Helvetica,sans-serif;color:#0E1B2C;">Our hosted checkout is re=
+ady and waiting for your review at <a href=3D"https://vesopaepos.com/trial" s=
+tyle=3D"color:#0E1B2C;font-weight:bold;">vesopaepos.com/trial</a>. It still r=
+uns on our Dojo sandbox account (key name &ldquo;Vesopa&rdquo;), so no real m=
+oney moves until you are happy.</p><p style=3D"margin:0 0 14px;font:15px/1.6 =
+Arial,Helvetica,sans-serif;color:#0E1B2C;">Could you please:</p><ol style=3D"=
+margin:0 0 14px 20px;padding:0;font:15px/1.6 Arial,Helvetica,sans-serif;color=
+:#0E1B2C;"><li style=3D"margin:0 0 6px;">Review vesopaepos.com against your o=
+nline checkout checklist and let us know if anything needs changing.</li><li>=
+Verify Vesopa Software Ltd for online checkout and issue our <strong>live (sk=
+_prod_) key</strong>, so we can start taking live payments on Dojo&rsquo;s ho=
+sted checkout.</li></ol><p style=3D"margin:0 0 14px;font:15px/1.6 Arial,Helve=
+tica,sans-serif;color:#0E1B2C;">As soon as we have the key we will set the li=
+ve webhook to https://backoffice.vesopaepos.com/api/webhooks/dojo/live, exact=
+ly as the sandbox one, and make our first live call.</p><p style=3D"margin:0 =
+0 14px;font:15px/1.6 Arial,Helvetica,sans-serif;color:#0E1B2C;">If it would h=
+elp, I&rsquo;m happy to walk you through it on a short call at any time: just=
+ reply with a time, or ring <a href=3D"tel:+447848494341" style=3D"color:#0E1=
+B2C;">+44 7848 494341</a>.</p><p style=3D"margin:0 0 14px;font:15px/1.6 Arial=
+,Helvetica,sans-serif;color:#0E1B2C;">Many thanks for your help.</p><p style=
+=3D"margin:0 0 14px;font:15px/1.6 Arial,Helvetica,sans-serif;color:#0E1B2C;">=
+Kind regards,<br><strong>Muzahid Islam</strong><br><span style=3D"color:#5555=
+4F;">Vesopa Developer, Vesopa Software Ltd</span><br><a href=3D"mailto:muzahi=
+d@vesopa.com" style=3D"color:#0E1B2C;">muzahid@vesopa.com</a> | +44 7848 4943=
+41</p><p style=3D"margin:0 0 22px;font:13px/1.5 Arial,Helvetica,sans-serif;co=
+lor:#55554F;">On behalf of Meirion Davies, Director<br>Vesopa Software Ltd an=
+d Vesopa Ltd<br>info@vesopasoftware.com | info@vesopa.com</p><div style=3D"bo=
+rder-left:3px solid #D9D9D2;padding:0 0 0 14px;margin:0;color:#55554F;"><p st=
+yle=3D"margin:0 0 10px;font:13px/1.5 Arial,Helvetica,sans-serif;color:#55554F=
+;">On Sat, 24 Oct 2026 21:31:00 +0000, Muzahid Islam &lt;muzahid@vesopa.com&g=
+t; wrote:</p><pre style=3D"white-space:pre-wrap;margin:0;font:13px/1.5 Arial,=
+Helvetica,sans-serif;color:#55554F;">Hi Alex, and the Partner Technology team,
+
+Thank you for your help with Pontardawe RFC. We have now built the same onlin=
+e checkout for Vesopa Software Ltd itself: venues start a free trial of Vesop=
+a EPOS on our website with a =C2=A31 card check on Dojo&#x27;s hosted checkou=
+t, refunded straight away. We have followed your online checkout checklist, a=
+nd it is ready for your review:
+
+  https://vesopaepos.com/trial
+
+Everything stays on vesopaepos.com: the sign-up, the terms, refund and privac=
+y pages, and the page Dojo&#x27;s checkout returns to. Card payments currentl=
+y run on our Dojo sandbox account (key name Vesopa), so no real money moves u=
+ntil you issue our live key.
+
+HOW TO TEST
+1. Open vesopaepos.com/trial and pick a plan.
+2. Add an extra if you like, then give a venue name and an email address and =
+press Pay =C2=A31 &amp; start my trial.
+3. Pay on Dojo&#x27;s checkout with your sandbox test cards (including the 3-=
+D Secure and decline cards), or use its Back option to cancel.
+4. You come back to vesopaepos.com: Your trial has started (and the =C2=A31 i=
+s refunded), or Payment not finished with the options to try again or cancel.
+
+WEBSITE CHECKLIST
+- Contact details: Business address, email and telephone in the footer of eve=
+ry page.
+- Legal entity name: Vesopa Software Ltd, registered in England and Wales, co=
+mpany number 17362206, Baglan Innovation Centre, Central Avenue, Baglan, Port=
+ Talbot SA12 7AX, in every footer and in the terms.
+- Refund policy: A clearly labelled Refund policy at vesopaepos.com/refund, w=
+ith a section on refunds of online card payments.
+- Privacy policy: vesopaepos.com/privacy, which names Dojo (Paymentsense Limi=
+ted) for online card payments.
+- Terms and conditions: vesopaepos.com/terms, naming the legal entity, with P=
+aying online by card and Free trial and subscriptions sections, and links to =
+the refund and privacy policies.
+- Card scheme logos: Visa, Mastercard, Apple Pay and Google Pay in every foot=
+er and beside the pay button.
+- Secure checkout page: HTTPS throughout; card details are entered only on Do=
+jo&#x27;s hosted checkout (pay.dojo.tech).
+- API keys: Our secret key is held only on our server, never in a web page or=
+ an app.
+
+PAYMENT HANDLING, READY FOR YOUR TESTING
+1. Successful payment: Dojo&#x27;s checkout returns to vesopaepos.com/trial/d=
+one, which reads the result from the payment intent with our key (never from =
+the redirect), starts the trial and refunds the =C2=A31 through the API.
+2. Unsuccessful payment: the page shows Payment not finished, with Try again =
+and Cancel. Nothing is started.
+3. Successful payment after an unsuccessful one: Try again refreshes the clie=
+nt session secret before returning to the same checkout.
+4. 3-D Secure, successful and unsuccessful: handled on Dojo&#x27;s checkout p=
+age; the result comes back through the payment intent.
+5. Cancel on Dojo&#x27;s checkout: the intent carries a cancelUrl as well as =
+a redirectUrl; the page says nothing was charged.
+6. Paid, then the browser closed before the redirect: the payment_intent.stat=
+us_updated webhook starts the trial within seconds, and a check every 5 minut=
+es asks Dojo about any card check still waiting.
+7. Webhooks: https://backoffice.vesopaepos.com/api/webhooks/dojo/sandbox veri=
+fies the dojo-signature (a forged or missing one is refused with 401), handle=
+s duplicate deliveries by event id, and always confirms the status with Dojo =
+before acting.
+8. Errors (4xx and 5xx): handled as exceptions and logged with Dojo&#x27;s tr=
+aceId; the customer is told plainly and can try again.
+9. Refunds: through the API with an idempotency key, automatically for the =
+=C2=A31 trial card check and from our admin console.
+
+OUR REQUEST
+1. Please review vesopaepos.com against the online checkout checklist and let=
+ us know if anything needs changing.
+2. Once you are happy, please verify Vesopa Software Ltd for online checkout =
+and issue our live (sk_prod_) key, so we can switch from the sandbox.
+3. We will set the live webhook to https://backoffice.vesopaepos.com/api/webh=
+ooks/dojo/live, configured exactly as the sandbox one, and make our first liv=
+e call straight away.
+
+We are happy to walk through it on a call at any time; just reply with a time=
+, or ring +44 7848 494341.
+
+Many thanks for your help.
+
+Kind regards,
+Muzahid Islam
+Vesopa Developer, Vesopa Software Ltd
+muzahid@vesopa.com | +44 7848 494341
+
+On behalf of Meirion Davies, Director
+Vesopa Software Ltd and Vesopa Ltd
+info@vesopasoftware.com | info@vesopa.com
+</pre></div></div></body></html>
+
+--===============7232470012830982844==--

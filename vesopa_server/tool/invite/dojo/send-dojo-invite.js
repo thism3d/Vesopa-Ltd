@@ -9,6 +9,7 @@
  *   node tool/invite/dojo/send-dojo-invite.js --send --only info@vesopa.com   # one copy only
  *   ... --final       # 11 Oct: accreditation fixes done, final testing Mon 12 Oct 10:30 (new invite)
  *   ... --confirm     # 12 Oct morning: please confirm today's final testing at 10:30
+ *   ... --vesopa-followup   # 26 Oct: follow-up, please verify and issue our live key (reply in the thread)
  *   ... --epos-live   # 24 Oct: certification + live API for Vesopa EPOS subscriptions (Alex, partnertech; cc Meirion)
  *   ... --staging2    # 19 Oct: staging on an established domain, pontardawerfcmenu.vesopa.com (Alex, partnertech, support, integrations; cc Meirion)
  *   ... --staging     # 16 Oct: staging link menu.pontardawerfc.com for Dojo's checklist review (Alex, support@ and integrations@, cc Meirion)
@@ -40,7 +41,8 @@ const RECIPIENTS = [
 ];
 
 async function main() {
-  const eml = path.join(__dirname, process.argv.includes('--vesopa-verify') ? 'Vesopa-Dojo-vesopa-verify.eml'
+  const eml = path.join(__dirname, process.argv.includes('--vesopa-followup') ? 'Vesopa-Dojo-vesopa-verify-followup.eml'
+    : process.argv.includes('--vesopa-verify') ? 'Vesopa-Dojo-vesopa-verify.eml'
     : process.argv.includes('--epos-live') ? 'Vesopa-Dojo-epos-live.eml'
     : process.argv.includes('--staging2') ? 'Vesopa-Dojo-staging2.eml'
     : process.argv.includes('--staging') ? 'Vesopa-Dojo-staging.eml'
@@ -67,7 +69,7 @@ async function main() {
   const only = onlyAt > -1 ? process.argv[onlyAt + 1] : null;
   if (onlyAt > -1 && !/^[^@\s]+@[^@\s]+$/.test(only || '')) throw new Error('--only needs an address');
   // The 12 Oct review email goes to Alex and Finn only (cc Meirion), not Oliver.
-  const list = process.argv.includes('--epos-live') || process.argv.includes('--vesopa-verify')
+  const list = process.argv.includes('--epos-live') || process.argv.includes('--vesopa-verify') || process.argv.includes('--vesopa-followup')
     ? ['alex.radzio@dojo.tech', 'partnertech@dojo.tech', 'info@vesopasoftware.com', 'info@vesopa.com']
     : process.argv.includes('--staging2')
     ? ['alex.radzio@dojo.tech', 'partnertech@dojo.tech', 'support@dojo.tech', 'integrations@dojo.tech', 'info@vesopasoftware.com', 'info@vesopa.com']
