@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../data/commerce.dart';
+import '../data/gift_top_up.dart';
 import '../data/price_level_controller.dart';
 import '../data/earning.dart';
 import '../data/training_mode.dart';
@@ -387,6 +388,9 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
             : outcome.customerDetail,
         'outcome': outcome?.name,
         'amount_minor': amountMinor,
+        // Cash back on the card (EPOS 1.16.31): the screen shows the sale, the
+        // cash and what the card is charged, so the customer sees all three.
+        if (cashbackMinor > 0) 'cashback_minor': cashbackMinor,
         // Barclaycard: the code the customer scans to pay on their phone.
         if (outcome == null && st.payUrl != null) 'qr': st.payUrl,
       }));
@@ -2446,6 +2450,20 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     // Activity page stayed empty, which is what the venue reported (1.8.1.0).
     // The renewal below has read the order for the same reason since 1.6.8.0.
     final settledOrder = await repo.watchOrder(widget.orderId).first;
+    // Gift card money sold on this bill: loaded onto the cards below, and not
+    // spend that earns points -- it earns when the card is spent.
+    // One load per card: the server keys a load on the bill and the card, so
+    // two top-ups of the same card on one bill go on together.
+    final byCard = <String, int>{};
+    for (final l in await repo.watchLines(widget.orderId).first) {
+      final code = giftTopUpCode(l);
+      if (code == null || l.quantity <= 0) continue;
+      byCard[code] = (byCard[code] ?? 0) + (l.unitPriceMinor * l.quantity).round();
+    }
+    final topUps = [
+      for (final e in byCard.entries) (code: e.key, amountMinor: e.value),
+    ];
+    final topUpMinor = topUps.fold<int>(0, (sum, t) => sum + t.amountMinor);
     final customerId = earningCustomer(
       attachedHere: _customer?.id,
       onOrder: settledOrder.customerId,
@@ -2487,7 +2505,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
         await commerce.movePoints(
           customerId: customerId,
           kind: 'earn',
-          spendMinor: _tender.totals.netGoodsMinor,
+          spendMinor: (_tender.totals.netGoodsMinor - topUpMinor).clamp(0, 1 << 40),
           eligibleSpendMinor: eligible,
           orderId: widget.orderId,
         );
@@ -2551,6 +2569,38 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
           'The fee was taken but the membership date could not be updated. '
           'Renew it in the back office. ($e)',
         );
+      }
+    }
+
+    // ---- Gift cards sold or topped up on this bill -----------------------
+    //
+    // Loaded only now, once the money is in: a top-up rung up and then voided
+    // never puts anything on the card. Keyed by the order, so a retry after a
+    // dropped connection does not load the card twice.
+    if (!practice) {
+      for (final t in topUps) {
+        try {
+          final card = await commerce.loadGiftCard(
+            code: t.code,
+            amountMinor: t.amountMinor,
+            orderId: widget.orderId,
+            clerkName: servedBy,
+          );
+          if (mounted) {
+            PosMessenger.success(
+              context,
+              'Gift card ${t.code} now holds ${_money(card.balanceMinor)}.',
+            );
+          }
+        } catch (e) {
+          if (mounted) {
+            PosMessenger.error(
+              context,
+              'The money was taken but gift card ${t.code} could not be loaded. '
+              'Top it up in the back office. ($e)',
+            );
+          }
+        }
       }
     }
 

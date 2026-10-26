@@ -38,6 +38,7 @@ const TILL_CALLS = [
   ['post', '/gift-cards/capture'],
   ['post', '/gift-cards/release'],
   ['post', '/gift-cards/reverse'],
+  ['post', '/gift-cards/load'],
   ['get', '/deposits/lookup'],
   ['post', '/deposits/redeem'],
   ['get', '/vouchers/validate'],
@@ -991,6 +992,69 @@ function commerceRoutes({ pool, broadcast, secret }) {
       await conn.rollback().catch(() => {});
       next(e);
     } finally { conn.release(); }
+  });
+
+  /**
+   * Money onto a gift card from a till, once the bill that sold it is paid
+   * (2026-10-26, Pontardawe: "when swiping a new gift card ask to create a new
+   * one and able to top up").
+   *
+   * The club keeps a rack of printed swipe cards. The first swipe of one used
+   * to say "No such gift card"; now the till offers to make it, rings the
+   * amount up, and calls this when the bill settles -- which creates the card
+   * under its own number if it is new and loads it. Only a signed-in till may:
+   * this puts money on a card. Idempotent on the bill, so a till that retries
+   * after a lost answer cannot load it twice.
+   */
+  router.post('/gift-cards/load', async (req, res, next) => {
+    try {
+      if (!req.terminal) {
+        return res.status(401).json({ error: 'Only a signed-in till can put money on a gift card.' });
+      }
+      const office = req.tillOffice;
+      const given = String(req.body.code || '').trim();
+      const amount = money(req.body.amount_minor);
+      const orderId = req.body.order_id ? String(req.body.order_id).slice(0, 64) : null;
+      if (!given) return res.status(400).json({ error: 'code is required' });
+      if (amount <= 0) return res.status(400).json({ error: 'Amount must be more than zero' });
+
+      let code = await giftCodeFrom(pool, office, given);
+      const [[exists]] = await pool.query('SELECT id FROM epos_gift_cards WHERE office = ? AND code = ?', [office, code]);
+      if (!exists) {
+        // A new printed card: made under the number on it. A number, so a
+        // scanned link or a typo cannot become a card.
+        if (!req.body.create || !/^\d{6,20}$/.test(given)) {
+          return res.status(404).json({ error: 'No such gift card' });
+        }
+        code = given;
+        await pool.execute(
+          `INSERT INTO epos_gift_cards
+             (id, office, code, kind, initial_minor, balance_minor, recipient_name, issued_by, notes)
+           VALUES (UUID(), ?, ?, 'swipe', 0, 0, ?, ?, 'Created at the till')`,
+          [office, code,
+           req.body.recipient_name ? String(req.body.recipient_name).slice(0, 120) : null,
+           req.body.clerk_name ? String(req.body.clerk_name).slice(0, 120) : null]
+        );
+      }
+      if (orderId) {
+        const [[done]] = await pool.query(
+          `SELECT t.id FROM epos_gift_card_txns t JOIN epos_gift_cards c ON c.id = t.gift_card_id
+            WHERE c.office = ? AND c.code = ? AND t.kind = 'reload' AND t.order_id = ? LIMIT 1`,
+          [office, code, orderId]
+        );
+        if (done) {
+          const [[card]] = await pool.query('SELECT * FROM epos_gift_cards WHERE office = ? AND code = ?', [office, code]);
+          return res.json({ ...card, already: true });
+        }
+      }
+      const result = await moveGiftCard({
+        office, code, kind: 'reload', amountMinor: amount, orderId,
+        clerk: req.body.clerk_name, note: req.body.note || 'Topped up at the till',
+      });
+      if (result.error) return res.status(result.status).json(result);
+      broadcast({ type: 'gift-cards' });
+      res.json(result.card);
+    } catch (e) { next(e); }
   });
 
   router.post('/gift-cards/:id/reload', auth, async (req, res, next) => {

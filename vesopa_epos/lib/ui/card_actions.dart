@@ -50,7 +50,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/commerce.dart';
-import '../data/membership.dart';
+import '../data/gift_top_up.dart';
 import '../data/staff_session.dart';
 import '../data/local/database.dart';
 import '../data/swipe_cards.dart';
@@ -156,7 +156,7 @@ Future<void> handleSwipedCard(
     case CardKind.loyalty:
       await _loyaltyCard(context, ref, card, orderId: orderId);
     case CardKind.gift:
-      await _giftCard(context, ref, card);
+      await _giftCard(context, ref, card, orderId: orderId);
     case CardKind.membership:
       // The same lookup as loyalty — a membership card names a customer, and a
       // customer is one row whether they hold points, a membership, or both.
@@ -721,32 +721,121 @@ Future<({String name, String phone, int? schemeId})?> _askForMember(
 Future<void> _giftCard(
   BuildContext context,
   WidgetRef ref,
-  SwipedCard card,
-) async {
+  SwipedCard card, {
+  String? orderId,
+}) async {
+  GiftCard? gift;
   try {
-    final gift = await ref.read(commerceRepositoryProvider).giftCard(card.number);
-    if (!context.mounted) return;
-
-    await _explain(
-      context,
-      title: gift.label == null ? 'Gift Card ${card.number}' : '${gift.label} · ${card.number}',
-      message: [
-        '${_money(gift.balanceMinor)} on the card.',
-        if (gift.spendableMinor < gift.balanceMinor)
-          '${_money(gift.balanceMinor - gift.spendableMinor)} of it is on another bill.',
-        if (!gift.redeemable && gift.reason != null) gift.reason!,
-        '',
-        'To spend it, take the payment and choose Gift Card.',
-      ].join('\n'),
-    );
+    gift = await ref.read(commerceRepositoryProvider).giftCard(card.number);
+  } on CommerceException catch (e) {
+    // A printed card nobody has sold yet (2026-10-26, Pontardawe: "when
+    // swiping a new gift card ask to create a new one and able to top up").
+    if (!e.message.toLowerCase().contains('no such gift card')) {
+      if (!context.mounted) return;
+      await _explain(context, title: 'Could not read that gift card', message: e.message);
+      return;
+    }
   } on Object catch (e) {
     if (!context.mounted) return;
-    await _explain(
-      context,
-      title: 'Could not read that gift card',
-      message: '$e',
-    );
+    await _explain(context, title: 'Could not read that gift card', message: '$e');
+    return;
   }
+  if (!context.mounted) return;
+
+  final isNew = gift == null;
+  final topUp = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      icon: const Icon(Icons.redeem_outlined, size: 30),
+      title: Text(isNew
+          ? 'New gift card ${card.number}'
+          : (gift!.label == null ? 'Gift Card ${card.number}' : '${gift.label} · ${card.number}')),
+      content: Text(isNew
+          ? 'This card has not been sold yet. Create it and put money on it? The '
+              'amount goes on this bill, and the card is loaded when the bill is paid.'
+          : [
+              '${_money(gift!.balanceMinor)} on the card.',
+              if (gift.spendableMinor < gift.balanceMinor)
+                '${_money(gift.balanceMinor - gift.spendableMinor)} of it is on another bill.',
+              if (!gift.redeemable && gift.reason != null) gift.reason!,
+              '',
+              'To spend it, take the payment and choose Gift Card. Or top it up now.',
+            ].join('\n')),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context, false), child: Text(isNew ? 'Cancel' : 'Close')),
+        if (orderId != null)
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(isNew ? 'Create and top up' : 'Top up'),
+          ),
+      ],
+    ),
+  );
+  if (topUp != true || orderId == null || !context.mounted) return;
+
+  final amount = await _askTopUp(context);
+  if (amount == null || !context.mounted) return;
+  await ref.read(orderRepositoryProvider).addLine(
+        orderId,
+        giftTopUpProduct(amount),
+        addedBy: ref.read(servedByProvider),
+        consolidate: false,
+        notes: giftTopUpNote(gift?.code ?? card.number),
+        unitPriceMinor: amount,
+      );
+  if (!context.mounted) return;
+  PosMessenger.success(
+    context,
+    '${_money(amount)} for gift card ${card.number} is on the bill. It goes on the card when the bill is paid.',
+  );
+}
+
+/// How much to put on a gift card: the usual amounts, or any other.
+Future<int?> _askTopUp(BuildContext context) async {
+  final chosen = await showDialog<int>(
+    context: context,
+    builder: (context) => SimpleDialog(
+      title: const Text('How much on the card?'),
+      children: [
+        for (final p in const [1000, 2000, 2500, 5000])
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, p),
+            child: Text(_money(p), style: const TextStyle(fontSize: 20)),
+          ),
+        SimpleDialogOption(
+          onPressed: () => Navigator.pop(context, -1),
+          child: const Text('Another amount', style: TextStyle(fontSize: 18)),
+        ),
+      ],
+    ),
+  );
+  if (chosen == null) return null;
+  if (chosen > 0) return chosen;
+  if (!context.mounted) return null;
+  final field = TextEditingController();
+  final typed = await showDialog<String>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Amount for the gift card'),
+      content: SizedBox(
+        width: 360,
+        child: PosTextField(
+          controller: field,
+          autofocus: true,
+          mode: PosKeyboardMode.decimal,
+          decoration: const InputDecoration(prefixText: '£ ', hintText: 'For example 15.00'),
+          onSubmitted: (v) => Navigator.pop(context, v),
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        FilledButton(onPressed: () => Navigator.pop(context, field.text), child: const Text('Add')),
+      ],
+    ),
+  );
+  final pounds = double.tryParse((typed ?? '').trim().replaceAll('£', ''));
+  if (pounds == null || pounds <= 0) return null;
+  return (pounds * 100).round();
 }
 
 // -----------------------------------------------------------------------------

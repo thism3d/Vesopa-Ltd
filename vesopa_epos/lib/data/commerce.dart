@@ -869,6 +869,37 @@ class CommerceRepository {
     return GiftCard.fromJson(body);
   }
 
+  /// Put money on a gift card once the bill that sold it is paid, making the
+  /// card first when it is a new printed one ([create]). See the server's
+  /// /gift-cards/load (2026-10-26).
+  Future<GiftCard> loadGiftCard({
+    required String code,
+    required int amountMinor,
+    required String orderId,
+    String? clerkName,
+    bool create = true,
+  }) async {
+    final res = await _client
+        .post(
+          Uri.parse('$apiBase/api/gift-cards/load'),
+          headers: _headers(json: true),
+          body: jsonEncode({
+            'office': office,
+            'code': code,
+            'amount_minor': amountMinor,
+            'order_id': orderId,
+            'clerk_name': clerkName,
+            'create': create,
+          }),
+        )
+        .timeout(_timeout);
+    final body = _json(res) ?? const <String, dynamic>{};
+    if (res.statusCode != 200) {
+      throw CommerceException(body['error'] as String? ?? 'The gift card could not be topped up');
+    }
+    return GiftCard.fromJson(body);
+  }
+
   /// A JSON object from [res], or null when the body is not one -- which is
   /// how a back office without a route answers (an HTML "Cannot POST").
   static Map<String, dynamic>? _json(http.Response res) {

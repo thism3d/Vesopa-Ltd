@@ -93,6 +93,7 @@ class CardStatus {
     this.detail,
     this.outcome,
     this.amountMinor = 0,
+    this.cashbackMinor = 0,
     this.heading,
     this.qr,
   });
@@ -110,6 +111,10 @@ class CardStatus {
   /// unknown | failed. Null while still in progress.
   final String? outcome;
   final int amountMinor;
+
+  /// Cash back asked for on the card (EPOS 1.16.31 and later): the card is
+  /// charged [amountMinor] plus this. Zero when there is none.
+  final int cashbackMinor;
 
   /// A link to pay on the customer's own phone (Barclaycard, EPOS 1.16.25):
   /// drawn as a QR code while the payment waits. Absent for a card machine.
@@ -134,6 +139,7 @@ class CardStatus {
       },
       outcome: raw['outcome'] as String?,
       amountMinor: (raw['amount_minor'] as num?)?.toInt() ?? 0,
+      cashbackMinor: (raw['cashback_minor'] as num?)?.toInt() ?? 0,
       qr: switch (raw['qr']) {
         final String s when s.startsWith('https://') => s,
         _ => null,

@@ -303,4 +303,4 @@ final commissionProvider = FutureProvider<DisplayCommission?>((ref) => readCommi
 
 /// This build's version, for the activity log and the version check
 /// (data/app_update.dart). Keep in step with pubspec.yaml.
-const displayAppVersion = '1.7.4.0';
+const displayAppVersion = '1.7.5.0';

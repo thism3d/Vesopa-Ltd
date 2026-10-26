@@ -43,13 +43,27 @@ class CardOverlay extends StatelessWidget {
                 ],
                 if (card.amountMinor > 0)
                   Text(
-                    money(card.amountMinor),
+                    money(card.amountMinor + card.cashbackMinor),
                     style: const TextStyle(
                       color: Brand.ink,
                       fontSize: 56,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
+                // Cash back: what the total is made of, so the customer can see
+                // the cash they asked for (Nicki, Pontardawe RFC, 2026-10-26).
+                if (card.amountMinor > 0 && card.cashbackMinor > 0) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    '${money(card.amountMinor)} + ${money(card.cashbackMinor)} cashback',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Brand.inkSoft,
+                      fontSize: 28,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 28),
                 AnimatedSwitcher(
                   duration: const Duration(milliseconds: 250),
