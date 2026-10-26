@@ -38,3 +38,7 @@ through `POST /api/tap/payments/:id/refund`.
 flutter test        # 7 tests, phone and tablet
 flutter run         # then "Try the demo": PINs 1111 (Sam, manager), 2222, 3333
 ```
+
+The web demo (a showroom link) is a build that opens straight into the demo venue, with no sign-in:
+`flutter create --platforms web .` in a scratch copy, then
+`flutter build web --no-web-resources-cdn --dart-define=LITE_DEMO_ONLY=true`.
