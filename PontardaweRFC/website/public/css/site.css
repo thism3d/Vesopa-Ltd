@@ -664,3 +664,7 @@ a.tile:hover, a.card:hover, .news-card:hover { transform: translateY(-6px); box-
 @media (max-width:700px){.app-video-play,.app-video-frame{border-radius:14px}.app-video-hint{bottom:10px;font-size:.85rem;padding:8px 14px}}
 @media (prefers-reduced-motion:reduce){.app-video-play img{transition:none}}
 .app-video-open{display:table;margin:12px auto 0}
+.app-videos{display:grid;grid-template-columns:1fr 1fr;gap:28px;align-items:start;max-width:1180px;margin-top:28px}
+.app-videos .app-video{margin:0;min-width:0}
+.app-videos-note{text-align:center;margin-top:6px}
+@media (max-width:860px){.app-videos{grid-template-columns:1fr;gap:22px}}

@@ -177,15 +177,23 @@ function home() {
       <p class="muted small">On iPhone, iPad and Android. Members can also sign in at <a href="${esc(MEMBERS)}/">member.pontardawerfc.com</a>. <a href="/app/help">Help with the app</a></p>
     </div>
   </div>
-  <div class="wrap">
+  <div class="wrap app-videos">
     <figure class="app-video reveal" data-yt="g7ghpbpwhDI" data-yt-title="Pontardawe RFC Members App">
+      <button class="app-video-play" type="button" aria-label="Play the Pontardawe RFC members' app film">
+        <picture><source media="(max-width: 700px)" srcset="/media/app-film-960.jpg?v=${ASSET_VERSION}"><img src="/media/app-film.jpg?v=${ASSET_VERSION}" alt="Pontardawe RFC members' app film: the crest over the squad photo" width="1920" height="1080" loading="lazy" decoding="async"></picture>
+        <span class="app-video-hint">${icon('arrow', { size: 18 })} Tap to watch</span>
+      </button>
+      <figcaption class="muted small">The members' app film. <a href="https://youtu.be/g7ghpbpwhDI" rel="noopener">Watch on YouTube</a></figcaption>
+    </figure>
+    <figure class="app-video reveal" data-yt="rOrT24s9flc" data-yt-title="Pontardawe RFC Members App: showcase">
       <button class="app-video-play" type="button" aria-label="Play the Pontardawe RFC app showcase video">
         <picture><source media="(max-width: 700px)" srcset="/media/app-showcase-960.jpg?v=${ASSET_VERSION}"><img src="/media/app-showcase.jpg?v=${ASSET_VERSION}" alt="The members' app is here: the Pontardawe RFC app showcase" width="1920" height="1080" loading="lazy" decoding="async"></picture>
         <span class="app-video-hint">${icon('arrow', { size: 18 })} Tap to watch</span>
       </button>
-      <figcaption class="muted small">The Pontardawe RFC members' app showcase, by Vesopa Software. Playing it loads YouTube (privacy-enhanced mode). <a href="https://youtu.be/g7ghpbpwhDI" rel="noopener">Watch on YouTube</a></figcaption>
+      <figcaption class="muted small">The app showcase. <a href="https://www.youtube.com/watch?v=rOrT24s9flc" rel="noopener">Watch on YouTube</a></figcaption>
     </figure>
   </div>
+  <p class="wrap muted small app-videos-note">By Vesopa Software. Playing a video loads YouTube (privacy-enhanced mode).</p>
 </section>
 
 <section class="stats" aria-label="The club in numbers">
