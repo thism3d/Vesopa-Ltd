@@ -13,10 +13,45 @@ class TenderEntry {
     this.gratuityMinor = 0,
     this.cashBreakdown,
     this.holdId,
+    this.saved = false,
   });
 
   final TenderKind kind;
   final int amountMinor;
+
+  /// Already recorded against the bill (2026-10-26, split bills). A share of a
+  /// split bill is written to the order the moment that person has paid, so
+  /// leaving the payment screen, or the till going off, cannot lose money that
+  /// has been taken -- and a table reopened later starts from what is still
+  /// owed. Settling the bill records only the payments that are not [saved].
+  final bool saved;
+
+  /// This payment, marked as recorded against the bill.
+  TenderEntry asSaved() => TenderEntry(
+        kind: kind,
+        amountMinor: amountMinor,
+        reference: reference,
+        entryMode: entryMode,
+        cashbackMinor: cashbackMinor,
+        gratuityMinor: gratuityMinor,
+        cashBreakdown: cashBreakdown,
+        holdId: holdId,
+        saved: true,
+      );
+
+  /// The same payment for a different amount (a split share's cash, cut to
+  /// what that share owed, the rest handed back as change).
+  TenderEntry withAmount(int minor) => TenderEntry(
+        kind: kind,
+        amountMinor: minor,
+        reference: reference,
+        entryMode: entryMode,
+        cashbackMinor: cashbackMinor,
+        gratuityMinor: gratuityMinor,
+        cashBreakdown: cashBreakdown,
+        holdId: holdId,
+        saved: saved,
+      );
 
   /// A gift-card code, deposit reference or card auth code — whatever makes
   /// this payment traceable afterwards.
@@ -164,6 +199,12 @@ class TenderState {
         activeShare: activeShare ?? this.activeShare,
       );
 
+  /// The payments from [from] onwards, marked as recorded against the bill.
+  TenderState markSavedFrom(int from) => copyWith(tenders: [
+        for (var i = 0; i < tenders.length; i++)
+          i >= from ? tenders[i].asSaved() : tenders[i],
+      ]);
+
   /// Record a payment, crediting the active share when the bill is split.
   TenderState addTender(TenderEntry entry) {
     final updatedShares = [...shares];
@@ -209,6 +250,9 @@ class TenderState {
   TenderState removeLastTender() {
     if (tenders.isEmpty) return this;
     final last = tenders.last;
+    // A payment already recorded against the bill (a paid share of a split)
+    // is a refund now, not an undo.
+    if (last.saved) return this;
     final updatedShares = [...shares];
     if (isSplit && activeShare >= 0 && activeShare < updatedShares.length) {
       updatedShares[activeShare] =

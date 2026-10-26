@@ -261,6 +261,9 @@ function commerceRoutes({ pool, broadcast, secret }) {
     // Manual card goes through Dojo's keyed payment. Off: the key records a
     // card payment taken on a separate machine (schema_manual_card.sql).
     allow_manual_dojo: 0,
+    // Ask "Manual card payment, £x?" before saving one taken on a separate
+    // machine. Off: the key saves it at once (2026-10-26, schema_manual_card.sql).
+    allow_manual_confirm: 0,
     // A Cashback key beside Card that asks how much and sends it to the card
     // machine with the sale. Off: Card alone (schema_cashback.sql).
     allow_cashback: 0,
@@ -271,7 +274,7 @@ function commerceRoutes({ pool, broadcast, secret }) {
   };
 
   /** Columns a database may not have yet, dropped from a save rather than failing it. */
-  const TENDER_LATER = ['allow_empty_pay', 'allow_manual_dojo', 'allow_cashback', 'allow_display_card_result'];
+  const TENDER_LATER = ['allow_empty_pay', 'allow_manual_dojo', 'allow_manual_confirm', 'allow_cashback', 'allow_display_card_result'];
 
   const TENDER_FIELDS = Object.keys(TENDER_DEFAULTS);
 
@@ -412,14 +415,55 @@ function commerceRoutes({ pool, broadcast, secret }) {
     return null;
   }
 
+  /**
+   * The card's own code, from whatever the till was given (2026-10-26,
+   * Pontardawe: "gift cards can't be redeemed").
+   *
+   * A clerk types "abcd efgh jklm" or the number without its dashes; a scanner
+   * reads the card's QR, which on a Wallet pass or a printed card is the
+   * card's link (/wallet/c/<token>), not its code. All of these are the same
+   * card, so all of them find it. Anything else comes back as it was, upper
+   * case, and simply finds nothing.
+   */
+  async function giftCodeFrom(db, office, raw) {
+    const given = String(raw || '').trim();
+    if (!given) return '';
+    const link = given.match(/\/wallet\/[cs]\/([A-Za-z0-9._-]+)/);
+    if (link) {
+      try {
+        const c = jwt.verify(link[1], secret);
+        if (c && c.scope === 'wallet' && c.kind === 'giftcard' && c.office === office) {
+          const [[row]] = await db.query('SELECT code FROM epos_gift_cards WHERE office = ? AND id = ?', [office, c.sub]);
+          if (row) return row.code;
+        }
+      } catch { /* an expired or foreign link names no card here */ }
+      return '';
+    }
+    const upper = given.toUpperCase();
+    const [[exact]] = await db.query('SELECT code FROM epos_gift_cards WHERE office = ? AND code = ?', [office, upper]);
+    if (exact) return exact.code;
+    const bare = upper.replace(/[^A-Z0-9]/g, '');
+    if (!bare) return upper;
+    const [loose] = await db.query(
+      `SELECT code FROM epos_gift_cards
+        WHERE office = ? AND REPLACE(REPLACE(REPLACE(UPPER(code), '-', ''), ' ', ''), '.', '') = ?
+        LIMIT 2`,
+      [office, bare]
+    );
+    // Two cards that differ only by their dashes cannot be told apart; refuse
+    // rather than guess which customer's money to take.
+    return loose.length === 1 ? loose[0].code : upper;
+  }
+
   /** Look a card up by code. Used by the till before offering it as a tender. */
   router.get('/gift-cards/lookup', async (req, res, next) => {
     try {
       const office = tillOffice(req);
-      const code = String(req.query.code || '').trim().toUpperCase();
-      if (!office || !code) {
+      if (!office || !String(req.query.code || '').trim()) {
         return res.status(400).json({ error: 'office and code are required' });
       }
+      const code = await giftCodeFrom(pool, office, req.query.code);
+      if (!code) return res.status(404).json({ error: 'No such gift card' });
 
       const [[card]] = await pool.query(
         'SELECT * FROM epos_gift_cards WHERE office = ? AND code = ?',
@@ -613,7 +657,7 @@ function commerceRoutes({ pool, broadcast, secret }) {
 
       const result = await moveGiftCard({
         office,
-        code: String(req.body.code || '').trim().toUpperCase(),
+        code: await giftCodeFrom(pool, office, req.body.code),
         kind: 'redeem',
         amountMinor: req.body.amount_minor,
         orderId: req.body.order_id,
@@ -645,11 +689,12 @@ function commerceRoutes({ pool, broadcast, secret }) {
     const conn = await pool.getConnection();
     try {
       const office = tillOffice(req);
-      const code = String(req.body.code || '').trim().toUpperCase();
+      const code = await giftCodeFrom(pool, office, req.body.code);
       const amount = money(req.body.amount_minor);
-      if (!office || !code) {
+      if (!office || !String(req.body.code || '').trim()) {
         return res.status(400).json({ error: 'office and code are required' });
       }
+      if (!code) return res.status(404).json({ error: 'No such gift card' });
       if (amount <= 0) return res.status(400).json({ error: 'Amount must be more than zero' });
 
       await conn.beginTransaction();

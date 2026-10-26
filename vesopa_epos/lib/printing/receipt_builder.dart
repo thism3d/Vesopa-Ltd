@@ -957,6 +957,16 @@ class ReceiptBuilder {
       );
     }
 
+    // Takings that were never cash, so nobody counts them as missing from the
+    // drawer (2026-10-26).
+    if (report.otherPayments.isNotEmpty) {
+      section('NOT IN THE DRAWER');
+      bytes.addAll(_row('Card', _money(report.cardMinor)));
+      for (final e in report.otherPayments.entries) {
+        bytes.addAll(_row('${_tenderName(e.key)} [${e.value.count}]', _money(e.value.amountMinor)));
+      }
+    }
+
     section('VAT');
     bytes.addAll(_row('VAT in takings', _money(report.taxMinor)));
 
@@ -965,7 +975,22 @@ class ReceiptBuilder {
     // drawer against a figure the till worked out is the entire reason a Z is
     // taken at a counter, so it stays.
     section('CASH DRAWER');
+    // Every movement of the drawer's day, so CASH EXPECTED is a sum anybody
+    // can follow down the paper (2026-10-26).
     bytes.addAll(_row('Float', _money(report.openingFloatMinor)));
+    bytes.addAll(_row('+ Cash sales', _money(report.cashSalesMinor)));
+    if (report.paidIn.count > 0) {
+      bytes.addAll(_row('+ Paid in [${report.paidIn.count}]', _money(report.paidIn.amountMinor)));
+    }
+    if (report.expenses.count > 0) {
+      bytes.addAll(_row('- Paid out [${report.expenses.count}]', _money(report.expenses.amountMinor)));
+    }
+    if (report.cashRefundsMinor > 0) {
+      bytes.addAll(_row('- Cash refunds', _money(report.cashRefundsMinor)));
+    }
+    if (report.cashbackMinor > 0) {
+      bytes.addAll(_row('- Cashback given', _money(report.cashbackMinor)));
+    }
     bytes.addAll(
       _rowText([
         _col(
@@ -1561,3 +1586,13 @@ class ReceiptBuilder {
         ),
       ]);
 }
+
+/// A payment method as a person reads it on the Z.
+String _tenderName(String method) => switch (method) {
+      'giftcard' => 'Gift cards',
+      'points' => 'Loyalty points',
+      'voucher' => 'Vouchers',
+      'deposit' => 'Deposits',
+      'account' => 'On account',
+      _ => method.isEmpty ? 'Other' : '${method[0].toUpperCase()}${method.substring(1)}',
+    };

@@ -480,6 +480,7 @@ class OrderRepository {
     String? staffName,
     String? orderId,
     List<int> lineNos = const [],
+    int cashMinor = 0,
   }) =>
       _logEvent(
         kind: 'refund',
@@ -490,6 +491,26 @@ class OrderRepository {
         staffName: staffName,
         orderId: orderId,
         lineNos: lineNos,
+        cashMinor: cashMinor.abs(),
+      );
+
+  /// Money put INTO the drawer that is not a sale: change brought from the
+  /// bank, a float top-up, an event's takings counted in (2026-10-26). The
+  /// Z adds it to the cash expected, as it takes an expense off.
+  Future<void> logPaidIn({
+    required String sessionId,
+    required int amountMinor,
+    required String from,
+    String? reason,
+    String? staffName,
+  }) =>
+      _logEvent(
+        kind: 'paid_in',
+        sessionId: sessionId,
+        amountMinor: amountMinor.abs(),
+        note: from,
+        reason: reason,
+        staffName: staffName,
       );
 
   /// Money paid out of the drawer that is not a refund: the window cleaner,
@@ -556,6 +577,7 @@ class OrderRepository {
     double? quantity,
     String? orderId,
     List<int> lineNos = const [],
+    int cashMinor = 0,
   }) async {
     // Practice is not counted: a trainee's voids, no-sales and refunds do not
     // belong on the Z a manager reconciles the drawer against.
@@ -575,6 +597,7 @@ class OrderRepository {
               pluId: Value(pluId),
               quantity: Value(quantity),
               at: Value(at),
+              cashMinor: Value(cashMinor),
             ),
           );
       // A void is already on its way to /till/voids with the items and the
@@ -600,6 +623,7 @@ class OrderRepository {
                 'quantity': quantity,
                 'order_id': ?orderId,
                 if (lineNos.isNotEmpty) 'line_nos': lineNos,
+                if (cashMinor != 0) 'cash_minor': cashMinor,
                 'at': at.toIso8601String(),
               }),
             ),

@@ -14,7 +14,7 @@ import '../data/order_repository.dart';
 import '../data/pricing_engine.dart';
 import '../data/staff_session.dart';
 import '../data/membership.dart';
-import '../data/memberships_api.dart' show MembershipsException;
+import '../data/memberships_api.dart' show MembershipsException, MemberPlan;
 import '../data/tender_engine.dart';
 import '../data/customer_display.dart';
 import '../data/customer_display_control.dart';
@@ -31,6 +31,7 @@ import '../printing/print_service.dart';
 import '../printing/print_targets.dart';
 import '../printing/receipt_builder.dart';
 import 'card_checkout_page.dart';
+import 'customer_picker.dart' show pickCustomer;
 import 'membership_gate.dart';
 import 'membership_prompt.dart';
 import 'printers_page.dart' show printerSettingsProvider;
@@ -914,6 +915,163 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
   /// Payments taken so far, and any split in progress.
   TenderState _tender = const TenderState(totals: BasketTotals.empty);
 
+  /// Whether the "who is this membership for?" question has been asked.
+  bool _membershipAsked = false;
+
+  /// A membership rung up with nobody on the bill (2026-10-26, Nicki:
+  /// "membership: find a way so that when people pay membership they can use
+  /// the card straight away, NOT wait 8 working days").
+  ///
+  /// The renewal or join is posted when the bill settles, to the member on the
+  /// bill. With nobody on it the fee was taken and nothing happened until the
+  /// office set the member up by hand. So the till asks who it is for, before
+  /// money is taken: an existing member, or a new one added on the spot. The
+  /// membership is then active the moment the bill is paid.
+  Future<void> _askMembershipHolder() async {
+    final repo = ref.read(orderRepositoryProvider);
+    final order = await repo.orderOnce(widget.orderId);
+    if (order == null || (order.customerId ?? '').isNotEmpty || !mounted) return;
+    final commerce = ref.read(commerceRepositoryProvider);
+    final settings = await commerce.membershipSettings();
+    final lines = await repo.watchLines(widget.orderId).first;
+    final renewing = renewingPlus(
+      ref.read(productsProvider).value ?? const <Product>[],
+      legacyPlu: settings.plu,
+    );
+    if (!billRenewsMembership(lines, renewing: renewing) || !mounted) return;
+
+    final choose = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        icon: const Icon(Icons.card_membership_outlined, size: 30),
+        title: const Text('Who is this membership for?'),
+        content: const Text(
+          'Choose the member, or add them now. Their membership starts the '
+          'moment this bill is paid, and their card and app work straight away.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Not now')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Choose member')),
+        ],
+      ),
+    );
+    if (choose != true || !mounted) return;
+    final customer = await pickCustomer(context, ref);
+    if (customer == null || !mounted) return;
+    await repo.attachCustomer(
+      widget.orderId,
+      id: customer.id,
+      name: customer.name,
+      // Being joined or renewed on this bill: the expiry it carries now is the
+      // one being replaced, as in sale_page's Customer key.
+      membershipExpiry: null,
+      discountType: customer.discountType,
+      discountValue: customer.discountValue,
+      phone: customer.phone,
+      email: customer.email,
+      cardNumber: customer.cardNumber,
+      pointsBalance: customer.pointsBalance,
+      scheme: commerce.schemeById(customer.schemeId),
+      memberNumber: customer.memberNumber,
+      revertLevel: ref.read(currentPriceLevelProvider),
+    );
+    // Somebody who is not on a plan yet is JOINING, and a join needs the plan.
+    // The membership product names it ("Vice President Membership" is the
+    // Vice President plan); when it does not, the clerk picks. The line's note
+    // then says "Joins Vice President [plan 2]", which the settle path posts.
+    if (customer.schemeId == null && ref.read(tillModulesProvider).memberships) {
+      await _noteJoiningPlan(lines, renewing);
+    }
+    if (mounted) {
+      PosMessenger.success(context, 'The membership starts for ${customer.name} when this bill is paid.');
+    }
+  }
+
+  Future<void> _noteJoiningPlan(List<OrderLine> lines, Set<int> renewing) async {
+    final matching = lines.where((l) =>
+        renewing.contains(l.pluId) && membershipLineIntent(l.notes) == null);
+    if (matching.isEmpty) return;
+    final line = matching.first;
+    List<MemberPlan> plans;
+    try {
+      plans = (await ref.read(membershipsRepositoryProvider).plans()).where((p) => p.active).toList();
+    } catch (_) {
+      return; // the module cannot be reached: the renewal path still runs
+    }
+    if (plans.isEmpty || !mounted) return;
+    final product = line.name.toLowerCase();
+    final named = plans.where((p) => p.name.trim().isNotEmpty && product.contains(p.name.trim().toLowerCase())).toList();
+    MemberPlan? plan = named.length == 1 ? named.single : null;
+    plan ??= await showDialog<MemberPlan>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: Text('Which plan is "${line.name}"?'),
+        children: [
+          for (final p in plans)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, p),
+              child: Text(p.name),
+            ),
+        ],
+      ),
+    );
+    if (plan == null) return;
+    await ref.read(orderRepositoryProvider).setLineNote(
+          line.id,
+          membershipLineNote(join: true, planId: plan.id, planName: plan.name),
+        );
+  }
+
+  /// Where the share being paid now starts in [TenderState.tenders]. When that
+  /// share is settled, the payments from here on are written to the bill
+  /// (see [_saveSettledShare]) and this moves past them.
+  int _shareStart = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadEarlierPayments());
+  }
+
+  /// Payments already recorded on this bill: shares of a split that paid
+  /// earlier, here or on another till (2026-10-26). They count as paid, are
+  /// not recorded again, and cannot be undone from here.
+  Future<void> _loadEarlierPayments() async {
+    final payments = await ref.read(orderRepositoryProvider).paymentsFor(widget.orderId);
+    if (!mounted || payments.isEmpty) return;
+    TenderKind kindOf(String method, String? entryMode) => switch (method) {
+          'cash' => TenderKind.cash,
+          'card' => entryMode == 'manual' ? TenderKind.manualCard : TenderKind.card,
+          'giftcard' => TenderKind.giftCard,
+          'voucher' => TenderKind.voucher,
+          'deposit' => TenderKind.deposit,
+          'points' => TenderKind.points,
+          'account' => TenderKind.account,
+          _ => TenderKind.card,
+        };
+    final earlier = [
+      for (final p in payments)
+        TenderEntry(
+          kind: kindOf(p.method, p.entryMode),
+          amountMinor: p.amountMinor,
+          reference: p.reference,
+          entryMode: p.entryMode,
+          cashbackMinor: p.cashbackMinor,
+          gratuityMinor: p.gratuityMinor,
+          cashBreakdown: p.cashBreakdown,
+          saved: true,
+        ),
+    ];
+    setState(() {
+      _tender = _tender.copyWith(tenders: [...earlier, ..._tender.tenders]);
+      _shareStart = earlier.length;
+    });
+    PosMessenger.info(
+      context,
+      '${_money(earlier.fold<int>(0, (s, t) => s + t.amountMinor))} has already been paid on this bill.',
+    );
+  }
+
   /// The repository gift cards were held through. Kept here, not re-read from
   /// `ref`, because [dispose] gives unspent holds back and may not use `ref`.
   CommerceRepository? _heldWith;
@@ -1090,7 +1248,14 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
         // Manual card carries its own warning on top of that, because a keyed
         // card number is a different liability from a presented one.
         final manual = kind == TenderKind.manualCard;
-        if (!await _confirm(kind, amount, due, manual: manual)) return;
+        final tenderSettings = ref.read(tenderSettingsProvider);
+        // A manual card taken on a separate machine is saved at once: the card
+        // has already been paid on the other machine, and the box asking again
+        // was one more tap at a busy bar (Nicki, 2026-10-26). Back office ›
+        // Tender settings › "Ask to confirm a manual card payment" brings it
+        // back. Card, and manual card through Dojo, still ask.
+        final skipConfirm = manual && !tenderSettings.manualViaDojo && !tenderSettings.manualConfirm;
+        if (!skipConfirm && !await _confirm(kind, amount, due, manual: manual)) return;
 
         // Manual card, by default, is a card taken on a separate card machine:
         // the amount is saved as a card payment and nothing goes to Dojo.
@@ -1393,33 +1558,131 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
 
   void _record(TenderEntry entry) {
     final before = _tender;
+
+    // SPLIT BILL, ONE PERSON AT A TIME (2026-10-26, Nicki: "can't give change
+    // to the first person until the last person pays").
+    //
+    // Cash over what this share owes is this person's change, not credit
+    // towards the next person: the payment is cut to what the share owed and
+    // the rest is handed back now. Not on the last share, whose change the
+    // whole-bill settle below shows as it always has.
+    var shareChange = 0;
+    if (before.isSplit && entry.kind == TenderKind.cash) {
+      final due = before.dueNowMinor;
+      final lastShare = before.shares.where((s) => !s.settled).length <= 1;
+      if (!lastShare && due > 0 && entry.amountMinor > due) {
+        shareChange = entry.amountMinor - due;
+        entry = entry.withAmount(due);
+      }
+    }
+
     setState(() {
       _entry = '';
       _tender = _tender.addTender(entry);
     });
-    // Split bill: open the cash drawer after each share is paid in cash, while
-    // the split stays on screen (Meirion, 2026-10-23). A share is paid when it
-    // settles and addTender moves on to the next person. The final share runs
-    // through the whole-bill settle below, which opens the drawer itself, so
-    // this handles every share but the last.
-    if (before.isSplit &&
+
+    final settledBefore = before.shares.where((s) => s.settled).length;
+    final shareDone = before.isSplit &&
         !_tender.settled &&
-        entry.kind == TenderKind.cash) {
-      final settledBefore = before.shares.where((s) => s.settled).length;
-      final settledNow = _tender.shares.where((s) => s.settled).length;
-      if (settledNow > settledBefore) {
+        _tender.shares.where((s) => s.settled).length > settledBefore;
+    if (shareDone) {
+      // The drawer for a share paid in cash (Meirion, 2026-10-23), then this
+      // person's change, then the share is written to the bill so nothing
+      // that has been taken can be lost.
+      if (_tender.tenders.skip(_shareStart).any((t) => t.kind == TenderKind.cash && !t.saved)) {
         unawaited(TillActions.openCashDrawerQuietly(ref));
       }
+      unawaited(_finishShare(shareChange));
+      return;
     }
     _settleIfPaid();
   }
 
+  /// One share of a split paid, not the last: hand over its change, then
+  /// record its payments on the bill.
+  Future<void> _finishShare(int changeMinor) async {
+    if (changeMinor > 0 && mounted) {
+      await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => _ChangeWindow(
+          changeMinor: changeMinor,
+          seconds: ref.read(tillSettingsProvider).changeWindowSeconds,
+        ),
+      );
+    }
+    await _saveSettledShare();
+  }
+
+  /// Write the payments of the share just paid to the bill.
+  ///
+  /// The bill stays open -- what has been paid is less than its total -- so
+  /// the table stays on the plan with only what is still owed, on this till
+  /// and (through the open-bill sync) on every other. Leaving this screen, or
+  /// the till going off, can no longer lose a payment that has been taken.
+  ///
+  /// Gift cards are left as holds until the bill closes, as before: their
+  /// money is only spent once, when the sale is recorded.
+  Future<void> _saveSettledShare() async {
+    final repo = ref.read(orderRepositoryProvider);
+    final session = await ref.read(sessionRepositoryProvider).current();
+    final servedBy = ref.read(servedByProvider);
+    final servedById = ref.read(servedByIdProvider);
+    final from = _shareStart;
+    final tenders = _tender.tenders;
+    // The bill closes when what is recorded reaches its stored total. A tip
+    // added on this screen is not in that total, so a share could reach it
+    // with people still to pay -- then the share waits and is recorded with
+    // the rest when the bill is settled, exactly as before this existed.
+    final order = await repo.orderOnce(widget.orderId);
+    final recorded = await repo.amountPaid(widget.orderId);
+    final adding = [
+      for (var i = from; i < tenders.length; i++)
+        if (!tenders[i].saved && tenders[i].kind != TenderKind.giftCard) tenders[i].amountMinor,
+    ].fold<int>(0, (s, v) => s + v);
+    if (order == null || recorded + adding >= order.totalMinor) {
+      if (mounted) setState(() => _shareStart = tenders.length);
+      return;
+    }
+    for (var i = from; i < tenders.length; i++) {
+      final t = tenders[i];
+      if (t.saved || t.kind == TenderKind.giftCard) continue;
+      await repo.settle(
+        widget.orderId,
+        t.kind.method,
+        t.amountMinor,
+        sessionId: session.id,
+        cashBreakdown: t.cashBreakdown,
+        staffId: servedById,
+        staffName: servedBy,
+        reference: t.reference,
+        gratuityMinor: t.gratuityMinor,
+        entryMode: t.entryMode,
+        cashbackMinor: t.cashbackMinor,
+      );
+    }
+    if (!mounted) return;
+    setState(() {
+      // Gift card holds stay unsaved so the final settle still spends them.
+      _tender = _tender.copyWith(tenders: [
+        for (var i = 0; i < tenders.length; i++)
+          i >= from && tenders[i].kind != TenderKind.giftCard ? tenders[i].asSaved() : tenders[i],
+      ]);
+      _shareStart = tenders.length;
+    });
+    final left = _tender.outstandingMinor;
+    PosMessenger.success(context, 'Share paid. ${_money(left)} still to pay on this bill.');
+  }
+
   Future<void> _takeGiftCard(int amount) async {
     final commerce = ref.read(commerceRepositoryProvider);
+    final scanned = pendingGiftCode.value;
+    pendingGiftCode.value = null;
     final result = await showGiftCardDialog(
       context,
       commerce: commerce,
       outstandingMinor: amount,
+      initialCode: scanned,
     );
     if (result == null || !mounted) return;
 
@@ -2131,6 +2394,8 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     }
 
     for (final entry in _tender.tenders) {
+      // A share of a split already written to the bill (_saveSettledShare).
+      if (entry.saved) continue;
       await repo.settle(
         widget.orderId,
         entry.kind.method,
@@ -2299,7 +2564,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     // printed or shown: the clerk's next move is to take notes out of a drawer
     // that has to be open for them to make it. A split bill counts — cash in
     // the drawer is cash in the drawer, whatever settled the rest of it.
-    if (_tender.tenders.any((t) => t.kind == TenderKind.cash)) {
+    if (_tender.tenders.any((t) => t.kind == TenderKind.cash && !t.saved)) {
       await TillActions.openCashDrawerQuietly(ref);
       if (!mounted) return;
     }
@@ -2526,6 +2791,15 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
               _splitOpened = true;
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (mounted) unawaited(_chooseSplit());
+              });
+            }
+
+            // A membership on the bill with nobody on it: ask who it is for,
+            // once, before any money is taken.
+            if (!_membershipAsked && totals.totalMinor > 0) {
+              _membershipAsked = true;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) unawaited(_askMembershipHolder());
               });
             }
 

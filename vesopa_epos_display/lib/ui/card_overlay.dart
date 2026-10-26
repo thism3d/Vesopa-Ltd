@@ -125,6 +125,10 @@ class CardOverlay extends StatelessWidget {
     };
   }
 
+  /// Whether the customer sees nothing of this at all: a card that was
+  /// declined, failed or had its signature refused (owner, 2026-10-26).
+  static bool hiddenFromCustomer(CardStatus c) => _notThrough(c);
+
   /// A payment that did not go through, in words that do not embarrass the
   /// customer, whatever an older till sends.
   static bool _notThrough(CardStatus c) =>

@@ -106,7 +106,7 @@ class _ConfirmTenderDialog extends StatelessWidget {
     TenderKind.cash => 'Take cash',
     TenderKind.card ||
     TenderKind.manualCard => separateMachine
-        ? 'Save card payment'
+        ? 'Paid on card machine'
         : manual
         ? 'Key the card'
         : 'Take card',
@@ -171,8 +171,9 @@ class _ConfirmTenderDialog extends StatelessWidget {
               const SizedBox(height: 10),
               Text(
                 separateMachine
-                    ? 'Take the card on the card machine first. This saves the '
-                          'amount as a card payment; nothing is sent to Dojo.'
+                    ? 'Use this once the customer has paid on the separate card '
+                          'machine. It records the card payment on this bill; '
+                          'nothing is sent to Dojo.'
                     : manual
                     ? 'The card number is keyed rather than presented. Only do '
                           'this when the card cannot be read or the customer is '

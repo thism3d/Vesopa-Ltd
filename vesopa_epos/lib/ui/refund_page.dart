@@ -595,6 +595,16 @@ class _RefundPageState extends ConsumerState<RefundPage> {
       reason: why,
       orderId: detail.summary.id,
       lineNos: (_picked.toList()..sort()),
+      // What goes back in cash: what is left after the gift card and Dojo
+      // parts, as far as cash paid for this receipt -- a card paid on the
+      // separate machine goes back on that machine, not out of the drawer.
+      cashMinor: (() {
+        final cashPaid = detail.tenders
+            .where((t) => t.method == 'cash')
+            .fold<int>(0, (s, t) => s + t.amountMinor);
+        final left = rest - toDojo;
+        return left <= 0 ? 0 : (left < cashPaid ? left : cashPaid);
+      })(),
       done: [?onCard, ?onDojo].isEmpty ? null : [?onCard, ?onDojo].join(', '),
     );
   }
@@ -624,6 +634,8 @@ class _RefundPageState extends ConsumerState<RefundPage> {
     await _record(
       amountMinor: result.minor,
       note: 'No receipt · ${result.reason}',
+      // With no receipt the money comes out of the drawer.
+      cashMinor: result.minor,
     );
   }
 
@@ -653,6 +665,7 @@ class _RefundPageState extends ConsumerState<RefundPage> {
     String? orderId,
     List<int> lineNos = const [],
     String? done,
+    int cashMinor = 0,
   }) async {
     final session = await ref.read(sessionRepositoryProvider).current();
     final staff = ref.read(servedByProvider);
@@ -664,6 +677,7 @@ class _RefundPageState extends ConsumerState<RefundPage> {
           staffName: staff,
           orderId: orderId,
           lineNos: lineNos,
+          cashMinor: cashMinor,
         );
     // Held on this till until the server has it, so the receipt reads as
     // refunded straight away, on this screen and in the receipt list.

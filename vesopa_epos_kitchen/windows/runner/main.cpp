@@ -32,6 +32,12 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   }
   window.SetQuitOnClose(true);
 
+  // A kitchen screen must never go dark between orders (2026-10-26,
+  // Pontardawe RFC: "screen in kitchen going off and on"). Keeps the display
+  // and the PC awake for as long as the board is open; Windows lets go of it
+  // by itself when the app closes.
+  ::SetThreadExecutionState(ES_CONTINUOUS | ES_DISPLAY_REQUIRED | ES_SYSTEM_REQUIRED);
+
   ::MSG msg;
   while (::GetMessage(&msg, nullptr, 0, 0)) {
     ::TranslateMessage(&msg);

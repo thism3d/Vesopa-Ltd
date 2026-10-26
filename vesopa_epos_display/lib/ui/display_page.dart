@@ -629,7 +629,10 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
 
           // The card machine's progress while the till takes a card, over
           // everything else so the customer is never left guessing.
-          if (_basket.card case final card?)
+          // Except a card that did not go through: then nothing at all, the
+          // order stays on screen and only the till says why (owner,
+          // 2026-10-26, Pontardawe: "card declined on big screen, get it gone").
+          if (_basket.card case final card? when !CardOverlay.hiddenFromCustomer(card))
             Positioned.fill(child: CardOverlay(card: card)),
 
           // Nothing at all over the adverts until somebody asks for it.

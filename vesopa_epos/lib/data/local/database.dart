@@ -226,7 +226,7 @@ class TillEvents extends Table {
   /// The trading period this belongs to, so a Z can total its own and no more.
   TextColumn get sessionId => text()();
 
-  /// void | no_sale | refund | expense | wastage
+  /// void | no_sale | refund | expense | paid_in | wastage
   TextColumn get kind => text()();
 
   /// What it was worth, in pence. Zero for a no-sale, which has a count and no
@@ -251,6 +251,11 @@ class TillEvents extends Table {
   /// else. The server takes the units off the shelf; the till keeps no count.
   IntColumn get pluId => integer().nullable()();
   RealColumn get quantity => real().nullable()();
+
+  /// For a refund: how much of it was handed back in cash from the drawer, as
+  /// opposed to onto a card or a gift card (2026-10-26). The Z takes this off
+  /// the cash expected, so a drawer that paid a refund is not called short.
+  IntColumn get cashMinor => integer().withDefault(const Constant(0))();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -710,7 +715,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 30;
+  int get schemaVersion => 31;
 
 
   /// Add a column only if the table has not already got it.
@@ -971,6 +976,10 @@ class AppDatabase extends _$AppDatabase {
             // it exactly as before: no scheme, the customer's own discount.
             await _addColumnIfMissing(m, orders, orders.customerScheme);
             await _addColumnIfMissing(m, orders, orders.customerMemberNo);
+          }
+          if (from < 31) {
+            // 1.16.30: the cash part of a refund, for the Z's cash expected.
+            await _addColumnIfMissing(m, tillEvents, tillEvents.cashMinor);
           }
         },
       );

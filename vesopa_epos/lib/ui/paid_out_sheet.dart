@@ -65,8 +65,38 @@ Future<void> showPaidOut(BuildContext context, WidgetRef ref) async {
   );
 }
 
+/// Money put INTO the drawer that is not a sale (2026-10-26): change brought
+/// from the bank, a float top-up. The other half of Paid Out, so the Z's cash
+/// expected rises by it instead of the drawer reading over.
+Future<void> showPaidIn(BuildContext context, WidgetRef ref) async {
+  if (!await allowed(context, ref, TillPermission.expense)) return;
+  if (!context.mounted) return;
+  final entry = await showDialog<({int minor, String paidTo})>(
+    context: context,
+    builder: (_) => const _PaidOutDialog(into: true),
+  );
+  if (entry == null || !context.mounted) return;
+  final session = await ref.read(sessionRepositoryProvider).current();
+  await ref.read(orderRepositoryProvider).logPaidIn(
+        sessionId: session.id,
+        amountMinor: entry.minor,
+        from: entry.paidTo,
+        staffName: ref.read(servedByProvider),
+      );
+  await TillActions.openCashDrawerQuietly(ref);
+  if (!context.mounted) return;
+  PosMessenger.success(
+    context,
+    '${money(entry.minor)} paid in (${entry.paidTo}). It is on the Z report '
+    'and the drawer expects that much more.',
+  );
+}
+
 class _PaidOutDialog extends StatefulWidget {
-  const _PaidOutDialog();
+  const _PaidOutDialog({this.into = false});
+
+  /// Paid in rather than out: the same box, worded the other way.
+  final bool into;
 
   @override
   State<_PaidOutDialog> createState() => _PaidOutDialogState();
@@ -111,7 +141,7 @@ class _PaidOutDialogState extends State<_PaidOutDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Paid out of the drawer'),
+      title: Text(widget.into ? 'Paid into the drawer' : 'Paid out of the drawer'),
       content: SizedBox(
         width: KeyboardSize.dialogWidth(context, 420),
         child: SingleChildScrollView(
@@ -139,10 +169,10 @@ class _PaidOutDialogState extends State<_PaidOutDialog> {
                 controller: _paidTo,
                 keyboardType: TextInputType.none,
                 onTap: () => setState(() => _focused = _paidTo),
-                decoration: const InputDecoration(
-                  labelText: 'Paid to',
-                  hintText: 'Who the money went to',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: widget.into ? 'What it is' : 'Paid to',
+                  hintText: widget.into ? 'Change from the bank, float top-up' : 'Who the money went to',
+                  border: const OutlineInputBorder(),
                 ),
               ),
               const SizedBox(height: 12),

@@ -53,6 +53,9 @@ class TillReport {
     this.noSales = const ReportTally(),
     this.refunds = const ReportTally(),
     this.expenses = const ReportTally(),
+    this.paidIn = const ReportTally(),
+    this.cashRefundsMinor = 0,
+    this.cashbackMinor = 0,
     this.wastage = const ReportTally(),
     this.discounts = const ReportTally(),
     this.gratuityMinor = 0,
@@ -90,6 +93,16 @@ class TillReport {
   /// short by it. Counted with its total, like a refund.
   final ReportTally expenses;
 
+  /// Money put into the drawer that was not a sale (2026-10-26): change from
+  /// the bank, a float top-up. The drawer holds it, so the Z expects it.
+  final ReportTally paidIn;
+
+  /// The part of the refunds handed back in cash from the drawer.
+  final int cashRefundsMinor;
+
+  /// Cash handed over as cashback on card payments. It came out of the drawer.
+  final int cashbackMinor;
+
   /// Wastage rung on this till: a count of entries, no money. The till holds
   /// no cost price, and a wastage priced at retail would overstate what was
   /// lost; the back office's Wastage Report has the real figure.
@@ -120,10 +133,36 @@ class TillReport {
   /// in cash, less what was paid out of it. A window cleaner paid £30 from
   /// the drawer is £30 the drawer is honestly short by, and a Z that called
   /// that "down" would have the manager counting twice.
+  ///
+  /// Since 2026-10-26 (Pontardawe: "staff have to add points, expenses etc
+  /// every day to make the final total; if they don't it looks as if they are
+  /// down cash") the whole of the drawer's day is in it: money paid in, cash
+  /// refunds and cashback handed over. Points, gift cards, vouchers, deposits
+  /// and accounts were never cash and are not in it -- they are listed beside
+  /// it as Other payments, so they no longer look like missing cash.
   int get expectedCashMinor =>
       openingFloatMinor +
-      (byMethod['cash']?.amountMinor ?? 0) -
-      expenses.amountMinor;
+      cashSalesMinor +
+      paidIn.amountMinor -
+      expenses.amountMinor -
+      cashRefundsMinor -
+      cashbackMinor;
+
+  /// Cash taken for sales, after change.
+  int get cashSalesMinor => byMethod['cash']?.amountMinor ?? 0;
+
+  /// Card taken (on the machine or keyed), tips included in the payments.
+  int get cardMinor => byMethod['card']?.amountMinor ?? 0;
+
+  /// What was paid other than cash and card: points, gift cards, vouchers,
+  /// deposits, accounts. Takings, but never in the drawer.
+  Map<String, ReportTally> get otherPayments => {
+        for (final e in byMethod.entries)
+          if (e.key != 'cash' && e.key != 'card') e.key: e.value,
+      };
+
+  int get otherPaymentsMinor =>
+      otherPayments.values.fold<int>(0, (s, t) => s + t.amountMinor);
 
   /// Counted minus expected. Positive is over, negative is short.
   ///
@@ -355,6 +394,7 @@ class SessionRepository {
 
     final byMethod = <String, ReportTally>{};
     var gratuity = 0;
+    var cashback = 0;
     if (ids.isNotEmpty) {
       final payments = await (_db.select(_db.payments)
             ..where((p) => p.orderId.isIn(ids)))
@@ -391,6 +431,7 @@ class SessionRepository {
           byMethod[p.method] =
               (byMethod[p.method] ?? const ReportTally()).plus(amount);
           gratuity += p.gratuityMinor;
+          cashback += p.cashbackMinor;
         }
       }
     }
@@ -425,6 +466,8 @@ class SessionRepository {
     var noSales = const ReportTally();
     var refunds = const ReportTally();
     var expenses = const ReportTally();
+    var paidIn = const ReportTally();
+    var cashRefunds = 0;
     var wastage = const ReportTally();
     for (final e in events) {
       switch (e.kind) {
@@ -434,6 +477,9 @@ class SessionRepository {
           noSales = noSales.plus(e.amountMinor);
         case 'refund':
           refunds = refunds.plus(e.amountMinor);
+          cashRefunds += e.cashMinor;
+        case 'paid_in':
+          paidIn = paidIn.plus(e.amountMinor);
         case 'expense':
           expenses = expenses.plus(e.amountMinor);
         case 'wastage':
@@ -458,6 +504,9 @@ class SessionRepository {
       noSales: noSales,
       refunds: refunds,
       expenses: expenses,
+      paidIn: paidIn,
+      cashRefundsMinor: cashRefunds,
+      cashbackMinor: cashback,
       wastage: wastage,
       discounts: ReportTally(count: discountedBills, amountMinor: discount),
       gratuityMinor: gratuity,

@@ -102,7 +102,10 @@ class BillSync {
   /// whose socket has quietly died. Ten seconds: long enough to be nearly free,
   /// short enough that a table saved at the bar is on the door terminal before
   /// anybody has walked there.
-  static const _interval = Duration(seconds: 10);
+  // Three seconds since 2026-10-26 (owner: tables shared through the server,
+  // "server only, faster"): a table saved on one till is on the others before
+  // anybody has turned round, even when a socket has quietly died.
+  static const _interval = Duration(seconds: 3);
 
   void start() {
     if (!_terminals.canShare) return;
@@ -204,6 +207,13 @@ class BillSync {
     final lines = await (_db.select(_db.orderLines)
           ..where((l) => l.orderId.equals(order.id)))
         .get();
+    // What has already been paid on a bill that is still open: the shares of a
+    // split that have paid (2026-10-26). Carried with the bill so a table
+    // picked up on another terminal asks only for what is still owed, never
+    // for the whole bill again.
+    final payments = await (_db.select(_db.payments)
+          ..where((p) => p.orderId.equals(order.id)))
+        .get();
     return {
       'id': order.id,
       'status': order.status,
@@ -242,6 +252,21 @@ class BillSync {
             'kitchen_printed_at': l.kitchenPrintedAt?.toIso8601String(),
           },
       ],
+      if (payments.isNotEmpty)
+        'payments': [
+          for (final p in payments)
+            {
+              'id': p.id,
+              'method': p.method,
+              'amount_minor': p.amountMinor,
+              'taken_at': p.takenAt.toIso8601String(),
+              'cash_breakdown': p.cashBreakdown,
+              'reference': p.reference,
+              'cashback_minor': p.cashbackMinor,
+              'gratuity_minor': p.gratuityMinor,
+              'entry_mode': p.entryMode,
+            },
+        ],
     };
   }
 
@@ -366,6 +391,28 @@ class BillSync {
                 ),
               );
         }
+      }
+
+      // The payments already taken on it, replaced wholesale like the lines.
+      await (_db.delete(_db.payments)
+            ..where((p) => p.orderId.equals(bill.id)))
+          .go();
+      for (final p in (payload['payments'] as List? ?? const [])
+          .cast<Map<String, dynamic>>()) {
+        await _db.into(_db.payments).insert(
+              PaymentsCompanion.insert(
+                id: p['id'] as String,
+                orderId: bill.id,
+                method: (p['method'] as String?) ?? 'cash',
+                amountMinor: _int(p['amount_minor']),
+                takenAt: Value(_time(p['taken_at']) ?? DateTime.now()),
+                cashBreakdown: Value(p['cash_breakdown'] as String?),
+                reference: Value(p['reference'] as String?),
+                cashbackMinor: Value(_int(p['cashback_minor'])),
+                gratuityMinor: Value(_int(p['gratuity_minor'])),
+                entryMode: Value(p['entry_mode'] as String?),
+              ),
+            );
       }
     });
   }

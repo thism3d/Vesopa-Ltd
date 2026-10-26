@@ -1,10 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/dinein_orders.dart';
+import '../data/kitchen_chime.dart';
 import '../data/live_link.dart' show kitchenViews;
 import '../data/notifications.dart';
 import '../data/providers.dart';
@@ -178,12 +178,11 @@ class _KitchenShellState extends ConsumerState<KitchenShell> {
 
   /// The flash on the board, and optionally the venue's own alert sound.
   /// Three quick beeps, which carries across a kitchen in a way one does not.
+  ///
+  /// The app's own chime since 2026-10-26 (see data/kitchen_chime.dart): the
+  /// Windows alert it used to ring is silent on a PC set to "No sounds".
   void _beep() {
-    for (var i = 0; i < 3; i++) {
-      Future<void>.delayed(Duration(milliseconds: 230 * i), () {
-        if (mounted) unawaited(SystemSound.play(SystemSoundType.alert));
-      });
-    }
+    if (mounted) unawaited(KitchenChime.play());
   }
 
   void _flashAndChime({bool chime = true}) {

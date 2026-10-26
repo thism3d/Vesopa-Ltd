@@ -30,8 +30,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 
+import 'package:intl/intl.dart';
+
+import '../data/commerce.dart';
 import '../data/local/database.dart';
 import '../main.dart';
+import 'redemption_dialogs.dart' show pendingGiftCode;
 import 'sale_page.dart' show productsProvider;
 import 'widgets/on_screen_keyboard.dart';
 import 'widgets/pos_message.dart';
@@ -54,6 +58,37 @@ Future<Product?> productForBarcode(WidgetRef ref, String code) async {
   return rows.isEmpty ? null : rows.first;
 }
 
+/// Whether [code] is one of the venue's gift cards; if it is, say what is on it
+/// and keep it for the Gift Card key. True when it was a gift card.
+Future<bool> _offerGiftCard(BuildContext context, WidgetRef ref, String code) async {
+  GiftCard card;
+  try {
+    card = await ref.read(commerceRepositoryProvider).giftCard(code);
+  } catch (_) {
+    return false; // not a gift card, or the server is away: carry on as a barcode
+  }
+  if (!context.mounted) return true;
+  final money = NumberFormat.currency(locale: 'en_GB', symbol: '£');
+  final use = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      icon: const Icon(Icons.card_giftcard_outlined, size: 30),
+      title: const Text('Gift card'),
+      content: Text(card.redeemable
+          ? '${money.format(card.spendableMinor / 100)} to spend on this card.\n\n'
+              'Ring up the order, then press Pay and Gift Card: it will be filled in.'
+          : (card.reason ?? (card.expired ? 'This card has expired.' : 'There is nothing left to spend on this card.'))),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Close')),
+        if (card.redeemable)
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Use when paying')),
+      ],
+    ),
+  );
+  if (use == true) pendingGiftCode.value = card.code;
+  return true;
+}
+
 /// What the till should do about a scan that is not one of the venue's cards.
 ///
 /// Returns the product to ring, or null when there is nothing to ring — either
@@ -66,6 +101,11 @@ Future<Product?> handleScannedBarcode(
 ) async {
   final known = await productForBarcode(ref, code);
   if (known != null) return known;
+
+  // A gift card, not a product (2026-10-26, Pontardawe: "gift cards can't be
+  // redeemed"). Its QR or barcode used to end up here and offer to create a
+  // product called after the card's number.
+  if (context.mounted && await _offerGiftCard(context, ref, code)) return null;
 
   if (!context.mounted) return null;
   final wanted = await showDialog<bool>(

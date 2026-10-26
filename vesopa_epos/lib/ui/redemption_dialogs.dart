@@ -47,23 +47,32 @@ Future<RedemptionResult?> showGiftCardDialog(
   BuildContext context, {
   required CommerceRepository commerce,
   required int outstandingMinor,
+  String? initialCode,
 }) =>
     showDialog<RedemptionResult>(
       context: context,
       builder: (_) => _GiftCardDialog(
         commerce: commerce,
         outstandingMinor: outstandingMinor,
+        initialCode: initialCode,
       ),
     );
+
+/// A gift card scanned on the sale screen, waiting for the bill to be paid
+/// (2026-10-26). The Gift Card key opens with it filled in and already looked
+/// up, so the clerk only presses Take.
+final pendingGiftCode = ValueNotifier<String?>(null);
 
 class _GiftCardDialog extends StatefulWidget {
   const _GiftCardDialog({
     required this.commerce,
     required this.outstandingMinor,
+    this.initialCode,
   });
 
   final CommerceRepository commerce;
   final int outstandingMinor;
+  final String? initialCode;
 
   @override
   State<_GiftCardDialog> createState() => _GiftCardDialogState();
@@ -74,6 +83,16 @@ class _GiftCardDialogState extends State<_GiftCardDialog> {
   GiftCard? _card;
   String? _error;
   bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final given = widget.initialCode?.trim() ?? '';
+    if (given.isNotEmpty) {
+      _code.text = given;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _lookup());
+    }
+  }
 
   @override
   void dispose() {
@@ -144,7 +163,9 @@ class _GiftCardDialogState extends State<_GiftCardDialog> {
               textCapitalization: TextCapitalization.characters,
               decoration: InputDecoration(
                 labelText: 'Card code',
-                hintText: 'ABCD-EFGH-JKLM',
+                // Typed with or without dashes, or scanned: the card's QR
+                // (a Wallet pass or printed card) is found too.
+                hintText: 'Scan the card, or type its code',
                 suffixIcon: IconButton(
                   icon: _busy
                       ? const SizedBox(

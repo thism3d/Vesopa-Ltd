@@ -58,6 +58,7 @@ class TenderSettings {
     this.allowSplitBill = true,
     this.allowEmptyPay = false,
     this.manualViaDojo = false,
+    this.manualConfirm = false,
     this.allowCashback = false,
     this.displayCardResult = true,
   });
@@ -88,6 +89,10 @@ class TenderSettings {
   /// key records a card payment taken on a separate card machine, with
   /// nothing sent to Dojo.
   final bool manualViaDojo;
+
+  /// Ask before saving a manual card taken on a separate machine. Off by
+  /// default (2026-10-26, Nicki): the key saves it at once.
+  final bool manualConfirm;
 
   /// A Cashback key beside Card (back office › Tender settings, off by
   /// default): it asks how much and sends it to the card machine with the
@@ -151,6 +156,7 @@ class TenderSettings {
       allowSplitBill: _flag(j['allow_split_bill']),
       allowEmptyPay: _flag(j['allow_empty_pay']),
       manualViaDojo: _flag(j['allow_manual_dojo']),
+      manualConfirm: _flag(j['allow_manual_confirm']),
       allowCashback: _flag(j['allow_cashback']),
       // Absent from an older server: shown, as before.
       displayCardResult: j['allow_display_card_result'] == null || _flag(j['allow_display_card_result']),

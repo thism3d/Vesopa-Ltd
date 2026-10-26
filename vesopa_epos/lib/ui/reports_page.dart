@@ -414,6 +414,13 @@ class _ReportBody extends StatelessWidget {
           ),
         if (report.wastage.count > 0)
           _Stat(label: 'Wastage entries', value: '${report.wastage.count}'),
+        // Takings that were never cash: not missing from the drawer.
+        if (report.otherPayments.isNotEmpty) ...[
+          const _Heading('Not in the drawer'),
+          _Stat(label: 'Card', value: money(report.cardMinor)),
+          for (final e in report.otherPayments.entries)
+            _Stat(label: '${e.key}  [${e.value.count}]', value: money(e.value.amountMinor)),
+        ],
         if (report.gratuityMinor > 0)
           _Stat(
             label: 'Gratuity (owed to staff)',
@@ -421,6 +428,15 @@ class _ReportBody extends StatelessWidget {
           ),
         const _Heading('Cash drawer'),
         _Stat(label: 'Opening float', value: money(report.openingFloatMinor)),
+        _Stat(label: '+ Cash sales', value: money(report.cashSalesMinor)),
+        if (report.paidIn.count > 0)
+          _Stat(label: '+ Paid in  [${report.paidIn.count}]', value: money(report.paidIn.amountMinor)),
+        if (report.expenses.count > 0)
+          _Stat(label: '− Paid out  [${report.expenses.count}]', value: money(report.expenses.amountMinor)),
+        if (report.cashRefundsMinor > 0)
+          _Stat(label: '− Cash refunds', value: money(report.cashRefundsMinor)),
+        if (report.cashbackMinor > 0)
+          _Stat(label: '− Cashback given', value: money(report.cashbackMinor)),
         _Stat(
           label: 'Expected in drawer',
           value: money(report.expectedCashMinor),

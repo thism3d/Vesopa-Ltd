@@ -621,7 +621,8 @@ app.post('/till/events', async (req, res, next) => {
   if (ev.kind === 'void') {
     return res.status(200).json({ ok: true, recorded_as: 'void' });
   }
-  if (!['refund', 'no_sale', 'expense', 'cashback'].includes(ev.kind)) {
+  // paid_in since 2026-10-26: money put into the drawer that is not a sale.
+  if (!['refund', 'no_sale', 'expense', 'cashback', 'paid_in'].includes(ev.kind)) {
     return res.status(400).json({ error: 'That is not a kind of till event.' });
   }
   try {

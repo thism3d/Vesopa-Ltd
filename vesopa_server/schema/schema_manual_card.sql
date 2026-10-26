@@ -26,4 +26,9 @@ DELIMITER ;
 
 CALL vesopa_add_column('epos_tender_settings', 'allow_manual_dojo', 'TINYINT(1) NOT NULL DEFAULT 0');
 
+-- 2026-10-26, Nicki: "when they click manual card can we remove this
+-- confirmation box". Manual card on a separate machine saves at once; this
+-- switch brings the confirmation back. Off for every venue.
+CALL vesopa_add_column('epos_tender_settings', 'allow_manual_confirm', 'TINYINT(1) NOT NULL DEFAULT 0');
+
 DROP PROCEDURE IF EXISTS vesopa_add_column;

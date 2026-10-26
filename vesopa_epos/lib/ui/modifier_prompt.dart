@@ -39,6 +39,7 @@ import '../data/fonts.dart';
 import '../data/local/database.dart';
 import '../data/modifiers.dart';
 import '../data/screens.dart';
+import 'widgets/pos_message.dart';
 import 'widgets/programmed_grid.dart';
 
 /// Put every question this product asks, in order.
@@ -60,6 +61,11 @@ Future<List<Product>?> askModifiers(
   FontLibrary fonts = FontLibrary.empty,
 }) async {
   final chosen = <Product>[];
+  // Questions with nothing to press, named afterwards rather than skipped in
+  // silence (2026-10-26, Pontardawe: "when a product has more than one
+  // modifier it only shows the first" -- its second question's screen was
+  // empty, and nobody could tell).
+  final empty = <String>[];
 
   for (final group in groups) {
     // A group nobody has laid out asks nothing. The till moves on rather than
@@ -71,7 +77,10 @@ Future<List<Product>?> askModifiers(
     // Pay key in it. The back office cannot produce that, which is exactly why
     // it is worth refusing here rather than trusting.
     final screen = screens.surfaceById(group.screenId, ScreenSurface.modifier);
-    if (screen == null || !_hasAnswers(screen, products)) continue;
+    if (screen == null || !_hasAnswers(screen, products)) {
+      empty.add(group.name);
+      continue;
+    }
 
     if (!context.mounted) return null;
     final answers = await showDialog<List<Product>>(
@@ -94,6 +103,15 @@ Future<List<Product>?> askModifiers(
     chosen.addAll(answers);
   }
 
+  if (empty.isNotEmpty && context.mounted) {
+    final names = empty.map((n) => '"$n"').join(', ');
+    PosMessenger.info(
+      context,
+      '$names ${empty.length == 1 ? 'has' : 'have'} no answers set up yet, so '
+      '${empty.length == 1 ? 'it was' : 'they were'} not asked. Add buttons to '
+      '${empty.length == 1 ? 'its' : 'their'} screen in the back office.',
+    );
+  }
   return chosen;
 }
 

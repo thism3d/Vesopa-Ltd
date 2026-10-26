@@ -162,6 +162,15 @@ class FunctionsPage extends ConsumerWidget {
               'record who and why.',
           () => unawaited(showPaidOut(context, ref)),
         ),
+        // And the other way: money put in that is not a sale (2026-10-26).
+        _Function(
+          'Paid In',
+          Icons.savings_outlined,
+          Pos.green,
+          'Put money into the drawer that is not a sale — change from the '
+              'bank, a float top-up — so the Z expects it.',
+          () => unawaited(showPaidIn(context, ref)),
+        ),
         // The card machine's own end of day can only be started from the till
         // on an integrated reader, so it needs a key of its own or the venue
         // cannot cash the machine up.
