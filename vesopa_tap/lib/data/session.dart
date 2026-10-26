@@ -224,11 +224,15 @@ class TapSession extends Notifier<TapState> {
   final _readyTickets = <String>{};
   late final Outbox _outbox = Outbox(ref.read(apiProvider));
 
+  /// The app this session runs in, as terminals and the back office name it.
+  /// Vesopa EPOS Lite runs on the same session and sets its own.
+  static String product = 'Vesopa Tap';
+
   /// This phone as the other terminals see it: "iPhone (Vesopa Tap) 3F2A".
   String get terminalName {
     final kind = kIsWeb ? 'Phone' : (Platform.isIOS ? 'iPhone' : 'Android');
     final tag = _deviceId.isEmpty ? '' : ' ${_deviceId.substring(0, 4).toUpperCase()}';
-    return '$kind (Vesopa Tap)$tag';
+    return '$kind ($product)$tag';
   }
 
   String get deviceId => _deviceId;
@@ -270,16 +274,23 @@ class TapSession extends Notifier<TapState> {
   }
 
   /// Try everything with the demo venue: no back office, pretend payments.
-  void startDemo() {
+  /// Another app on this session can bring a demo venue of its own.
+  void startDemo({
+    Venue venue = demoVenue,
+    List<Clerk> staff = demoClerks,
+    List<MenuCategory> categories = demoCategories,
+    List<Product> products = demoProducts,
+    List<TableInfo>? tables,
+  }) {
     _stopTimers();
     state = TapState(
       phase: Phase.locked,
-      venue: demoVenue,
+      venue: venue,
       demo: true,
-      staff: demoClerks,
-      categories: demoCategories,
-      products: demoProducts,
-      tables: demoTables,
+      staff: staff,
+      categories: categories,
+      products: products,
+      tables: tables ?? demoTables,
     );
   }
 
@@ -646,6 +657,28 @@ class TapSession extends Notifier<TapState> {
     ));
     if (ticket != null && !state.demo) unawaited(_outbox.add('/till/kitchen/tickets', ticket).then((_) => _flushOutbox()));
     return going.length;
+  }
+
+  /// A discount on the whole sale: [percent] off, or [fixedMinor] pence off
+  /// (zero both to take it off again).
+  void setDiscount(String billId, {double percent = 0, int fixedMinor = 0, String reason = ''}) =>
+      _put(state.bills[billId]!.copyWith(discountPercent: percent, discountFixedMinor: fixedMinor, discountReason: reason));
+
+  /// An unpaid bill thrown away before anything was taken or sent: a counter
+  /// sale the customer walked away from.
+  void discard(String billId) {
+    final bill = state.bills[billId];
+    if (bill == null || bill.paidMinor > 0 || bill.lines.any((l) => l.sent)) return;
+    state = state.copyWith(bills: Map.of(state.bills)..remove(billId));
+    if (_connected && bill.heldBy == null) unawaited(ref.read(apiProvider).retireBill(billId, reason: 'cancelled').then((_) {}, onError: (Object _) {}));
+  }
+
+  /// Something for the back office that is not a sale (a refund for the Z),
+  /// kept on the phone until the server takes it.
+  Future<void> queue(String path, Map<String, Object?> body) async {
+    if (state.demo) return;
+    await _outbox.add(path, body);
+    await _flushOutbox();
   }
 
   void setServiceCharge(String billId, double percent) =>

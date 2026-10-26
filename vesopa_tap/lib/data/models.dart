@@ -257,6 +257,9 @@ class Bill {
     this.member,
     this.voucherCode,
     this.voucherMinor = 0,
+    this.discountPercent = 0,
+    this.discountFixedMinor = 0,
+    this.discountReason = '',
   });
   final String id;
   final String name;
@@ -286,11 +289,19 @@ class Bill {
   final String? voucherCode;
   final int voucherMinor;
 
+  /// A discount the clerk gave on the whole sale: a percentage, or pence off.
+  final double discountPercent;
+  final int discountFixedMinor;
+  final String discountReason;
+
   int get subtotalMinor => lines.fold(0, (s, l) => s + l.totalMinor);
 
-  /// The member's standing discount and any voucher, never more than the bill.
-  int get discountMinor => (memberDiscountMinor + voucherMinor).clamp(0, subtotalMinor);
+  /// The member's standing discount, any voucher and the clerk's discount,
+  /// never more than the bill.
+  int get discountMinor => (memberDiscountMinor + voucherMinor + manualDiscountMinor).clamp(0, subtotalMinor);
   int get memberDiscountMinor => member?.discountOn(subtotalMinor) ?? 0;
+  int get manualDiscountMinor =>
+      ((subtotalMinor * discountPercent / 100).round() + discountFixedMinor).clamp(0, subtotalMinor);
 
   /// Service charge on what is left after the discount.
   int get serviceMinor => ((subtotalMinor - discountMinor) * serviceChargePercent / 100).round();
@@ -315,6 +326,9 @@ class Bill {
     bool clearMember = false,
     String? voucherCode,
     int? voucherMinor,
+    double? discountPercent,
+    int? discountFixedMinor,
+    String? discountReason,
   }) =>
       Bill(
         id: id,
@@ -335,6 +349,9 @@ class Bill {
         member: clearMember ? null : (member ?? this.member),
         voucherCode: voucherCode ?? this.voucherCode,
         voucherMinor: voucherMinor ?? this.voucherMinor,
+        discountPercent: discountPercent ?? this.discountPercent,
+        discountFixedMinor: discountFixedMinor ?? this.discountFixedMinor,
+        discountReason: discountReason ?? this.discountReason,
       );
 }
 
