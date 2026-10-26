@@ -264,14 +264,19 @@ class _FloatingKeyboardState extends State<_FloatingKeyboard> {
             ),
           ),
         );
+        // Part of the box being typed into, as far as taps go. On Windows a
+        // text field lets go of its focus at any touch outside it, and the
+        // board is drawn in an overlay of its own -- so the first key pressed
+        // closed the keyboard before the letter landed, and nothing could be
+        // typed (Nicki, Pontardawe RFC, 2026-10-26: a new member's name).
         if (docked) {
-          return Positioned(left: 0, right: 0, bottom: 0, child: board);
+          return Positioned(left: 0, right: 0, bottom: 0, child: TextFieldTapRegion(child: board));
         }
         return Positioned(
           left: rect!.left,
           top: rect.top,
           width: rect.width,
-          child: Stack(
+          child: TextFieldTapRegion(child: Stack(
             children: [
               board,
               // The resize grip, bottom right.
@@ -298,7 +303,7 @@ class _FloatingKeyboardState extends State<_FloatingKeyboard> {
                 ),
               ),
             ],
-          ),
+          )),
         );
       },
     );
