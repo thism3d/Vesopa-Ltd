@@ -4,9 +4,9 @@
 ///
 ///   GET /till/products?office=   every product (price in pounds, allergens
 ///                                as a comma list, printer routes = stations)
-///   GET /till/modifiers?office=  groups (min/max, a screen of choices) and
+///   GET /api/till/modifiers?office=  groups (min/max, a screen of choices) and
 ///                                which products ask which groups
-///   GET /till/screens?office=    the screens those choices sit on
+///   GET /api/till/screens?office=    the screens those choices sit on
 ///   GET /till/floor?office=      rooms and their tables
 library;
 

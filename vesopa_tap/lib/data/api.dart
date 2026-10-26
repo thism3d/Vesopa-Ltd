@@ -1,9 +1,10 @@
 /// Vesopa Tap's calls to the back office.
 ///
 /// A Tap phone is a terminal. It is commissioned like a till and reads the
-/// till's own endpoints, which live at the server's root (`/till/...`; the
-/// back office's own are under `/api`): staff, products, modifiers, screens,
-/// the floor and the shared open bills. So a table opened on a phone is on
+/// till's own endpoints, mostly at the server's root (`/till/...`): staff,
+/// products, the floor and the shared open bills. Screens and modifiers are
+/// the exception, mounted under `/api/till/...` (vesopa_server/src/server.js,
+/// tillScreenRoutes and tillModifierRoutes), as the till itself reads them. So a table opened on a phone is on
 /// every till at once and the other way round. Card payments go through
 /// /api/tap/* (vesopa_server/src/tap.js): the venue's Dojo key never comes
 /// to the phone.
@@ -121,8 +122,8 @@ class TapApi {
   }
 
   Future<List<dynamic>> products() async => (await _send('GET', '/till/products?office=$_o'))['items'] as List? ?? const [];
-  Future<Map<String, dynamic>> modifiers() => _send('GET', '/till/modifiers?office=$_o');
-  Future<List<dynamic>> screens() async => (await _send('GET', '/till/screens?office=$_o'))['screens'] as List? ?? const [];
+  Future<Map<String, dynamic>> modifiers() => _send('GET', '/api/till/modifiers?office=$_o');
+  Future<List<dynamic>> screens() async => (await _send('GET', '/api/till/screens?office=$_o'))['screens'] as List? ?? const [];
   Future<List<dynamic>> floor() async => (await _send('GET', '/till/floor?office=$_o'))['items'] as List? ?? const [];
 
   // ---- Shared open bills (vesopa_server/src/terminals.js) --------------------------

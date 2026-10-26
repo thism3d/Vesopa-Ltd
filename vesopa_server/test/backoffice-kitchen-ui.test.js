@@ -28,6 +28,13 @@ const source = fs.readFileSync(
 const from = source.indexOf('function kdsEditUser(user) {');
 assert.ok(from > 0, 'kdsEditUser not found in public/app.js');
 
+// The TV sizes the editor offers are declared further up app.js than the
+// editors, so the slice above does not carry them; lifted out on their own.
+const sizesFrom = source.indexOf('const KDS_TV_SIZES = [');
+const sizesTo = source.indexOf('\n', source.indexOf('const kdsSizeLabel ='));
+assert.ok(sizesFrom > 0 && sizesTo > sizesFrom, 'KDS_TV_SIZES not found in public/app.js');
+const sizes = source.slice(sizesFrom, sizesTo);
+
 /**
  * Run the editors with the browser stubbed out.
  *
@@ -54,6 +61,7 @@ function harness() {
     s.toUpperCase().replace('KP', 'KP ');
 
   vm.createContext(context);
+  vm.runInContext(sizes, context);
   vm.runInContext(source.slice(from), context);
   return {
     calls,
