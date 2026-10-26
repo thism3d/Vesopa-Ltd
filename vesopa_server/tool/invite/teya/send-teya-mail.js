@@ -34,6 +34,11 @@ const MAILS = {
     env: '/home/vesopasoftware/web/vesopasoftware.com/private/nodeapp/.env',
     to: ['partner@teya.com', 'globalpartner@teya.com', 'info@vesopa.com', 'muzahid@vesopa.com', 'info@vesopasoftware.com'],
   },
+  // 26 Oct 2026: answer to Teya's "is that correct?" on the certification ticket.
+  '--reply': {
+    eml: 'Vesopa-Teya-reply.eml',
+    to: ['help@teya.com', 'partnersupport@teya.com', 'global.partnerships@teya.com', 'info@vesopasoftware.com', 'info@vesopa.com'],
+  },
   '--certify': {
     eml: 'Vesopa-Teya-certify.eml',
     to: ['partnersupport@teya.com', 'info@vesopasoftware.com', 'info@vesopa.com'],
