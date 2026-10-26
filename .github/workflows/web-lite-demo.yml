@@ -1,0 +1,73 @@
+# The Vesopa EPOS Lite demo as a web page on GitHub Pages, for iPhone users (and
+# any browser) with no app store and no sign-in:
+#
+#   https://thism3d.github.io/Vesopa-Ltd/
+#
+# On an iPhone, Share > Add to Home Screen makes it an app: full screen, the V
+# icon. Built by vesopa_epos_lite/tool/web_demo.py; the real app with
+# LITE_DEMO_ONLY (PIN 1111, pretend card payments).
+#
+# Runs on every push to main that changes Lite or Tap, and by hand from
+# Actions > "Web - Lite demo" > Run workflow. Needs GitHub Pages switched on
+# once, with its source set to GitHub Actions (Settings > Pages); the run's
+# first step tries to do that itself.
+
+name: Web - Lite demo
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'vesopa_epos_lite/lib/**'
+      - 'vesopa_epos_lite/assets/**'
+      - 'vesopa_epos_lite/pubspec.*'
+      - 'vesopa_epos_lite/tool/web_demo.py'
+      - 'vesopa_tap/lib/**'
+      - 'vesopa_tap/pubspec.*'
+      - '.github/workflows/web-lite-demo.yml'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.8
+          cache: true
+
+      - name: Build the web demo
+        run: |
+          pip install --quiet pillow
+          python3 vesopa_epos_lite/tool/web_demo.py "$RUNNER_TEMP/site" --base-href "/${GITHUB_REPOSITORY#*/}/"
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ runner.temp }}/site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
