@@ -1,0 +1,70 @@
+# One link for everyone who should try Vesopa EPOS Lite, with no sign-in and
+# nothing to switch on:
+#
+#   https://raw.githack.com/thism3d/Vesopa-Ltd/lite-demo-web/index.html
+#
+# A page (vesopa_epos_lite/tool/share_index.html) with "Open the demo" (the web
+# app in app/, from vesopa_epos_lite/tool/web_demo.py, which an iPhone can add to
+# its home screen) and "Download the Android app" (the APK android-lite-demo.yml
+# keeps on lite-demo-apk). The files live on the lite-demo-web branch, one
+# commit replaced on every build; githack serves a public repository's files as
+# a website. It needs nothing from the repository's settings, unlike GitHub
+# Pages (web-lite-demo.yml), which only the owner can switch on.
+#
+# Runs on every push to main that changes Lite or Tap, and by hand from
+# Actions > "Share - Lite demo" > Run workflow.
+
+name: Share - Lite demo
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'vesopa_epos_lite/lib/**'
+      - 'vesopa_epos_lite/assets/**'
+      - 'vesopa_epos_lite/pubspec.*'
+      - 'vesopa_epos_lite/tool/web_demo.py'
+      - 'vesopa_epos_lite/tool/share_index.html'
+      - 'vesopa_tap/lib/**'
+      - 'vesopa_tap/pubspec.*'
+      - '.github/workflows/share-lite-demo.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: share-lite-demo
+  cancel-in-progress: true
+
+jobs:
+  site:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.8
+          cache: true
+
+      - name: Build the page and the web demo
+        run: |
+          pip install --quiet pillow
+          python3 vesopa_epos_lite/tool/web_demo.py "$RUNNER_TEMP/site/app"
+          cp vesopa_epos_lite/tool/share_index.html "$RUNNER_TEMP/site/index.html"
+
+      - name: Put it on the lite-demo-web branch
+        working-directory: ${{ runner.temp }}/site
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          git init -q -b lite-demo-web
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Vesopa EPOS Lite share page and web demo from ${GITHUB_SHA::7}"
+          git push -q -f "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" lite-demo-web
+          echo "Share: https://raw.githack.com/${GITHUB_REPOSITORY}/lite-demo-web/index.html" >> "$GITHUB_STEP_SUMMARY"

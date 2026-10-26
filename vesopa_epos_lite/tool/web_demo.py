@@ -1,13 +1,15 @@
 """Build the Vesopa EPOS Lite demo as a web page anyone can open, and add to an
 iPhone's home screen as an app (full screen, the V icon, no browser bar).
 
-    python vesopa_epos_lite/tool/web_demo.py <out_dir> --base-href /Vesopa-Ltd/
+    python vesopa_epos_lite/tool/web_demo.py <out_dir>                        # works under any address
+    python vesopa_epos_lite/tool/web_demo.py <out_dir> --base-href /Vesopa-Ltd/  # under one fixed path
 
 The real app built with LITE_DEMO_ONLY: straight into the demo venue (PIN 1111),
 pretend card payments. Built in a scratch copy of vesopa_epos_lite, so the
 checkout is not touched (Flutter's web/ folder is made there, not committed).
-Run by .github/workflows/web-lite-demo.yml for GitHub Pages; <base-href> is
-the path the page is served under, starting and ending with "/".
+Without --base-href every path in the page is relative, so the same files work
+wherever they are served (share-lite-demo.yml, through githack); with it, they
+expect that one path (web-lite-demo.yml, GitHub Pages).
 
 The output is only what the page loads: one renderer (CanvasKit, both builds),
 no source maps, no Flutter service worker.
@@ -28,8 +30,7 @@ INDEX = """<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <base href="{base}">
-  <title>Vesopa EPOS Lite</title>
+{base_tag}  <title>Vesopa EPOS Lite</title>
   <meta name="description" content="Try Vesopa EPOS Lite, the fast till for bars, cafés, pop-ups and events. Enter PIN 1111.">
   <meta property="og:title" content="Vesopa EPOS Lite demo">
   <meta property="og:description" content="The fast till for bars, cafés, pop-ups and events. Open it and enter PIN 1111.">
@@ -65,8 +66,8 @@ MANIFEST = """{{
   "name": "Vesopa EPOS Lite",
   "short_name": "EPOS Lite",
   "description": "The fast till for bars, cafés, pop-ups and events. Demo: PIN 1111.",
-  "start_url": "{base}",
-  "scope": "{base}",
+  "start_url": "{start}",
+  "scope": "{start}",
   "display": "standalone",
   "orientation": "any",
   "background_color": "#10130A",
@@ -106,8 +107,8 @@ def icons(out):
         im.resize((n, n), Image.LANCZOS).save(out / f"icon-{n}.png", optimize=True)
 
 
-def build(out_dir, base):
-    if not (base.startswith("/") and base.endswith("/")):
+def build(out_dir, base=None):
+    if base is not None and not (base.startswith("/") and base.endswith("/")):
         raise SystemExit("--base-href starts and ends with /")
     out_dir = Path(out_dir).resolve()
     fl = flutter()
@@ -119,7 +120,7 @@ def build(out_dir, base):
             "path: ../vesopa_tap", f"path: {(REPO / 'vesopa_tap').as_posix()}"), encoding="utf-8")
         run([fl, "create", "--platforms", "web", "--project-name", "vesopa_epos_lite", "."], app)
         run([fl, "build", "web", "--release", "--no-web-resources-cdn", "--no-wasm-dry-run",
-             "--base-href", base, "--dart-define=LITE_DEMO_ONLY=true"], app)
+             *(["--base-href", base] if base else []), "--dart-define=LITE_DEMO_ONLY=true"], app)
         web = app / "build" / "web"
         if out_dir.exists():
             shutil.rmtree(out_dir)
@@ -130,9 +131,12 @@ def build(out_dir, base):
                 shutil.copy(p, out_dir / rel)
     boot = out_dir / "flutter_bootstrap.js"
     js = boot.read_text(encoding="utf-8")
-    boot.write_text(js[:js.rindex("_flutter.loader.load(")] + "_flutter.loader.load({});\n", encoding="utf-8")
-    (out_dir / "index.html").write_text(INDEX.format(base=base), encoding="utf-8")
-    (out_dir / "manifest.json").write_text(MANIFEST.format(base=base), encoding="utf-8")
+    # Relative: the engine, its renderer and the assets are found next to the page.
+    config = "{}" if base else '{config: {entrypointBaseUrl: "./", assetBase: "./", canvasKitBaseUrl: "canvaskit/"}}'
+    boot.write_text(js[:js.rindex("_flutter.loader.load(")] + f"_flutter.loader.load({config});\n", encoding="utf-8")
+    base_tag = f'  <base href="{base}">\n' if base else ""
+    (out_dir / "index.html").write_text(INDEX.format(base_tag=base_tag), encoding="utf-8")
+    (out_dir / "manifest.json").write_text(MANIFEST.format(start=base or "./"), encoding="utf-8")
     icons(out_dir)
     # GitHub Pages runs Jekyll unless told not to, and Jekyll drops folders
     # whose names start with "_" or ".".
@@ -143,5 +147,5 @@ def build(out_dir, base):
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         raise SystemExit(__doc__)
-    base = sys.argv[sys.argv.index("--base-href") + 1] if "--base-href" in sys.argv else "/"
+    base = sys.argv[sys.argv.index("--base-href") + 1] if "--base-href" in sys.argv else None
     build(sys.argv[1], base)
