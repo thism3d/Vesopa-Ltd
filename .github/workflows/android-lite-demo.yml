@@ -1,0 +1,70 @@
+# The Vesopa EPOS Lite demo for Android, built on GitHub's machine and put on
+# the "lite-demo" release, so there is one link anyone can download it from:
+#
+#   https://github.com/thism3d/Vesopa-Ltd/releases/download/lite-demo/VesopaEPOSLite-demo.apk
+#
+# It is the real app built with LITE_DEMO_ONLY: it opens straight into the demo
+# bar (PIN 1111), its card payments are pretend and nothing reaches a back
+# office. It runs again on every push to main that changes Lite or Tap, and by
+# hand from Actions > "Android - Lite demo" > Run workflow.
+#
+# Signed with the runner's own debug key, so a phone with an older demo on it
+# must uninstall that one before installing a new one. It is never the Play
+# build: that is signed with the upload key (android-venue-app.yml's secrets).
+
+name: Android - Lite demo
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'vesopa_epos_lite/**'
+      - 'vesopa_tap/lib/**'
+      - 'vesopa_tap/pubspec.*'
+      - '.github/workflows/android-lite-demo.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-lite-demo
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.8
+          cache: true
+
+      - name: Build the demo APK
+        working-directory: vesopa_epos_lite
+        run: |
+          flutter pub get
+          flutter build apk --release --dart-define=LITE_DEMO_ONLY=true --target-platform android-arm,android-arm64
+          cp build/app/outputs/flutter-apk/app-release.apk "$RUNNER_TEMP/VesopaEPOSLite-demo.apk"
+
+      - name: Put it on the lite-demo release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes="Vesopa EPOS Lite demo for Android, built from ${GITHUB_SHA::7}. Open it and enter PIN 1111 (2222 and 3333 are bar staff). Card payments are pretend; nothing reaches a back office. Installing an update? Uninstall the old demo first."
+          if gh release view lite-demo >/dev/null 2>&1; then
+            gh release edit lite-demo --title "Vesopa EPOS Lite demo" --notes "$notes" --prerelease
+          else
+            gh release create lite-demo --title "Vesopa EPOS Lite demo" --notes "$notes" --prerelease --target "$GITHUB_SHA"
+          fi
+          gh release upload lite-demo "$RUNNER_TEMP/VesopaEPOSLite-demo.apk" --clobber
+          echo "Download: https://github.com/${GITHUB_REPOSITORY}/releases/download/lite-demo/VesopaEPOSLite-demo.apk" >> "$GITHUB_STEP_SUMMARY"
