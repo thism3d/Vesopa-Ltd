@@ -7,6 +7,7 @@
     python tool/deploy_lite_demo.py              # build both, back up, upload, verify
     python tool/deploy_lite_demo.py --web-only   # only the browser demo
     python tool/deploy_lite_demo.py --apk-only   # only the Android demo
+    python tool/deploy_lite_demo.py --remove     # take both off the site (backed up first)
 
 Both are the real app built with LITE_DEMO_ONLY: straight into the demo bar
 (PIN 1111), pretend card payments, nothing reaches a back office. Builds on this
@@ -156,7 +157,31 @@ def check_live():
             print(f"  {url}: {e}")
 
 
+def remove():
+    """Take the demo off the site. Both are backed up first, so this can be undone:
+    tar -xzf <backup> -C <app>/public restores demo/ and app/Vesopa-EPOS-Lite-Demo.apk."""
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    backup = f"{base.BACKUPS}/{DOMAIN}-demo-removed-{stamp}.tgz"
+    client = base.vesopa_ssh.connect()
+    try:
+        status, _ = base.sh(client, f"cd {APP}/public && mkdir -p {base.BACKUPS} && "
+                                    f"items=''; [ -d demo ] && items='demo'; [ -f app/{APK_NAME} ] && items=\"$items app/{APK_NAME}\"; "
+                                    f"if [ -z \"$items\" ]; then echo 'Nothing to remove: the demo is not on the site.'; "
+                                    f"else tar -czf {backup} $items && echo 'Backed up to {backup}' && "
+                                    f"rm -rf demo demo.new demo.old app/{APK_NAME} app/{APK_NAME}.part && echo 'Removed:' $items; fi")
+        if status:
+            raise SystemExit("Stopped: nothing was removed unless it says so above.")
+    finally:
+        client.close()
+    print("-- live (both should now be 404):")
+    check_live()
+
+
 def main():
+    if "--remove" in sys.argv:
+        print(f"== {DOMAIN}: removing the Vesopa EPOS Lite demo")
+        remove()
+        return
     check_only = "--check" in sys.argv
     web = "--apk-only" not in sys.argv
     apk = "--web-only" not in sys.argv
