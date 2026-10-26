@@ -1,7 +1,12 @@
-# The Vesopa EPOS Lite demo for Android, built on GitHub's machine and put on
-# the "lite-demo" release, so there is one link anyone can download it from:
+# The Vesopa EPOS Lite demo for Android, built on GitHub's machine and put where
+# a tap in Chrome downloads it straight away, with no sign-in:
 #
-#   https://github.com/thism3d/Vesopa-Ltd/releases/download/lite-demo/VesopaEPOSLite-demo.apk
+#   https://raw.githubusercontent.com/thism3d/Vesopa-Ltd/lite-demo-apk/Vesopa-EPOS-Lite-Demo.apk
+#
+# Not a release on github.com: a phone with the GitHub app installed opens every
+# github.com link in that app, which asks for a sign-in. raw.githubusercontent.com
+# goes to the browser. The APK is the only file on the lite-demo-apk branch, a
+# single commit replaced on every build, so the branch never grows.
 #
 # It is the real app built with LITE_DEMO_ONLY: it opens straight into the demo
 # bar (PIN 1111), its card payments are pretend and nothing reaches a back
@@ -54,17 +59,35 @@ jobs:
         run: |
           flutter pub get
           flutter build apk --release --dart-define=LITE_DEMO_ONLY=true --target-platform android-arm,android-arm64
-          cp build/app/outputs/flutter-apk/app-release.apk "$RUNNER_TEMP/VesopaEPOSLite-demo.apk"
+          mkdir -p "$RUNNER_TEMP/pub"
+          cp build/app/outputs/flutter-apk/app-release.apk "$RUNNER_TEMP/pub/Vesopa-EPOS-Lite-Demo.apk"
 
-      - name: Put it on the lite-demo release
+      - name: Put it on the lite-demo-apk branch
+        working-directory: ${{ runner.temp }}/pub
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          cat > README.md <<EOF
+          # Vesopa EPOS Lite demo for Android
+
+          Download: https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/lite-demo-apk/Vesopa-EPOS-Lite-Demo.apk
+
+          Built from ${GITHUB_SHA::7} by .github/workflows/android-lite-demo.yml; this branch is replaced on every build.
+          Open it on an Android phone, install, and enter PIN 1111. Card payments are pretend.
+          EOF
+          git init -q -b lite-demo-apk
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Vesopa EPOS Lite demo APK from ${GITHUB_SHA::7}"
+          git push -q -f "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" lite-demo-apk
+          echo "Download: https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/lite-demo-apk/Vesopa-EPOS-Lite-Demo.apk" >> "$GITHUB_STEP_SUMMARY"
+
+      # The earlier home of the demo, on github.com: taken down, so there is one link.
+      - name: Remove the old lite-demo release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          notes="Vesopa EPOS Lite demo for Android, built from ${GITHUB_SHA::7}. Open it and enter PIN 1111 (2222 and 3333 are bar staff). Card payments are pretend; nothing reaches a back office. Installing an update? Uninstall the old demo first."
           if gh release view lite-demo >/dev/null 2>&1; then
-            gh release edit lite-demo --title "Vesopa EPOS Lite demo" --notes "$notes" --prerelease
-          else
-            gh release create lite-demo --title "Vesopa EPOS Lite demo" --notes "$notes" --prerelease --target "$GITHUB_SHA"
+            gh release delete lite-demo --cleanup-tag --yes
           fi
-          gh release upload lite-demo "$RUNNER_TEMP/VesopaEPOSLite-demo.apk" --clobber
-          echo "Download: https://github.com/${GITHUB_REPOSITORY}/releases/download/lite-demo/VesopaEPOSLite-demo.apk" >> "$GITHUB_STEP_SUMMARY"
