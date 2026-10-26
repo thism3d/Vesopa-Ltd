@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Vesopa EPOS Lite</title>
+  <meta name="description" content="Try Vesopa EPOS Lite, the fast till for bars, cafés, pop-ups and events. Enter PIN 1111.">
+  <meta property="og:title" content="Vesopa EPOS Lite demo">
+  <meta property="og:description" content="The fast till for bars, cafés, pop-ups and events. Open it and enter PIN 1111.">
+  <meta property="og:image" content="icon-512.png">
+  <meta name="theme-color" content="#10130A">
+  <!-- Add to Home Screen on an iPhone: full screen, the V icon, its own name. -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="EPOS Lite">
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <link rel="icon" type="image/png" href="icon-192.png">
+  <link rel="manifest" href="manifest.json">
+  <style>
+    html, body { height: 100%; margin: 0; background: #10130A; color: #E9EDE0; overflow: hidden; }
+    #boot { position: fixed; inset: 0; display: grid; place-items: center; font: 600 15px/1.4 -apple-system, system-ui, sans-serif; }
+    #boot .wrap { text-align: center; padding: 0 24px; }
+    #boot img { display: block; width: 72px; height: 72px; border-radius: 16px; margin: 0 auto 16px; }
+    #boot small { display: block; margin-top: 6px; font-weight: 400; opacity: 0.7; }
+    @media (prefers-reduced-motion: no-preference) { #boot img { animation: pulse 1.4s ease-in-out infinite; } }
+    @keyframes pulse { 50% { transform: scale(0.92); opacity: 0.8; } }
+  </style>
+</head>
+<body>
+  <div id="boot"><div class="wrap"><img src="icon-192.png" alt="Vesopa">Loading the Vesopa EPOS Lite demo…<small>PIN 1111</small></div></div>
+  <script>window.addEventListener('flutter-first-frame', function () { var b = document.getElementById('boot'); if (b) b.remove(); });</script>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>
