@@ -15,7 +15,8 @@ const { zoned } = require('./posts');
 const MENU_API = (process.env.MENU_API || 'https://menu.vesopa.com').replace(/\/+$/, '');
 const MENU_SLUG = process.env.MENU_SLUG || 'pontardawe-rfc';
 /** The app on Google Play: on an Android phone this opens the Play Store app itself. */
-const ANDROID_STORE = club.web.android_app || 'https://play.google.com/store/apps/details?id=com.vesopaepos.pontardawerfc';
+const IOS_STORE = club.web.ios_app;
+const ANDROID_STORE = club.web.android_app ||'https://play.google.com/store/apps/details?id=com.vesopaepos.pontardawerfc';
 
 function photo(name, { cls = '', sizes = '(max-width: 700px) 100vw, 640px', lazy = true } = {}) {
   const m = images[name];
@@ -161,27 +162,28 @@ function home() {
 <section class="section app-news" aria-labelledby="app-news-h">
   <div class="wrap app-news-in">
     <div class="app-news-copy reveal">
-      <p class="kicker"><span class="app-news-new">New</span> Now on Google Play</p>
+      <p class="kicker"><span class="app-news-new">New</span> Now on the App Store</p>
       <h2 id="app-news-h">The Pontardawe RFC app is here</h2>
-      <p class="lead">Your members' card on your phone: show the code at the bar and the members' discount is applied, every time. Club news, fixtures and offers arrive as notifications, and on Wear OS your card is on your wrist.</p>
+      <p class="lead">Your members' card on your phone: show the code at the bar and the members' discount is applied, every time. Club news, fixtures and offers arrive as notifications, and on Apple Watch and Wear OS your card is on your wrist.</p>
       <ul class="app-news-ways">
         <li>${icon('phone', { size: 20 })}<span><b>Sign in your way:</b> your mobile number, an emailed code, a password, a passkey, or Google and Apple.</span></li>
         <li>${icon('shield', { size: 20 })}<span><b>Private by design:</b> no advertising, no tracking, no location. <a href="/app/privacy">App privacy</a></span></li>
       </ul>
       <div class="app-news-actions">
+        <a class="store-badge" href="${esc(IOS_STORE)}" rel="noopener" data-store="ios"><img src="/img/badges/app-store.svg" alt="Download on the App Store" width="144" height="48"></a>
         <a class="store-badge" href="${esc(ANDROID_STORE)}" rel="noopener" data-store="android"><img src="/img/badges/google-play.png" alt="Get it on Google Play" width="162" height="48"></a>
         <a class="btn btn-ghost" href="${esc(MEMBERS)}/">Use it on the web</a>
       </div>
-      <p class="muted small">iPhone and iPad: coming soon to the App Store. Members can sign in at <a href="${esc(MEMBERS)}/">member.pontardawerfc.com</a> today. <a href="/news/the-pontardawe-rfc-app-is-now-on-google-play">Read the news</a> &middot; <a href="/app/help">Help with the app</a></p>
+      <p class="muted small">On iPhone, iPad and Android. Members can also sign in at <a href="${esc(MEMBERS)}/">member.pontardawerfc.com</a>. <a href="/app/help">Help with the app</a></p>
     </div>
   </div>
   <div class="wrap">
-    <figure class="app-video reveal" data-yt="rOrT24s9flc" data-yt-title="Pontardawe RFC Members App: showcase">
+    <figure class="app-video reveal" data-yt="g7ghpbpwhDI" data-yt-title="Pontardawe RFC Members App">
       <button class="app-video-play" type="button" aria-label="Play the Pontardawe RFC app showcase video">
         <picture><source media="(max-width: 700px)" srcset="/media/app-showcase-960.jpg?v=${ASSET_VERSION}"><img src="/media/app-showcase.jpg?v=${ASSET_VERSION}" alt="The members' app is here: the Pontardawe RFC app showcase" width="1920" height="1080" loading="lazy" decoding="async"></picture>
         <span class="app-video-hint">${icon('arrow', { size: 18 })} Tap to watch</span>
       </button>
-      <figcaption class="muted small">The Pontardawe RFC members' app showcase, by Vesopa Software. Playing it loads YouTube (privacy-enhanced mode). <a href="https://www.youtube.com/watch?v=rOrT24s9flc" rel="noopener">Watch on YouTube</a></figcaption>
+      <figcaption class="muted small">The Pontardawe RFC members' app showcase, by Vesopa Software. Playing it loads YouTube (privacy-enhanced mode). <a href="https://youtu.be/g7ghpbpwhDI" rel="noopener">Watch on YouTube</a></figcaption>
     </figure>
   </div>
 </section>
@@ -945,7 +947,7 @@ function appHelpPage() {
     sections: [
       ['get', 'Getting the app', `<ul>
 <li><b>Android phones and Wear OS watches:</b> <a href="${esc(ANDROID_STORE)}" rel="noopener">Pontardawe RFC on Google Play</a>.</li>
-<li><b>iPhone and iPad:</b> coming soon to the App Store.</li>
+<li><b>iPhone, iPad and Apple Watch:</b> <a href="${esc(IOS_STORE)}" rel="noopener">Pontardawe RFC on the App Store</a>.</li>
 <li><b>Any phone or computer:</b> <a href="${esc(MEMBERS)}/">member.pontardawerfc.com</a>, the same card and account in your browser.</li>
 </ul>`],
       ['signin', 'Signing in', `<p>The app is for club members. Sign in with the email address or mobile number the club has for you:</p><ul>
