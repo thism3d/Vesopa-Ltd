@@ -11,17 +11,15 @@ import 'package:vesopa_tap/ui/theme.dart';
 
 const appName = 'Vesopa EPOS Lite';
 
-/// The till mark: a lime tile with the register, as the Vesopa EPOS icon.
+/// The Vesopa V on lime: the same mark as the app icon on the home screen.
 class LiteMark extends StatelessWidget {
   const LiteMark({super.key, this.size = 40});
   final double size;
 
   @override
-  Widget build(BuildContext context) => Container(
-    width: size,
-    height: size,
-    decoration: BoxDecoration(color: Tp.lime, borderRadius: BorderRadius.circular(size * 0.28)),
-    child: Icon(Icons.point_of_sale_rounded, size: size * 0.6, color: Tp.ink),
+  Widget build(BuildContext context) => ClipRRect(
+    borderRadius: BorderRadius.circular(size * 0.22),
+    child: Image.asset('assets/brand/vesopa_v.png', width: size, height: size, filterQuality: FilterQuality.medium, semanticLabel: 'Vesopa'),
   );
 }
 
