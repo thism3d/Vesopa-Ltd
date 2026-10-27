@@ -2,8 +2,11 @@
 /// the bills open on them. Money is always whole pence (int), as on the till.
 library;
 
+import 'mix_match_engine.dart';
+import 'mix_match_types.dart';
 import 'till_permissions.dart';
 
+export 'mix_match_engine.dart';
 export 'till_permissions.dart';
 import 'package:flutter/foundation.dart';
 
@@ -340,7 +343,18 @@ class Bill {
 
   /// The member's standing discount, any voucher and the clerk's discount,
   /// never more than the bill.
-  int get discountMinor => (memberDiscountMinor + voucherMinor + manualDiscountMinor).clamp(0, subtotalMinor);
+  int get discountMinor => (dealMinor + memberDiscountMinor + voucherMinor + manualDiscountMinor).clamp(0, subtotalMinor);
+
+  /// The venue's mix & match deals (back office), worked out by the till's own
+  /// engine. Set once the menu loads; none until then.
+  static MixMatchEngine deals = const MixMatchEngine([], {});
+
+  /// The deals this bill earns, and what they take off.
+  MixMatchResult get dealsApplied => deals.apply([
+        for (final l in lines)
+          if (l.product.plu != null) OrderLine(pluId: l.product.plu!, quantity: l.quantity.toDouble(), unitPriceMinor: l.unitMinor),
+      ]);
+  int get dealMinor => dealsApplied.totalSavingMinor;
   int get memberDiscountMinor => member?.discountOn(subtotalMinor) ?? 0;
   int get manualDiscountMinor =>
       ((subtotalMinor * discountPercent / 100).round() + discountFixedMinor).clamp(0, subtotalMinor);

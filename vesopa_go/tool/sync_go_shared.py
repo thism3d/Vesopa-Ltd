@@ -21,6 +21,14 @@ GO = REPO / "vesopa_go"
 
 SHARED = [
     {"kind": "whole", "till": "lib/data/till_permissions.dart", "go": "lib/data/till_permissions.dart"},
+    # The engine as it is, reading Go's own MixMatchDeal and OrderLine
+    # (lib/data/mix_match_types.dart) instead of the till's database rows.
+    {
+        "kind": "whole",
+        "till": "lib/data/mix_match_engine.dart",
+        "go": "lib/data/mix_match_engine.dart",
+        "swap": [("import 'local/database.dart';", "import 'mix_match_types.dart';")],
+    },
     {
         "kind": "models",
         "till": "lib/data/screens.dart",
@@ -46,6 +54,9 @@ SHARED = [
 def build(item):
     till = (TILL / item["till"]).read_bytes()
     if item["kind"] == "whole":
+        for old, new in item.get("swap", []):
+            assert old.encode() in till, (item["till"], old)
+            till = till.replace(old.encode(), new.encode())
         return till
     text = till.decode("utf-8").replace("\r\n", "\n")
     body = text[: text.index(item["stop"])]

@@ -31,6 +31,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../payments/payment_service.dart';
 import 'go_options.dart';
+import 'mix_match_types.dart';
 import 'lan/lan_link.dart' show LanMessage;
 import 'lan/lan_service.dart';
 import '../config/constants.dart' show apiBase;
@@ -439,10 +440,12 @@ class TapSession extends Notifier<TapState> {
         api.staffPhotos().catchError((Object _) => <String, dynamic>{}),
         api.layouts('tablet').catchError((Object _) => <String, dynamic>{}),
         api.layouts('phone').catchError((Object _) => <String, dynamic>{}),
+        api.deals().catchError((Object _) => <dynamic>[]),
       ]);
       final raw = {
         'staff': [for (final c in results[0] as List<Clerk>) {'id': c.id, 'name': c.name, 'pin': c.pin, 'swipe_card': c.card, 'permission_group': c.group, 'perms': c.permissions}],
         'products': results[1],
+        'deals': results[11],
         'modifiers': results[2],
         'screens': results[3],
         'floor': results[4],
@@ -467,6 +470,23 @@ class TapSession extends Notifier<TapState> {
   }
 
   void _apply(Map<String, dynamic> raw) {
+    // The venue's mix & match, as the till reads /till/deals.
+    final deals = <MixMatchDeal>[];
+    final members = <int, Set<int>>{};
+    for (final d in raw['deals'] as List? ?? const []) {
+      final m = Map<String, dynamic>.from(d as Map);
+      final id = (m['id'] as num?)?.toInt();
+      if (id == null) continue;
+      deals.add(MixMatchDeal(
+        id: id,
+        name: '${m['name'] ?? ''}',
+        triggerQty: (m['trigger_qty'] as num?)?.toInt() ?? 2,
+        dealPriceMinor: (m['deal_price_minor'] as num?)?.toInt() ?? 0,
+        active: m['active'] == null || m['active'] == true || m['active'] == 1,
+      ));
+      members[id] = {for (final p in m['plu_ids'] as List? ?? const []) (p as num).toInt()};
+    }
+    Bill.deals = MixMatchEngine(deals, members);
     final menu = menuFrom(
       products: raw['products'] as List? ?? const [],
       modifiers: raw['modifiers'] as Map<String, dynamic>?,

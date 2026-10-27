@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vesopa_go/data/mix_match_types.dart';
 import 'package:vesopa_go/data/models.dart';
 import 'package:vesopa_go/counter/ui/receipt_print.dart';
 import 'package:vesopa_go/data/session.dart';
@@ -50,5 +51,19 @@ void main() {
     expect(manager.canApprove(TillPermission.refund), isTrue);
     // As the device keeps them, and back.
     expect(Clerk.fromJson({'id': 2, 'name': 'Alex', 'pin': '2222', 'perms': staff.permissions}).can(TillPermission.refund), isFalse);
+  });
+
+  test('mix and match: any two of the deal for its price, the dearest first, never more than the shelf price', () {
+    Bill.deals = const MixMatchEngine([MixMatchDeal(id: 1, name: 'Any 2 sides', triggerQty: 2, dealPriceMinor: 500)], {1: {11, 12}});
+    const chips = Product(id: 'plu11', plu: 11, name: 'Chips', priceMinor: 350, category: 'sides');
+    const rings = Product(id: 'plu12', plu: 12, name: 'Onion rings', priceMinor: 400, category: 'sides');
+    final bill = Bill(id: 'b', name: 'Sale', clerk: 'Sam', openedAt: DateTime(2026), lines: const [
+      BillLine(id: 'a', product: chips),
+      BillLine(id: 'b', product: rings, quantity: 2),
+    ]);
+    // 1150 of sides: one pair (400 + 400) for 500 saves 300, the chips alone stay full price.
+    expect(bill.dealMinor, 300);
+    expect(bill.totalMinor, 1150 - 300);
+    Bill.deals = const MixMatchEngine([], {});
   });
 }

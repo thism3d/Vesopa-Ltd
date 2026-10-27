@@ -212,6 +212,9 @@ class TapApi {
   Future<void> saveLayout(String form, int screenId, List<Map<String, dynamic>>? buttons, {required int clerkId, required String pin}) =>
       _send('PUT', '/api/tap/layouts/$form/$screenId', {'buttons': buttons, 'clerk_id': clerkId, 'pin': pin});
 
+  /// The venue's mix & match deals, as the till reads them.
+  Future<List<dynamic>> deals() async => (await _send('GET', '/till/deals?office=$_o'))['items'] as List? ?? const [];
+
   /// Staff photos, `{photos: {id: url}}`.
   Future<Map<String, dynamic>> staffPhotos() => _send('GET', '/api/tap/staff-photos');
 

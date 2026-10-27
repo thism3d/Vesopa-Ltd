@@ -250,7 +250,10 @@ class _SalePanelState extends ConsumerState<SalePanel> {
             children: [
               if (bill.discountMinor > 0) ...[
                 _Row('Subtotal', bill.subtotalMinor),
-                _Row(bill.discountReason.isEmpty ? 'Discount' : 'Discount (${bill.discountReason})', -bill.discountMinor),
+                // Each mix & match deal by name, as the till lists them.
+                for (final d in bill.dealsApplied.deals) _Row(d.times > 1 ? '${d.name} ×${d.times}' : d.name, -d.savingMinor),
+                if (bill.discountMinor - bill.dealMinor > 0)
+                  _Row(bill.discountReason.isEmpty ? 'Discount' : 'Discount (${bill.discountReason})', -(bill.discountMinor - bill.dealMinor)),
               ],
               if (bill.paidMinor > 0) _Row('Paid so far', -bill.paidMinor),
               _Row(bill.paidMinor > 0 ? 'Left to pay' : 'Total', bill.dueMinor, bold: true),
