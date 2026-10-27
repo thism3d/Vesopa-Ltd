@@ -31,6 +31,9 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../payments/payment_service.dart';
 import 'go_options.dart';
+import 'lan/lan_link.dart' show LanMessage;
+import 'lan/lan_service.dart';
+import '../config/constants.dart' show apiBase;
 import 'screen_set.dart';
 
 export 'go_options.dart';
@@ -520,6 +523,7 @@ class TapSession extends Notifier<TapState> {
     if (state.demo) return;
     if (_connected) unawaited(pullBills());
     _connectLive();
+    if (_connected) unawaited(_joinLan());
     // The safety net under the live connection: slow while the socket is up,
     // every few seconds when it is not.
     _billTimer = Timer.periodic(const Duration(seconds: 5), (t) {
@@ -630,6 +634,55 @@ class TapSession extends Notifier<TapState> {
     } on TapApiError catch (e) {
       state = state.copyWith(online: e.status != 0);
     }
+  }
+
+  // ---- The venue's local link (vesopa_epos lib/data/lan, the till's own) --------
+  //
+  // Bills straight from the tills over the venue's network, in the shape the
+  // tills publish them ('bills', the open-bills feed's rows), and this device's
+  // own bills to them: milliseconds rather than the next poll, and still there
+  // when the internet is not. The tills' local addresses come from the back
+  // office with the venue key (/api/lan/key), which is also how an iPhone finds
+  // them: iOS does not let an app broadcast without Apple's multicast
+  // entitlement (applied for).
+
+  bool _lanJoined = false;
+
+  Future<void> _joinLan() async {
+    final token = ref.read(apiProvider).token;
+    if (token == null || token.isEmpty || _deviceId.isEmpty) return;
+    try {
+      await LanService.instance.configure(
+        apiBase: apiBase,
+        token: token,
+        deviceId: 'go-$_deviceId',
+        name: terminalName,
+        version: 'go',
+        role: 'go',
+      );
+      if (_lanJoined) return;
+      _lanJoined = true;
+      LanService.instance.subscribe('bills', _onLanBill);
+    } catch (_) {
+      // The local link is the fast path; the back office is still there.
+    }
+  }
+
+  void _onLanBill(LanMessage m) {
+    final id = m.key;
+    if (id == null) return;
+    final d = m.data;
+    final bills = Map.of(state.bills);
+    if (d == null) {
+      if (bills[id]?.heldBy != null) bills.remove(id);
+    } else if (d is Map) {
+      final row = {...Map<String, dynamic>.from(d), 'id': id};
+      if (row['terminal'] == terminalName) return;
+      final mirrored = _billFromFeed(row);
+      if (mirrored == null) return;
+      bills[id] = mirrored;
+    }
+    state = state.copyWith(bills: bills, sharing: true);
   }
 
   Bill? _billFromFeed(Map<String, dynamic> row) {
@@ -924,8 +977,15 @@ class TapSession extends Notifier<TapState> {
   void _put(Bill bill, {bool share = true}) {
     state = state.copyWith(bills: {...state.bills, bill.id: bill});
     if (share && _connected && bill.heldBy == null) {
-      // On the venue's shared plan at once: the tills see this table now.
-      unawaited(ref.read(apiProvider).saveBill(openBillPayload(bill, terminal: terminalName)).then((_) {}, onError: (Object _) {}));
+      // On the venue's shared plan at once: the tills see this table now,
+      // over the venue's network first and the back office as well.
+      final payload = openBillPayload(bill, terminal: terminalName);
+      if (_lanJoined) {
+        try {
+          LanService.instance.publish('bills', {...payload, 'changed_at': LanService.instance.now()}, key: bill.id);
+        } catch (_) {}
+      }
+      unawaited(ref.read(apiProvider).saveBill(payload).then((_) {}, onError: (Object _) {}));
     }
   }
 }

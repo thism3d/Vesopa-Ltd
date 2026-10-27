@@ -13,7 +13,9 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "vesopa_epos" / "lib" / "data" / "lan"
 FILES = ["lan_link.dart", "lan_service.dart"]
-APPS = ["vesopa_epos_kitchen", "vesopa_epos_display"]
+# Vesopa Go too (2026-10-27): tables and bills from the tills over the venue's
+# own network, the main till's address from the back office (iOS blocks UDP).
+APPS = ["vesopa_epos_kitchen", "vesopa_epos_display", "vesopa_go"]
 
 
 def main():
