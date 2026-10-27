@@ -29,10 +29,9 @@ class CurrentSale extends Notifier<String?> {
   String add(Product product, {List<Choice> choices = const [], int quantity = 1}) {
     final id = ensure();
     final session = ref.read(tapProvider.notifier);
-    final before = ref.read(tapProvider).bills[id]!.lines.length;
-    session.addLine(id, product, choices: choices);
-    final lines = ref.read(tapProvider).bills[id]!.lines;
-    if (quantity > 1 && lines.length > before) session.changeQuantity(id, lines.last.id, quantity - 1);
+    // The line it went on: a new one, or a stacked one already on the sale.
+    final line = session.addLine(id, product, choices: choices);
+    if (quantity > 1) session.changeQuantity(id, line, quantity - 1);
     return id;
   }
 
@@ -49,13 +48,14 @@ class CurrentSale extends Notifier<String?> {
 
 @immutable
 class LiteSettings {
-  const LiteSettings({this.allergenAlerts = true, this.cardVia = 'tap', this.cashButtons = const [500, 1000, 2000, 5000]});
+  const LiteSettings({this.allergenAlerts = true, this.cardVia = '', this.cashButtons = const [500, 1000, 2000, 5000]});
 
   /// Warn when an item with allergens goes on a sale.
   final bool allergenAlerts;
 
   /// `tap`: this device reads the card (a phone, or a Dojo handheld).
   /// `machine`: the venue's Dojo card machine beside it.
+  /// Empty: the venue's choice for this kind of device (see [cardVia] below).
   final String cardVia;
 
   /// The quick cash buttons, in pence.
@@ -92,6 +92,19 @@ class LiteSettingsStore extends Notifier<LiteSettings> {
       if (cardVia != null) await p.setString(_via, cardVia);
     } catch (_) {}
   }
+}
+
+/// How this device takes a card: its own choice, else the venue's for the
+/// platform (back office: Tap to Pay on iPhone and iPad, the Dojo machine on
+/// Android). A Dojo Pocket is this device's own reader, so it is `tap`.
+///
+/// An iPad has no Tap to Pay (Apple offers it on iPhone only), so an iPad on
+/// the venue's default goes to the card machine; [tablet] says which this is.
+String cardVia(LiteSettings settings, TapConfig config, {bool tablet = false}) {
+  if (settings.cardVia == 'tap' || settings.cardVia == 'machine') return settings.cardVia;
+  if (tablet && defaultTargetPlatform == TargetPlatform.iOS) return 'machine';
+  final venue = defaultTargetPlatform == TargetPlatform.iOS ? config.go.cardIos : config.go.cardAndroid;
+  return venue == 'machine' ? 'machine' : 'tap';
 }
 
 /// Category ids to the names the reports show.

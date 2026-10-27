@@ -692,7 +692,8 @@ class TapSession extends Notifier<TapState> {
     return bill;
   }
 
-  void addLine(String billId, Product product, {List<Choice> choices = const [], String note = '', int seat = 0, bool hold = false}) {
+  /// Puts [product] on the bill and answers the id of the line it went on.
+  String addLine(String billId, Product product, {List<Choice> choices = const [], String note = '', int seat = 0, bool hold = false}) {
     final bill = state.bills[billId]!;
     // The till's "consolidate lines" (or Go's own override): the same item,
     // with the same choices and note, not yet sent, goes up by one.
@@ -702,13 +703,14 @@ class TapSession extends Notifier<TapState> {
         final lines = [...bill.lines];
         lines[i] = lines[i].copyWith(quantity: lines[i].quantity + 1);
         _put(bill.copyWith(lines: lines));
-        return;
+        return lines[i].id;
       }
     }
+    final id = _uuid.v4();
     _put(bill.copyWith(lines: [
       ...bill.lines,
       BillLine(
-        id: _uuid.v4(),
+        id: id,
         product: product,
         choices: choices,
         note: note,
@@ -718,6 +720,13 @@ class TapSession extends Notifier<TapState> {
         addedAt: DateTime.now(),
       ),
     ]));
+    return id;
+  }
+
+  /// A note on an unsent line (No ice, Well done...), for the kitchen ticket.
+  void setNote(String billId, String lineId, String note) {
+    final bill = state.bills[billId]!;
+    _put(bill.copyWith(lines: [for (final l in bill.lines) l.id == lineId && !l.sent ? l.copyWith(note: note.trim()) : l]));
   }
 
   void changeQuantity(String billId, String lineId, int delta) {

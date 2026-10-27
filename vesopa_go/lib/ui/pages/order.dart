@@ -14,7 +14,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models.dart';
 import '../../data/session.dart';
+import '../sounds.dart';
 import '../theme.dart';
+import 'note_sheet.dart';
 import '../../counter/ui/product_sheet.dart';
 import 'bill.dart';
 
@@ -89,7 +91,7 @@ class _OrderPageState extends ConsumerState<OrderPage> {
     HapticFeedback.mediumImpact();
   }
 
-  Future<void> _add(Product p) async {
+  Future<void> _add(Product p, {String note = ''}) async {
     if (p.outOfStock) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${p.name} is out of stock')));
       return;
@@ -104,11 +106,35 @@ class _OrderPageState extends ConsumerState<OrderPage> {
       choices = picked.choices;
       quantity = picked.quantity;
     }
-    HapticFeedback.lightImpact();
     final session = ref.read(tapProvider.notifier);
-    session.addLine(widget.billId, p, choices: choices, seat: _seat, hold: _holdMains && p.course >= 2);
-    final lines = ref.read(tapProvider).bills[widget.billId]!.lines;
-    if (quantity > 1) session.changeQuantity(widget.billId, lines.last.id, quantity - 1);
+    final line = session.addLine(widget.billId, p, choices: choices, note: note, seat: _seat, hold: _holdMains && p.course >= 2);
+    if (quantity > 1) session.changeQuantity(widget.billId, line, quantity - 1);
+    final go = ref.read(tapProvider).config.go;
+    final warn = p.allergens.isNotEmpty && go.allergenAlerts;
+    GoSounds.play(go, warn ? GoSound.allergen : GoSound.add);
+    if (warn && mounted) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(
+          backgroundColor: Tp.amber,
+          duration: const Duration(seconds: 3),
+          content: Text('${p.name} contains ${p.allergens.join(', ')}. Check with the customer.',
+              style: const TextStyle(color: Tp.onLime, fontWeight: FontWeight.w700)),
+        ));
+    }
+  }
+
+  /// Long-press a dish: a note (and the venue's quick notes) before it goes on.
+  Future<void> _addWithNote(Product p) async {
+    final note = await askNote(context, ref, title: p.name);
+    if (note == null) return;
+    await _add(p, note: note);
+  }
+
+  /// Tap an unsent line: its note.
+  Future<void> _editNote(Bill bill, BillLine l) async {
+    final note = await askNote(context, ref, title: l.product.name, initial: l.note);
+    if (note != null) ref.read(tapProvider.notifier).setNote(bill.id, l.id, note);
   }
 
   @override
@@ -153,7 +179,11 @@ class _OrderPageState extends ConsumerState<OrderPage> {
             ),
         ],
       ),
-      body: Column(children: [
+      body: LayoutBuilder(builder: (context, box) {
+        // An iPad on its side: the menu on the left, the ticket on the right,
+        // as the till lays its sale screen out. A phone: one above the other.
+        final wide = box.maxWidth >= 900;
+        final menu = <Widget>[
         SizedBox(
           height: 56,
           child: ListView(
@@ -188,6 +218,7 @@ class _OrderPageState extends ConsumerState<OrderPage> {
                   child: InkWell(
                     borderRadius: BorderRadius.circular(Tp.radius),
                     onTap: () => _add(p),
+                    onLongPress: s.config.go.noteLongPress ? () => _addWithNote(p) : null,
                     child: Container(
                       decoration: BoxDecoration(borderRadius: BorderRadius.circular(Tp.radius), border: Border(top: BorderSide(color: colour, width: 4))),
                       padding: const EdgeInsets.all(12),
@@ -207,6 +238,19 @@ class _OrderPageState extends ConsumerState<OrderPage> {
             },
           ),
         ),
+        ];
+        final ticket = <Widget>[
+        if (wide)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 14, 18, 10),
+            child: Row(children: [
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(bill.name, style: t.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+                Text([if (bill.covers > 0) '${bill.covers} covers', if (bill.clerk.trim().isNotEmpty) bill.clerk].join(' · '), style: t.bodySmall),
+              ])),
+              Money(bill.dueMinor, style: t.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
+            ]),
+          ),
         const Divider(height: 1),
         Expanded(
           flex: 2,
@@ -224,12 +268,14 @@ class _OrderPageState extends ConsumerState<OrderPage> {
                       title: Text(l.product.name),
                       subtitle: Text([
                         ...l.choices.map((c) => c.name),
+                        if (l.note.isNotEmpty) 'Note: ${l.note}',
                         if (l.seat > 0) 'Seat ${l.seat}',
                         if (l.product.allergens.isNotEmpty) 'Contains ${l.product.allergens.join(', ')}',
                         if (l.held && !l.sent) 'Held',
                         if (l.sent) 'Sent · hold to void',
                       ].join(' · ')),
                       onLongPress: l.sent && l.unpaidQuantity > 0 ? () => _void(bill, l) : null,
+                      onTap: l.sent ? null : () => _editNote(bill, l),
                       trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                         if (!l.sent) IconButton(icon: const Icon(Icons.remove_circle_outline), onPressed: () => ref.read(tapProvider.notifier).changeQuantity(bill.id, l.id, -1)),
                         Money(l.totalMinor, style: t.bodyMedium),
@@ -280,7 +326,17 @@ class _OrderPageState extends ConsumerState<OrderPage> {
             ]),
           ),
         ),
-      ]),
+        ];
+        if (!wide) return Column(children: [...menu, ...ticket]);
+        return Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Expanded(child: Column(children: menu)),
+          Container(
+            width: 400,
+            decoration: const BoxDecoration(color: Tp.inkCard, border: Border(left: BorderSide(color: Tp.inkLine))),
+            child: Column(children: ticket),
+          ),
+        ]);
+      }),
     );
   }
 }

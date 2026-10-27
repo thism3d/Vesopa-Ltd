@@ -7,10 +7,10 @@
 library;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vesopa_go/data/models.dart';
 import 'package:vesopa_go/data/session.dart';
+import 'package:vesopa_go/ui/sounds.dart';
 import 'package:vesopa_go/ui/theme.dart';
 
 import '../data/lite_state.dart';
@@ -42,7 +42,7 @@ class _SellPageState extends ConsumerState<SellPage> {
         ..showSnackBar(SnackBar(margin: _noticeMargin, content: Text('${p.name} is sold out')));
       return;
     }
-    HapticFeedback.selectionClick();
+    final go = ref.read(tapProvider).config.go;
     final sale = ref.read(currentSaleProvider.notifier);
     if (p.options.isEmpty) {
       sale.add(p);
@@ -51,7 +51,9 @@ class _SellPageState extends ConsumerState<SellPage> {
       if (picked == null) return;
       sale.add(p, choices: picked.choices, quantity: picked.quantity);
     }
-    if (p.allergens.isNotEmpty && ref.read(liteSettingsProvider).allergenAlerts) {
+    final warn = p.allergens.isNotEmpty && ref.read(liteSettingsProvider).allergenAlerts && go.allergenAlerts;
+    GoSounds.play(go, warn ? GoSound.allergen : GoSound.add);
+    if (warn) {
       messenger
         ..hideCurrentSnackBar()
         ..showSnackBar(SnackBar(

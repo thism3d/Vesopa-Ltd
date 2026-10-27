@@ -18,7 +18,8 @@ import 'package:vesopa_go/data/session.dart';
 import 'package:vesopa_go/ui/pages/bill.dart';
 import 'package:vesopa_go/ui/pages/more.dart';
 import 'package:vesopa_go/ui/pages/tables.dart';
-import 'package:vesopa_go/ui/theme.dart';
+import 'package:vesopa_go/ui/go_frame.dart';
+import 'package:vesopa_go/ui/sounds.dart';
 
 import '../data/lite_state.dart';
 import 'brand.dart';
@@ -62,13 +63,7 @@ class _ShellState extends ConsumerState<Shell> {
         title: i == 0 ? const GoWordmark(size: 17) : Text(pages[i].$2),
         actions: [
           if (s.demo) const Padding(padding: EdgeInsets.only(right: 4), child: Chip(label: Text('Demo'), visualDensity: VisualDensity.compact)),
-          if (!s.online)
-            const Tooltip(message: 'Offline: sales are kept here and sent when the signal is back', child: Icon(Icons.cloud_off_rounded, color: Tp.amber)),
-          if (s.pendingSync > 0)
-            Padding(
-              padding: const EdgeInsets.only(left: 6),
-              child: Tooltip(message: '${s.pendingSync} waiting to reach the back office', child: Badge.count(count: s.pendingSync, child: const Icon(Icons.cloud_upload_rounded))),
-            ),
+          const StatusChips(),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: ActionChip(
@@ -116,14 +111,31 @@ class SettingsPage extends ConsumerWidget {
         value: settings.allergenAlerts,
         onChanged: (v) => store.set(allergenAlerts: v),
       ),
+      StatefulBuilder(
+        builder: (context, set) => SwitchListTile(
+          title: const Text('Sounds on this device'),
+          subtitle: const Text('Item added, payment approved or declined, kitchen ready, allergens. Volumes are set in the back office.'),
+          value: !GoSounds.muted,
+          onChanged: (v) async {
+            await GoSounds.setMuted(!v);
+            set(() {});
+            if (v) GoSounds.play(s.config.go, GoSound.approved);
+          },
+        ),
+      ),
       const Divider(),
       Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 4), child: Text('Card payments', style: t.titleSmall)),
       RadioGroup<String>(
         groupValue: settings.cardVia,
         onChanged: (v) => store.set(cardVia: v),
-        child: const Column(children: [
-          RadioListTile(value: 'tap', title: Text('On this device'), subtitle: Text('A phone\'s Tap to Pay, or a Dojo handheld terminal')),
-          RadioListTile(value: 'machine', title: Text('On the card machine'), subtitle: Text('The venue\'s Dojo card machine, beside the till')),
+        child: Column(children: [
+          RadioListTile(
+            value: '',
+            title: const Text('The venue\'s choice'),
+            subtitle: Text('Set in the back office: ${cardVia(const LiteSettings(), s.config, tablet: MediaQuery.sizeOf(context).shortestSide >= 600) == 'tap' ? 'Tap to Pay on this device' : 'the Dojo card machine'}'),
+          ),
+          const RadioListTile(value: 'tap', title: Text('On this device'), subtitle: Text('A phone\'s Tap to Pay, or a Dojo handheld terminal')),
+          const RadioListTile(value: 'machine', title: Text('On the card machine'), subtitle: Text('The venue\'s Dojo card machine, beside the till')),
         ]),
       ),
       const Divider(),

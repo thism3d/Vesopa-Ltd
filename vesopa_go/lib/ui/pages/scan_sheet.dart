@@ -89,7 +89,14 @@ class _Reticle extends StatefulWidget {
 }
 
 class _ReticleState extends State<_Reticle> with SingleTickerProviderStateMixin {
-  late final _pulse = AnimationController(vsync: this, duration: const Duration(milliseconds: 1100))..repeat(reverse: true);
+  late final _pulse = AnimationController(vsync: this, duration: const Duration(milliseconds: 1100));
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (ambientMotion(context) && !_pulse.isAnimating) _pulse.repeat(reverse: true);
+  }
+
   @override
   void dispose() {
     _pulse.dispose();

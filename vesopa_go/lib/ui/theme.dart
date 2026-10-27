@@ -126,6 +126,12 @@ class Tp {
   }
 }
 
+/// Whether looping, decorative motion (a breathing status light, rolling
+/// waves) should run: not when the device asks for less motion, and not under
+/// a widget test, where a loop that never ends never lets a test settle.
+bool ambientMotion(BuildContext context) =>
+    !MediaQuery.disableAnimationsOf(context) && !WidgetsBinding.instance.runtimeType.toString().contains('Test');
+
 /// The Vesopa Go mark: a lime disc with the contactless waves.
 class TapMark extends StatelessWidget {
   const TapMark({super.key, this.size = 72});

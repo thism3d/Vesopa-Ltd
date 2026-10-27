@@ -9,12 +9,12 @@
 library;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:vesopa_go/config/constants.dart' show contactlessLimitMinor;
 import 'package:vesopa_go/data/models.dart';
 import 'package:vesopa_go/data/session.dart';
 import 'package:vesopa_go/payments/payment_service.dart';
+import 'package:vesopa_go/ui/pay_motion.dart';
+import 'package:vesopa_go/ui/sounds.dart';
 import 'package:vesopa_go/ui/theme.dart';
 
 import '../data/journal.dart';
@@ -34,6 +34,7 @@ class _PayPageState extends ConsumerState<PayPage> {
   String? _problem;
   SaleRecord? _done;
   bool _busy = false;
+  String _via = 'tap';
 
   Bill? get _bill => ref.read(tapProvider).bills[widget.billId];
 
@@ -54,7 +55,7 @@ class _PayPageState extends ConsumerState<PayPage> {
     ref.read(tapProvider.notifier).addTender(bill.id, tender);
     if (rec != null) {
       ref.read(currentSaleProvider.notifier).finished();
-      HapticFeedback.heavyImpact();
+      GoSounds.play(ref.read(tapProvider).config.go, GoSound.approved);
       setState(() => _done = rec);
     } else {
       setState(() {});
@@ -77,6 +78,7 @@ class _PayPageState extends ConsumerState<PayPage> {
   Future<void> _card(String via) async {
     final bill = _bill;
     if (bill == null || _busy) return;
+    _via = via;
     final payments = ref.read(paymentsProvider);
     if (via == 'tap') {
       final why = await payments.whyUnavailable();
@@ -115,6 +117,7 @@ class _PayPageState extends ConsumerState<PayPage> {
         reference: outcome.paymentId,
       ));
     } else {
+      if (outcome.result == PayResult.declined) GoSounds.play(ref.read(tapProvider).config.go, GoSound.declined);
       setState(() => _problem = switch (outcome.result) {
             PayResult.declined => 'Declined${outcome.message != null ? ': ${outcome.message}' : ''}. Try another card.',
             PayResult.cancelled => 'Cancelled. Nothing was taken.',
@@ -128,7 +131,7 @@ class _PayPageState extends ConsumerState<PayPage> {
   @override
   Widget build(BuildContext context) {
     if (_done != null) return _Approved(sale: _done!);
-    if (_step != null) return _CardScreen(amountMinor: _cardAmount, step: _step!);
+    if (_step != null) return TapPrompt(amountMinor: _cardAmount, step: _step!, onMachine: _via == 'machine');
 
     final bill = ref.watch(tapProvider.select((s) => s.bills[widget.billId]));
     final settings = ref.watch(liteSettingsProvider);
@@ -138,7 +141,8 @@ class _PayPageState extends ConsumerState<PayPage> {
       return Scaffold(appBar: AppBar(), body: const Center(child: Text('This sale is closed.')));
     }
     final due = bill.dueMinor;
-    final other = settings.cardVia == 'tap' ? 'machine' : 'tap';
+    final via = cardVia(settings, ref.watch(tapProvider).config, tablet: MediaQuery.sizeOf(context).shortestSide >= 600);
+    final other = via == 'tap' ? 'machine' : 'tap';
 
     return Scaffold(
       appBar: AppBar(title: const Text('Pay')),
@@ -175,7 +179,7 @@ class _PayPageState extends ConsumerState<PayPage> {
               ],
               const SizedBox(height: 24),
               _Heading(icon: Icons.credit_card_rounded, label: 'Card'),
-              _PayButton(key: const ValueKey('pay-card'), icon: Icons.contactless_rounded, label: 'Pay by Card', minor: due, onTap: () => _card(settings.cardVia)),
+              _PayButton(key: const ValueKey('pay-card'), icon: Icons.contactless_rounded, label: 'Pay by Card', minor: due, onTap: () => _card(via)),
               Align(
                 child: TextButton(
                   onPressed: () => _card(other),
@@ -233,46 +237,6 @@ class _PayButton extends StatelessWidget {
       );
 }
 
-/// The card's turn: a plain, bright screen with the amount and the waves,
-/// so the customer knows where to tap.
-class _CardScreen extends StatelessWidget {
-  const _CardScreen({required this.amountMinor, required this.step});
-  final int amountMinor;
-  final PayStep step;
-
-  @override
-  Widget build(BuildContext context) {
-    final label = switch (step) {
-      PayStep.preparing => 'Getting ready…',
-      PayStep.activating => 'Setting up card payments on this device…',
-      PayStep.linking => 'Linking the venue\'s account…',
-      PayStep.waitingForCard => 'Tap your payment card',
-      PayStep.onMachine => 'Follow the card machine',
-      PayStep.confirming => 'Confirming with Dojo…',
-      PayStep.done => 'Done',
-    };
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Center(
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Icon(Icons.contactless_outlined, size: 96, color: Tp.ink),
-            const SizedBox(height: 24),
-            Text(money(amountMinor), style: const TextStyle(fontSize: 48, fontWeight: FontWeight.w900, color: Tp.ink, fontFeatures: Tp.tabular)),
-            const SizedBox(height: 16),
-            Text(label, style: const TextStyle(fontSize: 18, color: Tp.ink)),
-            if (amountMinor > contactlessLimitMinor && step == PayStep.waitingForCard)
-              const Padding(
-                padding: EdgeInsets.only(top: 8),
-                child: Text('Over £100: the card will ask for its PIN.', style: TextStyle(color: Colors.black54)),
-              ),
-          ]),
-        ),
-      ),
-    );
-  }
-}
-
 class _Approved extends ConsumerWidget {
   const _Approved({required this.sale});
   final SaleRecord sale;
@@ -287,7 +251,7 @@ class _Approved extends ConsumerWidget {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 480),
             child: ListView(shrinkWrap: true, padding: const EdgeInsets.all(24), children: [
-              const Icon(Icons.check_circle_rounded, size: 96, color: Color(0xFF2BB673)),
+              const Center(child: ApprovedBurst()),
               const SizedBox(height: 12),
               Text(cash ? 'Paid' : 'Payment approved!', textAlign: TextAlign.center, style: t.headlineMedium),
               const SizedBox(height: 6),

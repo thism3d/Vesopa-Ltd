@@ -24,6 +24,8 @@ import 'counter/ui/shell.dart';
 import 'counter/ui/start_pages.dart';
 import 'data/demo_venue.dart';
 import 'data/session.dart';
+import 'ui/go_frame.dart';
+import 'ui/sounds.dart';
 import 'ui/pages/setup.dart';
 import 'ui/theme.dart';
 
@@ -32,6 +34,8 @@ const demoOnly = bool.fromEnvironment('GO_DEMO_ONLY');
 void main() {
   // How the back office and the other terminals name this device.
   TapSession.product = appName;
+  WidgetsFlutterBinding.ensureInitialized();
+  GoSounds.load();
   runApp(const ProviderScope(child: GoApp()));
 }
 
@@ -64,6 +68,9 @@ class GoApp extends ConsumerWidget {
       if (next == Phase.welcome && demoOnly) startGoDemo(ref);
     });
     return MaterialApp(
+      navigatorKey: goNavigator,
+      // Signed on: the licence, offline and idle rules over every page.
+      builder: (context, child) => phase == Phase.ready ? GoFrame(child: child!) : child!,
       title: appName,
       debugShowCheckedModeBanner: false,
       theme: Tp.theme(Brightness.light),

@@ -27,6 +27,10 @@ dependencies:
   nfc_manager: ^4.2.1
   flutter_secure_storage: ^11.2.0
   mobile_scanner: ^7.4.2
+  # Product photos and the idle wallpaper, kept on the device for a fast start.
+  cached_network_image: ^3.4.1
+  # Go's sounds: item added, approved, declined, kitchen ready, allergen.
+  audioplayers: ^6.5.1
 
 dev_dependencies:
   flutter_test:
@@ -38,3 +42,4 @@ flutter:
   assets:
     - assets/brand/vesopa_v.png
     - assets/brand/go_mark.png
+    - assets/sounds/
