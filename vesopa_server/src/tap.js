@@ -295,6 +295,34 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
     refunded_minor: Number(row.refunded_minor) || 0,
   });
 
+  /**
+   * A customer's details changed at the counter (Vesopa Go's Customers): the
+   * name, phone and email only. Points, discounts and memberships stay the
+   * back office's. The venue is the terminal's own, so a phone can only ever
+   * touch its own venue's customers.
+   */
+  router.put('/api/tap/customers/:id', terminal, express.json(), async (req, res, next) => {
+    try {
+      const b = req.body || {};
+      const clean = (v, n) => (v === undefined ? undefined : (String(v || '').trim().slice(0, n) || null));
+      const name = clean(b.name, 120);
+      if (name === null) return res.status(400).json({ error: 'A customer needs a name.' });
+      const sets = [];
+      const args = [];
+      for (const [col, v] of [['name', name], ['phone', clean(b.phone, 40)], ['email', clean(b.email, 190)]]) {
+        if (v === undefined) continue;
+        sets.push(`${col} = ?`);
+        args.push(v);
+      }
+      if (!sets.length) return res.json({ ok: true });
+      const [r] = await pool.execute(
+        `UPDATE epos_customers SET ${sets.join(', ')} WHERE id = ? AND email_key = ?`,
+        [...args, String(req.params.id).slice(0, 64), req.office]);
+      if (!r.affectedRows) return res.status(404).json({ error: 'No such customer at this venue.' });
+      res.json({ ok: true });
+    } catch (e) { send(res, e, next); }
+  });
+
   /** Staff photos for the signed-on chip: { staff id: url }. Empty without the column. */
   router.get('/api/tap/staff-photos', terminal, async (req, res, next) => {
     try {

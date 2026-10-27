@@ -184,6 +184,27 @@ class TapApi {
     return true;
   }
 
+  /// Customers by name, phone, email or card, as the till's Customer key.
+  Future<List<dynamic>> customers(String q) async {
+    // A list, which _send hands back under `items`.
+    final r = await _send('GET', '/till/customers?office=$_o${q.trim().isEmpty ? '' : '&q=${Uri.encodeQueryComponent(q.trim())}'}');
+    return r['items'] as List? ?? const [];
+  }
+
+  /// A new customer, joined to the venue's loyalty scheme as the till does.
+  Future<Map<String, dynamic>> createCustomer({required String name, String phone = '', String email = '', bool marketing = false}) =>
+      _send('POST', '/till/customers', {
+        'office': office,
+        'name': name,
+        if (phone.isNotEmpty) 'phone': phone,
+        if (email.isNotEmpty) 'email': email,
+        'marketing_opt_in': marketing,
+      });
+
+  /// A customer's name, phone and email (vesopa_server tap.js).
+  Future<void> updateCustomer(String id, {required String name, String phone = '', String email = ''}) =>
+      _send('PUT', '/api/tap/customers/${Uri.encodeComponent(id)}', {'name': name, 'phone': phone, 'email': email});
+
   /// Staff photos, `{photos: {id: url}}`.
   Future<Map<String, dynamic>> staffPhotos() => _send('GET', '/api/tap/staff-photos');
 
