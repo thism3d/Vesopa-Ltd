@@ -7,10 +7,16 @@
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <!-- The back office, Vesopa sign-in and Dojo. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Android TV (owner, 2026-10-27): a touchscreen is not required, and the
+         TV launcher lists the app with its banner. Card payments on a TV go to
+         the card machine (no NFC). -->
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.software.leanback" android:required="false" />
     <application
         android:label="Vesopa Go"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:banner="@drawable/tv_banner">
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -31,6 +37,7 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER"/>
             </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.

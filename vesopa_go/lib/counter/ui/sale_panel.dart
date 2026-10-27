@@ -11,6 +11,7 @@ import 'package:vesopa_go/ui/pages/note_sheet.dart';
 import 'package:vesopa_go/ui/theme.dart';
 
 import '../data/lite_state.dart';
+import 'receipt_view.dart' show askManager;
 
 class SalePanel extends ConsumerStatefulWidget {
   const SalePanel({super.key, this.onPay, this.inSheet = false});
@@ -285,6 +286,9 @@ class _SalePanelState extends ConsumerState<SalePanel> {
   }
 
   Future<void> _discount(Bill bill) async {
+    // The till's discount key: without it, a manager's PIN.
+    final allowedBy = await askManager(context, ref, why: 'Discount', permission: TillPermission.discount);
+    if (allowedBy == null || !mounted) return;
     final clerk = ref.read(tapProvider).clerk?.name ?? '';
     final picked = await showModalBottomSheet<(double, int)>(
       context: context,
