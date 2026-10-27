@@ -39,7 +39,7 @@ void main() {
     expect(bytes.sublist(bytes.length - 3), [0x56, 0x42, 0x00]);
   });
 
-  test('staff keys are the till's: no group is every key, a group only what it grants', () {
+  test('staff keys follow the till: no group is every key, a group only what it grants', () {
     final none = Clerk.fromJson(const {'id': 1, 'name': 'Old', 'pin': '1234'});
     expect(none.can(TillPermission.refund), isTrue);
     final staff = Clerk.fromJson(const {'id': 2, 'name': 'Alex', 'pin': '2222', 'permission_group_id': 4, 'permissions': {'can_void': true}});
