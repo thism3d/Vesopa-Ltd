@@ -19,6 +19,7 @@ import '../config/constants.dart' show apiBase;
 import '../counter/data/lite_state.dart';
 import '../counter/ui/brand.dart';
 import '../data/session.dart';
+import 'sounds.dart';
 import 'theme.dart';
 
 /// The app's navigator, so the frame (which sits above it, in
@@ -184,6 +185,10 @@ class _GoFrameState extends ConsumerState<GoFrame> {
   @override
   Widget build(BuildContext context) {
     final s = ref.watch(tapProvider);
+    // The kitchen has finished a table's food: the ready sound, and a banner.
+    ref.listen(tapProvider.select((s) => s.alerts), (before, now) {
+      if (now.length > (before?.length ?? 0)) GoSounds.play(ref.read(tapProvider).config.go, GoSound.kitchenReady);
+    });
     if (!s.config.licensed && !s.demo) return const Material(child: _NotLicensed());
     return Listener(
       behavior: HitTestBehavior.translucent,
@@ -192,6 +197,31 @@ class _GoFrameState extends ConsumerState<GoFrame> {
         // The owner's rule: no orders while the back office cannot be reached.
         AbsorbPointer(absorbing: !s.online && !s.demo, child: widget.child),
         if (!s.online && !s.demo) const Positioned.fill(child: Material(type: MaterialType.transparency, child: _Offline())),
+        Positioned(
+          left: 16,
+          right: 16,
+          top: 0,
+          child: SafeArea(
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 300),
+              transitionBuilder: (child, a) => SlideTransition(position: Tween(begin: const Offset(0, -1.2), end: Offset.zero).animate(a), child: child),
+              child: s.alerts.isEmpty
+                  ? const SizedBox.shrink()
+                  : Material(
+                      key: ValueKey(s.alerts.first),
+                      color: Tp.lime,
+                      elevation: 8,
+                      borderRadius: BorderRadius.circular(14),
+                      child: ListTile(
+                        leading: const Icon(Icons.room_service_rounded, color: Tp.onLime),
+                        title: Text(s.alerts.first, style: const TextStyle(color: Tp.onLime, fontWeight: FontWeight.w800)),
+                        subtitle: s.alerts.length > 1 ? Text('and ${s.alerts.length - 1} more', style: const TextStyle(color: Tp.onLime)) : null,
+                        trailing: TextButton(onPressed: () => ref.read(tapProvider.notifier).clearAlerts(), child: const Text('OK', style: TextStyle(color: Tp.onLime, fontWeight: FontWeight.w800))),
+                      ),
+                    ),
+            ),
+          ),
+        ),
         Positioned.fill(
           child: IgnorePointer(
             ignoring: !_idleShown,

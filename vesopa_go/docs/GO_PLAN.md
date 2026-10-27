@@ -132,8 +132,9 @@ https://claude.ai/artifact/P3h7WevAfsfnKsp8qirdii.
 - [x] Product photos (cached); reports by the hour, staff tips/refunds, product mix, X/Z printed
 - [x] go-server live (run 40474368815), backup /home/vesopasoftware/backups/go-20261027-083409
 - [ ] Not yet: staff photos (no photo field in bo_clarks), a whole-order note, mix & match on Go,
-      on-device button rearranging, the device-to-customer hand-over flow, kitchen-ready sound
-      (no ready event reaches Go yet), live Dojo machine status
+      on-device button rearranging, the device-to-customer hand-over flow, live Dojo
+      machine status
+- [x] Kitchen ready: a banner over every page and the ready sound (after the 1.1.0 build)
 
 ## Waiting on others
 
