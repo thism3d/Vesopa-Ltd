@@ -352,7 +352,7 @@
           <button class="nav" data-view="dinein_qr">Table Codes</button>
           <button class="nav" data-view="dinein_orders">Online Orders</button>
           <button class="nav" data-view="express">Vesopa Express</button>
-          <button class="nav" data-view="tap">Vesopa Tap</button>
+          <button class="nav" data-view="tap">Vesopa Go</button>
 
           <button class="nav-group" data-group="people">People<span class="caret">▼</span></button>
           <button class="nav" data-view="users">Back Office Users</button>
@@ -3640,11 +3640,11 @@
         <section id="view-tap" class="view" hidden>
           <div class="page-head">
             <div>
-              <h2>Vesopa Tap</h2>
+              <h2>Vesopa Go</h2>
               <p class="muted small">
-                Take orders at the table and card payments on a phone: the customer
-                taps their card, Apple Pay or Google Pay on the clerk's phone. Each
-                phone signed in here counts as one of your tills.
+                Orders and card payments on iPads and phones, at the counter or the table:
+                the customer taps their card, Apple Pay or Google Pay on the device, or pays
+                on your Dojo card machine. Vesopa Go is licensed per venue.
               </p>
             </div>
             <button class="btn primary" id="tap-save">Save</button>
@@ -3654,7 +3654,8 @@
 
           <div class="card rd-card">
             <h3>Settings</h3>
-            <label class="check"><input type="checkbox" data-tap="enabled"> Vesopa Tap is on for this venue</label>
+            <p id="go-licence"></p>
+            <label class="check"><input type="checkbox" data-tap="enabled"> Vesopa Go is on for this venue</label>
             <label class="check"><input type="checkbox" data-tap="tips_enabled"> Offer a tip on card payments</label>
             <label>Tip choices (%)
               <input type="text" data-tap="tip_percents" placeholder="10, 12.5, 15">
@@ -3667,10 +3668,13 @@
             <p class="muted small" id="tap-env"></p>
           </div>
 
+          <!-- Every Vesopa Go option, drawn from GO_FIELDS in app.js (src/go_options.js holds the defaults). -->
+          <div class="card rd-card" id="go-options"></div>
+
           <div class="card rd-card">
-            <h3>Phones</h3>
+            <h3>Phones and iPads</h3>
             <p class="muted small">
-              To add a phone, install <b>Vesopa Tap</b> from the App Store or Google Play and
+              To add a phone or iPad, install <b>Vesopa Go</b> from the App Store or Google Play and
               press <b>Continue with Vesopa</b>. Staff sign on with their till PIN or their
               staff card (set under <b>Staff</b>).
             </p>

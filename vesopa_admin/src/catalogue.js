@@ -19,6 +19,7 @@ const ITEMS = [
   { key: 'kitchen', label: 'Kitchen screen', group: 'Apps', app: 'epos', hold: 'epos', holdKey: 'kitchen', seats: true },
   { key: 'display', label: 'Customer display', group: 'Apps', app: 'epos', hold: 'epos', holdKey: 'display', seats: true },
   { key: 'express', label: 'Express kiosk', group: 'Apps', app: 'epos', hold: 'epos', holdKey: 'express', seats: true },
+  { key: 'go', label: 'Vesopa Go (phones and iPads)', group: 'Apps', app: 'epos', hold: 'epos', holdKey: 'go', seats: true },
   { key: 'loyalty_app', label: 'Loyalty app', group: 'Apps', app: 'loyalty', hold: 'epos', holdKey: 'loyalty_app' },
   { key: 'gift', label: 'Gift cards and tickets', group: 'Apps', app: 'gift', hold: 'later' },
   { key: 'memberships', label: 'Memberships', group: 'Modules', app: 'epos', hold: 'epos', holdKey: 'module:memberships', module: 'memberships' },

@@ -110,6 +110,7 @@ const NOUNS = {
   kitchen: ['kitchen licence', 'kitchen licences', 'kitchen screen'],
   display: ['display licence', 'display licences', 'display'],
   express: ['kiosk licence', 'kiosk licences', 'kiosk'],
+  go: ['Vesopa Go licence', 'Vesopa Go licences', 'Go device'],
 };
 
 /** Refused: every seat is taken. Carries what the device shows and the back office lists. */
@@ -119,8 +120,10 @@ class SeatLimitError extends Error {
     const names = seats.map((s) => seatLabel(s, thing));
     const noun = limit === 1 ? `${one} is` : `${limit} ${many} are`;
     super(
-      `${limit === 1 ? 'The' : 'All'} ${noun} in use${names.length ? `: ${names.join(', ')}` : ''}. ` +
-        'Sign one of them out in the back office under Devices, or ask Vesopa for another licence.'
+      limit === 0
+        ? `This venue has no ${many}. Ask Vesopa to add ${kind === 'go' ? 'Vesopa Go' : 'one'} to your licences.`
+        : `${limit === 1 ? 'The' : 'All'} ${noun} in use${names.length ? `: ${names.join(', ')}` : ''}. ` +
+          'Sign one of them out in the back office under Devices, or ask Vesopa for another licence.'
     );
     this.name = 'SeatLimitError';
     this.limit = limit;

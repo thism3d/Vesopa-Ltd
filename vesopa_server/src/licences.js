@@ -40,7 +40,14 @@ const { requireAuth } = require('./auth');
 const entitlements = require('./entitlements');
 
 /** The apps a venue licenses. Matches bo_devices.kind. */
-const KINDS = ['till', 'kitchen', 'display', 'express'];
+const KINDS = ['till', 'kitchen', 'display', 'express', 'go'];
+
+/**
+ * Apps a venue has only when it is offered them: no row is NO seats, not no
+ * limit. Vesopa Go (the phone and iPad app) is sold separately, so a venue that
+ * was never given it cannot sign a Go device in (2026-10-27, owner).
+ */
+const OPT_IN = ['go'];
 
 /** What each app is called on screen. */
 const LABELS = {
@@ -48,6 +55,7 @@ const LABELS = {
   kitchen: 'Kitchen screen',
   display: 'Customer display',
   express: 'Express kiosk',
+  go: 'Vesopa Go device',
 };
 
 /**
@@ -67,6 +75,7 @@ const POLICY = {
   kitchen: 'refuse',
   express: 'refuse',
   display: 'evict-oldest',
+  go: 'refuse',
 };
 
 
@@ -131,6 +140,7 @@ async function limitFor(db, office, kind) {
   } catch (e) {
     if (e.code !== 'ER_NO_SUCH_TABLE') throw e;
   }
+  if (OPT_IN.includes(kind)) return 0;
   if (kind !== 'till') return null;
   try {
     const [[row]] = await db.query(
@@ -833,6 +843,7 @@ function adminLicenceRoutes({ pool }) {
 
 module.exports = {
   KINDS,
+  OPT_IN,
   LABELS,
   POLICY,
   hashKey,

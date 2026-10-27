@@ -1,6 +1,9 @@
 /// Vesopa Go's look.
 ///
-/// The Vesopa palette -- lime #A5C715 on ink #10130A -- for a tool held in
+/// The till's own palette (vesopa_epos/lib/ui/theme.dart, design A "Till
+/// exact", chosen by the owner 2026-10-27): lime #A5C715 on chrome #111111,
+/// surfaces #1A1A18, lines #33332F, so a clerk moving from the till to an iPad
+/// sees the same screen. It was made for a tool held in
 /// one hand while walking. It follows the phone: ink in the dark (a pub at
 /// nine at night), paper in the light (a garden at noon). Lime is kept for the
 /// one thing to press next: Send, Pay, Tap.
@@ -17,16 +20,21 @@ import '../data/models.dart';
 class Tp {
   static const lime = Color(0xFFA5C715);
   static const limeDeep = Color(0xFF6E8A0E);
-  static const ink = Color(0xFF10130A);
-  static const inkCard = Color(0xFF1A1F12);
-  static const inkLine = Color(0xFF2C331F);
+  static const ink = Color(0xFF111111);
+  static const onLime = Color(0xFF10130A);
+  static const inkCard = Color(0xFF1A1A18);
+  static const inkRaised = Color(0xFF232320);
+  static const inkLine = Color(0xFF33332F);
+  static const inkDeep = Color(0xFF0C0C0C);
+  static const green = Color(0xFF2E9E5B);
+  static const muted = Color(0xFF9A9B93);
   static const paper = Color(0xFFF6F7F0);
   static const paperLine = Color(0xFFE2E5D6);
   static const danger = Color(0xFFE5484D);
   static const amber = Color(0xFFF5B301);
   static const blue = Color(0xFF3E8CF0);
 
-  static const radius = 20.0;
+  static const radius = 14.0;
   static const target = 56.0;
 
   static const tabular = [FontFeature.tabularFigures()];
@@ -55,7 +63,7 @@ class Tp {
       seedColor: lime,
       brightness: b,
       primary: lime,
-      onPrimary: ink,
+      onPrimary: onLime,
       surface: dark ? ink : paper,
       onSurface: dark ? Colors.white : ink,
       surfaceContainer: dark ? inkCard : Colors.white,
@@ -86,9 +94,9 @@ class Tp {
         style: FilledButton.styleFrom(
           minimumSize: const Size.fromHeight(target),
           backgroundColor: lime,
-          foregroundColor: ink,
+          foregroundColor: onLime,
           textStyle: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
@@ -97,7 +105,7 @@ class Tp {
           foregroundColor: scheme.onSurface,
           side: BorderSide(color: scheme.outlineVariant, width: 1.5),
           textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
       ),
       navigationBarTheme: NavigationBarThemeData(
@@ -128,7 +136,7 @@ class TapMark extends StatelessWidget {
         width: size,
         height: size,
         decoration: BoxDecoration(color: Tp.lime, borderRadius: BorderRadius.circular(size * 0.28)),
-        child: Icon(Icons.contactless_rounded, size: size * 0.62, color: Tp.ink),
+        child: Icon(Icons.contactless_rounded, size: size * 0.62, color: Tp.onLime),
       );
 }
 

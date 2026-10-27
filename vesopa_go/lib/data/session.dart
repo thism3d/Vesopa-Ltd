@@ -30,6 +30,9 @@ import 'package:uuid/uuid.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../payments/payment_service.dart';
+import 'go_options.dart';
+
+export 'go_options.dart';
 import 'api.dart';
 import 'demo_venue.dart';
 import 'models.dart';
@@ -49,6 +52,11 @@ class TapConfig {
     this.servicePercents = const [0, 10, 12.5],
     this.allowCash = true,
     this.receiptEmail = true,
+    this.go = const GoOptions(),
+    this.licensed = true,
+    this.consolidateLines = true,
+    this.idleImageUrl,
+    this.idleMessage = 'Touch to begin',
   });
   final String environment;
   final bool tips;
@@ -57,7 +65,24 @@ class TapConfig {
   final bool allowCash;
   final bool receiptEmail;
 
+  /// Every Vesopa Go option from the back office.
+  final GoOptions go;
+
+  /// Whether the venue has Vesopa Go on its licence. A server too old to say
+  /// is taken as yes, so an update to the app never locks a venue out.
+  final bool licensed;
+
+  /// The till's own settings Go follows (`/api/till-settings/public`).
+  final bool consolidateLines;
+  final String? idleImageUrl;
+  final String idleMessage;
+
+  /// Whether a second tap of the same item raises the quantity.
+  bool get stacks => switch (go.stackLines) { 'on' => true, 'off' => false, _ => consolidateLines };
+
   factory TapConfig.fromJson(Map<String, dynamic> j) {
+    final till = j['till'] is Map ? Map<String, dynamic>.from(j['till'] as Map) : const <String, dynamic>{};
+    final idle = '${till['idle_image_url'] ?? ''}'.trim();
     List<double> nums(Object? v, List<double> d) =>
         v is List ? [for (final n in v) (n as num).toDouble()] : d;
     return TapConfig(
@@ -67,6 +92,12 @@ class TapConfig {
       servicePercents: nums(j['service_percents'], const [0, 10, 12.5]),
       allowCash: j['allow_cash'] as bool? ?? true,
       receiptEmail: j['receipt_email'] as bool? ?? true,
+      go: GoOptions.fromJson(j['go']),
+      licensed: j['go_licensed'] as bool? ?? true,
+      // The till's rule: absent is on (tap Carling three times, the bill says 3 Carling).
+      consolidateLines: switch (till['consolidate_lines']) { null => true, final v => v == true || v == 1 || v == '1' || v == 'true' },
+      idleImageUrl: idle.isEmpty ? null : idle,
+      idleMessage: till['idle_message'] as String? ?? 'Touch to begin',
     );
   }
 }
@@ -352,6 +383,7 @@ class TapSession extends Notifier<TapState> {
         api.screens().catchError((Object _) => <dynamic>[]),
         api.floor().catchError((Object _) => <dynamic>[]),
         api.tapConfig().catchError((Object _) => <String, dynamic>{}),
+        api.tillSettings().catchError((Object _) => <String, dynamic>{}),
       ]);
       final raw = {
         'staff': [for (final c in results[0] as List<Clerk>) {'id': c.id, 'name': c.name, 'pin': c.pin, 'swipe_card': c.card, 'permission_group': c.group}],
@@ -359,7 +391,7 @@ class TapSession extends Notifier<TapState> {
         'modifiers': results[2],
         'screens': results[3],
         'floor': results[4],
-        'config': results[5],
+        'config': {...results[5] as Map<String, dynamic>, 'till': results[6]},
       };
       _apply(raw);
       state = state.copyWith(online: true);
@@ -662,6 +694,17 @@ class TapSession extends Notifier<TapState> {
 
   void addLine(String billId, Product product, {List<Choice> choices = const [], String note = '', int seat = 0, bool hold = false}) {
     final bill = state.bills[billId]!;
+    // The till's "consolidate lines" (or Go's own override): the same item,
+    // with the same choices and note, not yet sent, goes up by one.
+    if (state.config.stacks) {
+      final i = bill.lines.lastIndexWhere((l) => l.sameAs(product, choices: choices, note: note, seat: seat, held: hold));
+      if (i >= 0) {
+        final lines = [...bill.lines];
+        lines[i] = lines[i].copyWith(quantity: lines[i].quantity + 1);
+        _put(bill.copyWith(lines: lines));
+        return;
+      }
+    }
     _put(bill.copyWith(lines: [
       ...bill.lines,
       BillLine(

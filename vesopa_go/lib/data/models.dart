@@ -126,7 +126,8 @@ enum TableState { free, seated, ordered, mains, bill, paid }
 
 @immutable
 class TableInfo {
-  const TableInfo({required this.id, required this.name, required this.area, this.seats = 4, this.number, this.roomId});
+  const TableInfo({required this.id, required this.name, required this.area, this.seats = 4, this.number, this.roomId,
+      this.x = 0, this.y = 0, this.width = 2, this.height = 2, this.round = false});
   final String id;
   final String name;
   final String area;
@@ -135,6 +136,13 @@ class TableInfo {
   /// The table number the till, the kitchen and the receipts use.
   final int? number;
   final int? roomId;
+
+  /// Where the back office's floor designer put it, in grid squares.
+  final int x;
+  final int y;
+  final int width;
+  final int height;
+  final bool round;
 }
 
 /// One line on a bill.
@@ -177,6 +185,19 @@ class BillLine {
   int get unitMinor => product.priceMinor + choices.fold(0, (s, c) => s + c.priceMinor);
   int get totalMinor => unitMinor * quantity;
   int get unpaidQuantity => quantity - paidQuantity;
+
+  /// Whether another tap of [p] belongs on this line: the same item, choices,
+  /// note and seat, still unsent and unpaid, so raising it changes nothing the
+  /// kitchen or a split has already seen.
+  bool sameAs(Product p, {List<Choice> choices = const [], String note = '', int seat = 0, bool held = false}) =>
+      !sent &&
+      paidQuantity == 0 &&
+      product.id == p.id &&
+      this.note == note &&
+      this.seat == seat &&
+      this.held == held &&
+      this.choices.length == choices.length &&
+      [for (var i = 0; i < choices.length; i++) this.choices[i].name == choices[i].name && this.choices[i].priceMinor == choices[i].priceMinor].every((x) => x);
 
   BillLine copyWith({int? quantity, bool? sent, bool? held, int? paidQuantity, String? note, int? seat}) => BillLine(
         id: id,

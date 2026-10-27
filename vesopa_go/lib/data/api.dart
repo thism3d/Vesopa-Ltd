@@ -97,7 +97,8 @@ class TapApi {
   Future<Map<String, dynamic>> commission(String idToken, {required String device, required String deviceId}) =>
       _send('POST', '/api/terminal/vesopa/commission', {
         'id_token': idToken,
-        'device_kind': 'till',
+        // Vesopa Go is its own licence (licences.js: none unless the venue is offered it).
+        'device_kind': 'go',
         'device_name': device,
         'device_id': deviceId,
         'site_choice': true,
@@ -108,7 +109,8 @@ class TapApi {
       _send('POST', '/api/terminal/vesopa/commission/site', {
         'pick_token': pickToken,
         'office_id': officeId,
-        'device_kind': 'till',
+        // Vesopa Go is its own licence (licences.js: none unless the venue is offered it).
+        'device_kind': 'go',
         'device_name': device,
         'device_id': deviceId,
       });
@@ -169,6 +171,9 @@ class TapApi {
   // ---- Card payments on this phone (vesopa_server/src/tap.js) ----------------------
 
   Future<Map<String, dynamic>> tapConfig() => _send('GET', '/api/tap/config');
+
+  /// The till's settings Go follows: consolidate lines, the idle screen.
+  Future<Map<String, dynamic>> tillSettings() => _send('GET', '/api/till-settings/public?office=$_o');
 
   /// A Tap to Pay terminal secret for Dojo's SDK (six hours).
   Future<String> tapSecret(String platform) async =>

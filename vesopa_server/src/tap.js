@@ -45,6 +45,7 @@ const { requireAuth, requireTerminal, issueTerminalToken } = require('./auth');
 const { attachAccess, requirePermission } = require('./permissions');
 const { unseal } = require('./express_kiosk');
 const dojoClient = require('./dojo_client');
+const { goOptionsFor, saveGoOptions } = require('./go_options');
 const { partnerIds } = dojoClient;
 
 /**
@@ -234,6 +235,16 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
     };
   }
 
+  /** Whether the venue has Vesopa Go seats; false when that cannot be told. */
+  async function goLicensed(office) {
+    try {
+      return (await require('./licences').limitFor(pool, office, 'go')) > 0;
+    } catch (e) {
+      console.warn('[go] licence:', e.message);
+      return false;
+    }
+  }
+
   /** The settings, or a 403 when the venue has switched Vesopa Tap off. */
   async function requireOn(office) {
     const s = await settingsFor(office);
@@ -294,6 +305,10 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
         android: Boolean(secretPath('android')),
         cards: ['visa', 'mastercard', 'maestro', 'amex'],
         ...phoneSettings(await settingsFor(req.office)),
+        // Vesopa Go's own options (go_options.js), and whether the venue has
+        // Go at all: it is licensed per venue, none unless offered (licences.js).
+        go: await goOptionsFor(pool, req.office),
+        go_licensed: await goLicensed(req.office),
       });
     } catch (e) { send(res, e, next); }
   });
@@ -532,7 +547,7 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
       const office = await officeOf(req);
       const s = await settingsFor(office);
       const { environment } = await keyFor(office);
-      res.json({ ...cleanSettings({}, s), environment });
+      res.json({ ...cleanSettings({}, s), environment, go: await goOptionsFor(pool, office), go_licensed: await goLicensed(office) });
     } catch (e) { send(res, e, next); }
   });
 
@@ -550,7 +565,11 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
         [office, s.enabled, s.tips_enabled, s.tip_percents, s.service_percents, s.allow_cash, s.receipt_email,
           String(req.user.email || '').slice(0, 255)]
       );
-      res.json(s);
+      const body = req.body || {};
+      const go = body.go && typeof body.go === 'object'
+        ? await saveGoOptions(pool, office, body.go, req.user.email)
+        : await goOptionsFor(pool, office);
+      res.json({ ...s, go });
     } catch (e) { send(res, e, next); }
   });
 

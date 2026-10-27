@@ -6959,7 +6959,10 @@ document.addEventListener('click', async (e) => {
     const labels = current.labels || {};
     const fields = (current.kinds || []).map((kind) => ({
       name: kind,
-      label: `${labels[kind] || kind}s at once (blank for no limit)`,
+      // Vesopa Go is offered, not assumed: blank there is none at all.
+      label: kind === 'go'
+        ? `${labels[kind] || kind}s at once (blank = not licensed)`
+        : `${labels[kind] || kind}s at once (blank for no limit)`,
       type: 'number',
       value: current.limits?.[kind] ?? '',
     }));
@@ -6995,6 +6998,7 @@ document.addEventListener('click', async (e) => {
             { value: 'kitchen', label: 'Kitchen screen' },
             { value: 'display', label: 'Customer display' },
             { value: 'express', label: 'Express kiosk' },
+            { value: 'go', label: 'Vesopa Go' },
           ],
           value: 'till',
         },
@@ -11640,6 +11644,92 @@ const expOn = () => !!Number(expState && expState.enabled);
 // Phones that are tills (src/tap.js): the venue's switch, tips and service
 // charge choices, the phones signed in, and the card payments taken on them.
 
+/**
+ * Vesopa Go's options, grouped as the manager thinks of them. Each line is one
+ * key of GO_DEFAULTS in src/go_options.js: a check box for true/false, a number
+ * box, a choice, or a text box. A new option is a line here and a line there.
+ */
+const GO_FIELDS = [
+  ['Orders', [
+    ['order_mode', 'When an order is finished', [['pay_on_go', 'Take payment on Go'], ['send_to_till', 'Send it to the till to pay']]],
+    ['stack_lines', 'Same item tapped again', [['till', 'Follow the till (Consolidate lines)'], ['on', 'Raise the quantity'], ['off', 'A new line each time']]],
+    ['floor_view', 'Tables open as', [['plan', 'The floor plan'], ['list', 'A list']]],
+    ['product_images', 'Show product photos on the buttons'],
+    ['allergen_alerts', 'Warn when an item with allergens goes on'],
+    ['note_long_press', 'Long-press a button for choices and notes'],
+    ['note_order', 'A note on the whole order'],
+    ['note_chips', 'Quick notes (comma separated)', 'text'],
+  ]],
+  ['Card payments', [
+    ['card_ios', 'iPhone and iPad take cards by', [['tap', 'Tap to Pay on the device'], ['machine', 'The Dojo card machine']]],
+    ['card_android', 'Android takes cards by', [['machine', 'The Dojo card machine'], ['pocket', 'A Dojo Pocket'], ['tap', 'Tap to Pay on the device']]],
+  ]],
+  ['Customer hand-over', [
+    ['customer_handover', 'Pass the device from person to person to pay a split'],
+    ['customer_tip', 'The customer chooses the tip'],
+    ['customer_receipt_choice', 'The customer chooses print, email or no receipt'],
+    ['customer_loyalty', 'Offer loyalty: scan a member or join by phone number'],
+  ]],
+  ['Signing in', [
+    ['login_pin', 'PIN'],
+    ['login_photos', 'Staff photos on the sign-in screen'],
+    ['login_nfc', 'Staff card or fob (NFC)'],
+    ['login_biometrics', 'Face ID or fingerprint after the first PIN'],
+    ['login_clock_in', 'Signing in clocks the staff member in'],
+  ]],
+  ['Idle', [
+    ['idle_enabled', 'Show the till\'s idle screen and wallpaper when nobody touches it'],
+    ['idle_seconds', 'After (seconds)', 'number'],
+    ['idle_require_pin', 'A PIN to come back'],
+  ]],
+  ['Sounds (volume 0-100, 0 is off)', [
+    ['sound_add', 'Item added', 'number'],
+    ['sound_approved', 'Payment approved', 'number'],
+    ['sound_declined', 'Payment declined', 'number'],
+    ['sound_kitchen_ready', 'Kitchen says food is ready', 'number'],
+    ['sound_allergen', 'Allergen warning', 'number'],
+    ['haptics', 'Vibrate with the sounds'],
+  ]],
+  ['Scanning', [
+    ['scan_table_qr', 'Table QR codes open the table'],
+    ['scan_barcode', 'Product barcodes and PLUs add the item'],
+    ['scan_gift_member', 'Gift cards and member cards'],
+    ['scan_nfc_table', 'NFC tags on tables'],
+  ]],
+  ['Printing', [
+    ['print_receipt_auto', 'Print a receipt after every sale'],
+    ['print_airprint_fallback', 'Use AirPrint or Android printing when no receipt printer is set'],
+    ['print_kitchen', 'Send kitchen tickets to the kitchen printers and screens'],
+  ]],
+  ['Reports', [
+    ['reports_clerks', 'Clerks can open reports (managers always can)'],
+    ['reports_z', 'X and Z reports'],
+    ['reports_hourly', 'Sales by the hour'],
+    ['reports_staff', 'Sales, tips, voids and refunds by staff'],
+    ['reports_products', 'Product mix'],
+  ]],
+  ['Screens', [
+    ['allow_rearrange', 'Managers can rearrange the buttons on the device (long-press)'],
+  ]],
+];
+
+function goOptionsHtml(go) {
+  const field = ([key, label, kind]) => {
+    const v = go[key];
+    if (Array.isArray(kind)) {
+      return `<label>${esc(label)}<select data-go="${key}">${
+        kind.map(([value, text]) => `<option value="${value}"${v === value ? ' selected' : ''}>${esc(text)}</option>`).join('')}</select></label>`;
+    }
+    if (kind === 'number') return `<label>${esc(label)}<input type="number" min="0" data-go="${key}" value="${esc(String(v ?? ''))}"></label>`;
+    if (kind === 'text') return `<label>${esc(label)}<input type="text" data-go="${key}" value="${esc(String(v ?? '').split(',').join(', '))}"></label>`;
+    return `<label class="check"><input type="checkbox" data-go="${key}"${v ? ' checked' : ''}> ${esc(label)}</label>`;
+  };
+  return `<h3>Vesopa Go options</h3>
+    <p class="muted small">Every device picks these up the next time it opens or comes back to the front.
+    The buttons come from your till's screens; each device can be rearranged for iPad or phone.</p>
+    ${GO_FIELDS.map(([title, fields]) => `<h4>${esc(title)}</h4>${fields.map(field).join('')}`).join('')}`;
+}
+
 async function loadTap() {
   let s;
   try {
@@ -11654,6 +11744,10 @@ async function loadTap() {
     if (el.type === 'checkbox') el.checked = !!Number(v);
     else el.value = String(v ?? '').split(',').join(', ');
   }
+  $('go-options').innerHTML = goOptionsHtml(s.go || {});
+  $('go-licence').innerHTML = s.go_licensed
+    ? '<span class="pill green">Licensed</span> This venue has Vesopa Go.'
+    : '<span class="pill amber">Not licensed</span> Vesopa Go is not on the licence for this venue yet. Ask Vesopa to add it.';
   $('tap-env').innerHTML = s.environment === 'live'
     ? '<span class="pill green">Live</span> Card payments go to your own Dojo account.'
     : '<span class="pill amber">Sandbox</span> Card payments go to the Dojo sandbox: no real money moves. '
@@ -11698,9 +11792,13 @@ document.addEventListener('DOMContentLoaded', () => {
     for (const el of document.querySelectorAll('[data-tap]')) {
       body[el.dataset.tap] = el.type === 'checkbox' ? el.checked : el.value;
     }
+    body.go = {};
+    for (const el of document.querySelectorAll('[data-go]')) {
+      body.go[el.dataset.go] = el.type === 'checkbox' ? el.checked : el.type === 'number' ? Number(el.value) : el.value;
+    }
     try {
       await api('/tap/settings', { method: 'PUT', body: JSON.stringify(body) });
-      toast('Vesopa Tap settings saved');
+      toast('Vesopa Go settings saved');
       loadTap();
     } catch (e) {
       toast(e.message, 'error');
@@ -13713,7 +13811,7 @@ document.addEventListener('click', async (e) => {
   }
 });
 
-const APP_NAMES = { till: 'Vesopa EPOS', kitchen: 'Kitchen screen', display: 'Customer display', express: 'Express kiosk', loyalty: 'Loyalty' };
+const APP_NAMES = { till: 'Vesopa EPOS', kitchen: 'Kitchen screen', display: 'Customer display', express: 'Express kiosk', go: 'Vesopa Go', loyalty: 'Loyalty' };
 
 async function loadAppInstalls() {
   const box = $('app-installs');

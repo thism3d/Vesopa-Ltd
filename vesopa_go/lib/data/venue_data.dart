@@ -10,6 +10,8 @@
 ///   GET /till/floor?office=      rooms and their tables
 library;
 
+import 'dart:convert';
+
 import 'models.dart';
 
 const _palette = [0xFF2F80ED, 0xFFF2994A, 0xFFA5C715, 0xFFBB6BD9, 0xFF2BB673, 0xFFE5484D, 0xFF56CCF2, 0xFFF5B301];
@@ -86,7 +88,7 @@ VenueMenu menuFrom({required List<dynamic> products, Map<String, dynamic>? modif
     final catId = dept.isEmpty ? 'menu' : dept.toLowerCase();
     categories.putIfAbsent(catId, () => MenuCategory(id: catId, name: dept.isEmpty ? 'Menu' : dept, colour: _palette[categories.length % _palette.length]));
     final plu = (m['pluid'] as num).toInt();
-    final allergens = '${m['allergens'] ?? ''}'.split(',').map((a) => a.trim()).where((a) => a.isNotEmpty).toList();
+    final allergens = allergensOf(m['allergens']);
     final routes = '${m['printer_routes'] ?? m['printer_route'] ?? ''}'.split(',').map((s) => s.trim().toLowerCase())
         .where((s) => RegExp(r'^kp[1-6]$').hasMatch(s)).toList();
     out.add(Product(
@@ -120,5 +122,37 @@ List<TableInfo> tablesFrom(List<dynamic> rooms) => [
             seats: (t['seats'] as num?)?.toInt() ?? 4,
             number: (t['table_number'] as num?)?.toInt(),
             roomId: (r['id'] as num?)?.toInt(),
+            x: (t['pos_x'] as num?)?.toInt() ?? 0,
+            y: (t['pos_y'] as num?)?.toInt() ?? 0,
+            width: ((t['width'] as num?)?.toInt() ?? 2).clamp(1, 40),
+            height: ((t['height'] as num?)?.toInt() ?? 2).clamp(1, 40),
+            round: t['shape'] == 'circle',
           ),
     ];
+
+/// A product's allergens as names. The back office stores them as a JSON list
+/// (`["celery","milk"]`); older rows hold a comma list. Either reads as
+/// `Celery`, `Milk`, never the brackets and quotes.
+List<String> allergensOf(Object? raw) {
+  Iterable<Object?> items;
+  if (raw is List) {
+    items = raw;
+  } else {
+    final text = '${raw ?? ''}'.trim();
+    if (text.isEmpty) return const [];
+    try {
+      final parsed = jsonDecode(text);
+      items = parsed is List ? parsed : [parsed];
+    } catch (_) {
+      items = text.split(',');
+    }
+  }
+  final out = <String>[];
+  for (final item in items) {
+    final name = '${item ?? ''}'.replaceAll(RegExp(r'["\[\]]'), '').trim();
+    if (name.isEmpty) continue;
+    final nice = name[0].toUpperCase() + name.substring(1);
+    if (!out.contains(nice)) out.add(nice);
+  }
+  return out;
+}

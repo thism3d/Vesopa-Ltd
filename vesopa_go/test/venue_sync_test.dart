@@ -59,7 +59,11 @@ void main() {
       expect(steak.priceMinor, 2450);
       expect(steak.plu, 101);
       expect(steak.taxPercent, 20);
-      expect(steak.allergens, ['milk', 'mustard']);
+      expect(steak.allergens, ['Milk', 'Mustard']);
+      // The back office's JSON list reads as names, never brackets and quotes.
+      expect(allergensOf('["celery","milk"]'), ['Celery', 'Milk']);
+      expect(allergensOf(['gluten', 'Gluten']), ['Gluten']);
+      expect(allergensOf(''), isEmpty);
       expect(steak.course, 2);
       expect(steak.stations, ['kp1', 'kp2'], reason: 'only kitchen stations, lower-cased');
       expect(menu.products[1].priceMinor, 550);

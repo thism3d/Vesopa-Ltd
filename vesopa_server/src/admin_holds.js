@@ -22,7 +22,7 @@ const express = require('express');
 
 const { MODULES } = require('./modules');
 
-const DEVICE_ITEMS = ['till', 'kitchen', 'display', 'express'];
+const DEVICE_ITEMS = ['till', 'kitchen', 'display', 'express', 'go'];
 const ITEMS = [
   ...DEVICE_ITEMS,
   ...MODULES.map((m) => `module:${m.key}`),
