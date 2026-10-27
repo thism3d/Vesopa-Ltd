@@ -20,6 +20,7 @@ import 'package:vesopa_go/ui/pages/more.dart';
 import 'package:vesopa_go/ui/pages/tables.dart';
 import 'package:vesopa_go/ui/clerk_chip.dart';
 import 'package:vesopa_go/ui/go_frame.dart';
+import 'package:vesopa_go/ui/pages/card_machine_page.dart';
 import 'package:vesopa_go/ui/pages/customers_page.dart';
 import 'package:vesopa_go/ui/product_photo.dart';
 import 'package:vesopa_go/ui/sounds.dart';
@@ -53,6 +54,7 @@ class _ShellState extends ConsumerState<Shell> {
         (Icons.receipt_long_rounded, 'Sales', () => const SalesPage()),
         (Icons.insights_rounded, 'Reports', () => const ReportsPage()),
         (Icons.credit_card_rounded, 'Card payments', () => const MorePage()),
+        (Icons.point_of_sale_rounded, 'Card machine', () => const CardMachinePage()),
         (Icons.settings_rounded, 'Settings', () => const SettingsPage()),
       ];
 

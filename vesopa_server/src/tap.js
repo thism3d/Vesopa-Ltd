@@ -323,6 +323,31 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
     } catch (e) { send(res, e, next); }
   });
 
+  /**
+   * The venue's Dojo card machines that are free, for Go's card machine page
+   * (pick this device's machine, switch mid-service), with the venue's own
+   * default. Each payment names the machine it wants (terminal_id).
+   */
+  router.get('/api/tap/terminals', terminal, async (req, res, next) => {
+    try {
+      const m = await machineFor(req.office);
+      try {
+        const list = await dojoClient.listTerminals(m.key);
+        res.json({
+          environment: m.environment,
+          default_terminal_id: m.terminalId,
+          terminals: (Array.isArray(list) ? list : []).map((t) => ({
+            id: t.id || t.terminalId,
+            tid: (t.properties && t.properties.tid) || t.tid || null,
+            status: t.status || null,
+          })),
+        });
+      } catch (err) {
+        res.json({ environment: m.environment, default_terminal_id: m.terminalId, terminals: [], error: 'Dojo would not list the card machines: ' + err.message });
+      }
+    } catch (e) { send(res, e, next); }
+  });
+
   /** Staff photos for the signed-on chip: { staff id: url }. Empty without the column. */
   router.get('/api/tap/staff-photos', terminal, async (req, res, next) => {
     try {

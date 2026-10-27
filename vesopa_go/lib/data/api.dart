@@ -223,6 +223,7 @@ class TapApi {
     String? billRef,
     String? clerk,
     String via = 'tap',
+    String? terminalId,
   }) =>
       _send('POST', '/api/tap/payments', {
         'id': id,
@@ -231,7 +232,12 @@ class TapApi {
         'bill_ref': billRef,
         'clerk': clerk,
         'via': via,
+        // This device's own card machine (Card machine page); else the venue's.
+        'terminal_id': ?terminalId,
       });
+
+  /// The venue's free Dojo card machines, and its default.
+  Future<Map<String, dynamic>> terminals() => _send('GET', '/api/tap/terminals');
 
   Future<Map<String, dynamic>> payment(String id) => _send('GET', '/api/tap/payments/$id');
   Future<Map<String, dynamic>> cancelPayment(String id) => _send('POST', '/api/tap/payments/$id/cancel');

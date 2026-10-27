@@ -30,6 +30,7 @@ import 'package:uuid/uuid.dart';
 
 import '../config/constants.dart';
 import '../data/api.dart';
+import '../ui/pages/card_machine_page.dart' show deviceMachine;
 
 enum PayResult { paid, declined, cancelled, uncertain, unavailable }
 
@@ -166,7 +167,8 @@ class DojoTapToPay implements PaymentService {
       void Function(PayStep step)? onStep) async {
     try {
       onStep?.call(PayStep.preparing);
-      await api.createPayment(id: paymentId, amountMinor: amountMinor, tipMinor: tipMinor, billRef: billRef, clerk: clerk, via: 'machine');
+      await api.createPayment(
+          id: paymentId, amountMinor: amountMinor, tipMinor: tipMinor, billRef: billRef, clerk: clerk, via: 'machine', terminalId: await deviceMachine());
       onStep?.call(PayStep.onMachine);
       final outcome = await _confirm(paymentId, seconds: 120);
       onStep?.call(PayStep.done);
