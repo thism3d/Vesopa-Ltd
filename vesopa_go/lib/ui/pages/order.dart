@@ -261,7 +261,26 @@ class _OrderPageState extends ConsumerState<OrderPage> {
               ? Center(child: Text('Tap a dish to add it', style: t.bodyMedium))
               : ListView(children: [
                   for (final l in bill.lines.reversed)
-                    ListTile(
+                    // The till's gestures: right adds one more, left takes it
+                    // off (a void with a reason once it has gone to the kitchen).
+                    Dismissible(
+                      key: ValueKey('tline-${l.id}'),
+                      direction: l.unpaidQuantity > 0 ? DismissDirection.horizontal : DismissDirection.none,
+                      confirmDismiss: (dir) async {
+                        final n = ref.read(tapProvider.notifier);
+                        if (dir == DismissDirection.startToEnd) {
+                          if (!l.sent) n.changeQuantity(bill.id, l.id, 1);
+                        } else if (l.sent) {
+                          await _void(bill, l);
+                        } else {
+                          n.changeQuantity(bill.id, l.id, -l.quantity);
+                        }
+                        HapticFeedback.selectionClick();
+                        return false;
+                      },
+                      background: Container(color: Tp.green.withValues(alpha: 0.85), alignment: Alignment.centerLeft, padding: const EdgeInsets.only(left: 20), child: const Icon(Icons.add_rounded, color: Colors.white)),
+                      secondaryBackground: Container(color: Tp.danger.withValues(alpha: 0.9), alignment: Alignment.centerRight, padding: const EdgeInsets.only(right: 20), child: Icon(l.sent ? Icons.block_rounded : Icons.delete_outline_rounded, color: Colors.white)),
+                      child: ListTile(
                       dense: true,
                       leading: CircleAvatar(
                         radius: 14,
@@ -283,6 +302,7 @@ class _OrderPageState extends ConsumerState<OrderPage> {
                         if (!l.sent) IconButton(icon: const Icon(Icons.remove_circle_outline), onPressed: () => ref.read(tapProvider.notifier).changeQuantity(bill.id, l.id, -1)),
                         Money(l.totalMinor, style: t.bodyMedium),
                       ]),
+                    ),
                     ),
                 ]),
         ),

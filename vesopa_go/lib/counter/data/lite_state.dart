@@ -26,11 +26,11 @@ class CurrentSale extends Notifier<String?> {
   }
 
   /// Ring [product] up [quantity] times with [choices]. Returns the sale's id.
-  String add(Product product, {List<Choice> choices = const [], int quantity = 1}) {
+  String add(Product product, {List<Choice> choices = const [], int quantity = 1, String note = ''}) {
     final id = ensure();
     final session = ref.read(tapProvider.notifier);
     // The line it went on: a new one, or a stacked one already on the sale.
-    final line = session.addLine(id, product, choices: choices);
+    final line = session.addLine(id, product, choices: choices, note: note);
     if (quantity > 1) session.changeQuantity(id, line, quantity - 1);
     return id;
   }

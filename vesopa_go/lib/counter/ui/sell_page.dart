@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vesopa_go/data/models.dart';
 import 'package:vesopa_go/data/session.dart';
+import 'package:vesopa_go/ui/pages/note_sheet.dart';
 import 'package:vesopa_go/ui/product_photo.dart';
 import 'package:vesopa_go/ui/sounds.dart';
 import 'package:vesopa_go/ui/theme.dart';
@@ -73,6 +74,25 @@ class _SellPageState extends ConsumerState<SellPage> {
     }
   }
 
+  /// Long press a key: its choices and how many (the product sheet), then a
+  /// note for the kitchen, before it goes on.
+  Future<void> _pressLong(Product p) async {
+    if (p.outOfStock) return;
+    var choices = const <Choice>[];
+    var quantity = 1;
+    if (p.options.isNotEmpty) {
+      final picked = await pickOptions(context, p);
+      if (picked == null) return;
+      choices = picked.choices;
+      quantity = picked.quantity;
+    }
+    if (!mounted) return;
+    final note = await askNote(context, ref, title: p.name);
+    if (note == null) return;
+    ref.read(currentSaleProvider.notifier).add(p, choices: choices, quantity: quantity, note: note);
+    GoSounds.play(ref.read(tapProvider).config.go, GoSound.add);
+  }
+
   void _pay() {
     final id = ref.read(currentSaleProvider);
     if (id == null) return;
@@ -113,7 +133,7 @@ class _SellPageState extends ConsumerState<SellPage> {
 
     return LayoutBuilder(builder: (context, box) {
       final wide = box.maxWidth >= 840;
-      final grid = _Grid(items: items, colour: colour, onPress: _press);
+      final grid = _Grid(items: items, colour: colour, onPress: _press, onLongPress: ref.read(tapProvider).config.go.noteLongPress ? _pressLong : null);
       final rail = _Rail(categories: categories, selected: selected, onSelect: (id) => setState(() => _category = id));
       if (wide) {
         return Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -183,27 +203,29 @@ class _Rail extends StatelessWidget {
 }
 
 class _Grid extends StatelessWidget {
-  const _Grid({required this.items, required this.colour, required this.onPress});
+  const _Grid({required this.items, required this.colour, required this.onPress, this.onLongPress});
   final List<Product> items;
   final Color colour;
   final ValueChanged<Product> onPress;
+  final ValueChanged<Product>? onLongPress;
 
   @override
   Widget build(BuildContext context) => GridView.builder(
         padding: const EdgeInsets.all(8),
         gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent: 128, mainAxisExtent: 84, crossAxisSpacing: 8, mainAxisSpacing: 8),
         itemCount: items.length,
-        itemBuilder: (_, i) => _Key(product: items[i], colour: colour, onTap: () => onPress(items[i])),
+        itemBuilder: (_, i) => _Key(product: items[i], colour: colour, onTap: () => onPress(items[i]), onLongPress: onLongPress == null ? null : () => onLongPress!(items[i])),
       );
 }
 
 /// One item key: its name, its price, and its category's colour along the
 /// bottom, the way a till's keys are colour-coded.
 class _Key extends StatelessWidget {
-  const _Key({required this.product, required this.colour, required this.onTap});
+  const _Key({required this.product, required this.colour, required this.onTap, this.onLongPress});
   final Product product;
   final Color colour;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -218,6 +240,7 @@ class _Key extends StatelessWidget {
         child: InkWell(
           key: ValueKey('item-${p.id}'),
           onTap: onTap,
+          onLongPress: onLongPress,
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             ProductPhoto(product: p, tint: colour),
             Expanded(
