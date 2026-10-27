@@ -11,6 +11,7 @@
 ///   Settings
 library;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vesopa_go/data/models.dart';
@@ -28,6 +29,7 @@ import 'package:vesopa_go/ui/sounds.dart';
 import '../data/lite_state.dart';
 import 'brand.dart';
 import 'quick_sale_page.dart';
+import 'printer_scan.dart';
 import 'receipt_print.dart';
 import 'reports_page.dart';
 import 'sales_page.dart';
@@ -211,6 +213,19 @@ class _ReceiptPrinterTileState extends State<_ReceiptPrinterTile> {
         leading: const Icon(Icons.print_rounded),
         title: const Text('Receipt printer'),
         subtitle: Text(_target.isEmpty ? 'None: AirPrint or Android printing, if the venue allows it' : 'Network printer at $_target'),
+        // Find it on the Wi-Fi, as the till's printers page does.
+        trailing: kIsWeb
+            ? null
+            : OutlinedButton.icon(
+                onPressed: () async {
+                  final ip = await pickPrinter(context);
+                  if (ip == null) return;
+                  await setReceiptPrinter(ip);
+                  if (mounted) setState(() => _target = ip);
+                },
+                icon: const Icon(Icons.wifi_find_rounded),
+                label: const Text('Scan'),
+              ),
         onTap: () async {
           final ctl = TextEditingController(text: _target);
           final v = await showDialog<String>(
