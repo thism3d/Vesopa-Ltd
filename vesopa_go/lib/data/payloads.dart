@@ -121,8 +121,9 @@ Map<String, Object?> salePayload(Bill bill, {required String office, required St
     'voucher_code': bill.voucherCode,
     'voucher_minor': bill.voucherMinor,
     'subtotal_minor': bill.subtotalMinor,
-    // The voucher has its own field; this is the member's and the clerk's.
-    'discount_minor': (bill.memberDiscountMinor + bill.manualDiscountMinor).clamp(0, bill.subtotalMinor),
+    // The voucher has its own field; this is the deals', the member's and the
+    // clerk's: what the till files as discount (everything taken off but the voucher).
+    'discount_minor': (bill.dealMinor + bill.memberDiscountMinor + bill.manualDiscountMinor).clamp(0, bill.subtotalMinor),
     if (bill.discountReason.isNotEmpty) 'discount_reason': bill.discountReason,
     'tax_minor': 0,
     'service_minor': bill.serviceMinor,
