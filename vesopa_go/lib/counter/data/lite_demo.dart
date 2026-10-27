@@ -8,14 +8,15 @@
 /// cooked. Payments in the demo are pretend (Go's DemoPayments).
 library;
 
+import 'package:vesopa_go/data/demo_venue.dart' show demoManagerKeys, demoStaffKeys;
 import 'package:vesopa_go/data/models.dart';
 
 const liteDemoVenue = Venue(name: 'The Vesopa Kitchen (demo)', office: 'demo', mode: VenueMode.connected);
 
 const liteDemoClerks = [
-  Clerk(id: 1, name: 'Sam', pin: '1111', group: 'Manager'),
-  Clerk(id: 2, name: 'Alex', pin: '2222', group: 'Bar'),
-  Clerk(id: 3, name: 'Priya', pin: '3333', group: 'Floor'),
+  Clerk(id: 1, name: 'Sam', pin: '1111', group: 'Manager', permissions: demoManagerKeys),
+  Clerk(id: 2, name: 'Alex', pin: '2222', group: 'Bar', permissions: demoStaffKeys),
+  Clerk(id: 3, name: 'Priya', pin: '3333', group: 'Floor', permissions: demoStaffKeys),
 ];
 
 const liteDemoCategories = [

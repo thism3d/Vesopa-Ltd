@@ -54,7 +54,9 @@ class _MorePageState extends ConsumerState<MorePage> {
     if (ok != true || !mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     final notifier = ref.read(tapProvider.notifier);
-    final manager = notifier.managerByPin(pin.text.trim());
+    final manager = (ref.read(tapProvider).clerk?.can(TillPermission.refund) ?? false) && pin.text.trim().isEmpty
+        ? ref.read(tapProvider).clerk
+        : notifier.managerByPin(pin.text.trim(), TillPermission.refund);
     if (manager == null) {
       messenger.showSnackBar(const SnackBar(content: Text('That is not a manager\'s PIN. Nothing was refunded.')));
       return;

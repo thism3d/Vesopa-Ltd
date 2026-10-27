@@ -89,7 +89,7 @@ class SaleDetailPage extends ConsumerWidget {
   }
 
   Future<void> _refund(BuildContext context, WidgetRef ref, SaleRecord sale) async {
-    final manager = await askManager(context, ref, why: 'Refund receipt ${sale.number}');
+    final manager = await askManager(context, ref, why: 'Refund receipt ${sale.number}', permission: TillPermission.refund);
     if (manager == null || !context.mounted) return;
     final asked = await showModalBottomSheet<(int, String)>(
       context: context,

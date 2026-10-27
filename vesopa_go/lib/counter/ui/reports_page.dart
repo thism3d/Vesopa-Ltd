@@ -30,7 +30,8 @@ class ReportsPage extends ConsumerWidget {
     final s = ref.watch(tapProvider);
     final go = s.config.go;
     // The venue decides whether clerks see the day's takings (back office).
-    final manager = RegExp('manager|supervisor|owner|admin').hasMatch((s.clerk?.group ?? '').toLowerCase());
+    // The till's X report key decides who reads the day (and the venue's option).
+    final manager = s.clerk?.can(TillPermission.xReport) ?? false;
     if (!go.reportsClerks && !manager && !s.demo) {
       return Center(
         child: Padding(
@@ -44,7 +45,7 @@ class ReportsPage extends ConsumerWidget {
             const SizedBox(height: 16),
             FilledButton.icon(
               onPressed: () async {
-                final m = await askManager(context, ref, why: 'Open the reports');
+                final m = await askManager(context, ref, why: 'Open the reports', permission: TillPermission.xReport);
                 if (m != null && context.mounted) {
                   Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => Scaffold(appBar: AppBar(title: const Text('Reports')), body: _ReportBody(manager: m))));
                 }
@@ -181,7 +182,7 @@ class _ReportBody extends ConsumerWidget {
   }
 
   Future<void> _endOfDay(BuildContext context, WidgetRef ref, DayReport r) async {
-    final manager = this.manager ?? await askManager(context, ref, why: 'End of day');
+    final manager = await askManager(context, ref, why: 'End of day', permission: TillPermission.zReport);
     if (manager == null || !context.mounted) return;
     final ok = await showDialog<bool>(
       context: context,

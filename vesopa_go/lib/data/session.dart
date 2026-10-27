@@ -407,7 +407,7 @@ class TapSession extends Notifier<TapState> {
         api.staffPhotos().catchError((Object _) => <String, dynamic>{}),
       ]);
       final raw = {
-        'staff': [for (final c in results[0] as List<Clerk>) {'id': c.id, 'name': c.name, 'pin': c.pin, 'swipe_card': c.card, 'permission_group': c.group}],
+        'staff': [for (final c in results[0] as List<Clerk>) {'id': c.id, 'name': c.name, 'pin': c.pin, 'swipe_card': c.card, 'permission_group': c.group, 'perms': c.permissions}],
         'products': results[1],
         'modifiers': results[2],
         'screens': results[3],
@@ -459,12 +459,11 @@ class TapSession extends Notifier<TapState> {
     state = state.copyWith(phase: Phase.locked, clearClerk: true);
   }
 
-  /// A manager's PIN, for a void or a refund: someone in a manager,
-  /// supervisor or owner group on the back office's staff list.
-  Clerk? managerByPin(String pin) {
+  /// Whoever this PIN belongs to, if they may approve [permission] (the
+  /// till's rule: they hold the key, or they are a manager).
+  Clerk? managerByPin(String pin, [TillPermission permission = TillPermission.isManager]) {
     for (final c in state.staff) {
-      final g = (c.group ?? '').toLowerCase();
-      if (c.pin == pin && pin.length >= 4 && RegExp('manager|supervisor|owner|admin').hasMatch(g)) return c;
+      if (c.pin == pin && pin.length >= 4 && c.canApprove(permission)) return c;
     }
     return null;
   }

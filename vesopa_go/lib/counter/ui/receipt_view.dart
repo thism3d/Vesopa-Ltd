@@ -7,7 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vesopa_go/config/constants.dart' show apiBase;
 import 'package:vesopa_go/data/api.dart';
-import 'package:vesopa_go/data/models.dart' show money;
+import 'package:vesopa_go/data/models.dart' show money, TillPermission;
 import 'package:vesopa_go/data/session.dart';
 import 'package:vesopa_go/ui/theme.dart';
 
@@ -158,11 +158,12 @@ Future<void> emailReceipt(BuildContext context, WidgetRef ref, String saleId) as
   }
 }
 
-/// A manager's PIN, for a refund or the End of day. Returns their name.
-Future<String?> askManager(BuildContext context, WidgetRef ref, {required String why}) async {
+/// May the signed-on clerk do [permission]? If they hold the key, yes, with
+/// their name; if not, the till's rule: a manager approves with their PIN.
+/// Returns who allowed it, or null.
+Future<String?> askManager(BuildContext context, WidgetRef ref, {required String why, TillPermission permission = TillPermission.isManager}) async {
   final s = ref.read(tapProvider);
-  final g = (s.clerk?.group ?? '').toLowerCase();
-  if (RegExp('manager|supervisor|owner|admin').hasMatch(g)) return s.clerk!.name;
+  if (s.clerk != null && s.clerk!.can(permission)) return s.clerk!.name;
   final pin = await showDialog<String>(
     context: context,
     builder: (c) {
@@ -185,9 +186,9 @@ Future<String?> askManager(BuildContext context, WidgetRef ref, {required String
     },
   );
   if (pin == null) return null;
-  final manager = ref.read(tapProvider.notifier).managerByPin(pin);
+  final manager = ref.read(tapProvider.notifier).managerByPin(pin, permission);
   if (manager == null && context.mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('That is not a manager\'s PIN')));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('That PIN cannot ${permission.verb}')));
   }
   return manager?.name;
 }

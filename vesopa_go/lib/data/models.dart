@@ -2,6 +2,9 @@
 /// the bills open on them. Money is always whole pence (int), as on the till.
 library;
 
+import 'till_permissions.dart';
+
+export 'till_permissions.dart';
 import 'package:flutter/foundation.dart';
 
 /// "£12.50" from 1250.
@@ -40,7 +43,7 @@ class Venue {
 /// card as on every till, set in the back office.
 @immutable
 class Clerk {
-  const Clerk({required this.id, required this.name, required this.pin, this.card = '', this.group});
+  const Clerk({required this.id, required this.name, required this.pin, this.card = '', this.group, this.permissions = ''});
   final int id;
   final String name;
   final String pin;
@@ -49,12 +52,26 @@ class Clerk {
   final String card;
   final String? group;
 
+  /// The till's keys for this member of staff (till_permissions.dart): the
+  /// group's switches as the till stores them, '' for no group (every key).
+  final String permissions;
+
+  bool can(TillPermission p) => TillPermissions.parse(permissions).can(p);
+
+  /// May approve [p] for somebody else: holds it, or is a manager.
+  bool canApprove(TillPermission p) => can(p) || can(TillPermission.isManager);
+
   factory Clerk.fromJson(Map<String, dynamic> j) => Clerk(
         id: (j['id'] as num).toInt(),
         name: j['name'] as String? ?? 'Staff',
         pin: '${j['pin'] ?? ''}',
         card: (j['swipe_card'] as String? ?? '').toUpperCase(),
         group: j['permission_group'] as String?,
+        // Kept on the device as `perms` (already encoded); from /till/staff as
+        // the group's switches, exactly as the till reads them.
+        permissions: j['perms'] is String
+            ? j['perms'] as String
+            : TillPermissions.encode(j['permissions'], grouped: j['permission_group_id'] != null),
       );
 }
 

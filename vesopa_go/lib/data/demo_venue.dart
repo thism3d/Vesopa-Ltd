@@ -8,10 +8,14 @@ import 'models.dart';
 
 const demoVenue = Venue(name: 'The Vesopa Arms (demo)', office: 'demo', mode: VenueMode.connected);
 
+/// The till's standard groups (src/permissions.js): a Manager holds every key, Staff none.
+const demoManagerKeys = '{"is_manager":true,"can_refund":true,"can_void":true,"can_discount":true,"can_no_sale":true,"can_set_price":true,"can_x_report":true,"can_z_report":true,"can_unlock_tables":true,"can_expense":true,"can_wastage":true}';
+const demoStaffKeys = '{"is_manager":false,"can_refund":false,"can_void":false,"can_discount":false,"can_no_sale":false,"can_set_price":false,"can_x_report":false,"can_z_report":false,"can_unlock_tables":false,"can_expense":false,"can_wastage":false}';
+
 const demoClerks = [
-  Clerk(id: 1, name: 'Sam', pin: '1111', card: '04A1B2C3D4', group: 'Manager'),
-  Clerk(id: 2, name: 'Alex', pin: '2222', group: 'Floor'),
-  Clerk(id: 3, name: 'Priya', pin: '3333', group: 'Bar'),
+  Clerk(id: 1, name: 'Sam', pin: '1111', card: '04A1B2C3D4', group: 'Manager', permissions: demoManagerKeys),
+  Clerk(id: 2, name: 'Alex', pin: '2222', group: 'Floor', permissions: demoStaffKeys),
+  Clerk(id: 3, name: 'Priya', pin: '3333', group: 'Bar', permissions: demoStaffKeys),
 ];
 
 const demoCategories = [

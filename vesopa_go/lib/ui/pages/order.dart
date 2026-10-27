@@ -41,7 +41,8 @@ class _OrderPageState extends ConsumerState<OrderPage> {
     String reason = reasons.first;
     var qty = 1;
     final pin = TextEditingController();
-    final isManager = s.clerk != null && ref.read(tapProvider.notifier).managerByPin(s.clerk!.pin) != null;
+    // The till's void key: the clerk voids alone if they hold it.
+    final isManager = s.clerk?.can(TillPermission.voidLine) ?? false;
     final ok = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -83,7 +84,7 @@ class _OrderPageState extends ConsumerState<OrderPage> {
     );
     if (ok != true || !mounted) return;
     final notifier = ref.read(tapProvider.notifier);
-    final approver = isManager ? s.clerk! : notifier.managerByPin(pin.text.trim());
+    final approver = isManager ? s.clerk! : notifier.managerByPin(pin.text.trim(), TillPermission.voidLine);
     if (approver == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('That is not a manager\'s PIN. Nothing was voided.')));
       return;
