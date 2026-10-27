@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Vesopa Go: the V with its speed lines on ink (tool/make_icons.py). -->
+<!-- Vesopa Go: the V breaking out of its orbit, on ink (tool/make_icons.py). -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@color/ic_launcher_background"/>
     <foreground android:drawable="@mipmap/ic_launcher_foreground"/>

@@ -94,8 +94,10 @@ def local_files():
     out = {}
     for part in PARTS:
         for p in (SERVER_DIR / part).rglob("*"):
-            if p.is_file() and "node_modules" not in p.parts and p.name != ".DS_Store" and not p.name.endswith(".log"):
-                out[p.relative_to(SERVER_DIR).as_posix()] = p
+            rel = p.relative_to(SERVER_DIR).as_posix()
+            if (p.is_file() and "node_modules" not in p.parts and p.name != ".DS_Store" and not p.name.endswith(".log")
+                    and ".bak" not in p.name and not rel.startswith("public/uploads/")):
+                out[rel] = p
     return out
 
 
@@ -155,6 +157,25 @@ def merge(server, base, ours):
         return r.stdout, r.returncode  # returncode: number of conflicts (<0 on error)
 
 
+def patch_hunks(server, base, ours):
+    """base -> ours as a patch, applied to the server's file hunk by hunk with
+    fuzz. Returns (content, failed hunk headers)."""
+    with tempfile.TemporaryDirectory() as t:
+        pb, po, ps = Path(t, "base"), Path(t, "ours"), Path(t, "server")
+        pb.write_bytes(base)
+        po.write_bytes(ours)
+        ps.write_bytes(server)
+        diff = subprocess.run(["diff", "-u", str(pb), str(po)], capture_output=True).stdout
+        r = subprocess.run(["patch", "--forward", "--fuzz=3", "--no-backup-if-mismatch", "-r", str(Path(t, "rej")), str(ps)],
+                           input=diff, capture_output=True)
+        failed = re.findall(r"Hunk #\d+ FAILED at \d+", r.stdout.decode(errors="replace"))
+        rej = Path(t, "rej").read_bytes() if Path(t, "rej").exists() else b""
+        # A failed hunk leaves the server's own version of that spot, as it is
+        # today. That is fine unless the hunk is part of Go (tap/go routes).
+        essential = bool(re.search(rb"^[+-].*\b(tap|Tap|tapPhones|/api/go|go_)\b", rej, re.M))
+        return ps.read_bytes(), failed, essential
+
+
 def plan(app):
     """What goes up: {path: bytes}, and what stops the run."""
     local, remote = local_files(), remote_hashes(app)
@@ -187,7 +208,13 @@ def plan(app):
         elif path.startswith("public/"):
             kept.append(path)
         else:
-            conflicts.append(f"{path} ({n} conflicting places, base {base_rev})")
+            patched, failed, essential = patch_hunks(server, base, mine)
+            if not failed or not essential:
+                upload[path] = patched
+                skipped = f"; skipped, the server keeps its own: {', '.join(failed)}" if failed else ""
+                merged.append(f"{path} (server's edits kept, this checkout's changes patched in{skipped}; base {base_rev})")
+            else:
+                conflicts.append(f"{path} ({n} conflicting places, base {base_rev}; patch: {', '.join(failed)})")
     only_server = sorted(set(remote) - set(local))
     for label, files in (("new", new), ("replaced (an earlier git version on the server)", replaced),
                          ("merged (edited on the server)", merged), ("left as the server has it", kept),
