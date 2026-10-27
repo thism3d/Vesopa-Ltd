@@ -610,6 +610,9 @@ def set_age_rating(c, info):
         "userGeneratedContent": False,
         "advertising": False,
         "healthOrWellnessTopics": False,
+        # Required by Apple since 2026-10 ("You must provide a value for the
+        # attribute 'socialMedia'").
+        "socialMedia": False,
         "kidsAgeBand": None,
     }
     patch_attributes(c, "ageRatingDeclarations", decl["id"], attrs, "age rating (4+)")

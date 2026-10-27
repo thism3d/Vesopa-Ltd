@@ -31,3 +31,15 @@ App Store Connect: `app_store.json` (filled by `go-ios.yml`, never submitted); T
   shared with third parties except Dojo for card payments; not sold. Card data
   is read by Dojo's software, never by the app.
 - **Financial features:** point of sale for the venue's own customers, through Dojo.
+
+## App Privacy (App Store Connect > Vesopa Go > App Privacy, by hand)
+
+Apple's API cannot answer these. Data collected, all **linked to the user**,
+**not used for tracking**:
+
+- **Contact info: name, email address**: app functionality (staff sign-in).
+- **Identifiers: user ID**: app functionality (the Vesopa account).
+- **Purchases: purchase history**: app functionality (the venue's sales).
+
+Card numbers are never collected by the app: Dojo's software reads cards.
+No advertising, no analytics SDKs, nothing sold or shared for tracking.
