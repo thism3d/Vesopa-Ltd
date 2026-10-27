@@ -66,7 +66,8 @@ API = "https://api.appstoreconnect.apple.com"
 # ours; the sizes are the ones each display type takes.
 SCREENSHOT_SETS = {
     "iphone-6.9": ("APP_IPHONE_67", {(1290, 2796), (1320, 2868)}),  # also APP_IPHONE_67's
-    "ipad-13": ("APP_IPAD_PRO_3GEN_129", {(2048, 2732), (2064, 2752)}),
+    # Portrait or landscape (Vesopa Go's are landscape, a till on a stand).
+    "ipad-13": ("APP_IPAD_PRO_3GEN_129", {(2048, 2732), (2064, 2752), (2732, 2048), (2752, 2064)}),
     # The Apple Watch app's own (tool/make_watch_screenshots.py): the listing
     # shows them under Apple Watch.
     "watch-ultra": ("APP_WATCH_ULTRA", {(410, 502), (422, 514)}),
