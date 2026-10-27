@@ -12,6 +12,7 @@ import 'package:vesopa_go/data/models.dart';
 import 'package:vesopa_go/data/session.dart';
 import 'package:vesopa_go/ui/pages/note_sheet.dart';
 import 'package:vesopa_go/ui/product_photo.dart';
+import 'package:vesopa_go/ui/programmed_grid.dart';
 import 'package:vesopa_go/ui/sounds.dart';
 import 'package:vesopa_go/ui/theme.dart';
 
@@ -117,9 +118,85 @@ class _SellPageState extends ConsumerState<SellPage> {
         ),
       );
 
+  /// The programmed screen on show, once the clerk has left the home screen.
+  int? _screenId;
+
+  void _function(String key) {
+    switch (key) {
+      case 'pay':
+        _pay();
+      case 'sign_on' || 'display_lock':
+        ref.read(tapProvider.notifier).lock();
+      case 'note':
+        final id = ref.read(currentSaleProvider);
+        final bill = id == null ? null : ref.read(tapProvider).bills[id];
+        final last = bill?.lines.where((l) => !l.sent).lastOrNull;
+        if (last != null) {
+          askNote(context, ref, title: last.product.name, initial: last.note)
+              .then((n) => n == null ? null : ref.read(tapProvider.notifier).setNote(bill!.id, last.id, n));
+        }
+    }
+  }
+
+  /// The venue's programmed screens, as the till lays them out: the top bar,
+  /// the screen, the bottom bar.
+  Widget _programmed(TapState s, TillScreen home) {
+    final config = s.config;
+    final screen = config.screens.byId(_screenId) ?? home;
+    final top = config.screens.barFor(screen, ScreenSurface.topBar, config.topBarScreenId);
+    final bottom = config.screens.barFor(screen, ScreenSurface.bottomBar, config.bottomBarScreenId);
+    final byPlu = {for (final p in s.products) if (p.plu != null) p.plu!: p};
+    Widget grid(TillScreen sc) => ProgrammedGrid(
+          screen: sc,
+          screens: config.screens,
+          productsByPlu: byPlu,
+          onProduct: _press,
+          onProductLong: config.go.noteLongPress ? _pressLong : null,
+          onPage: (t) => setState(() => _screenId = t.id),
+          onFunction: _function,
+        );
+    return Padding(
+      padding: const EdgeInsets.all(8),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        if (top != null) SizedBox(height: 60.0 * top.rows, child: grid(top)),
+        if (top != null) const SizedBox(height: 8),
+        Expanded(
+          child: AnimatedSwitcher(duration: const Duration(milliseconds: 180), child: KeyedSubtree(key: ValueKey(screen.id), child: grid(screen))),
+        ),
+        if (bottom != null) const SizedBox(height: 8),
+        if (bottom != null) SizedBox(height: 60.0 * bottom.rows, child: grid(bottom)),
+      ]),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = ref.watch(tapProvider);
+    final home = s.config.home;
+    if (home != null) {
+      return LayoutBuilder(builder: (context, box) {
+        final screens = _programmed(s, home);
+        if (box.maxWidth >= 840) {
+          return Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Expanded(child: screens),
+            SizedBox(
+              width: 380,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceContainer,
+                  border: Border(left: BorderSide(color: Theme.of(context).colorScheme.outlineVariant)),
+                ),
+                child: SalePanel(onPay: _pay),
+              ),
+            ),
+          ]);
+        }
+        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Expanded(child: screens),
+          _SaleBar(onView: _viewSale, onPay: _pay),
+        ]);
+      });
+    }
     final categories = [
       for (final c in s.categories)
         if (s.products.any((p) => p.category == c.id)) c,

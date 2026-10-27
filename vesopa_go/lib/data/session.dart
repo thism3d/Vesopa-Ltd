@@ -31,8 +31,10 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../payments/payment_service.dart';
 import 'go_options.dart';
+import 'screen_set.dart';
 
 export 'go_options.dart';
+export 'screen_set.dart';
 import 'api.dart';
 import 'demo_venue.dart';
 import 'models.dart';
@@ -61,6 +63,10 @@ class TapConfig {
     this.staffPhotos = const {},
     this.softwareHouseId = '',
     this.resellerId = '',
+    this.screens = ScreenSet.empty,
+    this.homeScreenId,
+    this.topBarScreenId,
+    this.bottomBarScreenId,
   });
   final String environment;
   final bool tips;
@@ -92,6 +98,17 @@ class TapConfig {
   final String softwareHouseId;
   final String resellerId;
 
+  /// The venue's programmed screens (back office, Screen Programming) and the
+  /// till's choice of home screen and bars. No home screen: the built-in
+  /// departments and products, as on the till.
+  final ScreenSet screens;
+  final int? homeScreenId;
+  final int? topBarScreenId;
+  final int? bottomBarScreenId;
+
+  /// The home screen to draw, or null for the built-in grid.
+  TillScreen? get home => screens.surfaceById(homeScreenId, ScreenSurface.sale);
+
   /// Whether a second tap of the same item raises the quantity.
   bool get stacks => switch (go.stackLines) { 'on' => true, 'off' => false, _ => consolidateLines };
 
@@ -117,6 +134,10 @@ class TapConfig {
       staffPhotos: j['photos'] is Map ? {for (final e in (j['photos'] as Map).entries) '${e.key}': '${e.value}'} : const {},
       softwareHouseId: '${j['software_house_id'] ?? ''}',
       resellerId: '${j['reseller_id'] ?? ''}',
+      screens: j['screens'] is List ? ScreenSet.fromJson({'screens': j['screens']}) : ScreenSet.empty,
+      homeScreenId: (till['home_screen_id'] as num?)?.toInt(),
+      topBarScreenId: (till['top_bar_screen_id'] as num?)?.toInt(),
+      bottomBarScreenId: (till['bottom_bar_screen_id'] as num?)?.toInt(),
     );
   }
 }
@@ -443,7 +464,7 @@ class TapSession extends Notifier<TapState> {
       categories: menu.categories,
       products: menu.products,
       tables: tablesFrom(raw['floor'] as List? ?? const []),
-      config: TapConfig.fromJson(Map<String, dynamic>.from(raw['config'] as Map? ?? const {})),
+      config: TapConfig.fromJson({...Map<String, dynamic>.from(raw['config'] as Map? ?? const {}), 'screens': raw['screens']}),
     );
   }
 
