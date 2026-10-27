@@ -94,11 +94,11 @@ modifier layout, receipt builder), copy it with a sync script, as
 
 ## Phase 5: everything else from the till
 
-- [ ] Stock and wastage: `stock_page.dart`, `wastage_sheet.dart`
-- [ ] Paid in and out, cash tally, Z reprint: `paid_out_sheet.dart`, `cash_tally.dart`, `reprint_z_sheet.dart`
+- [x] Stock and wastage: `stock_page.dart`, `wastage_sheet.dart`
+- [x] Paid in and out, cash tally, Z reprint: `paid_out_sheet.dart`, `cash_tally.dart`, `reprint_z_sheet.dart`
 - [ ] Reports: the till's `reports_page.dart`
-- [ ] Clock in and out, timesheets: `clock_sheet.dart`
-- [ ] Memberships, gym, events and tickets: `memberships_page.dart`, `gym_page.dart`, `tickets_page.dart`
+- [x] Clock in and out, timesheets: `clock_sheet.dart`
+- [x] Memberships, gym, events and tickets: `memberships_page.dart`, `gym_page.dart`, `tickets_page.dart`
 - [ ] Kitchen remote and delivery: `kitchen_remote_page.dart`, `kitchen_delivery_card.dart`
 - [ ] Settings for Go, mirrored with the back office (Vesopa Go options)
 
@@ -126,6 +126,13 @@ modifier layout, receipt builder), copy it with a sync script, as
   shared with the tills is still to do (the till keeps its printers locally).
 - The multicast entitlement request to Apple is still to be filed (in App Store
   Connect, by the account holder).
+
+- Memberships (join, renew, freeze, cancel, reinstate) and Events & tickets
+  (sell at the counter through POST /till/events/:id/sell, the gate) are on Go;
+  who may use them is a Vesopa Go option (staff, managers, off). The gym and
+  class bookings are not on Go yet. Cash & stock covers no sale, paid out and
+  in, wastage and the clock; the cash count and Z reprint are not.
+- Play: every hand-typed box is in `store/play_console.md`.
 
 ## How each phase is done
 
