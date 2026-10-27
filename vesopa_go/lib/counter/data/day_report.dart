@@ -39,7 +39,20 @@ class DayReport {
     required this.byHour,
     this.from,
     this.to,
+    this.tapMinor = 0,
+    this.machineMinor = 0,
+    this.tipsByClerk = const {},
+    this.refundsByClerk = const {},
   });
+
+  /// Card money by where it was read: on this device (Tap to Pay, a Dojo
+  /// Pocket) or on the venue's Dojo card machine.
+  final int tapMinor;
+  final int machineMinor;
+
+  /// Tips and refunds by the member of staff who took the sale.
+  final Map<String, int> tipsByClerk;
+  final Map<String, int> refundsByClerk;
 
   final int sales;
   final int grossMinor;
@@ -67,7 +80,9 @@ class DayReport {
   int get cashInDrawerMinor => cashMinor - refundCashMinor;
 
   factory DayReport.of(List<SaleRecord> sales) {
-    var gross = 0, discount = 0, net = 0, cash = 0, card = 0, tips = 0, rCash = 0, rCard = 0, rCount = 0;
+    var gross = 0, discount = 0, net = 0, cash = 0, card = 0, tips = 0, rCash = 0, rCard = 0, rCount = 0, tap = 0, machine = 0;
+    final tipsBy = <String, int>{};
+    final refundsBy = <String, int>{};
     final cat = <String, (int, int)>{};
     final prod = <String, (int, int)>{};
     final clerk = <String, (int, int)>{};
@@ -80,13 +95,20 @@ class DayReport {
       for (final p in s.payments) {
         if (p.isCard) {
           card += p.amountMinor;
+          if (p.kind == 'machine') {
+            machine += p.amountMinor;
+          } else {
+            tap += p.amountMinor;
+          }
         } else {
           cash += p.amountMinor;
         }
         tips += p.tipMinor;
+        if (p.tipMinor > 0) tipsBy.update(s.clerk.isEmpty ? 'Unknown' : s.clerk, (v) => v + p.tipMinor, ifAbsent: () => p.tipMinor);
       }
       for (final r in s.refunds) {
         rCount++;
+        refundsBy.update(s.clerk.isEmpty ? 'Unknown' : s.clerk, (v) => v + r.amountMinor, ifAbsent: () => r.amountMinor);
         if (r.kind == 'cash') {
           rCash += r.amountMinor;
         } else {
@@ -126,6 +148,10 @@ class DayReport {
       byHour: hour,
       from: from,
       to: to,
+      tapMinor: tap,
+      machineMinor: machine,
+      tipsByClerk: tipsBy,
+      refundsByClerk: refundsBy,
     );
   }
 }

@@ -110,6 +110,8 @@ void main() {
       await tester.tap(find.text('Reports').last);
       await tester.pumpAndSettle();
       expect(find.text('£18.61'), findsWidgets);
+      // Below the hourly chart on a phone: scroll to it.
+      await tester.scrollUntilVisible(find.text('Beers & cider'), 300, scrollable: find.byType(Scrollable).last);
       expect(find.text('Beers & cider'), findsOneWidget);
       await tester.scrollUntilVisible(find.byKey(const ValueKey('end-of-day')), 300, scrollable: find.byType(Scrollable).last);
       await tapKey(tester, 'end-of-day');

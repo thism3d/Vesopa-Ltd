@@ -21,6 +21,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vesopa_go/data/models.dart' show money;
 import 'package:vesopa_go/data/session.dart';
 
+import '../data/day_report.dart';
 import '../data/journal.dart';
 import 'receipt_view.dart' show ddmmyy, hhmm, payKind;
 
@@ -142,16 +143,56 @@ Future<void> _system(List<PrintLine> lines, String name) async {
   await Printing.layoutPdf(name: name, onLayout: (_) async => doc.save());
 }
 
+/// An X or Z report as the till prints it: the takings, payments, staff and
+/// categories, for the receipt printer.
+List<PrintLine> reportLines(DayReport r, TapState s, {required String title, DateTime? since, String? by}) {
+  const rule = PrintLine('------------------------------------------');
+  final now = DateTime.now();
+  return [
+    PrintLine(s.venue?.name ?? '', '', true, true),
+    PrintLine(title, '', true, true),
+    rule,
+    if (since != null) PrintLine('From', '${ddmmyy(since)} ${hhmm(since)}'),
+    PrintLine('To', '${ddmmyy(now)} ${hhmm(now)}'),
+    PrintLine('Device', s.venue == null ? 'Vesopa Go' : 'Vesopa Go'),
+    if (by != null) PrintLine('By', by),
+    rule,
+    PrintLine('Sales', '${r.sales}'),
+    PrintLine('Gross', money(r.grossMinor)),
+    PrintLine('Discounts', '-${money(r.discountMinor)}'),
+    PrintLine('NET', money(r.netMinor), false, true),
+    PrintLine('Average', money(r.averageMinor)),
+    rule,
+    PrintLine('Cash', money(r.cashMinor)),
+    PrintLine('Card', money(r.cardMinor)),
+    if (r.tipsMinor > 0) PrintLine('Tips', money(r.tipsMinor)),
+    if (r.refundsMinor > 0) PrintLine('Refunds (${r.refundCount})', '-${money(r.refundsMinor)}'),
+    PrintLine('Cash in the drawer', money(r.cashInDrawerMinor), false, true),
+    rule,
+    const PrintLine('STAFF', '', false, true),
+    for (final c in r.byClerk) PrintLine('${c.label} (${c.count})', money(c.minor)),
+    rule,
+    const PrintLine('CATEGORIES', '', false, true),
+    for (final c in r.byCategory) PrintLine('${c.label} (${c.count})', money(c.minor)),
+    rule,
+  ];
+}
+
+Future<void> printReport(BuildContext context, WidgetRef ref, DayReport r, {required String title, DateTime? since, String? by}) =>
+    _print(context, ref, reportLines(r, ref.read(tapProvider), title: title, since: since, by: by), title);
+
 /// Prints [sale]'s receipt, saying how it went.
-Future<void> printReceipt(BuildContext context, WidgetRef ref, SaleRecord sale) async {
+Future<void> printReceipt(BuildContext context, WidgetRef ref, SaleRecord sale) =>
+    _print(context, ref, receiptLines(sale, ref.read(tapProvider)), 'Receipt ${sale.number}');
+
+Future<void> _print(BuildContext context, WidgetRef ref, List<PrintLine> lines, String name) async {
   final s = ref.read(tapProvider);
-  final lines = receiptLines(sale, s);
   final messenger = ScaffoldMessenger.of(context);
   final target = kIsWeb ? '' : await receiptPrinter();
   if (target.isNotEmpty) {
     try {
       await _network(target, lines);
-      messenger.showSnackBar(const SnackBar(content: Text('Receipt printed')));
+      messenger.showSnackBar(SnackBar(content: Text('$name printed')));
       return;
     } catch (_) {
       if (!s.config.go.printAirprintFallback) {
@@ -165,7 +206,7 @@ Future<void> printReceipt(BuildContext context, WidgetRef ref, SaleRecord sale) 
     return;
   }
   try {
-    await _system(lines, 'Receipt ${sale.number}');
+    await _system(lines, name);
   } catch (e) {
     messenger.showSnackBar(SnackBar(content: Text('Could not print: $e')));
   }

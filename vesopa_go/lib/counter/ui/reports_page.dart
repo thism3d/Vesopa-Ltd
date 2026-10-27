@@ -18,6 +18,7 @@ import 'package:vesopa_go/ui/theme.dart';
 
 import '../data/day_report.dart';
 import '../data/journal.dart';
+import 'receipt_print.dart';
 import 'receipt_view.dart';
 
 class ReportsPage extends ConsumerWidget {
@@ -25,10 +26,53 @@ class ReportsPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final t = Theme.of(context).textTheme;
+    final s = ref.watch(tapProvider);
+    final go = s.config.go;
+    // The venue decides whether clerks see the day's takings (back office).
+    final manager = RegExp('manager|supervisor|owner|admin').hasMatch((s.clerk?.group ?? '').toLowerCase());
+    if (!go.reportsClerks && !manager && !s.demo) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Icon(Icons.lock_rounded, size: 48),
+            const SizedBox(height: 12),
+            Text('Reports are for managers', style: t.titleLarge),
+            const SizedBox(height: 6),
+            const Text('A manager can open them here with their PIN, or the venue can let every clerk see them in the back office.', textAlign: TextAlign.center),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: () async {
+                final m = await askManager(context, ref, why: 'Open the reports');
+                if (m != null && context.mounted) {
+                  Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => Scaffold(appBar: AppBar(title: const Text('Reports')), body: _ReportBody(manager: m))));
+                }
+              },
+              icon: const Icon(Icons.key_rounded),
+              label: const Text('Manager\'s PIN'),
+            ),
+          ]),
+        ),
+      );
+    }
+    return const _ReportBody();
+  }
+}
+
+class _ReportBody extends ConsumerWidget {
+  const _ReportBody({this.manager});
+
+  /// Who opened the reports with their PIN, when a clerk could not.
+  final String? manager;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
     final j = ref.watch(journalProvider);
     final r = DayReport.of(j.sales);
     final t = Theme.of(context).textTheme;
     final since = j.dayStarted ?? r.from;
+    final go = ref.watch(tapProvider.select((s) => s.config.go));
 
     return LayoutBuilder(builder: (context, box) {
       final two = box.maxWidth >= 760;
@@ -55,6 +99,10 @@ class ReportsPage extends ConsumerWidget {
         _Section(title: 'Payments', children: [
           _Line('Cash', r.cashMinor),
           _Line('Card', r.cardMinor),
+          if (r.tapMinor > 0 && r.machineMinor > 0) ...[
+            _Line('   on this device', r.tapMinor),
+            _Line('   on the card machine', r.machineMinor),
+          ],
           if (r.tipsMinor > 0) _Line('Tips (on top)', r.tipsMinor),
           if (r.refundCashMinor > 0) _Line('Cash refunded', -r.refundCashMinor),
           if (r.refundCardMinor > 0) _Line('Card refunded', -r.refundCardMinor),
@@ -62,24 +110,50 @@ class ReportsPage extends ConsumerWidget {
           _Line('Cash in the drawer', r.cashInDrawerMinor, bold: true),
         ]),
         const SizedBox(height: 12),
-        _Section(title: 'Staff', children: [
-          for (final c in r.byClerk) _Line('${c.label} (${c.count})', c.minor),
-          if (r.byClerk.isEmpty) Text('No sales yet', style: t.bodySmall),
-        ]),
+        if (go.reportsStaff)
+          _Section(title: 'Staff', subtitle: 'Sales, tips, refunds', children: [
+            for (final c in r.byClerk) ...[
+              _Line('${c.label} (${c.count})', c.minor),
+              if ((r.tipsByClerk[c.label] ?? 0) > 0) _Line('   tips', r.tipsByClerk[c.label]!),
+              if ((r.refundsByClerk[c.label] ?? 0) > 0) _Line('   refunded', -r.refundsByClerk[c.label]!),
+            ],
+            if (r.byClerk.isEmpty) Text('No sales yet', style: t.bodySmall),
+          ]),
       ];
       final right = <Widget>[
+        if (go.reportsHourly) ...[
+          _Section(title: 'Sales by the hour', subtitle: 'Net', children: [_Hours(r.byHour)]),
+          const SizedBox(height: 12),
+        ],
         _Section(title: 'By category', subtitle: 'Before discounts', children: [_Bars(r.byCategory, total: r.grossMinor)]),
-        const SizedBox(height: 12),
-        _Section(title: 'Top items', children: [_Bars(r.byProduct.take(10).toList(), total: r.grossMinor, counts: true)]),
+        if (go.reportsProducts) ...[
+          const SizedBox(height: 12),
+          _Section(title: 'Product mix', subtitle: 'Top 15 by value', children: [_Bars(r.byProduct.take(15).toList(), total: r.grossMinor, counts: true)]),
+        ],
       ];
       final end = <Widget>[
         const SizedBox(height: 16),
-        FilledButton.icon(
-          key: const ValueKey('end-of-day'),
-          onPressed: j.sales.isEmpty ? null : () => _endOfDay(context, ref, r),
-          icon: const Icon(Icons.lock_clock_rounded),
-          label: const Text('End of day (Z)'),
-        ),
+        Row(children: [
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: j.sales.isEmpty ? null : () => printReport(context, ref, r, title: 'X report', since: since),
+              icon: const Icon(Icons.print_rounded),
+              label: const Text('Print X report'),
+            ),
+          ),
+          if (go.reportsZ) ...[
+            const SizedBox(width: 12),
+            Expanded(
+              flex: 2,
+              child: FilledButton.icon(
+                key: const ValueKey('end-of-day'),
+                onPressed: j.sales.isEmpty ? null : () => _endOfDay(context, ref, r),
+                icon: const Icon(Icons.lock_clock_rounded),
+                label: const Text('End of day (Z)'),
+              ),
+            ),
+          ],
+        ]),
         if (j.zs.isNotEmpty) ...[
           const SizedBox(height: 20),
           Text('Past End of days', style: t.titleMedium),
@@ -107,7 +181,7 @@ class ReportsPage extends ConsumerWidget {
   }
 
   Future<void> _endOfDay(BuildContext context, WidgetRef ref, DayReport r) async {
-    final manager = await askManager(context, ref, why: 'End of day');
+    final manager = this.manager ?? await askManager(context, ref, why: 'End of day');
     if (manager == null || !context.mounted) return;
     final ok = await showDialog<bool>(
       context: context,
@@ -123,6 +197,8 @@ class ReportsPage extends ConsumerWidget {
     );
     if (ok != true) return;
     final j = ref.read(journalProvider);
+    final zTitle = 'Z report ${j.nextZ}';
+    final zSince = j.dayStarted ?? r.from;
     ref.read(journalProvider.notifier).endOfDay(
           summary: ZSummary(
             number: j.nextZ,
@@ -137,6 +213,8 @@ class ReportsPage extends ConsumerWidget {
           ),
         );
     if (context.mounted) {
+      // The Z prints as the till's does, from the figures the day closed on.
+      printReport(context, ref, r, title: zTitle, since: zSince, by: manager);
       final pending = ref.read(tapProvider).pendingSync;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(pending > 0 ? 'Day ended. $pending sales still to reach the back office: keep the device online.' : 'Day ended.'),
@@ -247,6 +325,57 @@ class _Bars extends StatelessWidget {
             ]),
           ),
         ),
+    ]);
+  }
+}
+
+/// Net sales by the hour, as columns from the first hour traded to the last.
+class _Hours extends StatelessWidget {
+  const _Hours(this.byHour);
+  final Map<int, int> byHour;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    if (byHour.isEmpty) return Text('No sales yet', style: t.bodySmall);
+    final first = byHour.keys.reduce((a, b) => a < b ? a : b);
+    final last = byHour.keys.reduce((a, b) => a > b ? a : b);
+    final top = byHour.values.reduce((a, b) => a > b ? a : b);
+    final busiest = byHour.entries.firstWhere((e) => e.value == top).key;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      SizedBox(
+        height: 140,
+        child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+          for (var h = first; h <= last; h++)
+            Expanded(
+              child: Tooltip(
+                message: '${h.toString().padLeft(2, '0')}:00  ${money(byHour[h] ?? 0)}',
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
+                  child: TweenAnimationBuilder<double>(
+                    tween: Tween(begin: 0, end: top == 0 ? 0 : (byHour[h] ?? 0) / top),
+                    duration: const Duration(milliseconds: 600),
+                    curve: Curves.easeOutCubic,
+                    builder: (_, v, _) => FractionallySizedBox(
+                      heightFactor: v.clamp(0.02, 1.0),
+                      alignment: Alignment.bottomCenter,
+                      child: Container(decoration: BoxDecoration(color: h == busiest ? Tp.lime : Tp.lime.withValues(alpha: 0.45), borderRadius: BorderRadius.circular(4))),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ]),
+      ),
+      const SizedBox(height: 6),
+      Row(children: [
+        Text('${first.toString().padLeft(2, '0')}:00', style: t.bodySmall),
+        Expanded(
+          child: Text('Busiest ${busiest.toString().padLeft(2, '0')}:00 · ${money(top)}',
+              textAlign: TextAlign.center, overflow: TextOverflow.ellipsis, style: t.bodySmall?.copyWith(fontWeight: FontWeight.w700)),
+        ),
+        if (last != first) Text('${last.toString().padLeft(2, '0')}:00', style: t.bodySmall),
+      ]),
     ]);
   }
 }
