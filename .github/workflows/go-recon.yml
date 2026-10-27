@@ -77,10 +77,10 @@ jobs:
           R() { ssh -n "$SERVER" "$@"; }
           R true && echo "SSH: ok"
           H='export PATH=$PATH:/usr/local/hestia/bin;'
-          echo "== Hestia users and DNS zones"
-          R "$H for u in \$(v-list-users plain | awk '{print \$1}'); do for z in \$(v-list-dns-domains \$u plain 2>/dev/null | awk '{print \$1}'); do echo \"  \$u \$z\"; done; done"
+          echo "== who serves the vesopaepos.com zone (only that zone; never other accounts)"
+          R "$H for u in admin vesopasoftware; do v-list-dns-domains \$u plain 2>/dev/null | awk -v u=\$u '\$1==\"vesopaepos.com\"{print \"  \"u\" has the zone\"}'; done; v-list-dns-records vesopasoftware vesopaepos.com plain 2>/dev/null | awk '\$2==\"go\"||\$2==\"backoffice\"{print \"  record \"\$2\" \"\$3\" \"\$4}'"
           echo "== web domains (vesopasoftware)"
-          R "$H v-list-web-domains vesopasoftware plain | awk '{print \"  \"\$1}'"
+          R "$H v-list-web-domains vesopasoftware plain | awk '{print \"  \"\$1}'" | grep -E "vesopa|backoffice|go\." || true
           echo "== DNS for vesopaepos.com, from outside"
           dig +short NS vesopaepos.com; dig +short A go.vesopaepos.com; dig +short A backoffice.vesopaepos.com
           echo "== pm2 (vesopasoftware)"
@@ -90,7 +90,7 @@ jobs:
           echo "== live back office: which commit its server.js is"
           live=$(R "cat $BO/src/server.js" | git hash-object --stdin)
           git log --format='%h %ad %s' --date=short -- vesopa_server/src/server.js | while read h rest; do
-            [ "$(git rev-parse "$h:vesopa_server/src/server.js")" = "$live" ] && { echo "  matches $h $rest" | cut -c1-140; break; }; done
+            [ "$(git rev-parse "$h:vesopa_server/src/server.js" 2>/dev/null)" = "$live" ] && { echo "  matches $h $rest" | cut -c1-140; break; }; done || true
           echo "== back office database"
           DB="cd $BO && mariadb \$(grep -E '^DB_NAME=' .env | cut -d= -f2)"
           R "$DB -N -e \"SELECT CONCAT('  size MB: ', ROUND(SUM(data_length+index_length)/1e6)) FROM information_schema.tables WHERE table_schema=DATABASE()\""
