@@ -295,6 +295,18 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
     refunded_minor: Number(row.refunded_minor) || 0,
   });
 
+  /** Staff photos for the signed-on chip: { staff id: url }. Empty without the column. */
+  router.get('/api/tap/staff-photos', terminal, async (req, res, next) => {
+    try {
+      const [rows] = await pool.query(
+        'SELECT id, photo_url FROM bo_clarks WHERE email = ? AND photo_url IS NOT NULL', [req.office]);
+      res.json({ photos: Object.fromEntries(rows.map((r) => [String(r.id), r.photo_url])) });
+    } catch (e) {
+      if (e.code === 'ER_BAD_FIELD_ERROR' || e.code === 'ER_NO_SUCH_TABLE') return res.json({ photos: {} });
+      send(res, e, next);
+    }
+  });
+
   /** What this phone needs to know before it offers Tap to Pay. */
   router.get('/api/tap/config', terminal, async (req, res, next) => {
     try {
@@ -309,6 +321,9 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
         // Go at all: it is licensed per venue, none unless offered (licences.js).
         go: await goOptionsFor(pool, req.office),
         go_licensed: await goLicensed(req.office),
+        // Dojo's partner ids, shown on the card machine page as the till shows them.
+        software_house_id: partnerIds('').softwareHouseId,
+        reseller_id: partnerIds('').resellerId,
       });
     } catch (e) { send(res, e, next); }
   });

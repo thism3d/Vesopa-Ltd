@@ -338,7 +338,7 @@ class _IdleScreenState extends ConsumerState<IdleScreen> with SingleTickerProvid
               Row(children: [
                 const GoMark(size: 40),
                 const SizedBox(width: 12),
-                Expanded(child: Text(s.venue?.name ?? appName, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white))),
+                Expanded(child: Text(s.venue?.name ?? appName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white))),
                 Text(time, style: const TextStyle(fontSize: 40, fontWeight: FontWeight.w800, color: Colors.white, fontFeatures: Tp.tabular)),
               ]),
               const Spacer(),
@@ -348,7 +348,16 @@ class _IdleScreenState extends ConsumerState<IdleScreen> with SingleTickerProvid
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
                     decoration: BoxDecoration(color: Tp.lime, borderRadius: BorderRadius.circular(999)),
-                    child: Text(s.config.idleMessage, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Tp.onLime)),
+                    // A venue's message can be a sentence: it wraps, and
+                    // shrinks to fit, rather than running off the screen.
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.8),
+                      child: Text(s.config.idleMessage,
+                          textAlign: TextAlign.center,
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Tp.onLime)),
+                    ),
                   ),
                 ),
               ),

@@ -58,6 +58,9 @@ class TapConfig {
     this.idleImageUrl,
     this.idleMessage = 'Touch to begin',
     this.branding = const {},
+    this.staffPhotos = const {},
+    this.softwareHouseId = '',
+    this.resellerId = '',
   });
   final String environment;
   final bool tips;
@@ -82,6 +85,13 @@ class TapConfig {
   /// address, VAT number, header and footer, which parts show.
   final Map<String, dynamic> branding;
 
+  /// Staff id to photo (back office, Staff > Photo).
+  final Map<String, String> staffPhotos;
+
+  /// Dojo's partner ids, shown on the card machine page as the till shows them.
+  final String softwareHouseId;
+  final String resellerId;
+
   /// Whether a second tap of the same item raises the quantity.
   bool get stacks => switch (go.stackLines) { 'on' => true, 'off' => false, _ => consolidateLines };
 
@@ -104,6 +114,9 @@ class TapConfig {
       idleImageUrl: idle.isEmpty ? null : idle,
       idleMessage: till['idle_message'] as String? ?? 'Touch to begin',
       branding: j['branding'] is Map ? Map<String, dynamic>.from(j['branding'] as Map) : const {},
+      staffPhotos: j['photos'] is Map ? {for (final e in (j['photos'] as Map).entries) '${e.key}': '${e.value}'} : const {},
+      softwareHouseId: '${j['software_house_id'] ?? ''}',
+      resellerId: '${j['reseller_id'] ?? ''}',
     );
   }
 }
@@ -391,6 +404,7 @@ class TapSession extends Notifier<TapState> {
         api.tapConfig().catchError((Object _) => <String, dynamic>{}),
         api.tillSettings().catchError((Object _) => <String, dynamic>{}),
         api.branding().catchError((Object _) => <String, dynamic>{}),
+        api.staffPhotos().catchError((Object _) => <String, dynamic>{}),
       ]);
       final raw = {
         'staff': [for (final c in results[0] as List<Clerk>) {'id': c.id, 'name': c.name, 'pin': c.pin, 'swipe_card': c.card, 'permission_group': c.group}],
@@ -398,7 +412,7 @@ class TapSession extends Notifier<TapState> {
         'modifiers': results[2],
         'screens': results[3],
         'floor': results[4],
-        'config': {...results[5] as Map<String, dynamic>, 'till': results[6], 'branding': results[7]},
+        'config': {...results[5] as Map<String, dynamic>, 'till': results[6], 'branding': results[7], 'photos': (results[8] as Map)['photos']},
       };
       _apply(raw);
       state = state.copyWith(online: true);

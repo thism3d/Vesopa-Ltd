@@ -318,6 +318,11 @@ def deploy_files(app, upload):
     sh(f"cat > {app}/schema/schema_go_licence.sql && chown {USER}:{USER} {app}/schema/schema_go_licence.sql", data=lic.read_bytes())
     sh(f"{db(app)} < schema/schema_go_licence.sql")
     note("  schema_go_licence.sql applied (The Vesopa Kitchen's Go licence, added only if missing)")
+    # Staff photos (ADD COLUMN IF NOT EXISTS: nothing removed).
+    photo = SERVER_DIR / "schema" / "schema_staff_photo.sql"
+    sh(f"cat > {app}/schema/schema_staff_photo.sql && chown {USER}:{USER} {app}/schema/schema_staff_photo.sql", data=photo.read_bytes())
+    sh(f"{db(app)} < schema/schema_staff_photo.sql")
+    note("  schema_staff_photo.sql applied (bo_clarks.photo_url, if missing)")
 
 
 def auth_client(app, auth):

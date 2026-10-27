@@ -7749,6 +7749,7 @@ document.addEventListener('click', async (e) => {
       await staffGroupField(''),
       await staffScreenField(''),
       { label: 'Hourly rate £ (for the wage reports; leave blank if not paid by the hour)', name: 'hourly_rate', type: 'money', value: '' },
+      { label: 'Photo (shown when they sign on, on the till and in Vesopa Go)', name: 'photo_url', type: 'image', crop: 'square', value: '' },
       { label: 'Active (can sign on at the till)', name: 'active', type: 'checkbox', value: 1 },
     ], (d) => {
       const bad = staffPinError(d.pin_code, { required: true });
@@ -7768,6 +7769,7 @@ document.addEventListener('click', async (e) => {
       await staffGroupField(c.permission_group_id ?? ''),
       await staffScreenField(c.default_screen_id ?? ''),
       { label: 'Hourly rate £ (for the wage reports; leave blank if not paid by the hour)', name: 'hourly_rate', type: 'money', value: c.hourly_rate ?? '' },
+      { label: 'Photo (shown when they sign on, on the till and in Vesopa Go)', name: 'photo_url', type: 'image', crop: 'square', value: c.photo_url ?? '' },
       { label: 'Active (can sign on at the till)', name: 'active', type: 'checkbox', value: c.active },
       { label: 'Training account (practice only: sales are not recorded or counted)', name: 'training', type: 'checkbox', value: c.training ?? 0 },
     ], (d) => {

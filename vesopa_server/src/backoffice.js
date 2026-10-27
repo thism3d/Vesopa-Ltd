@@ -46,6 +46,19 @@ const upload = multer({
  * a staff list by id. Its own query so a database without the column loses
  * only this and the list still loads.
  */
+/** Each staff row's photo, where the column exists (schema_staff_photo.sql). */
+async function withPhotos(pool, email, rows) {
+  try {
+    const [found] = await pool.query(
+      'SELECT id, photo_url FROM bo_clarks WHERE email = ? AND photo_url IS NOT NULL', [email]);
+    const byId = new Map(found.map((r) => [Number(r.id), r.photo_url]));
+    return rows.map((r) => ({ ...r, photo_url: byId.get(Number(r.id)) ?? null }));
+  } catch (e) {
+    if (e.code === 'ER_BAD_FIELD_ERROR') return rows;
+    throw e;
+  }
+}
+
 async function withDefaultScreens(pool, email, rows) {
   try {
     const [found] = await pool.query(
@@ -1136,6 +1149,7 @@ function backofficeRoutes({ pool, broadcast, secret }) {
         }
       }
       rows = await withDefaultScreens(pool, email, rows);
+      rows = await withPhotos(pool, email, rows);
       res.json(rows.map((r) => ({ ...r, training: Number(r.training) === 1 })));
     } catch (e) {
       next(e);
@@ -1182,6 +1196,23 @@ function backofficeRoutes({ pool, broadcast, secret }) {
    * hourly rate. Only an epos_screens row of this venue's is accepted; blank
    * means "wherever the till already is".
    */
+  /**
+   * The staff member's photo (schema_staff_photo.sql), shown on the till and
+   * in Vesopa Go once they sign on. Only a picture this server handed out, or
+   * an https address; blank removes it. A database without the column loses
+   * the photo and nothing else.
+   */
+  async function savePhoto(email, id, body) {
+    if (!body || !('photo_url' in body)) return;
+    const url = String(body.photo_url || '').trim();
+    const ok = /^(\/uploads\/|https:\/\/)[^\s"'<>]{1,480}$/.test(url) ? url : null;
+    try {
+      await pool.execute('UPDATE bo_clarks SET photo_url = ? WHERE id = ? AND email = ?', [ok, id, email]);
+    } catch (e) {
+      if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+    }
+  }
+
   async function saveDefaultScreen(email, id, body) {
     if (!body || !('default_screen_id' in body)) return;
     const raw = body.default_screen_id;
@@ -1266,6 +1297,7 @@ function backofficeRoutes({ pool, broadcast, secret }) {
       }
       await saveHourlyRate(email, result.insertId, req.body);
       await saveDefaultScreen(email, result.insertId, req.body);
+      await savePhoto(email, result.insertId, req.body);
       broadcast({ type: 'staff.updated' });
       res.status(201).json({ id: result.insertId });
     } catch (e) {
@@ -1355,6 +1387,7 @@ function backofficeRoutes({ pool, broadcast, secret }) {
       }
       await saveHourlyRate(email, req.params.id, req.body);
       await saveDefaultScreen(email, req.params.id, req.body);
+      await savePhoto(email, req.params.id, req.body);
       broadcast({ type: 'staff.updated' });
       res.json({ ok: true });
     } catch (e) {

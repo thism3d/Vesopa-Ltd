@@ -215,8 +215,6 @@ class _LiteLockPageState extends ConsumerState<LiteLockPage> with SingleTickerPr
     final dim = t.bodySmall?.color ?? Colors.grey;
     final bio = go.loginBiometrics && _bio && s.lastClerk != null;
     final nfc = go.loginNfc && _nfc;
-    final wide = MediaQuery.sizeOf(context).width >= 900;
-    final tiles = go.loginPhotos && s.staff.isNotEmpty;
     final url = s.config.idleImageUrl;
     final wallpaper = url == null ? null : (url.startsWith('http') ? url : '$apiBase${url.startsWith('/') ? '' : '/'}$url');
     final picked = _picked;
@@ -270,42 +268,6 @@ class _LiteLockPageState extends ConsumerState<LiteLockPage> with SingleTickerPr
       ]),
     );
 
-    final grid = GridView.builder(
-      padding: const EdgeInsets.all(8),
-      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent: 150, mainAxisSpacing: 14, crossAxisSpacing: 14, childAspectRatio: 0.9),
-      itemCount: s.staff.length,
-      itemBuilder: (_, i) {
-        final c = s.staff[i];
-        final on = picked?.id == c.id;
-        return AnimatedScale(
-          scale: on ? 1.06 : 1,
-          duration: const Duration(milliseconds: 180),
-          child: Material(
-            color: on ? Tp.lime.withValues(alpha: 0.22) : Tp.inkCard.withValues(alpha: 0.86),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: on ? Tp.lime : Tp.inkLine, width: on ? 2 : 1)),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(16),
-              onTap: () => setState(() {
-                _picked = on ? null : c;
-                _pin = '';
-                _error = null;
-              }),
-              child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                CircleAvatar(
-                  radius: 30,
-                  backgroundColor: Color(_avatarColours[c.id.abs() % _avatarColours.length]),
-                  child: Text(_initials(c.name), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Tp.onLime)),
-                ),
-                const SizedBox(height: 10),
-                Text(c.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700, color: Colors.white)),
-                if ((c.group ?? '').isNotEmpty) Text(c.group!, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.bodySmall),
-              ]),
-            ),
-          ),
-        );
-      },
-    );
-
     return Scaffold(
       backgroundColor: Tp.inkDeep,
       body: Stack(fit: StackFit.expand, children: [
@@ -323,13 +285,7 @@ class _LiteLockPageState extends ConsumerState<LiteLockPage> with SingleTickerPr
                 if (!s.online) const Icon(Icons.cloud_off_rounded, color: Tp.amber),
               ]),
               Expanded(
-                child: wide && tiles
-                    ? Row(children: [
-                        Expanded(child: grid),
-                        const SizedBox(width: 32),
-                        Center(child: SizedBox(width: 400, child: pad)),
-                      ])
-                    : Center(child: SingleChildScrollView(child: pad)),
+                child: Center(child: SingleChildScrollView(child: pad)),
               ),
             ]),
           ),
@@ -337,14 +293,6 @@ class _LiteLockPageState extends ConsumerState<LiteLockPage> with SingleTickerPr
       ]),
     );
   }
-}
-
-const _avatarColours = [0xFFA5C715, 0xFF4BA3F5, 0xFFF5B301, 0xFF3FBBD6, 0xFFF4633A, 0xFFC2569B, 0xFF2E9E5B, 0xFFBB6BD9];
-
-String _initials(String name) {
-  final parts = name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
-  if (parts.isEmpty) return '?';
-  return (parts.first[0] + (parts.length > 1 ? parts.last[0] : '')).toUpperCase();
 }
 
 class _Key extends StatelessWidget {

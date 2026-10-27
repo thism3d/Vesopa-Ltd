@@ -18,6 +18,7 @@ import 'package:vesopa_go/data/session.dart';
 import 'package:vesopa_go/ui/pages/bill.dart';
 import 'package:vesopa_go/ui/pages/more.dart';
 import 'package:vesopa_go/ui/pages/tables.dart';
+import 'package:vesopa_go/ui/clerk_chip.dart';
 import 'package:vesopa_go/ui/go_frame.dart';
 import 'package:vesopa_go/ui/product_photo.dart';
 import 'package:vesopa_go/ui/sounds.dart';
@@ -70,12 +71,7 @@ class _ShellState extends ConsumerState<Shell> {
           const StatusChips(),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: ActionChip(
-              avatar: const Icon(Icons.person_rounded, size: 18),
-              label: Text(s.clerk?.name ?? ''),
-              tooltip: 'Sign off',
-              onPressed: () => ref.read(tapProvider.notifier).lock(),
-            ),
+            child: const ClerkChip(),
           ),
         ],
       ),
@@ -145,6 +141,16 @@ class SettingsPage extends ConsumerWidget {
       const Divider(),
       const _ReceiptPrinterTile(),
       const Divider(),
+      if (s.config.softwareHouseId.isNotEmpty) ...[
+        Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 4), child: Text('Dojo', style: t.titleSmall)),
+        ListTile(
+          dense: true,
+          leading: const Icon(Icons.verified_rounded),
+          title: Text('Software house ID  ${s.config.softwareHouseId}'),
+          subtitle: Text('Reseller ID  ${s.config.resellerId} · ${s.config.environment == 'live' ? 'Live' : 'Sandbox'}'),
+        ),
+        const Divider(),
+      ],
       ListTile(
         leading: const Icon(Icons.sync_rounded),
         title: const Text('Refresh the menu and staff'),

@@ -184,6 +184,9 @@ class TapApi {
     return true;
   }
 
+  /// Staff photos, `{photos: {id: url}}`.
+  Future<Map<String, dynamic>> staffPhotos() => _send('GET', '/api/tap/staff-photos');
+
   /// The venue's receipt branding, as the tills print it.
   Future<Map<String, dynamic>> branding() => _send('GET', '/api/branding/public?office=$_o');
 
