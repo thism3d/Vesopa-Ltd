@@ -225,6 +225,41 @@ class TapApi {
         ],
       });
 
+  // ---- Memberships and Events & tickets (the till's own routes) ---------------
+
+  Future<List<dynamic>> membershipPlans() async => (await _send('GET', '/till/memberships/plans'))['items'] as List? ?? const [];
+
+  Future<List<dynamic>> memberships(String q) async =>
+      (await _send('GET', '/till/memberships/members${q.trim().isEmpty ? '' : '?q=${Uri.encodeQueryComponent(q.trim())}'}'))['items'] as List? ?? const [];
+
+  Future<Map<String, dynamic>> joinMembership({required int planId, String? customerId, Map<String, String>? newCustomer, int? amountMinor, String? staff}) =>
+      _send('POST', '/till/memberships/members', {
+        'scheme_id': planId,
+        'customer_id': ?customerId,
+        'customer': ?newCustomer,
+        'amount_minor': ?amountMinor,
+        'staff': ?staff,
+      });
+
+  /// renew, freeze, unfreeze, cancel or reinstate.
+  Future<Map<String, dynamic>> membershipAction(String id, String action, [Map<String, Object?> body = const {}]) =>
+      _send('POST', '/till/memberships/members/${Uri.encodeComponent(id)}/$action', body);
+
+  Future<List<dynamic>> events() async => (await _send('GET', '/till/events'))['events'] as List? ?? const [];
+
+  Future<Map<String, dynamic>> sellTickets(int eventId, {required List<Map<String, int>> items, required String name, String? email, String? phone, required int amountMinor, String? staff}) =>
+      _send('POST', '/till/events/$eventId/sell', {
+        'items': items,
+        'name': name,
+        if (email != null && email.isNotEmpty) 'email': email,
+        if (phone != null && phone.isNotEmpty) 'phone': phone,
+        'amount_minor': amountMinor,
+        'staff': ?staff,
+      });
+
+  Future<Map<String, dynamic>> checkInTicket(String code, {String? staff}) =>
+      _send('POST', '/till/events/checkin', {'code': code, 'staff': ?staff});
+
   /// Staff photos, `{photos: {id: url}}`.
   Future<Map<String, dynamic>> staffPhotos() => _send('GET', '/api/tap/staff-photos');
 

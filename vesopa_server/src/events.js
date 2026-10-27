@@ -1309,6 +1309,22 @@ function eventRoutes({ pool, broadcast = () => {}, secret }) {
   router.get('/till/events', ...till, async (req, res, next) => {
     try { res.json({ events: await tillEvents(pool, req.venue) }); } catch (e) { send(res, next)(e); }
   });
+  /**
+   * Tickets sold at the counter (Vesopa Go, 2026-10-27): issued exactly as the
+   * back office's Issue does, paid at the till, emailed when there is an
+   * address. Allowed only when the venue lets that device's staff sell them
+   * (back office, Vesopa Go options > Events and tickets).
+   */
+  router.post('/till/events/:id/sell', ...till, json, async (req, res, next) => {
+    try {
+      const { goOptionsFor } = require('./go_options');
+      const opt = await goOptionsFor(pool, req.venue);
+      if (opt.events_access === 'off') return res.status(403).json({ error: 'Selling tickets is switched off for Vesopa Go in the back office.' });
+      const o = await issueTickets(pool, req.venue, req.params.id, req.body, who(req), baseUrl(req));
+      changed(req.venue);
+      res.status(201).json({ order_id: o.public_id, id: o.id, tickets: await ticketsOf(pool, o.id) });
+    } catch (e) { send(res, next)(e); }
+  });
   router.post('/till/events/checkin', ...till, json, async (req, res, next) => {
     try {
       const r = await checkIn(pool, req.venue, req.body && req.body.code, who(req));

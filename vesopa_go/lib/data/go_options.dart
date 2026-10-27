@@ -78,6 +78,11 @@ class GoOptions {
   bool get reportsProducts => _flag('reports_products', true);
 
   bool get allowRearrange => _flag('allow_rearrange', true);
+
+  /// staff | managers | off: who may use Memberships, and Events & tickets.
+  String get membershipsAccess => _str('memberships_access', 'managers');
+  String get membershipsCancel => _str('memberships_cancel', 'managers');
+  String get eventsAccess => _str('events_access', 'staff');
 }
 
 enum GoSound {

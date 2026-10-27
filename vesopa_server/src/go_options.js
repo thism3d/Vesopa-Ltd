@@ -62,6 +62,12 @@ const GO_DEFAULTS = Object.freeze({
   reports_staff: true,
   reports_products: true,
   reports_z: true,
+  // Memberships and Events & tickets on Go: who may use them (the till's own
+  // module still has to be on). staff = every clerk, managers = a manager or
+  // a manager's PIN, off = not on Go.
+  memberships_access: 'managers', // staff | managers | off
+  memberships_cancel: 'managers', // staff | managers: who may cancel or reinstate
+  events_access: 'staff', // staff | managers | off: selling tickets and the gate
   // Screens: the till's programmed screens by default, rearranged per form factor.
   layout_tablet: '', // JSON list of screen ids in order, '' = the till's order
   layout_phone: '',
@@ -74,6 +80,9 @@ const CHOICES = {
   floor_view: ['plan', 'list'],
   card_ios: ['tap', 'machine'],
   card_android: ['tap', 'machine', 'pocket'],
+  memberships_access: ['staff', 'managers', 'off'],
+  memberships_cancel: ['staff', 'managers'],
+  events_access: ['staff', 'managers', 'off'],
 };
 
 /** body's known keys, typed and bounded like the defaults; unknown keys dropped. */

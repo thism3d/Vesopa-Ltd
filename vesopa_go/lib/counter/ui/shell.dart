@@ -23,6 +23,7 @@ import 'package:vesopa_go/ui/clerk_chip.dart';
 import 'package:vesopa_go/ui/go_frame.dart';
 import 'package:vesopa_go/ui/pages/card_machine_page.dart';
 import 'package:vesopa_go/ui/pages/customers_page.dart';
+import 'package:vesopa_go/ui/pages/module_gates.dart';
 import 'package:vesopa_go/ui/product_photo.dart';
 import 'package:vesopa_go/ui/sounds.dart';
 
@@ -55,6 +56,9 @@ class _ShellState extends ConsumerState<Shell> {
         (Icons.dialpad_rounded, 'Quick sale', () => QuickSalePage(onAdded: () => setState(() => _page = 0))),
         (Icons.people_alt_rounded, 'Customers', () => const CustomersPage()),
         (Icons.payments_rounded, 'Cash & stock', () => const CashPage()),
+        // The venue's choice (back office): every clerk, managers, or not on Go.
+        if (s.config.go.membershipsAccess != 'off') (Icons.card_membership_rounded, 'Memberships', () => const MembershipsGate()),
+        if (s.config.go.eventsAccess != 'off') (Icons.confirmation_number_rounded, 'Events & tickets', () => const EventsGate()),
         (Icons.receipt_long_rounded, 'Sales', () => const SalesPage()),
         (Icons.insights_rounded, 'Reports', () => const ReportsPage()),
         (Icons.credit_card_rounded, 'Card payments', () => const MorePage()),

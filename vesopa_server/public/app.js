@@ -11710,6 +11710,11 @@ const GO_FIELDS = [
     ['reports_staff', 'Sales, tips, voids and refunds by staff'],
     ['reports_products', 'Product mix'],
   ]],
+  ['Memberships, events and tickets', [
+    ['memberships_access', 'Memberships on Go (join, renew, freeze)', [['managers', 'Managers (or a manager PIN)'], ['staff', 'Every member of staff'], ['off', 'Not on Go']]],
+    ['memberships_cancel', 'Cancelling and reinstating a membership', [['managers', 'Managers only'], ['staff', 'Every member of staff']]],
+    ['events_access', 'Events and tickets on Go (sell, check in)', [['staff', 'Every member of staff'], ['managers', 'Managers (or a manager PIN)'], ['off', 'Not on Go']]],
+  ]],
   ['Screens', [
     ['allow_rearrange', 'Managers can rearrange the buttons on the device (long-press)'],
   ]],
