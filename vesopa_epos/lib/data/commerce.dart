@@ -1,8 +1,13 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
 import 'customer_repository.dart' show parseMembershipDay;
+import 'lan/lan_link.dart' show LanUnavailable;
+import 'lan/offline_ledger.dart' show LedgerRefused;
+import 'lan/offline_money.dart';
 import 'loyalty_schemes.dart';
 
 export 'loyalty_schemes.dart';
@@ -830,7 +835,7 @@ class CommerceRepository {
 
   /// Look up a gift card. Throws with a readable message so the till can show
   /// the clerk why a card was refused.
-  Future<GiftCard> giftCard(String code) async {
+  Future<GiftCard> _giftCardOnline(String code) async {
     final res = await _client
         .get(Uri.parse(
             '$apiBase/api/gift-cards/lookup?$_officeParam&code=${Uri.encodeComponent(code)}'),
@@ -843,7 +848,7 @@ class CommerceRepository {
     return GiftCard.fromJson(body);
   }
 
-  Future<GiftCard> redeemGiftCard({
+  Future<GiftCard> _redeemGiftCardOnline({
     required String code,
     required int amountMinor,
     String? orderId,
@@ -872,7 +877,7 @@ class CommerceRepository {
   /// Put money on a gift card once the bill that sold it is paid, making the
   /// card first when it is a new printed one ([create]). See the server's
   /// /gift-cards/load (2026-10-26).
-  Future<GiftCard> loadGiftCard({
+  Future<GiftCard> _loadGiftCardOnline({
     required String code,
     required int amountMinor,
     required String orderId,
@@ -916,7 +921,7 @@ class CommerceRepository {
   /// Throws [HoldsUnsupported] when the back office has no such route, so the
   /// caller can spend the card the old way; [CommerceException] when the card
   /// is refused, in the server's own words.
-  Future<GiftCardHold> holdGiftCard({
+  Future<GiftCardHold> _holdGiftCardOnline({
     required String code,
     required int amountMinor,
     required String orderId,
@@ -945,7 +950,7 @@ class CommerceRepository {
 
   /// Spend what a hold reserved. Safe to send twice: the second answers as the
   /// first did, so a retry after a dropped connection never spends twice.
-  Future<void> captureGiftCard({required String holdId, required String orderId}) async {
+  Future<void> _captureGiftCardOnline({required String holdId, required String orderId}) async {
     final res = await _client
         .post(
           Uri.parse('$apiBase/api/gift-cards/capture'),
@@ -961,7 +966,7 @@ class CommerceRepository {
 
   /// Give a hold back. True when it was still held; false when there was
   /// nothing to give back -- including when it had already been spent.
-  Future<bool> releaseGiftCard(String holdId) async {
+  Future<bool> _releaseGiftCardOnline(String holdId) async {
     final res = await _client
         .post(
           Uri.parse('$apiBase/api/gift-cards/release'),
@@ -1054,7 +1059,7 @@ class CommerceRepository {
     return (body['applied_minor'] as num?)?.toInt() ?? 0;
   }
 
-  Future<VoucherCheck> checkVoucher({
+  Future<VoucherCheck> _checkVoucherOnline({
     required String code,
     required int subtotalMinor,
   }) async {
@@ -1071,7 +1076,7 @@ class CommerceRepository {
     return VoucherCheck.fromJson(body);
   }
 
-  Future<void> redeemVoucher(String code) async {
+  Future<void> _redeemVoucherOnline(String code) async {
     await _client
         .post(
           Uri.parse('$apiBase/api/vouchers/redeem'),
@@ -1087,7 +1092,7 @@ class CommerceRepository {
   /// exact-phone lookup alone left the clerk unable to find a customer standing
   /// in front of them. Returns an empty list rather than throwing when nothing
   /// matches — no match is an answer, not a failure.
-  Future<List<LoyaltyCustomer>> searchLoyalty(String query) async {
+  Future<List<LoyaltyCustomer>> _searchLoyaltyOnline(String query) async {
     final res = await _client
         .get(Uri.parse(
             '$apiBase/api/loyalty/search?$_officeParam'
@@ -1102,7 +1107,7 @@ class CommerceRepository {
   }
 
   /// The member with this id, with their scheme and points; null if none.
-  Future<LoyaltyCustomer?> loyaltyById(String id) async {
+  Future<LoyaltyCustomer?> _loyaltyByIdOnline(String id) async {
     final res = await _client
         .get(Uri.parse(
             '$apiBase/api/loyalty/customer?$_officeParam&id=${Uri.encodeComponent(id)}'),
@@ -1112,7 +1117,7 @@ class CommerceRepository {
     return LoyaltyCustomer.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
   }
 
-  Future<LoyaltyCustomer> loyaltyByPhone(String phone) async {
+  Future<LoyaltyCustomer> _loyaltyByPhoneOnline(String phone) async {
     final res = await _client
         .get(Uri.parse(
             '$apiBase/api/loyalty/customer?$_officeParam&phone=${Uri.encodeComponent(phone)}'),
@@ -1140,7 +1145,7 @@ class CommerceRepository {
   /// completely different things from the clerk, and a method that answered
   /// null for both would put the first message in front of a member who has
   /// been with the venue for three years.
-  Future<LoyaltyCustomer?> loyaltyByCard(String cardNumber) async {
+  Future<LoyaltyCustomer?> _loyaltyByCardOnline(String cardNumber) async {
     final res = await _client
         .get(
           Uri.parse(
@@ -1212,7 +1217,7 @@ class CommerceRepository {
   /// renewal is a change to what somebody has paid for, and a till that says
   /// "renewed" on a request that never arrived has told a customer something
   /// untrue.
-  Future<LoyaltyCustomer> renewMembership(String customerId) async {
+  Future<LoyaltyCustomer> _renewMembershipOnline(String customerId) async {
     final res = await _client
         .post(
           Uri.parse('$apiBase/api/loyalty/renew'),
@@ -1264,7 +1269,7 @@ class CommerceRepository {
   }
 
   /// Award or spend points. Returns the new balance.
-  Future<double> movePoints({
+  Future<double> _movePointsOnline({
     required String customerId,
     required String kind,
     num? points,
@@ -1300,6 +1305,241 @@ class CommerceRepository {
     }
     return (body['points_balance'] as num?)?.toDouble() ?? 0;
   }
+
+  // ---- With the internet down (2026-10-27) -----------------------------------
+  //
+  // Each money call below tries the back office first, as it always has. Only
+  // when the NETWORK fails -- not when the server says no -- does it go to the
+  // venue's main till over the local link, which holds the venue's balances
+  // while offline (lan/offline_money.dart). A refusal there reads like the
+  // server's ("There is not that much on the card"). With no main till to ask
+  // either, the original network error stands, exactly as before.
+
+  static bool _offlineError(Object e) =>
+      e is SocketException || e is TimeoutException || e is http.ClientException || e is HandshakeException;
+
+  Future<T> _orLocal<T>(Future<T> Function() online, Future<T> Function(OfflineMoney o) local) async {
+    try {
+      return await online();
+    } catch (e, st) {
+      final o = OfflineMoney.instance;
+      if (!_offlineError(e) || !o.ready) rethrow;
+      try {
+        return await local(o);
+      } on LedgerRefused catch (r) {
+        throw CommerceException(r.message);
+      } on LanUnavailable {
+        Error.throwWithStackTrace(e, st);
+      }
+    }
+  }
+
+  Future<GiftCard> giftCard(String code) => _orLocal(() => _giftCardOnline(code), (o) async {
+        final j = o.ledger.giftCard(code);
+        if (j == null) throw const CommerceException('No such gift card');
+        return GiftCard.fromJson(j);
+      });
+
+  Future<GiftCard> redeemGiftCard({
+    required String code,
+    required int amountMinor,
+    String? orderId,
+    String? clerkName,
+  }) =>
+      _orLocal(
+        () => _redeemGiftCardOnline(code: code, amountMinor: amountMinor, orderId: orderId, clerkName: clerkName),
+        (o) async {
+          await o.apply('gift_redeem', {
+            'office': office,
+            'code': code,
+            'amount_minor': amountMinor,
+            'order_id': orderId,
+            'clerk_name': clerkName,
+          });
+          return GiftCard.fromJson(o.ledger.giftCard(code) ?? {'code': code});
+        },
+      );
+
+  Future<GiftCard> loadGiftCard({
+    required String code,
+    required int amountMinor,
+    required String orderId,
+    String? clerkName,
+    bool create = true,
+  }) =>
+      _orLocal(
+        () => _loadGiftCardOnline(
+            code: code, amountMinor: amountMinor, orderId: orderId, clerkName: clerkName, create: create),
+        (o) async {
+          await o.apply('gift_load', {
+            'office': office,
+            'code': code,
+            'amount_minor': amountMinor,
+            'order_id': orderId,
+            'clerk_name': clerkName,
+            'create': create,
+          });
+          return GiftCard.fromJson(o.ledger.giftCard(code) ?? {'code': code, 'balance_minor': amountMinor});
+        },
+      );
+
+  Future<GiftCardHold> holdGiftCard({
+    required String code,
+    required int amountMinor,
+    required String orderId,
+    String? clerkName,
+  }) =>
+      _orLocal(
+        () => _holdGiftCardOnline(code: code, amountMinor: amountMinor, orderId: orderId, clerkName: clerkName),
+        (o) async {
+          final card = o.ledger.giftCard(code);
+          if (card == null) throw const CommerceException('No such gift card');
+          final available = (card['available_minor'] as num?)?.toInt() ?? 0;
+          if (card['redeemable'] != true) {
+            throw CommerceException('${card['reason'] ?? 'This gift card cannot be used'}');
+          }
+          if (amountMinor > available) throw const CommerceException('There is not that much on the card');
+          final id = 'offline-${DateTime.now().microsecondsSinceEpoch}';
+          o.holds[id] = (code: code, amountMinor: amountMinor, orderId: orderId, clerk: clerkName);
+          return GiftCardHold(
+            holdId: id,
+            amountMinor: amountMinor,
+            code: code,
+            label: card['label'] as String?,
+            availableAfterMinor: available - amountMinor,
+          );
+        },
+      );
+
+  Future<void> captureGiftCard({required String holdId, required String orderId}) async {
+    // A hold taken offline was never on the cloud: it is spent on the main
+    // till, whatever the internet is doing now, and replayed from there.
+    if (holdId.startsWith('offline-')) {
+      final o = OfflineMoney.instance;
+      final h = o.holds[holdId];
+      if (h == null) throw const CommerceException('That gift card hold has gone; take the card again');
+      try {
+        await o.apply('gift_redeem', {
+          'office': office,
+          'code': h.code,
+          'amount_minor': h.amountMinor,
+          'order_id': orderId,
+          'clerk_name': h.clerk,
+        });
+      } on LedgerRefused catch (r) {
+        throw CommerceException(r.message);
+      } on LanUnavailable {
+        throw const CommerceException('The main till could not be reached to spend the gift card');
+      }
+      o.holds.remove(holdId);
+      return;
+    }
+    return _captureGiftCardOnline(holdId: holdId, orderId: orderId);
+  }
+
+  Future<bool> releaseGiftCard(String holdId) async {
+    if (holdId.startsWith('offline-')) return OfflineMoney.instance.holds.remove(holdId) != null;
+    return _releaseGiftCardOnline(holdId);
+  }
+
+  Future<VoucherCheck> checkVoucher({required String code, required int subtotalMinor}) => _orLocal(
+        () => _checkVoucherOnline(code: code, subtotalMinor: subtotalMinor),
+        (o) async {
+          final j = o.ledger.voucher(code, subtotalMinor);
+          if (j == null) throw const CommerceException('No such voucher');
+          return VoucherCheck.fromJson(j);
+        },
+      );
+
+  Future<void> redeemVoucher(String code) => _orLocal(
+        () => _redeemVoucherOnline(code),
+        (o) async {
+          await o.apply('voucher', {'office': office, 'code': code});
+        },
+      );
+
+  Future<List<LoyaltyCustomer>> searchLoyalty(String query) => _orLocal(
+        () => _searchLoyaltyOnline(query),
+        (o) async => [for (final j in o.ledger.search(query)) LoyaltyCustomer.fromJson(j)],
+      );
+
+  Future<LoyaltyCustomer?> loyaltyById(String id) => _orLocal(
+        () => _loyaltyByIdOnline(id),
+        (o) async {
+          final j = o.ledger.memberById(id);
+          return j == null ? null : LoyaltyCustomer.fromJson(j);
+        },
+      );
+
+  Future<LoyaltyCustomer> loyaltyByPhone(String phone) => _orLocal(
+        () => _loyaltyByPhoneOnline(phone),
+        (o) async {
+          final j = o.ledger.memberByPhone(phone);
+          if (j == null) throw const CommerceException('No customer with that number');
+          return LoyaltyCustomer.fromJson(j);
+        },
+      );
+
+  Future<LoyaltyCustomer?> loyaltyByCard(String cardNumber) => _orLocal(
+        () => _loyaltyByCardOnline(cardNumber),
+        (o) async {
+          final j = o.ledger.memberByCard(cardNumber);
+          return j == null ? null : LoyaltyCustomer.fromJson(j);
+        },
+      );
+
+  Future<LoyaltyCustomer> renewMembership(String customerId) => _orLocal(
+        () => _renewMembershipOnline(customerId),
+        (o) async {
+          final member = o.ledger.memberById(customerId);
+          if (member == null) throw const CommerceException('No such member');
+          // What the till says until the server, back online, works out the
+          // real date (/loyalty/renew computes it; this is only the estimate).
+          final today = DateTime.now();
+          final current = parseMembershipDay(member['membership_expiry']);
+          final from = current != null && current.isAfter(today) ? current : DateTime(today.year, today.month, today.day);
+          final months = _membership?.termMonths ?? 12;
+          final until = DateTime(from.year, from.month + months, from.day);
+          final day = '${until.year.toString().padLeft(4, '0')}-${until.month.toString().padLeft(2, '0')}'
+              '-${until.day.toString().padLeft(2, '0')}';
+          await o.apply('renew', {'office': office, 'customer_id': customerId, 'offline_expiry': day});
+          return LoyaltyCustomer.fromJson(o.ledger.memberById(customerId)!);
+        },
+      );
+
+  Future<double> movePoints({
+    required String customerId,
+    required String kind,
+    num? points,
+    int spendMinor = 0,
+    int? eligibleSpendMinor,
+    int? valueMinor,
+    String? orderId,
+  }) =>
+      _orLocal(
+        () => _movePointsOnline(
+          customerId: customerId,
+          kind: kind,
+          points: points,
+          spendMinor: spendMinor,
+          eligibleSpendMinor: eligibleSpendMinor,
+          valueMinor: valueMinor,
+          orderId: orderId,
+        ),
+        (o) async {
+          await o.apply('points', {
+            'office': office,
+            'customer_id': customerId,
+            'kind': kind,
+            'points': ?points,
+            'value_minor': ?valueMinor,
+            'spend_minor': spendMinor,
+            'eligible_spend_minor': ?eligibleSpendMinor,
+            'order_id': orderId,
+          });
+          return (o.ledger.memberById(customerId)?['points_balance'] as num?)?.toDouble() ?? 0;
+        },
+      );
 }
 
 /// A refusal the clerk needs to see, as opposed to a bug.

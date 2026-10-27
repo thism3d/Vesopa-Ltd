@@ -27,6 +27,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'customer_display_control.dart' show DisplayStatus;
+import 'lan/lan_service.dart';
 
 /// The note beside the basket that tells a display on this PC where to dial.
 const displayLinkFile = 'link.json';
@@ -188,6 +189,7 @@ class DisplayLinkHub {
     _token = terminalToken;
     _device = terminalDevice;
     _name = terminalName;
+    _joinLan();
     if (!changed) return;
     _closeCloud();
     _scheduleCloud(Duration.zero);
@@ -303,12 +305,49 @@ class DisplayLinkHub {
   void sendBasket(Map<String, Object?> basket) {
     _lastBasket = basket;
     _broadcast({'type': 'display.basket', 'data': basket});
+    _toLan('basket', {'type': 'display.basket', 'data': basket});
   }
 
   /// The settings, to every display on every route, now.
   void sendControl(Map<String, Object?> control) {
     _lastControl = control;
     _broadcast({'type': 'display.control', 'data': control});
+    _toLan('control', {'type': 'display.control', 'data': control});
+  }
+
+  // ---- the venue's own network (2026-10-27) ---------------------------------
+  //
+  // A display on another computer that is paired to this till also follows it
+  // over the local link: the same messages, on this till's own channel, kept
+  // by the main till so a display that starts later is shown the screen at
+  // once. The display draws whichever copy reaches it first; the cloud relay
+  // stays for when the two computers are on different networks.
+
+  String? _lanJoined;
+
+  void _joinLan() {
+    final device = _device;
+    if (device.isEmpty || _lanJoined == device) return;
+    _lanJoined = device;
+    final lan = LanService.instance;
+    lan.subscribe('display-status:$device', (m) {
+      final d = m.data;
+      if (d is! Map) return;
+      _onDisplayMessage(
+        'lan:${m.from}',
+        jsonEncode({'type': 'display.status', 'data': d['data']}),
+        name: d['name'] as String?,
+      );
+    });
+    lan.whenReady(() {
+      if (_lastControl != null) _toLan('control', {'type': 'display.control', 'data': _lastControl});
+      if (_lastBasket != null) _toLan('basket', {'type': 'display.basket', 'data': _lastBasket});
+    });
+  }
+
+  void _toLan(String key, Map<String, Object?> msg) {
+    if (_device.isEmpty) return;
+    LanService.instance.publish('display:$_device', msg, key: key);
   }
 
   void _broadcast(Map<String, Object?> msg) {

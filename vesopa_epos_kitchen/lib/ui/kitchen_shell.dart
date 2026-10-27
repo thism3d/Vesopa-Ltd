@@ -4,7 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/dinein_orders.dart';
+import '../config/constants.dart' show kitchenAppVersion;
+import '../data/app_update.dart' show Installation;
 import '../data/kitchen_chime.dart';
+import '../data/lan/lan_service.dart';
 import '../data/live_link.dart' show kitchenViews;
 import '../data/notifications.dart';
 import '../data/providers.dart';
@@ -100,6 +103,19 @@ class _KitchenShellState extends ConsumerState<KitchenShell> {
     await ref
         .read(ticketBoardProvider.notifier)
         .start(session!.office!, ref.read(wsUrlProvider));
+    // The venue's local link (2026-10-27): tickets straight from the tills,
+    // and the other screens' bumps, over the venue's own network.
+    unawaited(() async {
+      final me = await Installation.current(kitchenAppVersion);
+      await LanService.instance.configure(
+        apiBase: ref.read(apiBaseProvider),
+        token: session.token,
+        deviceId: 'kitchen-${me.deviceId}',
+        name: me.deviceName.isEmpty ? 'Kitchen screen' : me.deviceName,
+        version: kitchenAppVersion,
+        role: 'kitchen',
+      );
+    }());
     ref.read(dineInInboxProvider.notifier).start();
     unawaited(_loadNotifyPolicy(session.office!));
   }

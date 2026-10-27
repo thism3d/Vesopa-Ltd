@@ -32,6 +32,9 @@ class _SignInPageState extends ConsumerState<SignInPage> {
   /// asks for it, and by itself when the server says a key is the problem.
   final _licence = TextEditingController();
   bool _showLicence = false;
+
+  /// The eye beside the password: shown in plain text while pressed on.
+  bool _revealPassword = false;
   bool _busy = false;
   String? _error;
 
@@ -249,13 +252,18 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                     TextField(
                       controller: _password,
                       enabled: !_busy,
-                      obscureText: true,
+                      obscureText: !_revealPassword,
                       autofillHints: const [AutofillHints.password],
                       onSubmitted: (_) => _busy ? null : _submit(),
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Password',
-                        prefixIcon: Icon(Icons.lock_outline),
-                        border: OutlineInputBorder(),
+                        prefixIcon: const Icon(Icons.lock_outline),
+                        border: const OutlineInputBorder(),
+                        suffixIcon: IconButton(
+                          tooltip: _revealPassword ? 'Hide password' : 'Show password',
+                          icon: Icon(_revealPassword ? Icons.visibility_off_outlined : Icons.visibility_outlined),
+                          onPressed: () => setState(() => _revealPassword = !_revealPassword),
+                        ),
                       ),
                     ),
 

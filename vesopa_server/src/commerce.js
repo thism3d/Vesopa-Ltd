@@ -8,6 +8,7 @@ const { ensureMemberNumber } = require('./member_numbers');
 const schemes = require('./loyalty_schemes');
 const training = require('./training');
 const tillSeats = require('./till_seats');
+const { offlineOnce } = require('./lan');
 
 /**
  * How long a till's hold on a gift card lasts.
@@ -238,6 +239,13 @@ function commerceRoutes({ pool, broadcast, secret }) {
   }
 
   for (const [method, path] of TILL_CALLS) router[method](path, tillIdentity);
+
+  // Money the main till moved while the internet was down, replayed once
+  // each when it is back (src/lan.js, 2026-10-27).
+  router.post(
+    ['/gift-cards/redeem', '/gift-cards/load', '/vouchers/redeem', '/loyalty/points', '/loyalty/renew'],
+    offlineOnce(pool)
+  );
 
   const money = (v) => Math.round(Number(v) || 0);
 
@@ -2509,6 +2517,78 @@ function commerceRoutes({ pool, broadcast, secret }) {
       if (!r.affectedRows) return res.status(404).json({ error: 'No such voucher' });
       broadcast({ type: 'vouchers' });
       res.json({ ok: true });
+    } catch (e) { next(e); }
+  });
+
+  /**
+   * What the main till needs to keep points, gift cards and vouchers going
+   * while the internet is down (2026-10-27, docs/LOCAL_LINK_PLAN.md): every
+   * member in the shape /loyalty/card answers (their scheme's rules sent once
+   * per scheme rather than once per member), every live gift card in the
+   * shape /gift-cards/lookup answers, and the vouchers.
+   *
+   * A commissioned till only: this is the venue's whole member list.
+   */
+  router.get('/lan/snapshot', async (req, res, next) => {
+    try {
+      const header = req.headers.authorization || '';
+      let claims = null;
+      try {
+        claims = jwt.verify(header.startsWith('Bearer ') ? header.slice(7) : '', secret);
+      } catch { claims = null; }
+      if (!claims || claims.scope !== 'terminal' || !claims.office) {
+        return res.status(401).json({ error: 'Only a commissioned till can hold the offline copy.' });
+      }
+      const office = claims.office;
+      const rows = await selectCustomers('email_key = ?', [office], 'LIMIT 50000');
+      const members = await memberAnswer(office, rows);
+      const settingsByScheme = {};
+      const customers = members.map((m) => {
+        const k = m.scheme_id == null ? 'none' : String(m.scheme_id);
+        if (!settingsByScheme[k]) settingsByScheme[k] = m.settings;
+        const { settings, ...rest } = m;
+        return rest;
+      });
+      const [cards] = await pool.query(
+        `SELECT * FROM epos_gift_cards WHERE office = ? AND (balance_minor > 0 OR kind = 'swipe')`,
+        [office]
+      );
+      const giftCards = cards.map((card) => {
+        const expired = card.expires_on && new Date(card.expires_on) < new Date(new Date().toDateString());
+        const problem = cardProblem(card);
+        return {
+          ...card,
+          expired: !!expired,
+          available_minor: card.balance_minor,
+          not_yet: !!(card.usable_from && new Date(card.usable_from) > new Date()),
+          reason: problem && problem.status !== 404 ? problem.error : null,
+          redeemable: !problem && card.balance_minor > 0,
+        };
+      });
+      const [vouchers] = await pool.query(
+        `SELECT v.* FROM bo_vouchers v JOIN offices o ON o.id = v.office_id
+          WHERE o.contact_email = ? AND v.active = 1`,
+        [office]
+      );
+      // Moves replayed from the local link that this copy already includes, so
+      // a till never counts one twice (src/lan.js offlineOnce).
+      let applied = [];
+      try {
+        const [done] = await pool.query(
+          `SELECT id FROM epos_lan_journal
+            WHERE office = ? AND status IS NOT NULL AND created_at > DATE_SUB(NOW(), INTERVAL 7 DAY)`,
+          [office]
+        );
+        applied = done.map((r) => r.id);
+      } catch { /* no journal yet: nothing replayed */ }
+      res.json({
+        at: new Date().toISOString(),
+        applied,
+        customers,
+        settings_by_scheme: settingsByScheme,
+        gift_cards: giftCards,
+        vouchers,
+      });
     } catch (e) { next(e); }
   });
 

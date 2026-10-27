@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:io' show File, Platform, Process, ProcessStartMode;
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/lan/lan_service.dart';
 import '../config/constants.dart';
 import '../data/customer_display_control.dart';
 import '../data/fonts.dart';
@@ -462,6 +464,10 @@ class SettingsPage extends ConsumerWidget {
           ),
         ),
 
+        const SizedBox(height: 28),
+        const _SectionTitle('Local network'),
+        const Card(margin: EdgeInsets.zero, child: _LocalNetworkCard()),
+
         // ---- Closing the till ------------------------------------------
         //
         // The window has no X and no minimise button (see _lockWindowToKiosk
@@ -781,6 +787,123 @@ class _CustomerDisplaySummaryState extends State<_CustomerDisplaySummary> {
 
 /// Card payment configuration. Shows whether cards are set up on this terminal
 /// and lets the operator enter or change the credentials on the device.
+/// The venue's local link, as this till sees it (2026-10-27): which till is
+/// the main one, whether this one is linked, what it can reach, and -- when
+/// Windows is keeping the others out -- the button that lets them in.
+class _LocalNetworkCard extends StatefulWidget {
+  const _LocalNetworkCard();
+
+  @override
+  State<_LocalNetworkCard> createState() => _LocalNetworkCardState();
+}
+
+class _LocalNetworkCardState extends State<_LocalNetworkCard> {
+  StreamSubscription<void>? _changes;
+  Timer? _tick;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _changes = LanService.instance.changes.listen((_) {
+      if (mounted) setState(() {});
+    });
+    _tick = Timer.periodic(const Duration(seconds: 3), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _changes?.cancel();
+    _tick?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _allow() async {
+    setState(() => _busy = true);
+    final ok = await LanService.instance.allowThroughFirewall();
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (ok) {
+      PosMessenger.success(context, 'The other tills and screens can reach this till now.');
+    } else {
+      PosMessenger.error(context, 'Windows did not allow it. Someone with the administrator login needs to say Yes.');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final lan = LanService.instance;
+    final node = lan.node;
+    if (node == null) {
+      return const ListTile(
+        leading: Icon(Icons.lan_outlined, color: Pos.graphite),
+        title: Text('Local network'),
+        subtitle: Text('Starts once this till is signed in to the venue.'),
+      );
+    }
+    final hub = node.hubId == null
+        ? null
+        : node.hubId == node.identity.id
+            ? 'This till'
+            : node.peers[node.hubId]?.name ?? node.hubId;
+    final others = node.peers.values.toList()..sort((a, b) => a.name.compareTo(b.name));
+    final roleName = {'till': 'Till', 'kitchen': 'Kitchen screen', 'display': 'Customer display'};
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ListTile(
+          leading: Icon(
+            node.linked ? Icons.lan : Icons.lan_outlined,
+            color: node.linked ? Pos.brandDeep : Pos.graphite,
+          ),
+          title: Text(node.isHub
+              ? 'This is the main till'
+              : node.linked
+                  ? 'Linked to the main till: $hub'
+                  : hub == null
+                      ? 'Looking for the other tills'
+                      : 'Connecting to the main till: $hub'),
+          subtitle: Text(
+            'Tables, kitchen tickets, customer displays and, with the internet down, points, gift cards '
+            "and vouchers go between this venue's devices over its own network. Encrypted; only this "
+            "venue's devices can join."
+            '${node.isHub ? '\n${node.clientCount} device${node.clientCount == 1 ? '' : 's'} connected to this till.' : ''}',
+          ),
+        ),
+        if (others.isEmpty)
+          const ListTile(
+            dense: true,
+            title: Text('No other device heard yet'),
+            subtitle: Text('If there should be, check they are on the same network and updated.'),
+          )
+        else
+          for (final p in others)
+            ListTile(
+              dense: true,
+              leading: Icon(p.claimsHub ? Icons.star : Icons.circle, size: 14, color: Pos.brandDeep),
+              title: Text(p.name),
+              subtitle: Text('${roleName[p.role] ?? p.role} · ${p.address.address}${p.claimsHub ? ' · main till' : ''}'),
+            ),
+        if (Platform.isWindows && lan.firewallOpen == false)
+          ListTile(
+            leading: const Icon(Icons.shield_outlined, color: Pos.graphite),
+            title: const Text('Windows may be keeping the other devices out'),
+            subtitle: Text(
+              'Allow the local link through the firewall. Windows asks for the administrator login once.'
+              '${lan.networkProfile == null ? '' : ' Network: ${lan.networkProfile}.'}',
+            ),
+            trailing: FilledButton(
+              onPressed: _busy ? null : _allow,
+              child: Text(_busy ? 'Asking…' : 'Allow'),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 /// How big the till's on-screen keyboard is (also A- / A+ on the keyboard).
 class _KeyboardSizeCard extends StatelessWidget {
   const _KeyboardSizeCard();

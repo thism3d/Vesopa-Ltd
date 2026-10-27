@@ -13837,6 +13837,7 @@ async function loadAppInstalls() {
 
 async function loadDevices() {
   loadAppInstalls().catch(() => {});
+  if (typeof loadLan === 'function') loadLan().catch(() => {});
   let rows = [];
   try {
     rows = await api('/devices');

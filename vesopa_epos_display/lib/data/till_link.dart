@@ -23,6 +23,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'lan/lan_link.dart';
+import 'lan/lan_service.dart';
+
 /// The till's note of where it is listening, beside the basket.
 const tillLinkFile = 'link.json';
 
@@ -69,8 +74,81 @@ class TillLink {
   bool get localUp => _local != null;
   bool get cloudUp => _cloud != null;
 
-  /// 'local', 'cloud' or 'file', for the till and the status bar.
-  String get route => localUp ? 'local' : (cloudUp && _cloudPaired ? 'cloud' : 'file');
+  /// 'local', 'lan', 'cloud' or 'file', for the till and the status bar.
+  String get route => localUp
+      ? 'local'
+      : lanUp
+          ? 'lan'
+          : (cloudUp && _cloudPaired ? 'cloud' : 'file');
+
+  // ---- The venue's own network (2026-10-27) ---------------------------------
+  //
+  // A display on another computer also follows its till over the venue's local
+  // link (lan/lan_link.dart): the same messages on the till's own channel,
+  // there in milliseconds and there when the internet is not. Whichever of the
+  // two routes speaks first is drawn; while the link is carrying the till, the
+  // cloud's copy of the same basket is ignored.
+
+  /// The till this screen follows on the link: its device id, from pairing.
+  String? _lanTerminal;
+  DateTime? _lanHeard;
+
+  bool get lanUp =>
+      _lanTerminal != null &&
+      LanService.instance.linked &&
+      _lanHeard != null &&
+      DateTime.now().difference(_lanHeard!) < const Duration(seconds: 30);
+
+  final Set<String> _lanChannels = {};
+
+  void _followOnLan(String terminal) {
+    if (terminal.isEmpty) return;
+    _lanTerminal = terminal;
+    final channel = 'display:$terminal';
+    if (_lanChannels.add(channel)) {
+      LanService.instance.subscribe(channel, (m) => _onLan(m));
+    }
+    onChange?.call();
+  }
+
+  void _onLan(LanMessage m) {
+    if (m.channel != 'display:$_lanTerminal') return;
+    final d = m.data;
+    if (d is! Map) return;
+    _lanHeard = DateTime.now();
+    if (localUp) return;
+    switch (d['type']) {
+      case 'display.basket':
+        onBasket?.call(d['data']);
+      case 'display.control':
+        onControl?.call(d['data']);
+    }
+  }
+
+  bool _lanStarted = false;
+
+  Future<void> _startLan(String token) async {
+    if (_lanStarted) return;
+    _lanStarted = true;
+    await LanService.instance.configure(
+      apiBase: cloudBase,
+      token: token,
+      deviceId: 'display-$deviceId',
+      name: deviceName,
+      version: appVersion,
+      role: 'display',
+    );
+    // The till this screen was paired with last time, so it follows it at
+    // once -- before, or without, the back office saying so.
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString('display.remote_pairing');
+      if (raw != null) {
+        final j = jsonDecode(raw);
+        if (j is Map && j['terminal'] is String) _followOnLan(j['terminal'] as String);
+      }
+    } catch (_) {}
+  }
 
   bool _cloudPaired = false;
 
@@ -81,6 +159,7 @@ class TillLink {
     _basketPath = basketPath;
     _token = token;
     _code = code;
+    if (token != null && token.isNotEmpty) unawaited(_startLan(token));
     if (pathChanged) {
       _closeLocal();
       _scheduleLocal(Duration.zero);
@@ -104,6 +183,14 @@ class TillLink {
     final msg = jsonEncode({'type': 'display.status', 'data': status});
     _send(_local, msg);
     if (_cloudPaired) _send(_cloud, msg);
+    final terminal = _lanTerminal;
+    if (terminal != null) {
+      LanService.instance.publish(
+        'display-status:$terminal',
+        {'data': status, 'name': deviceName},
+        key: 'display-$deviceId',
+      );
+    }
   }
 
   void _send(WebSocket? ws, String msg) {
@@ -253,15 +340,17 @@ class TillLink {
     switch (msg['type']) {
       case 'display.basket':
         // A same-PC till is the faster route; while it is up the cloud copy of
-        // the same basket is ignored rather than drawn twice.
-        if (cloud && localUp) return;
+        // the same basket is ignored rather than drawn twice. Likewise while
+        // the venue's local link is carrying the till.
+        if (cloud && (localUp || lanUp)) return;
         onBasket?.call(msg['data']);
       case 'display.control':
-        if (cloud && localUp) return;
+        if (cloud && (localUp || lanUp)) return;
         onControl?.call(msg['data']);
       case 'display.paired':
         if (cloud) {
           _cloudPaired = true;
+          _followOnLan('${msg['terminal'] ?? ''}');
           onPaired?.call('${msg['terminal'] ?? ''}', '${msg['terminalName'] ?? 'the till'}');
           onChange?.call();
         }

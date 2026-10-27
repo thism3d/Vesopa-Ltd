@@ -99,6 +99,14 @@ Root: HKCU; Subkey: "Software\Classes\{#Scheme2}\shell\open\command"; ValueType:
 Filename: "{app}\{#ExeName}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
 ; When the app updated itself, start it again.
 Filename: "{app}\{#ExeName}"; Flags: nowait; Check: Relaunch
+#if AppKey == "till"
+; The venue's local link (2026-10-27): the other tills, kitchen screens and
+; customer displays connect to this till on TCP 47821 and find it on UDP 47820.
+; Only when the rule is missing and a person is running the installer: Windows
+; asks for the administrator once, and a silent self-update never does. A till
+; installed without it shows an Allow button in Settings > Local network.
+Filename: "{cmd}"; Parameters: "/c netsh advfirewall firewall delete rule name=""Vesopa local link"" >nul 2>&1 & netsh advfirewall firewall add rule name=""Vesopa local link"" dir=in action=allow protocol=TCP localport=47821 profile=any & netsh advfirewall firewall add rule name=""Vesopa local link"" dir=in action=allow protocol=UDP localport=47820 profile=any"; Verb: runas; Flags: shellexec runhidden waituntilterminated skipifsilent; StatusMsg: "Letting the venue's other devices reach this till..."; Check: NeedsLanRule
+#endif
 
 [UninstallDelete]
 Type: files; Name: "{app}\vesopa-install.txt"
@@ -107,6 +115,17 @@ Type: files; Name: "{app}\vesopa-install.txt"
 function Relaunch: Boolean;
 begin
   Result := WizardSilent and (ExpandConstant('{param:RELAUNCH|0}') = '1');
+end;
+
+// Whether the local link's firewall rule is missing (see [Run]).
+function NeedsLanRule: Boolean;
+var
+  Code: Integer;
+begin
+  if not Exec(ExpandConstant('{sys}\netsh.exe'), 'advfirewall firewall show rule name="Vesopa local link"', '', SW_HIDE, ewWaitUntilTerminated, Code) then
+    Result := True
+  else
+    Result := Code <> 0;
 end;
 
 // The app reads this to know it came from our installer (so it may update

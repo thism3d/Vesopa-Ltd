@@ -285,6 +285,7 @@ class TerminalService {
     int? covers,
     int? staffId,
     String? clerkName,
+    int? changedAt,
   }) async {
     if (!canShare) return false;
     try {
@@ -304,6 +305,10 @@ class TerminalService {
               'total_minor': totalMinor,
               'line_count': lineCount,
               'payload': payload,
+              // When it last changed, on the venue's main-till clock: the
+              // server keeps the newer change when the local link and the
+              // cloud meet (2026-10-27).
+              'changed_at': ?changedAt,
             }),
           )
           .timeout(_quick);

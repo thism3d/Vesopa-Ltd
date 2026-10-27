@@ -17,6 +17,9 @@ class LogoutDialog extends ConsumerStatefulWidget {
 class _LogoutDialogState extends ConsumerState<LogoutDialog> {
   final _password = TextEditingController();
   bool _busy = false;
+
+  /// The eye beside the password: shown in plain text while pressed on.
+  bool _reveal = false;
   String? _error;
   int _pending = 0;
   int _parked = 0;
@@ -152,12 +155,17 @@ class _LogoutDialogState extends ConsumerState<LogoutDialog> {
             TextField(
               controller: _password,
               enabled: !_busy,
-              obscureText: true,
+              obscureText: !_reveal,
               autofocus: true,
               onSubmitted: (_) => _busy ? null : _submit(),
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'Password',
-                border: OutlineInputBorder(),
+                border: const OutlineInputBorder(),
+                suffixIcon: IconButton(
+                  tooltip: _reveal ? 'Hide password' : 'Show password',
+                  icon: Icon(_reveal ? Icons.visibility_off_outlined : Icons.visibility_outlined),
+                  onPressed: () => setState(() => _reveal = !_reveal),
+                ),
               ),
             ),
 

@@ -11,7 +11,7 @@ publish_to: 'none'
 # reason the kitchen screen does: the two ship together, and a display and a
 # till on different major versions is a support question nobody can answer over
 # the phone. The build number is this app's own.
-version: 1.7.5+30
+version: 1.7.6+31
 
 environment:
   sdk: ^3.12.2
@@ -59,7 +59,7 @@ dependencies:
   # CustomPainter (see ui/customer_qr.dart) and a widget package would bring a
   # dependency, its own theming and its own opinions for the sake of them. `qr`
   # is pure Dart, has no plugin and no platform code, which matters on a screen
-  # whose Store package declares no capabilities at all.
+  # whose Store package declares only the network.
   qr: ^3.0.2
 
   # Opening the Microsoft Store when Vesopa EPOS is not installed on this PC.
@@ -139,7 +139,7 @@ msix_config:
 
   # Four parts, and the last must be 0 — the Store reserves the revision field
   # and rejects anything else. Tracks `version:` at the top of this file.
-  msix_version: 1.7.5.0
+  msix_version: 1.7.6.0
 
   logo_path: assets/brand/512x512.png
 
@@ -149,15 +149,12 @@ msix_config:
 
   trim_logo: false
 
-  # No network capability at all, and that is the point rather than an omission.
-  # This screen reads one file the till writes and plays media off a local
-  # folder; it has no business reaching the internet, and a customer-facing
-  # screen with no network is one fewer thing to think about.
-  #
-  # Opening the Store is not an exception to that. It is a ShellExecute on a
-  # ms-windows-store:// URI - Windows does the fetching, in its own application,
-  # and this one still never opens a socket.
-  capabilities: ""
+  # The network, for the till. A screen on the till's own PC reads its files
+  # and a loopback socket; one on another computer follows its till through the
+  # back office (internet) and, since 2026-10-27, over the venue's local link
+  # (the private network), so it keeps going when the internet does not.
+  # Opening the Store is still only a ShellExecute on a ms-windows-store:// URI.
+  capabilities: internetClient, privateNetworkClientServer
 
   # Deep link. Reverse DNS, matching the web host the same app answers on:
   #
@@ -176,7 +173,11 @@ msix_config:
   # rather than changing behaviour -- a Store package built in debug is accepted
   # by the packer and rejected by certification, and that is not a thing to
   # leave resting on a default. The till pins it for the same reason.
-  windows_build_args: --release
+  # Obfuscated (2026-10-27): the shipped program carries no readable names,
+  # and its symbols stay on the build machine (build/symbols), never in a
+  # package -- so a crash can still be read here and the app cannot be read
+  # anywhere else.
+  windows_build_args: --release --obfuscate --split-debug-info=build/symbols
 
   # WHERE THE PACKAGE LANDS.
   #

@@ -329,6 +329,40 @@ class Ticket {
     };
   }
 
+  /// A ticket as a till fires it, heard over the venue's local link
+  /// (2026-10-27) before -- or instead of -- the back office's copy. Same id,
+  /// so the board swaps it for the back office's the moment that arrives.
+  /// Allergens are not on it: the back office adds those.
+  factory Ticket.fromTill(Map<String, dynamic> j) {
+    final lines = [for (final l in (j['lines'] as List? ?? const [])) (l as Map).cast<String, dynamic>()];
+    final stations = <String>{for (final l in lines) ..._stations(l['stations'])};
+    return Ticket.fromJson({
+      'id': j['id'],
+      'orderId': j['order_id'] ?? j['id'],
+      'ticketNo': j['ticket_no'],
+      'kind': j['kind'],
+      'placedAt': j['placed_at'],
+      'tableNumber': j['table_number'],
+      'roomName': j['room_name'],
+      'staffName': j['staff_name'],
+      'covers': j['covers'],
+      'note': j['note'],
+      'lines': [
+        for (var i = 0; i < lines.length; i++)
+          {
+            'id': lines[i]['id'],
+            'seq': i,
+            'quantity': lines[i]['quantity'],
+            'name': lines[i]['name'],
+            'note': lines[i]['note'],
+            'stations': lines[i]['stations'],
+            'isModifier': lines[i]['is_modifier'] == true,
+          },
+      ],
+      'stations': [for (final st in stations) {'station': st, 'status': 'open'}],
+    });
+  }
+
   factory Ticket.fromJson(Map<String, dynamic> j) => Ticket(
     id: j['id'] as String,
     orderId: j['orderId'] as String? ?? j['id'] as String,

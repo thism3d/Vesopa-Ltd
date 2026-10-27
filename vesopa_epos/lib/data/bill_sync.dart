@@ -41,6 +41,8 @@ import 'dart:convert';
 
 import 'package:drift/drift.dart';
 
+import 'lan/lan_link.dart';
+import 'lan/lan_service.dart';
 import 'local/database.dart';
 import 'terminal_service.dart';
 
@@ -85,6 +87,18 @@ class BillSync {
   /// every open bill in the venue on every keystroke.
   final _sent = <String, String>{};
 
+  /// What was last put on the venue's local link for each bill (2026-10-27),
+  /// apart from the cloud: the link is up when the internet is not, and the
+  /// other way round.
+  final _lanSent = <String, String>{};
+
+  /// When each of our bills last changed, on the main till's clock.
+  final _changedAt = <String, int>{};
+
+  /// The channel the venue's tills share open bills on.
+  static const lanChannel = 'bills';
+  static const _claimChannel = 'bills-claim';
+
   final _status = StreamController<BillSyncStatus>.broadcast();
   Stream<BillSyncStatus> get status => _status.stream;
   var _current = BillSyncStatus.idle;
@@ -110,6 +124,16 @@ class BillSync {
   void start() {
     if (!_terminals.canShare) return;
 
+    // The local link: other tills' bills the moment they change, whatever the
+    // internet is doing; ours again whenever there is a new main till.
+    final lan = LanService.instance;
+    lan.subscribe(lanChannel, (m) => unawaited(_onLan(m)));
+    lan.subscribe(_claimChannel, (m) => unawaited(_onClaimAsked(m)));
+    lan.whenReady(() {
+      _lanSent.clear();
+      unawaited(_lanPass());
+    });
+
     // Anything already open when the app starts. A terminal that was killed
     // mid-service comes back holding bills the venue has not heard about since.
     unawaited(pushAll());
@@ -117,13 +141,19 @@ class BillSync {
 
     _poll = Timer.periodic(_interval, (_) {
       unawaited(pull());
+      unawaited(_lanPass());
       unawaited(pushAll());
     });
 
     // The local side. Watching the orders table alone would miss a line being
     // added to a bill that is already there, which is most of what changes
     // about a bill, so this watches the join.
-    _watch = _liveQuery().watch().listen((_) => unawaited(pushAll()));
+    _watch = _liveQuery().watch().listen((_) {
+      // The local link first and on its own: it must never wait behind a
+      // cloud push that is timing out because the internet is down.
+      unawaited(_lanPass());
+      unawaited(pushAll());
+    });
   }
 
   Future<void> dispose() async {
@@ -165,9 +195,12 @@ class BillSync {
         mine.putIfAbsent(order.id, () => order);
       }
 
+      final lan = LanService.instance;
       for (final order in mine.values) {
         final payload = await _payloadFor(order);
         final signature = jsonEncode(payload);
+        _noteChange(order.id, signature);
+        final changedAt = _changedAt[order.id] ??= lan.now();
         if (_sent[order.id] == signature) continue;
         final ok = await _terminals.pushBill(
           id: order.id,
@@ -180,6 +213,7 @@ class BillSync {
           covers: order.covers,
           staffId: order.staffId,
           clerkName: order.staffName,
+          changedAt: changedAt,
         );
         // Only remembered on a success, so a push that failed is retried by the
         // next tick rather than being assumed delivered.
@@ -192,10 +226,81 @@ class BillSync {
       // and a settled table would sit on the other terminal's plan for ever.
       for (final id in _sent.keys.toList()) {
         if (mine.containsKey(id)) continue;
-        if (await _terminals.retireBill(id)) _sent.remove(id);
+        if (await _terminals.retireBill(id)) {
+          _sent.remove(id);
+          _changedAt.remove(id);
+        }
       }
     } finally {
       _busy = false;
+    }
+  }
+
+  /// The last signature seen of each of our bills, to tell when one changed.
+  final _seenSignature = <String, String>{};
+
+  void _noteChange(String id, String signature) {
+    if (_seenSignature[id] != signature) {
+      _seenSignature[id] = signature;
+      _changedAt[id] = LanService.instance.now();
+    }
+  }
+
+  bool _lanBusy = false;
+  bool _lanAgain = false;
+
+  /// Our bills onto the venue's local link: every change, at once, with no
+  /// network call in the way. Runs again straight after if anything changed
+  /// while it was running, so nothing waits for the next tick.
+  Future<void> _lanPass() async {
+    if (_disposed || !_terminals.canShare) return;
+    if (_lanBusy) {
+      _lanAgain = true;
+      return;
+    }
+    _lanBusy = true;
+    try {
+      do {
+        _lanAgain = false;
+        final lan = LanService.instance;
+        if (!lan.linked) break;
+        final rows = await _liveQuery().get();
+        final mine = <String, Order>{};
+        for (final row in rows) {
+          final order = row.readTable(_db.orders);
+          mine.putIfAbsent(order.id, () => order);
+        }
+        for (final order in mine.values) {
+          final payload = await _payloadFor(order);
+          final signature = jsonEncode(payload);
+          if (_lanSent[order.id] == signature) continue;
+          _noteChange(order.id, signature);
+          final sent = lan.publish(lanChannel, {
+            'id': order.id,
+            'terminal': _terminals.terminalName,
+            'status': order.status == 'parked' ? 'parked' : 'open',
+            'table_number': order.tableNumber,
+            'room_id': order.roomId,
+            'covers': order.covers,
+            'staff_id': order.staffId,
+            'clerk_name': order.staffName,
+            'total_minor': order.totalMinor,
+            'line_count': (payload['lines'] as List).length,
+            'payload': payload,
+            'changed_at': _changedAt[order.id] ?? lan.now(),
+          }, key: order.id);
+          if (sent) _lanSent[order.id] = signature;
+        }
+        for (final id in _lanSent.keys.toList()) {
+          if (mine.containsKey(id)) continue;
+          if (lan.publish(lanChannel, null, key: id)) {
+            _lanSent.remove(id);
+            _seenSignature.remove(id);
+          }
+        }
+      } while (_lanAgain && !_disposed);
+    } finally {
+      _lanBusy = false;
     }
   }
 
@@ -279,7 +384,10 @@ class BillSync {
     if (_disposed || !_terminals.canShare) return;
     final feed = await _terminals.pullBills(since: _cursor);
     if (feed == null) {
-      _emit(BillSyncStatus(sharing: _current.sharing, stale: true));
+      // No internet. With the local link up the plan is still current: the
+      // other tills' bills arrive over it the moment they change.
+      final linked = LanService.instance.linked;
+      _emit(BillSyncStatus(sharing: _current.sharing || linked, stale: !linked));
       return;
     }
 
@@ -440,13 +548,101 @@ class BillSync {
       (_db.update(_db.orders)..where((o) => o.id.equals(id)))
           .write(const OrdersCompanion(heldBy: Value(null)));
 
+  // ---------------------------------------------------------------------------
+  // The local link (2026-10-27)
+  // ---------------------------------------------------------------------------
+
+  /// Another till's bill, or its retraction, over the venue's own network.
+  Future<void> _onLan(LanMessage m) async {
+    if (_disposed) return;
+    final id = m.key;
+    if (id == null) return;
+    final d = m.data;
+    if (d == null) {
+      await _forget(id);
+      return;
+    }
+    if (d is! Map) return;
+    final bill = RemoteBill.fromJson({...d.cast<String, dynamic>(), 'id': id, 'rev': 0});
+    if (bill.terminal == _terminals.terminalName) {
+      // Handed to us: see [claim], which is waiting for exactly this.
+      final waiting = _claims.remove(id);
+      if (waiting != null && !waiting.isCompleted) waiting.complete(bill);
+      return;
+    }
+    await _mirror(bill);
+    if (!_current.sharing || _current.stale) _emit(const BillSyncStatus(sharing: true, stale: false));
+  }
+
+  final Map<String, Completer<RemoteBill>> _claims = {};
+
+  /// Another till wants a bill we are holding, and the internet is down.
+  Future<void> _onClaimAsked(LanMessage m) async {
+    final d = m.data;
+    if (d is! Map) return;
+    final id = '${d['id'] ?? ''}';
+    final by = '${d['by'] ?? ''}';
+    if (id.isEmpty || by.isEmpty || by == _terminals.terminalName) return;
+    final order = await (_db.select(_db.orders)..where((o) => o.id.equals(id))).getSingleOrNull();
+    if (order == null || order.heldBy != null || !const {'open', 'parked'}.contains(order.status)) return;
+    final payload = await _payloadFor(order);
+    // Theirs from now: on the link with them as its holder, and a mirror here.
+    // Not retired on the cloud -- they push it as theirs.
+    LanService.instance.publish(lanChannel, {
+      'id': id,
+      'terminal': by,
+      'status': order.status == 'parked' ? 'parked' : 'open',
+      'table_number': order.tableNumber,
+      'room_id': order.roomId,
+      'covers': order.covers,
+      'staff_id': order.staffId,
+      'clerk_name': order.staffName,
+      'total_minor': order.totalMinor,
+      'line_count': (payload['lines'] as List).length,
+      'payload': payload,
+      'changed_at': LanService.instance.now(),
+    }, key: id);
+    await (_db.update(_db.orders)..where((o) => o.id.equals(id))).write(OrdersCompanion(heldBy: Value(by)));
+    _sent.remove(id);
+    _lanSent.remove(id);
+    _changedAt.remove(id);
+  }
+
+  /// Take a bill from the till holding it, over the local link.
+  Future<RemoteBill?> _claimOverLan(String id) async {
+    final lan = LanService.instance;
+    if (!lan.linked) return null;
+    final done = Completer<RemoteBill>();
+    _claims[id] = done;
+    if (!lan.publish(_claimChannel, {'id': id, 'by': _terminals.terminalName})) {
+      _claims.remove(id);
+      return null;
+    }
+    try {
+      return await done.future.timeout(const Duration(seconds: 4));
+    } on TimeoutException {
+      return null;
+    } finally {
+      _claims.remove(id);
+    }
+  }
+
   /// Take a bill another terminal is holding, so it can be worked on here.
   ///
   /// Throws [TerminalUnavailable] when the venue cannot be reached or the bill
   /// has gone. The caller is a clerk standing at a table, and "nothing
   /// happened" is not an answer they can act on.
   Future<void> claim(String id) async {
-    final bill = await _terminals.claimBill(id);
+    RemoteBill bill;
+    try {
+      bill = await _terminals.claimBill(id);
+    } on TerminalUnavailable {
+      // No internet: the till holding it hands it over on the local link.
+      final handed = await _claimOverLan(id);
+      if (handed == null) rethrow;
+      bill = handed;
+    }
+    _changedAt[id] = LanService.instance.now();
     // Written from the server's answer rather than assumed, and with heldBy
     // null: the server has just moved the bill to this terminal, so this is now
     // ours to ring up on and ours to settle.

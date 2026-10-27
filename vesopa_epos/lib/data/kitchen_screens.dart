@@ -19,6 +19,8 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'lan/lan_service.dart';
+
 import 'local/database.dart';
 import 'modifier_layout.dart';
 
@@ -230,6 +232,9 @@ class KitchenScreenResult {
 /// So this queue is small, lives in preferences, and throws away anything older
 /// than [ttl]. It survives a restart and a flaky minute of network. It does not
 /// survive a service, and it is not supposed to.
+/// The local link's channel for kitchen tickets (lan/lan_link.dart).
+const kitchenLanChannel = 'kitchen';
+
 class KitchenScreenSender {
   KitchenScreenSender({
     required this.apiBase,
@@ -262,6 +267,15 @@ class KitchenScreenSender {
       return KitchenScreenResult(stations: const {});
     }
 
+    // Straight to the kitchen screens over the venue's own network as well
+    // (2026-10-27): there in milliseconds, and there when the internet is not.
+    // The screens match it to the back office's copy by its id.
+    final onLink = LanService.instance.publish(
+      kitchenLanChannel,
+      {'op': 'ticket', 'ticket': ticket.toJson()},
+      log: true,
+    );
+
     try {
       final ok = await _post(ticket);
       if (ok) {
@@ -282,6 +296,8 @@ class KitchenScreenSender {
       await _queue(ticket);
       return KitchenScreenResult(
         stations: stations,
+        // On the screens already when the local link carried it.
+        delivered: onLink,
         queued: true,
         error: '$e',
       );

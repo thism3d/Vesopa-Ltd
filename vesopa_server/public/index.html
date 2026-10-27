@@ -4085,6 +4085,20 @@
             <button class="btn" id="devices-refresh">Refresh</button>
           </div>
           <div class="grid-cards" id="devices-stats"></div>
+          <div class="card rd-card" id="lan-card">
+            <div class="page-head" style="margin:0">
+              <h3 style="margin:0">Local network</h3>
+              <button class="btn btn-small" id="lan-refresh">Check again</button>
+            </div>
+            <p class="muted small">
+              Tills, kitchen screens and customer displays talk to each other over the
+              venue's own network, so tables and the kitchen keep going when the internet
+              does not. One till is the main one and the others connect to it; if it goes
+              off, another takes over. Only this venue's devices can join, and everything
+              is encrypted. Each device reports here what it can reach.
+            </p>
+            <div id="lan-list"></div>
+          </div>
           <div class="card rd-card" id="seats-card">
             <h3>Till licences</h3>
             <p class="muted small">
@@ -4975,6 +4989,7 @@
     <script src="/dashboard.js"></script>
     <script src="/dinein_card.js"></script>
     <script src="/dinein.js"></script>
+    <script src="/lan.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>

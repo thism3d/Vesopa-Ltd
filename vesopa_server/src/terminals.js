@@ -22,6 +22,7 @@
 const express = require('express');
 const { requireAuth, requireTerminal } = require('./auth');
 const training = require('./training');
+const { lanRoutes, ensureTables: ensureLanTables } = require('./lan');
 
 /** Longest basket we will carry. A bill this size is a runaway, not a round. */
 const MAX_PAYLOAD_BYTES = 512 * 1024;
@@ -36,6 +37,27 @@ const TOMBSTONE_DAYS = 1;
 function terminalRoutes({ pool, broadcast, secret }) {
   const router = express.Router();
   const terminal = requireTerminal(secret);
+
+  // The venue's local link (src/lan.js, 2026-10-27).
+  router.use(lanRoutes({ pool, secret }));
+
+  /**
+   * When each bill last changed, on the venue's main-till clock, so that a
+   * change made on the local link while the internet was down does not lose
+   * to an older one when the two meet (owner, 2026-10-27: "latest change
+   * wins", the other logged). Added on first use; a database that will not
+   * take it simply keeps last-write-wins.
+   */
+  let changedColumn = null;
+  function ensureChangedColumn() {
+    if (!changedColumn) {
+      changedColumn = pool
+        .query('ALTER TABLE epos_open_bills ADD COLUMN client_changed_at BIGINT NULL')
+        .then(() => true)
+        .catch((e) => e && (e.code === 'ER_DUP_FIELDNAME' || e.errno === 1060));
+    }
+    return changedColumn;
+  }
 
   /**
    * The next change number for an office.
@@ -162,9 +184,40 @@ function terminalRoutes({ pool, broadcast, secret }) {
       return res.status(413).json({ error: 'That bill is too large to share.' });
     }
 
+    const changedAt = Number(bill.changed_at) || null;
+    const tracked = changedAt ? await ensureChangedColumn() : false;
+
     const conn = await pool.getConnection();
     try {
       await conn.beginTransaction();
+
+      if (tracked) {
+        const [[held]] = await conn.execute(
+          `SELECT terminal, client_changed_at, total_minor FROM epos_open_bills
+            WHERE id = ? AND office = ? FOR UPDATE`,
+          [bill.id, office]
+        );
+        if (held && held.client_changed_at && Number(held.client_changed_at) > changedAt &&
+            (held.terminal || null) !== (bill.terminal ?? null)) {
+          // Another till changed it more recently: theirs stands, and this one
+          // is written down for the back office rather than lost silently.
+          await conn.commit();
+          try {
+            await ensureLanTables(pool);
+            await pool.execute(
+              'INSERT INTO epos_lan_conflicts (office, device, kind, ref, detail) VALUES (?, ?, ?, ?, ?)',
+              [office, String(bill.terminal || '').slice(0, 64), 'bill', String(bill.id).slice(0, 64),
+                JSON.stringify({
+                  kept: { terminal: held.terminal, changed_at: Number(held.client_changed_at), total_minor: held.total_minor },
+                  lost: { terminal: bill.terminal, changed_at: changedAt, total_minor: Number(bill.total_minor) || 0,
+                    table_number: bill.table_number ?? null },
+                }).slice(0, 4000)]
+            );
+          } catch { /* the log is a courtesy */ }
+          return res.json({ ok: true, stale: true });
+        }
+      }
+
       const rev = await nextRev(conn, office);
 
       await conn.execute(
@@ -202,6 +255,13 @@ function terminalRoutes({ pool, broadcast, secret }) {
           rev,
         ]
       );
+
+      if (tracked) {
+        await conn.execute(
+          'UPDATE epos_open_bills SET client_changed_at = ? WHERE id = ? AND office = ?',
+          [changedAt, bill.id, office]
+        );
+      }
 
       // A bill that comes back to life -- recalled from a table after being
       // settled and refunded, say -- must not stay retired, or every terminal

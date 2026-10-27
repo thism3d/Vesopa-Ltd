@@ -8,6 +8,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/constants.dart';
 import '../data/display_link.dart';
+import '../data/lan/lan_service.dart';
+import '../data/lan/offline_money.dart';
 import '../data/app_update.dart';
 import '../data/customer_display.dart';
 import '../data/dinein_orders.dart' show allergenLabelsProvider;
@@ -400,12 +402,31 @@ class _PosShellState extends ConsumerState<PosShell> {
 
     // Customer displays on another computer reach this till through the back
     // office's WebSocket (data/display_link.dart).
+    final deviceId = await terminalDeviceId();
     DisplayLinkHub.instance.configureCloud(
       apiBase: ref.read(apiBaseProvider),
       terminalToken: session.terminalToken,
-      terminalDevice: await terminalDeviceId(),
+      terminalDevice: deviceId,
       terminalName: terminalName,
     );
+
+    // The venue's local link (2026-10-27): tables, kitchen tickets, displays
+    // on other computers and offline balances over the venue's own network.
+    unawaited(() async {
+      await LanService.instance.configure(
+        apiBase: ref.read(apiBaseProvider),
+        token: session.terminalToken,
+        deviceId: deviceId,
+        name: terminalName,
+        version: VesopaBrand.appVersion,
+        role: 'till',
+      );
+      await OfflineMoney.instance.configure(
+        apiBase: ref.read(apiBaseProvider),
+        token: session.terminalToken,
+        deviceId: deviceId,
+      );
+    }());
 
     await pairing.refreshGrants(
       office: office,

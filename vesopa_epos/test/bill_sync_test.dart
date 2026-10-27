@@ -51,6 +51,7 @@ class _FakeTerminals extends TerminalService {
     int? covers,
     int? staffId,
     String? clerkName,
+    int? changedAt,
   }) async {
     if (!reachable) return false;
     pushed.add({
