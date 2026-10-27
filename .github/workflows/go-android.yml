@@ -1,0 +1,159 @@
+# Vesopa Go for Android, to Google Play (com.vesopa.go): the bundle signed with
+# the Vesopa upload key, on the internal testing track, with the store listing
+# and pictures from vesopa_go/store/play.json. The Android twin of go-ios.yml.
+#
+# Actions > "Android - Vesopa Go" > Run workflow.
+#
+#   full     builds the bundle with the next build number Play has not seen and
+#            uploads it with the listing
+#   listing  only the listing words and pictures, no build
+#   build    builds and keeps the bundle as the run's artifact, uploads nothing
+#
+# Secrets, in the "App Store Connect API" environment, as android-venue-app.yml:
+#   ANDROID_UPLOAD_KEYSTORE_B64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS,
+#   ANDROID_KEY_PASSWORD (optional), PLAY_SERVICE_ACCOUNT_JSON
+#
+# A brand-new Play app takes its very first bundle only from Play Console
+# (Test and release > Internal testing > Create release): if Play refuses the
+# upload for that reason, the run's artifact is that bundle, already signed.
+
+name: Android - Vesopa Go
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: full = build and upload with the listing; listing = only the words and pictures; build = bundle only
+        type: choice
+        options: [full, listing, build]
+        default: full
+      track:
+        description: Play track (empty = play.json's, internal)
+        required: false
+        default: ''
+      build:
+        description: Build number (empty = the next one Play has not seen)
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: App Store Connect API
+    env:
+      APP: vesopa_go
+      MODE: ${{ inputs.mode }}
+      PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python for the Play API
+        run: |
+          python3 -m venv "$RUNNER_TEMP/py"
+          "$RUNNER_TEMP/py/bin/pip" install --quiet cryptography
+
+      - name: Next build number Play has not seen
+        id: num
+        if: inputs.mode != 'listing'
+        env:
+          BUILD_INPUT: ${{ inputs.build }}
+        run: |
+          floor=$(python3 -c "import json;print(json.load(open('$APP/venue.json'))['build'])")
+          if [ -n "$BUILD_INPUT" ]; then
+            n=$BUILD_INPUT
+          elif [ -n "$PLAY_SERVICE_ACCOUNT_JSON" ] && n=$("$RUNNER_TEMP/py/bin/python" tool/play_upload.py "$APP" --next-build 2> "$RUNNER_TEMP/next-build.err"); then
+            :
+          else
+            echo "::warning::Play did not say which build numbers it has ($(tail -1 "$RUNNER_TEMP/next-build.err" 2>/dev/null)); using venue.json's $floor."
+            n=$floor
+          fi
+          case "$n" in ''|*[!0-9]*) echo "::error::Could not work out the build number ($n)"; exit 1;; esac
+          python3 - "$APP/venue.json" "$n" <<'PY'
+          import json, sys
+          p, n = sys.argv[1], int(sys.argv[2])
+          v = json.load(open(p, encoding="utf-8"))
+          v["build"] = n
+          json.dump(v, open(p, "w", encoding="utf-8"), indent=2)
+          PY
+          version=$(python3 -c "import json;print(json.load(open('$APP/venue.json'))['version'])")
+          echo "build=$n" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "### Vesopa Go $version ($n)" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/setup-java@v4
+        if: inputs.mode != 'listing'
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        if: inputs.mode != 'listing'
+        with:
+          channel: stable
+          flutter-version: 3.47.8
+          cache: true
+
+      - name: Upload key
+        if: inputs.mode != 'listing'
+        env:
+          KS: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_B64 }}
+          KSP: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KA: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KP: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          [ -n "$KS" ] && [ -n "$KSP" ] && [ -n "$KA" ] || { echo "::error::The Android upload key secrets are not set (see the top of this file)."; exit 1; }
+          mkdir -p "$RUNNER_TEMP/keys"
+          KP="${KP:-$KSP}"
+          printf '%s\n' "$KS" | tr -d '\r' | grep -v '^-----' | tr -d ' \n' | base64 -d > "$RUNNER_TEMP/keys/upload.jks"
+          keytool -list -keystore "$RUNNER_TEMP/keys/upload.jks" -storepass "$KSP" -alias "$KA" > /dev/null \
+            || { echo "::error::The upload key did not open with ANDROID_KEYSTORE_PASSWORD and ANDROID_KEY_ALIAS."; exit 1; }
+          {
+            echo "storeFile=$RUNNER_TEMP/keys/upload.jks"
+            echo "storePassword=$KSP"
+            echo "keyAlias=$KA"
+            echo "keyPassword=$KP"
+          } > "$APP/android/key.properties"
+
+      - name: Bundle
+        if: inputs.mode != 'listing'
+        working-directory: vesopa_go
+        run: |
+          flutter pub get
+          flutter build appbundle --release \
+            --build-name="${{ steps.num.outputs.version }}" --build-number="${{ steps.num.outputs.build }}"
+          out="$RUNNER_TEMP/android-builds"
+          mkdir -p "$out"
+          cp build/app/outputs/bundle/release/app-release.aab "$out/$APP-${{ steps.num.outputs.version }}-${{ steps.num.outputs.build }}.aab"
+          ls -la "$out"
+
+      - uses: actions/upload-artifact@v4
+        if: inputs.mode != 'listing'
+        with:
+          name: vesopa-go-${{ steps.num.outputs.version }}-${{ steps.num.outputs.build }}
+          path: ${{ runner.temp }}/android-builds/*.aab
+          retention-days: 30
+
+      - name: Upload to Google Play
+        if: inputs.mode != 'build'
+        env:
+          TRACK: ${{ inputs.track }}
+        run: |
+          [ -n "$PLAY_SERVICE_ACCOUNT_JSON" ] || { echo "::error::PLAY_SERVICE_ACCOUNT_JSON is not set."; exit 1; }
+          set -- "$APP" --builds "$RUNNER_TEMP/android-builds"
+          if [ "$MODE" = "listing" ]; then set -- "$@" --listing; fi
+          [ -n "$TRACK" ] && set -- "$@" --track "$TRACK"
+          ok=0
+          if [ "$MODE" = "full" ]; then
+            "$RUNNER_TEMP/py/bin/python" tool/play_upload.py "$@" --only phone || ok=1
+          fi
+          # The listing on its own, so a refused bundle does not stop it.
+          "$RUNNER_TEMP/py/bin/python" tool/play_upload.py "$APP" --listing || ok=1
+          exit $ok
+
+      - name: Remove the keys
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/keys" "$APP/android/key.properties"

@@ -75,13 +75,20 @@ const CLIENT_IDS = {
   kitchen: process.env.VESOPA_AUTH_KITCHEN_CLIENT_ID || '',
   display: process.env.VESOPA_AUTH_DISPLAY_CLIENT_ID || '',
   express: process.env.VESOPA_AUTH_EXPRESS_CLIENT_ID || '',
+  // Vesopa Go (vesopa_go/): a phone commissioned as one of the venue's tills,
+  // with a Vesopa Auth client of its own (vesopa_auth schema_028).
+  go: process.env.VESOPA_AUTH_GO_CLIENT_ID || '',
 };
 
-/** What a token for this product may say it was minted for. */
+/**
+ * What a token for this product may say it was minted for. A Go phone is
+ * commissioned as a till, so the till's door also takes Go's client.
+ */
 function audiencesFor(kind) {
   const own = CLIENT_IDS[kind] || '';
   const legacy = TILL_CLIENT_ID;
-  return [own, legacy].filter(Boolean);
+  const go = kind === 'till' ? CLIENT_IDS.go : '';
+  return [own, legacy, go].filter(Boolean);
 }
 
 /** What each product is called when a token is refused, so the message is true. */
@@ -90,6 +97,7 @@ const KIND_NOUNS = {
   kitchen: 'the kitchen screen',
   display: 'the display',
   express: 'the kiosk',
+  go: 'Vesopa Go',
 };
 const ENABLED =
   String(process.env.VESOPA_AUTH_TILL_ENABLED || '').toLowerCase() === 'on' && Boolean(TILL_CLIENT_ID);
@@ -246,6 +254,12 @@ function terminalVesopaRoutes({ pool, secret, issueToken, issueTerminalToken }) 
   router.get('/api/display/vesopa/enabled', enabledFor('display'));
   router.get('/api/kitchen/vesopa/enabled', enabledFor('kitchen'));
   router.get('/api/express/vesopa/enabled', enabledFor('express'));
+  // Vesopa Go asks here which client to sign in with: its own when set, else
+  // the till's, which the till's door has always taken.
+  router.get('/api/go/vesopa/enabled', (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json({ enabled: ENABLED, issuer: ISSUER, clientId: ENABLED ? (CLIENT_IDS.go || TILL_CLIENT_ID) : null });
+  });
   router.get('/api/terminal/vesopa/enabled', (req, res) => {
     res.set('Cache-Control', 'no-store');
     res.json({

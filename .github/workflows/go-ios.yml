@@ -1,0 +1,142 @@
+# Vesopa Go for iPhone, to TestFlight: the Vesopa team (internal testing) and
+# the "Closed testing" group (external, with a public link). Built on a Mac
+# runner, signed and uploaded the way ios-venue-app.yml does it
+# (vesopa_go/tool/testflight.py imports that workflow's app_store_connect.py),
+# with the key in the "App Store Connect API" environment.
+#
+# Actions > "iOS - Vesopa Go" > Run workflow. Each run uploads the next build
+# number App Store Connect has not seen, gives it to the team, adds it to
+# "Closed testing" and sends it to Beta App Review (Apple, usually within a
+# day); the run's summary prints the public link.
+#
+# The real app (com.vesopa.go, Apple ID 6827395109): Vesopa sign-in, the venue's
+# back office, Dojo. Dojo's Tap to Pay on iPhone SDK is in the Runner target;
+# the Tap to Pay entitlement is only signed in once Apple has granted it to the
+# App ID (testflight.py prepare says which), so a build before that takes cards
+# on the venue's Dojo card machine instead.
+#
+# Not on every push: each upload is a new build for Apple to review.
+
+name: iOS - Vesopa Go
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ios:
+    runs-on: macos-latest
+    timeout-minutes: 120
+    environment: App Store Connect API
+    env:
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.8
+          cache: true
+
+      - name: App Store Connect key
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          if [ -z "$ASC_KEY_ID" ] || [ -z "$ASC_ISSUER_ID" ] || [ -z "$ASC_KEY_P8" ]; then
+            echo "::error::Set ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_P8 in the App Store Connect API environment."
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/keys"
+          printf '%s\n' "$ASC_KEY_P8" > "$RUNNER_TEMP/keys/AuthKey_$ASC_KEY_ID.p8"
+          python3 -m venv "$RUNNER_TEMP/asc"
+          "$RUNNER_TEMP/asc/bin/pip" install --quiet "pyjwt[crypto]"
+
+      - name: App ID, app record and build number
+        id: asc
+        env:
+          ASC_KEY_PATH: ${{ runner.temp }}/keys/AuthKey_${{ secrets.ASC_KEY_ID }}.p8
+        run: |
+          "$RUNNER_TEMP/asc/bin/python" vesopa_go/tool/testflight.py prepare
+
+      # Only the entitlements the App ID has: signing fails on any other.
+      - name: Entitlements and export compliance
+        working-directory: vesopa_go/ios/Runner
+        env:
+          TAPTOPAY: ${{ steps.asc.outputs.taptopay }}
+          NFC: ${{ steps.asc.outputs.nfc }}
+        run: |
+          [ "$TAPTOPAY" = "true" ] || /usr/libexec/PlistBuddy -c "Delete :com.apple.developer.proximity-reader.payment.acceptance" Runner.entitlements
+          [ "$NFC" = "true" ] || /usr/libexec/PlistBuddy -c "Delete :com.apple.developer.nfc.readersession.formats" Runner.entitlements
+          echo "Signed with: $(/usr/libexec/PlistBuddy -c Print Runner.entitlements | grep -o 'com.apple[^ ]*' | tr '\n' ' ')"
+          /usr/libexec/PlistBuddy -c "Add :ITSAppUsesNonExemptEncryption bool false" Info.plist 2>/dev/null \
+            || /usr/libexec/PlistBuddy -c "Set :ITSAppUsesNonExemptEncryption false" Info.plist
+
+      - name: Flutter build
+        working-directory: vesopa_go
+        env:
+          BUILD_NUMBER: ${{ steps.asc.outputs.build }}
+        run: |
+          flutter pub get
+          flutter build ios --release --no-codesign --build-number="$BUILD_NUMBER"
+
+      # As ios-venue-app.yml: a distribution certificate and App Store profile
+      # made for this run, in a keychain of the run's own.
+      - name: Distribution signing
+        env:
+          ASC_KEY_PATH: ${{ runner.temp }}/keys/AuthKey_${{ secrets.ASC_KEY_ID }}.p8
+        run: |
+          S="$RUNNER_TEMP/signing"
+          "$RUNNER_TEMP/asc/bin/python" vesopa_go/tool/testflight.py signing "$S"
+          pass="$(uuidgen)"
+          /usr/bin/openssl x509 -inform DER -in "$S/dist.cer" -out "$S/dist.pem"
+          /usr/bin/openssl pkcs12 -export -inkey "$S/dist.key.pem" -in "$S/dist.pem" -out "$S/dist.p12" -passout "pass:$pass"
+          KC="$RUNNER_TEMP/signing.keychain-db"
+          security create-keychain -p "$pass" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$pass" "$KC"
+          curl -fsSL -o "$S/AppleWWDRCAG3.cer" https://www.apple.com/certificateauthority/AppleWWDRCAG3.cer
+          security import "$S/AppleWWDRCAG3.cer" -k "$KC" -A || true
+          security import "$S/dist.p12" -k "$KC" -P "$pass" -A -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$pass" "$KC" >/dev/null
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          security find-identity -v -p codesigning "$KC"
+          for d in "$HOME/Library/MobileDevice/Provisioning Profiles" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
+            mkdir -p "$d"; cp "$S"/*.mobileprovision "$d/"
+          done
+          rm -f "$S/dist.key.pem" "$S/dist.p12"
+          "$RUNNER_TEMP/asc/bin/python" vesopa_go/tool/testflight.py sign-project "$S/profiles.json"
+
+      - name: Archive
+        working-directory: vesopa_go
+        run: |
+          xcodebuild archive \
+            -workspace ios/Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/Go.xcarchive"
+
+      - name: Sign and upload to App Store Connect
+        working-directory: vesopa_go
+        run: |
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/Go.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/signing/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey_$ASC_KEY_ID.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+
+      - name: TestFlight, the team and Closed testing
+        env:
+          ASC_KEY_PATH: ${{ runner.temp }}/keys/AuthKey_${{ secrets.ASC_KEY_ID }}.p8
+        run: |
+          "$RUNNER_TEMP/asc/bin/python" vesopa_go/tool/testflight.py testflight "${{ steps.asc.outputs.build }}"
+
+      - name: Remove the keys
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/keys" "$RUNNER_TEMP/signing"

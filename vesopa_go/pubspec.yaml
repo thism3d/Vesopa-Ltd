@@ -1,0 +1,40 @@
+name: vesopa_go
+description: "Vesopa Go: take orders and payments anywhere, at the counter or the table, for Vesopa EPOS."
+publish_to: 'none'
+
+# The store version and build. The workflows give each upload the next build
+# number the store has not seen; this is the floor.
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.13.4
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+  flutter_riverpod: ^3.4.3
+  http: ^1.6.0
+  # The back office's /ws: open bills, the kitchen, the menu and staff pushed
+  # the moment they change, instead of waiting for the next poll.
+  web_socket_channel: ^3.0.3
+  shared_preferences: ^2.5.6
+  url_launcher: ^6.3.3
+  crypto: ^3.0.7
+  uuid: ^4.6.0
+  local_auth: ^3.0.2
+  nfc_manager: ^4.2.1
+  flutter_secure_storage: ^11.2.0
+  mobile_scanner: ^7.4.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/brand/vesopa_v.png
+    - assets/brand/go_mark.png

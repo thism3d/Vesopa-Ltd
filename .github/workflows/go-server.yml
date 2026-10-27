@@ -1,0 +1,62 @@
+# Vesopa Go's server half, on the Cloud box: the back office's /api/go and
+# /api/tap, Go's own Vesopa Auth client and go.vesopaepos.com. All of it is
+# vesopa_go/tool/go_server.py; read its top for exactly what each mode does.
+#
+# Actions > "Go - server" > Run workflow:
+#   check    what a deploy would change, on staging and live; changes nothing
+#   staging  staging.backoffice.vesopaepos.com
+#   live     backoffice.vesopaepos.com, then go.vesopaepos.com
+#
+# Before changing anything it backs up the app's files and .env and dumps the
+# back-office and Vesopa Auth databases, on the server, in
+# /home/vesopasoftware/backups/go-<stamp>/. Never as a GitHub artifact: this
+# repository and its logs are public, so the run prints names and ids only.
+# Nothing is ever deleted from a database.
+
+name: Go - server
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        options: [check, staging, live]
+        default: check
+
+permissions:
+  contents: read
+
+concurrency:
+  group: go-server
+  cancel-in-progress: false
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: App Store Connect API
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: SSH
+        env:
+          VESOPA_SSH_PASSWORD: ${{ secrets.VESOPA_SSH_PASSWORD }}
+        run: |
+          [ -n "$VESOPA_SSH_PASSWORD" ] || { echo "::error::VESOPA_SSH_PASSWORD is not set"; exit 1; }
+          mkdir -p ~/.ssh "$RUNNER_TEMP/ssh"
+          printf 'Host *\n  StrictHostKeyChecking accept-new\n  ConnectTimeout 20\n  ServerAliveInterval 30\n  ControlMaster auto\n  ControlPath %s/cm-%%r@%%h\n  ControlPersist 30m\n' "$RUNNER_TEMP/ssh" > ~/.ssh/config
+          printf '#!/bin/sh\nprintf "%%s\\n" "$VESOPA_SSH_PASSWORD"\n' > "$RUNNER_TEMP/ssh/askpass"; chmod 700 "$RUNNER_TEMP/ssh/askpass"
+
+      - name: Go's server half (${{ inputs.mode }})
+        env:
+          VESOPA_SSH_PASSWORD: ${{ secrets.VESOPA_SSH_PASSWORD }}
+          SSH_ASKPASS: ${{ runner.temp }}/ssh/askpass
+          SSH_ASKPASS_REQUIRE: force
+          DISPLAY: ':0'
+        run: python3 vesopa_go/tool/go_server.py "${{ inputs.mode }}"
+
+      - name: Close SSH
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/ssh"
