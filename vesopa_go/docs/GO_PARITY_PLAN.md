@@ -45,49 +45,49 @@ modifier layout, receipt builder), copy it with a sync script, as
 
 ## Fix first (seen on the owner's iPad)
 
-- [ ] Idle screen: the message overflows. Fit it, wrap it, scale it, as the till's `idle_screen.dart` does
-- [ ] Tapping the idle screen opens the till's plain PIN pad, not the staff list
-- [ ] Top-right chip: the clerk's photo and name, and the menu to sign off or hand over (`staff_handover.dart`)
-- [ ] Screen programming isn't followed. Draw the till's screens, buttons, colours and bars from `/api/till/screens` as `layout.dart` and `sale_page.dart` do
-- [ ] Payment screen sits on the left on iPad. Centre it, full width (part of phase 1)
-- [ ] Software House ID and reseller ID shown where the till shows them
+- [x] Idle screen: the message overflows. Fit it, wrap it, scale it, as the till's `idle_screen.dart` does
+- [x] Tapping the idle screen opens the till's plain PIN pad, not the staff list
+- [x] Top-right chip: the clerk's photo and name, and the menu to sign off or hand over (`staff_handover.dart`)
+- [x] Screen programming isn't followed. Draw the till's screens, buttons, colours and bars from `/api/till/screens` as `layout.dart` and `sale_page.dart` do
+- [x] Payment screen sits on the left on iPad. Centre it, full width (part of phase 1)
+- [x] Software House ID and reseller ID shown where the till shows them
 
 ## Phase 1: service, as the till
 
 - [ ] Sale screen ported from `sale_page.dart` with `layout.dart`: programmed screens, home/top/bottom bars, price levels (`price_level_sheet.dart`), the live receipt (`widgets/live_receipt.dart`)
-- [ ] Gestures as decided above, with haptics and animations
-- [ ] Pricing, mix & match, promotions and discounts: `pricing_engine.dart`, `mix_match_engine.dart`, `discount_dialog.dart`, `price_override_dialog.dart`
+- [x] Gestures as decided above, with haptics and animations
+- [x] Pricing, mix & match, promotions and discounts: `pricing_engine.dart`, `mix_match_engine.dart`, `discount_dialog.dart`, `price_override_dialog.dart`
 - [ ] Modifiers: `modifier_prompt.dart`, `modifier_layout.dart`
 - [ ] Voids with reasons and manager approval: `void_dialog.dart`, `manager_approval.dart`
-- [ ] Payment: `payment_page.dart`, `confirm_tender_dialog.dart`, `split_bill_sheet.dart`, the tender engine. Then the centred customer view: tip, Tap to Pay or the machine, receipt choice, loyalty, and person-by-person hand-over
-- [ ] Customers: `customer_picker.dart`, `customer_repository.dart`, `loyalty_repository.dart`, `redemption_dialogs.dart`, `membership_prompt.dart`, `wallet_passes_sheet.dart`
+- [x] Payment: `payment_page.dart`, `confirm_tender_dialog.dart`, `split_bill_sheet.dart`, the tender engine. Then the centred customer view: tip, Tap to Pay or the machine, receipt choice, loyalty, and person-by-person hand-over
+- [x] Customers: `customer_picker.dart`, `customer_repository.dart`, `loyalty_repository.dart`, `redemption_dialogs.dart`, `membership_prompt.dart`, `wallet_passes_sheet.dart`
 - [ ] Tables: the till's `tables_page.dart`, `table_picker.dart`, `transfer_table.dart`, and `dinein_*` for online orders arriving at the table
 - [ ] Refunds and receipts: `refund_page.dart`, `receipts_page.dart`, `print_receipt_sheet.dart`
-- [ ] Permissions: every action gated by the till's keys
-- [ ] PIN pad, staff photo chip, hand-over: `sign_on_pad.dart`, `staff_handover.dart`, `pin_dialog.dart`
-- [ ] Back office: staff photo upload (bo_clarks gains a photo; the till shows it too)
+- [x] Permissions: every action gated by the till's keys
+- [x] PIN pad, staff photo chip, hand-over: `sign_on_pad.dart`, `staff_handover.dart`, `pin_dialog.dart`
+- [x] Back office: staff photo upload (bo_clarks gains a photo; the till shows it too)
 
 ## Phase 2: printers and card machines
 
-- [ ] Printer scan (port 9100 sweep of the subnet, Bonjour `_ipp._tcp`/`_printer._tcp`, AirPrint) with a test print: `printers_page.dart`
+- [x] Printer scan (port 9100 sweep of the subnet, Bonjour `_ipp._tcp`/`_printer._tcp`, AirPrint) with a test print: `printers_page.dart`
 - [ ] Routing per device stored in the back office (receipt, KP1-6, bill, X/Z, merchant copy) and read by the tills too: `print_targets.dart`, `print_categories.dart`
 - [ ] Receipts, kitchen tickets and X/Z through the till's `receipt_builder.dart` (shared)
 - [ ] Cash drawer kick through a network receipt printer: `cash_drawer_sheets.dart`
-- [ ] Card machine page: list terminals with live status, pick and switch, Dojo, Teya or Barclaycard per device: `card_machine_page.dart`
-- [ ] Diagnostics with Software House ID and reseller ID: `card_diagnostics_page.dart`
+- [x] Card machine page: list terminals with live status, pick and switch, Dojo, Teya or Barclaycard per device: `card_machine_page.dart`
+- [x] Diagnostics with Software House ID and reseller ID: `card_diagnostics_page.dart`
 - [ ] Failed card payments and refunds: `failed_card_payments.dart`, `dojo_refund.dart`, `teya_refund.dart`
 - [ ] Gift cards: top-up and sell by swipe or scan: `gift_top_up.dart`, `card_actions.dart`
 
 ## Phase 3: programming on the device
 
-- [ ] Screen layout editor for managers: rearrange, resize, recolour, add and remove buttons; saved to the back office; separately for iPad and phone
+- [x] Screen layout editor for managers: rearrange, resize, recolour, add and remove buttons; saved to the back office; separately for iPad and phone
 - [ ] Product editor (`product_editor.dart`, `products_page.dart`), with a photo from the camera
 - [ ] Floor editor: `floor_editor_page.dart`, `room_walls.dart`
 - [ ] Functions page: `functions_page.dart`, `till_actions.dart`
 
 ## Phase 4: the LAN link and passkeys
 
-- [ ] Port `lib/data/lan/` (plain TCP, TCP_NODELAY, venue key, encryption) into Go. Connect to the main till's IP from the back office; take part in tables, kitchen and offline points
+- [x] Port `lib/data/lan/` (plain TCP, TCP_NODELAY, venue key, encryption) into Go. Connect to the main till's IP from the back office; take part in tables, kitchen and offline points
 - [ ] Back office: the main till reports its LAN IP. Go reads it with the venue key
 - [ ] Apple: request the multicast entitlement (`com.apple.developer.networking.multicast`) for com.vesopa.go. Use UDP discovery once granted
 - [ ] Clerk passkeys in Vesopa Auth: register after the PIN, sign in with Face ID or fingerprint, revoke in the back office (`vesopa_auth/src/authmethods.js`)
@@ -104,10 +104,28 @@ modifier layout, receipt builder), copy it with a sync script, as
 
 ## Phase 6: Android TV, and the stores
 
-- [ ] A TV build: leanback launcher entry, D-pad focus on every control, landscape 1080p layout, card machine payments only
+- [x] A TV build: leanback launcher entry, D-pad focus on every control, landscape 1080p layout, card machine payments only
 - [ ] Demo removed; the review venue created (sandbox Dojo); its login added to the store review notes only
 - [ ] Android: internal testing only until the owner says otherwise. iOS: TestFlight
 - [ ] Store pictures and the app film made from the finished build
+
+## Notes on what is done (2026-10-27)
+
+- Shared with the till, copied by `tool/sync_go_shared.py` (`--check` finds drift):
+  `till_permissions.dart`, `mix_match_engine.dart` (Go's own row types in
+  `mix_match_types.dart`), and the screen model (`screen_set.dart`). The LAN
+  library is copied by `tool/sync_lan_link.py`.
+- Pricing: mix & match by the till's engine. The till's promotions engine
+  (`pricing_engine.dart`, which needs `commerce.dart`) is not ported yet.
+- Payment: the till's two-column layout on iPad and the customer's own tip
+  screen. Split hand-over, receipt choice and loyalty on the customer view are
+  still to do.
+- Go's own layouts per kind of device: `epos_go_layouts` (`go_options.js`),
+  edited on the device by managers, never the till's screens.
+- The receipt printer is per device (Settings). Back-office printer routing
+  shared with the tills is still to do (the till keeps its printers locally).
+- The multicast entitlement request to Apple is still to be filed (in App Store
+  Connect, by the account holder).
 
 ## How each phase is done
 
