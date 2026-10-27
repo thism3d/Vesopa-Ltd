@@ -24,6 +24,7 @@ import 'package:vesopa_go/ui/sounds.dart';
 import '../data/lite_state.dart';
 import 'brand.dart';
 import 'quick_sale_page.dart';
+import 'receipt_print.dart';
 import 'reports_page.dart';
 import 'sales_page.dart';
 import 'sell_page.dart';
@@ -139,6 +140,8 @@ class SettingsPage extends ConsumerWidget {
         ]),
       ),
       const Divider(),
+      const _ReceiptPrinterTile(),
+      const Divider(),
       ListTile(
         leading: const Icon(Icons.sync_rounded),
         title: const Text('Refresh the menu and staff'),
@@ -172,4 +175,50 @@ class SettingsPage extends ConsumerWidget {
       Center(child: Text('$appName · ${ref.read(tapProvider.notifier).terminalName}', style: t.bodySmall)),
     ]);
   }
+}
+
+/// This device's receipt printer: a network printer's address, as on the till.
+class _ReceiptPrinterTile extends StatefulWidget {
+  const _ReceiptPrinterTile();
+  @override
+  State<_ReceiptPrinterTile> createState() => _ReceiptPrinterTileState();
+}
+
+class _ReceiptPrinterTileState extends State<_ReceiptPrinterTile> {
+  String _target = '';
+
+  @override
+  void initState() {
+    super.initState();
+    receiptPrinter().then((v) => mounted ? setState(() => _target = v) : null);
+  }
+
+  @override
+  Widget build(BuildContext context) => ListTile(
+        leading: const Icon(Icons.print_rounded),
+        title: const Text('Receipt printer'),
+        subtitle: Text(_target.isEmpty ? 'None: AirPrint or Android printing, if the venue allows it' : 'Network printer at $_target'),
+        onTap: () async {
+          final ctl = TextEditingController(text: _target);
+          final v = await showDialog<String>(
+            context: context,
+            builder: (c) => AlertDialog(
+              title: const Text('Receipt printer'),
+              content: TextField(
+                controller: ctl,
+                autofocus: true,
+                keyboardType: TextInputType.url,
+                decoration: const InputDecoration(labelText: 'IP address', hintText: '192.168.1.50 or 192.168.1.50:9100', helperText: 'Empty for none'),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(c), child: const Text('Cancel')),
+                FilledButton(onPressed: () => Navigator.pop(c, ctl.text.trim()), child: const Text('Save')),
+              ],
+            ),
+          );
+          if (v == null) return;
+          await setReceiptPrinter(v);
+          if (mounted) setState(() => _target = v);
+        },
+      );
 }

@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vesopa_go/data/models.dart';
+import 'package:vesopa_go/counter/ui/receipt_print.dart';
 import 'package:vesopa_go/data/session.dart';
 
 void main() {
@@ -28,5 +29,13 @@ void main() {
     expect(go.sendToTill, isTrue);
     expect(go.volume(GoSound.add), 0);
     expect(go.noteChips, ['No ice', 'Well done']);
+  });
+
+  test('a printed line fits 42 columns, and the pound is code page 437 0x9C', () {
+    expect(const PrintLine('Fish & Chips', '£14.50').text().length, 42);
+    expect(const PrintLine('TOTAL', '£41.40').text(), endsWith('£41.40'));
+    final bytes = escPos(const [PrintLine('£1')]);
+    expect(bytes.contains(0x9C), isTrue);
+    expect(bytes.sublist(bytes.length - 3), [0x56, 0x42, 0x00]);
   });
 }

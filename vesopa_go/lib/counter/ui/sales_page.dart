@@ -17,6 +17,7 @@ import 'package:vesopa_go/data/session.dart';
 import 'package:vesopa_go/ui/theme.dart';
 
 import '../data/journal.dart';
+import 'receipt_print.dart';
 import 'receipt_view.dart';
 
 class SalesPage extends ConsumerWidget {
@@ -70,7 +71,9 @@ class SaleDetailPage extends ConsumerWidget {
             child: ListView(padding: const EdgeInsets.all(16), children: [
               ReceiptView(sale: sale),
               const SizedBox(height: 16),
-              FilledButton.icon(onPressed: () => emailReceipt(context, ref, sale.id), icon: const Icon(Icons.email_rounded), label: const Text('Email the receipt')),
+              FilledButton.icon(onPressed: () => printReceipt(context, ref, sale), icon: const Icon(Icons.print_rounded), label: const Text('Print the receipt')),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(onPressed: () => emailReceipt(context, ref, sale.id), icon: const Icon(Icons.email_rounded), label: const Text('Email the receipt')),
               const SizedBox(height: 10),
               OutlinedButton.icon(
                 key: const ValueKey('refund'),

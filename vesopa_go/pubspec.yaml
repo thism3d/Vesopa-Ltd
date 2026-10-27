@@ -31,6 +31,9 @@ dependencies:
   cached_network_image: ^3.4.1
   # Go's sounds: item added, approved, declined, kitchen ready, allergen.
   audioplayers: ^6.5.1
+  # Receipts by AirPrint (iOS) or Android printing when no receipt printer is set.
+  printing: ^5.14.2
+  pdf: ^3.11.3
 
 dev_dependencies:
   flutter_test:

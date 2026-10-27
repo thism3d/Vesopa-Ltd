@@ -57,6 +57,7 @@ class TapConfig {
     this.consolidateLines = true,
     this.idleImageUrl,
     this.idleMessage = 'Touch to begin',
+    this.branding = const {},
   });
   final String environment;
   final bool tips;
@@ -76,6 +77,10 @@ class TapConfig {
   final bool consolidateLines;
   final String? idleImageUrl;
   final String idleMessage;
+
+  /// The venue's receipt as the tills print it (`/api/branding/public`):
+  /// address, VAT number, header and footer, which parts show.
+  final Map<String, dynamic> branding;
 
   /// Whether a second tap of the same item raises the quantity.
   bool get stacks => switch (go.stackLines) { 'on' => true, 'off' => false, _ => consolidateLines };
@@ -98,6 +103,7 @@ class TapConfig {
       consolidateLines: switch (till['consolidate_lines']) { null => true, final v => v == true || v == 1 || v == '1' || v == 'true' },
       idleImageUrl: idle.isEmpty ? null : idle,
       idleMessage: till['idle_message'] as String? ?? 'Touch to begin',
+      branding: j['branding'] is Map ? Map<String, dynamic>.from(j['branding'] as Map) : const {},
     );
   }
 }
@@ -384,6 +390,7 @@ class TapSession extends Notifier<TapState> {
         api.floor().catchError((Object _) => <dynamic>[]),
         api.tapConfig().catchError((Object _) => <String, dynamic>{}),
         api.tillSettings().catchError((Object _) => <String, dynamic>{}),
+        api.branding().catchError((Object _) => <String, dynamic>{}),
       ]);
       final raw = {
         'staff': [for (final c in results[0] as List<Clerk>) {'id': c.id, 'name': c.name, 'pin': c.pin, 'swipe_card': c.card, 'permission_group': c.group}],
@@ -391,7 +398,7 @@ class TapSession extends Notifier<TapState> {
         'modifiers': results[2],
         'screens': results[3],
         'floor': results[4],
-        'config': {...results[5] as Map<String, dynamic>, 'till': results[6]},
+        'config': {...results[5] as Map<String, dynamic>, 'till': results[6], 'branding': results[7]},
       };
       _apply(raw);
       state = state.copyWith(online: true);

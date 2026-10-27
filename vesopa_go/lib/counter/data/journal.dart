@@ -20,7 +20,7 @@ import 'package:vesopa_go/data/models.dart';
 
 @immutable
 class SoldLine {
-  const SoldLine({required this.name, required this.category, required this.quantity, required this.totalMinor, this.detail = ''});
+  const SoldLine({required this.name, required this.category, required this.quantity, required this.totalMinor, this.detail = '', this.taxPercent = 0});
   final String name;
   final String category;
   final int quantity;
@@ -29,13 +29,17 @@ class SoldLine {
   /// The portion and choices, as printed under the line: "Half · Coke".
   final String detail;
 
-  Map<String, Object?> toJson() => {'n': name, 'c': category, 'q': quantity, 't': totalMinor, if (detail.isNotEmpty) 'd': detail};
+  /// The VAT rate in the price, for the receipt's VAT breakdown.
+  final double taxPercent;
+
+  Map<String, Object?> toJson() => {'n': name, 'c': category, 'q': quantity, 't': totalMinor, if (detail.isNotEmpty) 'd': detail, if (taxPercent != 0) 'v': taxPercent};
   factory SoldLine.fromJson(Map<String, dynamic> j) => SoldLine(
         name: j['n'] as String,
         category: j['c'] as String? ?? '',
         quantity: (j['q'] as num).toInt(),
         totalMinor: (j['t'] as num).toInt(),
         detail: j['d'] as String? ?? '',
+        taxPercent: (j['v'] as num?)?.toDouble() ?? 0,
       );
 }
 
@@ -97,7 +101,10 @@ class SaleRecord {
     required this.payments,
     this.changeMinor = 0,
     this.refunds = const [],
+    this.place = '',
   });
+
+  /// The table or tab it was, for the receipt ("Table 7"); empty at the counter.
 
   /// The bill's id: the same id the back office files the sale under.
   final String id;
@@ -115,6 +122,7 @@ class SaleRecord {
   /// Cash handed back over the total.
   final int changeMinor;
   final List<Refund> refunds;
+  final String place;
 
   int get refundedMinor => refunds.fold(0, (s, r) => s + r.amountMinor);
   int get refundableMinor => totalMinor - refundedMinor;
@@ -135,6 +143,7 @@ class SaleRecord {
         payments: payments,
         changeMinor: changeMinor,
         refunds: [...refunds, r],
+        place: place,
       );
 
   Map<String, Object?> toJson() => {
@@ -149,6 +158,7 @@ class SaleRecord {
         'pay': [for (final p in payments) p.toJson()],
         if (changeMinor > 0) 'change': changeMinor,
         if (refunds.isNotEmpty) 'refunds': [for (final r in refunds) r.toJson()],
+        if (place.isNotEmpty) 'place': place,
       };
 
   factory SaleRecord.fromJson(Map<String, dynamic> j) => SaleRecord(
@@ -162,6 +172,7 @@ class SaleRecord {
         totalMinor: (j['total'] as num).toInt(),
         payments: [for (final p in j['pay'] as List) Paid.fromJson(Map<String, dynamic>.from(p as Map))],
         changeMinor: (j['change'] as num?)?.toInt() ?? 0,
+        place: j['place'] as String? ?? '',
         refunds: [for (final r in j['refunds'] as List? ?? const []) Refund.fromJson(Map<String, dynamic>.from(r as Map))],
       );
 
@@ -180,6 +191,7 @@ class SaleRecord {
               quantity: l.quantity,
               totalMinor: l.totalMinor,
               detail: [for (final c in l.choices) c.name, if (l.note.isNotEmpty) l.note].join(' · '),
+              taxPercent: l.product.taxPercent,
             ),
         ],
         subtotalMinor: bill.subtotalMinor,
@@ -187,6 +199,7 @@ class SaleRecord {
         totalMinor: bill.totalMinor,
         payments: [for (final t in bill.tenders) Paid(kind: t.kind, amountMinor: t.amountMinor, tipMinor: t.tipMinor, reference: t.reference)],
         changeMinor: changeMinor,
+        place: bill.tableNumber != null ? bill.name : '',
       );
 }
 

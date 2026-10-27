@@ -19,6 +19,7 @@ import 'package:vesopa_go/ui/theme.dart';
 
 import '../data/journal.dart';
 import '../data/lite_state.dart';
+import 'receipt_print.dart';
 import 'receipt_view.dart';
 
 class PayPage extends ConsumerStatefulWidget {
@@ -55,8 +56,11 @@ class _PayPageState extends ConsumerState<PayPage> {
     ref.read(tapProvider.notifier).addTender(bill.id, tender);
     if (rec != null) {
       ref.read(currentSaleProvider.notifier).finished();
-      GoSounds.play(ref.read(tapProvider).config.go, GoSound.approved);
+      final go = ref.read(tapProvider).config.go;
+      GoSounds.play(go, GoSound.approved);
       setState(() => _done = rec);
+      // The venue prints every receipt (back office): once the tick is up.
+      if (go.printReceiptAuto) WidgetsBinding.instance.addPostFrameCallback((_) => mounted ? printReceipt(context, ref, rec) : null);
     } else {
       setState(() {});
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${money(tender.amountMinor)} taken. ${money(_bill!.dueMinor)} left to pay.')));
@@ -280,12 +284,24 @@ class _Approved extends ConsumerWidget {
                   useSafeArea: true,
                   builder: (c) => ListView(padding: const EdgeInsets.fromLTRB(16, 0, 16, 24), shrinkWrap: true, children: [
                     ReceiptView(sale: sale),
-                    const SizedBox(height: 12),
-                    FilledButton.icon(
-                      onPressed: () => emailReceipt(c, ref, sale.id),
-                      icon: const Icon(Icons.email_rounded),
-                      label: const Text('Email it'),
-                    ),
+                    const SizedBox(height: 16),
+                    Row(children: [
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: () => printReceipt(c, ref, sale),
+                          icon: const Icon(Icons.print_rounded),
+                          label: const Text('Print'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => emailReceipt(c, ref, sale.id),
+                          icon: const Icon(Icons.email_rounded),
+                          label: const Text('Email'),
+                        ),
+                      ),
+                    ]),
                   ]),
                 ),
               ),

@@ -175,6 +175,9 @@ class TapApi {
   /// The till's settings Go follows: consolidate lines, the idle screen.
   Future<Map<String, dynamic>> tillSettings() => _send('GET', '/api/till-settings/public?office=$_o');
 
+  /// The venue's receipt branding, as the tills print it.
+  Future<Map<String, dynamic>> branding() => _send('GET', '/api/branding/public?office=$_o');
+
   /// A Tap to Pay terminal secret for Dojo's SDK (six hours).
   Future<String> tapSecret(String platform) async =>
       (await _send('POST', '/api/tap/secret', {'platform': platform}))['secret'] as String;
