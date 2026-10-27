@@ -104,8 +104,10 @@ the tills. It is Vesopa EPOS Lite and Vesopa Tap merged into one app
 - [x] iOS 1.0.0 (1) on TestFlight (run 40449504307): "Vesopa team" (internal) and
       "Closed testing" (public link https://testflight.apple.com/join/zgg5YSn8)
 - [x] Build 1 sent to Beta App Review for Closed testing (run 40450978687)
-- [ ] App Store page filled (words, category, iPhone 6.9" and iPad 13" screenshots,
-      review info): go-ios with listing_only. App Privacy is by hand (listing.md).
+- [x] App Store page filled, not submitted: words, Business / Food & Drink, free, 175
+      countries, age rating 4+, review info (+447848494341), 6 iPhone 6.9" and 6 iPad 13"
+      landscape screenshots (go-ios listing_only)
+- [ ] App Privacy in App Store Connect, by hand (answers in store/listing.md)
 - [x] App's `apiBase` is `https://go.vesopaepos.com`
 - [x] iOS bridge rewritten against Dojo SDK 0.0.11's real interface (`.prod`, result `.canceled`, iOS 16.7 guards)
 - [ ] GitHub Pages: the owner switches it on (Settings > Pages > Source: GitHub Actions)
