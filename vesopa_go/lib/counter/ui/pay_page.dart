@@ -36,6 +36,7 @@ class _PayPageState extends ConsumerState<PayPage> {
   SaleRecord? _done;
   bool _busy = false;
   String _via = 'tap';
+  int _tip = 0;
 
   Bill? get _bill => ref.read(tapProvider).bills[widget.billId];
 
@@ -91,16 +92,27 @@ class _PayPageState extends ConsumerState<PayPage> {
         return;
       }
     }
+    // The venue's tip (back office), chosen by the customer on a screen of
+    // their own, before the card.
+    final config = ref.read(tapProvider).config;
+    var tip = 0;
+    if (config.tips && config.go.customerTip && config.tipPercents.isNotEmpty) {
+      if (!mounted) return;
+      final chosen = await askTip(context, dueMinor: bill.dueMinor, percents: config.tipPercents);
+      if (chosen == null || !mounted) return;
+      tip = chosen;
+    }
     _sendFirst(bill);
     setState(() {
       _busy = true;
       _problem = null;
       _cardAmount = bill.dueMinor;
+      _tip = tip;
       _step = PayStep.preparing;
     });
     final outcome = await payments.take(
       amountMinor: _cardAmount,
-      tipMinor: 0,
+      tipMinor: tip,
       billRef: bill.id,
       clerk: ref.read(tapProvider).clerk?.name,
       via: via,
@@ -115,6 +127,7 @@ class _PayPageState extends ConsumerState<PayPage> {
       _take(Tender(
         id: outcome.paymentId!,
         amountMinor: _cardAmount,
+        tipMinor: _tip,
         kind: via,
         at: DateTime.now(),
         clerk: ref.read(tapProvider).clerk?.name ?? '',
@@ -135,7 +148,7 @@ class _PayPageState extends ConsumerState<PayPage> {
   @override
   Widget build(BuildContext context) {
     if (_done != null) return _Approved(sale: _done!);
-    if (_step != null) return TapPrompt(amountMinor: _cardAmount, step: _step!, onMachine: _via == 'machine');
+    if (_step != null) return TapPrompt(amountMinor: _cardAmount + _tip, step: _step!, onMachine: _via == 'machine');
 
     final bill = ref.watch(tapProvider.select((s) => s.bills[widget.billId]));
     final settings = ref.watch(liteSettingsProvider);
@@ -148,11 +161,8 @@ class _PayPageState extends ConsumerState<PayPage> {
     final via = cardVia(settings, ref.watch(tapProvider).config, tablet: MediaQuery.sizeOf(context).shortestSide >= 600);
     final other = via == 'tap' ? 'machine' : 'tap';
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Pay')),
-      body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
+    final wide = MediaQuery.sizeOf(context).width >= 900;
+    final tenders = ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 520),
             child: ListView(padding: const EdgeInsets.fromLTRB(20, 4, 20, 20), children: [
               Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
@@ -198,6 +208,137 @@ class _PayPageState extends ConsumerState<PayPage> {
               const SizedBox(height: 16),
               OutlinedButton(onPressed: () => Navigator.pop(context), child: const Text('Back to Sale')),
             ]),
+          );
+    return Scaffold(
+      appBar: AppBar(title: const Text('Pay')),
+      body: SafeArea(
+        child: wide
+            // As the till's payment page: the bill as it will print on the
+            // left, the ways to pay on the right.
+            ? Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                Expanded(child: _BillColumn(bill: bill)),
+                const VerticalDivider(width: 1),
+                SizedBox(width: 520, child: Center(child: tenders)),
+              ])
+            : Center(child: tenders),
+      ),
+    );
+  }
+}
+
+/// The bill being paid, line by line, as the till shows it beside the tenders.
+class _BillColumn extends StatelessWidget {
+  const _BillColumn({required this.bill});
+  final Bill bill;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    return ColoredBox(
+      color: Tp.inkCard,
+      child: ListView(padding: const EdgeInsets.all(24), children: [
+        Text(bill.name, style: t.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+        Text([if (bill.covers > 0) '${bill.covers} covers', if (bill.clerk.trim().isNotEmpty) bill.clerk].join(' · '), style: t.bodySmall),
+        const Divider(height: 28),
+        for (final l in bill.lines)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 5),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              SizedBox(width: 36, child: Text('${l.quantity}×', style: t.titleSmall?.copyWith(color: Tp.lime, fontFeatures: Tp.tabular))),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(l.product.name, style: t.titleSmall),
+                  for (final c in l.choices) Text('+ ${c.name}', style: t.bodySmall),
+                  if (l.note.isNotEmpty) Text(l.note, style: t.bodySmall?.copyWith(color: Tp.blue)),
+                ]),
+              ),
+              Money(l.totalMinor, style: t.titleSmall),
+            ]),
+          ),
+        const Divider(height: 28),
+        if (bill.discountMinor > 0) ...[
+          _Sum('Subtotal', bill.subtotalMinor),
+          _Sum('Discount', -bill.discountMinor),
+        ],
+        for (final tender in bill.tenders) _Sum(tender.kind == 'cash' ? 'Cash' : 'Card', -tender.amountMinor),
+        _Sum(bill.paidMinor > 0 ? 'Left to pay' : 'Total', bill.dueMinor, bold: true),
+      ]),
+    );
+  }
+}
+
+class _Sum extends StatelessWidget {
+  const _Sum(this.label, this.minor, {this.bold = false});
+  final String label;
+  final int minor;
+  final bool bold;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final style = bold ? t.headlineSmall?.copyWith(fontWeight: FontWeight.w900) : t.bodyLarge;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(children: [Expanded(child: Text(label, style: style)), Money(minor, style: style)]),
+    );
+  }
+}
+
+/// The customer's tip: a centred screen of their own, the venue's percentages
+/// as big keys, and no tip as plainly as any of them. Answers the tip in
+/// pence, or null if the clerk takes the device back.
+Future<int?> askTip(BuildContext context, {required int dueMinor, required List<double> percents}) =>
+    Navigator.of(context).push<int>(PageRouteBuilder(
+      opaque: true,
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (_, _, _) => _TipScreen(dueMinor: dueMinor, percents: percents),
+      transitionsBuilder: (_, a, _, child) => FadeTransition(opacity: a, child: child),
+    ));
+
+class _TipScreen extends StatelessWidget {
+  const _TipScreen({required this.dueMinor, required this.percents});
+  final int dueMinor;
+  final List<double> percents;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    int tipOf(double p) => (dueMinor * p / 100).round();
+    String pc(double p) => p % 1 == 0 ? p.toStringAsFixed(0) : p.toString();
+    return Scaffold(
+      backgroundColor: Tp.inkDeep,
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 640),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                Text('Add a tip?', textAlign: TextAlign.center, style: t.displaySmall?.copyWith(fontWeight: FontWeight.w900, color: Colors.white)),
+                const SizedBox(height: 8),
+                Text('Your bill is ${money(dueMinor)}', textAlign: TextAlign.center, style: t.titleLarge?.copyWith(color: Tp.muted)),
+                const SizedBox(height: 32),
+                Wrap(alignment: WrapAlignment.center, spacing: 14, runSpacing: 14, children: [
+                  for (final p in percents)
+                    SizedBox(
+                      width: 180,
+                      height: 120,
+                      child: FilledButton(
+                        style: FilledButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20))),
+                        onPressed: () => Navigator.pop(context, tipOf(p)),
+                        child: Column(mainAxisSize: MainAxisSize.min, children: [
+                          Text('${pc(p)}%', style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w900)),
+                          Text(money(tipOf(p)), style: const TextStyle(fontSize: 16, fontFeatures: Tp.tabular)),
+                        ]),
+                      ),
+                    ),
+                ]),
+                const SizedBox(height: 18),
+                OutlinedButton(style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(64)), onPressed: () => Navigator.pop(context, 0), child: const Text('No tip')),
+                const SizedBox(height: 28),
+                TextButton(onPressed: () => Navigator.pop(context), child: const Text('Back to the clerk')),
+              ]),
+            ),
           ),
         ),
       ),

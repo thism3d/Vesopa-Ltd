@@ -83,6 +83,9 @@ void main() {
         await tapKey(tester, 'panel-pay');
       }
       await tester.tap(find.byKey(const ValueKey('pay-card')));
+      await tester.pumpAndSettle();
+      // The customer's tip screen comes first: no tip.
+      await tester.tap(find.text('No tip'));
       await tester.pump(const Duration(seconds: 3));
       await tester.pumpAndSettle();
       expect(find.text('Payment approved!'), findsOneWidget);
