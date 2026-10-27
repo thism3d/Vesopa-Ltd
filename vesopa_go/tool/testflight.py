@@ -52,6 +52,8 @@ STORE = {
         "contact_first_name": "Vesopa",
         "contact_last_name": "Support",
         "contact_email": "info@vesopasoftware.com",
+        # The owner's number for Apple's reviewers (2026-10-27).
+        "contact_phone": "+447848494341",
         "notes": "Vesopa Go is the phone app for venues that use Vesopa EPOS: orders at the table and "
                  "the counter, sent to the kitchen, paid by card or cash. A venue signs in with its Vesopa "
                  "account. To look round without one, tap 'Try the demo' on the first screen and enter "

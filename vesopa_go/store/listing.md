@@ -1,10 +1,10 @@
 # Vesopa Go: store listings
 
 Play: `play.json` beside this file (uploaded by `.github/workflows/go-android.yml`).
-App Store Connect: the words below; TestFlight's test information is filled by
+App Store Connect: `app_store.json` (filled by `go-ios.yml`, never submitted); TestFlight's test information is filled by
 `tool/testflight.py`. Pictures: `icon-1024.png`, `play-icon-512.png`,
 `play-feature-graphic-1024x500.png`, `screenshots/android-phone` (1080x1920) and
-`screenshots/iphone-6.7` (1290x2796), from the demo build
+`screenshots/iphone-6.9` (1290x2796), `screenshots/ipad-13` (2048x2732), from the demo build
 (`tool/make_icons.py`, `tool/make_feature_graphic.py`).
 
 ## App Store

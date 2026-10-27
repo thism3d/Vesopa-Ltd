@@ -15,6 +15,9 @@
 # App ID (testflight.py prepare says which), so a build before that takes cards
 # on the venue's Dojo card machine instead.
 #
+# Never submits to App Review or releases on the App Store: Vesopa Go stays in
+# TestFlight (the team and Closed testing) until the owner says otherwise.
+#
 # Not on every push: each upload is a new build for Apple to review.
 
 name: iOS - Vesopa Go
@@ -26,6 +29,10 @@ on:
         description: Only TestFlight (groups, review contact, Beta App Review) for this build number already uploaded; empty = build and upload a new one
         required: false
         default: ''
+      listing_only:
+        description: Only the App Store page (words, pictures, review information); no build, no TestFlight
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -61,7 +68,7 @@ jobs:
           "$RUNNER_TEMP/asc/bin/pip" install --quiet "pyjwt[crypto]"
 
       - name: App ID, app record and build number
-        if: inputs.testflight_build == ''
+        if: inputs.testflight_build == '' && !inputs.listing_only
         id: asc
         env:
           ASC_KEY_PATH: ${{ runner.temp }}/keys/AuthKey_${{ secrets.ASC_KEY_ID }}.p8
@@ -70,7 +77,7 @@ jobs:
 
       # Only the entitlements the App ID has: signing fails on any other.
       - name: Entitlements and export compliance
-        if: inputs.testflight_build == ''
+        if: inputs.testflight_build == '' && !inputs.listing_only
         working-directory: vesopa_go/ios/Runner
         env:
           TAPTOPAY: ${{ steps.asc.outputs.taptopay }}
@@ -83,7 +90,7 @@ jobs:
             || /usr/libexec/PlistBuddy -c "Set :ITSAppUsesNonExemptEncryption false" Info.plist
 
       - name: Flutter build
-        if: inputs.testflight_build == ''
+        if: inputs.testflight_build == '' && !inputs.listing_only
         working-directory: vesopa_go
         env:
           BUILD_NUMBER: ${{ steps.asc.outputs.build }}
@@ -94,7 +101,7 @@ jobs:
       # As ios-venue-app.yml: a distribution certificate and App Store profile
       # made for this run, in a keychain of the run's own.
       - name: Distribution signing
-        if: inputs.testflight_build == ''
+        if: inputs.testflight_build == '' && !inputs.listing_only
         env:
           ASC_KEY_PATH: ${{ runner.temp }}/keys/AuthKey_${{ secrets.ASC_KEY_ID }}.p8
         run: |
@@ -120,7 +127,7 @@ jobs:
           "$RUNNER_TEMP/asc/bin/python" vesopa_go/tool/testflight.py sign-project "$S/profiles.json"
 
       - name: Archive
-        if: inputs.testflight_build == ''
+        if: inputs.testflight_build == '' && !inputs.listing_only
         working-directory: vesopa_go
         run: |
           xcodebuild archive \
@@ -131,7 +138,7 @@ jobs:
             -archivePath "$RUNNER_TEMP/Go.xcarchive"
 
       - name: Sign and upload to App Store Connect
-        if: inputs.testflight_build == ''
+        if: inputs.testflight_build == '' && !inputs.listing_only
         working-directory: vesopa_go
         run: |
           xcodebuild -exportArchive \
@@ -142,15 +149,27 @@ jobs:
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID"
 
-      # The review contact's phone is the venue apps' (ASC_REVIEW_PHONE). No
-      # review sign-in: App Review uses "Try the demo", PIN 1111.
+      # The review contact (phone +447848494341) is in testflight.py and
+      # store/app_store.json, not ASC_REVIEW_PHONE (the venue apps'). No review
+      # sign-in: App Review uses "Try the demo", PIN 1111.
       - name: TestFlight, the team and Closed testing
+        if: ${{ !inputs.listing_only }}
         env:
           ASC_KEY_PATH: ${{ runner.temp }}/keys/AuthKey_${{ secrets.ASC_KEY_ID }}.p8
-          ASC_REVIEW_PHONE: ${{ secrets.ASC_REVIEW_PHONE }}
           BUILD: ${{ inputs.testflight_build || steps.asc.outputs.build }}
         run: |
           "$RUNNER_TEMP/asc/bin/python" vesopa_go/tool/testflight.py testflight "$BUILD"
+
+      # The App Store page: words, category, age rating, price (free),
+      # screenshots, review information. It fills the page only: nothing is
+      # submitted to App Review or released. Releasing is the owner's call,
+      # always (owner, 2026-10-27).
+      - name: App Store page (filled in, not submitted)
+        env:
+          ASC_KEY_PATH: ${{ runner.temp }}/keys/AuthKey_${{ secrets.ASC_KEY_ID }}.p8
+        run: |
+          "$RUNNER_TEMP/asc/bin/pip" install --quiet cryptography
+          "$RUNNER_TEMP/asc/bin/python" vesopa_loyalty/tool/app_store_connect.py store vesopa_go
 
       - name: Remove the keys
         if: always()

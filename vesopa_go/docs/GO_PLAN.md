@@ -65,6 +65,12 @@ the tills. It is Vesopa EPOS Lite and Vesopa Tap merged into one app
    them: `go_server.py` merges (three-way, then hunk by hunk) and stops on a
    conflict in Go's own code.
 7. No force-push, no branch deletion.
+8. **Never release to the App Store or Play production without the owner's
+   consent.** iOS stays in TestFlight (the team, and Closed testing with its
+   public link); Android stays on testing tracks. Filling in the store pages is
+   fine: it submits nothing (`releaseType` MANUAL as a guard).
+9. **App Review contact phone: +447848494341** (store/app_store.json and
+   tool/testflight.py; not the venue apps' ASC_REVIEW_PHONE).
 
 ## Where things are
 
@@ -73,7 +79,7 @@ the tills. It is Vesopa EPOS Lite and Vesopa Tap merged into one app
 | App | `vesopa_go/lib` (`counter/` is the old Lite: sell, pay, sales, reports) |
 | Dojo bridge | `android/.../MainActivity.kt`, `ios/Runner/DojoTapToPay.swift`, `lib/payments/payment_service.dart` |
 | Icons | `tool/make_icons.py` (all sizes), `tool/make_feature_graphic.py` |
-| Store | `store/play.json`, `store/listing.md`, `store/screenshots/{android-phone,iphone-6.7}` |
+| Store | `store/play.json`, `store/listing.md`, `store/screenshots/{android-phone,iphone-6.9,ipad-13}`, `store/app_store.json` |
 | Version | `vesopa_go/venue.json` (Play's build floor) and `pubspec.yaml` |
 | Android CI | `.github/workflows/go-android.yml`: Play **internal** testing + listing |
 | iOS CI | `.github/workflows/go-ios.yml` + `tool/testflight.py`: TestFlight team + "Closed testing" |
@@ -97,8 +103,9 @@ the tills. It is Vesopa EPOS Lite and Vesopa Tap merged into one app
 - [x] Android 1.0.0 (2) on Play internal testing, with the listing, icon, feature graphic and 6 screenshots (run 40449501378)
 - [x] iOS 1.0.0 (1) on TestFlight (run 40449504307): "Vesopa team" (internal) and
       "Closed testing" (public link https://testflight.apple.com/join/zgg5YSn8)
-- [ ] Beta App Review for Closed testing: needed the review contact phone
-      (ASC_REVIEW_PHONE, as the venue apps); re-run go-ios with testflight_build=1
+- [x] Build 1 sent to Beta App Review for Closed testing (run 40450978687)
+- [ ] App Store page filled (words, category, iPhone 6.9" and iPad 13" screenshots,
+      review info): go-ios with listing_only. App Privacy is by hand (listing.md).
 - [x] App's `apiBase` is `https://go.vesopaepos.com`
 - [x] iOS bridge rewritten against Dojo SDK 0.0.11's real interface (`.prod`, result `.canceled`, iOS 16.7 guards)
 - [ ] GitHub Pages: the owner switches it on (Settings > Pages > Source: GitHub Actions)
