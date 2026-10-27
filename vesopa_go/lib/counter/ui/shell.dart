@@ -28,6 +28,7 @@ import 'package:vesopa_go/ui/sounds.dart';
 
 import '../data/lite_state.dart';
 import 'brand.dart';
+import 'cash_page.dart';
 import 'quick_sale_page.dart';
 import 'printer_scan.dart';
 import 'receipt_print.dart';
@@ -53,6 +54,7 @@ class _ShellState extends ConsumerState<Shell> {
         ],
         (Icons.dialpad_rounded, 'Quick sale', () => QuickSalePage(onAdded: () => setState(() => _page = 0))),
         (Icons.people_alt_rounded, 'Customers', () => const CustomersPage()),
+        (Icons.payments_rounded, 'Cash & stock', () => const CashPage()),
         (Icons.receipt_long_rounded, 'Sales', () => const SalesPage()),
         (Icons.insights_rounded, 'Reports', () => const ReportsPage()),
         (Icons.credit_card_rounded, 'Card payments', () => const MorePage()),
