@@ -64,8 +64,9 @@ DESCRIPTION = ("Vesopa Go: take orders and payments anywhere in a Vesopa EPOS ve
                "the table. Seat a table, send the order to the kitchen, split and pay the bill by card or "
                "cash, and see the day's sales. Sign in with the venue's Vesopa account, or try the demo "
                "(PIN 1111).")
-WHAT_TO_TEST = ("Sign in with the venue's Vesopa account (or Try the demo, PIN 1111). Open Tables, seat one, "
-                "order, send it to the kitchen, take the payment, then check Sales and Reports.")
+WHAT_TO_TEST = ("Vesopa Go 1.1: the till's look on iPad. Sign in with the venue's Vesopa account (or Try the demo, "
+                "PIN 1111). Open Tables (the floor plan), seat one, order (tap an item twice: it stacks; long-press for a "
+                "note), send it, take the payment, print or email the receipt, then check Reports.")
 FEEDBACK = "info@vesopasoftware.com"
 PRIVACY = "https://vesopaepos.com/privacy"
 MARKETING = "https://vesopaepos.com/"

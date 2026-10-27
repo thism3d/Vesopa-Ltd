@@ -112,6 +112,29 @@ the tills. It is Vesopa EPOS Lite and Vesopa Tap merged into one app
 - [x] iOS bridge rewritten against Dojo SDK 0.0.11's real interface (`.prod`, result `.canceled`, iOS 16.7 guards)
 - [ ] GitHub Pages: the owner switches it on (Settings > Pages > Source: GitHub Actions)
 
+## Status (2026-10-27, the iPad redesign, 1.1.0)
+
+The owner's brief and every answer are in the session memory
+(vesopa-go-ipad-redesign). Design A "Till exact" was chosen on the canvas
+https://claude.ai/artifact/P3h7WevAfsfnKsp8qirdii.
+
+- [x] Licensed per venue: licence kind `go` (licences.js OPT_IN, none unless offered); Go
+      commissions as `device_kind: go`; `go_licensed` in /api/tap/config; The Vesopa Kitchen
+      has 10 (schema/schema_go_licence.sql, run by go_server.py); admin.vesopa.com lists it
+- [x] Every option in the back office (src/go_options.js, the Vesopa Go page; app lib/data/go_options.dart)
+- [x] The till's palette; floor plan from the designer with a List toggle; table QR scan
+- [x] Stacking follows the till's Consolidate lines; allergens from the JSON list
+- [x] Status chips, licence screen, no orders offline (owner's rule), the till's idle screen
+- [x] Full-screen Tap prompt, approved tick, sounds (tool/make_sounds.py) with volumes, haptics
+- [x] Notes: quick-note chips, long-press a dish, tap a line; iPad order screen side by side
+- [x] The till's receipt on screen; ESC/POS to the device's receipt printer, AirPrint fallback, auto-print
+- [x] Sign-in: staff tiles and PIN on the venue wallpaper, each method switchable, clock-in
+- [x] Product photos (cached); reports by the hour, staff tips/refunds, product mix, X/Z printed
+- [x] go-server live (run 40474368815), backup /home/vesopasoftware/backups/go-20261027-083409
+- [ ] Not yet: staff photos (no photo field in bo_clarks), a whole-order note, mix & match on Go,
+      on-device button rearranging, the device-to-customer hand-over flow, kitchen-ready sound
+      (no ready event reaches Go yet), live Dojo machine status
+
 ## Waiting on others
 
 - Apple: Tap to Pay on iPhone entitlement for `com.vesopa.go`.

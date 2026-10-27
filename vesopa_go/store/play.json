@@ -7,7 +7,7 @@
   "contact_email": "info@vesopasoftware.com",
   "contact_website": "https://vesopaepos.com/",
   "track": "internal",
-  "release_notes": "The first Vesopa Go: tables, open bills shared with the tills, the counter, the kitchen, card payments with Dojo, sales and reports.",
+  "release_notes": "Vesopa Go 1.1: the till's look on iPad and phone. The floor plan as drawn in the back office, the same item stacks, allergens clearly, quick notes, product photos, the till's receipt printed on your receipt printer or by printing, staff sign-in with clock-in, the idle screen, sounds, and reports by the hour and by staff. Every option is set in the back office.",
   "images": {
     "icon": [
       "play-icon-512.png"
