@@ -1606,6 +1606,7 @@ function tillScreenRoutes({ pool }) {
 }
 
 module.exports = {
+  buttonToJson,
   placeProductOnScreen,
   screensRoutes,
   saveScreenButtons,

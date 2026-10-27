@@ -141,4 +141,54 @@ async function saveGoOptions(pool, office, body, by) {
   return next;
 }
 
-module.exports = { GO_DEFAULTS, CHOICES, cleanGoOptions, goOptionsFor, saveGoOptions };
+// ---- Go's own layouts --------------------------------------------------------
+//
+// The till's programmed screens are Go's by default. A manager can rearrange a
+// screen on an iPad or a phone (owner, 2026-10-27: "separately for iPad and
+// Android/iPhone"), which is kept here as that screen's buttons for that kind
+// of device, and never touches the till's own screen. Null buttons = back to
+// the till's (the row stays, so nothing is ever deleted).
+
+const FORMS = ['tablet', 'phone'];
+let layoutsEnsured = false;
+async function ensureLayouts(pool) {
+  if (layoutsEnsured) return;
+  await pool.query(`CREATE TABLE IF NOT EXISTS epos_go_layouts (
+    office      VARCHAR(255) NOT NULL,
+    form        VARCHAR(12)  NOT NULL,
+    screen_id   INT          NOT NULL,
+    buttons     MEDIUMTEXT   NULL,
+    updated_by  VARCHAR(255) NULL,
+    updated_at  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (office, form, screen_id)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+  layoutsEnsured = true;
+}
+
+/** { screenId: buttons } for one kind of device; screens back on the till's are left out. */
+async function goLayoutsFor(pool, office, form) {
+  if (!FORMS.includes(form)) return {};
+  try {
+    await ensureLayouts(pool);
+    const [rows] = await pool.query(
+      'SELECT screen_id, buttons FROM epos_go_layouts WHERE office = ? AND form = ? AND buttons IS NOT NULL', [office, form]);
+    const out = {};
+    for (const r of rows) {
+      try { out[String(r.screen_id)] = JSON.parse(r.buttons); } catch (_) { /* a broken row reads as the till's */ }
+    }
+    return out;
+  } catch (e) {
+    console.warn('[go] layouts:', e.message);
+    return {};
+  }
+}
+
+async function saveGoLayout(pool, office, form, screenId, buttons, by) {
+  await ensureLayouts(pool);
+  await pool.query(
+    `INSERT INTO epos_go_layouts (office, form, screen_id, buttons, updated_by) VALUES (?, ?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE buttons = VALUES(buttons), updated_by = VALUES(updated_by)`,
+    [office, form, screenId, buttons == null ? null : JSON.stringify(buttons), String(by || '').slice(0, 255)]);
+}
+
+module.exports = { GO_DEFAULTS, CHOICES, FORMS, cleanGoOptions, goOptionsFor, saveGoOptions, goLayoutsFor, saveGoLayout };

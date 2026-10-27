@@ -205,6 +205,13 @@ class TapApi {
   Future<void> updateCustomer(String id, {required String name, String phone = '', String email = ''}) =>
       _send('PUT', '/api/tap/customers/${Uri.encodeComponent(id)}', {'name': name, 'phone': phone, 'email': email});
 
+  /// Go's own layouts for a kind of device (`tablet` or `phone`).
+  Future<Map<String, dynamic>> layouts(String form) => _send('GET', '/api/tap/layouts?form=$form');
+
+  /// A screen as a manager arranged it here; null buttons = back to the till's.
+  Future<void> saveLayout(String form, int screenId, List<Map<String, dynamic>>? buttons, {required int clerkId, required String pin}) =>
+      _send('PUT', '/api/tap/layouts/$form/$screenId', {'buttons': buttons, 'clerk_id': clerkId, 'pin': pin});
+
   /// Staff photos, `{photos: {id: url}}`.
   Future<Map<String, dynamic>> staffPhotos() => _send('GET', '/api/tap/staff-photos');
 

@@ -12,6 +12,7 @@ import 'package:vesopa_go/data/models.dart';
 import 'package:vesopa_go/data/session.dart';
 import 'package:vesopa_go/ui/pages/note_sheet.dart';
 import 'package:vesopa_go/ui/product_photo.dart';
+import 'package:vesopa_go/ui/layout_editor.dart';
 import 'package:vesopa_go/ui/programmed_grid.dart';
 import 'package:vesopa_go/ui/sounds.dart';
 import 'package:vesopa_go/ui/theme.dart';
@@ -142,7 +143,8 @@ class _SellPageState extends ConsumerState<SellPage> {
   /// the screen, the bottom bar.
   Widget _programmed(TapState s, TillScreen home) {
     final config = s.config;
-    final screen = config.screens.byId(_screenId) ?? home;
+    final form = formOf(context);
+    final screen = withGoLayout(config.screens.byId(_screenId) ?? home, config, form);
     final top = config.screens.barFor(screen, ScreenSurface.topBar, config.topBarScreenId);
     final bottom = config.screens.barFor(screen, ScreenSurface.bottomBar, config.bottomBarScreenId);
     final byPlu = {for (final p in s.products) if (p.plu != null) p.plu!: p};
@@ -158,6 +160,16 @@ class _SellPageState extends ConsumerState<SellPage> {
     return Padding(
       padding: const EdgeInsets.all(8),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        // A manager can rearrange this screen for this kind of device.
+        if (config.go.allowRearrange && (s.clerk?.can(TillPermission.isManager) ?? false))
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => LayoutEditorPage(screen: screen, form: form))),
+              icon: const Icon(Icons.dashboard_customize_rounded, size: 18),
+              label: const Text('Arrange'),
+            ),
+          ),
         if (top != null) SizedBox(height: 60.0 * top.rows, child: grid(top)),
         if (top != null) const SizedBox(height: 8),
         Expanded(

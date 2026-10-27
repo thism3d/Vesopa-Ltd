@@ -45,7 +45,7 @@ const { requireAuth, requireTerminal, issueTerminalToken } = require('./auth');
 const { attachAccess, requirePermission } = require('./permissions');
 const { unseal } = require('./express_kiosk');
 const dojoClient = require('./dojo_client');
-const { goOptionsFor, saveGoOptions } = require('./go_options');
+const { goOptionsFor, saveGoOptions, goLayoutsFor, saveGoLayout, FORMS } = require('./go_options');
 const { partnerIds } = dojoClient;
 
 /**
@@ -345,6 +345,55 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
       } catch (err) {
         res.json({ environment: m.environment, default_terminal_id: m.terminalId, terminals: [], error: 'Dojo would not list the card machines: ' + err.message });
       }
+    } catch (e) { send(res, e, next); }
+  });
+
+  /** Go's own layouts for one kind of device: { screenId: buttons }. */
+  router.get('/api/tap/layouts', terminal, async (req, res, next) => {
+    try {
+      res.json({ layouts: await goLayoutsFor(pool, req.office, String(req.query.form || '')) });
+    } catch (e) { send(res, e, next); }
+  });
+
+  /**
+   * A screen rearranged on a device, for that kind of device only (the till's
+   * screen is not touched); `buttons: null` puts it back to the till's.
+   * A manager's say-so, checked here and not only on the device: the clerk id
+   * and PIN must be a member of staff of this venue who is a manager (or in no
+   * group, which is every key, as on the till).
+   */
+  router.put('/api/tap/layouts/:form/:screenId', terminal, express.json({ limit: '512kb' }), async (req, res, next) => {
+    try {
+      const form = String(req.params.form);
+      const screenId = Number(req.params.screenId);
+      if (!FORMS.includes(form) || !Number.isInteger(screenId)) return res.status(400).json({ error: 'Which screen, for which kind of device?' });
+      const b = req.body || {};
+      const [[clerk]] = await pool.query(
+        `SELECT c.clark_name AS name, c.pin_code AS pin, c.permission_group_id AS grp, g.is_manager
+           FROM bo_clarks c
+           LEFT JOIN epos_permission_groups g ON g.id = c.permission_group_id AND g.email = c.email
+          WHERE c.id = ? AND c.email = ? AND COALESCE(c.active, 1) = 1`,
+        [Number(b.clerk_id) || 0, req.office]);
+      if (!clerk || String(clerk.pin) !== String(b.pin || '') || (clerk.grp != null && !Number(clerk.is_manager))) {
+        return res.status(403).json({ error: 'Only a manager can change the layout.' });
+      }
+      const [[screen]] = await pool.query(
+        'SELECT id, surface, grid_rows, grid_cols FROM epos_screens WHERE id = ? AND office = ?', [screenId, req.office]);
+      if (!screen) return res.status(404).json({ error: 'No such screen at this venue.' });
+      let buttons = null;
+      if (Array.isArray(b.buttons)) {
+        const { normaliseButton, buttonToJson } = require('./screens');
+        const seen = new Set();
+        buttons = [];
+        for (const raw of b.buttons.slice(0, 400)) {
+          const n = normaliseButton(raw, { rows: screen.grid_rows, cols: screen.grid_cols, surface: screen.surface });
+          if (!n || seen.has(`${n.grid_row}:${n.grid_col}`)) continue;
+          seen.add(`${n.grid_row}:${n.grid_col}`);
+          buttons.push(buttonToJson(n));
+        }
+      }
+      await saveGoLayout(pool, req.office, form, screenId, buttons, clerk.name);
+      res.json({ ok: true, buttons });
     } catch (e) { send(res, e, next); }
   });
 

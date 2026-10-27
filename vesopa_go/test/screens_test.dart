@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vesopa_go/data/models.dart';
 import 'package:vesopa_go/data/session.dart';
+import 'package:vesopa_go/ui/layout_editor.dart';
 import 'package:vesopa_go/ui/programmed_grid.dart';
 
 /// One home screen as /api/till/screens sends it: a product key two cells
@@ -57,5 +58,24 @@ void main() {
     expect(opened?.id, 8);
     await tester.tap(find.text('No sale'));
     expect(find.text('On the till'), findsOneWidget);
+  });
+
+  test('a screen arranged on an iPad is the iPad’s only; the till and phones keep the till’s', () {
+    final c = TapConfig.fromJson(const {
+      'screens': _screens,
+      'till': {'home_screen_id': 7},
+      'layouts': {
+        'tablet': {
+          '7': [
+            {'row': 1, 'col': 2, 'kind': 'product', 'pluId': 101, 'label': 'Pint'},
+          ],
+        },
+        'phone': {},
+      },
+    });
+    final tablet = withGoLayout(c.home!, c, 'tablet');
+    expect(tablet.buttons.single.row, 1);
+    expect(tablet.buttons.single.col, 2);
+    expect(withGoLayout(c.home!, c, 'phone').buttons.length, 3);
   });
 }
