@@ -408,6 +408,30 @@ class _Approved extends ConsumerWidget {
                     style: t.displayMedium?.copyWith(fontWeight: FontWeight.w900, color: Tp.lime, fontFeatures: Tp.tabular)),
               ] else
                 Text('${money(sale.totalMinor)} · receipt ${sale.number}', textAlign: TextAlign.center, style: t.titleMedium),
+              // The customer's choice of receipt (back office: Customer
+              // hand-over), as big keys they can press themselves.
+              if (ref.watch(tapProvider.select((s) => s.config.go.customerReceiptChoice))) ...[
+                const SizedBox(height: 28),
+                Text('Would you like a receipt?', textAlign: TextAlign.center, style: t.titleLarge),
+                const SizedBox(height: 12),
+                Row(children: [
+                  for (final (icon, label, onTap) in [
+                    (Icons.print_rounded, 'Print', () => printReceipt(context, ref, sale)),
+                    (Icons.email_rounded, 'Email', () => emailReceipt(context, ref, sale.id)),
+                    (Icons.do_not_disturb_alt_rounded, 'No thanks', () async => Navigator.of(context).popUntil((r) => r.isFirst)),
+                  ])
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 5),
+                        child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(88)),
+                          onPressed: onTap,
+                          child: Column(mainAxisSize: MainAxisSize.min, children: [Icon(icon, size: 28), const SizedBox(height: 6), Text(label)]),
+                        ),
+                      ),
+                    ),
+                ]),
+              ],
               const SizedBox(height: 28),
               FilledButton(
                 key: const ValueKey('new-sale'),
