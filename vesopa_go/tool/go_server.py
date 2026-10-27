@@ -25,7 +25,9 @@ What `staging` and `live` do, in order, stopping at the first thing wrong:
              the back-office and Vesopa Auth databases. Nothing is deleted from
              any database, ever; the dumps are there so anything can be undone.
   4. deploy  the changed files (nothing on the server is deleted), then
-             schema/schema_tap.sql (CREATE TABLE IF NOT EXISTS only).
+             schema/schema_tap.sql (CREATE TABLE IF NOT EXISTS only) and
+             schema/schema_go_licence.sql (The Vesopa Kitchen's Go licence,
+             INSERT IGNORE: added only when the venue has none).
   5. auth    vesopa_auth/schema/schema_028_vesopa_go_client.sql: Go's own client,
              a copy of the till's (adds rows only; nothing if it is there), and
              VESOPA_AUTH_GO_CLIENT_ID in the app's .env.
@@ -311,6 +313,11 @@ def deploy_files(app, upload):
        data=schema.read_bytes())
     sh(f"{db(app)} < schema/schema_tap.sql")
     note("  schema_tap.sql applied (CREATE TABLE IF NOT EXISTS)")
+    # Vesopa Go's licence for the test venue (adds a row only when it has none).
+    lic = SERVER_DIR / "schema" / "schema_go_licence.sql"
+    sh(f"cat > {app}/schema/schema_go_licence.sql && chown {USER}:{USER} {app}/schema/schema_go_licence.sql", data=lic.read_bytes())
+    sh(f"{db(app)} < schema/schema_go_licence.sql")
+    note("  schema_go_licence.sql applied (The Vesopa Kitchen's Go licence, added only if missing)")
 
 
 def auth_client(app, auth):
