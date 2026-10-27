@@ -9,14 +9,15 @@ import DojoTapToPayOniPhoneSDK
 /// Dojo's Tap to Pay on iPhone SDK, reached from Dart over the
 /// `com.vesopa.go/dojo` channel (lib/payments/payment_service.dart).
 ///
-/// The calls are Dojo's own, in Dojo's order
-/// (https://docs.dojo.tech/tap-to-pay-on-iphone, SDK 0.0.11):
+/// The calls are Dojo's own, in Dojo's order, as SDK 0.0.11's interface has
+/// them (DojoTapToPayOniPhoneSDK.swiftinterface; iOS 16.7 and later):
 ///
-///   DojoTapToPayOniPhone(env: .staging | .production)
-///   activateTerminal(secret) -> status
+///   DojoTapToPayOniPhone(env: .staging | .prod)
+///   activateTerminal(secret) -> DojoTerminalStatus
 ///   getTerminalActivationStatus(notifyWhenOperational: true, secret:)
 ///   isAccountLinked(secret) / linkAccount(secret)
 ///   startPayment(paymentIntentId:secret:) -> result.status
+///     (.success, .decline, .alreadyPaid, .canceled)
 ///
 /// The secret comes from our server (POST /api/tap/secret), made with the
 /// venue's Dojo key, which never reaches the phone. This file never sees card
@@ -28,11 +29,9 @@ import DojoTapToPayOniPhoneSDK
 /// and the app offers the card machine instead.
 final class DojoTapToPayBridge {
   private let channel: FlutterMethodChannel
-
-  #if canImport(DojoTapToPayOniPhoneSDK)
-  private var sdk: DojoTapToPayOniPhone?
+  /// The SDK object, kept as Any: its class exists only on iOS 16.7+.
+  private var sdk: Any?
   private var sdkEnv = ""
-  #endif
 
   init(messenger: FlutterBinaryMessenger) {
     channel = FlutterMethodChannel(name: "com.vesopa.go/dojo", binaryMessenger: messenger)
@@ -44,19 +43,14 @@ final class DojoTapToPayBridge {
 
   /// Tap to Pay on iPhone needs an iPhone XS or newer on iOS 16.7 or later.
   private var supported: Bool {
-    guard #available(iOS 16.7, *) else { return false }
     #if canImport(DojoTapToPayOniPhoneSDK)
-    return PaymentCardReader.isSupported
-    #else
-    return false
+    if #available(iOS 16.7, *) { return PaymentCardReader.isSupported }
     #endif
+    return false
   }
 
   @MainActor
   private func handle(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) async {
-    let args = call.arguments as? [String: Any] ?? [:]
-    let secret = args["secret"] as? String ?? ""
-
     if call.method == "isSupported" {
       result(supported)
       return
@@ -65,17 +59,33 @@ final class DojoTapToPayBridge {
       result(FlutterError(code: "unsupported", message: "Tap to Pay needs an iPhone XS or newer on iOS 16.7 or later.", details: nil))
       return
     }
-
     #if canImport(DojoTapToPayOniPhoneSDK)
+    if #available(iOS 16.7, *) {
+      await run(call, result)
+      return
+    }
+    #endif
+    result(FlutterError(code: "unsupported", message: "This build has no Dojo Tap to Pay SDK.", details: nil))
+  }
+
+  #if canImport(DojoTapToPayOniPhoneSDK)
+  @available(iOS 16.7, *)
+  @MainActor
+  private func run(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) async {
+    let args = call.arguments as? [String: Any] ?? [:]
+    let secret = args["secret"] as? String ?? ""
     do {
       switch call.method {
       case "activate":
-        let env = args["env"] as? String ?? "staging"
-        let dojo = sdkFor(env)
+        let dojo = sdkFor(args["env"] as? String ?? "staging")
         let first = try await dojo.activateTerminal(secret)
-        if !Self.isOperational(first) {
+        if first != .operational {
           // Not ready yet: wait until Dojo says the terminal is operational.
-          _ = try await dojo.getTerminalActivationStatus(notifyWhenOperational: true, secret: secret)
+          let now = try await dojo.getTerminalActivationStatus(notifyWhenOperational: true, secret: secret)
+          if now == .failed {
+            result(FlutterError(code: "dojo", message: "Dojo could not activate this iPhone for Tap to Pay.", details: nil))
+            return
+          }
         }
         result(nil)
 
@@ -95,48 +105,45 @@ final class DojoTapToPayBridge {
         let outcome = try await current().startPayment(paymentIntentId: intent, secret: secret)
         // The status is reported, never trusted: the server asks Dojo for the
         // intent before the bill is settled.
-        result(["status": String(describing: outcome.status)])
+        result([
+          "status": String(describing: outcome.status),
+          "cancelled": outcome.status == .canceled,
+          "transactionId": outcome.data?.transactionId as Any,
+        ])
 
       default:
         result(FlutterMethodNotImplemented)
       }
     } catch {
-      let dojoError = AnyDojoSDKError(error: error)
       if let reader = error as? PaymentCardReaderError, case .unsupported = reader {
         result(FlutterError(code: "unsupported", message: reader.localizedDescription, details: nil))
         return
       }
-      if let read = error as? PaymentCardReaderSession.ReadError, case .cancelled = read {
-        result(FlutterError(code: "cancelled", message: "Cancelled", details: nil))
+      let ns = error as NSError
+      if let code = DojoSDKErrorCode(rawValue: ns.code), ns.domain.contains("Dojo") {
+        result(FlutterError(code: code == .terminalNotOperational ? "unsupported" : "dojo",
+                            message: "Dojo: \(code) (\(ns.localizedDescription))", details: nil))
         return
       }
-      result(FlutterError(code: "dojo", message: String(describing: dojoError), details: nil))
+      result(FlutterError(code: "dojo", message: ns.localizedDescription, details: nil))
     }
-    #else
-    result(FlutterError(code: "unsupported", message: "This build has no Dojo Tap to Pay SDK. Add the package in Xcode.", details: nil))
-    #endif
   }
 
-  #if canImport(DojoTapToPayOniPhoneSDK)
+  @available(iOS 16.7, *)
   private func sdkFor(_ env: String) -> DojoTapToPayOniPhone {
-    if let sdk, sdkEnv == env { return sdk }
-    let made = DojoTapToPayOniPhone(env: env == "production" ? .production : .staging)
+    if let made = sdk as? DojoTapToPayOniPhone, sdkEnv == env { return made }
+    let made = DojoTapToPayOniPhone(env: env == "production" ? .prod : .staging)
     sdk = made
     sdkEnv = env
     return made
   }
 
+  @available(iOS 16.7, *)
   private func current() throws -> DojoTapToPayOniPhone {
-    guard let sdk else {
-      throw NSError(domain: "VesopaTap", code: 1, userInfo: [NSLocalizedDescriptionKey: "Tap to Pay is not activated yet."])
+    guard let made = sdk as? DojoTapToPayOniPhone else {
+      throw NSError(domain: "VesopaGo", code: 1, userInfo: [NSLocalizedDescriptionKey: "Tap to Pay is not activated yet."])
     }
-    return sdk
-  }
-
-  /// Dojo's status names, read loosely so an SDK update that renames a case
-  /// does not stop payments: anything saying "operational" is ready.
-  private static func isOperational(_ status: Any) -> Bool {
-    String(describing: status).lowercased().contains("operational")
+    return made
   }
   #endif
 }

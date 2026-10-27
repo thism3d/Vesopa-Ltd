@@ -90,10 +90,14 @@ the tills. It is Vesopa EPOS Lite and Vesopa Tap merged into one app
 - [x] Icon redrawn (orbit; distinct from Express), Play listing, feature graphic, screenshots
 - [x] Workflows written and pushed
 - [x] `go-server check`: live has 1 conflict (`src/server.js`, one hunk); staging is far out of date (14 conflicts), so live is deployed directly, after the backup
-- [ ] `go-server live`: backup, deploy, Auth client, `go.vesopaepos.com`
+- [x] `go-server live` (run 40449227134): backup `/home/vesopasoftware/backups/go-20261027-042114`
+      (app files, back-office DB, Auth DB); 7 files deployed, live's own edits kept; Go's Auth
+      client `dc20f031d1bd11f1a75342010a80000e`; `/api/go/vesopa/enabled` and `/api/tap/config` live
+- [x] https://go.vesopaepos.com: DNS, web domain, proxy to 20005, Let's Encrypt, WebSocket 101
 - [ ] Android build on Play internal testing
 - [ ] iOS build on TestFlight (team + Closed testing)
-- [ ] App's `apiBase` to `https://go.vesopaepos.com` once that is live
+- [x] App's `apiBase` is `https://go.vesopaepos.com`
+- [x] iOS bridge rewritten against Dojo SDK 0.0.11's real interface (`.prod`, result `.canceled`, iOS 16.7 guards)
 - [ ] GitHub Pages: the owner switches it on (Settings > Pages > Source: GitHub Actions)
 
 ## Waiting on others
@@ -105,5 +109,5 @@ the tills. It is Vesopa EPOS Lite and Vesopa Tap merged into one app
 
 ## Next
 
-Run `go-server live`, then point the app at `go.vesopaepos.com`, then new
-store builds. Read the Android and iOS run results and fix what fails.
+New store builds with the new icon and go.vesopaepos.com. Read the Android
+and iOS run results and fix what fails, until both are in testing.

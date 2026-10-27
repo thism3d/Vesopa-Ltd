@@ -2,8 +2,9 @@
 /// test build can never reach a live venue by accident.
 library;
 
-/// The back office every Vesopa terminal talks to.
-const apiBase = String.fromEnvironment('VESOPA_API_BASE', defaultValue: 'https://backoffice.vesopaepos.com');
+/// The back office, at Go's own address (go.vesopaepos.com: the same back office
+/// as the tills, its /ws proxied for live updates).
+const apiBase = String.fromEnvironment('VESOPA_API_BASE', defaultValue: 'https://go.vesopaepos.com');
 
 /// Vesopa sign-in (passwordless OAuth/OIDC).
 const authIssuer = String.fromEnvironment('VESOPA_AUTH_ISSUER', defaultValue: 'https://auth.vesopa.com');
