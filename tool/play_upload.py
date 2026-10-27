@@ -122,6 +122,11 @@ class PlayError(Exception):
     pass
 
 
+# Set once Play has said the app is still a draft (never published): every
+# release after that is a draft, which is all such an app may hold.
+DRAFT_ONLY = [False]
+
+
 def release(play, edit, aab: pathlib.Path, track, name, notes, lang):
     print(f"   uploading {aab.name} ({aab.stat().st_size // 1_000_000} MB)")
     bundle = play.call("POST", f"{UPLOAD}/{play.package}/edits/{edit}/bundles?uploadType=media",
@@ -129,7 +134,7 @@ def release(play, edit, aab: pathlib.Path, track, name, notes, lang):
     code = bundle["versionCode"]
     # --draft: the release waits in Play Console for the owner to roll it out
     # (owner, 2026-10-24: "I'll press the production release myself").
-    rel = {"name": name, "versionCodes": [str(code)], "status": "draft" if "--draft" in sys.argv else "completed",
+    rel = {"name": name, "versionCodes": [str(code)], "status": "draft" if ("--draft" in sys.argv or DRAFT_ONLY[0]) else "completed",
            "releaseNotes": [{"language": lang, "text": notes}]}
     try:
         play.call("PUT", f"{API}/{play.package}/edits/{edit}/tracks/{track}", {"track": track, "releases": [rel]})
@@ -258,7 +263,18 @@ def main():
             try:
                 edit = play.edit()
                 release(play, edit, aab, t, name, p["release_notes"], p["language"])
-                play.commit(edit)
+                try:
+                    play.commit(edit)
+                except PlayError as e:
+                    # A draft app refuses a completed release at the commit, not
+                    # at the track: start again with the release as a draft.
+                    if "draft" not in str(e).lower() or DRAFT_ONLY[0]:
+                        raise
+                    DRAFT_ONLY[0] = True
+                    edit = play.edit()
+                    release(play, edit, aab, t, name, p["release_notes"], p["language"])
+                    play.commit(edit)
+                    print("   (the app is still a draft in Play, so the release is a draft: roll it out in Play Console)")
             except PlayError as e:
                 failed = True
                 print(f"   ! {e}")
