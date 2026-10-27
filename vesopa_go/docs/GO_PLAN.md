@@ -95,7 +95,10 @@ the tills. It is Vesopa EPOS Lite and Vesopa Tap merged into one app
       client `dc20f031d1bd11f1a75342010a80000e`; `/api/go/vesopa/enabled` and `/api/tap/config` live
 - [x] https://go.vesopaepos.com: DNS, web domain, proxy to 20005, Let's Encrypt, WebSocket 101
 - [x] Android 1.0.0 (2) on Play internal testing, with the listing, icon, feature graphic and 6 screenshots (run 40449501378)
-- [ ] iOS build on TestFlight (team + Closed testing)
+- [x] iOS 1.0.0 (1) on TestFlight (run 40449504307): "Vesopa team" (internal) and
+      "Closed testing" (public link https://testflight.apple.com/join/zgg5YSn8)
+- [ ] Beta App Review for Closed testing: needed the review contact phone
+      (ASC_REVIEW_PHONE, as the venue apps); re-run go-ios with testflight_build=1
 - [x] App's `apiBase` is `https://go.vesopaepos.com`
 - [x] iOS bridge rewritten against Dojo SDK 0.0.11's real interface (`.prod`, result `.canceled`, iOS 16.7 guards)
 - [ ] GitHub Pages: the owner switches it on (Settings > Pages > Source: GitHub Actions)
