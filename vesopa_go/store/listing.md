@@ -22,6 +22,8 @@ App Store Connect: `app_store.json` (filled by `go-ios.yml`, never submitted); T
 
 ## Play Console questions the API cannot answer
 
+Every box, with the answer to type: **`play_console.md`** beside this file. In short:
+
 - **App access:** some functions need sign-in; reviewers use "Try the demo", PIN 1111.
 - **Ads:** none.
 - **Content rating:** utility / business, no user content shared publicly.
