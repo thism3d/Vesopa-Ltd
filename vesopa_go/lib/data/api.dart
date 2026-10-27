@@ -175,6 +175,15 @@ class TapApi {
   /// The till's settings Go follows: consolidate lines, the idle screen.
   Future<Map<String, dynamic>> tillSettings() => _send('GET', '/api/till-settings/public?office=$_o');
 
+  /// Clocks [staffId] in unless their shift is already open (`/till/clock`
+  /// toggles, so it is asked first). Answers whether a shift was started.
+  Future<bool> clockIn(int staffId) async {
+    final open = (await _send('GET', '/till/clock'))['open'] as List? ?? const [];
+    if (open.any((o) => (o as Map)['staff_id'] == staffId)) return false;
+    await _send('POST', '/till/clock', {'staff_id': staffId, 'terminal': 'Vesopa Go'});
+    return true;
+  }
+
   /// The venue's receipt branding, as the tills print it.
   Future<Map<String, dynamic>> branding() => _send('GET', '/api/branding/public?office=$_o');
 

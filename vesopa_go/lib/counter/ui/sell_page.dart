@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vesopa_go/data/models.dart';
 import 'package:vesopa_go/data/session.dart';
+import 'package:vesopa_go/ui/product_photo.dart';
 import 'package:vesopa_go/ui/sounds.dart';
 import 'package:vesopa_go/ui/theme.dart';
 
@@ -218,6 +219,7 @@ class _Key extends StatelessWidget {
           key: ValueKey('item-${p.id}'),
           onTap: onTap,
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            ProductPhoto(product: p, tint: colour),
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),

@@ -100,6 +100,7 @@ VenueMenu menuFrom({required List<dynamic> products, Map<String, dynamic>? modif
       allergens: allergens,
       taxPercent: _num(m['tax_percentage']),
       stations: routes,
+      imageUrl: '${m['image_url'] ?? ''}'.trim(),
       course: courseOf(dept, group),
       outOfStock: m['available'] == false || m['available'] == 0,
       options: [

@@ -14,6 +14,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models.dart';
 import '../../data/session.dart';
+import '../product_photo.dart';
 import '../sounds.dart';
 import '../theme.dart';
 import 'note_sheet.dart';
@@ -223,6 +224,7 @@ class _OrderPageState extends ConsumerState<OrderPage> {
                       decoration: BoxDecoration(borderRadius: BorderRadius.circular(Tp.radius), border: Border(top: BorderSide(color: colour, width: 4))),
                       padding: const EdgeInsets.all(12),
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        ProductPhoto(product: p, tint: colour, height: 40, radius: 8),
                         Text(p.name, style: t.titleSmall?.copyWith(fontWeight: FontWeight.w700), maxLines: 2, overflow: TextOverflow.ellipsis),
                         const Spacer(),
                         Row(children: [

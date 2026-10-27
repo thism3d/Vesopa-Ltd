@@ -70,6 +70,8 @@
 	<string>Vesopa Go reads staff cards and fobs to sign you in.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Sign in to Vesopa Go with Face ID instead of your PIN.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Vesopa Go prints receipts on your venue's receipt printer over the local network.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Vesopa Go scans a member's card in the Vesopa Loyalty app.</string>
 </dict>

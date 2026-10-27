@@ -19,6 +19,7 @@ import 'package:vesopa_go/ui/pages/bill.dart';
 import 'package:vesopa_go/ui/pages/more.dart';
 import 'package:vesopa_go/ui/pages/tables.dart';
 import 'package:vesopa_go/ui/go_frame.dart';
+import 'package:vesopa_go/ui/product_photo.dart';
 import 'package:vesopa_go/ui/sounds.dart';
 
 import '../data/lite_state.dart';
@@ -55,6 +56,8 @@ class _ShellState extends ConsumerState<Shell> {
   @override
   Widget build(BuildContext context) {
     final s = ref.watch(tapProvider);
+    // New menu from the back office: its photos into the cache now.
+    ref.listen(tapProvider.select((s) => s.products), (_, products) => warmPhotos(context, products));
     final pages = _pagesFor(s);
     final i = _page.clamp(0, pages.length - 1);
     final body = pages[i].$3();

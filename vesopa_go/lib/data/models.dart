@@ -80,10 +80,14 @@ class Product {
     this.plu,
     this.taxPercent = 0,
     this.stations = const [],
+    this.imageUrl = '',
   });
   final String id;
   final String name;
   final int priceMinor;
+
+  /// The product's photo from the back office, the online menu's own; '' for none.
+  final String imageUrl;
   final String category;
   final List<String> allergens;
 

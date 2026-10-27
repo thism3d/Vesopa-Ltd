@@ -6,10 +6,15 @@
 /// runs as a counter till on its own -- no tables, no shared bills.
 library;
 
+import 'dart:math' as math;
+
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:vesopa_go/config/constants.dart' show apiBase;
 import 'package:vesopa_go/data/api.dart';
+import 'package:vesopa_go/data/models.dart';
 import 'package:vesopa_go/data/clerk_auth.dart';
 import 'package:vesopa_go/data/session.dart';
 import 'package:vesopa_go/data/vesopa_sso.dart';
@@ -119,25 +124,54 @@ class _LiteWelcomePageState extends ConsumerState<LiteWelcomePage> {
   }
 }
 
-/// Nobody signed on: the PIN pad, a staff card, or Face ID / fingerprint.
+/// Nobody signed on: the venue's wallpaper behind the staff and the PIN pad,
+/// as the till's sign-in. Each way in is the venue's to switch off (back
+/// office, Vesopa Go options > Signing in): the PIN, the staff tiles, a staff
+/// card, Face ID / fingerprint; signing in can clock the member of staff in.
 class LiteLockPage extends ConsumerStatefulWidget {
   const LiteLockPage({super.key});
   @override
   ConsumerState<LiteLockPage> createState() => _LiteLockPageState();
 }
 
-class _LiteLockPageState extends ConsumerState<LiteLockPage> {
+class _LiteLockPageState extends ConsumerState<LiteLockPage> with SingleTickerProviderStateMixin {
   final _auth = ClerkAuth();
   String _pin = '';
   String? _error;
   bool _nfc = false;
   bool _bio = false;
+  Clerk? _picked;
+  late final _shake = AnimationController(vsync: this, duration: const Duration(milliseconds: 420));
 
   @override
   void initState() {
     super.initState();
     StaffCardReader.available().then((v) => mounted ? setState(() => _nfc = v) : null);
     _auth.biometricsAvailable().then((v) => mounted ? setState(() => _bio = v) : null);
+  }
+
+  @override
+  void dispose() {
+    _shake.dispose();
+    super.dispose();
+  }
+
+  Future<void> _signOn(Clerk clerk) async {
+    final s = ref.read(tapProvider);
+    ref.read(tapProvider.notifier).signOn(clerk);
+    if (s.config.go.loginClockIn && !s.demo) {
+      // Clocked in on the first sign-in of the shift; already in stays in.
+      ref.read(apiProvider).clockIn(clerk.id).catchError((Object _) => false);
+    }
+  }
+
+  void _wrong(String why) {
+    HapticFeedback.heavyImpact();
+    _shake.forward(from: 0);
+    setState(() {
+      _pin = '';
+      _error = why;
+    });
   }
 
   void _digit(String d) {
@@ -147,15 +181,13 @@ class _LiteLockPageState extends ConsumerState<LiteLockPage> {
       _pin += d;
       _error = null;
     });
-    final clerk = ClerkAuth.byPin(ref.read(tapProvider).staff, _pin);
+    final picked = _picked;
+    final staff = picked == null ? ref.read(tapProvider).staff : [picked];
+    final clerk = ClerkAuth.byPin(staff, _pin);
     if (clerk != null) {
-      ref.read(tapProvider.notifier).signOn(clerk);
-    } else if (_pin.length == 6) {
-      HapticFeedback.heavyImpact();
-      setState(() {
-        _pin = '';
-        _error = 'That PIN is not on this venue\'s staff list';
-      });
+      _signOn(clerk);
+    } else if (_pin.length == 6 || (picked != null && picked.pin.isNotEmpty && _pin.length >= picked.pin.length)) {
+      _wrong(picked == null ? 'That PIN is not on this venue\'s staff list' : 'That is not ${picked.name}\'s PIN');
     }
   }
 
@@ -164,73 +196,155 @@ class _LiteLockPageState extends ConsumerState<LiteLockPage> {
     if (id == null) return;
     final clerk = ClerkAuth.byCard(ref.read(tapProvider).staff, id);
     if (clerk != null) {
-      ref.read(tapProvider.notifier).signOn(clerk);
+      _signOn(clerk);
     } else {
-      setState(() => _error = 'That card is not anyone\'s staff card. Set it in the back office under Staff.');
+      _wrong('That card is not anyone\'s staff card. Set it in the back office under Staff.');
     }
   }
 
   Future<void> _face() async {
     final last = ref.read(tapProvider).lastClerk;
-    if (last != null && await _auth.unlockWithBiometrics(last)) ref.read(tapProvider.notifier).signOn(last);
+    if (last != null && await _auth.unlockWithBiometrics(last)) _signOn(last);
   }
 
   @override
   Widget build(BuildContext context) {
     final s = ref.watch(tapProvider);
+    final go = s.config.go;
     final t = Theme.of(context).textTheme;
     final dim = t.bodySmall?.color ?? Colors.grey;
-    final bio = _bio && s.lastClerk != null;
-    return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-              child: Column(children: [
-                Row(children: [
-                  const GoMark(size: 32),
-                  const SizedBox(width: 12),
-                  Expanded(child: Text(s.venue?.name ?? '', style: t.titleMedium, overflow: TextOverflow.ellipsis)),
-                  if (s.demo) const Chip(label: Text('Demo')),
-                  if (!s.online) const Icon(Icons.cloud_off_rounded, color: Tp.amber),
-                ]),
-                const Spacer(),
-                Text('Enter your PIN', style: t.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
-                const SizedBox(height: 18),
-                Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  for (var i = 0; i < 4; i++)
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 120),
-                      margin: const EdgeInsets.all(8),
-                      width: 16,
-                      height: 16,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: i < _pin.length ? Tp.lime : Colors.transparent,
-                        border: Border.all(color: i < _pin.length ? Tp.lime : dim, width: 2),
-                      ),
-                    ),
-                ]),
-                SizedBox(height: 28, child: _error == null ? null : Text(_error!, textAlign: TextAlign.center, style: t.bodySmall?.copyWith(color: Tp.danger))),
-                const Spacer(),
-                for (final row in const [['1', '2', '3'], ['4', '5', '6'], ['7', '8', '9']])
-                  Row(children: [for (final d in row) _Key(label: d, onTap: () => _digit(d))]),
-                Row(children: [
-                  _Key(icon: bio ? Icons.face_rounded : (_nfc ? Icons.nfc_rounded : null), onTap: bio ? _face : (_nfc ? _card : null)),
-                  _Key(label: '0', onTap: () => _digit('0')),
-                  _Key(icon: Icons.backspace_outlined, onTap: _pin.isEmpty ? null : () => setState(() => _pin = _pin.substring(0, _pin.length - 1))),
-                ]),
-                const SizedBox(height: 8),
-                if (s.demo) Text('Demo PINs: 1111 Sam (manager) · 2222 Alex · 3333 Priya', style: t.bodySmall),
+    final bio = go.loginBiometrics && _bio && s.lastClerk != null;
+    final nfc = go.loginNfc && _nfc;
+    final wide = MediaQuery.sizeOf(context).width >= 900;
+    final tiles = go.loginPhotos && s.staff.isNotEmpty;
+    final url = s.config.idleImageUrl;
+    final wallpaper = url == null ? null : (url.startsWith('http') ? url : '$apiBase${url.startsWith('/') ? '' : '/'}$url');
+    final picked = _picked;
+
+    final pad = ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 400),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 200),
+          child: Text(
+            picked == null ? (go.loginPin ? 'Enter your PIN' : 'Tap your staff card') : 'Hello ${picked.name.split(' ').first}',
+            key: ValueKey(picked?.id),
+            style: t.headlineSmall?.copyWith(fontWeight: FontWeight.w800, color: Colors.white),
+          ),
+        ),
+        const SizedBox(height: 18),
+        if (go.loginPin) ...[
+          AnimatedBuilder(
+            animation: _shake,
+            builder: (_, child) => Transform.translate(offset: Offset(12 * math.sin(_shake.value * math.pi * 6) * (1 - _shake.value), 0), child: child),
+            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              for (var i = 0; i < 4; i++)
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 120),
+                  margin: const EdgeInsets.all(8),
+                  width: 16,
+                  height: 16,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: i < _pin.length ? Tp.lime : Colors.transparent,
+                    border: Border.all(color: i < _pin.length ? Tp.lime : dim, width: 2),
+                  ),
+                ),
+            ]),
+          ),
+          SizedBox(height: 28, child: _error == null ? null : Text(_error!, textAlign: TextAlign.center, style: t.bodySmall?.copyWith(color: Tp.danger))),
+          for (final row in const [['1', '2', '3'], ['4', '5', '6'], ['7', '8', '9']])
+            Row(children: [for (final d in row) _Key(label: d, onTap: () => _digit(d))]),
+          Row(children: [
+            _Key(icon: bio ? Icons.face_rounded : (nfc ? Icons.nfc_rounded : null), onTap: bio ? _face : (nfc ? _card : null)),
+            _Key(label: '0', onTap: () => _digit('0')),
+            _Key(icon: Icons.backspace_outlined, onTap: _pin.isEmpty ? null : () => setState(() => _pin = _pin.substring(0, _pin.length - 1))),
+          ]),
+        ] else ...[
+          SizedBox(height: 28, child: _error == null ? null : Text(_error!, textAlign: TextAlign.center, style: t.bodySmall?.copyWith(color: Tp.danger))),
+          if (nfc) FilledButton.icon(onPressed: _card, icon: const Icon(Icons.nfc_rounded), label: const Text('Read my staff card')),
+          if (bio) Padding(padding: const EdgeInsets.only(top: 10), child: OutlinedButton.icon(onPressed: _face, icon: const Icon(Icons.face_rounded), label: const Text('Face ID'))),
+        ],
+        const SizedBox(height: 8),
+        if (s.demo) Text('Demo PINs: 1111 Sam (manager) · 2222 Alex · 3333 Priya', style: t.bodySmall),
+      ]),
+    );
+
+    final grid = GridView.builder(
+      padding: const EdgeInsets.all(8),
+      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent: 150, mainAxisSpacing: 14, crossAxisSpacing: 14, childAspectRatio: 0.9),
+      itemCount: s.staff.length,
+      itemBuilder: (_, i) {
+        final c = s.staff[i];
+        final on = picked?.id == c.id;
+        return AnimatedScale(
+          scale: on ? 1.06 : 1,
+          duration: const Duration(milliseconds: 180),
+          child: Material(
+            color: on ? Tp.lime.withValues(alpha: 0.22) : Tp.inkCard.withValues(alpha: 0.86),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: on ? Tp.lime : Tp.inkLine, width: on ? 2 : 1)),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () => setState(() {
+                _picked = on ? null : c;
+                _pin = '';
+                _error = null;
+              }),
+              child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                CircleAvatar(
+                  radius: 30,
+                  backgroundColor: Color(_avatarColours[c.id.abs() % _avatarColours.length]),
+                  child: Text(_initials(c.name), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Tp.onLime)),
+                ),
+                const SizedBox(height: 10),
+                Text(c.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700, color: Colors.white)),
+                if ((c.group ?? '').isNotEmpty) Text(c.group!, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.bodySmall),
               ]),
             ),
           ),
+        );
+      },
+    );
+
+    return Scaffold(
+      backgroundColor: Tp.inkDeep,
+      body: Stack(fit: StackFit.expand, children: [
+        if (wallpaper != null) CachedNetworkImage(imageUrl: wallpaper, fit: BoxFit.cover, errorWidget: (_, _, _) => const SizedBox.shrink()),
+        const ColoredBox(color: Color(0xB3000000)),
+        SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+            child: Column(children: [
+              Row(children: [
+                const GoMark(size: 32),
+                const SizedBox(width: 12),
+                Expanded(child: Text(s.venue?.name ?? '', style: t.titleMedium?.copyWith(color: Colors.white), overflow: TextOverflow.ellipsis)),
+                if (s.demo) const Chip(label: Text('Demo')),
+                if (!s.online) const Icon(Icons.cloud_off_rounded, color: Tp.amber),
+              ]),
+              Expanded(
+                child: wide && tiles
+                    ? Row(children: [
+                        Expanded(child: grid),
+                        const SizedBox(width: 32),
+                        Center(child: SizedBox(width: 400, child: pad)),
+                      ])
+                    : Center(child: SingleChildScrollView(child: pad)),
+              ),
+            ]),
+          ),
         ),
-      ),
+      ]),
     );
   }
+}
+
+const _avatarColours = [0xFFA5C715, 0xFF4BA3F5, 0xFFF5B301, 0xFF3FBBD6, 0xFFF4633A, 0xFFC2569B, 0xFF2E9E5B, 0xFFBB6BD9];
+
+String _initials(String name) {
+  final parts = name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+  if (parts.isEmpty) return '?';
+  return (parts.first[0] + (parts.length > 1 ? parts.last[0] : '')).toUpperCase();
 }
 
 class _Key extends StatelessWidget {
