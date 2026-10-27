@@ -1,0 +1,107 @@
+# Read only: what Vesopa Go's build and deploy need to know, from the stores and
+# the Cloud box. Changes nothing anywhere. The repository is public, so this
+# prints names and ids only: no secret, no password, no customer's details.
+#
+# Actions > "Go - look around" > Run workflow.
+
+name: Go - look around
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  look:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: App Store Connect API
+    env:
+      SERVER: root@34.63.118.67
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: App Store Connect - apps on the team
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          python3 -m venv "$RUNNER_TEMP/py" && "$RUNNER_TEMP/py/bin/pip" install --quiet "pyjwt[crypto]" cryptography
+          "$RUNNER_TEMP/py/bin/python" - <<'PY'
+          import sys; sys.path.insert(0, "vesopa_loyalty/tool")
+          import app_store_connect as a
+          c = a.Client()
+          for app in c.all("/v1/apps", limit="200"):
+              x = app["attributes"]; print(f"  app {x['name']!r}: bundle {x['bundleId']}, Apple ID {app['id']}")
+          for b in c.all("/v1/bundleIds", limit="200"):
+              x = b["attributes"]
+              if "go" in x["identifier"].lower() or "lite" in x["identifier"].lower() or "tap" in x["identifier"].lower():
+                  print(f"  App ID {x['identifier']} ({x['name']})")
+          PY
+
+      - name: Google Play - which package is Vesopa Go
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          "$RUNNER_TEMP/py/bin/python" - <<'PY'
+          import sys; sys.path.insert(0, "tool")
+          import play_upload as p
+          token, _ = p.access_token(p.key_file())
+          for pkg in ["com.vesopa.go", "com.vesopa.vesopago", "com.vesopaepos.go", "com.vesopa.vesopa_go", "com.vesopasoftware.go",
+                      "com.vesopa.eposlite", "com.vesopa.tap", "co.vesopa.go", "uk.co.vesopa.go"]:
+              play = p.Play(token, pkg)
+              try:
+                  e = play.edit()
+                  tracks = play.call("GET", f"{p.API}/{pkg}/edits/{e}/tracks")
+                  print(f"  {pkg}: on Play, tracks {[t['track'] for t in tracks.get('tracks', [])]}")
+                  play.call("DELETE", f"{p.API}/{pkg}/edits/{e}")
+              except SystemExit as err:
+                  print(f"  {pkg}: no ({str(err)[:80]})")
+              except Exception as err:  # noqa: BLE001
+                  print(f"  {pkg}: no ({type(err).__name__}: {str(err)[:80]})")
+          PY
+
+      - name: The Cloud box
+        env:
+          VESOPA_SSH_PASSWORD: ${{ secrets.VESOPA_SSH_PASSWORD }}
+        run: |
+          [ -n "$VESOPA_SSH_PASSWORD" ] || { echo "::error::VESOPA_SSH_PASSWORD is not set"; exit 1; }
+          mkdir -p ~/.ssh "$RUNNER_TEMP/ssh"
+          printf 'Host *\n  StrictHostKeyChecking accept-new\n  ConnectTimeout 20\n  ControlMaster auto\n  ControlPath %s/cm-%%r@%%h\n  ControlPersist 10m\n' "$RUNNER_TEMP/ssh" > ~/.ssh/config
+          printf '#!/bin/sh\nprintf "%%s\\n" "$VESOPA_SSH_PASSWORD"\n' > "$RUNNER_TEMP/ssh/askpass"; chmod 700 "$RUNNER_TEMP/ssh/askpass"
+          export SSH_ASKPASS="$RUNNER_TEMP/ssh/askpass" SSH_ASKPASS_REQUIRE=force DISPLAY=:0
+          R() { ssh -n "$SERVER" "$@"; }
+          R true && echo "SSH: ok"
+          H='export PATH=$PATH:/usr/local/hestia/bin;'
+          echo "== Hestia users and DNS zones"
+          R "$H for u in \$(v-list-users plain | awk '{print \$1}'); do for z in \$(v-list-dns-domains \$u plain 2>/dev/null | awk '{print \$1}'); do echo \"  \$u \$z\"; done; done"
+          echo "== web domains (vesopasoftware)"
+          R "$H v-list-web-domains vesopasoftware plain | awk '{print \"  \"\$1}'"
+          echo "== DNS for vesopaepos.com, from outside"
+          dig +short NS vesopaepos.com; dig +short A go.vesopaepos.com; dig +short A backoffice.vesopaepos.com
+          echo "== pm2 (vesopasoftware)"
+          R "su - vesopasoftware -c 'PM2_HOME=/home/vesopasoftware/.pm2 pm2 jlist'" | python3 -c "import json,sys; [print('  ', p['name'], p['pm2_env']['status']) for p in json.load(sys.stdin)]"
+          echo "== disk"; R "df -h / | tail -1"
+          BO=/home/vesopasoftware/web/backoffice.vesopaepos.com/private/nodeapp
+          echo "== live back office: which commit its server.js is"
+          live=$(R "cat $BO/src/server.js" | git hash-object --stdin)
+          git log --format='%h %ad %s' --date=short -- vesopa_server/src/server.js | while read h rest; do
+            [ "$(git rev-parse "$h:vesopa_server/src/server.js")" = "$live" ] && { echo "  matches $h $rest" | cut -c1-140; break; }; done
+          echo "== back office database"
+          DB="cd $BO && mariadb \$(grep -E '^DB_NAME=' .env | cut -d= -f2)"
+          R "$DB -N -e \"SELECT CONCAT('  size MB: ', ROUND(SUM(data_length+index_length)/1e6)) FROM information_schema.tables WHERE table_schema=DATABASE()\""
+          R "$DB -N -e \"SELECT CONCAT('  office ', id, ': ', name) FROM offices WHERE name LIKE '%Vesopa Kitchen%'\""
+          R "$DB -N -e \"SHOW TABLES LIKE 'epos_tap%'\"" | sed 's/^/  table /'
+          R "$DB -N -e \"SELECT CONCAT('  dine-in venue ', slug, ' office ', office_id) FROM dinein_venue WHERE slug='vesopakitchen'\""
+          echo "== Vesopa Auth applications (client ids only)"
+          AU=$(R "ls -d /home/*/web/auth.vesopa.com/private/nodeapp 2>/dev/null | head -1")
+          echo "  app at $AU"
+          R "cd $AU && mariadb \$(grep -E '^DB_NAME=' .env | cut -d= -f2) -N -e \"SELECT CONCAT('  ', client_id, ' | ', name, ' | ', client_type) FROM applications\""
+          echo "== Cloud panel: who has vesopaepos.com"
+          CL=/home/vesopasoftware/web/cloud.vesopa.com/private/nodeapp
+          R "cd $CL && set -a && . ./.env 2>/dev/null; set +a; mariadb -N -u\$DB_USER -p\"\$DB_PASSWORD\" \$DB_NAME -e \"SELECT CONCAT('  domain ', d.domain, ' customer ', d.customer_id) FROM domains d WHERE d.domain LIKE '%vesopaepos.com'\""
+          R "cd $CL && set -a && . ./.env 2>/dev/null; set +a; mariadb -N -u\$DB_USER -p\"\$DB_PASSWORD\" \$DB_NAME -e \"SHOW COLUMNS FROM customers\"" | awk '{print "  customers."$1}' | head -12
