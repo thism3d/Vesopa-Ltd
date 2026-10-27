@@ -48,3 +48,39 @@ node tools/drive.js $B video out.mp4 $B/music.wav                               
 `drive.js` needs Playwright with Chromium. `comic.py` needs numpy and Pillow. Inter Bold and Inter
 SemiBold come from the system (`/usr/share/fonts/opentype/inter/`); copy them into `fonts/` as well.
 Scene timings, words and camera moves are all in the `SCENES` list in `build/render.html`.
+
+---
+
+# Version 2: matched to the reference's beat (use this one)
+
+The reference sound runs at 80 BPM, with a velocity burst every 0.75 s starting at 0.45 s (I measured
+it frame by frame off the TikTok player). Version 2 puts every cut and burst on that grid, so the
+creator's sound ("original sound - harveyverse") lines up when it is added in TikTok.
+
+| File | Use |
+|---|---|
+| `Vesopa_EPOS_TikTok_NoSound.mp4` | TikTok: add the reference sound in the app (steps below) |
+| `Vesopa_EPOS_Reels_WithMusic.mp4` | Instagram Reels and YouTube Shorts: our own 80 BPM track on the same grid |
+
+## Adding the exact sound on TikTok
+
+1. Open the reference video on your phone. Tap the spinning record at the bottom right
+   ("original sound - harveyverse"), then tap **Use this sound**.
+2. Tap **Upload** and pick `Vesopa_EPOS_TikTok_NoSound.mp4`.
+3. Leave the sound starting at 0:00; don't trim its start. The cuts are timed to it from the first frame.
+4. If TikTok also offers "Original sound" for the clip, turn it to 0 (the file is silent anyway).
+
+If the sound will not attach (the creator can turn reuse off), use any trending 80 or 160 BPM sound
+instead. The edit lands on the beat with those too.
+
+## What changed from version 1
+
+- Bright, warm grade on the real footage, and a blue-and-yellow pop-art grade for the comic section
+  (`POP=1 python3 tools/comic.py ...` writes `<clip>_pop` frames).
+- The real Vesopa till screen is pinned onto the blank screen in the pub footage (`pinScreen`).
+- The logo is on the venue wall with three camera angles, and the shot flickers from real to comic at
+  8.85 s, like the reference's style flicker. There is a second real-to-comic flicker at 22.95 s.
+- Hero shots work like the reference's food shots: the till, payment and kitchen screens sit on a
+  smoky, ember-lit stage with glowing angled headlines and jump to a new angle on each beat.
+- Renderer: `build/render2.html` (shot list `SHOTS`). Music: `tools/music_v2.py`.
+  `PAGE=render2.html node tools/drive.js <build> video out.mp4 music_v2.wav`.

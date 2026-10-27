@@ -2,6 +2,8 @@ import sys, os, numpy as np
 from PIL import Image, ImageFilter, ImageEnhance
 from multiprocessing import Pool
 
+POP = os.environ.get('POP') == '1'
+
 def comic(path, out):
     im = Image.open(path).convert('RGB')
     h = 1080; w = round(im.width * h / im.height)
@@ -10,6 +12,12 @@ def comic(path, out):
     im = ImageEnhance.Color(im).enhance(1.9)
     cel = im.filter(ImageFilter.MedianFilter(5))
     a = np.asarray(cel).astype(np.float32) / 255
+    if POP:  # bright pop-art grade: lift shadows, push saturation, blue shadows and warm highlights
+        a = a ** 0.6
+        m = a.mean(2, keepdims=True); a = np.clip(m + (a - m) * 1.7, 0, 1)
+        l = a.mean(2, keepdims=True)
+        a = a + (1 - l) ** 2 * np.array([-0.10, 0.02, 0.30]) * 0.9 + l ** 3 * np.array([0.12, 0.06, -0.10])
+        a = np.clip(a, 0, 1)
     # posterize with soft mix
     lv = 5
     post = np.round(a * (lv - 1)) / (lv - 1)
@@ -27,7 +35,7 @@ def comic(path, out):
     sp = 10.0
     u = (xx + yy) / 1.41421 / sp; v = (xx - yy) / 1.41421 / sp
     d = np.hypot(u - np.round(u), v - np.round(v)) * sp
-    dark = np.clip((0.62 - lum) / 0.62, 0, 1)
+    dark = np.clip((0.62 - lum) / 0.62, 0, 1) * (0.7 if POP else 1)
     dot = (d < sp * 0.62 * np.sqrt(dark)).astype(np.float32)
     col = col * (1 - 0.55 * dot[..., None])
     # light dots of warm tone in highlights for pop-art paper feel
@@ -43,7 +51,7 @@ if __name__ == '__main__':
     root = sys.argv[1]; clips = sys.argv[2:]
     jobs = []
     for c in clips:
-        od = os.path.join(root, c + '_comic'); os.makedirs(od, exist_ok=True)
+        od = os.path.join(root, c + ('_pop' if POP else '_comic')); os.makedirs(od, exist_ok=True)
         for f in sorted(os.listdir(os.path.join(root, c))):
             jobs.append((os.path.join(root, c, f), os.path.join(od, f)))
     with Pool(4) as p: p.map(job, jobs, chunksize=8)
