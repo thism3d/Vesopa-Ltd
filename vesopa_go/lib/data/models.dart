@@ -151,7 +151,7 @@ enum TableState { free, seated, ordered, mains, bill, paid }
 @immutable
 class TableInfo {
   const TableInfo({required this.id, required this.name, required this.area, this.seats = 4, this.number, this.roomId,
-      this.x = 0, this.y = 0, this.width = 2, this.height = 2, this.round = false});
+      this.x = 0, this.y = 0, this.width = 2, this.height = 2, this.round = false, this.colour});
   final String id;
   final String name;
   final String area;
@@ -167,6 +167,28 @@ class TableInfo {
   final int width;
   final int height;
   final bool round;
+
+  /// The colour the designer gave it, as the back office stores it; sent back
+  /// unchanged when the plan is saved from here.
+  final String? colour;
+
+  /// The floor_tables row id (the designer's own).
+  int? get rowId => int.tryParse(id.replaceFirst('table-', ''));
+
+  TableInfo moved({int? x, int? y, int? width, int? height, bool? round, int? seats}) => TableInfo(
+        id: id,
+        name: name,
+        area: area,
+        seats: seats ?? this.seats,
+        number: number,
+        roomId: roomId,
+        x: x ?? this.x,
+        y: y ?? this.y,
+        width: width ?? this.width,
+        height: height ?? this.height,
+        round: round ?? this.round,
+        colour: colour,
+      );
 }
 
 /// One line on a bill.

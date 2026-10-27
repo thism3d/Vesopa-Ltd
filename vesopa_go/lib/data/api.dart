@@ -215,6 +215,16 @@ class TapApi {
   /// The venue's mix & match deals, as the till reads them.
   Future<List<dynamic>> deals() async => (await _send('GET', '/till/deals?office=$_o'))['items'] as List? ?? const [];
 
+  /// The floor plan as moved on this device (the venue's one floor, as the
+  /// till's floor editor saves it).
+  Future<void> saveFloor(List<TableInfo> tables) => _send('PUT', '/till/floor/tables', {
+        'tables': [
+          for (final t in tables)
+            if (t.rowId != null)
+              {'id': t.rowId, 'pos_x': t.x, 'pos_y': t.y, 'width': t.width, 'height': t.height, 'shape': t.round ? 'circle' : 'rect', 'seats': t.seats, 'colour': t.colour},
+        ],
+      });
+
   /// Staff photos, `{photos: {id: url}}`.
   Future<Map<String, dynamic>> staffPhotos() => _send('GET', '/api/tap/staff-photos');
 

@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/models.dart';
 import '../../data/session.dart';
 import '../theme.dart';
+import 'floor_editor.dart';
 import 'order.dart';
 import 'scan_sheet.dart';
 
@@ -160,6 +161,15 @@ class _TablesPageState extends ConsumerState<TablesPage> {
             selected: {plan},
             onSelectionChanged: (v) => _setView(v.first),
           ),
+          // A manager can move tables, as on the till's floor editor.
+          if (s.clerk?.can(TillPermission.isManager) ?? false) ...[
+            const SizedBox(width: 8),
+            IconButton.outlined(
+              tooltip: 'Arrange tables',
+              onPressed: area == null ? null : () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => FloorEditorPage(area: area))),
+              icon: const Icon(Icons.edit_location_alt_rounded),
+            ),
+          ],
           if (go.scanTableQr) ...[
             const SizedBox(width: 8),
             IconButton.outlined(tooltip: 'Scan table QR', onPressed: _scan, icon: const Icon(Icons.qr_code_scanner_rounded)),

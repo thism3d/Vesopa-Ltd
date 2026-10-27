@@ -128,6 +128,7 @@ List<TableInfo> tablesFrom(List<dynamic> rooms) => [
             width: ((t['width'] as num?)?.toInt() ?? 2).clamp(1, 40),
             height: ((t['height'] as num?)?.toInt() ?? 2).clamp(1, 40),
             round: t['shape'] == 'circle',
+            colour: t['colour'] as String?,
           ),
     ];
 
