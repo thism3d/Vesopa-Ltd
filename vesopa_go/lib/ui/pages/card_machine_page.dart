@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../data/api.dart';
 import '../../data/session.dart';
+import '../../payments/teya_machine.dart';
 import '../theme.dart';
 
 const _machineKey = 'go_card_machine';
@@ -82,6 +83,8 @@ class _CardMachinePageState extends ConsumerState<CardMachinePage> {
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
     final config = ref.watch(tapProvider.select((s) => s.config));
+    // A Teya venue's machines are Teya's (back office, Card Payments).
+    if (config.teya.enabled) return const TeyaMachinesPage();
     final terms = [for (final x in (_list?['terminals'] as List? ?? const [])) Map<String, dynamic>.from(x as Map)];
     final venueDefault = _list?['default_terminal_id'] as String?;
     final current = _mine ?? venueDefault;
@@ -164,4 +167,126 @@ class _Fact extends StatelessWidget {
           Expanded(child: SelectableText(value.isEmpty ? '–' : value, style: const TextStyle(fontWeight: FontWeight.w600, fontFeatures: Tp.tabular))),
         ]),
       );
+}
+
+/// A Teya venue's card machines (the back office's Teya store): which one
+/// this device sends payments to, switchable at any time, as on the till.
+class TeyaMachinesPage extends ConsumerStatefulWidget {
+  const TeyaMachinesPage({super.key});
+  @override
+  ConsumerState<TeyaMachinesPage> createState() => _TeyaMachinesPageState();
+}
+
+class _TeyaMachinesPageState extends ConsumerState<TeyaMachinesPage> {
+  TeyaSettings? _teya;
+  String? _mine;
+  String? _error;
+  bool _busy = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _busy = true);
+    final mine = await deviceTeyaMachine();
+    try {
+      final j = await ref.read(apiProvider).teyaConfig();
+      if (mounted) {
+        setState(() {
+          _teya = TeyaSettings.fromJson(j);
+          _mine = mine;
+          _error = j['terminals_error'] as String?;
+        });
+      }
+    } on TapApiError catch (e) {
+      if (mounted) {
+        setState(() {
+          _teya = ref.read(tapProvider).config.teya;
+          _mine = mine;
+          _error = e.message;
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final TeyaSettings teya = _teya ?? ref.watch(tapProvider.select<TeyaSettings>((s) => s.config.teya));
+    final current = _mine ?? teya.machineId;
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView(padding: const EdgeInsets.all(16), children: [
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                const Icon(Icons.verified_user_rounded, color: Tp.lime),
+                const SizedBox(width: 10),
+                Text('Teya', style: t.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+                const Spacer(),
+                Chip(
+                  label: Text(teya.environment == 'live' ? 'Live' : 'Sandbox'),
+                  backgroundColor: teya.environment == 'live' ? Tp.green.withValues(alpha: 0.25) : Tp.amber.withValues(alpha: 0.25),
+                ),
+              ]),
+              const SizedBox(height: 8),
+              _Fact('Store', teya.storeName ?? ''),
+              _Fact('This device', current == null ? 'No machine chosen' : (_mine == null ? 'The machine the back office chose' : 'Its own choice')),
+              const SizedBox(height: 6),
+              Text('The customer taps or inserts the card on the Teya machine. Teya\'s Tap to Pay on a phone is only in Teya\'s own app.',
+                  style: t.bodySmall),
+            ]),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Row(children: [
+          Text('Card machines', style: t.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+          const Spacer(),
+          if (_busy) const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) else IconButton(onPressed: _load, icon: const Icon(Icons.refresh_rounded)),
+        ]),
+        if (_error != null) Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Text(_error!, style: t.bodyMedium?.copyWith(color: Tp.danger))),
+        for (final m in teya.terminals)
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.point_of_sale_rounded, color: Tp.green),
+              title: Text('${(m['name'] ?? '').toString().isNotEmpty ? m['name'] : m['id']}', style: const TextStyle(fontWeight: FontWeight.w700)),
+              subtitle: Text([
+                if ((m['serial'] ?? '').toString().isNotEmpty) 'Serial ${m['serial']}',
+                if (m['id'] == teya.machineId) 'the back office\'s choice',
+              ].join(' · ')),
+              trailing: m['id'] == current
+                  ? const Chip(avatar: Icon(Icons.check_rounded, size: 18), label: Text('In use here'))
+                  : FilledButton.tonal(
+                      onPressed: () async {
+                        await setDeviceTeyaMachine('${m['id']}');
+                        await _load();
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Card payments on this device now go to ${m['name'] ?? m['id']}')));
+                        }
+                      },
+                      child: const Text('Use this one'),
+                    ),
+            ),
+          ),
+        if (_mine != null)
+          TextButton.icon(
+            onPressed: () async {
+              await setDeviceTeyaMachine(null);
+              await _load();
+            },
+            icon: const Icon(Icons.undo_rounded),
+            label: const Text('Use the back office\'s machine'),
+          ),
+        if (!_busy && teya.terminals.isEmpty && _error == null)
+          Padding(padding: const EdgeInsets.all(16), child: Text('The Teya store has no card machines yet. Add one in Teya, then pick it here.', style: t.bodyMedium)),
+      ]),
+    );
+  }
 }

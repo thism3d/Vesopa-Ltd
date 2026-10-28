@@ -30,6 +30,7 @@ import 'package:uuid/uuid.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../payments/payment_service.dart';
+import '../payments/teya_machine.dart';
 import 'go_options.dart';
 import 'mix_match_types.dart';
 import 'lan/lan_link.dart' show LanMessage;
@@ -74,6 +75,7 @@ class TapConfig {
     this.goLayouts = const {},
     this.productPhotos = const {},
     this.sectionPhotos = const {},
+    this.teya = const TeyaSettings(),
   });
   final String environment;
   final bool tips;
@@ -121,6 +123,10 @@ class TapConfig {
   final Map<String, String> productPhotos;
   final Map<String, String> sectionPhotos;
 
+  /// The venue's Teya card machines, when it takes cards with Teya
+  /// (teya_machine.dart); off, it takes them with Dojo.
+  final TeyaSettings teya;
+
   /// The home screen to draw, or null for the built-in grid.
   TillScreen? get home => screens.surfaceById(homeScreenId, ScreenSurface.sale);
 
@@ -155,6 +161,7 @@ class TapConfig {
       bottomBarScreenId: (till['bottom_bar_screen_id'] as num?)?.toInt(),
       productPhotos: {for (final e in ((j['menu_photos'] as Map?)?['products'] as Map? ?? const {}).entries) '${e.key}': '${e.value}'},
       sectionPhotos: {for (final e in ((j['menu_photos'] as Map?)?['sections'] as Map? ?? const {}).entries) '${e.key}': '${e.value}'},
+      teya: TeyaSettings.fromJson(j['teya']),
       goLayouts: {
         for (final form in const ['tablet', 'phone'])
           if (j['layouts'] is Map && (j['layouts'] as Map)[form] is Map) form: Map<String, dynamic>.from((j['layouts'] as Map)[form] as Map),
@@ -297,7 +304,11 @@ final apiProvider = Provider<TapApi>((ref) => TapApi());
 
 final paymentsProvider = Provider<PaymentService>((ref) {
   final demo = ref.watch(tapProvider.select((s) => s.demo));
-  return demo ? DemoPayments() : DojoTapToPay(ref.watch(apiProvider));
+  if (demo) return DemoPayments();
+  // A Teya venue (back office, Card Payments) pays on its Teya machines.
+  final teya = ref.watch(tapProvider.select((s) => s.config.teya));
+  if (teya.enabled) return TeyaCardMachine(ref.watch(apiProvider), teya, tillName: ref.read(tapProvider.notifier).terminalName);
+  return DojoTapToPay(ref.watch(apiProvider));
 });
 
 final tapProvider = NotifierProvider<TapSession, TapState>(TapSession.new);
@@ -451,6 +462,7 @@ class TapSession extends Notifier<TapState> {
         api.layouts('phone').catchError((Object _) => <String, dynamic>{}),
         api.deals().catchError((Object _) => <dynamic>[]),
         api.photos().catchError((Object _) => <String, dynamic>{}),
+        api.teyaConfig().catchError((Object _) => <String, dynamic>{}),
       ]);
       final raw = {
         'staff': [for (final c in results[0] as List<Clerk>) {'id': c.id, 'name': c.name, 'pin': c.pin, 'swipe_card': c.card, 'permission_group': c.group, 'perms': c.permissions}],
@@ -459,7 +471,7 @@ class TapSession extends Notifier<TapState> {
         'modifiers': results[2],
         'screens': results[3],
         'floor': results[4],
-        'config': {...results[5] as Map<String, dynamic>, 'till': results[6], 'branding': results[7], 'photos': (results[8] as Map)['photos'], 'layouts': {'tablet': (results[9] as Map)['layouts'], 'phone': (results[10] as Map)['layouts']}, 'menu_photos': results[12]},
+        'config': {...results[5] as Map<String, dynamic>, 'till': results[6], 'branding': results[7], 'photos': (results[8] as Map)['photos'], 'layouts': {'tablet': (results[9] as Map)['layouts'], 'phone': (results[10] as Map)['layouts']}, 'menu_photos': results[12], 'teya': results[13]},
       };
       _apply(raw);
       state = state.copyWith(online: true);

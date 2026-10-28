@@ -309,11 +309,57 @@ class TapApi {
 
   Future<Map<String, dynamic>> payment(String id) => _send('GET', '/api/tap/payments/$id');
   Future<Map<String, dynamic>> cancelPayment(String id) => _send('POST', '/api/tap/payments/$id/cancel');
-  Future<Map<String, dynamic>> refund(String id, {int? amountMinor, required String approvedBy, required String reason}) =>
-      _send('POST', '/api/tap/payments/$id/refund', {
-        if (amountMinor != null) 'amount_minor': amountMinor,
-        'approved_by': approvedBy,
-        'reason': reason,
+  Future<Map<String, dynamic>> refund(String id, {int? amountMinor, required String approvedBy, required String reason}) async {
+    // A Teya payment goes back to its card through Teya, as on the till.
+    if (id.startsWith('teya:')) {
+      final r = await _send('POST', '/api/till/teya/refunds', {
+        'gateway_payment_id': id.substring(5),
+        'amount_minor': ?amountMinor,
+        'reference': 'vesopa-refund-${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}',
       });
+      if (r['ok'] != true) throw TapApiError(409, '${r['message'] ?? 'Teya refused the refund.'}', r);
+      return r;
+    }
+    return _send('POST', '/api/tap/payments/$id/refund', {
+      'amount_minor': ?amountMinor,
+      'approved_by': approvedBy,
+      'reason': reason,
+    });
+  }
+
+  // ---- Teya card machines (the till's own routes, vesopa_server src/teya.js) ----
+
+  /// Whether the venue takes cards with Teya, and its machines. A server
+  /// without Teya answers 404: Teya is off.
+  Future<Map<String, dynamic>> teyaConfig() async {
+    try {
+      return await _send('GET', '/api/till/teya/config');
+    } on TapApiError catch (e) {
+      if (e.status == 404) return const {'enabled': false};
+      rethrow;
+    }
+  }
+
+  /// Send a payment to a Teya machine; answers Teya's payment request id.
+  Future<String> teyaPay({required String terminalId, required int amountMinor, required String reference, String? orderId, required String tillName}) async {
+    final r = await _send('POST', '/api/till/teya/payments', {
+      'terminal_id': terminalId,
+      'amount_minor': amountMinor,
+      'type': 'SALE',
+      'reference': reference,
+      'idempotency_key': reference,
+      'order_id': ?orderId,
+      'till_name': tillName,
+    });
+    final id = '${r['id'] ?? ''}';
+    if (id.isEmpty) throw const TapApiError(502, 'Teya did not accept the payment.');
+    return id;
+  }
+
+  /// Where a Teya payment is, waiting up to [wait] seconds for it to move.
+  Future<Map<String, dynamic>> teyaStatus(String id, {int wait = 15}) =>
+      _send('GET', '/api/till/teya/payments/${Uri.encodeComponent(id)}?wait=$wait');
+
+  Future<void> teyaCancel(String id) => _send('POST', '/api/till/teya/payments/${Uri.encodeComponent(id)}/cancel');
   Future<void> emailReceipt(String orderId, String email) => _send('POST', '/api/tap/receipts', {'order_id': orderId, 'email': email});
 }
