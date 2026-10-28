@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../data/models.dart';
 import '../../data/session.dart';
+import '../fit_text.dart';
 import '../theme.dart';
 import 'floor_editor.dart';
 import 'order.dart';
@@ -121,7 +122,7 @@ class _TablesPageState extends ConsumerState<TablesPage> {
   Widget build(BuildContext context) {
     final s = ref.watch(tapProvider);
     final go = s.config.go;
-    final plan = _plan ?? go.floorPlan;
+    final plan = _plan ?? (MediaQuery.sizeOf(context).shortestSide < 600 ? false : go.floorPlan);
     final areas = {for (final t in s.tables) t.area}.toList();
     final area = (_area != null && areas.contains(_area)) ? _area : (areas.isEmpty ? null : areas.first);
     final tables = s.tables.where((t) => t.area == area).toList();
@@ -132,6 +133,9 @@ class _TablesPageState extends ConsumerState<TablesPage> {
         child: Text('No tables yet. Draw the floor plan in the back office and it appears here.', textAlign: TextAlign.center, style: t.bodyLarge),
       ));
     }
+    // A phone shows round buttons coloured by state, a glance at the room
+    // (owner, 2026-10-28); a bigger screen the plan or named tiles.
+    final phone = MediaQuery.sizeOf(context).shortestSide < 600;
     final counts = <TableState, int>{};
     for (final table in tables) {
       counts.update(s.tableState(table.id), (n) => n + 1, ifAbsent: () => 1);
@@ -152,18 +156,25 @@ class _TablesPageState extends ConsumerState<TablesPage> {
               ]),
             ),
           ),
-          SegmentedButton<bool>(
-            showSelectedIcon: false,
-            segments: const [
-              ButtonSegment(value: true, icon: Icon(Icons.grid_view_rounded), label: Text('Plan')),
-              ButtonSegment(value: false, icon: Icon(Icons.view_list_rounded), label: Text('List')),
-            ],
-            selected: {plan},
-            onSelectionChanged: (v) => _setView(v.first),
-          ),
+          if (phone)
+            IconButton(
+              tooltip: plan ? 'Round buttons' : 'Floor plan',
+              onPressed: () => _setView(!plan),
+              icon: Icon(plan ? Icons.bubble_chart_rounded : Icons.grid_view_rounded),
+            )
+          else
+            SegmentedButton<bool>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment(value: true, icon: Icon(Icons.grid_view_rounded), label: Text('Plan')),
+                ButtonSegment(value: false, icon: Icon(Icons.view_list_rounded), label: Text('List')),
+              ],
+              selected: {plan},
+              onSelectionChanged: (v) => _setView(v.first),
+            ),
           // A manager can move tables, as on the till's floor editor.
           if (s.clerk?.can(TillPermission.isManager) ?? false) ...[
-            const SizedBox(width: 8),
+            SizedBox(width: phone ? 0 : 8),
             IconButton.outlined(
               tooltip: 'Arrange tables',
               onPressed: area == null ? null : () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => FloorEditorPage(area: area))),
@@ -171,7 +182,7 @@ class _TablesPageState extends ConsumerState<TablesPage> {
             ),
           ],
           if (go.scanTableQr) ...[
-            const SizedBox(width: 8),
+            SizedBox(width: phone ? 4 : 8),
             IconButton.outlined(tooltip: 'Scan table QR', onPressed: _scan, icon: const Icon(Icons.qr_code_scanner_rounded)),
           ],
         ]),
@@ -181,7 +192,9 @@ class _TablesPageState extends ConsumerState<TablesPage> {
           duration: const Duration(milliseconds: 220),
           child: plan
               ? _FloorPlan(key: ValueKey('plan-$area'), tables: tables, onOpen: _open)
-              : _TableList(key: ValueKey('list-$area'), tables: tables, onOpen: _open),
+              : phone
+                  ? _TableDots(key: ValueKey('dots-$area'), tables: tables, onOpen: _open)
+                  : _TableList(key: ValueKey('list-$area'), tables: tables, onOpen: _open),
         ),
       ),
       // What the room is doing, at a glance.
@@ -338,6 +351,68 @@ class _TableList extends ConsumerWidget {
                 Text(tableDetail(bill, table), style: t.bodySmall),
               ]),
             ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// A phone's tables: a round button per table, filled with its state's
+/// colour so the room reads at a glance, the table's number in it and what
+/// it owes under it.
+class _TableDots extends ConsumerWidget {
+  const _TableDots({super.key, required this.tables, required this.onOpen});
+  final List<TableInfo> tables;
+  final ValueChanged<TableInfo> onOpen;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final s = ref.watch(tapProvider);
+    return GridView.builder(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent: 96, mainAxisSpacing: 14, crossAxisSpacing: 10, childAspectRatio: 0.78),
+      itemCount: tables.length,
+      itemBuilder: (_, i) {
+        final table = tables[i];
+        final state = s.tableState(table.id);
+        final bill = s.billForTable(table.id);
+        final colour = Tp.stateColour(state);
+        final free = state == TableState.free;
+        final short = (table.number ?? 0) > 0 ? '${table.number}' : table.name;
+        return Semantics(
+          button: true,
+          label: '${table.name}, ${Tp.stateName(state)}',
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: () => onOpen(table),
+            child: Column(children: [
+              AspectRatio(
+                aspectRatio: 1,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: free ? Tp.inkRaised : colour,
+                    border: Border.all(color: colour, width: 2.5),
+                    boxShadow: free ? null : [BoxShadow(color: colour.withValues(alpha: 0.35), blurRadius: 12)],
+                  ),
+                  alignment: Alignment.center,
+                  child: Padding(
+                    padding: const EdgeInsets.all(6),
+                    child: FitText(short,
+                        maxLines: 1,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: free ? Colors.white : Tp.ink)),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(bill != null ? money(bill.dueMinor) : Tp.stateName(state),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, fontFeatures: Tp.tabular, color: bill != null ? null : colour)),
+            ]),
           ),
         );
       },

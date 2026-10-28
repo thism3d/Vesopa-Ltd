@@ -130,17 +130,45 @@ Future<void> _network(String target, List<PrintLine> lines) async {
   }
 }
 
-Future<void> _system(List<PrintLine> lines, String name) async {
-  final doc = pw.Document();
+Future<void> _system(List<PrintLine> lines, String name) async =>
+    Printing.layoutPdf(name: name, onLayout: (format) async => receiptPdf(lines, format));
+
+/// The receipt as a PDF for the system's printing (AirPrint, Android): on a
+/// receipt roll, the roll's width and as long as it needs; on ordinary paper
+/// (A4, Letter), the receipt at a readable size in a column at the top of
+/// the page, never shrunk to a strip.
+Future<Uint8List> receiptPdf(List<PrintLine> lines, PdfPageFormat format) async {
+  final doc = pw.Document(title: 'Receipt');
   final font = pw.Font.courier();
   final bold = pw.Font.courierBold();
-  doc.addPage(pw.Page(
-    pageFormat: const PdfPageFormat(80 * PdfPageFormat.mm, double.infinity, marginAll: 4 * PdfPageFormat.mm),
-    build: (_) => pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-      for (final l in lines) pw.Text(l.text(), style: pw.TextStyle(font: l.bold ? bold : font, fontSize: 7.4)),
-    ]),
-  ));
-  await Printing.layoutPdf(name: name, onLayout: (_) async => doc.save());
+  final roll = format.width <= 90 * PdfPageFormat.mm;
+  final width = roll ? format.width : 90 * PdfPageFormat.mm;
+  // 42 characters to a line, as the till's printers: sized to fill the width.
+  final size = ((width - 8 * PdfPageFormat.mm) / (42 * 0.6)).clamp(6.0, 10.0);
+  pw.Widget body() => pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+        for (final l in lines) pw.Text(l.text(), style: pw.TextStyle(font: l.bold ? bold : font, fontSize: size)),
+      ]);
+  if (roll) {
+    doc.addPage(pw.Page(
+      pageFormat: PdfPageFormat(format.width, double.infinity, marginAll: 4 * PdfPageFormat.mm),
+      build: (_) => body(),
+    ));
+  } else {
+    // Line by line, so a long X or Z report runs on to a second page.
+    const margin = 15 * PdfPageFormat.mm;
+    final inset = ((format.width - margin * 2 - width) / 2).clamp(0.0, double.infinity);
+    doc.addPage(pw.MultiPage(
+      pageFormat: format.copyWith(marginTop: margin, marginBottom: margin, marginLeft: margin, marginRight: margin),
+      build: (_) => [
+        for (final l in lines)
+          pw.Padding(
+            padding: pw.EdgeInsets.only(left: inset),
+            child: pw.Text(l.text(), style: pw.TextStyle(font: l.bold ? bold : font, fontSize: size)),
+          ),
+      ],
+    ));
+  }
+  return doc.save();
 }
 
 /// An X or Z report as the till prints it: the takings, payments, staff and

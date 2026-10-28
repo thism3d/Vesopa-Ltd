@@ -7,7 +7,7 @@
   "contact_email": "info@vesopasoftware.com",
   "contact_website": "https://go.vesopa.com/",
   "track": "internal",
-  "release_notes": "Vesopa Go 1.2.5: the till's bar keys (icon and name), one Pay that waits for an item, the till's tender totals, Quick sale on the sale screen, small status icons, a calmer idle screen with brightness controls, the screen kept on and full screen, and only the venue's own modules in the menu.",
+  "release_notes": "Vesopa Go 1.2.6: tables as round buttons coloured by state on phones, a short No thanks after a payment, and receipts that print at a proper size on any printer.",
   "images": {
     "icon": [
       "play-icon-512.png"

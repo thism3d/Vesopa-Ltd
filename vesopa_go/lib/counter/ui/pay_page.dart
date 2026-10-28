@@ -418,7 +418,6 @@ class _Approved extends ConsumerWidget {
                   for (final (icon, label, onTap) in [
                     (Icons.print_rounded, 'Print', () => printReceipt(context, ref, sale)),
                     (Icons.email_rounded, 'Email', () => emailReceipt(context, ref, sale.id)),
-                    (Icons.do_not_disturb_alt_rounded, 'No thanks', () async => Navigator.of(context).popUntil((r) => r.isFirst)),
                   ])
                     Expanded(
                       child: Padding(
@@ -431,6 +430,14 @@ class _Approved extends ConsumerWidget {
                       ),
                     ),
                 ]),
+                // Short and plain (owner, 2026-10-28), under the two keys.
+                const SizedBox(height: 8),
+                Center(
+                  child: TextButton(
+                    onPressed: () => Navigator.of(context).popUntil((r) => r.isFirst),
+                    child: const Text('No thanks'),
+                  ),
+                ),
               ],
               const SizedBox(height: 28),
               FilledButton(
