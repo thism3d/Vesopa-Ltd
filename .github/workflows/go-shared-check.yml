@@ -1,0 +1,49 @@
+# Read only: does Vesopa EPOS (the till's code) build for Android and iOS?
+# Phase 0 of vesopa_go/docs/ONE_CODEBASE_PLAN.md: Vesopa Go becomes a phone and
+# iPad build of the till's code. Builds unsigned and uploads nothing anywhere.
+#
+# Actions > "Go - the till's code on phones" > Run workflow.
+
+name: Go - the till's code on phones
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.8
+          cache: true
+      - name: Analyze
+        working-directory: vesopa_epos
+        run: flutter pub get && (flutter analyze --no-fatal-infos --no-fatal-warnings || true)
+      - name: Build an Android debug app
+        working-directory: vesopa_epos
+        run: flutter build apk --debug --target-platform android-arm64
+
+  ios:
+    runs-on: macos-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.8
+          cache: true
+      - name: Build for iOS, unsigned
+        working-directory: vesopa_epos
+        run: flutter pub get && flutter build ios --debug --no-codesign
