@@ -37,7 +37,7 @@ const { linkAndFind } = require('./backoffice_auth');
 const jwt = require('jsonwebtoken');
 const tillSeats = require('./till_seats');
 const licences = require('./licences');
-const { resolveTillSite, sitePickToken, readSitePickToken } = require('./sites');
+const { resolveTillSite, sitePickToken, readSitePickToken, atSite } = require('./sites');
 
 /** Trimmed text of at most [max] characters, or null when there is none. */
 function clampText(value, max) {
@@ -275,6 +275,37 @@ function terminalVesopaRoutes({ pool, secret, issueToken, issueTerminalToken }) 
     return router;
   }
 
+  /**
+   * Vesopa Go for Vesopa's own staff (owner, 2026-10-28): a platform admin
+   * (role admin) signing in a Go device picks any active venue that has
+   * Vesopa Go seats, whatever venue their own login belongs to, so the team
+   * can set up and support Go without a licence being added to their home
+   * venue. Everyone else, and every till, goes through resolveTillSite as
+   * before. Null = not this case.
+   */
+  async function placeGoForAdmin(user, body) {
+    if (body.device_kind !== 'go' || user.role !== 'admin') return null;
+    let rows = [];
+    try {
+      [rows] = await pool.query(
+        `SELECT o.id, o.name, o.contact_email, COALESCE(o.status, 'active') AS status
+           FROM bo_licence_limits l JOIN offices o ON o.contact_email = l.office
+          WHERE l.kind = 'go' AND l.seats > 0
+          ORDER BY o.name`);
+    } catch (e) {
+      if (e.code !== 'ER_NO_SUCH_TABLE' && e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+      return null;
+    }
+    const sites = rows.filter((r) => r.status === 'active');
+    if (!sites.length) return null;
+    if (body.office_id) {
+      const site = sites.find((r) => Number(r.id) === Number(body.office_id));
+      return site ? { user: atSite(user, site) } : null;
+    }
+    if (sites.length === 1) return { user: atSite(user, sites[0]) };
+    return { choose: sites.map((r) => ({ id: r.id, name: r.name, home: Number(r.id) === Number(user.officeId) })) };
+  }
+
   router.post('/api/terminal/vesopa/commission', express.json(), async (req, res, next) => {
     try {
       let claims;
@@ -328,7 +359,7 @@ function terminalVesopaRoutes({ pool, secret, issueToken, issueTerminalToken }) 
       // is asked -- by a till that says it can ask (1.7.3.0). The Vesopa token
       // above is spent, so the till comes back with the site and a short pass
       // instead (`/commission/site`). See src/sites.js.
-      const placed = await resolveTillSite(pool, user, {
+      const placed = (await placeGoForAdmin(user, req.body || {})) || await resolveTillSite(pool, user, {
         canAsk: (req.body || {}).site_choice === true,
         officeId: (req.body || {}).office_id,
       });
@@ -421,7 +452,7 @@ function terminalVesopaRoutes({ pool, secret, issueToken, issueTerminalToken }) 
         officeName: row.office_name,
         officeEmail: row.office_email,
       };
-      const placed = await resolveTillSite(pool, user, {
+      const placed = (await placeGoForAdmin(user, body)) || await resolveTillSite(pool, user, {
         canAsk: true,
         officeId: body.office_id,
       });
