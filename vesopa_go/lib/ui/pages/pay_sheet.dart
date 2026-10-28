@@ -13,6 +13,8 @@ import '../../data/bill_math.dart';
 import '../../data/models.dart';
 import '../../data/session.dart';
 import '../../payments/payment_service.dart';
+import '../../counter/data/lite_state.dart';
+import '../pay_motion.dart';
 import '../theme.dart';
 
 class PaySheet extends ConsumerStatefulWidget {
@@ -30,10 +32,12 @@ class _PaySheetState extends ConsumerState<PaySheet> {
   PaymentOutcome? _outcome;
   bool _closesBill = false;
   bool _cash = false;
+  String _via = 'tap';
 
   int get _tip => tipPercent(widget.amountMinor, _tipPercent);
 
   Future<void> _card(String via) async {
+    _via = via;
     final s = ref.read(tapProvider);
     final payments = ref.read(paymentsProvider);
     if (via == 'tap') {
@@ -129,6 +133,14 @@ class _PaySheetState extends ConsumerState<PaySheet> {
       );
     }
 
+    // The card's turn: the same full-screen prompt as the counter's, on the
+    // device's whole height (an iPad's sheet would otherwise sit in the middle).
+    if (_step != null) {
+      return SizedBox(
+        height: MediaQuery.sizeOf(context).height * 0.92,
+        child: TapPrompt(amountMinor: total, step: _step!, onMachine: _via == 'machine'),
+      );
+    }
     if (_step != null) {
       final label = switch (_step!) {
         PayStep.preparing => 'Getting ready…',
@@ -193,15 +205,25 @@ class _PaySheetState extends ConsumerState<PaySheet> {
             ),
           ],
           const SizedBox(height: 20),
-          FilledButton.icon(onPressed: () => _card('tap'), icon: const Icon(Icons.contactless_rounded), label: const Text('Tap to pay on this phone')),
+          // The venue's way for this device first (an iPad: the card machine,
+          // as Apple offers Tap to Pay on iPhone only), the other beside it.
+          Builder(builder: (context) {
+            final via = cardVia(ref.watch(liteSettingsProvider), config, tablet: MediaQuery.sizeOf(context).shortestSide >= 600);
+            return via == 'tap'
+                ? FilledButton.icon(onPressed: () => _card('tap'), icon: const Icon(Icons.contactless_rounded), label: const Text('Tap to Pay on this device'))
+                : FilledButton.icon(onPressed: () => _card('machine'), icon: const Icon(Icons.point_of_sale_rounded), label: const Text('Pay on the card machine'));
+          }),
           const SizedBox(height: 10),
           Row(children: [
             Expanded(
-              child: OutlinedButton.icon(
-                onPressed: () => _card('machine'),
-                icon: const Icon(Icons.point_of_sale_rounded),
-                label: const Text('Card machine'),
-              ),
+              child: Builder(builder: (context) {
+                final tap = cardVia(ref.watch(liteSettingsProvider), config, tablet: MediaQuery.sizeOf(context).shortestSide >= 600) == 'tap';
+                return OutlinedButton.icon(
+                  onPressed: () => _card(tap ? 'machine' : 'tap'),
+                  icon: Icon(tap ? Icons.point_of_sale_rounded : Icons.contactless_rounded),
+                  label: Text(tap ? 'Card machine' : 'Tap to Pay'),
+                );
+              }),
             ),
             if (config.allowCash) ...[
               const SizedBox(width: 10),

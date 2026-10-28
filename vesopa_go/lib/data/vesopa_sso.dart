@@ -5,6 +5,8 @@ import 'dart:math';
 
 import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
+import 'package:flutter/services.dart' show PlatformException;
+import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// Continue with Vesopa, on a phone.
@@ -40,6 +42,12 @@ class VesopaSso {
     final challenge = base64Url.encode(sha256.convert(ascii.encode(verifier)).bytes).replaceAll('=', '');
     final state = _randomString(16);
     final nonce = _randomString(16);
+
+    // iPhone and iPad: Apple's own sign-in sheet (ASWebAuthenticationSession),
+    // answering on the app's own address. The loopback port below left
+    // Safari's in-app view on a blank http://127.0.0.1 page on an iPad
+    // (2026-10-27): that view runs outside the app and the hand-back stalled.
+    if (Platform.isIOS) return _authorizeApple(signUp: signUp, verifier: verifier, challenge: challenge, state: state, nonce: nonce);
 
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     final redirectUri = 'http://127.0.0.1:${server.port}/callback';
@@ -92,7 +100,48 @@ class VesopaSso {
       await server.close(force: true);
     }
   }
+
+  Future<String> _authorizeApple({required bool signUp, required String verifier, required String challenge, required String state, required String nonce}) async {
+    final url = Uri.parse('$issuer/oauth/authorize').replace(queryParameters: {
+      'response_type': 'code',
+      'client_id': clientId,
+      'redirect_uri': appleRedirect,
+      'scope': 'openid profile email',
+      'state': state,
+      'nonce': nonce,
+      'code_challenge': challenge,
+      'code_challenge_method': 'S256',
+      if (signUp) 'prompt': 'create',
+    });
+    final String answer;
+    try {
+      answer = await FlutterWebAuth2.authenticate(url: url.toString(), callbackUrlScheme: 'com.vesopa.go')
+          .timeout(_wait, onTimeout: () => throw const SsoFailed('Sign-in timed out. Try again.'));
+    } on PlatformException catch (e) {
+      throw SsoFailed(e.code == 'CANCELED' ? 'Sign-in was cancelled.' : 'Could not open the Vesopa sign-in page.');
+    }
+    final q = Uri.parse(answer).queryParameters;
+    if (q['state'] != state) throw const SsoFailed('The sign-in answer did not match. Try again.');
+    if (q['error'] != null) throw SsoFailed(q['error_description'] ?? 'Sign-in was cancelled.');
+    final code = q['code'];
+    if (code == null) throw const SsoFailed('Vesopa sent no sign-in code.');
+    final res = await _client.post(Uri.parse('$issuer/oauth/token'), body: {
+      'grant_type': 'authorization_code',
+      'code': code,
+      'redirect_uri': appleRedirect,
+      'client_id': clientId,
+      'code_verifier': verifier,
+    }).timeout(const Duration(seconds: 20));
+    if (res.statusCode != 200) throw SsoFailed('Vesopa refused the sign-in (${res.statusCode}).');
+    final idToken = (jsonDecode(res.body) as Map<String, dynamic>)['id_token'] as String?;
+    if (idToken == null) throw const SsoFailed('Vesopa sent no ID token.');
+    return idToken;
+  }
 }
+
+/// Go's own return address on iPhone and iPad, registered for its Vesopa Auth
+/// client (vesopa_auth/schema/schema_028_vesopa_go_client.sql).
+const appleRedirect = 'com.vesopa.go:/oauth/callback';
 
 class SsoFailed implements Exception {
   const SsoFailed(this.message);

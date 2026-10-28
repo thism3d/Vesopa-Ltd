@@ -92,7 +92,7 @@ class Tp {
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          minimumSize: const Size.fromHeight(target),
+          minimumSize: const Size(64, target),
           backgroundColor: lime,
           foregroundColor: onLime,
           textStyle: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
@@ -101,7 +101,7 @@ class Tp {
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          minimumSize: const Size.fromHeight(target),
+          minimumSize: const Size(64, target),
           foregroundColor: scheme.onSurface,
           side: BorderSide(color: scheme.outlineVariant, width: 1.5),
           textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),

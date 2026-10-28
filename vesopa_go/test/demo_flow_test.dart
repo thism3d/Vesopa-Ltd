@@ -58,7 +58,7 @@ void main() {
     await tap(find.byKey(const ValueKey('open-bill')));
     expect(find.text('Take £29.50'), findsOneWidget);
     await tap(find.text('Take £29.50'));
-    await tester.tap(find.text('Tap to pay on this phone'));
+    await tester.tap(find.text('Pay on the card machine'));
     await tester.pump(const Duration(seconds: 3));
     await tester.pumpAndSettle();
     expect(find.text('Paid £29.50'), findsOneWidget);

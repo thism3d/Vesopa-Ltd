@@ -34,6 +34,7 @@ dependencies:
   # Receipts by AirPrint (iOS) or Android printing when no receipt printer is set.
   printing: ^5.14.2
   pdf: ^3.11.3
+  flutter_web_auth_2: ^5.1.0
 
 dev_dependencies:
   flutter_test:

@@ -34,6 +34,10 @@ DROP TEMPORARY TABLE IF EXISTS go_app;
 
 INSERT IGNORE INTO application_redirect_uris (application_id, uri, kind)
   SELECT @go, uri, kind FROM application_redirect_uris WHERE application_id = @epos AND @go IS NOT NULL;
+-- iPhone and iPad sign in with Apple's own sheet, answering on Go's own
+-- address (2026-10-28): the loopback port stalled in Safari's in-app view.
+INSERT IGNORE INTO application_redirect_uris (application_id, uri, kind)
+  SELECT @go, 'com.vesopa.go:/oauth/callback', 'login' FROM DUAL WHERE @go IS NOT NULL;
 INSERT IGNORE INTO application_grants (application_id, grant_type)
   SELECT @go, grant_type FROM application_grants WHERE application_id = @epos AND @go IS NOT NULL;
 INSERT IGNORE INTO application_scopes (application_id, scope_id)

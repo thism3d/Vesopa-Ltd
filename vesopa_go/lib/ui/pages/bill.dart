@@ -49,6 +49,8 @@ class BillPage extends ConsumerWidget {
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
+      // Wide enough on an iPad to read across the counter.
+      constraints: const BoxConstraints(maxWidth: 760),
       builder: (_) => PaySheet(bill: bill, amountMinor: amount, items: items),
     );
     if (paid == true && context.mounted && ref.read(tapProvider).bills[bill.id] == null) Navigator.of(context).pop();
