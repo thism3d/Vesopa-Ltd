@@ -19,6 +19,7 @@ import '../config/constants.dart' show apiBase;
 import '../counter/data/lite_state.dart';
 import '../counter/ui/brand.dart';
 import '../data/session.dart';
+import 'fit_text.dart';
 import 'sounds.dart';
 import 'theme.dart';
 
@@ -348,15 +349,19 @@ class _IdleScreenState extends ConsumerState<IdleScreen> with SingleTickerProvid
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
                     decoration: BoxDecoration(color: Tp.lime, borderRadius: BorderRadius.circular(999)),
-                    // A venue's message can be a sentence: it wraps, and
-                    // shrinks to fit, rather than running off the screen.
+                    // A venue's message can be a sentence: it wraps between
+                    // words and shrinks until it fits, never running off the
+                    // screen or splitting a word (iPad, 2026-10-28).
                     child: ConstrainedBox(
-                      constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.8),
-                      child: Text(s.config.idleMessage,
+                      constraints: BoxConstraints(
+                        maxWidth: MediaQuery.sizeOf(context).width * 0.8 - 56,
+                        maxHeight: MediaQuery.sizeOf(context).height * 0.3,
+                      ),
+                      child: FitText(s.config.idleMessage,
                           textAlign: TextAlign.center,
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Tp.onLime)),
+                          maxLines: 4,
+                          minSize: 14,
+                          style: const TextStyle(fontSize: 26, height: 1.2, fontWeight: FontWeight.w800, color: Tp.onLime)),
                     ),
                   ),
                 ),

@@ -32,8 +32,6 @@ import 'theme.dart';
 /// The section's photo: the online menu section's of the same name, else the
 /// first photo among its products.
 String? sectionPhotoOf(TapState s, MenuCategory c) {
-  final own = s.config.sectionPhotos[c.name.trim().toLowerCase()];
-  if (own != null && own.isNotEmpty) return own;
   for (final p in s.products) {
     if (p.category != c.id) continue;
     final ph = _ownPhoto(s, p);
@@ -42,19 +40,12 @@ String? sectionPhotoOf(TapState s, MenuCategory c) {
   return null;
 }
 
-String? _ownPhoto(TapState s, Product p) {
-  if (p.imageUrl.isNotEmpty) return p.imageUrl;
-  final menu = p.plu == null ? null : s.config.productPhotos['${p.plu}'];
-  return menu == null || menu.isEmpty ? null : menu;
-}
+/// The product's back-office photo, the one the till shows (owner,
+/// 2026-10-28: "back office item photos, like in the EPOS and Go both").
+String? _ownPhoto(TapState s, Product p) => p.imageUrl.isNotEmpty ? p.imageUrl : null;
 
-/// The photo a product's button shows: its own, else its section's.
-String? photoOf(TapState s, Product p) {
-  final own = _ownPhoto(s, p);
-  if (own != null) return own;
-  final c = s.categories.where((c) => c.id == p.category).firstOrNull;
-  return c == null ? null : sectionPhotoOf(s, c);
-}
+/// The photo a product's button shows: the back office's, as on the till.
+String? photoOf(TapState s, Product p) => _ownPhoto(s, p);
 
 class _Photo extends StatelessWidget {
   const _Photo({required this.url, required this.tint, this.radius = 0});

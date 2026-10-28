@@ -31,10 +31,11 @@ void main() {
     expect(c.home?.buttons.first.colSpan, 2);
   });
 
-  testWidgets('product keys ring up, page keys open their screen, the till’s own functions are left off', (tester) async {
+  testWidgets('product keys ring up, page keys open their screen, function keys do what the till’s do', (tester) async {
     final c = TapConfig.fromJson(const {'screens': _screens, 'till': {'home_screen_id': 7}});
     Product? rung;
     TillScreen? opened;
+    String? function;
     const pint = Product(id: 'plu101', plu: 101, name: 'Pint', priceMinor: 580, category: 'beer');
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
@@ -47,7 +48,7 @@ void main() {
             productsByPlu: const {101: pint},
             onProduct: (p) => rung = p,
             onPage: (s) => opened = s,
-            onFunction: (_) => fail('No sale is the till’s'),
+            onFunction: (k) => function = k,
           ),
         ),
       ),
@@ -56,8 +57,9 @@ void main() {
     expect(rung, pint);
     await tester.tap(find.text('Food'));
     expect(opened?.id, 8);
-    // A key only the till can do is not shown at all.
-    expect(find.text('No sale'), findsNothing);
+    // No sale opens the drawer's page on Go, as the till's key opens the drawer.
+    await tester.tap(find.text('No sale'));
+    expect(function, 'open_drawer');
     expect(find.text('On the till'), findsNothing);
   });
 

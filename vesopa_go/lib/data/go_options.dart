@@ -86,7 +86,7 @@ class GoOptions {
 
   /// What the sale screen shows: 'photos' (photo buttons by section) or
   /// 'till' (the till's programmed screens), per kind of device.
-  String get screensPhone => _str('screens_phone', 'photos');
+  String get screensPhone => _str('screens_phone', 'till');
   String get screensTablet => _str('screens_tablet', 'till');
 }
 

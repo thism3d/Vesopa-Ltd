@@ -72,10 +72,10 @@ const GO_DEFAULTS = Object.freeze({
   layout_tablet: '', // JSON list of screen ids in order, '' = the till's order
   layout_phone: '',
   allow_rearrange: true,
-  // What the sale screen shows on each kind of device: photo buttons by
-  // section, or the till's programmed screens (owner, 2026-10-28: the till's
-  // screens are too small to read on a phone).
-  screens_phone: 'photos', // photos | till
+  // What the sale screen shows on each kind of device: the till's programmed
+  // screens (the back office's layout, laid out for the device; owner,
+  // 2026-10-28), or photo buttons by section.
+  screens_phone: 'till', // till | photos
   screens_tablet: 'till', // till | photos
 });
 
@@ -88,7 +88,7 @@ const CHOICES = {
   memberships_access: ['staff', 'managers', 'off'],
   memberships_cancel: ['staff', 'managers'],
   events_access: ['staff', 'managers', 'off'],
-  screens_phone: ['photos', 'till'],
+  screens_phone: ['till', 'photos'],
   screens_tablet: ['till', 'photos'],
 };
 

@@ -2,7 +2,15 @@
 /// (vesopa_epos/lib/ui/widgets/programmed_grid.dart): a grid of rows x cols
 /// sized from the space there is, each key at its row and column with its
 /// spans, the venue's colours, its picture and label. Product keys ring up,
-/// page keys open another screen, function keys do what Go can do.
+/// page keys open another screen, function keys do what the till's do.
+///
+/// Three ways to lay the same keys out, so every device can read them
+/// (owner, 2026-10-28):
+///   * [ProgrammedGrid]: the till's own rows and columns (an iPad, a tablet);
+///   * [ProgrammedGrid.reflow]: the same keys in the same order, a few to a
+///     row and scrolling (a phone);
+///   * [ProgrammedStrip]: a bar's keys side by side, each as wide as its
+///     words need, scrolling when there are more than fit.
 library;
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -10,49 +18,150 @@ import 'package:flutter/material.dart';
 
 import '../data/models.dart';
 import '../data/screen_set.dart';
+import 'fit_text.dart';
 import 'product_photo.dart' show photoUrl;
 import 'theme.dart';
 
-/// The till's function keys Go carries out; any other shows as the till's
-/// only and does nothing here (dimmed, so a clerk is not left wondering).
+/// The till's function keys Go carries out, with the till's own names for a
+/// key the back office left unnamed (vesopa_epos programmed_bar.dart). Any
+/// other function key is the till's only and is left off Go's screens.
 const goFunctions = <String, String>{
-  'note': 'Note',
-  'sign_on': 'Sign on',
-  'display_lock': 'Lock screen',
   'pay': 'Pay',
+  'void': 'Void',
+  'cancel': 'Cancel',
+  'save_table': 'Save Table',
+  'new_bill': 'New bill',
+  'last_bill': 'Last Bill',
+  'note': 'Notes',
+  'customer': 'Customer',
+  'open_drawer': 'No Sale',
+  'go_sale': 'Sale',
+  'go_tables': 'Tables',
+  'table_plan': 'Table Plan',
+  'go_receipts': 'Receipts',
+  'go_reports': 'Reports',
+  'go_tickets': 'Tickets',
+  'go_settings': 'Settings',
+  'refund': 'Refund',
+  'sign_off': 'Sign off',
+  'sign_on': 'Sign on',
+  'display_lock': 'Lock display',
+  'clock_in_out': 'Clock in / out',
 };
 
-class ProgrammedGrid extends StatelessWidget {
-  const ProgrammedGrid({
-    super.key,
-    required this.screen,
+/// Whether Go shows [b]: products, pages and the function keys Go carries
+/// out, so a phone or iPad never shows a key that does nothing.
+bool goUses(ScreenButton b) => switch (b.kind) {
+      ScreenButtonKind.product || ScreenButtonKind.page => true,
+      ScreenButtonKind.function => goFunctions.containsKey(b.functionKey ?? ''),
+      _ => false,
+    };
+
+/// Whether a bar has anything Go can use on it, so an empty bar takes no room.
+bool barHasKeys(TillScreen bar) => bar.buttons.any(goUses);
+
+/// [screen]'s keys Go uses, in reading order (row by row, left to right).
+List<ScreenButton> keysInOrder(TillScreen screen) {
+  final covered = screen.covered;
+  return [
+    for (var r = 0; r < screen.rows; r++)
+      for (var c = 0; c < screen.cols; c++)
+        if (!covered.contains('$r:$c'))
+          if (screen.at(r, c) case final b? when goUses(b)) b,
+  ];
+}
+
+/// What every layout needs to draw and work a key.
+class KeyActions {
+  const KeyActions({
     required this.screens,
     required this.productsByPlu,
     required this.onProduct,
     required this.onPage,
     required this.onFunction,
     this.onProductLong,
-    this.photoFor,
     this.showPrices = true,
-    this.gap = 8,
+    this.currentScreenId,
   });
 
-  final TillScreen screen;
   final ScreenSet screens;
   final Map<int, Product> productsByPlu;
   final ValueChanged<Product> onProduct;
   final ValueChanged<Product>? onProductLong;
-
-  /// The photo a product key shows when the till's key has no picture of its
-  /// own (the product's back-office or online menu photo).
-  final String? Function(Product)? photoFor;
   final ValueChanged<TillScreen> onPage;
   final ValueChanged<String> onFunction;
   final bool showPrices;
+
+  /// The screen on show, so its page key is drawn as "you are here".
+  final int? currentScreenId;
+
+  Widget key(ScreenButton b, {double fontScale = 1}) {
+    final product = b.pluId == null ? null : productsByPlu[b.pluId];
+    return _Key(
+      button: b,
+      here: b.kind == ScreenButtonKind.page && b.targetScreenId == currentScreenId,
+      product: product,
+      target: b.kind == ScreenButtonKind.page ? screens.byId(b.targetScreenId) : null,
+      actions: this,
+      fontScale: fontScale,
+    );
+  }
+}
+
+class ProgrammedGrid extends StatelessWidget {
+  ProgrammedGrid({
+    super.key,
+    required this.screen,
+    required ScreenSet screens,
+    required Map<int, Product> productsByPlu,
+    required ValueChanged<Product> onProduct,
+    required ValueChanged<TillScreen> onPage,
+    required ValueChanged<String> onFunction,
+    ValueChanged<Product>? onProductLong,
+    bool showPrices = true,
+    this.gap = 8,
+    this.reflowColumns,
+    this.bottomPad = 0,
+  }) : actions = KeyActions(
+          screens: screens,
+          productsByPlu: productsByPlu,
+          onProduct: onProduct,
+          onPage: onPage,
+          onFunction: onFunction,
+          onProductLong: onProductLong,
+          showPrices: showPrices,
+          currentScreenId: screen.id,
+        );
+
+  final TillScreen screen;
+  final KeyActions actions;
   final double gap;
+
+  /// Set: the keys in the till's order, this many to a row, scrolling.
+  final int? reflowColumns;
+  final double bottomPad;
 
   @override
   Widget build(BuildContext context) {
+    final cols = reflowColumns;
+    if (cols != null) {
+      final keys = keysInOrder(screen);
+      // A key two columns wide on the till is two wide here too, up to a row.
+      return LayoutBuilder(builder: (context, box) {
+        final cell = (box.maxWidth - gap * (cols - 1)) / cols;
+        return SingleChildScrollView(
+          padding: EdgeInsets.only(bottom: bottomPad),
+          child: Wrap(spacing: gap, runSpacing: gap, children: [
+            for (final b in keys)
+              SizedBox(
+                width: cell * b.colSpan.clamp(1, cols) + gap * (b.colSpan.clamp(1, cols) - 1),
+                height: cell * 0.86,
+                child: actions.key(b),
+              ),
+          ]),
+        );
+      });
+    }
     final covered = screen.covered;
     return LayoutBuilder(builder: (context, box) {
       final cellW = (box.maxWidth - gap * (screen.cols - 1)) / screen.cols;
@@ -63,24 +172,12 @@ class ProgrammedGrid extends StatelessWidget {
           if (covered.contains('$r:$c')) continue;
           final b = screen.at(r, c);
           if (b == null || !goUses(b)) continue;
-          final product = b.pluId == null ? null : productsByPlu[b.pluId];
           keys.add(Positioned(
             left: c * (cellW + gap),
             top: r * (cellH + gap),
             width: cellW * b.colSpan + gap * (b.colSpan - 1),
             height: cellH * b.rowSpan + gap * (b.rowSpan - 1),
-            child: _Key(
-              button: b,
-              here: b.kind == ScreenButtonKind.page && b.targetScreenId == screen.id,
-              product: product,
-              photo: b.imageUrl == null && product != null ? photoFor?.call(product) : null,
-              target: b.kind == ScreenButtonKind.page ? screens.byId(b.targetScreenId) : null,
-              showPrices: showPrices,
-              onProduct: onProduct,
-              onProductLong: onProductLong,
-              onPage: onPage,
-              onFunction: onFunction,
-            ),
+            child: actions.key(b),
           ));
         }
       }
@@ -89,42 +186,53 @@ class ProgrammedGrid extends StatelessWidget {
   }
 }
 
-/// Whether Go shows [b]: products, pages and the function keys Go carries
-/// out. The till's other keys (open bill, screen settings, the drawer...) are
-/// left out, so a phone or iPad never shows a key that does nothing.
-bool goUses(ScreenButton b) => switch (b.kind) {
-      ScreenButtonKind.product || ScreenButtonKind.page => true,
-      ScreenButtonKind.function => goFunctions.containsKey(b.functionKey ?? ''),
-      _ => false,
-    };
+/// A bar (the till's top or bottom bar): its keys in order along one row,
+/// each at least [minKey] wide for each column it spans, sharing the width
+/// when they fit and scrolling sideways when they do not.
+class ProgrammedStrip extends StatelessWidget {
+  const ProgrammedStrip({super.key, required this.bar, required this.actions, this.minKey = 104, this.gap = 8});
 
-/// Whether a bar has anything Go can use on it, so an empty bar takes no room.
-bool barHasKeys(TillScreen bar) => bar.buttons.any(goUses);
+  final TillScreen bar;
+  final KeyActions actions;
+  final double minKey;
+  final double gap;
+
+  @override
+  Widget build(BuildContext context) {
+    final keys = keysInOrder(bar);
+    if (keys.isEmpty) return const SizedBox.shrink();
+    final spans = keys.fold<int>(0, (n, b) => n + b.colSpan);
+    return LayoutBuilder(builder: (context, box) {
+      final room = box.maxWidth - gap * (keys.length - 1);
+      final fits = room / spans >= minKey;
+      final unit = fits ? room / spans : minKey;
+      final row = Row(children: [
+        for (var i = 0; i < keys.length; i++) ...[
+          if (i > 0) SizedBox(width: gap),
+          SizedBox(width: unit * keys[i].colSpan, child: actions.key(keys[i], fontScale: 0.95)),
+        ],
+      ]);
+      return fits ? row : SingleChildScrollView(scrollDirection: Axis.horizontal, child: row);
+    });
+  }
+}
 
 class _Key extends StatelessWidget {
   const _Key({
     required this.button,
     required this.here,
     required this.product,
-    required this.photo,
     required this.target,
-    required this.showPrices,
-    required this.onProduct,
-    required this.onProductLong,
-    required this.onPage,
-    required this.onFunction,
+    required this.actions,
+    this.fontScale = 1,
   });
 
   final ScreenButton button;
   final bool here;
   final Product? product;
-  final String? photo;
   final TillScreen? target;
-  final bool showPrices;
-  final ValueChanged<Product> onProduct;
-  final ValueChanged<Product>? onProductLong;
-  final ValueChanged<TillScreen> onPage;
-  final ValueChanged<String> onFunction;
+  final KeyActions actions;
+  final double fontScale;
 
   @override
   Widget build(BuildContext context) {
@@ -137,9 +245,10 @@ class _Key extends StatelessWidget {
         final p = product;
         label = button.label ?? p?.name ?? 'Unavailable';
         if (p != null && !p.outOfStock) {
-          onTap = () => onProduct(p);
-          if (onProductLong != null) onLong = () => onProductLong!(p);
-          note = showPrices ? money(p.priceMinor) : null;
+          onTap = () => actions.onProduct(p);
+          final long = actions.onProductLong;
+          if (long != null) onLong = () => long(p);
+          note = actions.showPrices ? money(p.priceMinor) : null;
         } else {
           note = p == null ? 'Not on the menu' : 'Sold out';
         }
@@ -147,20 +256,30 @@ class _Key extends StatelessWidget {
         final t = target;
         label = button.label ?? t?.name ?? 'Unavailable';
         note = here ? '●' : '›››';
-        if (t != null) onTap = () => onPage(t);
+        if (t != null) onTap = () => actions.onPage(t);
       case ScreenButtonKind.function:
         final k = button.functionKey ?? '';
         label = button.label ?? goFunctions[k] ?? k;
-        onTap = () => onFunction(k);
+        onTap = () => actions.onFunction(k);
       case ScreenButtonKind.modifier:
       case ScreenButtonKind.blank:
       case ScreenButtonKind.unknown:
         label = button.label ?? '';
-        note = button.kind == ScreenButtonKind.modifier ? '?' : null;
     }
     final fill = here ? Tp.lime.withValues(alpha: 0.28) : (button.fill ?? Tp.inkCard);
     final ink = button.ink ?? (button.fill == null ? Colors.white : (fill.computeLuminance() > 0.5 ? Tp.onLime : Colors.white));
-    final image = button.imageUrl ?? (photo == null ? null : photoUrl(photo!));
+
+    // The till's picture rule: the key's own picture, else the product's
+    // back-office picture. A picture takes the whole key, and the name and
+    // price go on it only when the back office ticks "show the name".
+    final own = button.imageUrl;
+    final productImage = product?.imageUrl ?? '';
+    final image = own != null && own.isNotEmpty ? own : (productImage.isNotEmpty ? photoUrl(productImage) : null);
+    final words = image == null || button.showLabel;
+    final onPicture = image != null;
+    final colour = onPicture ? Colors.white : ink;
+    final size = (button.fontSize ?? 15).toDouble().clamp(10, 28) * fontScale;
+
     return Opacity(
       opacity: onTap != null ? 1 : 0.55,
       child: Material(
@@ -174,27 +293,32 @@ class _Key extends StatelessWidget {
           onTap: onTap,
           onLongPress: onLong,
           child: Stack(fit: StackFit.expand, children: [
-            if (image != null && image.isNotEmpty)
-              CachedNetworkImage(imageUrl: image, fit: button.imageFit.boxFit, errorWidget: (_, _, _) => const SizedBox.shrink()),
-            if (button.showLabel || button.imageUrl == null || image == null || image.isEmpty)
+            if (image != null) CachedNetworkImage(imageUrl: image, fit: button.imageFit.boxFit, errorWidget: (_, _, _) => const SizedBox.shrink()),
+            if (words)
               Container(
-                decoration: image != null && image.isNotEmpty
+                decoration: onPicture
                     ? const BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0x00000000), Color(0xB3000000)]))
                     : null,
-                padding: const EdgeInsets.all(8),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: image != null && image.isNotEmpty ? MainAxisAlignment.end : MainAxisAlignment.start, children: [
-                  Flexible(
-                    child: Text(
-                      [if ((button.emoji ?? '').isNotEmpty) button.emoji, label].join(' '),
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: (button.fontSize ?? 14).toDouble().clamp(10, 28), height: 1.15, fontWeight: FontWeight.w700, color: image != null && image.isNotEmpty ? Colors.white : ink),
+                padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: onPicture ? MainAxisAlignment.end : MainAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Align(
+                        alignment: onPicture ? Alignment.bottomLeft : Alignment.topLeft,
+                        child: FitText(
+                          [if ((button.emoji ?? '').isNotEmpty) button.emoji, label].join(' '),
+                          maxLines: 3,
+                          style: TextStyle(fontSize: size, height: 1.15, fontWeight: FontWeight.w700, color: colour),
+                        ),
+                      ),
                     ),
-                  ),
-                  if (image == null || image.isEmpty) const Spacer(),
-                  if (note != null)
-                    Text(note, maxLines: 1, style: TextStyle(fontSize: 12, fontFeatures: Tp.tabular, color: (image != null && image.isNotEmpty ? Colors.white : ink).withValues(alpha: 0.8))),
-                ]),
+                    if (note != null)
+                      Text(note, maxLines: 1, overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 12.5 * fontScale, fontFeatures: Tp.tabular, color: colour.withValues(alpha: 0.85))),
+                  ],
+                ),
               ),
           ]),
         ),

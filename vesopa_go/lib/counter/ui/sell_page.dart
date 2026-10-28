@@ -15,11 +15,18 @@ import 'package:vesopa_go/ui/pages/note_sheet.dart';
 import 'package:vesopa_go/ui/layout_editor.dart';
 import 'package:vesopa_go/ui/photo_menu.dart';
 import 'package:vesopa_go/ui/programmed_grid.dart';
+import 'package:vesopa_go/ui/pages/customers_page.dart';
+import 'package:vesopa_go/ui/pages/module_gates.dart';
+import 'package:vesopa_go/ui/pages/tables.dart';
 import 'package:vesopa_go/ui/sounds.dart';
 import 'package:vesopa_go/ui/theme.dart';
 
 import '../data/lite_state.dart';
 import 'brand.dart';
+import 'cash_page.dart';
+import 'reports_page.dart';
+import 'sales_page.dart';
+import 'shell.dart' show SettingsPage;
 import 'pay_page.dart';
 import 'product_sheet.dart';
 import 'sale_panel.dart';
@@ -148,62 +155,180 @@ class _SellPageState extends ConsumerState<SellPage> {
   /// The programmed screen on show, once the clerk has left the home screen.
   int? _screenId;
 
-  void _function(String key) {
+  /// One of the venue's own pages, over the sale screen, with a way back.
+  void _open(String title, Widget page) => Navigator.of(context).push(MaterialPageRoute<void>(
+        builder: (_) => Scaffold(appBar: AppBar(title: Text(title)), body: page),
+      ));
+
+  void _say(String text) => ScaffoldMessenger.of(context)
+    ..hideCurrentSnackBar()
+    ..showSnackBar(SnackBar(margin: _noticeMargin, content: Text(text)));
+
+  Bill? get _bill {
+    final id = ref.read(currentSaleProvider);
+    return id == null ? null : ref.read(tapProvider).bills[id];
+  }
+
+  /// The till's function keys, as Go does them (programmed_grid.dart's
+  /// goFunctions lists which).
+  Future<void> _function(String key) async {
+    final s = ref.read(tapProvider);
+    final tapper = ref.read(tapProvider.notifier);
+    final standalone = s.venue?.mode == VenueMode.standalone;
     switch (key) {
       case 'pay':
         _pay();
-      case 'sign_on' || 'display_lock':
-        ref.read(tapProvider.notifier).lock();
+      case 'sign_on' || 'sign_off' || 'display_lock':
+        tapper.lock();
       case 'note':
-        final id = ref.read(currentSaleProvider);
-        final bill = id == null ? null : ref.read(tapProvider).bills[id];
+        final bill = _bill;
         final last = bill?.lines.where((l) => !l.sent).lastOrNull;
-        if (last != null) {
-          askNote(context, ref, title: last.product.name, initial: last.note)
-              .then((n) => n == null ? null : ref.read(tapProvider.notifier).setNote(bill!.id, last.id, n));
-        }
+        if (bill == null || last == null) return _say('Ring something up first.');
+        final n = await askNote(context, ref, title: last.product.name, initial: last.note);
+        if (n != null) tapper.setNote(bill.id, last.id, n);
+      case 'void':
+        // The last line still to go; a line the kitchen has is voided from
+        // the sale with a reason, as on the till.
+        final bill = _bill;
+        final last = bill?.lines.where((l) => !l.sent && l.paidQuantity == 0).lastOrNull;
+        if (bill == null || last == null) return _say('Nothing to void: a sent line is voided from the sale with a reason.');
+        tapper.changeQuantity(bill.id, last.id, -last.quantity);
+      case 'cancel' || 'new_bill':
+        if (_bill == null) return;
+        final cancel = key == 'cancel';
+        final ok = await showDialog<bool>(
+          context: context,
+          builder: (c) => AlertDialog(
+            title: Text(cancel ? 'Cancel this sale?' : 'Start a new bill?'),
+            content: const Text('Everything on this sale comes off. Nothing has been taken.'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Keep it')),
+              FilledButton(onPressed: () => Navigator.pop(c, true), child: Text(cancel ? 'Cancel sale' : 'New bill')),
+            ],
+          ),
+        );
+        if (ok == true) ref.read(currentSaleProvider.notifier).clear();
+      case 'go_sale':
+        setState(() => _screenId = null);
+      case 'go_tables' || 'table_plan' || 'save_table':
+        if (standalone) return _say('Tables are for venues with tills.');
+        _open('Tables', const TablesPage());
+      case 'go_receipts' || 'last_bill' || 'refund':
+        _open('Sales', const SalesPage());
+      case 'go_reports':
+        _open('Reports', const ReportsPage());
+      case 'go_tickets':
+        _open('Events & tickets', const EventsGate());
+      case 'go_settings':
+        _open('Settings', const SettingsPage());
+      case 'customer':
+        _open('Customers', const CustomersPage());
+      case 'open_drawer':
+        _open('Cash & stock', const CashPage());
+      case 'clock_in_out':
+        final clerk = s.clerk;
+        if (clerk == null) return;
+        final ok = await ref.read(apiProvider).clockIn(clerk.id).catchError((Object _) => false);
+        if (mounted) _say(ok ? '${clerk.name}: clocked in or out.' : 'Could not reach the back office to clock in.');
     }
   }
 
-  /// The venue's programmed screens, as the till lays them out: the top bar,
-  /// the screen, the bottom bar.
-  Widget _programmed(TapState s, TillScreen home) {
+  /// The venue's programmed screens, laid out as the till lays them out: the
+  /// top bar across the top, the sale on the left, the screen beside it, and
+  /// the bottom bar across the bottom. On a phone the same keys, in the same
+  /// order and colours, a few to a row.
+  Widget _programmed(TapState s, TillScreen home, {required bool phone}) {
     final config = s.config;
     final form = formOf(context);
     final screen = withGoLayout(config.screens.byId(_screenId) ?? home, config, form);
     final top = config.screens.barFor(screen, ScreenSurface.topBar, config.topBarScreenId);
     final bottom = config.screens.barFor(screen, ScreenSurface.bottomBar, config.bottomBarScreenId);
     final byPlu = {for (final p in s.products) if (p.plu != null) p.plu!: p};
-    Widget grid(TillScreen sc) => ProgrammedGrid(
-          screen: sc,
+    void page(TillScreen t) => setState(() => _screenId = t.id);
+    final actions = KeyActions(
+      screens: config.screens,
+      productsByPlu: byPlu,
+      onProduct: _press,
+      onProductLong: _longPressFor(s),
+      onPage: page,
+      onFunction: _function,
+      currentScreenId: screen.id,
+    );
+    final grid = AnimatedSwitcher(
+      duration: const Duration(milliseconds: 180),
+      child: KeyedSubtree(
+        key: ValueKey(screen.id),
+        child: ProgrammedGrid(
+          screen: screen,
           screens: config.screens,
           productsByPlu: byPlu,
           onProduct: _press,
           onProductLong: _longPressFor(s),
-          photoFor: config.go.productImages ? (p) => photoOf(s, p) : null,
-          onPage: (t) => setState(() => _screenId = t.id),
+          onPage: page,
           onFunction: _function,
-        );
-    return Padding(
-      padding: const EdgeInsets.all(8),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        // A manager can rearrange this screen for this kind of device.
-        if (config.go.allowRearrange && (s.clerk?.can(TillPermission.isManager) ?? false))
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton.icon(
-              onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => LayoutEditorPage(screen: screen, form: form))),
-              icon: const Icon(Icons.dashboard_customize_rounded, size: 18),
-              label: const Text('Arrange'),
-            ),
-          ),
-        if (top != null && barHasKeys(top)) ...[SizedBox(height: 64.0 * top.rows, child: grid(top)), const SizedBox(height: 8)],
-        Expanded(
-          child: AnimatedSwitcher(duration: const Duration(milliseconds: 180), child: KeyedSubtree(key: ValueKey(screen.id), child: grid(screen))),
+          reflowColumns: phone ? 3 : null,
         ),
-        if (bottom != null && barHasKeys(bottom)) ...[const SizedBox(height: 8), SizedBox(height: 64.0 * bottom.rows, child: grid(bottom))],
+      ),
+    );
+    final arrange = config.go.allowRearrange && (s.clerk?.can(TillPermission.isManager) ?? false);
+    Widget bar(TillScreen? b) => b == null || !barHasKeys(b)
+        ? const SizedBox.shrink()
+        : Padding(
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+            child: SizedBox(height: phone ? 56 : 64, child: ProgrammedStrip(bar: b, actions: actions, minKey: phone ? 92 : 104)),
+          );
+    final heading = Padding(
+      padding: const EdgeInsets.fromLTRB(16, 6, 4, 0),
+      child: Row(children: [
+        Expanded(child: Text(screen.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800))),
+        if (_screenId != null && _screenId != home.id)
+          TextButton.icon(onPressed: () => setState(() => _screenId = null), icon: const Icon(Icons.home_rounded, size: 18), label: Text(home.name)),
+        if (arrange)
+          IconButton(
+            tooltip: 'Arrange this screen',
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => LayoutEditorPage(screen: screen, form: form))),
+            icon: const Icon(Icons.dashboard_customize_rounded),
+          ),
       ]),
     );
+    if (phone) {
+      return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        bar(top),
+        heading,
+        Expanded(child: Padding(padding: const EdgeInsets.fromLTRB(8, 6, 8, 0), child: grid)),
+        bar(bottom),
+        const SizedBox(height: 8),
+        _SaleBar(onView: _viewSale, onPay: _pay),
+      ]);
+    }
+    final scheme = Theme.of(context).colorScheme;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      bar(top),
+      Expanded(
+        child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          // The sale on the left, as on the till.
+          Container(
+            width: MediaQuery.sizeOf(context).width >= 1100 ? 380 : 330,
+            margin: const EdgeInsets.fromLTRB(8, 8, 0, 0),
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainer,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: scheme.outlineVariant),
+            ),
+            child: SalePanel(onPay: _pay),
+          ),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              heading,
+              Expanded(child: Padding(padding: const EdgeInsets.fromLTRB(8, 6, 8, 0), child: grid)),
+            ]),
+          ),
+        ]),
+      ),
+      bar(bottom),
+      const SizedBox(height: 8),
+    ]);
   }
 
   /// Long press on an item: a manager's photo-and-price sheet, else the
@@ -215,36 +340,13 @@ class _SellPageState extends ConsumerState<SellPage> {
   Widget build(BuildContext context) {
     final s = ref.watch(tapProvider);
     final home = s.config.home;
-    // Each kind of device has its own sale screen (owner, 2026-10-28): phones
-    // show photo buttons by section, since the till's programmed screens are
-    // too small to read there; iPads and tablets show the till's screens.
-    // The back office can change either (Vesopa Go options > Screens).
+    // The back office's layout on every device (owner, 2026-10-28), laid out
+    // for each: the till's rows and columns on an iPad or tablet, the same
+    // keys a few to a row on a phone. Photo buttons by section are the back
+    // office's other choice (Vesopa Go options > Screens).
     final form = formOf(context);
     final tillScreens = form == 'tablet' ? s.config.go.screensTablet == 'till' : s.config.go.screensPhone == 'till';
-    if (home != null && tillScreens) {
-      return LayoutBuilder(builder: (context, box) {
-        final screens = _programmed(s, home);
-        if (box.maxWidth >= 840) {
-          return Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            Expanded(child: screens),
-            SizedBox(
-              width: 380,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surfaceContainer,
-                  border: Border(left: BorderSide(color: Theme.of(context).colorScheme.outlineVariant)),
-                ),
-                child: SalePanel(onPay: _pay),
-              ),
-            ),
-          ]);
-        }
-        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Expanded(child: screens),
-          _SaleBar(onView: _viewSale, onPay: _pay),
-        ]);
-      });
-    }
+    if (home != null && tillScreens) return _programmed(s, home, phone: form == 'phone');
     final categories = [
       for (final c in s.categories)
         if (s.products.any((p) => p.category == c.id)) c,

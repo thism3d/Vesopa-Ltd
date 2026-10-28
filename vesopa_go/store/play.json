@@ -7,7 +7,7 @@
   "contact_email": "info@vesopasoftware.com",
   "contact_website": "https://go.vesopa.com/",
   "track": "internal",
-  "release_notes": "Vesopa Go 1.2.2: photos on every button, a clear sale screen made for each device (photo buttons by section on phones, the till's screens on tablets), and managers can change a product's photo and price with a long press.",
+  "release_notes": "Vesopa Go 1.2.3: the back office's screens on every device, laid out like the till (the sale on the left, bars along the top and bottom), the till's keys working (void, cancel, tables, receipts, customers, no sale, clock in), back-office photos, and words that never split.",
   "images": {
     "icon": [
       "play-icon-512.png"
