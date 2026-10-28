@@ -2,6 +2,7 @@
 /// register a new one, or try the demo.
 library;
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -89,8 +90,8 @@ class _WelcomePageState extends ConsumerState<WelcomePage> {
                 icon: const Icon(Icons.storefront_rounded),
                 label: const Text('Register a new venue'),
               ),
-              const SizedBox(height: 4),
-              TextButton(
+              if (kDebugMode) const SizedBox(height: 4),
+              if (kDebugMode) TextButton(
                 onPressed: _busy ? null : () => ref.read(tapProvider.notifier).startDemo(),
                 child: const Text('Try the demo'),
               ),

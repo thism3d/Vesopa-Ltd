@@ -18,13 +18,13 @@ App Store Connect: `app_store.json` (filled by `go-ios.yml`, never submitted); T
 - **Marketing URL:** https://vesopaepos.com/
 - **Privacy policy:** https://vesopaepos.com/privacy
 - **Description:** as `play.json`'s full description.
-- **Sign-in for App Review:** the first screen's "Try the demo", PIN 1111 (no account needed).
+- **Sign-in for App Review:** Continue with Vesopa with The Vesopa Kitchen's manager account (Dojo sandbox), typed by hand into App Store Connect > App Review Information > Sign-in required (user name, password), with a staff PIN in the Notes. Never in this repo.
 
 ## Play Console questions the API cannot answer
 
 Every box, with the answer to type: **`play_console.md`** beside this file. In short:
 
-- **App access:** some functions need sign-in; reviewers use "Try the demo", PIN 1111.
+- **App access:** some functions need sign-in; reviewers use The Vesopa Kitchen's manager account (see `play_console.md`).
 - **Ads:** none.
 - **Content rating:** utility / business, no user content shared publicly.
 - **Target audience:** 18+ (venue staff).

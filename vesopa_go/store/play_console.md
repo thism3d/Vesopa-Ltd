@@ -45,12 +45,13 @@ Uploaded by the workflow; check it looks right.
 **Privacy policy:** https://vesopaepos.com/privacy
 
 **App access:** "All or some functionality is restricted". Add instructions:
-- Name: Demo venue
-- Username: leave blank
-- Password: leave blank
-- Any other information: "On the first screen tap Try the demo, then enter PIN 1111 (a manager). The demo venue's menu, tables and card payments are pretend: nothing is charged and no account is needed. A real venue signs in with its Vesopa account."
+- Name: The Vesopa Kitchen (review venue)
+- Username: The Vesopa Kitchen's manager email (manager@vesopa.co.uk)
+- Password: its password, typed here by hand (never in this repo)
+- Any other information: "Tap Continue with Vesopa and sign in with the email and password above. The Vesopa Kitchen is Vesopa's own test venue: its card payments run on Dojo's sandbox, so no real money moves. Then sign on with staff PIN ____ (a manager)."
 
-(When the review venue replaces the demo, put its email and password here instead.)
+The demo has been taken out of the store builds (2026-10-28). The Vesopa Kitchen
+is the review venue, and the only venue with Vesopa Go on its licence.
 
 **Ads:** No, the app does not contain ads.
 

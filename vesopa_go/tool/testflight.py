@@ -56,16 +56,16 @@ STORE = {
         "contact_phone": "+447848494341",
         "notes": "Vesopa Go is the phone app for venues that use Vesopa EPOS: orders at the table and "
                  "the counter, sent to the kitchen, paid by card or cash. A venue signs in with its Vesopa "
-                 "account. To look round without one, tap 'Try the demo' on the first screen and enter "
-                 "PIN 1111 (a manager): the demo venue's card payments are pretend and nothing is charged.",
+                 "account. To review it, tap Continue with Vesopa and sign in with the account in Sign-in "
+                 "information: The Vesopa Kitchen, Vesopa's own test venue on Dojo's sandbox (no real money "
+                 "moves), then sign on with the staff PIN given there.",
     },
 }
 DESCRIPTION = ("Vesopa Go: take orders and payments anywhere in a Vesopa EPOS venue, at the counter or "
                "the table. Seat a table, send the order to the kitchen, split and pay the bill by card or "
-               "cash, and see the day's sales. Sign in with the venue's Vesopa account, or try the demo "
-               "(PIN 1111).")
-WHAT_TO_TEST = ("Vesopa Go 1.2: the till on iPad (screens, permissions, customers, memberships, tickets). Sign in with the venue's Vesopa account (or Try the demo, "
-                "PIN 1111). Open Tables (the floor plan), seat one, order (tap an item twice: it stacks; long-press for a "
+               "cash, and see the day's sales. Sign in with the venue's Vesopa account.")
+WHAT_TO_TEST = ("Vesopa Go 1.2: the till on iPad (screens, permissions, customers, memberships, tickets). Sign in with the venue's Vesopa account "
+                "(The Vesopa Kitchen for testers). Open Tables (the floor plan), seat one, order (tap an item twice: it stacks; long-press for a "
                 "note), send it, take the payment, print or email the receipt, then check Reports.")
 FEEDBACK = "info@vesopasoftware.com"
 PRIVACY = "https://vesopaepos.com/privacy"

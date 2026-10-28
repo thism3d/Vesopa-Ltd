@@ -136,6 +136,16 @@ https://claude.ai/artifact/P3h7WevAfsfnKsp8qirdii.
       machine status
 - [x] Kitchen ready: a banner over every page and the ready sound (after the 1.1.0 build)
 
+## Review venue (owner, 2026-10-28)
+
+The demo is out of the store builds (it stays in debug builds for the tests,
+and in the web showroom). Store reviewers sign in to **The Vesopa Kitchen**
+(office 9) with its manager account; the email and password are typed into Play
+Console and App Store Connect by hand (store/play_console.md, store/listing.md),
+never into this repo. The Vesopa Kitchen is the only venue with Vesopa Go seats;
+every other venue has none until it is offered them. Vesopa's platform admins
+signing in a Go device are offered the venues that have Go.
+
 ## Waiting on others
 
 - Apple: Tap to Pay on iPhone entitlement for `com.vesopa.go`.

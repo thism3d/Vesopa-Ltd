@@ -9,6 +9,7 @@ library;
 import 'dart:math' as math;
 
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -101,8 +102,12 @@ class _LiteWelcomePageState extends ConsumerState<LiteWelcomePage> {
                   icon: const Icon(Icons.storefront_rounded),
                   label: const Text('Register a new venue'),
                 ),
-                const SizedBox(height: 4),
-                TextButton(
+                // The demo is gone from the store builds (owner, 2026-10-28):
+                // reviewers sign in to The Vesopa Kitchen. It stays in a
+                // developer build, where the tests drive it, and in the web
+                // showroom (GO_DEMO_ONLY).
+                if (kDebugMode) const SizedBox(height: 4),
+                if (kDebugMode) TextButton(
                   key: const ValueKey('demo'),
                   onPressed: _busy
                       ? null
