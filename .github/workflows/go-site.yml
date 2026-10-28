@@ -1,0 +1,56 @@
+# go.vesopa.com: Vesopa Go's own pages (home, privacy, terms, support), from
+# vesopa_go/web/site onto the Vesopa Cloud box. All of it is
+# vesopa_go/tool/go_site.py; read its top for what each mode does.
+#
+# Actions > "Go - site" > Run workflow:
+#   check   where the site lives and what it serves now; changes nothing
+#   live    back up the site's folder, upload, HTTPS if missing, check every page
+#
+# The repository and its logs are public: the run prints the domain, counts and
+# status codes only.
+
+name: Go - site
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        options: [check, live]
+        default: check
+
+permissions:
+  contents: read
+
+concurrency:
+  group: go-site
+  cancel-in-progress: false
+
+jobs:
+  site:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: App Store Connect API
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: SSH
+        env:
+          VESOPA_SSH_PASSWORD: ${{ secrets.VESOPA_SSH_PASSWORD }}
+        run: |
+          [ -n "$VESOPA_SSH_PASSWORD" ] || { echo "::error::VESOPA_SSH_PASSWORD is not set"; exit 1; }
+          mkdir -p ~/.ssh "$RUNNER_TEMP/ssh"
+          printf 'Host *\n  StrictHostKeyChecking accept-new\n  ConnectTimeout 20\n  ServerAliveInterval 30\n  ControlMaster auto\n  ControlPath %s/cm-%%r@%%h\n  ControlPersist 30m\n' "$RUNNER_TEMP/ssh" > ~/.ssh/config
+          printf '#!/bin/sh\nprintf "%%s\n" "$VESOPA_SSH_PASSWORD"\n' > "$RUNNER_TEMP/ssh/askpass"; chmod 700 "$RUNNER_TEMP/ssh/askpass"
+
+      - name: go.vesopa.com (${{ inputs.mode }})
+        env:
+          VESOPA_SSH_PASSWORD: ${{ secrets.VESOPA_SSH_PASSWORD }}
+          SSH_ASKPASS: ${{ runner.temp }}/ssh/askpass
+          SSH_ASKPASS_REQUIRE: force
+          DISPLAY: ':0'
+        run: python3 vesopa_go/tool/go_site.py "${{ inputs.mode }}"
+
+      - name: Close SSH
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/ssh"
