@@ -11,7 +11,7 @@
 ///   Settings
 library;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vesopa_go/data/models.dart';
@@ -20,7 +20,9 @@ import 'package:vesopa_go/ui/pages/bill.dart';
 import 'package:vesopa_go/ui/pages/more.dart';
 import 'package:vesopa_go/ui/pages/tables.dart';
 import 'package:vesopa_go/ui/clerk_chip.dart';
+import 'package:vesopa_go/ui/device_prefs.dart';
 import 'package:vesopa_go/ui/go_frame.dart';
+import 'package:vesopa_go/ui/theme.dart';
 import 'package:vesopa_go/ui/pages/card_machine_page.dart';
 import 'package:vesopa_go/ui/pages/customers_page.dart';
 import 'package:vesopa_go/ui/pages/module_gates.dart';
@@ -53,12 +55,15 @@ class _ShellState extends ConsumerState<Shell> {
           (Icons.table_restaurant_rounded, 'Tables', () => const TablesPage()),
           (Icons.receipt_rounded, 'Bills', () => const BillsPage()),
         ],
-        (Icons.dialpad_rounded, 'Quick sale', () => QuickSalePage(onAdded: () => setState(() => _page = 0))),
         (Icons.people_alt_rounded, 'Customers', () => const CustomersPage()),
         (Icons.payments_rounded, 'Cash & stock', () => const CashPage()),
         // The venue's choice (back office): every clerk, managers, or not on Go.
-        if (s.config.go.membershipsAccess != 'off') (Icons.card_membership_rounded, 'Memberships', () => const MembershipsGate()),
-        if (s.config.go.eventsAccess != 'off') (Icons.confirmation_number_rounded, 'Events & tickets', () => const EventsGate()),
+        // Only what the venue has switched on (back office, Modules), and
+        // the venue's choice of who may use it on Go.
+        if (s.config.moduleOn('memberships') && s.config.go.membershipsAccess != 'off')
+          (Icons.card_membership_rounded, 'Memberships', () => const MembershipsGate()),
+        if (s.config.moduleOn('events') && s.config.go.eventsAccess != 'off')
+          (Icons.confirmation_number_rounded, 'Events & tickets', () => const EventsGate()),
         (Icons.receipt_long_rounded, 'Sales', () => const SalesPage()),
         (Icons.insights_rounded, 'Reports', () => const ReportsPage()),
         (Icons.credit_card_rounded, 'Card payments', () => const MorePage()),
@@ -77,9 +82,21 @@ class _ShellState extends ConsumerState<Shell> {
     return Scaffold(
       appBar: AppBar(
         titleSpacing: 0,
-        title: i == 0 ? const GoWordmark(size: 17) : Text(pages[i].$2),
+        title: i == 0 ? const GoLockup(size: 22) : Text(pages[i].$2),
         actions: [
           if (s.demo) const Padding(padding: EdgeInsets.only(right: 4), child: Chip(label: Text('Demo'), visualDensity: VisualDensity.compact)),
+          // Quick sale on the sale screen itself (owner, 2026-10-28).
+          if (i == 0)
+            IconButton(
+              tooltip: 'Quick sale',
+              icon: const Icon(Icons.dialpad_rounded),
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                builder: (c) => Scaffold(
+                  appBar: AppBar(title: const Text('Quick sale')),
+                  body: QuickSalePage(onAdded: () => Navigator.of(c).pop()),
+                ),
+              )),
+            ),
           const StatusChips(),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -107,98 +124,155 @@ class _ShellState extends ConsumerState<Shell> {
   }
 }
 
-class SettingsPage extends ConsumerWidget {
+class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key});
+  @override
+  ConsumerState<SettingsPage> createState() => _SettingsPageState();
+}
+
+/// Settings, grouped and short, the way iOS lays its own out (owner,
+/// 2026-10-28: "too much text in the settings").
+class _SettingsPageState extends ConsumerState<SettingsPage> {
+  String? _nfc;
+  bool? _battery;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  void initState() {
+    super.initState();
+    _check();
+  }
+
+  Future<void> _check() async {
+    final nfc = await nfcProblem();
+    final battery = await DevicePrefs.batteryUnrestricted();
+    if (mounted) {
+      setState(() {
+        _nfc = nfc;
+        _battery = battery;
+      });
+    }
+  }
+
+  Widget _group(String title, List<Widget> rows) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+            child: Text(title.toUpperCase(), style: Theme.of(context).textTheme.labelSmall?.copyWith(letterSpacing: 0.6, color: Tp.muted)),
+          ),
+          Card(margin: EdgeInsets.zero, clipBehavior: Clip.antiAlias, child: Column(children: rows)),
+        ]),
+      );
+
+  @override
+  Widget build(BuildContext context) {
     final settings = ref.watch(liteSettingsProvider);
     final s = ref.watch(tapProvider);
     final store = ref.read(liteSettingsProvider.notifier);
     final t = Theme.of(context).textTheme;
-    return ListView(padding: const EdgeInsets.symmetric(vertical: 8), children: [
-      SwitchListTile(
-        title: const Text('Allergen alerts'),
-        subtitle: const Text('Warn when an item with allergens goes on a sale'),
-        value: settings.allergenAlerts,
-        onChanged: (v) => store.set(allergenAlerts: v),
-      ),
-      StatefulBuilder(
-        builder: (context, set) => SwitchListTile(
-          title: const Text('Sounds on this device'),
-          subtitle: const Text('Item added, payment approved or declined, kitchen ready, allergens. Volumes are set in the back office.'),
+    final tablet = MediaQuery.sizeOf(context).shortestSide >= 600;
+    final via = cardVia(settings, s.config, tablet: tablet);
+    final android = defaultTargetPlatform == TargetPlatform.android;
+    return ListView(padding: const EdgeInsets.only(bottom: 24), children: [
+      _group('Sale', [
+        SwitchListTile(title: const Text('Allergen alerts'), value: settings.allergenAlerts, onChanged: (v) => store.set(allergenAlerts: v)),
+        SwitchListTile(
+          title: const Text('Sounds'),
           value: !GoSounds.muted,
           onChanged: (v) async {
             await GoSounds.setMuted(!v);
-            set(() {});
+            setState(() {});
             if (v) GoSounds.play(s.config.go, GoSound.approved);
           },
         ),
-      ),
-      const Divider(),
-      Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 4), child: Text('Card payments', style: t.titleSmall)),
-      RadioGroup<String>(
-        groupValue: settings.cardVia,
-        onChanged: (v) => store.set(cardVia: v),
-        child: Column(children: [
-          RadioListTile(
-            value: '',
-            title: const Text('The venue\'s choice'),
-            subtitle: Text('Set in the back office: ${cardVia(const LiteSettings(), s.config, tablet: MediaQuery.sizeOf(context).shortestSide >= 600) == 'tap' ? 'Tap to Pay on this device' : 'the Dojo card machine'}'),
+      ]),
+      _group('Card payments', [
+        if (s.config.teya.enabled)
+          const ListTile(leading: Icon(Icons.point_of_sale_rounded), title: Text('Teya card machine'), subtitle: Text('Chosen on the Card machine page'))
+        else
+          RadioGroup<String>(
+            groupValue: settings.cardVia,
+            onChanged: (v) => store.set(cardVia: v),
+            child: Column(children: [
+              RadioListTile(
+                value: '',
+                title: const Text('The venue\'s choice'),
+                subtitle: Text(cardVia(const LiteSettings(), s.config, tablet: tablet) == 'tap' ? 'Tap to Pay' : 'Card machine'),
+              ),
+              const RadioListTile(value: 'tap', title: Text('Tap to Pay on this device')),
+              const RadioListTile(value: 'machine', title: Text('The card machine')),
+            ]),
           ),
-          const RadioListTile(value: 'tap', title: Text('On this device'), subtitle: Text('A phone\'s Tap to Pay, or a Dojo handheld terminal')),
-          const RadioListTile(value: 'machine', title: Text('On the card machine'), subtitle: Text('The venue\'s Dojo card machine, beside the till')),
-        ]),
-      ),
-      const Divider(),
-      const _ReceiptPrinterTile(),
-      const Divider(),
-      if (s.config.softwareHouseId.isNotEmpty) ...[
-        Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 4), child: Text('Dojo', style: t.titleSmall)),
-        ListTile(
-          dense: true,
-          leading: const Icon(Icons.verified_rounded),
-          title: Text('Software house ID  ${s.config.softwareHouseId}'),
-          subtitle: Text('Reseller ID  ${s.config.resellerId} · ${s.config.environment == 'live' ? 'Live' : 'Sandbox'}'),
+        // Tap to Pay needs NFC: when it is off or missing, say so and why.
+        if (via == 'tap' && _nfc != null)
+          ListTile(
+            leading: const Icon(Icons.warning_amber_rounded, color: Tp.amber),
+            title: const Text('Tap to Pay is unavailable'),
+            subtitle: Text(_nfc!),
+            trailing: android ? TextButton(onPressed: () => DevicePrefs.openNfcSettings().then((_) => _check()), child: const Text('NFC settings')) : null,
+          ),
+        if (!s.config.teya.enabled && s.config.softwareHouseId.isNotEmpty)
+          ListTile(
+            dense: true,
+            title: Text('Dojo · ${s.config.environment == 'live' ? 'Live' : 'Sandbox'}'),
+            subtitle: Text('Software house ${s.config.softwareHouseId} · Reseller ${s.config.resellerId}'),
+          ),
+      ]),
+      _group('Printing', const [_ReceiptPrinterTile()]),
+      _group('This device', [
+        SwitchListTile(
+          title: const Text('Keep the screen on'),
+          value: DevicePrefs.keepAwake,
+          onChanged: (v) => DevicePrefs.set(awake: v).then((_) => setState(() {})),
         ),
-        const Divider(),
-      ],
-      ListTile(
-        leading: const Icon(Icons.sync_rounded),
-        title: const Text('Refresh the menu and staff'),
-        subtitle: Text(s.demo ? 'The demo has its own menu' : 'From the Vesopa back office'),
-        onTap: s.demo ? null : () => ref.read(tapProvider.notifier).refresh(),
-      ),
-      ListTile(
-        leading: const Icon(Icons.logout_rounded),
-        title: Text(s.demo ? 'Leave the demo' : 'Forget this device'),
-        subtitle: Text(s.demo ? 'Back to the start' : 'Sign it out of ${s.venue?.name ?? 'the venue'}; the back office keeps its sales'),
-        onTap: () async {
-          final ok = s.demo ||
-              await showDialog<bool>(
-                    context: context,
-                    builder: (c) => AlertDialog(
-                      title: const Text('Forget this device?'),
-                      content: Text(s.pendingSync > 0
-                          ? '${s.pendingSync} sales have not reached the back office yet. They will be lost.'
-                          : 'It will need signing in again to take sales.'),
-                      actions: [
-                        TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
-                        FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Forget it')),
-                      ],
-                    ),
-                  ) ==
-                  true;
-          if (ok) await ref.read(tapProvider.notifier).forgetPhone();
-        },
-      ),
-      const SizedBox(height: 24),
+        SwitchListTile(
+          title: const Text('Full screen'),
+          value: DevicePrefs.fullScreen,
+          onChanged: (v) => DevicePrefs.set(full: v).then((_) => setState(() {})),
+        ),
+        if (android)
+          ListTile(
+            title: const Text('Battery saving'),
+            subtitle: Text(_battery == true ? 'Off for Vesopa Go' : 'On: Android may stop Vesopa Go in the background'),
+            trailing: Icon(_battery == true ? Icons.check_circle_rounded : Icons.chevron_right_rounded, color: _battery == true ? Tp.green : null),
+            onTap: () => DevicePrefs.openBatterySettings().then((_) => _check()),
+          ),
+      ]),
+      _group('Venue', [
+        ListTile(
+          leading: const Icon(Icons.sync_rounded),
+          title: const Text('Refresh the menu and staff'),
+          onTap: s.demo ? null : () => ref.read(tapProvider.notifier).refresh(),
+        ),
+        ListTile(
+          leading: const Icon(Icons.logout_rounded, color: Tp.danger),
+          title: Text(s.demo ? 'Leave the demo' : 'Forget this device'),
+          onTap: () async {
+            final ok = s.demo ||
+                await showDialog<bool>(
+                      context: context,
+                      builder: (c) => AlertDialog(
+                        title: const Text('Forget this device?'),
+                        content: Text(s.pendingSync > 0
+                            ? '${s.pendingSync} sales have not reached the back office yet. They will be lost.'
+                            : 'It will need signing in again to take sales.'),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
+                          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Forget it')),
+                        ],
+                      ),
+                    ) ==
+                    true;
+            if (ok) await ref.read(tapProvider.notifier).forgetPhone();
+          },
+        ),
+      ]),
+      const SizedBox(height: 16),
       Center(child: Text('$appName · ${ref.read(tapProvider.notifier).terminalName}', style: t.bodySmall)),
     ]);
   }
 }
 
-/// This device's receipt printer: a network printer's address, as on the till.
 class _ReceiptPrinterTile extends StatefulWidget {
   const _ReceiptPrinterTile();
   @override

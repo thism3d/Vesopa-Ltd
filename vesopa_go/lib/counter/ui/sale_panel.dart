@@ -59,7 +59,7 @@ class _SalePanelState extends ConsumerState<SalePanel> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.shopping_basket_outlined, size: 48, color: dim),
+              _EmptyBasket(colour: dim ?? Colors.grey),
               const SizedBox(height: 12),
               Text('Nothing on this sale yet', style: t.titleMedium),
               const SizedBox(height: 4),
@@ -248,13 +248,17 @@ class _SalePanelState extends ConsumerState<SalePanel> {
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
           child: Column(
             children: [
+              // The till's tender: how many, the subtotal, every deal and
+              // discount by name, the service charge, then the total.
+              _Row('Items', bill.lines.fold<int>(0, (n, l) => n + l.quantity), count: true),
+              _Row('Subtotal', bill.subtotalMinor),
               if (bill.discountMinor > 0) ...[
-                _Row('Subtotal', bill.subtotalMinor),
                 // Each mix & match deal by name, as the till lists them.
                 for (final d in bill.dealsApplied.deals) _Row(d.times > 1 ? '${d.name} ×${d.times}' : d.name, -d.savingMinor),
                 if (bill.discountMinor - bill.dealMinor > 0)
                   _Row(bill.discountReason.isEmpty ? 'Discount' : 'Discount (${bill.discountReason})', -(bill.discountMinor - bill.dealMinor)),
               ],
+              if (bill.serviceMinor > 0) _Row('Service (${bill.serviceChargePercent.toStringAsFixed(bill.serviceChargePercent % 1 == 0 ? 0 : 1)}%)', bill.serviceMinor),
               if (bill.paidMinor > 0) _Row('Paid so far', -bill.paidMinor),
               _Row(bill.paidMinor > 0 ? 'Left to pay' : 'Total', bill.dueMinor, bold: true),
             ],
@@ -306,10 +310,13 @@ class _SalePanelState extends ConsumerState<SalePanel> {
 }
 
 class _Row extends StatelessWidget {
-  const _Row(this.label, this.minor, {this.bold = false});
+  const _Row(this.label, this.minor, {this.bold = false, this.count = false});
   final String label;
   final int minor;
   final bool bold;
+
+  /// A number of things, not money.
+  final bool count;
 
   @override
   Widget build(BuildContext context) {
@@ -320,7 +327,7 @@ class _Row extends StatelessWidget {
       child: Row(
         children: [
           Expanded(child: Text(label, style: style)),
-          Money(minor, style: style),
+          if (count) Text('$minor', style: style?.copyWith(fontFeatures: Tp.tabular)) else Money(minor, style: style),
         ],
       ),
     );
@@ -387,4 +394,52 @@ class _DiscountSheetState extends State<_DiscountSheet> {
       ),
     );
   }
+}
+
+/// The empty sale: a basket that gently bobs, waiting for the first item.
+class _EmptyBasket extends StatefulWidget {
+  const _EmptyBasket({required this.colour});
+  final Color colour;
+  @override
+  State<_EmptyBasket> createState() => _EmptyBasketState();
+}
+
+class _EmptyBasketState extends State<_EmptyBasket> with SingleTickerProviderStateMixin {
+  late final _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 1800));
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (ambientMotion(context) && !_c.isAnimating) _c.repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+        animation: _c,
+        builder: (context, child) {
+          final v = Curves.easeInOut.transform(_c.value);
+          return SizedBox(
+            width: 96,
+            height: 80,
+            child: Stack(alignment: Alignment.center, children: [
+              // A soft ring breathing behind it.
+              Container(
+                width: 56 + 22 * v,
+                height: 56 + 22 * v,
+                decoration: BoxDecoration(shape: BoxShape.circle, color: Tp.lime.withValues(alpha: 0.10 * (1 - v) + 0.04)),
+              ),
+              Transform.translate(
+                offset: Offset(0, -6 * v),
+                child: Transform.rotate(angle: (v - 0.5) * 0.12, child: Icon(Icons.shopping_basket_outlined, size: 48, color: widget.colour)),
+              ),
+            ]),
+          );
+        },
+      );
 }

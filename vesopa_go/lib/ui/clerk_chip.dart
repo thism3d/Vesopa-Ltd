@@ -89,30 +89,36 @@ class ClerkChip extends ConsumerWidget {
       tooltip: clerk.name,
       position: PopupMenuPosition.under,
       onSelected: (v) => v == 'off' ? ref.read(tapProvider.notifier).lock() : _handOver(context, ref),
-      itemBuilder: (_) => const [
-        PopupMenuItem(value: 'on', child: ListTile(leading: Icon(Icons.swap_horiz_rounded), title: Text('Sign on someone else'))),
-        PopupMenuItem(value: 'off', child: ListTile(leading: Icon(Icons.logout_rounded), title: Text('Sign off'))),
+      itemBuilder: (_) => [
+        PopupMenuItem(
+          enabled: false,
+          child: ListTile(
+            leading: StaffAvatar(clerk: clerk),
+            title: Text(clerk.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+            subtitle: (clerk.group ?? '').isEmpty ? null : Text(clerk.group!),
+          ),
+        ),
+        const PopupMenuDivider(),
+        const PopupMenuItem(value: 'on', child: ListTile(leading: Icon(Icons.swap_horiz_rounded), title: Text('Sign on someone else'))),
+        const PopupMenuItem(value: 'off', child: ListTile(leading: Icon(Icons.logout_rounded), title: Text('Sign off'))),
       ],
+      // Less on the bar (owner, 2026-10-28): the face on a phone, the face
+      // and first name on a tablet; the whole name is in the menu.
       child: AnimatedSwitcher(
         duration: const Duration(milliseconds: 250),
         child: Container(
           key: ValueKey(clerk.id),
-          padding: const EdgeInsets.fromLTRB(4, 4, 14, 4),
+          padding: EdgeInsets.fromLTRB(3, 3, wide ? 12 : 3, 3),
           decoration: BoxDecoration(borderRadius: BorderRadius.circular(999), border: Border.all(color: Tp.inkLine), color: Tp.inkCard),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
-            StaffAvatar(clerk: clerk),
-            const SizedBox(width: 10),
-            // The name always shows, as on the till: the whole name and group
-            // on a tablet, the first name on a phone.
-            ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: wide ? 200 : 96),
-              child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(wide ? clerk.name : clerk.name.split(' ').first,
-                    maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
-                if (wide && (clerk.group ?? '').isNotEmpty)
-                  Text(clerk.group!, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Tp.muted)),
-              ]),
-            ),
+            StaffAvatar(clerk: clerk, radius: 15),
+            if (wide) ...[
+              const SizedBox(width: 8),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 120),
+                child: Text(clerk.name.split(' ').first, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+              ),
+            ],
           ]),
         ),
       ),

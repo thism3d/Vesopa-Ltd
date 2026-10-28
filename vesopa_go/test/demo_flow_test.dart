@@ -33,7 +33,7 @@ void main() {
       await tester.pump();
     }
     await tester.pumpAndSettle();
-    expect(find.text('Sam'), findsOneWidget, reason: 'signed on as Sam');
+    expect(find.byTooltip('Sam'), findsOneWidget, reason: 'signed on as Sam');
 
     await tap(find.byTooltip('Open navigation menu'));
     await tap(find.text('Tables').last);

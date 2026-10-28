@@ -11,15 +11,23 @@ library;
 
 import 'dart:async';
 
+import 'dart:ui' show ImageFilter;
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:screen_brightness/screen_brightness.dart';
 
 import '../config/constants.dart' show apiBase;
 import '../counter/data/lite_state.dart';
 import '../counter/ui/brand.dart';
+import '../counter/ui/receipt_print.dart' show receiptPrinter;
+import '../data/lan/lan_service.dart';
 import '../data/session.dart';
+import '../payments/teya_machine.dart';
+import 'device_prefs.dart';
 import 'fit_text.dart';
+import 'pages/card_machine_page.dart' show deviceMachine;
 import 'sounds.dart';
 import 'theme.dart';
 
@@ -28,7 +36,10 @@ import 'theme.dart';
 /// page or sheet is open over the main screens.
 final goNavigator = GlobalKey<NavigatorState>();
 
-/// The top bar's chips.
+/// The top bar's lights, as small icons (owner, 2026-10-28: "use icons,
+/// interactive, once clicked show dialogs"): card payments, the receipt
+/// printer, and the link to the back office and the tills. Each has a dot for
+/// its state; a tap shows what it is connected to.
 class StatusChips extends ConsumerWidget {
   const StatusChips({super.key});
 
@@ -36,68 +47,110 @@ class StatusChips extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final s = ref.watch(tapProvider);
     final via = cardVia(ref.watch(liteSettingsProvider), s.config, tablet: MediaQuery.sizeOf(context).shortestSide >= 600);
-    final wide = MediaQuery.sizeOf(context).width >= 700;
-    final live = s.config.environment == 'live';
-    final chips = [
-      _Chip(
-        icon: via == 'tap' ? Icons.contactless_rounded : Icons.point_of_sale_rounded,
-        label: via == 'tap' ? 'Tap to Pay' : 'Dojo machine',
-        ok: s.online,
-        note: live ? null : 'sandbox',
-        tooltip: via == 'tap' ? 'Cards are taken on this device' : 'Cards go to the venue\'s Dojo card machine',
-      ),
-      _Chip(
-        icon: Icons.print_rounded,
-        label: s.config.go.printAirprintFallback ? 'Receipts · AirPrint' : 'Receipts',
-        ok: true,
-        tooltip: 'Receipts print on the venue\'s receipt printer, or AirPrint when none is set',
-      ),
-      _Chip(
-        icon: s.online ? Icons.cloud_done_rounded : Icons.cloud_off_rounded,
-        label: s.online ? (s.pendingSync > 0 ? 'Sending ${s.pendingSync}' : 'Synced') : 'Offline',
-        ok: s.online,
-        tooltip: 'The link to the back office',
-      ),
-    ];
+    final teya = s.config.teya.enabled;
+    final sandbox = (teya ? s.config.teya.environment : s.config.environment) != 'live';
+    final cardName = teya ? 'Teya card machine' : (via == 'tap' ? 'Tap to Pay on this device' : 'Dojo card machine');
+    final lan = LanService.instance;
     // A phone's bar has room for one light: the link to the back office.
-    if (!wide) {
-      return Tooltip(
-        message: s.online ? 'Synced with the back office' : 'Offline',
-        child: Icon(s.online ? Icons.cloud_done_rounded : Icons.cloud_off_rounded, color: s.online ? Tp.green : Tp.amber),
-      );
-    }
-    return Row(mainAxisSize: MainAxisSize.min, children: [for (final c in chips) Padding(padding: const EdgeInsets.only(right: 6), child: c)]);
+    final phone = MediaQuery.sizeOf(context).width < 600;
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      if (!phone) ...[
+      _StatusIcon(
+        icon: via == 'tap' ? Icons.contactless_rounded : Icons.point_of_sale_rounded,
+        ok: s.online,
+        warn: sandbox,
+        tooltip: cardName,
+        onTap: () async {
+          final machine = teya ? await deviceTeyaMachine() ?? s.config.teya.machineId : await deviceMachine();
+          final nfc = via == 'tap' ? await nfcProblem() : null;
+          if (!context.mounted) return;
+          _info(context, 'Card payments', Icons.credit_card_rounded, [
+            ('Takes cards', cardName),
+            ('Provider', teya ? 'Teya' : 'Dojo'),
+            ('Mode', sandbox ? 'Sandbox (test cards)' : 'Live'),
+            if (via == 'machine') ('Machine', machine ?? 'The venue\'s default'),
+            if (!teya && s.config.softwareHouseId.isNotEmpty) ('Software house ID', s.config.softwareHouseId),
+            if (nfc != null) ('NFC', nfc),
+          ]);
+        },
+      ),
+      _StatusIcon(
+        icon: Icons.print_rounded,
+        ok: true,
+        tooltip: 'Receipts',
+        onTap: () async {
+          final printer = await receiptPrinter();
+          if (!context.mounted) return;
+          _info(context, 'Receipts', Icons.print_rounded, [
+            ('Receipt printer', printer.isEmpty ? 'None set' : printer),
+            ('Without one', s.config.go.printAirprintFallback ? 'AirPrint or Android printing' : 'No printing'),
+            ('Kitchen tickets', s.config.go.printKitchen ? 'To the kitchen printers and screens' : 'Off'),
+          ]);
+        },
+      ),
+      ],
+      _StatusIcon(
+        icon: s.online ? Icons.cloud_done_rounded : Icons.cloud_off_rounded,
+        ok: s.online,
+        badge: s.pendingSync > 0 ? '${s.pendingSync}' : null,
+        tooltip: s.online ? 'Synced' : 'Offline',
+        onTap: () => _info(context, 'Connection', Icons.cloud_done_rounded, [
+          ('Back office', s.online ? 'Connected' : 'Offline'),
+          ('Waiting to send', s.pendingSync == 0 ? 'Nothing' : '${s.pendingSync}'),
+          ('Venue network', lan.linked ? (lan.isHub ? 'Linked, leading the tills' : 'Linked to the tills') : 'Not linked'),
+          ('This device', ref.read(tapProvider.notifier).terminalName),
+        ]),
+      ),
+    ]);
   }
 }
 
-class _Chip extends StatelessWidget {
-  const _Chip({required this.icon, required this.label, required this.ok, required this.tooltip, this.note});
+void _info(BuildContext context, String title, IconData icon, List<(String, String)> facts) => showDialog<void>(
+      context: context,
+      builder: (c) => AlertDialog(
+        icon: Icon(icon),
+        title: Text(title),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          for (final (k, v) in facts)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 5),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                SizedBox(width: 130, child: Text(k, style: Theme.of(c).textTheme.bodySmall)),
+                Expanded(child: Text(v, style: const TextStyle(fontWeight: FontWeight.w600))),
+              ]),
+            ),
+        ]),
+        actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text('Done'))],
+      ),
+    );
+
+class _StatusIcon extends StatelessWidget {
+  const _StatusIcon({required this.icon, required this.ok, required this.tooltip, required this.onTap, this.warn = false, this.badge});
   final IconData icon;
-  final String label;
   final bool ok;
+  final bool warn;
   final String tooltip;
-  final String? note;
+  final VoidCallback onTap;
+  final String? badge;
 
   @override
-  Widget build(BuildContext context) => Tooltip(
-        message: tooltip,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 300),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: Tp.inkCard,
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: ok ? Tp.inkLine : Tp.amber),
-          ),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            _Dot(colour: ok ? Tp.green : Tp.amber),
-            const SizedBox(width: 6),
-            Icon(icon, size: 15),
-            const SizedBox(width: 5),
-            Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-            if (note != null) Text(' · $note', style: const TextStyle(fontSize: 12, color: Tp.amber)),
-          ]),
-        ),
+  Widget build(BuildContext context) => IconButton(
+        tooltip: tooltip,
+        onPressed: onTap,
+        icon: Stack(clipBehavior: Clip.none, children: [
+          Icon(icon, size: 22),
+          Positioned(right: -3, top: -3, child: _Dot(colour: !ok ? Tp.amber : (warn ? Tp.amber : Tp.green))),
+          if (badge != null)
+            Positioned(
+              right: -10,
+              bottom: -6,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                decoration: BoxDecoration(color: Tp.amber, borderRadius: BorderRadius.circular(8)),
+                child: Text(badge!, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Tp.ink)),
+              ),
+            ),
+        ]),
       );
 }
 
@@ -321,7 +374,11 @@ class _IdleScreenState extends ConsumerState<IdleScreen> with SingleTickerProvid
     final image = url == null ? null : (url.startsWith('http') ? url : '$apiBase${url.startsWith('/') ? '' : '/'}$url');
     final now = TimeOfDay.now();
     final time = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
-    return GestureDetector(
+    // A Material under it: text outside one is drawn with Flutter's warning
+    // underlines (the two yellow lines under the words, iPad 2026-10-28).
+    return Material(
+      type: MaterialType.transparency,
+      child: GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: widget.onWake,
       child: Stack(fit: StackFit.expand, children: [
@@ -345,10 +402,20 @@ class _IdleScreenState extends ConsumerState<IdleScreen> with SingleTickerProvid
               const Spacer(),
               Center(
                 child: FadeTransition(
-                  opacity: Tween(begin: 0.55, end: 1.0).animate(_pulse),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
-                    decoration: BoxDecoration(color: Tp.lime, borderRadius: BorderRadius.circular(999)),
+                  opacity: Tween(begin: 0.7, end: 1.0).animate(_pulse),
+                  // Glass, as Apple's own controls over a picture: the
+                  // wallpaper blurred through it, a hairline edge, white words.
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(999),
+                    child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+                    child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.16),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.35), width: 0.8),
+                    ),
                     // A venue's message can be a sentence: it wraps between
                     // words and shrinks until it fits, never running off the
                     // screen or splitting a word (iPad, 2026-10-28).
@@ -361,8 +428,10 @@ class _IdleScreenState extends ConsumerState<IdleScreen> with SingleTickerProvid
                           textAlign: TextAlign.center,
                           maxLines: 4,
                           minSize: 14,
-                          style: const TextStyle(fontSize: 26, height: 1.2, fontWeight: FontWeight.w800, color: Tp.onLime)),
+                          style: const TextStyle(fontSize: 26, height: 1.2, fontWeight: FontWeight.w700, color: Colors.white, letterSpacing: 0.2)),
                     ),
+                  ),
+                  ),
                   ),
                 ),
               ),
@@ -370,7 +439,58 @@ class _IdleScreenState extends ConsumerState<IdleScreen> with SingleTickerProvid
             ]),
           ),
         ),
+        const Positioned(left: 20, bottom: 20, child: SafeArea(child: _Brightness())),
       ]),
+      ),
     );
   }
+}
+
+/// Brightness, on the idle screen's corner: dimmer, brighter, and back to the
+/// device's own. Taps here do not wake the screen.
+class _Brightness extends StatefulWidget {
+  const _Brightness();
+  @override
+  State<_Brightness> createState() => _BrightnessState();
+}
+
+class _BrightnessState extends State<_Brightness> {
+  double? _level;
+
+  Future<void> _step(double by) async {
+    try {
+      final now = _level ?? await ScreenBrightness.instance.application;
+      final next = (now + by).clamp(0.05, 1.0);
+      await ScreenBrightness.instance.setApplicationScreenBrightness(next);
+      setState(() => _level = next);
+    } catch (_) {}
+  }
+
+  Future<void> _reset() async {
+    try {
+      await ScreenBrightness.instance.resetApplicationScreenBrightness();
+      setState(() => _level = null);
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) => ClipRRect(
+        borderRadius: BorderRadius.circular(999),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.25), width: 0.8),
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              IconButton(color: Colors.white, onPressed: () => _step(-0.15), icon: const Icon(Icons.brightness_low_rounded)),
+              IconButton(color: Colors.white, onPressed: () => _step(0.15), icon: const Icon(Icons.brightness_high_rounded)),
+              if (_level != null)
+                IconButton(color: Colors.white, onPressed: _reset, icon: const Icon(Icons.brightness_auto_rounded)),
+            ]),
+          ),
+        ),
+      );
 }

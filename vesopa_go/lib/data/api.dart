@@ -263,6 +263,9 @@ class TapApi {
   /// The venue's photos: `{products: {plu: url}, sections: {name: url}}`.
   Future<Map<String, dynamic>> photos() => _send('GET', '/api/tap/photos');
 
+  /// The venue's modules that are on (memberships, events...), as the till asks.
+  Future<Map<String, dynamic>> modules() => _send('GET', '/till/modules');
+
   /// A photo taken or chosen on the device, as a data URI; answers its address.
   Future<String> uploadPhoto(String dataUri) async => (await _send('POST', '/api/tap/uploads', {'data': dataUri}))['url'] as String;
 

@@ -7,7 +7,7 @@
   "contact_email": "info@vesopasoftware.com",
   "contact_website": "https://go.vesopa.com/",
   "track": "internal",
-  "release_notes": "Vesopa Go 1.2.4: Teya card machines for Teya venues (the machine chosen in the back office or on the device, refunds back to the card), plus the till's layout on every device from 1.2.3.",
+  "release_notes": "Vesopa Go 1.2.5: the till's bar keys (icon and name), one Pay that waits for an item, the till's tender totals, Quick sale on the sale screen, small status icons, a calmer idle screen with brightness controls, the screen kept on and full screen, and only the venue's own modules in the menu.",
   "images": {
     "icon": [
       "play-icon-512.png"

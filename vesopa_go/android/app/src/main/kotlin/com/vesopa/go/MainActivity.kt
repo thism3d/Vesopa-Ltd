@@ -47,6 +47,27 @@ class MainActivity : FlutterFragmentActivity() {
                 else -> result.error("unsupported", "This Android device has no Dojo payment app. Use the card machine.", null)
             }
         }
+        // This device's settings (lib/ui/device_prefs.dart): battery saving and NFC.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.vesopa.go/device").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "isIgnoringBatteryOptimizations" -> {
+                    val power = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+                    result.success(power.isIgnoringBatteryOptimizations(packageName))
+                }
+                "openBatterySettings" -> open(result, Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                "openNfcSettings" -> open(result, Intent(android.provider.Settings.ACTION_NFC_SETTINGS))
+                else -> result.notImplemented()
+            }
+        }
+    }
+
+    private fun open(result: MethodChannel.Result, intent: Intent) {
+        try {
+            startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            result.success(null)
+        } catch (e: Exception) {
+            result.error("unavailable", e.message, null)
+        }
     }
 
     private fun pocketInstalled(): Boolean = try {

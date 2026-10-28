@@ -49,6 +49,32 @@ const goFunctions = <String, String>{
   'clock_in_out': 'Clock in / out',
 };
 
+/// The till's icon for each function key (vesopa_epos programmed_bar.dart),
+/// drawn above the key's name on a bar.
+const functionIcons = <String, IconData>{
+  'pay': Icons.credit_card_rounded,
+  'void': Icons.backspace_outlined,
+  'cancel': Icons.block_rounded,
+  'save_table': Icons.event_seat_rounded,
+  'new_bill': Icons.note_add_rounded,
+  'last_bill': Icons.receipt_long_rounded,
+  'note': Icons.edit_note_rounded,
+  'customer': Icons.person_rounded,
+  'open_drawer': Icons.point_of_sale_rounded,
+  'go_sale': Icons.shopping_basket_rounded,
+  'go_tables': Icons.table_restaurant_rounded,
+  'table_plan': Icons.table_bar_rounded,
+  'go_receipts': Icons.receipt_rounded,
+  'go_reports': Icons.insights_rounded,
+  'go_tickets': Icons.confirmation_number_rounded,
+  'go_settings': Icons.settings_rounded,
+  'refund': Icons.currency_exchange_rounded,
+  'sign_off': Icons.logout_rounded,
+  'sign_on': Icons.login_rounded,
+  'display_lock': Icons.lock_rounded,
+  'clock_in_out': Icons.schedule_rounded,
+};
+
 /// Whether Go shows [b]: products, pages and the function keys Go carries
 /// out, so a phone or iPad never shows a key that does nothing.
 bool goUses(ScreenButton b) => switch (b.kind) {
@@ -82,6 +108,8 @@ class KeyActions {
     this.onProductLong,
     this.showPrices = true,
     this.currentScreenId,
+    this.payEnabled = true,
+    this.payLabel,
   });
 
   final ScreenSet screens;
@@ -95,7 +123,12 @@ class KeyActions {
   /// The screen on show, so its page key is drawn as "you are here".
   final int? currentScreenId;
 
-  Widget key(ScreenButton b, {double fontScale = 1}) {
+  /// Pay works only with something on the sale, as on the till; its key
+  /// says how much ("Pay £9.85").
+  final bool payEnabled;
+  final String? payLabel;
+
+  Widget key(ScreenButton b, {double fontScale = 1, bool bar = false}) {
     final product = b.pluId == null ? null : productsByPlu[b.pluId];
     return _Key(
       button: b,
@@ -104,6 +137,7 @@ class KeyActions {
       target: b.kind == ScreenButtonKind.page ? screens.byId(b.targetScreenId) : null,
       actions: this,
       fontScale: fontScale,
+      bar: bar,
     );
   }
 }
@@ -119,6 +153,8 @@ class ProgrammedGrid extends StatelessWidget {
     required ValueChanged<String> onFunction,
     ValueChanged<Product>? onProductLong,
     bool showPrices = true,
+    bool payEnabled = true,
+    String? payLabel,
     this.gap = 8,
     this.reflowColumns,
     this.bottomPad = 0,
@@ -131,6 +167,8 @@ class ProgrammedGrid extends StatelessWidget {
           onProductLong: onProductLong,
           showPrices: showPrices,
           currentScreenId: screen.id,
+          payEnabled: payEnabled,
+          payLabel: payLabel,
         );
 
   final TillScreen screen;
@@ -209,7 +247,7 @@ class ProgrammedStrip extends StatelessWidget {
       final row = Row(children: [
         for (var i = 0; i < keys.length; i++) ...[
           if (i > 0) SizedBox(width: gap),
-          SizedBox(width: unit * keys[i].colSpan, child: actions.key(keys[i], fontScale: 0.95)),
+          SizedBox(width: unit * keys[i].colSpan, child: actions.key(keys[i], fontScale: 0.95, bar: true)),
         ],
       ]);
       return fits ? row : SingleChildScrollView(scrollDirection: Axis.horizontal, child: row);
@@ -225,6 +263,7 @@ class _Key extends StatelessWidget {
     required this.target,
     required this.actions,
     this.fontScale = 1,
+    this.bar = false,
   });
 
   final ScreenButton button;
@@ -233,6 +272,9 @@ class _Key extends StatelessWidget {
   final TillScreen? target;
   final KeyActions actions;
   final double fontScale;
+
+  /// On a bar: the till's small keys, an icon over a centred name.
+  final bool bar;
 
   @override
   Widget build(BuildContext context) {
@@ -260,7 +302,8 @@ class _Key extends StatelessWidget {
       case ScreenButtonKind.function:
         final k = button.functionKey ?? '';
         label = button.label ?? goFunctions[k] ?? k;
-        onTap = () => actions.onFunction(k);
+        if (k == 'pay' && actions.payLabel != null && actions.payEnabled) label = '$label ${actions.payLabel}';
+        if (k != 'pay' || actions.payEnabled) onTap = () => actions.onFunction(k);
       case ScreenButtonKind.modifier:
       case ScreenButtonKind.blank:
       case ScreenButtonKind.unknown:
@@ -279,6 +322,46 @@ class _Key extends StatelessWidget {
     final onPicture = image != null;
     final colour = onPicture ? Colors.white : ink;
     final size = (button.fontSize ?? 15).toDouble().clamp(10, 28) * fontScale;
+
+    // A bar's key, as the till draws it: its icon, and its name centred under
+    // it, a size that fits without breaking a word.
+    if (bar && image == null) {
+      final icon = button.kind == ScreenButtonKind.function
+          ? functionIcons[button.functionKey]
+          : (button.kind == ScreenButtonKind.page ? Icons.grid_view_rounded : null);
+      return Opacity(
+        opacity: onTap != null ? 1 : 0.45,
+        child: Material(
+          color: fill,
+          clipBehavior: Clip.antiAlias,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+            side: BorderSide(color: here ? Tp.lime : Tp.inkLine, width: here ? 2 : 1),
+          ),
+          child: InkWell(
+            onTap: onTap,
+            onLongPress: onLong,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+              child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                if (icon != null) Icon(icon, size: 20, color: colour),
+                if (icon != null) const SizedBox(height: 3),
+                Flexible(
+                  child: FitText(
+                    [if ((button.emoji ?? '').isNotEmpty) button.emoji, label].join(' '),
+                    maxLines: 2,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 13 * fontScale, height: 1.1, fontWeight: FontWeight.w700, color: colour),
+                  ),
+                ),
+                if (button.kind == ScreenButtonKind.product && note != null)
+                  Text(note, maxLines: 1, style: TextStyle(fontSize: 11, fontFeatures: Tp.tabular, color: colour.withValues(alpha: 0.85))),
+              ]),
+            ),
+          ),
+        ),
+      );
+    }
 
     return Opacity(
       opacity: onTap != null ? 1 : 0.55,

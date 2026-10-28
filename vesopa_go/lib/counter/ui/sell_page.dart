@@ -245,6 +245,14 @@ class _SellPageState extends ConsumerState<SellPage> {
     final bottom = config.screens.barFor(screen, ScreenSurface.bottomBar, config.bottomBarScreenId);
     final byPlu = {for (final p in s.products) if (p.plu != null) p.plu!: p};
     void page(TillScreen t) => setState(() => _screenId = t.id);
+    // One Pay, as on the till: the venue's Pay key when it has one (only
+    // with something on the sale), else the sale's own.
+    final saleId = ref.watch(currentSaleProvider);
+    final bill = saleId == null ? null : s.bills[saleId];
+    final hasLines = bill?.lines.isNotEmpty ?? false;
+    final payLabel = hasLines ? money(bill!.dueMinor) : null;
+    bool hasPay(TillScreen? b) => b != null && keysInOrder(b).any((k) => k.kind == ScreenButtonKind.function && k.functionKey == 'pay');
+    final keyedPay = hasPay(top) || hasPay(bottom) || hasPay(screen);
     final actions = KeyActions(
       screens: config.screens,
       productsByPlu: byPlu,
@@ -253,6 +261,8 @@ class _SellPageState extends ConsumerState<SellPage> {
       onPage: page,
       onFunction: _function,
       currentScreenId: screen.id,
+      payEnabled: hasLines,
+      payLabel: payLabel,
     );
     final grid = AnimatedSwitcher(
       duration: const Duration(milliseconds: 180),
@@ -266,6 +276,8 @@ class _SellPageState extends ConsumerState<SellPage> {
           onProductLong: _longPressFor(s),
           onPage: page,
           onFunction: _function,
+          payEnabled: hasLines,
+          payLabel: payLabel,
           reflowColumns: phone ? 3 : null,
         ),
       ),
@@ -298,7 +310,7 @@ class _SellPageState extends ConsumerState<SellPage> {
         Expanded(child: Padding(padding: const EdgeInsets.fromLTRB(8, 6, 8, 0), child: grid)),
         bar(bottom),
         const SizedBox(height: 8),
-        _SaleBar(onView: _viewSale, onPay: _pay),
+        _SaleBar(onView: _viewSale, onPay: keyedPay ? null : _pay),
       ]);
     }
     final scheme = Theme.of(context).colorScheme;
@@ -316,7 +328,7 @@ class _SellPageState extends ConsumerState<SellPage> {
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: scheme.outlineVariant),
             ),
-            child: SalePanel(onPay: _pay),
+            child: SalePanel(onPay: keyedPay ? null : _pay),
           ),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -410,7 +422,9 @@ class _SellPageState extends ConsumerState<SellPage> {
 class _SaleBar extends ConsumerWidget {
   const _SaleBar({required this.onView, required this.onPay});
   final VoidCallback onView;
-  final VoidCallback onPay;
+
+  /// Null when the venue's bottom bar has its own Pay key: one Pay only.
+  final VoidCallback? onPay;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -452,6 +466,7 @@ class _SaleBar extends ConsumerWidget {
                   child: Text(count == 0 ? 'View Sale' : 'View Sale ($count)'),
                 ),
               ),
+              if (onPay != null) ...[
               const SizedBox(width: 10),
               Expanded(
                 child: FilledButton(
@@ -460,6 +475,7 @@ class _SaleBar extends ConsumerWidget {
                   child: Text(empty ? 'Pay' : 'Pay ${money(bill.dueMinor)}'),
                 ),
               ),
+              ],
             ]),
           ]),
         ),

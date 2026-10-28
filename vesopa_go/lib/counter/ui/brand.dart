@@ -57,6 +57,24 @@ class GoWordmark extends StatelessWidget {
   }
 }
 
+/// The app's mark and "Go" as one lockup (owner, 2026-10-28: the app icon
+/// and Go together, for the sale screen's bar).
+class GoLockup extends StatelessWidget {
+  const GoLockup({super.key, this.size = 22});
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerLeft,
+        child: Row(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.center, children: [
+          GoMark(size: size * 1.45),
+          SizedBox(width: size * 0.18),
+          Text('Go', style: TextStyle(fontSize: size * 1.15, height: 1, fontWeight: FontWeight.w900, letterSpacing: -0.8, color: Tp.lime)),
+        ]),
+      );
+}
+
 /// An icon for a menu category from its name, so the rail reads at a glance
 /// without anyone choosing icons in the back office.
 IconData categoryIcon(String name) {

@@ -33,7 +33,7 @@ void main() {
         await tester.pump();
       }
       await tester.pumpAndSettle();
-      expect(find.text('Sam'), findsOneWidget);
+      expect(find.byTooltip('Sam'), findsOneWidget);
 
       // Starters open first. Garlic Bread is off today; the wings ask for a sauce.
       await tapKey(tester, 'item-p145');

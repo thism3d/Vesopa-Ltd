@@ -24,6 +24,7 @@ import 'counter/ui/shell.dart';
 import 'counter/ui/start_pages.dart';
 import 'data/demo_venue.dart';
 import 'data/session.dart';
+import 'ui/device_prefs.dart';
 import 'ui/go_frame.dart';
 import 'ui/sounds.dart';
 import 'ui/pages/setup.dart';
@@ -36,6 +37,7 @@ void main() {
   TapSession.product = appName;
   WidgetsFlutterBinding.ensureInitialized();
   GoSounds.load();
+  DevicePrefs.load();
   runApp(const ProviderScope(child: GoApp()));
 }
 
