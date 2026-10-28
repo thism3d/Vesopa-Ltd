@@ -14,9 +14,9 @@ App Store Connect: `app_store.json` (filled by `go-ios.yml`, never submitted); T
 - **Promotional text (170):** Seat a table, send the order to the kitchen and take the payment, all from your phone, with everything in the same Vesopa back office as your tills.
 - **Keywords (100):** epos,pos,till,restaurant,bar,cafe,table service,orders,kitchen,dojo,tap to pay,hospitality
 - **Category:** Business (secondary: Food & Drink)
-- **Support URL:** https://vesopaepos.com/
-- **Marketing URL:** https://vesopaepos.com/
-- **Privacy policy:** https://vesopaepos.com/privacy
+- **Support URL:** https://go.vesopa.com/support/
+- **Marketing URL:** https://go.vesopa.com/
+- **Privacy policy:** https://go.vesopa.com/privacy/
 - **Description:** as `play.json`'s full description.
 - **Sign-in for App Review:** Continue with Vesopa with The Vesopa Kitchen's manager account (Dojo sandbox), typed by hand into App Store Connect > App Review Information > Sign-in required (user name, password), with a staff PIN in the Notes. Never in this repo.
 

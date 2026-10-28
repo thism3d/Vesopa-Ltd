@@ -37,12 +37,12 @@ Uploaded by the workflow; check it looks right.
 | Tags | Point of sale, Restaurant, Business, Payments (the closest Play offers) |
 | Email address | info@vesopasoftware.com |
 | Phone | leave blank |
-| Website | https://vesopaepos.com/ |
+| Website | https://go.vesopa.com/ |
 | External marketing | Off (an app for venue staff, not the public) |
 
 ## App content (Policy and programmes > App content)
 
-**Privacy policy:** https://vesopaepos.com/privacy
+**Privacy policy:** https://go.vesopa.com/privacy/ (terms: https://go.vesopa.com/terms/, support: https://go.vesopa.com/support/)
 
 **App access:** "All or some functionality is restricted". Add instructions:
 - Name: The Vesopa Kitchen (review venue)

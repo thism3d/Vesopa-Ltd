@@ -68,8 +68,8 @@ WHAT_TO_TEST = ("Vesopa Go 1.2.1 (sign-in fixed on iPad): the till on iPad (scre
                 "(The Vesopa Kitchen for testers). Open Tables (the floor plan), seat one, order (tap an item twice: it stacks; long-press for a "
                 "note), send it, take the payment, print or email the receipt, then check Reports.")
 FEEDBACK = "info@vesopasoftware.com"
-PRIVACY = "https://vesopaepos.com/privacy"
-MARKETING = "https://vesopaepos.com/"
+PRIVACY = "https://go.vesopa.com/privacy/"
+MARKETING = "https://go.vesopa.com/"
 
 
 def version():
