@@ -72,6 +72,11 @@ const GO_DEFAULTS = Object.freeze({
   layout_tablet: '', // JSON list of screen ids in order, '' = the till's order
   layout_phone: '',
   allow_rearrange: true,
+  // What the sale screen shows on each kind of device: photo buttons by
+  // section, or the till's programmed screens (owner, 2026-10-28: the till's
+  // screens are too small to read on a phone).
+  screens_phone: 'photos', // photos | till
+  screens_tablet: 'till', // till | photos
 });
 
 const CHOICES = {
@@ -83,6 +88,8 @@ const CHOICES = {
   memberships_access: ['staff', 'managers', 'off'],
   memberships_cancel: ['staff', 'managers'],
   events_access: ['staff', 'managers', 'off'],
+  screens_phone: ['photos', 'till'],
+  screens_tablet: ['till', 'photos'],
 };
 
 /** body's known keys, typed and bounded like the defaults; unknown keys dropped. */

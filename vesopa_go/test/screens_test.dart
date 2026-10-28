@@ -31,7 +31,7 @@ void main() {
     expect(c.home?.buttons.first.colSpan, 2);
   });
 
-  testWidgets('product keys ring up, page keys open their screen, the till’s own functions do nothing', (tester) async {
+  testWidgets('product keys ring up, page keys open their screen, the till’s own functions are left off', (tester) async {
     final c = TapConfig.fromJson(const {'screens': _screens, 'till': {'home_screen_id': 7}});
     Product? rung;
     TillScreen? opened;
@@ -56,8 +56,9 @@ void main() {
     expect(rung, pint);
     await tester.tap(find.text('Food'));
     expect(opened?.id, 8);
-    await tester.tap(find.text('No sale'));
-    expect(find.text('On the till'), findsOneWidget);
+    // A key only the till can do is not shown at all.
+    expect(find.text('No sale'), findsNothing);
+    expect(find.text('On the till'), findsNothing);
   });
 
   test('a screen arranged on an iPad is the iPad’s only; the till and phones keep the till’s', () {

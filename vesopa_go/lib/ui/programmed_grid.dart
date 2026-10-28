@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 
 import '../data/models.dart';
 import '../data/screen_set.dart';
+import 'product_photo.dart' show photoUrl;
 import 'theme.dart';
 
 /// The till's function keys Go carries out; any other shows as the till's
@@ -31,6 +32,7 @@ class ProgrammedGrid extends StatelessWidget {
     required this.onPage,
     required this.onFunction,
     this.onProductLong,
+    this.photoFor,
     this.showPrices = true,
     this.gap = 8,
   });
@@ -40,6 +42,10 @@ class ProgrammedGrid extends StatelessWidget {
   final Map<int, Product> productsByPlu;
   final ValueChanged<Product> onProduct;
   final ValueChanged<Product>? onProductLong;
+
+  /// The photo a product key shows when the till's key has no picture of its
+  /// own (the product's back-office or online menu photo).
+  final String? Function(Product)? photoFor;
   final ValueChanged<TillScreen> onPage;
   final ValueChanged<String> onFunction;
   final bool showPrices;
@@ -56,7 +62,8 @@ class ProgrammedGrid extends StatelessWidget {
         for (var c = 0; c < screen.cols; c++) {
           if (covered.contains('$r:$c')) continue;
           final b = screen.at(r, c);
-          if (b == null || b.kind == ScreenButtonKind.blank) continue;
+          if (b == null || !goUses(b)) continue;
+          final product = b.pluId == null ? null : productsByPlu[b.pluId];
           keys.add(Positioned(
             left: c * (cellW + gap),
             top: r * (cellH + gap),
@@ -65,7 +72,8 @@ class ProgrammedGrid extends StatelessWidget {
             child: _Key(
               button: b,
               here: b.kind == ScreenButtonKind.page && b.targetScreenId == screen.id,
-              product: b.pluId == null ? null : productsByPlu[b.pluId],
+              product: product,
+              photo: b.imageUrl == null && product != null ? photoFor?.call(product) : null,
               target: b.kind == ScreenButtonKind.page ? screens.byId(b.targetScreenId) : null,
               showPrices: showPrices,
               onProduct: onProduct,
@@ -81,11 +89,24 @@ class ProgrammedGrid extends StatelessWidget {
   }
 }
 
+/// Whether Go shows [b]: products, pages and the function keys Go carries
+/// out. The till's other keys (open bill, screen settings, the drawer...) are
+/// left out, so a phone or iPad never shows a key that does nothing.
+bool goUses(ScreenButton b) => switch (b.kind) {
+      ScreenButtonKind.product || ScreenButtonKind.page => true,
+      ScreenButtonKind.function => goFunctions.containsKey(b.functionKey ?? ''),
+      _ => false,
+    };
+
+/// Whether a bar has anything Go can use on it, so an empty bar takes no room.
+bool barHasKeys(TillScreen bar) => bar.buttons.any(goUses);
+
 class _Key extends StatelessWidget {
   const _Key({
     required this.button,
     required this.here,
     required this.product,
+    required this.photo,
     required this.target,
     required this.showPrices,
     required this.onProduct,
@@ -97,6 +118,7 @@ class _Key extends StatelessWidget {
   final ScreenButton button;
   final bool here;
   final Product? product;
+  final String? photo;
   final TillScreen? target;
   final bool showPrices;
   final ValueChanged<Product> onProduct;
@@ -129,11 +151,7 @@ class _Key extends StatelessWidget {
       case ScreenButtonKind.function:
         final k = button.functionKey ?? '';
         label = button.label ?? goFunctions[k] ?? k;
-        if (goFunctions.containsKey(k)) {
-          onTap = () => onFunction(k);
-        } else {
-          note = 'On the till';
-        }
+        onTap = () => onFunction(k);
       case ScreenButtonKind.modifier:
       case ScreenButtonKind.blank:
       case ScreenButtonKind.unknown:
@@ -142,7 +160,7 @@ class _Key extends StatelessWidget {
     }
     final fill = here ? Tp.lime.withValues(alpha: 0.28) : (button.fill ?? Tp.inkCard);
     final ink = button.ink ?? (button.fill == null ? Colors.white : (fill.computeLuminance() > 0.5 ? Tp.onLime : Colors.white));
-    final image = button.imageUrl;
+    final image = button.imageUrl ?? (photo == null ? null : photoUrl(photo!));
     return Opacity(
       opacity: onTap != null ? 1 : 0.55,
       child: Material(
@@ -158,7 +176,7 @@ class _Key extends StatelessWidget {
           child: Stack(fit: StackFit.expand, children: [
             if (image != null && image.isNotEmpty)
               CachedNetworkImage(imageUrl: image, fit: button.imageFit.boxFit, errorWidget: (_, _, _) => const SizedBox.shrink()),
-            if (button.showLabel || image == null || image.isEmpty)
+            if (button.showLabel || button.imageUrl == null || image == null || image.isEmpty)
               Container(
                 decoration: image != null && image.isNotEmpty
                     ? const BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0x00000000), Color(0xB3000000)]))

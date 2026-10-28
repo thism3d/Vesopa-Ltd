@@ -72,6 +72,8 @@ class TapConfig {
     this.topBarScreenId,
     this.bottomBarScreenId,
     this.goLayouts = const {},
+    this.productPhotos = const {},
+    this.sectionPhotos = const {},
   });
   final String environment;
   final bool tips;
@@ -114,6 +116,11 @@ class TapConfig {
   /// Go's own layouts, `{form: {screenId: buttons}}` (layout_editor.dart).
   final Map<String, Map<String, dynamic>> goLayouts;
 
+  /// The venue's photos beyond the products' own (the online menu's):
+  /// PLU to photo, and section name (lower case) to photo (photo_menu.dart).
+  final Map<String, String> productPhotos;
+  final Map<String, String> sectionPhotos;
+
   /// The home screen to draw, or null for the built-in grid.
   TillScreen? get home => screens.surfaceById(homeScreenId, ScreenSurface.sale);
 
@@ -146,6 +153,8 @@ class TapConfig {
       homeScreenId: (till['home_screen_id'] as num?)?.toInt(),
       topBarScreenId: (till['top_bar_screen_id'] as num?)?.toInt(),
       bottomBarScreenId: (till['bottom_bar_screen_id'] as num?)?.toInt(),
+      productPhotos: {for (final e in ((j['menu_photos'] as Map?)?['products'] as Map? ?? const {}).entries) '${e.key}': '${e.value}'},
+      sectionPhotos: {for (final e in ((j['menu_photos'] as Map?)?['sections'] as Map? ?? const {}).entries) '${e.key}': '${e.value}'},
       goLayouts: {
         for (final form in const ['tablet', 'phone'])
           if (j['layouts'] is Map && (j['layouts'] as Map)[form] is Map) form: Map<String, dynamic>.from((j['layouts'] as Map)[form] as Map),
@@ -441,6 +450,7 @@ class TapSession extends Notifier<TapState> {
         api.layouts('tablet').catchError((Object _) => <String, dynamic>{}),
         api.layouts('phone').catchError((Object _) => <String, dynamic>{}),
         api.deals().catchError((Object _) => <dynamic>[]),
+        api.photos().catchError((Object _) => <String, dynamic>{}),
       ]);
       final raw = {
         'staff': [for (final c in results[0] as List<Clerk>) {'id': c.id, 'name': c.name, 'pin': c.pin, 'swipe_card': c.card, 'permission_group': c.group, 'perms': c.permissions}],
@@ -449,7 +459,7 @@ class TapSession extends Notifier<TapState> {
         'modifiers': results[2],
         'screens': results[3],
         'floor': results[4],
-        'config': {...results[5] as Map<String, dynamic>, 'till': results[6], 'branding': results[7], 'photos': (results[8] as Map)['photos'], 'layouts': {'tablet': (results[9] as Map)['layouts'], 'phone': (results[10] as Map)['layouts']}},
+        'config': {...results[5] as Map<String, dynamic>, 'till': results[6], 'branding': results[7], 'photos': (results[8] as Map)['photos'], 'layouts': {'tablet': (results[9] as Map)['layouts'], 'phone': (results[10] as Map)['layouts']}, 'menu_photos': results[12]},
       };
       _apply(raw);
       state = state.copyWith(online: true);

@@ -83,6 +83,11 @@ class GoOptions {
   String get membershipsAccess => _str('memberships_access', 'managers');
   String get membershipsCancel => _str('memberships_cancel', 'managers');
   String get eventsAccess => _str('events_access', 'staff');
+
+  /// What the sale screen shows: 'photos' (photo buttons by section) or
+  /// 'till' (the till's programmed screens), per kind of device.
+  String get screensPhone => _str('screens_phone', 'photos');
+  String get screensTablet => _str('screens_tablet', 'till');
 }
 
 enum GoSound {

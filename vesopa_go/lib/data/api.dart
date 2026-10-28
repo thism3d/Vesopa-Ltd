@@ -260,6 +260,19 @@ class TapApi {
   Future<Map<String, dynamic>> checkInTicket(String code, {String? staff}) =>
       _send('POST', '/till/events/checkin', {'code': code, 'staff': ?staff});
 
+  /// The venue's photos: `{products: {plu: url}, sections: {name: url}}`.
+  Future<Map<String, dynamic>> photos() => _send('GET', '/api/tap/photos');
+
+  /// A photo taken or chosen on the device, as a data URI; answers its address.
+  Future<String> uploadPhoto(String dataUri) async => (await _send('POST', '/api/tap/uploads', {'data': dataUri}))['url'] as String;
+
+  /// A product's price (pounds) and photo, as the till's own product edit.
+  Future<void> updateProduct(int plu, {double? price, String? imageUrl}) =>
+      _send('PATCH', '/till/products/$plu', {'price': ?price, 'image_url': ?imageUrl});
+
+  /// The online menu shows the product's new photo too.
+  Future<void> menuPhoto(int plu, String imageUrl) => _send('PUT', '/api/tap/menu-photo/$plu', {'image_url': imageUrl});
+
   /// Staff photos, `{photos: {id: url}}`.
   Future<Map<String, dynamic>> staffPhotos() => _send('GET', '/api/tap/staff-photos');
 

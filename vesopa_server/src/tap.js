@@ -397,6 +397,80 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
     } catch (e) { send(res, e, next); }
   });
 
+  // ---- Photos on Go's buttons (owner, 2026-10-28) ------------------------------
+  //
+  // A product's photo is its back-office picture, else the one the venue's
+  // online menu shows for it (dinein_items), and a section's is the online
+  // menu section's. A manager changes a photo or a price on the device:
+  // PATCH /till/products/:pluid (the till's own route) for the product, and
+  // the online menu's item picture through /api/tap/menu-photo, so the tills,
+  // every Go device and the online menu all show the same thing.
+
+  async function officeIdOf(office) {
+    const [[o]] = await pool.query('SELECT id FROM offices WHERE contact_email = ?', [office]);
+    return o ? o.id : null;
+  }
+
+  router.get('/api/tap/photos', terminal, async (req, res, next) => {
+    try {
+      const products = {};
+      const sections = {};
+      const [rows] = await pool.query(
+        "SELECT pluid, image_url FROM bo_products WHERE email = ? AND image_url IS NOT NULL AND image_url <> ''", [req.office]);
+      for (const r of rows) products[String(r.pluid)] = r.image_url;
+      const officeId = await officeIdOf(req.office);
+      if (officeId != null) {
+        try {
+          const [items] = await pool.query(
+            "SELECT plu_id, image_url FROM dinein_items WHERE office_id = ? AND image_url IS NOT NULL AND image_url <> ''", [officeId]);
+          for (const i of items) if (!products[String(i.plu_id)]) products[String(i.plu_id)] = i.image_url;
+          const [secs] = await pool.query(
+            "SELECT name, image_url FROM dinein_sections WHERE office_id = ? AND image_url IS NOT NULL AND image_url <> ''", [officeId]);
+          for (const sct of secs) sections[String(sct.name).trim().toLowerCase()] = sct.image_url;
+        } catch (e) {
+          if (e.code !== 'ER_NO_SUCH_TABLE' && e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+        }
+      }
+      res.json({ products, sections });
+    } catch (e) { send(res, e, next); }
+  });
+
+  /** A photo taken or chosen on the device: JPEG or PNG as base64, up to 4 MB, into the back office's uploads. */
+  router.post('/api/tap/uploads', terminal, express.json({ limit: '6mb' }), async (req, res, next) => {
+    try {
+      const m = /^data:image\/(jpeg|png);base64,([A-Za-z0-9+/=]+)$/.exec(String((req.body || {}).data || ''));
+      if (!m) return res.status(400).json({ error: 'A JPEG or PNG photo, please.' });
+      const bytes = Buffer.from(m[2], 'base64');
+      if (bytes.length > 4 * 1024 * 1024) return res.status(413).json({ error: 'That photo is over 4 MB.' });
+      const okJpeg = bytes[0] === 0xff && bytes[1] === 0xd8;
+      const okPng = bytes[0] === 0x89 && bytes[1] === 0x50;
+      if (!okJpeg && !okPng) return res.status(400).json({ error: 'That is not a photo.' });
+      const name = `${crypto.randomUUID()}.${okJpeg ? 'jpg' : 'png'}`;
+      const dir = require('path').join(__dirname, '..', 'public', 'uploads');
+      await require('fs').promises.mkdir(dir, { recursive: true });
+      await require('fs').promises.writeFile(require('path').join(dir, name), bytes);
+      res.status(201).json({ url: `/uploads/${name}` });
+    } catch (e) { send(res, e, next); }
+  });
+
+  /** The online menu shows the product's new photo too (its dine-in items for that PLU). */
+  router.put('/api/tap/menu-photo/:plu', terminal, express.json(), async (req, res, next) => {
+    try {
+      const url = String((req.body || {}).image_url || '').trim();
+      if (!/^(\/uploads\/|https:\/\/)[^\s"'<>]{1,480}$/.test(url)) return res.status(400).json({ error: 'That is not a photo address.' });
+      const officeId = await officeIdOf(req.office);
+      if (officeId == null) return res.json({ ok: true, changed: 0 });
+      try {
+        const [r] = await pool.execute('UPDATE dinein_items SET image_url = ? WHERE office_id = ? AND plu_id = ?',
+          [url, officeId, Number(req.params.plu)]);
+        res.json({ ok: true, changed: r.affectedRows });
+      } catch (e) {
+        if (e.code === 'ER_NO_SUCH_TABLE') return res.json({ ok: true, changed: 0 });
+        throw e;
+      }
+    } catch (e) { send(res, e, next); }
+  });
+
   /** Staff photos for the signed-on chip: { staff id: url }. Empty without the column. */
   router.get('/api/tap/staff-photos', terminal, async (req, res, next) => {
     try {

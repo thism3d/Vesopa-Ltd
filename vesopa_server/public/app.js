@@ -11716,6 +11716,8 @@ const GO_FIELDS = [
     ['events_access', 'Events and tickets on Go (sell, check in)', [['staff', 'Every member of staff'], ['managers', 'Managers (or a manager PIN)'], ['off', 'Not on Go']]],
   ]],
   ['Screens', [
+    ['screens_phone', 'Phones show', [['photos', 'Photo buttons by section (easiest to read)'], ['till', "The till's programmed screens"]]],
+    ['screens_tablet', 'iPads and tablets show', [['till', "The till's programmed screens"], ['photos', 'Photo buttons by section']]],
     ['allow_rearrange', 'Managers can rearrange the buttons on the device (long-press)'],
   ]],
 ];

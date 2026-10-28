@@ -6,13 +6,14 @@
 /// the items, as the till does, and Pay sits under it.
 library;
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vesopa_go/data/models.dart';
 import 'package:vesopa_go/data/session.dart';
 import 'package:vesopa_go/ui/pages/note_sheet.dart';
-import 'package:vesopa_go/ui/product_photo.dart';
 import 'package:vesopa_go/ui/layout_editor.dart';
+import 'package:vesopa_go/ui/photo_menu.dart';
 import 'package:vesopa_go/ui/programmed_grid.dart';
 import 'package:vesopa_go/ui/sounds.dart';
 import 'package:vesopa_go/ui/theme.dart';
@@ -95,6 +96,31 @@ class _SellPageState extends ConsumerState<SellPage> {
     GoSounds.play(ref.read(tapProvider).config.go, GoSound.add);
   }
 
+  /// Long press: a manager can change the photo and price; anyone else (and a
+  /// manager who chooses to) gets the choices and a note.
+  Future<void> _longPress(Product p) async {
+    final s = ref.read(tapProvider);
+    final manager = s.clerk?.can(TillPermission.isManager) ?? false;
+    if (!manager) return _pressLong(p);
+    final what = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (c) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          ListTile(leading: const Icon(Icons.edit_rounded), title: const Text('Change photo and price'), onTap: () => Navigator.pop(c, 'edit')),
+          if (s.config.go.noteLongPress)
+            ListTile(leading: const Icon(Icons.edit_note_rounded), title: const Text('Add with choices and a note'), onTap: () => Navigator.pop(c, 'note')),
+        ]),
+      ),
+    );
+    if (!mounted || what == null) return;
+    if (what == 'edit') {
+      await editProduct(context, ref, p);
+    } else {
+      await _pressLong(p);
+    }
+  }
+
   void _pay() {
     final id = ref.read(currentSaleProvider);
     if (id == null) return;
@@ -153,7 +179,8 @@ class _SellPageState extends ConsumerState<SellPage> {
           screens: config.screens,
           productsByPlu: byPlu,
           onProduct: _press,
-          onProductLong: config.go.noteLongPress ? _pressLong : null,
+          onProductLong: _longPressFor(s),
+          photoFor: config.go.productImages ? (p) => photoOf(s, p) : null,
           onPage: (t) => setState(() => _screenId = t.id),
           onFunction: _function,
         );
@@ -170,22 +197,31 @@ class _SellPageState extends ConsumerState<SellPage> {
               label: const Text('Arrange'),
             ),
           ),
-        if (top != null) SizedBox(height: 60.0 * top.rows, child: grid(top)),
-        if (top != null) const SizedBox(height: 8),
+        if (top != null && barHasKeys(top)) ...[SizedBox(height: 64.0 * top.rows, child: grid(top)), const SizedBox(height: 8)],
         Expanded(
           child: AnimatedSwitcher(duration: const Duration(milliseconds: 180), child: KeyedSubtree(key: ValueKey(screen.id), child: grid(screen))),
         ),
-        if (bottom != null) const SizedBox(height: 8),
-        if (bottom != null) SizedBox(height: 60.0 * bottom.rows, child: grid(bottom)),
+        if (bottom != null && barHasKeys(bottom)) ...[const SizedBox(height: 8), SizedBox(height: 64.0 * bottom.rows, child: grid(bottom))],
       ]),
     );
   }
+
+  /// Long press on an item: a manager's photo-and-price sheet, else the
+  /// choices and a note when the venue allows it.
+  ValueChanged<Product>? _longPressFor(TapState s) =>
+      (s.clerk?.can(TillPermission.isManager) ?? false) || s.config.go.noteLongPress ? _longPress : null;
 
   @override
   Widget build(BuildContext context) {
     final s = ref.watch(tapProvider);
     final home = s.config.home;
-    if (home != null) {
+    // Each kind of device has its own sale screen (owner, 2026-10-28): phones
+    // show photo buttons by section, since the till's programmed screens are
+    // too small to read there; iPads and tablets show the till's screens.
+    // The back office can change either (Vesopa Go options > Screens).
+    final form = formOf(context);
+    final tillScreens = form == 'tablet' ? s.config.go.screensTablet == 'till' : s.config.go.screensPhone == 'till';
+    if (home != null && tillScreens) {
       return LayoutBuilder(builder: (context, box) {
         final screens = _programmed(s, home);
         if (box.maxWidth >= 840) {
@@ -220,10 +256,30 @@ class _SellPageState extends ConsumerState<SellPage> {
     final colour = Color(categories.firstWhere((c) => c.id == selected).colour);
     final items = [for (final p in s.products) if (p.category == selected) p];
 
+    // Photos on every button, laid out for each device (photo_menu.dart).
+    final longPress = _longPressFor(s);
+    void pick(String id) => setState(() => _category = id);
     return LayoutBuilder(builder: (context, box) {
       final wide = box.maxWidth >= 840;
-      final grid = _Grid(items: items, colour: colour, onPress: _press, onLongPress: ref.read(tapProvider).config.go.noteLongPress ? _pressLong : null);
-      final rail = _Rail(categories: categories, selected: selected, onSelect: (id) => setState(() => _category = id));
+      final tablet = form == 'tablet';
+      final iphone = !tablet && defaultTargetPlatform == TargetPlatform.iOS;
+      if (iphone) {
+        final cat = categories.firstWhere((c) => c.id == selected);
+        return Stack(children: [
+          Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+              child: Text(cat.name, style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w800, letterSpacing: -0.5)),
+            ),
+            PhotoChips(categories: categories, selected: selected, onSelect: pick),
+            const SizedBox(height: 6),
+            Expanded(child: PhotoGrid(items: items, tint: colour, columns: 2, square: true, bottomPad: 96, onPress: _press, onLongPress: longPress)),
+          ]),
+          Positioned(left: 12, right: 12, bottom: 12, child: SafeArea(top: false, child: _FloatingSale(onView: _viewSale, onPay: _pay))),
+        ]);
+      }
+      final grid = PhotoGrid(items: items, tint: colour, columns: wide || tablet ? 0 : 2, onPress: _press, onLongPress: longPress);
+      final rail = PhotoRail(categories: categories, selected: selected, onSelect: pick, width: wide || tablet ? 96 : 84);
       if (wide) {
         return Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           rail,
@@ -245,119 +301,6 @@ class _SellPageState extends ConsumerState<SellPage> {
         _SaleBar(onView: _viewSale, onPay: _pay),
       ]);
     });
-  }
-}
-
-class _Rail extends StatelessWidget {
-  const _Rail({required this.categories, required this.selected, required this.onSelect});
-  final List<MenuCategory> categories;
-  final String selected;
-  final ValueChanged<String> onSelect;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      width: 84,
-      decoration: BoxDecoration(color: scheme.surfaceContainer, border: Border(right: BorderSide(color: scheme.outlineVariant))),
-      child: ListView(padding: const EdgeInsets.symmetric(vertical: 6), children: [
-        for (final c in categories)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-            child: Material(
-              color: c.id == selected ? Color(c.colour).withValues(alpha: 0.22) : Colors.transparent,
-              borderRadius: BorderRadius.circular(14),
-              child: InkWell(
-                key: ValueKey('cat-${c.id}'),
-                borderRadius: BorderRadius.circular(14),
-                onTap: () => onSelect(c.id),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-                  child: Column(children: [
-                    Icon(categoryIcon(c.name), color: c.id == selected ? Color(c.colour) : scheme.onSurface.withValues(alpha: 0.75)),
-                    const SizedBox(height: 4),
-                    Text(c.name,
-                        maxLines: 2,
-                        textAlign: TextAlign.center,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 11.5, height: 1.15, fontWeight: c.id == selected ? FontWeight.w800 : FontWeight.w600)),
-                  ]),
-                ),
-              ),
-            ),
-          ),
-      ]),
-    );
-  }
-}
-
-class _Grid extends StatelessWidget {
-  const _Grid({required this.items, required this.colour, required this.onPress, this.onLongPress});
-  final List<Product> items;
-  final Color colour;
-  final ValueChanged<Product> onPress;
-  final ValueChanged<Product>? onLongPress;
-
-  @override
-  Widget build(BuildContext context) => GridView.builder(
-        padding: const EdgeInsets.all(8),
-        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent: 128, mainAxisExtent: 84, crossAxisSpacing: 8, mainAxisSpacing: 8),
-        itemCount: items.length,
-        itemBuilder: (_, i) => _Key(product: items[i], colour: colour, onTap: () => onPress(items[i]), onLongPress: onLongPress == null ? null : () => onLongPress!(items[i])),
-      );
-}
-
-/// One item key: its name, its price, and its category's colour along the
-/// bottom, the way a till's keys are colour-coded.
-class _Key extends StatelessWidget {
-  const _Key({required this.product, required this.colour, required this.onTap, this.onLongPress});
-  final Product product;
-  final Color colour;
-  final VoidCallback onTap;
-  final VoidCallback? onLongPress;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final p = product;
-    return Opacity(
-      opacity: p.outOfStock ? 0.4 : 1,
-      child: Material(
-        color: scheme.surfaceContainer,
-        clipBehavior: Clip.antiAlias,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: scheme.outlineVariant)),
-        child: InkWell(
-          key: ValueKey('item-${p.id}'),
-          onTap: onTap,
-          onLongPress: onLongPress,
-          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            ProductPhoto(product: p, tint: colour),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  // The name has the key's whole width: "Fortyniner" never breaks.
-                  Text(p.name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13.5, height: 1.15, fontWeight: FontWeight.w700)),
-                  const Spacer(),
-                  Row(children: [
-                    Expanded(
-                      child: Text(p.outOfStock ? 'Sold out' : money(p.priceMinor),
-                          style: TextStyle(fontSize: 12, fontFeatures: Tp.tabular, color: scheme.onSurface.withValues(alpha: 0.7))),
-                    ),
-                    if (p.allergens.isNotEmpty) const Icon(Icons.back_hand_rounded, size: 13, color: Tp.amber, semanticLabel: 'Has allergens'),
-                    if (p.options.isNotEmpty && !p.outOfStock) ...[
-                      const SizedBox(width: 4),
-                      Icon(Icons.tune_rounded, size: 13, color: scheme.onSurface.withValues(alpha: 0.5), semanticLabel: 'Has choices'),
-                    ],
-                  ]),
-                ]),
-              ),
-            ),
-            Container(height: 4, color: colour),
-          ]),
-        ),
-      ),
-    );
   }
 }
 
@@ -441,6 +384,46 @@ class _EmptyMenu extends StatelessWidget {
               'Until then, Quick sale takes a typed amount.',
               textAlign: TextAlign.center, style: t.bodyMedium),
         ]),
+      ),
+    );
+  }
+}
+
+/// The iPhone's sale, floating at the bottom within thumb reach.
+class _FloatingSale extends ConsumerWidget {
+  const _FloatingSale({required this.onView, required this.onPay});
+  final VoidCallback onView;
+  final VoidCallback onPay;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final id = ref.watch(currentSaleProvider);
+    final bill = ref.watch(tapProvider.select((s) => id == null ? null : s.bills[id]));
+    final count = bill?.lines.fold<int>(0, (n, l) => n + l.quantity) ?? 0;
+    final due = bill?.dueMinor ?? 0;
+    return Material(
+      color: const Color(0xEB232320),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22), side: const BorderSide(color: Tp.inkLine)),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(22),
+        onTap: count == 0 ? null : onView,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+          child: Row(children: [
+            Expanded(
+              child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(count == 0 ? 'Tap an item to start a sale' : 'This sale · $count item${count == 1 ? '' : 's'}', style: const TextStyle(color: Tp.muted, fontSize: 12)),
+                Money(due, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17)),
+              ]),
+            ),
+            FilledButton(
+              key: const ValueKey('pay'),
+              style: FilledButton.styleFrom(minimumSize: const Size(96, 48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+              onPressed: count == 0 ? null : onPay,
+              child: const Text('Pay'),
+            ),
+          ]),
+        ),
       ),
     );
   }

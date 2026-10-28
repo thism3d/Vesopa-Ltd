@@ -7,7 +7,7 @@
   "contact_email": "info@vesopasoftware.com",
   "contact_website": "https://go.vesopa.com/",
   "track": "internal",
-  "release_notes": "Vesopa Go 1.2.1: signing in fixed on iPhone and iPad, wider payment and customer screens, the card machine first on an iPad, and the demo removed (Vesopa Go is for licensed venues).",
+  "release_notes": "Vesopa Go 1.2.2: photos on every button, a clear sale screen made for each device (photo buttons by section on phones, the till's screens on tablets), and managers can change a product's photo and price with a long press.",
   "images": {
     "icon": [
       "play-icon-512.png"
