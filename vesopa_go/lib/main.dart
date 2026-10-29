@@ -24,6 +24,7 @@ import 'counter/ui/shell.dart';
 import 'counter/ui/start_pages.dart';
 import 'data/demo_venue.dart';
 import 'data/session.dart';
+import 'ui/appearance.dart';
 import 'ui/device_prefs.dart';
 import 'ui/go_frame.dart';
 import 'ui/sounds.dart';
@@ -77,8 +78,8 @@ class GoApp extends ConsumerWidget {
       debugShowCheckedModeBanner: false,
       theme: Tp.theme(Brightness.light),
       darkTheme: Tp.theme(Brightness.dark),
-      // A till behind a bar: ink unless the device is set otherwise.
-      themeMode: ThemeMode.dark,
+      // Light, dark or the device's own (Settings, Appearance).
+      themeMode: ref.watch(appearanceProvider),
       home: AnimatedSwitcher(
         duration: const Duration(milliseconds: 250),
         child: switch (phase) {
@@ -86,7 +87,8 @@ class GoApp extends ConsumerWidget {
           Phase.welcome when demoOnly => const Scaffold(key: ValueKey('boot'), body: Center(child: GoMark(size: 72))),
           Phase.welcome => const LiteWelcomePage(key: ValueKey('welcome')),
           Phase.setup => const SetupPage(key: ValueKey('setup')),
-          Phase.locked => const LiteLockPage(key: ValueKey('locked')),
+          // The PIN pad stays dark, as the till's.
+          Phase.locked => Theme(data: Tp.theme(Brightness.dark), child: const LiteLockPage(key: ValueKey('locked'))),
           Phase.ready => const Shell(key: ValueKey('ready')),
         },
       ),

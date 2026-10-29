@@ -355,7 +355,7 @@ class _OrderPageState extends ConsumerState<OrderPage> {
           Expanded(child: Column(children: menu)),
           Container(
             width: 400,
-            decoration: const BoxDecoration(color: Tp.inkCard, border: Border(left: BorderSide(color: Tp.inkLine))),
+            decoration: BoxDecoration(color: context.goCard, border: Border(left: BorderSide(color: context.goLine))),
             child: Column(children: ticket),
           ),
         ]);

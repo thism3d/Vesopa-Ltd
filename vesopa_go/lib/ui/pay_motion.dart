@@ -57,7 +57,7 @@ class _TapPromptState extends State<TapPrompt> with TickerProviderStateMixin {
     final waiting = widget.step == PayStep.waitingForCard || widget.step == PayStep.onMachine;
     final machine = widget.onMachine || widget.step == PayStep.onMachine;
     return Scaffold(
-      backgroundColor: Tp.inkDeep,
+      backgroundColor: context.goDeep,
       body: SafeArea(
         child: FadeTransition(
           opacity: _enter,
@@ -113,12 +113,12 @@ class _TapPromptState extends State<TapPrompt> with TickerProviderStateMixin {
                 child: Text(_label, key: ValueKey(widget.step), style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w600, color: Colors.white)),
               ),
               if (widget.amountMinor > contactlessLimitMinor && widget.step == PayStep.waitingForCard)
-                const Padding(
+                Padding(
                   padding: EdgeInsets.only(top: 8),
-                  child: Text('Over £100: the card will ask for its PIN.', style: TextStyle(color: Tp.muted)),
+                  child: Text('Over £100: the card will ask for its PIN.', style: TextStyle(color: context.goMuted)),
                 ),
               const SizedBox(height: 10),
-              const Text('Visa · Mastercard · Maestro · Amex · Apple Pay · Google Pay', style: TextStyle(color: Tp.muted, fontSize: 13)),
+              Text('Visa · Mastercard · Maestro · Amex · Apple Pay · Google Pay', style: TextStyle(color: context.goMuted, fontSize: 13)),
               const Spacer(),
               if (widget.onCancel != null)
                 Padding(

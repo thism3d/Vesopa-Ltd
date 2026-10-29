@@ -274,7 +274,7 @@ class _LiteLockPageState extends ConsumerState<LiteLockPage> with SingleTickerPr
     );
 
     return Scaffold(
-      backgroundColor: Tp.inkDeep,
+      backgroundColor: context.goDeep,
       body: Stack(fit: StackFit.expand, children: [
         if (wallpaper != null) CachedNetworkImage(imageUrl: wallpaper, fit: BoxFit.cover, errorWidget: (_, _, _) => const SizedBox.shrink()),
         const ColoredBox(color: Color(0xB3000000)),

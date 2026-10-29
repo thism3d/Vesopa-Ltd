@@ -225,7 +225,7 @@ class _CustomersPageState extends ConsumerState<CustomersPage> {
                     final c = _found[i];
                     return ListTile(
                       leading: CircleAvatar(
-                        backgroundColor: Tp.inkRaised,
+                        backgroundColor: context.goRaised,
                         foregroundImage: c.photo == null || c.photo!.isEmpty ? null : CachedNetworkImageProvider(photoUrl(c.photo!)),
                         child: Text(initialsOf(c.name)),
                       ),

@@ -208,7 +208,8 @@ class _PayPageState extends ConsumerState<PayPage> {
   @override
   Widget build(BuildContext context) {
     if (_done != null) return _Approved(sale: _done!);
-    if (_step != null) return TapPrompt(amountMinor: _cardAmount + _tip, step: _step!, onMachine: _via == 'machine');
+    // The customer's screens stay dark whatever the appearance.
+    if (_step != null) return Theme(data: Tp.theme(Brightness.dark), child: TapPrompt(amountMinor: _cardAmount + _tip, step: _step!, onMachine: _via == 'machine'));
 
     final bill = ref.watch(tapProvider.select((s) => s.bills[widget.billId]));
     final settings = ref.watch(liteSettingsProvider);
@@ -274,7 +275,7 @@ class _BillColumn extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
     return ColoredBox(
-      color: Tp.inkCard,
+      color: context.goCard,
       child: ListView(padding: const EdgeInsets.all(24), children: [
         Text(bill.name, style: t.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
         Text([if (bill.covers > 0) '${bill.covers} covers', if (bill.clerk.trim().isNotEmpty) bill.clerk].join(' · '), style: t.bodySmall),
@@ -330,7 +331,7 @@ Future<int?> askTip(BuildContext context, {required int dueMinor, required List<
     Navigator.of(context).push<int>(PageRouteBuilder(
       opaque: true,
       transitionDuration: const Duration(milliseconds: 300),
-      pageBuilder: (_, _, _) => _TipScreen(dueMinor: dueMinor, percents: percents),
+      pageBuilder: (_, _, _) => Theme(data: Tp.theme(Brightness.dark), child: _TipScreen(dueMinor: dueMinor, percents: percents)),
       transitionsBuilder: (_, a, _, child) => FadeTransition(opacity: a, child: child),
     ));
 
@@ -345,7 +346,7 @@ class _TipScreen extends StatelessWidget {
     int tipOf(double p) => (dueMinor * p / 100).round();
     String pc(double p) => p % 1 == 0 ? p.toStringAsFixed(0) : p.toString();
     return Scaffold(
-      backgroundColor: Tp.inkDeep,
+      backgroundColor: context.goDeep,
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
@@ -355,7 +356,7 @@ class _TipScreen extends StatelessWidget {
               child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                 Text('Add a tip?', textAlign: TextAlign.center, style: t.displaySmall?.copyWith(fontWeight: FontWeight.w900, color: Colors.white)),
                 const SizedBox(height: 8),
-                Text('Your bill is ${money(dueMinor)}', textAlign: TextAlign.center, style: t.titleLarge?.copyWith(color: Tp.muted)),
+                Text('Your bill is ${money(dueMinor)}', textAlign: TextAlign.center, style: t.titleLarge?.copyWith(color: context.goMuted)),
                 const SizedBox(height: 32),
                 Wrap(alignment: WrapAlignment.center, spacing: 14, runSpacing: 14, children: [
                   for (final p in percents)

@@ -109,7 +109,7 @@ class ClerkChip extends ConsumerWidget {
         child: Container(
           key: ValueKey(clerk.id),
           padding: EdgeInsets.fromLTRB(3, 3, wide ? 12 : 3, 3),
-          decoration: BoxDecoration(borderRadius: BorderRadius.circular(999), border: Border.all(color: Tp.inkLine), color: Tp.inkCard),
+          decoration: BoxDecoration(borderRadius: BorderRadius.circular(999), border: Border.all(color: context.goLine), color: context.goCard),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
             StaffAvatar(clerk: clerk, radius: 15),
             if (wide) ...[

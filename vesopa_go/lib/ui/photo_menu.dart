@@ -86,9 +86,9 @@ class PhotoTile extends ConsumerWidget {
     return Opacity(
       opacity: p.outOfStock ? 0.45 : 1,
       child: Material(
-        color: Tp.inkCard,
+        color: context.goCard,
         clipBehavior: Clip.antiAlias,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(square ? 18 : 14), side: const BorderSide(color: Tp.inkLine)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(square ? 18 : 14), side: BorderSide(color: context.goLine)),
         child: InkWell(
           key: ValueKey('item-${p.id}'),
           onTap: onTap,
@@ -108,7 +108,7 @@ class PhotoTile extends ConsumerWidget {
               padding: const EdgeInsets.fromLTRB(9, 7, 9, 9),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(p.name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5, height: 1.15)),
-                if (!photos) Text(money(p.priceMinor), style: const TextStyle(fontSize: 12, color: Tp.muted, fontFeatures: Tp.tabular)),
+                if (!photos) Text(money(p.priceMinor), style: TextStyle(fontSize: 12, color: context.goMuted, fontFeatures: Tp.tabular)),
               ]),
             ),
           ]),
@@ -173,7 +173,7 @@ class PhotoRail extends ConsumerWidget {
     final s = ref.watch(tapProvider);
     return Container(
       width: width,
-      decoration: const BoxDecoration(color: Tp.inkCard, border: Border(right: BorderSide(color: Tp.inkLine))),
+      decoration: BoxDecoration(color: context.goCard, border: Border(right: BorderSide(color: context.goLine))),
       child: ListView(padding: const EdgeInsets.symmetric(vertical: 6), children: [
         for (final c in categories)
           Padding(
@@ -239,8 +239,8 @@ class PhotoChips extends ConsumerWidget {
           final c = categories[i];
           final on = c.id == selected;
           return Material(
-            color: on ? Tp.lime : Tp.inkCard,
-            shape: StadiumBorder(side: BorderSide(color: on ? Tp.lime : Tp.inkLine)),
+            color: on ? Tp.lime : context.goCard,
+            shape: StadiumBorder(side: BorderSide(color: on ? Tp.lime : context.goLine)),
             child: InkWell(
               key: ValueKey('cat-${c.id}'),
               customBorder: const StadiumBorder(),

@@ -154,7 +154,7 @@ class _LayoutEditorPageState extends ConsumerState<LayoutEditorPage> {
                       height: h,
                       child: GestureDetector(
                         onTap: () => _tapCell(r, c),
-                        child: DecoratedBox(decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), border: Border.all(color: Tp.inkLine))),
+                        child: DecoratedBox(decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), border: Border.all(color: context.goLine))),
                       ),
                     ),
                 for (var i = 0; i < _keys.length; i++)
@@ -170,9 +170,9 @@ class _LayoutEditorPageState extends ConsumerState<LayoutEditorPage> {
                         duration: const Duration(milliseconds: 150),
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: _colourOf(_keys[i]['fill']) ?? Tp.inkCard,
+                          color: _colourOf(_keys[i]['fill']) ?? context.goCard,
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: i == p ? Tp.lime : Tp.inkLine, width: i == p ? 3 : 1),
+                          border: Border.all(color: i == p ? Tp.lime : context.goLine, width: i == p ? 3 : 1),
                         ),
                         child: Text('${_keys[i]['label'] ?? _keys[i]['kind']}', maxLines: 3, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700)),
                       ),
@@ -201,7 +201,7 @@ class _LayoutEditorPageState extends ConsumerState<LayoutEditorPage> {
                           child: Container(
                             width: 32,
                             height: 32,
-                            decoration: BoxDecoration(color: c == null ? Tp.inkCard : Color(c), shape: BoxShape.circle, border: Border.all(color: Tp.inkLine)),
+                            decoration: BoxDecoration(color: c == null ? context.goCard : Color(c), shape: BoxShape.circle, border: Border.all(color: context.goLine)),
                             child: c == null ? const Icon(Icons.format_color_reset_rounded, size: 16) : null,
                           ),
                         ),

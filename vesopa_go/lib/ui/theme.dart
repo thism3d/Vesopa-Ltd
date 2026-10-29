@@ -126,6 +126,20 @@ class Tp {
   }
 }
 
+/// Go's surface colours for the current appearance (light, dark or the
+/// device's own): cards, raised keys, hairlines, the deepest ground, and the
+/// quiet text. The brand colours (lime, amber, the table states) are the same
+/// in both.
+extension GoColours on BuildContext {
+  bool get goDark => Theme.of(this).brightness == Brightness.dark;
+  Color get goCard => goDark ? Tp.inkCard : Colors.white;
+  Color get goRaised => goDark ? Tp.inkRaised : const Color(0xFFEDEFE6);
+  Color get goLine => goDark ? Tp.inkLine : Tp.paperLine;
+  Color get goDeep => goDark ? Tp.inkDeep : Tp.paper;
+  Color get goMuted => goDark ? Tp.muted : const Color(0xFF64665D);
+  Color get goText => goDark ? Colors.white : Tp.ink;
+}
+
 /// Whether looping, decorative motion (a breathing status light, rolling
 /// waves) should run: not when the device asks for less motion, and not under
 /// a widget test, where a loop that never ends never lets a test settle.

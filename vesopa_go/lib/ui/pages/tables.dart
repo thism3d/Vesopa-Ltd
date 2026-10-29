@@ -247,7 +247,7 @@ class _FloorPlan extends ConsumerWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
       child: DecoratedBox(
-        decoration: BoxDecoration(color: Tp.inkCard, borderRadius: BorderRadius.circular(16), border: Border.all(color: Tp.inkLine)),
+        decoration: BoxDecoration(color: context.goCard, borderRadius: BorderRadius.circular(16), border: Border.all(color: context.goLine)),
         child: LayoutBuilder(builder: (context, box) {
           const pad = 16.0;
           final cell = math.min((box.maxWidth - pad * 2) / (maxX - minX), (box.maxHeight - pad * 2) / (maxY - minY));
@@ -285,7 +285,7 @@ class _TableTile extends StatelessWidget {
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeOut,
       decoration: ShapeDecoration(
-        color: free ? Tp.inkRaised : colour.withValues(alpha: 0.16),
+        color: free ? context.goRaised : colour.withValues(alpha: 0.16),
         shape: table.round
             ? CircleBorder(side: BorderSide(color: colour, width: 2))
             : RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: BorderSide(color: colour, width: 2)),
@@ -304,7 +304,7 @@ class _TableTile extends StatelessWidget {
                 Text(table.name, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
                 Text(Tp.stateName(state), style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: colour)),
                 if (bill != null) Money(bill!.dueMinor, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
-                Text(tableDetail(bill, table), style: const TextStyle(fontSize: 11, color: Tp.muted)),
+                Text(tableDetail(bill, table), style: TextStyle(fontSize: 11, color: context.goMuted)),
               ]),
             ),
           ),
@@ -393,7 +393,7 @@ class _TableDots extends ConsumerWidget {
                   duration: const Duration(milliseconds: 300),
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: free ? Tp.inkRaised : colour,
+                    color: free ? context.goRaised : colour,
                     border: Border.all(color: colour, width: 2.5),
                     boxShadow: free ? null : [BoxShadow(color: colour.withValues(alpha: 0.35), blurRadius: 12)],
                   ),
@@ -403,7 +403,7 @@ class _TableDots extends ConsumerWidget {
                     child: FitText(short,
                         maxLines: 1,
                         textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: free ? Colors.white : Tp.ink)),
+                        style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: free ? context.goText : Tp.ink)),
                   ),
                 ),
               ),

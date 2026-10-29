@@ -138,7 +138,7 @@ class _PaySheetState extends ConsumerState<PaySheet> {
     if (_step != null) {
       return SizedBox(
         height: MediaQuery.sizeOf(context).height * 0.92,
-        child: TapPrompt(amountMinor: total, step: _step!, onMachine: _via == 'machine'),
+        child: Theme(data: Tp.theme(Brightness.dark), child: TapPrompt(amountMinor: total, step: _step!, onMachine: _via == 'machine')),
       );
     }
     if (_step != null) {

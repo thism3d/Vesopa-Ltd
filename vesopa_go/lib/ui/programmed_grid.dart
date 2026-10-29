@@ -309,8 +309,8 @@ class _Key extends StatelessWidget {
       case ScreenButtonKind.unknown:
         label = button.label ?? '';
     }
-    final fill = here ? Tp.lime.withValues(alpha: 0.28) : (button.fill ?? Tp.inkCard);
-    final ink = button.ink ?? (button.fill == null ? Colors.white : (fill.computeLuminance() > 0.5 ? Tp.onLime : Colors.white));
+    final fill = here ? Tp.lime.withValues(alpha: 0.28) : (button.fill ?? context.goCard);
+    final ink = button.ink ?? (button.fill == null ? context.goText : (fill.computeLuminance() > 0.5 ? Tp.onLime : Colors.white));
 
     // The till's picture rule: the key's own picture, else the product's
     // back-office picture. A picture takes the whole key, and the name and
@@ -336,7 +336,7 @@ class _Key extends StatelessWidget {
           clipBehavior: Clip.antiAlias,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(10),
-            side: BorderSide(color: here ? Tp.lime : Tp.inkLine, width: here ? 2 : 1),
+            side: BorderSide(color: here ? Tp.lime : context.goLine, width: here ? 2 : 1),
           ),
           child: InkWell(
             onTap: onTap,
@@ -370,7 +370,7 @@ class _Key extends StatelessWidget {
         clipBehavior: Clip.antiAlias,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(10),
-          side: BorderSide(color: here ? Tp.lime : Tp.inkLine, width: here ? 2 : 1),
+          side: BorderSide(color: here ? Tp.lime : context.goLine, width: here ? 2 : 1),
         ),
         child: InkWell(
           onTap: onTap,

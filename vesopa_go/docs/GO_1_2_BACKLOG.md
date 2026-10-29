@@ -32,7 +32,8 @@ code (ONE_CODEBASE_PLAN.md). Ticked items are on main.
       Gratuity, Print bill, the pad with Exact and the next note up; a Check
       tab. Still to come: Redeem points, Gift card and Deposit (they need the
       till's loyalty, gift card and deposit routes on Go).
-- [ ] Light, dark and automatic appearance (automatic by default).
+- [x] 1.2.8 Light, dark and automatic appearance (automatic by default);
+      the customer's screens and the PIN pad stay dark.
 - [ ] Start animation: the app icon built, turning into a card and a tick.
 - [ ] Reports live, with digits that roll when they change.
 - [ ] Idle screen settings per kind of device (iPad, Android, iPhone).

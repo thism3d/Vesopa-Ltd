@@ -521,7 +521,7 @@ class _FloatingSale extends ConsumerWidget {
     final due = bill?.dueMinor ?? 0;
     return Material(
       color: const Color(0xEB232320),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22), side: const BorderSide(color: Tp.inkLine)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22), side: BorderSide(color: context.goLine)),
       child: InkWell(
         borderRadius: BorderRadius.circular(22),
         onTap: count == 0 ? null : onView,
@@ -530,7 +530,7 @@ class _FloatingSale extends ConsumerWidget {
           child: Row(children: [
             Expanded(
               child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(count == 0 ? 'Tap an item to start a sale' : 'This sale · $count item${count == 1 ? '' : 's'}', style: const TextStyle(color: Tp.muted, fontSize: 12)),
+                Text(count == 0 ? 'Tap an item to start a sale' : 'This sale · $count item${count == 1 ? '' : 's'}', style: TextStyle(color: context.goMuted, fontSize: 12)),
                 Money(due, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17)),
               ]),
             ),

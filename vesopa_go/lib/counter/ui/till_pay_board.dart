@@ -130,24 +130,24 @@ class _TillPayBoardState extends State<TillPayBoard> {
 
     final amountCard = Container(
       padding: const EdgeInsets.fromLTRB(22, 14, 22, 14),
-      decoration: BoxDecoration(color: Tp.inkCard, borderRadius: BorderRadius.circular(16), border: Border.all(color: Tp.inkLine)),
+      decoration: BoxDecoration(color: context.goCard, borderRadius: BorderRadius.circular(16), border: Border.all(color: context.goLine)),
       child: Row(children: [
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(bill.paidMinor > 0 ? 'LEFT TO PAY' : 'TO PAY', style: t.labelSmall?.copyWith(letterSpacing: 0.8, color: Tp.muted)),
+            Text(bill.paidMinor > 0 ? 'LEFT TO PAY' : 'TO PAY', style: t.labelSmall?.copyWith(letterSpacing: 0.8, color: context.goMuted)),
             FittedBox(
               fit: BoxFit.scaleDown,
               alignment: Alignment.centerLeft,
-              child: Text(money(_due), style: TextStyle(fontSize: wide ? 64 : 48, fontWeight: FontWeight.w900, color: Tp.lime, fontFeatures: Tp.tabular)),
+              child: Text(money(_due), style: TextStyle(fontSize: wide ? 64 : 48, fontWeight: FontWeight.w900, color: context.goDark ? Tp.lime : Tp.limeDeep, fontFeatures: Tp.tabular)),
             ),
           ]),
         ),
-        Container(width: 1, height: 64, color: Tp.inkLine, margin: const EdgeInsets.symmetric(horizontal: 16)),
+        Container(width: 1, height: 64, color: context.goLine, margin: const EdgeInsets.symmetric(horizontal: 16)),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('TAKEN', style: t.labelSmall?.copyWith(letterSpacing: 0.8, color: Tp.muted)),
+            Text('TAKEN', style: t.labelSmall?.copyWith(letterSpacing: 0.8, color: context.goMuted)),
             const SizedBox(height: 4),
-            if (taken.isEmpty) Text('Nothing taken yet', style: t.bodyMedium?.copyWith(color: Tp.muted)) else for (final x in taken) Text(x, style: t.bodyMedium),
+            if (taken.isEmpty) Text('Nothing taken yet', style: t.bodyMedium?.copyWith(color: context.goMuted)) else for (final x in taken) Text(x, style: t.bodyMedium),
             if (widget.tipMinor > 0) Text('Gratuity ${money(widget.tipMinor)} on the card', style: t.bodySmall?.copyWith(color: Tp.lime)),
           ]),
         ),
@@ -182,7 +182,7 @@ class _TillPayBoardState extends State<TillPayBoard> {
 
     final notes = widget.allowCash && widget.notes.isNotEmpty
         ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('CASH — TAP A NOTE TO TAKE IT', style: t.labelMedium?.copyWith(letterSpacing: 1.2, color: Tp.muted, fontWeight: FontWeight.w700)),
+            Text('CASH — TAP A NOTE TO TAKE IT', style: t.labelMedium?.copyWith(letterSpacing: 1.2, color: context.goMuted, fontWeight: FontWeight.w700)),
             const SizedBox(height: 8),
             Row(children: [
               for (final n in widget.notes)
@@ -305,13 +305,13 @@ class _ToolKey extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Material(
-        color: Tp.inkCard,
+        color: context.goCard,
         borderRadius: BorderRadius.circular(14),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onTap,
           child: DecoratedBox(
-            decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), border: Border.all(color: Tp.inkLine)),
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), border: Border.all(color: context.goLine)),
             child: Center(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -381,7 +381,7 @@ class _Pad extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.all(5),
             child: Material(
-              color: colour ?? Tp.inkCard,
+              color: colour ?? context.goCard,
               borderRadius: BorderRadius.circular(14),
               clipBehavior: Clip.antiAlias,
               child: InkWell(
@@ -396,19 +396,19 @@ class _Pad extends StatelessWidget {
         height: 84,
         padding: const EdgeInsets.symmetric(horizontal: 20),
         alignment: Alignment.centerRight,
-        decoration: BoxDecoration(color: Tp.inkCard, borderRadius: BorderRadius.circular(16), border: Border.all(color: Tp.inkLine)),
+        decoration: BoxDecoration(color: context.goCard, borderRadius: BorderRadius.circular(16), border: Border.all(color: context.goLine)),
         child: FittedBox(
           fit: BoxFit.scaleDown,
           child: Text(money(entered > 0 ? entered : due),
-              style: TextStyle(fontSize: 48, fontWeight: FontWeight.w900, fontFeatures: Tp.tabular, color: entered > 0 ? Colors.white : Tp.muted)),
+              style: TextStyle(fontSize: 48, fontWeight: FontWeight.w900, fontFeatures: Tp.tabular, color: entered > 0 ? context.goText : context.goMuted)),
         ),
       ),
       const SizedBox(height: 10),
       SizedBox(
         height: 56,
         child: Row(children: [
-          key('Exact', onTap: onExact, colour: Tp.lime.withValues(alpha: 0.16), ink: Tp.lime),
-          if (nextNote != null) key(money(nextNote!), onTap: () => onNote(nextNote!), colour: Tp.lime.withValues(alpha: 0.16), ink: Tp.lime),
+          key('Exact', onTap: onExact, colour: Tp.lime.withValues(alpha: 0.16), ink: context.goDark ? Tp.lime : Tp.limeDeep),
+          if (nextNote != null) key(money(nextNote!), onTap: () => onNote(nextNote!), colour: Tp.lime.withValues(alpha: 0.16), ink: context.goDark ? Tp.lime : Tp.limeDeep),
         ]),
       ),
       const SizedBox(height: 6),

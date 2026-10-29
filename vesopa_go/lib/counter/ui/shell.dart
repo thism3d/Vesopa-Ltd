@@ -20,6 +20,7 @@ import 'package:vesopa_go/ui/pages/bill.dart';
 import 'package:vesopa_go/ui/pages/more.dart';
 import 'package:vesopa_go/ui/pages/tables.dart';
 import 'package:vesopa_go/ui/clerk_chip.dart';
+import 'package:vesopa_go/ui/appearance.dart';
 import 'package:vesopa_go/ui/device_prefs.dart';
 import 'package:vesopa_go/ui/go_frame.dart';
 import 'package:vesopa_go/ui/theme.dart';
@@ -158,7 +159,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
-            child: Text(title.toUpperCase(), style: Theme.of(context).textTheme.labelSmall?.copyWith(letterSpacing: 0.6, color: Tp.muted)),
+            child: Text(title.toUpperCase(), style: Theme.of(context).textTheme.labelSmall?.copyWith(letterSpacing: 0.6, color: context.goMuted)),
           ),
           Card(margin: EdgeInsets.zero, clipBehavior: Clip.antiAlias, child: Column(children: rows)),
         ]),
@@ -219,6 +220,21 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           ),
       ]),
       _group('Printing', const [_ReceiptPrinterTile()]),
+      _group('Appearance', [
+        Padding(
+          padding: const EdgeInsets.all(12),
+          child: SegmentedButton<ThemeMode>(
+            showSelectedIcon: false,
+            segments: const [
+              ButtonSegment(value: ThemeMode.system, icon: Icon(Icons.brightness_auto_rounded), label: Text('Automatic')),
+              ButtonSegment(value: ThemeMode.light, icon: Icon(Icons.light_mode_rounded), label: Text('Light')),
+              ButtonSegment(value: ThemeMode.dark, icon: Icon(Icons.dark_mode_rounded), label: Text('Dark')),
+            ],
+            selected: {ref.watch(appearanceProvider)},
+            onSelectionChanged: (v) => ref.read(appearanceProvider.notifier).set(v.first),
+          ),
+        ),
+      ]),
       _group('This device', [
         SwitchListTile(
           title: const Text('Keep the screen on'),

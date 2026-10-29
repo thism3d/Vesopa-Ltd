@@ -77,7 +77,7 @@ class _FloorEditorPageState extends ConsumerState<FloorEditorPage> {
                 child: Container(
                   width: cell * cols,
                   height: cell * rows,
-                  decoration: BoxDecoration(color: Tp.inkCard, borderRadius: BorderRadius.circular(12), border: Border.all(color: Tp.inkLine)),
+                  decoration: BoxDecoration(color: context.goCard, borderRadius: BorderRadius.circular(12), border: Border.all(color: context.goLine)),
                   child: Stack(children: [
                     for (final t in _tables)
                       AnimatedPositioned(
@@ -101,10 +101,10 @@ class _FloorEditorPageState extends ConsumerState<FloorEditorPage> {
                           child: Container(
                             alignment: Alignment.center,
                             decoration: ShapeDecoration(
-                              color: _picked == t.id ? Tp.lime.withValues(alpha: 0.25) : Tp.inkRaised,
+                              color: _picked == t.id ? Tp.lime.withValues(alpha: 0.25) : context.goRaised,
                               shape: t.round
-                                  ? CircleBorder(side: BorderSide(color: _picked == t.id ? Tp.lime : Tp.inkLine, width: 2))
-                                  : RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: _picked == t.id ? Tp.lime : Tp.inkLine, width: 2)),
+                                  ? CircleBorder(side: BorderSide(color: _picked == t.id ? Tp.lime : context.goLine, width: 2))
+                                  : RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: _picked == t.id ? Tp.lime : context.goLine, width: 2)),
                             ),
                             child: FittedBox(
                               fit: BoxFit.scaleDown,
@@ -112,7 +112,7 @@ class _FloorEditorPageState extends ConsumerState<FloorEditorPage> {
                                 padding: const EdgeInsets.all(4),
                                 child: Column(mainAxisSize: MainAxisSize.min, children: [
                                   Text(t.name, style: const TextStyle(fontWeight: FontWeight.w800)),
-                                  Text('${t.seats} seats', style: const TextStyle(fontSize: 11, color: Tp.muted)),
+                                  Text('${t.seats} seats', style: TextStyle(fontSize: 11, color: context.goMuted)),
                                 ]),
                               ),
                             ),
