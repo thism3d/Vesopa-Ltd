@@ -1,0 +1,61 @@
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<%- include('../partials/admin-shell', { pageTitle: 'Send SMS', pageSub: 'To Bangladeshi mobile numbers, through BulkSMSBD.' }) %>
+
+<% if (!configured) { %>
+  <div class="p-card"><p>BulkSMSBD is not set up on this server. Add <code>BULKSMSBD_API_KEY</code> and <code>BULKSMSBD_SENDER_ID</code> to <code>.env</code> and restart.</p></div>
+<% } else { %>
+  <% if (result) { %>
+    <div class="p-card" style="border-left:4px solid <%= result.ok ? 'var(--ok, #16a34a)' : 'var(--danger, #dc2626)' %>">
+      <strong><%= result.ok ? 'Sent' : 'Not sent' %></strong> — <%= result.message %>
+    </div>
+  <% } %>
+
+  <div class="p-card">
+    <p class="small muted" style="margin-top:0">Balance: <strong><%= balance === null ? 'unavailable' : '৳' + balance.toFixed(2) %></strong></p>
+    <form method="post" action="/admin/sms" id="sms-form">
+      <input type="hidden" name="_csrf" value="<%= csrf %>">
+      <div class="field">
+        <label class="label" for="numbers">Numbers</label>
+        <textarea class="input" id="numbers" name="numbers" rows="3" required placeholder="01712345678, 01812345678 — commas, spaces or one per line"><%= values.numbers || '' %></textarea>
+        <span class="tiny muted">01XXXXXXXXX, +8801XXXXXXXXX or 8801XXXXXXXXX. Up to 500.</span>
+      </div>
+      <div class="field">
+        <label class="label" for="message">Message</label>
+        <textarea class="input" id="message" name="message" rows="5" maxlength="1000" required placeholder="Bangla or English"><%= values.message || '' %></textarea>
+        <span class="tiny muted" id="sms-count"></span>
+      </div>
+      <button class="btn" type="submit">Send SMS</button>
+    </form>
+  </div>
+<% } %>
+
+<div class="p-card p-card-flush mt-3">
+  <% if (!sent.length) { %>
+    <div class="empty"><%- icon('mail', 46) %><h3>Nothing sent yet</h3><p>Messages sent from here are listed here.</p></div>
+  <% } %>
+  <% sent.forEach(function (s) { var d = {}; try { d = JSON.parse(s.detail || '{}'); } catch (e) {} %>
+    <div class="item" style="align-items:flex-start">
+      <span class="item-icon"><%- icon('mail', 18) %></span>
+      <span class="item-main">
+        <span class="item-title"><%= s.target %></span>
+        <span class="item-sub"><%= new Date(s.created_at).toLocaleString('en-GB') %> · <%= s.ok ? 'Sent' : 'Failed' %><% if (!s.ok && d.reply) { %>: <%= d.reply %><% } %></span>
+        <div class="small mt-2" style="white-space:pre-wrap;color:var(--ink-2)"><%= d.message || '' %></div>
+      </span>
+    </div>
+  <% }); %>
+</div>
+
+<script nonce="<%= nonce %>">
+  (function () {
+    var m = document.getElementById('message'), out = document.getElementById('sms-count');
+    if (!m || !out) return;
+    function count() {
+      var uni = /[^\x00-\x7F]/.test(m.value), len = m.value.length;
+      var per = uni ? (len > 70 ? 67 : 70) : (len > 160 ? 153 : 160);
+      out.textContent = len + ' characters · ' + Math.max(1, Math.ceil(len / per)) + ' SMS each' + (uni ? ' (Bangla/Unicode)' : '');
+    }
+    m.addEventListener('input', count); count();
+  })();
+</script>
+
+<%- include('../partials/panel-shell-end') %>

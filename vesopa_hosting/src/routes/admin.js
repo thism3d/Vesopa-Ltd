@@ -1631,6 +1631,63 @@ router.post('/enquiries/:id/handled', async (req, res, next) => {
 });
 
 // ---------------------------------------------------------------------------
+// SMS — Bangladeshi mobiles through BulkSMSBD
+// ---------------------------------------------------------------------------
+const bulksms = require('../integrations/bulksmsbd');
+
+async function renderSms(req, res, values = {}, result = null) {
+  const [balance, sent] = await Promise.all([
+    bulksms.balance().catch(() => null),
+    db.query("SELECT * FROM activity_log WHERE action = 'admin.sms' ORDER BY created_at DESC LIMIT 30"),
+  ]);
+  res.render('admin/sms', {
+    title: 'Send SMS', robots: 'noindex',
+    configured: bulksms.configured(), balance, sent, values, result,
+  });
+}
+
+router.get('/sms', async (req, res, next) => {
+  try {
+    await renderSms(req, res);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/sms', async (req, res, next) => {
+  try {
+    if (!guard(req, res, '/admin/sms')) return;
+    const values = { numbers: String(req.body.numbers || ''), message: String(req.body.message || '') };
+    const raw = values.numbers.split(/[\s,;]+/).filter(Boolean);
+    const numbers = [...new Set(raw.map(bulksms.normaliseNumber).filter(Boolean))];
+    const bad = raw.filter((n) => !bulksms.normaliseNumber(n));
+    const message = values.message.trim();
+
+    let result;
+    if (!raw.length || !message) result = { ok: false, message: 'Enter at least one number and a message.' };
+    else if (bad.length) result = { ok: false, message: `Not a Bangladeshi mobile number: ${bad.join(', ')}` };
+    else if (numbers.length > 500) result = { ok: false, message: 'At most 500 numbers at a time.' };
+    else if (message.length > 1000) result = { ok: false, message: 'Message is longer than 1000 characters.' };
+    else {
+      result = await bulksms.send(numbers, message).catch((err) => ({ ok: false, message: err.message }));
+      await db.logActivity({
+        actorType: 'admin', actorId: req.admin.id, action: 'admin.sms',
+        target: numbers.join(', ').slice(0, 250),
+        detail: JSON.stringify({ count: numbers.length, message: message.slice(0, 500), code: result.code, reply: result.message }),
+        ok: result.ok, ip: req.ip,
+      });
+    }
+    if (result.ok) {
+      result.message = `Sent to ${numbers.length} number${numbers.length === 1 ? '' : 's'}.`;
+      return renderSms(req, res, {}, result);
+    }
+    await renderSms(req, res, values, result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Settings and log
 // ---------------------------------------------------------------------------
 router.get('/settings', async (req, res, next) => {
