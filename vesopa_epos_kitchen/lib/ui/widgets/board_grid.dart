@@ -24,7 +24,18 @@ class BoardGrid extends StatelessWidget {
     this.maxColumns = 6,
     this.spacing = 10,
     this.padding = const EdgeInsets.all(10),
+    this.cardScale = 1,
   });
+
+  /// How big the orders are drawn on this screen: A+ / A- (Ctrl + / Ctrl -).
+  ///
+  /// Pontardawe RFC, 2026-10-29: zooming the whole screen "just makes the
+  /// screen bigger and smaller, the order boxes stay same size" -- a screen
+  /// pinned to five across still drew five across, only with everything round
+  /// them larger. This sizes the cards themselves: their text grows by this
+  /// much, and they get wider, so fewer fit across (a pinned count shrinks in
+  /// proportion), leaving the header and menus as they were.
+  final double cardScale;
 
   final int itemCount;
   final IndexedWidgetBuilder itemBuilder;
@@ -49,10 +60,18 @@ class BoardGrid extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final usable = constraints.maxWidth - padding.horizontal;
-        final fits = ((usable + spacing) / (minColumnWidth + spacing)).floor();
+        final scale = cardScale.clamp(0.5, 3.0);
+        final fits = ((usable + spacing) / (minColumnWidth * scale + spacing)).floor();
         final count = columns > 0
-            ? columns.clamp(1, maxColumns)
+            ? (columns / scale).round().clamp(1, maxColumns)
             : fits.clamp(1, maxColumns);
+        final media = MediaQuery.of(context);
+        Widget sized(Widget card) => (scale - 1).abs() < 0.01
+            ? card
+            : MediaQuery(
+                data: media.copyWith(textScaler: TextScaler.linear(scale)),
+                child: card,
+              );
 
         return SingleChildScrollView(
           padding: padding,
@@ -74,7 +93,7 @@ class BoardGrid extends StatelessWidget {
                           if (c > 0) SizedBox(width: spacing),
                           Expanded(
                             child: start + c < itemCount
-                                ? itemBuilder(context, start + c)
+                                ? sized(itemBuilder(context, start + c))
                                 : const SizedBox.shrink(),
                           ),
                         ],

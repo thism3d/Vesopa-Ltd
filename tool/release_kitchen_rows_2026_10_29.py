@@ -1,4 +1,4 @@
-"""Release Kitchen 1.7.18 (2026-10-29): the board in rows, and bigger orders on the screen.
+"""Release Kitchen 1.7.19 (2026-10-29): A+ / A- size the orders themselves (1.7.18: the board in rows).
 
     python tool/release_kitchen_rows_2026_10_29.py               # build, installers, Store
     python tool/release_kitchen_rows_2026_10_29.py --from store  # pick up at a step
@@ -18,7 +18,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 STORE = ROOT / "ms-store-submission-client"
 APPS = [
     # store key, folder, version, msix, notes
-    ("vesopa-kitchen", "vesopa_epos_kitchen", "1.7.18.0", "vesopa_epos_kitchen/build/store/vesopa-kitchen-store.msix", "notes-1.7.18.0-kitchen.txt"),
+    ("vesopa-kitchen", "vesopa_epos_kitchen", "1.7.19.0", "vesopa_epos_kitchen/build/store/vesopa-kitchen-store.msix", "notes-1.7.19.0-kitchen.txt"),
 ]
 # The same as each pubspec's windows_build_args: obfuscated, symbols kept here.
 BUILD_ARGS = ["build", "windows", "--release", "--obfuscate", "--split-debug-info=build/symbols"]
@@ -26,9 +26,9 @@ STEPS = ["build", "installers", "store"]
 
 # The Store's "What's new", LF only (see the 1.16.3 script).
 NOTES = {
-    "notes-1.7.18.0-kitchen.txt": "Version 1.7.18.0 - Orders in line, and bigger\n\n"
+    "notes-1.7.19.0-kitchen.txt": "Version 1.7.19.0 - Bigger orders, in line\n\n"
         "Orders now sit in neat rows, oldest first from left to right, with the cards in each row the same height so the Done buttons line up.\n"
-        "New A+ and A- buttons at the top make the orders bigger or smaller on this screen.\n",
+        "The A+ and A- buttons at the top make the orders themselves bigger or smaller on this screen: larger writing, wider cards, fewer across.\n",
 }
 
 

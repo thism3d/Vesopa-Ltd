@@ -47,6 +47,7 @@ class OpenBoard extends ConsumerWidget {
 
     return BoardGrid(
       columns: profile.columns,
+      cardScale: (session?.zoomNudge ?? 100) / 100,
       itemCount: tickets.length,
       // Roughly how tall each card will be, so the column packer can keep the
       // columns level. Header plus footer is worth about three lines, and a

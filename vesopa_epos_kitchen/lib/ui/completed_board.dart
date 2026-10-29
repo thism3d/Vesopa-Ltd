@@ -44,6 +44,7 @@ class CompletedBoard extends ConsumerWidget {
     return BoardGrid(
       itemCount: tickets.length,
       columns: profile.columns,
+      cardScale: session.zoomNudge / 100,
       // Roughly how tall each card will be, so the column packer can keep them
       // level. Header plus footer is worth about three lines.
       weightOf: (index) =>

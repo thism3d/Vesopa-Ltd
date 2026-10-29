@@ -745,21 +745,26 @@ class _FooterButton extends StatelessWidget {
           // 52 tall. The board is pressed with a finger by somebody who is not
           // looking straight at it, and this is the smallest target that
           // survives that.
-          height: 52,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: emphasis ? 26 : 20, color: color),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: emphasis ? 17 : 15,
-                  fontWeight: FontWeight.w700,
-                  color: color,
+          // Taller with the orders' text size (A+, 2026-10-29), and the label
+          // shrinks to fit rather than spilling out of a narrow button.
+          height: MediaQuery.textScalerOf(context).scale(52).clamp(52.0, 120.0),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: emphasis ? 26 : 20, color: color),
+                const SizedBox(width: 8),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: emphasis ? 17 : 15,
+                    fontWeight: FontWeight.w700,
+                    color: color,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

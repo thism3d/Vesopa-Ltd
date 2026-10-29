@@ -193,7 +193,8 @@ class _VesopaKitchenAppState extends ConsumerState<VesopaKitchenApp> {
                         preset: s.tvSize,
                         width: box.maxWidth,
                         zoomPercent: s.zoom,
-                        nudgePercent: s.zoomNudge,
+                        // This machine's A+ / A- sizes the orders, not the
+                        // whole screen (2026-10-29) -- see BoardGrid.cardScale.
                       );
                 return ScaledBoard(
                   scale: scale,

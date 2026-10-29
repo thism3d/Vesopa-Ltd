@@ -80,9 +80,11 @@ class KitchenSession {
   /// line is down.
   final KitchenBranding branding;
 
-  /// This machine's own nudge on the size, from its keyboard (Ctrl +, Ctrl -,
-  /// Ctrl 0), as a percentage. A fact about where this panel hangs, like
-  /// [soundOverride], so it stays on the machine.
+  /// How big this machine draws the orders, as a percentage: the A+ / A-
+  /// buttons in the header, or Ctrl +, Ctrl -, Ctrl 0. Since 2026-10-29 it
+  /// sizes the order cards (their text, and how many fit across), not the whole
+  /// screen -- see BoardGrid.cardScale. A fact about where this panel hangs,
+  /// like [soundOverride], so it stays on the machine.
   final int zoomNudge;
 
   /// The size preset this screen draws at: its own, or the venue's.
