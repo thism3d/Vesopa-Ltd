@@ -26,9 +26,12 @@ code (ONE_CODEBASE_PLAN.md). Ticked items are on main.
       to pick up a table.
 - [x] 1.2.6 Payment approved: Print and Email, a short "No thanks" under them.
 - [x] 1.2.6 The receipt PDF sized to the printer's paper (roll or A4).
-- [ ] The till's payment page (tender buttons, notes, number pad, Exact,
-      Manual card, Redeem points, Split bill, Gift card, Voucher, Deposit,
-      Points, Discount, Customer, Gratuity, Print bill), keeping Go's extras.
+- [x] 1.2.7 The till's payment page: Cash and Card tender keys, the venue's
+      banknote pictures, Manual card, the other card route, Split bill,
+      Voucher, Points (with a member on the bill), Discount, Customer,
+      Gratuity, Print bill, the pad with Exact and the next note up; a Check
+      tab. Still to come: Redeem points, Gift card and Deposit (they need the
+      till's loyalty, gift card and deposit routes on Go).
 - [ ] Light, dark and automatic appearance (automatic by default).
 - [ ] Start animation: the app icon built, turning into a card and a tick.
 - [ ] Reports live, with digits that roll when they change.

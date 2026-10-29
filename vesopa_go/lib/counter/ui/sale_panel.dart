@@ -292,21 +292,24 @@ class _SalePanelState extends ConsumerState<SalePanel> {
     if (widget.inSheet && mounted) Navigator.pop(context);
   }
 
-  Future<void> _discount(Bill bill) async {
-    // The till's discount key: without it, a manager's PIN.
-    final allowedBy = await askManager(context, ref, why: 'Discount', permission: TillPermission.discount);
-    if (allowedBy == null || !mounted) return;
-    final clerk = ref.read(tapProvider).clerk?.name ?? '';
-    final picked = await showModalBottomSheet<(double, int)>(
-      context: context,
-      showDragHandle: true,
-      builder: (c) => _DiscountSheet(bill: bill),
-    );
-    if (picked == null) return;
-    final (percent, fixed) = picked;
-    final label = percent > 0 ? '${percent % 1 == 0 ? percent.toInt() : percent}%' : (fixed > 0 ? money(fixed) : '');
-    ref.read(tapProvider.notifier).setDiscount(bill.id, percent: percent, fixedMinor: fixed, reason: label.isEmpty ? '' : '$label by $clerk');
-  }
+  Future<void> _discount(Bill bill) => discountBill(context, ref, bill);
+}
+
+/// The till's discount key, for the sale panel and the payment page: without
+/// the permission, a manager's PIN; then a percentage or an amount off.
+Future<void> discountBill(BuildContext context, WidgetRef ref, Bill bill) async {
+  final allowedBy = await askManager(context, ref, why: 'Discount', permission: TillPermission.discount);
+  if (allowedBy == null || !context.mounted) return;
+  final clerk = ref.read(tapProvider).clerk?.name ?? '';
+  final picked = await showModalBottomSheet<(double, int)>(
+    context: context,
+    showDragHandle: true,
+    builder: (c) => _DiscountSheet(bill: bill),
+  );
+  if (picked == null) return;
+  final (percent, fixed) = picked;
+  final label = percent > 0 ? '${percent % 1 == 0 ? percent.toInt() : percent}%' : (fixed > 0 ? money(fixed) : '');
+  ref.read(tapProvider.notifier).setDiscount(bill.id, percent: percent, fixedMinor: fixed, reason: label.isEmpty ? '' : '$label by $clerk');
 }
 
 class _Row extends StatelessWidget {

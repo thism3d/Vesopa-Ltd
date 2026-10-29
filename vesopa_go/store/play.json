@@ -7,7 +7,7 @@
   "contact_email": "info@vesopasoftware.com",
   "contact_website": "https://go.vesopa.com/",
   "track": "internal",
-  "release_notes": "Vesopa Go 1.2.6: tables as round buttons coloured by state on phones, a short No thanks after a payment, and receipts that print at a proper size on any printer.",
+  "release_notes": "Vesopa Go 1.2.7: the till's payment page. Cash and Card tender keys, the venue's banknote pictures (tap a note to take it), Manual card, Split bill, Voucher, Discount, Customer, Gratuity, Print bill, and the number pad with Exact and the next note up.",
   "images": {
     "icon": [
       "play-icon-512.png"

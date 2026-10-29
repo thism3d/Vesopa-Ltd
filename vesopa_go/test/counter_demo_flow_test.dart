@@ -68,7 +68,10 @@ void main() {
       await tapKey(tester, 'panel-pay');
 
       // £20 note: change £4.39.
-      expect(find.text('To pay'), findsOneWidget);
+      // The till's payment page: the note pictures take cash at a tap.
+      expect(find.text('TO PAY'), findsOneWidget);
+      await tester.ensureVisible(find.byKey(const ValueKey('cash-2000')));
+      await tester.pumpAndSettle();
       await tapKey(tester, 'cash-2000');
       expect(find.text('£4.39'), findsOneWidget);
       await tapKey(tester, 'new-sale');

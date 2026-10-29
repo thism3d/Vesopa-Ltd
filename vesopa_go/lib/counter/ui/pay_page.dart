@@ -19,8 +19,14 @@ import 'package:vesopa_go/ui/theme.dart';
 
 import '../data/journal.dart';
 import '../data/lite_state.dart';
+import 'package:vesopa_go/data/bill_math.dart';
+import 'package:vesopa_go/ui/pages/customers_page.dart';
+import 'package:vesopa_go/ui/pages/member_sheet.dart';
+
 import 'receipt_print.dart';
 import 'receipt_view.dart';
+import 'sale_panel.dart' show discountBill;
+import 'till_pay_board.dart';
 
 class PayPage extends ConsumerStatefulWidget {
   const PayPage({super.key, required this.billId});
@@ -37,6 +43,9 @@ class _PayPageState extends ConsumerState<PayPage> {
   bool _busy = false;
   String _via = 'tap';
   int _tip = 0;
+
+  /// A gratuity chosen with the Gratuity key, for the next card.
+  int _presetTip = 0;
 
   Bill? get _bill => ref.read(tapProvider).bills[widget.billId];
 
@@ -80,7 +89,7 @@ class _PayPageState extends ConsumerState<PayPage> {
     );
   }
 
-  Future<void> _card(String via) async {
+  Future<void> _card(String via, {int? amount}) async {
     final bill = _bill;
     if (bill == null || _busy) return;
     _via = via;
@@ -95,8 +104,8 @@ class _PayPageState extends ConsumerState<PayPage> {
     // The venue's tip (back office), chosen by the customer on a screen of
     // their own, before the card.
     final config = ref.read(tapProvider).config;
-    var tip = 0;
-    if (config.tips && config.go.customerTip && config.tipPercents.isNotEmpty) {
+    var tip = _presetTip;
+    if (tip == 0 && config.tips && config.go.customerTip && config.tipPercents.isNotEmpty) {
       if (!mounted) return;
       final chosen = await askTip(context, dueMinor: bill.dueMinor, percents: config.tipPercents);
       if (chosen == null || !mounted) return;
@@ -106,8 +115,9 @@ class _PayPageState extends ConsumerState<PayPage> {
     setState(() {
       _busy = true;
       _problem = null;
-      _cardAmount = bill.dueMinor;
+      _cardAmount = (amount ?? bill.dueMinor).clamp(1, bill.dueMinor);
       _tip = tip;
+      _presetTip = 0;
       _step = PayStep.preparing;
     });
     final outcome = await payments.take(
@@ -145,6 +155,56 @@ class _PayPageState extends ConsumerState<PayPage> {
     }
   }
 
+  /// A card taken on a machine Go is not connected to (the till's Manual
+  /// card): recorded as card, after the clerk confirms it went through.
+  Future<void> _manualCard(int amount) async {
+    final bill = _bill;
+    if (bill == null) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: Text('Card ${money(amount)} on another machine?'),
+        content: const Text('Only when the card machine has printed an approved slip for it.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('It was approved')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    _sendFirst(bill);
+    final id = 'manual-${DateTime.now().microsecondsSinceEpoch}';
+    _take(Tender(id: id, amountMinor: amount, kind: 'machine', at: DateTime.now(), clerk: ref.read(tapProvider).clerk?.name ?? '', reference: 'manual:$id'));
+  }
+
+  /// Split bill: how many ways; each share goes on the pad.
+  Future<int?> _split() async {
+    final bill = _bill;
+    if (bill == null) return null;
+    final ways = await showDialog<int>(
+      context: context,
+      builder: (c) => SimpleDialog(title: const Text('Split equally between'), children: [
+        Wrap(alignment: WrapAlignment.center, spacing: 8, runSpacing: 8, children: [
+          for (var n = 2; n <= 10; n++) OutlinedButton(onPressed: () => Navigator.pop(c, n), child: Text('$n')),
+        ]),
+      ]),
+    );
+    if (ways == null) return null;
+    final shares = splitEqually(bill.dueMinor, ways);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$ways ways: ${shares.map(money).toSet().join(' or ')} each. Take each share in turn.')));
+    }
+    return shares.first;
+  }
+
+  Future<void> _gratuity() async {
+    final bill = _bill;
+    final config = ref.read(tapProvider).config;
+    if (bill == null) return;
+    final tip = await askTip(context, dueMinor: bill.dueMinor, percents: config.tipPercents.isEmpty ? const [10, 12.5, 15] : config.tipPercents);
+    if (tip != null && mounted) setState(() => _presetTip = tip);
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_done != null) return _Approved(sale: _done!);
@@ -152,75 +212,54 @@ class _PayPageState extends ConsumerState<PayPage> {
 
     final bill = ref.watch(tapProvider.select((s) => s.bills[widget.billId]));
     final settings = ref.watch(liteSettingsProvider);
-    final allowCash = ref.watch(tapProvider.select((s) => s.config.allowCash));
-    final t = Theme.of(context).textTheme;
+    final config = ref.watch(tapProvider.select((s) => s.config));
     if (bill == null) {
       return Scaffold(appBar: AppBar(), body: const Center(child: Text('This sale is closed.')));
     }
-    final due = bill.dueMinor;
-    final via = cardVia(settings, ref.watch(tapProvider).config, tablet: MediaQuery.sizeOf(context).shortestSide >= 600);
+    final via = cardVia(settings, config, tablet: MediaQuery.sizeOf(context).shortestSide >= 600);
+    final teya = config.teya.enabled;
     final other = via == 'tap' ? 'machine' : 'tap';
-
-    final wide = MediaQuery.sizeOf(context).width >= 900;
-    final tenders = ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 520),
-            child: ListView(padding: const EdgeInsets.fromLTRB(20, 4, 20, 20), children: [
-              Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                Expanded(child: Text('To pay', style: t.titleLarge)),
-                Money(due, style: t.displaySmall?.copyWith(fontWeight: FontWeight.w900)),
-              ]),
-              if (bill.paidMinor > 0)
-                Align(alignment: Alignment.centerRight, child: Text('${money(bill.paidMinor)} already taken of ${money(bill.totalMinor)}', style: t.bodySmall)),
-              if (allowCash) ...[
-                const SizedBox(height: 24),
-                _Heading(icon: Icons.payments_rounded, label: 'Cash'),
-                Row(children: [
-                  for (final n in settings.cashButtons)
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
-                        child: OutlinedButton(
-                          key: ValueKey('cash-$n'),
-                          style: OutlinedButton.styleFrom(padding: EdgeInsets.zero),
-                          onPressed: () => _cash(n),
-                          child: Text('£${n ~/ 100}', style: const TextStyle(fontFeatures: Tp.tabular)),
-                        ),
-                      ),
-                    ),
-                ]),
-                const SizedBox(height: 10),
-                _PayButton(key: const ValueKey('pay-cash'), icon: Icons.payments_rounded, label: 'Pay by Cash', minor: due, onTap: () => _cash(due)),
-              ],
-              const SizedBox(height: 24),
-              _Heading(icon: Icons.credit_card_rounded, label: 'Card'),
-              _PayButton(key: const ValueKey('pay-card'), icon: Icons.contactless_rounded, label: 'Pay by Card', minor: due, onTap: () => _card(via)),
-              Align(
-                child: TextButton(
-                  onPressed: () => _card(other),
-                  child: Text(other == 'machine' ? 'Use the card machine instead' : 'Tap on this device instead'),
-                ),
-              ),
-              if (_problem != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(_problem!, textAlign: TextAlign.center, style: t.bodyMedium?.copyWith(color: Tp.danger)),
-                ),
-              const SizedBox(height: 16),
-              OutlinedButton(onPressed: () => Navigator.pop(context), child: const Text('Back to Sale')),
-            ]),
-          );
-    return Scaffold(
-      appBar: AppBar(title: const Text('Pay')),
-      body: SafeArea(
-        child: wide
-            // As the till's payment page: the bill as it will print on the
-            // left, the ways to pay on the right.
-            ? Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                Expanded(child: _BillColumn(bill: bill)),
-                const VerticalDivider(width: 1),
-                SizedBox(width: 520, child: Center(child: tenders)),
-              ])
-            : Center(child: tenders),
+    final notes = CashNote.listFrom(config.cashNotes);
+    final board = TillPayBoard(
+      bill: bill,
+      allowCash: config.allowCash,
+      notes: notes.isNotEmpty ? notes : [for (final n in settings.cashButtons) CashNote(valueMinor: n, label: money(n))],
+      problem: _problem,
+      tipMinor: _presetTip,
+      actions: PayActions(
+        cash: _cash,
+        card: (amount) => _card(via, amount: amount),
+        cardLabel: 'Card',
+        otherCard: teya ? null : (amount) => _card(other, amount: amount),
+        otherCardLabel: other == 'machine' ? 'Card machine' : 'Tap to Pay',
+        manualCard: _manualCard,
+        split: _split,
+        voucher: () => askVoucher(context, ref, bill),
+        points: bill.member == null
+            ? null
+            : () => showModalBottomSheet<void>(context: context, isScrollControlled: true, showDragHandle: true, builder: (_) => MemberSheet(billId: bill.id)),
+        discount: () => discountBill(context, ref, bill),
+        customer: () => Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (_) => Scaffold(appBar: AppBar(title: const Text('Customer')), body: CustomersPage(billId: bill.id)),
+            )),
+        gratuity: _gratuity,
+        printBill: () => printBill(context, ref, bill),
+      ),
+    );
+    // The till's two tabs: paying, and the bill as it will print.
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Payment'),
+          bottom: const TabBar(tabs: [Tab(text: 'Pay'), Tab(text: 'Check')]),
+        ),
+        body: SafeArea(
+          child: TabBarView(children: [
+            board,
+            Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 560), child: _BillColumn(bill: bill))),
+          ]),
+        ),
       ),
     );
   }
@@ -344,42 +383,6 @@ class _TipScreen extends StatelessWidget {
       ),
     );
   }
-}
-
-class _Heading extends StatelessWidget {
-  const _Heading({required this.icon, required this.label});
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(bottom: 10),
-        child: Row(children: [
-          Icon(icon, size: 18, color: Tp.lime),
-          const SizedBox(width: 8),
-          Text(label, style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
-        ]),
-      );
-}
-
-/// A wide green key with the amount at its end, as TouchPoint's.
-class _PayButton extends StatelessWidget {
-  const _PayButton({super.key, required this.icon, required this.label, required this.minor, required this.onTap});
-  final IconData icon;
-  final String label;
-  final int minor;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) => FilledButton(
-        onPressed: onTap,
-        child: Row(children: [
-          Icon(icon),
-          const SizedBox(width: 12),
-          Expanded(child: Text(label)),
-          Text(money(minor), style: const TextStyle(fontFeatures: Tp.tabular)),
-        ]),
-      );
 }
 
 class _Approved extends ConsumerWidget {

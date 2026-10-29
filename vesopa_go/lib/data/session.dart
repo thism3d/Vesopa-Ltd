@@ -77,6 +77,7 @@ class TapConfig {
     this.sectionPhotos = const {},
     this.teya = const TeyaSettings(),
     this.modules,
+    this.cashNotes = const [],
   });
   final String environment;
   final bool tips;
@@ -133,6 +134,9 @@ class TapConfig {
   final Set<String>? modules;
   bool moduleOn(String key) => modules == null || modules!.contains(key);
 
+  /// The venue's banknote keys for the payment page (/till/denominations).
+  final List<dynamic> cashNotes;
+
   /// The home screen to draw, or null for the built-in grid.
   TillScreen? get home => screens.surfaceById(homeScreenId, ScreenSurface.sale);
 
@@ -169,6 +173,7 @@ class TapConfig {
       sectionPhotos: {for (final e in ((j['menu_photos'] as Map?)?['sections'] as Map? ?? const {}).entries) '${e.key}': '${e.value}'},
       teya: TeyaSettings.fromJson(j['teya']),
       modules: j['modules'] is List ? {for (final m in j['modules'] as List) '$m'} : null,
+      cashNotes: j['notes'] is List ? j['notes'] as List : const [],
       goLayouts: {
         for (final form in const ['tablet', 'phone'])
           if (j['layouts'] is Map && (j['layouts'] as Map)[form] is Map) form: Map<String, dynamic>.from((j['layouts'] as Map)[form] as Map),
@@ -471,6 +476,7 @@ class TapSession extends Notifier<TapState> {
         api.photos().catchError((Object _) => <String, dynamic>{}),
         api.teyaConfig().catchError((Object _) => <String, dynamic>{}),
         api.modules().catchError((Object _) => <String, dynamic>{}),
+        api.cashNotes().catchError((Object _) => <dynamic>[]),
       ]);
       final raw = {
         'staff': [for (final c in results[0] as List<Clerk>) {'id': c.id, 'name': c.name, 'pin': c.pin, 'swipe_card': c.card, 'permission_group': c.group, 'perms': c.permissions}],
@@ -479,7 +485,7 @@ class TapSession extends Notifier<TapState> {
         'modifiers': results[2],
         'screens': results[3],
         'floor': results[4],
-        'config': {...results[5] as Map<String, dynamic>, 'till': results[6], 'branding': results[7], 'photos': (results[8] as Map)['photos'], 'layouts': {'tablet': (results[9] as Map)['layouts'], 'phone': (results[10] as Map)['layouts']}, 'menu_photos': results[12], 'teya': results[13], 'modules': (results[14] as Map)['on']},
+        'config': {...results[5] as Map<String, dynamic>, 'till': results[6], 'branding': results[7], 'photos': (results[8] as Map)['photos'], 'layouts': {'tablet': (results[9] as Map)['layouts'], 'phone': (results[10] as Map)['layouts']}, 'menu_photos': results[12], 'teya': results[13], 'modules': (results[14] as Map)['on'], 'notes': results[15]},
       };
       _apply(raw);
       state = state.copyWith(online: true);

@@ -21,15 +21,17 @@ class FitText extends StatelessWidget {
   Widget build(BuildContext context) {
     final scaler = MediaQuery.textScalerOf(context);
     final dir = Directionality.of(context);
+    // Measured in the style the text is drawn in: the theme's font, merged.
+    final drawn = DefaultTextStyle.of(context).style.merge(style);
     return LayoutBuilder(builder: (context, box) {
-      final start = style.fontSize ?? 14;
-      final size = fitSize(text, style, box.maxWidth, box.maxHeight, maxLines: maxLines, minSize: minSize, scaler: scaler, dir: dir);
+      final start = drawn.fontSize ?? 14;
+      final size = fitSize(text, drawn, box.maxWidth, box.maxHeight, maxLines: maxLines, minSize: minSize, scaler: scaler, dir: dir);
       return Text(
         text,
         maxLines: maxLines,
         overflow: TextOverflow.ellipsis,
         textAlign: textAlign,
-        style: style.copyWith(fontSize: size.clamp(minSize, start)),
+        style: drawn.copyWith(fontSize: size.clamp(minSize, start)),
       );
     });
   }

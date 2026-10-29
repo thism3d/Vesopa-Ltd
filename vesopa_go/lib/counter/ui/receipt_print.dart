@@ -18,7 +18,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:vesopa_go/data/models.dart' show money;
+import 'package:vesopa_go/data/models.dart' show Bill, money;
 import 'package:vesopa_go/data/session.dart';
 
 import '../data/day_report.dart';
@@ -212,6 +212,36 @@ Future<void> printReport(BuildContext context, WidgetRef ref, DayReport r, {requ
 /// Prints [sale]'s receipt, saying how it went.
 Future<void> printReceipt(BuildContext context, WidgetRef ref, SaleRecord sale) =>
     _print(context, ref, receiptLines(sale, ref.read(tapProvider)), 'Receipt ${sale.number}');
+
+/// The bill before it is paid, as the till's Print bill key prints it: the
+/// lines, the subtotal, deals and discounts, service and the total.
+List<PrintLine> billLines(Bill bill, TapState s) {
+  const rule = PrintLine('------------------------------------------');
+  final now = DateTime.now();
+  return [
+    PrintLine(s.venue?.name ?? '', '', true, true),
+    const PrintLine('BILL', '', true, true),
+    PrintLine(bill.name, '', true),
+    PrintLine('${ddmmyy(now)} ${hhmm(now)}', bill.clerk),
+    rule,
+    for (final l in bill.lines) ...[
+      PrintLine('${l.quantity} x ${l.product.name}', money(l.totalMinor)),
+      for (final c in l.choices) PrintLine('    ${c.name}'),
+    ],
+    rule,
+    PrintLine('Subtotal', money(bill.subtotalMinor)),
+    for (final d in bill.dealsApplied.deals) PrintLine(d.name, '-${money(d.savingMinor)}'),
+    if (bill.discountMinor - bill.dealMinor > 0) PrintLine('Discount', '-${money(bill.discountMinor - bill.dealMinor)}'),
+    if (bill.serviceMinor > 0) PrintLine('Service', money(bill.serviceMinor)),
+    if (bill.paidMinor > 0) PrintLine('Paid', '-${money(bill.paidMinor)}'),
+    PrintLine('TOTAL', money(bill.dueMinor), false, true),
+    rule,
+    const PrintLine('This is not a receipt', '', true),
+  ];
+}
+
+Future<void> printBill(BuildContext context, WidgetRef ref, Bill bill) =>
+    _print(context, ref, billLines(bill, ref.read(tapProvider)), 'Bill ${bill.name}');
 
 Future<void> _print(BuildContext context, WidgetRef ref, List<PrintLine> lines, String name) async {
   final s = ref.read(tapProvider);
