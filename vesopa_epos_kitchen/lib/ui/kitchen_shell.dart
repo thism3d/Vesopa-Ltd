@@ -250,6 +250,12 @@ class _KitchenShellState extends ConsumerState<KitchenShell> {
               onSettings: () => showKitchenSettings(context),
               onInfo: () => showKitchenInfo(context),
               onSignOut: () => _confirmSignOut(context),
+              // Bigger and smaller orders, on the screen itself (Pontardawe
+              // RFC, 2026-10-29: "some chefs struggle with their eyesight").
+              // The same per-screen size as Ctrl + / Ctrl -, kept on this
+              // machine; fewer, larger cards fit across as it grows.
+              onBigger: () => ref.read(kitchenSessionProvider.notifier).nudgeZoom(1),
+              onSmaller: () => ref.read(kitchenSessionProvider.notifier).nudgeZoom(-1),
             ),
 
             // A persistent bar, not a toast.
@@ -337,7 +343,12 @@ class _Header extends StatelessWidget {
     required this.onSettings,
     required this.onInfo,
     required this.onSignOut,
+    required this.onBigger,
+    required this.onSmaller,
   });
+
+  final VoidCallback onBigger;
+  final VoidCallback onSmaller;
 
   final _Tab tab;
   final int openCount;
@@ -376,6 +387,17 @@ class _Header extends StatelessWidget {
             ),
           ),
 
+          IconButton(
+            icon: const Icon(Icons.text_decrease),
+            tooltip: 'Smaller orders',
+            onPressed: onSmaller,
+          ),
+          IconButton(
+            icon: const Icon(Icons.text_increase),
+            tooltip: 'Bigger orders',
+            onPressed: onBigger,
+          ),
+          const SizedBox(width: 6),
           IconButton(
             icon: const Icon(Icons.print_outlined),
             tooltip: 'Print what is on this board',

@@ -238,64 +238,68 @@ class _TicketCardState extends State<TicketCard>
             ),
 
             // ---- Body ------------------------------------------------------
-            Container(
-              color: skin.card,
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  ..._lineRowsFor(
-                    lines,
-                    _stationChipFor,
-                    widget.onLineMade,
-                    widget.allergenLabels,
-                  ),
+            // Takes whatever height the row gives the card beyond its own, so
+            // the footer sits at the bottom, level with its neighbours'.
+            Expanded(
+              child: Container(
+                color: skin.card,
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    ..._lineRowsFor(
+                      lines,
+                      _stationChipFor,
+                      widget.onLineMade,
+                      widget.allergenLabels,
+                    ),
 
-                  if (ticket.note != null) ...[
-                    const Divider(height: 12, indent: 12, endIndent: 12),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 2),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Icon(
-                            Icons.sticky_note_2_outlined,
-                            size: 17,
-                            color: Kds.modifier,
-                          ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              ticket.note!,
-                              style: const TextStyle(
-                                color: Kds.modifier,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
+                    if (ticket.note != null) ...[
+                      const Divider(height: 12, indent: 12, endIndent: 12),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 2),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(
+                              Icons.sticky_note_2_outlined,
+                              size: 17,
+                              color: Kds.modifier,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                ticket.note!,
+                                style: const TextStyle(
+                                  color: Kds.modifier,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                             ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-
-                  // Somebody else's half of this order is still cooking. Only
-                  // ever visible on a kitchen with more than one screen; on a
-                  // single-screen board every station is this board's, so this
-                  // can never fire.
-                  if (ticket.isPartlyDone && _isOpen)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
-                      child: Text(
-                        'Still with ${ticket.outstanding.map(widget.labelFor).join(', ')}',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: skin.inkMuted,
-                          fontStyle: FontStyle.italic,
+                          ],
                         ),
                       ),
-                    ),
-                ],
+                    ],
+
+                    // Somebody else's half of this order is still cooking. Only
+                    // ever visible on a kitchen with more than one screen; on a
+                    // single-screen board every station is this board's, so this
+                    // can never fire.
+                    if (ticket.isPartlyDone && _isOpen)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+                        child: Text(
+                          'Still with ${ticket.outstanding.map(widget.labelFor).join(', ')}',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: skin.inkMuted,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
 
@@ -630,14 +634,21 @@ class _LineRow extends StatelessWidget {
           // and small -- a reminder under the line, not an instruction over it.
           Consumer(
             builder: (context, ref, _) {
-              final item = ref.watch(kitchenStockProvider.select((st) => st.byName(line.name)));
-              if (item == null || item.recipe.isEmpty) return const SizedBox.shrink();
+              final item = ref.watch(
+                kitchenStockProvider.select((st) => st.byName(line.name)),
+              );
+              if (item == null || item.recipe.isEmpty)
+                return const SizedBox.shrink();
               return Padding(
                 key: Key('recipe-${line.id}'),
                 padding: const EdgeInsets.only(left: 36, top: 2),
                 child: Text(
                   item.recipe.map((m) => m.label).join(' · '),
-                  style: TextStyle(fontSize: 13, color: skin.inkMuted, height: 1.25),
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: skin.inkMuted,
+                    height: 1.25,
+                  ),
                 ),
               );
             },
