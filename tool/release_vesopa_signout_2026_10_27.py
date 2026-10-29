@@ -32,7 +32,8 @@ NOTES = {
     "notes-1.16.34.0-epos.txt": "Version 1.16.34.0 - Sign out with Vesopa\n\n"
         "Sign out of the till by confirming with your Vesopa account, for venues that sign in with Vesopa.\n"
         "Tills share tables, kitchen tickets and customer displays over the venue's own network, and keep points, gift cards and vouchers going when the internet is down.\n",
-    "notes-1.7.17.0-kitchen.txt": "Version 1.7.17.0 - Sign out with Vesopa\n\n"
+    "notes-1.7.17.0-kitchen.txt": "Version 1.7.17.0 - Finished orders stay finished\n\n"
+        "Fixed: an order marked Done could come back on the board after a while. Finished orders now stay off the board.\n"
         "A kitchen screen set up with a Vesopa account can be signed out by confirming with Vesopa.\n",
 }
 
