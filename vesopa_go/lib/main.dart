@@ -28,6 +28,7 @@ import 'ui/appearance.dart';
 import 'ui/device_prefs.dart';
 import 'ui/go_frame.dart';
 import 'ui/sounds.dart';
+import 'ui/splash.dart';
 import 'ui/pages/setup.dart';
 import 'ui/theme.dart';
 
@@ -73,7 +74,8 @@ class GoApp extends ConsumerWidget {
     return MaterialApp(
       navigatorKey: goNavigator,
       // Signed on: the licence, offline and idle rules over every page.
-      builder: (context, child) => phase == Phase.ready ? GoFrame(child: child!) : child!,
+      // The start animation over the first screen, then the frame's rules.
+      builder: (context, child) => GoSplash(child: phase == Phase.ready ? GoFrame(child: child!) : child!),
       title: appName,
       debugShowCheckedModeBanner: false,
       theme: Tp.theme(Brightness.light),

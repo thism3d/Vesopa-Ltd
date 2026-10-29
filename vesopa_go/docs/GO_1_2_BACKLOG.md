@@ -34,7 +34,7 @@ code (ONE_CODEBASE_PLAN.md). Ticked items are on main.
       till's loyalty, gift card and deposit routes on Go).
 - [x] 1.2.8 Light, dark and automatic appearance (automatic by default);
       the customer's screens and the PIN pad stay dark.
-- [ ] Start animation: the app icon built, turning into a card and a tick.
+- [x] 1.2.10 Start animation: the mark builds, flips into a card, a tick is drawn.
 - [x] 1.2.9 Reports: the whole venue today (every till and device, from
       /api/tap/today), refreshed every 15 seconds, digits that roll.
 - [ ] Idle screen settings per kind of device (iPad, Android, iPhone).
