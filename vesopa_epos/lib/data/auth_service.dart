@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import 'local/database.dart';
 import 'sync_service.dart';
+import 'vesopa_sso.dart';
 
 /// Why a logout was refused.
 class LogoutBlocked implements Exception {
@@ -97,6 +98,55 @@ class AuthService {
     }
     if (!ok) throw LogoutBlocked('That password is not correct.');
 
+    await _handOver();
+  }
+
+  /// Sign out confirmed with the person's Vesopa account rather than a typed
+  /// password (2026-10-27).
+  ///
+  /// With Vesopa as the way in, an account has no password the back office
+  /// holds -- the Users page stopped offering "Reset password" for that reason
+  /// -- so the password box could never be answered and a till could not be
+  /// signed out. The person signs in to Vesopa again (their own password,
+  /// passkey or two-step, in the browser) and the back office says whether
+  /// they are one of this venue's users (`/api/vesopa/confirm`).
+  Future<void> logoutWithVesopa({
+    required String issuer,
+    required String clientId,
+    required String? terminalToken,
+    void Function(Uri url)? onUrl,
+  }) async {
+    final idToken = await VesopaSso(issuer: issuer, clientId: clientId).authorize(onUrl: onUrl);
+    final http.Response res;
+    try {
+      res = await _client
+          .post(
+            Uri.parse('$apiBase/api/vesopa/confirm'),
+            headers: {
+              'Content-Type': 'application/json',
+              if ((terminalToken ?? '').isNotEmpty) 'Authorization': 'Bearer $terminalToken',
+            },
+            body: jsonEncode({'id_token': idToken}),
+          )
+          .timeout(const Duration(seconds: 15));
+    } catch (e) {
+      throw LogoutBlocked(
+        'Cannot reach the server to confirm who you are. Connect to the network '
+        'and try again.\n\n$e',
+      );
+    }
+    if (res.statusCode != 200) {
+      String? why;
+      try {
+        why = (jsonDecode(res.body) as Map<String, dynamic>)['error'] as String?;
+      } catch (_) {}
+      throw LogoutBlocked(why ?? 'Vesopa could not confirm that sign-in.');
+    }
+    await _handOver();
+  }
+
+  /// Everything after "who is this?": the sales sent, the tables checked.
+  Future<void> _handOver() async {
     // 2. Get every offline sale onto the server.
     await sync.flush();
 

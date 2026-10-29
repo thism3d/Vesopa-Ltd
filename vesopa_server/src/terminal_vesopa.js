@@ -37,7 +37,7 @@ const { linkAndFind } = require('./backoffice_auth');
 const jwt = require('jsonwebtoken');
 const tillSeats = require('./till_seats');
 const licences = require('./licences');
-const { resolveTillSite, sitePickToken, readSitePickToken, atSite } = require('./sites');
+const { resolveTillSite, sitePickToken, readSitePickToken, sitesFor, atSite } = require('./sites');
 
 /** Trimmed text of at most [max] characters, or null when there is none. */
 function clampText(value, max) {
@@ -656,6 +656,68 @@ function terminalVesopaRoutes({ pool, secret, issueToken, issueTerminalToken }) 
         // So the screen can say "licensed" rather than only "signed in".
         seat: Boolean(seatId),
       });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  /**
+   * "Is this somebody from the venue?" for a device that is already signed in
+   * (2026-10-27).
+   *
+   * A till asks for the account's password before it signs out, and a kitchen
+   * screen before it signs out or changes its branding. With Vesopa as the way
+   * in, the account has no password the back office holds -- the Users page
+   * stopped offering "Reset password" for exactly that reason -- so the box
+   * could never be answered and a till could not be signed out at all. The
+   * device now signs the person in to Vesopa again (their own password, their
+   * own passkey or two-step) and sends the token here.
+   *
+   * Answers yes for a back-office user of the device's own venue, one who
+   * manages it as a linked site, or the platform admin. Spends the token like
+   * every other door here, so it cannot be replayed.
+   */
+  router.post('/api/vesopa/confirm', express.json(), async (req, res, next) => {
+    try {
+      const header = req.headers.authorization || '';
+      let device = null;
+      try {
+        device = jwt.verify(header.startsWith('Bearer ') ? header.slice(7) : '', secret);
+      } catch {
+        device = null;
+      }
+      if (!device || !['terminal', 'kitchen'].includes(device.scope) || !device.office) {
+        return res.status(401).json({ error: 'This device needs to be signed in again.' });
+      }
+
+      let claims;
+      try {
+        claims = await verifyTillToken((req.body || {}).id_token, device.scope === 'kitchen' ? 'kitchen' : 'till');
+      } catch (error) {
+        console.warn('[terminal_vesopa] refused a confirmation:', error.message);
+        return res.status(401).json({ error: 'That sign-in could not be accepted.' });
+      }
+      if (!claims.email || claims.email_verified !== true) {
+        return res.status(403).json({ error: 'Your Vesopa account has no confirmed email address.' });
+      }
+
+      const user = await linkAndFind(pool, claims);
+      if (!user) return res.status(403).json({ error: 'There is no back-office user for that address.' });
+      if (user.blocked) return res.status(403).json({ error: user.blocked });
+
+      const office = String(device.office).toLowerCase();
+      let mine = user.role === 'admin' || String(user.officeEmail || '').toLowerCase() === office;
+      if (!mine) {
+        try {
+          mine = (await sitesFor(pool, user.id)).some((s) => String(s.contact_email || '').toLowerCase() === office);
+        } catch {
+          mine = false;
+        }
+      }
+      if (!mine) {
+        return res.status(403).json({ error: `${user.email} is not one of this venue's back-office users.` });
+      }
+      return res.json({ ok: true, email: user.email, name: user.name });
     } catch (error) {
       return next(error);
     }

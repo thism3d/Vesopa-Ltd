@@ -227,6 +227,13 @@ class KitchenApi {
     }
   }
 
+  /// "This is somebody from the venue": a Vesopa sign-in, checked by the back
+  /// office (2026-10-27). For signing out a screen that was set up with a
+  /// Vesopa account, which has no screen password to type.
+  Future<void> confirmWithVesopa(String idToken) async {
+    await _send('POST', '/api/vesopa/confirm', body: {'id_token': idToken});
+  }
+
   /// Set this screen up from a person's Vesopa account.
   ///
   /// The back office decides what that account may commission -- the same

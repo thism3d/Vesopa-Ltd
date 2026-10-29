@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/kitchen_api.dart';
 import '../../data/providers.dart';
+import '../../data/vesopa_sso.dart';
 import '../theme.dart';
 import 'on_screen_keyboard.dart';
 
@@ -28,6 +29,7 @@ Future<String?> askForKitchenPassword(
   required String confirmLabel,
   IconData icon = Icons.lock_outline,
   Color? tone,
+  bool allowVesopa = false,
 }) {
   return showDialog<String>(
     context: context,
@@ -40,6 +42,7 @@ Future<String?> askForKitchenPassword(
       confirmLabel: confirmLabel,
       icon: icon,
       tone: tone,
+      allowVesopa: allowVesopa,
     ),
   );
 }
@@ -51,6 +54,7 @@ class _PasswordPrompt extends ConsumerStatefulWidget {
     required this.confirmLabel,
     required this.icon,
     this.tone,
+    this.allowVesopa = false,
   });
 
   final String title;
@@ -58,6 +62,10 @@ class _PasswordPrompt extends ConsumerStatefulWidget {
   final String confirmLabel;
   final IconData icon;
   final Color? tone;
+
+  /// Offer "Confirm with Vesopa" as well (2026-10-27): a screen set up with a
+  /// Vesopa account has no screen password, so signing it out needs this.
+  final bool allowVesopa;
 
   @override
   ConsumerState<_PasswordPrompt> createState() => _PasswordPromptState();
@@ -69,6 +77,48 @@ class _PasswordPromptState extends ConsumerState<_PasswordPrompt> {
   bool _busy = false;
   bool _revealed = false;
   String? _error;
+
+  ({bool enabled, bool only, String issuer, String clientId})? _vesopa;
+  bool _waitingForVesopa = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.allowVesopa) {
+      ref.read(kitchenApiProvider).vesopaOption().then((v) {
+        if (mounted) setState(() => _vesopa = v);
+      });
+    }
+  }
+
+  Future<void> _confirmWithVesopa() async {
+    final v = _vesopa;
+    if (v == null || _busy) return;
+    setState(() {
+      _busy = true;
+      _waitingForVesopa = true;
+      _error = null;
+    });
+    try {
+      final idToken = await VesopaSso(issuer: v.issuer, clientId: v.clientId).authorize();
+      await ref.read(kitchenApiProvider).confirmWithVesopa(idToken);
+      if (mounted) Navigator.of(context).pop('vesopa');
+    } on KitchenApiError catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.message;
+        _busy = false;
+        _waitingForVesopa = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e is VesopaSsoFailed ? e.message : 'Vesopa could not confirm that sign-in.';
+        _busy = false;
+        _waitingForVesopa = false;
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -143,6 +193,16 @@ class _PasswordPromptState extends ConsumerState<_PasswordPrompt> {
                 style: TextStyle(color: skin.inkMuted, height: 1.35),
               ),
               const SizedBox(height: 16),
+              if (_vesopa != null) ...[
+                FilledButton.tonalIcon(
+                  icon: const Icon(Icons.verified_user_outlined),
+                  label: Text(_waitingForVesopa
+                      ? 'Sign in on the Vesopa page in the browser…'
+                      : 'Confirm with Vesopa'),
+                  onPressed: _busy ? null : _confirmWithVesopa,
+                ),
+                const SizedBox(height: 12),
+              ],
               TextField(
                 controller: _password,
                 obscureText: !_revealed,

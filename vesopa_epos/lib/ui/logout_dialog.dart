@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/auth_service.dart';
 import '../main.dart';
+import '../data/session_controller.dart' show VesopaOption, vesopaOptionProvider;
+import '../data/vesopa_sso.dart' show VesopaSsoFailed;
 import 'theme.dart';
 
 /// Confirms who is signing out, and refuses to do it while this terminal still
@@ -20,6 +22,48 @@ class _LogoutDialogState extends ConsumerState<LogoutDialog> {
 
   /// The eye beside the password: shown in plain text while pressed on.
   bool _reveal = false;
+
+  /// The Vesopa sign-in page, once it has been opened in the browser.
+  Uri? _opened;
+
+  /// Confirm with the person's Vesopa account (2026-10-27): the way to sign
+  /// out of a till whose venue signs in with Vesopa only, where the account
+  /// has no password here to type.
+  Future<void> _confirmWithVesopa(VesopaOption option) async {
+    setState(() {
+      _busy = true;
+      _error = null;
+      _opened = null;
+    });
+    try {
+      await ref.read(authServiceProvider).logoutWithVesopa(
+            issuer: option.issuer,
+            clientId: option.clientId,
+            terminalToken: ref.read(sessionProvider).terminalToken,
+            onUrl: (url) {
+              if (mounted) setState(() => _opened = url);
+            },
+          );
+      if (mounted) Navigator.of(context).pop(true);
+    } on LogoutBlocked catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e.message;
+          _busy = false;
+          _opened = null;
+        });
+        await _counts();
+      }
+    } on VesopaSsoFailed catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e.message;
+          _busy = false;
+          _opened = null;
+        });
+      }
+    }
+  }
   String? _error;
   int _pending = 0;
   int _parked = 0;
@@ -80,6 +124,10 @@ class _LogoutDialogState extends ConsumerState<LogoutDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final unsafe = _pending > 0 || _parked > 0;
+    final vesopa = ref.watch(vesopaOptionProvider).value;
+    final withVesopa = vesopa != null && vesopa.enabled;
+    // Vesopa is the only way into this venue: no password to type.
+    final vesopaOnly = withVesopa && vesopa.only;
 
     return AlertDialog(
       title: const Row(
@@ -96,8 +144,11 @@ class _LogoutDialogState extends ConsumerState<LogoutDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Confirm your password. Everything taken on this terminal is '
-              'sent to the server before you are signed out.',
+              vesopaOnly
+                  ? 'Confirm it is you with your Vesopa account. Everything taken '
+                      'on this terminal is sent to the server before you are signed out.'
+                  : 'Confirm your password. Everything taken on this terminal is '
+                      'sent to the server before you are signed out.',
               style: theme.textTheme.bodyMedium,
             ),
             const SizedBox(height: 16),
@@ -152,7 +203,29 @@ class _LogoutDialogState extends ConsumerState<LogoutDialog> {
               ),
             ),
             const SizedBox(height: 12),
-            TextField(
+            if (withVesopa) ...[
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.tonalIcon(
+                  icon: const Icon(Icons.verified_user_outlined),
+                  label: Text(_busy && _opened != null ? 'Waiting for Vesopa…' : 'Confirm with Vesopa'),
+                  onPressed: _busy ? null : () => _confirmWithVesopa(vesopa),
+                ),
+              ),
+              if (_opened != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Sign in on the Vesopa page that has opened in the browser, then come back here.',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ],
+              if (!vesopaOnly) ...[
+                const SizedBox(height: 12),
+                Text('Or type the password', style: theme.textTheme.bodySmall),
+                const SizedBox(height: 8),
+              ],
+            ],
+            if (!vesopaOnly) TextField(
               controller: _password,
               enabled: !_busy,
               obscureText: !_reveal,
@@ -191,16 +264,17 @@ class _LogoutDialogState extends ConsumerState<LogoutDialog> {
           onPressed: _busy ? null : () => Navigator.of(context).pop(false),
           child: const Text('Cancel'),
         ),
-        FilledButton(
-          onPressed: _busy ? null : _submit,
-          child: _busy
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('Sign out'),
-        ),
+        if (!vesopaOnly)
+          FilledButton(
+            onPressed: _busy ? null : _submit,
+            child: _busy
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('Sign out'),
+          ),
       ],
     );
   }

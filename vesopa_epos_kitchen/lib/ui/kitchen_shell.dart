@@ -318,6 +318,7 @@ class _KitchenShellState extends ConsumerState<KitchenShell> {
           'email and this login. Orders already sent are not lost — they will '
           'be here when it is.',
       confirmLabel: 'Sign out',
+      allowVesopa: true,
     );
 
     if (password != null) {
