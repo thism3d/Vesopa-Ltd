@@ -35,7 +35,8 @@ code (ONE_CODEBASE_PLAN.md). Ticked items are on main.
 - [x] 1.2.8 Light, dark and automatic appearance (automatic by default);
       the customer's screens and the PIN pad stay dark.
 - [ ] Start animation: the app icon built, turning into a card and a tick.
-- [ ] Reports live, with digits that roll when they change.
+- [x] 1.2.9 Reports: the whole venue today (every till and device, from
+      /api/tap/today), refreshed every 15 seconds, digits that roll.
 - [ ] Idle screen settings per kind of device (iPad, Android, iPhone).
 - [ ] Notifications, vibration and sounds checked on every device.
 - [ ] Screen programming on the device: lines (horizontal and vertical,

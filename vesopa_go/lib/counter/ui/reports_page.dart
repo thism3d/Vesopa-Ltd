@@ -10,8 +10,11 @@
 /// the device's own day, there with or without a signal.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:vesopa_go/data/api.dart';
 import 'package:vesopa_go/data/models.dart';
 import 'package:vesopa_go/data/session.dart';
 import 'package:vesopa_go/ui/theme.dart';
@@ -47,7 +50,7 @@ class ReportsPage extends ConsumerWidget {
               onPressed: () async {
                 final m = await askManager(context, ref, why: 'Open the reports', permission: TillPermission.xReport);
                 if (m != null && context.mounted) {
-                  Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => Scaffold(appBar: AppBar(title: const Text('Reports')), body: _ReportBody(manager: m))));
+                  Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => Scaffold(appBar: AppBar(title: const Text('Reports')), body: _ReportTabs(manager: m))));
                 }
               },
               icon: const Icon(Icons.key_rounded),
@@ -57,7 +60,7 @@ class ReportsPage extends ConsumerWidget {
         ),
       );
     }
-    return const _ReportBody();
+    return const _ReportTabs();
   }
 }
 
@@ -225,9 +228,12 @@ class _ReportBody extends ConsumerWidget {
 }
 
 class _Stat extends StatelessWidget {
-  const _Stat(this.label, this.value);
+  const _Stat(this.label, this.value, {this.rolling = false});
   final String label;
   final String value;
+
+  /// The digits roll when the value changes (the live venue report).
+  final bool rolling;
 
   @override
   Widget build(BuildContext context) {
@@ -238,7 +244,10 @@ class _Stat extends StatelessWidget {
       decoration: BoxDecoration(border: Border.all(color: Theme.of(context).colorScheme.outlineVariant), borderRadius: BorderRadius.circular(14)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(label, style: t.bodySmall),
-        Text(value, style: t.titleMedium?.copyWith(fontWeight: FontWeight.w800, fontFeatures: Tp.tabular)),
+        if (rolling)
+          RollingText(value, style: t.titleMedium?.copyWith(fontWeight: FontWeight.w800, fontFeatures: Tp.tabular))
+        else
+          Text(value, style: t.titleMedium?.copyWith(fontWeight: FontWeight.w800, fontFeatures: Tp.tabular)),
       ]),
     );
   }
@@ -379,4 +388,208 @@ class _Hours extends StatelessWidget {
       ]),
     ]);
   }
+}
+
+/// This device's day, or the whole venue's today (every till and Go device),
+/// live from the back office.
+class _ReportTabs extends ConsumerStatefulWidget {
+  const _ReportTabs({this.manager});
+  final String? manager;
+  @override
+  ConsumerState<_ReportTabs> createState() => _ReportTabsState();
+}
+
+class _ReportTabsState extends ConsumerState<_ReportTabs> {
+  /// The whole venue first, except in the demo, which has no back office.
+  late bool _venue = !ref.read(tapProvider).demo;
+
+  @override
+  Widget build(BuildContext context) => Column(children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: SegmentedButton<bool>(
+            showSelectedIcon: false,
+            segments: const [
+              ButtonSegment(value: true, icon: Icon(Icons.storefront_rounded), label: Text('Whole venue')),
+              ButtonSegment(value: false, icon: Icon(Icons.phone_iphone_rounded), label: Text('This device')),
+            ],
+            selected: {_venue},
+            onSelectionChanged: (v) => setState(() => _venue = v.first),
+          ),
+        ),
+        Expanded(child: _venue ? const _VenueBody() : _ReportBody(manager: widget.manager)),
+      ]);
+}
+
+/// Today across the venue, from /api/tap/today, asked again every 15
+/// seconds while it is open; numbers roll to their new value.
+class _VenueBody extends ConsumerStatefulWidget {
+  const _VenueBody();
+  @override
+  ConsumerState<_VenueBody> createState() => _VenueBodyState();
+}
+
+class _VenueBodyState extends ConsumerState<_VenueBody> {
+  Map<String, dynamic>? _r;
+  String? _error;
+  Timer? _timer;
+  DateTime? _at;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+    _timer = Timer.periodic(const Duration(seconds: 15), (_) => _load());
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    try {
+      final r = await ref.read(apiProvider).today();
+      if (mounted) {
+        setState(() {
+          _r = r;
+          _error = null;
+          _at = DateTime.now();
+        });
+      }
+    } on TapApiError catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final r = _r;
+    final go = ref.watch(tapProvider.select((s) => s.config.go));
+    if (r == null) {
+      return Center(child: _error == null ? const CircularProgressIndicator() : Padding(padding: const EdgeInsets.all(24), child: Text(_error!, textAlign: TextAlign.center)));
+    }
+    int n(Object? v) => (v as num?)?.toInt() ?? 0;
+    List<Map<String, dynamic>> list(String k) => [for (final x in (r[k] as List? ?? const [])) Map<String, dynamic>.from(x as Map)];
+    final net = n(r['net_minor']);
+    final gross = list('departments').fold<int>(0, (s, d) => s + n(d['total_minor']));
+    String method(String m) => switch (m.toLowerCase()) {
+          'cash' => 'Cash',
+          'card' || 'dojo' || 'machine' || 'tap' => 'Card',
+          'teya' => 'Card (Teya)',
+          'voucher' => 'Voucher',
+          'gift_card' || 'gift' => 'Gift card',
+          'points' => 'Points',
+          _ => m.isEmpty ? 'Other' : '${m[0].toUpperCase()}${m.substring(1).replaceAll('_', ' ')}',
+        };
+    return LayoutBuilder(builder: (context, box) {
+      final two = box.maxWidth >= 900;
+      final left = <Widget>[
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Expanded(child: Text('Today, every till and device', style: t.bodySmall)),
+                if (_at != null) ...[
+                  const _LiveDot(),
+                  const SizedBox(width: 6),
+                  Text('Live · ${hhmm(_at!)}', style: t.bodySmall),
+                ],
+              ]),
+              const SizedBox(height: 4),
+              Text('Net sales', style: t.titleSmall),
+              RollingText(money(net), style: t.displaySmall?.copyWith(fontWeight: FontWeight.w900, fontFeatures: Tp.tabular)),
+              const SizedBox(height: 14),
+              Wrap(spacing: 10, runSpacing: 10, children: [
+                _Stat('Sales', '${n(r['sales'])}', rolling: true),
+                _Stat('Average', money(n(r['average_minor'])), rolling: true),
+                _Stat('Discounts', money(n(r['discount_minor'])), rolling: true),
+                if (n(r['tips_minor']) > 0) _Stat('Tips', money(n(r['tips_minor'])), rolling: true),
+                if (n(r['covers']) > 0) _Stat('Covers', '${n(r['covers'])}', rolling: true),
+              ]),
+            ]),
+          ),
+        ),
+        const SizedBox(height: 12),
+        _Section(title: 'Payments', children: [
+          for (final p in list('payments')) _Line('${method('${p['method']}')} (${n(p['count'])})', n(p['total_minor'])),
+          if (list('payments').isEmpty) Text('No sales yet', style: t.bodySmall),
+        ]),
+        if (go.reportsStaff) ...[
+          const SizedBox(height: 12),
+          _Section(title: 'Staff', subtitle: 'Sales today', children: [
+            for (final c in list('staff')) _Line('${c['name']} (${n(c['count'])})', n(c['total_minor'])),
+            if (list('staff').isEmpty) Text('No sales yet', style: t.bodySmall),
+          ]),
+        ],
+      ];
+      final right = <Widget>[
+        if (go.reportsHourly) ...[
+          _Section(title: 'Sales by the hour', subtitle: 'Net', children: [
+            _Hours({for (final h in list('hours')) n(h['hour']): n(h['total_minor'])}),
+          ]),
+          const SizedBox(height: 12),
+        ],
+        _Section(title: 'By department', subtitle: 'Before discounts', children: [
+          _Bars([for (final d in list('departments')) Slice('${d['name']}', n(d['total_minor']))], total: gross),
+        ]),
+        if (go.reportsProducts) ...[
+          const SizedBox(height: 12),
+          _Section(title: 'Product mix', subtitle: 'Top 15 by value', children: [
+            _Bars([for (final p in list('products')) Slice('${p['name']}', n(p['total_minor']), count: n(p['quantity']))], total: gross, counts: true),
+          ]),
+        ],
+      ];
+      return RefreshIndicator(
+        onRefresh: _load,
+        child: ListView(padding: const EdgeInsets.all(16), children: [
+          if (two)
+            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Expanded(child: Column(children: left)),
+              const SizedBox(width: 12),
+              Expanded(child: Column(children: right)),
+            ])
+          else ...[...left, const SizedBox(height: 12), ...right],
+        ]),
+      );
+    });
+  }
+}
+
+/// A small green light that says the figures are live.
+class _LiveDot extends StatelessWidget {
+  const _LiveDot();
+  @override
+  Widget build(BuildContext context) => Container(width: 8, height: 8, decoration: const BoxDecoration(color: Tp.green, shape: BoxShape.circle));
+}
+
+/// Text whose characters roll to their new value when it changes, like an
+/// odometer: each digit that changed slides up out and the new one in.
+class RollingText extends StatelessWidget {
+  const RollingText(this.text, {super.key, this.style});
+  final String text;
+  final TextStyle? style;
+
+  @override
+  Widget build(BuildContext context) => Row(mainAxisSize: MainAxisSize.min, children: [
+        for (var i = 0; i < text.length; i++)
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 420),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            transitionBuilder: (child, anim) {
+              final incoming = child.key == ValueKey('$i${text[i]}');
+              return ClipRect(
+                child: SlideTransition(
+                  position: Tween(begin: Offset(0, incoming ? 1 : -1), end: Offset.zero).animate(anim),
+                  child: FadeTransition(opacity: anim, child: child),
+                ),
+              );
+            },
+            child: Text(text[i], key: ValueKey('$i${text[i]}'), style: style),
+          ),
+      ]);
 }

@@ -266,6 +266,9 @@ class TapApi {
   /// The venue's modules that are on (memberships, events...), as the till asks.
   Future<Map<String, dynamic>> modules() => _send('GET', '/till/modules');
 
+  /// Today across the venue: every till and device (vesopa_server tap.js).
+  Future<Map<String, dynamic>> today() => _send('GET', '/api/tap/today');
+
   /// The venue's banknote keys and their pictures (back office, as the till's).
   Future<List<dynamic>> cashNotes() async => (await _send('GET', '/till/denominations?office=$_o'))['items'] as List? ?? const [];
 

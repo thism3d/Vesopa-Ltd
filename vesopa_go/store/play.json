@@ -7,7 +7,7 @@
   "contact_email": "info@vesopasoftware.com",
   "contact_website": "https://go.vesopa.com/",
   "track": "internal",
-  "release_notes": "Vesopa Go 1.2.8: light, dark or automatic appearance (automatic by default, Settings > Appearance); the customer's screens and the PIN pad stay dark.",
+  "release_notes": "Vesopa Go 1.2.9: live reports for the whole venue (every till and device, refreshed every 15 seconds, numbers that roll as they change), light, dark or automatic appearance, and the till's payment page.",
   "images": {
     "icon": [
       "play-icon-512.png"

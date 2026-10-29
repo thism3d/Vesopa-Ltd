@@ -454,6 +454,67 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
   });
 
   /** The online menu shows the product's new photo too (its dine-in items for that PLU). */
+  // ---- Today across the venue (owner, 2026-10-28: live reports on Go) ---------
+  //
+  // Every till's and every Go device's closed sales today, as the back
+  // office's Financial Summary counts them (epos_orders closed today, by the
+  // same day boundary): the takings, how they were paid, by staff, by hour, by
+  // department and the best sellers. Go asks every few seconds while Reports
+  // is open, so this stays a handful of indexed sums.
+  router.get('/api/tap/today', terminal, async (req, res, next) => {
+    try {
+      const { resolveRange, sqlDateTime } = require('./reports');
+      const { from, to } = resolveRange('today');
+      const w = 'o.email = ? AND o.closed_at BETWEEN ? AND ?';
+      const params = [req.office, sqlDateTime(from), sqlDateTime(to)];
+      const q = async (sql) => {
+        try { return (await pool.query(sql, params))[0]; } catch (e) {
+          if (e.code === 'ER_BAD_FIELD_ERROR' || e.code === 'ER_NO_SUCH_TABLE') return [];
+          throw e;
+        }
+      };
+      const [totals] = await q(`SELECT COUNT(*) AS sales, COALESCE(SUM(o.total_minor), 0) AS net_minor,
+          COALESCE(SUM(o.covers), 0) AS covers, COALESCE(SUM(o.gratuity_minor), 0) AS tips_minor,
+          COALESCE(SUM(o.voucher_minor + o.points_value_minor + o.promo_minor), 0) AS discount_minor,
+          MIN(o.closed_at) AS first_at, MAX(o.closed_at) AS last_at
+        FROM epos_orders o WHERE ${w}`);
+      const payments = await q(`SELECT pay.method AS method, COUNT(*) AS count,
+          COALESCE(SUM(COALESCE(pay.applied_minor, pay.amount_minor)), 0) AS total_minor
+        FROM epos_payments pay JOIN epos_orders o ON o.id = pay.order_id WHERE ${w} GROUP BY pay.method ORDER BY total_minor DESC`);
+      const staff = await q(`SELECT COALESCE(NULLIF(o.clerk_name, ''), 'No clerk recorded') AS name, COUNT(*) AS count,
+          COALESCE(SUM(o.total_minor), 0) AS total_minor
+        FROM epos_orders o WHERE ${w} GROUP BY name ORDER BY total_minor DESC LIMIT 20`);
+      const hours = await q(`SELECT HOUR(o.closed_at) AS hour, COALESCE(SUM(o.total_minor), 0) AS total_minor
+        FROM epos_orders o WHERE ${w} GROUP BY hour ORDER BY hour`);
+      const departments = await q(`SELECT COALESCE(NULLIF(TRIM(p.department_name), ''), 'Unassigned') AS name,
+          COALESCE(SUM(l.quantity * l.unit_price_minor), 0) AS total_minor
+        FROM epos_order_lines l JOIN epos_orders o ON o.id = l.order_id
+        LEFT JOIN bo_products p ON p.pluid = l.plu_id AND p.email = o.email
+        WHERE ${w} GROUP BY name ORDER BY total_minor DESC LIMIT 12`);
+      const products = await q(`SELECT l.name AS name, COALESCE(SUM(l.quantity), 0) AS quantity,
+          COALESCE(SUM(l.quantity * l.unit_price_minor), 0) AS total_minor
+        FROM epos_order_lines l JOIN epos_orders o ON o.id = l.order_id
+        WHERE ${w} GROUP BY l.name ORDER BY total_minor DESC LIMIT 15`);
+      const t = totals || {};
+      const num = (v) => Number(v) || 0;
+      res.json({
+        from: from.toISOString(),
+        sales: num(t.sales),
+        net_minor: num(t.net_minor),
+        covers: num(t.covers),
+        tips_minor: num(t.tips_minor),
+        discount_minor: num(t.discount_minor),
+        average_minor: num(t.sales) > 0 ? Math.round(num(t.net_minor) / num(t.sales)) : 0,
+        last_at: t.last_at || null,
+        payments: payments.map((r) => ({ method: r.method, count: num(r.count), total_minor: num(r.total_minor) })),
+        staff: staff.map((r) => ({ name: r.name, count: num(r.count), total_minor: num(r.total_minor) })),
+        hours: hours.map((r) => ({ hour: num(r.hour), total_minor: num(r.total_minor) })),
+        departments: departments.map((r) => ({ name: r.name, total_minor: Math.round(num(r.total_minor)) })),
+        products: products.map((r) => ({ name: r.name, quantity: num(r.quantity), total_minor: Math.round(num(r.total_minor)) })),
+      });
+    } catch (e) { send(res, e, next); }
+  });
+
   router.put('/api/tap/menu-photo/:plu', terminal, express.json(), async (req, res, next) => {
     try {
       const url = String((req.body || {}).image_url || '').trim();
