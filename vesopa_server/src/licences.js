@@ -140,7 +140,14 @@ async function limitFor(db, office, kind) {
   } catch (e) {
     if (e.code !== 'ER_NO_SUCH_TABLE') throw e;
   }
-  if (OPT_IN.includes(kind)) return 0;
+  if (OPT_IN.includes(kind)) {
+    // A practice venue (demo_venue.js) takes no money, so it may run Vesopa Go
+    // with no limit: trainees practise on the same devices the venue uses. Its
+    // licence rows are never set up, so without this no demo could ever sign a
+    // Go device in (owner, 2026-10-30: "why is Vesopa Go not enabled for the
+    // Pontardawe RFC demo venue").
+    return String(office || '').toLowerCase().endsWith('@vesopa.invalid') ? null : 0;
+  }
   if (kind !== 'till') return null;
   try {
     const [[row]] = await db.query(
