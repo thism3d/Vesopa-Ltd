@@ -403,7 +403,9 @@ class BillSync {
   }
 
   /// Write one of the venue's bills into this terminal's own tables.
-  Future<void> _mirror(RemoteBill bill) async {
+  /// [changedAt]: when the sender last changed it, on the main till's clock
+  /// (local link messages carry it; the server's feed is authoritative).
+  Future<void> _mirror(RemoteBill bill, {int? changedAt}) async {
     // Ours, coming back to us. Nothing to do -- and importantly nothing to
     // overwrite: the local copy is the one being edited, and the server's is
     // whatever we last managed to send it.
@@ -420,6 +422,25 @@ class BillSync {
     // that vanishes is worse than one that will not open -- but with nothing on
     // it, so pressing it says so rather than opening an empty check.
     if (payload == null) return;
+
+    // TAKEN OVER. A bill we hold, now held by another terminal: somebody took
+    // it (a claim from Vesopa Go or another till; the server only ever moves a
+    // bill's holder by a claim). It is theirs from now, so this copy becomes
+    // a mirror of theirs at once, and their lines replace ours on screen.
+    // Before this, the till kept ringing onto its own copy and never saw
+    // anything the new holder added: two Table 7s (the owner, 2026-10-30).
+    final existing = await (_db.select(_db.orders)..where((o) => o.id.equals(bill.id))).getSingleOrNull();
+    if (existing != null && existing.heldBy == null) {
+      // A late message from the till we just took it from is not a takeover:
+      // only something newer than our own last change to it is.
+      final ours = _changedAt[bill.id];
+      if (changedAt != null && ours != null && changedAt <= ours) return;
+      await _write(bill, heldBy: bill.terminal, over: true);
+      _sent.remove(bill.id);
+      _lanSent.remove(bill.id);
+      _changedAt.remove(bill.id);
+      return;
+    }
 
     await _write(bill, heldBy: bill.terminal, over: false);
   }
@@ -570,7 +591,7 @@ class BillSync {
       if (waiting != null && !waiting.isCompleted) waiting.complete(bill);
       return;
     }
-    await _mirror(bill);
+    await _mirror(bill, changedAt: (d['changed_at'] as num?)?.toInt());
     if (!_current.sharing || _current.stale) _emit(const BillSyncStatus(sharing: true, stale: false));
   }
 
