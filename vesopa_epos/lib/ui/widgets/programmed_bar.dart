@@ -578,12 +578,12 @@ class _BarKey extends ConsumerWidget {
         button.label ?? ref.watch(brandingProvider).venueName,
         ink,
       ),
-      'staff_name' => _oneLine(
-        ref.watch(staffSessionProvider).name ??
-            ref.watch(sessionProvider).name ??
-            'Not signed on',
-        ink,
-        icon: Icons.person,
+      // The whole name when it fits; else their initials as an icon key, and
+      // a tap shows who it is (the owner, 2026-10-30: "Mu..." told nobody).
+      'staff_name' => _StaffNameKey(
+        name: ref.watch(staffSessionProvider).name ?? ref.watch(sessionProvider).name,
+        ink: ink,
+        onSignOff: ref.watch(staffSessionProvider).signedOn ? () => ref.read(staffSessionProvider.notifier).signOff() : null,
       ),
       'screen_name' => _oneLine(button.label ?? live.screenName, ink),
       _ => const SizedBox.shrink(),
@@ -1222,6 +1222,67 @@ class _OverflowBarState extends State<_OverflowBar> with SingleTickerProviderSta
                 Expanded(child: SizedBox(height: widget.height, child: widget.keyFor(pay))),
               ],
             ]),
+          ),
+        );
+      });
+}
+
+/// The signed-on clerk on a bar: their name, or their initials when the key
+/// is too narrow for it; a tap says who, with Sign off.
+class _StaffNameKey extends StatelessWidget {
+  const _StaffNameKey({required this.name, required this.ink, required this.onSignOff});
+  final String? name;
+  final Color ink;
+  final VoidCallback? onSignOff;
+
+  String get _initials {
+    final parts = (name ?? '').trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+    if (parts.isEmpty) return '?';
+    return (parts.first[0] + (parts.length > 1 ? parts.last[0] : '')).toUpperCase();
+  }
+
+  void _show(BuildContext context) => showDialog<void>(
+        context: context,
+        builder: (c) => AlertDialog(
+          icon: CircleAvatar(radius: 26, child: Text(_initials, style: const TextStyle(fontWeight: FontWeight.w800))),
+          title: Text(name ?? 'Not signed on'),
+          actions: [
+            if (onSignOff != null)
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(c);
+                  onSignOff!();
+                },
+                child: const Text('Sign off'),
+              ),
+            FilledButton(onPressed: () => Navigator.pop(c), child: const Text('Done')),
+          ],
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(builder: (context, box) {
+        final text = name ?? 'Not signed on';
+        const style = TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700);
+        final p = TextPainter(text: TextSpan(text: text, style: style), textDirection: TextDirection.ltr, maxLines: 1)..layout();
+        final fits = p.width + 22 <= box.maxWidth;
+        return InkWell(
+          onTap: () => _show(context),
+          child: Center(
+            child: fits
+                ? Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    Icon(Icons.person, size: 16, color: ink.withValues(alpha: 0.8)),
+                    const SizedBox(width: 6),
+                    Flexible(child: Text(text, maxLines: 1, style: style)),
+                  ])
+                : Tooltip(
+                    message: text,
+                    child: CircleAvatar(
+                      radius: 15,
+                      backgroundColor: Pos.brand,
+                      child: Text(_initials, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Pos.onBrand)),
+                    ),
+                  ),
           ),
         );
       });

@@ -164,32 +164,27 @@ class SettingsPage extends ConsumerWidget {
         ),
 
         const SizedBox(height: 28),
-        const _SectionTitle('Orders from tables'),
+        // The long explanation behind an info key (the owner, 2026-10-30).
+        const _SectionTitle(
+          'Orders from tables',
+          info: 'How this till is told when somebody orders from the code on '
+              'their table. It is set per terminal, not for the venue: a '
+              'till facing customers all evening and a till by the pass '
+              'want different answers.\n\n'
+              'A Windows notification is also shown, so an order reaches '
+              'somebody who has this window minimised. It follows the two '
+              'settings below — a till set to be told Nothing shows none, '
+              'and turning the sound off makes it silent — and the back '
+              'office can switch them off for every terminal at once under '
+              'Settings.',
+        ),
         Card(
           margin: EdgeInsets.zero,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+            padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text(
-                  'How this till is told when somebody orders from the code on '
-                  'their table. It is set per terminal, not for the venue: a '
-                  'till facing customers all evening and a till by the pass '
-                  'want different answers.',
-                  style: TextStyle(fontSize: 12.5),
-                ),
-                const SizedBox(height: 4),
-                const Text(
-                  'A Windows notification is also shown, so an order reaches '
-                  'somebody who has this window minimised. It follows the two '
-                  'settings below — a till set to be told Nothing shows none, '
-                  'and turning the sound off makes it silent — and the back '
-                  'office can switch them off for every terminal at once under '
-                  'Settings.',
-                  style: TextStyle(fontSize: 12.5),
-                ),
-                const SizedBox(height: 6),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   value: ref.watch(orderChimeProvider),
@@ -2493,21 +2488,41 @@ class _TerminalNameRow extends ConsumerWidget {
 }
 
 class _SectionTitle extends StatelessWidget {
-  const _SectionTitle(this.text);
+  const _SectionTitle(this.text, {this.info});
   final String text;
+
+  /// The longer explanation, behind an info key rather than on the page.
+  final String? info;
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 10),
-    child: Text(
-      text.toUpperCase(),
-      style: TextStyle(
-        fontSize: 11.5,
-        fontWeight: FontWeight.w700,
-        letterSpacing: 1.1,
-        color: Theme.of(context).hintColor,
+    padding: EdgeInsets.only(bottom: info == null ? 10 : 2),
+    child: Row(children: [
+      Text(
+        text.toUpperCase(),
+        style: TextStyle(
+          fontSize: 11.5,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 1.1,
+          color: Theme.of(context).hintColor,
+        ),
       ),
-    ),
+      if (info != null)
+        IconButton(
+          tooltip: 'About $text',
+          visualDensity: VisualDensity.compact,
+          iconSize: 18,
+          icon: Icon(Icons.info_outline, color: Theme.of(context).hintColor),
+          onPressed: () => showDialog<void>(
+            context: context,
+            builder: (c) => AlertDialog(
+              title: Text(text),
+              content: Text(info!),
+              actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text('Done'))],
+            ),
+          ),
+        ),
+    ]),
   );
 }
 
