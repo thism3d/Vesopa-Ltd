@@ -16,6 +16,7 @@ import 'wastage_sheet.dart';
 import 'layout.dart';
 import 'sign_on_pad.dart';
 import 'staff_admin.dart';
+import 'staff_drink_dialog.dart';
 import 'theme.dart';
 import 'widgets/basket_panel.dart' show money;
 import 'till_actions.dart';
@@ -121,6 +122,15 @@ class FunctionsPage extends ConsumerWidget {
           Pos.cyan,
           'Browse and reprint any earlier sale.',
           onGoToReceipts,
+        ),
+        // A drink bought for staff prints a slip with a code (2026-10-30);
+        // this is where the code is typed when the slip will not scan.
+        _Function(
+          'Staff Drink',
+          Icons.local_bar,
+          Pos.green,
+          'Redeem a staff drink slip by typing its code.',
+          () => unawaited(redeemStaffDrink(context, ref)),
         ),
       ]),
       _Group('Cash & card', [

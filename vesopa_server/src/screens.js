@@ -157,6 +157,8 @@ const BAR_KEYS = [
   'save_table',
   'new_bill',
   'last_bill',
+  // Redeem a staff drink slip by typing its code (2026-10-30, staff_drinks.js).
+  'staff_drink',
   'qty',
   'note',
   'covers',

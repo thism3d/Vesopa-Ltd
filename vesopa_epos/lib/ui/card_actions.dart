@@ -53,6 +53,7 @@ import '../data/commerce.dart';
 import '../data/gift_top_up.dart';
 import '../data/staff_session.dart';
 import '../data/local/database.dart';
+import '../data/staff_drinks.dart' show isStaffDrinkCode;
 import '../data/swipe_cards.dart';
 import 'barcode_actions.dart';
 import 'gym_greeting.dart';
@@ -66,6 +67,7 @@ import 'membership_gate.dart';
 import 'membership_prompt.dart';
 import 'memberships_page.dart' show MemberCardCapture;
 import 'staff_admin.dart' show StaffCardCapture;
+import 'staff_drink_dialog.dart';
 import 'staff_handover.dart';
 import 'manager_approval.dart';
 import 'widgets/pos_message.dart';
@@ -121,6 +123,13 @@ Future<void> handleSwipedCard(
   // Before the gym door and the bill, which would otherwise greet them or
   // attach them to a sale instead.
   if (MemberCardCapture.offer(card)) return;
+
+  // A staff drink slip's barcode (2026-10-30): SD and eight letters and
+  // numbers, which no card prefix or product gets in the way of.
+  if (isStaffDrinkCode(card.number)) {
+    if (context.mounted) await redeemStaffDrink(context, ref, code: card.number);
+    return;
+  }
 
   final settings = ref.read(cardRepositoryProvider).settings;
   if (!settings.enabled) return;

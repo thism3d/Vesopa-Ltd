@@ -271,6 +271,36 @@ class PrintService {
     );
   }
 
+  /// Staff drink slips, one per drink, on the receipt printer at the counter
+  /// where the drink was bought (data/staff_drinks.dart).
+  Future<void> printStaffDrinkSlips(
+    List<({String code, String printedCode, String productName})> slips, {
+    String? soldBy,
+    String? terminal,
+  }) async {
+    final printer = setup.deviceFor(PrintTarget.customerReceipt);
+    if (printer == null) {
+      throw StateError('No receipt printer is set up on this till.');
+    }
+    final builder = await _for(printer);
+    final now = DateTime.now();
+    for (var i = 0; i < slips.length; i++) {
+      await PrinterTransport.of(printer).send(
+        builder.staffDrinkSlip(
+          productName: slips[i].productName,
+          code: slips[i].code,
+          printedCode: slips[i].printedCode,
+          shopName: setup.shopName,
+          soldBy: soldBy,
+          terminal: terminal,
+          number: i + 1,
+          of: slips.length,
+          at: now,
+        ),
+      );
+    }
+  }
+
   /// The slip that prints when an expired gym card is swiped at the door.
   ///
   /// On the receipt printer, like the card slip above and for a different

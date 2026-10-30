@@ -53,6 +53,7 @@ class ProductExtras {
     this.maxStock,
     this.openPrice = false,
     this.openPriceNote = true,
+    this.staffItem = false,
   });
 
   final String? shortDescription;
@@ -76,13 +77,17 @@ class ProductExtras {
   /// And asks what it was for, kept as the line's note.
   final bool openPriceNote;
 
+  /// Paying for it prints a slip with a code the member of staff redeems
+  /// later (data/staff_drinks.dart).
+  final bool staffItem;
+
   static const none = ProductExtras();
 
   /// The keys the server sends, which are the keys stored.
   static const _keys = [
     'short_description', 'description', 'calories', 'may_contain', 'dietary',
     'is_weighted', 'manual_weight', 'supplier_code', 'min_stock', 'max_stock',
-    'open_price', 'open_price_note',
+    'open_price', 'open_price_note', 'staff_item',
   ];
 
   /// What to store for one catalogue row: the fields it carries, as JSON, or
@@ -119,6 +124,7 @@ class ProductExtras {
         // On unless the venue turned it off: the point of an open price is
         // knowing afterwards what the money was for.
         openPriceNote: m['open_price_note'] == null || _b(m['open_price_note']),
+        staffItem: _b(m['staff_item']),
       );
     } catch (_) {
       return none;

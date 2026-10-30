@@ -1157,6 +1157,58 @@ class ReceiptBuilder {
     return bytes;
   }
 
+  /// A staff drink slip (2026-10-30, data/staff_drinks.dart): bought for a
+  /// member of staff, kept by them, and scanned or typed at the till when they
+  /// have the drink. The drink and the code are the biggest things on it, and
+  /// the code is printed as a barcode too.
+  List<int> staffDrinkSlip({
+    required String productName,
+    required String code,
+    required String printedCode,
+    String? shopName,
+    String? soldBy,
+    String? terminal,
+    int? number,
+    int? of,
+    DateTime? at,
+  }) {
+    final bytes = _begin();
+    if (shopName != null && shopName.trim().isNotEmpty) {
+      bytes.addAll(_shopName(shopName));
+    }
+    bytes.addAll(_text('STAFF DRINK', styles: const PosStyles(align: PosAlign.center, bold: true)));
+    if (number != null && of != null && of > 1) {
+      bytes.addAll(_text('$number of $of', styles: const PosStyles(align: PosAlign.center)));
+    }
+    bytes.addAll(_hr());
+    bytes.addAll(_text(
+      productName,
+      styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size2, width: PosTextSize.size2),
+    ));
+    bytes.addAll(_generator.feed(1));
+    try {
+      // {B picks Code 128 set B, which Epson-style printers need before the data.
+      bytes.addAll(_generator.barcode(Barcode.code128('{B$code'.split(''))));
+    } catch (_) {
+      // A printer that will not take the barcode: the code is printed below
+      // and can be typed in.
+    }
+    bytes.addAll(_text(
+      printedCode,
+      styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size2, width: PosTextSize.size2),
+    ));
+    bytes.addAll(_generator.feed(1));
+    bytes.addAll(_text('Scan or type this code at the', styles: const PosStyles(align: PosAlign.center)));
+    bytes.addAll(_text('till to have your drink.', styles: const PosStyles(align: PosAlign.center)));
+    bytes.addAll(_text('It can be used once.', styles: const PosStyles(align: PosAlign.center, bold: true)));
+    bytes.addAll(_hr());
+    if (soldBy != null && soldBy.trim().isNotEmpty) bytes.addAll(_row('Sold by', soldBy.trim()));
+    if (terminal != null && terminal.trim().isNotEmpty) bytes.addAll(_row('Till', terminal.trim()));
+    bytes.addAll(_row('Bought', _time.format(at ?? DateTime.now())));
+    bytes.addAll(_finish());
+    return bytes;
+  }
+
   /// The slip that prints when an expired gym card is swiped.
   ///
   /// "If the gym membership card has expired, can we get an automated slip

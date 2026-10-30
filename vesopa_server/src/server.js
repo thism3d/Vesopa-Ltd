@@ -33,6 +33,7 @@ const { adminRoutes } = require('./admin');
 const { programmingRoutes } = require('./programming');
 const { permissionRoutes, TILL_COLUMNS } = require('./permissions');
 const { commerceRoutes } = require('./commerce');
+const { staffDrinkRoutes } = require('./staff_drinks');
 const { analyticsRoutes } = require('./analytics');
 const { templateRoutes } = require('./templates');
 const {
@@ -41,7 +42,7 @@ const {
   tillKitchenRoutes,
 } = require('./kitchen');
 const { screensRoutes, tillScreenRoutes, placeProductOnScreen } = require('./screens');
-const { saveProductExtras, PRODUCT_EXTRA_FIELDS, OPEN_PRICE_FIELDS } = require('./product_info');
+const { saveProductExtras, PRODUCT_EXTRA_FIELDS, OPEN_PRICE_FIELDS, STAFF_ITEM_FIELDS } = require('./product_info');
 const { cleanAllergens } = require('./allergens');
 const { screenScheduleRoutes } = require('./screen_schedules');
 const { dashboardLayoutRoutes } = require('./dashboard_layout');
@@ -402,6 +403,7 @@ app.use('/api', licenceRoutes({ pool, secret: JWT_SECRET }));
 app.use(appUpdates.publicRoutes({ pool }));
 app.use('/api', programmingRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use('/api', commerceRoutes({ pool, broadcast, secret: JWT_SECRET }));
+app.use('/api', staffDrinkRoutes({ pool, broadcast, secret: JWT_SECRET }));
 // Repricing a catalogue a level at a time: preview, apply, and put back. See
 // the header of src/price_levels.js for why a preview and an undo are the
 // whole point rather than extras.
@@ -2272,6 +2274,17 @@ app.get(['/till/products', '/products.json'], async (req, res, next) => {
         [office]
       );
       const byPlu = new Map(open.map((r) => [Number(r.pluid), r]));
+      for (const r of rows) Object.assign(r, byPlu.get(Number(r.pluid)) || {});
+    } catch (e) {
+      if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+    }
+    // Staff item (schema_staff_items.sql), on its own for the same reason.
+    try {
+      const [staff] = await pool.query(
+        `SELECT pluid, ${STAFF_ITEM_FIELDS.join(', ')} FROM bo_products WHERE email = ?`,
+        [office]
+      );
+      const byPlu = new Map(staff.map((r) => [Number(r.pluid), r]));
       for (const r of rows) Object.assign(r, byPlu.get(Number(r.pluid)) || {});
     } catch (e) {
       if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;

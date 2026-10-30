@@ -111,6 +111,7 @@ const SP_BAR_GROUPS = [
   ['Paper and cash', [
     ['print_bill', 'Print bill'],
     ['last_bill', 'Last bill'],
+    ['staff_drink', 'Staff drink — redeem a slip by its code'],
     ['open_drawer', 'No sale (open drawer)'],
   ]],
   ['Go to', [

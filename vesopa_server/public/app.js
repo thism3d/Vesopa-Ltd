@@ -348,6 +348,7 @@ const ROUTES = {
   promotions: '/promotions',
   gift_cards: '/gift-cards',
   deposits: '/deposits',
+  staff_drinks: '/staff-drinks',
   loyalty_schemes: '/loyalty-schemes',
   loyalty: '/loyalty',
   cards: '/cards',
@@ -1393,6 +1394,7 @@ const VIEW_LOADERS = {
     promotions: loadPromotions,
     gift_cards: loadGiftCards,
     deposits: loadDeposits,
+    staff_drinks: loadStaffDrinks,
     loyalty_schemes: loadSchemes,
     loyalty: loadLoyalty,
     cards: loadCards,
@@ -7357,6 +7359,16 @@ document.addEventListener('click', async (e) => {
       hint: 'For an open price product: staff type a short note, which is kept on the bill and the receipt.',
       value: p.open_price_note ?? 1,
     },
+    // Nicky (2026-10-30): drinks bought for staff "off customers" were a scam
+    // nobody could check. A staff item prints a slip with a code when it is
+    // paid for, and the drink is poured when that code is scanned, once.
+    {
+      label: 'Staff item — print a slip with a code to redeem later',
+      name: 'staff_item',
+      type: 'checkbox',
+      hint: 'For drinks bought for staff: paying for it prints a slip with a barcode and code. The member of staff scans or types the code at the till to have their drink, and it can only be used once.',
+      value: p.staff_item ?? 0,
+    },
     {
       label: 'Renews membership — paying for this moves the member’s expiry on',
       name: 'renews_membership',
@@ -9204,6 +9216,30 @@ document.addEventListener('click', async (e) => {
 });
 
 // ---- Deposits -------------------------------------------------------------
+
+/** Staff drink slips (2026-10-30, src/staff_drinks.js): the last 90 days. */
+async function loadStaffDrinks() {
+  const rows = await api('/staff-drinks?days=90');
+  const used = rows.filter((r) => r.redeemed_at);
+  const when = (v) => (v ? new Date(v).toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' }) : '');
+  statCards($('staff-drink-stats'), [
+    { label: 'Slips printed', value: String(rows.length), tone: 'primary', hint: 'Last 90 days' },
+    { label: 'Redeemed', value: String(used.length), tone: 'green' },
+    { label: 'Not yet used', value: String(rows.length - used.length), tone: 'amber' },
+    { label: 'Value', value: `£${pounds(rows.reduce((s, r) => s + (r.price_minor || 0), 0))}`, tone: 'blue' },
+  ]);
+  $('staff-drinks').innerHTML = rows.map((r) => `
+    <tr>
+      <td><code>${esc(r.code)}</code></td>
+      <td>${esc(r.product_name)}</td>
+      <td class="right">£${pounds(r.price_minor || 0)}</td>
+      <td class="small">${esc(when(r.issued_at))}${r.terminal ? `<br><span class="muted">${esc(r.terminal)}</span>` : ''}</td>
+      <td class="small">${esc(r.sold_by || '—')}</td>
+      <td class="small">${r.redeemed_at
+        ? `${esc(when(r.redeemed_at))}<br><span class="muted">${esc([r.redeemed_by, r.redeemed_terminal].filter(Boolean).join(' · '))}</span>`
+        : '<span class="pill">not used</span>'}</td>
+    </tr>`).join('') || '<tr><td colspan="6" class="muted">No staff drink slips yet. Tick <b>Staff item</b> on a product to start.</td></tr>';
+}
 
 async function loadDeposits() {
   const rows = await api('/deposits');

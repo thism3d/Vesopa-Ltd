@@ -370,6 +370,7 @@
           <button class="nav" data-view="promotions">Promotions</button>
           <button class="nav" data-view="gift_cards">Gift Cards</button>
           <button class="nav" data-view="deposits">Deposits</button>
+          <button class="nav" data-view="staff_drinks">Staff Drinks</button>
           <button class="nav" data-view="loyalty_schemes">Loyalty Schemes</button>
           <button class="nav" data-view="loyalty">Loyalty Settings</button>
           <button class="nav" data-view="cards">Cards</button>
@@ -2770,6 +2771,18 @@
           <div class="card"><table>
             <thead><tr><th>Reference</th><th>Customer</th><th>For</th><th class="right">Amount</th><th class="right">Redeemed</th><th>Due</th><th>Status</th><th></th></tr></thead>
             <tbody id="deposits"></tbody>
+          </table></div>
+        </section>
+
+        <!-- Staff drinks (2026-10-30): slips printed for products marked Staff item -->
+        <section id="view-staff_drinks" class="view" hidden>
+          <div class="page-head">
+            <div><h2>Staff Drinks</h2><p class="muted small">Every slip printed for a product marked <b>Staff item</b>, who sold it, and when it was redeemed. A slip can only be used once.</p></div>
+          </div>
+          <div class="grid-cards" id="staff-drink-stats"></div>
+          <div class="card"><table>
+            <thead><tr><th>Code</th><th>Drink</th><th class="right">Price</th><th>Bought</th><th>Sold by</th><th>Redeemed</th></tr></thead>
+            <tbody id="staff-drinks"></tbody>
           </table></div>
         </section>
 

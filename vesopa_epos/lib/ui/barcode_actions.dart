@@ -35,7 +35,9 @@ import 'package:intl/intl.dart';
 import '../data/commerce.dart';
 import '../data/local/database.dart';
 import '../main.dart';
+import '../data/staff_drinks.dart' show isStaffDrinkCode;
 import 'redemption_dialogs.dart' show pendingGiftCode;
+import 'staff_drink_dialog.dart';
 import 'sale_page.dart' show productsProvider;
 import 'widgets/on_screen_keyboard.dart';
 import 'widgets/pos_message.dart';
@@ -99,6 +101,12 @@ Future<Product?> handleScannedBarcode(
   WidgetRef ref,
   String code,
 ) async {
+  // A staff drink slip (2026-10-30): known by its shape, redeemed once.
+  if (isStaffDrinkCode(code)) {
+    if (context.mounted) await redeemStaffDrink(context, ref, code: code);
+    return null;
+  }
+
   final known = await productForBarcode(ref, code);
   if (known != null) return known;
 

@@ -116,6 +116,14 @@ const OPEN_PRICE_FIELDS = {
 };
 
 /**
+ * Staff item (schema_staff_items.sql): paying for it prints a slip with a code
+ * the member of staff redeems later. Apart for the same reason as above.
+ */
+const STAFF_ITEM_FIELDS = {
+  staff_item: onOff,
+};
+
+/**
  * Write whichever of the extra fields the caller sent onto one product.
  *
  * A field that is absent is left alone, the same rule PUT /products follows:
@@ -124,7 +132,8 @@ const OPEN_PRICE_FIELDS = {
 async function saveProductExtras(pool, id, email, body) {
   const main = await saveFields(pool, id, email, body, FIELDS, 'schema_product_wizard.sql');
   const open = await saveFields(pool, id, email, body, OPEN_PRICE_FIELDS, 'schema_open_price.sql');
-  return main || open;
+  const staff = await saveFields(pool, id, email, body, STAFF_ITEM_FIELDS, 'schema_staff_items.sql');
+  return main || open || staff;
 }
 
 const warnedFor = new Set();
@@ -162,4 +171,5 @@ module.exports = {
   saveProductExtras,
   PRODUCT_EXTRA_FIELDS: Object.keys(FIELDS),
   OPEN_PRICE_FIELDS: Object.keys(OPEN_PRICE_FIELDS),
+  STAFF_ITEM_FIELDS: Object.keys(STAFF_ITEM_FIELDS),
 };

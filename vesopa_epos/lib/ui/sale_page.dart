@@ -50,6 +50,7 @@ import 'widgets/clock_punch_button.dart';
 import '../data/price_level_controller.dart';
 import 'price_level_sheet.dart';
 import 'display_lock.dart';
+import 'staff_drink_dialog.dart';
 
 /// Live catalogue, straight from the local database so the grid renders with
 /// no network at all.
@@ -1337,6 +1338,8 @@ class SalePage extends ConsumerWidget {
         return;
       case 'last_bill':
         return TillActions.reprintLastReceipt(context, ref);
+      case 'staff_drink':
+        return redeemStaffDrink(context, ref);
 
       // Leaving the sale screen. A venue that keeps the nav rail hidden to buy
       // back the width needs these somewhere, and the bar is where.

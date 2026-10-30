@@ -323,6 +323,11 @@ def deploy_files(app, upload):
     sh(f"cat > {app}/schema/schema_staff_photo.sql && chown {USER}:{USER} {app}/schema/schema_staff_photo.sql", data=photo.read_bytes())
     sh(f"{db(app)} < schema/schema_staff_photo.sql")
     note("  schema_staff_photo.sql applied (bo_clarks.photo_url, if missing)")
+    # Staff drink slips (2026-10-30): a column and a table, both only if missing.
+    staff = SERVER_DIR / "schema" / "schema_staff_items.sql"
+    sh(f"cat > {app}/schema/schema_staff_items.sql && chown {USER}:{USER} {app}/schema/schema_staff_items.sql", data=staff.read_bytes())
+    sh(f"{db(app)} < schema/schema_staff_items.sql")
+    note("  schema_staff_items.sql applied (bo_products.staff_item, epos_staff_drinks, if missing)")
 
 
 def auth_client(app, auth):

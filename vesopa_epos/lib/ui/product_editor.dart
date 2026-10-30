@@ -144,6 +144,7 @@ class _ProductEditorState extends ConsumerState<ProductEditor> {
   late bool _manualWeight = _was.manualWeight;
   late bool _openPrice = _was.openPrice;
   late bool _openPriceNote = _was.openPriceNote;
+  late bool _staffItem = _was.staffItem;
   late bool _attachedOnly = widget.product?.isModifier ?? false;
   late bool _onReceipt = widget.product?.printToReceipt ?? true;
   late final Set<String> _routes = {
@@ -365,6 +366,7 @@ class _ProductEditorState extends ConsumerState<ProductEditor> {
         'manual_weight': _manualWeight ? 1 : 0,
         'open_price': _openPrice ? 1 : 0,
         'open_price_note': _openPriceNote ? 1 : 0,
+        'staff_item': _staffItem ? 1 : 0,
         if (_allergensSeen) ...{
           'allergens': _allergens.toList(),
           'may_contain': _mayContain.toList(),
@@ -677,6 +679,14 @@ class _ProductEditorState extends ConsumerState<ProductEditor> {
           value: _openPriceNote,
           onChanged: (v) => setState(() => _openPriceNote = v),
         ),
+      SwitchListTile(
+        key: const Key('editor-staff-item'),
+        contentPadding: EdgeInsets.zero,
+        title: const Text('Staff item'),
+        subtitle: const Text('For drinks bought for staff: paying for it prints a slip with a code, used once at the till.'),
+        value: _staffItem,
+        onChanged: (v) => setState(() => _staffItem = v),
+      ),
       SwitchListTile(
         contentPadding: EdgeInsets.zero,
         title: const Text('Can only be sold attached to another item'),
@@ -1118,6 +1128,7 @@ class _ProductEditorState extends ConsumerState<ProductEditor> {
           if (_levels[i].text.trim().isNotEmpty) (ref.read(priceLevelNamesProvider).nameFor(i + 2), '£${_levels[i].text.trim()}'),
         if (_attachedOnly) ('Sold', 'Attached to another item only'),
         if (_openPrice) ('Open price', _openPriceNote ? 'Asked at the till, with a note' : 'Asked at the till'),
+        if (_staffItem) ('Staff item', 'Prints a slip with a code to redeem'),
       ]),
       (_Step.stock, [
         ('Case size', pack?.label ?? ''),

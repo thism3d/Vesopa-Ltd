@@ -14,6 +14,7 @@ import 'data/bill_sync.dart';
 import 'data/fonts.dart';
 import 'data/auth_service.dart';
 import 'data/branding.dart';
+import 'data/staff_drinks.dart';
 import 'data/commerce.dart';
 import 'data/floor_repository.dart';
 import 'data/kitchen_printing.dart';
@@ -855,6 +856,14 @@ final commerceRepositoryProvider = Provider<CommerceRepository>(
     office: ref.watch(officeProvider),
     // So the back office can tell this venue's tills from anybody holding the
     // venue's address and a card code. See commerce.js, tillIdentity.
+    terminalToken: ref.watch(sessionProvider).terminalToken,
+  ),
+);
+
+/// Staff drink slips: sending the codes, and redeeming them (data/staff_drinks.dart).
+final staffDrinksProvider = Provider<StaffDrinksApi>(
+  (ref) => StaffDrinksApi(
+    apiBase: ref.watch(apiBaseProvider),
     terminalToken: ref.watch(sessionProvider).terminalToken,
   ),
 );

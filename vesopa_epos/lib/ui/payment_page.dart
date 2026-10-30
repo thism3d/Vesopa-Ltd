@@ -49,6 +49,8 @@ import 'widgets/cash_notes_panel.dart';
 import '../data/screens.dart';
 import 'sale_page.dart' show productsProvider, dealsProvider, askTillField;
 import '../data/product_extras.dart';
+import '../data/staff_drinks.dart';
+import '../data/terminal_identity.dart' show terminalNameProvider;
 import 'widgets/pay_check_panel.dart';
 import 'widgets/programmed_bar.dart';
 import 'widgets/till_top_bar.dart' show VenueTopBarBody;
@@ -234,6 +236,81 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
       // that — they can reprint from Receipts once it is back.
       if (mounted) PosMessenger.error(context, 'Could not print receipt: $e');
     }
+  }
+
+  /// Print a staff drink slip for every Staff item on the bill just paid, and
+  /// send the codes to the back office (data/staff_drinks.dart).
+  ///
+  /// The slips print whatever the venue's receipt setting says: the slip is
+  /// the drink, and without it the member of staff has nothing to redeem.
+  Future<void> _issueStaffDrinks(String? servedBy) async {
+    final products = ref.read(productsProvider).value ?? const <Product>[];
+    final staffPlus = {
+      for (final p in products)
+        if (ProductExtras.decode(p.extras).staffItem) p.pluId,
+    };
+    if (staffPlus.isEmpty) return;
+    final repo = ref.read(orderRepositoryProvider);
+    final drinks = <StaffDrink>[];
+    final now = DateTime.now();
+    for (final l in await repo.watchLines(widget.orderId).first) {
+      if (!staffPlus.contains(l.pluId) || l.quantity <= 0) continue;
+      final count = l.quantity.round().clamp(1, 50);
+      for (var i = 0; i < count; i++) {
+        drinks.add(StaffDrink(
+          code: newStaffDrinkCode(),
+          productName: l.name,
+          pluId: l.pluId,
+          priceMinor: l.unitPriceMinor,
+          issuedAt: now,
+        ));
+      }
+    }
+    if (drinks.isEmpty) return;
+    final terminal = ref.read(terminalNameProvider);
+
+    // Printed before it is sent: a slip printed with the internet down is
+    // still a slip, and its code goes up when the back office answers.
+    try {
+      final printers = await ref.read(printerSettingsProvider.future);
+      final branding = ref.read(brandingProvider);
+      final service = PrintService(
+        await ReceiptBuilder.create(paperWidthMm: printers.receiptWidthMm),
+        PrinterSetup(
+          printers: printers,
+          shopName: branding.venueName.isNotEmpty ? branding.venueName : ref.read(sessionProvider).venueName,
+          footer: branding.footerMessage,
+        ),
+      );
+      await service.printStaffDrinkSlips(
+        [
+          for (final d in drinks)
+            (code: d.code, printedCode: formatStaffDrinkCode(d.code), productName: d.productName),
+        ],
+        soldBy: servedBy,
+        terminal: terminal,
+      );
+      if (mounted) {
+        PosMessenger.success(
+          context,
+          drinks.length == 1 ? 'Staff drink slip printed.' : '${drinks.length} staff drink slips printed.',
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        PosMessenger.error(
+          context,
+          'The staff drink slip could not be printed ($e). The codes are in the back office under Staff Drinks: '
+          '${drinks.map((d) => formatStaffDrinkCode(d.code)).join(', ')}',
+        );
+      }
+    }
+    await ref.read(staffDrinksProvider).issue(
+          orderId: widget.orderId,
+          drinks: drinks,
+          soldBy: servedBy,
+          terminal: terminal,
+        );
   }
 
   /// Whether this sale earns the venue a copy of its own.
@@ -2603,6 +2680,13 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
         }
       }
     }
+
+    // ---- Staff drinks: a slip with a code for each one -------------------
+    //
+    // Nicky (2026-10-30): drinks bought for staff "off customers" were a scam
+    // nobody could check. Printed only now the drink is paid for, and a code
+    // per drink, so two pints are two slips. See data/staff_drinks.dart.
+    if (!practice) await _issueStaffDrinks(servedBy);
 
     if (!mounted) return;
 
