@@ -208,7 +208,7 @@ class CashPage extends ConsumerWidget {
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Icon(icon, size: 32, color: Tp.lime),
+                  Icon(icon, size: 32, color: context.goLimeInk),
                   const Spacer(),
                   Text(title, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
                   Text(sub, style: Theme.of(context).textTheme.bodySmall),

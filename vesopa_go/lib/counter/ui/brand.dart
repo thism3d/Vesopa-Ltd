@@ -18,9 +18,18 @@ class GoMark extends StatelessWidget {
   final double size;
 
   @override
-  Widget build(BuildContext context) => ClipRRect(
-    borderRadius: BorderRadius.circular(size * 0.22),
-    child: Image.asset('assets/brand/go_mark.png', width: size, height: size, filterQuality: FilterQuality.medium, semanticLabel: 'Vesopa'),
+  Widget build(BuildContext context) => DecoratedBox(
+    // A hairline in Night, as iOS rings a dark icon on a dark ground, so the
+    // black tile does not vanish into the bar.
+    position: DecorationPosition.foreground,
+    decoration: BoxDecoration(
+      borderRadius: BorderRadius.circular(size * 0.22),
+      border: Theme.of(context).brightness == Brightness.dark ? Border.all(color: const Color(0x2EFFFFFF), width: 0.8) : null,
+    ),
+    child: ClipRRect(
+      borderRadius: BorderRadius.circular(size * 0.22),
+      child: Image.asset('assets/brand/go_mark.png', width: size, height: size, filterQuality: FilterQuality.medium, semanticLabel: 'Vesopa'),
+    ),
   );
 }
 
@@ -49,7 +58,7 @@ class GoWordmark extends StatelessWidget {
           ),
           Text(
             'Go',
-            style: TextStyle(fontSize: size, fontWeight: FontWeight.w900, letterSpacing: -0.3, color: Tp.lime),
+            style: TextStyle(fontSize: size, fontWeight: FontWeight.w900, letterSpacing: -0.3, color: context.goLimeInk),
           ),
         ],
       ),
@@ -70,7 +79,7 @@ class GoLockup extends StatelessWidget {
         child: Row(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.center, children: [
           GoMark(size: size * 1.45),
           SizedBox(width: size * 0.18),
-          Text('Go', style: TextStyle(fontSize: size * 1.15, height: 1, fontWeight: FontWeight.w900, letterSpacing: -0.8, color: Tp.lime)),
+          Text('Go', style: TextStyle(fontSize: size * 1.15, height: 1, fontWeight: FontWeight.w900, letterSpacing: -0.8, color: context.goLimeInk)),
         ]),
       );
 }

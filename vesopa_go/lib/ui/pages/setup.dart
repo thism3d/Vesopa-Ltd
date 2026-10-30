@@ -22,7 +22,7 @@ class SetupPage extends ConsumerWidget {
             child: Padding(
               padding: const EdgeInsets.all(20),
               child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Icon(icon, size: 32, color: Tp.lime),
+                Icon(icon, size: 32, color: context.goLimeInk),
                 const SizedBox(width: 16),
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(title, style: t.titleLarge),

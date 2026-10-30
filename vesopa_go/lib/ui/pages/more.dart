@@ -115,7 +115,7 @@ class _MorePageState extends ConsumerState<MorePage> {
       const SizedBox(height: 12),
       Card(
         child: ListTile(
-          leading: const Icon(Icons.contactless_rounded, color: Tp.lime),
+          leading: Icon(Icons.contactless_rounded, color: context.goLimeInk),
           title: const Text('Tap to Pay'),
           subtitle: Text(_tapStatus ?? 'Checking…'),
         ),

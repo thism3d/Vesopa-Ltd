@@ -109,7 +109,7 @@ class _ScanSheetState extends ConsumerState<_ScanSheet> {
             for (final ip in found)
               Card(
                 child: ListTile(
-                  leading: const Icon(Icons.print_rounded, color: Tp.lime),
+                  leading: Icon(Icons.print_rounded, color: context.goLimeInk),
                   title: Text(ip, style: const TextStyle(fontWeight: FontWeight.w700, fontFeatures: Tp.tabular)),
                   subtitle: const Text('ESC/POS on port 9100'),
                   trailing: Row(mainAxisSize: MainAxisSize.min, children: [

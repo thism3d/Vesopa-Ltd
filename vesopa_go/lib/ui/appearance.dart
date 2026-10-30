@@ -1,4 +1,5 @@
-/// Light, dark or the device's own (owner, 2026-10-28: automatic by default).
+/// Day, Night or System, as the till names them. Night by default, as the
+/// till is set (owner, 2026-10-30: "follow the colour rules" of the till).
 library;
 
 import 'package:flutter/material.dart';
@@ -15,7 +16,7 @@ class Appearance extends Notifier<ThemeMode> {
       final mode = ThemeMode.values.where((m) => m.name == v).firstOrNull;
       if (mode != null && mode != state) state = mode;
     }).catchError((Object _) {});
-    return ThemeMode.system;
+    return ThemeMode.dark;
   }
 
   Future<void> set(ThemeMode mode) async {

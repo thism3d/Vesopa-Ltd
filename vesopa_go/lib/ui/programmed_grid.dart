@@ -18,6 +18,7 @@ import 'package:flutter/material.dart';
 
 import '../data/models.dart';
 import '../data/screen_set.dart';
+import '../data/venue_data.dart' show VenueMenu;
 import 'fit_text.dart';
 import 'product_photo.dart' show photoUrl;
 import 'theme.dart';
@@ -47,6 +48,7 @@ const goFunctions = <String, String>{
   'sign_on': 'Sign on',
   'display_lock': 'Lock display',
   'clock_in_out': 'Clock in / out',
+  'covers': 'Covers',
 };
 
 /// The till's icon for each function key (vesopa_epos programmed_bar.dart),
@@ -73,6 +75,7 @@ const functionIcons = <String, IconData>{
   'sign_on': Icons.login_rounded,
   'display_lock': Icons.lock_rounded,
   'clock_in_out': Icons.schedule_rounded,
+  'covers': Icons.groups_rounded,
 };
 
 /// Whether Go shows [b]: products, pages and the function keys Go carries
@@ -80,6 +83,8 @@ const functionIcons = <String, IconData>{
 bool goUses(ScreenButton b) => switch (b.kind) {
       ScreenButtonKind.product || ScreenButtonKind.page => true,
       ScreenButtonKind.function => goFunctions.containsKey(b.functionKey ?? ''),
+      // A modifier key works when its group is on the menu (MIXERS ?).
+      ScreenButtonKind.modifier => VenueMenu.current.containsKey('${b.modifierGroupId}'),
       _ => false,
     };
 
@@ -312,7 +317,8 @@ class _ProgrammedStripState extends State<ProgrammedStrip> with SingleTickerProv
       final compactMin = widget.minKey * 0.68;
       if (room / all >= compactMin) return _row(keys, room / all, compact: true);
       // 3. As many as fit before the arrow and Pay; the rest above.
-      final payWidth = pay == null ? 0.0 : compactMin * 1.6 * pay.colSpan;
+      // Pay keeps a thumb's width, not its span on a 15-inch till.
+      final payWidth = pay == null ? 0.0 : compactMin * 1.6;
       final arrowWidth = compactMin * 0.8;
       var space = box.maxWidth - payWidth - arrowWidth - gap * 2;
       final shown = <ScreenButton>[];
@@ -475,12 +481,17 @@ class _Key extends StatelessWidget {
         if (k == 'pay' && actions.payLabel != null && actions.payEnabled) label = '$label ${actions.payLabel}';
         if (k != 'pay' || actions.payEnabled) onTap = () => actions.onFunction(k);
       case ScreenButtonKind.modifier:
+        final group = VenueMenu.current['${button.modifierGroupId}'];
+        label = button.label ?? group?.name ?? 'Choices';
+        note = '?';
+        if (group != null) onTap = () => actions.onFunction('modifier:${button.modifierGroupId}');
       case ScreenButtonKind.blank:
       case ScreenButtonKind.unknown:
         label = button.label ?? '';
     }
-    final fill = here ? Tp.lime.withValues(alpha: 0.28) : (button.fill ?? context.goCard);
-    final ink = button.ink ?? (button.fill == null ? context.goText : (fill.computeLuminance() > 0.5 ? Tp.onLime : Colors.white));
+    final off = onTap == null && button.kind == ScreenButtonKind.function;
+    final fill = off ? context.goDisabledFill : (here ? Tp.lime.withValues(alpha: 0.28) : (button.fill ?? context.goCard));
+    final ink = off ? context.goDisabledInk : (button.ink ?? (button.fill == null ? context.goText : (fill.computeLuminance() > 0.5 ? Tp.onLime : Colors.white)));
 
     // The till's picture rule: the key's own picture, else the product's
     // back-office picture. A picture takes the whole key, and the name and
@@ -507,7 +518,7 @@ class _Key extends StatelessWidget {
           ? functionIcons[button.functionKey]
           : (button.kind == ScreenButtonKind.page ? Icons.grid_view_rounded : null);
       return Opacity(
-        opacity: onTap != null ? 1 : 0.45,
+        opacity: onTap != null || off ? 1 : 0.45,
         child: Material(
           color: fill,
           clipBehavior: Clip.antiAlias,

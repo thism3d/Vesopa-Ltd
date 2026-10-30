@@ -179,7 +179,7 @@ class _EventsPageState extends ConsumerState<EventsPage> {
             Card(
               child: ListTile(
                 contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                leading: const Icon(Icons.confirmation_number_rounded, color: Tp.lime, size: 32),
+                leading: Icon(Icons.confirmation_number_rounded, color: context.goLimeInk, size: 32),
                 title: Text('${e['title']}', style: const TextStyle(fontWeight: FontWeight.w800)),
                 subtitle: Text('${'${e['starts_at'] ?? ''}'.replaceFirst('T', ' ').substring(0, '${e['starts_at'] ?? ''}'.length.clamp(0, 16))} · ${e['sold'] ?? 0} sold · ${e['checked_in'] ?? 0} in'),
                 trailing: FilledButton.tonal(onPressed: () => _sell(e), child: const Text('Sell')),

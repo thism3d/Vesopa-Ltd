@@ -61,7 +61,7 @@ class _MemberSheetState extends ConsumerState<MemberSheet> {
           if (m != null) ...[
             Card(
               child: ListTile(
-                leading: const Icon(Icons.card_membership_rounded, color: Tp.lime, size: 32),
+                leading: Icon(Icons.card_membership_rounded, color: context.goLimeInk, size: 32),
                 title: Text(m.name, style: t.titleMedium),
                 subtitle: Text([
                   if (m.number.isNotEmpty) m.number,

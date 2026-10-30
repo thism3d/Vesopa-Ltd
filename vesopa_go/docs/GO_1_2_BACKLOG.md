@@ -83,8 +83,8 @@ Vesopa Go (iPad and phones):
       Attach customer with results as you type, Gratuity (5/10/12.5/15/20%,
       none, an amount), Voucher, Redeem deposit, Loyalty points, Split bill
       by item or equally.
-- [ ] Cancel and Void with the till's reasons from the back office.
-- [ ] The Covers key and modifier keys (MIXERS ?) on Go's screens.
+- [x] 1.2.13 Cancel and Void with the till's reasons from the back office.
+- [x] 1.2.13 The Covers key and modifier keys (MIXERS ?) on Go's screens.
 - [ ] Idle: the venue's logo; one quick button that opens a brightness
       slider; Touch to begin in the back office's lettering.
 - [ ] A better start animation: Apple-like square tick, the card animated
@@ -109,3 +109,6 @@ Windows till (vesopa_epos):
 
 Website:
 - [ ] go.vesopa.com: real screenshots of the till and the plans.
+- [x] 1.2.13 Night and Day follow the till's colours exactly (PosColors and the
+      payment board's PayPalette); Night by default; lime text deepens in Day;
+      disabled keys grey; the mark ringed in Night.

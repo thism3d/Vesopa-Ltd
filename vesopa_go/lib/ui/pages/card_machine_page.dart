@@ -96,7 +96,7 @@ class _CardMachinePageState extends ConsumerState<CardMachinePage> {
             padding: const EdgeInsets.all(16),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
-                const Icon(Icons.verified_user_rounded, color: Tp.lime),
+                Icon(Icons.verified_user_rounded, color: context.goLimeInk),
                 const SizedBox(width: 10),
                 Text('Dojo', style: t.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
                 const Spacer(),
@@ -227,7 +227,7 @@ class _TeyaMachinesPageState extends ConsumerState<TeyaMachinesPage> {
             padding: const EdgeInsets.all(16),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
-                const Icon(Icons.verified_user_rounded, color: Tp.lime),
+                Icon(Icons.verified_user_rounded, color: context.goLimeInk),
                 const SizedBox(width: 10),
                 Text('Teya', style: t.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
                 const Spacer(),

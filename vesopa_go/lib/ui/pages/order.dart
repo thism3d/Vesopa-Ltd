@@ -18,6 +18,7 @@ import '../product_photo.dart';
 import '../sounds.dart';
 import '../theme.dart';
 import 'note_sheet.dart';
+import 'reasons.dart';
 import '../../counter/ui/product_sheet.dart';
 import 'bill.dart';
 
@@ -37,7 +38,9 @@ class _OrderPageState extends ConsumerState<OrderPage> {
 
   Future<void> _void(Bill bill, BillLine line) async {
     final s = ref.read(tapProvider);
-    final reasons = ['Wrong item', 'Changed their mind', 'Quality', 'Took too long', 'Other'];
+    // The venue's own reasons (back office), as the till offers them.
+    final reasons = await reasonsFor(ref, 'void');
+    if (!mounted) return;
     String reason = reasons.first;
     var qty = 1;
     final pin = TextEditingController();

@@ -528,6 +528,7 @@ class TapSession extends Notifier<TapState> {
       modifiers: raw['modifiers'] as Map<String, dynamic>?,
       screens: raw['screens'] as List?,
     );
+    VenueMenu.current = menu.groups;
     state = state.copyWith(
       staff: [for (final s in raw['staff'] as List? ?? const []) Clerk.fromJson(Map<String, dynamic>.from(s as Map))],
       categories: menu.categories,
@@ -538,6 +539,15 @@ class TapSession extends Notifier<TapState> {
   }
 
   // ---- Clerks --------------------------------------------------------------------
+
+  /// A venue's real data, as [refresh] gathers it, signed on as [clerk] with
+  /// no timers or network: for checking screens against a real venue
+  /// (The Vesopa Kitchen) in tests and screenshots.
+  @visibleForTesting
+  void debugLoad(Map<String, dynamic> raw, {required Venue venue, required Clerk clerk}) {
+    state = TapState(phase: Phase.ready, venue: venue, clerk: clerk, lastClerk: clerk);
+    _apply(raw);
+  }
 
   void signOn(Clerk clerk) {
     state = state.copyWith(phase: Phase.ready, clerk: clerk, lastClerk: clerk);
@@ -906,6 +916,21 @@ class TapSession extends Notifier<TapState> {
       if (q > 0) lines.add(l.copyWith(quantity: q));
     }
     _put(bill.copyWith(lines: lines));
+  }
+
+  /// How many are at the table (the till's Covers key).
+  void setCovers(String billId, int covers) {
+    final bill = state.bills[billId];
+    if (bill != null) _put(bill.copyWith(covers: covers.clamp(0, 99)));
+  }
+
+  /// A modifier key's choice onto a line not yet sent (MIXERS ? on the till).
+  void addChoice(String billId, String lineId, Choice choice) {
+    final bill = state.bills[billId];
+    if (bill == null) return;
+    _put(bill.copyWith(lines: [
+      for (final l in bill.lines) l.id == lineId && !l.sent ? l.copyWith(choices: [...l.choices, choice]) : l,
+    ]));
   }
 
   /// Take [quantity] of a SENT line off, with a reason and a manager's approval.

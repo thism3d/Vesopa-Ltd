@@ -240,9 +240,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           child: SegmentedButton<ThemeMode>(
             showSelectedIcon: false,
             segments: const [
-              ButtonSegment(value: ThemeMode.system, icon: Icon(Icons.brightness_auto_rounded), label: Text('Automatic')),
-              ButtonSegment(value: ThemeMode.light, icon: Icon(Icons.light_mode_rounded), label: Text('Light')),
-              ButtonSegment(value: ThemeMode.dark, icon: Icon(Icons.dark_mode_rounded), label: Text('Dark')),
+              ButtonSegment(value: ThemeMode.light, icon: Icon(Icons.light_mode_rounded), label: Text('Day')),
+              ButtonSegment(value: ThemeMode.dark, icon: Icon(Icons.dark_mode_rounded), label: Text('Night')),
+              ButtonSegment(value: ThemeMode.system, icon: Icon(Icons.brightness_auto_rounded), label: Text('System')),
             ],
             selected: {ref.watch(appearanceProvider)},
             onSelectionChanged: (v) => ref.read(appearanceProvider.notifier).set(v.first),

@@ -251,7 +251,10 @@ class _PayPageState extends ConsumerState<PayPage> {
     return DefaultTabController(
       length: 2,
       child: Scaffold(
+        // The till's payment board: a black canvas in Night, stone in Day.
+        backgroundColor: PayPalette.of(context).canvas,
         appBar: AppBar(
+          backgroundColor: PayPalette.of(context).canvas,
           title: const Text('Payment'),
           bottom: const TabBar(tabs: [Tab(text: 'Pay'), Tab(text: 'Check')]),
         ),
@@ -284,7 +287,7 @@ class _BillColumn extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 5),
             child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              SizedBox(width: 36, child: Text('${l.quantity}×', style: t.titleSmall?.copyWith(color: Tp.lime, fontFeatures: Tp.tabular))),
+              SizedBox(width: 36, child: Text('${l.quantity}×', style: t.titleSmall?.copyWith(color: context.goLimeInk, fontFeatures: Tp.tabular))),
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(l.product.name, style: t.titleSmall),
@@ -409,7 +412,7 @@ class _Approved extends ConsumerWidget {
                 Text(money(sale.changeMinor),
                     key: const ValueKey('change'),
                     textAlign: TextAlign.center,
-                    style: t.displayMedium?.copyWith(fontWeight: FontWeight.w900, color: Tp.lime, fontFeatures: Tp.tabular)),
+                    style: t.displayMedium?.copyWith(fontWeight: FontWeight.w900, color: context.goLimeInk, fontFeatures: Tp.tabular)),
               ] else
                 Text('${money(sale.totalMinor)} · receipt ${sale.number}', textAlign: TextAlign.center, style: t.titleMedium),
               // The customer's choice of receipt (back office: Customer

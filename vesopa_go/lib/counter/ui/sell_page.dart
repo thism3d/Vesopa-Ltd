@@ -6,17 +6,21 @@
 /// the items, as the till does, and Pay sits under it.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vesopa_go/data/models.dart';
 import 'package:vesopa_go/data/session.dart';
+import 'package:vesopa_go/data/venue_data.dart' show VenueMenu;
 import 'package:vesopa_go/ui/pages/note_sheet.dart';
 import 'package:vesopa_go/ui/layout_editor.dart';
 import 'package:vesopa_go/ui/photo_menu.dart';
 import 'package:vesopa_go/ui/programmed_grid.dart';
 import 'package:vesopa_go/ui/pages/customers_page.dart';
 import 'package:vesopa_go/ui/pages/module_gates.dart';
+import 'package:vesopa_go/ui/pages/reasons.dart';
 import 'package:vesopa_go/ui/pages/tables.dart';
 import 'package:vesopa_go/ui/sounds.dart';
 import 'package:vesopa_go/ui/theme.dart';
@@ -175,9 +179,27 @@ class _SellPageState extends ConsumerState<SellPage> {
     final s = ref.read(tapProvider);
     final tapper = ref.read(tapProvider.notifier);
     final standalone = s.venue?.mode == VenueMode.standalone;
+    // A modifier key: its group's choices, onto the last item still to go.
+    if (key.startsWith('modifier:')) return _modifier(key.substring(9));
     switch (key) {
       case 'pay':
         _pay();
+      case 'covers':
+        final bill = _bill;
+        if (bill == null) return _say('Ring something up first, or open a table.');
+        final n = await showDialog<int>(
+          context: context,
+          builder: (c) => SimpleDialog(title: const Text('How many covers?'), children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Wrap(spacing: 8, runSpacing: 8, children: [
+                for (var i = 1; i <= 16; i++)
+                  SizedBox(width: 56, height: 48, child: OutlinedButton(onPressed: () => Navigator.pop(c, i), child: Text('$i'))),
+              ]),
+            ),
+          ]),
+        );
+        if (n != null) tapper.setCovers(bill.id, n);
       case 'sign_on' || 'sign_off' || 'display_lock':
         tapper.lock();
       case 'note':
@@ -187,23 +209,41 @@ class _SellPageState extends ConsumerState<SellPage> {
         final n = await askNote(context, ref, title: last.product.name, initial: last.note);
         if (n != null) tapper.setNote(bill.id, last.id, n);
       case 'void':
-        // The last line still to go; a line the kitchen has is voided from
-        // the sale with a reason, as on the till.
+        // The last line still to go, with the venue's reason, as on the
+        // till; a line the kitchen has is voided from the sale with a
+        // manager.
         final bill = _bill;
         final last = bill?.lines.where((l) => !l.sent && l.paidQuantity == 0).lastOrNull;
         if (bill == null || last == null) return _say('Nothing to void: a sent line is voided from the sale with a reason.');
+        final why = await askReason(context, ref, 'void', title: 'Void ${last.product.name}?', subtitle: money(last.totalMinor));
+        if (why == null) return;
         tapper.changeQuantity(bill.id, last.id, -last.quantity);
-      case 'cancel' || 'new_bill':
-        if (_bill == null) return;
-        final cancel = key == 'cancel';
+        _logVoid(bill, why, scope: 'item', items: last.product.name, amountMinor: last.totalMinor);
+      case 'cancel':
+        // The till's Cancel: the venue's reasons, and the check comes off.
+        final bill = _bill;
+        if (bill == null) return;
+        final why = await askReason(context, ref, 'cancel', title: 'Cancel this sale?', subtitle: 'Everything comes off. Nothing has been taken.');
+        if (why == null) return;
+        _logVoid(bill, why, scope: 'sale', items: [for (final l in bill.lines) '${l.quantity}x ${l.product.name}'].join(', '), amountMinor: bill.totalMinor);
+        ref.read(currentSaleProvider.notifier).clear();
+      case 'new_bill':
+        // A table keeps its bill and the screen starts a new one; a counter
+        // sale has nowhere to wait, so it asks first.
+        final bill = _bill;
+        if (bill == null) return;
+        if (bill.tableId != null) {
+          ref.read(currentSaleProvider.notifier).finished();
+          return;
+        }
         final ok = await showDialog<bool>(
           context: context,
           builder: (c) => AlertDialog(
-            title: Text(cancel ? 'Cancel this sale?' : 'Start a new bill?'),
+            title: const Text('Start a new bill?'),
             content: const Text('Everything on this sale comes off. Nothing has been taken.'),
             actions: [
               TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Keep it')),
-              FilledButton(onPressed: () => Navigator.pop(c, true), child: Text(cancel ? 'Cancel sale' : 'New bill')),
+              FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('New bill')),
             ],
           ),
         );
@@ -244,6 +284,51 @@ class _SellPageState extends ConsumerState<SellPage> {
     }
   }
 
+  Future<void> _modifier(String groupId) async {
+    final group = VenueMenu.current[groupId];
+    final bill = _bill;
+    final last = bill?.lines.where((l) => !l.sent).lastOrNull;
+    if (group == null) return;
+    if (bill == null || last == null) return _say('Ring the item up first, then its ${group.name.toLowerCase()}.');
+    final choice = await showModalBottomSheet<Choice>(
+      context: context,
+      showDragHandle: true,
+      builder: (c) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Padding(padding: const EdgeInsets.fromLTRB(20, 0, 20, 8), child: Text('${group.name} for ${last.product.name}', style: Theme.of(c).textTheme.titleMedium)),
+          Flexible(
+            child: ListView(shrinkWrap: true, children: [
+              for (final ch in group.choices)
+                ListTile(
+                  title: Text(ch.name),
+                  trailing: ch.priceMinor > 0 ? Text('+${money(ch.priceMinor)}') : null,
+                  onTap: () => Navigator.pop(c, ch),
+                ),
+            ]),
+          ),
+        ]),
+      ),
+    );
+    if (choice != null) ref.read(tapProvider.notifier).addChoice(bill.id, last.id, choice);
+  }
+
+  /// A void or a cancelled check, with its reason, into the back office's
+  /// void log, as the till records them (/till/voids).
+  void _logVoid(Bill bill, String reason, {required String scope, required String items, required int amountMinor}) {
+    final tapper = ref.read(tapProvider.notifier);
+    unawaited(tapper.queue('/till/voids', {
+      'id': 'go-${DateTime.now().microsecondsSinceEpoch}',
+      'office': ref.read(tapProvider).venue?.office,
+      'order_id': bill.id,
+      'reason': reason,
+      'items': items,
+      'scope': scope,
+      'amount_minor': amountMinor,
+      'voided_at': DateTime.now().toUtc().toIso8601String(),
+      'terminal': tapper.terminalName,
+    }));
+  }
+
   /// The venue's programmed screens, laid out as the till lays them out: the
   /// top bar across the top, the sale on the left, the screen beside it, and
   /// the bottom bar across the bottom. On a phone the same keys, in the same
@@ -277,6 +362,7 @@ class _SellPageState extends ConsumerState<SellPage> {
     );
     final grid = AnimatedSwitcher(
       duration: const Duration(milliseconds: 180),
+      layoutBuilder: (current, previous) => Stack(alignment: Alignment.topCenter, children: [...previous, ?current]),
       child: KeyedSubtree(
         key: ValueKey(screen.id),
         child: ProgrammedGrid(
@@ -483,7 +569,7 @@ class _SaleBar extends ConsumerWidget {
                       if (bill?.tableId != null)
                         Padding(
                           padding: const EdgeInsets.only(right: 8),
-                          child: Text(bill!.name, style: t.bodyMedium?.copyWith(fontWeight: FontWeight.w800, color: Tp.lime)),
+                          child: Text(bill!.name, style: t.bodyMedium?.copyWith(fontWeight: FontWeight.w800, color: context.goLimeInk)),
                         ),
                       Expanded(
                         child: Text(

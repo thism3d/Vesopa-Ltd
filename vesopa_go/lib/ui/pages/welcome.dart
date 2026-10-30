@@ -194,7 +194,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Row(children: [
-                  const Icon(Icons.credit_card_rounded, color: Tp.lime),
+                  Icon(Icons.credit_card_rounded, color: context.goLimeInk),
                   const SizedBox(width: 12),
                   Expanded(child: Text('Card payments go through your own Dojo account. You connect it in the back office '
                       'after registering; until then the app runs in test mode.', style: t.bodyMedium)),

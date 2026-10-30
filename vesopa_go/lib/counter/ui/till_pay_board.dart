@@ -130,11 +130,11 @@ class _TillPayBoardState extends State<TillPayBoard> {
 
     final amountCard = Container(
       padding: const EdgeInsets.fromLTRB(22, 14, 22, 14),
-      decoration: BoxDecoration(color: context.goCard, borderRadius: BorderRadius.circular(16), border: Border.all(color: context.goLine)),
+      decoration: BoxDecoration(color: PayPalette.of(context).panel, borderRadius: BorderRadius.circular(16), border: Border.all(color: PayPalette.of(context).panelLine)),
       child: Row(children: [
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(bill.paidMinor > 0 ? 'LEFT TO PAY' : 'TO PAY', style: t.labelSmall?.copyWith(letterSpacing: 0.8, color: context.goMuted)),
+            Text(bill.paidMinor > 0 ? 'LEFT TO PAY' : 'TO PAY', style: t.labelSmall?.copyWith(letterSpacing: 0.8, color: PayPalette.of(context).inkMuted)),
             FittedBox(
               fit: BoxFit.scaleDown,
               alignment: Alignment.centerLeft,
@@ -142,13 +142,13 @@ class _TillPayBoardState extends State<TillPayBoard> {
             ),
           ]),
         ),
-        Container(width: 1, height: 64, color: context.goLine, margin: const EdgeInsets.symmetric(horizontal: 16)),
+        Container(width: 1, height: 64, color: PayPalette.of(context).panelLine, margin: const EdgeInsets.symmetric(horizontal: 16)),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('TAKEN', style: t.labelSmall?.copyWith(letterSpacing: 0.8, color: context.goMuted)),
+            Text('TAKEN', style: t.labelSmall?.copyWith(letterSpacing: 0.8, color: PayPalette.of(context).inkMuted)),
             const SizedBox(height: 4),
-            if (taken.isEmpty) Text('Nothing taken yet', style: t.bodyMedium?.copyWith(color: context.goMuted)) else for (final x in taken) Text(x, style: t.bodyMedium),
-            if (widget.tipMinor > 0) Text('Gratuity ${money(widget.tipMinor)} on the card', style: t.bodySmall?.copyWith(color: Tp.lime)),
+            if (taken.isEmpty) Text('Nothing taken yet', style: t.bodyMedium?.copyWith(color: PayPalette.of(context).inkMuted)) else for (final x in taken) Text(x, style: t.bodyMedium),
+            if (widget.tipMinor > 0) Text('Gratuity ${money(widget.tipMinor)} on the card', style: t.bodySmall?.copyWith(color: context.goLimeInk)),
           ]),
         ),
       ]),
@@ -156,7 +156,7 @@ class _TillPayBoardState extends State<TillPayBoard> {
 
     final tenders = Row(children: [
       if (widget.allowCash) ...[
-        Expanded(child: _TenderKey(key: const ValueKey('pay-cash'), label: 'Cash', colour: const Color(0xFF0E4A4F), ink: Colors.white, onTap: () => _then(() => a.cash(_amount)))),
+        Expanded(child: _TenderKey(key: const ValueKey('pay-cash'), label: 'Cash', colour: PayPalette.of(context).cash, ink: Colors.white, onTap: () => _then(() => a.cash(_amount)))),
         const SizedBox(width: 12),
       ],
       Expanded(child: _TenderKey(key: const ValueKey('pay-card'), label: a.cardLabel, colour: Tp.lime, ink: Tp.onLime, onTap: () => _then(() => a.card(_amount.clamp(1, _due))))),
@@ -182,7 +182,7 @@ class _TillPayBoardState extends State<TillPayBoard> {
 
     final notes = widget.allowCash && widget.notes.isNotEmpty
         ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('CASH — TAP A NOTE TO TAKE IT', style: t.labelMedium?.copyWith(letterSpacing: 1.2, color: context.goMuted, fontWeight: FontWeight.w700)),
+            Text('CASH — TAP A NOTE TO TAKE IT', style: t.labelMedium?.copyWith(letterSpacing: 1.2, color: PayPalette.of(context).inkMuted, fontWeight: FontWeight.w700)),
             const SizedBox(height: 8),
             Row(children: [
               for (final n in widget.notes)
@@ -225,7 +225,7 @@ class _TillPayBoardState extends State<TillPayBoard> {
 
     final problem = widget.problem == null
         ? const SizedBox.shrink()
-        : Padding(padding: const EdgeInsets.only(top: 8), child: Text(widget.problem!, style: t.bodyMedium?.copyWith(color: Tp.danger)));
+        : Padding(padding: const EdgeInsets.only(top: 8), child: Text(widget.problem!, style: t.bodyMedium?.copyWith(color: PayPalette.of(context).dangerInk)));
 
     if (!wide) {
       return ListView(padding: const EdgeInsets.all(14), children: [
@@ -305,13 +305,13 @@ class _ToolKey extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Material(
-        color: context.goCard,
+        color: PayPalette.of(context).keyFill,
         borderRadius: BorderRadius.circular(14),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onTap,
           child: DecoratedBox(
-            decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), border: Border.all(color: context.goLine)),
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), border: Border.all(color: PayPalette.of(context).keyLine)),
             child: Center(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -381,7 +381,7 @@ class _Pad extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.all(5),
             child: Material(
-              color: colour ?? context.goCard,
+              color: colour ?? PayPalette.of(context).keyFill,
               borderRadius: BorderRadius.circular(14),
               clipBehavior: Clip.antiAlias,
               child: InkWell(
@@ -396,7 +396,7 @@ class _Pad extends StatelessWidget {
         height: 84,
         padding: const EdgeInsets.symmetric(horizontal: 20),
         alignment: Alignment.centerRight,
-        decoration: BoxDecoration(color: context.goCard, borderRadius: BorderRadius.circular(16), border: Border.all(color: context.goLine)),
+        decoration: BoxDecoration(color: PayPalette.of(context).panel, borderRadius: BorderRadius.circular(16), border: Border.all(color: PayPalette.of(context).panelLine)),
         child: FittedBox(
           fit: BoxFit.scaleDown,
           child: Text(money(entered > 0 ? entered : due),
@@ -407,8 +407,8 @@ class _Pad extends StatelessWidget {
       SizedBox(
         height: 56,
         child: Row(children: [
-          key('Exact', onTap: onExact, colour: Tp.lime.withValues(alpha: 0.16), ink: context.goDark ? Tp.lime : Tp.limeDeep),
-          if (nextNote != null) key(money(nextNote!), onTap: () => onNote(nextNote!), colour: Tp.lime.withValues(alpha: 0.16), ink: context.goDark ? Tp.lime : Tp.limeDeep),
+          key('Exact', onTap: onExact, colour: PayPalette.of(context).accentFill, ink: context.goLimeInk),
+          if (nextNote != null) key(money(nextNote!), onTap: () => onNote(nextNote!), colour: PayPalette.of(context).accentFill, ink: context.goLimeInk),
         ]),
       ),
       const SizedBox(height: 6),
@@ -425,9 +425,59 @@ class _Pad extends StatelessWidget {
             onDigit('0');
           }),
           key('0'),
-          key('CL', onTap: onClear, colour: Tp.danger.withValues(alpha: 0.18), ink: Tp.danger),
+          key('CL', onTap: onClear, colour: PayPalette.of(context).dangerFill, ink: PayPalette.of(context).dangerInk),
         ]),
       ),
     ]);
   }
+}
+
+/// The till's payment board colours (vesopa_epos PayPalette), Night and Day,
+/// so paying looks the same on the counter and on Go.
+class PayPalette {
+  const PayPalette({
+    required this.canvas,
+    required this.panel,
+    required this.panelLine,
+    required this.keyFill,
+    required this.keyLine,
+    required this.ink,
+    required this.inkMuted,
+    required this.accentFill,
+    required this.cash,
+    required this.dangerFill,
+    required this.dangerInk,
+  });
+
+  final Color canvas, panel, panelLine, keyFill, keyLine, ink, inkMuted, accentFill, cash, dangerFill, dangerInk;
+
+  static const dark = PayPalette(
+    canvas: Color(0xFF000000),
+    panel: Color(0xFF0E1113),
+    panelLine: Color(0x14FFFFFF),
+    keyFill: Color(0xFF14181B),
+    keyLine: Color(0x1AFFFFFF),
+    ink: Color(0xFFFFFFFF),
+    inkMuted: Color(0x73FFFFFF),
+    accentFill: Color(0x1AA5C715),
+    cash: Color(0xFF00373A),
+    dangerFill: Color(0xFF2A1213),
+    dangerInk: Color(0xFFFF8B84),
+  );
+
+  static const light = PayPalette(
+    canvas: Color(0xFFEDEEE8),
+    panel: Color(0xFFFFFFFF),
+    panelLine: Color(0xFFD8D9D3),
+    keyFill: Color(0xFFFFFFFF),
+    keyLine: Color(0xFFCFD1C8),
+    ink: Color(0xFF10130A),
+    inkMuted: Color(0xFF6B6B6A),
+    accentFill: Color(0x2EA5C715),
+    cash: Color(0xFF00373A),
+    dangerFill: Color(0xFFFBE3DF),
+    dangerInk: Color(0xFF9C2417),
+  );
+
+  static PayPalette of(BuildContext context) => Theme.of(context).brightness == Brightness.dark ? dark : light;
 }

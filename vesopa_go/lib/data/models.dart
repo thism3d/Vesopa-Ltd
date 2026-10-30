@@ -245,11 +245,11 @@ class BillLine {
       this.choices.length == choices.length &&
       [for (var i = 0; i < choices.length; i++) this.choices[i].name == choices[i].name && this.choices[i].priceMinor == choices[i].priceMinor].every((x) => x);
 
-  BillLine copyWith({int? quantity, bool? sent, bool? held, int? paidQuantity, String? note, int? seat}) => BillLine(
+  BillLine copyWith({int? quantity, bool? sent, bool? held, int? paidQuantity, String? note, int? seat, List<Choice>? choices}) => BillLine(
         id: id,
         product: product,
         quantity: quantity ?? this.quantity,
-        choices: choices,
+        choices: choices ?? this.choices,
         note: note ?? this.note,
         seat: seat ?? this.seat,
         sent: sent ?? this.sent,

@@ -130,14 +130,27 @@ class Tp {
 /// device's own): cards, raised keys, hairlines, the deepest ground, and the
 /// quiet text. The brand colours (lime, amber, the table states) are the same
 /// in both.
+///
+/// The values are the till's own (vesopa_epos lib/ui/theme.dart, PosColors
+/// and the payment board's PayPalette), so Night and Day read the same on
+/// the counter and on Go.
 extension GoColours on BuildContext {
   bool get goDark => Theme.of(this).brightness == Brightness.dark;
   Color get goCard => goDark ? Tp.inkCard : Colors.white;
-  Color get goRaised => goDark ? Tp.inkRaised : const Color(0xFFEDEFE6);
-  Color get goLine => goDark ? Tp.inkLine : Tp.paperLine;
-  Color get goDeep => goDark ? Tp.inkDeep : Tp.paper;
-  Color get goMuted => goDark ? Tp.muted : const Color(0xFF64665D);
-  Color get goText => goDark ? Colors.white : Tp.ink;
+  Color get goRaised => goDark ? Tp.inkRaised : const Color(0xFFEDEEE8);
+  Color get goLine => goDark ? Tp.inkLine : const Color(0xFFD8D9D3);
+  Color get goDeep => goDark ? Tp.inkDeep : const Color(0xFFF8F9F4);
+  Color get goMuted => goDark ? Tp.muted : const Color(0xFF6B6B6A);
+  Color get goText => goDark ? Colors.white : Tp.onLime;
+
+  /// Lime as text or an icon: raw lime on a light ground is 1.9:1, so Day
+  /// takes the deep lime (4.6:1), as the till does.
+  Color get goLimeInk => goDark ? Tp.lime : Tp.limeDeep;
+
+  /// A key that cannot be pressed yet (Pay with nothing on the sale): a quiet
+  /// grey, never a faded colour (faded lime reads as mud in Night).
+  Color get goDisabledFill => goDark ? const Color(0xFF1E1E1C) : const Color(0xFFE4E5DF);
+  Color get goDisabledInk => goDark ? const Color(0x73FFFFFF) : const Color(0xFFA3A49E);
 }
 
 /// Whether looping, decorative motion (a breathing status light, rolling

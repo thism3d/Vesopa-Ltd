@@ -34,9 +34,15 @@ int courseOf(String department, String group) {
 }
 
 class VenueMenu {
-  const VenueMenu({required this.categories, required this.products});
+  const VenueMenu({required this.categories, required this.products, this.groups = const {}});
   final List<MenuCategory> categories;
   final List<Product> products;
+
+  /// The modifier groups by id, for a screen's modifier keys (MIXERS ?).
+  final Map<String, OptionGroup> groups;
+
+  /// The venue's current groups, set whenever the menu is loaded.
+  static Map<String, OptionGroup> current = const {};
 }
 
 /// Products, modifiers and screens as Tap's menu. Modifier products (the
@@ -109,7 +115,7 @@ VenueMenu menuFrom({required List<dynamic> products, Map<String, dynamic>? modif
       ],
     ));
   }
-  return VenueMenu(categories: categories.values.toList(), products: out);
+  return VenueMenu(categories: categories.values.toList(), products: out, groups: groups);
 }
 
 /// Rooms and tables from the floor designer.

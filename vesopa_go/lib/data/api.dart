@@ -266,6 +266,11 @@ class TapApi {
   /// The venue's modules that are on (memberships, events...), as the till asks.
   Future<Map<String, dynamic>> modules() => _send('GET', '/till/modules');
 
+  /// The venue's reasons for an action (void, cancel, refund, no_sale), as the
+  /// back office's Error reasons set them for the tills.
+  Future<List<String>> reasons(String action) async =>
+      [for (final r in ((await _send('GET', '/till/error-reasons?office=$_o&applies_to=$action'))['items'] as List? ?? const [])) '$r'];
+
   /// Today across the venue: every till and device (vesopa_server tap.js).
   Future<Map<String, dynamic>> today() => _send('GET', '/api/tap/today');
 
