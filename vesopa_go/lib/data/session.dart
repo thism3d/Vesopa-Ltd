@@ -22,7 +22,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart' show sha256;
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show MethodChannel;
 import 'package:flutter/widgets.dart' show WidgetsBinding;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -402,6 +404,21 @@ class TapSession extends Notifier<TapState> {
     return const TapState(phase: Phase.booting);
   }
 
+  /// An Android phone's own id, which a reinstall does not change, so the
+  /// same phone keeps the same Go licence (owner, 2026-10-30: nine seats were
+  /// a few test phones reinstalled). Hashed: the raw id never leaves the phone.
+  /// Null elsewhere: the iPhone's Keychain already survives a reinstall.
+  static Future<String?> _phoneId() async {
+    if (kIsWeb || !Platform.isAndroid) return null;
+    try {
+      final id = await const MethodChannel('com.vesopa.go/device').invokeMethod<String>('androidId');
+      if (id == null || id.isEmpty) return null;
+      return sha256.convert(utf8.encode('vesopa-go:$id')).toString().substring(0, 32);
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> _boot() async {
     String? token;
     String? venue;
@@ -410,7 +427,7 @@ class TapSession extends Notifier<TapState> {
       venue = await _store.read(key: _venueKey);
       _deviceId = await _store.read(key: _deviceKey) ?? '';
       if (_deviceId.isEmpty) {
-        _deviceId = _uuid.v4().replaceAll('-', '');
+        _deviceId = await _phoneId() ?? _uuid.v4().replaceAll('-', '');
         await _store.write(key: _deviceKey, value: _deviceId);
       }
     } catch (_) {

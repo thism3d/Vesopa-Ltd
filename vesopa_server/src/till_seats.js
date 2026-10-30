@@ -113,6 +113,9 @@ const NOUNS = {
   go: ['Vesopa Go licence', 'Vesopa Go licences', 'Go device'],
 };
 
+/** Days without a call after which an app's seat frees itself (claimSeat). */
+const IDLE_DAYS = { go: 30 };
+
 /** Refused: every seat is taken. Carries what the device shows and the back office lists. */
 class SeatLimitError extends Error {
   constructor(limit, seats, kind = 'till') {
@@ -175,6 +178,31 @@ async function claimSeat(db, { office, kind = 'till', deviceId, deviceName, by, 
     }
 
     const limit = await licences.limitFor(conn, office, kind);
+
+    // A phone not used for a month gives its seat back (owner, 2026-10-30):
+    // Go is installed and reinstalled on phones that come and go, and a
+    // venue should not have to tidy the list before a new one can sign in.
+    // A device that comes back simply signs in again. Only where the limit
+    // bites, and only for apps whose devices hold nothing of their own.
+    const idleDays = IDLE_DAYS[kind];
+    if (limit != null && idleDays) {
+      const [idle] = await conn.query(
+        `SELECT id FROM bo_till_seats
+          WHERE office = ? AND kind = ? AND released_at IS NULL
+            AND COALESCE(last_seen_at, signed_in_at) < NOW() - INTERVAL ? DAY`,
+        [office, kind, idleDays]
+      );
+      for (const seat of idle) {
+        await conn.execute(
+          `UPDATE bo_till_seats
+              SET released_at = NOW(), released_by = NULL, release_reason = ?
+            WHERE id = ?`,
+          [`not used for ${idleDays} days`, seat.id]
+        );
+        forget(seat.id);
+      }
+    }
+
     if (limit != null) {
       const seats = await activeSeats(conn, office, kind);
       if (seats.length >= limit) {
@@ -353,5 +381,6 @@ module.exports = {
   releaseSeat,
   hashToken,
   SeatLimitError,
+  IDLE_DAYS,
   _cache: cache,
 };

@@ -20,6 +20,7 @@ import 'package:vesopa_go/data/clerk_auth.dart';
 import 'package:vesopa_go/data/session.dart';
 import 'package:vesopa_go/data/vesopa_sso.dart';
 import 'package:vesopa_go/nfc/staff_card.dart';
+import 'package:vesopa_go/ui/pages/sign_in_flow.dart';
 import 'package:vesopa_go/ui/pages/welcome.dart' show RegisterPage;
 import 'package:vesopa_go/ui/theme.dart';
 
@@ -45,22 +46,8 @@ class _LiteWelcomePageState extends ConsumerState<LiteWelcomePage> {
     try {
       final sso = await ref.read(apiProvider).signInClient();
       final idToken = await VesopaSso(issuer: sso.issuer, clientId: sso.clientId).authorize();
-      final session = ref.read(tapProvider.notifier);
-      final api = ref.read(apiProvider);
-      final answer = await api.commission(idToken, device: session.terminalName, deviceId: session.deviceId);
-      final choice = await session.commissioned(answer);
-      if (choice != null && mounted) {
-        final site = await showDialog<Map<String, dynamic>>(
-          context: context,
-          builder: (c) => SimpleDialog(title: const Text('Which venue is this device for?'), children: [
-            for (final s in choice.sites)
-              SimpleDialogOption(onPressed: () => Navigator.pop(c, s), child: Text('${s['name'] ?? s['office_name'] ?? s['id']}')),
-          ]),
-        );
-        if (site == null) return;
-        final picked = await api.commissionSite(choice.pickToken, site['id'] as Object, device: session.terminalName, deviceId: session.deviceId);
-        await session.commissioned(picked);
-      }
+      if (!mounted) return;
+      await commissionDevice(context, ref, idToken);
     } on SsoFailed catch (e) {
       setState(() => _error = e.message);
     } on TapApiError catch (e) {

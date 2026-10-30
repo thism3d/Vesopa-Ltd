@@ -405,7 +405,17 @@ function terminalVesopaRoutes({ pool, secret, issueToken, issueTerminalToken }) 
         return res.status(409).json({
           error: e.message,
           licences: e.limit,
-          seats: e.seats.map((s) => ({ name: s.device_name, last_seen_at: s.last_seen_at })),
+          kind: e.kind,
+          // The id and a ten-minute pass let the device offer "sign one out"
+          // there and then (owner, 2026-10-30), as the back office's Devices
+          // page would for the same person: /commission/release-seat.
+          seats: e.seats.map((s) => ({
+            id: s.id,
+            name: s.device_name,
+            signed_in_at: s.signed_in_at,
+            last_seen_at: s.last_seen_at,
+          })),
+          release_token: seatReleaseToken(user, e.kind),
         });
       }
       // Somebody else's machine holds this key. Nothing can be signed out to
@@ -419,6 +429,73 @@ function terminalVesopaRoutes({ pool, secret, issueToken, issueTerminalToken }) 
       user,
     });
   }
+
+  /** Ten minutes to sign one device out and take its seat, for the person just proved. */
+  function seatReleaseToken(user, kind) {
+    return jwt.sign(
+      {
+        scope: 'seat-release',
+        kind: kind || 'till',
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          role: user.role,
+          officeId: user.officeId,
+          officeName: user.officeName,
+          officeEmail: user.officeEmail,
+        },
+      },
+      secret,
+      { expiresIn: '10m' }
+    );
+  }
+
+  /**
+   * "All the licences are in use": sign one of them out from the device that
+   * was refused, and sign this one in on the seat it frees. The pass came with
+   * the refusal, so only the person who just signed in can use it, for their
+   * own venue, for ten minutes -- the same person the back office's Devices
+   * page would let do it.
+   */
+  router.post('/api/terminal/vesopa/commission/release-seat', express.json(), async (req, res, next) => {
+    try {
+      const body = req.body || {};
+      let claims;
+      try {
+        claims = jwt.verify(String(body.release_token || ''), secret);
+        if (claims.scope !== 'seat-release' || !claims.user?.officeEmail) throw new Error('scope');
+      } catch {
+        return res.status(401).json({ error: 'That took too long. Sign in again.' });
+      }
+      const user = claims.user;
+      const [[account]] = await pool.query('SELECT approved FROM backoffice_users WHERE id = ?', [user.id]);
+      if (!account || account.approved !== 'Y') {
+        return res.status(403).json({ error: 'That account can no longer set up a device.' });
+      }
+      const seatId = clampText(body.seat_id, 36);
+      const [[seat]] = await pool.query(
+        `SELECT id, device_id FROM bo_till_seats
+          WHERE id = ? AND office = ? AND released_at IS NULL AND COALESCE(kind, 'till') = ?`,
+        [seatId, user.officeEmail, claims.kind]
+      );
+      if (seat) {
+        await tillSeats.releaseSeat(pool, {
+          office: user.officeEmail, seatId: seat.id, by: user.email, reason: 'signed out from another device',
+        });
+        if (seat.device_id) {
+          await pool.execute(
+            'UPDATE bo_devices SET online = 0 WHERE office = ? AND device_id = ?',
+            [user.officeEmail, seat.device_id]
+          ).catch(() => {});
+        }
+      }
+      // Gone already (somebody else freed it) is fine: try for a seat anyway.
+      return finishCommission(user, { ...body, device_kind: claims.kind }, res);
+    } catch (error) {
+      return next(error);
+    }
+  });
 
   /**
    * The second half of signing a till in for a login with more than one site:

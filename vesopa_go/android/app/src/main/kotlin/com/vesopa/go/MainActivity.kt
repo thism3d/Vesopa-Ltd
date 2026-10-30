@@ -56,6 +56,11 @@ class MainActivity : FlutterFragmentActivity() {
                 }
                 "openBatterySettings" -> open(result, Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
                 "openNfcSettings" -> open(result, Intent(android.provider.Settings.ACTION_NFC_SETTINGS))
+                // The same answer after a reinstall (one per phone, app signing key and
+                // user), so a reinstalled phone keeps its Go licence (2026-10-30).
+                "androidId" -> result.success(
+                    android.provider.Settings.Secure.getString(contentResolver, android.provider.Settings.Secure.ANDROID_ID)
+                )
                 else -> result.notImplemented()
             }
         }

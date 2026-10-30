@@ -115,6 +115,18 @@ class TapApi {
         'device_id': deviceId,
       });
 
+  /// Every Go licence in use: sign [seatId] out with the ten-minute pass that
+  /// came with the refusal, and this device takes its seat.
+  Future<Map<String, dynamic>> releaseSeatAndCommission(String releaseToken, String seatId, {required String device, required String deviceId}) =>
+      _send('POST', '/api/terminal/vesopa/commission/release-seat', {
+        'release_token': releaseToken,
+        'seat_id': seatId,
+        'device_kind': 'go',
+        'device_name': device,
+        'device_id': deviceId,
+        'site_choice': true,
+      });
+
   /// A new venue on Vesopa Go alone (vesopa_server/src/tap.js).
   Future<Map<String, dynamic>> registerVenue({
     required String idToken,
