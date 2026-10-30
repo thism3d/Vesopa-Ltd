@@ -354,7 +354,14 @@ void main() {
         ).first,
       );
       expect(first.width, greaterThanOrEqualTo(60));
-      expect(find.byType(SingleChildScrollView), findsOneWidget);
+      // The rest wait behind an arrow (the owner, 2026-10-30), not in a strip
+      // that drags sideways.
+      expect(find.byType(SingleChildScrollView), findsNothing);
+      expect(find.byIcon(Icons.keyboard_arrow_up_rounded), findsOneWidget);
+      final before = find.text('Covers').evaluate().length;
+      await tester.tap(find.byIcon(Icons.keyboard_arrow_up_rounded));
+      await tester.pumpAndSettle();
+      expect(find.text('Covers').evaluate().length, greaterThan(before));
     });
 
     testWidgets('and a bar that fits is not made scrollable', (tester) async {

@@ -209,6 +209,37 @@ class ProgrammedBar extends ConsumerWidget {
                 final cellW = natural < _minKeyWidth ? _minKeyWidth : natural;
                 final width = cellW * bar.cols + _gap * (bar.cols - 1);
 
+                Widget keyFor(ScreenButton button) => _BarKey(
+                      button: button,
+                      screens: screens,
+                      priceLevelLabel: ref
+                          .watch(priceLevelNamesProvider)
+                          .nameFor(ref.watch(currentPriceLevelProvider)),
+                      product: button.pluId == null ? null : products[button.pluId],
+                      live: live,
+                      pal: pal,
+                      showPrices: showPrices,
+                      onSaleScreen: onSaleScreen,
+                      onProduct: onProduct,
+                      onPage: onPage,
+                      onFunction: onFunction,
+                      onModifier: onModifier,
+                      group: button.modifierGroupId == null ? null : modifiers[button.modifierGroupId],
+                    );
+
+                // A one-row bar with more keys than room: the keys that fit,
+                // an arrow for the rest, and Pay where it always is, at the
+                // right (the owner, 2026-10-30), rather than a strip a clerk
+                // can drag sideways by accident.
+                if (natural < _minKeyWidth && bar.rows == 1) {
+                  final ordered = [
+                    for (var c = 0; c < bar.cols; c++)
+                      if (!covered.contains('0:$c'))
+                        if (bar.at(0, c) case final b? when b.kind != ScreenButtonKind.blank) b,
+                  ];
+                  return _OverflowBar(keys: ordered, keyFor: keyFor, unit: _minKeyWidth, gap: _gap, height: rowHeight, pal: pal);
+                }
+
                 final keys = <Widget>[];
                 for (var r = 0; r < bar.rows; r++) {
                   for (var c = 0; c < bar.cols; c++) {
@@ -479,7 +510,9 @@ class _BarKey extends ConsumerWidget {
         currentOrderId: live.currentOrderId,
         currentOrder: live.currentOrder,
         onSwitch: live.onSwitchOrder,
-        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 6),
+        // The whole height of the bar, so the chips line up with the keys
+        // beside them (the owner, 2026-10-30).
+        padding: const EdgeInsets.symmetric(horizontal: 2),
       );
     }
 
@@ -867,11 +900,11 @@ class _BarKey extends ConsumerWidget {
                               Icon(r.icon, size: 18, color: ink),
                           if (words)
                             Flexible(
-                              child: Text(
+                              // Never a word broken over two lines
+                              // ("Function s": the owner, 2026-10-30): the
+                              // name shrinks until each word fits whole.
+                              child: _WholeWords(
                                 r.label,
-                                textAlign: TextAlign.center,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                   color: picture != null ? Colors.white : ink,
                                   fontFamily: fontFamily,
@@ -1030,4 +1063,166 @@ class _ClockState extends State<_Clock> {
       ),
     );
   }
+}
+
+/// A key's name centred on up to two lines, at the largest size where every
+/// word fits its line whole; only at the smallest size does it ellipsise.
+class _WholeWords extends StatelessWidget {
+  const _WholeWords(this.text, {required this.style});
+  final String text;
+  final TextStyle style;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(builder: (context, box) {
+        final drawn = DefaultTextStyle.of(context).style.merge(style);
+        final start = drawn.fontSize ?? 12;
+        var size = start;
+        if (box.maxWidth.isFinite && box.maxWidth > 0) {
+          final words = text.split(RegExp(r'\s+')).where((w) => w.isNotEmpty);
+          final scaler = MediaQuery.textScalerOf(context);
+          bool fits(double s) {
+            final st = drawn.copyWith(fontSize: s);
+            for (final w in words) {
+              final p = TextPainter(text: TextSpan(text: w, style: st), textDirection: TextDirection.ltr, textScaler: scaler, maxLines: 1)..layout();
+              if (p.width > box.maxWidth) return false;
+            }
+            final all = TextPainter(text: TextSpan(text: text, style: st), textDirection: TextDirection.ltr, textScaler: scaler, maxLines: 2)
+              ..layout(maxWidth: box.maxWidth);
+            return !all.didExceedMaxLines;
+          }
+
+          while (size > 8 && !fits(size)) {
+            size -= 0.5;
+          }
+        }
+        return Text(text, textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis, style: drawn.copyWith(fontSize: size));
+      });
+}
+
+/// A bar too narrow for its keys: those that fit, then an arrow, then Pay.
+/// The arrow opens the rest in a row just above; a tap anywhere else, or
+/// using one of them, puts it away.
+class _OverflowBar extends StatefulWidget {
+  const _OverflowBar({required this.keys, required this.keyFor, required this.unit, required this.gap, required this.height, required this.pal});
+  final List<ScreenButton> keys;
+  final Widget Function(ScreenButton) keyFor;
+  final double unit;
+  final double gap;
+  final double height;
+  final PayPalette pal;
+  @override
+  State<_OverflowBar> createState() => _OverflowBarState();
+}
+
+class _OverflowBarState extends State<_OverflowBar> with SingleTickerProviderStateMixin {
+  final _link = LayerLink();
+  final _portal = OverlayPortalController();
+  late final _anim = AnimationController(vsync: this, duration: const Duration(milliseconds: 200));
+
+  @override
+  void dispose() {
+    _anim.dispose();
+    super.dispose();
+  }
+
+  Future<void> _hide() async {
+    await _anim.reverse();
+    if (mounted && _portal.isShowing) _portal.hide();
+  }
+
+  void _toggle() {
+    if (_portal.isShowing) {
+      _hide();
+    } else {
+      _portal.show();
+      _anim.forward(from: 0);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(builder: (context, box) {
+        final gap = widget.gap;
+        final pay = widget.keys.where((k) => k.kind == ScreenButtonKind.function && k.functionKey == 'pay').firstOrNull;
+        final rest = [for (final k in widget.keys) if (!identical(k, pay)) k];
+        final payWidth = pay == null ? 0.0 : widget.unit * 1.8;
+        final arrowWidth = widget.unit * 0.8;
+        var space = box.maxWidth - payWidth - arrowWidth - gap * 2;
+        final shown = <ScreenButton>[];
+        for (final k in rest) {
+          final w = widget.unit * k.colSpan + (shown.isEmpty ? 0 : gap);
+          if (w > space) break;
+          shown.add(k);
+          space -= w;
+        }
+        final hidden = rest.skip(shown.length).toList();
+        final spans = shown.fold<int>(0, (n, k) => n + k.colSpan);
+        final each = spans == 0 ? widget.unit : widget.unit + space / spans;
+        return CompositedTransformTarget(
+          link: _link,
+          child: OverlayPortal(
+            controller: _portal,
+            overlayChildBuilder: (_) => Stack(children: [
+              Positioned.fill(child: GestureDetector(behavior: HitTestBehavior.translucent, onTap: _hide)),
+              CompositedTransformFollower(
+                link: _link,
+                targetAnchor: Alignment.topRight,
+                followerAnchor: Alignment.bottomRight,
+                offset: const Offset(0, -8),
+                child: FadeTransition(
+                  opacity: _anim,
+                  child: Material(
+                    color: widget.pal.canvas,
+                    elevation: 10,
+                    borderRadius: BorderRadius.circular(14),
+                    child: Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(maxWidth: box.maxWidth),
+                        child: Wrap(spacing: gap, runSpacing: gap, alignment: WrapAlignment.end, children: [
+                          for (final k in hidden)
+                            Listener(
+                              onPointerUp: (_) => Future<void>.delayed(const Duration(milliseconds: 120), _hide),
+                              child: SizedBox(width: widget.unit * 1.4 * k.colSpan, height: widget.height, child: widget.keyFor(k)),
+                            ),
+                        ]),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ]),
+            child: Row(children: [
+              for (var i = 0; i < shown.length; i++) ...[
+                if (i > 0) SizedBox(width: gap),
+                SizedBox(width: each * shown[i].colSpan, height: widget.height, child: widget.keyFor(shown[i])),
+              ],
+              if (hidden.isNotEmpty) ...[
+                if (shown.isNotEmpty) SizedBox(width: gap),
+                SizedBox(
+                  width: arrowWidth,
+                  height: widget.height,
+                  child: Material(
+                    color: widget.pal.keyFill,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: widget.pal.keyLine)),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: _toggle,
+                      child: Center(
+                        child: RotationTransition(
+                          turns: Tween(begin: 0.0, end: 0.5).animate(_anim),
+                          child: Icon(Icons.keyboard_arrow_up_rounded, size: 30, color: widget.pal.ink),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+              if (pay != null) ...[
+                SizedBox(width: gap),
+                Expanded(child: SizedBox(height: widget.height, child: widget.keyFor(pay))),
+              ],
+            ]),
+          ),
+        );
+      });
 }
