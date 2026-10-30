@@ -289,6 +289,14 @@ class TapApi {
   Future<Map<String, dynamic>> branding() => _send('GET', '/api/branding/public?office=$_o');
 
   /// A Tap to Pay terminal secret for Dojo's SDK (six hours).
+  /// What went wrong on the phone (Dojo's SDK, Apple's reader), for the back
+  /// office's Card payments page. Best effort: never fails the payment flow.
+  Future<void> reportTapError(String paymentId, {required String where, required String code, String? message}) async {
+    try {
+      await _send('POST', '/api/tap/payments/$paymentId/client-error', {'where': where, 'code': code, 'message': message ?? ''});
+    } catch (_) {}
+  }
+
   Future<String> tapSecret(String platform) async =>
       (await _send('POST', '/api/tap/secret', {'platform': platform}))['secret'] as String;
 

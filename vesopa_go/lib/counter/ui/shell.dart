@@ -20,6 +20,7 @@ import 'package:vesopa_go/ui/pages/bill.dart';
 import 'package:vesopa_go/ui/pages/more.dart';
 import 'package:vesopa_go/ui/pages/tables.dart';
 import 'package:vesopa_go/ui/clerk_chip.dart';
+import 'package:vesopa_go/payments/payment_service.dart';
 import 'package:vesopa_go/ui/appearance.dart';
 import 'package:vesopa_go/ui/device_prefs.dart';
 import 'package:vesopa_go/ui/go_frame.dart';
@@ -48,6 +49,20 @@ class Shell extends ConsumerStatefulWidget {
 
 class _ShellState extends ConsumerState<Shell> {
   int _page = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // Tap to Pay on iPhone, readied as the app opens (Apple's guidance), so
+    // the first customer is not kept waiting on "Getting ready".
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) return;
+      final s = ref.read(tapProvider);
+      final tablet = MediaQuery.sizeOf(context).shortestSide >= 600;
+      final pay = ref.read(paymentsProvider);
+      if (pay is DojoTapToPay && cardVia(ref.read(liteSettingsProvider), s.config, tablet: tablet) == 'tap') pay.prepare();
+    });
+  }
 
   /// The pages this venue uses: tables and shared bills only beside tills.
   List<(IconData, String, Widget Function())> _pagesFor(TapState s) => [

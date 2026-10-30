@@ -705,6 +705,23 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
   });
 
   /**
+   * What the phone's Tap to Pay said when it went wrong (Dojo's SDK error,
+   * Apple's reader), into the card log, so the back office's Card payments
+   * page shows why a tap failed. Never card data: a code and a message.
+   */
+  router.post('/api/tap/payments/:id/client-error', terminal, express.json(), async (req, res, next) => {
+    try {
+      const [[row]] = await pool.query('SELECT * FROM epos_tap_payments WHERE id = ? AND office = ?', [req.params.id, req.office]);
+      if (!row) throw new TapError(404, 'No such payment.');
+      const b = req.body || {};
+      const code = String(b.code || 'error').slice(0, 60);
+      const message = `${String(b.where || 'tap').slice(0, 40)}: ${String(b.message || '').slice(0, 400)}`;
+      await logAttempt({ ...row, id: `${row.id}:${Date.now()}` }, 'error', code, message);
+      res.json({ ok: true });
+    } catch (e) { send(res, e, next); }
+  });
+
+  /**
    * A refund of a paid payment, all or part. The phone asks only after a
    * manager's PIN (the app's void rule); who approved it is kept in the card
    * log. Refunds go back to the card that paid, never as cash.

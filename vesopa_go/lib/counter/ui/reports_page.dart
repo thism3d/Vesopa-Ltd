@@ -471,7 +471,7 @@ class _VenueBodyState extends ConsumerState<_VenueBody> {
     if (r == null) {
       return Center(child: _error == null ? const CircularProgressIndicator() : Padding(padding: const EdgeInsets.all(24), child: Text(_error!, textAlign: TextAlign.center)));
     }
-    int n(Object? v) => (v as num?)?.toInt() ?? 0;
+    int n(Object? v) => v is num ? v.toInt() : (num.tryParse('${v ?? ''}') ?? 0).toInt();
     List<Map<String, dynamic>> list(String k) => [for (final x in (r[k] as List? ?? const [])) Map<String, dynamic>.from(x as Map)];
     final net = n(r['net_minor']);
     final gross = list('departments').fold<int>(0, (s, d) => s + n(d['total_minor']));

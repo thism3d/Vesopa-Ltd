@@ -42,15 +42,17 @@ class GoCustomer {
 
   factory GoCustomer.fromJson(Map<String, dynamic> j) {
     final type = j['discount_type'] as String? ?? 'none';
-    final value = (j['discount_value'] as num?)?.toInt() ?? 0;
+    // The server's DECIMAL columns arrive as text ("0.00000"): read either.
+    num n(Object? v) => v is num ? v : num.tryParse('${v ?? ''}') ?? 0;
+    final value = n(j['discount_value']).toInt();
     final expiry = '${j['membership_expiry'] ?? ''}';
     return GoCustomer(
       id: '${j['id']}',
       name: j['name'] as String? ?? '',
       phone: j['phone'] as String?,
       email: j['email'] as String?,
-      memberNumber: (j['member_number'] as String?)?.trim().isEmpty ?? true ? null : j['member_number'] as String,
-      points: (j['points_balance'] as num?)?.toInt() ?? 0,
+      memberNumber: '${j['member_number'] ?? ''}'.trim().isEmpty ? null : '${j['member_number']}'.trim(),
+      points: n(j['points_balance']).floor(),
       schemeName: j['scheme_name'] as String?,
       photo: j['photo_url'] as String?,
       expiry: expiry.length >= 10 ? DateTime.tryParse(expiry.substring(0, 10)) : null,
@@ -102,6 +104,9 @@ class _CustomersPageState extends ConsumerState<CustomersPage> {
       if (mounted) setState(() => _found = [for (final r in rows) GoCustomer.fromJson(Map<String, dynamic>.from(r as Map))]);
     } on TapApiError catch (e) {
       if (mounted) setState(() => _error = e.message);
+    } catch (e) {
+      // A row Go could not read says so, rather than "Nobody matches".
+      if (mounted) setState(() => _error = 'Could not read the customers ($e).');
     } finally {
       if (mounted) setState(() => _busy = false);
     }

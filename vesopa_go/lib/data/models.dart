@@ -486,7 +486,7 @@ class Member {
       number: '${j['member_number'] ?? j['card_number'] ?? ''}',
       pointsBalance: _d(j['points_balance'], 0),
       discountType: '${j['discount_type'] ?? 'none'}',
-      discountValue: (j['discount_value'] as num?)?.toInt() ?? 0,
+      discountValue: _d(j['discount_value'], 0).toInt(),
       earns: s['earn_points'] == true || s['earn_points'] == 1,
       pointsPerPound: _d(s['points_per_pound'], 0),
       minSpendMinor: (s['min_spend_minor'] as num?)?.toInt() ?? 0,

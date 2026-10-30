@@ -7,7 +7,7 @@
   "contact_email": "info@vesopasoftware.com",
   "contact_website": "https://go.vesopa.com/",
   "track": "internal",
-  "release_notes": "Vesopa Go 1.2.10: a start animation (the mark turns into a card and a tick), live reports for the whole venue, light, dark or automatic appearance, and the till's payment page.",
+  "release_notes": "Vesopa Go 1.2.11: Tap to Pay starts afresh after an error and says no at once when the card is declined, the card prompt is centred, and customer search finds every customer again.",
   "images": {
     "icon": [
       "play-icon-512.png"

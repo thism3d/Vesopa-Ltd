@@ -117,6 +117,7 @@ class DojoTapToPay implements PaymentService {
     final paymentId = const Uuid().v4();
     if (via == 'machine') return _onMachine(paymentId, amountMinor, tipMinor, billRef, clerk, onStep);
     if (Platform.isAndroid) return _onPocket(amountMinor + tipMinor, onStep);
+    var created = false;
     try {
       onStep?.call(PayStep.preparing);
       final secret = await _freshSecret();
@@ -130,11 +131,12 @@ class DojoTapToPay implements PaymentService {
         await _channel.invokeMethod('linkAccount', {'secret': secret});
       }
 
-      final created = await api.createPayment(
+      final made = await api.createPayment(
         id: paymentId, amountMinor: amountMinor, tipMinor: tipMinor, billRef: billRef, clerk: clerk);
+      created = true;
       onStep?.call(PayStep.waitingForCard);
       final sdk = await _channel.invokeMapMethod<String, Object?>('startPayment', {
-        'paymentIntentId': created['intent_id'],
+        'paymentIntentId': made['intent_id'],
         'secret': secret,
       });
       if (sdk?['cancelled'] == true) {
@@ -145,6 +147,15 @@ class DojoTapToPay implements PaymentService {
         }
         return PaymentOutcome(PayResult.cancelled, paymentId: paymentId);
       }
+      // Dojo said no on the phone: a quick word with the server (it has the
+      // last say), then the decline at once rather than half a minute later.
+      final status = '${sdk?['status'] ?? ''}'.toLowerCase();
+      if (status.contains('decline')) {
+        unawaited(api.reportTapError(paymentId, where: 'startPayment', code: 'decline', message: 'Dojo declined the card on the phone'));
+        final check = await _confirm(paymentId, quick: true);
+        if (check.paid) return check;
+        return PaymentOutcome(PayResult.declined, paymentId: paymentId, message: 'Declined by the card issuer');
+      }
 
       onStep?.call(PayStep.confirming);
       final outcome = await _confirm(paymentId);
@@ -153,12 +164,36 @@ class DojoTapToPay implements PaymentService {
     } on TapApiError catch (e) {
       return PaymentOutcome(PayResult.unavailable, paymentId: paymentId, message: e.message);
     } on PlatformException catch (e) {
-      if (e.code == 'cancelled') return PaymentOutcome(PayResult.cancelled, paymentId: paymentId);
-      if (e.code == 'unsupported') _active = false;
+      // Whatever went wrong, the next payment starts Tap to Pay afresh: a new
+      // secret and a new activation, never a half-dead session from before.
+      _active = false;
+      _secret = null;
+      if (e.code == 'cancelled') {
+        if (created) unawaited(api.cancelPayment(paymentId).then((_) {}, onError: (Object _) {}));
+        return PaymentOutcome(PayResult.cancelled, paymentId: paymentId);
+      }
+      if (!created) {
+        // It never reached a payment: nothing to check, nothing was taken.
+        return PaymentOutcome(PayResult.unavailable, message: 'Tap to Pay could not start: ${e.message ?? e.code}. Try again.');
+      }
+      unawaited(api.reportTapError(paymentId, where: 'startPayment', code: e.code, message: e.message));
       // The card may still have gone through: ask the server before saying no.
       final outcome = await _confirm(paymentId, quick: true);
       return outcome.result == PayResult.paid ? outcome : PaymentOutcome(PayResult.declined, paymentId: paymentId, message: e.message);
     }
+  }
+
+  /// Gets Tap to Pay ready before the first payment (Apple asks apps to
+  /// prepare the reader early, so the customer is not kept waiting): a fresh
+  /// secret and the activation, in the background. Errors are ignored here;
+  /// the payment itself will try again and say what is wrong.
+  Future<void> prepare() async {
+    if (!Platform.isIOS || _active) return;
+    try {
+      final secret = await _freshSecret();
+      await _channel.invokeMethod('activate', {'secret': secret, 'env': dojoEnvironment});
+      _active = true;
+    } catch (_) {}
   }
 
   /// The venue's Dojo card machine: the server starts it, the customer uses

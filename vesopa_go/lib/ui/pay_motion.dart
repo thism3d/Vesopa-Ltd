@@ -63,7 +63,11 @@ class _TapPromptState extends State<TapPrompt> with TickerProviderStateMixin {
           opacity: _enter,
           child: ScaleTransition(
             scale: Tween(begin: 0.96, end: 1.0).animate(CurvedAnimation(parent: _enter, curve: Curves.easeOutCubic)),
-            child: Column(children: [
+            // The whole width, so everything sits in the middle (it hugged
+            // its widest line and drifted left; iPad, 2026-10-30).
+            child: SizedBox(
+              width: double.infinity,
+              child: Column(crossAxisAlignment: CrossAxisAlignment.center, children: [
               const SizedBox(height: 12),
               if (!machine)
                 // The card goes at the top of the device: point at it.
@@ -118,7 +122,11 @@ class _TapPromptState extends State<TapPrompt> with TickerProviderStateMixin {
                   child: Text('Over £100: the card will ask for its PIN.', style: TextStyle(color: context.goMuted)),
                 ),
               const SizedBox(height: 10),
-              Text('Visa · Mastercard · Maestro · Amex · Apple Pay · Google Pay', style: TextStyle(color: context.goMuted, fontSize: 13)),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Text('Visa · Mastercard · Maestro · Amex · Apple Pay · Google Pay',
+                    textAlign: TextAlign.center, style: TextStyle(color: context.goMuted, fontSize: 13)),
+              ),
               const Spacer(),
               if (widget.onCancel != null)
                 Padding(
@@ -126,6 +134,7 @@ class _TapPromptState extends State<TapPrompt> with TickerProviderStateMixin {
                   child: TextButton(onPressed: widget.onCancel, child: const Text('Cancel')),
                 ),
             ]),
+            ),
           ),
         ),
       ),
