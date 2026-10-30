@@ -44,6 +44,20 @@ class CurrentSale extends Notifier<String?> {
 
   /// Paid: the next press starts a new sale.
   void finished() => state = null;
+
+  /// Put [billId] on the sale screen: a table's bill, or another open sale
+  /// (the till's open-bill chips; a tapped table, owner 2026-10-30).
+  void show(String billId) => state = billId;
+}
+
+/// Which of the shell's pages is on show, so a page (Tables) can send the
+/// clerk to the sale screen.
+final shellPageProvider = NotifierProvider<ShellPage, int>(ShellPage.new);
+
+class ShellPage extends Notifier<int> {
+  @override
+  int build() => 0;
+  void go(int page) => state = page;
 }
 
 @immutable

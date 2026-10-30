@@ -48,7 +48,6 @@ class Shell extends ConsumerStatefulWidget {
 }
 
 class _ShellState extends ConsumerState<Shell> {
-  int _page = 0;
 
   @override
   void initState() {
@@ -93,7 +92,7 @@ class _ShellState extends ConsumerState<Shell> {
     // New menu from the back office: its photos into the cache now.
     ref.listen(tapProvider.select((s) => s.products), (_, products) => warmPhotos(context, products));
     final pages = _pagesFor(s);
-    final i = _page.clamp(0, pages.length - 1);
+    final i = ref.watch(shellPageProvider).clamp(0, pages.length - 1);
     final body = pages[i].$3();
     return Scaffold(
       appBar: AppBar(
@@ -124,7 +123,7 @@ class _ShellState extends ConsumerState<Shell> {
         selectedIndex: i,
         onDestinationSelected: (i) {
           Navigator.pop(context);
-          setState(() => _page = i);
+          ref.read(shellPageProvider.notifier).go(i);
         },
         children: [
           Padding(padding: const EdgeInsets.fromLTRB(24, 20, 16, 4), child: const GoWordmark(size: 18)),

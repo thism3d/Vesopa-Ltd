@@ -128,7 +128,7 @@ class KeyActions {
   final bool payEnabled;
   final String? payLabel;
 
-  Widget key(ScreenButton b, {double fontScale = 1, bool bar = false}) {
+  Widget key(ScreenButton b, {double fontScale = 1, bool bar = false, bool compact = false, VoidCallback? onDone}) {
     final product = b.pluId == null ? null : productsByPlu[b.pluId];
     return _Key(
       button: b,
@@ -138,6 +138,8 @@ class KeyActions {
       actions: this,
       fontScale: fontScale,
       bar: bar,
+      compact: compact,
+      onDone: onDone,
     );
   }
 }
@@ -179,10 +181,19 @@ class ProgrammedGrid extends StatelessWidget {
   final int? reflowColumns;
   final double bottomPad;
 
+  /// Below this a key is too thin for its name (iPad portrait, Split View,
+  /// Android): the same keys reflow, a few to a row (owner, 2026-10-30).
+  static const minCell = 92.0;
+
   @override
   Widget build(BuildContext context) {
     final cols = reflowColumns;
-    if (cols != null) {
+    if (cols != null) return _reflow(cols);
+    return _geometry();
+  }
+
+  Widget _reflow(int cols) {
+    {
       final keys = keysInOrder(screen);
       // A key two columns wide on the till is two wide here too, up to a row.
       return LayoutBuilder(builder: (context, box) {
@@ -200,11 +211,27 @@ class ProgrammedGrid extends StatelessWidget {
         );
       });
     }
+  }
+
+  Widget _geometry() {
     final covered = screen.covered;
     return LayoutBuilder(builder: (context, box) {
       final cellW = (box.maxWidth - gap * (screen.cols - 1)) / screen.cols;
       final cellH = (box.maxHeight - gap * (screen.rows - 1)) / screen.rows;
+      if (cellW < minCell && screen.cols > 3) return _reflow((box.maxWidth / 112).floor().clamp(3, 8));
       final keys = <Widget>[];
+      // A line before the category keys when the last column holds only
+      // page keys, as the owner drew it.
+      final last = [for (var r = 0; r < screen.rows; r++) if (screen.at(r, screen.cols - 1) case final b? when goUses(b)) b];
+      if (screen.cols > 2 && last.isNotEmpty && last.every((b) => b.kind == ScreenButtonKind.page)) {
+        keys.add(Positioned(
+          left: (screen.cols - 1) * (cellW + gap) - gap / 2 - 0.75,
+          top: 4,
+          bottom: 4,
+          width: 1.5,
+          child: ColoredBox(color: context.goLine),
+        ));
+      }
       for (var r = 0; r < screen.rows; r++) {
         for (var c = 0; c < screen.cols; c++) {
           if (covered.contains('$r:$c')) continue;
@@ -224,10 +251,7 @@ class ProgrammedGrid extends StatelessWidget {
   }
 }
 
-/// A bar (the till's top or bottom bar): its keys in order along one row,
-/// each at least [minKey] wide for each column it spans, sharing the width
-/// when they fit and scrolling sideways when they do not.
-class ProgrammedStrip extends StatelessWidget {
+class ProgrammedStrip extends StatefulWidget {
   const ProgrammedStrip({super.key, required this.bar, required this.actions, this.minKey = 104, this.gap = 8});
 
   final TillScreen bar;
@@ -236,23 +260,161 @@ class ProgrammedStrip extends StatelessWidget {
   final double gap;
 
   @override
+  State<ProgrammedStrip> createState() => _ProgrammedStripState();
+}
+
+/// A bar's keys as the owner drew them (2026-10-30): they share the width
+/// when they fit; when they do not, they get narrower (icon over a small
+/// name) before anything is hidden; and when even that is not enough, the
+/// ones that do not fit go behind an arrow beside a Pay key that never moves
+/// from the right. The arrow opens them in a row just above the bar; a tap
+/// anywhere else puts them away.
+class _ProgrammedStripState extends State<ProgrammedStrip> with SingleTickerProviderStateMixin {
+  final _link = LayerLink();
+  final _portal = OverlayPortalController();
+  late final _anim = AnimationController(vsync: this, duration: const Duration(milliseconds: 220));
+
+  @override
+  void dispose() {
+    _anim.dispose();
+    super.dispose();
+  }
+
+  void _toggle() {
+    if (_portal.isShowing) {
+      _hide();
+    } else {
+      _portal.show();
+      _anim.forward(from: 0);
+    }
+  }
+
+  Future<void> _hide() async {
+    await _anim.reverse();
+    if (mounted && _portal.isShowing) _portal.hide();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final keys = keysInOrder(bar);
+    final keys = keysInOrder(widget.bar);
     if (keys.isEmpty) return const SizedBox.shrink();
-    final spans = keys.fold<int>(0, (n, b) => n + b.colSpan);
+    final gap = widget.gap;
+    // Pay stays where the hand expects it: the right-hand end.
+    final pay = keys.where((k) => k.kind == ScreenButtonKind.function && k.functionKey == 'pay').firstOrNull;
+    final rest = [for (final k in keys) if (!identical(k, pay)) k];
     return LayoutBuilder(builder: (context, box) {
+      int spans(Iterable<ScreenButton> ks) => ks.fold<int>(0, (n, b) => n + b.colSpan);
+      final all = spans(keys);
       final room = box.maxWidth - gap * (keys.length - 1);
-      final fits = room / spans >= minKey;
-      final unit = fits ? room / spans : minKey;
-      final row = Row(children: [
-        for (var i = 0; i < keys.length; i++) ...[
-          if (i > 0) SizedBox(width: gap),
-          SizedBox(width: unit * keys[i].colSpan, child: actions.key(keys[i], fontScale: 0.95, bar: true)),
-        ],
-      ]);
-      return fits ? row : SingleChildScrollView(scrollDirection: Axis.horizontal, child: row);
+      // 1. Everything at full size.
+      if (room / all >= widget.minKey) return _row(keys, room / all, compact: false);
+      // 2. Everything, narrower, as icon keys with a small name.
+      final compactMin = widget.minKey * 0.68;
+      if (room / all >= compactMin) return _row(keys, room / all, compact: true);
+      // 3. As many as fit before the arrow and Pay; the rest above.
+      final payWidth = pay == null ? 0.0 : compactMin * 1.6 * pay.colSpan;
+      final arrowWidth = compactMin * 0.8;
+      var space = box.maxWidth - payWidth - arrowWidth - gap * 2;
+      final shown = <ScreenButton>[];
+      for (final k in rest) {
+        final w = compactMin * k.colSpan + (shown.isEmpty ? 0 : gap);
+        if (w > space) break;
+        shown.add(k);
+        space -= w;
+      }
+      final hidden = rest.skip(shown.length).toList();
+      if (hidden.isEmpty) return _row(keys, room / all, compact: true);
+      final unit = shown.isEmpty ? compactMin : (compactMin + space / spans(shown).clamp(1, 999));
+      return CompositedTransformTarget(
+        link: _link,
+        child: OverlayPortal(
+          controller: _portal,
+          overlayChildBuilder: (_) => _overflow(context, hidden, box.maxWidth, box.maxHeight.isFinite ? box.maxHeight : 64, compactMin),
+          child: Row(children: [
+            for (var i = 0; i < shown.length; i++) ...[
+              if (i > 0) SizedBox(width: gap),
+              SizedBox(width: unit * shown[i].colSpan, child: widget.actions.key(shown[i], fontScale: 0.9, bar: true, compact: true)),
+            ],
+            if (shown.isNotEmpty) SizedBox(width: gap),
+            SizedBox(width: arrowWidth, child: _Arrow(open: _anim, onTap: _toggle)),
+            if (pay != null) ...[
+              SizedBox(width: gap),
+              Expanded(child: widget.actions.key(pay, fontScale: 0.95, bar: true)),
+            ],
+          ]),
+        ),
+      );
     });
   }
+
+  Widget _row(List<ScreenButton> keys, double unit, {required bool compact}) => Row(children: [
+        for (var i = 0; i < keys.length; i++) ...[
+          if (i > 0) SizedBox(width: widget.gap),
+          SizedBox(width: unit * keys[i].colSpan, child: widget.actions.key(keys[i], fontScale: compact ? 0.9 : 0.95, bar: true, compact: compact)),
+        ],
+      ]);
+
+  /// The keys that did not fit, in a row just above the bar.
+  Widget _overflow(BuildContext context, List<ScreenButton> hidden, double width, double height, double unit) {
+    return Stack(children: [
+      // A tap anywhere else puts them away.
+      Positioned.fill(child: GestureDetector(behavior: HitTestBehavior.translucent, onTap: _hide)),
+      CompositedTransformFollower(
+        link: _link,
+        targetAnchor: Alignment.topRight,
+        followerAnchor: Alignment.bottomRight,
+        offset: const Offset(0, -8),
+        child: FadeTransition(
+          opacity: _anim,
+          child: SlideTransition(
+            position: Tween(begin: const Offset(0, 0.25), end: Offset.zero).animate(CurvedAnimation(parent: _anim, curve: Curves.easeOutCubic)),
+            child: Material(
+              color: context.goCard,
+              elevation: 8,
+              borderRadius: BorderRadius.circular(14),
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: width),
+                  child: Wrap(spacing: widget.gap, runSpacing: widget.gap, alignment: WrapAlignment.end, children: [
+                    for (final k in hidden)
+                      SizedBox(
+                        width: unit * 1.3 * k.colSpan,
+                        height: height,
+                        child: widget.actions.key(k, fontScale: 0.9, bar: true, compact: true, onDone: _hide),
+                      ),
+                  ]),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ]);
+  }
+}
+
+/// The arrow that opens a bar's other keys, pointing up, turning when open.
+class _Arrow extends StatelessWidget {
+  const _Arrow({required this.open, required this.onTap});
+  final Animation<double> open;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+        color: context.goCard,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: onTap,
+          child: Center(
+            child: RotationTransition(
+              turns: Tween(begin: 0.0, end: 0.5).animate(open),
+              child: Icon(Icons.keyboard_arrow_up_rounded, size: 30, color: context.goText),
+            ),
+          ),
+        ),
+      );
 }
 
 class _Key extends StatelessWidget {
@@ -264,7 +426,15 @@ class _Key extends StatelessWidget {
     required this.actions,
     this.fontScale = 1,
     this.bar = false,
+    this.compact = false,
+    this.onDone,
   });
+
+  /// Narrow: a smaller icon and name, one line.
+  final bool compact;
+
+  /// After the key has done its work (an overflow row closes itself).
+  final VoidCallback? onDone;
 
   final ScreenButton button;
   final bool here;
@@ -325,6 +495,13 @@ class _Key extends StatelessWidget {
 
     // A bar's key, as the till draws it: its icon, and its name centred under
     // it, a size that fits without breaking a word.
+    if (onDone != null && onTap != null) {
+      final tap = onTap;
+      onTap = () {
+        onDone!();
+        tap();
+      };
+    }
     if (bar && image == null) {
       final icon = button.kind == ScreenButtonKind.function
           ? functionIcons[button.functionKey]
@@ -344,14 +521,15 @@ class _Key extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
               child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                if (icon != null) Icon(icon, size: 20, color: colour),
-                if (icon != null) const SizedBox(height: 3),
+                if (icon != null) Icon(icon, size: compact ? 18 : 20, color: colour),
+                if (icon != null) SizedBox(height: compact ? 2 : 3),
                 Flexible(
                   child: FitText(
                     [if ((button.emoji ?? '').isNotEmpty) button.emoji, label].join(' '),
-                    maxLines: 2,
+                    maxLines: compact ? 1 : 2,
+                    minSize: compact ? 8.5 : 10,
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 13 * fontScale, height: 1.1, fontWeight: FontWeight.w700, color: colour),
+                    style: TextStyle(fontSize: (compact ? 11.5 : 13) * fontScale, height: 1.1, fontWeight: FontWeight.w700, color: colour),
                   ),
                 ),
                 if (button.kind == ScreenButtonKind.product && note != null)

@@ -78,7 +78,18 @@ class _SalePanelState extends ConsumerState<SalePanel> {
           child: Row(
             children: [
               Expanded(
-                child: Text('This sale', style: t.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(bill.tableId == null ? 'This sale' : bill.name, style: t.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+                  // Who and since when, as the till's check heads it.
+                  if (bill.clerk.trim().isNotEmpty || bill.openedAt != null)
+                    Text(
+                      [
+                        if (bill.clerk.trim().isNotEmpty) bill.clerk.trim(),
+                        if (bill.openedAt != null) _clock(bill.openedAt!),
+                      ].join(' · '),
+                      style: t.bodySmall?.copyWith(fontFeatures: Tp.tabular),
+                    ),
+                ]),
               ),
               TextButton.icon(
                 onPressed: bill.paidMinor > 0 ? null : () => _discount(bill),
@@ -445,4 +456,11 @@ class _EmptyBasketState extends State<_EmptyBasket> with SingleTickerProviderSta
           );
         },
       );
+}
+
+/// 10:12am, as the till's check writes the time.
+String _clock(DateTime d) {
+  final l = d.toLocal();
+  final h = l.hour % 12 == 0 ? 12 : l.hour % 12;
+  return '$h:${l.minute.toString().padLeft(2, '0')}${l.hour < 12 ? 'am' : 'pm'}';
 }

@@ -7,7 +7,7 @@
   "contact_email": "info@vesopasoftware.com",
   "contact_website": "https://go.vesopa.com/",
   "track": "internal",
-  "release_notes": "Vesopa Go 1.2.11: Tap to Pay starts afresh after an error and says no at once when the card is declined, the card prompt is centred, and customer search finds every customer again.",
+  "release_notes": "Vesopa Go 1.2.12: bars that fit, with an arrow for the keys that do not and Pay fixed at the right; narrow screens reflow instead of squeezing names; open tables as chips to switch in one tap; a tapped table opens on the sale screen; Save Table sends and parks the table; the check shows who and when.",
   "images": {
     "icon": [
       "play-icon-512.png"

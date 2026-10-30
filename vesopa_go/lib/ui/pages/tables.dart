@@ -9,12 +9,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../counter/data/lite_state.dart';
 import '../../data/models.dart';
 import '../../data/session.dart';
 import '../fit_text.dart';
 import '../theme.dart';
 import 'floor_editor.dart';
-import 'order.dart';
 import 'scan_sheet.dart';
 
 class TablesPage extends ConsumerStatefulWidget {
@@ -73,14 +73,11 @@ class _TablesPageState extends ConsumerState<TablesPage> {
       }
       if (!mounted) return;
     }
-    await Navigator.of(context).push(PageRouteBuilder<void>(
-      transitionDuration: const Duration(milliseconds: 260),
-      pageBuilder: (_, _, _) => OrderPage(billId: bill!.id),
-      transitionsBuilder: (_, a, _, child) => FadeTransition(
-        opacity: a,
-        child: SlideTransition(position: Tween(begin: const Offset(0.04, 0), end: Offset.zero).animate(CurvedAnimation(parent: a, curve: Curves.easeOutCubic)), child: child),
-      ),
-    ));
+    // Straight to the sale screen with the table's bill on it, as the till
+    // does (owner, 2026-10-30): the tender is where the table is edited.
+    ref.read(currentSaleProvider.notifier).show(bill.id);
+    ref.read(shellPageProvider.notifier).go(0);
+    Navigator.of(context).popUntil((r) => r.isFirst);
   }
 
   /// A table's QR (or its NFC tag's text): a link with `table=7`, `t=7` or a

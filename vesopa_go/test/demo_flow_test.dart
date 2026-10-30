@@ -51,18 +51,15 @@ void main() {
     await tap(find.text('Medium'));
     await tap(find.byKey(const ValueKey('add')));
 
-    expect(find.text('Send 2'), findsOneWidget);
-    await tap(find.text('Send 2'));
-    expect(find.text('All sent'), findsOneWidget);
-
-    await tap(find.byKey(const ValueKey('open-bill')));
-    expect(find.text('Take £29.50'), findsOneWidget);
-    await tap(find.text('Take £29.50'));
-    await tester.tap(find.text('Pay on the card machine'));
+    // The table's bill is on the sale screen, as on the till.
+    expect(find.text('Table 1'), findsWidgets);
+    await tap(find.byKey(const ValueKey('pay')));
+    await tap(find.byKey(const ValueKey('pay-card')));
+    if (find.text('No tip').evaluate().isNotEmpty) await tap(find.text('No tip'));
     await tester.pump(const Duration(seconds: 3));
     await tester.pumpAndSettle();
-    expect(find.text('Paid £29.50'), findsOneWidget);
-    await tap(find.text('Done'));
+    expect(find.text('Payment approved!'), findsOneWidget);
+    await tap(find.byKey(const ValueKey('new-sale')));
 
     // Back to the shell: the table's sale is in today's Sales and Reports.
     while (find.byTooltip('Open navigation menu').evaluate().isEmpty) {

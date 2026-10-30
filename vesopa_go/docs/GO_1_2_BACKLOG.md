@@ -54,3 +54,58 @@ code (ONE_CODEBASE_PLAN.md). Ticked items are on main.
 
 - [ ] cloud.vesopa.com: a 402 on a page (the home page answers 200 now;
       need the address) and a 5xx when creating an email account.
+
+## The owner's TestNotes (2026-10-30): iPad, phones, the Windows till
+
+Asked again, the owner said these go on the iPad and phones; the Windows
+till items are built now (venues update only when the owner says).
+
+Done in 1.2.11 (and the till):
+- [x] Tap to Pay on iPhone: start afresh after an error, a decline at once,
+      readied when the app opens, errors to the Card payments page.
+- [x] Customer search found nobody ("0.00000" points as text).
+- [x] The card prompt centred.
+- [x] Till: Last Bill crashed on numbers sent as text.
+
+Vesopa Go (iPad and phones):
+- [x] 1.2.12 Bars fit by shrinking; when they cannot, an arrow by a Pay key fixed
+      at the right shows the rest in a row above (animated; a tap outside
+      hides it); icon-only keys as the last resort.
+- [x] 1.2.12 Narrow screens (iPad portrait, Split View, Android): keys never
+      squeezed into broken words; reflow as on a phone when cells get narrow;
+      a smaller section title; a line before the category keys.
+- [x] 1.2.12 Open tables as chips at the top (Current £11.00, Table 7 £22.95), one
+      tap to switch, as on the till.
+- [x] 1.2.12 A tapped table opens the sale screen with that table's bill, as on the
+      till, not a separate order page.
+- [x] 1.2.12 The check's header: who and when (Muzahid Islam · 10:12am).
+- [ ] Payment dialogs as the till's: Discount with the bill after it,
+      Attach customer with results as you type, Gratuity (5/10/12.5/15/20%,
+      none, an amount), Voucher, Redeem deposit, Loyalty points, Split bill
+      by item or equally.
+- [ ] Cancel and Void with the till's reasons from the back office.
+- [ ] The Covers key and modifier keys (MIXERS ?) on Go's screens.
+- [ ] Idle: the venue's logo; one quick button that opens a brightness
+      slider; Touch to begin in the back office's lettering.
+- [ ] A better start animation: Apple-like square tick, the card animated
+      in time.
+- [ ] Bills: each bill's payments and its refund.
+- [ ] One Cards page: payment cards, staff cards, membership, loyalty and
+      gift cards.
+- [ ] Top bar keys (Clock in, Sign on, Sign off) as compact icon keys.
+
+Windows till (vesopa_epos):
+- [ ] On-screen keyboard: hold to resize as on Windows; the number pad only
+      as wide as it needs; A- and A+ scale the keys, not only the height.
+- [ ] Top bar: a hamburger on the left opening the side menu from the left
+      (no dropdown); keys the same height; no two-line labels; an arrow for
+      the keys that do not fit; Pay fixed bottom right; the clerk's name as an
+      icon key when it does not fit.
+- [ ] The empty sale's moving basket.
+- [ ] Functions: the Cash and Card tiles readable at any width.
+- [ ] Settings: Appearance and Side menu as one row of icons; less text,
+      an info button for the rest; the idle picture shown, not its path.
+- [ ] Idle: the quick brightness button.
+
+Website:
+- [ ] go.vesopa.com: real screenshots of the till and the plans.

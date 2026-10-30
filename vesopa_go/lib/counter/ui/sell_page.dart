@@ -210,7 +210,18 @@ class _SellPageState extends ConsumerState<SellPage> {
         if (ok == true) ref.read(currentSaleProvider.notifier).clear();
       case 'go_sale':
         setState(() => _screenId = null);
-      case 'go_tables' || 'table_plan' || 'save_table':
+      case 'save_table':
+        // The till's Save Table: what is new goes to the kitchen, the table
+        // keeps its bill, and the screen is free for the next sale.
+        final bill = _bill;
+        if (bill != null && bill.tableId != null) {
+          final sent = bill.hasUnsent ? tapper.send(bill.id) : 0;
+          ref.read(currentSaleProvider.notifier).finished();
+          return _say(sent > 0 ? '${bill.name} saved, $sent sent to the kitchen.' : '${bill.name} saved.');
+        }
+        if (standalone) return _say('Tables are for venues with tills.');
+        _open('Tables', const TablesPage());
+      case 'go_tables' || 'table_plan':
         if (standalone) return _say('Tables are for venues with tills.');
         _open('Tables', const TablesPage());
       case 'go_receipts' || 'last_bill' || 'refund':
@@ -289,14 +300,23 @@ class _SellPageState extends ConsumerState<SellPage> {
             padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
             child: SizedBox(height: phone ? 56 : 64, child: ProgrammedStrip(bar: b, actions: actions, minKey: phone ? 92 : 104)),
           );
+    final open = _openBills(s, saleId);
     final heading = Padding(
-      padding: const EdgeInsets.fromLTRB(16, 6, 4, 0),
+      padding: const EdgeInsets.fromLTRB(12, 6, 4, 0),
       child: Row(children: [
-        Expanded(child: Text(screen.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800))),
+        // The open bills, one tap to switch, as on the till; else the
+        // screen's name, small (owner, 2026-10-30).
+        Expanded(
+          child: open.isEmpty
+              ? Text(screen.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: context.goMuted))
+              : _OpenBillChips(bills: open, current: saleId, onPick: (id) => ref.read(currentSaleProvider.notifier).show(id)),
+        ),
         if (_screenId != null && _screenId != home.id)
           TextButton.icon(onPressed: () => setState(() => _screenId = null), icon: const Icon(Icons.home_rounded, size: 18), label: Text(home.name)),
         if (arrange)
           IconButton(
+            iconSize: 18,
+            visualDensity: VisualDensity.compact,
             tooltip: 'Arrange this screen',
             onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => LayoutEditorPage(screen: screen, form: form))),
             icon: const Icon(Icons.dashboard_customize_rounded),
@@ -341,6 +361,18 @@ class _SellPageState extends ConsumerState<SellPage> {
       bar(bottom),
       const SizedBox(height: 8),
     ]);
+  }
+
+  /// The bills open on this device: the current sale, and every table with
+  /// something on it, for the chips.
+  List<Bill> _openBills(TapState s, String? current) {
+    final list = [
+      for (final b in s.bills.values)
+        if (b.heldBy == null && (b.id == current || (b.tableId != null && b.lines.isNotEmpty))) b,
+    ]..sort((a, b) => (a.tableNumber ?? 0).compareTo(b.tableNumber ?? 0));
+    // Only worth a row when there is more than one, or the one is a table.
+    if (list.length == 1 && list.first.tableId == null) return const [];
+    return list;
   }
 
   /// Long press on an item: a manager's photo-and-price sheet, else the
@@ -445,8 +477,14 @@ class _SaleBar extends ConsumerWidget {
             SizedBox(
               height: 24,
               child: last == null
-                  ? Align(alignment: Alignment.centerLeft, child: Text('Tap an item to start a sale', style: t.bodySmall))
+                  ? Align(alignment: Alignment.centerLeft, child: Text(bill?.tableId != null ? '${bill!.name}: tap an item to add it' : 'Tap an item to start a sale', style: t.bodySmall))
                   : Row(children: [
+                      // The table it is going on, first.
+                      if (bill?.tableId != null)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: Text(bill!.name, style: t.bodyMedium?.copyWith(fontWeight: FontWeight.w800, color: Tp.lime)),
+                        ),
                       Expanded(
                         child: Text(
                           '${last.quantity > 1 ? '${last.quantity}× ' : ''}${last.product.name}${last.choices.isEmpty ? '' : ' (${last.choices.map((c) => c.name).join(', ')})'}',
@@ -545,4 +583,42 @@ class _FloatingSale extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// The till's open-bill chips: "Current £11.00", "Table 7 £22.95"; the one
+/// on the screen lit, a tap puts another there.
+class _OpenBillChips extends StatelessWidget {
+  const _OpenBillChips({required this.bills, required this.current, required this.onPick});
+  final List<Bill> bills;
+  final String? current;
+  final ValueChanged<String> onPick;
+
+  @override
+  Widget build(BuildContext context) => SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(children: [
+          for (final b in bills)
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: Material(
+                color: b.id == current ? Tp.lime : context.goCard,
+                shape: StadiumBorder(side: BorderSide(color: b.id == current ? Tp.lime : context.goLine)),
+                child: InkWell(
+                  customBorder: const StadiumBorder(),
+                  onTap: () => onPick(b.id),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Text(b.tableId == null ? 'Current' : b.name,
+                          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: b.id == current ? Tp.onLime : context.goText)),
+                      const SizedBox(width: 6),
+                      Text(money(b.dueMinor),
+                          style: TextStyle(fontSize: 13, fontFeatures: Tp.tabular, color: b.id == current ? Tp.onLime : context.goMuted)),
+                    ]),
+                  ),
+                ),
+              ),
+            ),
+        ]),
+      );
 }
