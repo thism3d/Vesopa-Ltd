@@ -16,6 +16,18 @@ void main() {
     ...extra,
   });
 
+  test('numbers the server sends as text (DECIMAL columns) are read, not a crash', () {
+    // Last Bill on the till, 2026-10-30: "type 'String' is not a subtype of
+    // type 'num' in type cast" from points_balance: "0.00000".
+    final r = summary({'points_balance': '0.00000', 'covers': '2', 'table_number': '7'});
+    expect(r.pointsBalance, 0);
+    expect(r.covers, 2);
+    expect(r.tableNumber, 7);
+    final l = ReceiptLine.fromJson({'name': 'Pint', 'quantity': '2', 'unit_price_minor': '400', 'tax_percentage': '20.00'});
+    expect(l.quantity, 2);
+    expect(l.unitPriceMinor, 400);
+  });
+
   test('the list row carries how it was paid and its refund status', () {
     final r = summary({
       'methods': ['card'],

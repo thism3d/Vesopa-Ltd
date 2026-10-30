@@ -84,15 +84,19 @@ class ReceiptSummary {
   int get grossMinor =>
       totalMinor + discountMinor + voucherMinor - serviceMinor;
 
-  // MySQL sends INTs as num; a value written by an older till may be absent.
-  static int _int(Object? v) => (v as num?)?.toInt() ?? 0;
+  // MySQL sends INTs as num, but DECIMAL columns (points_balance, prices
+  // on some rows) as text ("0.00000"); a value from an older till may be
+  // absent. Every number here goes through [_numOf], so a column that turns
+  // into DECIMAL never again takes Last Bill down ("type 'String' is not a
+  // subtype of type 'num'", 2026-10-30).
+  static int _int(Object? v) => _numOf(v)?.toInt() ?? 0;
 
   factory ReceiptSummary.fromJson(Map<String, dynamic> j) => ReceiptSummary(
         id: j['id'] as String,
         totalMinor: _int(j['total_minor']),
         taxMinor: _int(j['tax_minor']),
         discountMinor: _int(j['discount_minor']),
-        tableNumber: (j['table_number'] as num?)?.toInt(),
+        tableNumber: _numOf(j['table_number'])?.toInt(),
         closedAt:
             DateTime.tryParse(j['closed_at'] as String? ?? '') ?? DateTime.now(),
         customerName: j['customer_name'] as String?,
@@ -101,10 +105,10 @@ class ReceiptSummary {
         serviceMinor: _int(j['service_minor']),
         pointsEarned: _int(j['points_earned']),
         pointsRedeemed: _int(j['points_redeemed']),
-        pointsBalance: (j['points_balance'] as num?)?.toInt(),
+        pointsBalance: _numOf(j['points_balance'])?.toInt(),
         clerkName: j['clerk_name'] as String?,
         orderNote: j['order_note'] as String? ?? j['notes'] as String?,
-        covers: (j['covers'] as num?)?.toInt(),
+        covers: _numOf(j['covers'])?.toInt(),
         methods: [
           for (final m in (j['methods'] as List?) ?? const []) '$m',
         ],
@@ -191,7 +195,7 @@ class ReceiptRefund {
 
   factory ReceiptRefund.fromJson(Map<String, dynamic> j) => ReceiptRefund(
     id: '${j['id']}',
-    amountMinor: (j['amount_minor'] as num?)?.toInt() ?? 0,
+    amountMinor: _numOf(j['amount_minor'])?.toInt() ?? 0,
     at: DateTime.tryParse('${j['at'] ?? ''}')?.toLocal() ?? DateTime.now(),
     staffName: j['staff_name'] as String?,
     reason: j['reason'] as String?,
@@ -242,16 +246,16 @@ class ReceiptLine {
 
   factory ReceiptLine.fromJson(Map<String, dynamic> j) => ReceiptLine(
         name: j['name'] as String? ?? '',
-        quantity: (j['quantity'] as num? ?? 1).toDouble(),
-        unitPriceMinor: (j['unit_price_minor'] as num?)?.toInt() ?? 0,
+        quantity: (_numOf(j['quantity']) ?? 1).toDouble(),
+        unitPriceMinor: _numOf(j['unit_price_minor'])?.toInt() ?? 0,
         note: (j['note'] as String?)?.trim().isEmpty ?? true
             ? null
             : j['note'] as String,
-        taxPercentage: (j['tax_percentage'] as num? ?? 0).toDouble(),
+        taxPercentage: (_numOf(j['tax_percentage']) ?? 0).toDouble(),
         // Absent on a sale recorded before modifiers existed, which was an
         // item in its own right — so the default is the truth, not a guess.
-        isModifier: (j['is_modifier'] as num?) == 1 || j['is_modifier'] == true,
-        discountMinor: (j['discount_minor'] as num?)?.toInt() ?? 0,
+        isModifier: _numOf(j['is_modifier']) == 1 || j['is_modifier'] == true,
+        discountMinor: _numOf(j['discount_minor'])?.toInt() ?? 0,
       );
 }
 
@@ -287,7 +291,7 @@ class ReceiptTender {
 
   factory ReceiptTender.fromJson(Map<String, dynamic> j) => ReceiptTender(
         method: j['method'] as String? ?? '',
-        amountMinor: j['amount_minor'] as int? ?? 0,
+        amountMinor: _numOf(j['amount_minor'])?.toInt() ?? 0,
         cashBreakdown: j['cash_breakdown'] as String?,
         reference: j['reference'] as String?,
         entryMode: j['entry_mode'] as String?,
@@ -442,7 +446,7 @@ class ReceiptRepository {
       cardRefundedMinor: {
         for (final e
             in ((status?['card_refunds'] as Map?) ?? const {}).entries)
-          '${e.key}': (e.value as num?)?.toInt() ?? 0,
+          '${e.key}': _numOf(e.value)?.toInt() ?? 0,
       },
       lines: (body['lines'] as List<dynamic>)
           .cast<Map<String, dynamic>>()
@@ -460,3 +464,6 @@ class ReceiptRepository {
       '${d.month.toString().padLeft(2, '0')}-'
       '${d.day.toString().padLeft(2, '0')}';
 }
+
+/// A number from the server whether it came as a number or as text.
+num? _numOf(Object? v) => v is num ? v : (v == null ? null : num.tryParse('$v'));
