@@ -96,15 +96,15 @@ Vesopa Go (iPad and phones):
 - [ ] Top bar keys (Clock in, Sign on, Sign off) as compact icon keys.
 
 Windows till (vesopa_epos):
-- [ ] On-screen keyboard: hold to resize as on Windows; the number pad only
+- [x] Till: On-screen keyboard: hold to resize as on Windows; the number pad only
       as wide as it needs; A- and A+ scale the keys, not only the height.
-- [ ] Top bar: a hamburger on the left opening the side menu from the left
+- [x] Till (all but the clerk's name as an icon key): Top bar: a hamburger on the left opening the side menu from the left
       (no dropdown); keys the same height; no two-line labels; an arrow for
       the keys that do not fit; Pay fixed bottom right; the clerk's name as an
       icon key when it does not fit.
-- [ ] The empty sale's moving basket.
-- [ ] Functions: the Cash and Card tiles readable at any width.
-- [ ] Settings: Appearance and Side menu as one row of icons; less text,
+- [x] Till: The empty sale's moving basket.
+- [x] Till: Functions: the Cash and Card tiles readable at any width.
+- [x] Till (info buttons for long text still to do): Settings: Appearance and Side menu as one row of icons; less text,
       an info button for the rest; the idle picture shown, not its path.
 - [ ] Idle: the quick brightness button.
 
