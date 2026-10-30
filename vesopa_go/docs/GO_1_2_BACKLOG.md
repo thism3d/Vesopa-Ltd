@@ -79,8 +79,8 @@ Vesopa Go (iPad and phones):
 - [x] 1.2.12 A tapped table opens the sale screen with that table's bill, as on the
       till, not a separate order page.
 - [x] 1.2.12 The check's header: who and when (Muzahid Islam · 10:12am).
-- [x] 1.2.14 (gift card, deposit, discount, gratuity, attach customer; loyalty
-      points and split by item still to come) Payment dialogs as the till's: Discount with the bill after it,
+- [x] 1.2.14 (gift card, deposit, discount, gratuity, attach customer; 1.2.16 loyalty
+      points and split by item) Payment dialogs as the till's: Discount with the bill after it,
       Attach customer with results as you type, Gratuity (5/10/12.5/15/20%,
       none, an amount), Voucher, Redeem deposit, Loyalty points, Split bill
       by item or equally.
@@ -90,10 +90,10 @@ Vesopa Go (iPad and phones):
       slider; Touch to begin in the back office's lettering.
 - [x] 1.2.15 A better start animation: Apple-like square tick, the card animated
       in time.
-- [ ] Bills: each bill's payments and its refund.
-- [ ] One Cards page: payment cards, staff cards, membership, loyalty and
+- [x] 1.2.16 Bills: each bill's payments and its refund.
+- [x] 1.2.16 One Cards page: payment cards, staff cards, membership, loyalty and
       gift cards.
-- [ ] Top bar keys (Clock in, Sign on, Sign off) as compact icon keys.
+- [x] 1.2.16 Top bar keys (Clock in, Sign on, Sign off) as compact icon keys.
 
 Windows till (vesopa_epos):
 - [x] Till: On-screen keyboard: hold to resize as on Windows; the number pad only
@@ -113,3 +113,6 @@ Website:
 - [x] 1.2.13 Night and Day follow the till's colours exactly (PosColors and the
       payment board's PayPalette); Night by default; lime text deepens in Day;
       disabled keys grey; the mark ringed in Night.
+- [x] 1.2.16 Devices report their screen (points, pixels, kind, version) to the
+      back office (Vesopa Go > Screens and screen savers), each with its own
+      screen saver; the idle picture centred on its own edge colour.

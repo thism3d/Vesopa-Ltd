@@ -63,7 +63,8 @@ class _PayPageState extends ConsumerState<PayPage> {
     final rec = closes
         ? ref.read(journalProvider.notifier).record(paid, categoryNames: categoryNames(ref.read(tapProvider)), changeMinor: change)
         : null;
-    ref.read(tapProvider.notifier).addTender(bill.id, tender);
+    ref.read(tapProvider.notifier).addTender(bill.id, tender, items: _splitItems);
+    _splitItems = const {};
     if (rec != null) {
       ref.read(currentSaleProvider.notifier).finished();
       final go = ref.read(tapProvider).config.go;
@@ -178,23 +179,20 @@ class _PayPageState extends ConsumerState<PayPage> {
   }
 
   /// Split bill: how many ways; each share goes on the pad.
+  /// Items picked with Split bill by item: the next tender pays for them.
+  Map<String, int> _splitItems = const {};
+
+  /// Split bill, as the till's: by item (pick what this person is paying
+  /// for; the next payment settles those items) or equally. The share goes
+  /// on the pad.
   Future<int?> _split() async {
     final bill = _bill;
     if (bill == null) return null;
-    final ways = await showDialog<int>(
-      context: context,
-      builder: (c) => SimpleDialog(title: const Text('Split equally between'), children: [
-        Wrap(alignment: WrapAlignment.center, spacing: 8, runSpacing: 8, children: [
-          for (var n = 2; n <= 10; n++) OutlinedButton(onPressed: () => Navigator.pop(c, n), child: Text('$n')),
-        ]),
-      ]),
-    );
-    if (ways == null) return null;
-    final shares = splitEqually(bill.dueMinor, ways);
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$ways ways: ${shares.map(money).toSet().join(' or ')} each. Take each share in turn.')));
-    }
-    return shares.first;
+    final picked = await showDialog<(int, Map<String, int>)>(context: context, builder: (_) => _SplitDialog(bill: bill));
+    if (picked == null) return null;
+    final (amount, items) = picked;
+    setState(() => _splitItems = items);
+    return amount;
   }
 
   Future<void> _gratuity() async {
@@ -204,6 +202,15 @@ class _PayPageState extends ConsumerState<PayPage> {
     final tip = await askGratuity(context,
         onMinor: bill.dueMinor, percents: config.tipPercents.isEmpty ? const [5, 10, 12.5, 15, 20] : config.tipPercents, current: _presetTip);
     if (tip != null && mounted) setState(() => _presetTip = tip);
+  }
+
+  Future<void> _points(Bill bill) async {
+    final member = bill.member;
+    if (member == null) return;
+    final taken = await askPoints(context, ref, member: member, dueMinor: bill.dueMinor, billId: bill.id);
+    if (taken == null || taken <= 0 || !mounted) return;
+    _sendFirst(bill);
+    _take(Tender(id: 'points-${DateTime.now().microsecondsSinceEpoch}', amountMinor: taken, kind: 'points', at: DateTime.now(), clerk: ref.read(tapProvider).clerk?.name ?? '', reference: 'points'));
   }
 
   /// A gift card or a deposit towards the bill, as the till takes them.
@@ -256,9 +263,8 @@ class _PayPageState extends ConsumerState<PayPage> {
         voucher: () => askVoucher(context, ref, bill),
         giftCard: () => _codeTender('giftcard'),
         deposit: () => _codeTender('deposit'),
-        points: bill.member == null
-            ? null
-            : () => showModalBottomSheet<void>(context: context, isScrollControlled: true, showDragHandle: true, builder: (_) => MemberSheet(billId: bill.id)),
+        // The member's points towards the bill, as the till's Points key.
+        points: bill.member == null ? null : () => _points(bill),
         discount: () => discountBill(context, ref, bill),
         customer: () => attachCustomer(context, ref, bill.id),
         gratuity: _gratuity,
@@ -506,6 +512,103 @@ class _Approved extends ConsumerWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// The till's Split the bill: by item (tick what is being paid for, how many
+/// of each) or equally (how many ways). Answers the amount and the items.
+class _SplitDialog extends StatefulWidget {
+  const _SplitDialog({required this.bill});
+  final Bill bill;
+  @override
+  State<_SplitDialog> createState() => _SplitDialogState();
+}
+
+class _SplitDialogState extends State<_SplitDialog> {
+  bool _byItem = true;
+  final _picked = <String, int>{};
+  int _ways = 2;
+
+  List<BillLine> get _open => [for (final l in widget.bill.lines) if (l.unpaidQuantity > 0) l];
+
+  int get _itemsTotal => _open.fold<int>(0, (s, l) => s + l.unitMinor * (_picked[l.id] ?? 0));
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final due = widget.bill.dueMinor;
+    final share = splitEqually(due, _ways);
+    return AlertDialog(
+      title: Row(children: [
+        const Expanded(child: Text('Split the bill')),
+        Text('${money(due)} left', style: t.bodyMedium),
+      ]),
+      content: SizedBox(
+        width: 480,
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          SegmentedButton<bool>(
+            segments: const [
+              ButtonSegment(value: true, icon: Icon(Icons.checklist_rounded), label: Text('By item')),
+              ButtonSegment(value: false, icon: Icon(Icons.pie_chart_outline_rounded), label: Text('Equally')),
+            ],
+            selected: {_byItem},
+            onSelectionChanged: (v) => setState(() => _byItem = v.first),
+          ),
+          const SizedBox(height: 12),
+          if (_byItem)
+            Flexible(
+              child: ListView(shrinkWrap: true, children: [
+                for (final l in _open)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Checkbox(
+                      value: (_picked[l.id] ?? 0) > 0,
+                      onChanged: (v) => setState(() => v == true ? _picked[l.id] = l.unpaidQuantity : _picked.remove(l.id)),
+                    ),
+                    title: Text(l.product.name),
+                    subtitle: Text('${money(l.unitMinor)} each'),
+                    trailing: l.unpaidQuantity > 1
+                        ? Row(mainAxisSize: MainAxisSize.min, children: [
+                            IconButton(
+                              onPressed: (_picked[l.id] ?? 0) > 0 ? () => setState(() => _picked[l.id] = _picked[l.id]! - 1) : null,
+                              icon: const Icon(Icons.remove_circle_outline),
+                            ),
+                            Text('${_picked[l.id] ?? 0}/${l.unpaidQuantity}'),
+                            IconButton(
+                              onPressed: (_picked[l.id] ?? 0) < l.unpaidQuantity ? () => setState(() => _picked[l.id] = (_picked[l.id] ?? 0) + 1) : null,
+                              icon: const Icon(Icons.add_circle_outline),
+                            ),
+                          ])
+                        : Text(money(l.unitMinor)),
+                  ),
+              ]),
+            )
+          else
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              for (var n = 2; n <= 10; n++) ChoiceChip(label: Text('$n ways'), selected: _ways == n, onSelected: (_) => setState(() => _ways = n)),
+            ]),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(color: context.goRaised, borderRadius: BorderRadius.circular(12)),
+            child: Row(children: [
+              Expanded(child: Text(_byItem ? 'This person pays' : 'Each pays', style: t.bodyMedium)),
+              Text(_byItem ? money(_itemsTotal) : share.map(money).toSet().join(' or '),
+                  style: t.titleMedium?.copyWith(fontWeight: FontWeight.w800, fontFeatures: Tp.tabular)),
+            ]),
+          ),
+        ]),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        FilledButton(
+          onPressed: _byItem && _itemsTotal <= 0
+              ? null
+              : () => Navigator.pop(context, _byItem ? (_itemsTotal.clamp(1, due), Map<String, int>.of(_picked)) : (share.first, const <String, int>{})),
+          child: const Text('Done'),
+        ),
+      ],
     );
   }
 }

@@ -133,7 +133,7 @@ class KeyActions {
   final bool payEnabled;
   final String? payLabel;
 
-  Widget key(ScreenButton b, {double fontScale = 1, bool bar = false, bool compact = false, VoidCallback? onDone}) {
+  Widget key(ScreenButton b, {double fontScale = 1, bool bar = false, bool compact = false, bool inline = false, VoidCallback? onDone}) {
     final product = b.pluId == null ? null : productsByPlu[b.pluId];
     return _Key(
       button: b,
@@ -144,6 +144,7 @@ class KeyActions {
       fontScale: fontScale,
       bar: bar,
       compact: compact,
+      inline: inline,
       onDone: onDone,
     );
   }
@@ -257,7 +258,10 @@ class ProgrammedGrid extends StatelessWidget {
 }
 
 class ProgrammedStrip extends StatefulWidget {
-  const ProgrammedStrip({super.key, required this.bar, required this.actions, this.minKey = 104, this.gap = 8});
+  const ProgrammedStrip({super.key, required this.bar, required this.actions, this.minKey = 104, this.gap = 8, this.inline = false});
+
+  /// Slim keys, icon beside the name (the top bar).
+  final bool inline;
 
   final TillScreen bar;
   final KeyActions actions;
@@ -356,7 +360,7 @@ class _ProgrammedStripState extends State<ProgrammedStrip> with SingleTickerProv
   Widget _row(List<ScreenButton> keys, double unit, {required bool compact}) => Row(children: [
         for (var i = 0; i < keys.length; i++) ...[
           if (i > 0) SizedBox(width: widget.gap),
-          SizedBox(width: unit * keys[i].colSpan, child: widget.actions.key(keys[i], fontScale: compact ? 0.9 : 0.95, bar: true, compact: compact)),
+          SizedBox(width: unit * keys[i].colSpan, child: widget.actions.key(keys[i], fontScale: compact ? 0.9 : 0.95, bar: true, compact: compact, inline: widget.inline)),
         ],
       ]);
 
@@ -433,11 +437,15 @@ class _Key extends StatelessWidget {
     this.fontScale = 1,
     this.bar = false,
     this.compact = false,
+    this.inline = false,
     this.onDone,
   });
 
   /// Narrow: a smaller icon and name, one line.
   final bool compact;
+
+  /// A slim top-bar key: the icon beside the name, one line.
+  final bool inline;
 
   /// After the key has done its work (an overflow row closes itself).
   final VoidCallback? onDone;
@@ -531,7 +539,15 @@ class _Key extends StatelessWidget {
             onLongPress: onLong,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-              child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+              child: inline
+                  ? Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                      if (icon != null) ...[Icon(icon, size: 18, color: colour), const SizedBox(width: 6)],
+                      Flexible(
+                        child: FitText(label, maxLines: 1, minSize: 9,
+                            style: TextStyle(fontSize: 13 * fontScale, fontWeight: FontWeight.w700, color: colour)),
+                      ),
+                    ])
+                  : Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                 if (icon != null) Icon(icon, size: compact ? 18 : 20, color: colour),
                 if (icon != null) SizedBox(height: compact ? 2 : 3),
                 Flexible(

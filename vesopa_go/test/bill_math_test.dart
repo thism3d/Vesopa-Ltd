@@ -45,7 +45,7 @@ void main() {
   });
 
   group('members and vouchers', () {
-    const jo = Member(id: 9, name: 'Jo', discountType: 'percent', discountValue: 10, earns: true, pointsPerPound: 2, minSpendMinor: 500);
+    const jo = Member(id: '9', name: 'Jo', discountType: 'percent', discountValue: 10, earns: true, pointsPerPound: 2, minSpendMinor: 500);
 
     test('the discount comes off first, the service charge is on what is left', () {
       final b = _bill().copyWith(member: jo, voucherCode: 'SAVE5', voucherMinor: 500, serviceChargePercent: 12.5);

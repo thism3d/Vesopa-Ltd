@@ -23,6 +23,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart' show WidgetsBinding;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -35,7 +36,7 @@ import 'go_options.dart';
 import 'mix_match_types.dart';
 import 'lan/lan_link.dart' show LanMessage;
 import 'lan/lan_service.dart';
-import '../config/constants.dart' show apiBase;
+import '../config/constants.dart' show apiBase, goAppVersion;
 import 'screen_set.dart';
 
 export 'go_options.dart';
@@ -157,7 +158,10 @@ class TapConfig {
 
   factory TapConfig.fromJson(Map<String, dynamic> j) {
     final till = j['till'] is Map ? Map<String, dynamic>.from(j['till'] as Map) : const <String, dynamic>{};
-    final idle = '${till['idle_image_url'] ?? ''}'.trim();
+    // This device's own screen saver (back office, Vesopa Go > Screens),
+    // else the venue's idle picture.
+    final own = '${j['device_idle'] ?? ''}'.trim();
+    final idle = own.isNotEmpty ? own : '${till['idle_image_url'] ?? ''}'.trim();
     List<double> nums(Object? v, List<double> d) =>
         v is List ? [for (final n in v) (n as num).toDouble()] : d;
     return TapConfig(
@@ -373,6 +377,24 @@ class TapSession extends Notifier<TapState> {
 
   String get deviceId => _deviceId;
 
+  /// What the back office lists for this device: its screen in points and
+  /// pixels as it lays out now, its kind, and the app's version.
+  Map<String, Object?> _deviceReport() {
+    final view = WidgetsBinding.instance.platformDispatcher.views.first;
+    final ratio = view.devicePixelRatio;
+    final size = view.physicalSize / ratio;
+    return {
+      'device_id': 'go-$_deviceId',
+      'name': terminalName,
+      'platform': defaultTargetPlatform == TargetPlatform.iOS ? 'ios' : 'android',
+      'form': size.shortestSide >= 600 ? 'tablet' : 'phone',
+      'width_pt': size.width.round(),
+      'height_pt': size.height.round(),
+      'pixel_ratio': double.parse(ratio.toStringAsFixed(2)),
+      'app_version': goAppVersion,
+    };
+  }
+
   @override
   TapState build() {
     ref.onDispose(_stopTimers);
@@ -490,6 +512,7 @@ class TapSession extends Notifier<TapState> {
         api.teyaConfig().catchError((Object _) => <String, dynamic>{}),
         api.modules().catchError((Object _) => <String, dynamic>{}),
         api.cashNotes().catchError((Object _) => <dynamic>[]),
+        api.reportDevice(_deviceReport()).catchError((Object _) => null),
       ]);
       final raw = {
         'staff': [for (final c in results[0] as List<Clerk>) {'id': c.id, 'name': c.name, 'pin': c.pin, 'swipe_card': c.card, 'permission_group': c.group, 'perms': c.permissions}],
@@ -498,7 +521,7 @@ class TapSession extends Notifier<TapState> {
         'modifiers': results[2],
         'screens': results[3],
         'floor': results[4],
-        'config': {...results[5] as Map<String, dynamic>, 'till': results[6], 'branding': results[7], 'photos': (results[8] as Map)['photos'], 'layouts': {'tablet': (results[9] as Map)['layouts'], 'phone': (results[10] as Map)['layouts']}, 'menu_photos': results[12], 'teya': results[13], 'modules': (results[14] as Map)['on'], 'notes': results[15]},
+        'config': {...results[5] as Map<String, dynamic>, 'till': results[6], 'branding': results[7], 'photos': (results[8] as Map)['photos'], 'layouts': {'tablet': (results[9] as Map)['layouts'], 'phone': (results[10] as Map)['layouts']}, 'menu_photos': results[12], 'teya': results[13], 'modules': (results[14] as Map)['on'], 'notes': results[15], 'device_idle': results[16]},
       };
       _apply(raw);
       state = state.copyWith(online: true);

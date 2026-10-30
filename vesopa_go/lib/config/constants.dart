@@ -23,3 +23,7 @@ const appName = 'Vesopa Go';
 /// UK contactless limit without a PIN. Above it the card asks for one
 /// (Tap to Pay on iPhone shows its own PIN pad).
 const contactlessLimitMinor = 10000;
+
+/// The app's version, as pubspec.yaml has it (kept in step with every bump),
+/// for the back office's device list.
+const goAppVersion = '1.2.16';

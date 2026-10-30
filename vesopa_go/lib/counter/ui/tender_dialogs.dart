@@ -348,3 +348,74 @@ Future<void> attachCustomer(BuildContext context, WidgetRef ref, String billId) 
     messenger.showSnackBar(SnackBar(content: Text(e.message)));
   }
 }
+
+/// The till's Points: the member's balance and what it is worth, taken
+/// towards the bill (up to what is due). Answers the pence taken.
+Future<int?> askPoints(BuildContext context, WidgetRef ref, {required Member member, required int dueMinor, required String billId}) =>
+    showDialog<int>(context: context, builder: (_) => _Points(member: member, dueMinor: dueMinor, billId: billId));
+
+class _Points extends ConsumerStatefulWidget {
+  const _Points({required this.member, required this.dueMinor, required this.billId});
+  final Member member;
+  final int dueMinor;
+  final String billId;
+  @override
+  ConsumerState<_Points> createState() => _PointsState();
+}
+
+class _PointsState extends ConsumerState<_Points> {
+  bool _busy = false;
+  String? _error;
+
+  int get _take => widget.member.balanceWorthMinor < widget.dueMinor ? widget.member.balanceWorthMinor : widget.dueMinor;
+
+  Future<void> _spend() async {
+    final m = widget.member;
+    if (_take <= 0 || m.pointValueMinor <= 0) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await ref.read(apiProvider).redeemPoints(m.id, points: _take / m.pointValueMinor, valueMinor: _take, orderId: widget.billId);
+      if (mounted) Navigator.pop(context, _take);
+    } on TapApiError catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final m = widget.member;
+    final pts = m.pointsBalance % 1 == 0 ? m.pointsBalance.toInt().toString() : m.pointsBalance.toStringAsFixed(2);
+    return AlertDialog(
+      scrollable: true,
+      title: const Text('Loyalty points'),
+      content: SizedBox(
+        width: 420,
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Text(m.name, style: t.titleMedium),
+          if (m.number.isNotEmpty) Text('Member ${m.number}', style: t.bodySmall),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(color: context.goRaised, borderRadius: BorderRadius.circular(12)),
+            child: Row(children: [
+              Expanded(child: Text('$pts points', style: t.bodyLarge)),
+              Text('worth ${money(m.balanceWorthMinor)}', style: t.titleMedium?.copyWith(fontWeight: FontWeight.w800, fontFeatures: Tp.tabular)),
+            ]),
+          ),
+          if (_busy) const Padding(padding: EdgeInsets.only(top: 12), child: LinearProgressIndicator()),
+          if (_error != null) Padding(padding: const EdgeInsets.only(top: 10), child: Text(_error!, style: t.bodyMedium?.copyWith(color: Tp.danger))),
+        ]),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        FilledButton(onPressed: _busy || _take <= 0 ? null : _spend, child: Text(_take <= 0 ? 'No points to spend' : 'Take ${money(_take)}')),
+      ],
+    );
+  }
+}

@@ -380,11 +380,16 @@ class _SellPageState extends ConsumerState<SellPage> {
       ),
     );
     final arrange = config.go.allowRearrange && (s.clerk?.can(TillPermission.isManager) ?? false);
-    Widget bar(TillScreen? b) => b == null || !barHasKeys(b)
+    // The top bar slim, its keys' icons beside their names (the owner,
+    // 2026-10-30); the bottom bar full height, where the thumb works.
+    Widget bar(TillScreen? b, {bool slim = false}) => b == null || !barHasKeys(b)
         ? const SizedBox.shrink()
         : Padding(
             padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
-            child: SizedBox(height: phone ? 56 : 64, child: ProgrammedStrip(bar: b, actions: actions, minKey: phone ? 92 : 104)),
+            child: SizedBox(
+              height: slim ? 44 : (phone ? 56 : 64),
+              child: ProgrammedStrip(bar: b, actions: actions, minKey: phone ? 92 : 104, inline: slim),
+            ),
           );
     final open = _openBills(s, saleId);
     final heading = Padding(
@@ -411,7 +416,7 @@ class _SellPageState extends ConsumerState<SellPage> {
     );
     if (phone) {
       return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        bar(top),
+        bar(top, slim: true),
         heading,
         Expanded(child: Padding(padding: const EdgeInsets.fromLTRB(8, 6, 8, 0), child: grid)),
         bar(bottom),
@@ -421,7 +426,7 @@ class _SellPageState extends ConsumerState<SellPage> {
     }
     final scheme = Theme.of(context).colorScheme;
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      bar(top),
+      bar(top, slim: true),
       Expanded(
         child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           // The sale on the left, as on the till.

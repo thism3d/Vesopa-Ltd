@@ -447,8 +447,11 @@ class Member {
     this.pointsPerPound = 0,
     this.minSpendMinor = 0,
     this.multiplier = 1,
+    this.pointValueMinor = 1,
   });
-  final int id;
+  /// The customer's id (epos_customers.id, a UUID): what points and the sale
+  /// are filed against.
+  final String id;
   final String name;
   final String number;
   final double pointsBalance;
@@ -460,6 +463,12 @@ class Member {
   final double pointsPerPound;
   final int minSpendMinor;
   final double multiplier;
+
+  /// What one point is worth in pence when spent (the scheme's setting).
+  final int pointValueMinor;
+
+  /// What the whole balance is worth, as the till rounds it (down).
+  int get balanceWorthMinor => (pointsBalance * pointValueMinor).floor();
 
   int discountOn(int subtotalMinor) => switch (discountType) {
         'percent' => (subtotalMinor * discountValue / 100).round(),
@@ -481,7 +490,7 @@ class Member {
     final last = '${j['last_name'] ?? ''}'.trim();
     final name = '${j['name'] ?? '$first $last'}'.trim();
     return Member(
-      id: (j['id'] as num).toInt(),
+      id: '${j['id']}',
       name: name.isEmpty ? 'Member' : name,
       number: '${j['member_number'] ?? j['card_number'] ?? ''}',
       pointsBalance: _d(j['points_balance'], 0),
@@ -491,6 +500,7 @@ class Member {
       pointsPerPound: _d(s['points_per_pound'], 0),
       minSpendMinor: (s['min_spend_minor'] as num?)?.toInt() ?? 0,
       multiplier: _d(j['tier_multiplier'], 1),
+      pointValueMinor: _d(s['point_value_minor'], 1).round().clamp(0, 100000),
     );
   }
 }

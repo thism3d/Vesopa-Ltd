@@ -855,6 +855,58 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
     } catch (e) { send(res, e, next); }
   });
 
+  // ---- Go's devices (owner, 2026-10-30): screens and a screen saver each ------
+
+  /** A Go device reporting itself; answers its own screen saver picture, if any. */
+  router.post('/api/tap/device', terminal, express.json(), async (req, res, next) => {
+    try {
+      const b = req.body || {};
+      const id = String(b.device_id || '').trim().slice(0, 80);
+      if (!id) return res.status(400).json({ error: 'device_id is required' });
+      const int = (v) => (Number.isFinite(Number(v)) ? Math.round(Number(v)) : null);
+      const str = (v, n) => (v == null ? null : String(v).slice(0, n));
+      try {
+        await pool.query(
+          `INSERT INTO epos_go_devices (office, device_id, name, platform, form, width_pt, height_pt, pixel_ratio, app_version, last_seen_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP())
+           ON DUPLICATE KEY UPDATE name = VALUES(name), platform = VALUES(platform), form = VALUES(form),
+             width_pt = VALUES(width_pt), height_pt = VALUES(height_pt), pixel_ratio = VALUES(pixel_ratio),
+             app_version = VALUES(app_version), last_seen_at = UTC_TIMESTAMP()`,
+          [req.office, id, str(b.name, 120), str(b.platform, 20), str(b.form, 10), int(b.width_pt), int(b.height_pt),
+            Number.isFinite(Number(b.pixel_ratio)) ? Number(b.pixel_ratio) : null, str(b.app_version, 20)]);
+        const [[row]] = await pool.query('SELECT idle_image_url FROM epos_go_devices WHERE office = ? AND device_id = ?', [req.office, id]);
+        res.json({ idle_image_url: (row && row.idle_image_url) || null });
+      } catch (e) {
+        if (e.code === 'ER_NO_SUCH_TABLE') return res.json({ idle_image_url: null });
+        throw e;
+      }
+    } catch (e) { send(res, e, next); }
+  });
+
+  /** The venue's Go devices for the back office, newest first. */
+  router.get('/api/tap/devices', guard('commerce.tender'), async (req, res, next) => {
+    try {
+      const office = await officeOf(req);
+      const [rows] = await pool.query(
+        'SELECT * FROM epos_go_devices WHERE office = ? ORDER BY last_seen_at DESC', [office])
+        .catch((e) => (e.code === 'ER_NO_SUCH_TABLE' ? [[]] : Promise.reject(e)));
+      res.json({ devices: rows });
+    } catch (e) { send(res, e, next); }
+  });
+
+  /** One device's own screen saver picture; null goes back to the venue's. */
+  router.put('/api/tap/devices/:id/idle', guard('commerce.edit'), express.json(), async (req, res, next) => {
+    try {
+      const office = await officeOf(req);
+      const url = (req.body || {}).idle_image_url;
+      const clean = url == null || url === '' ? null : String(url).trim();
+      if (clean && !/^(\/uploads\/|https:\/\/)[^\s"'<>]{1,480}$/.test(clean)) return res.status(400).json({ error: 'That is not a picture address.' });
+      const [r] = await pool.query('UPDATE epos_go_devices SET idle_image_url = ? WHERE office = ? AND device_id = ?', [clean, office, req.params.id]);
+      if (!r.affectedRows) return res.status(404).json({ error: 'No such device.' });
+      res.json({ ok: true, idle_image_url: clean });
+    } catch (e) { send(res, e, next); }
+  });
+
   /** Card payments taken on phones on one day (default today), newest first. */
   router.get('/api/tap/payments', guard('commerce.tender'), async (req, res, next) => {
     try {

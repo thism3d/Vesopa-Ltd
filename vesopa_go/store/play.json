@@ -7,7 +7,7 @@
   "contact_email": "info@vesopasoftware.com",
   "contact_website": "https://go.vesopa.com/",
   "track": "internal",
-  "release_notes": "Vesopa Go 1.2.15: the venue's own lettering and logo, a quick brightness button with a slider on the idle screen, a smoother start animation, and the till's payment dialogs (gift card, deposit, discount, gratuity, attach customer).",
+  "release_notes": "Vesopa Go 1.2.16: loyalty points and split by item on the payment page, each bill's payments and today's refunds under Bills, every card in one Cards page, a slimmer top bar, a screen saver for each device from the back office, and the idle picture centred on its own colour.",
   "images": {
     "icon": [
       "play-icon-512.png"

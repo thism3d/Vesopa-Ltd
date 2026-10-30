@@ -288,6 +288,21 @@ class TapApi {
     return (r['applied_minor'] as num?)?.toInt() ?? (r['redeemed_minor'] as num?)?.toInt() ?? amountMinor;
   }
 
+  /// Spends a member's points (fractional, so it can clear an exact price),
+  /// as the till's points route does; answers the balance left.
+  Future<double> redeemPoints(String customerId, {required double points, required int valueMinor, String? orderId}) async {
+    final r = await _send('POST', '/api/loyalty/points', {
+      'office': office,
+      'customer_id': customerId,
+      'kind': 'redeem',
+      'points': double.parse(points.toStringAsFixed(5)),
+      'value_minor': valueMinor,
+      'order_id': ?orderId,
+    });
+    final b = r['points_balance'];
+    return b is num ? b.toDouble() : double.tryParse('${b ?? ''}') ?? 0;
+  }
+
   Future<Map<String, dynamic>> deposit(String reference) =>
       _send('GET', '/api/deposits/lookup?office=$_o&reference=${Uri.encodeQueryComponent(reference)}');
 
@@ -301,6 +316,11 @@ class TapApi {
     });
     return (r['applied_minor'] as num?)?.toInt() ?? amountMinor;
   }
+
+  /// This device's screen and kind, for the back office's device list;
+  /// answers the screen saver picture chosen for this device, if any.
+  Future<String?> reportDevice(Map<String, Object?> device) async =>
+      (await _send('POST', '/api/tap/device', device))['idle_image_url'] as String?;
 
   /// Today across the venue: every till and device (vesopa_server tap.js).
   Future<Map<String, dynamic>> today() => _send('GET', '/api/tap/today');

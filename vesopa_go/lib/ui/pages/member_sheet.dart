@@ -37,7 +37,7 @@ class _MemberSheetState extends ConsumerState<MemberSheet> {
     });
     try {
       final m = ref.read(tapProvider).demo
-          ? Member(id: 9, name: 'Jo Member', number: n, pointsBalance: 120, discountType: 'percent', discountValue: 10, earns: true, pointsPerPound: 1)
+          ? Member(id: 'demo-9', name: 'Jo Member', number: n, pointsBalance: 120, discountType: 'percent', discountValue: 10, earns: true, pointsPerPound: 1)
           : await ref.read(apiProvider).member(n);
       HapticFeedback.mediumImpact();
       setState(() => _found = m);

@@ -132,7 +132,7 @@ class _CustomersPageState extends ConsumerState<CustomersPage> {
     final billId = widget.billId ?? ref.read(currentSaleProvider.notifier).ensure();
     try {
       final member = ref.read(tapProvider).demo
-          ? Member(id: 1, name: c.name, number: number, pointsBalance: c.points.toDouble())
+          ? Member(id: c.id, name: c.name, number: number, pointsBalance: c.points.toDouble())
           : await ref.read(apiProvider).member(number);
       ref.read(tapProvider.notifier).setMember(billId, member);
       if (mounted) {

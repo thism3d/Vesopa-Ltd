@@ -11782,6 +11782,7 @@ async function loadTap() {
         <td>${p.released_at ? '<span class="pill">Signed out</span>' : '<span class="pill green">In use</span>'}</td>
       </tr>`).join('')}</tbody></table>`
     : '<p class="muted small">No phones yet.</p>';
+  renderGoDevices();
   const states = { paid: 'green', waiting: 'amber', failed: 'danger', cancelled: '', refunded: '' };
   $('tap-payments').innerHTML = pays.payments.length
     ? `<table class="data"><thead><tr><th>Time</th><th>Bill</th><th>Clerk</th><th>Amount</th><th>Tip</th><th></th></tr></thead><tbody>${
@@ -11793,6 +11794,80 @@ async function loadTap() {
       </tr>`).join('')}</tbody></table>`
     : '<p class="muted small">No card payments on phones on this day.</p>';
 }
+
+// ---- Vesopa Go's devices: their screens, and a screen saver each -------------
+
+let goDeviceFor = null;
+
+async function renderGoDevices() {
+  const box = $('go-devices');
+  if (!box) return;
+  const { devices } = await api('/tap/devices').catch(() => ({ devices: [] }));
+  if (!devices.length) {
+    box.innerHTML = '<p class="muted small">No Vesopa Go device has reported its screen yet. It does on its next sync.</p>';
+    return;
+  }
+  const screen = (d) => {
+    if (!d.width_pt || !d.height_pt) return '';
+    const r = Number(d.pixel_ratio) || 1;
+    return `${d.width_pt} × ${d.height_pt} pt<br><span class="muted small">${Math.round(d.width_pt * r)} × ${Math.round(d.height_pt * r)} px</span>`;
+  };
+  const kind = (d) => `${d.platform === 'ios' ? (d.form === 'tablet' ? 'iPad' : 'iPhone') : (d.form === 'tablet' ? 'Android tablet' : 'Android phone')}`;
+  box.innerHTML = `<table class="data"><thead><tr><th>Device</th><th>Screen</th><th>Version</th><th>Last seen</th><th>Screen saver</th><th></th></tr></thead><tbody>${
+    devices.map((d) => `<tr>
+      <td><b>${esc(d.name || d.device_id)}</b><br><span class="muted small">${esc(kind(d))}</span></td>
+      <td>${screen(d)}</td>
+      <td>${esc(d.app_version || '')}</td>
+      <td>${d.last_seen_at ? esc(new Date(d.last_seen_at).toLocaleString('en-GB')) : ''}</td>
+      <td>${d.idle_image_url
+        ? `<img src="${esc(d.idle_image_url)}" alt="" style="width:96px;height:54px;object-fit:cover;border-radius:6px">`
+        : '<span class="muted small">The venue’s idle picture</span>'}</td>
+      <td style="white-space:nowrap">
+        <button class="btn small" data-go-device-pick="${esc(d.device_id)}">Choose picture</button>
+        ${d.idle_image_url ? `<button class="btn small ghost" data-go-device-clear="${esc(d.device_id)}">Use the venue's</button>` : ''}
+      </td>
+    </tr>`).join('')}</tbody></table>`;
+}
+
+async function setGoDeviceIdle(id, url) {
+  await api(`/tap/devices/${encodeURIComponent(id)}/idle`, { method: 'PUT', body: JSON.stringify({ idle_image_url: url }) });
+  toast(url ? 'Screen saver set for this device.' : 'Back to the venue’s idle picture.');
+  renderGoDevices();
+}
+
+document.addEventListener('click', (e) => {
+  const pick = e.target.closest?.('[data-go-device-pick]');
+  if (pick) {
+    goDeviceFor = pick.dataset.goDevicePick;
+    $('go-device-image').click();
+    return;
+  }
+  const clear = e.target.closest?.('[data-go-device-clear]');
+  if (clear) setGoDeviceIdle(clear.dataset.goDeviceClear, null).catch((err) => toast(err.message, 'error'));
+});
+
+document.addEventListener('change', async (e) => {
+  if (e.target.id !== 'go-device-image' || !goDeviceFor) return;
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  const body = new FormData();
+  body.append('image', file);
+  try {
+    // The till settings' picture upload, which answers the picture's address.
+    const res = await fetch('/api/till-settings/idle-image', {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body,
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Upload failed');
+    const { url } = await res.json();
+    await setGoDeviceIdle(goDeviceFor, url);
+  } catch (err) {
+    toast(err.message, 'error');
+  } finally {
+    e.target.value = '';
+  }
+});
 
 document.addEventListener('DOMContentLoaded', () => {
   $('tap-date')?.addEventListener('change', () => loadTap());

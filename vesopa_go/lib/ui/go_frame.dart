@@ -383,8 +383,9 @@ class _IdleScreenState extends ConsumerState<IdleScreen> with SingleTickerProvid
       onTap: widget.onWake,
       child: Stack(fit: StackFit.expand, children: [
         const ColoredBox(color: Tp.inkDeep),
-        if (image != null)
-          CachedNetworkImage(imageUrl: image, fit: BoxFit.cover, fadeInDuration: const Duration(milliseconds: 600), errorWidget: (_, _, _) => const SizedBox.shrink()),
+        // The whole picture in the middle, the rest of the screen in its own
+        // background colour (Android, 2026-10-30: it was cropped off-centre).
+        if (image != null) _Wallpaper(url: image),
         // Keeps the words readable on any picture.
         const DecoratedBox(
           decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0x66000000), Color(0x00000000), Color(0xB3000000)])),
@@ -518,6 +519,64 @@ class _BrightnessState extends State<_Brightness> {
                 ),
             ]),
           ),
+        ),
+      );
+}
+
+/// The idle picture fitted whole and centred, on its own edge colour, so a
+/// picture of any shape fills any screen without being cropped.
+class _Wallpaper extends StatefulWidget {
+  const _Wallpaper({required this.url});
+  final String url;
+  @override
+  State<_Wallpaper> createState() => _WallpaperState();
+}
+
+class _WallpaperState extends State<_Wallpaper> {
+  static final _edges = <String, Color>{};
+  Color? _edge;
+
+  @override
+  void initState() {
+    super.initState();
+    _edge = _edges[widget.url];
+    if (_edge == null) _read();
+  }
+
+  /// The average of the picture's four corners: its background, in practice.
+  Future<void> _read() async {
+    final stream = CachedNetworkImageProvider(widget.url).resolve(ImageConfiguration.empty);
+    late final ImageStreamListener listener;
+    listener = ImageStreamListener((info, _) async {
+      stream.removeListener(listener);
+      final img = info.image;
+      final data = await img.toByteData();
+      if (data == null || !mounted) return;
+      int r = 0, g = 0, b = 0;
+      final w = img.width, h = img.height;
+      for (final (x, y) in [(2, 2), (w - 3, 2), (2, h - 3), (w - 3, h - 3)]) {
+        final i = (y.clamp(0, h - 1) * w + x.clamp(0, w - 1)) * 4;
+        r += data.getUint8(i);
+        g += data.getUint8(i + 1);
+        b += data.getUint8(i + 2);
+      }
+      final c = Color.fromARGB(255, r ~/ 4, g ~/ 4, b ~/ 4);
+      _edges[widget.url] = c;
+      if (mounted) setState(() => _edge = c);
+    }, onError: (_, _) => stream.removeListener(listener));
+    stream.addListener(listener);
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedContainer(
+        duration: const Duration(milliseconds: 400),
+        color: _edge ?? Tp.inkDeep,
+        child: CachedNetworkImage(
+          imageUrl: widget.url,
+          fit: BoxFit.contain,
+          alignment: Alignment.center,
+          fadeInDuration: const Duration(milliseconds: 600),
+          errorWidget: (_, _, _) => const SizedBox.shrink(),
         ),
       );
 }

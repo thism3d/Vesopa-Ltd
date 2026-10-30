@@ -17,7 +17,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vesopa_go/data/models.dart';
 import 'package:vesopa_go/data/session.dart';
 import 'package:vesopa_go/ui/pages/bill.dart';
-import 'package:vesopa_go/ui/pages/more.dart';
 import 'package:vesopa_go/ui/pages/tables.dart';
 import 'package:vesopa_go/ui/clerk_chip.dart';
 import 'package:vesopa_go/payments/payment_service.dart';
@@ -25,7 +24,7 @@ import 'package:vesopa_go/ui/appearance.dart';
 import 'package:vesopa_go/ui/device_prefs.dart';
 import 'package:vesopa_go/ui/go_frame.dart';
 import 'package:vesopa_go/ui/theme.dart';
-import 'package:vesopa_go/ui/pages/card_machine_page.dart';
+import 'package:vesopa_go/ui/pages/cards_page.dart';
 import 'package:vesopa_go/ui/pages/customers_page.dart';
 import 'package:vesopa_go/ui/pages/module_gates.dart';
 import 'package:vesopa_go/ui/product_photo.dart';
@@ -81,8 +80,8 @@ class _ShellState extends ConsumerState<Shell> {
           (Icons.confirmation_number_rounded, 'Events & tickets', () => const EventsGate()),
         (Icons.receipt_long_rounded, 'Sales', () => const SalesPage()),
         (Icons.insights_rounded, 'Reports', () => const ReportsPage()),
-        (Icons.credit_card_rounded, 'Card payments', () => const MorePage()),
-        (Icons.point_of_sale_rounded, 'Card machine', () => const CardMachinePage()),
+        // Every card in one place: payment, staff, membership, gift.
+        (Icons.credit_card_rounded, 'Cards', () => const CardsPage()),
         (Icons.settings_rounded, 'Settings', () => const SettingsPage()),
       ];
 

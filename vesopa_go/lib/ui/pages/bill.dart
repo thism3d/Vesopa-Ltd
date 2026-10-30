@@ -4,6 +4,8 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../counter/ui/sales_page.dart';
+
 import '../../data/bill_math.dart';
 import '../../data/models.dart';
 import '../../data/session.dart';
@@ -15,27 +17,64 @@ import 'pay_sheet.dart';
 class BillsPage extends ConsumerWidget {
   const BillsPage({super.key});
 
+  /// How a bill has been paid so far: "card £10.00 · cash £5.00".
+  static String paidSoFar(Bill b) {
+    final by = <String, int>{};
+    for (final t in b.tenders) {
+      final kind = switch (t.kind) {
+        'cash' => 'cash',
+        'giftcard' => 'gift card',
+        'deposit' => 'deposit',
+        'points' => 'points',
+        _ => (t.reference ?? '').startsWith('teya:') ? 'card (Teya)' : 'card',
+      };
+      by[kind] = (by[kind] ?? 0) + t.amountMinor;
+    }
+    return [for (final e in by.entries) '${e.key} ${money(e.value)}'].join(' · ');
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final bills = ref.watch(tapProvider.select((s) => s.bills.values.toList()));
     final t = Theme.of(context).textTheme;
-    if (bills.isEmpty) return Center(child: Text('No open bills', style: t.bodyLarge));
-    return ListView.separated(
-      padding: const EdgeInsets.all(16),
-      itemCount: bills.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 10),
-      itemBuilder: (_, i) {
-        final b = bills[i];
-        return Card(
-          child: ListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-            title: Text(b.name, style: t.titleMedium),
-            subtitle: Text('${b.lines.length} items · ${b.clerk}${b.heldBy != null ? ' · on ${b.heldBy}' : ''}'),
-            trailing: Money(b.dueMinor, style: t.titleMedium),
-            onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => BillPage(billId: b.id))),
-          ),
-        );
-      },
+    // Open bills, and today's paid ones with their payments and refunds
+    // (the owner, 2026-10-30: "where are the payments and the refunds").
+    return DefaultTabController(
+      length: 2,
+      child: Column(children: [
+        const TabBar(tabs: [Tab(text: 'Open'), Tab(text: 'Paid today')]),
+        Expanded(
+          child: TabBarView(children: [
+            if (bills.isEmpty)
+              Center(child: Text('No open bills', style: t.bodyLarge))
+            else
+              ListView.separated(
+                padding: const EdgeInsets.all(16),
+                itemCount: bills.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 10),
+                itemBuilder: (_, i) {
+                  final b = bills[i];
+                  return Card(
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                      title: Text(b.name, style: t.titleMedium),
+                      subtitle: Text([
+                        '${b.lines.length} items · ${b.clerk}${b.heldBy != null ? ' · on ${b.heldBy}' : ''}',
+                        if (b.tenders.isNotEmpty) 'Paid so far: ${paidSoFar(b)}',
+                      ].join('\n')),
+                      isThreeLine: b.tenders.isNotEmpty,
+                      trailing: Money(b.dueMinor, style: t.titleMedium),
+                      onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => BillPage(billId: b.id))),
+                    ),
+                  );
+                },
+              ),
+            // Each receipt with how it was paid, and its refund: back to the
+            // card through Dojo or Teya, or cash from the drawer.
+            const SalesPage(),
+          ]),
+        ),
+      ]),
     );
   }
 }

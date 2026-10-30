@@ -41,3 +41,23 @@ CREATE TABLE IF NOT EXISTS epos_tap_settings (
   updated_by        VARCHAR(255) NULL,
   updated_at        TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Every Vesopa Go device, as it last reported itself (POST /api/tap/device):
+-- its screen in points and pixels, its kind and version, so the back office
+-- can show which screens a venue's layouts are drawn on; and the screen
+-- saver picture chosen for it alone (empty: the venue's idle picture).
+CREATE TABLE IF NOT EXISTS epos_go_devices (
+  office         VARCHAR(190) NOT NULL,
+  device_id      VARCHAR(80)  NOT NULL,
+  name           VARCHAR(120) NULL,
+  platform       VARCHAR(20)  NULL,               -- ios | android
+  form           VARCHAR(10)  NULL,               -- phone | tablet
+  width_pt       INT          NULL,               -- logical points, as laid out
+  height_pt      INT          NULL,
+  pixel_ratio    DECIMAL(4,2) NULL,
+  app_version    VARCHAR(20)  NULL,
+  idle_image_url VARCHAR(500) NULL,
+  first_seen_at  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  last_seen_at   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (office, device_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
