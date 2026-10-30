@@ -60,47 +60,21 @@ class SettingsPage extends ConsumerWidget {
         const SizedBox(height: 24),
 
         const _SectionTitle('Appearance'),
+        // One row of three, icon and name, as the owner drew it (2026-10-30):
+        // the choice is plain from the icon, so no line under each.
         Card(
           margin: EdgeInsets.zero,
-          child: RadioGroup<ThemeMode>(
-            groupValue: mode,
-            onChanged: (value) {
-              if (value != null) {
-                ref.read(themeControllerProvider.notifier).set(value);
-              }
-            },
-            child: Column(
-              children: [
-                for (final option in const [
-                  (
-                    ThemeMode.light,
-                    'Day',
-                    Icons.light_mode,
-                    'Bright rooms and daylight',
-                  ),
-                  (
-                    ThemeMode.dark,
-                    'Night',
-                    Icons.dark_mode,
-                    'Dim bars and evening service',
-                  ),
-                  (
-                    ThemeMode.system,
-                    'System',
-                    Icons.brightness_auto,
-                    'Follow the device setting',
-                  ),
-                ])
-                  RadioListTile<ThemeMode>(
-                    value: option.$1,
-                    secondary: Icon(option.$3, color: Pos.brandDeep),
-                    title: Text(option.$2),
-                    subtitle: Text(
-                      option.$4,
-                      style: const TextStyle(fontSize: 12.5),
-                    ),
-                  ),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: SegmentedButton<ThemeMode>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment(value: ThemeMode.light, icon: Icon(Icons.light_mode), label: Text('Day')),
+                ButtonSegment(value: ThemeMode.dark, icon: Icon(Icons.dark_mode), label: Text('Night')),
+                ButtonSegment(value: ThemeMode.system, icon: Icon(Icons.brightness_auto), label: Text('System')),
               ],
+              selected: {mode},
+              onSelectionChanged: (v) => ref.read(themeControllerProvider.notifier).set(v.first),
             ),
           ),
         ),
@@ -112,44 +86,36 @@ class SettingsPage extends ConsumerWidget {
         const _SectionTitle('Side menu'),
         Card(
           margin: EdgeInsets.zero,
-          child: RadioGroup<NavPanelMode>(
-            groupValue: navMode,
-            onChanged: (value) {
-              if (value != null) {
-                ref.read(navPanelControllerProvider.notifier).set(value);
-              }
-            },
-            child: Column(
-              children: [
-                for (final option in NavPanelMode.values)
-                  RadioListTile<NavPanelMode>(
-                    value: option,
-                    secondary: Icon(switch (option) {
-                      NavPanelMode.auto => Icons.auto_awesome_mosaic,
-                      NavPanelMode.fixed => Icons.view_sidebar,
-                      NavPanelMode.hidden => Icons.menu_open,
-                    }, color: Pos.brandDeep),
-                    title: Text(option.label),
-                    subtitle: Text(
-                      option.blurb,
-                      style: const TextStyle(fontSize: 12.5),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              SegmentedButton<NavPanelMode>(
+                showSelectedIcon: false,
+                segments: [
+                  for (final option in NavPanelMode.values)
+                    ButtonSegment(
+                      value: option,
+                      tooltip: option.blurb,
+                      icon: Icon(switch (option) {
+                        NavPanelMode.auto => Icons.auto_awesome_mosaic,
+                        NavPanelMode.fixed => Icons.view_sidebar,
+                        NavPanelMode.hidden => Icons.menu_open,
+                      }),
+                      label: Text(option.label),
                     ),
-                  ),
-                // Said here rather than left as a surprise: "Always show" on a
-                // phone still opens from the menu key, because 208px of
-                // navigation on a phone leaves no room to take a sale.
-                if (context.isPhone && navMode == NavPanelMode.fixed)
-                  const Padding(
-                    padding: EdgeInsets.fromLTRB(16, 0, 16, 14),
-                    child: Text(
-                      'This screen is too narrow to keep the menu on show, so '
-                      'it opens from the menu key here. It will stay on show '
-                      'on a tablet or a desktop till.',
-                      style: TextStyle(fontSize: 12.5),
-                    ),
-                  ),
-              ],
-            ),
+                ],
+                selected: {navMode},
+                onSelectionChanged: (v) => ref.read(navPanelControllerProvider.notifier).set(v.first),
+              ),
+              // Said here rather than left as a surprise: "Always show" on a
+              // phone still opens from the menu key, because 208px of
+              // navigation on a phone leaves no room to take a sale.
+              if (context.isPhone && navMode == NavPanelMode.fixed)
+                const Padding(
+                  padding: EdgeInsets.only(top: 10),
+                  child: Text('Too narrow to keep on show here: it opens from the menu key.', style: TextStyle(fontSize: 12.5)),
+                ),
+            ]),
           ),
         ),
 
@@ -2018,16 +1984,36 @@ class _IdleImageCard extends ConsumerWidget {
                   'That file is no longer there, so the back office picture is '
                       'being shown instead.\n$override',
                 // Non-null whenever hasOverride is true — that is what it tests.
-                (true, false, _) => override!,
-                (false, _, final url?) =>
-                  'Set for the whole venue in the back office.\n$url',
+                (true, false, _) => 'Chosen on this terminal.',
+                (false, _, _?) => 'Set for the whole venue in the back office.',
                 (false, _, null) =>
                   'No picture set, so the till shows the built-in Vesopa screen.',
               },
               style: const TextStyle(fontSize: 12.5),
             ),
-            isThreeLine: hasOverride || settings.idleImageUrl != null,
+            isThreeLine: hasOverride && missing,
           ),
+          // The picture itself, not its path (the owner, 2026-10-30).
+          if ((hasOverride && !missing) || settings.idleImageUrl != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: AspectRatio(
+                  aspectRatio: 16 / 9,
+                  child: hasOverride && !missing
+                      ? Image.file(File(override), fit: BoxFit.cover)
+                      : Image.network(
+                          _absolute(ref.read(apiBaseProvider), settings.idleImageUrl!),
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => const ColoredBox(
+                            color: Color(0x14000000),
+                            child: Center(child: Icon(Icons.broken_image_outlined)),
+                          ),
+                        ),
+                ),
+              ),
+            ),
           const Divider(height: 1),
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
@@ -2066,6 +2052,9 @@ class _IdleImageCard extends ConsumerWidget {
     );
   }
 }
+
+/// A picture's address as the back office sends it, made whole.
+String _absolute(String base, String url) => url.startsWith('http') ? url : '$base${url.startsWith('/') ? '' : '/'}$url';
 
 /// The lettering this venue's tills wear, changed from the counter.
 ///
