@@ -29,6 +29,7 @@ import 'ui/device_prefs.dart';
 import 'ui/go_frame.dart';
 import 'ui/sounds.dart';
 import 'ui/splash.dart';
+import 'ui/venue_font.dart';
 import 'ui/pages/setup.dart';
 import 'ui/theme.dart';
 
@@ -78,8 +79,9 @@ class GoApp extends ConsumerWidget {
       builder: (context, child) => GoSplash(child: phase == Phase.ready ? GoFrame(child: child!) : child!),
       title: appName,
       debugShowCheckedModeBanner: false,
-      theme: Tp.theme(Brightness.light),
-      darkTheme: Tp.theme(Brightness.dark),
+      // In the venue's lettering once it has loaded, as the till is.
+      theme: Tp.theme(Brightness.light, font: ref.watch(venueFontProvider).value),
+      darkTheme: Tp.theme(Brightness.dark, font: ref.watch(venueFontProvider).value),
       // Light, dark or the device's own (Settings, Appearance).
       themeMode: ref.watch(appearanceProvider),
       home: AnimatedSwitcher(

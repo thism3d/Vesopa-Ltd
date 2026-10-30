@@ -394,7 +394,19 @@ class _IdleScreenState extends ConsumerState<IdleScreen> with SingleTickerProvid
             padding: const EdgeInsets.all(32),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
-                const GoMark(size: 40),
+                // The venue's own logo (back office, Branding), as the till's
+                // idle screen; the Vesopa mark when there is none.
+                if (s.config.logoUrl case final logo?)
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 44, maxWidth: 160),
+                    child: CachedNetworkImage(
+                      imageUrl: logo.startsWith('http') ? logo : '$apiBase${logo.startsWith('/') ? '' : '/'}$logo',
+                      fit: BoxFit.contain,
+                      errorWidget: (_, _, _) => const GoMark(size: 40),
+                    ),
+                  )
+                else
+                  const GoMark(size: 40),
                 const SizedBox(width: 12),
                 Expanded(child: Text(s.venue?.name ?? appName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white))),
                 Text(time, style: const TextStyle(fontSize: 40, fontWeight: FontWeight.w800, color: Colors.white, fontFeatures: Tp.tabular)),
@@ -446,8 +458,9 @@ class _IdleScreenState extends ConsumerState<IdleScreen> with SingleTickerProvid
   }
 }
 
-/// Brightness, on the idle screen's corner: dimmer, brighter, and back to the
-/// device's own. Taps here do not wake the screen.
+/// Brightness, as one quick button in the idle screen's corner (owner,
+/// 2026-10-30, after iOS and Android's own): a tap opens a slider beside it,
+/// a tap on the button again puts it away. Taps here do not wake the screen.
 class _Brightness extends StatefulWidget {
   const _Brightness();
   @override
@@ -455,21 +468,22 @@ class _Brightness extends StatefulWidget {
 }
 
 class _BrightnessState extends State<_Brightness> {
-  double? _level;
+  bool _open = false;
+  double _level = 0.6;
 
-  Future<void> _step(double by) async {
-    try {
-      final now = _level ?? await ScreenBrightness.instance.application;
-      final next = (now + by).clamp(0.05, 1.0);
-      await ScreenBrightness.instance.setApplicationScreenBrightness(next);
-      setState(() => _level = next);
-    } catch (_) {}
+  Future<void> _toggle() async {
+    if (!_open) {
+      try {
+        _level = await ScreenBrightness.instance.application;
+      } catch (_) {}
+    }
+    if (mounted) setState(() => _open = !_open);
   }
 
-  Future<void> _reset() async {
+  Future<void> _set(double v) async {
+    setState(() => _level = v);
     try {
-      await ScreenBrightness.instance.resetApplicationScreenBrightness();
-      setState(() => _level = null);
+      await ScreenBrightness.instance.setApplicationScreenBrightness(v.clamp(0.05, 1.0));
     } catch (_) {}
   }
 
@@ -478,17 +492,30 @@ class _BrightnessState extends State<_Brightness> {
         borderRadius: BorderRadius.circular(999),
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-          child: Container(
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            width: _open ? 300 : 52,
+            height: 52,
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(999),
               border: Border.all(color: Colors.white.withValues(alpha: 0.25), width: 0.8),
             ),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              IconButton(color: Colors.white, onPressed: () => _step(-0.15), icon: const Icon(Icons.brightness_low_rounded)),
-              IconButton(color: Colors.white, onPressed: () => _step(0.15), icon: const Icon(Icons.brightness_high_rounded)),
-              if (_level != null)
-                IconButton(color: Colors.white, onPressed: _reset, icon: const Icon(Icons.brightness_auto_rounded)),
+            child: Row(children: [
+              IconButton(color: Colors.white, onPressed: _toggle, icon: Icon(_open ? Icons.close_rounded : Icons.brightness_6_rounded)),
+              if (_open)
+                Expanded(
+                  child: SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      activeTrackColor: Colors.white,
+                      inactiveTrackColor: Colors.white.withValues(alpha: 0.25),
+                      thumbColor: Colors.white,
+                      overlayColor: Colors.white.withValues(alpha: 0.12),
+                    ),
+                    child: Slider(value: _level.clamp(0.05, 1.0), min: 0.05, onChanged: _set),
+                  ),
+                ),
             ]),
           ),
         ),

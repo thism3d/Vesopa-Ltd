@@ -57,7 +57,8 @@ class Tp {
         TableState.paid => 'Paid',
       };
 
-  static ThemeData theme(Brightness b) {
+  /// [font]: the venue's lettering (venue_font.dart), else the device's own.
+  static ThemeData theme(Brightness b, {String? font}) {
     final dark = b == Brightness.dark;
     final scheme = ColorScheme.fromSeed(
       seedColor: lime,
@@ -70,7 +71,7 @@ class Tp {
       outlineVariant: dark ? inkLine : paperLine,
       error: danger,
     );
-    final base = ThemeData(useMaterial3: true, colorScheme: scheme, brightness: b, scaffoldBackgroundColor: scheme.surface);
+    final base = ThemeData(useMaterial3: true, colorScheme: scheme, brightness: b, scaffoldBackgroundColor: scheme.surface, fontFamily: font);
     return base.copyWith(
       textTheme: base.textTheme.apply(bodyColor: scheme.onSurface, displayColor: scheme.onSurface).copyWith(
             headlineMedium: base.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800, letterSpacing: -0.5),

@@ -1,10 +1,13 @@
-/// The start animation (owner, 2026-10-28): the app's mark builds itself,
-/// turns into a card, and a tick is drawn on it; then the app shows through.
-/// Plays once per start, over whatever the app opens on, in about two
-/// seconds. Skipped when the device asks for less motion (and under tests).
+/// The start animation (owner, 2026-10-28; reworked 2026-10-30 "more robust,
+/// the tick like Apple's, square, the card animated in time"): the app's mark
+/// springs in; its rounded square widens into a lime payment card while its
+/// chip and contactless waves slide into place; then an Apple-style rounded
+/// square tick pops onto the card's corner and its check is drawn; then the
+/// app shows through. About 2.2 seconds, once per start; skipped when the
+/// device asks for less motion (and under tests).
 library;
 
-import 'dart:math' as math;
+import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/material.dart';
 
@@ -19,7 +22,7 @@ class GoSplash extends StatefulWidget {
 }
 
 class _GoSplashState extends State<GoSplash> with SingleTickerProviderStateMixin {
-  late final _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 2100));
+  late final _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 2200));
   bool _done = false;
 
   @override
@@ -41,6 +44,10 @@ class _GoSplashState extends State<GoSplash> with SingleTickerProviderStateMixin
     super.dispose();
   }
 
+  /// [v] from 0 to 1 over [from]..[to] of the run, through [curve].
+  double _phase(double from, double to, [Curve curve = Curves.easeInOutCubic]) =>
+      curve.transform(((_c.value - from) / (to - from)).clamp(0.0, 1.0));
+
   @override
   Widget build(BuildContext context) {
     if (_done) return widget.child;
@@ -49,32 +56,96 @@ class _GoSplashState extends State<GoSplash> with SingleTickerProviderStateMixin
       AnimatedBuilder(
         animation: _c,
         builder: (context, _) {
-          final v = _c.value;
-          // 0.00-0.35 the mark builds; 0.35-0.60 it turns into a card;
-          // 0.60-0.85 the tick is drawn; 0.85-1.00 it all fades away.
-          final build = Curves.easeOutBack.transform((v / 0.35).clamp(0.0, 1.0));
-          final turn = Curves.easeInOutCubic.transform(((v - 0.35) / 0.25).clamp(0.0, 1.0));
-          final tick = Curves.easeOutCubic.transform(((v - 0.60) / 0.25).clamp(0.0, 1.0));
-          final fade = 1 - Curves.easeIn.transform(((v - 0.85) / 0.15).clamp(0.0, 1.0));
-          final showCard = turn > 0.5;
-          // A flip about the vertical axis: the mark's face away, the card's toward.
-          final angle = turn * math.pi;
+          // 0.00-0.22 the mark springs in; 0.22-0.52 it becomes the card;
+          // 0.52-0.80 the tick pops on and is drawn; 0.86-1.00 fade away.
+          final appear = _phase(0.0, 0.22, Curves.easeOutBack);
+          final morph = _phase(0.22, 0.52);
+          final details = _phase(0.38, 0.58, Curves.easeOutCubic);
+          final badge = _phase(0.52, 0.66, Curves.elasticOut);
+          final check = _phase(0.60, 0.80, Curves.easeOutCubic);
+          final fade = 1 - _phase(0.86, 1.0, Curves.easeIn);
+
+          // The mark's rounded square (120) widens into a card (210 x 132).
+          final w = lerpDouble(120, 210, morph)!;
+          final h = lerpDouble(120, 132, morph)!;
+          final r = lerpDouble(26, 18, morph)!;
+          final fill = Color.lerp(const Color(0xFF0B0B0B), Tp.lime, morph)!;
           return IgnorePointer(
-            ignoring: v > 0.85,
+            ignoring: _c.value > 0.86,
             child: Opacity(
               opacity: fade,
               child: ColoredBox(
                 color: Tp.inkDeep,
                 child: Center(
-                  child: Transform(
-                    alignment: Alignment.center,
-                    transform: Matrix4.identity()
-                      ..setEntry(3, 2, 0.0015)
-                      ..rotateY(showCard ? angle - math.pi : angle)
-                      ..scaleByDouble(0.6 + 0.4 * build, 0.6 + 0.4 * build, 1, 1),
+                  child: Transform.scale(
+                    scale: 0.7 + 0.3 * appear,
                     child: Opacity(
-                      opacity: build.clamp(0.0, 1.0),
-                      child: showCard ? _Card(tick: tick) : const GoMark(size: 120),
+                      opacity: appear.clamp(0.0, 1.0),
+                      child: SizedBox(
+                        width: 240,
+                        height: 170,
+                        child: Stack(alignment: Alignment.center, clipBehavior: Clip.none, children: [
+                          Container(
+                            width: w,
+                            height: h,
+                            decoration: BoxDecoration(
+                              color: fill,
+                              borderRadius: BorderRadius.circular(r),
+                              boxShadow: [BoxShadow(color: Tp.lime.withValues(alpha: 0.30 * morph), blurRadius: 36, spreadRadius: 2)],
+                            ),
+                            clipBehavior: Clip.antiAlias,
+                            child: Stack(children: [
+                              // The mark fades out as the card comes.
+                              Center(child: Opacity(opacity: 1 - morph, child: const GoMark(size: 120))),
+                              // The chip and the waves slide in, as on a card.
+                              Positioned(
+                                left: 20,
+                                top: 24 + 12 * (1 - details),
+                                child: Opacity(
+                                  opacity: details,
+                                  child: Container(
+                                    width: 34,
+                                    height: 26,
+                                    decoration: BoxDecoration(color: Tp.onLime.withValues(alpha: 0.25), borderRadius: BorderRadius.circular(6)),
+                                  ),
+                                ),
+                              ),
+                              Positioned(
+                                right: 18 - 12 * (1 - details),
+                                top: 20,
+                                child: Opacity(opacity: details, child: const Icon(Icons.contactless_rounded, color: Tp.onLime, size: 30)),
+                              ),
+                              Positioned(
+                                left: 20,
+                                bottom: 20,
+                                child: Opacity(
+                                  opacity: details,
+                                  child: Text('Vesopa Go',
+                                      style: TextStyle(color: Tp.onLime.withValues(alpha: 0.8), fontWeight: FontWeight.w800, fontSize: 14, letterSpacing: 0.3)),
+                                ),
+                              ),
+                            ]),
+                          ),
+                          // Apple's rounded-square tick, on the card's corner.
+                          Positioned(
+                            right: (240 - w) / 2 - 18,
+                            bottom: (170 - h) / 2 - 18,
+                            child: Transform.scale(
+                              scale: badge,
+                              child: Container(
+                                width: 56,
+                                height: 56,
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(14),
+                                  boxShadow: const [BoxShadow(color: Color(0x66000000), blurRadius: 16, offset: Offset(0, 6))],
+                                ),
+                                child: CustomPaint(painter: _TickPainter(check)),
+                              ),
+                            ),
+                          ),
+                        ]),
+                      ),
                     ),
                   ),
                 ),
@@ -87,29 +158,6 @@ class _GoSplashState extends State<GoSplash> with SingleTickerProviderStateMixin
   }
 }
 
-/// A payment card in the brand's lime, with a tick drawn across it.
-class _Card extends StatelessWidget {
-  const _Card({required this.tick});
-  final double tick;
-
-  @override
-  Widget build(BuildContext context) => Container(
-        width: 190,
-        height: 120,
-        decoration: BoxDecoration(
-          color: Tp.lime,
-          borderRadius: BorderRadius.circular(18),
-          boxShadow: [BoxShadow(color: Tp.lime.withValues(alpha: 0.35), blurRadius: 36, spreadRadius: 2)],
-        ),
-        child: Stack(children: [
-          // The chip and the contactless mark, as on a real card.
-          Positioned(left: 20, top: 22, child: Container(width: 32, height: 24, decoration: BoxDecoration(color: Tp.onLime.withValues(alpha: 0.25), borderRadius: BorderRadius.circular(5)))),
-          const Positioned(right: 18, top: 18, child: Icon(Icons.contactless_rounded, color: Tp.onLime, size: 28)),
-          Positioned.fill(child: CustomPaint(painter: _TickPainter(tick))),
-        ]),
-      );
-}
-
 class _TickPainter extends CustomPainter {
   _TickPainter(this.progress);
   final double progress;
@@ -118,14 +166,14 @@ class _TickPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (progress <= 0) return;
     final path = Path()
-      ..moveTo(size.width * 0.36, size.height * 0.58)
-      ..lineTo(size.width * 0.47, size.height * 0.72)
-      ..lineTo(size.width * 0.68, size.height * 0.40);
+      ..moveTo(size.width * 0.27, size.height * 0.53)
+      ..lineTo(size.width * 0.43, size.height * 0.69)
+      ..lineTo(size.width * 0.74, size.height * 0.34);
     final metric = path.computeMetrics().first;
     final paint = Paint()
-      ..color = Tp.onLime
+      ..color = Tp.limeDeep
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 9
+      ..strokeWidth = 6.5
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
     canvas.drawPath(metric.extractPath(0, metric.length * progress), paint);

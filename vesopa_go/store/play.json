@@ -7,7 +7,7 @@
   "contact_email": "info@vesopasoftware.com",
   "contact_website": "https://go.vesopa.com/",
   "track": "internal",
-  "release_notes": "Vesopa Go 1.2.14: the till's payment dialogs: Gift Card and Deposit taken towards the bill, Discount by percentage or amount with the bill after it, Gratuity by percentage, none or an amount, and Attach customer with matches as you type.",
+  "release_notes": "Vesopa Go 1.2.15: the venue's own lettering and logo, a quick brightness button with a slider on the idle screen, a smoother start animation, and the till's payment dialogs (gift card, deposit, discount, gratuity, attach customer).",
   "images": {
     "icon": [
       "play-icon-512.png"

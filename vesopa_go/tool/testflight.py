@@ -64,7 +64,7 @@ STORE = {
 DESCRIPTION = ("Vesopa Go: take orders and payments anywhere in a Vesopa EPOS venue, at the counter or "
                "the table. Seat a table, send the order to the kitchen, split and pay the bill by card or "
                "cash, and see the day's sales. Sign in with the venue's Vesopa account.")
-WHAT_TO_TEST = ("Vesopa Go 1.2.14 (the till's payment dialogs: gift card, deposit, discount, gratuity, attach customer): the till on iPad (screens, permissions, customers, memberships, tickets). Sign in with the venue's Vesopa account "
+WHAT_TO_TEST = ("Vesopa Go 1.2.15 (the venue's lettering and logo, idle brightness slider, start animation, the till's payment dialogs): the till on iPad (screens, permissions, customers, memberships, tickets). Sign in with the venue's Vesopa account "
                 "(The Vesopa Kitchen for testers). Open Tables (the floor plan), seat one, order (tap an item twice: it stacks; long-press for a "
                 "note), send it, take the payment, print or email the receipt, then check Reports.")
 FEEDBACK = "info@vesopasoftware.com"

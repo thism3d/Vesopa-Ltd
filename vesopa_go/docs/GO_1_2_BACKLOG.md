@@ -86,9 +86,9 @@ Vesopa Go (iPad and phones):
       by item or equally.
 - [x] 1.2.13 Cancel and Void with the till's reasons from the back office.
 - [x] 1.2.13 The Covers key and modifier keys (MIXERS ?) on Go's screens.
-- [ ] Idle: the venue's logo; one quick button that opens a brightness
+- [x] 1.2.15 Idle: the venue's logo; one quick button that opens a brightness
       slider; Touch to begin in the back office's lettering.
-- [ ] A better start animation: Apple-like square tick, the card animated
+- [x] 1.2.15 A better start animation: Apple-like square tick, the card animated
       in time.
 - [ ] Bills: each bill's payments and its refund.
 - [ ] One Cards page: payment cards, staff cards, membership, loyalty and

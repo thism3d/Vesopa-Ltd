@@ -78,6 +78,7 @@ class TapConfig {
     this.teya = const TeyaSettings(),
     this.modules,
     this.cashNotes = const [],
+    this.fontSlug = '',
   });
   final String environment;
   final bool tips;
@@ -137,6 +138,17 @@ class TapConfig {
   /// The venue's banknote keys for the payment page (/till/denominations).
   final List<dynamic> cashNotes;
 
+  /// The venue's lettering (back office, Till settings > Lettering), as the
+  /// till letters itself: a slug from /api/till/fonts, empty for the default.
+  final String fontSlug;
+
+  /// The venue's own logo (back office, Branding), when it shows one.
+  String? get logoUrl {
+    final url = '${branding['logo_url'] ?? ''}'.trim();
+    final show = branding['show_logo'];
+    return url.isEmpty || show == 0 || show == false ? null : url;
+  }
+
   /// The home screen to draw, or null for the built-in grid.
   TillScreen? get home => screens.surfaceById(homeScreenId, ScreenSurface.sale);
 
@@ -174,6 +186,7 @@ class TapConfig {
       teya: TeyaSettings.fromJson(j['teya']),
       modules: j['modules'] is List ? {for (final m in j['modules'] as List) '$m'} : null,
       cashNotes: j['notes'] is List ? j['notes'] as List : const [],
+      fontSlug: '${till['font_family'] ?? ''}'.trim(),
       goLayouts: {
         for (final form in const ['tablet', 'phone'])
           if (j['layouts'] is Map && (j['layouts'] as Map)[form] is Map) form: Map<String, dynamic>.from((j['layouts'] as Map)[form] as Map),
