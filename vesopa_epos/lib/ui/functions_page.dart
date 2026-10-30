@@ -376,19 +376,30 @@ class FunctionsPage extends ConsumerWidget {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           _GroupHeading(group.title),
-                          Row(
-                            children: [
-                              for (final f in group.functions) ...[
-                                Expanded(
-                                  child: SizedBox(
-                                    height: _tileHeight,
-                                    child: _FunctionTile(f),
-                                  ),
-                                ),
-                                if (f != group.functions.last)
-                                  const SizedBox(width: 12),
-                              ],
-                            ],
+                          // Tiles at a width their names and hints can be
+                          // read at, wrapping onto more rows, rather than
+                          // every tile of a big group squeezed into one row
+                          // ("Ref...", "Pai...": the owner, 2026-10-30).
+                          LayoutBuilder(
+                            builder: (context, box) {
+                              const gap = 12.0;
+                              const minTile = 160.0;
+                              final n = group.functions.length;
+                              final fit = ((box.maxWidth + gap) / (minTile + gap)).floor().clamp(1, n);
+                              final tile = (box.maxWidth - gap * (fit - 1)) / fit;
+                              return Wrap(
+                                spacing: gap,
+                                runSpacing: gap,
+                                children: [
+                                  for (final f in group.functions)
+                                    SizedBox(
+                                      width: tile,
+                                      height: _tileHeight,
+                                      child: _FunctionTile(f),
+                                    ),
+                                ],
+                              );
+                            },
                           ),
                         ],
                       ),
