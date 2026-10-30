@@ -354,8 +354,6 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          Text('Keyboard: ${KeyboardSize.label}', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: pal.ink.withValues(alpha: 0.7))),
-          const SizedBox(width: 8),
           button('A−', KeyboardSize.canShrink ? KeyboardSize.shrink : null, 'Smaller keyboard'),
           const SizedBox(width: 6),
           button('A+', KeyboardSize.canGrow ? KeyboardSize.grow : null, 'Bigger keyboard'),
@@ -381,14 +379,20 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
         // dividing the whole width by the units alone hands back a unit that is
         // too big by exactly the gap.
         final forKeys = available - _keyGap * _bottomKeys;
-        final unit = (forKeys / _bottomUnits).clamp(1.0, maxUnit);
+        // The number pad takes the size setting at its word: its keys are
+        // maxUnit wide (A- and A+ change that), limited only by the room.
+        final unit = widget._isNumeric
+            ? maxUnit.clamp(1.0, (available - _keyGap * 3) / (3 * 2.2))
+            : (forKeys / _bottomUnits).clamp(1.0, maxUnit);
 
         // Roughly square, with a floor: a finger needs a target in the vertical
         // axis too, and it is the axis that costs least to keep. The size
         // setting makes keys taller even where the width is spoken for.
         final keyHeight = (unit * 0.92 * scale).clamp(40.0 * scale, 64.0 * scale);
 
-        return Container(
+        // Only as wide as its keys (the owner, 2026-10-30: "take only the
+        // space it needs"), centred where the room is wider.
+        final board = Container(
           padding: const EdgeInsets.all(_padding),
           decoration: BoxDecoration(
             color: pal.softFill,
@@ -406,6 +410,10 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
             ],
           ),
         );
+        if (!widget._isNumeric) return board;
+        // Each key carries half a gap either side: three keys, three gaps.
+        final natural = unit * 2.2 * 3 + _keyGap * 3 + (_padding + _border) * 2 + 1;
+        return Center(child: ConstrainedBox(constraints: BoxConstraints(maxWidth: natural), child: board));
       },
     );
   }

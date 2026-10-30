@@ -270,7 +270,29 @@ class _FloatingKeyboardState extends State<_FloatingKeyboard> {
         // closed the keyboard before the letter landed, and nothing could be
         // typed (Nicki, Pontardawe RFC, 2026-10-26: a new member's name).
         if (docked) {
-          return Positioned(left: 0, right: 0, bottom: 0, child: TextFieldTapRegion(child: board));
+          // Docked, it is resized as on Windows: hold the grip at the top
+          // right and drag up for bigger keys, down for smaller.
+          return Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: TextFieldTapRegion(
+              child: Stack(children: [
+                board,
+                Positioned(
+                  right: 8,
+                  top: 0,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onVerticalDragUpdate: (d) => KeyboardSize.scale.value =
+                        (KeyboardSize.scale.value - d.delta.dy / 300).clamp(KeyboardSize.minScale, KeyboardSize.maxScale),
+                    onVerticalDragEnd: (_) => KeyboardSize.set(KeyboardSize.scale.value),
+                    child: const SizedBox(width: 44, height: 34, child: Icon(Icons.height_rounded, size: 20)),
+                  ),
+                ),
+              ]),
+            ),
+          );
         }
         return Positioned(
           left: rect!.left,
@@ -332,21 +354,37 @@ class _FloatingKeyboardState extends State<_FloatingKeyboard> {
         child: Row(
           children: [
             const SizedBox(width: 12),
+            // Icons, and an info key for what they do (the owner,
+            // 2026-10-30: fewer words on the keyboard).
             const Icon(Icons.drag_indicator, size: 20),
-            const SizedBox(width: 6),
-            Text(docked ? 'Drag to move' : 'Drag to move · corner to resize',
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
             const Spacer(),
-            TextButton.icon(
+            IconButton(
+              tooltip: 'About the keyboard',
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.info_outline, size: 18),
+              onPressed: () => showDialog<void>(
+                context: context,
+                builder: (c) => AlertDialog(
+                  title: const Text('The keyboard'),
+                  content: const Text('Drag the bar to move it.\n'
+                      'Docked: hold the arrows at the top right and drag up or down to resize.\n'
+                      'Floating: drag the corner to resize.\n'
+                      'A− and A+ make the keys smaller or bigger.'),
+                  actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text('Done'))],
+                ),
+              ),
+            ),
+            IconButton(
+              tooltip: docked ? 'Float' : 'Dock',
+              visualDensity: VisualDensity.compact,
               onPressed: () => docked
                   ? KeyboardSize.setPlace(_clamp(
                       Rect.fromLTWH(screen.width * 0.15, screen.height * 0.35, (_standardWidth * KeyboardSize.scale.value).clamp(_minWidth, screen.width * 0.7), 0),
                       screen))
                   : KeyboardSize.setPlace(null),
               icon: Icon(docked ? Icons.picture_in_picture_alt_outlined : Icons.vertical_align_bottom, size: 18),
-              label: Text(docked ? 'Float' : 'Dock'),
             ),
-            const SizedBox(width: 6),
+            SizedBox(width: docked ? 52 : 6),
           ],
         ),
       ),
