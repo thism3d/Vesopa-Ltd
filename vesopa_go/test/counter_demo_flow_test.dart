@@ -64,6 +64,9 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('10%'));
       await tester.pumpAndSettle();
+      // The till's discount dialog shows the bill after it, then Apply.
+      await tester.tap(find.text('Apply'));
+      await tester.pumpAndSettle();
       expect(find.text('Pay £15.61'), findsWidgets);
       await tapKey(tester, 'panel-pay');
 

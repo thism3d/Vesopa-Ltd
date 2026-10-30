@@ -7,7 +7,7 @@
   "contact_email": "info@vesopasoftware.com",
   "contact_website": "https://go.vesopa.com/",
   "track": "internal",
-  "release_notes": "Vesopa Go 1.2.13: the till's colours in Night and Day (Night by default), the till's payment board colours, Void and Cancel with the venue's reasons, the Covers key and modifier keys (MIXERS), a grey Pay until there is something to pay, and the logo visible in Night.",
+  "release_notes": "Vesopa Go 1.2.14: the till's payment dialogs: Gift Card and Deposit taken towards the bill, Discount by percentage or amount with the bill after it, Gratuity by percentage, none or an amount, and Attach customer with matches as you type.",
   "images": {
     "icon": [
       "play-icon-512.png"

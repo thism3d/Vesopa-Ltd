@@ -315,6 +315,8 @@ Future<void> discountBill(BuildContext context, WidgetRef ref, Bill bill) async 
   final picked = await showModalBottomSheet<(double, int)>(
     context: context,
     showDragHandle: true,
+    // As tall as it needs (a phone's half-height sheet cut off Apply).
+    isScrollControlled: true,
     builder: (c) => _DiscountSheet(bill: bill),
   );
   if (picked == null) return;
@@ -357,52 +359,100 @@ class _DiscountSheet extends StatefulWidget {
 }
 
 class _DiscountSheetState extends State<_DiscountSheet> {
-  final _amount = TextEditingController();
+  final _value = TextEditingController();
+  bool _percent = true;
+
+  /// What comes off with what is typed (the till's preview, 2026-10-30).
+  int get _off {
+    final v = double.tryParse(_value.text.trim()) ?? 0;
+    final base = widget.bill.subtotalMinor;
+    return _percent ? (base * v.clamp(0, 100) / 100).round() : (v * 100).round().clamp(0, base);
+  }
 
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
     final b = widget.bill;
+    final off = _off;
     return SafeArea(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: EdgeInsets.fromLTRB(20, 0, 20, 20 + MediaQuery.of(context).viewInsets.bottom),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Discount the sale', style: t.titleLarge),
+            Text('Discount', style: t.titleLarge),
             Text('On ${money(b.subtotalMinor)}', style: t.bodySmall),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                for (final p in const [10.0, 20.0, 25.0, 50.0])
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      child: OutlinedButton(onPressed: () => Navigator.pop(context, (p, 0)), child: Text('${p.toInt()}%')),
-                    ),
-                  ),
+            const SizedBox(height: 14),
+            // The till's two ways: a percentage or an amount.
+            SegmentedButton<bool>(
+              segments: const [
+                ButtonSegment(value: true, icon: Icon(Icons.percent_rounded), label: Text('Percentage')),
+                ButtonSegment(value: false, icon: Icon(Icons.currency_pound_rounded), label: Text('Amount')),
               ],
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _amount,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(labelText: 'Or an amount off', prefixText: '£ '),
+              selected: {_percent},
+              onSelectionChanged: (v) => setState(() {
+                _percent = v.first;
+                _value.clear();
+              }),
             ),
             const SizedBox(height: 12),
-            FilledButton(
-              onPressed: () {
-                final v = double.tryParse(_amount.text.trim());
-                if (v == null || v <= 0) return;
-                Navigator.pop(context, (0.0, (v * 100).round().clamp(0, b.subtotalMinor)));
-              },
-              child: const Text('Take it off'),
+            if (_percent)
+              Wrap(spacing: 8, runSpacing: 8, children: [
+                for (final p in const [5, 10, 15, 20, 25, 50])
+                  ChoiceChip(
+                    label: Text('$p%'),
+                    selected: _value.text == '$p',
+                    onSelected: (_) => setState(() => _value.text = '$p'),
+                  ),
+              ]),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _value,
+              autofocus: !_percent,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                labelText: _percent ? 'Percentage off' : 'Amount off',
+                prefixText: _percent ? null : '£ ',
+                suffixText: _percent ? '%' : null,
+              ),
             ),
-            if (b.manualDiscountMinor > 0) ...[
-              const SizedBox(height: 8),
-              TextButton(onPressed: () => Navigator.pop(context, (0.0, 0)), child: const Text('Remove the discount')),
-            ],
+            const SizedBox(height: 12),
+            // What it does to the bill, before it is applied.
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(color: context.goRaised, borderRadius: BorderRadius.circular(12)),
+              child: Row(children: [
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('Comes off the bill', style: t.bodyMedium),
+                    Text('Bill after discount', style: t.bodySmall),
+                  ]),
+                ),
+                Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                  Text('-${money(off)}', style: t.titleMedium?.copyWith(fontWeight: FontWeight.w800, fontFeatures: Tp.tabular)),
+                  Text(money(b.subtotalMinor - off), style: t.bodySmall?.copyWith(fontFeatures: Tp.tabular)),
+                ]),
+              ]),
+            ),
+            const SizedBox(height: 12),
+            Row(children: [
+              if (b.manualDiscountMinor > 0)
+                TextButton(onPressed: () => Navigator.pop(context, (0.0, 0)), child: const Text('Remove the discount')),
+              const Spacer(),
+              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+              const SizedBox(width: 8),
+              FilledButton(
+                onPressed: off <= 0
+                    ? null
+                    : () {
+                        final v = double.tryParse(_value.text.trim()) ?? 0;
+                        Navigator.pop(context, _percent ? (v.clamp(0, 100).toDouble(), 0) : (0.0, off));
+                      },
+                child: const Text('Apply'),
+              ),
+            ]),
           ],
         ),
       ),

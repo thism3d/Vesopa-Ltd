@@ -271,6 +271,37 @@ class TapApi {
   Future<List<String>> reasons(String action) async =>
       [for (final r in ((await _send('GET', '/till/error-reasons?office=$_o&applies_to=$action'))['items'] as List? ?? const [])) '$r'];
 
+  // ---- Gift cards and deposits, through the till's routes (commerce.js) ----------
+
+  Future<Map<String, dynamic>> giftCard(String code) =>
+      _send('GET', '/api/gift-cards/lookup?office=$_o&code=${Uri.encodeQueryComponent(code)}');
+
+  /// Takes [amountMinor] off the card; answers what was taken.
+  Future<int> redeemGiftCard(String code, {required int amountMinor, String? orderId, String? clerk}) async {
+    final r = await _send('POST', '/api/gift-cards/redeem', {
+      'office': office,
+      'code': code,
+      'amount_minor': amountMinor,
+      'order_id': ?orderId,
+      'clerk_name': ?clerk,
+    });
+    return (r['applied_minor'] as num?)?.toInt() ?? (r['redeemed_minor'] as num?)?.toInt() ?? amountMinor;
+  }
+
+  Future<Map<String, dynamic>> deposit(String reference) =>
+      _send('GET', '/api/deposits/lookup?office=$_o&reference=${Uri.encodeQueryComponent(reference)}');
+
+  /// Uses [amountMinor] of a deposit; answers what was applied.
+  Future<int> redeemDeposit(String reference, {required int amountMinor, String? orderId}) async {
+    final r = await _send('POST', '/api/deposits/redeem', {
+      'office': office,
+      'reference': reference,
+      'amount_minor': amountMinor,
+      'order_id': ?orderId,
+    });
+    return (r['applied_minor'] as num?)?.toInt() ?? amountMinor;
+  }
+
   /// Today across the venue: every till and device (vesopa_server tap.js).
   Future<Map<String, dynamic>> today() => _send('GET', '/api/tap/today');
 

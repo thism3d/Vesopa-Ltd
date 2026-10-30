@@ -79,7 +79,8 @@ Vesopa Go (iPad and phones):
 - [x] 1.2.12 A tapped table opens the sale screen with that table's bill, as on the
       till, not a separate order page.
 - [x] 1.2.12 The check's header: who and when (Muzahid Islam · 10:12am).
-- [ ] Payment dialogs as the till's: Discount with the bill after it,
+- [x] 1.2.14 (gift card, deposit, discount, gratuity, attach customer; loyalty
+      points and split by item still to come) Payment dialogs as the till's: Discount with the bill after it,
       Attach customer with results as you type, Gratuity (5/10/12.5/15/20%,
       none, an amount), Voucher, Redeem deposit, Loyalty points, Split bill
       by item or equally.

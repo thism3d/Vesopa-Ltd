@@ -42,6 +42,8 @@ class PayActions {
     required this.customer,
     required this.gratuity,
     required this.printBill,
+    this.giftCard,
+    this.deposit,
     this.points,
     this.cardLabel = 'Card',
     this.otherCard,
@@ -58,6 +60,8 @@ class PayActions {
   final VoidCallback customer;
   final VoidCallback gratuity;
   final VoidCallback printBill;
+  final VoidCallback? giftCard;
+  final VoidCallback? deposit;
   final VoidCallback? points;
   final String cardLabel;
 
@@ -196,8 +200,12 @@ class _TillPayBoardState extends State<TillPayBoard> {
           ])
         : const SizedBox.shrink();
 
+    // The till's order: Gift Card, Voucher, Deposit, Points, then Discount,
+    // Customer, Gratuity, Print bill.
     final grid = [
+      if (a.giftCard != null) ('Gift Card', a.giftCard!),
       ('Voucher', a.voucher),
+      if (a.deposit != null) ('Deposit', a.deposit!),
       if (a.points != null) ('Points', a.points!),
       ('Discount', a.discount),
       ('Customer', a.customer),

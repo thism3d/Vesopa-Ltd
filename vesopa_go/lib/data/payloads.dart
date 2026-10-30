@@ -135,7 +135,11 @@ Map<String, Object?> salePayload(Bill bill, {required String office, required St
     'payments': [
       for (final t in bill.tenders)
         {
-          'method': t.kind == 'cash' ? 'cash' : 'card',
+          // The till's tender methods: cash, card, giftcard, deposit, points.
+          'method': switch (t.kind) {
+            'cash' || 'giftcard' || 'deposit' || 'points' || 'voucher' => t.kind,
+            _ => 'card',
+          },
           'amount_minor': t.amountMinor,
           'gratuity_minor': t.tipMinor,
           'reference': t.reference,

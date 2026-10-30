@@ -20,12 +20,12 @@ import 'package:vesopa_go/ui/theme.dart';
 import '../data/journal.dart';
 import '../data/lite_state.dart';
 import 'package:vesopa_go/data/bill_math.dart';
-import 'package:vesopa_go/ui/pages/customers_page.dart';
 import 'package:vesopa_go/ui/pages/member_sheet.dart';
 
 import 'receipt_print.dart';
 import 'receipt_view.dart';
 import 'sale_panel.dart' show discountBill;
+import 'tender_dialogs.dart';
 import 'till_pay_board.dart';
 
 class PayPage extends ConsumerStatefulWidget {
@@ -201,8 +201,26 @@ class _PayPageState extends ConsumerState<PayPage> {
     final bill = _bill;
     final config = ref.read(tapProvider).config;
     if (bill == null) return;
-    final tip = await askTip(context, dueMinor: bill.dueMinor, percents: config.tipPercents.isEmpty ? const [10, 12.5, 15] : config.tipPercents);
+    final tip = await askGratuity(context,
+        onMinor: bill.dueMinor, percents: config.tipPercents.isEmpty ? const [5, 10, 12.5, 15, 20] : config.tipPercents, current: _presetTip);
     if (tip != null && mounted) setState(() => _presetTip = tip);
+  }
+
+  /// A gift card or a deposit towards the bill, as the till takes them.
+  Future<void> _codeTender(String kind) async {
+    final bill = _bill;
+    if (bill == null) return;
+    final taken = await askCodeTender(context, ref, kind: kind, dueMinor: bill.dueMinor, billId: bill.id);
+    if (taken == null || taken <= 0 || !mounted) return;
+    _sendFirst(bill);
+    _take(Tender(
+      id: '$kind-${DateTime.now().microsecondsSinceEpoch}',
+      amountMinor: taken,
+      kind: kind,
+      at: DateTime.now(),
+      clerk: ref.read(tapProvider).clerk?.name ?? '',
+      reference: kind,
+    ));
   }
 
   @override
@@ -236,13 +254,13 @@ class _PayPageState extends ConsumerState<PayPage> {
         manualCard: _manualCard,
         split: _split,
         voucher: () => askVoucher(context, ref, bill),
+        giftCard: () => _codeTender('giftcard'),
+        deposit: () => _codeTender('deposit'),
         points: bill.member == null
             ? null
             : () => showModalBottomSheet<void>(context: context, isScrollControlled: true, showDragHandle: true, builder: (_) => MemberSheet(billId: bill.id)),
         discount: () => discountBill(context, ref, bill),
-        customer: () => Navigator.of(context).push(MaterialPageRoute<void>(
-              builder: (_) => Scaffold(appBar: AppBar(title: const Text('Customer')), body: CustomersPage(billId: bill.id)),
-            )),
+        customer: () => attachCustomer(context, ref, bill.id),
         gratuity: _gratuity,
         printBill: () => printBill(context, ref, bill),
       ),
