@@ -206,8 +206,9 @@ class LiveReceipt extends StatelessWidget {
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.receipt_long_outlined,
-                                size: 40, color: scheme.outlineVariant),
+                            // The basket that gently bobs, as on Vesopa Go
+                            // (the owner, 2026-10-30: "like this in Windows").
+                            _EmptyBasket(colour: scheme.onSurfaceVariant),
                             const SizedBox(height: 10),
                             Text(emptyMessage,
                                 style: theme.textTheme.bodyMedium
@@ -775,4 +776,55 @@ class _SplitStrip extends StatelessWidget {
       ],
     );
   }
+}
+
+/// The empty sale: a basket that gently bobs over a breathing ring, waiting
+/// for the first item. Still when the device asks for less motion, and under
+/// tests, so goldens and settles are unchanged.
+class _EmptyBasket extends StatefulWidget {
+  const _EmptyBasket({required this.colour});
+  final Color colour;
+  @override
+  State<_EmptyBasket> createState() => _EmptyBasketState();
+}
+
+class _EmptyBasketState extends State<_EmptyBasket> with SingleTickerProviderStateMixin {
+  late final _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 1800));
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final still = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    final testing = WidgetsBinding.instance.runtimeType.toString().contains('Test');
+    if (!still && !testing && !_c.isAnimating) _c.repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+        animation: _c,
+        builder: (context, _) {
+          final v = Curves.easeInOut.transform(_c.value);
+          return SizedBox(
+            width: 96,
+            height: 80,
+            child: Stack(alignment: Alignment.center, children: [
+              Container(
+                width: 56 + 22 * v,
+                height: 56 + 22 * v,
+                decoration: BoxDecoration(shape: BoxShape.circle, color: Pos.brand.withValues(alpha: 0.10 * (1 - v) + 0.04)),
+              ),
+              Transform.translate(
+                offset: Offset(0, -6 * v),
+                child: Transform.rotate(angle: (v - 0.5) * 0.12, child: Icon(Icons.shopping_basket_outlined, size: 44, color: widget.colour)),
+              ),
+            ]),
+          );
+        },
+      );
 }

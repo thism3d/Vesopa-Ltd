@@ -254,15 +254,15 @@ class PageSelector extends ConsumerWidget {
     final pal = PayPalette.of(context);
     final ink = onBarCanvas ? pal.ink : theme.posOnChrome;
 
+    // The owner, 2026-10-30: the side menu itself, not a dropdown. With the
+    // side menu hidden this is a hamburger that slides it in from the left;
+    // with it always on screen there is nothing to open, so no key at all.
+    final menu = onOpenMenu;
+    if (menu == null) return const SizedBox.shrink();
     return Padding(
-      // Matches ProgrammedBar's own outer padding on a programmed bar, so this
-      // key lines up with the row of keys beside it instead of standing a few
-      // pixels proud of them.
       padding: onBarCanvas
           ? const EdgeInsets.fromLTRB(8, 8, 6, 8)
           : const EdgeInsets.fromLTRB(6, 6, 8, 6),
-      // `shape` and `borderRadius` are mutually exclusive on a Material, so the
-      // outlined variant states its radius inside the shape.
       child: Material(
         color: onBarCanvas ? pal.keyFill : Colors.white.withValues(alpha: 0.08),
         borderRadius: onBarCanvas ? null : BorderRadius.circular(8),
@@ -272,131 +272,19 @@ class PageSelector extends ConsumerWidget {
                 side: BorderSide(color: pal.keyLine),
               )
             : null,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(onBarCanvas ? 10 : 8),
-          onTap: () => _open(context, ref),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 9),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  section.icon,
-                  color: onBarCanvas ? pal.accent : theme.posBrandOnChrome,
-                  size: 18,
-                ),
-                const SizedBox(width: 8),
-                // Bounded so the selector cannot grow with the section name and
-                // eat the bar the venue laid out beside it.
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 96),
-                  child: Text(
-                    section.label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: ink,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 4),
-                Icon(
-                  Icons.expand_more,
-                  size: 18,
-                  color: ink.withValues(alpha: 0.7),
-                ),
-              ],
+        child: Tooltip(
+          message: 'Menu',
+          child: InkWell(
+            borderRadius: BorderRadius.circular(onBarCanvas ? 10 : 8),
+            onTap: menu,
+            child: SizedBox(
+              width: 52,
+              child: Icon(Icons.menu_rounded, color: ink, size: 24),
             ),
           ),
         ),
       ),
     );
-  }
-
-  /// Every section, plus the two things the gear used to be the only way to.
-  ///
-  /// A menu rather than a row of keys: eight sections across the left of a bar
-  /// would leave a venue nothing to lay out, and this has to cost as little of
-  /// the bar as it can while still being impossible to lose.
-  Future<void> _open(BuildContext context, WidgetRef ref) async {
-    final box = context.findRenderObject() as RenderBox?;
-    final overlay =
-        Overlay.of(context).context.findRenderObject() as RenderBox?;
-    if (box == null || overlay == null) return;
-
-    final origin = box.localToGlobal(Offset.zero, ancestor: overlay);
-    final position = RelativeRect.fromLTRB(
-      origin.dx,
-      origin.dy + box.size.height,
-      overlay.size.width - origin.dx - box.size.width,
-      0,
-    );
-
-    final signedOn = onSignOff != null;
-    final canSignOn = onSignOn != null || onSignOff != null;
-
-    final chosen = await showMenu<String>(
-      context: context,
-      position: position,
-      items: [
-        for (var i = 0; i < destinations.length; i++)
-          PopupMenuItem<String>(
-            value: 'go:$i',
-            child: Row(
-              children: [
-                Icon(
-                  destinations[i].icon,
-                  size: 18,
-                  color: i == destinations.indexOf(section)
-                      ? Pos.brandDeep
-                      : null,
-                ),
-                const SizedBox(width: 12),
-                Text(destinations[i].label),
-              ],
-            ),
-          ),
-        if (onOpenMenu != null) ...[
-          const PopupMenuDivider(),
-          const PopupMenuItem<String>(
-            value: 'menu',
-            child: Row(
-              children: [
-                Icon(Icons.menu, size: 18),
-                SizedBox(width: 12),
-                Text('Settings & menu'),
-              ],
-            ),
-          ),
-        ],
-        // Handing the till to the next person is a mid-service action and has
-        // to be reachable from wherever whoever is handing it over happens to
-        // be standing. It was on the fixed bar; it cannot only be on a bar the
-        // venue might not have laid out.
-        if (canSignOn) ...[
-          const PopupMenuDivider(),
-          PopupMenuItem<String>(
-            value: 'shift',
-            child: Row(
-              children: [
-                Icon(signedOn ? Icons.logout : Icons.login, size: 18),
-                const SizedBox(width: 12),
-                Text(signedOn ? 'Sign off' : 'Sign on'),
-              ],
-            ),
-          ),
-        ],
-      ],
-    );
-
-    if (chosen == null) return;
-    if (chosen == 'menu') return onOpenMenu?.call();
-    if (chosen == 'shift') return (onSignOff ?? onSignOn)?.call();
-    if (chosen.startsWith('go:')) {
-      onSelectSection(int.parse(chosen.substring(3)));
-    }
   }
 }
 
