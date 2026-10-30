@@ -36,7 +36,12 @@ const REFUSED =
  */
 function tillUnderstandsTraining(req) {
   const asked = String((req.query && req.query.features) || '');
-  return asked.split(',').map((s) => s.trim()).includes('training');
+  if (asked.split(',').map((s) => s.trim()).includes('training')) return true;
+  // A practice venue (demo_venue.js) holds only training accounts and takes no
+  // money, so any device signed in to one is given them -- Vesopa Go asks
+  // without `features=training`, and found an empty staff list there, so no
+  // PIN could sign on (owner, 2026-10-30).
+  return String(req.office || '').toLowerCase().endsWith('@vesopa.invalid');
 }
 
 /**
