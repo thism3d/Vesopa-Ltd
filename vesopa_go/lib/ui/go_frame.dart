@@ -345,8 +345,13 @@ class _NotLicensed extends ConsumerWidget {
             OutlinedButton.icon(onPressed: () => ref.read(tapProvider.notifier).refresh(), icon: const Icon(Icons.refresh_rounded), label: const Text('Check again')),
             OutlinedButton.icon(
               onPressed: () async {
-                final sure = await showDialog<bool>(
-                  context: context,
+                // This screen sits above the app's Navigator (MaterialApp.builder),
+                // so the question is asked of the navigator itself: with this
+                // screen's own context it had nowhere to open (owner, 2026-10-31).
+                final at = goNavigator.currentContext;
+                final sure = at == null ||
+                    true == await showDialog<bool>(
+                  context: at,
                   builder: (c) => AlertDialog(
                     title: const Text('Sign out of this venue?'),
                     content: const Text('This device goes back to the first screen, to sign in to another venue.'),

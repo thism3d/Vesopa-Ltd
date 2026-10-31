@@ -26,4 +26,4 @@ const contactlessLimitMinor = 10000;
 
 /// The app's version, as pubspec.yaml has it (kept in step with every bump),
 /// for the back office's device list.
-const goAppVersion = '1.2.18';
+const goAppVersion = '1.2.19';
