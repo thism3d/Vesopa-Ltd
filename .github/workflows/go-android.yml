@@ -83,6 +83,14 @@ jobs:
           # stale at 1.2.16 while the app moved on (2026-10-31).
           version=$(sed -n 's/^version:[[:space:]]*\([0-9.]*\).*/\1/p' "$APP/pubspec.yaml")
           [ -n "$version" ] || version=$(python3 -c "import json;print(json.load(open('$APP/venue.json'))['version'])")
+          # And into venue.json, which tool/play_upload.py names the bundle by.
+          python3 - "$APP/venue.json" "$version" <<'PY'
+          import json, sys
+          p, version = sys.argv[1], sys.argv[2]
+          v = json.load(open(p, encoding="utf-8"))
+          v["version"] = version
+          json.dump(v, open(p, "w", encoding="utf-8"), indent=2)
+          PY
           echo "build=$n" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "### Vesopa Go $version ($n)" >> "$GITHUB_STEP_SUMMARY"
