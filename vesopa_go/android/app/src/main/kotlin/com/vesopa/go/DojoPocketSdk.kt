@@ -41,7 +41,7 @@ object DojoPocketSdk {
             context.applicationContext,
             Config(apiKey = apiKey, softwareHouseId = softwareHouseId, resellerId = resellerId),
         )
-        if (r.isFailure()) {
+        if (r.isFailure) {
             configuredKey = null
             return result.error("setup", friendly(r.errorOrNull()?.toString()), null)
         }
@@ -56,8 +56,8 @@ object DojoPocketSdk {
     fun sale(amount: Int, reference: String?, result: MethodChannel.Result) {
         if (!claim(result, "sale")) return
         scope.launch {
-            val r = DojoTapToPayOnPocket.sale(amount, reference = reference)
-            if (r.isFailure()) fail("sale", friendly(r.errorOrNull()?.toString()))
+            val r = if (reference.isNullOrEmpty()) DojoTapToPayOnPocket.sale(amount) else DojoTapToPayOnPocket.sale(amount, reference = reference)
+            if (r.isFailure) fail("sale", friendly(r.errorOrNull()?.toString()))
         }
     }
 
@@ -65,7 +65,7 @@ object DojoPocketSdk {
         if (!claim(result, "refund")) return
         scope.launch {
             val r = DojoTapToPayOnPocket.refund(amount)
-            if (r.isFailure()) fail("refund", friendly(r.errorOrNull()?.toString()))
+            if (r.isFailure) fail("refund", friendly(r.errorOrNull()?.toString()))
         }
     }
 
@@ -74,7 +74,7 @@ object DojoPocketSdk {
     private fun ask(result: MethodChannel.Result, what: String, send: () -> DojoResult<*, *>) {
         if (!claim(result, what)) return
         val r = send()
-        if (r.isFailure()) fail(what, friendly(r.errorOrNull()?.toString()))
+        if (r.isFailure) fail(what, friendly(r.errorOrNull()?.toString()))
     }
 
     private fun claim(result: MethodChannel.Result, what: String): Boolean {

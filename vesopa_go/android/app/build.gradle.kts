@@ -17,7 +17,9 @@ val keyProperties = Properties().apply {
 
 android {
     namespace = "com.vesopa.go"
-    compileSdk = flutter.compileSdkVersion
+    // 37: Dojo's Tap to Pay on Pocket SDK is built against it (minSdk and
+    // targetSdk are unchanged, so no device is left out).
+    compileSdk = maxOf(flutter.compileSdkVersion, 37)
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
