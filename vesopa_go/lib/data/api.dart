@@ -369,6 +369,10 @@ class TapApi {
     } catch (_) {}
   }
 
+  /// What Dojo's Tap to Pay on Pocket SDK needs (/api/tap/pocket-config):
+  /// the venue's Dojo API key and partner ids. Kept in memory only.
+  Future<Map<String, dynamic>> pocketConfig() => _send('GET', '/api/tap/pocket-config');
+
   Future<String> tapSecret(String platform) async =>
       (await _send('POST', '/api/tap/secret', {'platform': platform}))['secret'] as String;
 

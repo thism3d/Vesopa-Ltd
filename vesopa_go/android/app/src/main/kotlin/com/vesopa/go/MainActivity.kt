@@ -40,10 +40,31 @@ class MainActivity : FlutterFragmentActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.vesopa.go/dojo").setMethodCallHandler { call, result ->
             when (call.method) {
                 "isSupported", "pocketAvailable" -> result.success(pocketInstalled())
-                "pocketInit" -> ask(result, Intent(INIT))
-                "pocketSale" -> ask(result, Intent(SALE).putExtra(BASE_AMOUNT, call.argument<Int>("amount") ?: 0))
-                "pocketRefund" -> ask(result, Intent(REFUND).putExtra(BASE_AMOUNT, call.argument<Int>("amount") ?: 0))
-                "pocketLastTx" -> ask(result, Intent(LAST_TX))
+                // Dojo's SDK once the venue's Dojo account is known
+                // (DojoPocketSdk.kt); the intents below until then.
+                "pocketConfigure" -> {
+                    val key = call.argument<String>("apiKey").orEmpty()
+                    val house = call.argument<String>("softwareHouseId").orEmpty()
+                    if (key.isEmpty() || house.isEmpty()) {
+                        result.error("setup", "The venue's Dojo account is not set up in the back office.", null)
+                    } else if (!pocketInstalled()) {
+                        result.error("unsupported", DojoPocketSdk.friendly("DpaNotInstalled"), null)
+                    } else {
+                        DojoPocketSdk.configure(this, key, house, call.argument<String>("resellerId") ?: house, result)
+                    }
+                }
+                "pocketInit" -> if (DojoPocketSdk.ready) DojoPocketSdk.initDojo(result) else ask(result, Intent(INIT))
+                "pocketSale" -> {
+                    val amount = call.argument<Int>("amount") ?: 0
+                    if (DojoPocketSdk.ready) DojoPocketSdk.sale(amount, call.argument<String>("reference"), result)
+                    else ask(result, Intent(SALE).putExtra(BASE_AMOUNT, amount))
+                }
+                "pocketRefund" -> {
+                    val amount = call.argument<Int>("amount") ?: 0
+                    if (DojoPocketSdk.ready) DojoPocketSdk.refund(amount, result)
+                    else ask(result, Intent(REFUND).putExtra(BASE_AMOUNT, amount))
+                }
+                "pocketLastTx" -> if (DojoPocketSdk.ready) DojoPocketSdk.lastTx(result) else ask(result, Intent(LAST_TX))
                 else -> result.error("unsupported", "This Android device has no Dojo payment app. Use the card machine.", null)
             }
         }

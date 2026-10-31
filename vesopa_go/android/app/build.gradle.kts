@@ -66,3 +66,10 @@ kotlin {
 flutter {
     source = "../.."
 }
+
+// Dojo Tap to Pay on Pocket (docs.dojo.tech/tap-to-pay-on-pocket/sdk-integration).
+// Talks to the Dojo payment app on a Pocket; MainActivity.kt uses it when the
+// venue's Dojo account is known, and its own intents otherwise.
+dependencies {
+    implementation("tech.dojo.pos:tap-to-pay-on-pocket:1.0.0")
+}

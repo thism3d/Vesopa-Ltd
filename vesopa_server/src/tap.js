@@ -343,6 +343,53 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
    * (pick this device's machine, switch mid-service), with the venue's own
    * default. Each payment names the machine it wants (terminal_id).
    */
+  /**
+   * What Dojo's Tap to Pay on Pocket SDK needs on the Pocket (2026-10-31,
+   * docs.dojo.tech/tap-to-pay-on-pocket/sdk-integration): the venue's Dojo API
+   * key, the partner ids and whether it is live. The SDK will not start without
+   * the key, so it goes to this venue's own signed-in Go devices only, is never
+   * cached on the server's side of the answer, and the app keeps it in memory.
+   *
+   * The key is the Dojo account's API key: the card settings' own when they
+   * are a live Dojo account; else the online-payments key (Pontardawe RFC's
+   * card settings are a Paymentsense Connect key, its Dojo account key is
+   * the online one); else Dojo's sandbox.
+   */
+  router.get('/api/tap/pocket-config', terminal, async (req, res, next) => {
+    try {
+      res.set('Cache-Control', 'no-store');
+      let key = null;
+      let environment = 'sandbox';
+      let row;
+      try {
+        [[row]] = await pool.query('SELECT api_key_enc, environment, platform FROM epos_dojo_settings WHERE office = ?', [req.office]);
+      } catch (e) {
+        if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+        [[row]] = await pool.query('SELECT api_key_enc, environment FROM epos_dojo_settings WHERE office = ?', [req.office]);
+      }
+      if (row && row.api_key_enc && row.environment === 'live' && (row.platform || 'dojo') === 'dojo') {
+        key = unseal(row.api_key_enc);
+        environment = 'live';
+      }
+      if (!key) {
+        try {
+          const [[ex]] = await pool.query('SELECT dojo_key_enc FROM epos_express_settings WHERE office = ?', [req.office]);
+          const online = ex && ex.dojo_key_enc ? unseal(ex.dojo_key_enc) : null;
+          if (online && /^sk_prod_/.test(online)) {
+            key = online;
+            environment = 'live';
+          }
+        } catch (e) {
+          if (e.code !== 'ER_NO_SUCH_TABLE' && e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+        }
+      }
+      if (!key) key = TAP_SANDBOX_KEY;
+      const ids = partnerIds('');
+      console.log(`[go] pocket config for ${req.office} (${environment}) to ${who(req)}`);
+      res.json({ api_key: key, environment, software_house_id: ids.softwareHouseId, reseller_id: ids.resellerId });
+    } catch (e) { send(res, e, next); }
+  });
+
   router.get('/api/tap/terminals', terminal, async (req, res, next) => {
     try {
       const m = await machineFor(req.office);

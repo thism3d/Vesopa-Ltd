@@ -21,4 +21,10 @@ void main() {
     expect(pocketOutcome({'sale_status': 'OK'}).result, PayResult.uncertain);
     expect(pocketOutcome(null).result, PayResult.uncertain);
   });
+
+  test("the SDK's missing answer is uncertain, with the words to check the Pocket", () {
+    final o = pocketOutcome({'missing': true, 'message': 'Check the Pocket.'});
+    expect(o.result, PayResult.uncertain);
+    expect(o.message, 'Check the Pocket.');
+  });
 }

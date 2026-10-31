@@ -119,7 +119,7 @@ class DojoTapToPay implements PaymentService {
   }) async {
     final paymentId = const Uuid().v4();
     if (via == 'machine') return _onMachine(paymentId, amountMinor, tipMinor, billRef, clerk, onStep);
-    if (Platform.isAndroid) return _onPocket(amountMinor + tipMinor, onStep);
+    if (Platform.isAndroid) return _onPocket(amountMinor + tipMinor, onStep, reference: billRef);
     var created = false;
     try {
       onStep?.call(PayStep.preparing);
@@ -219,8 +219,32 @@ class DojoTapToPay implements PaymentService {
   /// A Dojo Pocket: Dojo's own app reads the card and answers with the
   /// transaction (MainActivity.kt). Its id, prefixed `pocket:`, is the
   /// payment's reference on the bill, and what a refund goes back through.
-  Future<PaymentOutcome> _onPocket(int totalMinor, void Function(PayStep step)? onStep) async {
+  /// Dojo's Pocket SDK started with the venue's account (MainActivity.kt,
+  /// DojoPocketSdk.kt). Once per app run; when the back office cannot be
+  /// reached the Pocket is driven by its intents instead, as before.
+  bool _pocketSdk = false;
+
+  Future<void> _configurePocket() async {
+    if (_pocketSdk) return;
     try {
+      final c = await api.pocketConfig();
+      await _channel.invokeMethod('pocketConfigure', {
+        'apiKey': '${c['api_key'] ?? ''}',
+        'softwareHouseId': '${c['software_house_id'] ?? ''}',
+        'resellerId': '${c['reseller_id'] ?? ''}',
+      });
+      _pocketSdk = true;
+    } on TapApiError {
+      // Offline or an older back office: the intents still take the card.
+    } on PlatformException catch (e) {
+      // Not a Pocket: the payment itself says so.
+      if (e.code != 'setup') rethrow;
+    }
+  }
+
+  Future<PaymentOutcome> _onPocket(int totalMinor, void Function(PayStep step)? onStep, {String? reference}) async {
+    try {
+      await _configurePocket();
       if (!_active) {
         onStep?.call(PayStep.activating);
         final init = await _channel.invokeMapMethod<String, Object?>('pocketInit');
@@ -230,11 +254,16 @@ class DojoTapToPay implements PaymentService {
         _active = true;
       }
       onStep?.call(PayStep.waitingForCard);
-      final r = await _channel.invokeMapMethod<String, Object?>('pocketSale', {'amount': totalMinor});
+      final r = await _channel.invokeMapMethod<String, Object?>('pocketSale', {'amount': totalMinor, 'reference': ?reference});
       onStep?.call(PayStep.done);
       return pocketOutcome(r);
     } on PlatformException catch (e) {
       if (e.code == 'cancelled') return const PaymentOutcome(PayResult.cancelled);
+      // Refused before the card was asked for (not a Pocket, the app out of
+      // date, no connection, ...): nothing was taken, and the words say why.
+      if (const {'dojo', 'setup', 'busy', 'unsupported'}.contains(e.code)) {
+        return PaymentOutcome(PayResult.unavailable, message: e.message ?? 'The Dojo app could not take the payment.');
+      }
       // The answer was lost: ask the Pocket what its last payment did.
       try {
         final last = pocketOutcome(await _channel.invokeMapMethod<String, Object?>('pocketLastTx'));
@@ -279,6 +308,11 @@ class DojoTapToPay implements PaymentService {
 /// What Dojo's app answered (MainActivity.kt names each extra by its short
 /// name: transaction_result, transaction_id, auth_code, ...).
 PaymentOutcome pocketOutcome(Map<String, Object?>? r) {
+  // The Pocket never answered and Dojo could not say either (the SDK's
+  // MissingResponse): the card may have been charged.
+  if (r?['missing'] == true) {
+    return PaymentOutcome(PayResult.uncertain, message: '${r?['message'] ?? 'The Dojo app did not answer. Check the Pocket before taking it again.'}');
+  }
   final id = r?['transaction_id']?.toString();
   final ref = 'pocket:${id == null || id.isEmpty ? const Uuid().v4() : id}';
   return switch ('${r?['transaction_result'] ?? r?['refund_status'] ?? ''}'.toUpperCase()) {
