@@ -259,6 +259,41 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           value: DevicePrefs.fullScreen,
           onChanged: (v) => DevicePrefs.set(full: v).then((_) => setState(() {})),
         ),
+        // The idle screen on this device: the venue's picture filling it or
+        // shown whole, and what goes over it.
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: Text('Idle screen', style: Theme.of(context).textTheme.titleSmall),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+          child: SegmentedButton<bool>(
+            showSelectedIcon: false,
+            segments: const [
+              ButtonSegment(value: true, icon: Icon(Icons.fullscreen_rounded), label: Text('Fill the screen')),
+              ButtonSegment(value: false, icon: Icon(Icons.fit_screen_rounded), label: Text('Whole picture')),
+            ],
+            selected: {DevicePrefs.idleFill},
+            onSelectionChanged: (v) => DevicePrefs.setIdle(fill: v.first).then((_) => setState(() {})),
+          ),
+        ),
+        SwitchListTile(
+          title: const Text('Logo, name and clock'),
+          value: DevicePrefs.idleTop,
+          onChanged: (v) => DevicePrefs.setIdle(top: v).then((_) => setState(() {})),
+        ),
+        SwitchListTile(
+          title: const Text('The venue\'s message'),
+          subtitle: const Text('Back office, Till settings, Idle screen'),
+          value: DevicePrefs.idleMessage,
+          onChanged: (v) => DevicePrefs.setIdle(message: v).then((_) => setState(() {})),
+        ),
+        SwitchListTile(
+          title: const Text('Darken the picture'),
+          subtitle: const Text('So the words read on any picture'),
+          value: DevicePrefs.idleShade,
+          onChanged: (v) => DevicePrefs.setIdle(shade: v).then((_) => setState(() {})),
+        ),
         if (android)
           ListTile(
             title: const Text('Battery saving'),

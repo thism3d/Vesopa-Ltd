@@ -25,13 +25,19 @@ class FitText extends StatelessWidget {
     final drawn = DefaultTextStyle.of(context).style.merge(style);
     return LayoutBuilder(builder: (context, box) {
       final start = drawn.fontSize ?? 14;
-      final size = fitSize(text, drawn, box.maxWidth, box.maxHeight, maxLines: maxLines, minSize: minSize, scaler: scaler, dir: dir);
+      final size = fitSize(text, drawn, box.maxWidth, box.maxHeight, maxLines: maxLines, minSize: minSize, scaler: scaler, dir: dir)
+          .clamp(minSize, start);
+      // Never a line cut in half (owner, 2026-10-31, "the next line is being
+      // hidden"): only as many lines as the height holds, the last one
+      // ellipsised, rather than a second line clipped through its middle.
+      final lineHeight = scaler.scale(size) * (drawn.height ?? 1.2);
+      final room = box.maxHeight.isFinite ? (box.maxHeight / lineHeight).floor().clamp(1, maxLines) : maxLines;
       return Text(
         text,
-        maxLines: maxLines,
+        maxLines: room,
         overflow: TextOverflow.ellipsis,
         textAlign: textAlign,
-        style: drawn.copyWith(fontSize: size.clamp(minSize, start)),
+        style: drawn.copyWith(fontSize: size),
       );
     });
   }

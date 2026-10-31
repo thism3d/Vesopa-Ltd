@@ -21,14 +21,52 @@ class DevicePrefs {
   static bool keepAwake = true;
   static bool fullScreen = true;
 
+  // The idle screen on this device (owner, 2026-10-31: "hide the top and
+  // bottom and expand ... a proper idle screen, customised in the settings").
+  static const _idleFillKey = 'go_idle_fill';
+  static const _idleTopKey = 'go_idle_top';
+  static const _idleMessageKey = 'go_idle_message';
+  static const _idleShadeKey = 'go_idle_shade';
+
+  /// The picture fills the screen (cropped at the edges) rather than shown
+  /// whole on bands of its own colour.
+  static bool idleFill = true;
+
+  /// The venue's logo, name and the clock along the top.
+  static bool idleTop = true;
+
+  /// The venue's message ("Touch to begin").
+  static bool idleMessage = true;
+
+  /// A shade over the picture so the words read on any picture.
+  static bool idleShade = true;
+
   /// Read the choices and apply them; called once at start.
   static Future<void> load() async {
     try {
       final p = await SharedPreferences.getInstance();
       keepAwake = p.getBool(_awakeKey) ?? true;
       fullScreen = p.getBool(_fullKey) ?? true;
+      idleFill = p.getBool(_idleFillKey) ?? true;
+      idleTop = p.getBool(_idleTopKey) ?? true;
+      idleMessage = p.getBool(_idleMessageKey) ?? true;
+      idleShade = p.getBool(_idleShadeKey) ?? true;
     } catch (_) {}
     await apply();
+  }
+
+  static Future<void> setIdle({bool? fill, bool? top, bool? message, bool? shade}) async {
+    idleFill = fill ?? idleFill;
+    idleTop = top ?? idleTop;
+    idleMessage = message ?? idleMessage;
+    idleShade = shade ?? idleShade;
+    try {
+      final p = await SharedPreferences.getInstance();
+      await p.setBool(_idleFillKey, idleFill);
+      await p.setBool(_idleTopKey, idleTop);
+      await p.setBool(_idleMessageKey, idleMessage);
+      await p.setBool(_idleShadeKey, idleShade);
+    } catch (_) {}
   }
 
   static Future<void> apply() async {

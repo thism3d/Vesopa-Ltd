@@ -637,11 +637,60 @@ function backofficeRoutes({ pool, broadcast, secret }) {
         'SELECT * FROM epos_branding WHERE office = ?',
         [office]
       );
-      res.json(row || { office, ...BRANDING_DEFAULTS });
+      const out = row || { office, ...BRANDING_DEFAULTS };
+      // The venue's mark wherever the venue put one (owner, 2026-10-31: "the
+      // venue's logo here", on Vesopa Go's idle and PIN screens).
+      out.mark_url = await venueMark(office, out);
+      res.json(out);
     } catch (e) {
       next(e);
     }
   });
+
+  /**
+   * The first logo this venue has anywhere: the receipt's, the kitchen's, its
+   * loyalty app's icon or logo, its dine-in menu's. A practice venue shows
+   * its real venue's. Null when there is none; a missing table is no answer.
+   */
+  async function venueMark(office, branding) {
+    const tries = [
+      async () => branding.logo_url,
+      async () => branding.kitchen_logo_url,
+      async () => {
+        const [[a]] = await pool.query('SELECT icon_url, logo_url FROM epos_loyalty_app WHERE office = ?', [office]);
+        return a && (a.icon_url || a.logo_url);
+      },
+      async () => {
+        const [[d]] = await pool.query(
+          'SELECT d.logo_url FROM dinein_venue d JOIN offices o ON o.id = d.office_id WHERE o.contact_email = ?',
+          [office]
+        );
+        return d && d.logo_url;
+      },
+    ];
+    for (const t of tries) {
+      try {
+        const v = String((await t()) || '').trim();
+        if (v) return v;
+      } catch (e) {
+        if (e.code !== 'ER_NO_SUCH_TABLE' && e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+      }
+    }
+    try {
+      const [[live]] = await pool.query(
+        `SELECT l.contact_email FROM offices d JOIN offices l ON l.id = d.demo_of
+          WHERE d.contact_email = ? AND l.contact_email <> ?`,
+        [office, office]
+      );
+      if (live) {
+        const [[b]] = await pool.query('SELECT * FROM epos_branding WHERE office = ?', [live.contact_email]);
+        return venueMark(live.contact_email, b || {});
+      }
+    } catch (e) {
+      if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+    }
+    return null;
+  }
 
   /** Create-or-update the caller's branding. */
   router.put('/branding', auth, async (req, res, next) => {

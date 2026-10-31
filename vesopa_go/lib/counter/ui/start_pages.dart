@@ -20,6 +20,7 @@ import 'package:vesopa_go/data/clerk_auth.dart';
 import 'package:vesopa_go/data/session.dart';
 import 'package:vesopa_go/data/vesopa_sso.dart';
 import 'package:vesopa_go/nfc/staff_card.dart';
+import 'package:vesopa_go/ui/go_frame.dart' show IdleScreen, VenueMark;
 import 'package:vesopa_go/ui/pages/sign_in_flow.dart';
 import 'package:vesopa_go/ui/pages/welcome.dart' show RegisterPage;
 import 'package:vesopa_go/ui/theme.dart';
@@ -133,6 +134,7 @@ class _LiteLockPageState extends ConsumerState<LiteLockPage> with SingleTickerPr
   bool _nfc = false;
   bool _bio = false;
   Clerk? _picked;
+  bool _idle = false;
   late final _shake = AnimationController(vsync: this, duration: const Duration(milliseconds: 420));
 
   @override
@@ -158,7 +160,9 @@ class _LiteLockPageState extends ConsumerState<LiteLockPage> with SingleTickerPr
   }
 
   void _wrong(String why) {
+    // Felt as well as seen, and the pad starts again at the first digit.
     HapticFeedback.heavyImpact();
+    HapticFeedback.vibrate();
     _shake.forward(from: 0);
     setState(() {
       _pin = '';
@@ -178,9 +182,32 @@ class _LiteLockPageState extends ConsumerState<LiteLockPage> with SingleTickerPr
     final clerk = ClerkAuth.byPin(staff, _pin);
     if (clerk != null) {
       _signOn(clerk);
-    } else if (_pin.length == 6 || (picked != null && picked.pin.isNotEmpty && _pin.length >= picked.pin.length)) {
+    } else if (_pin.length >= _pinLength(staff)) {
+      // Wrong as soon as it is as long as the venue's PINs (4 digits at most
+      // venues), not after six (owner, 2026-10-31).
       _wrong(picked == null ? 'That PIN is not on this venue\'s staff list' : 'That is not ${picked.name}\'s PIN');
     }
+  }
+
+  /// The longest PIN on the staff list: a PIN that long and matching nobody
+  /// is wrong. 4 when nobody has one.
+  static int _pinLength(List<Clerk> staff) {
+    var n = 0;
+    for (final c in staff) {
+      if (c.pin.length > n) n = c.pin.length;
+    }
+    return n == 0 ? 4 : n.clamp(4, 6);
+  }
+
+  /// Cancel: what was typed goes, and the idle screen comes back when the
+  /// venue has one (owner, 2026-10-31).
+  void _cancel() {
+    setState(() {
+      _pin = '';
+      _error = null;
+      _picked = null;
+      _idle = ref.read(tapProvider).config.go.idleEnabled;
+    });
   }
 
   Future<void> _card() async {
@@ -228,7 +255,7 @@ class _LiteLockPageState extends ConsumerState<LiteLockPage> with SingleTickerPr
             animation: _shake,
             builder: (_, child) => Transform.translate(offset: Offset(12 * math.sin(_shake.value * math.pi * 6) * (1 - _shake.value), 0), child: child),
             child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-              for (var i = 0; i < 4; i++)
+              for (var i = 0; i < _pinLength(picked == null ? s.staff : [picked]); i++)
                 AnimatedContainer(
                   duration: const Duration(milliseconds: 120),
                   margin: const EdgeInsets.all(8),
@@ -256,10 +283,16 @@ class _LiteLockPageState extends ConsumerState<LiteLockPage> with SingleTickerPr
           if (bio) Padding(padding: const EdgeInsets.only(top: 10), child: OutlinedButton.icon(onPressed: _face, icon: const Icon(Icons.face_rounded), label: const Text('Face ID'))),
         ],
         const SizedBox(height: 8),
+        TextButton(
+          onPressed: _cancel,
+          style: TextButton.styleFrom(foregroundColor: Colors.white, minimumSize: const Size(160, 48), textStyle: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
+          child: const Text('Cancel'),
+        ),
         if (s.demo) Text('Demo PINs: 1111 Sam (manager) · 2222 Alex · 3333 Priya', style: t.bodySmall),
       ]),
     );
 
+    if (_idle) return IdleScreen(onWake: () => setState(() => _idle = false));
     return Scaffold(
       backgroundColor: context.goDeep,
       body: Stack(fit: StackFit.expand, children: [
@@ -270,11 +303,13 @@ class _LiteLockPageState extends ConsumerState<LiteLockPage> with SingleTickerPr
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
             child: Column(children: [
               Row(children: [
-                const GoMark(size: 32),
+                // The venue's own logo, as on the idle screen.
+                const VenueMark(height: 36),
                 const SizedBox(width: 12),
                 Expanded(child: Text(s.venue?.name ?? '', style: t.titleMedium?.copyWith(color: Colors.white), overflow: TextOverflow.ellipsis)),
                 if (s.demo) const Chip(label: Text('Demo')),
                 if (!s.online) const Icon(Icons.cloud_off_rounded, color: Tp.amber),
+                if (!s.demo) const _SyncMark(),
               ]),
               Expanded(
                 child: Center(child: SingleChildScrollView(child: pad)),
@@ -318,4 +353,26 @@ class _Key extends StatelessWidget {
           ),
         ),
       );
+}
+
+/// The venue's menu, staff and settings: turning while they are being
+/// fetched, a tick once they are in. A tap fetches them again (owner,
+/// 2026-10-31: "a sync icon here if new stuff is added").
+class _SyncMark extends ConsumerWidget {
+  const _SyncMark();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final session = ref.read(tapProvider.notifier);
+    return ValueListenableBuilder<bool>(
+      valueListenable: session.syncing,
+      builder: (context, busy, _) => IconButton(
+        tooltip: busy ? 'Fetching the menu and staff' : 'Menu and staff are up to date. Tap to fetch again.',
+        onPressed: busy ? null : session.refresh,
+        icon: busy
+            ? const SizedBox.square(dimension: 22, child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white))
+            : const Icon(Icons.cloud_done_rounded, color: Colors.white),
+      ),
+    );
+  }
 }

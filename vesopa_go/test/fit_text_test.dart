@@ -28,4 +28,30 @@ void main() {
     expect(text.style!.fontSize, lessThan(30));
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('a box too short for two lines shows one, ellipsised, never a half-cut second line', (tester) async {
+    await tester.pumpWidget(const MaterialApp(
+      home: Center(
+        child: SizedBox(
+          width: 120,
+          height: 18,
+          child: FitText('1/2 Caffreys Black Stout', maxLines: 3, minSize: 12, style: TextStyle(fontSize: 14, height: 1.15)),
+        ),
+      ),
+    ));
+    expect(tester.widget<Text>(find.byType(Text)).maxLines, 1);
+  });
+
+  testWidgets('a short key keeps two lines when they fit', (tester) async {
+    await tester.pumpWidget(const MaterialApp(
+      home: Center(
+        child: SizedBox(
+          width: 150,
+          height: 34,
+          child: FitText('Mariquita S / Blanc 175ml', maxLines: 2, minSize: 9.5, style: TextStyle(fontSize: 15, height: 1.08)),
+        ),
+      ),
+    ));
+    expect(tester.widget<Text>(find.byType(Text)).maxLines, 2);
+  });
 }

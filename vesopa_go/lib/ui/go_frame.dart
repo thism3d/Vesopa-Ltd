@@ -417,35 +417,28 @@ class _IdleScreenState extends ConsumerState<IdleScreen> with SingleTickerProvid
         const ColoredBox(color: Tp.inkDeep),
         // The whole picture in the middle, the rest of the screen in its own
         // background colour (Android, 2026-10-30: it was cropped off-centre).
-        if (image != null) _Wallpaper(url: image),
-        // Keeps the words readable on any picture.
-        const DecoratedBox(
-          decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0x66000000), Color(0x00000000), Color(0xB3000000)])),
-        ),
+        if (image != null) _Wallpaper(url: image, fill: DevicePrefs.idleFill),
+        // Keeps the words readable on any picture; off in this device's
+        // settings for a picture that is the whole idle screen.
+        if (DevicePrefs.idleShade && (DevicePrefs.idleTop || DevicePrefs.idleMessage))
+          const DecoratedBox(
+            decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0x66000000), Color(0x00000000), Color(0xB3000000)])),
+          ),
         SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(32),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Row(children: [
-                // The venue's own logo (back office, Branding), as the till's
-                // idle screen; the Vesopa mark when there is none.
-                if (s.config.logoUrl case final logo?)
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 44, maxWidth: 160),
-                    child: CachedNetworkImage(
-                      imageUrl: logo.startsWith('http') ? logo : '$apiBase${logo.startsWith('/') ? '' : '/'}$logo',
-                      fit: BoxFit.contain,
-                      errorWidget: (_, _, _) => const GoMark(size: 40),
-                    ),
-                  )
-                else
-                  const GoMark(size: 40),
-                const SizedBox(width: 12),
-                Expanded(child: Text(s.venue?.name ?? appName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white))),
-                Text(time, style: const TextStyle(fontSize: 40, fontWeight: FontWeight.w800, color: Colors.white, fontFeatures: Tp.tabular)),
-              ]),
+              if (DevicePrefs.idleTop)
+                Row(children: [
+                  // The venue's own logo, exactly as drawn: no tile behind it
+                  // (owner, 2026-10-31); Go's mark only when there is none.
+                  const VenueMark(height: 44),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text(s.venue?.name ?? appName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white))),
+                  Text(time, style: const TextStyle(fontSize: 40, fontWeight: FontWeight.w800, color: Colors.white, fontFeatures: Tp.tabular)),
+                ]),
               const Spacer(),
-              Center(
+              if (DevicePrefs.idleMessage) Center(
                 child: FadeTransition(
                   opacity: Tween(begin: 0.7, end: 1.0).animate(_pulse),
                   // Glass, as Apple's own controls over a picture: the
@@ -558,8 +551,12 @@ class _BrightnessState extends State<_Brightness> {
 /// The idle picture fitted whole and centred, on its own edge colour, so a
 /// picture of any shape fills any screen without being cropped.
 class _Wallpaper extends StatefulWidget {
-  const _Wallpaper({required this.url});
+  const _Wallpaper({required this.url, this.fill = false});
   final String url;
+
+  /// Fills the screen, cropping the picture's edges, rather than showing it
+  /// whole on its own edge colour (this device's settings).
+  final bool fill;
   @override
   State<_Wallpaper> createState() => _WallpaperState();
 }
@@ -605,10 +602,35 @@ class _WallpaperState extends State<_Wallpaper> {
         color: _edge ?? Tp.inkDeep,
         child: CachedNetworkImage(
           imageUrl: widget.url,
-          fit: BoxFit.contain,
+          fit: widget.fill ? BoxFit.cover : BoxFit.contain,
           alignment: Alignment.center,
           fadeInDuration: const Duration(milliseconds: 600),
           errorWidget: (_, _, _) => const SizedBox.shrink(),
         ),
       );
+}
+
+/// The venue's own logo, exactly as the venue made it: no tile, frame or
+/// background behind it (owner, 2026-10-31). Go's mark when the venue has
+/// none anywhere, or it will not load.
+class VenueMark extends ConsumerWidget {
+  const VenueMark({super.key, this.height = 40, this.maxWidth = 180});
+  final double height;
+  final double maxWidth;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final url = ref.watch(tapProvider.select((s) => s.config.markUrl));
+    if (url == null) return GoMark(size: height * 0.9);
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: height, maxWidth: maxWidth),
+      child: CachedNetworkImage(
+        imageUrl: url.startsWith('http') ? url : '$apiBase${url.startsWith('/') ? '' : '/'}$url',
+        fit: BoxFit.contain,
+        alignment: Alignment.centerLeft,
+        placeholder: (_, _) => SizedBox(height: height, width: height),
+        errorWidget: (_, _, _) => GoMark(size: height * 0.9),
+      ),
+    );
+  }
 }

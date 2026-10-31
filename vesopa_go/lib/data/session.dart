@@ -152,6 +152,16 @@ class TapConfig {
     return url.isEmpty || show == 0 || show == false ? null : url;
   }
 
+  /// The venue's mark for Go's own screens (idle, PIN): the receipt logo,
+  /// else whatever logo the venue has anywhere (/api/branding/public's
+  /// mark_url, 2026-10-31). Null: none anywhere, and Go's mark is drawn.
+  String? get markUrl {
+    final own = '${branding['logo_url'] ?? ''}'.trim();
+    if (own.isNotEmpty) return own;
+    final any = '${branding['mark_url'] ?? ''}'.trim();
+    return any.isEmpty ? null : any;
+  }
+
   /// The home screen to draw, or null for the built-in grid.
   TillScreen? get home => screens.surfaceById(homeScreenId, ScreenSurface.sale);
 
@@ -508,9 +518,14 @@ class TapSession extends Notifier<TapState> {
 
   /// Staff, menu, floor and settings from the back office; the last good copy
   /// is kept so a phone that starts with no signal still knows its venue.
+  /// True while the venue's menu, staff and settings are being fetched: the
+  /// PIN screen's sync mark (owner, 2026-10-31).
+  final syncing = ValueNotifier<bool>(false);
+
   Future<void> refresh() async {
     if (state.demo) return;
     final api = ref.read(apiProvider);
+    syncing.value = true;
     try {
       final results = await Future.wait([
         api.staff(),
@@ -547,6 +562,8 @@ class TapSession extends Notifier<TapState> {
       } catch (_) {}
     } on TapApiError catch (e) {
       state = state.copyWith(online: e.status != 0, message: e.message);
+    } finally {
+      syncing.value = false;
     }
     await _flushOutbox();
   }

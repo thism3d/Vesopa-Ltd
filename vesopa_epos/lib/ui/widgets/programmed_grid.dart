@@ -424,9 +424,17 @@ class _Key extends StatelessWidget {
                     final asked = button.fontSize?.toDouble();
                     final ceiling = (box.maxHeight / (roomForMedia ? 4.2 : 2.8))
                         .clamp(9.0, 48.0);
-                    final size = asked == null
-                        ? 14.0
-                        : (asked > ceiling ? ceiling : asked);
+                    // And never a word broken across two lines ("DRAUGH/TS",
+                    // "FOO/D", owner 2026-10-31): smaller until the longest
+                    // word fits the key's width and the name its lines.
+                    final size = wholeWordSize(
+                      r.label,
+                      TextStyle(fontFamily: fontFamily, fontWeight: FontWeight.w700, height: 1.15),
+                      asked == null ? 14.0 : (asked > ceiling ? ceiling : asked),
+                      box.maxWidth,
+                      maxLines: roomForMedia ? 2 : 3,
+                      scaler: MediaQuery.textScalerOf(context),
+                    );
                     final noteSize = asked == null
                         ? 11.5
                         : (size * 0.82).clamp(9.0, 20.0);
@@ -626,4 +634,30 @@ class _OverPicture extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The largest size from [start] down to 8 at which every word of [text] fits
+/// [width] on its own and the whole of it fits [maxLines] lines: a key's name
+/// is made smaller rather than broken through a word.
+double wholeWordSize(String text, TextStyle style, double start, double width,
+    {int maxLines = 3, TextScaler scaler = TextScaler.noScaling}) {
+  if (!width.isFinite || width <= 0 || text.trim().isEmpty) return start;
+  final words = text.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+  bool fits(double size) {
+    final st = style.copyWith(fontSize: size);
+    for (final w in words) {
+      final p = TextPainter(text: TextSpan(text: w, style: st), textDirection: TextDirection.ltr, textScaler: scaler, maxLines: 1)
+        ..layout();
+      if (p.width > width) return false;
+    }
+    final all = TextPainter(text: TextSpan(text: text, style: st), textDirection: TextDirection.ltr, textScaler: scaler, maxLines: maxLines)
+      ..layout(maxWidth: width);
+    return !all.didExceedMaxLines;
+  }
+
+  var size = start;
+  while (size > 8 && !fits(size)) {
+    size -= 0.5;
+  }
+  return size;
 }

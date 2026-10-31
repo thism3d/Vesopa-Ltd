@@ -580,14 +580,27 @@ class _Key extends StatelessWidget {
         child: InkWell(
           onTap: onTap,
           onLongPress: onLong,
-          child: Stack(fit: StackFit.expand, children: [
-            if (image != null) CachedNetworkImage(imageUrl: image, fit: button.imageFit.boxFit, errorWidget: (_, _, _) => const SizedBox.shrink()),
+          child: LayoutBuilder(builder: (context, box) {
+            // A one-row key on an iPad is short (owner, 2026-10-31: "should
+            // show two lines with proper height"): less padding and a smaller
+            // price, so two lines of name and the price always fit.
+            final short = box.maxHeight < 80;
+            return Stack(fit: StackFit.expand, children: [
+            if (image != null)
+              CachedNetworkImage(
+                imageUrl: image,
+                fit: button.imageFit.boxFit,
+                // Decoded at the key's size, not the photo's: a screen of full
+                // size photos made signing on slow (owner, 2026-10-31).
+                memCacheWidth: box.maxWidth.isFinite ? (box.maxWidth * MediaQuery.devicePixelRatioOf(context)).round() : null,
+                errorWidget: (_, _, _) => const SizedBox.shrink(),
+              ),
             if (words)
               Container(
                 decoration: onPicture
                     ? const BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0x00000000), Color(0xB3000000)]))
                     : null,
-                padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                padding: short ? const EdgeInsets.fromLTRB(9, 5, 9, 5) : const EdgeInsets.fromLTRB(10, 8, 10, 8),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: onPicture ? MainAxisAlignment.end : MainAxisAlignment.start,
@@ -597,18 +610,20 @@ class _Key extends StatelessWidget {
                         alignment: onPicture ? Alignment.bottomLeft : Alignment.topLeft,
                         child: FitText(
                           [if ((button.emoji ?? '').isNotEmpty) button.emoji, label].join(' '),
-                          maxLines: 3,
-                          style: TextStyle(fontSize: size, height: 1.15, fontWeight: FontWeight.w700, color: colour),
+                          maxLines: short ? 2 : 3,
+                          minSize: short ? 9.5 : 10,
+                          style: TextStyle(fontSize: size, height: short ? 1.08 : 1.15, fontWeight: FontWeight.w700, color: colour),
                         ),
                       ),
                     ),
                     if (note != null)
                       Text(note, maxLines: 1, overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 12.5 * fontScale, fontFeatures: Tp.tabular, color: colour.withValues(alpha: 0.85))),
+                          style: TextStyle(fontSize: (short ? 11 : 12.5) * fontScale, height: 1.1, fontFeatures: Tp.tabular, color: colour.withValues(alpha: 0.85))),
                   ],
                 ),
               ),
-          ]),
+          ]);
+          }),
         ),
       ),
     );
