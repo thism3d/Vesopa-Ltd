@@ -238,7 +238,11 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
   /** Whether the venue has Vesopa Go seats; false when that cannot be told. */
   async function goLicensed(office) {
     try {
-      return (await require('./licences').limitFor(pool, office, 'go')) > 0;
+      // null is "no limit" (a practice venue, licences.js), not "none": the
+      // Pontardawe RFC demo venue showed "not on this venue's licence" with
+      // the comparison alone (owner, 2026-10-31).
+      const limit = await require('./licences').limitFor(pool, office, 'go');
+      return limit == null || limit > 0;
     } catch (e) {
       console.warn('[go] licence:', e.message);
       return false;

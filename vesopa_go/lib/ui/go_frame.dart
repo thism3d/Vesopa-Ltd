@@ -324,6 +324,9 @@ class _NotLicensed extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final t = Theme.of(context).textTheme;
+    final venue = ref.watch(tapProvider.select((s) => s.venue?.name));
+    // Never a dead end (owner, 2026-10-31: "nothing I can do, go back or
+    // whatever"): the venue is named, and the device can leave it for another.
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -331,10 +334,34 @@ class _NotLicensed extends ConsumerWidget {
           const GoMark(size: 72),
           const SizedBox(height: 20),
           Text('Vesopa Go is not on this venue\'s licence', style: t.headlineSmall, textAlign: TextAlign.center),
+          if (venue != null && venue.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(venue, style: t.titleMedium?.copyWith(color: context.goMuted), textAlign: TextAlign.center),
+          ],
           const SizedBox(height: 8),
           const Text('Ask Vesopa to add Vesopa Go to your licences. It works the moment it is added.', textAlign: TextAlign.center),
           const SizedBox(height: 20),
-          OutlinedButton.icon(onPressed: () => ref.read(tapProvider.notifier).refresh(), icon: const Icon(Icons.refresh_rounded), label: const Text('Check again')),
+          Wrap(spacing: 12, runSpacing: 12, alignment: WrapAlignment.center, children: [
+            OutlinedButton.icon(onPressed: () => ref.read(tapProvider.notifier).refresh(), icon: const Icon(Icons.refresh_rounded), label: const Text('Check again')),
+            OutlinedButton.icon(
+              onPressed: () async {
+                final sure = await showDialog<bool>(
+                  context: context,
+                  builder: (c) => AlertDialog(
+                    title: const Text('Sign out of this venue?'),
+                    content: const Text('This device goes back to the first screen, to sign in to another venue.'),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
+                      FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Sign out')),
+                    ],
+                  ),
+                );
+                if (sure == true) await ref.read(tapProvider.notifier).forgetPhone();
+              },
+              icon: const Icon(Icons.logout_rounded),
+              label: const Text('Sign out of this venue'),
+            ),
+          ]),
         ]),
       ),
     );

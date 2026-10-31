@@ -623,6 +623,13 @@ class TapSession extends Notifier<TapState> {
 
   Future<void> forgetPhone() async {
     _stopTimers();
+    // Give the licence back first, while the token still works. Best effort:
+    // offline, the seat frees itself after 30 days (till_seats.js).
+    if (!state.demo && ref.read(apiProvider).token != null) {
+      try {
+        await ref.read(apiProvider).releaseOwnSeat();
+      } catch (_) {}
+    }
     try {
       await _store.delete(key: _tokenKey);
       await _store.delete(key: _venueKey);

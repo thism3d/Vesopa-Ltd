@@ -127,6 +127,10 @@ class TapApi {
         'site_choice': true,
       });
 
+  /// Signing out gives this device's licence back at once (devices.js), as
+  /// the till's own Sign out does.
+  Future<void> releaseOwnSeat() => _send('POST', '/till/seat/release', const {}).timeout(const Duration(seconds: 4));
+
   /// A new venue on Vesopa Go alone (vesopa_server/src/tap.js).
   Future<Map<String, dynamic>> registerVenue({
     required String idToken,
