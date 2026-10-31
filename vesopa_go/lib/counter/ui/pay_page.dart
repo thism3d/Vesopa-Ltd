@@ -98,7 +98,7 @@ class _PayPageState extends ConsumerState<PayPage> {
     if (via == 'tap') {
       final why = await payments.whyUnavailable();
       if (why != null) {
-        if (mounted) setState(() => _problem = '$why Use the card machine, or take cash.');
+        if (mounted) setState(() => _problem = '$why Use the card machine or cash.');
         return;
       }
     }

@@ -79,7 +79,10 @@ class DojoTapToPay implements PaymentService {
       if (!ok) {
         return Platform.isIOS
             ? 'Tap to Pay needs an iPhone XS or newer on iOS 16.7 or later.'
-            : 'Card payments on an Android device need a Dojo Pocket. Use the card machine on this one.';
+            // Dojo's Tap to Pay on Android runs only in Dojo's own payment
+            // app (com.dojo.tap), which comes on a Dojo Pocket: an ordinary
+            // phone has NFC but not that app (owner, 2026-10-31).
+            : 'Tap to Pay on Android works on a Dojo Pocket, where the Dojo payment app is built in. This device does not have it.';
       }
       // The Pocket has the venue's Dojo account in it already.
       if (!Platform.isIOS) return null;
