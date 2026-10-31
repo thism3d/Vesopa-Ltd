@@ -1,4 +1,8 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- Dojo's Pocket SDK is Android 10+; a Pocket always is. Go still installs on
+         Android 8 and 9 and only calls the SDK on 10+ (DojoPocketSdk.kt). -->
+    <uses-sdk tools:overrideLibrary="tech.dojo.pos.pocket,tech.dojo.pos,tech.dojo.pos.core" />
     <!-- Staff cards and fobs; card payments are read by Dojo's own app. Not required:
          a phone without NFC still takes orders and uses the card machine. -->
     <uses-permission android:name="android.permission.NFC" />

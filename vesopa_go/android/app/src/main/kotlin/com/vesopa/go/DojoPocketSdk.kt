@@ -36,6 +36,9 @@ object DojoPocketSdk {
 
     /** Starts the SDK with the venue's account. Safe to call again: a new key restarts it. */
     fun configure(context: Context, apiKey: String, softwareHouseId: String, resellerId: String, result: MethodChannel.Result) {
+        // The SDK is Android 10+ (AndroidManifest.xml lets Go install below
+        // that); older devices keep the intents, and a Pocket is never older.
+        if (android.os.Build.VERSION.SDK_INT < 29) return result.error("setup", "This device's Android is too old for Dojo's Tap to Pay.", null)
         if (apiKey == configuredKey) return result.success(true)
         val r = DojoTapToPayOnPocket.initSdk(
             context.applicationContext,
