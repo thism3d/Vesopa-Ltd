@@ -88,7 +88,7 @@ const pool = {
       payments.set(id, { id, office, terminal, intent_id, amount_minor, tip_minor, bill_ref, clerk, state, environment, via, session_id, refunded_minor: 0 });
       return [{ affectedRows: 1 }];
     }
-    if (s.startsWith('SELECT api_key_enc, environment, terminal_id FROM epos_dojo_settings')) {
+    if (s.startsWith('SELECT api_key_enc, environment, terminal_id FROM epos_dojo_settings') || s.startsWith('SELECT api_key_enc, environment, terminal_id, platform, base_url FROM epos_dojo_settings')) {
       const row = settings.get(args[0]);
       return [row ? [row] : []];
     }

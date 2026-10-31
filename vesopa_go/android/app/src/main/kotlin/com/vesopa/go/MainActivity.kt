@@ -93,7 +93,11 @@ class MainActivity : FlutterFragmentActivity() {
         val pending = PendingIntent.getBroadcast(this, 7, reply, flags)
         listen()
         try {
-            startActivity(request.setPackage(DOJO).putExtra(PENDING_INTENT, pending).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            // The flags Dojo's intent guide gives (docs.dojo.tech/tap-to-pay-on-pocket/intent-integration).
+            startActivity(
+                request.setPackage(DOJO).putExtra(PENDING_INTENT, pending)
+                    .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            )
         } catch (e: Exception) {
             finish("unsupported", e.message ?: "Dojo's payment app did not open.")
         }

@@ -281,6 +281,9 @@ PaymentOutcome pocketOutcome(Map<String, Object?>? r) {
   return switch ('${r?['transaction_result'] ?? r?['refund_status'] ?? ''}'.toUpperCase()) {
     'AUTHORISED' || 'AUTHORIZED' || 'SUCCESS' || 'SUCCESSFUL' => PaymentOutcome(PayResult.paid, paymentId: ref),
     'DECLINED' => PaymentOutcome(PayResult.declined, paymentId: ref, message: 'Declined'),
+    // Dojo's FAILED: the payment did not go through (no money moved), not a
+    // "check the app" (docs.dojo.tech/tap-to-pay-on-pocket, TRANSACTION_RESULT).
+    'FAILED' => PaymentOutcome(PayResult.declined, paymentId: ref, message: 'The card payment failed. Nothing was taken.'),
     'CANCELLED' || 'CANCELED' => PaymentOutcome(PayResult.cancelled, paymentId: ref),
     _ => PaymentOutcome(PayResult.uncertain, paymentId: ref, message: 'The Dojo app did not say. Check it before taking the payment again.'),
   };
