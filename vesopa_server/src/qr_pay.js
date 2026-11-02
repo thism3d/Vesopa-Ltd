@@ -224,41 +224,46 @@ function qrPayRoutes({ pool, broadcast, secret, fetchImpl }) {
 
   // ---- Vesopa Go --------------------------------------------------------------
 
+  /**
+   * A QR payment for one tender: a Dojo checkout intent on the venue's online
+   * key, the same key its menu takes cards with. The same id again (a phone
+   * that lost its answer) is the same payment.
+   */
+  async function createPayment(office, b, by) {
+    const id = String(b.id || '');
+    if (!ID.test(id)) throw new QrError(400, 'A payment id is required.');
+    const amount = Number(b.amount_minor);
+    if (!Number.isInteger(amount) || amount < 30 || amount > 1_000_000) throw new QrError(400, 'QR Pay takes from £0.30 to £10,000.');
+    const settings = await settingsFor(office);
+    if (!settings.enabled && !b.test) throw new QrError(403, 'QR Pay is switched off for this venue in the back office.');
+    const had = await rowById(office, id);
+    if (had) return had;
+    const key = await keyFor(office);
+    if (!key) throw new QrError(409, 'This venue has no online card payments set up. Choose a Dojo key in the back office under Card Payments, Online checkout.');
+    const base = await baseFor(office);
+    const code = crypto.randomBytes(12).toString('hex');
+    const venue = await venueName(office);
+    const billName = String(b.bill_name || '').trim().slice(0, 120) || null;
+    const customer = String(b.customer_name || '').trim().slice(0, 120) || null;
+    const intent = await dojo.createCheckoutIntent(key, {
+      amountMinor: amount,
+      reference: `qr-${code.slice(0, 12)}`,
+      description: `${venue.slice(0, 50)}${billName ? ' · ' + billName.slice(0, 24) : ''}`,
+      redirectUrl: `${base}/pay/${code}`,
+    }, opts);
+    const environment = dojo.isSandboxKey(key) ? 'sandbox' : 'live';
+    await pool.execute(
+      `INSERT INTO epos_qr_payments (id, office, code, bill_ref, bill_name, customer_name, amount_minor, intent_id, environment, terminal)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, office, code, String(b.bill_ref || '').slice(0, 64) || null, billName, customer, amount, intent.id, environment, String(by || 'go').slice(0, 128)]);
+    return rowById(office, id);
+  }
+
   router.post('/api/tap/qr', terminal, express.json(), async (req, res, next) => {
     try {
-      const b = req.body || {};
-      const id = String(b.id || '');
-      if (!ID.test(id)) throw new QrError(400, 'A payment id is required.');
-      const amount = Number(b.amount_minor);
-      if (!Number.isInteger(amount) || amount < 30 || amount > 1_000_000) throw new QrError(400, 'QR Pay takes from £0.30 to £10,000.');
-      const office = req.office;
-      const settings = await settingsFor(office);
-      if (!settings.enabled) throw new QrError(403, 'QR Pay is switched off for this venue in the back office.');
-      const base = await baseFor(office);
-
-      // The same id again (a phone that lost its answer) is the same payment.
-      const had = await rowById(office, id);
-      if (had) return res.json(view(had, base));
-
-      const key = await keyFor(office);
-      if (!key) throw new QrError(409, 'This venue has no online card payments set up. Choose a Dojo key in the back office under Card Payments, Online checkout.');
-      const code = crypto.randomBytes(12).toString('hex');
-      const venue = await venueName(office);
-      const billName = String(b.bill_name || '').trim().slice(0, 120) || null;
-      const customer = String(b.customer_name || '').trim().slice(0, 120) || null;
-      const intent = await dojo.createCheckoutIntent(key, {
-        amountMinor: amount,
-        reference: `qr-${code.slice(0, 12)}`,
-        description: `${venue.slice(0, 50)}${billName ? ' · ' + billName.slice(0, 24) : ''}`,
-        redirectUrl: `${base}/pay/${code}`,
-      }, opts);
-      const environment = dojo.isSandboxKey(key) ? 'sandbox' : 'live';
-      await pool.execute(
-        `INSERT INTO epos_qr_payments (id, office, code, bill_ref, bill_name, customer_name, amount_minor, intent_id, environment, terminal)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, office, code, String(b.bill_ref || '').slice(0, 64) || null, billName, customer, amount, intent.id, environment,
-          String((req.terminal && (req.terminal.jti || req.terminal.commissionedBy)) || 'go').slice(0, 128)]);
-      res.json(view(await rowById(office, id), base));
+      const row = await createPayment(req.office, { ...(req.body || {}), test: false },
+        req.terminal && (req.terminal.jti || req.terminal.commissionedBy));
+      res.json(view(row, await baseFor(req.office)));
     } catch (e) { send(res, e, next); }
   });
 
@@ -430,6 +435,50 @@ h1{font-size:22px;margin:0 0 4px}.amount{font-size:46px;font-weight:800;margin:1
         [office, flag('enabled'), flag('email_link'), flag('on_bill'), minutes, String((req.user && req.user.email) || '').slice(0, 255)]);
       if (typeof broadcast === 'function') broadcast({ type: 'till-settings' }, { office });
       res.json(await settingsFor(office));
+    } catch (e) { send(res, e, next); }
+  });
+
+  // A test from the back office (QR Pay card, Test QR Pay): a real payment
+  // on the venue's own online key -- test money on a sandbox key, real money
+  // on a live one -- with its code drawn on the page and its state read back
+  // as Go reads it.
+  router.post('/api/qr-pay/test', guard('commerce.edit'), express.json(), async (req, res, next) => {
+    try {
+      const office = await officeOf(req);
+      const amount = Math.round(Number((req.body && req.body.amount_minor) || 100));
+      const row = await createPayment(office, {
+        id: 'test-' + crypto.randomBytes(8).toString('hex'),
+        amount_minor: amount,
+        bill_name: 'Back office test',
+        test: true,
+      }, 'back office ' + String((req.user && req.user.email) || '').slice(0, 100));
+      const v = view(row, await baseFor(office));
+      res.json({ ...v, qr_svg: require('./qr').svg(v.url, { size: 220 }) });
+    } catch (e) { send(res, e, next); }
+  });
+
+  router.get('/api/qr-pay/test/:id', guard('commerce.tender'), async (req, res, next) => {
+    try {
+      const office = await officeOf(req);
+      const row = await rowById(office, String(req.params.id));
+      if (!row) throw new QrError(404, 'That test is not known.');
+      res.json(view(await settle(row), await baseFor(office)));
+    } catch (e) { send(res, e, next); }
+  });
+
+  router.post('/api/qr-pay/test/:id/cancel', guard('commerce.edit'), async (req, res, next) => {
+    try {
+      const office = await officeOf(req);
+      let row = await rowById(office, String(req.params.id));
+      if (!row) throw new QrError(404, 'That test is not known.');
+      row = await settle(row);
+      if (row.status === 'waiting') {
+        const key = await keyFor(office);
+        if (key && row.intent_id) await dojo.cancelIntent(key, row.intent_id, opts).catch(() => false);
+        await pool.execute("UPDATE epos_qr_payments SET status = 'cancelled' WHERE id = ? AND status = 'waiting'", [row.id]);
+        row = await rowById(office, row.id);
+      }
+      res.json(view(row, await baseFor(office)));
     } catch (e) { send(res, e, next); }
   });
 

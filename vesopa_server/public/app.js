@@ -195,6 +195,7 @@ function connectSocket() {
     if (msg.type === 'memberships' && currentView === 'memberships') loadMemberships().catch(() => {});
     if (msg.type === 'events' && currentView === 'events') evRefresh().catch(() => {});
     if (msg.type === 'card-transactions' && currentView === 'card_payments') loadCardLog().catch(() => {});
+    if (msg.type === 'qrpay.updated' && typeof qrTestHeard === 'function') qrTestHeard(msg);
     if (msg.type === 'modules') applyModules().then(() => { if (currentView === 'modules') render(); });
     // The screen editor names its keys from the catalogue, so a product renamed
     // on another machine should relabel them here. Safe to reload now that
@@ -15104,6 +15105,53 @@ async function loadQrPay() {
       say('Saved. Vesopa Go picks this up straight away.', true);
     } catch (e) { say(e.message, false); }
   };
+  $('qrpay-test').onclick = qrTestStart;
+  $('qrpay-test-cancel').onclick = qrTestCancel;
+}
+
+// The QR Pay test: a payment on the venue's own online key, drawn here, and
+// its state heard over the websocket as Vesopa Go hears it (a poll behind it).
+let qrTest = null;
+let qrTestTimer = null;
+function qrTestShow(v) {
+  qrTest = v;
+  const words = { waiting: 'Waiting for the payment…', paid: 'Paid. Dojo has confirmed it.', cancelled: 'Cancelled. Nothing was taken.', expired: 'The link ran out. Nothing was taken.', failed: 'The payment did not go through.' };
+  const el = $('qrpay-test-state');
+  el.textContent = words[v.status] || v.status;
+  el.style.color = v.status === 'paid' ? '#06784f' : v.status === 'waiting' ? '' : '#b42318';
+  el.style.fontWeight = '600';
+  $('qrpay-test-cancel').hidden = v.status !== 'waiting';
+  if (v.status !== 'waiting') { clearInterval(qrTestTimer); qrTestTimer = null; }
+}
+async function qrTestStart() {
+  const pounds = Number($('qrpay-test-amount').value) || 1;
+  const live = $('qrpay-env').textContent === 'live';
+  if (live && !confirm(`This venue's key is LIVE: a test of £${pounds.toFixed(2)} is a real card payment. Refund it from Dojo afterwards. Go on?`)) return;
+  try {
+    const v = await api('/qr-pay/test', { method: 'POST', body: JSON.stringify({ amount_minor: Math.round(pounds * 100) }) });
+    $('qrpay-test-box').hidden = false;
+    $('qrpay-test-qr').innerHTML = v.qr_svg;
+    const a = $('qrpay-test-link');
+    a.href = v.url;
+    a.textContent = v.url.replace(/^https:\/\//, '');
+    qrTestShow(v);
+    clearInterval(qrTestTimer);
+    qrTestTimer = setInterval(qrTestPoll, 4000);
+  } catch (e) {
+    $('qrpay-msg').textContent = e.message;
+    $('qrpay-msg').style.color = '#b42318';
+  }
+}
+async function qrTestPoll() {
+  if (!qrTest) return;
+  try { qrTestShow(await api('/qr-pay/test/' + encodeURIComponent(qrTest.id))); } catch (_) { /* asked again */ }
+}
+async function qrTestCancel() {
+  if (!qrTest) return;
+  try { qrTestShow(await api('/qr-pay/test/' + encodeURIComponent(qrTest.id) + '/cancel', { method: 'POST', body: '{}' })); } catch (e) { $('qrpay-test-state').textContent = e.message; }
+}
+function qrTestHeard(msg) {
+  if (qrTest && msg.id === qrTest.id) qrTestPoll();
 }
 
 // ---- Teya (2026-10-19) ---------------------------------------------------------

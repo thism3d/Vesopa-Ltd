@@ -178,16 +178,16 @@ class _TillPayBoardState extends State<TillPayBoard> {
     ]);
 
     final row2 = Row(children: [
-      Expanded(child: _ToolKey(label: 'Manual card', onTap: () => _then(() => a.manualCard(_amount.clamp(1, _due))))),
+      Expanded(child: _ToolKey(label: 'Manual card', icon: Icons.keyboard_alt_rounded, onTap: () => _then(() => a.manualCard(_amount.clamp(1, _due))))),
       const SizedBox(width: 10),
       if (a.otherCard != null) ...[
-        Expanded(child: _ToolKey(label: a.otherCardLabel ?? 'Other card', onTap: () => _then(() => a.otherCard!(_amount.clamp(1, _due))))),
+        Expanded(child: _ToolKey(label: a.otherCardLabel ?? 'Other card', icon: a.otherCardLabel == 'Tap to Pay' ? Icons.contactless_rounded : Icons.point_of_sale_rounded, onTap: () => _then(() => a.otherCard!(_amount.clamp(1, _due))))),
         const SizedBox(width: 10),
       ],
       if (a.qrPay != null)
         Expanded(child: _ToolKey(key: const ValueKey('pay-qr'), label: 'QR Pay', icon: Icons.qr_code_2_rounded, onTap: () => _then(() => a.qrPay!(_amount.clamp(1, _due)))))
       else
-        Expanded(child: _ToolKey(label: 'Split bill', onTap: _split)),
+        Expanded(child: _ToolKey(label: 'Split bill', icon: Icons.call_split_rounded, onTap: _split)),
     ]);
 
     final notes = widget.allowCash && widget.notes.isNotEmpty
@@ -226,7 +226,7 @@ class _TillPayBoardState extends State<TillPayBoard> {
       final cols = wide ? (grid.length <= 5 ? grid.length : (grid.length == 9 ? 5 : 4)) : 3;
       final w = (box.maxWidth - 10 * (cols - 1)) / cols;
       return Wrap(spacing: 10, runSpacing: 10, children: [
-        for (final (label, onTap) in grid) SizedBox(width: w, height: 64, child: _ToolKey(label: label, onTap: onTap)),
+        for (final (label, onTap) in grid) SizedBox(width: w, height: 64, child: _ToolKey(label: label, icon: _toolIcons[label], onTap: onTap)),
       ]);
     });
 
@@ -314,6 +314,19 @@ class _TenderKey extends StatelessWidget {
         ),
       );
 }
+
+/// Every key on the board carries an icon, as QR Pay does (owner, 2026-11-02).
+const _toolIcons = <String, IconData>{
+  'Split bill': Icons.call_split_rounded,
+  'Gift Card': Icons.card_giftcard_rounded,
+  'Voucher': Icons.confirmation_number_rounded,
+  'Deposit': Icons.savings_rounded,
+  'Points': Icons.stars_rounded,
+  'Discount': Icons.percent_rounded,
+  'Customer': Icons.person_search_rounded,
+  'Gratuity': Icons.volunteer_activism_rounded,
+  'Print bill': Icons.print_rounded,
+};
 
 class _ToolKey extends StatelessWidget {
   const _ToolKey({super.key, required this.label, required this.onTap, this.icon});

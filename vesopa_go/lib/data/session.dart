@@ -55,8 +55,13 @@ enum Phase { booting, welcome, setup, locked, ready }
 /// QR Pay as the back office set it (server qr_pay.js).
 @immutable
 class QrPaySettings {
-  const QrPaySettings({this.available = false, this.emailLink = true, this.onBill = false, this.environment});
+  const QrPaySettings({this.available = false, this.emailLink = true, this.onBill = false, this.environment, this.known = false});
   final bool available;
+
+  /// Whether the server said anything about QR Pay. An older server does
+  /// not: then Go asks for the payment and shows the server's own answer,
+  /// rather than warning about a key that may well be there.
+  final bool known;
   final bool emailLink;
   final bool onBill;
 
@@ -70,6 +75,7 @@ class QrPaySettings {
       emailLink: j['email_link'] != false,
       onBill: j['on_bill'] == true,
       environment: j['environment'] as String?,
+      known: raw is Map,
     );
   }
 }

@@ -228,7 +228,7 @@ class _PayPageState extends ConsumerState<PayPage> {
     final bill = _bill;
     if (bill == null) return;
     final config = ref.read(tapProvider).config;
-    if (!config.qrPay.available) {
+    if (config.qrPay.known && !config.qrPay.available) {
       setState(() => _problem = 'QR Pay needs an online card key. Set one in the back office under Card Payments, Online checkout, and switch QR Pay on there.');
       return;
     }

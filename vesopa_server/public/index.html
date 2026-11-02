@@ -4535,6 +4535,23 @@
                 <button class="btn primary" type="button" id="qrpay-save">Save</button>
                 <span class="small" id="qrpay-msg" role="status"></span>
               </div>
+              <hr style="margin:16px 0;border:0;border-top:1px solid var(--line, #2a2c2e)">
+              <h4 style="margin:0 0 6px">Test QR Pay</h4>
+              <p class="small muted">Makes a payment on this venue's online key, as Vesopa Go does, and shows its code here. Scan it with a phone and pay: the state below changes the moment Dojo confirms. On a sandbox key use a Dojo test card; on a live key it is a real payment.</p>
+              <div class="row" style="gap:8px;align-items:center">
+                <label style="margin:0">£ <input type="number" id="qrpay-test-amount" min="0.30" step="0.01" value="1.00" style="width:100px" aria-label="Test amount in pounds"></label>
+                <button class="btn" type="button" id="qrpay-test">Test QR Pay</button>
+                <button class="btn small" type="button" id="qrpay-test-cancel" hidden>Cancel the test</button>
+              </div>
+              <div id="qrpay-test-box" hidden>
+                <div style="display:flex;gap:16px;align-items:center;margin-top:12px;flex-wrap:wrap">
+                  <div id="qrpay-test-qr" style="background:#fff;border-radius:12px;padding:8px;line-height:0"></div>
+                  <div>
+                    <p style="margin:0 0 6px"><a id="qrpay-test-link" target="_blank" rel="noopener"></a></p>
+                    <p class="small" id="qrpay-test-state" role="status"></p>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
           <!-- Teya, the second card acquirer (2026-10-19). Off until a manager
