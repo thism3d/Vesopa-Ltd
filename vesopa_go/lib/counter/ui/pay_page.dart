@@ -22,6 +22,7 @@ import '../data/lite_state.dart';
 import 'package:vesopa_go/data/bill_math.dart';
 import 'package:vesopa_go/ui/pages/member_sheet.dart';
 
+import 'check_view.dart';
 import 'qr_pay_page.dart';
 import 'receipt_print.dart';
 import 'receipt_view.dart';
@@ -388,68 +389,24 @@ class _PayPageState extends ConsumerState<PayPage> {
         body: SafeArea(
           child: TabBarView(children: [
             board,
-            Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 560), child: _BillColumn(bill: bill))),
+            CheckView(
+              bill: bill,
+              presetTipMinor: _presetTip,
+              onRemoveMember: () => ref.read(tapProvider.notifier).setMember(bill.id, null),
+              actions: [
+                (icon: Icons.print_rounded, label: 'Print bill', onTap: () => printBill(context, ref, bill)),
+                (icon: Icons.qr_code_2_rounded, label: 'QR Pay', onTap: bill.dueMinor > 0 ? () => _qr(bill.dueMinor) : null),
+                (icon: Icons.person_search_rounded, label: bill.member == null ? 'Customer' : 'Change customer', onTap: () => attachCustomer(context, ref, bill.id)),
+                (icon: Icons.percent_rounded, label: 'Discount', onTap: () => discountBill(context, ref, bill)),
+                (icon: Icons.confirmation_number_rounded, label: 'Voucher', onTap: () => askVoucher(context, ref, bill)),
+                (icon: Icons.volunteer_activism_rounded, label: 'Gratuity', onTap: _gratuity),
+                (icon: Icons.card_giftcard_rounded, label: 'Gift Card', onTap: bill.dueMinor > 0 ? () => _codeTender('giftcard') : null),
+                (icon: Icons.stars_rounded, label: 'Points', onTap: bill.member != null && bill.dueMinor > 0 ? () => _points(bill) : null),
+              ],
+            ),
           ]),
         ),
       ),
-    );
-  }
-}
-
-/// The bill being paid, line by line, as the till shows it beside the tenders.
-class _BillColumn extends StatelessWidget {
-  const _BillColumn({required this.bill});
-  final Bill bill;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = Theme.of(context).textTheme;
-    return ColoredBox(
-      color: context.goCard,
-      child: ListView(padding: const EdgeInsets.all(24), children: [
-        Text(bill.name, style: t.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
-        Text([if (bill.covers > 0) '${bill.covers} covers', if (bill.clerk.trim().isNotEmpty) bill.clerk].join(' · '), style: t.bodySmall),
-        const Divider(height: 28),
-        for (final l in bill.lines)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 5),
-            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              SizedBox(width: 36, child: Text('${l.quantity}×', style: t.titleSmall?.copyWith(color: context.goLimeInk, fontFeatures: Tp.tabular))),
-              Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(l.product.name, style: t.titleSmall),
-                  for (final c in l.choices) Text('+ ${c.name}', style: t.bodySmall),
-                  if (l.note.isNotEmpty) Text(l.note, style: t.bodySmall?.copyWith(color: Tp.blue)),
-                ]),
-              ),
-              Money(l.totalMinor, style: t.titleSmall),
-            ]),
-          ),
-        const Divider(height: 28),
-        if (bill.discountMinor > 0) ...[
-          _Sum('Subtotal', bill.subtotalMinor),
-          _Sum('Discount', -bill.discountMinor),
-        ],
-        for (final tender in bill.tenders) _Sum(tender.kind == 'cash' ? 'Cash' : 'Card', -tender.amountMinor),
-        _Sum(bill.paidMinor > 0 ? 'Left to pay' : 'Total', bill.dueMinor, bold: true),
-      ]),
-    );
-  }
-}
-
-class _Sum extends StatelessWidget {
-  const _Sum(this.label, this.minor, {this.bold = false});
-  final String label;
-  final int minor;
-  final bool bold;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = Theme.of(context).textTheme;
-    final style = bold ? t.headlineSmall?.copyWith(fontWeight: FontWeight.w900) : t.bodyLarge;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Row(children: [Expanded(child: Text(label, style: style)), Money(minor, style: style)]),
     );
   }
 }

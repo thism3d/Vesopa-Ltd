@@ -39,8 +39,9 @@ Future<QrPaid?> showQrPay(
 }) =>
     Navigator.of(context).push<QrPaid>(MaterialPageRoute(
       fullscreenDialog: true,
+      // Dark for the customer, in the venue's own lettering.
       builder: (_) => Theme(
-        data: Tp.theme(Brightness.dark),
+        data: Tp.theme(Brightness.dark, font: Theme.of(context).textTheme.bodyMedium?.fontFamily),
         child: QrPayPage(bill: bill, amountMinor: amountMinor, customerName: customerName, customerEmail: customerEmail),
       ),
     ));
@@ -347,10 +348,11 @@ class _PayMarks extends StatelessWidget {
           height: 30,
           padding: const EdgeInsets.symmetric(horizontal: 10),
           decoration: BoxDecoration(color: fill, borderRadius: BorderRadius.circular(7), border: Border.all(color: line)),
-          alignment: Alignment.center,
-          child: child,
+          // As wide as the mark: an aligned Container in a Wrap takes the
+          // whole row, which stacked the marks on a phone.
+          child: Center(widthFactor: 1, child: child),
         );
-    const bold = TextStyle(fontWeight: FontWeight.w900, fontSize: 13, height: 1);
+    const bold = TextStyle(fontWeight: FontWeight.w900, fontSize: 13, height: 1, color: Color(0xFF3C4043));
     return Wrap(spacing: 6, runSpacing: 6, children: [
       chip(const Text('VISA', style: TextStyle(fontWeight: FontWeight.w900, fontStyle: FontStyle.italic, fontSize: 14, color: Color(0xFF1A1F71)))),
       chip(SizedBox(
