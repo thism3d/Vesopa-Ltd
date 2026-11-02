@@ -201,6 +201,51 @@ void main() {
     expect(a.clientCount, 1);
   }, timeout: const Timeout(Duration(seconds: 30)));
 
+  test('support: test, speed, call through the main till, disconnect, takeover', () async {
+    final a = node('till-s', 'till', 47960, [47961]);
+    final b = node('till-t', 'till', 47961, [47960]);
+    final k = node('kitchen-s', 'kitchen', 0, [47960]);
+    await a.start();
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+    await b.start();
+    await k.start();
+    addTearDown(() async {
+      await k.dispose();
+      await b.dispose();
+      await a.dispose();
+    });
+    await until(() => a.isHub && !b.isHub && b.linked && k.linked);
+
+    // From the main till, and from another till through it.
+    final ping = await a.testConnection('kitchen-s', count: 5);
+    expect(ping['ok'], isTrue);
+    expect(ping['lost'], 0);
+    expect(ping['avg_ms'] as double, lessThan(200));
+    final viaHub = await b.testConnection('kitchen-s', count: 3);
+    expect(viaHub['ok'], isTrue);
+    final speed = await a.testSpeed('kitchen-s', kilobytes: 64);
+    expect(speed['up_mbps'] as double, greaterThan(0));
+    expect(speed['down_mbps'] as double, greaterThan(0));
+    final info = await a.call('kitchen-s', 'info', null) as Map;
+    expect(info['role'], 'kitchen');
+
+    // An app's own method, and one it does not have.
+    k.onCall('identify', (data, from) => {'shown': true, 'from': from});
+    expect(((await b.call('kitchen-s', 'identify', null)) as Map)['from'], 'till-s');
+    await expectLater(a.call('kitchen-s', 'nope', null), throwsA(isA<LanUnavailable>()));
+    await expectLater(a.call('nobody', 'ping', 'p'), throwsA(isA<LanUnavailable>()));
+
+    // Disconnect: off the link, and stays off for now.
+    await a.call('kitchen-s', 'disconnect', null);
+    await until(() => !k.linked);
+    await Future<void>.delayed(const Duration(milliseconds: 800));
+    expect(k.linked, isFalse);
+
+    // Make the other till the main one.
+    await a.call('till-t', 'takeover', null);
+    await until(() => b.isHub && !a.isHub && a.linked, within: const Duration(seconds: 12));
+  }, timeout: const Timeout(Duration(seconds: 40)));
+
   test('a device holding another venue key is never let in', () async {
     final a = node('till-x', 'till', 47920, []);
     await a.start();

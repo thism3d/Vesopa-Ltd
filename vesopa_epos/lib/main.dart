@@ -9,6 +9,8 @@ import 'package:window_manager/window_manager.dart';
 
 import 'config/constants.dart';
 import 'data/activity_log.dart';
+import 'data/lan/lan_identify.dart';
+import 'data/lan/lan_service.dart';
 import 'data/app_update.dart';
 import 'data/bill_sync.dart';
 import 'data/fonts.dart';
@@ -961,6 +963,8 @@ final billSyncRunnerProvider = Provider<void>((ref) {
   final sync = ref.watch(billSyncProvider);
   ref.listen(syncEventsProvider, (_, next) {
     if (next.value?.type == 'open-bills.updated') unawaited(sync.pull());
+    // A Vesopa admin's test or action, from the back office.
+    if (next.value?.type == 'lan.command') unawaited(LanService.instance.pollCommands());
   });
   sync.start();
 });
@@ -1264,7 +1268,7 @@ class _VesopaEposAppState extends ConsumerState<VesopaEposApp> {
       navigatorKey: _rootNavigator,
       debugShowCheckedModeBanner: false,
       navigatorObservers: [ActivityLog.instance.observer],
-      builder: (context, child) => ActivityLog.instance.wrap(child ?? const SizedBox.shrink()),
+      builder: (context, child) => ActivityLog.instance.wrap(LanIdentifyBanner(child: child ?? const SizedBox.shrink())),
       // The venue's font, if it has chosen one and this terminal has it on
       // disk. Null until the list has loaded, which is the honest answer: the
       // alternative is lettering the whole till in the app's own typeface and

@@ -52,6 +52,11 @@ import 'widgets/pos_message.dart';
 import 'widgets/nav_rail.dart';
 import 'widgets/till_top_bar.dart';
 import 'dinein_toasts.dart';
+import 'package:drift/drift.dart' show innerJoin, BooleanExpressionOperators;
+import 'connected_devices_page.dart' show testPrinter, tillEquipment;
+import 'printers_page.dart' show printerSettingsProvider;
+import '../payments/dojo_config.dart' show dojoConfigProvider;
+import '../printing/printer_transport.dart' show PrinterConfig;
 
 /// The till frame: fixed nav rail on the left, the selected page beside it.
 class PosShell extends ConsumerStatefulWidget {
@@ -426,6 +431,27 @@ class _PosShellState extends ConsumerState<PosShell> {
         token: session.terminalToken,
         deviceId: deviceId,
       );
+
+      // For Vesopa support's Connected devices page (2026-11-02).
+      final lan = LanService.instance;
+      lan.busy = () async {
+        final db = ref.read(databaseProvider);
+        final selling = await (db.select(db.orderLines).join([
+          innerJoin(db.orders, db.orders.id.equalsExp(db.orderLines.orderId)),
+        ])
+              ..where(db.orders.status.equals('open') & db.orders.heldBy.isNull())
+              ..limit(1))
+            .get();
+        return selling.isNotEmpty;
+      };
+      lan.extraReport = () async => tillEquipment(
+            ref.read(printerSettingsProvider).value?.printers ?? const [],
+            ref.read(dojoConfigProvider).value,
+          );
+      lan.testPrinters = () async => [
+            for (final p in ref.read(printerSettingsProvider).value?.printers ?? const <PrinterConfig>[])
+              await testPrinter(p),
+          ];
     }());
 
     await pairing.refreshGrants(

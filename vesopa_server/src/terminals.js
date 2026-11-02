@@ -39,7 +39,7 @@ function terminalRoutes({ pool, broadcast, secret }) {
   const terminal = requireTerminal(secret);
 
   // The venue's local link (src/lan.js, 2026-10-27).
-  router.use(lanRoutes({ pool, secret }));
+  router.use(lanRoutes({ pool, secret, broadcast }));
 
   /**
    * When each bill last changed, on the venue's main-till clock, so that a

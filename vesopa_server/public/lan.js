@@ -106,13 +106,23 @@ async function loadLan() {
     const pin = d.role === 'till'
       ? `<button class="btn btn-small" data-lan-pin="${esc(d.device)}">${data.preferred_hub === d.device ? 'Unpin' : 'Make main till'}</button>`
       : '';
+    // Vesopa support's tools: through the main till, so only for a device on
+    // the local link, and only when a main till is reporting.
+    const tools = data.support && fresh(d) && (r.linked || r.is_hub)
+      ? `<div class="row gap small" style="margin-top:6px;flex-wrap:wrap">
+          ${[['ping', 'Test connection'], ['speed', 'Test speed'], ['identify', 'Identify'],
+            ...(d.role === 'till' && !r.is_hub ? [['takeover', 'Make main till']] : []),
+            ['restart', 'Restart app'], ['disconnect', 'Disconnect']]
+            .map(([a, label]) => `<button class="btn btn-small" data-lan-cmd="${esc(a)}" data-lan-target="${esc(d.device)}" data-lan-name="${esc(d.name || d.device)}">${esc(label)}</button>`).join('')}
+        </div><div class="small muted" id="lan-result-${esc(d.device)}"></div>`
+      : '';
     return `<tr>
       <td><strong>${esc(d.name || d.device)}</strong><br><span class="muted small">${esc(roleName[d.role] || d.role)} · ${esc(d.version || '')}</span></td>
       <td>${state}${data.preferred_hub === d.device ? ' <span class="pill">Pinned</span>' : ''}</td>
       <td class="small">${esc((r.ips || []).join(', ') || '—')}</td>
       <td>${reach}</td>
       <td class="small muted">${fresh(d) ? 'Just now' : esc(ago(d.age_s))}</td>
-      <td>${pin}</td>
+      <td>${pin}${tools}</td>
     </tr>`;
   }).join('');
 
@@ -138,7 +148,81 @@ async function loadLan() {
     </table>
     ${conflicts ? `<h4>Changes that lost when the link and the cloud met</h4>
       <table class="table"><thead><tr><th>When</th><th>What</th><th>Device</th><th>Detail</th></tr></thead><tbody>${conflicts}</tbody></table>` : ''}
-    ${setup}`;
+    ${setup}
+    ${data.support ? `<h4>Vesopa support</h4>
+      <p class="small">Code that opens Connected devices on the till today (long-press Network setup in its Settings):
+        <strong id="lan-support-code">…</strong></p>
+      <div class="row gap"><button class="btn btn-small" data-lan-cmd="fullcheck" data-lan-target="*" data-lan-name="Everything">Full check of everything</button></div>
+      <pre class="small" id="lan-result-*" style="white-space:pre-wrap"></pre>` : ''}
+    ${data.platform_admin ? `<h4>Who has Vesopa support</h4>
+      <p class="muted small">Opens these tools and the till's Connected devices page for the venue the login is in.
+        Always: info@vesopa.com, support@vesopa.com, info@vesopasoftware.com, and every platform admin.</p>
+      <div id="lan-support-users" class="small">…</div>
+      <div class="row gap" style="margin-top:6px">
+        <input id="lan-support-email" type="email" placeholder="name@example.com">
+        <button class="btn btn-small" id="lan-support-add">Give access</button>
+      </div>` : ''}`;
+  if (data.support) {
+    api('/lan/support-code').then((r) => { const el = $('lan-support-code'); if (el) el.textContent = r.code; }).catch(() => {});
+  }
+  if (data.platform_admin) loadSupportUsers();
+}
+
+async function loadSupportUsers() {
+  const box = $('lan-support-users');
+  if (!box) return;
+  try {
+    const r = await api('/lan/support-users');
+    box.innerHTML = r.granted.length
+      ? r.granted.map((u) => `${esc(u.email)} <span class="muted">${esc(u.office || '')}</span>
+          <button class="btn btn-small" data-lan-support-off="${esc(u.email)}">Remove</button>`).join('<br>')
+      : '<span class="muted">Nobody else yet.</span>';
+  } catch (e) {
+    box.textContent = e.message;
+  }
+}
+
+/** Words for a command's answer, as the till's page says them. */
+function lanSaid(action, r) {
+  if (!r) return 'Done.';
+  if (r.error) return r.error;
+  const ms = (v) => (typeof v === 'number' ? `${v.toFixed(v < 10 ? 1 : 0)} ms` : '?');
+  if (action === 'ping') {
+    return r.ok ? `Reached: ${ms(r.avg_ms)} average, ${ms(r.min_ms)} best, ${ms(r.max_ms)} worst, ${r.lost} of ${r.sent} lost.` : `No answer (${r.sent} tried).`;
+  }
+  if (action === 'speed') {
+    const low = Math.min(r.up_mbps || 0, r.down_mbps || 0);
+    return `${low >= 5 ? 'Good' : low >= 1 ? 'Slow' : 'Poor'}: ${(r.up_mbps || 0).toFixed(1)} Mbit/s sending, ${(r.down_mbps || 0).toFixed(1)} receiving.`;
+  }
+  if (action === 'fullcheck') {
+    const out = [r.internet_ms == null ? 'Internet: FAILED' : `Internet: OK, ${r.internet_ms} ms`];
+    for (const d of r.devices || []) out.push(`${d.name}: ${lanSaid('ping', d.link)}${d.speed ? ' ' + lanSaid('speed', d.speed) : ''}`);
+    for (const p of r.printers || []) out.push(`Printer ${p.name}: ${p.ok == null ? (p.note || '') : p.ok ? `OK, ${p.ms} ms` : 'NO ANSWER'} (${p.where})`);
+    return out.join('\n');
+  }
+  return 'Done.';
+}
+
+async function runLanCommand(target, action, name) {
+  const out = $(`lan-result-${target}`);
+  const say = (t) => { if (out) out.textContent = t; };
+  say('Sent to the main till…');
+  try {
+    const { id } = await api('/lan/commands', { method: 'POST', body: JSON.stringify({ target, action }) });
+    const started = Date.now();
+    while (Date.now() - started < 120000) {
+      await new Promise((r) => setTimeout(r, 1500));
+      const c = await api(`/lan/commands/${id}`);
+      if (c.status === 'done' || c.status === 'failed') {
+        say(`${name}: ${lanSaid(action, c.result)}`);
+        return;
+      }
+      if (c.status === 'running') say('The main till is on it…');
+    }
+    say('No answer from the main till yet. It collects commands when it next reports, within a minute.');
+  } catch (e) {
+    say(e.message);
+  }
 }
 
 function ago(seconds) {
@@ -160,6 +244,33 @@ document.addEventListener('click', async (e) => {
     } catch (err) {
       toast(err.message, 'error');
     }
+  }
+  const cmd = e.target.closest && e.target.closest('[data-lan-cmd]');
+  if (cmd) {
+    const action = cmd.getAttribute('data-lan-cmd');
+    const name = cmd.getAttribute('data-lan-name');
+    const ask = { restart: `Restart the Vesopa app on ${name}? Refused during a sale.`,
+      disconnect: `Take ${name} off the local link for a minute?`, takeover: `Make ${name} the main till?` }[action];
+    if (ask && !window.confirm(ask)) return;
+    runLanCommand(cmd.getAttribute('data-lan-target'), action, name);
+    return;
+  }
+  if (e.target.id === 'lan-support-add') {
+    try {
+      await api('/lan/support-users', { method: 'PUT', body: JSON.stringify({ email: $('lan-support-email').value, on: true }) });
+      toast('Vesopa support given.');
+      $('lan-support-email').value = '';
+      loadSupportUsers();
+    } catch (err) { toast(err.message, 'error'); }
+    return;
+  }
+  const off = e.target.closest && e.target.closest('[data-lan-support-off]');
+  if (off) {
+    try {
+      await api('/lan/support-users', { method: 'PUT', body: JSON.stringify({ email: off.getAttribute('data-lan-support-off'), on: false }) });
+      loadSupportUsers();
+    } catch (err) { toast(err.message, 'error'); }
+    return;
   }
   if (e.target.id === 'lan-hosts-save') {
     try {

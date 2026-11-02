@@ -9,6 +9,7 @@ import 'touch_gate.dart';
 import 'data/activity_log.dart';
 import 'data/app_update.dart';
 import 'data/kitchen_branding.dart';
+import 'data/lan/lan_identify.dart';
 import 'data/providers.dart';
 import 'package:flutter/services.dart';
 
@@ -170,7 +171,7 @@ class _VesopaKitchenAppState extends ConsumerState<VesopaKitchenApp> {
       darkTheme: Kds.theme(brightness: Brightness.dark),
       themeMode: ref.watch(kdsThemeProvider).value ?? ThemeMode.light,
       navigatorObservers: [ActivityLog.instance.observer],
-      builder: (context, child) => ActivityLog.instance.wrap(MediaQuery.withNoTextScaling(
+      builder: (context, child) => ActivityLog.instance.wrap(LanIdentifyBanner(child: MediaQuery.withNoTextScaling(
         // The board's type sizes are chosen for a specific reading distance —
         // see `ui/theme.dart` — and a Windows display scale set for somebody's
         // desktop would reflow a card mid-service into something that no longer
@@ -211,7 +212,7 @@ class _VesopaKitchenAppState extends ConsumerState<VesopaKitchenApp> {
               ),
           ],
         ),
-      )),
+      ))),
       home: session.when(
         // Only ever seen for the instant it takes to read the stored session
         // off disk — and, on a normal launch, seen behind the start screen

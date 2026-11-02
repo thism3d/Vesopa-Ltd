@@ -14,6 +14,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -196,6 +197,19 @@ class LanService {
     for (final e in _handlers.entries) {
       node.handle(e.key, e.value);
     }
+    node.onCall('identify', (data, from) {
+      if (!_identify.isClosed) _identify.add('This is ${node.identity.name}');
+      return {'shown': true};
+    });
+    node.onCall('restart', (data, from) async {
+      final check = busy;
+      if (check != null && await check()) {
+        throw const LanUnavailable('Not restarted: a sale is in progress on this device.');
+      }
+      await Process.start(Platform.resolvedExecutable, const [], mode: ProcessStartMode.detached);
+      Timer(const Duration(milliseconds: 400), () => exit(0));
+      return {'restarting': true};
+    });
     _nodeChanges = node.changes.listen((_) => _changed());
     _nodeReady = node.onReady.listen((_) {
       for (final f in List.of(_ready)) {
@@ -287,16 +301,210 @@ class LanService {
   Future<Map<String, Object?>?> report() async {
     final n = _node;
     if (n == null) return null;
+    Map<String, Object?> extra = const {};
+    try {
+      extra = await extraReport?.call() ?? const {};
+    } catch (_) {}
     return {
       ...await n.report(),
       'firewall': firewallOpen,
       'network_profile': networkProfile,
       'os': Platform.operatingSystemVersion,
+      ...extra,
     };
+  }
+
+  // ---- Vesopa support (2026-11-02) -------------------------------------------
+  //
+  // The Connected devices page on the till, and the same controls for a Vesopa
+  // admin in the back office, which reach the devices through the main till.
+
+  final _identify = StreamController<String>.broadcast();
+
+  /// Show this message across this device's screen (see LanIdentifyBanner).
+  Stream<String> get identifyRequests => _identify.stream;
+
+  /// Whether a restart would interrupt a sale. Set by the till.
+  Future<bool> Function()? busy;
+
+  /// What else this device reports: a till's printers and card machine.
+  Future<Map<String, Object?>> Function()? extraReport;
+
+  /// Checks this till's printers, for the full check.
+  Future<List<Map<String, Object?>>> Function()? testPrinters;
+
+  /// Today's support code for this venue. See supportCode in src/lan.js.
+  String? _codeFor(DateTime day) {
+    final key = _key;
+    if (key == null) return null;
+    final date = day.toUtc().toIso8601String().substring(0, 10);
+    final mac = Hmac(sha256, key).convert(utf8.encode('vesopa-lan-support|$date')).bytes;
+    final n = ((mac[0] << 24) | (mac[1] << 16) | (mac[2] << 8) | mac[3]) & 0xFFFFFFFF;
+    return (n % 1000000).toString().padLeft(6, '0');
+  }
+
+  /// Whether [code] opens the page. Yesterday's works too, for a day that
+  /// turns over at midnight UTC while somebody is on the phone to the venue.
+  bool checkSupportCode(String code) {
+    final now = DateTime.now().toUtc();
+    final c = code.trim();
+    return c.isNotEmpty && (c == _codeFor(now) || c == _codeFor(now.subtract(const Duration(days: 1))));
+  }
+
+  static const _devicesCache = 'vesopa_lan_devices';
+
+  /// Every device the back office has heard from this month, or the last list
+  /// kept here when it cannot be reached.
+  Future<List<Map<String, dynamic>>> knownDevices() async {
+    final base = _apiBase, token = _token;
+    List<Map<String, dynamic>> parse(String raw) => [
+          for (final d in (jsonDecode(raw) as Map)['devices'] as List) (d as Map).cast<String, dynamic>(),
+        ];
+    if (base != null && token != null) {
+      try {
+        final res = await _client
+            .get(Uri.parse('$base/api/lan/devices'), headers: {'Authorization': 'Bearer $token'})
+            .timeout(const Duration(seconds: 6));
+        if (res.statusCode == 200) {
+          try {
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setString(_devicesCache, res.body);
+          } catch (_) {}
+          return parse(res.body);
+        }
+      } catch (_) {}
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_devicesCache);
+      if (raw != null) return parse(raw);
+    } catch (_) {}
+    return const [];
+  }
+
+  /// How long the back office takes to answer, or null when it cannot be reached.
+  Future<int?> testInternet() async {
+    final base = _apiBase;
+    if (base == null) return null;
+    final clock = Stopwatch()..start();
+    try {
+      final res = await _client.get(Uri.parse('$base/health')).timeout(const Duration(seconds: 6));
+      return res.statusCode == 200 ? clock.elapsedMilliseconds : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Make [device] the main till, and tell the back office so it stays so.
+  Future<void> makeMain(String device) async {
+    final n = _node;
+    if (n == null) throw const LanUnavailable('The local link is not running');
+    await n.call(device, 'takeover', null);
+    final base = _apiBase, token = _token;
+    if (base == null || token == null) return;
+    try {
+      await _client
+          .post(
+            Uri.parse('$base/api/lan/main-till'),
+            headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
+            body: jsonEncode({'device': device}),
+          )
+          .timeout(const Duration(seconds: 6));
+    } catch (_) {}
+  }
+
+  /// Every test at once: the internet, each device on the link, the printers.
+  Future<Map<String, Object?>> fullCheck() async {
+    final n = _node;
+    if (n == null) throw const LanUnavailable('The local link is not running');
+    final ids = <String, String>{
+      for (final p in n.peers.values)
+        if (p.id != n.identity.id && (p.role == 'till' || n.isHub == false || n.clients.any((c) => c['id'] == p.id)))
+          p.id: p.name,
+      for (final c in n.clients) '${c['id']}': '${c['name']}',
+    };
+    final devices = <Map<String, Object?>>[];
+    for (final e in ids.entries) {
+      Map<String, Object?> link;
+      try {
+        link = await n.testConnection(e.key, count: 5);
+      } catch (error) {
+        link = {'ok': false, 'error': '$error'};
+      }
+      Map<String, Object?>? speed;
+      if (link['ok'] == true) {
+        try {
+          speed = await n.testSpeed(e.key, kilobytes: 128);
+        } catch (_) {}
+      }
+      devices.add({'id': e.key, 'name': e.value, 'link': link, 'speed': speed});
+    }
+    List<Map<String, Object?>> printers = const [];
+    try {
+      printers = await testPrinters?.call() ?? const [];
+    } catch (_) {}
+    return {
+      'internet_ms': await testInternet(),
+      'firewall': firewallOpen,
+      'network_profile': networkProfile,
+      'is_hub': n.isHub,
+      'linked': n.linked,
+      'devices': devices,
+      'printers': printers,
+    };
+  }
+
+  /// One action from the back office, or from the page's own buttons.
+  Future<Object?> runAction(String target, String action) async {
+    final n = _node;
+    if (n == null) throw const LanUnavailable('The local link is not running');
+    return switch (action) {
+      'ping' => n.testConnection(target),
+      'speed' => n.testSpeed(target),
+      'identify' => n.call(target, 'identify', null),
+      'restart' => n.call(target, 'restart', null),
+      'disconnect' => n.call(target, 'disconnect', null),
+      'takeover' => makeMain(target).then((_) => {'ok': true}),
+      'fullcheck' => fullCheck(),
+      _ => throw LanUnavailable('Unknown action $action'),
+    };
+  }
+
+  bool _polling = false;
+
+  /// On the main till: run what a Vesopa admin asked for in the back office.
+  Future<void> pollCommands() async {
+    final base = _apiBase, token = _token;
+    if (!isHub || _polling || base == null || token == null) return;
+    _polling = true;
+    final headers = {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'};
+    try {
+      final res = await _client
+          .get(Uri.parse('$base/api/lan/commands'), headers: headers)
+          .timeout(const Duration(seconds: 6));
+      if (res.statusCode != 200) return;
+      for (final c in (jsonDecode(res.body) as Map)['commands'] as List) {
+        final m = c as Map;
+        Map<String, Object?> body;
+        try {
+          body = {'ok': true, 'result': await runAction('${m['target']}', '${m['action']}')};
+        } catch (e) {
+          body = {'ok': false, 'result': {'error': '$e'}};
+        }
+        await _client
+            .post(Uri.parse('$base/api/lan/commands/${m['id']}/result'), headers: headers, body: jsonEncode(body))
+            .timeout(const Duration(seconds: 6));
+      }
+    } catch (_) {
+      // Asked again on the next report.
+    } finally {
+      _polling = false;
+    }
   }
 
   Future<void> sendReport() async {
     unawaited(_rememberTills());
+    unawaited(pollCommands());
     final base = _apiBase, token = _token;
     if (base == null || token == null || token.isEmpty) return;
     final body = await report();

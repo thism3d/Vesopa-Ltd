@@ -719,12 +719,35 @@ class LanNode {
         unawaited(_answer(conn, m));
       case 'ping':
         conn.send({'op': 'pong', 't': m['t'], 'now': DateTime.now().millisecondsSinceEpoch});
+      case 'reply':
+        _onReply(m);
+    }
+  }
+
+  void _onReply(Map m) {
+    final waiting = _waiting.remove(m['rid']);
+    if (waiting == null) return;
+    if (m['error'] != null) {
+      waiting.completeError(LanUnavailable('${m['error']}'));
+    } else {
+      waiting.complete(m['data']);
     }
   }
 
   Future<void> _answer(_Conn conn, Map m) async {
     final rid = m['rid'];
     final ch = '${m['ch'] ?? ''}';
+    // One device asking another, through here.
+    if (ch == _callChannel && m['data'] is Map) {
+      final d = m['data'] as Map;
+      try {
+        final out = await call('${d['to']}', '${d['method']}', d['data'], timeout: _callTimeout(d['ms']));
+        conn.send({'op': 'rep', 'rid': rid, 'data': out});
+      } catch (e) {
+        conn.send({'op': 'rep', 'rid': rid, 'error': '$e'});
+      }
+      return;
+    }
     final handler = _handlers[ch];
     if (handler == null) {
       conn.send({'op': 'rep', 'rid': rid, 'error': 'Nothing on the main till answers $ch'});
@@ -802,6 +825,8 @@ class LanNode {
 
   void _keepClient() {
     if (_isHub || _connecting || !_running) return;
+    final paused = _pausedUntil;
+    if (paused != null && DateTime.now().isBefore(paused)) return;
     final id = hubId;
     if (id == null) {
       _probe();
@@ -939,7 +964,146 @@ class LanNode {
         }
       case 'nothub':
         conn.close();
+      case 'call':
+        unawaited(_onCalled(conn, m));
     }
+  }
+
+  // ---- one device asking another --------------------------------------------
+  //
+  // For the support page (2026-11-02): test a device, show which one it is,
+  // restart it. Goes through the main till like everything else, so any device
+  // on the link can reach any other, and nothing listens but the main till.
+
+  static const _callChannel = 'lan-call';
+  static Duration _callTimeout(Object? ms) =>
+      Duration(milliseconds: ms is num ? ms.toInt() : 6000);
+
+  final Map<String, LanHandler> _calls = {};
+
+  /// Answer [method] when another device calls it on this one.
+  void onCall(String method, LanHandler handler) => _calls[method] = handler;
+
+  Future<Object?> _called(String method, Object? data, String from) async {
+    switch (method) {
+      case 'ping':
+        return {'id': identity.id, 'size': data is String ? data.length : 0};
+      case 'fill':
+        return 'x' * ((data as num?)?.toInt() ?? 0).clamp(0, 1 << 20);
+      case 'info':
+        return report();
+      case 'takeover':
+        identity.preferredHub = identity.id;
+        return {'ok': true};
+      case 'disconnect':
+        pause(const Duration(seconds: 60));
+        return {'ok': true};
+    }
+    final h = _calls[method];
+    if (h == null) throw LanUnavailable('$method is not available on ${identity.name}');
+    return h(data, from);
+  }
+
+  Future<void> _onCalled(_Conn conn, Map m) async {
+    final rid = m['rid'];
+    try {
+      final out = await _called('${m['method']}', m['data'], '${m['from'] ?? ''}');
+      conn.send({'op': 'reply', 'rid': rid, 'data': out});
+    } catch (e) {
+      conn.send({'op': 'reply', 'rid': rid, 'error': '$e'});
+    }
+  }
+
+  /// Ask [deviceId] something. Throws [LanUnavailable] when it cannot be reached.
+  Future<Object?> call(
+    String deviceId,
+    String method,
+    Object? data, {
+    Duration timeout = const Duration(seconds: 6),
+  }) async {
+    if (deviceId == identity.id) return _called(method, data, identity.id);
+    if (!_isHub) {
+      return request(
+        _callChannel,
+        {'to': deviceId, 'method': method, 'data': data, 'ms': timeout.inMilliseconds},
+        timeout: timeout + const Duration(seconds: 1),
+      );
+    }
+    final conn = _clients.where((c) => c.authed && c.peerId == deviceId).firstOrNull;
+    if (conn == null) throw const LanUnavailable('That device is not on the local link');
+    final rid = '${identity.id}-${++_rid}';
+    final done = Completer<Object?>();
+    _waiting[rid] = done;
+    conn.send({'op': 'call', 'rid': rid, 'method': method, 'data': data, 'from': identity.id});
+    try {
+      return await done.future.timeout(timeout);
+    } on TimeoutException {
+      throw const LanUnavailable('The device did not answer');
+    } finally {
+      _waiting.remove(rid);
+    }
+  }
+
+  /// Round trips to [deviceId], in milliseconds, over the encrypted link.
+  Future<Map<String, Object?>> testConnection(String deviceId, {int count = 10}) async {
+    final times = <double>[];
+    var lost = 0;
+    for (var i = 0; i < count; i++) {
+      final clock = Stopwatch()..start();
+      try {
+        await call(deviceId, 'ping', 'p', timeout: const Duration(seconds: 2));
+        times.add(clock.elapsedMicroseconds / 1000);
+      } on LanUnavailable {
+        lost++;
+      }
+    }
+    if (times.isEmpty) return {'ok': false, 'lost': lost, 'sent': count};
+    times.sort();
+    return {
+      'ok': true,
+      'sent': count,
+      'lost': lost,
+      'min_ms': times.first,
+      'avg_ms': times.reduce((a, b) => a + b) / times.length,
+      'max_ms': times.last,
+    };
+  }
+
+  /// Sends data to [deviceId] and fetches it back: megabits a second each way.
+  Future<Map<String, Object?>> testSpeed(String deviceId, {int kilobytes = 256}) async {
+    const piece = 32 * 1024;
+    final pieces = (kilobytes * 1024 / piece).ceil();
+    final payload = 'x' * piece;
+    double mbps(int bytes, Stopwatch c) => bytes * 8 / 1e6 / (c.elapsedMicroseconds / 1e6);
+    final up = Stopwatch()..start();
+    for (var i = 0; i < pieces; i++) {
+      await call(deviceId, 'ping', payload, timeout: const Duration(seconds: 8));
+    }
+    up.stop();
+    final down = Stopwatch()..start();
+    for (var i = 0; i < pieces; i++) {
+      await call(deviceId, 'fill', piece, timeout: const Duration(seconds: 8));
+    }
+    down.stop();
+    return {
+      'ok': true,
+      'kilobytes': kilobytes,
+      'up_mbps': mbps(pieces * piece, up),
+      'down_mbps': mbps(pieces * piece, down),
+    };
+  }
+
+  DateTime? _pausedUntil;
+
+  /// Leave the link for [how] long (support's Disconnect).
+  void pause(Duration how) {
+    _pausedUntil = DateTime.now().add(how);
+    // After the answer has gone back.
+    Timer(const Duration(milliseconds: 200), () {
+      _client?.close();
+      _client = null;
+      _changed();
+    });
   }
 
   // ---- channels -------------------------------------------------------------

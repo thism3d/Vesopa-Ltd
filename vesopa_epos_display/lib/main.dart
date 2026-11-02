@@ -29,6 +29,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'data/activity_log.dart';
+import 'data/lan/lan_identify.dart';
 import 'data/app_update.dart';
 import 'data/deep_links.dart';
 import 'data/screens.dart';
@@ -143,7 +144,7 @@ class VesopaDisplayApp extends StatelessWidget {
     debugShowCheckedModeBanner: false,
     theme: buildDisplayTheme(),
     navigatorObservers: [ActivityLog.instance.observer],
-    builder: (context, child) => ActivityLog.instance.wrap(child ?? const SizedBox.shrink()),
+    builder: (context, child) => ActivityLog.instance.wrap(LanIdentifyBanner(child: child ?? const SizedBox.shrink())),
     // One theme, not a light and a dark one. See ui/theme.dart: this screen
     // faces a customer across a counter and a white panel at that distance is
     // a lamp pointed at them.

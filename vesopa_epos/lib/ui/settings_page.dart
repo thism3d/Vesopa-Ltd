@@ -6,6 +6,7 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'connected_devices_page.dart' show openConnectedDevices;
 import '../data/lan/lan_link.dart' show LanNode;
 import '../data/lan/lan_service.dart';
 import '../config/constants.dart';
@@ -900,6 +901,8 @@ class _LocalNetworkCardState extends State<_LocalNetworkCard> {
             ),
           ),
           trailing: OutlinedButton(onPressed: _editHosts, child: const Text('Addresses')),
+          // Vesopa support's page: hidden, and behind the day's code.
+          onLongPress: () => openConnectedDevices(context),
         ),
         if (Platform.isWindows && lan.firewallOpen == false)
           ListTile(

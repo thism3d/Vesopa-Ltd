@@ -11,7 +11,7 @@ const assert = require('assert');
 const http = require('http');
 const express = require('express');
 const jwt = require('jsonwebtoken');
-const { lanRoutes, offlineOnce, lanKey } = require('../src/lan');
+const { lanRoutes, offlineOnce, lanKey, supportCode } = require('../src/lan');
 
 const SECRET = 'lan-test-secret';
 let passed = 0;
@@ -35,6 +35,7 @@ function fakePool() {
     reports, journal, settings,
     async query(sql, params = []) {
       if (/^(CREATE|ALTER) TABLE/i.test(sql.trim())) return [[]];
+      if (/SELECT lan_support FROM backoffice_users/.test(sql)) return [[]];
       if (/FROM epos_lan_settings/.test(sql)) {
         const v = settings.get(params[0]);
         return [v ? [{ preferred_hub: v.hub ?? null, hosts: v.hosts ?? null }] : []];
@@ -148,6 +149,28 @@ async function call(server, method, path, { token, body, headers = {} } = {}) {
     assert.strictEqual(r.status, 200);
     const key = await call(server, 'GET', '/api/lan/key', { token: kitchen });
     assert.deepStrictEqual(key.json.targets, ['192.168.1.190', '192.168.10.1', '192.168.1.20']);
+  });
+
+  await check('support: the day code and commands are for a Vesopa admin only', async () => {
+    const admin = jwt.sign({ email: 'club@venue.test', role: 'admin' }, SECRET);
+    const outsider = jwt.sign({ email: 'someone@else.test' }, SECRET);
+    assert.strictEqual((await call(server, 'GET', '/api/lan/support-code', { token: outsider })).status, 403);
+    // One of the addresses the owner named has it without being an admin.
+    const named = jwt.sign({ email: 'support@vesopa.com', officeId: null }, SECRET);
+    assert.strictEqual((await call(server, 'GET', '/api/lan/support-code', { token: named })).status, 200);
+    // Only a platform admin may hand it out.
+    assert.strictEqual((await call(server, 'PUT', '/api/lan/support-users', {
+      token: named, body: { email: 'x@y.test' },
+    })).status, 403);
+    assert.strictEqual((await call(server, 'GET', '/api/lan/support-code', { token: till })).status, 401);
+    const code = await call(server, 'GET', '/api/lan/support-code', { token: admin });
+    assert.strictEqual(code.json.code, supportCode(SECRET, 'club@venue.test'));
+    assert.match(code.json.code, /^\d{6}$/);
+    assert.notStrictEqual(supportCode(SECRET, 'club@venue.test', new Date('2026-01-01')),
+      supportCode(SECRET, 'club@venue.test', new Date('2026-01-02')));
+    assert.strictEqual((await call(server, 'POST', '/api/lan/commands', {
+      token: outsider, body: { target: 'till-1', action: 'restart' },
+    })).status, 403);
   });
 
   await check('a replayed move runs once; a failed one may run again', async () => {

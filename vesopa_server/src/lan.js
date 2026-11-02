@@ -14,6 +14,13 @@
  *   POST /api/lan/conflicts  a change that lost when the link and the cloud met
  *   GET  /api/lan/conflicts  for the back office
  *
+ * Vesopa support (2026-11-02), a platform admin only:
+ *   GET  /api/lan/support-code   today's code that opens the till's page
+ *   POST /api/lan/commands       test or act on a device, through the main till
+ *   GET  /api/lan/commands/:id   how that went
+ * And the till's side of it: GET /api/lan/devices, GET /api/lan/commands,
+ * POST /api/lan/commands/:id/result, POST /api/lan/main-till.
+ *
  * THE KEY. One per venue, derived from the server's secret and the venue, so
  * it needs no table and every device of the venue gets the same one. A device
  * proves it belongs with its own signed token -- a till's, a kitchen
@@ -62,6 +69,18 @@ function ensureTables(pool) {
         created_at  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
         KEY idx_lan_conflicts_office (office, created_at)
       )`);
+      await pool.query(`CREATE TABLE IF NOT EXISTS epos_lan_commands (
+        id          BIGINT       NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        office      VARCHAR(190) NOT NULL,
+        target      VARCHAR(80)  NOT NULL,
+        action      VARCHAR(24)  NOT NULL,
+        status      VARCHAR(12)  NOT NULL DEFAULT 'pending',
+        result      TEXT         NULL,
+        created_by  VARCHAR(190) NULL,
+        created_at  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        done_at     TIMESTAMP    NULL,
+        KEY idx_lan_commands_office (office, status)
+      )`);
       await pool.query(`CREATE TABLE IF NOT EXISTS epos_lan_journal (
         office      VARCHAR(190) NOT NULL,
         id          VARCHAR(80)  NOT NULL,
@@ -91,6 +110,29 @@ function hostsOf(raw) {
   return [...new Set(list.map((h) => String(h).trim())
     .filter((h) => /^\d{1,3}(\.\d{1,3}){3}$/.test(h) && h.split('.').every((n) => Number(n) <= 255)))].slice(0, 32);
 }
+
+/**
+ * The day's code that opens the till's Connected devices page. Made from the
+ * venue key, so a till can check it with the internet down, and different for
+ * every venue and every day (UTC).
+ */
+function supportCode(secret, office, day = new Date()) {
+  const date = day.toISOString().slice(0, 10);
+  const mac = crypto.createHmac('sha256', Buffer.from(lanKey(secret, office), 'hex'))
+    .update(`vesopa-lan-support|${date}`)
+    .digest();
+  return String(mac.readUInt32BE(0) % 1000000).padStart(6, '0');
+}
+
+/**
+ * Who may use Vesopa support's tools (2026-11-02): a platform admin, the
+ * addresses the owner named, and anybody a platform admin grants it to in the
+ * back office (backoffice_users.lan_support). Not platform admin: it opens the
+ * support tools for the venue that login is in, and nothing else.
+ */
+const SUPPORT_EMAILS = new Set(['info@vesopa.com', 'support@vesopa.com', 'info@vesopasoftware.com']);
+
+const COMMANDS = new Set(['ping', 'speed', 'identify', 'restart', 'disconnect', 'takeover', 'fullcheck']);
 
 function clamp(v, n) {
   return v == null ? null : String(v).slice(0, n);
@@ -150,7 +192,7 @@ function offlineOnce(pool) {
   };
 }
 
-function lanRoutes({ pool, secret }) {
+function lanRoutes({ pool, secret, broadcast = () => {} }) {
   const router = express.Router();
   const device = requireDevice(secret);
   const auth = requireAuth(secret);
@@ -228,6 +270,8 @@ function lanRoutes({ pool, secret }) {
         [office]
       );
       res.json({
+        support: await isSupport(req.user),
+        platform_admin: req.user.role === 'admin',
         preferred_hub: settings ? settings.preferred_hub : null,
         hosts: hostsOf(settings && settings.hosts),
         ports: { tcp: 47821, udp: 47820 },
@@ -274,6 +318,188 @@ function lanRoutes({ pool, secret }) {
     } catch (e) { next(e); }
   });
 
+  // ---- Vesopa support ------------------------------------------------------
+
+  let supportColumn = null;
+  function ensureSupportColumn() {
+    if (!supportColumn) {
+      supportColumn = pool
+        .query('ALTER TABLE backoffice_users ADD COLUMN lan_support TINYINT(1) NOT NULL DEFAULT 0')
+        .then(() => true)
+        .catch((e) => e && (e.code === 'ER_DUP_FIELDNAME' || e.errno === 1060));
+    }
+    return supportColumn;
+  }
+
+  async function isSupport(user) {
+    if (!user) return false;
+    if (user.role === 'admin') return true;
+    if (SUPPORT_EMAILS.has(String(user.email || '').toLowerCase())) return true;
+    if (!(await ensureSupportColumn())) return false;
+    try {
+      const [[row]] = await pool.query(
+        'SELECT lan_support FROM backoffice_users WHERE LOWER(email) = ?',
+        [String(user.email || '').toLowerCase()]
+      );
+      return !!(row && Number(row.lan_support) === 1);
+    } catch {
+      return false;
+    }
+  }
+
+  const supportOnly = async (req, res, next) => {
+    try {
+      if (!(await isSupport(req.user))) {
+        return res.status(403).json({ error: 'This is for Vesopa support.' });
+      }
+      next();
+    } catch (e) { next(e); }
+  };
+
+  const adminOnly = (req, res, next) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Only a Vesopa platform admin can do this.' });
+    next();
+  };
+
+  /** Who has Vesopa support, for the back office. */
+  router.get('/api/lan/support-users', auth, adminOnly, async (req, res, next) => {
+    try {
+      const has = await ensureSupportColumn();
+      const [rows] = has
+        ? await pool.query(
+          `SELECT u.email, u.name, o.name AS office FROM backoffice_users u
+             LEFT JOIN offices o ON o.id = u.office_id WHERE u.lan_support = 1 ORDER BY u.email`)
+        : [[]];
+      res.json({ always: [...SUPPORT_EMAILS], granted: rows });
+    } catch (e) { next(e); }
+  });
+
+  /** Give or take away Vesopa support for a back-office login, by its address. */
+  router.put('/api/lan/support-users', auth, adminOnly, async (req, res, next) => {
+    try {
+      const email = String((req.body && req.body.email) || '').trim().toLowerCase();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: 'Type the email address of a back-office login.' });
+      if (!(await ensureSupportColumn())) return res.status(500).json({ error: 'The database would not take the setting.' });
+      const [r] = await pool.execute(
+        'UPDATE backoffice_users SET lan_support = ? WHERE LOWER(email) = ?',
+        [req.body.on === false ? 0 : 1, email]
+      );
+      if (!r.affectedRows) {
+        return res.status(404).json({ error: `There is no back-office login for ${email}. Add it under Back Office Users first.` });
+      }
+      res.json({ ok: true });
+    } catch (e) { next(e); }
+  });
+
+  /** What the venue's devices last reported, for the till's own page. */
+  router.get('/api/lan/devices', device, async (req, res, next) => {
+    try {
+      await ensureTables(pool);
+      const [rows] = await pool.query(
+        `SELECT device, role, name, version, report,
+                TIMESTAMPDIFF(SECOND, updated_at, NOW()) AS age_s
+           FROM epos_lan_reports
+          WHERE office = ? AND updated_at > DATE_SUB(NOW(), INTERVAL 30 DAY)
+          ORDER BY role, name`,
+        [req.device.office]
+      );
+      res.json({
+        devices: rows.map((r) => {
+          let report = {};
+          try { report = JSON.parse(r.report || '{}'); } catch { /* empty */ }
+          return { device: r.device, role: r.role, name: r.name, version: r.version, age_s: Number(r.age_s), report };
+        }),
+      });
+    } catch (e) { next(e); }
+  });
+
+  /** A till that has just been made the main one, so it stays so. */
+  router.post('/api/lan/main-till', device, async (req, res, next) => {
+    try {
+      await ensureTables(pool);
+      if (req.device.scope !== 'terminal') return res.status(403).json({ error: 'Only a till can do this.' });
+      const hub = clamp(req.body && req.body.device, 64);
+      if (!hub) return res.status(400).json({ error: 'device is required' });
+      await pool.execute(
+        `INSERT INTO epos_lan_settings (office, preferred_hub) VALUES (?, ?)
+         ON DUPLICATE KEY UPDATE preferred_hub = VALUES(preferred_hub)`,
+        [req.device.office, hub]
+      );
+      res.json({ ok: true });
+    } catch (e) { next(e); }
+  });
+
+  router.get('/api/lan/support-code', auth, supportOnly, async (req, res, next) => {
+    try {
+      res.json({ code: supportCode(secret, await tenantEmail(req)) });
+    } catch (e) { next(e); }
+  });
+
+  router.post('/api/lan/commands', auth, supportOnly, async (req, res, next) => {
+    try {
+      await ensureTables(pool);
+      const office = await tenantEmail(req);
+      const target = clamp(req.body && req.body.target, 80);
+      const action = clamp(req.body && req.body.action, 24);
+      if (!target || !COMMANDS.has(action)) return res.status(400).json({ error: 'target and action are required' });
+      const [r] = await pool.execute(
+        'INSERT INTO epos_lan_commands (office, target, action, created_by) VALUES (?, ?, ?, ?)',
+        [office, target, action, clamp(req.user.email, 190)]
+      );
+      broadcast({ type: 'lan.command' }, { office });
+      res.json({ ok: true, id: r.insertId });
+    } catch (e) { next(e); }
+  });
+
+  router.get('/api/lan/commands/:id', auth, supportOnly, async (req, res, next) => {
+    try {
+      await ensureTables(pool);
+      const [[row]] = await pool.query(
+        'SELECT id, target, action, status, result FROM epos_lan_commands WHERE id = ? AND office = ?',
+        [req.params.id, await tenantEmail(req)]
+      );
+      if (!row) return res.status(404).json({ error: 'No such command.' });
+      let result = null;
+      try { result = JSON.parse(row.result || 'null'); } catch { /* plain */ }
+      res.json({ ...row, result });
+    } catch (e) { next(e); }
+  });
+
+  /** The main till collects what is waiting; anything over five minutes is stale. */
+  router.get('/api/lan/commands', device, async (req, res, next) => {
+    try {
+      await ensureTables(pool);
+      if (req.device.scope !== 'terminal') return res.json({ commands: [] });
+      const [rows] = await pool.query(
+        `SELECT id, target, action FROM epos_lan_commands
+          WHERE office = ? AND status = 'pending' AND created_at > DATE_SUB(NOW(), INTERVAL 5 MINUTE)
+          ORDER BY id LIMIT 10`,
+        [req.device.office]
+      );
+      const taken = [];
+      for (const r of rows) {
+        const [u] = await pool.execute(
+          `UPDATE epos_lan_commands SET status = 'running' WHERE id = ? AND status = 'pending'`,
+          [r.id]
+        );
+        if (u.affectedRows) taken.push(r);
+      }
+      res.json({ commands: taken });
+    } catch (e) { next(e); }
+  });
+
+  router.post('/api/lan/commands/:id/result', device, async (req, res, next) => {
+    try {
+      await ensureTables(pool);
+      const b = req.body || {};
+      await pool.execute(
+        `UPDATE epos_lan_commands SET status = ?, result = ?, done_at = NOW() WHERE id = ? AND office = ?`,
+        [b.ok === false ? 'failed' : 'done', JSON.stringify(b.result ?? null).slice(0, 60000), req.params.id, req.device.office]
+      );
+      res.json({ ok: true });
+    } catch (e) { next(e); }
+  });
+
   router.post('/api/lan/conflicts', device, async (req, res, next) => {
     try {
       await ensureTables(pool);
@@ -292,4 +518,4 @@ function lanRoutes({ pool, secret }) {
   return router;
 }
 
-module.exports = { lanRoutes, offlineOnce, ensureTables, lanKey };
+module.exports = { lanRoutes, offlineOnce, ensureTables, lanKey, supportCode };
