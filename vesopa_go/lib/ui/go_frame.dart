@@ -429,28 +429,49 @@ class _IdleScreenState extends ConsumerState<IdleScreen> with SingleTickerProvid
           child: Padding(
             padding: const EdgeInsets.all(32),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              if (DevicePrefs.idleTop)
+              // A phone: the time on top, as the iPhone's own lock screen, and
+              // the venue's logo and name under it, the name shrinking to fit
+              // (owner, 2026-11-02). A tablet keeps them in one row.
+              if (DevicePrefs.idleTop && narrow)
+                Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  Center(
+                    child: Text(time, style: const TextStyle(fontSize: 72, height: 1.05, fontWeight: FontWeight.w800, color: Colors.white, fontFeatures: Tp.tabular)),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    const VenueMark(height: 40, maxWidth: 110),
+                    const SizedBox(width: 12),
+                    // Its own width, so logo and name sit centred together;
+                    // a long name scales down rather than being cut short.
+                    Flexible(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(s.venue?.name ?? appName,
+                            maxLines: 1,
+                            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: Colors.white)),
+                      ),
+                    ),
+                  ]),
+                ])
+              else if (DevicePrefs.idleTop)
                 Row(children: [
                   // The venue's own logo, exactly as drawn: no tile behind it
                   // (owner, 2026-10-31); Go's mark only when there is none.
-                  // A phone gets a smaller logo and clock, and the name
-                  // shrinks to fit (two lines at most) rather than being cut
-                  // short (iPhone, owner 2026-11-02).
-                  VenueMark(height: narrow ? 36 : 44, maxWidth: narrow ? 96 : 180),
+                  const VenueMark(height: 44),
                   const SizedBox(width: 12),
                   Expanded(
                     child: SizedBox(
-                      height: narrow ? 48 : 56,
+                      height: 56,
                       child: Align(
                         alignment: Alignment.centerLeft,
                         child: FitText(s.venue?.name ?? appName,
                             maxLines: 2, minSize: 11,
-                            style: TextStyle(fontSize: narrow ? 18 : 20, height: 1.15, fontWeight: FontWeight.w700, color: Colors.white)),
+                            style: const TextStyle(fontSize: 20, height: 1.15, fontWeight: FontWeight.w700, color: Colors.white)),
                       ),
                     ),
                   ),
                   const SizedBox(width: 12),
-                  Text(time, style: TextStyle(fontSize: narrow ? 32 : 40, fontWeight: FontWeight.w800, color: Colors.white, fontFeatures: Tp.tabular)),
+                  Text(time, style: const TextStyle(fontSize: 40, fontWeight: FontWeight.w800, color: Colors.white, fontFeatures: Tp.tabular)),
                 ]),
               const Spacer(),
               if (DevicePrefs.idleMessage) Center(
