@@ -13,10 +13,6 @@ const authIssuer = String.fromEnvironment('VESOPA_AUTH_ISSUER', defaultValue: 'h
 /// (TapApi.signInClient, /api/go/vesopa/enabled), so Go signs in as its own app
 /// once Vesopa Auth has it, and as the till's until then.
 
-/// Dojo's environment for the Tap to Pay SDK: `staging` (sandbox) or `production`.
-/// The server says which one a venue is on; this is only the build's ceiling.
-const dojoEnvironment = String.fromEnvironment('DOJO_ENV', defaultValue: 'staging');
-
 /// The app's name everywhere a person reads it.
 const appName = 'Vesopa Go';
 

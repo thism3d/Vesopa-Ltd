@@ -8,7 +8,6 @@ library;
 
 import 'dart:math' as math;
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -20,7 +19,8 @@ import 'package:vesopa_go/data/clerk_auth.dart';
 import 'package:vesopa_go/data/session.dart';
 import 'package:vesopa_go/data/vesopa_sso.dart';
 import 'package:vesopa_go/nfc/staff_card.dart';
-import 'package:vesopa_go/ui/go_frame.dart' show IdleScreen, VenueMark;
+import 'package:vesopa_go/ui/device_prefs.dart';
+import 'package:vesopa_go/ui/go_frame.dart' show IdleScreen, IdleWallpaper, VenueMark;
 import 'package:vesopa_go/ui/pages/sign_in_flow.dart';
 import 'package:vesopa_go/ui/pages/welcome.dart' show RegisterPage;
 import 'package:vesopa_go/ui/theme.dart';
@@ -296,7 +296,9 @@ class _LiteLockPageState extends ConsumerState<LiteLockPage> with SingleTickerPr
     return Scaffold(
       backgroundColor: context.goDeep,
       body: Stack(fit: StackFit.expand, children: [
-        if (wallpaper != null) CachedNetworkImage(imageUrl: wallpaper, fit: BoxFit.cover, errorWidget: (_, _, _) => const SizedBox.shrink()),
+        // The idle picture as this device shows it: whole, or filling the
+        // screen when chosen in its settings (iPhone, owner 2026-11-02).
+        if (wallpaper != null) IdleWallpaper(url: wallpaper, fill: DevicePrefs.idleFill),
         const ColoredBox(color: Color(0xB3000000)),
         SafeArea(
           child: Padding(

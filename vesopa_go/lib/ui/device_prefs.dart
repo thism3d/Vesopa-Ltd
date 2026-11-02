@@ -23,14 +23,17 @@ class DevicePrefs {
 
   // The idle screen on this device (owner, 2026-10-31: "hide the top and
   // bottom and expand ... a proper idle screen, customised in the settings").
-  static const _idleFillKey = 'go_idle_fill';
+  // A new key, 2026-11-02: the old one was saved as "fill" whenever any idle
+  // switch changed, so phones cropped the picture nobody asked to crop.
+  static const _idleFillKey = 'go_idle_fill_2';
   static const _idleTopKey = 'go_idle_top';
   static const _idleMessageKey = 'go_idle_message';
   static const _idleShadeKey = 'go_idle_shade';
 
   /// The picture fills the screen (cropped at the edges) rather than shown
-  /// whole on bands of its own colour.
-  static bool idleFill = true;
+  /// whole on bands of its own colour. Whole unless chosen (owner, 2026-11-02:
+  /// the picture cropped on an iPhone's idle and PIN screens).
+  static bool idleFill = false;
 
   /// The venue's logo, name and the clock along the top.
   static bool idleTop = true;
@@ -47,7 +50,7 @@ class DevicePrefs {
       final p = await SharedPreferences.getInstance();
       keepAwake = p.getBool(_awakeKey) ?? true;
       fullScreen = p.getBool(_fullKey) ?? true;
-      idleFill = p.getBool(_idleFillKey) ?? true;
+      idleFill = p.getBool(_idleFillKey) ?? false;
       idleTop = p.getBool(_idleTopKey) ?? true;
       idleMessage = p.getBool(_idleMessageKey) ?? true;
       idleShade = p.getBool(_idleShadeKey) ?? true;
@@ -62,10 +65,11 @@ class DevicePrefs {
     idleShade = shade ?? idleShade;
     try {
       final p = await SharedPreferences.getInstance();
-      await p.setBool(_idleFillKey, idleFill);
-      await p.setBool(_idleTopKey, idleTop);
-      await p.setBool(_idleMessageKey, idleMessage);
-      await p.setBool(_idleShadeKey, idleShade);
+      // Only what was changed: an untouched choice keeps following the default.
+      if (fill != null) await p.setBool(_idleFillKey, idleFill);
+      if (top != null) await p.setBool(_idleTopKey, idleTop);
+      if (message != null) await p.setBool(_idleMessageKey, idleMessage);
+      if (shade != null) await p.setBool(_idleShadeKey, idleShade);
     } catch (_) {}
   }
 

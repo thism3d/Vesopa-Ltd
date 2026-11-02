@@ -276,13 +276,54 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
     return req.user && (req.user.officeEmail || req.user.email);
   }
 
-  /** The venue's Dojo key and whether it is live. */
+  /**
+   * The Dojo account key Tap to Pay uses for a venue, and whether it is live:
+   * the card settings' own key when they are a live Dojo account; else the
+   * live online-payments key (Pontardawe RFC's card settings are a
+   * Paymentsense Connect key, which is no Dojo API key: its Dojo account key
+   * is the online one); else Dojo's sandbox.
+   *
+   * DOJO_TAP_BORROW ("test@venue=lender@venue,...") lets a test venue take
+   * Tap to Pay on another venue's live key. Owner, 2026-11-02: the Vesopa
+   * Kitchen on Pontardawe RFC's, while Dojo's public sandbox key answers 401.
+   * That is real money into the lender's account. The setting names offices
+   * only; the key stays sealed in the lender's settings.
+   */
+  async function liveKeyOf(office) {
+    let row;
+    try {
+      [[row]] = await pool.query('SELECT api_key_enc, environment, platform FROM epos_dojo_settings WHERE office = ?', [office]);
+    } catch (e) {
+      if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+      [[row]] = await pool.query('SELECT api_key_enc, environment FROM epos_dojo_settings WHERE office = ?', [office]);
+    }
+    if (row && row.api_key_enc && row.environment === 'live' && (row.platform || 'dojo') === 'dojo') {
+      return unseal(row.api_key_enc);
+    }
+    try {
+      const [[ex]] = await pool.query('SELECT dojo_key_enc FROM epos_express_settings WHERE office = ?', [office]);
+      const online = ex && ex.dojo_key_enc ? unseal(ex.dojo_key_enc) : null;
+      if (online && /^sk_prod_/.test(online)) return online;
+    } catch (e) {
+      if (e.code !== 'ER_NO_SUCH_TABLE' && e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+    }
+    return null;
+  }
+
+  function lenderOf(office) {
+    for (const pair of String(process.env.DOJO_TAP_BORROW || '').split(',')) {
+      const [from, to] = pair.split('=').map((s) => s.trim().toLowerCase());
+      if (from && to && from === String(office || '').toLowerCase()) return to;
+    }
+    return null;
+  }
+
   async function keyFor(office) {
-    const [[row]] = await pool.query(
-      'SELECT api_key_enc, environment FROM epos_dojo_settings WHERE office = ?', [office]);
-    const own = row && row.api_key_enc ? unseal(row.api_key_enc) : null;
-    if (own && row.environment === 'live') return { key: own, environment: 'live' };
-    // A venue on sandbox tests against Dojo's Tap to Pay sandbox, whatever card-machine key it saved.
+    const own = await liveKeyOf(office);
+    if (own) return { key: own, environment: 'live' };
+    const lender = lenderOf(office);
+    const borrowed = lender ? await liveKeyOf(lender) : null;
+    if (borrowed) return { key: borrowed, environment: 'live' };
     return { key: TAP_SANDBOX_KEY, environment: 'sandbox' };
   }
 
@@ -358,32 +399,10 @@ function tapRoutes({ pool, secret, fetchImpl, verifyIdToken, signInDevice }) {
   router.get('/api/tap/pocket-config', terminal, async (req, res, next) => {
     try {
       res.set('Cache-Control', 'no-store');
-      let key = null;
-      let environment = 'sandbox';
-      let row;
-      try {
-        [[row]] = await pool.query('SELECT api_key_enc, environment, platform FROM epos_dojo_settings WHERE office = ?', [req.office]);
-      } catch (e) {
-        if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
-        [[row]] = await pool.query('SELECT api_key_enc, environment FROM epos_dojo_settings WHERE office = ?', [req.office]);
-      }
-      if (row && row.api_key_enc && row.environment === 'live' && (row.platform || 'dojo') === 'dojo') {
-        key = unseal(row.api_key_enc);
-        environment = 'live';
-      }
-      if (!key) {
-        try {
-          const [[ex]] = await pool.query('SELECT dojo_key_enc FROM epos_express_settings WHERE office = ?', [req.office]);
-          const online = ex && ex.dojo_key_enc ? unseal(ex.dojo_key_enc) : null;
-          if (online && /^sk_prod_/.test(online)) {
-            key = online;
-            environment = 'live';
-          }
-        } catch (e) {
-          if (e.code !== 'ER_NO_SUCH_TABLE' && e.code !== 'ER_BAD_FIELD_ERROR') throw e;
-        }
-      }
-      if (!key) key = TAP_SANDBOX_KEY;
+      // A borrowed key never goes to a phone: the Pocket SDK holds the key it is given.
+      const own = await liveKeyOf(req.office);
+      const key = own || TAP_SANDBOX_KEY;
+      const environment = own ? 'live' : 'sandbox';
       const ids = partnerIds('');
       console.log(`[go] pocket config for ${req.office} (${environment}) to ${who(req)}`);
       res.json({ api_key: key, environment, software_house_id: ids.softwareHouseId, reseller_id: ids.resellerId });

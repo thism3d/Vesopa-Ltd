@@ -75,10 +75,11 @@ const pool = {
       Object.assign(row, { state: args[0], dojo_status: args[1] });
       return [{ affectedRows: 1 }];
     }
-    if (s.startsWith('SELECT api_key_enc, environment FROM epos_dojo_settings')) {
+    if (s.startsWith('SELECT api_key_enc, environment FROM epos_dojo_settings') || s.startsWith('SELECT api_key_enc, environment, platform FROM epos_dojo_settings')) {
       const row = settings.get(args[0]);
       return [row ? [row] : []];
     }
+    if (s.startsWith('SELECT dojo_key_enc FROM epos_express_settings')) return [[]];
     if (s.startsWith('SELECT * FROM epos_tap_payments')) {
       const row = payments.get(args[0]);
       return [row && row.office === args[1] ? [{ ...row }] : []];

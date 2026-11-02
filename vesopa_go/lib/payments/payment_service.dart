@@ -28,7 +28,6 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:uuid/uuid.dart';
 
-import '../config/constants.dart';
 import '../data/api.dart';
 import '../ui/pages/card_machine_page.dart' show deviceMachine;
 
@@ -67,6 +66,8 @@ class DojoTapToPay implements PaymentService {
   final MethodChannel _channel;
 
   String? _secret;
+  /// The SDK's environment for [_secret], as the server said.
+  String _env = 'staging';
   DateTime _secretUntil = DateTime.fromMillisecondsSinceEpoch(0);
   bool _active = false;
 
@@ -101,7 +102,9 @@ class DojoTapToPay implements PaymentService {
     // Renewed half an hour early: a payment must not start on a secret that
     // runs out while the customer is reaching for their card.
     if (_secret == null || DateTime.now().isAfter(_secretUntil.subtract(const Duration(minutes: 30)))) {
-      _secret = await api.tapSecret(_platform);
+      final s = await api.tapSecret(_platform);
+      _secret = s.secret;
+      _env = s.env;
       _secretUntil = DateTime.now().add(const Duration(hours: 6));
       _active = false;
     }
@@ -126,7 +129,7 @@ class DojoTapToPay implements PaymentService {
       final secret = await _freshSecret();
       if (!_active) {
         onStep?.call(PayStep.activating);
-        await _channel.invokeMethod('activate', {'secret': secret, 'env': dojoEnvironment});
+        await _channel.invokeMethod('activate', {'secret': secret, 'env': _env});
         _active = true;
       }
       if (!(await _channel.invokeMethod<bool>('isAccountLinked', {'secret': secret}) ?? false)) {
@@ -194,7 +197,7 @@ class DojoTapToPay implements PaymentService {
     if (!Platform.isIOS || _active) return;
     try {
       final secret = await _freshSecret();
-      await _channel.invokeMethod('activate', {'secret': secret, 'env': dojoEnvironment});
+      await _channel.invokeMethod('activate', {'secret': secret, 'env': _env});
       _active = true;
     } catch (_) {}
   }

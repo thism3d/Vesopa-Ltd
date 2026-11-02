@@ -406,6 +406,7 @@ class _IdleScreenState extends ConsumerState<IdleScreen> with SingleTickerProvid
     final image = url == null ? null : (url.startsWith('http') ? url : '$apiBase${url.startsWith('/') ? '' : '/'}$url');
     final now = TimeOfDay.now();
     final time = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+    final narrow = MediaQuery.sizeOf(context).shortestSide < 600;
     // A Material under it: text outside one is drawn with Flutter's warning
     // underlines (the two yellow lines under the words, iPad 2026-10-28).
     return Material(
@@ -417,7 +418,7 @@ class _IdleScreenState extends ConsumerState<IdleScreen> with SingleTickerProvid
         const ColoredBox(color: Tp.inkDeep),
         // The whole picture in the middle, the rest of the screen in its own
         // background colour (Android, 2026-10-30: it was cropped off-centre).
-        if (image != null) _Wallpaper(url: image, fill: DevicePrefs.idleFill),
+        if (image != null) IdleWallpaper(url: image, fill: DevicePrefs.idleFill),
         // Keeps the words readable on any picture; off in this device's
         // settings for a picture that is the whole idle screen.
         if (DevicePrefs.idleShade && (DevicePrefs.idleTop || DevicePrefs.idleMessage))
@@ -432,10 +433,24 @@ class _IdleScreenState extends ConsumerState<IdleScreen> with SingleTickerProvid
                 Row(children: [
                   // The venue's own logo, exactly as drawn: no tile behind it
                   // (owner, 2026-10-31); Go's mark only when there is none.
-                  const VenueMark(height: 44),
+                  // A phone gets a smaller logo and clock, and the name
+                  // shrinks to fit (two lines at most) rather than being cut
+                  // short (iPhone, owner 2026-11-02).
+                  VenueMark(height: narrow ? 36 : 44, maxWidth: narrow ? 96 : 180),
                   const SizedBox(width: 12),
-                  Expanded(child: Text(s.venue?.name ?? appName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white))),
-                  Text(time, style: const TextStyle(fontSize: 40, fontWeight: FontWeight.w800, color: Colors.white, fontFeatures: Tp.tabular)),
+                  Expanded(
+                    child: SizedBox(
+                      height: narrow ? 48 : 56,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: FitText(s.venue?.name ?? appName,
+                            maxLines: 2, minSize: 11,
+                            style: TextStyle(fontSize: narrow ? 18 : 20, height: 1.15, fontWeight: FontWeight.w700, color: Colors.white)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(time, style: TextStyle(fontSize: narrow ? 32 : 40, fontWeight: FontWeight.w800, color: Colors.white, fontFeatures: Tp.tabular)),
                 ]),
               const Spacer(),
               if (DevicePrefs.idleMessage) Center(
@@ -550,18 +565,18 @@ class _BrightnessState extends State<_Brightness> {
 
 /// The idle picture fitted whole and centred, on its own edge colour, so a
 /// picture of any shape fills any screen without being cropped.
-class _Wallpaper extends StatefulWidget {
-  const _Wallpaper({required this.url, this.fill = false});
+class IdleWallpaper extends StatefulWidget {
+  const IdleWallpaper({super.key, required this.url, this.fill = false});
   final String url;
 
   /// Fills the screen, cropping the picture's edges, rather than showing it
   /// whole on its own edge colour (this device's settings).
   final bool fill;
   @override
-  State<_Wallpaper> createState() => _WallpaperState();
+  State<IdleWallpaper> createState() => IdleWallpaperState();
 }
 
-class _WallpaperState extends State<_Wallpaper> {
+class IdleWallpaperState extends State<IdleWallpaper> {
   static final _edges = <String, Color>{};
   Color? _edge;
 
