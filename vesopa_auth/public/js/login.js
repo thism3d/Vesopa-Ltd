@@ -10,7 +10,9 @@
 (function () {
   'use strict';
 
-  var form = document.querySelector('.auth-form');
+  // The email step (.auth-form) and the password step (.signin-form): both
+  // offer the passkey, in the keyboard bar and as a button.
+  var form = document.querySelector('.auth-form, .signin-form');
   if (!form) return;
 
   // ---------------------------------------------------------------------
@@ -155,7 +157,9 @@
         return fetch('/webauthn/authenticate/verify', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(encodeCredential(credential)),
+          body: JSON.stringify(
+            Object.assign(encodeCredential(credential), { return_to: returnTo() })
+          ),
         });
       })
       .then(function (response) {
@@ -187,6 +191,13 @@
   form.addEventListener('submit', function () {
     if (passkeyAbort) passkeyAbort.abort();
   });
+
+  // Where the sign-in was going (an app's "Continue to ..."), so a passkey
+  // carries on there rather than stopping at the account page.
+  function returnTo() {
+    var field = form.querySelector('input[name="return_to"]');
+    return field ? field.value : '';
+  }
 
   function showError(message) {
     var region = document.getElementById('form-error');

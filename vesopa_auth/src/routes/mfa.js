@@ -31,6 +31,8 @@ const events = require('../events');
 const csrf = require('../csrf');
 const rateLimit = require('../ratelimit');
 const identity = require('../identity');
+const accounts = require('../accounts');
+const { safeReturnTo } = require('./pages');
 const {
   newId,
   newToken,
@@ -535,6 +537,7 @@ router.post('/webauthn/authenticate/verify', async (req, res, next) => {
       userAgent: req.userAgent,
     });
     sessions.setCookie(res, session.token, true);
+    accounts.add(res, await accounts.list(req, null), session.token);
     await recent.rememberUser(req, res, stored.user_id);
 
     await events.recordLogin({
@@ -546,7 +549,8 @@ router.post('/webauthn/authenticate/verify', async (req, res, next) => {
       userAgent: req.userAgent,
     });
 
-    return res.json({ ok: true, redirect: '/account' });
+    // On to the app that asked (its "Continue to ..."), not the account page.
+    return res.json({ ok: true, redirect: safeReturnTo(req.body.return_to) || '/account' });
   } catch (error) {
     return next(error);
   }
