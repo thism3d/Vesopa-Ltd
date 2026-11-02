@@ -40,6 +40,7 @@ dependencies:
   screen_brightness: ^2.1.11
   qr_flutter: ^4.1.0
   share_plus: ^13.3.1
+  flutter_svg: ^2.3.2
 
 dev_dependencies:
   flutter_test:
@@ -53,3 +54,5 @@ flutter:
     - assets/brand/go_mark.png
     - assets/brand/vesopa_wordmark.png
     - assets/sounds/
+    # Card and wallet marks for QR Pay (Visa, Amex, Apple Pay, Google Pay).
+    - assets/marks/

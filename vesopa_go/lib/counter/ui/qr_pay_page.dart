@@ -15,6 +15,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:uuid/uuid.dart';
@@ -338,42 +339,37 @@ class _QrPayPageState extends ConsumerState<QrPayPage> {
   }
 }
 
-/// How the customer can pay: cards and the two wallets, drawn as marks.
+/// How the customer can pay: the card schemes' and the wallets' own marks
+/// (owner, 2026-11-02: "use real icons" for Apple Pay and Google Pay), each
+/// on a white card as they are shown at a checkout.
 class _PayMarks extends StatelessWidget {
   const _PayMarks();
 
   @override
   Widget build(BuildContext context) {
-    Widget chip(Widget child, {Color fill = Colors.white, Color line = const Color(0x22000000)}) => Container(
-          height: 30,
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          decoration: BoxDecoration(color: fill, borderRadius: BorderRadius.circular(7), border: Border.all(color: line)),
-          // As wide as the mark: an aligned Container in a Wrap takes the
-          // whole row, which stacked the marks on a phone.
-          child: Center(widthFactor: 1, child: child),
+    Widget chip(Widget child, {double width = 58}) => Container(
+          width: width,
+          height: 36,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(7), border: Border.all(color: const Color(0x22000000))),
+          child: child,
         );
-    const bold = TextStyle(fontWeight: FontWeight.w900, fontSize: 13, height: 1, color: Color(0xFF3C4043));
+    Widget mark(String name, {String? label}) => SvgPicture.asset('assets/marks/$name.svg', fit: BoxFit.contain, semanticsLabel: label);
     return Wrap(spacing: 6, runSpacing: 6, children: [
-      chip(const Text('VISA', style: TextStyle(fontWeight: FontWeight.w900, fontStyle: FontStyle.italic, fontSize: 14, color: Color(0xFF1A1F71)))),
-      chip(SizedBox(
-        width: 26,
-        height: 16,
-        child: Stack(children: [
-          Positioned(left: 0, child: Container(width: 16, height: 16, decoration: const BoxDecoration(color: Color(0xFFEB001B), shape: BoxShape.circle))),
-          Positioned(left: 10, child: Container(width: 16, height: 16, decoration: BoxDecoration(color: const Color(0xFFF79E1B).withValues(alpha: 0.9), shape: BoxShape.circle))),
-        ]),
+      chip(mark('visa', label: 'Visa')),
+      chip(Center(
+        child: SizedBox(
+          width: 30,
+          height: 19,
+          child: Stack(children: [
+            Positioned(left: 0, child: Container(width: 19, height: 19, decoration: const BoxDecoration(color: Color(0xFFEB001B), shape: BoxShape.circle))),
+            Positioned(left: 11, child: Container(width: 19, height: 19, decoration: BoxDecoration(color: const Color(0xFFF79E1B).withValues(alpha: 0.9), shape: BoxShape.circle))),
+          ]),
+        ),
       )),
-      chip(const Text('AMEX', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12, color: Colors.white)), fill: const Color(0xFF2E77BC), line: const Color(0xFF2E77BC)),
-      chip(const Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(Icons.apple, size: 16, color: Colors.white),
-        SizedBox(width: 2),
-        Text('Pay', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: Colors.white, height: 1)),
-      ]), fill: Colors.black, line: const Color(0x55FFFFFF)),
-      chip(const Row(mainAxisSize: MainAxisSize.min, children: [
-        Text('G', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15, color: Color(0xFF4285F4), height: 1)),
-        SizedBox(width: 3),
-        Text('Pay', style: bold),
-      ])),
+      chip(mark('americanexpress', label: 'American Express'), width: 44),
+      chip(mark('applepay', label: 'Apple Pay')),
+      chip(mark('googlepay', label: 'Google Pay'), width: 64),
     ]);
   }
 }
