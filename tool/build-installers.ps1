@@ -91,11 +91,37 @@ foreach ($file in '.env.claude-tools', '.env.claude') {
 $canSign = $env:TRUSTED_SIGNING_ENDPOINT -and $env:TRUSTED_SIGNING_ACCOUNT -and $env:TRUSTED_SIGNING_PROFILE -and
   $env:AZURE_TENANT_ID -and $env:AZURE_CLIENT_ID -and $env:AZURE_CLIENT_SECRET
 if ($canSign) {
-  if (-not (Get-Module -ListAvailable -Name TrustedSigning)) {
-    Write-Host '==> Installing the TrustedSigning PowerShell module (once)' -ForegroundColor Cyan
-    Install-Module -Name TrustedSigning -Scope CurrentUser -Force -AllowClobber
+  # signtool with Microsoft's signing client, straight from nuget.org. The
+  # TrustedSigning PowerShell module needs the .NET SDK, which the build
+  # machine does not have; these two packages are all it would fetch anyway.
+  $tsDir = Join-Path $env:LOCALAPPDATA 'TrustedSigning'
+  function Get-SignPackage([string] $Id, [string] $Version) {
+    $dest = Join-Path $tsDir "$Id\$Id.$Version"
+    if (-not (Test-Path $dest)) {
+      Write-Host "==> Fetching $Id $Version (once)" -ForegroundColor Cyan
+      [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+      New-Item -ItemType Directory -Force $dest | Out-Null
+      $zip = Join-Path $env:TEMP "$Id.$Version.zip"
+      Invoke-WebRequest "https://www.nuget.org/api/v2/package/$Id/$Version" -OutFile $zip -UseBasicParsing
+      Expand-Archive $zip -DestinationPath $dest -Force
+      Remove-Item $zip
+    }
+    $dest
   }
-  Import-Module TrustedSigning
+  $signtool = Get-ChildItem (Get-SignPackage 'Microsoft.Windows.SDK.BuildTools' '10.0.26100.4188') -Recurse -Filter signtool.exe |
+    Where-Object { $_.FullName -match '\\x64\\' } | Select-Object -First 1 -ExpandProperty FullName
+  $dlib = Get-ChildItem (Get-SignPackage 'Microsoft.Trusted.Signing.Client' '1.0.95') -Recurse -Filter Azure.CodeSigning.Dlib.dll |
+    Where-Object { $_.FullName -match '\\x64\\' } | Select-Object -First 1 -ExpandProperty FullName
+  # The app registration in AZURE_* signs in; nothing else is tried.
+  $signMeta = Join-Path $env:TEMP 'vesopa-signing-metadata.json'
+  @{
+    Endpoint = $env:TRUSTED_SIGNING_ENDPOINT
+    CodeSigningAccountName = $env:TRUSTED_SIGNING_ACCOUNT
+    CertificateProfileName = $env:TRUSTED_SIGNING_PROFILE
+    ExcludeCredentials = @('ManagedIdentityCredential', 'WorkloadIdentityCredential', 'SharedTokenCacheCredential',
+      'VisualStudioCredential', 'VisualStudioCodeCredential', 'AzureCliCredential', 'AzurePowerShellCredential',
+      'AzureDeveloperCliCredential', 'InteractiveBrowserCredential')
+  } | ConvertTo-Json | Set-Content -Encoding ascii $signMeta
 } else {
   if ($Publish -and -not $AllowUnsigned) {
     throw 'Refusing to publish: installers on admin.vesopa.com must be signed, and AZURE_TENANT_ID, AZURE_CLIENT_ID and AZURE_CLIENT_SECRET are not all set in .env.claude.'
@@ -105,11 +131,9 @@ if ($canSign) {
 
 function Invoke-Sign([string[]] $Files) {
   if (-not $canSign) { return }
-  Invoke-TrustedSigning -Endpoint $env:TRUSTED_SIGNING_ENDPOINT `
-    -CodeSigningAccountName $env:TRUSTED_SIGNING_ACCOUNT `
-    -CertificateProfileName $env:TRUSTED_SIGNING_PROFILE `
-    -Files ($Files -join ',') -FileDigest SHA256 `
-    -TimestampRfc3161 'http://timestamp.acs.microsoft.com' -TimestampDigest SHA256
+  # A 403 here means the app registration lacks the "Artifact Signing
+  # Certificate Profile Signer" role on the account.
+  Invoke-Native { & $signtool sign /fd SHA256 /tr 'http://timestamp.acs.microsoft.com' /td SHA256 /dlib $dlib /dmdf $signMeta @Files } 'Signing'
 }
 
 # Inno Setup 6 or 7, wherever winget or its own installer put it.
