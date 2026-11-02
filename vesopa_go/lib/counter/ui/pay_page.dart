@@ -22,6 +22,7 @@ import '../data/lite_state.dart';
 import 'package:vesopa_go/data/bill_math.dart';
 import 'package:vesopa_go/ui/pages/member_sheet.dart';
 
+import 'card_pay_screen.dart';
 import 'check_view.dart';
 import 'qr_pay_page.dart';
 import 'receipt_print.dart';
@@ -48,6 +49,14 @@ class _PayPageState extends ConsumerState<PayPage> {
 
   /// A gratuity chosen with the Gratuity key, for the next card.
   int _presetTip = 0;
+
+  /// The till's card screen: a step set here (a test payment walking its
+  /// steps, the tick before the receipt), and how a payment ended when it
+  /// was not paid, with what a status check found.
+  CardStep? _cardStep;
+  PaymentOutcome? _result;
+  String? _resultNote;
+  bool _testing = false;
 
   Bill? get _bill => ref.read(tapProvider).bills[widget.billId];
 
@@ -161,11 +170,18 @@ class _PayPageState extends ConsumerState<PayPage> {
       onStep: (st) => mounted ? setState(() => _step = st) : null,
     );
     if (!mounted) return;
-    setState(() {
-      _busy = false;
-      _step = null;
-    });
     if (outcome.paid) {
+      // The rail finishes on Complete before the receipt, as the till's.
+      setState(() {
+        _step = null;
+        _cardStep = CardStep.done;
+      });
+      await Future<void>.delayed(const Duration(milliseconds: 900));
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _cardStep = null;
+      });
       _take(Tender(
         id: outcome.paymentId!,
         amountMinor: _cardAmount,
@@ -177,14 +193,69 @@ class _PayPageState extends ConsumerState<PayPage> {
       ));
     } else {
       if (outcome.result == PayResult.declined) GoSounds.play(ref.read(tapProvider).config.go, GoSound.declined);
-      setState(() => _problem = switch (outcome.result) {
-            PayResult.declined => 'Declined${outcome.message != null ? ': ${outcome.message}' : ''}. Try another card.',
-            PayResult.cancelled => 'Cancelled. Nothing was taken.',
-            PayResult.uncertain => outcome.message ?? 'No answer from Dojo yet. Check the payment before taking it again.',
-            PayResult.unavailable => outcome.message ?? 'Card payments are not available on this device.',
-            PayResult.paid => null,
-          });
+      // The same screen turns into its result, with what can be done next.
+      setState(() {
+        _busy = false;
+        _step = null;
+        _result = outcome;
+        _resultNote = null;
+      });
     }
+  }
+
+  /// "Check payment status" on a payment Dojo has not answered for.
+  Future<void> _checkResult() async {
+    final id = _result?.paymentId;
+    if (id == null) return;
+    setState(() => _resultNote = 'Asking Dojo what happened to this payment…');
+    try {
+      final p = await ref.read(apiProvider).payment(id);
+      if (!mounted) return;
+      final state = '${p['state'] ?? ''}';
+      if (state == 'paid') {
+        setState(() {
+          _result = null;
+          _resultNote = null;
+        });
+        _take(Tender(id: id, amountMinor: _cardAmount, tipMinor: _tip, kind: _via, at: DateTime.now(), clerk: ref.read(tapProvider).clerk?.name ?? '', reference: id));
+      } else {
+        setState(() => _resultNote = state == 'failed' ? 'Dojo says it did not go through. Nothing was taken.' : 'Dojo is still waiting on it. Check again in a moment.');
+      }
+    } catch (e) {
+      if (mounted) setState(() => _resultNote = 'Dojo could not be asked just now ($e).');
+    }
+  }
+
+  void _closeResult() => setState(() {
+        _result = null;
+        _resultNote = null;
+      });
+
+  /// What the clerk can do after a payment that did not go through.
+  List<CardResultAction> _resultActions(Bill bill) {
+    final r = _result?.result;
+    final other = _via == 'tap' ? 'machine' : 'tap';
+    final again = _cardAmount.clamp(1, bill.dueMinor);
+    void then(VoidCallback f) {
+      _closeResult();
+      f();
+    }
+
+    return [
+      if (r == PayResult.uncertain && _result?.paymentId != null)
+        (icon: Icons.manage_search_rounded, label: 'Check payment status', onPressed: _checkResult, primary: true),
+      if (r != PayResult.uncertain) ...[
+        (icon: Icons.refresh_rounded, label: 'Try again', onPressed: () => then(() => _card(_via, amount: again)), primary: true),
+        (
+          icon: other == 'machine' ? Icons.point_of_sale_rounded : Icons.contactless_rounded,
+          label: other == 'machine' ? 'Use the card machine' : 'Use Tap to Pay',
+          onPressed: () => then(() => _card(other, amount: again)),
+          primary: false,
+        ),
+        (icon: Icons.qr_code_2_rounded, label: 'QR Pay', onPressed: () => then(() => _qr(again)), primary: false),
+      ],
+      (icon: Icons.close_rounded, label: 'Close', onPressed: _closeResult, primary: false),
+    ];
   }
 
   /// A pretend Tap to Pay on a device without it, at a test venue only: the
@@ -208,19 +279,57 @@ class _PayPageState extends ConsumerState<PayPage> {
     setState(() {
       _via = 'tap';
       _problem = null;
+      _testing = true;
       _cardAmount = amount.clamp(1, bill.dueMinor);
       _tip = _presetTip;
       _presetTip = 0;
-      _step = PayStep.waitingForCard;
     });
-    await Future<void>.delayed(const Duration(milliseconds: 1600));
+    // Every step the till shows, so the whole payment can be seen on an iPad.
+    for (final (step, ms) in const [(CardStep.starting, 700), (CardStep.present, 1600), (CardStep.pin, 1100), (CardStep.processing, 900), (CardStep.done, 900)]) {
+      if (!mounted) return;
+      setState(() => _cardStep = step);
+      await Future<void>.delayed(Duration(milliseconds: ms));
+    }
     if (!mounted) return;
-    setState(() => _step = PayStep.confirming);
-    await Future<void>.delayed(const Duration(milliseconds: 700));
-    if (!mounted) return;
-    setState(() => _step = null);
+    setState(() {
+      _cardStep = null;
+      _testing = false;
+    });
     final id = 'test-${DateTime.now().microsecondsSinceEpoch}';
     _take(Tender(id: id, amountMinor: _cardAmount, tipMinor: _tip, kind: 'tap', at: DateTime.now(), clerk: ref.read(tapProvider).clerk?.name ?? '', reference: 'test:$id'));
+  }
+
+  /// The till's card screen for the payment going on, or how it ended.
+  Widget _cardScreen(BuildContext context) {
+    final config = ref.read(tapProvider).config;
+    final machine = _via == 'machine';
+    final mapped = _step == null ? null : cardStepOf(_step!, machine: machine);
+    final step = _cardStep ?? mapped?.step ?? CardStep.starting;
+    final words = switch (_cardStep) {
+      CardStep.starting => 'Setting up the payment',
+      CardStep.present => machine ? 'Ask the customer to tap, insert or swipe on the card machine' : 'Ask the customer to hold their card or phone at the top of this device',
+      CardStep.pin => 'The customer is entering their PIN',
+      CardStep.processing => 'Authorising with the bank',
+      CardStep.done => 'Payment approved',
+      null => mapped?.detail,
+    };
+    final bill = ref.read(tapProvider).bills[widget.billId];
+    return Theme(
+      data: Tp.theme(Brightness.dark, font: Theme.of(context).textTheme.bodyMedium?.fontFamily),
+      child: CardPayScreen(
+        amountMinor: _cardAmount + _tip,
+        heading: machine ? 'Card machine' : 'Tap to Pay',
+        step: step,
+        detail: words,
+        device: machine ? "The venue's card machine" : ref.read(tapProvider.notifier).terminalName,
+        partner: config.softwareHouseId.isEmpty ? null : 'Software house ${config.softwareHouseId}${config.resellerId.isEmpty ? '' : ' · Reseller ${config.resellerId}'}',
+        result: _result,
+        resultNote: _resultNote,
+        actions: bill == null ? const [] : _resultActions(bill),
+        test: _testing,
+        machine: machine,
+      ),
+    );
   }
 
   /// QR Pay: the customer scans and pays on their own phone.
@@ -336,7 +445,7 @@ class _PayPageState extends ConsumerState<PayPage> {
   Widget build(BuildContext context) {
     if (_done != null) return _Approved(sale: _done!);
     // The customer's screens stay dark whatever the appearance.
-    if (_step != null) return Theme(data: Tp.theme(Brightness.dark), child: TapPrompt(amountMinor: _cardAmount + _tip, step: _step!, onMachine: _via == 'machine'));
+    if (_step != null || _cardStep != null || _result != null) return _cardScreen(context);
 
     ref.listen(qrBillPaymentsProvider.select((m) => m[widget.billId]), (_, paid) => _takeQrBill(paid));
     final bill = ref.watch(tapProvider.select((s) => s.bills[widget.billId]));

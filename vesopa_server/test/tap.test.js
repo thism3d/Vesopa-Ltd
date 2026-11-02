@@ -185,7 +185,10 @@ async function main() {
     const sent = calls.at(-1);
     assert.strictEqual(sent.url, 'https://staging-api.dojo.dev/integration-test/tap/apple-terminal/secret');
     assert.strictEqual(sent.init.headers.Authorization, 'Basic ' + tap.TAP_SANDBOX_KEY);
-    assert.strictEqual(sent.init.headers.Version, '2023-12-12');
+    assert.strictEqual(sent.init.headers.version, '2023-12-12');
+    // Once only: two spellings were joined into "2023-12-12, 2023-12-12",
+    // which Dojo refuses ("Invalid version provided.").
+    assert.strictEqual(sent.init.headers.Version, undefined);
     assert.strictEqual(sent.init.headers['software-house-id'], 'SL942X04');
     assert.ok(!JSON.stringify(secret.body).includes('sk_'), 'no key ever goes to the phone');
 

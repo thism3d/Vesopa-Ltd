@@ -145,8 +145,10 @@ async function dojo(key, method, path, { body, version = API_VERSION, fetchImpl,
   const headers = {
     ...extraHeaders,
     Authorization: 'Basic ' + key,
+    // Once. Sent as both `version` and `Version`, fetch joined them into
+    // "2023-12-12, 2023-12-12" and Dojo refused every Tap to Pay call with
+    // "Invalid version provided." -- the reader never switched on (2026-11-02).
     version,
-    Version: version,
     Accept: 'application/json',
     'software-house-id': ids.softwareHouseId,
     'reseller-id': ids.resellerId,
