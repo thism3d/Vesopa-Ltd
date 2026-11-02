@@ -22,6 +22,21 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 
+/**
+ * A line's id as the column holds it (CHAR(36)). Vesopa Go names a choice's
+ * line "<line id>-m<n>", 39 characters, and every Go ticket with a modifier
+ * on a kitchen item failed on it -- "Data too long for column 'id'", the
+ * whole ticket lost (2026-11-02). A longer id becomes a UUID-shaped hash of
+ * itself, the same every time, so a resent ticket is still the same lines.
+ */
+function lineId(id) {
+  const raw = id == null ? '' : String(id);
+  if (!raw) return crypto.randomUUID();
+  if (raw.length <= 36) return raw;
+  const h = crypto.createHash('sha1').update(raw).digest('hex');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-5${h.slice(13, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
+}
+
 const { requireAuth, requireTerminal, verifyPassword, AccessDeniedError } = require('./auth');
 const training = require('./training');
 const licences = require('./licences');
@@ -188,7 +203,7 @@ async function recordTicket(conn, ticket) {
           allergens)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        line.id || crypto.randomUUID(),
+        lineId(line.id),
         ticket.id,
         seq++,
         Number(line.quantity) || 1,

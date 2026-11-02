@@ -99,7 +99,8 @@ class _QrPayPageState extends ConsumerState<QrPayPage> {
       _listen();
       _poll = Timer.periodic(const Duration(seconds: 3), (_) => _check());
     } on TapApiError catch (e) {
-      if (mounted) setState(() => _problem = e.message);
+      // 404: the back office has no QR Pay yet (an older server).
+      if (mounted) setState(() => _problem = e.status == 404 ? "QR Pay is not on this venue's back office yet. Use Card or Cash for now." : e.message);
     }
   }
 
@@ -240,6 +241,7 @@ class _QrPayPageState extends ConsumerState<QrPayPage> {
       'cancelled' => ('Cancelled. Nothing was taken.', Tp.danger),
       'expired' => ('The link ran out. Nothing was taken.', Tp.danger),
       'failed' => ('The payment did not go through. Nothing was taken.', Tp.danger),
+      _ when _problem != null => ('No code was made. Nothing was taken.', Tp.danger),
       _ => ('Making the code…', context.goMuted),
     };
 
@@ -267,7 +269,7 @@ class _QrPayPageState extends ConsumerState<QrPayPage> {
         ],
         const SizedBox(height: 18),
         Row(mainAxisSize: MainAxisSize.min, children: [
-          if (_status == 'waiting' || _status == 'starting') ...[
+          if (_status == 'waiting' || (_status == 'starting' && _problem == null)) ...[
             const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
             const SizedBox(width: 10),
           ],

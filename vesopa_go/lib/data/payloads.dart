@@ -6,6 +6,7 @@
 ///   sale        POST /till/orders       (src/sales.js recordSale)
 library;
 
+import 'package:uuid/uuid.dart';
 import 'models.dart';
 
 /// The lines as the till sends them: a dish, then each chosen modifier as
@@ -82,7 +83,10 @@ Map<String, Object?>? kitchenTicket(Bill bill, List<BillLine> lines, {required S
       'stations': l.product.stations.join(','),
     });
     for (final (i, c) in l.choices.indexed) {
-      out.add({'id': '${l.id}-m$i', 'quantity': l.quantity, 'name': c.name, 'is_modifier': true, 'stations': l.product.stations.join(',')});
+      // A UUID made from the line and the choice: the same every time it is
+      // sent, and 36 characters, as the kitchen's column holds ("<id>-m0"
+      // was 39, and lost the whole ticket, 2026-11-02).
+      out.add({'id': const Uuid().v5(Namespace.oid.value, '${l.id}-m$i'), 'quantity': l.quantity, 'name': c.name, 'is_modifier': true, 'stations': l.product.stations.join(',')});
     }
   }
   if (out.isEmpty) return null;
