@@ -1,6 +1,10 @@
 """Put a Windows installer on admin.vesopa.com's Downloads (2026-10-05).
 
-    python tool/publish_installers.py <app> <version> <installer.exe> [--signed] [--notes "..."]
+    python tool/publish_installers.py <app> <version> <installer.exe> [--notes "..."]
+
+Owner 2026-11-02: every installer on admin is signed with Vesopa Software Ltd's
+Azure Artifact Signing certificate. An installer that is not is refused here,
+whoever calls this (--allow-unsigned only with the owner's say-so).
 
 Run from the repository root on the owner's PC; tool/build-installers.ps1
 -Publish calls it for each installer it built. It copies the file to the
@@ -48,11 +52,18 @@ def ssh(*args):
     return out
 
 
+def signed_by_vesopa(exe):
+    """Whether Windows says the file carries a valid Vesopa Software Ltd signature."""
+    script = (f"$s = Get-AuthenticodeSignature -LiteralPath '{exe}'; "
+              "if ($s.Status -eq 'Valid' -and $s.SignerCertificate.Subject -like '*O=Vesopa Software Ltd*') { 'yes' }")
+    r = subprocess.run(["powershell", "-NoProfile", "-Command", script], capture_output=True, text=True)
+    return r.stdout.strip() == "yes"
+
+
 def main():
     args = sys.argv[1:]
-    signed = "--signed" in args
-    if signed:
-        args.remove("--signed")
+    allow_unsigned = "--allow-unsigned" in args
+    args = [a for a in args if a not in ("--signed", "--allow-unsigned")]
     notes = None
     if "--notes" in args:
         i = args.index("--notes")
@@ -64,6 +75,10 @@ def main():
     exe = pathlib.Path(exe).resolve()
     if not exe.is_file() or exe.suffix.lower() != ".exe":
         raise SystemExit(f"{exe} is not an installer")
+    signed = signed_by_vesopa(exe)
+    if not signed and not allow_unsigned:
+        raise SystemExit(f"✗ {exe.name} is not signed by Vesopa Software Ltd; nothing was published. "
+                         "Build it with tool/build-installers.ps1, which signs.")
 
     stamp = time.strftime("%Y%m%d_%H%M%S")
     remote = f"{PRIVATE}/release-uploads/{stamp}-{app}"

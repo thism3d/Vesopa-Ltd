@@ -166,8 +166,13 @@ foreach ($key in $Apps) {
   $release = Join-Path $dir 'build\windows\x64\runner\Release'
   if (-not (Test-Path (Join-Path $release $a.Exe))) { throw "No $($a.Exe) in $release" }
 
-  # The program first, so Windows names Vesopa when it runs, then the installer.
-  Invoke-Sign @(Join-Path $release $a.Exe)
+  # The program and every DLL beside it that nobody has signed (Flutter's and
+  # the plugins'), so Windows names Vesopa when it runs; then the installer.
+  # DLLs that already carry their maker's signature keep it.
+  $unsigned = @(Get-ChildItem $release -Recurse -Include *.exe, *.dll |
+    Where-Object { (Get-AuthenticodeSignature $_.FullName).Status -eq 'NotSigned' } |
+    Select-Object -ExpandProperty FullName)
+  if ($unsigned.Count) { Invoke-Sign $unsigned }
 
   $defines = @(
     "/DAppKey=$key", "/DAppName=$($a.Name)", "/DAppVersion=$version", "/DAppGuid=$($a.Guid)",
