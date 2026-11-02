@@ -103,6 +103,10 @@ String replayPath(String kind) => switch (kind) {
       'points' => '/api/loyalty/points',
       'voucher' => '/api/vouchers/redeem',
       'renew' => '/api/loyalty/renew',
+      // Slips printed while offline go first (they are entries too, in order),
+      // so a slip's redeem always finds it.
+      'staff_issue' => '/api/till/staff-drinks',
+      'staff_drink' => '/api/till/staff-drinks/redeem',
       _ => '',
     };
 
@@ -112,6 +116,7 @@ class OfflineLedger {
   Map<String, dynamic> settingsByScheme = const {};
   List<Map<String, dynamic>> giftCards = const [];
   List<Map<String, dynamic>> vouchers = const [];
+  List<Map<String, dynamic>> staffDrinks = const [];
   int snapshotAt = 0;
 
   final List<LedgerEntry> entries = [];
@@ -123,6 +128,7 @@ class OfflineLedger {
     settingsByScheme = (j['settings_by_scheme'] as Map?)?.cast<String, dynamic>() ?? const {};
     giftCards = [for (final c in (j['gift_cards'] as List? ?? const [])) (c as Map).cast<String, dynamic>()];
     vouchers = [for (final c in (j['vouchers'] as List? ?? const [])) (c as Map).cast<String, dynamic>()];
+    staffDrinks = [for (final c in (j['staff_drinks'] as List? ?? const [])) (c as Map).cast<String, dynamic>()];
     snapshotAt = at;
     // The moves this copy already includes, as the server lists them: counting
     // them again would spend the same money twice on paper.
@@ -135,6 +141,7 @@ class OfflineLedger {
         'settings_by_scheme': settingsByScheme,
         'gift_cards': giftCards,
         'vouchers': vouchers,
+        'staff_drinks': staffDrinks,
         'at': snapshotAt,
       };
 
@@ -346,6 +353,39 @@ class OfflineLedger {
     };
   }
 
+  // ---- staff drink slips -----------------------------------------------------
+
+  /// The slip as the back office would answer, with offline moves applied.
+  /// Null: a code this venue has not issued, as far as anybody here knows.
+  Map<String, dynamic>? staffDrink(String code) {
+    Map<String, dynamic>? slip;
+    for (final d in staffDrinks) {
+      if (d['code'] == code) slip = {...d};
+    }
+    for (final e in _pending) {
+      if (e.kind == 'staff_issue') {
+        for (final d in (e.body['drinks'] as List? ?? const [])) {
+          if (d is Map && d['code'] == code) {
+            slip ??= {
+              ...d.cast<String, dynamic>(),
+              'sold_by': e.body['sold_by'],
+              'terminal': e.body['terminal'],
+            };
+          }
+        }
+      }
+    }
+    if (slip == null) return null;
+    for (final e in _pending) {
+      if (e.kind == 'staff_drink' && e.body['code'] == code) {
+        slip['redeemed_at'] = DateTime.fromMillisecondsSinceEpoch(e.at).toUtc().toIso8601String();
+        slip['redeemed_by'] = e.body['by'];
+        slip['redeemed_terminal'] = e.body['terminal'];
+      }
+    }
+    return slip;
+  }
+
   // ---- the main till's check ------------------------------------------------
 
   /// Check [e] against this view and take it, numbered. Throws
@@ -381,6 +421,12 @@ class OfflineLedger {
         if (v == null) throw const LedgerRefused('No such voucher');
         final reasons = [for (final r in (v['reasons'] as List)) '$r'].where((r) => !r.startsWith('Spend at least'));
         if (reasons.isNotEmpty) throw LedgerRefused(reasons.first);
+      case 'staff_issue':
+        break;
+      case 'staff_drink':
+        final slip = staffDrink('${e.body['code'] ?? ''}');
+        if (slip == null) throw const LedgerRefused("That is not one of this venue's staff drink slips.");
+        if (slip['redeemed_at'] != null) throw const LedgerRefused('This slip has already been used.');
       case 'renew':
         break;
       default:

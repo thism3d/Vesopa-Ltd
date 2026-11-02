@@ -2581,9 +2581,23 @@ function commerceRoutes({ pool, broadcast, secret }) {
         );
         applied = done.map((r) => r.id);
       } catch { /* no journal yet: nothing replayed */ }
+      // Staff drink slips, so the main till can let each through once offline.
+      let staffDrinks = [];
+      try {
+        [staffDrinks] = await pool.query(
+          `SELECT code, plu_id, product_name, price_minor, sold_by, terminal, issued_at,
+                  redeemed_at, redeemed_by, redeemed_terminal
+             FROM epos_staff_drinks
+            WHERE office = ? AND issued_at > DATE_SUB(NOW(), INTERVAL 120 DAY)`,
+          [office]
+        );
+      } catch (e) {
+        if (e.code !== 'ER_NO_SUCH_TABLE') throw e;
+      }
       res.json({
         at: new Date().toISOString(),
         applied,
+        staff_drinks: staffDrinks,
         customers,
         settings_by_scheme: settingsByScheme,
         gift_cards: giftCards,

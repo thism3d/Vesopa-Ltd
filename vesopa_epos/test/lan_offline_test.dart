@@ -126,6 +126,37 @@ void main() {
       expect(() => l.accept(move('b:1', 'voucher', {'code': 'XMAS10'})), throwsA(isA<LedgerRefused>()));
     });
 
+    test('a staff drink slip is poured once, wherever it was printed, and goes up in order', () {
+      final l = withSnapshot()
+        ..setSnapshot({
+          'staff_drinks': [
+            {'code': 'SDAAAA2222', 'product_name': 'Pint'},
+            {'code': 'SDBBBB3333', 'product_name': 'Pint', 'redeemed_at': '2026-11-01T20:00:00Z', 'redeemed_by': 'Sam'},
+          ],
+        }, at: 1500);
+      // Printed before the internet went.
+      l.accept(move('a:1', 'staff_drink', {'code': 'SDAAAA2222', 'by': 'Nicki'}));
+      expect(l.staffDrink('SDAAAA2222')!['redeemed_by'], 'Nicki');
+      expect(() => l.accept(move('b:1', 'staff_drink', {'code': 'SDAAAA2222'})), throwsA(isA<LedgerRefused>()));
+      // Used yesterday, online.
+      expect(() => l.accept(move('b:2', 'staff_drink', {'code': 'SDBBBB3333'})), throwsA(isA<LedgerRefused>()));
+      // A code nobody issued.
+      expect(() => l.accept(move('b:3', 'staff_drink', {'code': 'SDCCCC4444'})), throwsA(isA<LedgerRefused>()));
+      // Printed offline on another till: known to all, and sent up before its redeem.
+      l.accept(move('c:1', 'staff_issue', {
+        'order_id': 'o1',
+        'sold_by': 'Bar',
+        'drinks': [
+          {'code': 'SDCCCC4444', 'product_name': 'Half'},
+        ],
+      }));
+      l.accept(move('c:2', 'staff_drink', {'code': 'SDCCCC4444', 'by': 'Sam'}));
+      expect(l.toReplay.map((e) => replayPath(e.kind)).toList().sublist(1), [
+        '/api/till/staff-drinks',
+        '/api/till/staff-drinks/redeem',
+      ]);
+    });
+
     test('a fresh snapshot never counts a replayed move twice', () {
       final l = withSnapshot();
       l.accept(move('a:1', 'gift_redeem', {'code': '9878-0001', 'amount_minor': 300}));

@@ -25,7 +25,9 @@
                                an app registration given the
                                "Trusted Signing Certificate Profile Signer" role
   Unsigned installers work: Windows shows "Windows protected your PC", and
-  More info, then Run anyway, installs it.
+  More info, then Run anyway, installs it. They are for trying out here only:
+  -Publish refuses them (owner, 2026-11-02: "from now in admin exe should be
+  signed"), and checks each signature before anything is uploaded.
 
   Needs: Flutter, Inno Setup 6 or 7 (winget install JRSoftware.InnoSetup) and, for
   -Publish, Python with the server login in .env.claude.
@@ -40,6 +42,8 @@ param(
   [ValidateSet('till', 'kitchen', 'display', 'express', 'loyalty')]
   [string[]] $Apps = @('till', 'kitchen', 'display', 'express', 'loyalty'),
   [switch] $Publish,
+  # Put an unsigned installer on Downloads anyway. Only ever with the owner's say-so.
+  [switch] $AllowUnsigned,
   [string] $Notes,
   # Reuse the Flutter build already in build\windows (saves the long build
   # while trying installer changes).
@@ -93,6 +97,9 @@ if ($canSign) {
   }
   Import-Module TrustedSigning
 } else {
+  if ($Publish -and -not $AllowUnsigned) {
+    throw 'Refusing to publish: installers on admin.vesopa.com must be signed, and AZURE_TENANT_ID, AZURE_CLIENT_ID and AZURE_CLIENT_SECRET are not all set in .env.claude.'
+  }
   Write-Host 'Not signing: TRUSTED_SIGNING_* and AZURE_* are not all set. Installers will be unsigned.' -ForegroundColor Yellow
 }
 
@@ -148,6 +155,12 @@ foreach ($key in $Apps) {
 
   $setup = Join-Path $out "$($a.Base)-Setup-$version.exe"
   Invoke-Sign @($setup)
+  if ($Publish -and -not $AllowUnsigned) {
+    foreach ($file in @((Join-Path $release $a.Exe), $setup)) {
+      $signature = Get-AuthenticodeSignature -FilePath $file
+      if ($signature.Status -ne 'Valid') { throw "$file is not properly signed ($($signature.Status)); nothing was published." }
+    }
+  }
   $signed = (Get-AuthenticodeSignature $setup).Status -eq 'Valid'
   $mb = '{0:N1}' -f ((Get-Item $setup).Length / 1MB)
   Write-Host "    $setup ($mb MB, $(if ($signed) { 'signed' } else { 'unsigned' }))" -ForegroundColor Green

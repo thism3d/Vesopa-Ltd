@@ -254,7 +254,13 @@ class KitchenScreenSender {
 
   /// Bounded so a terminal that has been off the network for an hour cannot
   /// fill its preferences with food nobody is going to cook.
-  static const _maxQueued = 60;
+  static const _maxQueued = 300;
+
+  /// A ticket the local link put on the screens is being cooked whatever the
+  /// internet does, so it is only waiting to be recorded: kept through a whole
+  /// outage and sent when the internet is back (2026-11-02). [ttl] protects a
+  /// kitchen from food nobody wants; this one has already had it.
+  static const ttlOnLink = Duration(hours: 12);
 
   /// Send [ticket], queueing it if the server cannot be reached.
   ///
@@ -293,7 +299,7 @@ class KitchenScreenSender {
         error: 'the back office rejected it',
       );
     } catch (e) {
-      await _queue(ticket);
+      await _queue(ticket, onLink: onLink);
       return KitchenScreenResult(
         stations: stations,
         // On the screens already when the local link carried it.
@@ -320,7 +326,7 @@ class KitchenScreenSender {
     for (var i = 0; i < queued.length; i++) {
       final entry = queued[i];
       // Too old to be worth cooking. Dropped rather than sent.
-      if (now.difference(entry.ticket.placedAt) > ttl) continue;
+      if (now.difference(entry.ticket.placedAt) > entry.ttl) continue;
       try {
         // A rejection is final — the server understood us and said no — so the
         // ticket is dropped rather than retried forever.
@@ -343,7 +349,7 @@ class KitchenScreenSender {
   Future<int> pending() async {
     final prefs = await SharedPreferences.getInstance();
     return _read(prefs).where((e) {
-      return DateTime.now().difference(e.ticket.placedAt) <= ttl;
+      return DateTime.now().difference(e.ticket.placedAt) <= e.ttl;
     }).length;
   }
 
@@ -364,11 +370,11 @@ class KitchenScreenSender {
     return res.statusCode >= 200 && res.statusCode < 300;
   }
 
-  Future<void> _queue(KitchenTicket ticket) async {
+  Future<void> _queue(KitchenTicket ticket, {bool onLink = false}) async {
     final prefs = await SharedPreferences.getInstance();
     final queued = _read(prefs)
       ..removeWhere((e) => e.ticket.id == ticket.id)
-      ..add(_QueuedTicket(ticket));
+      ..add(_QueuedTicket(ticket, onLink: onLink));
 
     // Oldest first out, because the oldest is the one closest to being useless.
     while (queued.length > _maxQueued) {
@@ -383,7 +389,7 @@ class KitchenScreenSender {
       if (raw == null || raw.isEmpty) return [];
       return (jsonDecode(raw) as List)
           .cast<Map<String, dynamic>>()
-          .map((j) => _QueuedTicket(KitchenTicket.fromJson(j)))
+          .map((j) => _QueuedTicket(KitchenTicket.fromJson(j), onLink: j['on_link'] == true))
           .toList();
     } catch (_) {
       // A corrupt queue must not stop the till firing the *next* ticket, and
@@ -399,14 +405,21 @@ class KitchenScreenSender {
     }
     await prefs.setString(
       _queueKey,
-      jsonEncode([for (final e in queue) e.ticket.toJson()]),
+      jsonEncode([
+        for (final e in queue) {...e.ticket.toJson(), if (e.onLink) 'on_link': true},
+      ]),
     );
   }
 }
 
 class _QueuedTicket {
-  const _QueuedTicket(this.ticket);
+  const _QueuedTicket(this.ticket, {this.onLink = false});
   final KitchenTicket ticket;
+
+  /// Already on the kitchen screens over the local link.
+  final bool onLink;
+
+  Duration get ttl => onLink ? KitchenScreenSender.ttlOnLink : KitchenScreenSender.ttl;
 }
 
 /// Compose the ticket for one fire.

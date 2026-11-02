@@ -32,7 +32,39 @@ async function loadLan() {
   const fresh = (d) => d.age_s < 180;
   const tills = devices.filter((d) => d.role === 'till');
   const hub = devices.find((d) => fresh(d) && d.report && d.report.is_hub);
-  const roleName = { till: 'Till', kitchen: 'Kitchen screen', display: 'Customer display' };
+  const roleName = { till: 'Till', kitchen: 'Kitchen screen', display: 'Customer display', go: 'Vesopa Go' };
+
+  // Devices on different networks: 192.168.1.x cannot find 192.168.10.x by
+  // itself, and only reaches it if the router lets the two talk.
+  const subnet = (ip) => String(ip || '').split('.').slice(0, 3).join('.');
+  const recent = devices.filter((d) => d.age_s < 7 * 86400);
+  const tillNets = new Set(recent.filter((d) => d.role === 'till')
+    .flatMap((d) => ((d.report && d.report.ips) || []).map(subnet)));
+  const apart = recent.filter((d) => {
+    const ips = (d.report && d.report.ips) || [];
+    return d.role !== 'till' && tillNets.size && ips.length && !ips.some((ip) => tillNets.has(subnet(ip)));
+  });
+  const ports = data.ports || { tcp: 47821, udp: 47820 };
+  const setup = `
+    <h4>Network setup</h4>
+    <p class="muted small">
+      Devices on the same network need nothing set here: they find each other, and no port
+      on the router has to be opened or forwarded. Keep the local link off the internet:
+      do not forward these ports. To keep going in a power cut the router and any switch
+      need a UPS as well as the tills, because they carry the traffic between devices.
+    </p>
+    <ul class="muted small">
+      <li><strong>Ports:</strong> TCP ${esc(ports.tcp)} (the link) and UDP ${esc(ports.udp)} (finding each other), on the tills only. The till installer opens them in Windows Firewall.</li>
+      <li><strong>Router:</strong> reserve each till's address (DHCP reservation), and turn off "client isolation" or "AP isolation" on the staff Wi-Fi, or devices cannot see each other.</li>
+      <li><strong>Separate networks</strong> (for example tills on cable and tablets on Wi-Fi): let the router pass TCP ${esc(ports.tcp)} from the Wi-Fi network to the tills, and put the tills' addresses below.</li>
+    </ul>
+    ${apart.length ? `<p class="small"><span class="pill amber">Different network</span>
+      ${apart.map((d) => esc(d.name || d.device)).join(', ')} ${apart.length === 1 ? 'is' : 'are'} not on the same network as the tills
+      (${[...tillNets].map((n) => `${esc(n)}.x`).join(', ')}), so ${apart.length === 1 ? 'it goes' : 'they go'} through the internet, more slowly, and stop if it drops.</p>` : ''}
+    <label class="small">Till addresses to try directly (only if devices do not find each other)
+      <input id="lan-hosts" type="text" placeholder="192.168.1.190, 192.168.1.247" value="${esc((data.hosts || []).join(', '))}">
+    </label>
+    <div class="row gap" style="margin-top:8px"><button class="btn btn-small" id="lan-hosts-save">Save addresses</button></div>`;
 
   // Can A see B? From A's own list of what it heard, both ways round.
   const sees = (a, b) => {
@@ -105,7 +137,8 @@ async function loadLan() {
       <tbody>${rows}</tbody>
     </table>
     ${conflicts ? `<h4>Changes that lost when the link and the cloud met</h4>
-      <table class="table"><thead><tr><th>When</th><th>What</th><th>Device</th><th>Detail</th></tr></thead><tbody>${conflicts}</tbody></table>` : ''}`;
+      <table class="table"><thead><tr><th>When</th><th>What</th><th>Device</th><th>Detail</th></tr></thead><tbody>${conflicts}</tbody></table>` : ''}
+    ${setup}`;
 }
 
 function ago(seconds) {
@@ -123,6 +156,15 @@ document.addEventListener('click', async (e) => {
     try {
       await api('/lan/settings', { method: 'PUT', body: JSON.stringify({ preferred_hub: unpin ? null : id }) });
       toast(unpin ? 'No till is pinned; the longest running is the main one.' : 'Pinned. That till becomes the main one within a minute.');
+      loadLan();
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  }
+  if (e.target.id === 'lan-hosts-save') {
+    try {
+      await api('/lan/settings', { method: 'PUT', body: JSON.stringify({ hosts: $('lan-hosts').value }) });
+      toast('Saved. Devices pick the addresses up within 15 minutes, or when restarted.');
       loadLan();
     } catch (err) {
       toast(err.message, 'error');

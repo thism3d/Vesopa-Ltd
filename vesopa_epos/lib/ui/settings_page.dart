@@ -6,6 +6,7 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/lan/lan_link.dart' show LanNode;
 import '../data/lan/lan_service.dart';
 import '../config/constants.dart';
 import '../data/customer_display_control.dart';
@@ -35,6 +36,7 @@ import 'theme_controller.dart';
 import 'till_actions.dart';
 import 'widgets/pos_message.dart';
 import '../data/order_alerts.dart';
+import 'widgets/pos_text_field.dart';
 
 /// Terminal settings. Anything that belongs to the venue lives in the back
 /// office; what is here is specific to *this* screen — chiefly how it looks in
@@ -781,6 +783,38 @@ class _LocalNetworkCardState extends State<_LocalNetworkCard> {
     super.dispose();
   }
 
+  /// Addresses to try directly, for a network where devices do not find each
+  /// other. Here as well as the back office, because this is the machine in
+  /// front of somebody when the internet is down.
+  Future<void> _editHosts() async {
+    final lan = LanService.instance;
+    final field = TextEditingController(text: lan.manualHosts.join(', '));
+    final saved = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Addresses to try'),
+        content: SizedBox(
+          width: 420,
+          child: PosTextField(
+            controller: field,
+            decoration: const InputDecoration(
+              labelText: 'Other tills',
+              hintText: '192.168.1.190, 192.168.1.247',
+              helperText: 'Only if devices do not find each other by themselves.',
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, field.text), child: const Text('Save')),
+        ],
+      ),
+    );
+    if (saved == null) return;
+    await lan.setManualHosts(saved.split(RegExp(r'[\s,]+')));
+    if (mounted) setState(() {});
+  }
+
   Future<void> _allow() async {
     setState(() => _busy = true);
     final ok = await LanService.instance.allowThroughFirewall();
@@ -847,6 +881,26 @@ class _LocalNetworkCardState extends State<_LocalNetworkCard> {
               title: Text(p.name),
               subtitle: Text('${roleName[p.role] ?? p.role} · ${p.address.address}${p.claimsHub ? ' · main till' : ''}'),
             ),
+        const Divider(height: 1),
+        ListTile(
+          dense: true,
+          leading: const Icon(Icons.settings_ethernet, color: Pos.graphite),
+          title: const Text('Network setup'),
+          subtitle: FutureBuilder<List<String>>(
+            future: LanNode.localAddresses(),
+            builder: (context, ips) => Text(
+              'This till: ${(ips.data ?? const <String>[]).join(', ')}'
+              '${lan.networkProfile == null ? '' : ' (${lan.networkProfile} network)'}\n'
+              'Ports: TCP ${LanNode.defaultLinkPort} and UDP ${LanNode.defaultDiscoveryPort}. '
+              'Nothing to open on the router on one network; never forward them to the internet. '
+              "Reserve this till's address in the router, and turn off Wi-Fi client isolation.\n"
+              'In a power cut the router needs a UPS too. Sales, tables and balances catch up '
+              'with the cloud by themselves when the internet is back.'
+              '${lan.manualHosts.isEmpty ? '' : '\nAlso trying: ${lan.manualHosts.join(', ')}'}',
+            ),
+          ),
+          trailing: OutlinedButton(onPressed: _editHosts, child: const Text('Addresses')),
+        ),
         if (Platform.isWindows && lan.firewallOpen == false)
           ListTile(
             leading: const Icon(Icons.shield_outlined, color: Pos.graphite),

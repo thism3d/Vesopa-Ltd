@@ -46,8 +46,12 @@ function ensureTables(pool) {
       await pool.query(`CREATE TABLE IF NOT EXISTS epos_lan_settings (
         office         VARCHAR(190) NOT NULL PRIMARY KEY,
         preferred_hub  VARCHAR(64)  NULL,
+        hosts          VARCHAR(600) NULL,
         updated_at     TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       )`);
+      // Added 2026-11-02, for a table made before it.
+      await pool.query('ALTER TABLE epos_lan_settings ADD COLUMN hosts VARCHAR(600) NULL')
+        .catch((e) => { if (e.code !== 'ER_DUP_FIELDNAME') throw e; });
       await pool.query(`CREATE TABLE IF NOT EXISTS epos_lan_conflicts (
         id          BIGINT       NOT NULL AUTO_INCREMENT PRIMARY KEY,
         office      VARCHAR(190) NOT NULL,
@@ -79,6 +83,13 @@ function lanKey(secret, office) {
     .createHmac('sha256', String(secret))
     .update(`vesopa-lan-v${LAN_KEY_VERSION}|${String(office).toLowerCase()}`)
     .digest('hex');
+}
+
+/** Addresses from a box or a stored list: IPv4 only, no more than 32. */
+function hostsOf(raw) {
+  const list = Array.isArray(raw) ? raw : String(raw || '').split(/[\s,]+/);
+  return [...new Set(list.map((h) => String(h).trim())
+    .filter((h) => /^\d{1,3}(\.\d{1,3}){3}$/.test(h) && h.split('.').every((n) => Number(n) <= 255)))].slice(0, 32);
 }
 
 function clamp(v, n) {
@@ -114,7 +125,7 @@ function offlineOnce(pool) {
   return async (req, res, next) => {
     const id = clamp(req.headers['x-vesopa-offline-id'], 80);
     if (!id) return next();
-    const office = String((req.body && req.body.office) || req.query.office || '').trim();
+    const office = String(req.office || (req.body && req.body.office) || req.query.office || '').trim();
     if (!office) return next();
     try {
       await ensureTables(pool);
@@ -156,15 +167,16 @@ function lanRoutes({ pool, secret }) {
     try {
       await ensureTables(pool);
       const office = req.device.office;
-      const [[settings]] = await pool.query('SELECT preferred_hub FROM epos_lan_settings WHERE office = ?', [office]);
-      // Where the venue's other devices said they were today: announced to
-      // directly as well, for a network that drops broadcasts.
+      const [[settings]] = await pool.query('SELECT preferred_hub, hosts FROM epos_lan_settings WHERE office = ?', [office]);
+      // Where the venue's tills said they were this month, and any addresses
+      // set in the back office: tried directly as well, for a network that
+      // drops broadcasts or puts its Wi-Fi on another subnet.
       const [rows] = await pool.query(
         `SELECT device, role, report FROM epos_lan_reports
-          WHERE office = ? AND updated_at > DATE_SUB(NOW(), INTERVAL 1 DAY)`,
+          WHERE office = ? AND updated_at > DATE_SUB(NOW(), INTERVAL 30 DAY)`,
         [office]
       );
-      const targets = [];
+      const targets = hostsOf(settings && settings.hosts);
       for (const r of rows) {
         if (r.role !== 'till') continue;
         try {
@@ -209,7 +221,7 @@ function lanRoutes({ pool, secret }) {
            FROM epos_lan_reports WHERE office = ? ORDER BY role, name`,
         [office]
       );
-      const [[settings]] = await pool.query('SELECT preferred_hub FROM epos_lan_settings WHERE office = ?', [office]);
+      const [[settings]] = await pool.query('SELECT preferred_hub, hosts FROM epos_lan_settings WHERE office = ?', [office]);
       const [conflicts] = await pool.query(
         `SELECT id, device, kind, ref, detail, created_at FROM epos_lan_conflicts
           WHERE office = ? ORDER BY id DESC LIMIT 50`,
@@ -217,6 +229,8 @@ function lanRoutes({ pool, secret }) {
       );
       res.json({
         preferred_hub: settings ? settings.preferred_hub : null,
+        hosts: hostsOf(settings && settings.hosts),
+        ports: { tcp: 47821, udp: 47820 },
         devices: rows.map((r) => {
           let report = {};
           try { report = JSON.parse(r.report || '{}'); } catch { /* empty */ }
@@ -239,13 +253,24 @@ function lanRoutes({ pool, secret }) {
     try {
       await ensureTables(pool);
       const office = await tenantEmail(req);
-      const hub = clamp(req.body && req.body.preferred_hub, 64) || null;
-      await pool.execute(
-        `INSERT INTO epos_lan_settings (office, preferred_hub) VALUES (?, ?)
-         ON DUPLICATE KEY UPDATE preferred_hub = VALUES(preferred_hub)`,
-        [office, hub]
-      );
-      res.json({ ok: true, preferred_hub: hub });
+      const body = req.body || {};
+      if ('preferred_hub' in body) {
+        const hub = clamp(body.preferred_hub, 64) || null;
+        await pool.execute(
+          `INSERT INTO epos_lan_settings (office, preferred_hub) VALUES (?, ?)
+           ON DUPLICATE KEY UPDATE preferred_hub = VALUES(preferred_hub)`,
+          [office, hub]
+        );
+      }
+      if ('hosts' in body) {
+        const hosts = hostsOf(body.hosts).join(',');
+        await pool.execute(
+          `INSERT INTO epos_lan_settings (office, hosts) VALUES (?, ?)
+           ON DUPLICATE KEY UPDATE hosts = VALUES(hosts)`,
+          [office, hosts || null]
+        );
+      }
+      res.json({ ok: true });
     } catch (e) { next(e); }
   });
 

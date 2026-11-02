@@ -19,6 +19,10 @@ import 'dart:math';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'lan/lan_link.dart' show LanUnavailable;
+import 'lan/offline_ledger.dart' show LedgerRefused;
+import 'lan/offline_money.dart';
+
 /// Every staff drink code starts with this, so a scan is known without asking
 /// anybody: `SD` and eight letters and digits.
 const staffDrinkPrefix = 'SD';
@@ -157,6 +161,24 @@ class StaffDrinksApi {
       });
     await prefs.setString(_pendingKey, jsonEncode(pending));
     await flush();
+
+    // Not through to the back office: the other tills hear of the slips over
+    // the local link, so any of them can redeem one (2026-11-02).
+    if (_read(await SharedPreferences.getInstance()).isNotEmpty) {
+      final o = OfflineMoney.instance;
+      if (o.ready) {
+        try {
+          await o.apply('staff_issue', {
+            'order_id': orderId,
+            'sold_by': soldBy,
+            'terminal': terminal,
+            'drinks': [for (final d in drinks) d.toJson()],
+          });
+        } catch (_) {
+          // This till still holds them and sends them when it can.
+        }
+      }
+    }
   }
 
   /// Send whatever is still waiting. Codes are unique, so sending one twice
@@ -218,9 +240,33 @@ class StaffDrinksApi {
       if (res.statusCode == 409 && drink != null) return StaffDrinkUsed(drink);
       return StaffDrinkRefused('${map['error'] ?? 'The slip could not be checked (${res.statusCode}).'}');
     } catch (_) {
-      return const StaffDrinkRefused(
-        'The back office cannot be reached, so the slip cannot be checked. Try again in a moment.',
-      );
+      return _redeemOffline(c, by: by, terminal: terminal);
+    }
+  }
+
+  /// With the internet down the main till lets each slip through once, and
+  /// sends the redeem to the back office when it is back (2026-11-02).
+  Future<StaffDrinkRedeem> _redeemOffline(String code, {String? by, String? terminal}) async {
+    const unreachable = StaffDrinkRefused(
+      'The back office and the main till cannot be reached, so the slip cannot be checked. Try again in a moment.',
+    );
+    final o = OfflineMoney.instance;
+    if (!o.ready) return unreachable;
+    StaffDrink? known() {
+      final j = o.ledger.staffDrink(code);
+      return j == null ? null : StaffDrink.fromJson(j);
+    }
+
+    try {
+      await o.apply('staff_drink', {'code': code, 'by': by, 'terminal': terminal});
+      final drink = known();
+      return drink == null ? unreachable : StaffDrinkOk(drink);
+    } on LedgerRefused catch (r) {
+      final drink = known();
+      if (drink?.redeemedAt != null) return StaffDrinkUsed(drink!);
+      return StaffDrinkRefused(r.message);
+    } on LanUnavailable {
+      return unreachable;
     }
   }
 }

@@ -20,6 +20,7 @@
  */
 const express = require('express');
 const { requireAuth, requireTerminal } = require('./auth');
+const { offlineOnce } = require('./lan');
 
 /** Codes as printed: letters and digits, no 0/O or 1/I, upper case. */
 function cleanCode(v) {
@@ -50,6 +51,10 @@ function staffDrinkRoutes({ pool, broadcast, secret }) {
     redeemed_by: r.redeemed_by,
     redeemed_terminal: r.redeemed_terminal,
   });
+
+  // Moves the main till took with the internet down, replayed once each when
+  // it is back (src/lan.js).
+  router.post(['/till/staff-drinks', '/till/staff-drinks/redeem'], till, offlineOnce(pool));
 
   router.post('/till/staff-drinks', till, async (req, res, next) => {
     try {

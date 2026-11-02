@@ -1026,7 +1026,11 @@ final syncServiceProvider = Provider<SyncService>((ref) {
 
   // Kitchen tickets that could not be posted when they fired ride on the same
   // catch-up. Read lazily for the same reason as above.
-  sync.flushKitchen = () => ref.read(kitchenScreenSenderProvider).flush();
+  // What waited for the internet: kitchen tickets and staff drink slips.
+  sync.flushKitchen = () async {
+    await ref.read(kitchenScreenSenderProvider).flush();
+    await ref.read(staffDrinksProvider).flush();
+  };
 
   ref.onDispose(sync.dispose);
   return sync;

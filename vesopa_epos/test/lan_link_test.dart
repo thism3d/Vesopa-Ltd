@@ -150,6 +150,57 @@ void main() {
     expect(worst, lessThan(500), reason: 'even a whole plan at once arrives in well under a second');
   }, timeout: const Timeout(Duration(seconds: 40)));
 
+  test('with UDP blocked, a screen reaches the main till straight on TCP', () async {
+    final a = LanNode(
+      LanIdentity(venueKey: key, id: 'till-tcp', name: 'Bar', role: 'till'),
+      discoveryPort: 47950,
+      linkPort: 47951,
+      broadcast: false,
+      claimAfter: const Duration(milliseconds: 300),
+      announceEvery: const Duration(milliseconds: 150),
+    );
+    await a.start();
+    // Its "discovery" goes nowhere: all it has is the address.
+    final k = LanNode(
+      LanIdentity(venueKey: key, id: 'kitchen-tcp', name: 'Grill', role: 'kitchen'),
+      discoveryPort: 0,
+      linkPort: 47951,
+      broadcast: false,
+      announceEvery: const Duration(milliseconds: 150),
+      targets: [(host: '127.0.0.1', port: 47999)],
+    );
+    await k.start();
+    addTearDown(() async {
+      await k.dispose();
+      await a.dispose();
+    });
+    await until(() => a.isHub && k.linked && k.hubId == 'till-tcp');
+    expect(k.peers, isEmpty, reason: 'it never heard the till, it was reached directly');
+    final got = <LanMessage>[];
+    k.subscribe('kitchen', got.add);
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    a.publish('kitchen', {'ticket': 'direct'}, log: true);
+    await until(() => got.isNotEmpty);
+    // The link stays up across elections: nothing heard is not a reason to drop it.
+    await Future<void>.delayed(const Duration(seconds: 1));
+    expect(k.linked, isTrue);
+
+    // A wrong venue key gets nowhere over TCP either.
+    final stranger = LanNode(
+      LanIdentity(venueKey: List<int>.filled(32, 3), id: 'x', name: 'x', role: 'kitchen'),
+      discoveryPort: 0,
+      linkPort: 47951,
+      broadcast: false,
+      announceEvery: const Duration(milliseconds: 150),
+      targets: [(host: '127.0.0.1', port: 47999)],
+    );
+    await stranger.start();
+    addTearDown(stranger.dispose);
+    await Future<void>.delayed(const Duration(seconds: 2));
+    expect(stranger.linked, isFalse);
+    expect(a.clientCount, 1);
+  }, timeout: const Timeout(Duration(seconds: 30)));
+
   test('a device holding another venue key is never let in', () async {
     final a = node('till-x', 'till', 47920, []);
     await a.start();

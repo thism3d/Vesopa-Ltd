@@ -252,6 +252,9 @@ class LanNode {
   /// The main till as far as this device knows, or null.
   String? hubId;
 
+  /// The main till's name, when it was reached directly and never heard.
+  String? directHubName;
+
   /// Linked: this device is the main till, or is connected to it.
   bool get linked => _isHub || _client?.authed == true;
 
@@ -587,6 +590,9 @@ class LanNode {
       }
       return;
     }
+    // Linked straight to a main till nothing here can hear (see [_probe]): UDP
+    // is what cannot get through, so hearing nobody says nothing about it.
+    if (claimers.isEmpty && _client?.direct == true) return;
     claimers.sort((a, b) => _rank(_of(a), _of(b)));
     final next = claimers.isEmpty ? null : claimers.first.id;
     if (next != hubId) {
@@ -634,7 +640,7 @@ class LanNode {
       final conn = _Conn(ws, address: socket.remoteAddress.address);
       final nonce = _nonce();
       conn.serverNonce = nonce;
-      ws.add(jsonEncode({'t': 'hello', 'nonce': nonce, 'hub': _isHub, 'id': identity.id}));
+      ws.add(jsonEncode({'t': 'hello', 'nonce': nonce, 'hub': _isHub, 'id': identity.id, 'name': identity.name}));
       // An unauthenticated socket has five seconds to prove itself.
       final timeout = Timer(const Duration(seconds: 5), () {
         if (!conn.authed) conn.close();
@@ -797,18 +803,42 @@ class LanNode {
   void _keepClient() {
     if (_isHub || _connecting || !_running) return;
     final id = hubId;
-    if (id == null) return;
+    if (id == null) {
+      _probe();
+      return;
+    }
     if (_client != null) return;
     final hub = peers[id];
     if (hub == null || hub.port <= 0) return;
     unawaited(_connect(hub));
   }
 
-  Future<void> _connect(LanPeer hub) async {
+  int _probeNext = 0;
+
+  /// Nobody has been heard, so try the known addresses straight on TCP.
+  ///
+  /// Some networks carry TCP and drop UDP: a phone or tablet on another subnet
+  /// (Pontardawe's Wi-Fi hands out 192.168.10.x, its tills are on 192.168.1.x),
+  /// or a router with broadcasts off, and iOS will not broadcast at all. Only
+  /// the main till answers yes, so whichever address that is, this finds it.
+  /// A till does not do this: it takes the job itself if nobody claims it, and
+  /// announces directly to these addresses over UDP anyway.
+  void _probe() {
+    if (identity.canHost || _targets.isEmpty) return;
+    final t = _targets[_probeNext++ % _targets.length];
+    final address = InternetAddress.tryParse(t.host);
+    if (address == null || address.isLoopback && linkPort == 0) return;
+    unawaited(_connect(null, address: address, port: linkPort));
+  }
+
+  Future<void> _connect(LanPeer? hub, {InternetAddress? address, int? port}) async {
     _connecting = true;
     try {
-      final ws = _Wire(await Socket.connect(hub.address, hub.port, timeout: const Duration(seconds: 4)));
-      final conn = _Conn(ws, address: hub.address.address)..peerId = hub.id;
+      final at = hub?.address ?? address!;
+      final ws = _Wire(await Socket.connect(at, hub?.port ?? port!, timeout: const Duration(seconds: 2)));
+      final conn = _Conn(ws, address: at.address)
+        ..peerId = hub?.id ?? ''
+        ..direct = hub == null;
       _client = conn;
       final done = Completer<void>();
       ws.listen(
@@ -840,6 +870,12 @@ class LanNode {
         final m = jsonDecode(data);
         if (m is! Map) return conn.close();
         if (m['t'] == 'hello') {
+          if (conn.direct) {
+            // Only the main till is any use; it says who it is.
+            if (m['hub'] != true) return conn.close();
+            conn.peerId = '${m['id'] ?? ''}';
+            directHubName = m['name'] as String?;
+          }
           conn.serverNonce = '${m['nonce'] ?? ''}';
           conn.clientNonce = _nonce();
           conn.ws.add(jsonEncode({
@@ -865,6 +901,7 @@ class LanNode {
             ..sealer = _Sealer(identity.venueKey, conn.serverNonce, conn.clientNonce, server: false)
             ..authed = true
             ..lastHeard = DateTime.now();
+          if (conn.direct) hubId = conn.peerId;
           if (!authed.isCompleted) authed.complete();
           if (_subs.isNotEmpty) conn.send({'op': 'sub', 'ch': _subs.keys.toList()});
           _changed();
@@ -1002,8 +1039,9 @@ class LanNode {
           ? null
           : {
               'id': hubId,
-              'name': hubId == identity.id ? identity.name : hub?.name,
-              'address': hub?.address.address,
+              'name': hubId == identity.id ? identity.name : hub?.name ?? directHubName,
+              'address': hub?.address.address ?? _client?.address,
+              'direct': _client?.direct == true,
             },
       'peers': [for (final p in peers.values) p.toJson(now)],
       'clients': clients,
@@ -1115,6 +1153,9 @@ class _Conn {
   String peerName = '';
   String peerRole = '';
   bool authed = false;
+
+  /// Reached by trying an address, not by hearing an announce.
+  bool direct = false;
   _Sealer? sealer;
   DateTime lastHeard = DateTime.now();
   final Set<String> channels = {};

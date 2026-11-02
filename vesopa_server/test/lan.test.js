@@ -34,10 +34,10 @@ function fakePool() {
   return {
     reports, journal, settings,
     async query(sql, params = []) {
-      if (/^CREATE TABLE/i.test(sql.trim())) return [[]];
+      if (/^(CREATE|ALTER) TABLE/i.test(sql.trim())) return [[]];
       if (/FROM epos_lan_settings/.test(sql)) {
         const v = settings.get(params[0]);
-        return [v ? [{ preferred_hub: v }] : []];
+        return [v ? [{ preferred_hub: v.hub ?? null, hosts: v.hosts ?? null }] : []];
       }
       if (/FROM epos_lan_reports/.test(sql)) {
         return [[...reports.values()].filter((r) => r.office === params[0])];
@@ -63,7 +63,9 @@ function fakePool() {
       }
       if (/UPDATE epos_lan_journal/.test(sql)) return [{ affectedRows: 1 }];
       if (/INSERT INTO epos_lan_settings/.test(sql)) {
-        settings.set(params[0], params[1]);
+        const had = settings.get(params[0]) || {};
+        settings.set(params[0], /\(office, hosts\)/.test(sql)
+          ? { ...had, hosts: params[1] } : { ...had, hub: params[1] });
         return [{ affectedRows: 1 }];
       }
       throw new Error(`unexpected execute ${sql}`);
@@ -136,6 +138,16 @@ async function call(server, method, path, { token, body, headers = {} } = {}) {
     assert.strictEqual(r.status, 200);
     const key = await call(server, 'GET', '/api/lan/key', { token: kitchen });
     assert.deepStrictEqual(key.json.targets, ['192.168.1.20']);
+  });
+
+  await check('addresses set in the back office reach the devices; junk does not', async () => {
+    const r = await call(server, 'PUT', '/api/lan/settings', {
+      token: person,
+      body: { hosts: '192.168.1.190, 192.168.10.1 not-an-ip 999.1.1.1' },
+    });
+    assert.strictEqual(r.status, 200);
+    const key = await call(server, 'GET', '/api/lan/key', { token: kitchen });
+    assert.deepStrictEqual(key.json.targets, ['192.168.1.190', '192.168.10.1', '192.168.1.20']);
   });
 
   await check('a replayed move runs once; a failed one may run again', async () => {

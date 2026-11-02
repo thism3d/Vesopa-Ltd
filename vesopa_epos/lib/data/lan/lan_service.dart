@@ -36,6 +36,7 @@ class LanService {
 
   Timer? _report;
   Timer? _refresh;
+  Timer? _retry;
   StreamSubscription<void>? _nodeChanges;
   StreamSubscription<void>? _nodeReady;
 
@@ -61,6 +62,18 @@ class LanService {
 
   static const _keyCache = 'vesopa_lan_key';
 
+  /// Addresses typed in on this device (Settings > Local network), for a
+  /// network that will not let devices find each other by themselves.
+  static const _manualKey = 'vesopa_lan_manual';
+
+  /// Tills heard on the network, kept so that after a power cut -- no internet,
+  /// the back office unreachable -- this device still knows where to look.
+  static const _knownKey = 'vesopa_lan_known';
+
+  List<String> manualHosts = const [];
+  List<String> _knownHosts = const [];
+  List<String> _serverHosts = const [];
+
   /// Point the link at this device's credentials. Cheap to call often; the
   /// node is only rebuilt when the device, the venue or the key changes.
   Future<void> configure({
@@ -83,8 +96,30 @@ class LanService {
     if (same && _node != null) return;
     if (deviceId.isEmpty) return;
 
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      manualHosts = prefs.getStringList(_manualKey) ?? const [];
+      _knownHosts = prefs.getStringList(_knownKey) ?? const [];
+    } catch (_) {}
+
     final key = await _readKey(fresh: true);
-    if (key == null) return;
+    if (key == null) {
+      // Never signed in with the internet up on this device, or the back
+      // office is down: nothing to join with yet, so ask again shortly.
+      _retry?.cancel();
+      _retry = Timer(const Duration(minutes: 1), () {
+        _token = null;
+        unawaited(configure(
+          apiBase: apiBase,
+          token: token,
+          deviceId: deviceId,
+          name: name,
+          version: version,
+          role: role,
+        ));
+      });
+      return;
+    }
     await _startNode(key);
 
     _report?.cancel();
@@ -174,9 +209,45 @@ class LanService {
     _changed();
   }
 
-  List<({String host, int port})> _targetsOf(List<String> ips) => [
-        for (final ip in ips) (host: ip, port: LanNode.defaultDiscoveryPort),
-      ];
+  List<({String host, int port})> _targetsOf(List<String> ips) {
+    _serverHosts = ips;
+    return [
+      for (final ip in {...manualHosts, ...ips, ..._knownHosts})
+        (host: ip, port: LanNode.defaultDiscoveryPort),
+    ];
+  }
+
+  /// Set the addresses typed in on this device.
+  Future<void> setManualHosts(List<String> hosts) async {
+    manualHosts = [
+      for (final h in hosts)
+        if (InternetAddress.tryParse(h.trim())?.type == InternetAddressType.IPv4) h.trim(),
+    ];
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(_manualKey, manualHosts);
+    } catch (_) {}
+    _node?.targets = _targetsOf(_serverHosts);
+    _changed();
+  }
+
+  /// Remember where the venue's tills are, for the next time there is no
+  /// back office to ask.
+  Future<void> _rememberTills() async {
+    final n = _node;
+    if (n == null) return;
+    final seen = {
+      for (final p in n.peers.values)
+        if (p.role == 'till' && !p.address.isLoopback) p.address.address,
+    };
+    if (seen.isEmpty || seen.every(_knownHosts.contains)) return;
+    _knownHosts = {...seen, ..._knownHosts}.take(16).toList();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(_knownKey, _knownHosts);
+    } catch (_) {}
+    n.targets = _targetsOf(_serverHosts);
+  }
 
   Future<void> _refreshKey() async {
     final k = await _readKey(fresh: true);
@@ -225,6 +296,7 @@ class LanService {
   }
 
   Future<void> sendReport() async {
+    unawaited(_rememberTills());
     final base = _apiBase, token = _token;
     if (base == null || token == null || token.isEmpty) return;
     final body = await report();
